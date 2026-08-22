@@ -1,0 +1,51 @@
+name: Fix tdwall package removal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-tdwall-package-removal.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch managed tdwall removal and regression test
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/native/src/WallpaperLibrary.cpp')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''    if (!item.thumbnail.empty() && PathIsInside(item.thumbnail, ThumbnailDirectory())) fs::remove(item.thumbnail, ec);\n    if (deleteManagedCopy && item.managedCopy && !item.source.empty() && PathIsInside(item.source, MediaDirectory()))\n        fs::remove(item.source, ec);\n'''
+          new = '''    if (!item.thumbnail.empty() && PathIsInside(item.thumbnail, ThumbnailDirectory())) fs::remove(item.thumbnail, ec);\n    if (deleteManagedCopy && item.managedCopy && !item.source.empty()) {\n        if (PathIsInside(item.source, MediaDirectory())) {\n            fs::remove(item.source, ec);\n        } else if (PathIsInside(item.source, PackageDirectory())) {\n            const fs::path package = item.source.parent_path();\n            if (Lower(package.extension().wstring()) == L".tdwall" && PathIsInside(package, PackageDirectory()))\n                fs::remove_all(package, ec);\n        }\n    }\n'''
+          if old not in text:
+              raise SystemExit('Remove managed-copy anchor missing')
+          text = text.replace(old, new, 1)
+
+          old_test = '''    ok = ok && reloaded.Find(L"scene-aurora").has_value();\n    ok = ok && !reloaded.Search(L"Package Web").empty();\n    if (imported) ok = ok && reloaded.Find(imported->id).has_value();\n\n    fs::remove_all(root, ec);\n'''
+          new_test = '''    ok = ok && reloaded.Find(L"scene-aurora").has_value();\n    const auto packageItems = reloaded.Search(L"Package Web");\n    ok = ok && !packageItems.empty();\n    if (!packageItems.empty()) {\n        ok = ok && reloaded.Remove(packageItems.front().id, true, &error);\n        ok = ok && !fs::exists(package);\n        WallpaperLibrary afterRemoval(root / L"Library");\n        ok = ok && afterRemoval.Load(&error);\n        ok = ok && afterRemoval.Search(L"Package Web").empty();\n    }\n    if (imported) ok = ok && reloaded.Find(imported->id).has_value();\n\n    fs::remove_all(root, ec);\n'''
+          if old_test not in text:
+              raise SystemExit('SelfTest package anchor missing')
+          text = text.replace(old_test, new_test, 1)
+          path.write_text(text, encoding='utf-8', newline='\n')
+
+      - name: Commit repair directly to main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm .github/workflows/fix-tdwall-package-removal.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/WallpaperLibrary.cpp .github/workflows/fix-tdwall-package-removal.yml
+          git commit -m "fix: remove managed tdwall packages permanently"
+          git push origin HEAD:main

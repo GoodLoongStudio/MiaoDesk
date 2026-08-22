@@ -1,4 +1,5 @@
 #include "turingdesk/WallpaperLibrary.h"
+#include "turingdesk/WallpaperPackage.h"
 
 #include <windows.h>
 #include <shobjidl.h>
@@ -208,6 +209,7 @@ bool WallpaperLibrary::Load(std::wstring* error) {
     std::error_code ec;
     fs::create_directories(root_, ec);
     fs::create_directories(MediaDirectory(), ec);
+    fs::create_directories(PackageDirectory(), ec);
     fs::create_directories(ThumbnailDirectory(), ec);
     if (ec) {
         SetError(error, L"无法创建壁纸库目录：" + root_.wstring());
@@ -215,8 +217,7 @@ bool WallpaperLibrary::Load(std::wstring* error) {
     }
 
     const fs::path manifest = ManifestPath();
-    if (!fs::exists(manifest, ec)) return true;
-
+    if (fs::exists(manifest, ec)) {
     for (const auto& section : EnumerateSections(manifest)) {
         if (section.rfind(kItemPrefix, 0) != 0) continue;
         WallpaperLibraryItem item;
@@ -232,6 +233,9 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (item.title.empty()) item.title = item.source.empty() ? L"未命名壁纸" : DefaultTitle(item.source);
         if (!item.id.empty() && item.kind != LibraryWallpaperKind::Unknown) items_.push_back(std::move(item));
     }
+    }
+
+    if (!DiscoverPackages(error)) return false;
 
     std::sort(items_.begin(), items_.end(), [](const WallpaperLibraryItem& a, const WallpaperLibraryItem& b) {
         if (a.lastUsedUnixSeconds != b.lastUsedUnixSeconds) return a.lastUsedUnixSeconds > b.lastUsedUnixSeconds;
@@ -418,6 +422,46 @@ fs::path WallpaperLibrary::MediaDirectory() const {
     return root_ / L"Media";
 }
 
+fs::path WallpaperLibrary::PackageDirectory() const {
+    return root_ / L"Packages";
+}
+
+bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
+    std::error_code ec;
+    const auto packages = PackageDirectory();
+    fs::create_directories(packages, ec);
+    if (ec) { SetError(error, L"无法创建壁纸包目录"); return false; }
+    for (const auto& entry : fs::directory_iterator(packages, ec)) {
+        if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
+        if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".tdwall") continue;
+        WallpaperPackageManifest manifest;
+        std::wstring packageError;
+        if (!WallpaperPackage::Validate(entry.path(), &manifest, &packageError)) continue;
+        LibraryWallpaperKind kind = LibraryWallpaperKind::Unknown;
+        switch (manifest.type) {
+        case WallpaperPackageType::Image: kind = LibraryWallpaperKind::Image; break;
+        case WallpaperPackageType::Video: kind = LibraryWallpaperKind::Video; break;
+        case WallpaperPackageType::Web: kind = LibraryWallpaperKind::Web; break;
+        case WallpaperPackageType::Scene:
+        case WallpaperPackageType::Unknown: continue;
+        }
+        const fs::path source = NormalizedAbsolute(entry.path() / manifest.entry);
+        if (FindSourceIndex(source)) continue;
+        WallpaperLibraryItem item;
+        item.id = L"package-" + Lower(entry.path().stem().wstring());
+        if (item.id == L"package-") item.id = MakeId();
+        if (FindIndex(item.id)) item.id += L"-" + std::to_wstring(items_.size());
+        item.kind = kind;
+        item.title = SanitizeText(manifest.title.empty() ? DefaultTitle(entry.path()) : manifest.title);
+        item.source = source;
+        item.managedCopy = true;
+        item.importedUnixSeconds = NowUnixSeconds();
+        if (!SaveItem(item, error)) return false;
+        items_.push_back(std::move(item));
+    }
+    return true;
+}
+
 fs::path WallpaperLibrary::ThumbnailDirectory() const {
     return root_ / L"Thumbnails";
 }
@@ -524,10 +568,13 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && !library.RecentlyUsed(1).empty();
     }
     ok = ok && library.UpsertScene(L"scene-aurora", L"Aurora Flow", &error);
+    const fs::path package = library.PackageDirectory() / L"selftest.tdwall";
+    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"TuringDesk", &error);
 
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
     ok = ok && reloaded.Find(L"scene-aurora").has_value();
+    ok = ok && !reloaded.Search(L"Package Web").empty();
     if (imported) ok = ok && reloaded.Find(imported->id).has_value();
 
     fs::remove_all(root, ec);

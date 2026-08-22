@@ -346,8 +346,15 @@ bool WallpaperLibrary::Remove(std::wstring_view id, bool deleteManagedCopy, std:
 
     std::error_code ec;
     if (!item.thumbnail.empty() && PathIsInside(item.thumbnail, ThumbnailDirectory())) fs::remove(item.thumbnail, ec);
-    if (deleteManagedCopy && item.managedCopy && !item.source.empty() && PathIsInside(item.source, MediaDirectory()))
-        fs::remove(item.source, ec);
+    if (deleteManagedCopy && item.managedCopy && !item.source.empty()) {
+        if (PathIsInside(item.source, MediaDirectory())) {
+            fs::remove(item.source, ec);
+        } else if (PathIsInside(item.source, PackageDirectory())) {
+            const fs::path package = item.source.parent_path();
+            if (Lower(package.extension().wstring()) == L".tdwall" && PathIsInside(package, PackageDirectory()))
+                fs::remove_all(package, ec);
+        }
+    }
     items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
     return true;
 }
@@ -574,7 +581,15 @@ bool WallpaperLibrary::SelfTest() {
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
     ok = ok && reloaded.Find(L"scene-aurora").has_value();
-    ok = ok && !reloaded.Search(L"Package Web").empty();
+    const auto packageItems = reloaded.Search(L"Package Web");
+    ok = ok && !packageItems.empty();
+    if (!packageItems.empty()) {
+        ok = ok && reloaded.Remove(packageItems.front().id, true, &error);
+        ok = ok && !fs::exists(package);
+        WallpaperLibrary afterRemoval(root / L"Library");
+        ok = ok && afterRemoval.Load(&error);
+        ok = ok && afterRemoval.Search(L"Package Web").empty();
+    }
     if (imported) ok = ok && reloaded.Find(imported->id).has_value();
 
     fs::remove_all(root, ec);

@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "vendorRevision": 6,
+  "vendorRevision": 7,
   "architecture": "arm64",
   "node": {
     "version": "24.19.0",
@@ -20,9 +20,11 @@
     "rustToolchain": "1.94.0"
   },
   "codexRelay": {
-    "version": "0.5.8",
-    "commit": "84586a12976400957747c0afcd61618e052bc97d",
-    "archive": "codex-relay-v0.5.8-win-arm64.zip",
+    "version": "0.5.7",
+    "commit": "f6b65c4b7a818f215f2aa1dcebb33657716b487f",
+    "archive": "codex-relay-v0.5.7-win-arm64.zip",
+    "wheel": "codex_relay-0.5.7-py3-none-win_arm64.whl",
+    "wheelSha256": "4755de9ff3c4756ebcdce5eb998095f1a27bad515b084aab1bd1bfd4b95dea7b",
     "source": "https://github.com/MetaFARS/codex-relay/archive/",
     "rustToolchain": "1.94.0"
   },
@@ -41,7 +43,7 @@
     "This lock drives one-time repository vendoring on Windows ARM64.",
     "Normal ARM64 builds and deployments consume runtime/arm64 only and do not download third-party runtimes.",
     "goz replaces the previous Everything runtime. gozd is the elevated MFT/USN index service and goz.exe is the unprivileged query client.",
-    "codex-relay is the MIT local Responses-to-Chat-Completions bridge used when a configured provider does not expose the Responses API.",
+    "codex-relay is the MIT local Responses-to-Chat-Completions bridge used when a configured provider does not expose the Responses API; TuringDesk vendors the official PyPI Windows ARM64 wheel with a pinned SHA-256.",
     "The complete Codex CLI is vendored as the upstream .exe.zst asset so it remains below GitHub's 100 MiB per-file limit; Node 24 materializes codex.exe offline during deployment.",
     "Microsoft Edge WebView2 Runtime is an operating-system prerequisite; only the build SDK/loader is vendored."
   ]

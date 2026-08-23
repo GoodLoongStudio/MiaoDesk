@@ -87,23 +87,47 @@ function Test-HarnessSmoke([string]$Exe) {
     Step "Running bundled DeepSeek Harness smoke test"
     $Process = Start-Process -FilePath $Exe -ArgumentList "--harness-smoke-test" -Wait -PassThru
     if ($Process.ExitCode -ne 0) {
-        $log = Join-Path $env:LOCALAPPDATA "TuringDesk\Logs\harness.log"
+        $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+        $log = Join-Path $desktop "TuringDesk-Logs\harness.log"
         throw "Bundled DeepSeek Harness smoke test failed with exit code $($Process.ExitCode). Log: $log"
     }
 }
 
 function Get-MainSha {
-    $Sha = ((& gh api "repos/$Repo/commits/main" --jq ".sha") | Select-Object -First 1).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Sha)) {
-        throw "Unable to resolve main commit SHA"
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        $Output = @(& gh api "repos/$Repo/commits/main" --jq ".sha" 2>$null)
+        $ExitCode = $LASTEXITCODE
+        $Sha = [string]($Output | Select-Object -First 1)
+        if ($ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($Sha)) {
+            return $Sha.Trim()
+        }
+        if ($attempt -lt 5) {
+            Write-Host "GitHub API main lookup failed (attempt $attempt/5); retrying..." -ForegroundColor Yellow
+            Start-Sleep -Seconds ([Math]::Min(2 * $attempt, 6))
+        }
     }
-    return [string]$Sha
+    throw "Unable to resolve main commit SHA after retries"
 }
 
 function Get-RunsForCommit([string]$Sha) {
-    $Json = & gh run list --repo $Repo --workflow $Workflow --commit $Sha --limit 20 --json databaseId,headSha,status,conclusion,event,createdAt
-    if ($LASTEXITCODE -ne 0) { throw "Unable to query GitHub Actions runs" }
-    return @($Json | ConvertFrom-Json)
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        $Json = @(& gh run list --repo $Repo --workflow $Workflow --commit $Sha --limit 20 --json databaseId,headSha,status,conclusion,event,createdAt 2>$null)
+        $ExitCode = $LASTEXITCODE
+        if ($ExitCode -eq 0) {
+            try {
+                if ($Json.Count -eq 0) { return @() }
+                return @(($Json -join "`n") | ConvertFrom-Json)
+            }
+            catch {
+                # Treat a truncated/partial API response like any other transient query failure.
+            }
+        }
+        if ($attempt -lt 5) {
+            Write-Host "GitHub Actions query failed (attempt $attempt/5); retrying..." -ForegroundColor Yellow
+            Start-Sleep -Seconds ([Math]::Min(2 * $attempt, 6))
+        }
+    }
+    throw "Unable to query GitHub Actions runs after retries"
 }
 
 function Wait-ForRun([long]$RunId) {

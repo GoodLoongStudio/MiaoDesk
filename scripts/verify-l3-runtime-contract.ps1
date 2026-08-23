@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
+$mainPath = Join-Path $root 'src/native/src/main.cpp'
 $codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'
 $cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
 $armWorkflowPath = Join-Path $root '.github/workflows/native-search-windows.yml'
@@ -12,9 +13,15 @@ $productBaselinePath = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
 $nativeBaselinePath = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
 $contractDocPath = Join-Path $root 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
 $readmePath = Join-Path $root 'README.md'
+$obsoletePlanPath = Join-Path $root 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
+$obsoleteDesignSpecPath = Join-Path $root 'docs/TURINGDESK-DESIGN-SPEC.md'
+$retiredRuntimeHeaderPath = Join-Path $root 'src/native/include/turingdesk/DirectToolRuntime.h'
+$retiredRuntimeV1Path = Join-Path $root 'src/native/src/DirectAgentRuntime.cpp'
+$retiredRuntimeV2Path = Join-Path $root 'src/native/src/DirectAgentRuntimeV2.cpp'
+$retiredRuntimeStubPath = Join-Path $root 'src/native/src/DirectToolRuntimeDisabled.cpp'
 
 $requiredFiles = @(
-    $l3Path, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
+    $l3Path, $mainPath, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
     $deployCmdPath, $deployPs1Path, $productBaselinePath, $nativeBaselinePath,
     $contractDocPath, $readmePath
 )
@@ -23,8 +30,21 @@ foreach ($path in $requiredFiles) {
         throw "L3 runtime contract input missing: $path"
     }
 }
+foreach ($path in @(
+    $obsoletePlanPath,
+    $obsoleteDesignSpecPath,
+    $retiredRuntimeHeaderPath,
+    $retiredRuntimeV1Path,
+    $retiredRuntimeV2Path,
+    $retiredRuntimeStubPath
+)) {
+    if (Test-Path $path) {
+        throw "Superseded L3 artifact must stay removed: $path"
+    }
+}
 
 $l3 = Get-Content $l3Path -Raw
+$main = Get-Content $mainPath -Raw
 $codex = Get-Content $codexPath -Raw
 $cmake = Get-Content $cmakePath -Raw
 $armWorkflow = Get-Content $armWorkflowPath -Raw
@@ -54,15 +74,17 @@ foreach ($marker in $requiredL3) {
     }
 }
 
-$forbiddenL3 = @(
+$forbiddenRuntimeMarkers = @(
     'DirectToolRuntime',
     'WantsNativeTools',
     'ActiveRuntime::DirectTools',
-    'src/DirectAgentRuntimeV2.cpp'
+    'DirectAgentRuntime.cpp',
+    'DirectAgentRuntimeV2.cpp',
+    'DirectToolRuntimeDisabled.cpp'
 )
-foreach ($marker in $forbiddenL3) {
-    if ($l3.Contains($marker)) {
-        throw "Retired L3 routing marker returned: $marker"
+foreach ($marker in $forbiddenRuntimeMarkers) {
+    if ($l3.Contains($marker) -or $main.Contains($marker) -or $cmake.Contains($marker)) {
+        throw "Retired L3 runtime marker returned: $marker"
     }
 }
 
@@ -76,9 +98,6 @@ foreach ($marker in @(
     if (-not $cmake.Contains($marker)) {
         throw "CMake L3 build contract marker missing: $marker"
     }
-}
-if ($cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
-    throw 'Retired DirectToolRuntime must not be compiled into the default L3 route.'
 }
 
 # 3) Codex transport and diagnostics must stay capability-based, not brand-based.
@@ -208,4 +227,4 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'L3 runtime contract OK: Codex CLI primary, Relay/API transport, Direct API fallback, provider-neutral routing, diagnostics and packaging are enforced.'
+Write-Host 'L3 runtime contract OK: Codex CLI primary, Relay/API transport, Direct API fallback, provider-neutral routing, diagnostics, packaging and retired-runtime cleanup are enforced.'

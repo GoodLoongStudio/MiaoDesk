@@ -2,116 +2,123 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 
-$requiredDocs = @(
+$paths = @{
+    L3 = Join-Path $root 'src/native/src/L3CliWindow.cpp'
+    Codex = Join-Path $root 'src/native/src/CodexRuntime.cpp'
+    Harness = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
+    CMake = Join-Path $root 'src/native/CMakeLists.txt'
+    Product = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
+    Native = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
+    Contract = Join-Path $root 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
+    Arm = Join-Path $root '.github/workflows/native-search-windows.yml'
+    X64 = Join-Path $root '.github/workflows/native-x64-validation.yml'
+}
+
+foreach ($entry in $paths.GetEnumerator()) {
+    if (-not (Test-Path $entry.Value -PathType Leaf)) {
+        throw "Required current architecture input missing: $($entry.Value)"
+    }
+}
+
+$forbiddenPaths = @(
+    'legacy',
     'docs/TURINGDESK-DESIGN-SPEC.md',
-    'docs/V1-SCENE-RELEASE-SCOPE.md',
+    'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
     'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md',
-    'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
+    'docs/THIRD-PARTY-EVERYTHING.md',
+    '.github/workflows/apply-codex-reconnect-diagnostics.yml',
+    '.github/workflows/implement-l4-handoff.yml',
+    '.github/workflows/repair-release-doc-contract.yml',
+    '.github/workflows/repair-canonical-l3-boundary.yml',
+    '.github/workflows/repair-l3-direct-runtime.yml'
 )
-foreach ($relative in $requiredDocs) {
-    $path = Join-Path $root $relative
-    if (-not (Test-Path $path -PathType Leaf)) {
-        throw "Required release baseline missing: $relative"
+foreach ($relative in $forbiddenPaths) {
+    if (Test-Path (Join-Path $root $relative)) {
+        throw "Retired architecture artifact or self-modifying automation must stay removed: $relative"
     }
 }
 
-$l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
-$searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'
-$cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
-$harnessPath = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
-$armWorkflowPath = Join-Path $root '.github/workflows/native-search-windows.yml'
-$x64WorkflowPath = Join-Path $root '.github/workflows/native-x64-validation.yml'
+$l3 = Get-Content $paths.L3 -Raw
+$codex = Get-Content $paths.Codex -Raw
+$harness = Get-Content $paths.Harness -Raw
+$cmake = Get-Content $paths.CMake -Raw
+$product = Get-Content $paths.Product -Raw
+$native = Get-Content $paths.Native -Raw
+$contract = Get-Content $paths.Contract -Raw
+$arm = Get-Content $paths.Arm -Raw
+$x64 = Get-Content $paths.X64 -Raw
 
-foreach ($path in @($l3Path, $searchPath, $cmakePath, $harnessPath, $armWorkflowPath, $x64WorkflowPath)) {
-    if (-not (Test-Path $path -PathType Leaf)) {
-        throw "Contract input missing: $path"
-    }
-}
-
-$l3 = Get-Content $l3Path -Raw
-$search = Get-Content $searchPath -Raw
-$cmake = Get-Content $cmakePath -Raw
-$harness = Get-Content $harnessPath -Raw
-$armWorkflow = Get-Content $armWorkflowPath -Raw
-$x64Workflow = Get-Content $x64WorkflowPath -Raw
-
-# Ordinary L3 must be owned by TuringDesk: local in-process tools first, Direct Model SSE for chat.
+# Forward-only L3 architecture: Codex first, Direct API fallback only.
 foreach ($marker in @(
-    'state.agent->TryHandleLocal',
-    'state.agent->AskAsync',
-    'kDeltaMessage',
-    'kDoneMessage',
-    'case WM_NCDESTROY:',
-    'RuntimeLogPath(L"l3-runtime.log")'
-)) {
-    if (-not $l3.Contains($marker)) {
-        throw "L3 lightweight contract marker missing: $marker"
-    }
-}
-
-foreach ($marker in @(
-    'CodexRuntime',
-    'gCodexRuntime',
+    '#include "turingdesk/CodexRuntime.h"',
     'ActiveRuntime::Codex',
-    'kCodexDoneMessage',
-    '4317',
-    '4318',
-    'MCP'
+    'gCodexRuntime',
+    'state.codex->AskAsync',
+    'StartDirectFallback',
+    'state.agent->AskAsync',
+    'route: primary codex start',
+    'fallback: direct api start',
+    'primary=Codex CLI -> Relay/API; fallback=Direct API'
 )) {
-    if ($l3.Contains($marker)) {
-        throw "External or legacy runtime marker returned to ordinary L3: $marker"
-    }
-}
-
-if ($cmake.Contains('src/CodexRuntime.cpp')) {
-    throw 'Ordinary TuringDesk binary must not compile CodexRuntime.cpp.'
-}
-foreach ($source in @('src/AppSearch.cpp', 'src/GozSearch.cpp')) {
-    $count = ([regex]::Matches($cmake, [regex]::Escape($source))).Count
-    if ($count -ne 1) {
-        throw "Ordinary TuringDesk binary must compile $source exactly once; found $count entries."
-    }
-}
-
-# L3 window must share the application message loop and must not steal focus back to Search.
-foreach ($marker in @('while (IsWindow(window))', 'GetMessageW(&msg')) {
-    if ($l3.Contains($marker)) {
-        throw "L3 window owns a nested message loop: $marker"
-    }
-}
-foreach ($marker in @('auto* state = new CliState{};', 'case WM_NCDESTROY:', 'reinterpret_cast<LONG_PTR>(state)')) {
     if (-not $l3.Contains($marker)) {
-        throw "L3 nonblocking lifecycle marker missing: $marker"
+        throw "Codex-first L3 marker missing: $marker"
+    }
+}
+if ($l3.Contains('L3 runtime: TuringDesk Direct Model SSE')) {
+    throw 'Architecture regression: Direct Model SSE returned as the primary L3 runtime.'
+}
+
+# CodexRuntime and NativeTools must be part of the ordinary TuringDesk binary.
+foreach ($marker in @('src/CodexRuntime.cpp', 'src/NativeTools.cpp')) {
+    if (-not $cmake.Contains($marker)) {
+        throw "TuringDesk build graph marker missing: $marker"
     }
 }
 
-$start = $search.IndexOf('void SearchWindow::StartL3')
-if ($start -lt 0) {
-    throw 'SearchWindow::StartL3 missing.'
+# Provider-neutral Codex transport and diagnostics.
+foreach ($marker in @(
+    'OpenAiResponsesBase',
+    'ChatCompletionsBase',
+    'setup.relayRequired = true',
+    'app-server --stdio',
+    'thread/start',
+    'turn/start',
+    'RuntimeLogPath(L"codex-runtime.log")',
+    'notification.starts_with(L"Reconnecting...")',
+    'app-server: transient reconnect notification:',
+    'relay=exited code='
+)) {
+    if (-not $codex.Contains($marker)) {
+        throw "Codex runtime contract marker missing: $marker"
+    }
 }
-$length = [Math]::Min(1800, $search.Length - $start)
-$startL3Body = $search.Substring($start, $length)
-if ($startL3Body.Contains('ShowAndFocus();')) {
-    throw 'L3 must not force Search focus after opening or closing.'
+foreach ($marker in @('providerId == L"deepseek"', 'providerId) == L"deepseek"')) {
+    if ($codex.Contains($marker)) {
+        throw "Codex transport must not be hard-wired to a provider brand: $marker"
+    }
 }
 
-# L4 Harness must remain loopback-only. Self-test strings may mention forbidden alternatives,
-# so assert the actual launch constant instead of banning those words globally.
+# Harness must stay local and must never open an external browser itself.
 $requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";'
 if (-not $harness.Contains($requiredHarnessArgs)) {
     throw 'Harness launch arguments must be loopback-only and include --no-open.'
 }
-foreach ($marker in @('4317', '4318', 'MCP')) {
-    if ($harness.Contains($marker)) {
-        throw "Harness legacy marker present: $marker"
-    }
-}
 
-# Both release architectures must execute the same guard before build.
-foreach ($workflow in @($armWorkflow, $x64Workflow)) {
+# Both release workflows must run the architecture guard before build.
+foreach ($workflow in @($arm, $x64)) {
     if (-not $workflow.Contains('verify-l3-runtime-contract.ps1')) {
         throw 'Cloud build is missing the L3 runtime contract guard.'
     }
 }
 
-Write-Host 'L3 contract OK: in-process local tools, Direct Model SSE, explicit L4 Harness, loopback-only workbench.'
+# Active docs must agree on Codex-first and Direct fallback.
+foreach ($doc in @($product, $native, $contract)) {
+    if (-not $doc.Contains('Codex CLI')) {
+        throw 'Current architecture documentation is missing Codex CLI.'
+    }
+    if (-not $doc.Contains('Direct Model')) {
+        throw 'Current architecture documentation is missing Direct Model fallback.'
+    }
+}
+
+Write-Host 'L3 runtime contract OK: Codex CLI primary, Relay/API transport, Direct API fallback only, no legacy/self-modifying restore path.'

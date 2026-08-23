@@ -34,8 +34,8 @@ jobs:
           if (-not $cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
             throw 'TuringDesk Native Tool Runtime must be compiled into the default L3 binary.'
           }
-          if ($cmake.Contains('DirectToolRuntimeDisabled.cpp')) {
-            throw 'Disabled L3 tool stub must not replace the real Native Tool Runtime.'
+          foreach ($marker in @('DirectToolRuntimeDisabled.cpp', 'src/CodexRuntime.cpp')) {
+            if ($cmake.Contains($marker)) { throw "Ordinary L3 binary must not compile external/disabled runtime source: $marker" }
           }
 
       - name: Configure x64

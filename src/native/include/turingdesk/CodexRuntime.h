@@ -18,6 +18,8 @@ struct CodexRuntimeStatus {
     std::wstring message;
 };
 
+// Codex is the primary L3 runtime. Native Responses providers connect directly;
+// OpenAI-compatible Chat Completions providers are normalized through Codex Relay.
 class CodexRuntime {
 public:
     using DeltaCallback = std::function<void(std::wstring)>;

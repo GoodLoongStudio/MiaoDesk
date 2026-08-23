@@ -423,6 +423,10 @@ public:
     }
 
     void ShowSettings() {
+        ShowLibrary();
+    }
+
+    void ShowAdvancedSettings() {
         if (settings_ && IsWindow(settings_)) {
             ShowWindow(settings_, SW_RESTORE);
             SetForegroundWindow(settings_);
@@ -632,6 +636,18 @@ private:
             instance_, &library_, LibraryTargets(),
             [this](const turingdesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
                 ApplyLibraryItem(item, targetMonitorId);
+            },
+            [this](turingdesk::wallpaper::WallpaperSettingsSection section) {
+                using Section = turingdesk::wallpaper::WallpaperSettingsSection;
+                if (section == Section::Playlists || section == Section::Rules) {
+                    ShowAutomation();
+                } else if (section == Section::Displays || section == Section::Performance) {
+                    ShowAdvancedSettings();
+                } else if (section == Section::AI) {
+                    MessageBoxW(libraryWindow_.Window(),
+                                L"AI 模型配置位于 TuringDesk 设置中心。桌面 AI 创作入口会在此页继续接入。",
+                                L"TuringDesk 设置", MB_OK | MB_ICONINFORMATION);
+                }
             });
     }
 

@@ -23,19 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Guard lightweight L3 runtime boundary
+      - name: Guard Codex-first AI baseline
         shell: pwsh
         run: |
           $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
-          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
-            if ($source.Contains($marker)) { throw "Ordinary L3 must not depend on external Agent/Harness runtime marker: $marker" }
+          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime')) {
+            if (-not $source.Contains($marker)) { throw "Codex-first L3 marker missing: $marker" }
           }
           $cmake = Get-Content 'src/native/CMakeLists.txt' -Raw
-          if (-not $cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
-            throw 'TuringDesk Native Tool Runtime must be compiled into the default L3 binary.'
+          foreach ($marker in @('src/CodexRuntime.cpp', 'src/DirectToolRuntimeDisabled.cpp')) {
+            if (-not $cmake.Contains($marker)) { throw "Required AI runtime source missing: $marker" }
           }
-          foreach ($marker in @('DirectToolRuntimeDisabled.cpp', 'src/CodexRuntime.cpp')) {
-            if ($cmake.Contains($marker)) { throw "Ordinary L3 binary must not compile external/disabled runtime source: $marker" }
+          if ($cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
+            throw 'DirectAgentRuntimeV2 must not be compiled into the default AI route.'
           }
 
       - name: Configure x64

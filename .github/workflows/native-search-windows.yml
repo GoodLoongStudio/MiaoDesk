@@ -9,6 +9,7 @@ on:
       - runtime/arm64/**
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
+      - scripts/verify-l3-runtime-contract.ps1
       - .github/workflows/native-search-windows.yml
   workflow_run:
     workflows: ["Vendor ARM64 Runtime Bundle"]
@@ -32,23 +33,9 @@ jobs:
         with:
           ref: main
 
-      - name: Guard L3 and L4 runtime boundary
+      - name: Verify L3 Codex-first runtime contract
         shell: pwsh
-        run: |
-          $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
-          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
-            if ($source.Contains($marker)) { throw "External Agent/legacy marker leaked into ordinary L3: $marker" }
-          }
-          foreach ($marker in @('普通对话：Direct Model Runtime · SSE 流式', 'WantsNativeTools(actualPrompt)', 'L3 外部 Agent/Harness/Relay：不参与')) {
-            if (-not $source.Contains($marker)) { throw "Required native L3 marker missing: $marker" }
-          }
-          $cmake = Get-Content 'src/native/CMakeLists.txt' -Raw
-          if (-not $cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
-            throw 'TuringDesk Native Tool runtime must be compiled into the default L3 route.'
-          }
-          foreach ($marker in @('src/CodexRuntime.cpp', 'src/DirectToolRuntimeDisabled.cpp')) {
-            if ($cmake.Contains($marker)) { throw "Retired/external runtime must not be compiled into TuringDesk L3: $marker" }
-          }
+        run: .\scripts\verify-l3-runtime-contract.ps1
 
       - name: Check RuntimeBundle freshness
         shell: pwsh
@@ -391,8 +378,6 @@ jobs:
         run: |
           Remove-Item build/package/Runtime -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item build/package/Goz -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item build/package/CodexRelay -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item build/package/Codex -Recurse -Force -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v4
         with:

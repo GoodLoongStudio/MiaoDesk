@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+$RepoRoot = Split-Path $PSScriptRoot -Parent
 $DeployDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
 $ArtifactName = "TuringDesk-Native-Search-ARM64"
 $Workflow = "native-search-windows.yml"
@@ -14,6 +15,27 @@ $HarnessExeName = "TuringDeskHarness.exe"
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
+}
+
+function Assert-L3RuntimeContract {
+    $Guard = Join-Path $RepoRoot "scripts\verify-l3-runtime-contract.ps1"
+    if (-not (Test-Path $Guard -PathType Leaf)) { throw "Missing L3 runtime contract guard: $Guard" }
+    Step "Verifying Codex-first L3 runtime contract"
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Guard | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "L3 Codex-first runtime contract failed" }
+}
+
+function Assert-DeployedCodexRuntime {
+    $Codex = Join-Path $DeployDir "Codex\codex.exe"
+    $Relay = Join-Path $DeployDir "CodexRelay\codex-relay.exe"
+    if (-not (Test-Path $Codex -PathType Leaf)) { throw "Local runtime is missing Codex CLI: $Codex" }
+    if (-not (Test-Path $Relay -PathType Leaf)) { throw "Local runtime is missing Codex Relay: $Relay" }
+    & $Codex --version | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Local Codex CLI failed --version" }
+    & $Codex app-server --help | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Local Codex CLI app-server is unavailable" }
+    & $Relay --help | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Local Codex Relay failed --help" }
 }
 
 function Stop-DeployedInstance {
@@ -147,10 +169,12 @@ function Download-Artifact([long]$RunId) {
     $SearchExe = Get-ChildItem -Path $Temp -Filter $ExeName -Recurse | Select-Object -First 1
     $WallpaperExe = Get-ChildItem -Path $Temp -Filter $WallpaperExeName -Recurse | Select-Object -First 1
     $HarnessExe = Get-ChildItem -Path $Temp -Filter $HarnessExeName -Recurse | Select-Object -First 1
-    foreach ($Required in @($SearchExe, $WallpaperExe, $HarnessExe)) {
+    $ArtifactCodex = Get-ChildItem -Path $Temp -Filter "codex.exe" -Recurse | Select-Object -First 1
+    $ArtifactRelay = Get-ChildItem -Path $Temp -Filter "codex-relay.exe" -Recurse | Select-Object -First 1
+    foreach ($Required in @($SearchExe, $WallpaperExe, $HarnessExe, $ArtifactCodex, $ArtifactRelay)) {
         if (-not $Required) {
             Remove-Item $Temp -Recurse -Force -ErrorAction SilentlyContinue
-            throw "ARM64 artifact is missing a required native executable"
+            throw "ARM64 artifact is missing a required TuringDesk/Codex runtime file"
         }
     }
 
@@ -158,6 +182,8 @@ function Download-Artifact([long]$RunId) {
         Exe = $SearchExe.FullName
         WallpaperExe = $WallpaperExe.FullName
         HarnessExe = $HarnessExe.FullName
+        CodexExe = $ArtifactCodex.FullName
+        RelayExe = $ArtifactRelay.FullName
         Temp = $Temp
     }
 }
@@ -171,6 +197,8 @@ function Should-ShowWallpaperSettings {
     }
     catch { return $true }
 }
+
+Assert-L3RuntimeContract
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw "GitHub CLI (gh) was not found in PATH"
@@ -187,8 +215,10 @@ $BundledHarness = Join-Path $DeployDir "Runtime\Node\node_modules\@deepseek-ai\d
 if (-not (Test-Path $BundledNode -PathType Leaf) -or -not (Test-Path $BundledHarness -PathType Leaf)) {
     throw "Repository-vendored ARM64 RuntimeBundle is not prepared. Run only DEPLOY-NATIVE-ARM64.cmd; its previous step should prepare it."
 }
+Assert-DeployedCodexRuntime
 Write-Host "DeepSeek Harness mode: repository-vendored official package + bundled ARM64 Node + TuringDesk WebView2 shell" -ForegroundColor Green
 Write-Host "Bundled Node: $BundledNode" -ForegroundColor DarkGray
+Write-Host "L3 default route: Codex CLI -> Relay/API; Direct API fallback only" -ForegroundColor Green
 
 Step "Resolving current main commit"
 $MainSha = Get-MainSha
@@ -213,6 +243,10 @@ try {
     Copy-WithRetry -Source $Downloaded.WallpaperExe -Destination $DeployedWallpaper
     Copy-WithRetry -Source $Downloaded.HarnessExe -Destination $DeployedHarness
 
+    # RuntimeBundle was materialized before this script. The cloud artifact must also prove
+    # that Codex/Relay were packaged, while local runtime integrity is checked independently.
+    Assert-DeployedCodexRuntime
+
     Test-Binary -Exe $DeployedExe -Name "Deployed Search"
     Test-Binary -Exe $DeployedWallpaper -Name "Deployed Wallpaper"
     Test-Binary -Exe $DeployedHarness -Name "Deployed Harness shell"
@@ -230,6 +264,7 @@ try {
     Start-Process $DeployedExe
 
     Write-Host "`nDeployment complete. Press Alt+Space to open Search." -ForegroundColor Green
+    Write-Host "L3: Codex CLI primary; Direct API is fallback only." -ForegroundColor Green
     Write-Host "DeepSeek Harness is running from the pinned RuntimeBundle in this repository; no npm install occurs on the user machine." -ForegroundColor Green
     Write-Host "Path: $DeployDir" -ForegroundColor DarkGray
 }

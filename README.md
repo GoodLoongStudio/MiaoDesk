@@ -126,3 +126,4 @@ API Key、Token 和其他凭据不得写入日志。
 - `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线
 - `docs/TURINGDESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
 - `docs/L3-CODEX-RUNTIME-CONTRACT.md` — L3 强制架构契约
+- `docs/WALLPAPER_ENGINE_PARITY.md` — 从属于产品基线的壁纸能力路线图，不是独立架构基线

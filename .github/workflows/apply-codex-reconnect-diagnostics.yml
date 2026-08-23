@@ -1,0 +1,94 @@
+name: Apply Codex Reconnect Diagnostics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-codex-reconnect-diagnostics.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch Codex reconnect handling
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('src/native/src/CodexRuntime.cpp')
+          s = p.read_text(encoding='utf-8')
+
+          if 'app-server: transient reconnect notification:' not in s:
+              pattern = re.compile(
+                  r'        if \(method == "error"\) \{\n'
+                  r'            const auto message = ExtractJsonString\(line, "\\\\"message\\\\""\);\n'
+                  r'            error = message\.empty\(\) \? L"Codex app-server 返回 error 通知" : Utf8ToWide\(message\);\n'
+                  r'            AppendRuntimeLog\(L"app-server: error notification: " \+ error\);\n'
+                  r'            break;\n'
+                  r'        \}\n'
+              )
+              replacement = '''        if (method == "error") {
+            const auto message = ExtractJsonString(line, "\\\"message\\\"");
+            const std::wstring notification = message.empty() ? L"Codex app-server 返回 error 通知" : Utf8ToWide(message);
+            if (notification.starts_with(L"Reconnecting...")) {
+                bool relayAlive = true;
+                DWORD relayExitCode = STILL_ACTIVE;
+                std::wstring relayState = L"; relay=not-required";
+                if (setup.relayRequired) {
+                    std::scoped_lock lock(processMutex_);
+                    relayAlive = ProcessAlive(relayProcess_);
+                    if (relayProcess_ && !relayAlive) GetExitCodeProcess(relayProcess_, &relayExitCode);
+                    relayState = relayAlive ? L"; relay=alive" : L"; relay=exited code=" + std::to_wstring(relayExitCode);
+                }
+                AppendRuntimeLog(L"app-server: transient reconnect notification: " + notification + relayState);
+                if (relayAlive) continue;
+                error = L"Codex Relay 已退出，ExitCode=" + std::to_wstring(relayExitCode) + L"；" + notification;
+                break;
+            }
+            error = notification;
+            AppendRuntimeLog(L"app-server: error notification: " + error);
+            break;
+        }
+'''
+              s2, n = pattern.subn(replacement, s, count=1)
+              if n != 1:
+                  raise SystemExit('Could not locate Codex error notification block')
+              s = s2
+
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          guard = Path('scripts/verify-l3-runtime-contract.ps1')
+          g = guard.read_text(encoding='utf-8')
+          marker = "    'app-server: transient reconnect notification:'"
+          if marker not in g:
+              anchor = "    'session: failed'"
+              if anchor not in g:
+                  raise SystemExit('L3 guard anchor missing')
+              g = g.replace(anchor, anchor + ",\n    'notification.starts_with(L\"Reconnecting...\")',\n    'app-server: transient reconnect notification:',\n    'relay=exited code='", 1)
+              guard.write_text(g, encoding='utf-8', newline='\n')
+
+          Path('.github/workflows/apply-codex-reconnect-diagnostics.yml').unlink()
+
+      - name: Verify L3 runtime contract
+        shell: pwsh
+        run: ./scripts/verify-l3-runtime-contract.ps1
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'GoodLoongStudio'
+          git config user.email 'chnmlong@hotmail.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: preserve Codex retries and log relay state'
+          git pull --rebase origin main
+          git push origin HEAD:main

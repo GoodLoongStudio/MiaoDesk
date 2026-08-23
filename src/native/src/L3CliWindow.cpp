@@ -460,6 +460,12 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         state->agent->Stop();
         state->codex->Stop();
         return 0;
+    case WM_NCDESTROY:
+        if (state->backgroundBrush) DeleteObject(state->backgroundBrush);
+        if (state->monoFont) DeleteObject(state->monoFont);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        delete state;
+        return 0;
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
@@ -476,16 +482,16 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-    CliState state{};
-    state.instance = instance;
-    state.owner = owner;
-    state.agent = &agent;
-    state.codex = &gCodexRuntime;
-    state.backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
-    state.monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+    auto* state = new CliState{};
+    state->instance = instance;
+    state->owner = owner;
+    state->agent = &agent;
+    state->codex = &gCodexRuntime;
+    state->backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
+    state->monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                  FIXED_PITCH | FF_MODERN, L"Consolas");
-    state.uiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    state->uiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
 
     RECT ownerRect{};
     GetWindowRect(owner, &ownerRect);
@@ -496,73 +502,56 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
 
     HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · AI Agent",
                                   WS_POPUP | WS_BORDER,
-                                  x, y, width, height, owner, nullptr, instance, &state);
+                                  x, y, width, height, owner, nullptr, instance, state);
     if (!window) {
-        DeleteObject(state.backgroundBrush);
-        if (state.monoFont) DeleteObject(state.monoFont);
+        DeleteObject(state->backgroundBrush);
+        if (state->monoFont) DeleteObject(state->monoFont);
+        delete state;
         return false;
     }
 
     HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · L3 AI", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
-    state.settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    state->settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,
                                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsId)), instance, nullptr);
-    state.transcript = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    state->transcript = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
                                        16, 52, width - 32, height - 118,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTranscriptId)), instance, nullptr);
-    state.input = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    state->input = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                                   16, height - 50, width - 76, 34,
                                   window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kInputId)), instance, nullptr);
-    state.close = CreateWindowExW(0, L"BUTTON", L"×", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    state->close = CreateWindowExW(0, L"BUTTON", L"×", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                   width - 52, height - 48, 36, 30,
                                   window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseId)), instance, nullptr);
-    if (!title || !state.settings || !state.transcript || !state.input || !state.close) {
+    if (!title || !state->settings || !state->transcript || !state->input || !state->close) {
         DestroyWindow(window);
-        DeleteObject(state.backgroundBrush);
-        if (state.monoFont) DeleteObject(state.monoFont);
         return false;
     }
 
-    SetWindowLongPtrW(state.input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&state));
-    state.oldInputProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(state.input, GWLP_WNDPROC,
+    SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&state));
+    state->oldInputProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(state->input, GWLP_WNDPROC,
                                                                      reinterpret_cast<LONG_PTR>(&InputProc)));
-    SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state.uiFont), TRUE);
-    SendMessageW(state.settings, WM_SETFONT, reinterpret_cast<WPARAM>(state.uiFont), TRUE);
-    SendMessageW(state.close, WM_SETFONT, reinterpret_cast<WPARAM>(state.uiFont), TRUE);
-    SendMessageW(state.transcript, WM_SETFONT, reinterpret_cast<WPARAM>(state.monoFont), TRUE);
-    SendMessageW(state.input, WM_SETFONT, reinterpret_cast<WPARAM>(state.monoFont), TRUE);
-    SendMessageW(state.input, EM_SETCUEBANNER, TRUE,
+    SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->settings, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->close, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->transcript, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
+    SendMessageW(state->input, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
+    SendMessageW(state->input, EM_SETCUEBANNER, TRUE,
                  reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
 
     AppendRouteLog(L"window: L3 opened; primary=Codex CLI -> Relay/API; fallback=Direct API");
     ShowWindow(window, SW_SHOWNORMAL);
     SetForegroundWindow(window);
-    SetFocus(state.input);
+    SetFocus(state->input);
 
     if (!Trim(initialPrompt).empty()) {
-        SetWindowTextW(state.input, initialPrompt.c_str());
-        SendPrompt(state);
+        SetWindowTextW(state->input, initialPrompt.c_str());
+        SendPrompt(*state);
     }
 
-    MSG msg{};
-    bool sawQuit = false;
-    while (IsWindow(window)) {
-        const BOOL result = GetMessageW(&msg, nullptr, 0, 0);
-        if (result <= 0) {
-            if (result == 0) sawQuit = true;
-            break;
-        }
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-
-    if (IsWindow(owner)) SetForegroundWindow(owner);
-    DeleteObject(state.backgroundBrush);
-    if (state.monoFont) DeleteObject(state.monoFont);
-    if (sawQuit) PostQuitMessage(static_cast<int>(msg.wParam));
     return true;
 }
 

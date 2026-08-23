@@ -567,7 +567,7 @@ void SearchWindow::StartL3(const std::wstring& prompt) {
     if (l3_.Busy()) l3_.Stop();
     SetExpanded(false);
     if (!ShowL3CliWindow(instance_, hwnd_, l3_, prompt)) { SetStatus(L"AI 启动失败", L"请检查模型配置后重试。"); return; }
-    SetWindowTextW(edit_, L""); SetExpanded(false); ShowAndFocus();
+    SetWindowTextW(edit_, L""); SetExpanded(false);
 }
 
 void SearchWindow::SetStatus(std::wstring title, std::wstring subtitle) {

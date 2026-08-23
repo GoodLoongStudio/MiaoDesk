@@ -817,6 +817,8 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
     }
 
     bool startAccepted = false;
+    bool emittedAgentText = false;
+    std::wstring finalAgentText;
     std::string line;
     while (!stopToken.stop_requested() && ReadLine(line)) {
         if (HasResponseId(line, requestId)) {
@@ -851,7 +853,18 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         }
         if (method == "item/agentMessage/delta") {
             const auto delta = ExtractJsonString(line, "\"delta\"");
-            if (!delta.empty() && onDelta) onDelta(Utf8ToWide(delta));
+            if (!delta.empty()) {
+                emittedAgentText = true;
+                if (onDelta) onDelta(Utf8ToWide(delta));
+            }
+            continue;
+        }
+        if (method == "item/completed") {
+            const auto type = ExtractJsonString(line, "\"type\"");
+            if (type == "agentMessage") {
+                const auto text = ExtractJsonString(line, "\"text\"");
+                if (!text.empty()) finalAgentText = Utf8ToWide(text);
+            }
             continue;
         }
         if (method == "turn/completed") {
@@ -863,6 +876,12 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
             } else if (status == "interrupted") {
                 done = L"Codex turn 已中断";
             }
+            if (done.empty() && !emittedAgentText && !finalAgentText.empty()) {
+                emittedAgentText = true;
+                if (onDelta) onDelta(finalAgentText);
+            }
+            if (done.empty() && !emittedAgentText)
+                done = L"Codex turn 已完成，但模型没有返回可显示文本";
             if (onDone) onDone(std::move(done));
             return;
         }

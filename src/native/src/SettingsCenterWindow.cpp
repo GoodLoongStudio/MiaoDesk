@@ -171,7 +171,7 @@ LRESULT CALLBACK CenterProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case kHarnessButtonId:
-            LaunchSibling(*state, L"TuringDeskHarness.exe", nullptr, L"DeepSeek Harness");
+            LaunchSibling(*state, L"TuringDeskHarness.exe", L"--ui", L"DeepSeek Harness");
             return 0;
         case kCloseButtonId:
             DestroyWindow(hwnd); return 0;

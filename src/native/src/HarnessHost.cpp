@@ -389,11 +389,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         if (SUCCEEDED(com)) CoUninitialize();
         return 2;
     }
+    const bool showUi = args.find(L"--ui") != std::wstring_view::npos;
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        ActivateExistingHarnessWindow();
+        if (showUi) ActivateExistingHarnessWindow();
         CloseHandle(mutex);
         if (SUCCEEDED(com)) CoUninitialize();
         return 0;
+    }
+
+    if (!showUi) {
+        turingdesk::HarnessProcessManager harness;
+        if (!harness.Start()) {
+            CloseHandle(mutex);
+            if (SUCCEEDED(com)) CoUninitialize();
+            return 6;
+        }
+        // Keep the owner process alive invisibly so the managed Harness child
+        // is not torn down by HarnessProcessManager destruction.
+        while (harness.Running()) Sleep(500);
+        const DWORD exitCode = harness.ExitCode();
+        CloseHandle(mutex);
+        if (SUCCEEDED(com)) CoUninitialize();
+        return exitCode == STILL_ACTIVE ? 0 : static_cast<int>(exitCode);
     }
 
     HarnessHost host(instance);

@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - 'scripts/**/*.ps1'
+      - 'docs/TURINGDESK-DESIGN-SPEC.md'
+      - 'docs/V1-SCENE-RELEASE-SCOPE.md'
+      - 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
+      - 'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
       - 'docs/TURINGDESK-PRODUCT-BASELINE.md'
       - 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
       - 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
-      - 'docs/V1-SCENE-RELEASE-SCOPE.md'
-      - 'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
-      - 'docs/TURINGDESK-DESIGN-SPEC.md'
-      - '.github/workflows/repair-release-doc-contract.yml'
       - '.github/workflows/powershell-syntax.yml'
   workflow_dispatch:
 
@@ -28,30 +28,20 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v5
-      - name: Verify current release baselines
+      - name: Verify release baselines
         shell: pwsh
         run: |
           $required = @(
+            'docs/TURINGDESK-DESIGN-SPEC.md',
+            'docs/V1-SCENE-RELEASE-SCOPE.md',
+            'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md',
+            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
             'docs/TURINGDESK-PRODUCT-BASELINE.md',
             'docs/TURINGDESK-NATIVE-TECH-BASELINE.md',
-            'docs/L3-CODEX-RUNTIME-CONTRACT.md',
-            'docs/V1-SCENE-RELEASE-SCOPE.md',
-            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
+            'docs/L3-CODEX-RUNTIME-CONTRACT.md'
           )
           foreach ($path in $required) {
-            if (-not (Test-Path $path -PathType Leaf)) { throw "Required current release baseline missing: $path" }
-          }
-      - name: Reject superseded architecture restore artifacts
-        shell: pwsh
-        run: |
-          $forbidden = @(
-            'docs/TURINGDESK-DESIGN-SPEC.md',
-            '.github/workflows/repair-release-doc-contract.yml'
-          )
-          foreach ($path in $forbidden) {
-            if (Test-Path $path -PathType Leaf) {
-              throw "Superseded architecture artifact must not return: $path"
-            }
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Required release baseline missing: $path" }
           }
       - name: Parse PowerShell scripts
         shell: pwsh

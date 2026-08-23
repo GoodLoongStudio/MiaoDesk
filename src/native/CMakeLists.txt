@@ -39,8 +39,6 @@ add_executable(TuringDesk WIN32
     src/GozSearch.cpp
     src/L3Agent.cpp
     src/L3PersistenceSelfTest.cpp
-    src/AppSearch.cpp
-    src/GozSearch.cpp
     src/HarnessProcessManager.cpp
     src/HarnessSettingsBridge.cpp
 )

@@ -13,8 +13,6 @@ $productBaselinePath = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
 $nativeBaselinePath = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
 $contractDocPath = Join-Path $root 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
 $readmePath = Join-Path $root 'README.md'
-$obsoletePlanPath = Join-Path $root 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
-$obsoleteDesignSpecPath = Join-Path $root 'docs/TURINGDESK-DESIGN-SPEC.md'
 $retiredRuntimeHeaderPath = Join-Path $root 'src/native/include/turingdesk/DirectToolRuntime.h'
 $retiredRuntimeV1Path = Join-Path $root 'src/native/src/DirectAgentRuntime.cpp'
 $retiredRuntimeV2Path = Join-Path $root 'src/native/src/DirectAgentRuntimeV2.cpp'
@@ -31,8 +29,6 @@ foreach ($path in $requiredFiles) {
     }
 }
 foreach ($path in @(
-    $obsoletePlanPath,
-    $obsoleteDesignSpecPath,
     $retiredRuntimeHeaderPath,
     $retiredRuntimeV1Path,
     $retiredRuntimeV2Path,

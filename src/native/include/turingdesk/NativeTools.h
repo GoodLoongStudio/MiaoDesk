@@ -26,6 +26,19 @@ inline std::string NativeToolDefinitionsJson() {
 }
 #endif
 
-NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view argumentsJson);
+// NativeTools.cpp is compiled with TURINGDESK_NATIVE_TOOLS_IMPL, so its existing
+// ExecuteNativeTool definition becomes the in-process/raw implementation. Normal
+// consumers use the isolated worker wrapper instead. A blocked Office/WPS COM
+// server (or any future native tool) therefore cannot freeze the Codex read loop.
+NativeToolResult ExecuteNativeToolRaw(std::string_view toolName, std::string_view argumentsJson);
+
+#ifdef TURINGDESK_NATIVE_TOOLS_IMPL
+#define ExecuteNativeTool ExecuteNativeToolRaw
+#else
+NativeToolResult ExecuteNativeToolIsolated(std::string_view toolName, std::string_view argumentsJson);
+inline NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view argumentsJson) {
+    return ExecuteNativeToolIsolated(toolName, argumentsJson);
+}
+#endif
 
 } // namespace turingdesk

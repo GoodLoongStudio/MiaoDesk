@@ -1,50 +1,42 @@
 # TuringDesk Native 技术路线基线
 
-- 状态：已确认
-- 日期：2026-08-21
-- 适用范围：TuringDesk 新 Native 主线
-- 旧实现：`legacy/turingdesk-wpf/`，仅作为参考，不再作为新主线架构
-- 产品基线：`docs/TURINGDESK-DESIGN-SPEC.md`
+- 状态：**已确认**
+- 日期：2026-08-23
+- 适用范围：TuringDesk Native 主线
+- 正式开发分支：`main`
+- 产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`
+- L3 详细契约：`docs/L3-CODEX-RUNTIME-CONTRACT.md`
+- 旧实现：`legacy/turingdesk-wpf/` 仅作历史参考
 
-## 1. 产品只包含三个一级能力
+> 本文已替换 2026-08-21 版本中“L3 直接 WinHTTP、禁止本地代理、Codex 不进入普通 L3”的旧技术路线。旧路线不得恢复。
 
-TuringDesk 的顶层定义固定为：
+## 1. 三个核心能力
 
 ```text
 TuringDesk
-├─ 1. Desktop Search：L1-L3
-├─ 2. Wallpaper Engine 级桌面引擎
-└─ 3. L4 DeepSeek Harness WebView
+├─ A. 顶部统一入口：应用 / 文件 / L3 AI
+├─ B. Wallpaper Engine 级桌面引擎
+└─ C. DeepSeek Harness 高级工作台
 ```
 
-一句话定义：
-
-> TuringDesk = 桌面 Search（L1-L3） + Wallpaper Engine 级桌面引擎 + DeepSeek Harness WebView（L4）。
-
-任何新增功能首先必须明确归属于以上三块之一；不属于三块的功能默认不进入核心主线。
-
----
+Native 主线以 Windows 性能、稳定性、低常驻资源和清晰故障边界为优先目标。
 
 ## 2. 总体技术原则
 
-新主线以 Windows 上的性能、常驻内存、安装体积和系统集成质量为第一优先级，同时通过接口隔离给未来跨平台留下空间。
+1. 主桌面核心使用 C++23 / Win32。
+2. Search UI 不使用 WPF、Electron、CEF、Qt 或 WebView。
+3. L3 默认主路由固定为 **Codex CLI**。
+4. OpenAI-compatible Chat Completions Provider 通过 **Codex Relay** 适配 Codex Responses 协议。
+5. 原生 Responses Provider 可以由 Codex 直接连接，不强制经过 Relay。
+6. Codex / Relay 失败时才回退 **Direct Model Runtime → 当前配置 API**。
+7. Provider 路由按协议能力判断，不能绑定 DeepSeek 品牌。
+8. L3 不自动启动 DeepSeek Harness；Harness 是独立高级工作台。
+9. Web Runtime 只在 Harness 或 Web Wallpaper 等确有需要的场景按需启动。
+10. 代码存在、编译通过、Mock/Loopback 通过都不等于产品完成；真实 Windows 设备可用才算完成。
 
-核心原则：
+## 3. Desktop Search / L1-L3
 
-1. 常驻核心使用 C++23。
-2. 常驻核心不依赖 WPF、.NET、Electron、CEF、Qt、Python、Node.js。
-3. Web Runtime 只在确实需要 Web 的功能中按需启动。
-4. L3 不依赖 Harness，不通过 WebView，不通过 Node/Python/本地代理。
-5. L4 才启动 DeepSeek Harness 和 WebView2。
-6. 普通动态 Scene 不使用 WebView2/Chromium，走原生 GPU 渲染。
-7. Web Wallpaper 独立进程运行，避免污染主进程常驻内存。
-8. 代码存在、编译通过、Mock/Loopback 通过均不等于产品完成；真实设备可用才算完成。
-
----
-
-## 3. 一级能力一：Desktop Search（L1-L3）
-
-### 3.1 技术栈
+### 3.1 UI 与本地搜索
 
 ```text
 语言                 C++23
@@ -52,490 +44,316 @@ TuringDesk
 UI 绘制              Direct2D
 文字                 DirectWrite
 合成/动画            DirectComposition
-网络                 WinHTTP
 凭据                 Windows Credential Manager
-文件搜索 V1          Everything IPC / SDK
-文件搜索 V2          NTFS USN Journal + 自研索引
+文件搜索正式后端     goz / gozd · NTFS MFT + USN Journal
 ```
 
-Search 是最轻、最高频、长期常驻的用户入口，因此禁止使用 WPF、Qt、Electron 或 WebView 来实现主 Search UI。
+顶部 Search 是最高频入口，保持 Native UI；AI Runtime 可以按请求启动子进程，但不得把 WebView 或 Harness UI 塞进 Search。
 
-### 3.2 L1：应用搜索
+### 3.2 L1 应用搜索
 
-由 TuringDesk 自己维护轻量应用索引，来源包括：
+TuringDesk 维护应用发现与排序，至少覆盖：
 
 ```text
 Start Menu
 App Paths
 注册表应用信息
-UWP / MSIX 应用
+UWP / MSIX
 常用系统程序
 ```
 
-排序能力至少包括：
+排序逐步支持 Exact / Prefix / Substring / Fuzzy / 使用频率 / 最近启动。
+
+### 3.3 L2 文件搜索
+
+正式路线：
 
 ```text
-Exact
-Prefix
-Substring
-Fuzzy
-使用频率
-最近启动
-```
-
-### 3.3 L2：文件搜索
-
-V1 直接使用 Everything IPC / SDK，优先获得成熟、低延迟、低开发风险的文件搜索能力。
-
-长期 V2 可替换为：
-
-```text
-NTFS USN Journal
-    ↓
-增量索引
-    ↓
-SQLite / mmap / 自定义紧凑索引
-    ↓
-TuringDesk L2
-```
-
-上层通过接口隔离，不把 Everything 绑定到业务层。
-
-### 3.4 L3：TuringDesk 原生轻 Agent
-
-L3 属于 TuringDesk 自己，不属于 Harness。
-
-结构：
-
-```text
-Search
+Search UI
   ↓
-L3 Tool Router
-  ├─ Native Tools
-  └─ Model Provider
-       ↓
-     WinHTTP
-       ↓
-DeepSeek / OpenAI-compatible
+GozSearch Adapter
+  ↓
+goz.exe / gozd.exe
+  ↓
+NTFS MFT + USN Journal
 ```
 
-L3 模型通信：
+L2 故障不得阻塞 L3 AI。
+
+### 3.4 L3 唯一默认运行链
 
 ```text
-API Key
+用户请求
   ↓
-Windows Credential Manager
+TuringDesk L3 UI
   ↓
-WinHTTP HTTPS
+Codex CLI `app-server --stdio`
   ↓
-/chat/completions
-  ↓
-SSE streaming
-  ↓
-Search UI 实时显示
+  ├─ Responses Provider ─────────────→ 当前 API
+  │
+  └─ Chat Completions Provider
+          ↓
+      Codex Relay
+          ↓
+      当前 API
 ```
 
-明确禁止：
+Codex CLI 是普通 AI 请求和桌面 Agent 请求的默认 Runtime。
+
+如果 Codex / Relay / app-server / 协议协商任一阶段失败：
 
 ```text
-L3 → Harness
-L3 → WebView
-L3 → Node.js sidecar
-L3 → Python sidecar
-L3 → 本地 HTTP 代理
-模型输出 → 任意 Shell 直接执行
+记录失败
+  ↓
+Direct Model Runtime
+  ↓
+当前配置 API
 ```
 
-所有本地动作必须通过注册、校验、可审计的 Tool 边界执行。
+Direct Model 是 **fallback**，不是默认主路由。
 
----
+### 3.5 Provider 兼容原则
 
-## 4. 一级能力二：Wallpaper Engine 级桌面引擎
+API 不限定为 DeepSeek。
 
-这部分按“小型专用原生游戏引擎”设计，而不是普通 UI 模块。
+判断依据只有：
 
-### 4.1 核心技术栈
+- Base URL / endpoint；
+- Responses API 能力；
+- OpenAI-compatible Chat Completions 能力；
+- Model；
+- Credential。
+
+允许为具体 Provider 做参数兼容，但禁止用 Provider 品牌决定是否绕过 Codex。
+
+### 3.6 L3 Native Tools
 
 ```text
-语言                 C++23
-桌面集成             Win32 / Explorer / WorkerW
-图形 API             Direct3D 11
-2D                   Direct2D
-Shader               HLSL
-显示/适配器          DXGI
-视频                 Media Foundation
-音频采集             WASAPI Loopback
-音频分析             原生 FFT
-Web Wallpaper        独立 WebView2 Host 进程
-Application Wallpaper 外部 EXE + 原生窗口/进程管理
+Codex CLI
+  ↓ Dynamic Tools
+TuringDesk NativeTools
+  ↓
+受控 Windows / 文件 / 桌面能力
 ```
 
-首版优先 Direct3D 11，而不是 Direct3D 12：兼容性更高、驱动风险更低、资源管理更简单，并且壁纸场景性能已经足够。后续如有明确需求，再增加 D3D12 backend。
+工具由 TuringDesk 注册、校验、测试和审计。模型输出不能直接获得任意 PowerShell / CMD / Shell 权限，也不能绕过 Tool Result 声称动作成功。
 
-### 4.2 Scene Wallpaper
+### 3.7 L3 日志
 
-原生 Scene Engine 至少包含：
+路由日志：
 
 ```text
-Scene Graph
-├─ Sprite
-├─ Mesh
-├─ Texture
-├─ Material
-├─ HLSL Shader
-├─ Particle
-├─ Animation
-├─ Camera
-├─ Light
-└─ Post Processing
+%LOCALAPPDATA%\TuringDesk\Logs\l3-runtime.log
 ```
 
-目标能力按 Wallpaper Engine 级别持续补齐，包括：
+Codex / Relay 详细日志：
 
 ```text
-图片壁纸
-视频壁纸
-Web 壁纸
+%LOCALAPPDATA%\TuringDesk\Logs\codex-runtime.log
+```
+
+日志必须能区分 binary、Relay、model catalog、initialize、thread/start、turn/start、timeout、exit code 和 Direct API fallback。
+
+API Key / Token 禁止写入日志。
+
+## 4. L3 与 L4 的边界
+
+```text
+L3 = Codex CLI → Relay/API → Direct API fallback
+L4 = DeepSeek Harness WebUI
+```
+
+L3 与 L4 共享 Provider / Model / Base URL / API Key 配置，但 Runtime 生命周期互相独立。
+
+必须遵守：
+
+- Harness 关闭时 L1/L2/L3 继续可用；
+- Codex 失败不能自动打开 Harness；
+- Harness 后台可以受 TuringDesk 管理；
+- Harness 后台启动不得自动弹浏览器；
+- Harness UI 只在用户明确打开时显示。
+
+## 5. Wallpaper Engine 级桌面引擎
+
+桌面引擎按小型专用原生渲染引擎设计。
+
+### 5.1 技术栈
+
+```text
+语言                  C++23
+桌面集成              Win32 / Explorer / WorkerW
+图形 API              Direct3D 11
+2D                    Direct2D
+Shader                HLSL
+显示/适配器           DXGI
+视频                  Media Foundation
+音频                  WASAPI Loopback + FFT
+Web Wallpaper         独立 WebView2 Host
+Application Wallpaper 外部 EXE + 原生进程/窗口管理
+```
+
+### 5.2 Scene 能力方向
+
+```text
+Image
+Video
+Web
 2D Scene
 3D Scene
 Shader
-粒子
-动画
-音频响应
-交互
-脚本
-多显示器
-性能规则
+Particle
+Animation
+Audio Reactive
+Interaction
+Multi-monitor
+Performance Rules
 Application Wallpaper
-壁纸导入/管理/编辑/切换
+.tdwall 导入 / 管理 / 编辑
 ```
 
-### 4.3 视频壁纸
+普通 Scene 不得因为 AI 或 Web 功能无条件加载 WebView2 / Chromium。
 
-视频链路：
+### 5.3 视频与音频
+
+视频：
 
 ```text
-Video File
-  ↓
-Media Foundation
-  ↓
-Hardware Decode
-  ↓
-D3D11 Texture
-  ↓
-Desktop Renderer
+Video File → Media Foundation → Hardware Decode → D3D11 Texture → Desktop Renderer
 ```
 
-优先硬件解码，降低 CPU 占用。
-
-### 4.4 音频响应
+音频响应：
 
 ```text
-WASAPI Loopback
-  ↓
-FFT
-  ↓
-Bass / Mid / Treble / Spectrum
-  ↓
-Scene Parameters
+WASAPI Loopback → FFT → Bass/Mid/Treble/Spectrum → Scene Parameters
 ```
 
-可驱动粒子、Glow、Shader 参数、动画强度等。
+### 5.4 多显示器与生命周期
 
-### 4.5 Web Wallpaper
-
-Web Wallpaper 不进入主进程：
-
-```text
-TuringDesk.WebWallpaper.exe
-  ↓
-WebView2
-```
-
-只有当前壁纸确实是 Web 类型时才启动该进程。
-
-普通图片、视频、2D/3D Scene 不得因此加载 WebView2。
-
-### 4.6 Application Wallpaper
-
-```text
-External EXE
-  ↓
-TuringDesk Process Manager
-  ↓
-Desktop Window Host / WorkerW
-```
-
-TuringDesk 负责启动、停止、窗口层级、异常退出恢复、性能规则和进程监控。
-
-### 4.7 多显示器与系统生命周期
-
-至少正确处理：
+必须处理：
 
 ```text
 每屏独立壁纸
-复制壁纸
-跨屏壁纸
-主屏模式
+复制 / 跨屏
 不同 DPI
 显示器插拔
 Explorer 重启
-睡眠/唤醒
+睡眠 / 唤醒
 锁屏
-显卡设备丢失
+GPU Device Lost
 桌面层重建
 ```
 
-### 4.8 性能策略
+性能规则支持全屏、最大化、电池、锁屏、休眠下的降帧 / Pause / Stop / 释放 GPU Resource。
 
-支持状态级资源策略：
+## 6. DeepSeek Harness 高级工作台
 
-```text
-全屏游戏      → Pause / Stop
-最大化程序    → 降 FPS / Pause
-电池模式      → 降 FPS / Pause
-锁屏          → Stop
-休眠          → Release GPU Resources
-```
-
-Stop 必须允许真正释放 Scene、Texture、Video Decoder、GPU Resource，而不是仅停止刷新。
-
----
-
-## 5. 一级能力三：L4 DeepSeek Harness
-
-L4 不重写 DeepSeek Harness。
-
-技术路线固定为：
+TuringDesk 不 fork、不重写 DeepSeek Harness。
 
 ```text
-用户进入 L4
+用户明确打开高级工作台
   ↓
-TuringDesk 启动官方 DeepSeek Harness
+TuringDesk 管理 Harness 后台
   ↓
-等待 Harness WebUI 本地服务
-  ↓
-TuringDesk Harness Window
+TuringDeskHarness.exe
   ↓
 WebView2
   ↓
 官方 DeepSeek Harness WebUI
 ```
 
-### 5.1 技术栈
+Host 使用 C++ / Win32，Web 容器使用 WebView2。
 
-```text
-Host                 C++ / Win32
-Web 容器             Microsoft Edge WebView2
-AI Agent             官方 DeepSeek Harness
-启动策略             按需启动
-```
+Harness 启动参数必须保持后台不自动打开外部浏览器，例如使用官方支持的 `--no-open` 行为。
 
-选择 WebView2 而不是 CEF，主要原因：
+## 7. 推荐进程模型
 
-- Windows 通常已有 WebView2 Runtime；
-- 不需要随安装包携带完整 Chromium；
-- 安装体积更小；
-- 与 Windows 生命周期、窗口和安全模型集成更自然。
-
-### 5.2 与 L3 的关系
-
-```text
-L3 = TuringDesk Native Agent
-L4 = DeepSeek Harness
-```
-
-二者是不同层级，不允许把 Harness 作为 L3 transport。
-
-共享的只有用户模型配置：
-
-```text
-Model Configuration
-├─ L3 → WinHTTP direct provider
-└─ L4 → Harness synchronized configuration
-```
-
-Harness 关闭时，L1/L2/L3 必须继续完全可用。
-
----
-
-## 6. 推荐进程模型
-
-### 常驻
+### 常驻 / 主体
 
 ```text
 TuringDesk.exe
-C++ Native Core
-├─ Tray
-├─ Hotkey
+├─ Tray / Hotkey
 ├─ Search L1
 ├─ Search L2
-├─ Search L3
-├─ Desktop Host
-├─ Scene Engine
-└─ Process Manager
+├─ L3 Router
+├─ Settings
+└─ Desktop coordination
 ```
 
-### 按需
+### L3 请求时按需
 
 ```text
-TuringDesk.WebWallpaper.exe
-└─ WebView2
+Codex\codex.exe app-server --stdio
+CodexRelay\codex-relay.exe   # 仅需要协议桥时
 ```
 
-仅 Web Wallpaper 使用。
+### 其他按需
 
 ```text
-DeepSeek Harness
-+
-TuringDesk Harness WebView Window
-```
-
-仅 L4 使用。
-
-```text
+TuringDeskWallpaper.exe
+TuringDeskHarness.exe + Harness Node runtime
+Web Wallpaper Host
 Application Wallpaper EXE
 ```
 
-仅对应壁纸启用时存在。
+## 8. Build / CI 架构约束
 
-目标不是“让 WebView2/Chromium 变得极轻”，而是让它们根本不进入不需要它们的常驻路径。
-
----
-
-## 7. 新工程基础选型
+本地和云端共用同一个 L3 guard：
 
 ```text
-Language              C++23
-Build                  CMake
-Windows API            Win32
-Search UI              Direct2D + DirectWrite + DirectComposition
-Wallpaper Renderer     Direct3D 11 + HLSL
-Video                  Media Foundation
-Audio                  WASAPI
-HTTP / SSE             WinHTTP
-Credential             Windows Credential Manager
-File Search V1         Everything IPC / SDK
-File Search V2         NTFS USN Journal
-Web Wallpaper          WebView2 独立进程
-L4                     DeepSeek Harness + WebView2
+scripts/verify-l3-runtime-contract.ps1
 ```
 
-主线尽量不引入以下依赖：
+### 本地 CMake
+
+`TuringDesk` target 必须依赖 `TuringDeskL3ContractCheck`，真正编译前先检查 Codex-first 架构。
+
+### ARM64 一键部署
+
+`DEPLOY-NATIVE-ARM64.cmd` 必须先执行同一 guard，再准备 RuntimeBundle / 获取已验证 Artifact。
+
+### GitHub Actions
+
+x64 源码验证和 ARM64 正式构建都必须在 Configure / Build 前执行同一 guard。
+
+ARM64 Artifact 必须保留：
 
 ```text
-WPF / .NET
-Qt
-Electron
-CEF
-Python
-Node.js（仅 Harness 自身需要时存在，不进入 Native Core）
-大型游戏引擎
-大型 Agent Framework
-Boost（无明确收益时不引入）
+Codex\codex.exe
+CodexRelay\codex-relay.exe
 ```
 
----
+不能出现“测试通过后为了压缩包体积又删除 Codex / Relay”的流程。
 
-## 8. 跨平台原则
-
-Windows 首版优先极致原生体验，但核心接口不得让 Windows 类型无边界渗透到业务层。
-
-例如：
-
-```text
-IHttpClient
-ICredentialStore
-IFileSearchBackend
-IWindowHost
-IRenderBackend
-IAudioCapture
-IAppDiscovery
-```
-
-Windows 实现：
-
-```text
-WinHttpClient
-WindowsCredentialStore
-Everything/UsnFileSearchBackend
-Win32WindowHost
-D3D11RenderBackend
-WasapiAudioCapture
-WindowsAppDiscovery
-```
-
-未来 macOS/Linux 可替换平台实现，而不重写 Search/L3/Scene 数据模型等上层逻辑。
-
----
-
-## 9. 性能目标
-
-以下为工程验收目标，不是未经测试的承诺值：
-
-### 空闲 / 无动态壁纸
-
-```text
-TuringDesk Native Core
-Private Memory：目标 < 30 MB
-CPU idle：接近 0%
-GPU idle：接近 0%
-```
-
-### 普通原生 Scene
-
-内存主要由纹理、Scene 和 GPU Resource 决定；禁止因为普通 Scene 启动 WebView2、Node.js、.NET 或 Chromium。
-
-### Harness / Web Wallpaper
-
-允许显著增加内存，但关闭对应功能后，其进程与绝大部分资源必须释放。
-
----
-
-## 10. 完成标准
-
-统一使用以下定义：
+## 9. 完成标准
 
 ```text
 代码存在        ≠ 完成
 编译成功        ≠ 完成
-单元测试通过    ≠ 完成
+CI 通过         ≠ 完成
 Mock 通过       ≠ 完成
 Loopback 通过   ≠ 完成
 真实设备可用    = 完成
 ```
 
-每个阶段必须有真实 Windows 设备黑盒验收。
+重点黑盒验收：
 
-特别是：
+- L3 正常请求显示 `Codex CLI · 主路由 · Relay/API`；
+- 故意破坏 Codex 后自动出现 Direct API fallback；
+- 两份日志能指出失败层级；
+- Wallpaper 真实嵌入 Explorer 并通过多显示器/睡眠/重启验证；
+- Harness 后台静默启动，工作台只在用户明确打开时出现。
 
-- L3 必须用真实模型 API 收到流式回复；
-- Wallpaper 必须真实嵌入 Explorer 桌面层并通过多显示器/睡眠/Explorer 重启测试；
-- L4 必须真实启动官方 DeepSeek Harness 并在 WebView2 中正常交互。
-
----
-
-## 11. 架构边界总结
+## 10. 最终边界
 
 ```text
-                    TuringDesk
-                  /      |       \
-                 /       |        \
-           Search     Wallpaper    Harness
-           L1-L3       Engine        L4
-             |            |           |
-      Native C++      Native C++   WebView2
-      WinHTTP         D3D11/MF     Official Harness
+TuringDesk Search
+  = Native UI + goz + Codex CLI + optional Codex Relay + Direct API fallback
+
+Wallpaper
+  = Native Win32 + D3D11 / Media Foundation / WASAPI
+
+Advanced Workbench
+  = Official DeepSeek Harness + WebView2
 ```
 
-最终边界固定为：
-
-> Search = C++ / Win32 / Direct2D / DirectWrite / DirectComposition / WinHTTP
->
-> Wallpaper = C++ / Win32 / Direct3D 11 / HLSL / Media Foundation / WASAPI
->
-> L4 = 官方 DeepSeek Harness + WebView2
->
-> Web Wallpaper = 独立 WebView2 Host
->
-> 其余常驻路径禁止 Web Runtime。
+任何旧文档中“普通 L3 禁止 Codex”“L3 只能 Direct WinHTTP”“L3 禁止本地 Relay”“Direct Model 是默认路由”的描述均已废弃，不得恢复。

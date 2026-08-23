@@ -81,22 +81,65 @@ function Invoke-ElevatedGoz([string]$Exe, [string]$Arguments) {
     if (-not $process -or $process.ExitCode -ne 0) { throw "Elevated goz operation failed: $Arguments" }
 }
 
+function Invoke-NativeProbe([string]$Exe, [string[]]$Arguments) {
+    # Windows PowerShell 5.1 surfaces native stderr as ErrorRecord objects. With
+    # $ErrorActionPreference='Stop', a normal cold-start exit (goz uses exit 8 while
+    # gozd's pipe is not ready yet) can abort the whole deployment before our retry
+    # loop gets a chance to run. Redirect through Start-Process so readiness is based
+    # only on the native exit code and captured diagnostics.
+    $stdoutPath = Join-Path $env:TEMP ('TuringDesk-Probe-Out-' + [guid]::NewGuid().ToString('N') + '.txt')
+    $stderrPath = Join-Path $env:TEMP ('TuringDesk-Probe-Err-' + [guid]::NewGuid().ToString('N') + '.txt')
+    try {
+        $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw -ErrorAction SilentlyContinue } else { '' }
+        $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw -ErrorAction SilentlyContinue } else { '' }
+        return [pscustomobject]@{
+            ExitCode = if ($process) { [int]$process.ExitCode } else { -1 }
+            StdOut = [string]$stdout
+            StdErr = [string]$stderr
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            ExitCode = -1
+            StdOut = ''
+            StdErr = [string]$_.Exception.Message
+        }
+    }
+    finally {
+        Remove-Item $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Ensure-GozService([string]$GozExe, [string]$GozDaemon) {
     if ($SkipGozServiceInstall) { return }
-    $status = (& $GozDaemon status 2>&1 | Out-String)
-    if ($status -notmatch 'Running') {
+
+    $daemonProbe = Invoke-NativeProbe $GozDaemon @('status')
+    $daemonText = ($daemonProbe.StdOut + "`n" + $daemonProbe.StdErr).Trim()
+    if ($daemonProbe.ExitCode -ne 0 -or $daemonText -notmatch '(?i)Running') {
         Step 'Installing/starting TuringDesk goz index service'
         Invoke-ElevatedGoz $GozDaemon 'install'
     }
-    for ($i = 0; $i -lt 60; $i++) {
-        & $GozExe --status *> $null
-        if ($LASTEXITCODE -eq 0) {
+
+    $lastDaemon = $null
+    $lastClient = $null
+    for ($i = 0; $i -lt 120; $i++) {
+        $lastDaemon = Invoke-NativeProbe $GozDaemon @('status')
+        $lastClient = Invoke-NativeProbe $GozExe @('--status')
+        if ($lastClient.ExitCode -eq 0) {
             Write-Host 'goz index service is reachable.' -ForegroundColor Green
             return
         }
+        if (($i + 1) % 20 -eq 0) {
+            Write-Host "Waiting for gozd named pipe... $([int](($i + 1) / 2))s" -ForegroundColor DarkGray
+        }
         Start-Sleep -Milliseconds 500
     }
-    throw 'goz service was installed but its named pipe did not become reachable'
+
+    $daemonDiag = if ($lastDaemon) { (($lastDaemon.StdOut + "`n" + $lastDaemon.StdErr).Trim()) } else { '<no daemon status>' }
+    $clientDiag = if ($lastClient) { (($lastClient.StdOut + "`n" + $lastClient.StdErr).Trim()) } else { '<no client status>' }
+    throw "goz service did not become reachable after 60 seconds.`ngo zd status:`n$daemonDiag`n`ngoz --status:`n$clientDiag"
 }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {

@@ -1,0 +1,34 @@
+name: Restore Native L3 Boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/restore-native-l3-boundary.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore TuringDesk-owned L3 runtime routing
+        run: |
+          git checkout 407f739284431dbb4be8c917c004c92f09f76d5b -- src/native/src/L3CliWindow.cpp
+          rm -f .github/workflows/restore-native-l3-boundary.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/L3CliWindow.cpp .github/workflows/restore-native-l3-boundary.yml
+          if git diff --cached --quiet; then
+            echo "Nothing to restore"
+            exit 0
+          fi
+          git commit -m "fix: restore native L3 streaming boundary"
+          git push origin HEAD:main

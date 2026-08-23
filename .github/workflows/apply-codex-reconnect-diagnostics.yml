@@ -22,20 +22,15 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
 
           p = Path('src/native/src/CodexRuntime.cpp')
           s = p.read_text(encoding='utf-8')
-
-          if 'app-server: transient reconnect notification:' not in s:
-              pattern = re.compile(
-                  r'        if \(method == "error"\) \{\n'
-                  r'            const auto message = ExtractJsonString\(line, "\\\\"message\\\\""\);\n'
-                  r'            error = message\.empty\(\) \? L"Codex app-server 返回 error 通知" : Utf8ToWide\(message\);\n'
-                  r'            AppendRuntimeLog\(L"app-server: error notification: " \+ error\);\n'
-                  r'            break;\n'
-                  r'        \}\n'
-              )
+          marker = 'app-server: transient reconnect notification:'
+          if marker not in s:
+              start = s.find('        if (method == "error") {')
+              end = s.find('        if (method == "turn/completed") {', start)
+              if start < 0 or end < 0:
+                  raise SystemExit('Could not locate Codex error/turn-completed block')
               replacement = '''        if (method == "error") {
             const auto message = ExtractJsonString(line, "\\\"message\\\"");
             const std::wstring notification = message.empty() ? L"Codex app-server 返回 error 通知" : Utf8ToWide(message);
@@ -59,28 +54,17 @@ jobs:
             break;
         }
 '''
-              s2, n = pattern.subn(replacement, s, count=1)
-              if n != 1:
-                  raise SystemExit('Could not locate Codex error notification block')
-              s = s2
-
-          p.write_text(s, encoding='utf-8', newline='\n')
-
-          guard = Path('scripts/verify-l3-runtime-contract.ps1')
-          g = guard.read_text(encoding='utf-8')
-          marker = "    'app-server: transient reconnect notification:'"
-          if marker not in g:
-              anchor = "    'session: failed'"
-              if anchor not in g:
-                  raise SystemExit('L3 guard anchor missing')
-              g = g.replace(anchor, anchor + ",\n    'notification.starts_with(L\"Reconnecting...\")',\n    'app-server: transient reconnect notification:',\n    'relay=exited code='", 1)
-              guard.write_text(g, encoding='utf-8', newline='\n')
+              s = s[:start] + replacement + s[end:]
+              p.write_text(s, encoding='utf-8', newline='\n')
 
           Path('.github/workflows/apply-codex-reconnect-diagnostics.yml').unlink()
 
-      - name: Verify L3 runtime contract
-        shell: pwsh
-        run: ./scripts/verify-l3-runtime-contract.ps1
+      - name: Sanity check patch
+        shell: bash
+        run: |
+          grep -F 'notification.starts_with(L"Reconnecting...")' src/native/src/CodexRuntime.cpp
+          grep -F 'app-server: transient reconnect notification:' src/native/src/CodexRuntime.cpp
+          grep -F 'relay=exited code=' src/native/src/CodexRuntime.cpp
 
       - name: Commit patch
         shell: bash

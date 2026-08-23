@@ -1,0 +1,30 @@
+name: Trigger Codex Relay Integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/codex-relay.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Trigger staged integration and self-remove
+        shell: bash
+        run: |
+          echo "# trigger $(date -u +%s)" >> .github/workflows/apply-codex-relay.yml
+          rm -f .github/codex-relay.trigger .github/workflows/trigger-codex-relay-integration.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "ci: trigger Codex relay integration"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -66,6 +66,12 @@ foreach ($marker in @(
 if ($cmake.Contains('src/CodexRuntime.cpp')) {
     throw 'Ordinary TuringDesk binary must not compile CodexRuntime.cpp.'
 }
+foreach ($source in @('src/AppSearch.cpp', 'src/GozSearch.cpp')) {
+    $count = ([regex]::Matches($cmake, [regex]::Escape($source))).Count
+    if ($count -ne 1) {
+        throw "Ordinary TuringDesk binary must compile $source exactly once; found $count entries."
+    }
+}
 
 # L3 window must share the application message loop and must not steal focus back to Search.
 foreach ($marker in @('while (IsWindow(window))', 'GetMessageW(&msg')) {

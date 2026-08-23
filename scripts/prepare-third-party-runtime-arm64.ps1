@@ -5,133 +5,84 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $BundleRoot = Join-Path $RepoRoot 'runtime\arm64'
 $ManifestPath = Join-Path $BundleRoot 'runtime-manifest.json'
 $CompleteMarker = Join-Path $BundleRoot '.complete'
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
-function Sha256([string]$Path) { return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
-
+function Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
 function Resolve-BundleFile([string]$RelativePath) {
-    $candidate = Join-Path $BundleRoot ($RelativePath -replace '/', '\')
-    if (-not (Test-Path $candidate -PathType Leaf)) { throw "Vendored runtime file is missing: $candidate" }
-    return $candidate
+    $path = Join-Path $BundleRoot ($RelativePath -replace '/', '\')
+    if (-not (Test-Path $path -PathType Leaf)) { throw "Vendored runtime file is missing: $path" }
+    $path
 }
-
 function Assert-BundleHash([string]$Path, [string]$Expected) {
     $actual = Sha256 $Path
     if ([string]::IsNullOrWhiteSpace($Expected) -or $actual -ne $Expected.ToLowerInvariant()) {
         throw "Vendored runtime integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
     }
 }
-
-function Test-PathInsideRoot([string]$Candidate, [string]$Root) {
-    if ([string]::IsNullOrWhiteSpace($Candidate) -or [string]::IsNullOrWhiteSpace($Root)) { return $false }
+function Test-InDeploy([string]$Candidate) {
     try {
-        $candidateFull = [IO.Path]::GetFullPath($Candidate).TrimEnd('\')
-        $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
-        return $candidateFull.Equals($rootFull, [StringComparison]::OrdinalIgnoreCase) -or
-               $candidateFull.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)
-    }
-    catch { return $false }
+        $root = [IO.Path]::GetFullPath($DeployDir).TrimEnd('\')
+        $path = [IO.Path]::GetFullPath($Candidate).TrimEnd('\')
+        return $path.Equals($root, [StringComparison]::OrdinalIgnoreCase) -or
+               $path.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
 }
-
 function Stop-OwnedProcesses {
-    # Never kill arbitrary node/codex/relay instances. Only terminate executables
-    # that live inside this TuringDesk deployment root.
-    $ownedNames = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe')
+    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe')
     try {
-        foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
-            if ($ownedNames -notcontains [string]$process.Name) { continue }
-            $exe = [string]$process.ExecutablePath
-            if (-not $exe -or -not (Test-PathInsideRoot $exe $DeployDir)) { continue }
-            Write-Host "Stopping TuringDesk-owned $($process.Name) PID $($process.ProcessId)" -ForegroundColor DarkGray
-            & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
+        foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
+            if ($names -notcontains [string]$p.Name) { continue }
+            $exe = [string]$p.ExecutablePath
+            if (-not $exe -or -not (Test-InDeploy $exe)) { continue }
+            & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null
         }
-    }
-    catch {
-        Write-Host "Process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow
-    }
+    } catch { Write-Host "Process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
     Start-Sleep -Milliseconds 250
 }
-
 function Expand-BundleArchive([string]$Archive, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     if ($Archive.EndsWith('.zst', [StringComparison]::OrdinalIgnoreCase)) {
-        if (-not (Test-Path $script:NodeExe -PathType Leaf)) {
-            throw "Node 24 is required to materialize the vendored Zstd payload: $Archive"
-        }
-        $outputName = [IO.Path]::GetFileNameWithoutExtension($Archive)
-        $outputPath = Join-Path $Destination $outputName
-        $js = "const fs=require('node:fs');const z=require('node:zlib');const [src,dst]=process.argv.slice(1);fs.writeFileSync(dst,z.zstdDecompressSync(fs.readFileSync(src)));"
-        & $script:NodeExe -e $js $Archive $outputPath
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputPath -PathType Leaf)) {
-            throw "Failed to materialize vendored Zstd payload: $Archive"
-        }
+        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Codex Zstd payload' }
+        $out = Join-Path $Destination ([IO.Path]::GetFileNameWithoutExtension($Archive))
+        $js = "const fs=require('node:fs');const z=require('node:zlib');const [s,d]=process.argv.slice(1);fs.writeFileSync(d,z.zstdDecompressSync(fs.readFileSync(s)));"
+        & $script:NodeExe -e $js $Archive $out
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out -PathType Leaf)) { throw "Failed to materialize $Archive" }
         return
     }
     & tar.exe -xf $Archive -C $Destination
-    if ($LASTEXITCODE -ne 0) { throw "Failed to extract vendored archive: $Archive" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
 }
-
 function Invoke-ElevatedGoz([string]$Exe, [string]$Arguments) {
-    $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
-    if (-not $process -or $process.ExitCode -ne 0) { throw "Elevated goz operation failed: $Arguments" }
+    $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
+    if (-not $p -or $p.ExitCode -ne 0) { throw "Elevated goz operation failed: $Arguments" }
 }
-
-function Invoke-NativeProbe([string]$Exe, [string[]]$Arguments) {
-    $stdoutPath = Join-Path $env:TEMP ('TuringDesk-Probe-Out-' + [guid]::NewGuid().ToString('N') + '.txt')
-    $stderrPath = Join-Path $env:TEMP ('TuringDesk-Probe-Err-' + [guid]::NewGuid().ToString('N') + '.txt')
+function Probe([string]$Exe, [string[]]$Arguments) {
+    $out = Join-Path $env:TEMP ('td-probe-o-' + [guid]::NewGuid().ToString('N'))
+    $err = Join-Path $env:TEMP ('td-probe-e-' + [guid]::NewGuid().ToString('N'))
     try {
-        $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow `
-            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-        $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw -ErrorAction SilentlyContinue } else { '' }
-        $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw -ErrorAction SilentlyContinue } else { '' }
-        return [pscustomobject]@{
-            ExitCode = if ($process) { [int]$process.ExitCode } else { -1 }
-            StdOut = [string]$stdout
-            StdErr = [string]$stderr
-        }
-    }
-    catch {
-        return [pscustomobject]@{ ExitCode = -1; StdOut = ''; StdErr = [string]$_.Exception.Message }
-    }
-    finally { Remove-Item $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue }
+        $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+        [pscustomobject]@{ ExitCode=[int]$p.ExitCode; Text=((Get-Content $out,$err -Raw -ErrorAction SilentlyContinue) -join "`n") }
+    } catch { [pscustomobject]@{ ExitCode=-1; Text=$_.Exception.Message } }
+    finally { Remove-Item $out,$err -Force -ErrorAction SilentlyContinue }
 }
-
-function Ensure-GozService([string]$GozExe, [string]$GozDaemon) {
+function Ensure-GozService([string]$GozExe,[string]$GozDaemon) {
     if ($SkipGozServiceInstall) { return }
-    $daemonProbe = Invoke-NativeProbe $GozDaemon @('status')
-    $daemonText = ($daemonProbe.StdOut + "`n" + $daemonProbe.StdErr).Trim()
-    if ($daemonProbe.ExitCode -ne 0 -or $daemonText -notmatch '(?i)Running') {
-        Step 'Installing/starting TuringDesk goz index service'
-        Invoke-ElevatedGoz $GozDaemon 'install'
-    }
-    $lastDaemon = $null
-    $lastClient = $null
-    for ($i = 0; $i -lt 120; $i++) {
-        $lastDaemon = Invoke-NativeProbe $GozDaemon @('status')
-        $lastClient = Invoke-NativeProbe $GozExe @('--status')
-        if ($lastClient.ExitCode -eq 0) {
-            Write-Host 'goz index service is reachable.' -ForegroundColor Green
-            return
-        }
-        if (($i + 1) % 20 -eq 0) {
-            Write-Host "Waiting for gozd named pipe... $([int](($i + 1) / 2))s" -ForegroundColor DarkGray
-        }
+    $status = Probe $GozDaemon @('status')
+    if ($status.ExitCode -ne 0 -or $status.Text -notmatch '(?i)Running') { Invoke-ElevatedGoz $GozDaemon 'install' }
+    for ($i=0; $i -lt 120; $i++) {
+        if ((Probe $GozExe @('--status')).ExitCode -eq 0) { Write-Host 'goz index service is reachable.' -ForegroundColor Green; return }
         Start-Sleep -Milliseconds 500
     }
-    $daemonDiag = if ($lastDaemon) { (($lastDaemon.StdOut + "`n" + $lastDaemon.StdErr).Trim()) } else { '<no daemon status>' }
-    $clientDiag = if ($lastClient) { (($lastClient.StdOut + "`n" + $lastClient.StdErr).Trim()) } else { '<no client status>' }
-    throw "goz service did not become reachable after 60 seconds.`n`ngo zd status:`n$daemonDiag`n`ngoz --status:`n$clientDiag"
+    throw 'goz service did not become reachable after 60 seconds.'
 }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {
-    throw 'TuringDesk ARM64 RuntimeBundle is not vendored yet. Pull main after the vendoring workflow finishes.'
+    throw 'TuringDesk ARM64 RuntimeBundle is not vendored yet.'
 }
-
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 goz/Codex bundle' }
 
@@ -141,7 +92,7 @@ $gozArchive = Resolve-BundleFile ([string]$manifest.goz.archive)
 $relayArchive = Resolve-BundleFile ([string]$manifest.codexRelay.archive)
 $codexArchive = Resolve-BundleFile ([string]$manifest.codex.archive)
 Assert-BundleHash $nodeArchive ([string]$manifest.node.sha256)
-Assert-BundleHash $harnessArchive ([string]$manifest.deepseekHarness.sha256256)
+Assert-BundleHash $harnessArchive ([string]$manifest.deepseekHarness.sha256)
 Assert-BundleHash $gozArchive ([string]$manifest.goz.sha256)
 Assert-BundleHash $relayArchive ([string]$manifest.codexRelay.sha256)
 Assert-BundleHash $codexArchive ([string]$manifest.codex.sha256)
@@ -160,100 +111,78 @@ $CodexExe = Join-Path $CodexDir 'codex.exe'
 $DeployManifestHash = Join-Path $RuntimeDir 'runtime-manifest.sha256'
 $sourceManifestHash = Sha256 $ManifestPath
 
-$alreadyReady = (Test-Path $DeployManifestHash -PathType Leaf) -and
-                (Test-Path $NodeExe -PathType Leaf) -and
-                (Test-Path $DshBin -PathType Leaf) -and
-                (Test-Path $GozExe -PathType Leaf) -and
-                (Test-Path $GozDaemon -PathType Leaf) -and
-                (Test-Path $RelayExe -PathType Leaf) -and
-                (Test-Path $CodexExe -PathType Leaf) -and
-                ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
-if ($alreadyReady) {
-    Write-Host "Vendored ARM64 RuntimeBundle already ready: $DeployDir" -ForegroundColor Green
-    Ensure-GozService $GozExe $GozDaemon
-    exit 0
-}
+$ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe -PathType Leaf) -and
+         (Test-Path $DshBin -PathType Leaf) -and (Test-Path $GozExe -PathType Leaf) -and
+         (Test-Path $GozDaemon -PathType Leaf) -and (Test-Path $RelayExe -PathType Leaf) -and
+         (Test-Path $CodexExe -PathType Leaf) -and
+         ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
+if ($ready) { Ensure-GozService $GozExe $GozDaemon; Write-Host "RuntimeBundle ready: $DeployDir" -ForegroundColor Green; exit 0 }
 
 Step 'Installing repository-vendored ARM64 RuntimeBundle (offline)'
 Stop-OwnedProcesses
-New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
-# Materialize goz first and preserve an unchanged running service binary.
+# goz is a Windows service: only replace its binaries when content changed.
 $gozTemp = Join-Path $env:TEMP ('TuringDesk-Goz-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $gozArchive $gozTemp
-    $newGoz = Get-ChildItem $gozTemp -Filter 'goz.exe' -File -Recurse | Select-Object -First 1
-    $newGozd = Get-ChildItem $gozTemp -Filter 'gozd.exe' -File -Recurse | Select-Object -First 1
+    $newGoz = Get-ChildItem $gozTemp -Filter goz.exe -File -Recurse | Select-Object -First 1
+    $newGozd = Get-ChildItem $gozTemp -Filter gozd.exe -File -Recurse | Select-Object -First 1
     if (-not $newGoz -or -not $newGozd) { throw 'Vendored goz archive is incomplete' }
-    $replaceGoz = $true
-    if ((Test-Path $GozExe -PathType Leaf) -and (Test-Path $GozDaemon -PathType Leaf)) {
-        $replaceGoz = (Sha256 $GozExe) -ne (Sha256 $newGoz.FullName) -or (Sha256 $GozDaemon) -ne (Sha256 $newGozd.FullName)
+    $replace = $true
+    if ((Test-Path $GozExe) -and (Test-Path $GozDaemon)) {
+        $replace = (Sha256 $GozExe) -ne (Sha256 $newGoz.FullName) -or (Sha256 $GozDaemon) -ne (Sha256 $newGozd.FullName)
     }
-    if ($replaceGoz -and (Test-Path $GozDaemon -PathType Leaf) -and -not $SkipGozServiceInstall) {
-        try { Invoke-ElevatedGoz $GozDaemon 'uninstall' } catch { Write-Host "goz uninstall warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
-    }
-    if ($replaceGoz) {
+    if ($replace) {
+        if ((Test-Path $GozDaemon) -and -not $SkipGozServiceInstall) { try { Invoke-ElevatedGoz $GozDaemon 'uninstall' } catch {} }
         Remove-Item $GozDir -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $GozDir | Out-Null
         Copy-Item (Join-Path $gozTemp '*') $GozDir -Recurse -Force
-    } else {
-        Write-Host 'Vendored goz binaries are unchanged; preserving the installed service binary.' -ForegroundColor DarkGray
     }
-}
-finally { Remove-Item $gozTemp -Recurse -Force -ErrorAction SilentlyContinue }
+} finally { Remove-Item $gozTemp -Recurse -Force -ErrorAction SilentlyContinue }
 
-Remove-Item $NodeDir -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item $RelayDir -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item $CodexDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $NodeDir,$RelayDir,$CodexDir -Recurse -Force -ErrorAction SilentlyContinue
 
 $nodeTemp = Join-Path $env:TEMP ('TuringDesk-Node-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $nodeArchive $nodeTemp
-    $nodeRoot = Get-ChildItem $nodeTemp -Directory | Select-Object -First 1
-    if (-not $nodeRoot -or -not (Test-Path (Join-Path $nodeRoot.FullName 'node.exe'))) { throw 'Vendored Node archive layout is invalid' }
+    $root = Get-ChildItem $nodeTemp -Directory | Select-Object -First 1
+    if (-not $root -or -not (Test-Path (Join-Path $root.FullName 'node.exe'))) { throw 'Vendored Node archive is invalid' }
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
-    Copy-Item (Join-Path $nodeRoot.FullName '*') $NodeDir -Recurse -Force
-}
-finally { Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue }
-
+    Copy-Item (Join-Path $root.FullName '*') $NodeDir -Recurse -Force
+} finally { Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue }
 Expand-BundleArchive $harnessArchive $NodeDir
-if (-not (Test-Path $NodeExe) -or -not (Test-Path $DshBin)) { throw 'Bundled DeepSeek Harness runtime is incomplete' }
-& $NodeExe --version | Out-Host
+if (-not (Test-Path $NodeExe) -or -not (Test-Path $DshBin)) { throw 'Bundled Harness runtime is incomplete' }
 & $NodeExe $DshBin --help | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled DeepSeek Harness CLI failed to start' }
 
-$relayTemp = Join-Path $env:TEMP ('TuringDesk-CodexRelay-' + [guid]::NewGuid().ToString('N'))
+$relayTemp = Join-Path $env:TEMP ('TuringDesk-Relay-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $relayArchive $relayTemp
-    $foundRelay = Get-ChildItem $relayTemp -Filter 'codex-relay.exe' -File -Recurse | Select-Object -First 1
-    if (-not $foundRelay) { throw 'Vendored codex-relay payload is incomplete' }
+    $relay = Get-ChildItem $relayTemp -Filter codex-relay.exe -File -Recurse | Select-Object -First 1
+    if (-not $relay) { throw 'Vendored codex-relay archive is incomplete' }
     New-Item -ItemType Directory -Force -Path $RelayDir | Out-Null
-    Copy-Item $foundRelay.FullName $RelayExe -Force
-}
-finally { Remove-Item $relayTemp -Recurse -Force -ErrorAction SilentlyContinue }
+    Copy-Item $relay.FullName $RelayExe -Force
+} finally { Remove-Item $relayTemp -Recurse -Force -ErrorAction SilentlyContinue }
 & $RelayExe --help | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled codex-relay failed to execute' }
 
 $codexTemp = Join-Path $env:TEMP ('TuringDesk-Codex-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $codexArchive $codexTemp
-    $found = Get-ChildItem $codexTemp -Filter 'codex-aarch64-pc-windows-msvc.exe' -File -Recurse | Select-Object -First 1
-    if (-not $found) { throw 'Vendored full Codex CLI payload is incomplete' }
+    $codex = Get-ChildItem $codexTemp -Filter 'codex-aarch64-pc-windows-msvc.exe' -File -Recurse | Select-Object -First 1
+    if (-not $codex) { throw 'Vendored Codex CLI payload is incomplete' }
     New-Item -ItemType Directory -Force -Path $CodexDir | Out-Null
-    Copy-Item $found.FullName $CodexExe -Force
-}
-finally { Remove-Item $codexTemp -Recurse -Force -ErrorAction SilentlyContinue }
-
+    Copy-Item $codex.FullName $CodexExe -Force
+} finally { Remove-Item $codexTemp -Recurse -Force -ErrorAction SilentlyContinue }
 & $CodexExe --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI failed to execute' }
 & $CodexExe app-server --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server command is unavailable' }
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server is unavailable' }
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
 Ensure-GozService $GozExe $GozDaemon
-
 Write-Host 'Repository-vendored ARM64 RuntimeBundle ready.' -ForegroundColor Green
 Write-Host "Node:    $NodeExe" -ForegroundColor DarkGray
 Write-Host "Harness: $DshBin" -ForegroundColor DarkGray

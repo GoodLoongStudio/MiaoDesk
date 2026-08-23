@@ -33,7 +33,7 @@ add_executable(TuringDesk WIN32
     src/SettingsCenterWindow.cpp
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
-    src/DirectAgentRuntimeV2.cpp
+    src/CodexRuntime.cpp
     src/NativeTools.cpp
     src/WallpaperPackage.cpp
     src/AppSearch.cpp
@@ -78,6 +78,18 @@ add_executable(TuringDeskHarness WIN32
     src/HarnessSettingsBridge.cpp
     src/HarnessBundledRuntimeBootstrap.cpp
 )
+
+set(TURINGDESK_L3_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-l3-runtime-contract.ps1")
+if (NOT EXISTS "${TURINGDESK_L3_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing L3 runtime contract guard: ${TURINGDESK_L3_CONTRACT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskL3ContractCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_L3_CONTRACT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying Codex-first L3 runtime contract"
+    VERBATIM
+)
+add_dependencies(TuringDesk TuringDeskL3ContractCheck)
 
 target_include_directories(TuringDesk PRIVATE include)
 target_compile_features(TuringDesk PRIVATE cxx_std_23)

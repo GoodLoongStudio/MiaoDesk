@@ -36,12 +36,13 @@ if ([int]$manifest.schema -lt 2) { throw 'RuntimeBundle manifest predates the go
 
 $lockHash = Sha256 $LockPath
 if ($manifest.lockSha256.ToLowerInvariant() -ne $lockHash) {
-    throw 'RuntimeBundle is stale relative to runtime-lock.json. Wait for Vendor ARM64 Runtime Bundle to finish.'
+    throw 'RuntimeBundle is stale relative to runtime-lock.json. Vendor ARM64 Runtime Bundle must finish successfully first.'
 }
 
 Assert-Hash (Resolve-BundleFile ([string]$manifest.node.archive)) ([string]$manifest.node.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)) ([string]$manifest.deepseekHarness.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.goz.archive)) ([string]$manifest.goz.sha256)
+Assert-Hash (Resolve-BundleFile ([string]$manifest.codexRelay.archive)) ([string]$manifest.codexRelay.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.codex.archive)) ([string]$manifest.codex.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.webview2Sdk.loader)) ([string]$manifest.webview2Sdk.sha256)
 
@@ -50,5 +51,6 @@ if (Test-Path (Join-Path $BundleRoot 'everything')) {
 }
 
 Write-Host 'TuringDesk ARM64 RuntimeBundle verified.' -ForegroundColor Green
-Write-Host "goz:   $($manifest.goz.version) ($($manifest.goz.tag))" -ForegroundColor DarkGray
-Write-Host "Codex: $($manifest.codex.release) / full CLI" -ForegroundColor DarkGray
+Write-Host "goz:         $($manifest.goz.version) ($($manifest.goz.tag))" -ForegroundColor DarkGray
+Write-Host "Codex Relay: $($manifest.codexRelay.version) ($($manifest.codexRelay.commit))" -ForegroundColor DarkGray
+Write-Host "Codex:       $($manifest.codex.release) / full CLI" -ForegroundColor DarkGray

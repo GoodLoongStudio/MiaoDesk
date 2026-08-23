@@ -531,7 +531,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&state));
+    SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
     state->oldInputProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(state->input, GWLP_WNDPROC,
                                                                      reinterpret_cast<LONG_PTR>(&InputProc)));
     SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);

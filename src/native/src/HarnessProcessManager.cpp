@@ -16,7 +16,7 @@ namespace {
 constexpr wchar_t kHarnessHost[] = L"127.0.0.1";
 constexpr INTERNET_PORT kHarnessPort = 3080;
 constexpr wchar_t kHarnessPath[] = L"/";
-constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";
+constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080";
 constexpr char kHarnessBootMarker[] = "window.__DSH_BOOT__";
 constexpr std::size_t kMaxReadinessProbeBytes = 256 * 1024;
 
@@ -317,7 +317,7 @@ bool HarnessProcessManager::Start() {
     } else {
         WriteLogLine(logHandle, L"[TuringDesk] shared model: TuringDesk AI settings are not configured yet");
     }
-    WriteLogLine(logHandle, L"[TuringDesk] external browser: disabled by --no-open; UI is hosted by TuringDesk WebView2");
+    WriteLogLine(logHandle, L"[TuringDesk] browser launch: TuringDesk does not invoke an external browser; UI is hosted by TuringDesk WebView2");
     WriteLogLine(logHandle, L"[TuringDesk] network bootstrap: disabled; using repository RuntimeBundle");
     WriteLogLine(logHandle, L"[TuringDesk] waiting for upstream stdout/stderr...");
     FlushFileBuffers(logHandle);
@@ -461,7 +461,7 @@ std::wstring HarnessProcessManager::LogPath() {
 std::wstring HarnessProcessManager::BuildLaunchCommand() {
     const LaunchSpec resolved = ResolveLaunchSpec();
     if (resolved.Valid()) return resolved.commandLine;
-    return L"<TuringDesk>\\Runtime\\Node\\node.exe <TuringDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
+    return L"<TuringDesk>\\Runtime\\Node\\node.exe <TuringDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080";
 }
 
 bool HarnessProcessManager::SelfTest() {
@@ -480,11 +480,11 @@ bool HarnessProcessManager::SelfTest() {
            DefaultUrl() == L"http://localhost:3080" &&
            dshCommand.find(L"Runtime\\Node\\node.exe") != std::wstring::npos &&
            dshCommand.find(L"@deepseek-ai\\dsh\\lib\\bin.js") != std::wstring::npos &&
-           dshCommand.find(L"--no-open") != std::wstring::npos &&
+           dshCommand.find(L"--no-open") == std::wstring::npos &&
            dshCommand.find(L"npx") == std::wstring::npos &&
            dshCommand.find(L"registry.npmjs.org") == std::wstring::npos &&
            bindsOnlyLoopback(dshCommand) &&
-           BuildLaunchCommand().find(L"--no-open") != std::wstring::npos &&
+           BuildLaunchCommand().find(L"--no-open") == std::wstring::npos &&
            BuildLaunchCommand().find(L"npx") == std::wstring::npos &&
            std::string_view(kHarnessBootMarker) == "window.__DSH_BOOT__" &&
            !LogPath().empty();

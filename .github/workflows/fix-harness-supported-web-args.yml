@@ -1,0 +1,49 @@
+name: Repair Harness supported web args
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-harness-supported-web-args.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Remove unsupported --no-open from DeepSeek Harness web launch
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/native/src/HarnessProcessManager.cpp')
+          s = p.read_text(encoding='utf-8')
+          if '--no-open' not in s:
+              raise SystemExit('expected --no-open regression is not present')
+          s = s.replace('web --host 127.0.0.1 --port 3080 --no-open', 'web --host 127.0.0.1 --port 3080')
+          old = '''    const auto suppressesExternalBrowser = [](const std::wstring& command) {
+        return command.find(L"--no-open") != std::wstring::npos;
+    };
+'''
+          s = s.replace(old, '')
+          s = s.replace('           suppressesExternalBrowser(dshCommand) &&\n', '')
+          s = s.replace('           suppressesExternalBrowser(BuildLaunchCommand()) &&\n', '')
+          if '--no-open' in s:
+              raise SystemExit('unsupported --no-open remains after repair')
+          if 'web --host 127.0.0.1 --port 3080' not in s:
+              raise SystemExit('loopback Harness binding was lost')
+          p.write_text(s, encoding='utf-8')
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-harness-supported-web-args.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/HarnessProcessManager.cpp .github/workflows/fix-harness-supported-web-args.yml
+          git diff --cached --check
+          git commit -m "fix: launch Harness with supported web args"
+          git push origin HEAD:main

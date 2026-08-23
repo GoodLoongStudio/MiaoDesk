@@ -17,10 +17,20 @@ struct WallpaperLibraryTarget {
     bool primary{};
 };
 
+enum class WallpaperSettingsSection {
+    Installed,
+    Playlists,
+    Displays,
+    Rules,
+    Performance,
+    AI,
+};
+
 class WallpaperLibraryWindow {
 public:
     using ApplyCallback = std::function<void(const WallpaperLibraryItem&, const std::wstring& targetMonitorId)>;
     using GlobalApplyCallback = std::function<void(const WallpaperLibraryItem&)>;
+    using NavigateCallback = std::function<void(WallpaperSettingsSection)>;
 
     WallpaperLibraryWindow();
     ~WallpaperLibraryWindow();
@@ -30,7 +40,8 @@ public:
 
     bool Show(HINSTANCE instance, WallpaperLibrary* library,
               const std::vector<WallpaperLibraryTarget>& targets,
-              ApplyCallback applyCallback);
+              ApplyCallback applyCallback,
+              NavigateCallback navigateCallback = {});
     bool Show(HINSTANCE instance, WallpaperLibrary* library, GlobalApplyCallback applyCallback) {
         return Show(instance, library, {},
                     [callback = std::move(applyCallback)](const WallpaperLibraryItem& item, const std::wstring&) {

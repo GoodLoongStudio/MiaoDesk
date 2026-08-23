@@ -44,11 +44,16 @@ private:
         std::wstring apiKey;
         std::wstring signature;
         std::wstring message;
+        bool relayRequired{};
+        std::wstring upstreamBaseUrl;
+        unsigned short relayPort{};
     };
 
     ProviderSetup BuildProviderSetup(const L3Agent& agent) const;
     std::wstring FindBinary(bool& isCliBinary) const;
+    std::wstring FindRelayBinary() const;
     bool EnsureSession(const ProviderSetup& setup, std::wstring& error);
+    bool LaunchRelay(const ProviderSetup& setup, std::wstring& error);
     bool LaunchProcess(const ProviderSetup& setup, std::wstring& error);
     bool ConfigureCodexHome(const ProviderSetup& setup, std::wstring& codeHome, std::wstring& error) const;
     bool WriteLine(const std::string& line);
@@ -62,6 +67,8 @@ private:
     mutable std::mutex processMutex_;
     HANDLE process_{};
     HANDLE processThread_{};
+    HANDLE relayProcess_{};
+    HANDLE relayThread_{};
     HANDLE inputWrite_{};
     HANDLE outputRead_{};
     std::string readBuffer_;

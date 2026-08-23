@@ -97,13 +97,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return 0;
     }
 
-    // Harness is part of the desktop runtime, not a user-facing startup window.
-    // Keep one manager alive for the lifetime of TuringDesk so its Job Object and
-    // child process remain healthy. Startup failure is non-fatal to Search; the
-    // explicit Harness workbench can surface the runtime error to the user.
-    turingdesk::HarnessProcessManager backgroundHarness;
-    backgroundHarness.Start();
-
     turingdesk::SearchWindow window(instance);
     if (!window.Create()) {
         if (SUCCEEDED(com)) CoUninitialize();

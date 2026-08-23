@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "vendorRevision": 7,
+  "vendorRevision": 8,
   "architecture": "arm64",
   "node": {
     "version": "24.19.0",

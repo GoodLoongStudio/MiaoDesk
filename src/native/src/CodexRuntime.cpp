@@ -1,5 +1,6 @@
 #include "turingdesk/CodexRuntime.h"
 #include "turingdesk/NativeTools.h"
+
 #include <wincred.h>
 #include <algorithm>
 #include <cstdio>
@@ -123,7 +124,6 @@ std::string ExtractJsonString(std::string_view json, std::string_view key) {
     pos = json.find('"', pos + 1);
     if (pos == std::string_view::npos) return {};
     ++pos;
-
     std::string out;
     while (pos < json.size()) {
         const char ch = json[pos++];
@@ -213,6 +213,26 @@ std::wstring TomlEscape(const std::wstring& value) {
     return out;
 }
 
+std::wstring QuoteArg(std::wstring_view value) {
+    std::wstring result = L"\"";
+    unsigned backslashes = 0;
+    for (wchar_t ch : value) {
+        if (ch == L'\\') { ++backslashes; continue; }
+        if (ch == L'"') {
+            result.append(backslashes * 2 + 1, L'\\');
+            result.push_back(L'"');
+            backslashes = 0;
+            continue;
+        }
+        result.append(backslashes, L'\\');
+        backslashes = 0;
+        result.push_back(ch);
+    }
+    result.append(backslashes * 2, L'\\');
+    result.push_back(L'"');
+    return result;
+}
+
 fs::path ModuleDirectory() {
     std::wstring path(32768, L'\0');
     const DWORD count = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
@@ -228,6 +248,17 @@ fs::path CodexHomeDirectory() {
     return fs::temp_directory_path() / L"TuringDesk" / L"CodexHome";
 }
 
+std::wstring DesktopDirectory() {
+    wchar_t profile[32768]{};
+    const DWORD count = GetEnvironmentVariableW(L"USERPROFILE", profile, static_cast<DWORD>(std::size(profile)));
+    if (count > 0 && count < std::size(profile)) {
+        const auto desktop = fs::path(profile) / L"Desktop";
+        std::error_code ec;
+        if (fs::exists(desktop, ec) && fs::is_directory(desktop, ec)) return desktop.wstring();
+    }
+    return ModuleDirectory().wstring();
+}
+
 std::wstring LoadApiKey() {
     PCREDENTIALW credential = nullptr;
     if (!CredReadW(kCredentialTarget, CRED_TYPE_GENERIC, 0, &credential)) return {};
@@ -240,18 +271,15 @@ std::wstring LoadApiKey() {
     return key;
 }
 
-std::wstring DesktopDirectory() {
-    wchar_t profile[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"USERPROFILE", profile, static_cast<DWORD>(std::size(profile)));
-    if (count > 0 && count < std::size(profile)) {
-        const auto desktop = fs::path(profile) / L"Desktop";
-        std::error_code ec;
-        if (fs::exists(desktop, ec) && fs::is_directory(desktop, ec)) return desktop.wstring();
-    }
-    return ModuleDirectory().wstring();
+std::wstring SearchExecutable(const wchar_t* name) {
+    std::wstring buffer(32768, L'\0');
+    const DWORD count = SearchPathW(nullptr, name, nullptr, static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
+    if (count == 0 || count >= buffer.size()) return {};
+    buffer.resize(count);
+    return buffer;
 }
 
-std::vector<wchar_t> BuildEnvironmentBlock(const std::wstring& codexHome, const std::wstring& apiKey) {
+std::vector<wchar_t> BuildEnvironmentBlock(const std::vector<std::pair<std::wstring, std::wstring>>& overrides) {
     std::vector<std::wstring> entries;
     LPWCH block = GetEnvironmentStringsW();
     if (block) {
@@ -259,18 +287,18 @@ std::vector<wchar_t> BuildEnvironmentBlock(const std::wstring& codexHome, const 
             std::wstring entry(cursor);
             const auto equal = entry.find(L'=');
             const std::wstring name = equal == std::wstring::npos ? entry : entry.substr(0, equal);
-            const auto lower = Lower(name);
-            if (lower == L"codex_home" || lower == L"turingdesk_model_api_key") continue;
-            entries.push_back(std::move(entry));
+            bool replaced = false;
+            for (const auto& [overrideName, _] : overrides) {
+                if (_wcsicmp(name.c_str(), overrideName.c_str()) == 0) { replaced = true; break; }
+            }
+            if (!replaced) entries.push_back(std::move(entry));
         }
         FreeEnvironmentStringsW(block);
     }
-    entries.push_back(L"CODEX_HOME=" + codexHome);
-    entries.push_back(std::wstring(kApiKeyEnvironment) + L"=" + apiKey);
+    for (const auto& [name, value] : overrides) entries.push_back(name + L"=" + value);
     std::sort(entries.begin(), entries.end(), [](const std::wstring& a, const std::wstring& b) {
         return _wcsicmp(a.c_str(), b.c_str()) < 0;
     });
-
     std::size_t chars = 1;
     for (const auto& entry : entries) chars += entry.size() + 1;
     std::vector<wchar_t> out(chars, L'\0');
@@ -284,6 +312,30 @@ std::vector<wchar_t> BuildEnvironmentBlock(const std::wstring& codexHome, const 
     return out;
 }
 
+std::vector<wchar_t> BuildCodexEnvironmentBlock(const std::wstring& codexHome, const std::wstring& apiKey) {
+    return BuildEnvironmentBlock({
+        {L"CODEX_HOME", codexHome},
+        {kApiKeyEnvironment, apiKey},
+    });
+}
+
+std::vector<wchar_t> BuildRelayEnvironmentBlock(const std::wstring& upstream,
+                                                 const std::wstring& apiKey,
+                                                 unsigned short port) {
+    wchar_t oldPath[32768]{};
+    const DWORD count = GetEnvironmentVariableW(L"PATH", oldPath, static_cast<DWORD>(std::size(oldPath)));
+    std::wstring path = (ModuleDirectory() / L"Codex").wstring();
+    if (count > 0 && count < std::size(oldPath)) path += L";" + std::wstring(oldPath, count);
+    return BuildEnvironmentBlock({
+        {L"CODEX_RELAY_BIND", L"127.0.0.1"},
+        {L"CODEX_RELAY_PORT", std::to_wstring(port)},
+        {L"CODEX_RELAY_UPSTREAM", upstream},
+        {L"CODEX_RELAY_API_KEY", apiKey},
+        {L"RUST_LOG", L"codex_relay=warn"},
+        {L"PATH", path},
+    });
+}
+
 std::wstring StripResponsesSuffix(std::wstring url) {
     url = Trim(std::move(url));
     while (url.size() > 1 && url.back() == L'/') url.pop_back();
@@ -293,12 +345,11 @@ std::wstring StripResponsesSuffix(std::wstring url) {
 }
 
 std::wstring OpenAiResponsesBase(const L3Agent& agent) {
-    auto url = agent.CurrentApiUrl();
+    auto url = Trim(agent.CurrentApiUrl());
     if (url.empty()) return {};
     const auto provider = Lower(agent.Config().providerId);
     if (EndsWithInsensitive(url, L"/responses")) return StripResponsesSuffix(url);
-    if (provider != L"openai") return {};
-    if (EndsWithInsensitive(url, L"/chat/completions")) {
+    if (provider == L"openai" && EndsWithInsensitive(url, L"/chat/completions")) {
         url.resize(url.size() - std::wstring(L"/chat/completions").size());
         while (url.size() > 1 && url.back() == L'/') url.pop_back();
         return url;
@@ -306,12 +357,25 @@ std::wstring OpenAiResponsesBase(const L3Agent& agent) {
     return {};
 }
 
-std::wstring SearchExecutable(const wchar_t* name) {
-    std::wstring buffer(32768, L'\0');
-    const DWORD count = SearchPathW(nullptr, name, nullptr, static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
-    if (count == 0 || count >= buffer.size()) return {};
-    buffer.resize(count);
-    return buffer;
+std::wstring ChatCompletionsBase(const L3Agent& agent) {
+    auto url = Trim(agent.CurrentApiUrl());
+    while (url.size() > 1 && url.back() == L'/') url.pop_back();
+    const std::wstring suffix = L"/chat/completions";
+    if (!EndsWithInsensitive(url, suffix)) return {};
+    url.resize(url.size() - suffix.size());
+    while (url.size() > 1 && url.back() == L'/') url.pop_back();
+    return url;
+}
+
+bool IsLocalHttpBase(const std::wstring& url) {
+    const auto lower = Lower(url);
+    return lower.starts_with(L"http://127.0.0.1") || lower.starts_with(L"http://localhost") ||
+           lower.starts_with(L"https://127.0.0.1") || lower.starts_with(L"https://localhost") ||
+           lower.starts_with(L"http://[::1]") || lower.starts_with(L"https://[::1]");
+}
+
+bool ProcessAlive(HANDLE process) {
+    return process && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
 }
 
 } // namespace
@@ -323,28 +387,45 @@ CodexRuntime::~CodexRuntime() {
 CodexRuntime::ProviderSetup CodexRuntime::BuildProviderSetup(const L3Agent& agent) const {
     ProviderSetup setup;
     setup.model = Trim(agent.Config().model);
-    setup.baseUrl = OpenAiResponsesBase(agent);
     setup.apiKey = LoadApiKey();
     if (setup.model.empty()) {
         setup.message = L"模型未配置";
         return setup;
     }
-    if (setup.baseUrl.empty()) {
-        setup.message = L"当前 Provider 还没有 Responses 协议桥，继续使用 Direct Runtime";
-        return setup;
+
+    const auto directResponses = OpenAiResponsesBase(agent);
+    if (!directResponses.empty()) {
+        setup.baseUrl = directResponses;
+    } else {
+        if (Lower(agent.Config().providerId) == L"anthropic") {
+            setup.message = L"Anthropic Messages Provider 暂不属于 OpenAI-compatible Chat Completions，无法交给 Codex Relay";
+            return setup;
+        }
+        setup.upstreamBaseUrl = ChatCompletionsBase(agent);
+        if (setup.upstreamBaseUrl.empty()) {
+            setup.message = L"当前 Provider 既不是 Responses API，也不是可桥接的 Chat Completions API";
+            return setup;
+        }
+        setup.relayRequired = true;
+        setup.relayPort = static_cast<unsigned short>(45000 + (GetCurrentProcessId() % 10000));
+        setup.baseUrl = L"http://127.0.0.1:" + std::to_wstring(setup.relayPort) + L"/v1";
     }
+
     if (setup.apiKey.empty()) {
-        setup.message = L"Codex Runtime 当前需要 API Key";
-        return setup;
+        if (setup.relayRequired && IsLocalHttpBase(setup.upstreamBaseUrl)) setup.apiKey = L"turingdesk-local";
+        else {
+            setup.message = L"Codex Runtime 当前需要 API Key";
+            return setup;
+        }
     }
-    setup.signature = setup.baseUrl + L"\n" + setup.model;
+    setup.signature = (setup.relayRequired ? L"relay\n" + setup.upstreamBaseUrl : L"responses\n" + setup.baseUrl) +
+                      L"\n" + setup.model;
     setup.ok = true;
     return setup;
 }
 
 std::wstring CodexRuntime::FindBinary(bool& isCliBinary) const {
     isCliBinary = false;
-
     wchar_t explicitPath[32768]{};
     const DWORD explicitCount = GetEnvironmentVariableW(L"TURINGDESK_CODEX_APP_SERVER", explicitPath,
                                                          static_cast<DWORD>(std::size(explicitPath)));
@@ -352,26 +433,28 @@ std::wstring CodexRuntime::FindBinary(bool& isCliBinary) const {
         std::error_code ec;
         if (fs::exists(explicitPath, ec)) return explicitPath;
     }
-
     std::error_code ec;
     const auto bundledCli = ModuleDirectory() / L"Codex" / L"codex.exe";
-    if (fs::exists(bundledCli, ec)) {
-        isCliBinary = true;
-        return bundledCli.wstring();
-    }
-
+    if (fs::exists(bundledCli, ec)) { isCliBinary = true; return bundledCli.wstring(); }
     const auto bundledServer = ModuleDirectory() / L"Codex" / L"codex-app-server.exe";
     if (fs::exists(bundledServer, ec)) return bundledServer.wstring();
-
     auto found = SearchExecutable(L"codex.exe");
-    if (!found.empty()) {
-        isCliBinary = true;
-        return found;
-    }
+    if (!found.empty()) { isCliBinary = true; return found; }
+    return SearchExecutable(L"codex-app-server.exe");
+}
 
-    found = SearchExecutable(L"codex-app-server.exe");
-    if (!found.empty()) return found;
-    return {};
+std::wstring CodexRuntime::FindRelayBinary() const {
+    wchar_t explicitPath[32768]{};
+    const DWORD explicitCount = GetEnvironmentVariableW(L"TURINGDESK_CODEX_RELAY", explicitPath,
+                                                         static_cast<DWORD>(std::size(explicitPath)));
+    if (explicitCount > 0 && explicitCount < std::size(explicitPath)) {
+        std::error_code ec;
+        if (fs::exists(explicitPath, ec)) return explicitPath;
+    }
+    std::error_code ec;
+    const auto bundled = ModuleDirectory() / L"CodexRelay" / L"codex-relay.exe";
+    if (fs::exists(bundled, ec)) return bundled.wstring();
+    return SearchExecutable(L"codex-relay.exe");
 }
 
 CodexRuntimeStatus CodexRuntime::Status(const L3Agent& agent) const {
@@ -380,21 +463,29 @@ CodexRuntimeStatus CodexRuntime::Status(const L3Agent& agent) const {
     status.binaryPath = FindBinary(cli);
     status.binaryAvailable = !status.binaryPath.empty();
     const auto setup = BuildProviderSetup(agent);
-    status.providerCompatible = setup.ok;
+    const bool relayAvailable = !setup.relayRequired || !FindRelayBinary().empty();
+    status.providerCompatible = setup.ok && relayAvailable;
     {
         std::scoped_lock lock(processMutex_);
-        status.running = process_ != nullptr;
+        status.running = ProcessAlive(process_);
     }
-    if (!status.binaryAvailable) status.message = L"Codex CLI 未安装；当前使用兼容 Runtime";
-    else if (!status.providerCompatible) status.message = setup.message;
-    else if (status.running) status.message = L"Codex CLI Agent Runtime 正在运行";
-    else status.message = L"Codex CLI Agent Runtime 可用，将在下一次请求时按需启动";
+    if (!status.binaryAvailable) status.message = L"Codex CLI 未安装";
+    else if (!setup.ok) status.message = setup.message;
+    else if (!relayAvailable) status.message = L"当前 Provider 需要 Codex Relay，但 codex-relay.exe 尚未部署";
+    else if (status.running) status.message = setup.relayRequired
+        ? L"Codex CLI Agent Runtime 正在通过本地 Codex Relay 运行"
+        : L"Codex CLI Agent Runtime 正在直连 Responses API";
+    else status.message = setup.relayRequired
+        ? L"Codex CLI 可用；下一次请求将通过本地 Codex Relay 接入 Chat Completions"
+        : L"Codex CLI 可用；下一次请求将直连 Responses API";
     return status;
 }
 
 bool CodexRuntime::CanHandle(const L3Agent& agent) const {
     bool cli = false;
-    return !FindBinary(cli).empty() && BuildProviderSetup(agent).ok;
+    const auto setup = BuildProviderSetup(agent);
+    if (FindBinary(cli).empty() || !setup.ok) return false;
+    return !setup.relayRequired || !FindRelayBinary().empty();
 }
 
 bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& codexHome, std::wstring& error) const {
@@ -406,16 +497,52 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
         return false;
     }
     codexHome = home.wstring();
+
+    fs::path catalogPath;
+    if (setup.relayRequired) {
+        catalogPath = home / L"codex-relay-models.json";
+        const auto relay = FindRelayBinary();
+        if (!relay.empty()) {
+            SECURITY_ATTRIBUTES security{};
+            security.nLength = sizeof(security);
+            security.bInheritHandle = TRUE;
+            HANDLE nullHandle = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                            &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            STARTUPINFOW startup{};
+            startup.cb = sizeof(startup);
+            startup.dwFlags = STARTF_USESTDHANDLES;
+            startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            startup.hStdOutput = nullHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_OUTPUT_HANDLE) : nullHandle;
+            startup.hStdError = nullHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_ERROR_HANDLE) : nullHandle;
+            PROCESS_INFORMATION process{};
+            std::wstring command = QuoteArg(relay) + L" --print-config --model-catalog " + QuoteArg(catalogPath.wstring());
+            auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort);
+            const BOOL created = CreateProcessW(relay.c_str(), command.data(), nullptr, nullptr, TRUE,
+                                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                                environment.data(), home.c_str(), &startup, &process);
+            if (created) {
+                const DWORD wait = WaitForSingleObject(process.hProcess, 15000);
+                if (wait == WAIT_TIMEOUT) TerminateProcess(process.hProcess, 1);
+                CloseHandle(process.hThread);
+                CloseHandle(process.hProcess);
+            }
+            if (nullHandle && nullHandle != INVALID_HANDLE_VALUE) CloseHandle(nullHandle);
+        }
+    }
+
     std::wofstream stream(home / L"config.toml", std::ios::trunc);
     if (!stream) {
         error = L"无法写入 Codex Runtime 配置";
         return false;
     }
-    stream << L"model_provider = \"turingdesk\"\n"
+    stream << L"model = \"" << TomlEscape(setup.model) << L"\"\n"
+           << L"model_provider = \"turingdesk\"\n"
            << L"approval_policy = \"never\"\n"
-           << L"sandbox_mode = \"workspace-write\"\n\n"
-           << L"[model_providers.turingdesk]\n"
-           << L"name = \"TuringDesk Responses Provider\"\n"
+           << L"sandbox_mode = \"workspace-write\"\n";
+    if (!catalogPath.empty() && fs::exists(catalogPath, ec))
+        stream << L"model_catalog_json = \"" << TomlEscape(catalogPath.wstring()) << L"\"\n";
+    stream << L"\n[model_providers.turingdesk]\n"
+           << L"name = \"TuringDesk Codex Provider\"\n"
            << L"base_url = \"" << TomlEscape(setup.baseUrl) << L"\"\n"
            << L"env_key = \"TURINGDESK_MODEL_API_KEY\"\n"
            << L"wire_api = \"responses\"\n"
@@ -423,6 +550,43 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
     if (!stream) {
         error = L"Codex Runtime 配置写入失败";
         return false;
+    }
+    return true;
+}
+
+bool CodexRuntime::LaunchRelay(const ProviderSetup& setup, std::wstring& error) {
+    if (!setup.relayRequired) return true;
+    const auto binary = FindRelayBinary();
+    if (binary.empty()) {
+        error = L"当前 Provider 需要 Codex Relay，但没有找到 codex-relay.exe";
+        return false;
+    }
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::wstring command = QuoteArg(binary);
+    auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort);
+    const auto cwd = ModuleDirectory().wstring();
+    const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, FALSE,
+                                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                        environment.data(), cwd.empty() ? nullptr : cwd.c_str(), &startup, &process);
+    if (!created) {
+        error = L"启动 Codex Relay 失败，Win32=" + std::to_wstring(GetLastError());
+        return false;
+    }
+    const DWORD early = WaitForSingleObject(process.hProcess, 500);
+    if (early != WAIT_TIMEOUT) {
+        DWORD exitCode = 0;
+        GetExitCodeProcess(process.hProcess, &exitCode);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        error = L"Codex Relay 启动后立即退出，ExitCode=" + std::to_wstring(exitCode);
+        return false;
+    }
+    {
+        std::scoped_lock lock(processMutex_);
+        relayProcess_ = process.hProcess;
+        relayThread_ = process.hThread;
     }
     return true;
 }
@@ -441,7 +605,6 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     SECURITY_ATTRIBUTES security{};
     security.nLength = sizeof(security);
     security.bInheritHandle = TRUE;
-
     HANDLE childStdoutRead = nullptr;
     HANDLE childStdoutWrite = nullptr;
     HANDLE childStdinRead = nullptr;
@@ -457,33 +620,25 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     }
     SetHandleInformation(childStdoutRead, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(childStdinWrite, HANDLE_FLAG_INHERIT, 0);
-
     HANDLE nullError = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                    &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = childStdinRead;
     startup.hStdOutput = childStdoutWrite;
     startup.hStdError = nullError == INVALID_HANDLE_VALUE ? childStdoutWrite : nullError;
-
     PROCESS_INFORMATION process{};
-    std::wstring commandLine = L"\"" + binary + L"\"";
-    if (cliBinary) commandLine += L" app-server --stdio";
-    else commandLine += L" --stdio";
-
-    auto environment = BuildEnvironmentBlock(codexHome, setup.apiKey);
+    std::wstring command = QuoteArg(binary);
+    command += cliBinary ? L" app-server --stdio" : L" --stdio";
+    auto environment = BuildCodexEnvironmentBlock(codexHome, setup.apiKey);
     const auto cwd = DesktopDirectory();
-    const BOOL created = CreateProcessW(binary.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
+    const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                                        environment.data(), cwd.empty() ? nullptr : cwd.c_str(),
-                                        &startup, &process);
-
+                                        environment.data(), cwd.empty() ? nullptr : cwd.c_str(), &startup, &process);
     CloseHandle(childStdinRead);
     CloseHandle(childStdoutWrite);
     if (nullError && nullError != INVALID_HANDLE_VALUE) CloseHandle(nullError);
-
     if (!created) {
         const DWORD code = GetLastError();
         CloseHandle(childStdoutRead);
@@ -491,7 +646,6 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
         error = L"启动 Codex app-server 失败，Win32=" + std::to_wstring(code);
         return false;
     }
-
     {
         std::scoped_lock lock(processMutex_);
         process_ = process.hProcess;
@@ -523,19 +677,20 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
         return false;
     }
 
-    const long long threadIdRequest = nextRequestId_++;
+    const long long threadRequest = nextRequestId_++;
     const std::wstring developerInstructions =
-        L"You are 图灵智能桌面 (Turing Intelligent Desktop), the AI agent built into TuringDesk. When the user asks who you are, identify yourself as 图灵智能桌面 / Turing Intelligent Desktop, not as a raw Codex CLI shell. "
-        L"Use the provided TuringDesk native dynamic tools when the user asks to create, open, inspect, search, or operate supported desktop artifacts and capabilities. "
-        L"Never report an action as successful until its tool result reports success. Prefer TuringDesk native tools over shell commands for supported desktop operations.";
+        L"You are 图灵智能桌面 (Turing Intelligent Desktop), the AI agent built into TuringDesk. "
+        L"When the user asks who you are, identify yourself as 图灵智能桌面 / Turing Intelligent Desktop, not as raw Codex CLI. "
+        L"Use TuringDesk native dynamic tools for supported desktop operations. Never report an action as successful until its tool result reports success. "
+        L"Prefer native tools over shell commands for supported operations.";
     const std::string threadStart =
-        "{\"id\":" + std::to_string(threadIdRequest) +
+        "{\"id\":" + std::to_string(threadRequest) +
         ",\"method\":\"thread/start\",\"params\":{\"model\":\"" + EscapeJson(setup.model) +
         "\",\"modelProvider\":\"turingdesk\",\"cwd\":\"" + EscapeJson(DesktopDirectory()) +
         "\",\"developerInstructions\":\"" + EscapeJson(developerInstructions) +
         "\",\"dynamicTools\":" + NativeToolDefinitionsJson() +
         ",\"ephemeral\":true}}";
-    if (!WriteLine(threadStart) || !WaitForResponse(threadIdRequest, response, error)) {
+    if (!WriteLine(threadStart) || !WaitForResponse(threadRequest, response, error)) {
         CleanupProcess();
         return false;
     }
@@ -554,10 +709,17 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
 bool CodexRuntime::EnsureSession(const ProviderSetup& setup, std::wstring& error) {
     {
         std::scoped_lock lock(processMutex_);
-        if (process_ && sessionSignature_ == setup.signature && !threadId_.empty()) return true;
+        const bool codexAlive = ProcessAlive(process_);
+        const bool relayAlive = !setup.relayRequired || ProcessAlive(relayProcess_);
+        if (codexAlive && relayAlive && sessionSignature_ == setup.signature && !threadId_.empty()) return true;
     }
     CleanupProcess();
-    return LaunchProcess(setup, error);
+    if (setup.relayRequired && !LaunchRelay(setup, error)) return false;
+    if (!LaunchProcess(setup, error)) {
+        CleanupProcess();
+        return false;
+    }
+    return true;
 }
 
 bool CodexRuntime::WriteLine(const std::string& line) {
@@ -589,7 +751,6 @@ bool CodexRuntime::ReadLine(std::string& line) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             return true;
         }
-
         HANDLE handle = nullptr;
         {
             std::scoped_lock lock(processMutex_);
@@ -610,7 +771,7 @@ bool CodexRuntime::WaitForResponse(long long id, std::string& response, std::wst
         if (!HasResponseId(line, id)) continue;
         response = line;
         if (line.find("\"result\"") == std::string::npos && line.find("\"error\"") != std::string::npos) {
-            auto message = ExtractJsonString(line, "\"message\"");
+            const auto message = ExtractJsonString(line, "\"message\"");
             error = message.empty() ? L"Codex JSON-RPC 请求失败" : Utf8ToWide(message);
             return false;
         }
@@ -644,7 +805,6 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         if (onDone) onDone(L"Codex Runtime 启动失败：" + error);
         return;
     }
-
     const long long requestId = nextRequestId_++;
     const std::string request =
         "{\"id\":" + std::to_string(requestId) +
@@ -673,13 +833,9 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
             long long serverRequestId = 0;
             const auto tool = ExtractJsonString(line, "\"tool\"");
             NativeToolResult result;
-            if (!TryReadRequestId(line, serverRequestId)) {
-                result = {false, L"TuringDesk 无法解析 Codex tool request id。"};
-            } else if (tool.empty()) {
-                result = {false, L"Codex tool request 缺少 tool 名称。"};
-            } else {
-                result = ExecuteNativeTool(tool, line);
-            }
+            if (!TryReadRequestId(line, serverRequestId)) result = {false, L"TuringDesk 无法解析 Codex tool request id。"};
+            else if (tool.empty()) result = {false, L"Codex tool request 缺少 tool 名称。"};
+            else result = ExecuteNativeTool(tool, line);
             if (serverRequestId != 0) {
                 const std::string reply =
                     "{\"id\":" + std::to_string(serverRequestId) +
@@ -711,7 +867,6 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
             return;
         }
     }
-
     if (stopToken.stop_requested()) {
         if (onDone) onDone(L"已取消 Codex 请求");
     } else if (onDone) {
@@ -723,11 +878,14 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
 void CodexRuntime::Stop() {
     if (worker_.joinable()) worker_.request_stop();
     HANDLE process = nullptr;
+    HANDLE relay = nullptr;
     {
         std::scoped_lock lock(processMutex_);
         process = process_;
+        relay = relayProcess_;
     }
     if (process) TerminateProcess(process, 0);
+    if (relay) TerminateProcess(relay, 0);
 }
 
 void CodexRuntime::ResetSession() {
@@ -743,10 +901,15 @@ void CodexRuntime::CleanupProcess() {
     if (outputRead_) { CloseHandle(outputRead_); outputRead_ = nullptr; }
     if (processThread_) { CloseHandle(processThread_); processThread_ = nullptr; }
     if (process_) {
-        const DWORD wait = WaitForSingleObject(process_, 0);
-        if (wait == WAIT_TIMEOUT) TerminateProcess(process_, 0);
+        if (ProcessAlive(process_)) TerminateProcess(process_, 0);
         CloseHandle(process_);
         process_ = nullptr;
+    }
+    if (relayThread_) { CloseHandle(relayThread_); relayThread_ = nullptr; }
+    if (relayProcess_) {
+        if (ProcessAlive(relayProcess_)) TerminateProcess(relayProcess_, 0);
+        CloseHandle(relayProcess_);
+        relayProcess_ = nullptr;
     }
     readBuffer_.clear();
     threadId_.clear();

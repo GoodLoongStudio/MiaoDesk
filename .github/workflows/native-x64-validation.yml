@@ -23,6 +23,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Guard lightweight L3 runtime boundary
+        shell: pwsh
+        run: |
+          $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
+          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
+            if ($source.Contains($marker)) { throw "Ordinary L3 must not depend on external Agent/Harness runtime marker: $marker" }
+          }
+          $cmake = Get-Content 'src/native/CMakeLists.txt' -Raw
+          if (-not $cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
+            throw 'TuringDesk Native Tool Runtime must be compiled into the default L3 binary.'
+          }
+          if ($cmake.Contains('DirectToolRuntimeDisabled.cpp')) {
+            throw 'Disabled L3 tool stub must not replace the real Native Tool Runtime.'
+          }
+
       - name: Configure x64
         run: cmake -S . -B build-x64 -A x64
 

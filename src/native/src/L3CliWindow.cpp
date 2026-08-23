@@ -70,6 +70,47 @@ std::wstring Lower(std::wstring value) {
     return value;
 }
 
+// Route only explicit desktop actions through the non-streaming Native Tool runtime.
+// Informational questions such as "explain PowerPoint" or "what is a file system"
+// must stay on L3Agent so ordinary conversation keeps the SSE streaming path.
+bool WantsNativeTools(const std::wstring& prompt) {
+    const auto lower = Lower(prompt);
+    const bool action = lower.find(L"创建") != std::wstring::npos ||
+                        lower.find(L"生成") != std::wstring::npos ||
+                        lower.find(L"新建") != std::wstring::npos ||
+                        lower.find(L"制作") != std::wstring::npos ||
+                        lower.find(L"打开") != std::wstring::npos ||
+                        lower.find(L"列出") != std::wstring::npos ||
+                        lower.find(L"列一下") != std::wstring::npos ||
+                        lower.find(L"查看") != std::wstring::npos ||
+                        lower.find(L"看看") != std::wstring::npos ||
+                        lower.find(L"create") != std::wstring::npos ||
+                        lower.find(L"generate") != std::wstring::npos ||
+                        lower.find(L"make") != std::wstring::npos ||
+                        lower.find(L"open") != std::wstring::npos ||
+                        lower.find(L"list") != std::wstring::npos ||
+                        lower.find(L"show") != std::wstring::npos;
+    if (!action) return false;
+
+    return lower.find(L"ppt") != std::wstring::npos ||
+           lower.find(L"powerpoint") != std::wstring::npos ||
+           lower.find(L"演示文稿") != std::wstring::npos ||
+           lower.find(L"幻灯片") != std::wstring::npos ||
+           lower.find(L"桌面") != std::wstring::npos ||
+           lower.find(L"下载") != std::wstring::npos ||
+           lower.find(L"文档") != std::wstring::npos ||
+           lower.find(L"文件") != std::wstring::npos ||
+           lower.find(L"目录") != std::wstring::npos ||
+           lower.find(L"文件夹") != std::wstring::npos ||
+           lower.find(L"应用") != std::wstring::npos ||
+           lower.find(L"desktop") != std::wstring::npos ||
+           lower.find(L"downloads") != std::wstring::npos ||
+           lower.find(L"documents") != std::wstring::npos ||
+           lower.find(L"file") != std::wstring::npos ||
+           lower.find(L"folder") != std::wstring::npos ||
+           lower.find(L"app") != std::wstring::npos;
+}
+
 bool ContainsHttpStatus(const std::wstring& text, int status) {
     return text.find(L"HTTP " + std::to_wstring(status)) != std::wstring::npos;
 }
@@ -157,17 +198,16 @@ std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     return L"";
 }
 
-ActiveRuntime ChooseRuntime(CliState& state) {
-    // Ordinary L3 is owned by TuringDesk. External agent runtimes belong to L4
-    // and must never become an automatic fallback merely because they are installed.
-    if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+ActiveRuntime ChooseRuntime(CliState& state, const std::wstring& prompt) {
+    // Ordinary L3 conversation remains on L3Agent's SSE streaming path. Only an
+    // explicit desktop action may enter the TuringDesk-owned Native Tool runtime.
+    if (WantsNativeTools(prompt) && state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
     return ActiveRuntime::DirectModel;
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
-    const auto selected = ChooseRuntime(state);
-    std::wstring text = L"当前路由：" + RuntimeName(selected);
-    text += L" · " + RuntimeExecutionLabel(selected);
+    std::wstring text = L"普通对话：Direct Model Runtime · SSE 流式";
+    text += L"\r\n明确桌面动作：TuringDesk Native Tool Runtime（可用时）";
     text += L"\r\nL3 外部 Agent/Harness：不参与；复杂任务请交给 L4。";
     text += L"\r\nNative Tools：" + state.directTools->StatusText(*state.agent);
     return text;
@@ -229,9 +269,9 @@ void SendPrompt(CliState& state) {
         return;
     }
 
-    ActiveRuntime runtime = ChooseRuntime(state);
+    ActiveRuntime runtime = ChooseRuntime(state, actualPrompt);
     if (retry) {
-        if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+        if (state.lastRuntime == ActiveRuntime::DirectTools && WantsNativeTools(actualPrompt) && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
         else if (state.lastRuntime == ActiveRuntime::DirectModel) runtime = ActiveRuntime::DirectModel;
     }
 

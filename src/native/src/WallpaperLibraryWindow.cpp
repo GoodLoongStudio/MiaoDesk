@@ -179,6 +179,17 @@ struct WallpaperLibraryWindow::Impl {
         DestroyResources();
     }
 
+    int FontHeight(int logicalPixels) const {
+        const UINT dpi = window ? GetDpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
+        return -MulDiv(logicalPixels, static_cast<int>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI), USER_DEFAULT_SCREEN_DPI);
+    }
+
+    HFONT MakeFont(int logicalPixels, int weight, const wchar_t* face) const {
+        return CreateFontW(FontHeight(logicalPixels), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                           DEFAULT_PITCH | FF_DONTCARE, face);
+    }
+
     void DestroyResources() {
         for (HFONT* font : {&titleFont, &pageTitleFont, &bodyFont, &smallFont, &cardTitleFont, &sectionFont}) {
             if (*font) { DeleteObject(*font); *font = nullptr; }
@@ -586,13 +597,13 @@ struct WallpaperLibraryWindow::Impl {
         SelectObject(dc, cardTitleFont);
         SetTextColor(dc, RGB(26, 30, 38));
         std::wstring title = item->favorite ? L"★ " + item->title : item->title;
-        RECT titleRect{rc.left + 12, preview.bottom + 9, rc.right - 12, preview.bottom + 37};
+        RECT titleRect{rc.left + 12, preview.bottom + 9, rc.right - 12, preview.bottom + 40};
         DrawTextW(dc, title.c_str(), -1, &titleRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(dc, smallFont);
         SetTextColor(dc, RGB(95, 105, 126));
         const std::wstring description = SourceMissing(*item) ? L"资源不可用" : DescriptionFor(*item);
-        RECT descRect{rc.left + 12, preview.bottom + 39, rc.right - 12, rc.bottom - 8};
+        RECT descRect{rc.left + 12, preview.bottom + 43, rc.right - 12, rc.bottom - 8};
         DrawTextW(dc, description.c_str(), -1, &descRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         SelectObject(dc, oldFont);
         return CDRF_SKIPDEFAULT;
@@ -601,62 +612,62 @@ struct WallpaperLibraryWindow::Impl {
     void Layout() {
         if (!window) return;
         RECT rc{}; GetClientRect(window, &rc);
-        const int width = std::max(980L, rc.right - rc.left);
-        const int height = std::max(680L, rc.bottom - rc.top);
-        constexpr int margin = 22;
-        constexpr int headerHeight = 108;
-        constexpr int tabsHeight = 50;
-        const int contentTop = headerHeight + tabsHeight + 20;
+        const int width = std::max(1080L, rc.right - rc.left);
+        const int height = std::max(720L, rc.bottom - rc.top);
+        constexpr int margin = 24;
+        constexpr int headerHeight = 122;
+        constexpr int tabsHeight = 58;
+        const int contentTop = headerHeight + tabsHeight + 22;
 
-        MoveWindow(headerTitle, margin, 18, 460, 38, TRUE);
-        MoveWindow(headerSubtitle, margin, 58, 720, 28, TRUE);
-        MoveWindow(importButton, width - margin - 146, 24, 146, 46, TRUE);
+        MoveWindow(headerTitle, margin, 18, 500, 48, TRUE);
+        MoveWindow(headerSubtitle, margin, 68, 760, 34, TRUE);
+        MoveWindow(importButton, width - margin - 160, 28, 160, 50, TRUE);
         MoveWindow(tabs, 0, headerHeight, width, tabsHeight, TRUE);
-        MoveWindow(pageTitle, margin, contentTop, 360, 38, TRUE);
-        MoveWindow(pageSubtitle, margin, contentTop + 42, 760, 28, TRUE);
+        MoveWindow(pageTitle, margin, contentTop, 420, 46, TRUE);
+        MoveWindow(pageSubtitle, margin, contentTop + 48, 820, 34, TRUE);
 
         if (!aiPage) {
-            constexpr int detailWidth = 340;
-            constexpr int gap = 22;
+            constexpr int detailWidth = 380;
+            constexpr int gap = 24;
             const int detailX = width - margin - detailWidth;
-            const int libraryWidth = std::max(500, detailX - gap - margin);
-            MoveWindow(search, margin + libraryWidth - 250, contentTop + 3, 250, 40, TRUE);
-            MoveWindow(list, margin, contentTop + 82, libraryWidth, height - (contentTop + 82) - 48, TRUE);
-            MoveWindow(detailFrame, detailX, contentTop, detailWidth, height - contentTop - 48, TRUE);
-            MoveWindow(selectedTitle, detailX + 20, contentTop + 24, detailWidth - 40, 34, TRUE);
-            MoveWindow(selectedMeta, detailX + 20, contentTop + 62, detailWidth - 40, 26, TRUE);
-            MoveWindow(selectedDescription, detailX + 20, contentTop + 104, detailWidth - 40, 112, TRUE);
-            MoveWindow(targetLabel, detailX + 20, contentTop + 228, detailWidth - 40, 26, TRUE);
-            MoveWindow(targetCombo, detailX + 20, contentTop + 258, detailWidth - 40, 200, TRUE);
-            MoveWindow(applyButton, detailX + 20, contentTop + 306, detailWidth - 40, 44, TRUE);
-            MoveWindow(favoriteButton, detailX + 20, contentTop + 362, 140, 38, TRUE);
-            MoveWindow(removeButton, detailX + 170, contentTop + 362, detailWidth - 190, 38, TRUE);
-            MoveWindow(webLabel, detailX + 20, contentTop + 424, detailWidth - 40, 26, TRUE);
-            MoveWindow(webUrl, detailX + 20, contentTop + 454, detailWidth - 40, 36, TRUE);
-            MoveWindow(importWebButton, detailX + 20, contentTop + 500, detailWidth - 40, 40, TRUE);
+            const int libraryWidth = std::max(540, detailX - gap - margin);
+            MoveWindow(search, margin + libraryWidth - 280, contentTop + 2, 280, 46, TRUE);
+            MoveWindow(list, margin, contentTop + 92, libraryWidth, height - (contentTop + 92) - 52, TRUE);
+            MoveWindow(detailFrame, detailX, contentTop, detailWidth, height - contentTop - 52, TRUE);
+            MoveWindow(selectedTitle, detailX + 22, contentTop + 24, detailWidth - 44, 42, TRUE);
+            MoveWindow(selectedMeta, detailX + 22, contentTop + 70, detailWidth - 44, 32, TRUE);
+            MoveWindow(selectedDescription, detailX + 22, contentTop + 112, detailWidth - 44, 126, TRUE);
+            MoveWindow(targetLabel, detailX + 22, contentTop + 250, detailWidth - 44, 32, TRUE);
+            MoveWindow(targetCombo, detailX + 22, contentTop + 286, detailWidth - 44, 220, TRUE);
+            MoveWindow(applyButton, detailX + 22, contentTop + 340, detailWidth - 44, 48, TRUE);
+            MoveWindow(favoriteButton, detailX + 22, contentTop + 400, 156, 42, TRUE);
+            MoveWindow(removeButton, detailX + 188, contentTop + 400, detailWidth - 210, 42, TRUE);
+            MoveWindow(webLabel, detailX + 22, contentTop + 466, detailWidth - 44, 32, TRUE);
+            MoveWindow(webUrl, detailX + 22, contentTop + 502, detailWidth - 44, 44, TRUE);
+            MoveWindow(importWebButton, detailX + 22, contentTop + 558, detailWidth - 44, 46, TRUE);
         } else {
-            const int leftWidth = std::min(760, width - 430);
-            const int rightX = margin + leftWidth + 42;
-            const int rightWidth = std::max(300, width - rightX - margin);
-            int y = contentTop + 88;
-            MoveWindow(aiUrlLabel, margin, y, 220, 28, TRUE); y += 32;
-            MoveWindow(aiUrl, margin, y, leftWidth, 40, TRUE); y += 56;
-            MoveWindow(aiKeyLabel, margin, y, 220, 28, TRUE); y += 32;
-            MoveWindow(aiKey, margin, y, leftWidth - 150, 40, TRUE);
-            MoveWindow(aiClearKeyButton, margin + leftWidth - 138, y, 138, 40, TRUE); y += 56;
-            MoveWindow(aiModelLabel, margin, y, 220, 28, TRUE); y += 32;
-            MoveWindow(aiModel, margin, y, leftWidth - 150, 180, TRUE);
-            MoveWindow(aiProbeButton, margin + leftWidth - 138, y, 138, 40, TRUE); y += 58;
-            MoveWindow(aiProviderLabel, margin, y, 110, 28, TRUE);
-            MoveWindow(aiProviderValue, margin + 116, y, leftWidth - 116, 28, TRUE); y += 46;
-            MoveWindow(aiSaveButton, margin, y, 180, 44, TRUE); y += 58;
-            MoveWindow(aiStatus, margin, y, leftWidth, 70, TRUE);
+            const int leftWidth = std::min(790, width - 450);
+            const int rightX = margin + leftWidth + 44;
+            const int rightWidth = std::max(320, width - rightX - margin);
+            int y = contentTop + 96;
+            MoveWindow(aiUrlLabel, margin, y, 250, 34, TRUE); y += 38;
+            MoveWindow(aiUrl, margin, y, leftWidth, 46, TRUE); y += 64;
+            MoveWindow(aiKeyLabel, margin, y, 250, 34, TRUE); y += 38;
+            MoveWindow(aiKey, margin, y, leftWidth - 164, 46, TRUE);
+            MoveWindow(aiClearKeyButton, margin + leftWidth - 152, y, 152, 46, TRUE); y += 64;
+            MoveWindow(aiModelLabel, margin, y, 250, 34, TRUE); y += 38;
+            MoveWindow(aiModel, margin, y, leftWidth - 164, 200, TRUE);
+            MoveWindow(aiProbeButton, margin + leftWidth - 152, y, 152, 46, TRUE); y += 66;
+            MoveWindow(aiProviderLabel, margin, y, 124, 34, TRUE);
+            MoveWindow(aiProviderValue, margin + 132, y, leftWidth - 132, 34, TRUE); y += 52;
+            MoveWindow(aiSaveButton, margin, y, 200, 50, TRUE); y += 66;
+            MoveWindow(aiStatus, margin, y, leftWidth, 80, TRUE);
 
-            MoveWindow(aiRuntimeTitle, rightX, contentTop + 88, rightWidth, 34, TRUE);
-            MoveWindow(aiRuntimeStatus, rightX, contentTop + 130, rightWidth, 112, TRUE);
-            MoveWindow(aiHarnessButton, rightX, contentTop + 260, rightWidth, 44, TRUE);
+            MoveWindow(aiRuntimeTitle, rightX, contentTop + 96, rightWidth, 42, TRUE);
+            MoveWindow(aiRuntimeStatus, rightX, contentTop + 146, rightWidth, 140, TRUE);
+            MoveWindow(aiHarnessButton, rightX, contentTop + 306, rightWidth, 50, TRUE);
         }
-        MoveWindow(status, margin, height - 32, width - margin * 2, 26, TRUE);
+        MoveWindow(status, margin, height - 38, width - margin * 2, 32, TRUE);
     }
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -737,28 +748,16 @@ struct WallpaperLibraryWindow::Impl {
 
         window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"TuringDesk 设置",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-                                 CW_USEDEFAULT, CW_USEDEFAULT, 1280, 840,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, 1360, 900,
                                  nullptr, nullptr, instance, this);
         if (!window) return false;
 
-        titleFont = CreateFontW(-32, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Display");
-        pageTitleFont = CreateFontW(-28, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                    DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Display");
-        sectionFont = CreateFontW(-22, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                  DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
-        bodyFont = CreateFontW(-20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                               OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                               DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
-        smallFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
-        cardTitleFont = CreateFontW(-20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                    DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
+        titleFont = MakeFont(38, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        pageTitleFont = MakeFont(32, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        sectionFont = MakeFont(26, FW_SEMIBOLD, L"Segoe UI Variable Text");
+        bodyFont = MakeFont(24, FW_NORMAL, L"Segoe UI Variable Text");
+        smallFont = MakeFont(20, FW_NORMAL, L"Segoe UI Variable Text");
+        cardTitleFont = MakeFont(24, FW_SEMIBOLD, L"Segoe UI Variable Text");
 
         auto font = [&](HWND control, HFONT use) {
             if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
@@ -795,7 +794,7 @@ struct WallpaperLibraryWindow::Impl {
                                    LVS_ICON | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE,
                                    0, 0, 10, 10, window, ControlId(kListId), instance, nullptr), bodyFont);
         ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP | LVS_EX_BORDERSELECT);
-        ListView_SetIconSpacing(list, 254, 178);
+        ListView_SetIconSpacing(list, 270, 190);
 
         detailFrame = label(L"", SS_ETCHEDFRAME, bodyFont);
         selectedTitle = label(L"选择一个桌面", 0, pageTitleFont);

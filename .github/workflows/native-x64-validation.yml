@@ -7,6 +7,8 @@ on:
       - CMakeLists.txt
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
+      - scripts/verify-codex-jsonl-wire.ps1
+      - scripts/verify-runtime-log-paths.ps1
       - scripts/deploy-native-arm64.ps1
       - docs/L3-CODEX-RUNTIME-CONTRACT.md
       - docs/TURINGDESK-PRODUCT-BASELINE.md

@@ -1,0 +1,6 @@
+L3 local migration anchor diagnostics:
+OK src/native/include/turingdesk/GozSearch.h: '    bool Query(HWND replyWindow, const std::wstring& query, DWORD maxResults = 12) const;\n'
+OK src/native/src/GozSearch.cpp: 'bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<SearchResult>& results) const {\n'
+OK src/native/src/L3Agent.cpp: 'reply = L"L3 命令：/status、/time、/new。模型和 API Key 请使用右上角 AI 设置；Ctrl+Enter 强制进入 L3。";'
+OK src/native/src/L3Agent.cpp: '    if (lower.starts_with(L"/key ")) {\n'
+OK src/native/src/main.cpp: '    for (const wchar_t* command : {L"/new", L"/new-chat", L"新对话"}) {\n'

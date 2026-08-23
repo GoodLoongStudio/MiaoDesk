@@ -164,18 +164,25 @@ std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
 }
 
 ActiveRuntime ChooseRuntime(CliState& state) {
-    // L3 is deliberately owned by TuringDesk. External Agent runtimes belong to
-    // L4 and must never become the implicit path for an ordinary L3 prompt.
+    // Codex CLI is the preferred L3 agent runtime. Direct runtimes are retained
+    // only as compatibility fallbacks for providers that do not yet expose the
+    // Responses wire protocol required by Codex.
+    if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;
     if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
     return ActiveRuntime::DirectModel;
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
+    const auto status = state.codex->Status(*state.agent);
     const auto selected = ChooseRuntime(state);
     std::wstring text = L"当前路由：" + RuntimeName(state, selected);
     text += L" · " + RuntimeExecutionLabel(selected);
-    text += L"\r\nNative Tools：" + state.directTools->StatusText(*state.agent);
-    text += L"\r\nL3 外部 Agent/Harness：不参与；深度任务请交给 L4。";
+    text += L"\r\nCodex CLI：";
+    text += status.binaryAvailable ? L"已安装" : L"未安装";
+    text += L"\r\nProvider → Codex：";
+    text += status.providerCompatible ? L"Responses 可直连（默认使用 Codex CLI）" : L"等待 Responses 协议桥";
+    text += L"\r\nDirect Tools fallback：" + state.directTools->StatusText(*state.agent);
+    text += L"\r\n" + status.message;
     return text;
 }
 
@@ -239,8 +246,9 @@ void SendPrompt(CliState& state) {
 
     ActiveRuntime runtime = ChooseRuntime(state);
     if (retry) {
-        if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
-        else runtime = ActiveRuntime::DirectModel;
+        if (state.lastRuntime == ActiveRuntime::Codex && state.codex->CanHandle(*state.agent)) runtime = ActiveRuntime::Codex;
+        else if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+        else if (state.lastRuntime == ActiveRuntime::DirectModel) runtime = ActiveRuntime::DirectModel;
     }
 
     if (!retry) {
@@ -420,7 +428,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · AI Agent", WS_CHILD | WS_VISIBLE,
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Codex CLI Agent", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
     state.settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,

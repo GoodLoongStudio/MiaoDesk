@@ -247,6 +247,30 @@ bool GozSearch::Query(HWND replyWindow, const std::wstring& query, DWORD maxResu
     return true;
 }
 
+std::vector<SearchResult> GozSearch::QuerySync(const std::wstring& query, DWORD maxResults) const {
+    std::vector<SearchResult> results;
+    if (query.empty() || maxResults == 0) return results;
+    const auto binary = FindClientBinary();
+    if (binary.empty() || !PipeAvailable()) return results;
+
+    std::vector<std::wstring> paths;
+    if (!RunGozQuery(binary, query, maxResults, paths)) return results;
+    results.reserve(paths.size());
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        const auto& fullPath = paths[i];
+        if (fullPath.empty()) continue;
+        fs::path path(fullPath);
+        std::wstring title = path.filename().wstring();
+        if (title.empty()) title = fullPath;
+        const DWORD attributes = GetFileAttributesW(fullPath.c_str());
+        const bool directory = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+        results.push_back({directory ? ResultKind::Folder : ResultKind::File,
+                           std::move(title), fullPath, fullPath,
+                           500.0 - static_cast<double>(i)});
+    }
+    return results;
+}
+
 bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<SearchResult>& results) const {
     if (!copyData || copyData->dwData != kReplyId || !copyData->lpData) return false;
     if (copyData->cbData < sizeof(GozReplyHeader)) return true;

@@ -16,6 +16,7 @@ public:
 
     bool Available() const;
     bool Query(HWND replyWindow, const std::wstring& query, DWORD maxResults = 12) const;
+    std::vector<SearchResult> QuerySync(const std::wstring& query, DWORD maxResults = 12) const;
     bool HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<SearchResult>& results) const;
     bool SelfTest() const;
     void Shutdown() const;

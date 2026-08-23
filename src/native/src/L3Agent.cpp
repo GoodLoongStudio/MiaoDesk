@@ -1,4 +1,7 @@
 #include "turingdesk/L3Agent.h"
+#include "turingdesk/AppSearch.h"
+#include "turingdesk/GozSearch.h"
+#include <shellapi.h>
 #include <wincred.h>
 #include <algorithm>
 #include <chrono>
@@ -849,7 +852,7 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
     const auto lower = Lower(input);
 
     if (lower == L"/help") {
-        reply = L"L3 命令：/status、/time、/new。模型和 API Key 请使用右上角 AI 设置；Ctrl+Enter 强制进入 L3。";
+        reply = L"L3 命令：/status、/time、/apps <关键词>、/files <关键词>、/open <应用名>、/open-file <文件名>、/new。模型和 API Key 请使用右上角 AI 设置。";
         return true;
     }
     if (lower == L"/status") {
@@ -872,6 +875,67 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
         wchar_t buffer[64]{};
         swprintf_s(buffer, L"当前时间：%04u-%02u-%02u %02u:%02u:%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
         reply = buffer;
+        return true;
+    }
+    if (lower.starts_with(L"/apps ")) {
+        const auto query = Trim(input.substr(6));
+        if (query.empty()) { reply = L"用法：/apps <关键词>"; return true; }
+        AppSearch apps;
+        apps.BuildIndex();
+        const auto results = apps.Query(query, 8);
+        if (results.empty()) { reply = L"没有找到匹配的应用。"; return true; }
+        reply = L"应用结果：";
+        for (const auto& item : results) reply += L"\r\n- " + item.title;
+        return true;
+    }
+    if (lower.starts_with(L"/files ")) {
+        const auto query = Trim(input.substr(7));
+        if (query.empty()) { reply = L"用法：/files <关键词>"; return true; }
+        GozSearch files;
+        if (!files.Available()) { reply = L"文件索引当前未就绪；应用搜索和其他 L3 本地工具仍可使用。"; return true; }
+        const auto results = files.QuerySync(query, 8);
+        if (results.empty()) { reply = L"没有找到匹配的文件或文件夹。"; return true; }
+        reply = L"文件结果：";
+        for (const auto& item : results) reply += L"\r\n- " + item.target;
+        return true;
+    }
+    if (lower.starts_with(L"/open ")) {
+        const auto query = Trim(input.substr(6));
+        if (query.empty()) { reply = L"用法：/open <应用名>"; return true; }
+        AppSearch apps;
+        apps.BuildIndex();
+        const auto results = apps.Query(query, 12);
+        std::vector<SearchResult> exact;
+        const auto expected = Lower(query);
+        for (const auto& item : results) if (Lower(item.title) == expected) exact.push_back(item);
+        if (exact.size() != 1) {
+            reply = exact.empty() ? L"没有唯一精确匹配的应用，未执行打开。" : L"存在多个同名应用，未执行打开。请使用更精确名称。";
+            return true;
+        }
+        const auto targetLower = Lower(fs::path(exact[0].target).filename().wstring());
+        if (targetLower == L"cmd.exe" || targetLower == L"powershell.exe" || targetLower == L"pwsh.exe") {
+            reply = L"L3 不启动命令解释器。需要终端或任意命令时请显式进入 L4。";
+            return true;
+        }
+        const auto launched = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", exact[0].target.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        reply = launched > 32 ? L"已打开：" + exact[0].title : L"打开失败，ShellExecute 错误=" + std::to_wstring(launched);
+        return true;
+    }
+    if (lower.starts_with(L"/open-file ")) {
+        const auto query = Trim(input.substr(11));
+        if (query.empty()) { reply = L"用法：/open-file <文件名>"; return true; }
+        GozSearch files;
+        if (!files.Available()) { reply = L"文件索引当前未就绪，未执行打开。"; return true; }
+        const auto results = files.QuerySync(query, 20);
+        std::vector<SearchResult> exact;
+        const auto expected = Lower(query);
+        for (const auto& item : results) if (Lower(item.title) == expected || Lower(item.target) == expected) exact.push_back(item);
+        if (exact.size() != 1) {
+            reply = exact.empty() ? L"没有唯一精确匹配的文件，未执行打开。" : L"存在多个同名文件，未执行打开。请使用完整路径。";
+            return true;
+        }
+        const auto launched = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", exact[0].target.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        reply = launched > 32 ? L"已打开：" + exact[0].target : L"打开失败，ShellExecute 错误=" + std::to_wstring(launched);
         return true;
     }
     if (lower.starts_with(L"/key ")) {

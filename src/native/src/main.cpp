@@ -41,8 +41,16 @@ bool RunNativeSelfTest() {
     consumedSecret = false;
     if (!l3.TryHandleLocal(L"/help", reply, consumedSecret) || reply.empty() || consumedSecret) return false;
     if (reply.find(L"/status") == std::wstring::npos || reply.find(L"/time") == std::wstring::npos ||
-        reply.find(L"/new") == std::wstring::npos || reply.find(L"Ctrl+Enter") == std::wstring::npos) return false;
+        reply.find(L"/apps") == std::wstring::npos || reply.find(L"/files") == std::wstring::npos ||
+        reply.find(L"/open") == std::wstring::npos || reply.find(L"/open-file") == std::wstring::npos ||
+        reply.find(L"/new") == std::wstring::npos) return false;
     if (reply.find(L"4317") != std::wstring::npos || reply.find(L"4318") != std::wstring::npos || reply.find(L"MCP") != std::wstring::npos) return false;
+
+    for (const wchar_t* command : {L"/apps Notepad", L"/files TuringDesk"}) {
+        reply.clear();
+        consumedSecret = false;
+        if (!l3.TryHandleLocal(command, reply, consumedSecret) || reply.empty() || consumedSecret) return false;
+    }
 
     for (const wchar_t* command : {L"/new", L"/new-chat", L"新对话"}) {
         reply.clear();

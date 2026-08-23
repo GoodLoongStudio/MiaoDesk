@@ -71,6 +71,8 @@ add_executable(TuringDeskWallpaper WIN32
     src/WallpaperPackage.cpp
     src/VideoWallpaperPlayer.cpp
     src/VideoWallpaperSet.cpp
+    src/AppSearch.cpp
+    src/GozSearch.cpp
     src/L3Agent.cpp
 )
 

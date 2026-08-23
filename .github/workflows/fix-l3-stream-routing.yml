@@ -1,0 +1,102 @@
+name: Repair ordinary L3 streaming route
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-l3-stream-routing.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Keep ordinary chat on streaming Direct Model
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/native/src/L3CliWindow.cpp')
+          text = path.read_text(encoding='utf-8')
+
+          lower_anchor = '''std::wstring Lower(std::wstring value) {
+              std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+                  return static_cast<wchar_t>(std::towlower(ch));
+              });
+              return value;
+          }
+          '''
+          helper = lower_anchor + '''\n// Route only explicit desktop actions through the non-streaming Native Tool runtime.\n// Informational questions such as "explain PowerPoint" or "what is a file system"\n// must stay on L3Agent so ordinary conversation keeps the SSE streaming path.\nbool WantsNativeTools(const std::wstring& prompt) {\n    const auto lower = Lower(prompt);\n    const bool action = lower.find(L"创建") != std::wstring::npos ||\n                        lower.find(L"生成") != std::wstring::npos ||\n                        lower.find(L"新建") != std::wstring::npos ||\n                        lower.find(L"制作") != std::wstring::npos ||\n                        lower.find(L"打开") != std::wstring::npos ||\n                        lower.find(L"列出") != std::wstring::npos ||\n                        lower.find(L"列一下") != std::wstring::npos ||\n                        lower.find(L"查看") != std::wstring::npos ||\n                        lower.find(L"看看") != std::wstring::npos ||\n                        lower.find(L"create") != std::wstring::npos ||\n                        lower.find(L"generate") != std::wstring::npos ||\n                        lower.find(L"make") != std::wstring::npos ||\n                        lower.find(L"open") != std::wstring::npos ||\n                        lower.find(L"list") != std::wstring::npos ||\n                        lower.find(L"show") != std::wstring::npos;\n    if (!action) return false;\n\n    return lower.find(L"ppt") != std::wstring::npos ||\n           lower.find(L"powerpoint") != std::wstring::npos ||\n           lower.find(L"演示文稿") != std::wstring::npos ||\n           lower.find(L"幻灯片") != std::wstring::npos ||\n           lower.find(L"桌面") != std::wstring::npos ||\n           lower.find(L"下载") != std::wstring::npos ||\n           lower.find(L"文档") != std::wstring::npos ||\n           lower.find(L"文件") != std::wstring::npos ||\n           lower.find(L"目录") != std::wstring::npos ||\n           lower.find(L"文件夹") != std::wstring::npos ||\n           lower.find(L"应用") != std::wstring::npos ||\n           lower.find(L"desktop") != std::wstring::npos ||\n           lower.find(L"downloads") != std::wstring::npos ||\n           lower.find(L"documents") != std::wstring::npos ||\n           lower.find(L"file") != std::wstring::npos ||\n           lower.find(L"folder") != std::wstring::npos ||\n           lower.find(L"app") != std::wstring::npos;\n}\n'''
+          if lower_anchor not in text:
+              raise SystemExit('Lower anchor not found')
+          text = text.replace(lower_anchor, helper, 1)
+
+          old_route = '''ActiveRuntime ChooseRuntime(CliState& state) {
+              // Ordinary L3 is owned by TuringDesk. External agent runtimes belong to L4
+              // and must never become an automatic fallback merely because they are installed.
+              if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+              return ActiveRuntime::DirectModel;
+          }
+
+          std::wstring RuntimeStatusText(CliState& state) {
+              const auto selected = ChooseRuntime(state);
+              std::wstring text = L"当前路由：" + RuntimeName(selected);
+              text += L" · " + RuntimeExecutionLabel(selected);
+              text += L"\\r\\nL3 外部 Agent/Harness：不参与；复杂任务请交给 L4。";
+              text += L"\\r\\nNative Tools：" + state.directTools->StatusText(*state.agent);
+              return text;
+          }
+          '''
+          new_route = '''ActiveRuntime ChooseRuntime(CliState& state, const std::wstring& prompt) {
+              // Ordinary L3 conversation remains on L3Agent's SSE streaming path. Only an
+              // explicit desktop action may enter the TuringDesk-owned Native Tool runtime.
+              if (WantsNativeTools(prompt) && state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+              return ActiveRuntime::DirectModel;
+          }
+
+          std::wstring RuntimeStatusText(CliState& state) {
+              std::wstring text = L"普通对话：Direct Model Runtime · SSE 流式";
+              text += L"\\r\\n明确桌面动作：TuringDesk Native Tool Runtime（可用时）";
+              text += L"\\r\\nL3 外部 Agent/Harness：不参与；复杂任务请交给 L4。";
+              text += L"\\r\\nNative Tools：" + state.directTools->StatusText(*state.agent);
+              return text;
+          }
+          '''
+          if old_route not in text:
+              raise SystemExit('runtime routing anchor not found')
+          text = text.replace(old_route, new_route, 1)
+
+          old_send = '    ActiveRuntime runtime = ChooseRuntime(state);\n'
+          new_send = '    ActiveRuntime runtime = ChooseRuntime(state, actualPrompt);\n'
+          if old_send not in text:
+              raise SystemExit('send route anchor not found')
+          text = text.replace(old_send, new_send, 1)
+
+          old_retry = '        if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;\n'
+          new_retry = '        if (state.lastRuntime == ActiveRuntime::DirectTools && WantsNativeTools(actualPrompt) && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;\n'
+          if old_retry not in text:
+              raise SystemExit('retry route anchor not found')
+          text = text.replace(old_retry, new_retry, 1)
+
+          path.write_text(text, encoding='utf-8')
+      - name: Guard route semantics
+        shell: bash
+        run: |
+          grep -F 'ChooseRuntime(CliState& state, const std::wstring& prompt)' src/native/src/L3CliWindow.cpp
+          grep -F '普通对话：Direct Model Runtime · SSE 流式' src/native/src/L3CliWindow.cpp
+          grep -F 'WantsNativeTools(actualPrompt)' src/native/src/L3CliWindow.cpp
+          ! grep -F 'ActiveRuntime runtime = ChooseRuntime(state);' src/native/src/L3CliWindow.cpp
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-l3-stream-routing.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/native/src/L3CliWindow.cpp .github/workflows/fix-l3-stream-routing.yml
+          git commit -m 'fix: keep ordinary L3 chat on streaming runtime'
+          git push origin HEAD:main

@@ -33,9 +33,12 @@ if (-not $nativeTools.Contains('std::string NativeToolDefinitionsJson()')) {
     throw 'NativeTools.cpp raw registry definition missing.'
 }
 
+# Check semantic source markers instead of exact C++ quote escaping. The source
+# contains escaped quotes inside a C++ string literal, so matching a rendered
+# JSON token such as '"dynamicTools"' is brittle and can false-fail the build.
 foreach ($marker in @(
     'NativeToolDefinitionsJson()',
-    '"dynamicTools"',
+    'dynamicTools',
     'WriteLine(threadStart)'
 )) {
     if (-not $codex.Contains($marker)) {

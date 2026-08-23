@@ -23,19 +23,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Guard Codex-first AI baseline
+      - name: Guard L3 and L4 runtime boundary
         shell: pwsh
         run: |
           $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
-          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime')) {
-            if (-not $source.Contains($marker)) { throw "Codex-first L3 marker missing: $marker" }
+          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
+            if ($source.Contains($marker)) { throw "External Agent/legacy marker leaked into ordinary L3: $marker" }
+          }
+          foreach ($marker in @('普通对话：Direct Model Runtime · SSE 流式', 'WantsNativeTools(actualPrompt)', 'L3 外部 Agent/Harness/Relay：不参与')) {
+            if (-not $source.Contains($marker)) { throw "Required native L3 marker missing: $marker" }
           }
           $cmake = Get-Content 'src/native/CMakeLists.txt' -Raw
-          foreach ($marker in @('src/CodexRuntime.cpp', 'src/DirectToolRuntimeDisabled.cpp')) {
-            if (-not $cmake.Contains($marker)) { throw "Required AI runtime source missing: $marker" }
+          if (-not $cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
+            throw 'TuringDesk Native Tool runtime must be compiled into the default L3 route.'
           }
-          if ($cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
-            throw 'DirectAgentRuntimeV2 must not be compiled into the default AI route.'
+          foreach ($marker in @('src/CodexRuntime.cpp', 'src/DirectToolRuntimeDisabled.cpp')) {
+            if ($cmake.Contains($marker)) { throw "Retired/external runtime must not be compiled into TuringDesk L3: $marker" }
           }
 
       - name: Configure x64

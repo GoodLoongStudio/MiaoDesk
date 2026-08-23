@@ -10,6 +10,8 @@ on:
       - 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
       - 'docs/V1-SCENE-RELEASE-SCOPE.md'
       - 'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
+      - 'docs/TURINGDESK-DESIGN-SPEC.md'
+      - '.github/workflows/repair-release-doc-contract.yml'
       - '.github/workflows/powershell-syntax.yml'
   workflow_dispatch:
 
@@ -39,11 +41,17 @@ jobs:
           foreach ($path in $required) {
             if (-not (Test-Path $path -PathType Leaf)) { throw "Required current release baseline missing: $path" }
           }
-      - name: Reject superseded design baseline
+      - name: Reject superseded architecture restore artifacts
         shell: pwsh
         run: |
-          if (Test-Path 'docs/TURINGDESK-DESIGN-SPEC.md' -PathType Leaf) {
-            throw 'Superseded docs/TURINGDESK-DESIGN-SPEC.md must not return. Use the 2026-08-23 product/native/L3 baselines.'
+          $forbidden = @(
+            'docs/TURINGDESK-DESIGN-SPEC.md',
+            '.github/workflows/repair-release-doc-contract.yml'
+          )
+          foreach ($path in $forbidden) {
+            if (Test-Path $path -PathType Leaf) {
+              throw "Superseded architecture artifact must not return: $path"
+            }
           }
       - name: Parse PowerShell scripts
         shell: pwsh

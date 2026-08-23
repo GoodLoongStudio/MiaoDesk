@@ -1,0 +1,154 @@
+name: Repair L3 nonblocking lifecycle v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-l3-nonblocking-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch source
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/native/src/L3CliWindow.cpp')
+          s = p.read_text(encoding='utf-8')
+
+          needle = '''    case WM_DESTROY:\n        gCliGeneration.fetch_add(1, std::memory_order_relaxed);\n        state->agent->Stop();\n        state->codex->Stop();\n        return 0;\n    }\n'''
+          replacement = '''    case WM_DESTROY:\n        gCliGeneration.fetch_add(1, std::memory_order_relaxed);\n        state->agent->Stop();\n        state->codex->Stop();\n        return 0;\n    case WM_NCDESTROY:\n        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);\n        if (state->backgroundBrush) DeleteObject(state->backgroundBrush);\n        if (state->monoFont) DeleteObject(state->monoFont);\n        delete state;\n        return DefWindowProcW(hwnd, message, wParam, lParam);\n    }\n'''
+          if needle not in s:
+              raise SystemExit('destroy anchor missing')
+          s = s.replace(needle, replacement, 1)
+
+          start = s.index('bool ShowL3CliWindow(')
+          end = s.index('\n} // namespace turingdesk', start)
+          func = r'''bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.hInstance = instance;
+    wc.lpfnWndProc = &CliProc;
+    wc.lpszClassName = kCliClass;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+
+    if (HWND existing = FindWindowW(kCliClass, nullptr)) {
+        auto* existingState = reinterpret_cast<CliState*>(GetWindowLongPtrW(existing, GWLP_USERDATA));
+        ShowWindow(existing, SW_SHOWNORMAL);
+        SetForegroundWindow(existing);
+        if (existingState && existingState->input && !Trim(initialPrompt).empty()) {
+            SetWindowTextW(existingState->input, initialPrompt.c_str());
+            if (!existingState->busy) SendPrompt(*existingState);
+            else SetFocus(existingState->input);
+        } else if (existingState && existingState->input) {
+            SetFocus(existingState->input);
+        }
+        return true;
+    }
+
+    auto* state = new CliState{};
+    state->instance = instance;
+    state->owner = owner;
+    state->agent = &agent;
+    state->codex = &gCodexRuntime;
+    state->backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
+    state->monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                  FIXED_PITCH | FF_MODERN, L"Consolas");
+    state->uiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+
+    RECT ownerRect{};
+    GetWindowRect(owner, &ownerRect);
+    constexpr int width = 760;
+    constexpr int height = 480;
+    const int x = ownerRect.left;
+    const int y = ownerRect.top;
+
+    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · AI Agent",
+                                  WS_POPUP | WS_BORDER,
+                                  x, y, width, height, owner, nullptr, instance, state);
+    if (!window) {
+        if (state->backgroundBrush) DeleteObject(state->backgroundBrush);
+        if (state->monoFont) DeleteObject(state->monoFont);
+        delete state;
+        return false;
+    }
+
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · L3 AI", WS_CHILD | WS_VISIBLE,
+                                 16, 16, 360, 24, window, nullptr, instance, nullptr);
+    state->settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                      width - 112, 14, 96, 28, window,
+                                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsId)), instance, nullptr);
+    state->transcript = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+                                        16, 52, width - 32, height - 118,
+                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTranscriptId)), instance, nullptr);
+    state->input = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                                   16, height - 50, width - 76, 34,
+                                   window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kInputId)), instance, nullptr);
+    state->close = CreateWindowExW(0, L"BUTTON", L"×", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                   width - 52, height - 48, 36, 30,
+                                   window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseId)), instance, nullptr);
+    if (!title || !state->settings || !state->transcript || !state->input || !state->close) {
+        DestroyWindow(window);
+        return false;
+    }
+
+    SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+    state->oldInputProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(state->input, GWLP_WNDPROC,
+                                                                      reinterpret_cast<LONG_PTR>(&InputProc)));
+    SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->settings, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->close, WM_SETFONT, reinterpret_cast<WPARAM>(state->uiFont), TRUE);
+    SendMessageW(state->transcript, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
+    SendMessageW(state->input, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
+    SendMessageW(state->input, EM_SETCUEBANNER, TRUE,
+                 reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
+
+    AppendRouteLog(L"window: L3 opened; primary=Codex CLI -> Relay/API; fallback=Direct API; nonmodal=1");
+    ShowWindow(window, SW_SHOWNORMAL);
+    SetForegroundWindow(window);
+    SetFocus(state->input);
+    if (!Trim(initialPrompt).empty()) {
+        SetWindowTextW(state->input, initialPrompt.c_str());
+        SendPrompt(*state);
+    }
+    return true;
+}
+'''
+          s = s[:start] + func + s[end:]
+          if 'while (IsWindow(window))' in s:
+              raise SystemExit('nested loop remains')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/native/src/SearchWindow.cpp')
+          s = p.read_text(encoding='utf-8')
+          old = '    SetWindowTextW(edit_, L""); SetExpanded(false); ShowAndFocus();\n'
+          new = '    SetWindowTextW(edit_, L"");\n    SetExpanded(false);\n'
+          if old not in s:
+              raise SystemExit('search focus anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          rm .github/workflows/repair-l3-nonblocking-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/L3CliWindow.cpp src/native/src/SearchWindow.cpp .github/workflows/repair-l3-nonblocking-v2.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make L3 window nonblocking"
+          git push origin HEAD:main

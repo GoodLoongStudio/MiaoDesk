@@ -1,4 +1,5 @@
 #include "turingdesk/L3CliWindow.h"
+#include "turingdesk/CodexRuntime.h"
 #include "turingdesk/DirectToolRuntime.h"
 #include "turingdesk/ModelSettingsWindow.h"
 #include <CommCtrl.h>
@@ -23,6 +24,7 @@ constexpr UINT kDoneMessage = WM_APP + 32;
 enum class ActiveRuntime {
     DirectModel,
     DirectTools,
+    Codex,
 };
 
 struct UiMessage {
@@ -40,6 +42,7 @@ struct CliState {
     HWND close{};
     WNDPROC oldInputProc{};
     L3Agent* agent{};
+    CodexRuntime* codex{};
     DirectToolRuntime* directTools{};
     HBRUSH backgroundBrush{};
     HFONT monoFont{};
@@ -54,6 +57,7 @@ struct CliState {
 };
 
 std::atomic_uint64_t gCliGeneration{0};
+CodexRuntime gCodexRuntime;
 DirectToolRuntime gDirectToolRuntime;
 
 std::wstring Trim(std::wstring value) {
@@ -68,47 +72,6 @@ std::wstring Lower(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(ch));
     });
     return value;
-}
-
-// Route only explicit desktop actions through the non-streaming Native Tool runtime.
-// Informational questions such as "explain PowerPoint" or "what is a file system"
-// must stay on L3Agent so ordinary conversation keeps the SSE streaming path.
-bool WantsNativeTools(const std::wstring& prompt) {
-    const auto lower = Lower(prompt);
-    const bool action = lower.find(L"创建") != std::wstring::npos ||
-                        lower.find(L"生成") != std::wstring::npos ||
-                        lower.find(L"新建") != std::wstring::npos ||
-                        lower.find(L"制作") != std::wstring::npos ||
-                        lower.find(L"打开") != std::wstring::npos ||
-                        lower.find(L"列出") != std::wstring::npos ||
-                        lower.find(L"列一下") != std::wstring::npos ||
-                        lower.find(L"查看") != std::wstring::npos ||
-                        lower.find(L"看看") != std::wstring::npos ||
-                        lower.find(L"create") != std::wstring::npos ||
-                        lower.find(L"generate") != std::wstring::npos ||
-                        lower.find(L"make") != std::wstring::npos ||
-                        lower.find(L"open") != std::wstring::npos ||
-                        lower.find(L"list") != std::wstring::npos ||
-                        lower.find(L"show") != std::wstring::npos;
-    if (!action) return false;
-
-    return lower.find(L"ppt") != std::wstring::npos ||
-           lower.find(L"powerpoint") != std::wstring::npos ||
-           lower.find(L"演示文稿") != std::wstring::npos ||
-           lower.find(L"幻灯片") != std::wstring::npos ||
-           lower.find(L"桌面") != std::wstring::npos ||
-           lower.find(L"下载") != std::wstring::npos ||
-           lower.find(L"文档") != std::wstring::npos ||
-           lower.find(L"文件") != std::wstring::npos ||
-           lower.find(L"目录") != std::wstring::npos ||
-           lower.find(L"文件夹") != std::wstring::npos ||
-           lower.find(L"应用") != std::wstring::npos ||
-           lower.find(L"desktop") != std::wstring::npos ||
-           lower.find(L"downloads") != std::wstring::npos ||
-           lower.find(L"documents") != std::wstring::npos ||
-           lower.find(L"file") != std::wstring::npos ||
-           lower.find(L"folder") != std::wstring::npos ||
-           lower.find(L"app") != std::wstring::npos;
 }
 
 bool ContainsHttpStatus(const std::wstring& text, int status) {
@@ -182,9 +145,10 @@ void AppendCompleted(CliState& state, const std::wstring& user, const std::wstri
     RenderTranscript(state);
 }
 
-std::wstring RuntimeName(ActiveRuntime runtime) {
+std::wstring RuntimeName(const CliState&, ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::DirectTools: return L"TuringDesk Native Tool Runtime";
+    case ActiveRuntime::Codex: return L"Codex CLI Agent Runtime";
+    case ActiveRuntime::DirectTools: return L"Direct Agent Tool Runtime";
     case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
     }
     return L"Unknown Runtime";
@@ -192,31 +156,41 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
 
 std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     switch (runtime) {
+    case ActiveRuntime::Codex: return L"Agent Tools=启用";
     case ActiveRuntime::DirectTools: return L"Native Tools=启用";
     case ActiveRuntime::DirectModel: return L"文本模式";
     }
     return L"";
 }
 
-ActiveRuntime ChooseRuntime(CliState& state, const std::wstring& prompt) {
-    // Ordinary L3 conversation remains on L3Agent's SSE streaming path. Only an
-    // explicit desktop action may enter the TuringDesk-owned Native Tool runtime.
-    if (WantsNativeTools(prompt) && state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+ActiveRuntime ChooseRuntime(CliState& state) {
+    // Codex CLI is the preferred L3 agent runtime. Direct runtimes are retained
+    // only as compatibility fallbacks for providers that do not yet expose the
+    // Responses wire protocol required by Codex.
+    if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;
+    if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
     return ActiveRuntime::DirectModel;
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
-    std::wstring text = L"普通对话：Direct Model Runtime · SSE 流式";
-    text += L"\r\n明确桌面动作：TuringDesk Native Tool Runtime（可用时）";
-    text += L"\r\nL3 外部 Agent/Harness：不参与；复杂任务请交给 L4。";
-    text += L"\r\nNative Tools：" + state.directTools->StatusText(*state.agent);
+    const auto status = state.codex->Status(*state.agent);
+    const auto selected = ChooseRuntime(state);
+    std::wstring text = L"当前路由：" + RuntimeName(state, selected);
+    text += L" · " + RuntimeExecutionLabel(selected);
+    text += L"\r\nCodex CLI：";
+    text += status.binaryAvailable ? L"已安装" : L"未安装";
+    text += L"\r\nProvider → Codex：";
+    text += status.providerCompatible ? L"Responses 可直连（默认使用 Codex CLI）" : L"等待 Responses 协议桥";
+    text += L"\r\nDirect Tools fallback：" + state.directTools->StatusText(*state.agent);
+    text += L"\r\n" + status.message;
     return text;
 }
 
 void StopTurn(CliState& state) {
     if (!state.busy) return;
     gCliGeneration.fetch_add(1, std::memory_order_relaxed);
-    if (state.activeRuntime == ActiveRuntime::DirectTools) state.directTools->Stop();
+    if (state.activeRuntime == ActiveRuntime::Codex) state.codex->Stop();
+    else if (state.activeRuntime == ActiveRuntime::DirectTools) state.directTools->Stop();
     else state.agent->Stop();
     state.busy = false;
     if (state.streaming.empty()) state.streaming = L"[已停止]";
@@ -257,6 +231,7 @@ void SendPrompt(CliState& state) {
         if (state.agent->TryHandleLocal(actualPrompt, localReply, consumedSecret)) {
             if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {
                 state.lastPrompt.clear();
+                state.codex->ResetSession();
                 state.directTools->ResetSession();
             }
             AppendCompleted(state, typedPrompt, localReply);
@@ -269,9 +244,10 @@ void SendPrompt(CliState& state) {
         return;
     }
 
-    ActiveRuntime runtime = ChooseRuntime(state, actualPrompt);
+    ActiveRuntime runtime = ChooseRuntime(state);
     if (retry) {
-        if (state.lastRuntime == ActiveRuntime::DirectTools && WantsNativeTools(actualPrompt) && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+        if (state.lastRuntime == ActiveRuntime::Codex && state.codex->CanHandle(*state.agent)) runtime = ActiveRuntime::Codex;
+        else if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
         else if (state.lastRuntime == ActiveRuntime::DirectModel) runtime = ActiveRuntime::DirectModel;
     }
 
@@ -281,7 +257,7 @@ void SendPrompt(CliState& state) {
     }
     state.activeRuntime = runtime;
     state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(runtime) + L" · " + RuntimeExecutionLabel(runtime) + L"\r\n";
+    state.transcriptPrefix += L"[Runtime] " + RuntimeName(state, runtime) + L" · " + RuntimeExecutionLabel(runtime) + L"\r\n";
     state.transcriptPrefix += L"AI  ";
     state.streaming.clear();
     state.busy = true;
@@ -298,7 +274,9 @@ void SendPrompt(CliState& state) {
         PostUi(hwnd, kDoneMessage, generation, std::move(done));
     };
 
-    if (runtime == ActiveRuntime::DirectTools) {
+    if (runtime == ActiveRuntime::Codex) {
+        state.codex->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
+    } else if (runtime == ActiveRuntime::DirectTools) {
         state.directTools->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
     } else {
         state.agent->AskAsync(actualPrompt, std::move(onDelta), std::move(onDone));
@@ -337,6 +315,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (LOWORD(wParam) == kSettingsId && HIWORD(wParam) == BN_CLICKED) {
             if (state->busy) StopTurn(*state);
             if (ShowModelSettingsWindow(state->instance, hwnd, *state->agent)) {
+                state->codex->ResetSession();
                 state->directTools->ResetSession();
                 state->lastPrompt.clear();
                 state->transcriptPrefix += L"[配置] " + state->agent->Config().model + L" 已保存\r\n";
@@ -377,7 +356,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         state->streaming.clear();
         state->busy = false;
         EnableWindow(state->input, TRUE);
-        RenderTranscript(*state);
+        RenderTranscript(state->streaming.empty() ? *state : *state);
         SetFocus(state->input);
         return 0;
     }
@@ -403,6 +382,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
         state->agent->Stop();
         state->directTools->Stop();
+        state->codex->Stop();
         return 0;
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
@@ -424,6 +404,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     state.instance = instance;
     state.owner = owner;
     state.agent = &agent;
+    state.codex = &gCodexRuntime;
     state.directTools = &gDirectToolRuntime;
     state.backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
     state.monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -447,7 +428,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Native AI Agent", WS_CHILD | WS_VISIBLE,
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Codex CLI Agent", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
     state.settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,

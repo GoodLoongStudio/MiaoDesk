@@ -16,7 +16,7 @@ namespace {
 constexpr wchar_t kHarnessHost[] = L"127.0.0.1";
 constexpr INTERNET_PORT kHarnessPort = 3080;
 constexpr wchar_t kHarnessPath[] = L"/";
-constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";
+constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080";
 constexpr char kHarnessBootMarker[] = "window.__DSH_BOOT__";
 constexpr std::size_t kMaxReadinessProbeBytes = 256 * 1024;
 
@@ -461,7 +461,7 @@ std::wstring HarnessProcessManager::LogPath() {
 std::wstring HarnessProcessManager::BuildLaunchCommand() {
     const LaunchSpec resolved = ResolveLaunchSpec();
     if (resolved.Valid()) return resolved.commandLine;
-    return L"<TuringDesk>\\Runtime\\Node\\node.exe <TuringDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
+    return L"<TuringDesk>\\Runtime\\Node\\node.exe <TuringDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080";
 }
 
 bool HarnessProcessManager::SelfTest() {
@@ -475,9 +475,6 @@ bool HarnessProcessManager::SelfTest() {
                command.find(L"--host 0.0.0.0") == std::wstring::npos &&
                command.find(L"--host ::") == std::wstring::npos;
     };
-    const auto suppressesExternalBrowser = [](const std::wstring& command) {
-        return command.find(L"--no-open") != std::wstring::npos;
-    };
 
     return HarnessSettingsBridgeSelfTest() &&
            DefaultUrl() == L"http://localhost:3080" &&
@@ -486,9 +483,7 @@ bool HarnessProcessManager::SelfTest() {
            dshCommand.find(L"npx") == std::wstring::npos &&
            dshCommand.find(L"registry.npmjs.org") == std::wstring::npos &&
            bindsOnlyLoopback(dshCommand) &&
-           suppressesExternalBrowser(dshCommand) &&
            BuildLaunchCommand().find(L"npx") == std::wstring::npos &&
-           suppressesExternalBrowser(BuildLaunchCommand()) &&
            std::string_view(kHarnessBootMarker) == "window.__DSH_BOOT__" &&
            !LogPath().empty();
 }

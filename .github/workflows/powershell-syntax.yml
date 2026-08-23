@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'scripts/**/*.ps1'
+      - 'docs/TURINGDESK-DESIGN-SPEC.md'
+      - 'docs/V1-SCENE-RELEASE-SCOPE.md'
+      - 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
+      - 'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
       - '.github/workflows/powershell-syntax.yml'
   workflow_dispatch:
 
@@ -21,6 +25,18 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v5
+      - name: Verify release acceptance baselines
+        shell: pwsh
+        run: |
+          $required = @(
+            'docs/TURINGDESK-DESIGN-SPEC.md',
+            'docs/V1-SCENE-RELEASE-SCOPE.md',
+            'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md',
+            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Required release acceptance baseline missing: $path" }
+          }
       - name: Parse PowerShell scripts
         shell: pwsh
         run: |

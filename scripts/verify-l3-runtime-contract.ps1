@@ -20,10 +20,12 @@ $requiredFiles = @(
     $contractDocPath, $readmePath
 )
 foreach ($path in $requiredFiles) {
-    if (-not (Test-Path $path -PathType Leaf)) { throw "L3 runtime contract input missing: $path" }
+    if (-not (Test-Path $path -PathType Leaf)) {
+        throw "L3 runtime contract input missing: $path"
+    }
 }
 if (Test-Path $obsoletePlanPath) {
-    throw 'Superseded AI-WORKBENCH-CONSOLIDATION-PLAN.md must stay removed; it encoded the retired Direct-Model-first L3 architecture.'
+    throw 'Superseded AI-WORKBENCH-CONSOLIDATION-PLAN.md must stay removed.'
 }
 
 $l3 = Get-Content $l3Path -Raw
@@ -38,49 +40,85 @@ $nativeBaseline = Get-Content $nativeBaselinePath -Raw
 $contractDoc = Get-Content $contractDocPath -Raw
 $readme = Get-Content $readmePath -Raw
 
-# 1) Runtime source: Codex is primary, Direct API exists only as fallback.
+# 1) Runtime source: Codex must be primary and Direct API must remain fallback only.
 $requiredL3 = @(
-    '#include "turingdesk/CodexRuntime.h"', 'ActiveRuntime::Codex', 'gCodexRuntime',
-    'state.codex->AskAsync', 'state.agent->AskAsync', 'Codex CLI → Relay/API',
-    '[Fallback] Codex CLI 失败，已切换 Direct API', 'route: primary codex start',
-    'fallback: direct api start', 'l3-runtime.log', 'codex-runtime.log'
+    '#include "turingdesk/CodexRuntime.h"',
+    'ActiveRuntime::Codex',
+    'gCodexRuntime',
+    'state.codex->AskAsync',
+    'state.agent->AskAsync',
+    'route: primary codex start',
+    'fallback: direct api start',
+    'l3-runtime.log',
+    'codex-runtime.log'
 )
 foreach ($marker in $requiredL3) {
-    if (-not $l3.Contains($marker)) { throw "L3 Codex-first contract marker missing: $marker" }
-}
-$forbiddenL3 = @(
-    'DirectToolRuntime', 'WantsNativeTools', 'L3 外部 Agent/Harness/Relay：不参与',
-    '普通对话：Direct Model Runtime · SSE 流式',
-    'Ordinary L3 must not depend on external Agent/Harness runtime marker'
-)
-foreach ($marker in $forbiddenL3) {
-    if ($l3.Contains($marker)) { throw "Retired L3 routing marker returned: $marker" }
+    if (-not $l3.Contains($marker)) {
+        throw "L3 Codex-first contract marker missing: $marker"
+    }
 }
 
-# 2) Build graph: CodexRuntime and NativeTools must be in TuringDesk.
-foreach ($marker in @('src/CodexRuntime.cpp', 'src/NativeTools.cpp', 'TuringDeskL3ContractCheck', 'add_dependencies(TuringDesk TuringDeskL3ContractCheck)')) {
-    if (-not $cmake.Contains($marker)) { throw "CMake L3 build contract marker missing: $marker" }
+$forbiddenL3 = @(
+    'DirectToolRuntime',
+    'WantsNativeTools',
+    'ActiveRuntime::DirectTools',
+    'src/DirectAgentRuntimeV2.cpp'
+)
+foreach ($marker in $forbiddenL3) {
+    if ($l3.Contains($marker)) {
+        throw "Retired L3 routing marker returned: $marker"
+    }
+}
+
+# 2) Build graph: CodexRuntime and NativeTools must be compiled into TuringDesk.
+foreach ($marker in @(
+    'src/CodexRuntime.cpp',
+    'src/NativeTools.cpp',
+    'TuringDeskL3ContractCheck',
+    'add_dependencies(TuringDesk TuringDeskL3ContractCheck)'
+)) {
+    if (-not $cmake.Contains($marker)) {
+        throw "CMake L3 build contract marker missing: $marker"
+    }
 }
 if ($cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
     throw 'Retired DirectToolRuntime must not be compiled into the default L3 route.'
 }
 
-# 3) Codex transport and diagnostics must stay provider-capability based.
+# 3) Codex transport and diagnostics must stay capability-based, not brand-based.
 foreach ($marker in @(
-    'OpenAiResponsesBase', 'ChatCompletionsBase', 'setup.relayRequired = true',
-    'codex-runtime.log', 'relay: readiness failed', 'app-server: initialize',
-    'thread/start', 'turn/start', 'session: failed'
+    'OpenAiResponsesBase',
+    'ChatCompletionsBase',
+    'setup.relayRequired = true',
+    'codex-runtime.log',
+    'relay: readiness failed',
+    'app-server: initialize',
+    'thread/start',
+    'turn/start',
+    'session: failed'
 )) {
-    if (-not $codex.Contains($marker)) { throw "Codex runtime diagnostic/transport marker missing: $marker" }
+    if (-not $codex.Contains($marker)) {
+        throw "Codex runtime diagnostic/transport marker missing: $marker"
+    }
 }
-foreach ($marker in @('providerId == L"deepseek"', 'providerId) == L"deepseek"')) {
-    if ($codex.Contains($marker)) { throw "Codex routing must not be hard-wired to DeepSeek: $marker" }
+foreach ($marker in @(
+    'providerId == L"deepseek"',
+    'providerId) == L"deepseek"'
+)) {
+    if ($codex.Contains($marker)) {
+        throw "Codex routing must not be hard-wired to DeepSeek: $marker"
+    }
 }
 
-# 4) Cloud build: x64 and ARM64 must both run the same guard before Configure/Build.
+# 4) Cloud build: both x64 and ARM64 must run the same guard before Configure/Build.
 foreach ($workflow in @($armWorkflow, $x64Workflow)) {
-    foreach ($marker in @('Verify L3 Codex-first runtime contract', '.\scripts\verify-l3-runtime-contract.ps1')) {
-        if (-not $workflow.Contains($marker)) { throw "Cloud build is missing L3 contract guard: $marker" }
+    foreach ($marker in @(
+        'Verify L3 Codex-first runtime contract',
+        '.\scripts\verify-l3-runtime-contract.ps1'
+    )) {
+        if (-not $workflow.Contains($marker)) {
+            throw "Cloud build is missing L3 contract guard: $marker"
+        }
     }
 }
 if ($armWorkflow.Contains('Remove-Item build/package/Codex -Recurse')) {
@@ -90,47 +128,88 @@ if ($armWorkflow.Contains('Remove-Item build/package/CodexRelay -Recurse')) {
     throw 'ARM64 artifact must not delete bundled Codex Relay after validation.'
 }
 foreach ($marker in @(
-    'Validate full Codex CLI runtime', 'Real Codex Relay protocol bridge smoke test',
+    'Validate full Codex CLI runtime',
+    'Real Codex Relay protocol bridge smoke test',
     'Real Codex app-server through Relay end-to-end smoke test',
-    '.\build\package\Codex\codex.exe', '.\build\package\CodexRelay\codex-relay.exe'
+    '.\build\package\Codex\codex.exe',
+    '.\build\package\CodexRelay\codex-relay.exe'
 )) {
-    if (-not $armWorkflow.Contains($marker)) { throw "ARM64 Codex validation marker missing: $marker" }
-}
-
-# 5) Local deploy entry points must both enforce the contract and refuse missing Codex/Relay.
-foreach ($marker in @('verify-l3-runtime-contract.ps1', 'Codex\codex.exe', 'CodexRelay\codex-relay.exe', 'L3 default route: Codex CLI')) {
-    if (-not $deployCmd.Contains($marker)) { throw "Local deploy CMD Codex-first marker missing: $marker" }
-}
-foreach ($marker in @(
-    'Assert-L3RuntimeContract', 'verify-l3-runtime-contract.ps1', 'Assert-DeployedCodexRuntime',
-    'Codex\codex.exe', 'CodexRelay\codex-relay.exe', 'ArtifactCodex', 'ArtifactRelay',
-    'L3 default route: Codex CLI -> Relay/API; Direct API fallback only'
-)) {
-    if (-not $deployPs1.Contains($marker)) { throw "Direct deploy PowerShell Codex-first marker missing: $marker" }
-}
-
-# 6) Active documentation must agree with code.
-foreach ($marker in @('Codex CLI 永远优先', '轻量 Direct Model fallback', 'Chat Completions Provider 通过 Codex Relay', 'Responses Provider 可直接连接')) {
-    if (-not $productBaseline.Contains($marker)) { throw "Product baseline L3 marker missing: $marker" }
-}
-foreach ($marker in @('Codex CLI `app-server --stdio`', 'Codex Relay', 'Direct Model 是 **fallback**', 'Provider 路由按协议能力判断', 'scripts/verify-l3-runtime-contract.ps1')) {
-    if (-not $nativeBaseline.Contains($marker)) { throw "Native baseline L3 marker missing: $marker" }
-}
-foreach ($marker in @('Codex CLI 是 L3 默认主路由', 'Direct Model 只允许作为失败回退', 'Provider 无品牌绑定', 'l3-runtime.log', 'codex-runtime.log', '本地构建契约', '云端 CI 契约')) {
-    if (-not $contractDoc.Contains($marker)) { throw "L3 design contract marker missing: $marker" }
-}
-$forbiddenActiveDocMarkers = @(
-    'L3 → WinHTTP direct provider', 'L3 → 本地 HTTP 代理',
-    '普通 L3 不启动外部 Agent/Harness',
-    '搜索栏 L3 保持轻量，不启动官方工作台，也不启动旧 Runtime'
-)
-foreach ($doc in @($productBaseline, $nativeBaseline, $contractDoc)) {
-    foreach ($marker in $forbiddenActiveDocMarkers) {
-        if ($doc.Contains($marker)) { throw "Retired Direct-Model-first architecture text returned to an active baseline: $marker" }
+    if (-not $armWorkflow.Contains($marker)) {
+        throw "ARM64 Codex validation marker missing: $marker"
     }
 }
-foreach ($marker in @('Codex CLI `app-server --stdio`', 'Direct Model Runtime', 'Codex Relay', '--no-open', 'L3-CODEX-RUNTIME-CONTRACT.md')) {
-    if (-not $readme.Contains($marker)) { throw "README runtime contract marker missing: $marker" }
+
+# 5) Local deploy entry points must enforce the same contract and runtime checks.
+foreach ($marker in @(
+    'verify-l3-runtime-contract.ps1',
+    'Codex\codex.exe',
+    'CodexRelay\codex-relay.exe',
+    'L3 default route: Codex CLI'
+)) {
+    if (-not $deployCmd.Contains($marker)) {
+        throw "Local deploy CMD Codex-first marker missing: $marker"
+    }
+}
+foreach ($marker in @(
+    'Assert-L3RuntimeContract',
+    'verify-l3-runtime-contract.ps1',
+    'Assert-DeployedCodexRuntime',
+    'Codex\codex.exe',
+    'CodexRelay\codex-relay.exe',
+    'ArtifactCodex',
+    'ArtifactRelay',
+    'L3 default route: Codex CLI -> Relay/API; Direct API fallback only'
+)) {
+    if (-not $deployPs1.Contains($marker)) {
+        throw "Direct deploy PowerShell Codex-first marker missing: $marker"
+    }
 }
 
-Write-Host 'L3 runtime contract OK: local + cloud builds and both local deploy entry points enforce Codex CLI -> Relay/API, Direct API fallback, provider-neutral routing, diagnostics and packaging.'
+# 6) Active documentation must contain the stable ASCII architecture terms.
+foreach ($marker in @(
+    'Codex CLI',
+    'Direct Model fallback',
+    'Chat Completions',
+    'Codex Relay',
+    'Responses Provider'
+)) {
+    if (-not $productBaseline.Contains($marker)) {
+        throw "Product baseline L3 marker missing: $marker"
+    }
+}
+foreach ($marker in @(
+    'Codex CLI `app-server --stdio`',
+    'Codex Relay',
+    'Direct Model',
+    'Provider',
+    'scripts/verify-l3-runtime-contract.ps1'
+)) {
+    if (-not $nativeBaseline.Contains($marker)) {
+        throw "Native baseline L3 marker missing: $marker"
+    }
+}
+foreach ($marker in @(
+    'Codex CLI',
+    'Direct Model',
+    'Provider',
+    'l3-runtime.log',
+    'codex-runtime.log',
+    'app-server --stdio'
+)) {
+    if (-not $contractDoc.Contains($marker)) {
+        throw "L3 design contract marker missing: $marker"
+    }
+}
+foreach ($marker in @(
+    'Codex CLI `app-server --stdio`',
+    'Direct Model Runtime',
+    'Codex Relay',
+    '--no-open',
+    'L3-CODEX-RUNTIME-CONTRACT.md'
+)) {
+    if (-not $readme.Contains($marker)) {
+        throw "README runtime contract marker missing: $marker"
+    }
+}
+
+Write-Host 'L3 runtime contract OK: Codex CLI primary, Relay/API transport, Direct API fallback, provider-neutral routing, diagnostics and packaging are enforced.'

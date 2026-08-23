@@ -26,27 +26,22 @@ jobs:
   build-arm64:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-11-arm
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
           ref: main
 
       - name: Check RuntimeBundle freshness
-        id: bundle
         shell: pwsh
         run: |
           $lock = 'runtime/arm64/runtime-lock.json'
           $manifest = 'runtime/arm64/runtime-manifest.json'
-          $ready = $false
-          if ((Test-Path $lock) -and (Test-Path $manifest)) {
-            $hash = (Get-FileHash -Algorithm SHA256 $lock).Hash.ToLowerInvariant()
-            $m = Get-Content $manifest -Raw | ConvertFrom-Json
-            $ready = ([int]$m.schema -ge 2) -and ($m.lockSha256 -eq $hash)
-          }
-          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          if (-not $ready) {
-            throw 'ARM64 RuntimeBundle is stale or incomplete. Vendor ARM64 Runtime Bundle must succeed before native validation can pass.'
+          if (-not (Test-Path $lock) -or -not (Test-Path $manifest)) { throw 'ARM64 RuntimeBundle is incomplete' }
+          $hash = (Get-FileHash -Algorithm SHA256 $lock).Hash.ToLowerInvariant()
+          $m = Get-Content $manifest -Raw | ConvertFrom-Json
+          if ([int]$m.schema -lt 2 -or $m.lockSha256 -ne $hash) {
+            throw 'ARM64 RuntimeBundle is stale. Vendor ARM64 Runtime Bundle must succeed first.'
           }
 
       - name: Verify repository ARM64 RuntimeBundle
@@ -63,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           foreach ($test in @(
-            @{ Exe = '.\build\src\native\Release\TuringDesk.exe'; Name = 'Search' },
+            @{ Exe = '.\build\src\native\Release\TuringDesk.exe'; Name = 'Search/Agent' },
             @{ Exe = '.\build\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' },
             @{ Exe = '.\build\src\native\Release\TuringDeskHarness.exe'; Name = 'Harness shell' }
           )) {
@@ -88,6 +83,70 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI --version failed' }
           & $codex app-server --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server command failed' }
+
+      - name: Real Codex Relay protocol bridge smoke test
+        shell: pwsh
+        run: |
+          $node = (Resolve-Path '.\build\package\Runtime\Node\node.exe').Path
+          $relay = (Resolve-Path '.\build\package\CodexRelay\codex-relay.exe').Path
+          $codexDir = (Resolve-Path '.\build\package\Codex').Path
+          & $relay --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled codex-relay --help failed' }
+
+          $upstreamPort = 46151
+          $relayPort = 46152
+          $fake = Join-Path $env:RUNNER_TEMP 'turingdesk-relay-upstream.js'
+          @'
+          const http=require('http');
+          const port=Number(process.argv[2]);
+          http.createServer((req,res)=>{
+            if(req.method==='GET' && req.url==='/v1/models'){
+              res.writeHead(200,{'content-type':'application/json'});
+              return res.end(JSON.stringify({object:'list',data:[{id:'ci-model',object:'model'}]}));
+            }
+            if(req.method==='POST' && req.url==='/v1/chat/completions'){
+              let body=''; req.on('data',c=>body+=c); req.on('end',()=>{
+                res.writeHead(200,{'content-type':'application/json'});
+                res.end(JSON.stringify({id:'chatcmpl-ci',object:'chat.completion',created:1,model:'ci-model',choices:[{index:0,message:{role:'assistant',content:'relay-ok'},finish_reason:'stop'}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}}));
+              }); return;
+            }
+            res.writeHead(404); res.end();
+          }).listen(port,'127.0.0.1');
+          '@ | Set-Content $fake -Encoding UTF8
+
+          $upstream = Start-Process -FilePath $node -ArgumentList @($fake, $upstreamPort) -PassThru -NoNewWindow
+          $oldBind=$env:CODEX_RELAY_BIND; $oldPort=$env:CODEX_RELAY_PORT; $oldUp=$env:CODEX_RELAY_UPSTREAM
+          $oldKey=$env:CODEX_RELAY_API_KEY; $oldPath=$env:Path
+          try {
+            $env:CODEX_RELAY_BIND='127.0.0.1'
+            $env:CODEX_RELAY_PORT="$relayPort"
+            $env:CODEX_RELAY_UPSTREAM="http://127.0.0.1:$upstreamPort/v1"
+            $env:CODEX_RELAY_API_KEY='ci-key'
+            $env:Path="$codexDir;$oldPath"
+            Start-Sleep -Milliseconds 500
+
+            $catalog = Join-Path $env:RUNNER_TEMP 'codex-relay-models.json'
+            & $relay --print-config --model-catalog $catalog | Out-Host
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $catalog) -or (Get-Content $catalog -Raw) -notmatch 'ci-model') {
+              throw 'codex-relay model catalog generation failed'
+            }
+
+            $relayProc = Start-Process -FilePath $relay -PassThru -NoNewWindow
+            try {
+              Start-Sleep -Seconds 2
+              $payload = @{ model='ci-model'; input=@(@{role='user';content=@(@{type='input_text';text='ping'})}); stream=$false } | ConvertTo-Json -Depth 8 -Compress
+              $response = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:$relayPort/v1/responses" -ContentType 'application/json' -Body $payload
+              if ($response.StatusCode -ne 200 -or $response.Content -notmatch 'relay-ok') {
+                throw 'codex-relay did not translate Responses API to Chat Completions correctly'
+              }
+            }
+            finally { if ($relayProc -and -not $relayProc.HasExited) { Stop-Process -Id $relayProc.Id -Force } }
+          }
+          finally {
+            if ($upstream -and -not $upstream.HasExited) { Stop-Process -Id $upstream.Id -Force }
+            $env:CODEX_RELAY_BIND=$oldBind; $env:CODEX_RELAY_PORT=$oldPort; $env:CODEX_RELAY_UPSTREAM=$oldUp
+            $env:CODEX_RELAY_API_KEY=$oldKey; $env:Path=$oldPath
+          }
 
       - name: Real goz MFT/USN integration test
         shell: pwsh
@@ -129,6 +188,7 @@ jobs:
         run: |
           Remove-Item build/package/Runtime -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item build/package/Goz -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item build/package/CodexRelay -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item build/package/Codex -Recurse -Force -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v4
@@ -154,7 +214,7 @@ jobs:
           cat > "ci/native-${GITHUB_SHA}.json" <<EOF
           {
             "sha": "${GITHUB_SHA}",
-            "mode": "native-arm64-goz-codex-cli",
+            "mode": "native-arm64-goz-codex-relay-codex-cli",
             "arm64": "${ARM64_RESULT}",
             "run_id": "${GITHUB_RUN_ID}"
           }

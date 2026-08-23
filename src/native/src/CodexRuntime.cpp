@@ -391,8 +391,6 @@ std::vector<wchar_t> BuildRelayEnvironmentBlock(const std::wstring& upstream,
                               lowerModel.find(L"reasoner") == std::wstring::npos &&
                               lowerModel.find(L"reasoning") == std::wstring::npos;
     if (deepseekChat) {
-        // Keep the Codex path aligned with the previously-working direct DeepSeek path.
-        // codex-relay documents this pair for non-reasoning DeepSeek chat models.
         overrides.emplace_back(L"CODEX_RELAY_UPSTREAM_EXTRA_PARAMS", L"{\"thinking\":{\"type\":\"disabled\"}}");
         overrides.emplace_back(L"CODEX_RELAY_DROP_PARAMS", L"[\"reasoning_effort\"]");
     }
@@ -1083,7 +1081,23 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         }
         if (method == "error") {
             const auto message = ExtractJsonString(line, "\"message\"");
-            error = message.empty() ? L"Codex app-server 返回 error 通知" : Utf8ToWide(message);
+            const std::wstring notification = message.empty() ? L"Codex app-server 返回 error 通知" : Utf8ToWide(message);
+            if (notification.starts_with(L"Reconnecting...")) {
+                bool relayAlive = true;
+                DWORD relayExitCode = STILL_ACTIVE;
+                std::wstring relayState = L"; relay=not-required";
+                if (setup.relayRequired) {
+                    std::scoped_lock lock(processMutex_);
+                    relayAlive = ProcessAlive(relayProcess_);
+                    if (relayProcess_ && !relayAlive) GetExitCodeProcess(relayProcess_, &relayExitCode);
+                    relayState = relayAlive ? L"; relay=alive" : L"; relay=exited code=" + std::to_wstring(relayExitCode);
+                }
+                AppendRuntimeLog(L"app-server: transient reconnect notification: " + notification + relayState);
+                if (relayAlive) continue;
+                error = L"Codex Relay 已退出，ExitCode=" + std::to_wstring(relayExitCode) + L"；" + notification;
+                break;
+            }
+            error = notification;
             AppendRuntimeLog(L"app-server: error notification: " + error);
             break;
         }

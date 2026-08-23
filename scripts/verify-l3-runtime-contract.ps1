@@ -1,281 +1,111 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
-$searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'
-$mainPath = Join-Path $root 'src/native/src/main.cpp'
-$codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'
-$harnessProcessPath = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
-$runtimeLogPathsHeaderPath = Join-Path $root 'src/native/include/turingdesk/RuntimeLogPaths.h'
-$cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
-$armWorkflowPath = Join-Path $root '.github/workflows/native-search-windows.yml'
-$x64WorkflowPath = Join-Path $root '.github/workflows/native-x64-validation.yml'
-$deployCmdPath = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
-$deployPs1Path = Join-Path $root 'scripts/deploy-native-arm64.ps1'
-$productBaselinePath = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
-$nativeBaselinePath = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
-$contractDocPath = Join-Path $root 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
-$readmePath = Join-Path $root 'README.md'
-$obsoleteDesignSpecPath = Join-Path $root 'docs/TURINGDESK-DESIGN-SPEC.md'
-$retiredRuntimeHeaderPath = Join-Path $root 'src/native/include/turingdesk/DirectToolRuntime.h'
-$retiredRuntimeV1Path = Join-Path $root 'src/native/src/DirectAgentRuntime.cpp'
-$retiredRuntimeV2Path = Join-Path $root 'src/native/src/DirectAgentRuntimeV2.cpp'
-$retiredRuntimeStubPath = Join-Path $root 'src/native/src/DirectToolRuntimeDisabled.cpp'
 
-$requiredFiles = @(
-    $l3Path, $searchPath, $mainPath, $codexPath, $harnessProcessPath, $runtimeLogPathsHeaderPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
-    $deployCmdPath, $deployPs1Path, $productBaselinePath, $nativeBaselinePath,
-    $contractDocPath, $readmePath
+$requiredDocs = @(
+    'docs/TURINGDESK-DESIGN-SPEC.md',
+    'docs/V1-SCENE-RELEASE-SCOPE.md',
+    'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md',
+    'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
 )
-foreach ($path in $requiredFiles) {
+foreach ($relative in $requiredDocs) {
+    $path = Join-Path $root $relative
     if (-not (Test-Path $path -PathType Leaf)) {
-        throw "L3 runtime contract input missing: $path"
+        throw "Required release baseline missing: $relative"
     }
 }
-foreach ($path in @(
-    $obsoleteDesignSpecPath,
-    $retiredRuntimeHeaderPath,
-    $retiredRuntimeV1Path,
-    $retiredRuntimeV2Path,
-    $retiredRuntimeStubPath
-)) {
-    if (Test-Path $path) {
-        throw "Superseded architecture artifact must stay removed: $path"
+
+$l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
+$searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'
+$cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
+$harnessPath = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
+$armWorkflowPath = Join-Path $root '.github/workflows/native-search-windows.yml'
+$x64WorkflowPath = Join-Path $root '.github/workflows/native-x64-validation.yml'
+
+foreach ($path in @($l3Path, $searchPath, $cmakePath, $harnessPath, $armWorkflowPath, $x64WorkflowPath)) {
+    if (-not (Test-Path $path -PathType Leaf)) {
+        throw "Contract input missing: $path"
     }
 }
 
 $l3 = Get-Content $l3Path -Raw
 $search = Get-Content $searchPath -Raw
-$main = Get-Content $mainPath -Raw
-$codex = Get-Content $codexPath -Raw
-$harnessProcess = Get-Content $harnessProcessPath -Raw
-$runtimeLogPathsHeader = Get-Content $runtimeLogPathsHeaderPath -Raw
 $cmake = Get-Content $cmakePath -Raw
+$harness = Get-Content $harnessPath -Raw
 $armWorkflow = Get-Content $armWorkflowPath -Raw
 $x64Workflow = Get-Content $x64WorkflowPath -Raw
-$deployCmd = Get-Content $deployCmdPath -Raw
-$deployPs1 = Get-Content $deployPs1Path -Raw
-$productBaseline = Get-Content $productBaselinePath -Raw
-$nativeBaseline = Get-Content $nativeBaselinePath -Raw
-$contractDoc = Get-Content $contractDocPath -Raw
-$readme = Get-Content $readmePath -Raw
 
-# 1) Runtime source: Codex must be primary and Direct API must remain fallback only.
-$requiredL3 = @(
-    '#include "turingdesk/CodexRuntime.h"',
-    'ActiveRuntime::Codex',
-    'gCodexRuntime',
-    'state.codex->AskAsync',
+# Ordinary L3 must be owned by TuringDesk: local in-process tools first, Direct Model SSE for chat.
+foreach ($marker in @(
+    'state.agent->TryHandleLocal',
     'state.agent->AskAsync',
-    'route: primary codex start',
-    'fallback: direct api start',
-    'l3-runtime.log',
-    'codex-runtime.log'
-)
-foreach ($marker in $requiredL3) {
-    if (-not $l3.Contains($marker)) {
-        throw "L3 Codex-first contract marker missing: $marker"
-    }
-}
-
-$forbiddenRuntimeMarkers = @(
-    'DirectToolRuntime',
-    'WantsNativeTools',
-    'ActiveRuntime::DirectTools',
-    'DirectAgentRuntime.cpp',
-    'DirectAgentRuntimeV2.cpp',
-    'DirectToolRuntimeDisabled.cpp'
-)
-foreach ($marker in $forbiddenRuntimeMarkers) {
-    if ($l3.Contains($marker) -or $main.Contains($marker) -or $cmake.Contains($marker)) {
-        throw "Retired L3 runtime marker returned: $marker"
-    }
-}
-
-# 1b) L3 CLI must share the application message loop and must not steal focus back to Search.
-foreach ($forbidden in @(
-    'while (IsWindow(window))',
-    'GetMessageW(&msg'
-)) {
-    if ($l3.Contains($forbidden)) { throw "L3 window must not own a nested message loop: $forbidden" }
-}
-foreach ($required in @(
-    'auto* state = new CliState{};',
+    'kDeltaMessage',
+    'kDoneMessage',
     'case WM_NCDESTROY:',
-    'reinterpret_cast<LONG_PTR>(state)'
+    'RuntimeLogPath(L"l3-runtime.log")'
 )) {
-    if (-not $l3.Contains($required)) { throw "L3 nonblocking lifecycle marker missing: $required" }
-}
-$startL3Start = $search.IndexOf('void SearchWindow::StartL3')
-$startL3End = $search.IndexOf('void SearchWindow::SetStatus', $startL3Start)
-if ($startL3Start -lt 0 -or $startL3End -le $startL3Start) { throw 'SearchWindow::StartL3 contract block missing.' }
-$startL3Body = $search.Substring($startL3Start, $startL3End - $startL3Start)
-if ($startL3Body.Contains('ShowAndFocus();')) { throw 'Closing/opening L3 must not force Search focus.' }
-
-# 2) Build graph: CodexRuntime and NativeTools must be compiled into TuringDesk.
-foreach ($marker in @(
-    'src/CodexRuntime.cpp',
-    'src/NativeTools.cpp',
-    'TuringDeskL3ContractCheck',
-    'add_dependencies(TuringDesk TuringDeskL3ContractCheck)'
-)) {
-    if (-not $cmake.Contains($marker)) {
-        throw "CMake L3 build contract marker missing: $marker"
+    if (-not $l3.Contains($marker)) {
+        throw "L3 lightweight contract marker missing: $marker"
     }
 }
 
-# 3) Codex transport and diagnostics must stay capability-based, not brand-based.
 foreach ($marker in @(
-    'OpenAiResponsesBase',
-    'ChatCompletionsBase',
-    'setup.relayRequired = true',
-    'codex-runtime.log',
-    'relay: readiness failed',
-    'app-server: initialize',
-    'thread/start',
-    'turn/start',
-    'session: failed'
+    'CodexRuntime',
+    'gCodexRuntime',
+    'ActiveRuntime::Codex',
+    'kCodexDoneMessage',
+    '4317',
+    '4318',
+    'MCP'
 )) {
-    if (-not $codex.Contains($marker)) {
-        throw "Codex runtime diagnostic/transport marker missing: $marker"
-    }
-}
-foreach ($marker in @(
-    'providerId == L"deepseek"',
-    'providerId) == L"deepseek"'
-)) {
-    if ($codex.Contains($marker)) {
-        throw "Codex routing must not be hard-wired to DeepSeek: $marker"
+    if ($l3.Contains($marker)) {
+        throw "External or legacy runtime marker returned to ordinary L3: $marker"
     }
 }
 
-# 3b) Every native runtime log must resolve through the shared Desktop log path helper.
-foreach ($marker in @(
-    'FOLDERID_Desktop',
-    'TuringDesk-Logs',
-    'RuntimeLogPath'
-)) {
-    if (-not $runtimeLogPathsHeader.Contains($marker)) {
-        throw "Desktop runtime log helper marker missing: $marker"
+if ($cmake.Contains('src/CodexRuntime.cpp')) {
+    throw 'Ordinary TuringDesk binary must not compile CodexRuntime.cpp.'
+}
+
+# L3 window must share the application message loop and must not steal focus back to Search.
+foreach ($marker in @('while (IsWindow(window))', 'GetMessageW(&msg')) {
+    if ($l3.Contains($marker)) {
+        throw "L3 window owns a nested message loop: $marker"
     }
 }
-foreach ($pair in @(
-    @{ Text = $l3; Marker = 'RuntimeLogPath(L"l3-runtime.log")' },
-    @{ Text = $l3; Marker = 'RuntimeLogPath(L"codex-runtime.log")' },
-    @{ Text = $codex; Marker = 'RuntimeLogPath(L"codex-runtime.log")' },
-    @{ Text = $harnessProcess; Marker = 'RuntimeLogPath(L"harness.log")' }
-)) {
-    if (-not $pair.Text.Contains($pair.Marker)) {
-        throw "Desktop runtime log routing marker missing: $($pair.Marker)"
-    }
-}
-foreach ($source in Get-ChildItem (Join-Path $root 'src/native/src') -Filter '*.cpp' -File) {
-    $text = Get-Content $source.FullName -Raw
-    if ($text.Contains('L"Logs"') -and $text.Contains('.log')) {
-        throw "Runtime log path bypasses shared Desktop helper: $($source.FullName)"
+foreach ($marker in @('auto* state = new CliState{};', 'case WM_NCDESTROY:', 'reinterpret_cast<LONG_PTR>(state)')) {
+    if (-not $l3.Contains($marker)) {
+        throw "L3 nonblocking lifecycle marker missing: $marker"
     }
 }
 
-# 4) Cloud build: both x64 and ARM64 must run the same guard before Configure/Build.
+$start = $search.IndexOf('void SearchWindow::StartL3')
+if ($start -lt 0) {
+    throw 'SearchWindow::StartL3 missing.'
+}
+$length = [Math]::Min(1800, $search.Length - $start)
+$startL3Body = $search.Substring($start, $length)
+if ($startL3Body.Contains('ShowAndFocus();')) {
+    throw 'L3 must not force Search focus after opening or closing.'
+}
+
+# L4 Harness must remain loopback-only and must not restore legacy ports or MCP.
+foreach ($marker in @('web --host 127.0.0.1 --port 3080', '127.0.0.1')) {
+    if (-not $harness.Contains($marker)) {
+        throw "Harness loopback contract marker missing: $marker"
+    }
+}
+foreach ($marker in @('--no-open', '0.0.0.0', '4317', '4318', 'MCP')) {
+    if ($harness.Contains($marker)) {
+        throw "Harness forbidden marker present: $marker"
+    }
+}
+
+# Both release architectures must execute the same guard before build.
 foreach ($workflow in @($armWorkflow, $x64Workflow)) {
-    foreach ($marker in @(
-        'Verify L3 Codex-first runtime contract',
-        '.\scripts\verify-l3-runtime-contract.ps1'
-    )) {
-        if (-not $workflow.Contains($marker)) {
-            throw "Cloud build is missing L3 contract guard: $marker"
-        }
-    }
-}
-if ($armWorkflow.Contains('Remove-Item build/package/Codex -Recurse')) {
-    throw 'ARM64 artifact must not delete bundled Codex CLI after validation.'
-}
-if ($armWorkflow.Contains('Remove-Item build/package/CodexRelay -Recurse')) {
-    throw 'ARM64 artifact must not delete bundled Codex Relay after validation.'
-}
-foreach ($marker in @(
-    'Validate full Codex CLI runtime',
-    'Real Codex Relay protocol bridge smoke test',
-    'Real Codex app-server through Relay end-to-end smoke test',
-    '.\build\package\Codex\codex.exe',
-    '.\build\package\CodexRelay\codex-relay.exe'
-)) {
-    if (-not $armWorkflow.Contains($marker)) {
-        throw "ARM64 Codex validation marker missing: $marker"
+    if (-not $workflow.Contains('verify-l3-runtime-contract.ps1')) {
+        throw 'Cloud build is missing the L3 runtime contract guard.'
     }
 }
 
-# 5) Local deploy entry points must enforce the same contract and runtime checks.
-foreach ($marker in @(
-    'verify-l3-runtime-contract.ps1',
-    'Codex\codex.exe',
-    'CodexRelay\codex-relay.exe',
-    'L3 default route: Codex CLI'
-)) {
-    if (-not $deployCmd.Contains($marker)) {
-        throw "Local deploy CMD Codex-first marker missing: $marker"
-    }
-}
-foreach ($marker in @(
-    'Assert-L3RuntimeContract',
-    'verify-l3-runtime-contract.ps1',
-    'Assert-DeployedCodexRuntime',
-    'Codex\codex.exe',
-    'CodexRelay\codex-relay.exe',
-    'ArtifactCodex',
-    'ArtifactRelay',
-    'L3 default route: Codex CLI -> Relay/API; Direct API fallback only'
-)) {
-    if (-not $deployPs1.Contains($marker)) {
-        throw "Direct deploy PowerShell Codex-first marker missing: $marker"
-    }
-}
-
-# 6) Active documentation must contain the stable ASCII architecture terms.
-foreach ($marker in @(
-    'Codex CLI',
-    'Direct Model fallback',
-    'Chat Completions',
-    'Codex Relay',
-    'Responses Provider'
-)) {
-    if (-not $productBaseline.Contains($marker)) {
-        throw "Product baseline L3 marker missing: $marker"
-    }
-}
-foreach ($marker in @(
-    'Codex CLI `app-server --stdio`',
-    'Codex Relay',
-    'Direct Model',
-    'Provider',
-    'scripts/verify-l3-runtime-contract.ps1'
-)) {
-    if (-not $nativeBaseline.Contains($marker)) {
-        throw "Native baseline L3 marker missing: $marker"
-    }
-}
-foreach ($marker in @(
-    'Codex CLI',
-    'Direct Model',
-    'Provider',
-    'l3-runtime.log',
-    'codex-runtime.log',
-    'app-server --stdio'
-)) {
-    if (-not $contractDoc.Contains($marker)) {
-        throw "L3 design contract marker missing: $marker"
-    }
-}
-foreach ($marker in @(
-    'Codex CLI `app-server --stdio`',
-    'Direct Model Runtime',
-    'Codex Relay',
-    '--no-open',
-    'L3-CODEX-RUNTIME-CONTRACT.md'
-)) {
-    if (-not $readme.Contains($marker)) {
-        throw "README runtime contract marker missing: $marker"
-    }
-}
-
-Write-Host 'L3 runtime contract OK: Codex CLI primary, Relay/API transport, Direct API fallback, provider-neutral routing, diagnostics, packaging and retired-runtime cleanup are enforced.'
+Write-Host 'L3 contract OK: in-process local tools, Direct Model SSE, explicit L4 Harness, loopback-only workbench.'

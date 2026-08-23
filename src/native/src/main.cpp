@@ -40,8 +40,8 @@ bool RunNativeSelfTest() {
     if (reply.find(L"4317") != std::wstring::npos || reply.find(L"4318") != std::wstring::npos || reply.find(L"MCP") != std::wstring::npos) return false;
     // L3 is a TuringDesk-owned lightweight layer. Its normal status surface must
     // not regress into advertising or depending on another heavy agent runtime.
-    if (reply.find(L"Codex") != std::wstring::npos || reply.find(L"Node") != std::wstring::npos ||
-        reply.find(L"WebView") != std::wstring::npos) return false;
+    if (reply.find(L"Codex") != std::wstring::npos || reply.find(L"Relay") != std::wstring::npos ||
+        reply.find(L"Node") != std::wstring::npos || reply.find(L"WebView") != std::wstring::npos) return false;
 
     reply.clear();
     consumedSecret = false;
@@ -49,8 +49,8 @@ bool RunNativeSelfTest() {
     if (reply.find(L"/status") == std::wstring::npos || reply.find(L"/time") == std::wstring::npos ||
         reply.find(L"/new") == std::wstring::npos || reply.find(L"Ctrl+Enter") == std::wstring::npos) return false;
     if (reply.find(L"4317") != std::wstring::npos || reply.find(L"4318") != std::wstring::npos || reply.find(L"MCP") != std::wstring::npos) return false;
-    if (reply.find(L"Codex") != std::wstring::npos || reply.find(L"Node") != std::wstring::npos ||
-        reply.find(L"WebView") != std::wstring::npos) return false;
+    if (reply.find(L"Codex") != std::wstring::npos || reply.find(L"Relay") != std::wstring::npos ||
+        reply.find(L"Node") != std::wstring::npos || reply.find(L"WebView") != std::wstring::npos) return false;
 
     for (const wchar_t* command : {L"/new", L"/new-chat", L"新对话"}) {
         reply.clear();

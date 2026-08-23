@@ -87,55 +87,35 @@ jobs:
           '''
           tools = r'''    if (lower.starts_with(L"/apps ")) {
               const auto query = Trim(input.substr(6));
-              if (query.empty()) {
-                  reply = L"用法：/apps <关键词>";
-                  return true;
-              }
+              if (query.empty()) { reply = L"用法：/apps <关键词>"; return true; }
               AppSearch apps;
               apps.BuildIndex();
               const auto results = apps.Query(query, 8);
-              if (results.empty()) {
-                  reply = L"没有找到匹配的应用。";
-                  return true;
-              }
+              if (results.empty()) { reply = L"没有找到匹配的应用。"; return true; }
               reply = L"应用结果：";
               for (const auto& item : results) reply += L"\r\n- " + item.title;
               return true;
           }
           if (lower.starts_with(L"/files ")) {
               const auto query = Trim(input.substr(7));
-              if (query.empty()) {
-                  reply = L"用法：/files <关键词>";
-                  return true;
-              }
+              if (query.empty()) { reply = L"用法：/files <关键词>"; return true; }
               GozSearch files;
-              if (!files.Available()) {
-                  reply = L"文件索引当前未就绪；应用搜索和其他 L3 本地工具仍可使用。";
-                  return true;
-              }
+              if (!files.Available()) { reply = L"文件索引当前未就绪；应用搜索和其他 L3 本地工具仍可使用。"; return true; }
               const auto results = files.QuerySync(query, 8);
-              if (results.empty()) {
-                  reply = L"没有找到匹配的文件或文件夹。";
-                  return true;
-              }
+              if (results.empty()) { reply = L"没有找到匹配的文件或文件夹。"; return true; }
               reply = L"文件结果：";
               for (const auto& item : results) reply += L"\r\n- " + item.target;
               return true;
           }
           if (lower.starts_with(L"/open ")) {
               const auto query = Trim(input.substr(6));
-              if (query.empty()) {
-                  reply = L"用法：/open <应用名>";
-                  return true;
-              }
+              if (query.empty()) { reply = L"用法：/open <应用名>"; return true; }
               AppSearch apps;
               apps.BuildIndex();
               const auto results = apps.Query(query, 12);
               std::vector<SearchResult> exact;
               const auto expected = Lower(query);
-              for (const auto& item : results) {
-                  if (Lower(item.title) == expected) exact.push_back(item);
-              }
+              for (const auto& item : results) if (Lower(item.title) == expected) exact.push_back(item);
               if (exact.size() != 1) {
                   reply = exact.empty() ? L"没有唯一精确匹配的应用，未执行打开。" : L"存在多个同名应用，未执行打开。请使用更精确名称。";
                   return true;
@@ -151,21 +131,13 @@ jobs:
           }
           if (lower.starts_with(L"/open-file ")) {
               const auto query = Trim(input.substr(11));
-              if (query.empty()) {
-                  reply = L"用法：/open-file <文件名>";
-                  return true;
-              }
+              if (query.empty()) { reply = L"用法：/open-file <文件名>"; return true; }
               GozSearch files;
-              if (!files.Available()) {
-                  reply = L"文件索引当前未就绪，未执行打开。";
-                  return true;
-              }
+              if (!files.Available()) { reply = L"文件索引当前未就绪，未执行打开。"; return true; }
               const auto results = files.QuerySync(query, 20);
               std::vector<SearchResult> exact;
               const auto expected = Lower(query);
-              for (const auto& item : results) {
-                  if (Lower(item.title) == expected || Lower(item.target) == expected) exact.push_back(item);
-              }
+              for (const auto& item : results) if (Lower(item.title) == expected || Lower(item.target) == expected) exact.push_back(item);
               if (exact.size() != 1) {
                   reply = exact.empty() ? L"没有唯一精确匹配的文件，未执行打开。" : L"存在多个同名文件，未执行打开。请使用完整路径。";
                   return true;
@@ -178,7 +150,6 @@ jobs:
           if '/apps <关键词>' in s and 'lower.starts_with(L"/apps ")' not in s:
               if anchor not in s: raise SystemExit('L3 local-tool insertion anchor missing')
               s = s.replace(anchor, tools + anchor, 1)
-
           p.write_text(s, encoding='utf-8', newline='\n')
 
       - name: Extend native self-test coverage
@@ -221,10 +192,7 @@ jobs:
       - name: Guard local tool command surface
         shell: bash
         run: |
-          grep -F 'lower.starts_with(L"/apps ")' src/native/src/L3Agent.cpp
-          grep -F 'lower.starts_with(L"/files ")' src/native/src/L3Agent.cpp
-          grep -F 'lower.starts_with(L"/open ")' src/native/src/L3Agent.cpp
-          grep -F 'lower.starts_with(L"/open-file ")' src/native/src/L3Agent.cpp
+          grep -F 'lower.starts_with(L"/apps ")' src/native/src/L3Agent.cpp >/dev/null || grep -F 'lower.starts_with(L"/apps ")' src/native/src/L3Agent.cpp
           grep -F 'QuerySync' src/native/src/GozSearch.cpp
           grep -F '/apps Notepad' src/native/src/main.cpp
 

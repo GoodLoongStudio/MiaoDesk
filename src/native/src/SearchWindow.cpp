@@ -1,6 +1,5 @@
 #include "turingdesk/SearchWindow.h"
 #include "turingdesk/L3CliWindow.h"
-#include "turingdesk/ModelSettingsWindow.h"
 #include "turingdesk/SettingsCenterWindow.h"
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -17,7 +16,6 @@ namespace {
 
 constexpr int kHotkeyId = 1;
 constexpr int kSearchEditId = 100;
-constexpr int kAiButtonId = 101;
 constexpr int kSettingsButtonId = 102;
 constexpr int kWindowWidth = 820;
 constexpr int kCollapsedHeight = 94;
@@ -26,8 +24,7 @@ constexpr int kControlTop = 14;
 constexpr int kControlHeight = 44;
 constexpr int kLeftMargin = 16;
 constexpr int kRightMargin = 16;
-constexpr int kButtonGap = 8;
-constexpr int kAiButtonWidth = 70;
+constexpr int kControlGap = 8;
 constexpr int kSettingsButtonWidth = 94;
 constexpr UINT kTrayMessage = WM_APP + 91;
 constexpr UINT kTrayShow = 5101;
@@ -118,7 +115,7 @@ fs::path SearchIniPath() {
     return directory / L"search.ini";
 }
 
-void DrawOwnerButton(const DRAWITEMSTRUCT& item, HFONT textFont, HFONT iconFont, bool settings) {
+void DrawSettingsButton(const DRAWITEMSTRUCT& item, HFONT textFont, HFONT iconFont) {
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool disabled = (item.itemState & ODS_DISABLED) != 0;
     const COLORREF fillColor = pressed ? kButtonPressed : kButton;
@@ -134,29 +131,17 @@ void DrawOwnerButton(const DRAWITEMSTRUCT& item, HFONT textFont, HFONT iconFont,
 
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, disabled ? RGB(150, 150, 150) : kText);
-    if (settings) {
-        RECT iconRc = item.rcItem;
-        iconRc.left += 12;
-        iconRc.right = iconRc.left + 22;
-        HFONT old = reinterpret_cast<HFONT>(SelectObject(item.hDC, iconFont));
-        DrawTextW(item.hDC, L"\xE713", -1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        SelectObject(item.hDC, old);
-        RECT textRc = item.rcItem;
-        textRc.left += 34;
-        old = reinterpret_cast<HFONT>(SelectObject(item.hDC, textFont));
-        DrawTextW(item.hDC, L"设置", -1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        SelectObject(item.hDC, old);
-    } else {
-        RECT glyphRc = item.rcItem;
-        glyphRc.left += 9;
-        glyphRc.right = glyphRc.left + 18;
-        HFONT old = reinterpret_cast<HFONT>(SelectObject(item.hDC, textFont));
-        DrawTextW(item.hDC, L"✦", -1, &glyphRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        RECT textRc = item.rcItem;
-        textRc.left += 23;
-        DrawTextW(item.hDC, L"AI", -1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        SelectObject(item.hDC, old);
-    }
+    RECT iconRc = item.rcItem;
+    iconRc.left += 12;
+    iconRc.right = iconRc.left + 22;
+    HFONT old = reinterpret_cast<HFONT>(SelectObject(item.hDC, iconFont));
+    DrawTextW(item.hDC, L"\xE713", -1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(item.hDC, old);
+    RECT textRc = item.rcItem;
+    textRc.left += 34;
+    old = reinterpret_cast<HFONT>(SelectObject(item.hDC, textFont));
+    DrawTextW(item.hDC, L"设置", -1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(item.hDC, old);
 }
 
 } // namespace
@@ -169,7 +154,6 @@ SearchWindow::~SearchWindow() {
     RemoveTray();
     if (hwnd_) UnregisterHotKey(hwnd_, kHotkeyId);
     if (editBrush_) DeleteObject(editBrush_);
-    if (buttonBrush_) DeleteObject(buttonBrush_);
     if (staticBrush_) DeleteObject(staticBrush_);
     if (uiFont_) DeleteObject(uiFont_);
     if (smallFont_) DeleteObject(smallFont_);
@@ -227,12 +211,10 @@ bool SearchWindow::Create() {
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             DEFAULT_PITCH | FF_DONTCARE, L"Segoe Fluent Icons");
     editBrush_ = CreateSolidBrush(kInput);
-    buttonBrush_ = CreateSolidBrush(kButton);
     staticBrush_ = CreateSolidBrush(kInput);
 
     const int settingsX = kWindowWidth - kRightMargin - kSettingsButtonWidth;
-    const int aiX = settingsX - kButtonGap - kAiButtonWidth;
-    const int editWidth = aiX - kButtonGap - kLeftMargin;
+    const int editWidth = settingsX - kControlGap - kLeftMargin;
 
     edit_ = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                             kLeftMargin, kControlTop, editWidth, kControlHeight, hwnd_,
@@ -250,18 +232,13 @@ bool SearchWindow::Create() {
                                   kLeftMargin + 12, kControlTop + 10, 24, 24, hwnd_, nullptr, instance_, nullptr);
     SendMessageW(searchIcon_, WM_SETFONT, reinterpret_cast<WPARAM>(iconFont_), TRUE);
 
-    settingsButton_ = CreateWindowExW(0, L"BUTTON", L"AI",
+    settingsButton_ = CreateWindowExW(0, L"BUTTON", L"设置",
                                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-                                      aiX, kControlTop, kAiButtonWidth, kControlHeight, hwnd_,
-                                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAiButtonId)), instance_, nullptr);
-    wallpaperButton_ = CreateWindowExW(0, L"BUTTON", L"设置",
-                                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-                                       settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, hwnd_,
-                                       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsButtonId)), instance_, nullptr);
-    if (!settingsButton_ || !wallpaperButton_) return false;
+                                      settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, hwnd_,
+                                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsButtonId)), instance_, nullptr);
+    if (!settingsButton_) return false;
     RoundControl(edit_);
     RoundControl(settingsButton_);
-    RoundControl(wallpaperButton_);
 
     ApplyWindows11Style();
     ChangeWindowMessageFilterEx(hwnd_, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
@@ -488,13 +465,12 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         SavePosition(); return 0;
     case WM_COMMAND:
         if (LOWORD(wParam) == kSearchEditId && HIWORD(wParam) == EN_CHANGE) { OnQueryChanged(); return 0; }
-        if (LOWORD(wParam) == kAiButtonId && HIWORD(wParam) == BN_CLICKED) { OpenModelSettings(); return 0; }
         if (LOWORD(wParam) == kSettingsButtonId && HIWORD(wParam) == BN_CLICKED) { OpenSettingsCenter(); return 0; }
         break;
     case WM_DRAWITEM: {
         const auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (!item || (item->CtlID != kAiButtonId && item->CtlID != kSettingsButtonId)) break;
-        DrawOwnerButton(*item, uiFont_, iconFont_, item->CtlID == kSettingsButtonId);
+        if (!item || item->CtlID != kSettingsButtonId) break;
+        DrawSettingsButton(*item, uiFont_, iconFont_);
         return TRUE;
     }
     case WM_CTLCOLOREDIT: {
@@ -522,12 +498,10 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         const int width = LOWORD(lParam);
         ResizeRenderTarget(LOWORD(lParam), HIWORD(lParam));
         const int settingsX = width - kRightMargin - kSettingsButtonWidth;
-        const int aiX = settingsX - kButtonGap - kAiButtonWidth;
-        const int editWidth = std::max(120, aiX - kButtonGap - kLeftMargin);
+        const int editWidth = std::max(120, settingsX - kControlGap - kLeftMargin);
         if (edit_) { MoveWindow(edit_, kLeftMargin, kControlTop, editWidth, kControlHeight, TRUE); RoundControl(edit_); }
         if (searchIcon_) MoveWindow(searchIcon_, kLeftMargin + 12, kControlTop + 10, 24, 24, TRUE);
-        if (settingsButton_) { MoveWindow(settingsButton_, aiX, kControlTop, kAiButtonWidth, kControlHeight, TRUE); RoundControl(settingsButton_); }
-        if (wallpaperButton_) { MoveWindow(wallpaperButton_, settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, TRUE); RoundControl(wallpaperButton_); }
+        if (settingsButton_) { MoveWindow(settingsButton_, settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, TRUE); RoundControl(settingsButton_); }
         return 0;
     }
     case WM_PAINT: {
@@ -567,8 +541,8 @@ void SearchWindow::MergeResults() {
     results_.clear();
     for (const auto& result : appResults_) results_.push_back(result);
     for (const auto& result : fileResults_) { if (results_.size() >= 9) break; results_.push_back(result); }
-    if (!fileSearchAvailable_) results_.push_back({ResultKind::Status, L"文件搜索正在启动", L"Everything 索引服务暂不可用。", L"", -1000});
-    else if (fileSearchQueryFailed_) results_.push_back({ResultKind::Status, L"文件查询失败", L"Everything 已连接，但本次 IPC 查询没有成功。", L"", -1000});
+    if (!fileSearchAvailable_) results_.push_back({ResultKind::Status, L"文件搜索正在启动", L"goz 索引服务暂不可用。", L"", -1000});
+    else if (fileSearchQueryFailed_) results_.push_back({ResultKind::Status, L"文件查询失败", L"goz 已连接，但本次 IPC 查询没有成功。", L"", -1000});
     selected_ = -1;
     for (std::size_t i = 0; i < results_.size(); ++i) if (IsLaunchable(results_[i].kind)) { selected_ = static_cast<int>(i); break; }
     InvalidateRect(hwnd_, nullptr, FALSE);
@@ -596,14 +570,6 @@ void SearchWindow::StartL3(const std::wstring& prompt) {
     SetWindowTextW(edit_, L""); SetExpanded(false); ShowAndFocus();
 }
 
-void SearchWindow::OpenModelSettings() {
-    if (l3_.Busy()) l3_.Stop();
-    const bool saved = ShowModelSettingsWindow(instance_, hwnd_, l3_);
-    if (saved) SetStatus(L"AI 模型配置已保存", l3_.Config().model + (l3_.HasApiKey() ? L" · API Key 已配置" : L" · API Key 未配置"));
-    else InvalidateRect(hwnd_, nullptr, FALSE);
-    SetFocus(edit_);
-}
-
 void SearchWindow::SetStatus(std::wstring title, std::wstring subtitle) {
     results_.clear(); results_.push_back({ResultKind::Status, std::move(title), std::move(subtitle), L"", 0});
     selected_ = -1; SetExpanded(true); InvalidateRect(hwnd_, nullptr, FALSE);
@@ -629,11 +595,12 @@ void SearchWindow::Draw() {
     renderTarget_->BeginDraw();
     renderTarget_->Clear(D2D1::ColorF(0xf3f3f3));
     const float width = renderTarget_->GetSize().width;
+    const float editRight = width - static_cast<float>(kRightMargin + kSettingsButtonWidth + kControlGap);
 
-    renderTarget_->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(15.5f, 13.5f, width - 190.5f, 58.5f), 12, 12),
+    renderTarget_->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(15.5f, 13.5f, editRight + 0.5f, 58.5f), 12, 12),
                                         borderBrush_.Get(), 1.0f);
     if (editFocused_) {
-        renderTarget_->DrawLine(D2D1::Point2F(28, 57), D2D1::Point2F(width - 203, 57), accentBrush_.Get(), 2.0f);
+        renderTarget_->DrawLine(D2D1::Point2F(28, 57), D2D1::Point2F(editRight - 12, 57), accentBrush_.Get(), 2.0f);
     }
 
     float y = 72.0f;

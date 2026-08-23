@@ -1,4 +1,5 @@
 #include "turingdesk/L3CliWindow.h"
+#include "turingdesk/CodexRuntime.h"
 #include "turingdesk/ModelSettingsWindow.h"
 #include "turingdesk/RuntimeLogPaths.h"
 #include <CommCtrl.h>
@@ -23,8 +24,10 @@ constexpr int kSettingsId = 3103;
 constexpr int kCloseId = 3104;
 constexpr UINT kDeltaMessage = WM_APP + 31;
 constexpr UINT kDoneMessage = WM_APP + 32;
+constexpr UINT kCodexDoneMessage = WM_APP + 33;
 
 enum class ActiveRuntime {
+    Codex,
     DirectModel,
 };
 
@@ -43,6 +46,7 @@ struct CliState {
     HWND close{};
     WNDPROC oldInputProc{};
     L3Agent* agent{};
+    CodexRuntime* codex{};
     HBRUSH backgroundBrush{};
     HFONT monoFont{};
     HFONT uiFont{};
@@ -51,11 +55,12 @@ struct CliState {
     std::wstring lastPrompt;
     std::wstring activePrompt;
     std::uint64_t generation{};
-    ActiveRuntime activeRuntime{ActiveRuntime::DirectModel};
+    ActiveRuntime activeRuntime{ActiveRuntime::Codex};
     bool busy{};
 };
 
 std::atomic_uint64_t gCliGeneration{0};
+CodexRuntime gCodexRuntime;
 
 std::wstring Trim(std::wstring value) {
     const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
@@ -81,6 +86,9 @@ fs::path L3RouteLogPath() {
     return RuntimeLogPath(L"l3-runtime.log");
 }
 
+fs::path CodexDetailLogPath() {
+    return RuntimeLogPath(L"codex-runtime.log");
+}
 
 std::string WideToUtf8(const std::wstring& value) {
     if (value.empty()) return {};
@@ -183,6 +191,7 @@ void AppendCompleted(CliState& state, const std::wstring& user, const std::wstri
 
 std::wstring RuntimeName(ActiveRuntime runtime) {
     switch (runtime) {
+    case ActiveRuntime::Codex: return L"Codex CLI";
     case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
     }
     return L"Unknown Runtime";
@@ -190,18 +199,21 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
 
 std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::DirectModel: return L"SSE 流式";
+    case ActiveRuntime::Codex: return L"主路由 · Relay/API";
+    case ActiveRuntime::DirectModel: return L"Fallback · SSE 流式";
     }
     return L"";
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
-    std::wstring text = L"L3 runtime: TuringDesk Direct Model SSE";
-    text += L"\r\nProvider: " + (state.agent->Config().providerId.empty() ? std::wstring(L"unconfigured") : state.agent->Config().providerId);
-    text += L" · Model: " + (state.agent->Config().model.empty() ? std::wstring(L"unconfigured") : state.agent->Config().model);
-    text += L"\r\nLocal tools: in-process whitelist before model requests";
-    text += L"\r\nDeep workbench: explicit L4 only";
-    text += L"\r\nRoute log: " + L3RouteLogPath().wstring();
+    const auto status = state.codex->Status(*state.agent);
+    std::wstring text = L"主路由：Codex CLI → Relay/API";
+    text += L"\r\n失败回退：Direct Model Runtime → 当前配置 API";
+    text += L"\r\nProvider：" + (state.agent->Config().providerId.empty() ? std::wstring(L"未识别") : state.agent->Config().providerId);
+    text += L" · Model：" + (state.agent->Config().model.empty() ? std::wstring(L"未配置") : state.agent->Config().model);
+    text += L"\r\nCodex：" + status.message;
+    text += L"\r\n路由日志：" + L3RouteLogPath().wstring();
+    text += L"\r\nCodex 详情：" + CodexDetailLogPath().wstring();
     return text;
 }
 
@@ -224,10 +236,35 @@ void FinishTurn(CliState& state, const std::wstring& rawDone, bool classifyFailu
     SetFocus(state.input);
 }
 
+void StartDirectFallback(CliState& state, const std::wstring& codexError) {
+    const auto generation = state.generation;
+    const HWND hwnd = state.window;
+    const std::wstring prompt = state.activePrompt;
+    state.activeRuntime = ActiveRuntime::DirectModel;
+    state.streaming.clear();
+
+    const std::wstring reason = codexError.empty() ? L"Codex CLI 未返回有效结果" : codexError;
+    AppendRouteLog(L"fallback: direct api start; reason=" + reason +
+                   L"; provider=" + state.agent->Config().providerId +
+                   L"; model=" + state.agent->Config().model +
+                   L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
+    state.transcriptPrefix += L"[Fallback] Codex CLI 失败，已切换 Direct API；原因已写入日志。\r\nAI  ";
+    RenderTranscript(state, L"…");
+
+    auto onDelta = [hwnd, generation](std::wstring delta) {
+        PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
+    };
+    auto onDone = [hwnd, generation](std::wstring done) {
+        PostUi(hwnd, kDoneMessage, generation, std::move(done));
+    };
+    state.agent->AskAsync(prompt, std::move(onDelta), std::move(onDone));
+}
+
 void StopTurn(CliState& state) {
     if (!state.busy) return;
     gCliGeneration.fetch_add(1, std::memory_order_relaxed);
-    state.agent->Stop();
+    if (state.activeRuntime == ActiveRuntime::Codex) state.codex->Stop();
+    else state.agent->Stop();
     AppendRouteLog(L"route: request cancelled; runtime=" + RuntimeName(state.activeRuntime));
     state.busy = false;
     if (state.streaming.empty()) state.streaming = L"[已停止]";
@@ -269,7 +306,8 @@ void SendPrompt(CliState& state) {
         if (state.agent->TryHandleLocal(actualPrompt, localReply, consumedSecret)) {
             if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {
                 state.lastPrompt.clear();
-                AppendRouteLog(L"route: L3 session reset by user");
+                state.codex->ResetSession();
+                AppendRouteLog(L"route: Codex session reset by user");
             }
             AppendCompleted(state, typedPrompt, localReply);
             return;
@@ -283,9 +321,9 @@ void SendPrompt(CliState& state) {
 
     state.lastPrompt = actualPrompt;
     state.activePrompt = actualPrompt;
-    state.activeRuntime = ActiveRuntime::DirectModel;
+    state.activeRuntime = ActiveRuntime::Codex;
     state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::DirectModel) + L" · " + RuntimeExecutionLabel(ActiveRuntime::DirectModel) + L"\r\n";
+    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::Codex) + L" · " + RuntimeExecutionLabel(ActiveRuntime::Codex) + L"\r\n";
     state.transcriptPrefix += L"AI  ";
     state.streaming.clear();
     state.busy = true;
@@ -293,7 +331,7 @@ void SendPrompt(CliState& state) {
     EnableWindow(state.input, FALSE);
     RenderTranscript(state, L"…");
 
-    AppendRouteLog(L"route: direct model start; provider=" + state.agent->Config().providerId +
+    AppendRouteLog(L"route: primary codex start; provider=" + state.agent->Config().providerId +
                    L"; model=" + state.agent->Config().model +
                    L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
 
@@ -303,9 +341,9 @@ void SendPrompt(CliState& state) {
         PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
     };
     auto onDone = [hwnd, generation](std::wstring done) {
-        PostUi(hwnd, kDoneMessage, generation, std::move(done));
+        PostUi(hwnd, kCodexDoneMessage, generation, std::move(done));
     };
-    state.agent->AskAsync(actualPrompt, std::move(onDelta), std::move(onDone));
+    state.codex->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
 }
 
 LRESULT CALLBACK InputProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -340,6 +378,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (LOWORD(wParam) == kSettingsId && HIWORD(wParam) == BN_CLICKED) {
             if (state->busy) StopTurn(*state);
             if (ShowModelSettingsWindow(state->instance, hwnd, *state->agent)) {
+                state->codex->ResetSession();
                 state->lastPrompt.clear();
                 AppendRouteLog(L"route: model settings changed; provider=" + state->agent->Config().providerId +
                                L"; model=" + state->agent->Config().model +
@@ -365,12 +404,25 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         RenderTranscript(*state, state->streaming.empty() ? L"…" : state->streaming);
         return 0;
     }
+    case kCodexDoneMessage: {
+        std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
+        if (!payload || payload->generation != state->generation ||
+            payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
+        if (payload->text.empty()) {
+            AppendRouteLog(L"route: primary codex success");
+            FinishTurn(*state, L"", false);
+        } else {
+            AppendRouteLog(L"route: primary codex failed; error=" + payload->text);
+            StartDirectFallback(*state, payload->text);
+        }
+        return 0;
+    }
     case kDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
         if (!payload || payload->generation != state->generation ||
             payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
-        if (payload->text.empty()) AppendRouteLog(L"route: direct model success");
-        else AppendRouteLog(L"route: direct model failed; error=" + payload->text);
+        if (payload->text.empty()) AppendRouteLog(L"fallback: direct api success");
+        else AppendRouteLog(L"fallback: direct api failed; error=" + payload->text);
         FinishTurn(*state, payload->text, true);
         return 0;
     }
@@ -395,6 +447,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
         state->agent->Stop();
+        state->codex->Stop();
         return 0;
     case WM_NCDESTROY:
         if (state->backgroundBrush) DeleteObject(state->backgroundBrush);
@@ -422,6 +475,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     state->instance = instance;
     state->owner = owner;
     state->agent = &agent;
+    state->codex = &gCodexRuntime;
     state->backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
     state->monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -477,7 +531,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE,
                  reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
 
-    AppendRouteLog(L"window: L3 opened; runtime=Direct Model SSE; local-tools=in-process");
+    AppendRouteLog(L"window: L3 opened; primary=Codex CLI -> Relay/API; fallback=Direct API");
     ShowWindow(window, SW_SHOWNORMAL);
     SetForegroundWindow(window);
     SetFocus(state->input);

@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: native-windows-arm64
@@ -196,36 +196,3 @@ jobs:
           name: TuringDesk-Native-Search-ARM64
           path: build/package/**
           retention-days: 3
-
-  report:
-    if: always()
-    needs: [build-arm64]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ci-status
-      - name: Write native CI status
-        shell: bash
-        env:
-          ARM64_RESULT: ${{ needs.build-arm64.result }}
-        run: |
-          mkdir -p ci
-          cat > "ci/native-${GITHUB_SHA}.json" <<EOF
-          {
-            "sha": "${GITHUB_SHA}",
-            "mode": "native-arm64-goz-codex-relay-codex-cli",
-            "arm64": "${ARM64_RESULT}",
-            "run_id": "${GITHUB_RUN_ID}"
-          }
-          EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "ci/native-${GITHUB_SHA}.json"
-          git commit -m "ci: report native ARM64 build ${GITHUB_SHA}" || exit 0
-          for i in 1 2 3; do
-            git pull --rebase origin ci-status || true
-            if git push origin HEAD:ci-status; then exit 0; fi
-            sleep 2
-          done
-          exit 1

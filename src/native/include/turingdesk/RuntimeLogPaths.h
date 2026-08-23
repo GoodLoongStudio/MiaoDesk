@@ -4,6 +4,7 @@
 #include <shlobj.h>
 
 #include <filesystem>
+#include <iterator>
 #include <string>
 
 namespace turingdesk {

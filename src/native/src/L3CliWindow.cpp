@@ -147,16 +147,16 @@ void AppendCompleted(CliState& state, const std::wstring& user, const std::wstri
 
 std::wstring RuntimeName(const CliState&, ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::Codex: return L"Codex CLI Agent Runtime";
-    case ActiveRuntime::DirectTools: return L"Direct Agent Tool Runtime";
-    case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
+    case ActiveRuntime::Codex: return L"External Agent Runtime";
+    case ActiveRuntime::DirectTools: return L"TuringDesk Native Tool Runtime";
+    case ActiveRuntime::DirectModel: return L"TuringDesk Direct Model Runtime";
     }
     return L"Unknown Runtime";
 }
 
 std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::Codex: return L"Agent Tools=启用";
+    case ActiveRuntime::Codex: return L"外部 Agent";
     case ActiveRuntime::DirectTools: return L"Native Tools=启用";
     case ActiveRuntime::DirectModel: return L"文本模式";
     }
@@ -164,25 +164,18 @@ std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
 }
 
 ActiveRuntime ChooseRuntime(CliState& state) {
-    // Codex CLI is the preferred L3 agent runtime. Direct runtimes are retained
-    // only as compatibility fallbacks for providers that do not yet expose the
-    // Responses wire protocol required by Codex.
-    if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;
+    // Ordinary L3 always stays on TuringDesk-owned lightweight runtimes.
+    // Full external-agent workflows belong to the L4 Harness workbench.
     if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
     return ActiveRuntime::DirectModel;
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
-    const auto status = state.codex->Status(*state.agent);
     const auto selected = ChooseRuntime(state);
     std::wstring text = L"当前路由：" + RuntimeName(state, selected);
     text += L" · " + RuntimeExecutionLabel(selected);
-    text += L"\r\nCodex CLI：";
-    text += status.binaryAvailable ? L"已安装" : L"未安装";
-    text += L"\r\nProvider → Codex：";
-    text += status.providerCompatible ? L"Responses 可直连（默认使用 Codex CLI）" : L"等待 Responses 协议桥";
-    text += L"\r\nDirect Tools fallback：" + state.directTools->StatusText(*state.agent);
-    text += L"\r\n" + status.message;
+    text += L"\r\nTuringDesk Native Tools：" + state.directTools->StatusText(*state.agent);
+    text += L"\r\n边界：普通 L3 不启动外部 Agent/Harness；深度任务仅由 L4 工作台处理。";
     return text;
 }
 
@@ -246,9 +239,8 @@ void SendPrompt(CliState& state) {
 
     ActiveRuntime runtime = ChooseRuntime(state);
     if (retry) {
-        if (state.lastRuntime == ActiveRuntime::Codex && state.codex->CanHandle(*state.agent)) runtime = ActiveRuntime::Codex;
-        else if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
-        else if (state.lastRuntime == ActiveRuntime::DirectModel) runtime = ActiveRuntime::DirectModel;
+        if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+        else runtime = ActiveRuntime::DirectModel;
     }
 
     if (!retry) {
@@ -274,9 +266,7 @@ void SendPrompt(CliState& state) {
         PostUi(hwnd, kDoneMessage, generation, std::move(done));
     };
 
-    if (runtime == ActiveRuntime::Codex) {
-        state.codex->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
-    } else if (runtime == ActiveRuntime::DirectTools) {
+    if (runtime == ActiveRuntime::DirectTools) {
         state.directTools->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
     } else {
         state.agent->AskAsync(actualPrompt, std::move(onDelta), std::move(onDone));
@@ -356,7 +346,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         state->streaming.clear();
         state->busy = false;
         EnableWindow(state->input, TRUE);
-        RenderTranscript(state->streaming.empty() ? *state : *state);
+        RenderTranscript(*state);
         SetFocus(state->input);
         return 0;
     }
@@ -419,7 +409,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     const int x = ownerRect.left;
     const int y = ownerRect.top;
 
-    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · AI Agent",
+    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · AI 对话",
                                   WS_POPUP | WS_BORDER,
                                   x, y, width, height, owner, nullptr, instance, &state);
     if (!window) {
@@ -428,7 +418,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Codex CLI Agent", WS_CHILD | WS_VISIBLE,
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · L3 对话", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
     state.settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,

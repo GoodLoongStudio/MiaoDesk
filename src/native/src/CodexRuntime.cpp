@@ -2,6 +2,7 @@
 #include "turingdesk/NativeTools.h"
 
 #include <wincred.h>
+#include <winhttp.h>
 #include <algorithm>
 #include <cstdio>
 #include <cwchar>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -19,6 +21,10 @@ namespace {
 
 constexpr wchar_t kCredentialTarget[] = L"TuringDesk/ModelApiKey";
 constexpr wchar_t kApiKeyEnvironment[] = L"TURINGDESK_MODEL_API_KEY";
+constexpr DWORD kInitializeTimeoutMs = 30000;
+constexpr DWORD kThreadStartTimeoutMs = 60000;
+constexpr DWORD kTurnTimeoutMs = 120000;
+constexpr DWORD kRelayReadyTimeoutMs = 10000;
 
 std::wstring Trim(std::wstring value) {
     const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
@@ -241,18 +247,60 @@ fs::path ModuleDirectory() {
     return fs::path(path).parent_path();
 }
 
-fs::path CodexHomeDirectory() {
+fs::path LocalAppDataRoot() {
     wchar_t localAppData[32768]{};
     const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) return fs::path(localAppData) / L"TuringDesk" / L"CodexHome";
-    return fs::temp_directory_path() / L"TuringDesk" / L"CodexHome";
+    if (count > 0 && count < std::size(localAppData)) return fs::path(std::wstring(localAppData, count)) / L"TuringDesk";
+    return fs::temp_directory_path() / L"TuringDesk";
+}
+
+fs::path CodexHomeDirectory() {
+    return LocalAppDataRoot() / L"CodexHome";
+}
+
+fs::path CodexLogPath() {
+    const auto directory = LocalAppDataRoot() / L"Logs";
+    std::error_code ec;
+    fs::create_directories(directory, ec);
+    return directory / L"codex-runtime.log";
+}
+
+HANDLE OpenRuntimeLogHandle(bool inheritable) {
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = inheritable ? TRUE : FALSE;
+    const auto path = CodexLogPath();
+    HANDLE handle = CreateFileW(path.c_str(), FILE_APPEND_DATA,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                inheritable ? &security : nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    return handle;
+}
+
+void AppendRuntimeLog(const std::wstring& text) {
+    HANDLE handle = OpenRuntimeLogHandle(false);
+    if (!handle || handle == INVALID_HANDLE_VALUE) return;
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t prefix[64]{};
+    swprintf_s(prefix, L"[%04u-%02u-%02u %02u:%02u:%02u] ", now.wYear, now.wMonth, now.wDay,
+               now.wHour, now.wMinute, now.wSecond);
+    const auto utf8 = WideToUtf8(std::wstring(prefix) + text + L"\r\n");
+    if (!utf8.empty()) {
+        DWORD written = 0;
+        WriteFile(handle, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
+    }
+    CloseHandle(handle);
+}
+
+std::wstring LogHint() {
+    return L" · 日志：" + CodexLogPath().wstring();
 }
 
 std::wstring DesktopDirectory() {
     wchar_t profile[32768]{};
     const DWORD count = GetEnvironmentVariableW(L"USERPROFILE", profile, static_cast<DWORD>(std::size(profile)));
     if (count > 0 && count < std::size(profile)) {
-        const auto desktop = fs::path(profile) / L"Desktop";
+        const auto desktop = fs::path(std::wstring(profile, count)) / L"Desktop";
         std::error_code ec;
         if (fs::exists(desktop, ec) && fs::is_directory(desktop, ec)) return desktop.wstring();
     }
@@ -316,24 +364,41 @@ std::vector<wchar_t> BuildCodexEnvironmentBlock(const std::wstring& codexHome, c
     return BuildEnvironmentBlock({
         {L"CODEX_HOME", codexHome},
         {kApiKeyEnvironment, apiKey},
+        {L"RUST_LOG", L"codex_app_server=info,codex_core=warn"},
+        {L"LOG_FORMAT", L"json"},
     });
 }
 
 std::vector<wchar_t> BuildRelayEnvironmentBlock(const std::wstring& upstream,
                                                  const std::wstring& apiKey,
-                                                 unsigned short port) {
+                                                 unsigned short port,
+                                                 const std::wstring& model) {
     wchar_t oldPath[32768]{};
     const DWORD count = GetEnvironmentVariableW(L"PATH", oldPath, static_cast<DWORD>(std::size(oldPath)));
     std::wstring path = (ModuleDirectory() / L"Codex").wstring();
     if (count > 0 && count < std::size(oldPath)) path += L";" + std::wstring(oldPath, count);
-    return BuildEnvironmentBlock({
+
+    std::vector<std::pair<std::wstring, std::wstring>> overrides{
         {L"CODEX_RELAY_BIND", L"127.0.0.1"},
         {L"CODEX_RELAY_PORT", std::to_wstring(port)},
         {L"CODEX_RELAY_UPSTREAM", upstream},
         {L"CODEX_RELAY_API_KEY", apiKey},
-        {L"RUST_LOG", L"codex_relay=warn"},
+        {L"RUST_LOG", L"codex_relay=info"},
         {L"PATH", path},
-    });
+    };
+
+    const auto lowerUpstream = Lower(upstream);
+    const auto lowerModel = Lower(model);
+    const bool deepseekChat = lowerUpstream.find(L"deepseek") != std::wstring::npos &&
+                              lowerModel.find(L"reasoner") == std::wstring::npos &&
+                              lowerModel.find(L"reasoning") == std::wstring::npos;
+    if (deepseekChat) {
+        // Keep the Codex path aligned with the previously-working direct DeepSeek path.
+        // codex-relay documents this pair for non-reasoning DeepSeek chat models.
+        overrides.emplace_back(L"CODEX_RELAY_UPSTREAM_EXTRA_PARAMS", L"{\"thinking\":{\"type\":\"disabled\"}}");
+        overrides.emplace_back(L"CODEX_RELAY_DROP_PARAMS", L"[\"reasoning_effort\"]");
+    }
+    return BuildEnvironmentBlock(overrides);
 }
 
 std::wstring StripResponsesSuffix(std::wstring url) {
@@ -347,10 +412,6 @@ std::wstring StripResponsesSuffix(std::wstring url) {
 std::wstring OpenAiResponsesBase(const L3Agent& agent) {
     auto url = Trim(agent.CurrentApiUrl());
     if (url.empty()) return {};
-    // Only an explicitly configured Responses endpoint is safe to use directly.
-    // A /chat/completions endpoint must always go through codex-relay, even when
-    // the provider id is "openai" (that id is also used for OpenAI-compatible
-    // providers such as DeepSeek in the TuringDesk settings UI).
     if (EndsWithInsensitive(url, L"/responses")) return StripResponsesSuffix(url);
     return {};
 }
@@ -374,6 +435,30 @@ bool IsLocalHttpBase(const std::wstring& url) {
 
 bool ProcessAlive(HANDLE process) {
     return process && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+}
+
+bool ProbeLoopbackHttp(unsigned short port) {
+    HINTERNET session = WinHttpOpen(L"TuringDesk.CodexRelay.Readiness/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return false;
+    WinHttpSetTimeouts(session, 250, 250, 250, 250);
+    HINTERNET connection = WinHttpConnect(session, L"127.0.0.1", port, 0);
+    if (!connection) {
+        WinHttpCloseHandle(session);
+        return false;
+    }
+    HINTERNET request = WinHttpOpenRequest(connection, L"GET", L"/__turingdesk_ready", nullptr,
+                                           WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+    bool ready = false;
+    if (request) {
+        ready = WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                   WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+                WinHttpReceiveResponse(request, nullptr);
+        WinHttpCloseHandle(request);
+    }
+    WinHttpCloseHandle(connection);
+    WinHttpCloseHandle(session);
+    return ready;
 }
 
 } // namespace
@@ -499,33 +584,56 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
     fs::path catalogPath;
     if (setup.relayRequired) {
         catalogPath = home / L"codex-relay-models.json";
+        fs::remove(catalogPath, ec);
+        ec.clear();
         const auto relay = FindRelayBinary();
-        if (!relay.empty()) {
-            SECURITY_ATTRIBUTES security{};
-            security.nLength = sizeof(security);
-            security.bInheritHandle = TRUE;
-            HANDLE nullHandle = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                            &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-            STARTUPINFOW startup{};
-            startup.cb = sizeof(startup);
-            startup.dwFlags = STARTF_USESTDHANDLES;
-            startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-            startup.hStdOutput = nullHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_OUTPUT_HANDLE) : nullHandle;
-            startup.hStdError = nullHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_ERROR_HANDLE) : nullHandle;
-            PROCESS_INFORMATION process{};
-            std::wstring command = QuoteArg(relay) + L" --print-config --model-catalog " + QuoteArg(catalogPath.wstring());
-            auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort);
-            const BOOL created = CreateProcessW(relay.c_str(), command.data(), nullptr, nullptr, TRUE,
-                                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                                                environment.data(), home.c_str(), &startup, &process);
-            if (created) {
-                const DWORD wait = WaitForSingleObject(process.hProcess, 15000);
-                if (wait == WAIT_TIMEOUT) TerminateProcess(process.hProcess, 1);
-                CloseHandle(process.hThread);
-                CloseHandle(process.hProcess);
-            }
-            if (nullHandle && nullHandle != INVALID_HANDLE_VALUE) CloseHandle(nullHandle);
+        if (relay.empty()) {
+            error = L"生成 Codex 模型目录时没有找到 codex-relay.exe";
+            return false;
         }
+
+        SECURITY_ATTRIBUTES security{};
+        security.nLength = sizeof(security);
+        security.bInheritHandle = TRUE;
+        HANDLE nullInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                       &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE logHandle = OpenRuntimeLogHandle(true);
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = nullInput == INVALID_HANDLE_VALUE ? GetStdHandle(STD_INPUT_HANDLE) : nullInput;
+        startup.hStdOutput = logHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_OUTPUT_HANDLE) : logHandle;
+        startup.hStdError = logHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_ERROR_HANDLE) : logHandle;
+        PROCESS_INFORMATION process{};
+        std::wstring command = QuoteArg(relay) + L" --print-config --model-catalog " + QuoteArg(catalogPath.wstring());
+        auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort, setup.model);
+        AppendRuntimeLog(L"catalog: generating model catalog for model=" + setup.model + L" upstream=" + setup.upstreamBaseUrl);
+        const BOOL created = CreateProcessW(relay.c_str(), command.data(), nullptr, nullptr, TRUE,
+                                            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                            environment.data(), home.c_str(), &startup, &process);
+        if (nullInput && nullInput != INVALID_HANDLE_VALUE) CloseHandle(nullInput);
+        if (logHandle && logHandle != INVALID_HANDLE_VALUE) CloseHandle(logHandle);
+        if (!created) {
+            error = L"Codex Relay 模型目录生成进程启动失败，Win32=" + std::to_wstring(GetLastError()) + LogHint();
+            return false;
+        }
+        const DWORD wait = WaitForSingleObject(process.hProcess, 20000);
+        DWORD exitCode = STILL_ACTIVE;
+        if (wait == WAIT_TIMEOUT) {
+            TerminateProcess(process.hProcess, 1);
+            error = L"Codex Relay 模型目录生成超时" + LogHint();
+        } else {
+            GetExitCodeProcess(process.hProcess, &exitCode);
+            if (exitCode != 0) error = L"Codex Relay 模型目录生成失败，ExitCode=" + std::to_wstring(exitCode) + LogHint();
+        }
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        if (!error.empty()) return false;
+        if (!fs::is_regular_file(catalogPath, ec)) {
+            error = L"Codex Relay 没有生成模型目录文件" + LogHint();
+            return false;
+        }
+        AppendRuntimeLog(L"catalog: ready at " + catalogPath.wstring());
     }
 
     std::wofstream stream(home / L"config.toml", std::ios::trunc);
@@ -537,7 +645,7 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
            << L"model_provider = \"turingdesk\"\n"
            << L"approval_policy = \"never\"\n"
            << L"sandbox_mode = \"workspace-write\"\n";
-    if (!catalogPath.empty() && fs::exists(catalogPath, ec))
+    if (!catalogPath.empty())
         stream << L"model_catalog_json = \"" << TomlEscape(catalogPath.wstring()) << L"\"\n";
     stream << L"\n[model_providers.turingdesk]\n"
            << L"name = \"TuringDesk Codex Provider\"\n"
@@ -549,7 +657,33 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
         error = L"Codex Runtime 配置写入失败";
         return false;
     }
+    AppendRuntimeLog(L"config: provider=turingdesk model=" + setup.model +
+                     (setup.relayRequired ? L" route=relay" : L" route=responses"));
     return true;
+}
+
+bool CodexRuntime::WaitForRelayReady(const ProviderSetup& setup, DWORD timeoutMs, std::wstring& error) const {
+    if (!setup.relayRequired) return true;
+    const ULONGLONG started = GetTickCount64();
+    for (;;) {
+        HANDLE relay = nullptr;
+        {
+            std::scoped_lock lock(processMutex_);
+            relay = relayProcess_;
+        }
+        if (!ProcessAlive(relay)) {
+            DWORD exitCode = 0;
+            if (relay) GetExitCodeProcess(relay, &exitCode);
+            error = L"Codex Relay 在就绪前退出，ExitCode=" + std::to_wstring(exitCode) + LogHint();
+            return false;
+        }
+        if (ProbeLoopbackHttp(setup.relayPort)) return true;
+        if (GetTickCount64() - started >= timeoutMs) {
+            error = L"Codex Relay 监听端口在限定时间内没有就绪" + LogHint();
+            return false;
+        }
+        Sleep(80);
+    }
 }
 
 bool CodexRuntime::LaunchRelay(const ProviderSetup& setup, std::wstring& error) {
@@ -559,26 +693,31 @@ bool CodexRuntime::LaunchRelay(const ProviderSetup& setup, std::wstring& error) 
         error = L"当前 Provider 需要 Codex Relay，但没有找到 codex-relay.exe";
         return false;
     }
+
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+    HANDLE nullInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE logHandle = OpenRuntimeLogHandle(true);
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = nullInput == INVALID_HANDLE_VALUE ? GetStdHandle(STD_INPUT_HANDLE) : nullInput;
+    startup.hStdOutput = logHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_OUTPUT_HANDLE) : logHandle;
+    startup.hStdError = logHandle == INVALID_HANDLE_VALUE ? GetStdHandle(STD_ERROR_HANDLE) : logHandle;
     PROCESS_INFORMATION process{};
     std::wstring command = QuoteArg(binary);
-    auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort);
+    auto environment = BuildRelayEnvironmentBlock(setup.upstreamBaseUrl, setup.apiKey, setup.relayPort, setup.model);
     const auto cwd = ModuleDirectory().wstring();
-    const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, FALSE,
+    AppendRuntimeLog(L"relay: starting port=" + std::to_wstring(setup.relayPort) + L" upstream=" + setup.upstreamBaseUrl + L" model=" + setup.model);
+    const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
                                         environment.data(), cwd.empty() ? nullptr : cwd.c_str(), &startup, &process);
+    if (nullInput && nullInput != INVALID_HANDLE_VALUE) CloseHandle(nullInput);
+    if (logHandle && logHandle != INVALID_HANDLE_VALUE) CloseHandle(logHandle);
     if (!created) {
-        error = L"启动 Codex Relay 失败，Win32=" + std::to_wstring(GetLastError());
-        return false;
-    }
-    const DWORD early = WaitForSingleObject(process.hProcess, 500);
-    if (early != WAIT_TIMEOUT) {
-        DWORD exitCode = 0;
-        GetExitCodeProcess(process.hProcess, &exitCode);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        error = L"Codex Relay 启动后立即退出，ExitCode=" + std::to_wstring(exitCode);
+        error = L"启动 Codex Relay 失败，Win32=" + std::to_wstring(GetLastError()) + LogHint();
         return false;
     }
     {
@@ -586,6 +725,11 @@ bool CodexRuntime::LaunchRelay(const ProviderSetup& setup, std::wstring& error) 
         relayProcess_ = process.hProcess;
         relayThread_ = process.hThread;
     }
+    if (!WaitForRelayReady(setup, kRelayReadyTimeoutMs, error)) {
+        AppendRuntimeLog(L"relay: readiness failed: " + error);
+        return false;
+    }
+    AppendRuntimeLog(L"relay: listener ready");
     return true;
 }
 
@@ -618,30 +762,37 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     }
     SetHandleInformation(childStdoutRead, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(childStdinWrite, HANDLE_FLAG_INHERIT, 0);
-    HANDLE nullError = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                   &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+    HANDLE logHandle = OpenRuntimeLogHandle(true);
+    HANDLE nullError = INVALID_HANDLE_VALUE;
+    if (!logHandle || logHandle == INVALID_HANDLE_VALUE) {
+        nullError = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = childStdinRead;
     startup.hStdOutput = childStdoutWrite;
-    startup.hStdError = nullError == INVALID_HANDLE_VALUE ? childStdoutWrite : nullError;
+    startup.hStdError = logHandle && logHandle != INVALID_HANDLE_VALUE ? logHandle : nullError;
     PROCESS_INFORMATION process{};
     std::wstring command = QuoteArg(binary);
     command += cliBinary ? L" app-server --stdio" : L" --stdio";
     auto environment = BuildCodexEnvironmentBlock(codexHome, setup.apiKey);
     const auto cwd = DesktopDirectory();
+    AppendRuntimeLog(L"app-server: starting binary=" + binary + L" cwd=" + cwd);
     const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
                                         environment.data(), cwd.empty() ? nullptr : cwd.c_str(), &startup, &process);
     CloseHandle(childStdinRead);
     CloseHandle(childStdoutWrite);
+    if (logHandle && logHandle != INVALID_HANDLE_VALUE) CloseHandle(logHandle);
     if (nullError && nullError != INVALID_HANDLE_VALUE) CloseHandle(nullError);
     if (!created) {
         const DWORD code = GetLastError();
         CloseHandle(childStdoutRead);
         CloseHandle(childStdinWrite);
-        error = L"启动 Codex app-server 失败，Win32=" + std::to_wstring(code);
+        error = L"启动 Codex app-server 失败，Win32=" + std::to_wstring(code) + LogHint();
         return false;
     }
     {
@@ -659,18 +810,21 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     const std::string initialize =
         "{\"id\":" + std::to_string(initializeId) +
         ",\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"turingdesk\",\"title\":\"Turing Intelligent Desktop\",\"version\":\"0.1\"},\"capabilities\":{\"experimentalApi\":true}}}";
+    AppendRuntimeLog(L"app-server: initialize ->");
     if (!WriteLine(initialize)) {
-        error = L"Codex initialize 写入失败";
+        error = L"Codex initialize 写入失败" + LogHint();
         CleanupProcess();
         return false;
     }
     std::string response;
-    if (!WaitForResponse(initializeId, response, error)) {
+    if (!WaitForResponse(initializeId, response, error, kInitializeTimeoutMs)) {
+        error = L"Codex initialize 失败：" + error + LogHint();
         CleanupProcess();
         return false;
     }
+    AppendRuntimeLog(L"app-server: initialize <- ok");
     if (!WriteLine("{\"method\":\"initialized\"}")) {
-        error = L"Codex initialized 写入失败";
+        error = L"Codex initialized 写入失败" + LogHint();
         CleanupProcess();
         return false;
     }
@@ -688,7 +842,9 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
         "\",\"developerInstructions\":\"" + EscapeJson(developerInstructions) +
         "\",\"dynamicTools\":" + NativeToolDefinitionsJson() +
         ",\"ephemeral\":true}}";
-    if (!WriteLine(threadStart) || !WaitForResponse(threadRequest, response, error)) {
+    AppendRuntimeLog(L"app-server: thread/start -> model=" + setup.model);
+    if (!WriteLine(threadStart) || !WaitForResponse(threadRequest, response, error, kThreadStartTimeoutMs)) {
+        error = L"Codex thread/start 失败：" + error + LogHint();
         CleanupProcess();
         return false;
     }
@@ -696,10 +852,11 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     const auto id = ExtractJsonString(threadPos == std::string::npos ? std::string_view(response) : std::string_view(response).substr(threadPos), "\"id\"");
     threadId_ = Utf8ToWide(id);
     if (threadId_.empty()) {
-        error = L"Codex thread/start 没有返回 thread id";
+        error = L"Codex thread/start 没有返回 thread id" + LogHint();
         CleanupProcess();
         return false;
     }
+    AppendRuntimeLog(L"app-server: thread/start <- ok thread=" + threadId_);
     sessionSignature_ = setup.signature;
     return true;
 }
@@ -712,7 +869,11 @@ bool CodexRuntime::EnsureSession(const ProviderSetup& setup, std::wstring& error
         if (codexAlive && relayAlive && sessionSignature_ == setup.signature && !threadId_.empty()) return true;
     }
     CleanupProcess();
-    if (setup.relayRequired && !LaunchRelay(setup, error)) return false;
+    AppendRuntimeLog(L"session: creating new Codex session");
+    if (setup.relayRequired && !LaunchRelay(setup, error)) {
+        CleanupProcess();
+        return false;
+    }
     if (!LaunchProcess(setup, error)) {
         CleanupProcess();
         return false;
@@ -740,7 +901,8 @@ bool CodexRuntime::WriteLine(const std::string& line) {
     return true;
 }
 
-bool CodexRuntime::ReadLine(std::string& line) {
+bool CodexRuntime::ReadLine(std::string& line, DWORD timeoutMs, std::wstring& error) {
+    const ULONGLONG started = GetTickCount64();
     for (;;) {
         const auto newline = readBuffer_.find('\n');
         if (newline != std::string::npos) {
@@ -749,23 +911,65 @@ bool CodexRuntime::ReadLine(std::string& line) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             return true;
         }
+
         HANDLE handle = nullptr;
+        HANDLE process = nullptr;
         {
             std::scoped_lock lock(processMutex_);
             handle = outputRead_;
+            process = process_;
         }
-        if (!handle) return false;
-        char buffer[4096];
-        DWORD read = 0;
-        if (!ReadFile(handle, buffer, static_cast<DWORD>(sizeof(buffer)), &read, nullptr) || read == 0) return false;
-        readBuffer_.append(buffer, read);
-        if (readBuffer_.size() > 4 * 1024 * 1024) return false;
+        if (!handle) {
+            error = L"Codex app-server 输出管道不存在";
+            return false;
+        }
+
+        DWORD available = 0;
+        if (!PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr)) {
+            const DWORD code = GetLastError();
+            error = L"Codex app-server 输出管道断开，Win32=" + std::to_wstring(code);
+            return false;
+        }
+        if (available > 0) {
+            char buffer[4096];
+            const DWORD toRead = std::min<DWORD>(available, static_cast<DWORD>(sizeof(buffer)));
+            DWORD read = 0;
+            if (!ReadFile(handle, buffer, toRead, &read, nullptr) || read == 0) {
+                error = L"Codex app-server 输出读取失败，Win32=" + std::to_wstring(GetLastError());
+                return false;
+            }
+            readBuffer_.append(buffer, read);
+            if (readBuffer_.size() > 4 * 1024 * 1024) {
+                error = L"Codex app-server 单条输出异常过大";
+                return false;
+            }
+            continue;
+        }
+        if (!ProcessAlive(process)) {
+            DWORD exitCode = 0;
+            if (process) GetExitCodeProcess(process, &exitCode);
+            error = L"Codex app-server 已退出，ExitCode=" + std::to_wstring(exitCode);
+            return false;
+        }
+        if (GetTickCount64() - started >= timeoutMs) {
+            error = L"Codex app-server 等待输出超时（" + std::to_wstring(timeoutMs / 1000) + L" 秒）";
+            return false;
+        }
+        Sleep(15);
     }
 }
 
-bool CodexRuntime::WaitForResponse(long long id, std::string& response, std::wstring& error) {
+bool CodexRuntime::WaitForResponse(long long id, std::string& response, std::wstring& error, DWORD timeoutMs) {
+    const ULONGLONG started = GetTickCount64();
     std::string line;
-    while (ReadLine(line)) {
+    for (;;) {
+        const ULONGLONG elapsed = GetTickCount64() - started;
+        if (elapsed >= timeoutMs) {
+            error = L"等待 JSON-RPC response id=" + std::to_wstring(id) + L" 超时";
+            return false;
+        }
+        const DWORD remaining = static_cast<DWORD>(timeoutMs - elapsed);
+        if (!ReadLine(line, remaining, error)) return false;
         if (!HasResponseId(line, id)) continue;
         response = line;
         if (line.find("\"result\"") == std::string::npos && line.find("\"error\"") != std::string::npos) {
@@ -775,8 +979,6 @@ bool CodexRuntime::WaitForResponse(long long id, std::string& response, std::wst
         }
         return true;
     }
-    error = L"Codex app-server 连接已断开";
-    return false;
 }
 
 void CodexRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone) {
@@ -800,6 +1002,7 @@ void CodexRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCall
 void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken) {
     std::wstring error;
     if (!EnsureSession(setup, error)) {
+        AppendRuntimeLog(L"session: failed: " + error);
         if (onDone) onDone(L"Codex Runtime 启动失败：" + error);
         return;
     }
@@ -808,8 +1011,9 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         "{\"id\":" + std::to_string(requestId) +
         ",\"method\":\"turn/start\",\"params\":{\"threadId\":\"" + EscapeJson(threadId_) +
         "\",\"input\":[{\"type\":\"text\",\"text\":\"" + EscapeJson(prompt) + "\"}]}}";
+    AppendRuntimeLog(L"app-server: turn/start ->");
     if (!WriteLine(request)) {
-        if (onDone) onDone(L"Codex turn/start 写入失败");
+        if (onDone) onDone(L"Codex turn/start 写入失败" + LogHint());
         CleanupProcess();
         return;
     }
@@ -818,20 +1022,34 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
     bool emittedAgentText = false;
     std::wstring finalAgentText;
     std::string line;
-    while (!stopToken.stop_requested() && ReadLine(line)) {
+    const ULONGLONG turnStarted = GetTickCount64();
+    for (;;) {
+        if (stopToken.stop_requested()) break;
+        const ULONGLONG elapsed = GetTickCount64() - turnStarted;
+        if (elapsed >= kTurnTimeoutMs) {
+            error = L"Codex turn 等待模型响应超过 " + std::to_wstring(kTurnTimeoutMs / 1000) + L" 秒";
+            break;
+        }
+        if (!ReadLine(line, static_cast<DWORD>(kTurnTimeoutMs - elapsed), error)) break;
+
         if (HasResponseId(line, requestId)) {
             if (line.find("\"result\"") == std::string::npos && line.find("\"error\"") != std::string::npos) {
                 const auto message = ExtractJsonString(line, "\"message\"");
-                if (onDone) onDone(message.empty() ? L"Codex turn/start 失败" : Utf8ToWide(message));
+                const std::wstring done = message.empty() ? L"Codex turn/start 失败" : Utf8ToWide(message);
+                AppendRuntimeLog(L"app-server: turn/start <- error: " + done);
+                if (onDone) onDone(done + LogHint());
                 return;
             }
             startAccepted = true;
+            AppendRuntimeLog(L"app-server: turn/start <- accepted");
             continue;
         }
+
         const auto method = ExtractJsonString(line, "\"method\"");
         if (method == "item/tool/call") {
             long long serverRequestId = 0;
             const auto tool = ExtractJsonString(line, "\"tool\"");
+            AppendRuntimeLog(L"app-server: dynamic tool call=" + Utf8ToWide(tool));
             NativeToolResult result;
             if (!TryReadRequestId(line, serverRequestId)) result = {false, L"TuringDesk 无法解析 Codex tool request id。"};
             else if (tool.empty()) result = {false, L"Codex tool request 缺少 tool 名称。"};
@@ -842,7 +1060,7 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
                     ",\"result\":{\"contentItems\":[{\"type\":\"inputText\",\"text\":\"" + EscapeJson(result.message) +
                     "\"}],\"success\":" + (result.success ? "true" : "false") + "}}";
                 if (!WriteLine(reply)) {
-                    if (onDone) onDone(L"Codex Native Tool 结果回传失败");
+                    if (onDone) onDone(L"Codex Native Tool 结果回传失败" + LogHint());
                     CleanupProcess();
                     return;
                 }
@@ -865,6 +1083,12 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
             }
             continue;
         }
+        if (method == "error") {
+            const auto message = ExtractJsonString(line, "\"message\"");
+            error = message.empty() ? L"Codex app-server 返回 error 通知" : Utf8ToWide(message);
+            AppendRuntimeLog(L"app-server: error notification: " + error);
+            break;
+        }
         if (method == "turn/completed") {
             std::wstring done;
             const auto status = ExtractJsonString(line, "\"status\"");
@@ -880,14 +1104,23 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
             }
             if (done.empty() && !emittedAgentText)
                 done = L"Codex turn 已完成，但模型没有返回可显示文本";
+            AppendRuntimeLog(L"app-server: turn/completed status=" + Utf8ToWide(status));
             if (onDone) onDone(std::move(done));
             return;
         }
     }
+
     if (stopToken.stop_requested()) {
+        AppendRuntimeLog(L"app-server: turn cancelled");
         if (onDone) onDone(L"已取消 Codex 请求");
-    } else if (onDone) {
-        onDone(startAccepted ? L"Codex app-server 意外断开" : L"Codex turn 未启动");
+    } else {
+        AppendRuntimeLog(L"app-server: turn aborted: " + error);
+        if (onDone) {
+            std::wstring done = startAccepted ? L"Codex turn 中断：" : L"Codex turn 未启动：";
+            done += error.empty() ? L"app-server 没有继续输出" : error;
+            done += LogHint();
+            onDone(std::move(done));
+        }
     }
     CleanupProcess();
 }

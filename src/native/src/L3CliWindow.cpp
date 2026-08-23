@@ -1,13 +1,17 @@
 #include "turingdesk/L3CliWindow.h"
-#include "turingdesk/DirectToolRuntime.h"
+#include "turingdesk/CodexRuntime.h"
 #include "turingdesk/ModelSettingsWindow.h"
 #include <CommCtrl.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cwctype>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <utility>
+
+namespace fs = std::filesystem;
 
 namespace turingdesk {
 namespace {
@@ -19,10 +23,11 @@ constexpr int kSettingsId = 3103;
 constexpr int kCloseId = 3104;
 constexpr UINT kDeltaMessage = WM_APP + 31;
 constexpr UINT kDoneMessage = WM_APP + 32;
+constexpr UINT kCodexDoneMessage = WM_APP + 33;
 
 enum class ActiveRuntime {
+    Codex,
     DirectModel,
-    DirectTools,
 };
 
 struct UiMessage {
@@ -40,21 +45,21 @@ struct CliState {
     HWND close{};
     WNDPROC oldInputProc{};
     L3Agent* agent{};
-    DirectToolRuntime* directTools{};
+    CodexRuntime* codex{};
     HBRUSH backgroundBrush{};
     HFONT monoFont{};
     HFONT uiFont{};
     std::wstring transcriptPrefix;
     std::wstring streaming;
     std::wstring lastPrompt;
+    std::wstring activePrompt;
     std::uint64_t generation{};
-    ActiveRuntime activeRuntime{ActiveRuntime::DirectModel};
-    ActiveRuntime lastRuntime{ActiveRuntime::DirectModel};
+    ActiveRuntime activeRuntime{ActiveRuntime::Codex};
     bool busy{};
 };
 
 std::atomic_uint64_t gCliGeneration{0};
-DirectToolRuntime gDirectToolRuntime;
+CodexRuntime gCodexRuntime;
 
 std::wstring Trim(std::wstring value) {
     const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
@@ -70,44 +75,58 @@ std::wstring Lower(std::wstring value) {
     return value;
 }
 
-// Ordinary conversation must remain on L3Agent's SSE streaming path. Only
-// explicit desktop actions may enter TuringDesk's bounded Native Tool runtime.
-bool WantsNativeTools(const std::wstring& prompt) {
-    const auto lower = Lower(prompt);
-    const bool action = lower.find(L"创建") != std::wstring::npos ||
-                        lower.find(L"生成") != std::wstring::npos ||
-                        lower.find(L"新建") != std::wstring::npos ||
-                        lower.find(L"制作") != std::wstring::npos ||
-                        lower.find(L"打开") != std::wstring::npos ||
-                        lower.find(L"列出") != std::wstring::npos ||
-                        lower.find(L"列一下") != std::wstring::npos ||
-                        lower.find(L"查看") != std::wstring::npos ||
-                        lower.find(L"看看") != std::wstring::npos ||
-                        lower.find(L"create") != std::wstring::npos ||
-                        lower.find(L"generate") != std::wstring::npos ||
-                        lower.find(L"make") != std::wstring::npos ||
-                        lower.find(L"open") != std::wstring::npos ||
-                        lower.find(L"list") != std::wstring::npos ||
-                        lower.find(L"show") != std::wstring::npos;
-    if (!action) return false;
+std::wstring SafeEndpoint(std::wstring value) {
+    const auto query = value.find_first_of(L"?#");
+    if (query != std::wstring::npos) value.resize(query);
+    return value;
+}
 
-    return lower.find(L"ppt") != std::wstring::npos ||
-           lower.find(L"powerpoint") != std::wstring::npos ||
-           lower.find(L"演示文稿") != std::wstring::npos ||
-           lower.find(L"幻灯片") != std::wstring::npos ||
-           lower.find(L"桌面") != std::wstring::npos ||
-           lower.find(L"下载") != std::wstring::npos ||
-           lower.find(L"文档") != std::wstring::npos ||
-           lower.find(L"文件") != std::wstring::npos ||
-           lower.find(L"目录") != std::wstring::npos ||
-           lower.find(L"文件夹") != std::wstring::npos ||
-           lower.find(L"应用") != std::wstring::npos ||
-           lower.find(L"desktop") != std::wstring::npos ||
-           lower.find(L"downloads") != std::wstring::npos ||
-           lower.find(L"documents") != std::wstring::npos ||
-           lower.find(L"file") != std::wstring::npos ||
-           lower.find(L"folder") != std::wstring::npos ||
-           lower.find(L"app") != std::wstring::npos;
+fs::path RuntimeLogDirectory() {
+    wchar_t localAppData[32768]{};
+    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
+    fs::path root;
+    if (count > 0 && count < std::size(localAppData)) root = fs::path(std::wstring(localAppData, count));
+    else root = fs::temp_directory_path();
+    std::error_code ec;
+    const auto logs = root / L"TuringDesk" / L"Logs";
+    fs::create_directories(logs, ec);
+    return logs;
+}
+
+fs::path L3RouteLogPath() {
+    return RuntimeLogDirectory() / L"l3-runtime.log";
+}
+
+fs::path CodexDetailLogPath() {
+    return RuntimeLogDirectory() / L"codex-runtime.log";
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+    if (value.empty()) return {};
+    const int needed = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return {};
+    std::string out(static_cast<std::size_t>(needed), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), out.data(), needed, nullptr, nullptr);
+    return out;
+}
+
+void AppendRouteLog(const std::wstring& text) {
+    const auto path = L3RouteLogPath();
+    HANDLE handle = CreateFileW(path.c_str(), FILE_APPEND_DATA,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (!handle || handle == INVALID_HANDLE_VALUE) return;
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t prefix[64]{};
+    swprintf_s(prefix, L"[%04u-%02u-%02u %02u:%02u:%02u] ", now.wYear, now.wMonth, now.wDay,
+               now.wHour, now.wMinute, now.wSecond);
+    const auto utf8 = WideToUtf8(std::wstring(prefix) + text + L"\r\n");
+    if (!utf8.empty()) {
+        DWORD written = 0;
+        WriteFile(handle, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
+    }
+    CloseHandle(handle);
 }
 
 bool ContainsHttpStatus(const std::wstring& text, int status) {
@@ -128,7 +147,7 @@ bool ShouldOfferRetry(const std::wstring& rawText) {
 std::wstring ClassifyTransportFailure(std::wstring text) {
     if (text.empty()) return text;
     if (text.find(L"WinHTTP 错误 12002") != std::wstring::npos || ContainsHttpStatus(text, 408) || ContainsHttpStatus(text, 504)) {
-        return L"L3 请求超时。模型服务在限定时间内没有完成响应；本地搜索与工具不受影响，可输入 /retry 重试。";
+        return L"L3 请求超时。模型服务在限定时间内没有完成响应；可输入 /retry 重试。";
     }
     if (text.find(L"WinHTTP 错误 12007") != std::wstring::npos) {
         return L"L3 无法解析模型服务地址（DNS）。请检查 Base URL 或网络连接，可输入 /retry 重试。";
@@ -139,16 +158,16 @@ std::wstring ClassifyTransportFailure(std::wstring text) {
         return L"L3 无法连接模型服务，或连接被服务端中断。请检查网络/服务状态，可输入 /retry 重试。";
     }
     if (text.find(L"WinHTTP 错误 12175") != std::wstring::npos) {
-        return L"L3 HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置；不会自动升级到 Harness。";
+        return L"L3 HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
     }
     if (ContainsHttpStatus(text, 401) || ContainsHttpStatus(text, 403)) {
-        return L"L3 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限；不会自动升级到 Harness。";
+        return L"L3 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限。";
     }
     if (ContainsHttpStatus(text, 429)) {
-        return L"L3 模型服务限流（HTTP 429）。稍后可输入 /retry 重试；不会自动升级到 Harness。";
+        return L"L3 模型服务限流（HTTP 429）。稍后可输入 /retry 重试。";
     }
     if (ContainsHttpStatus(text, 500) || ContainsHttpStatus(text, 502) || ContainsHttpStatus(text, 503)) {
-        return L"L3 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试；不会自动升级到 Harness。";
+        return L"L3 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试。";
     }
     return text;
 }
@@ -183,7 +202,7 @@ void AppendCompleted(CliState& state, const std::wstring& user, const std::wstri
 
 std::wstring RuntimeName(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::DirectTools: return L"TuringDesk Native Tool Runtime";
+    case ActiveRuntime::Codex: return L"Codex CLI";
     case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
     }
     return L"Unknown Runtime";
@@ -191,35 +210,79 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
 
 std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::DirectTools: return L"Native Tools=启用";
-    case ActiveRuntime::DirectModel: return L"SSE 流式";
+    case ActiveRuntime::Codex: return L"主路由 · Relay/API";
+    case ActiveRuntime::DirectModel: return L"Fallback · SSE 流式";
     }
     return L"";
 }
 
-ActiveRuntime ChooseRuntime(CliState& state, const std::wstring& prompt) {
-    if (WantsNativeTools(prompt) && state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
-    return ActiveRuntime::DirectModel;
+std::wstring RuntimeStatusText(CliState& state) {
+    const auto status = state.codex->Status(*state.agent);
+    std::wstring text = L"主路由：Codex CLI → Relay/API";
+    text += L"\r\n失败回退：Direct Model Runtime → 当前配置 API";
+    text += L"\r\nProvider：" + (state.agent->Config().providerId.empty() ? std::wstring(L"未识别") : state.agent->Config().providerId);
+    text += L" · Model：" + (state.agent->Config().model.empty() ? std::wstring(L"未配置") : state.agent->Config().model);
+    text += L"\r\nCodex：" + status.message;
+    text += L"\r\n路由日志：" + L3RouteLogPath().wstring();
+    text += L"\r\nCodex 详情：" + CodexDetailLogPath().wstring();
+    return text;
 }
 
-std::wstring RuntimeStatusText(CliState& state) {
-    std::wstring text = L"普通对话：Direct Model Runtime · SSE 流式";
-    text += L"\r\n明确桌面动作：TuringDesk Native Tool Runtime（可用时）";
-    text += L"\r\nL3 外部 Agent/Harness/Relay：不参与；复杂任务请交给 L4。";
-    text += L"\r\nNative Tools：" + state.directTools->StatusText(*state.agent);
-    return text;
+void FinishTurn(CliState& state, const std::wstring& rawDone, bool classifyFailure) {
+    const bool offerRetry = classifyFailure && ShouldOfferRetry(rawDone);
+    const auto doneText = classifyFailure ? ClassifyTransportFailure(rawDone) : rawDone;
+    if (!doneText.empty()) {
+        if (state.streaming.empty()) state.streaming = doneText;
+        else state.streaming += L"\r\n" + doneText;
+        if (offerRetry && !state.lastPrompt.empty() && doneText.find(L"/retry") == std::wstring::npos)
+            state.streaming += L"\r\n[可输入 /retry 重试上一请求]";
+    }
+    if (state.streaming.empty()) state.streaming = L"[完成，无可显示内容]";
+    state.transcriptPrefix += state.streaming + L"\r\n\r\n";
+    state.streaming.clear();
+    state.activePrompt.clear();
+    state.busy = false;
+    EnableWindow(state.input, TRUE);
+    RenderTranscript(state);
+    SetFocus(state.input);
+}
+
+void StartDirectFallback(CliState& state, const std::wstring& codexError) {
+    const auto generation = state.generation;
+    const HWND hwnd = state.window;
+    const std::wstring prompt = state.activePrompt;
+    state.activeRuntime = ActiveRuntime::DirectModel;
+    state.streaming.clear();
+
+    const std::wstring reason = codexError.empty() ? L"Codex CLI 未返回有效结果" : codexError;
+    AppendRouteLog(L"fallback: direct api start; reason=" + reason +
+                   L"; provider=" + state.agent->Config().providerId +
+                   L"; model=" + state.agent->Config().model +
+                   L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
+    state.transcriptPrefix += L"[Fallback] Codex CLI 失败，已切换 Direct API；原因已写入日志。\r\nAI  ";
+    RenderTranscript(state, L"…");
+
+    auto onDelta = [hwnd, generation](std::wstring delta) {
+        PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
+    };
+    auto onDone = [hwnd, generation](std::wstring done) {
+        PostUi(hwnd, kDoneMessage, generation, std::move(done));
+    };
+    state.agent->AskAsync(prompt, std::move(onDelta), std::move(onDone));
 }
 
 void StopTurn(CliState& state) {
     if (!state.busy) return;
     gCliGeneration.fetch_add(1, std::memory_order_relaxed);
-    if (state.activeRuntime == ActiveRuntime::DirectTools) state.directTools->Stop();
+    if (state.activeRuntime == ActiveRuntime::Codex) state.codex->Stop();
     else state.agent->Stop();
+    AppendRouteLog(L"route: request cancelled; runtime=" + RuntimeName(state.activeRuntime));
     state.busy = false;
     if (state.streaming.empty()) state.streaming = L"[已停止]";
     else state.streaming += L"\r\n[已停止]";
     state.transcriptPrefix += state.streaming + L"\r\n\r\n";
     state.streaming.clear();
+    state.activePrompt.clear();
     EnableWindow(state.input, TRUE);
     RenderTranscript(state);
     SetFocus(state.input);
@@ -254,7 +317,8 @@ void SendPrompt(CliState& state) {
         if (state.agent->TryHandleLocal(actualPrompt, localReply, consumedSecret)) {
             if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {
                 state.lastPrompt.clear();
-                state.directTools->ResetSession();
+                state.codex->ResetSession();
+                AppendRouteLog(L"route: Codex session reset by user");
             }
             AppendCompleted(state, typedPrompt, localReply);
             return;
@@ -266,22 +330,11 @@ void SendPrompt(CliState& state) {
         return;
     }
 
-    ActiveRuntime runtime = ChooseRuntime(state, actualPrompt);
-    if (retry) {
-        if (state.lastRuntime == ActiveRuntime::DirectTools && WantsNativeTools(actualPrompt) && state.directTools->CanHandle(*state.agent)) {
-            runtime = ActiveRuntime::DirectTools;
-        } else {
-            runtime = ActiveRuntime::DirectModel;
-        }
-    }
-
-    if (!retry) {
-        state.lastPrompt = actualPrompt;
-        state.lastRuntime = runtime;
-    }
-    state.activeRuntime = runtime;
+    state.lastPrompt = actualPrompt;
+    state.activePrompt = actualPrompt;
+    state.activeRuntime = ActiveRuntime::Codex;
     state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(runtime) + L" · " + RuntimeExecutionLabel(runtime) + L"\r\n";
+    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::Codex) + L" · " + RuntimeExecutionLabel(ActiveRuntime::Codex) + L"\r\n";
     state.transcriptPrefix += L"AI  ";
     state.streaming.clear();
     state.busy = true;
@@ -289,20 +342,19 @@ void SendPrompt(CliState& state) {
     EnableWindow(state.input, FALSE);
     RenderTranscript(state, L"…");
 
+    AppendRouteLog(L"route: primary codex start; provider=" + state.agent->Config().providerId +
+                   L"; model=" + state.agent->Config().model +
+                   L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
+
     const auto generation = state.generation;
     const HWND hwnd = state.window;
     auto onDelta = [hwnd, generation](std::wstring delta) {
         PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
     };
     auto onDone = [hwnd, generation](std::wstring done) {
-        PostUi(hwnd, kDoneMessage, generation, std::move(done));
+        PostUi(hwnd, kCodexDoneMessage, generation, std::move(done));
     };
-
-    if (runtime == ActiveRuntime::DirectTools) {
-        state.directTools->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
-    } else {
-        state.agent->AskAsync(actualPrompt, std::move(onDelta), std::move(onDone));
-    }
+    state.codex->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
 }
 
 LRESULT CALLBACK InputProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -337,8 +389,11 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (LOWORD(wParam) == kSettingsId && HIWORD(wParam) == BN_CLICKED) {
             if (state->busy) StopTurn(*state);
             if (ShowModelSettingsWindow(state->instance, hwnd, *state->agent)) {
-                state->directTools->ResetSession();
+                state->codex->ResetSession();
                 state->lastPrompt.clear();
+                AppendRouteLog(L"route: model settings changed; provider=" + state->agent->Config().providerId +
+                               L"; model=" + state->agent->Config().model +
+                               L"; endpoint=" + SafeEndpoint(state->agent->CurrentApiUrl()));
                 state->transcriptPrefix += L"[配置] " + state->agent->Config().model + L" 已保存\r\n";
                 state->transcriptPrefix += L"[Runtime] " + RuntimeStatusText(*state) + L"\r\n\r\n";
                 RenderTranscript(*state);
@@ -360,25 +415,26 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         RenderTranscript(*state, state->streaming.empty() ? L"…" : state->streaming);
         return 0;
     }
+    case kCodexDoneMessage: {
+        std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
+        if (!payload || payload->generation != state->generation ||
+            payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
+        if (payload->text.empty()) {
+            AppendRouteLog(L"route: primary codex success");
+            FinishTurn(*state, L"", false);
+        } else {
+            AppendRouteLog(L"route: primary codex failed; error=" + payload->text);
+            StartDirectFallback(*state, payload->text);
+        }
+        return 0;
+    }
     case kDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
         if (!payload || payload->generation != state->generation ||
             payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
-        const bool offerRetry = ShouldOfferRetry(payload->text);
-        const auto doneText = ClassifyTransportFailure(payload->text);
-        if (!doneText.empty()) {
-            if (state->streaming.empty()) state->streaming = doneText;
-            else state->streaming += L"\r\n" + doneText;
-            if (offerRetry && !state->lastPrompt.empty() && doneText.find(L"/retry") == std::wstring::npos)
-                state->streaming += L"\r\n[可输入 /retry 重试上一请求]";
-        }
-        if (state->streaming.empty()) state->streaming = L"[完成，无可显示内容]";
-        state->transcriptPrefix += state->streaming + L"\r\n\r\n";
-        state->streaming.clear();
-        state->busy = false;
-        EnableWindow(state->input, TRUE);
-        RenderTranscript(*state);
-        SetFocus(state->input);
+        if (payload->text.empty()) AppendRouteLog(L"fallback: direct api success");
+        else AppendRouteLog(L"fallback: direct api failed; error=" + payload->text);
+        FinishTurn(*state, payload->text, true);
         return 0;
     }
     case WM_SIZE: {
@@ -402,7 +458,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
         state->agent->Stop();
-        state->directTools->Stop();
+        state->codex->Stop();
         return 0;
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
@@ -424,7 +480,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     state.instance = instance;
     state.owner = owner;
     state.agent = &agent;
-    state.directTools = &gDirectToolRuntime;
+    state.codex = &gCodexRuntime;
     state.backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
     state.monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -481,6 +537,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state.input, EM_SETCUEBANNER, TRUE,
                  reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
 
+    AppendRouteLog(L"window: L3 opened; primary=Codex CLI -> Relay/API; fallback=Direct API");
     ShowWindow(window, SW_SHOWNORMAL);
     SetForegroundWindow(window);
     SetFocus(state.input);

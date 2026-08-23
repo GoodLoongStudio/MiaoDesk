@@ -17,7 +17,7 @@ jobs:
         with:
           ref: main
       - name: Patch Codex final-message handling
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
           p = Path('src/native/src/CodexRuntime.cpp')
@@ -86,7 +86,6 @@ jobs:
             if (onDone) onDone(std::move(done));
             return;
         }'''
-          # Replace the final turn/completed block occurrence, not an earlier callback.
           pos = s.find('        if (method == "turn/completed") {')
           if pos < 0:
               raise SystemExit('turn/completed anchor not found')

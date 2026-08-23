@@ -56,11 +56,12 @@ private:
     std::wstring FindRelayBinary() const;
     bool EnsureSession(const ProviderSetup& setup, std::wstring& error);
     bool LaunchRelay(const ProviderSetup& setup, std::wstring& error);
+    bool WaitForRelayReady(const ProviderSetup& setup, DWORD timeoutMs, std::wstring& error) const;
     bool LaunchProcess(const ProviderSetup& setup, std::wstring& error);
-    bool ConfigureCodexHome(const ProviderSetup& setup, std::wstring& codeHome, std::wstring& error) const;
+    bool ConfigureCodexHome(const ProviderSetup& setup, std::wstring& codexHome, std::wstring& error) const;
     bool WriteLine(const std::string& line);
-    bool ReadLine(std::string& line);
-    bool WaitForResponse(long long id, std::string& response, std::wstring& error);
+    bool ReadLine(std::string& line, DWORD timeoutMs, std::wstring& error);
+    bool WaitForResponse(long long id, std::string& response, std::wstring& error, DWORD timeoutMs = 30000);
     void RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken);
     void CleanupProcess();
 

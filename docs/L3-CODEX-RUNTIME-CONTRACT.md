@@ -151,7 +151,7 @@ Harness 后台和 UI 生命周期独立；后台启动不得自动弹浏览器�
 ### 8.1 路由日志
 
 ```text
-%LOCALAPPDATA%\TuringDesk\Logs\l3-runtime.log
+Windows Desktop known folder\TuringDesk-Logs\l3-runtime.log
 ```
 
 至少记录：
@@ -169,7 +169,7 @@ Harness 后台和 UI 生命周期独立；后台启动不得自动弹浏览器�
 ### 8.2 Codex 详细日志
 
 ```text
-%LOCALAPPDATA%\TuringDesk\Logs\codex-runtime.log
+Windows Desktop known folder\TuringDesk-Logs\codex-runtime.log
 ```
 
 至少记录：
@@ -186,6 +186,8 @@ Harness 后台和 UI 生命周期独立；后台启动不得自动弹浏览器�
 - Codex / Relay stderr。
 
 **API Key、Credential 内容、Bearer Token 不得写入日志。**
+
+所有 TuringDesk Native 运行日志统一写入 Windows 实际 Desktop Known Folder 下的 `TuringDesk-Logs` 目录；不得重新散落到 `%LOCALAPPDATA%`。
 
 ## 9. 本地构建契约
 

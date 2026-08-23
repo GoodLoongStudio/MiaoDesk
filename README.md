@@ -133,3 +133,15 @@ Codex / Relay 详情：
 当前产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`  
 L3 强制架构契约：`docs/L3-CODEX-RUNTIME-CONTRACT.md`  
 Native 技术基线：`docs/TURINGDESK-NATIVE-TECH-BASELINE.md`
+
+## Runtime diagnostics
+
+All native runtime logs are written to the user's actual Windows Desktop known folder:
+
+```text
+Desktop\TuringDesk-Logs\l3-runtime.log
+Desktop\TuringDesk-Logs\codex-runtime.log
+Desktop\TuringDesk-Logs\harness.log
+```
+
+API keys and credentials must never be written to these logs.

@@ -5,6 +5,8 @@ $l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
 $searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'
 $mainPath = Join-Path $root 'src/native/src/main.cpp'
 $codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'
+$harnessProcessPath = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
+$runtimeLogPathsHeaderPath = Join-Path $root 'src/native/include/turingdesk/RuntimeLogPaths.h'
 $cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
 $armWorkflowPath = Join-Path $root '.github/workflows/native-search-windows.yml'
 $x64WorkflowPath = Join-Path $root '.github/workflows/native-x64-validation.yml'
@@ -21,7 +23,7 @@ $retiredRuntimeV2Path = Join-Path $root 'src/native/src/DirectAgentRuntimeV2.cpp
 $retiredRuntimeStubPath = Join-Path $root 'src/native/src/DirectToolRuntimeDisabled.cpp'
 
 $requiredFiles = @(
-    $l3Path, $searchPath, $mainPath, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
+    $l3Path, $searchPath, $mainPath, $codexPath, $harnessProcessPath, $runtimeLogPathsHeaderPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
     $deployCmdPath, $deployPs1Path, $productBaselinePath, $nativeBaselinePath,
     $contractDocPath, $readmePath
 )
@@ -46,6 +48,8 @@ $l3 = Get-Content $l3Path -Raw
 $search = Get-Content $searchPath -Raw
 $main = Get-Content $mainPath -Raw
 $codex = Get-Content $codexPath -Raw
+$harnessProcess = Get-Content $harnessProcessPath -Raw
+$runtimeLogPathsHeader = Get-Content $runtimeLogPathsHeaderPath -Raw
 $cmake = Get-Content $cmakePath -Raw
 $armWorkflow = Get-Content $armWorkflowPath -Raw
 $x64Workflow = Get-Content $x64WorkflowPath -Raw
@@ -142,6 +146,33 @@ foreach ($marker in @(
 )) {
     if ($codex.Contains($marker)) {
         throw "Codex routing must not be hard-wired to DeepSeek: $marker"
+    }
+}
+
+# 3b) Every native runtime log must resolve through the shared Desktop log path helper.
+foreach ($marker in @(
+    'FOLDERID_Desktop',
+    'TuringDesk-Logs',
+    'RuntimeLogPath'
+)) {
+    if (-not $runtimeLogPathsHeader.Contains($marker)) {
+        throw "Desktop runtime log helper marker missing: $marker"
+    }
+}
+foreach ($pair in @(
+    @{ Text = $l3; Marker = 'RuntimeLogPath(L"l3-runtime.log")' },
+    @{ Text = $l3; Marker = 'RuntimeLogPath(L"codex-runtime.log")' },
+    @{ Text = $codex; Marker = 'RuntimeLogPath(L"codex-runtime.log")' },
+    @{ Text = $harnessProcess; Marker = 'RuntimeLogPath(L"harness.log")' }
+)) {
+    if (-not $pair.Text.Contains($pair.Marker)) {
+        throw "Desktop runtime log routing marker missing: $($pair.Marker)"
+    }
+}
+foreach ($source in Get-ChildItem (Join-Path $root 'src/native/src') -Filter '*.cpp' -File) {
+    $text = Get-Content $source.FullName -Raw
+    if ($text.Contains('L"Logs"') -and $text.Contains('.log')) {
+        throw "Runtime log path bypasses shared Desktop helper: $($source.FullName)"
     }
 }
 

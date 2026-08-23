@@ -1,5 +1,6 @@
 #include "turingdesk/CodexRuntime.h"
 #include "turingdesk/NativeTools.h"
+#include "turingdesk/RuntimeLogPaths.h"
 
 #include <wincred.h>
 #include <winhttp.h>
@@ -259,10 +260,7 @@ fs::path CodexHomeDirectory() {
 }
 
 fs::path CodexLogPath() {
-    const auto directory = LocalAppDataRoot() / L"Logs";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory / L"codex-runtime.log";
+    return RuntimeLogPath(L"codex-runtime.log");
 }
 
 HANDLE OpenRuntimeLogHandle(bool inheritable) {

@@ -1,5 +1,6 @@
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/HarnessSettingsBridge.h"
+#include "turingdesk/RuntimeLogPaths.h"
 #include <winhttp.h>
 #include <algorithm>
 #include <filesystem>
@@ -44,25 +45,8 @@ std::wstring Win32ErrorText(DWORD error) {
     return text;
 }
 
-fs::path LocalAppDataDirectory() {
-    wchar_t value[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", value, static_cast<DWORD>(std::size(value)));
-    if (length > 0 && length < std::size(value)) return fs::path(std::wstring(value, length));
-
-    wchar_t tempPath[32768]{};
-    const DWORD tempLength = GetTempPathW(static_cast<DWORD>(std::size(tempPath)), tempPath);
-    if (tempLength > 0 && tempLength < std::size(tempPath)) return fs::path(std::wstring(tempPath, tempLength));
-    return {};
-}
-
 fs::path HarnessLogPathFs() {
-    const fs::path root = LocalAppDataDirectory();
-    if (root.empty()) return {};
-    const fs::path directory = root / L"TuringDesk" / L"Logs";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    if (ec) return {};
-    return directory / L"harness.log";
+    return RuntimeLogPath(L"harness.log");
 }
 
 std::wstring UserHomeDirectory() {

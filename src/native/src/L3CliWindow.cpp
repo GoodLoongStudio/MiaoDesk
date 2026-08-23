@@ -1,6 +1,7 @@
 #include "turingdesk/L3CliWindow.h"
 #include "turingdesk/CodexRuntime.h"
 #include "turingdesk/ModelSettingsWindow.h"
+#include "turingdesk/RuntimeLogPaths.h"
 #include <CommCtrl.h>
 #include <algorithm>
 #include <atomic>
@@ -81,24 +82,12 @@ std::wstring SafeEndpoint(std::wstring value) {
     return value;
 }
 
-fs::path RuntimeLogDirectory() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    fs::path root;
-    if (count > 0 && count < std::size(localAppData)) root = fs::path(std::wstring(localAppData, count));
-    else root = fs::temp_directory_path();
-    std::error_code ec;
-    const auto logs = root / L"TuringDesk" / L"Logs";
-    fs::create_directories(logs, ec);
-    return logs;
-}
-
 fs::path L3RouteLogPath() {
-    return RuntimeLogDirectory() / L"l3-runtime.log";
+    return RuntimeLogPath(L"l3-runtime.log");
 }
 
 fs::path CodexDetailLogPath() {
-    return RuntimeLogDirectory() / L"codex-runtime.log";
+    return RuntimeLogPath(L"codex-runtime.log");
 }
 
 std::string WideToUtf8(const std::wstring& value) {

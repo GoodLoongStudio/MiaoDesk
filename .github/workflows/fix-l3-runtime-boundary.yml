@@ -1,0 +1,60 @@
+name: Repair native L3 runtime boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-l3-runtime-boundary.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Keep ordinary L3 on TuringDesk-owned runtimes
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/native/src/L3CliWindow.cpp')
+          s = p.read_text(encoding='utf-8')
+          old = '''ActiveRuntime ChooseRuntime(CliState& state) {
+    // Codex CLI is the preferred L3 agent runtime. Direct runtimes are retained
+    // only as compatibility fallbacks for providers that do not yet expose the
+    // Responses wire protocol required by Codex.
+    if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;
+    if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+    return ActiveRuntime::DirectModel;
+}
+'''
+          new = '''ActiveRuntime ChooseRuntime(CliState& state) {
+    // L3 stays on TuringDesk-owned lightweight runtimes. Codex is not selected
+    // automatically; complete external-agent workflows belong to the L4 workbench.
+    if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+    return ActiveRuntime::DirectModel;
+}
+'''
+          if old not in s:
+              raise SystemExit('ChooseRuntime regression anchor missing')
+          s = s.replace(old, new, 1)
+          s = s.replace('status.providerCompatible ? L"Responses 可直连（默认使用 Codex CLI）" : L"等待 Responses 协议桥";',
+                        'status.providerCompatible ? L"Responses 可直连，但普通 L3 不自动使用 Codex" : L"等待 Responses 协议桥";', 1)
+          s = s.replace('L"\\r\\nDirect Tools fallback：" + state.directTools->StatusText(*state.agent);',
+                        'L"\\r\\nTuringDesk Native Tools：" + state.directTools->StatusText(*state.agent);', 1)
+          if 'preferred L3 agent runtime' in s or '默认使用 Codex CLI' in s:
+              raise SystemExit('Codex default-L3 wording remains')
+          p.write_text(s, encoding='utf-8')
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-l3-runtime-boundary.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/L3CliWindow.cpp .github/workflows/fix-l3-runtime-boundary.yml
+          git diff --cached --check
+          git commit -m "fix: keep native L3 on TuringDesk runtime"
+          git push origin HEAD:main

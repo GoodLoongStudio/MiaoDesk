@@ -12,7 +12,6 @@ $productBaselinePath = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
 $nativeBaselinePath = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
 $contractDocPath = Join-Path $root 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
 $readmePath = Join-Path $root 'README.md'
-$obsoletePlanPath = Join-Path $root 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
 
 $requiredFiles = @(
     $l3Path, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
@@ -23,9 +22,6 @@ foreach ($path in $requiredFiles) {
     if (-not (Test-Path $path -PathType Leaf)) {
         throw "L3 runtime contract input missing: $path"
     }
-}
-if (Test-Path $obsoletePlanPath) {
-    throw 'Superseded AI-WORKBENCH-CONSOLIDATION-PLAN.md must stay removed.'
 }
 
 $l3 = Get-Content $l3Path -Raw

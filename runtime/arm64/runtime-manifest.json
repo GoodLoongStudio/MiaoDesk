@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-22T20:14:59.5947830Z",
-  "lockSha256": "f41f13418b9aab670e3f2b6f01290f2cbd000de5e6f23bd0801a67ac3ece2210",
+  "generatedUtc": "2026-08-23T03:06:14.3176628Z",
+  "lockSha256": "11dd1d551eb2247075e5138ba57fd569930091134ea8786101330ee5872d15e3",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-arm64.zip",
@@ -18,6 +18,14 @@
     "tag": "v0.1.1",
     "archive": "goz/goz-v0.1.1-win-arm64.zip",
     "sha256": "076cf0234b37327a730c1cf48e9c11b971f39c130ea11fbd28528cbcebed62a1"
+  },
+  "codexRelay": {
+    "version": "0.5.7",
+    "commit": "f6b65c4b7a818f215f2aa1dcebb33657716b487f",
+    "archive": "codex-relay/codex-relay-v0.5.7-win-arm64.zip",
+    "sha256": "f4b1b99236a35a338aca45f21073b7fabc263c9b432c85eceaf5b28ae6afde5f",
+    "wheelSha256": "4755de9ff3c4756ebcdce5eb998095f1a27bad515b084aab1bd1bfd4b95dea7b",
+    "source": "pypi-win-arm64-wheel"
   },
   "codex": {
     "release": "rust-v0.146.0",

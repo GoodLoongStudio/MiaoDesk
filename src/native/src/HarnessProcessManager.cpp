@@ -17,7 +17,7 @@ namespace {
 constexpr wchar_t kHarnessHost[] = L"127.0.0.1";
 constexpr INTERNET_PORT kHarnessPort = 3080;
 constexpr wchar_t kHarnessPath[] = L"/";
-constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080";
+constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";
 constexpr char kHarnessBootMarker[] = "window.__DSH_BOOT__";
 constexpr std::size_t kMaxReadinessProbeBytes = 256 * 1024;
 
@@ -301,7 +301,7 @@ bool HarnessProcessManager::Start() {
     } else {
         WriteLogLine(logHandle, L"[TuringDesk] shared model: TuringDesk AI settings are not configured yet");
     }
-    WriteLogLine(logHandle, L"[TuringDesk] browser launch: TuringDesk does not invoke an external browser; UI is hosted by TuringDesk WebView2");
+    WriteLogLine(logHandle, L"[TuringDesk] browser launch: disabled via dsh --no-open; UI is hosted by TuringDesk WebView2");
     WriteLogLine(logHandle, L"[TuringDesk] network bootstrap: disabled; using repository RuntimeBundle");
     WriteLogLine(logHandle, L"[TuringDesk] waiting for upstream stdout/stderr...");
     FlushFileBuffers(logHandle);

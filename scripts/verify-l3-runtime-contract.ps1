@@ -97,9 +97,9 @@ if ($startL3Body.Contains('ShowAndFocus();')) {
 
 # L4 Harness must remain loopback-only. Self-test strings may mention forbidden alternatives,
 # so assert the actual launch constant instead of banning those words globally.
-$requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080";'
+$requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";'
 if (-not $harness.Contains($requiredHarnessArgs)) {
-    throw 'Harness launch arguments must be exactly loopback 127.0.0.1:3080.'
+    throw 'Harness launch arguments must be loopback-only and include --no-open.'
 }
 foreach ($marker in @('4317', '4318', 'MCP')) {
     if ($harness.Contains($marker)) {

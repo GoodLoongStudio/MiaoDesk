@@ -24,8 +24,9 @@ jobs:
           s = p.read_text(encoding='utf-8')
           old = 'SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&state));'
           new = 'SetWindowLongPtrW(state->input, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));'
-          assert s.count(old) == 1, 'L3 state pointer anchor changed'
-          s = s.replace(old, new, 1)
+          if old in s:
+              s = s.replace(old, new, 1)
+          assert new in s, 'L3 input state pointer is not the heap CliState pointer'
           body = s[s.index('bool ShowL3CliWindow('):]
           assert 'while (IsWindow(window))' not in body
           assert 'GetMessageW(&msg' not in body
@@ -40,4 +41,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src/native/src/L3CliWindow.cpp .github/workflows/fix-l3-state-pointer.yml
           git commit -m "fix: keep L3 input state pointer valid"
+          git pull --rebase origin main
           git push origin HEAD:main

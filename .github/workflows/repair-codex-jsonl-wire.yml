@@ -1,0 +1,131 @@
+name: Repair Codex JSONL Wire
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/repair-codex-jsonl-wire.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Repair Codex stdio JSONL framing
+        shell: python
+        run: |
+          from pathlib import Path
+
+          native = Path('src/native/src/NativeTools.cpp')
+          s = native.read_text(encoding='utf-8')
+          old_start = 'std::string NativeToolDefinitionsJson() {\n    return R"JSON(['
+          new_start = 'std::string NativeToolDefinitionsJson() {\n    std::string json = R"JSON(['
+          if old_start in s:
+              s = s.replace(old_start, new_start, 1)
+          elif new_start not in s:
+              raise SystemExit('NativeToolDefinitionsJson start marker not found')
+
+          old_end = '])JSON";\n}\n\nNativeToolResult ExecuteNativeTool'
+          new_end = '''])JSON";
+    // Codex app-server uses one JSON-RPC message per line on stdio. Keep the
+    // dynamicTools payload JSON-valid but physically single-line so it cannot
+    // split thread/start into multiple protocol messages.
+    json.erase(std::remove(json.begin(), json.end(), '\\r'), json.end());
+    json.erase(std::remove(json.begin(), json.end(), '\\n'), json.end());
+    return json;
+}
+
+NativeToolResult ExecuteNativeTool'''
+          if old_end in s:
+              s = s.replace(old_end, new_end, 1)
+          elif 'json.erase(std::remove(json.begin(), json.end()' not in s:
+              raise SystemExit('NativeToolDefinitionsJson end marker not found')
+          native.write_text(s, encoding='utf-8', newline='\n')
+
+          codex = Path('src/native/src/CodexRuntime.cpp')
+          s = codex.read_text(encoding='utf-8')
+          old = '''bool CodexRuntime::WriteLine(const std::string& line) {
+    HANDLE handle = nullptr;'''
+          new = '''bool CodexRuntime::WriteLine(const std::string& line) {
+    if (line.find('\\n') != std::string::npos || line.find('\\r') != std::string::npos) {
+        AppendRuntimeLog(L"wire: rejected JSON-RPC message containing CR/LF");
+        return false;
+    }
+    HANDLE handle = nullptr;'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'wire: rejected JSON-RPC message containing CR/LF' not in s:
+              raise SystemExit('Codex WriteLine marker not found')
+          codex.write_text(s, encoding='utf-8', newline='\n')
+
+          guard = Path('scripts/verify-l3-runtime-contract.ps1')
+          s = guard.read_text(encoding='utf-8')
+          if "$nativeToolsPath = Join-Path $root 'src/native/src/NativeTools.cpp'" not in s:
+              s = s.replace(
+                  "$codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'\n",
+                  "$codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'\n$nativeToolsPath = Join-Path $root 'src/native/src/NativeTools.cpp'\n",
+                  1)
+          s = s.replace(
+              '$l3Path, $searchPath, $mainPath, $codexPath, $harnessProcessPath, $runtimeLogPathsHeaderPath,',
+              '$l3Path, $searchPath, $mainPath, $codexPath, $nativeToolsPath, $harnessProcessPath, $runtimeLogPathsHeaderPath,',
+              1)
+          if '$nativeTools = Get-Content $nativeToolsPath -Raw' not in s:
+              s = s.replace(
+                  '$codex = Get-Content $codexPath -Raw\n',
+                  '$codex = Get-Content $codexPath -Raw\n$nativeTools = Get-Content $nativeToolsPath -Raw\n',
+                  1)
+
+          marker = '# 4) Cloud build:'
+          check = '''# 3c) Codex stdio is JSONL: every outbound JSON-RPC message must be physically one line.
+foreach ($required in @(
+    'std::string json = R"JSON([',
+    'json.erase(std::remove(json.begin(), json.end()',
+    'return json;'
+)) {
+    if (-not $nativeTools.Contains($required)) {
+        throw "Native tool JSONL compaction marker missing: $required"
+    }
+}
+foreach ($required in @(
+    "line.find('\\n')",
+    "line.find('\\r')",
+    'wire: rejected JSON-RPC message containing CR/LF'
+)) {
+    if (-not $codex.Contains($required)) {
+        throw "Codex JSONL wire guard marker missing: $required"
+    }
+}
+
+'''
+          if '# 3c) Codex stdio is JSONL:' not in s:
+              if marker not in s:
+                  raise SystemExit('Guard insertion marker not found')
+              s = s.replace(marker, check + marker, 1)
+          guard.write_text(s, encoding='utf-8', newline='\n')
+
+          # Self-remove this one-shot repair workflow in the same commit.
+          Path('.github/workflows/repair-codex-jsonl-wire.yml').unlink()
+
+      - name: Verify repaired source contract
+        shell: pwsh
+        run: ./scripts/verify-l3-runtime-contract.ps1
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name 'GoodLoongStudio'
+          git config user.email 'chnmlong@hotmail.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'fix: keep Codex thread-start JSON-RPC single-line'
+          git push origin HEAD:main

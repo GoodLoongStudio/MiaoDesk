@@ -185,6 +185,7 @@ struct WallpaperLibraryWindow::Impl {
     HFONT pageTitleFont{};
     HFONT bodyFont{};
     HFONT smallFont{};
+    HFONT cardTitleFont{};
 
     ~Impl() {
         if (window && IsWindow(window)) DestroyWindow(window);
@@ -197,6 +198,7 @@ struct WallpaperLibraryWindow::Impl {
         if (pageTitleFont) { DeleteObject(pageTitleFont); pageTitleFont = nullptr; }
         if (bodyFont) { DeleteObject(bodyFont); bodyFont = nullptr; }
         if (smallFont) { DeleteObject(smallFont); smallFont = nullptr; }
+        if (cardTitleFont) { DeleteObject(cardTitleFont); cardTitleFont = nullptr; }
     }
 
     void SetStatus(const std::wstring& text) const {
@@ -435,6 +437,81 @@ struct WallpaperLibraryWindow::Impl {
             : L"壁纸已应用，但最近使用记录保存失败：" + markError);
     }
 
+    LRESULT DrawListCustom(NMLVCUSTOMDRAW* draw) {
+        if (!draw) return CDRF_DODEFAULT;
+        if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+        if (draw->nmcd.dwDrawStage != CDDS_ITEMPREPAINT) return CDRF_DODEFAULT;
+
+        const int index = static_cast<int>(draw->nmcd.dwItemSpec);
+        if (index < 0 || static_cast<std::size_t>(index) >= visibleIds.size()) return CDRF_DODEFAULT;
+        const auto item = library ? library->Find(visibleIds[static_cast<std::size_t>(index)]) : std::nullopt;
+        if (!item) return CDRF_DODEFAULT;
+
+        RECT rc{};
+        if (!ListView_GetItemRect(list, index, &rc, LVIR_BOUNDS)) return CDRF_DODEFAULT;
+        rc.left += 5;
+        rc.top += 5;
+        rc.right -= 8;
+        rc.bottom -= 8;
+        HDC dc = draw->nmcd.hdc;
+        const bool selected = (ListView_GetItemState(list, index, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+
+        HBRUSH cardBrush = CreateSolidBrush(RGB(255, 255, 255));
+        HPEN borderPen = CreatePen(PS_SOLID, selected ? 2 : 1,
+                                  selected ? RGB(37, 99, 235) : RGB(217, 222, 230));
+        HGDIOBJ oldBrush = SelectObject(dc, cardBrush);
+        HGDIOBJ oldPen = SelectObject(dc, borderPen);
+        RoundRect(dc, rc.left, rc.top, rc.right, rc.bottom, 14, 14);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(cardBrush);
+        DeleteObject(borderPen);
+
+        RECT preview{rc.left + 12, rc.top + 12, rc.right - 12, rc.top + 84};
+        COLORREF previewColor = RGB(242, 245, 252);
+        COLORREF strokeColor = RGB(220, 229, 255);
+        if (item->kind == LibraryWallpaperKind::Video) {
+            previewColor = RGB(243, 241, 250);
+            strokeColor = RGB(225, 218, 247);
+        } else if (item->kind == LibraryWallpaperKind::Web) {
+            previewColor = RGB(239, 248, 246);
+            strokeColor = RGB(211, 236, 231);
+        } else if (item->kind == LibraryWallpaperKind::Image) {
+            previewColor = RGB(248, 247, 240);
+            strokeColor = RGB(236, 231, 205);
+        }
+
+        HBRUSH previewBrush = CreateSolidBrush(previewColor);
+        HPEN previewPen = CreatePen(PS_SOLID, 1, strokeColor);
+        oldBrush = SelectObject(dc, previewBrush);
+        oldPen = SelectObject(dc, previewPen);
+        RoundRect(dc, preview.left, preview.top, preview.right, preview.bottom, 10, 10);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(previewBrush);
+        DeleteObject(previewPen);
+
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(101, 121, 160));
+        HGDIOBJ oldFont = SelectObject(dc, smallFont);
+        RECT kindRect{preview.left + 10, preview.bottom - 27, preview.right - 8, preview.bottom - 7};
+        DrawTextW(dc, KindLabel(item->kind), -1, &kindRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        SetTextColor(dc, RGB(31, 35, 40));
+        SelectObject(dc, cardTitleFont ? cardTitleFont : bodyFont);
+        std::wstring title = item->favorite ? L"★ " + item->title : item->title;
+        RECT titleRect{rc.left + 12, preview.bottom + 8, rc.right - 12, preview.bottom + 31};
+        DrawTextW(dc, title.c_str(), -1, &titleRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        SetTextColor(dc, RGB(102, 112, 133));
+        SelectObject(dc, smallFont);
+        const std::wstring description = SourceMissing(*item) ? L"资源不可用" : DescriptionFor(*item);
+        RECT descRect{rc.left + 12, preview.bottom + 32, rc.right - 12, rc.bottom - 7};
+        DrawTextW(dc, description.c_str(), -1, &descRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SelectObject(dc, oldFont);
+        return CDRF_SKIPDEFAULT;
+    }
+
     void NavigateToTab(int index) {
         if (index <= 0) return;
         if (navigateCallback) navigateCallback(SectionForTab(index));
@@ -515,8 +592,12 @@ struct WallpaperLibraryWindow::Impl {
                 self->NavigateToTab(TabCtrl_GetCurSel(self->tabs));
                 return 0;
             }
+            if (note->idFrom == kListId && note->code == NM_CUSTOMDRAW) {
+                return self->DrawListCustom(reinterpret_cast<NMLVCUSTOMDRAW*>(lParam));
+            }
             if (note->idFrom == kListId && note->code == LVN_ITEMCHANGED) {
                 self->UpdateSelectionActions();
+                InvalidateRect(self->list, nullptr, FALSE);
                 return 0;
             }
             if (note->idFrom == kListId && note->code == NM_DBLCLK) {
@@ -577,6 +658,9 @@ struct WallpaperLibraryWindow::Impl {
         smallFont = CreateFontW(-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
+        cardTitleFont = CreateFontW(-17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                    DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
 
         auto font = [&](HWND control, HFONT use) {
             if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
@@ -629,7 +713,7 @@ struct WallpaperLibraryWindow::Impl {
         }
         if (previewImages) ListView_SetImageList(list, previewImages, LVSIL_NORMAL);
 
-        detailFrame = label(L"", SS_WHITEFRAME, bodyFont);
+        detailFrame = label(L"", SS_WHITERECT, bodyFont);
         selectedTitle = label(L"选择一个桌面", 0, pageTitleFont);
         selectedMeta = label(L"", 0, smallFont);
         selectedDescription = label(L"从左边选择一个桌面，然后直接应用。", SS_LEFT, bodyFont);

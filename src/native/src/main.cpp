@@ -1,5 +1,4 @@
 #include "turingdesk/AppSearch.h"
-#include "turingdesk/DirectToolRuntime.h"
 #include "turingdesk/GozSearch.h"
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/L3Agent.h"
@@ -24,7 +23,6 @@ bool RunNativeSelfTest() {
     turingdesk::GozSearch files;
     if (!files.SelfTest()) return false;
 
-    if (!turingdesk::DirectToolRuntime::SelfTest()) return false;
     if (!turingdesk::HarnessProcessManager::SelfTest()) return false;
     if (!turingdesk::RunL3PersistenceSelfTest()) return false;
 

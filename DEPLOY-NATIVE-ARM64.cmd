@@ -6,7 +6,7 @@ cd /d "%~dp0"
 echo.
 echo ========================================
 echo   TuringDesk ARM64 One-Click Deploy
-echo   Repository RuntimeBundle / Offline
+echo   Codex-first L3 / Repository RuntimeBundle
 echo ========================================
 echo.
 
@@ -22,29 +22,45 @@ if errorlevel 1 (
   goto :fail
 )
 
-echo [1/4] Updating main...
+echo [1/5] Updating main...
 git pull --ff-only
 if errorlevel 1 goto :fail
 
 echo.
-echo [2/4] Verifying repository ARM64 RuntimeBundle integrity...
+echo [2/5] Verifying L3 Codex-first runtime contract...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\verify-l3-runtime-contract.ps1"
+if errorlevel 1 goto :fail
+
+echo.
+echo [3/5] Verifying repository ARM64 RuntimeBundle integrity...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\verify-arm64-runtime-bundle.ps1"
 if errorlevel 1 goto :fail
 
 echo.
-echo [3/4] Preparing repository-vendored ARM64 runtime (no third-party download)...
+echo [4/5] Preparing repository-vendored ARM64 runtime (no third-party download)...
 echo       First goz setup may request UAC once to install its MFT/USN index service.
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\prepare-third-party-runtime-arm64.ps1"
 if errorlevel 1 goto :fail
 
+set "TD_DEPLOY=%LOCALAPPDATA%\TuringDesk\NativeTest"
+if not exist "%TD_DEPLOY%\Codex\codex.exe" (
+  echo [ERROR] Codex CLI is missing after RuntimeBundle preparation.
+  goto :fail
+)
+if not exist "%TD_DEPLOY%\CodexRelay\codex-relay.exe" (
+  echo [ERROR] Codex Relay is missing after RuntimeBundle preparation.
+  goto :fail
+)
+
 echo.
-echo [4/4] Fetching the verified ARM64 build, validating, and launching TuringDesk...
+echo [5/5] Fetching the verified ARM64 build, validating, and launching TuringDesk...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1"
 if errorlevel 1 goto :fail
 
 echo.
+echo L3 default route: Codex CLI ^> Relay/API; Direct API is fallback only.
 echo DeepSeek Harness: pinned official package from this repository RuntimeBundle.
-echo Node / Harness / goz / full Codex CLI are deployed from local repository files.
+echo Node / Harness / goz / Codex Relay / full Codex CLI are deployed from repository-pinned files.
 echo goz provides the TuringDesk L2 MFT/USN file index service.
 echo Harness smoke test passed before TuringDesk was launched.
 echo ========================================

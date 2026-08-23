@@ -197,15 +197,11 @@ std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
 
 std::wstring RuntimeStatusText(CliState& state) {
     std::wstring text = L"L3 runtime: TuringDesk Direct Model SSE";
-    text += L"
-Provider: " + (state.agent->Config().providerId.empty() ? std::wstring(L"unconfigured") : state.agent->Config().providerId);
+    text += L"\r\nProvider: " + (state.agent->Config().providerId.empty() ? std::wstring(L"unconfigured") : state.agent->Config().providerId);
     text += L" · Model: " + (state.agent->Config().model.empty() ? std::wstring(L"unconfigured") : state.agent->Config().model);
-    text += L"
-Local tools: in-process whitelist before model requests";
-    text += L"
-Deep workbench: explicit L4 only";
-    text += L"
-Route log: " + L3RouteLogPath().wstring();
+    text += L"\r\nLocal tools: in-process whitelist before model requests";
+    text += L"\r\nDeep workbench: explicit L4 only";
+    text += L"\r\nRoute log: " + L3RouteLogPath().wstring();
     return text;
 }
 
@@ -288,10 +284,8 @@ void SendPrompt(CliState& state) {
     state.lastPrompt = actualPrompt;
     state.activePrompt = actualPrompt;
     state.activeRuntime = ActiveRuntime::DirectModel;
-    state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"
-";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::DirectModel) + L" · " + RuntimeExecutionLabel(ActiveRuntime::DirectModel) + L"
-";
+    state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
+    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::DirectModel) + L" · " + RuntimeExecutionLabel(ActiveRuntime::DirectModel) + L"\r\n";
     state.transcriptPrefix += L"AI  ";
     state.streaming.clear();
     state.busy = true;

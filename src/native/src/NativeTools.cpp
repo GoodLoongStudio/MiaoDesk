@@ -507,6 +507,16 @@ NativeToolResult OpenFile(std::string_view arguments) {
     return {true, L"已打开：" + path.wstring()};
 }
 
+NativeToolResult OpenSettingsCenter(std::string_view) {
+    constexpr wchar_t kSearchWindowClass[] = L"TuringDesk.Native.SearchWindow";
+    constexpr int kSettingsButtonId = 102;
+    const HWND search = FindWindowW(kSearchWindowClass, nullptr);
+    if (!search) return {false, L"没有找到正在运行的图灵智能桌面主窗口。"};
+    if (!PostMessageW(search, WM_COMMAND, MAKEWPARAM(kSettingsButtonId, BN_CLICKED), 0))
+        return {false, L"无法向图灵智能桌面发送打开设置中心命令。"};
+    return {true, L"已打开图灵智能桌面设置中心。"};
+}
+
 NativeToolResult CreateWebWallpaperPackage(std::string_view arguments) {
     auto desktop = KnownFolder(FOLDERID_Desktop);
     if (desktop.empty()) return {false, L"无法定位桌面目录。"};
@@ -566,6 +576,7 @@ NativeToolResult ValidateWallpaperPackage(std::string_view arguments) {
 
 std::string NativeToolDefinitionsJson() {
     return R"JSON([
+{"type":"function","name":"settings_open","description":"Open the native TuringDesk Settings Center. Use this for requests to open settings, desktop settings, wallpaper settings, configuration, preferences, or the TuringDesk setting panel. Do not use shell commands for this action.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
 {"type":"function","name":"ppt_create","description":"Create a real .pptx PowerPoint presentation on the Windows desktop. Use this instead of merely writing a presentation outline when the user asks for a PPT or presentation.","inputSchema":{"type":"object","properties":{"file_name":{"type":"string","description":"Output filename, preferably ending in .pptx"},"title":{"type":"string"},"subtitle":{"type":"string"},"slides_markdown":{"type":"string","description":"Content slides. Start each slide with '# Slide title'; following lines are bullet points."},"open_after_create":{"type":"boolean","description":"Open the generated presentation after saving"}},"required":["file_name","title","slides_markdown"],"additionalProperties":false}},
 {"type":"function","name":"file_create","description":"Create a UTF-8 text file in one of the user's safe folders.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"},"content":{"type":"string"}},"required":["location","file_name","content"],"additionalProperties":false}},
 {"type":"function","name":"folder_list","description":"List files and folders from Desktop, Documents, or Downloads.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["location"],"additionalProperties":false}},
@@ -576,6 +587,7 @@ std::string NativeToolDefinitionsJson() {
 }
 
 NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view argumentsJson) {
+    if (toolName == "settings_open") return OpenSettingsCenter(argumentsJson);
     if (toolName == "ppt_create") return CreatePowerPoint(argumentsJson);
     if (toolName == "file_create") return CreateFile(argumentsJson);
     if (toolName == "folder_list") return ListFolder(argumentsJson);

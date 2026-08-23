@@ -89,15 +89,15 @@ if ($startL3Body.Contains('ShowAndFocus();')) {
     throw 'L3 must not force Search focus after opening or closing.'
 }
 
-# L4 Harness must remain loopback-only and must not restore legacy ports or MCP.
-foreach ($marker in @('web --host 127.0.0.1 --port 3080', '127.0.0.1')) {
-    if (-not $harness.Contains($marker)) {
-        throw "Harness loopback contract marker missing: $marker"
-    }
+# L4 Harness must remain loopback-only. Self-test strings may mention forbidden alternatives,
+# so assert the actual launch constant instead of banning those words globally.
+$requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080";'
+if (-not $harness.Contains($requiredHarnessArgs)) {
+    throw 'Harness launch arguments must be exactly loopback 127.0.0.1:3080.'
 }
-foreach ($marker in @('--no-open', '0.0.0.0', '4317', '4318', 'MCP')) {
+foreach ($marker in @('4317', '4318', 'MCP')) {
     if ($harness.Contains($marker)) {
-        throw "Harness forbidden marker present: $marker"
+        throw "Harness legacy marker present: $marker"
     }
 }
 

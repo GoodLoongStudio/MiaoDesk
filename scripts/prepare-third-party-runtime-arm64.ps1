@@ -39,9 +39,9 @@ function Test-PathInsideRoot([string]$Candidate, [string]$Root) {
 }
 
 function Stop-OwnedProcesses {
-    # Never kill arbitrary node.exe/codex.exe instances on the machine. Only
-    # terminate processes whose executable actually lives inside this deployment.
-    $ownedNames = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe')
+    # Never kill arbitrary node/codex/relay instances. Only terminate executables
+    # that live inside this TuringDesk deployment root.
+    $ownedNames = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe')
     try {
         foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
             if ($ownedNames -notcontains [string]$process.Name) { continue }
@@ -82,11 +82,6 @@ function Invoke-ElevatedGoz([string]$Exe, [string]$Arguments) {
 }
 
 function Invoke-NativeProbe([string]$Exe, [string[]]$Arguments) {
-    # Windows PowerShell 5.1 surfaces native stderr as ErrorRecord objects. With
-    # $ErrorActionPreference='Stop', a normal cold-start exit (goz uses exit 8 while
-    # gozd's pipe is not ready yet) can abort the whole deployment before our retry
-    # loop gets a chance to run. Redirect through Start-Process so readiness is based
-    # only on the native exit code and captured diagnostics.
     $stdoutPath = Join-Path $env:TEMP ('TuringDesk-Probe-Out-' + [guid]::NewGuid().ToString('N') + '.txt')
     $stderrPath = Join-Path $env:TEMP ('TuringDesk-Probe-Err-' + [guid]::NewGuid().ToString('N') + '.txt')
     try {
@@ -101,27 +96,19 @@ function Invoke-NativeProbe([string]$Exe, [string[]]$Arguments) {
         }
     }
     catch {
-        return [pscustomobject]@{
-            ExitCode = -1
-            StdOut = ''
-            StdErr = [string]$_.Exception.Message
-        }
+        return [pscustomobject]@{ ExitCode = -1; StdOut = ''; StdErr = [string]$_.Exception.Message }
     }
-    finally {
-        Remove-Item $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue
-    }
+    finally { Remove-Item $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue }
 }
 
 function Ensure-GozService([string]$GozExe, [string]$GozDaemon) {
     if ($SkipGozServiceInstall) { return }
-
     $daemonProbe = Invoke-NativeProbe $GozDaemon @('status')
     $daemonText = ($daemonProbe.StdOut + "`n" + $daemonProbe.StdErr).Trim()
     if ($daemonProbe.ExitCode -ne 0 -or $daemonText -notmatch '(?i)Running') {
         Step 'Installing/starting TuringDesk goz index service'
         Invoke-ElevatedGoz $GozDaemon 'install'
     }
-
     $lastDaemon = $null
     $lastClient = $null
     for ($i = 0; $i -lt 120; $i++) {
@@ -136,10 +123,9 @@ function Ensure-GozService([string]$GozExe, [string]$GozDaemon) {
         }
         Start-Sleep -Milliseconds 500
     }
-
     $daemonDiag = if ($lastDaemon) { (($lastDaemon.StdOut + "`n" + $lastDaemon.StdErr).Trim()) } else { '<no daemon status>' }
     $clientDiag = if ($lastClient) { (($lastClient.StdOut + "`n" + $lastClient.StdErr).Trim()) } else { '<no client status>' }
-    throw "goz service did not become reachable after 60 seconds.`ngo zd status:`n$daemonDiag`n`ngoz --status:`n$clientDiag"
+    throw "goz service did not become reachable after 60 seconds.`n`ngo zd status:`n$daemonDiag`n`ngoz --status:`n$clientDiag"
 }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {
@@ -147,25 +133,29 @@ if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $Manifes
 }
 
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 goz/Codex CLI bundle' }
+if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 goz/Codex bundle' }
 
 $nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)
 $harnessArchive = Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)
 $gozArchive = Resolve-BundleFile ([string]$manifest.goz.archive)
+$relayArchive = Resolve-BundleFile ([string]$manifest.codexRelay.archive)
 $codexArchive = Resolve-BundleFile ([string]$manifest.codex.archive)
 Assert-BundleHash $nodeArchive ([string]$manifest.node.sha256)
-Assert-BundleHash $harnessArchive ([string]$manifest.deepseekHarness.sha256)
+Assert-BundleHash $harnessArchive ([string]$manifest.deepseekHarness.sha256256)
 Assert-BundleHash $gozArchive ([string]$manifest.goz.sha256)
+Assert-BundleHash $relayArchive ([string]$manifest.codexRelay.sha256)
 Assert-BundleHash $codexArchive ([string]$manifest.codex.sha256)
 
 $RuntimeDir = Join-Path $DeployDir 'Runtime'
 $NodeDir = Join-Path $RuntimeDir 'Node'
 $GozDir = Join-Path $DeployDir 'Goz'
+$RelayDir = Join-Path $DeployDir 'CodexRelay'
 $CodexDir = Join-Path $DeployDir 'Codex'
 $NodeExe = Join-Path $NodeDir 'node.exe'
 $DshBin = Join-Path $NodeDir 'node_modules\@deepseek-ai\dsh\lib\bin.js'
 $GozExe = Join-Path $GozDir 'goz.exe'
 $GozDaemon = Join-Path $GozDir 'gozd.exe'
+$RelayExe = Join-Path $RelayDir 'codex-relay.exe'
 $CodexExe = Join-Path $CodexDir 'codex.exe'
 $DeployManifestHash = Join-Path $RuntimeDir 'runtime-manifest.sha256'
 $sourceManifestHash = Sha256 $ManifestPath
@@ -175,6 +165,7 @@ $alreadyReady = (Test-Path $DeployManifestHash -PathType Leaf) -and
                 (Test-Path $DshBin -PathType Leaf) -and
                 (Test-Path $GozExe -PathType Leaf) -and
                 (Test-Path $GozDaemon -PathType Leaf) -and
+                (Test-Path $RelayExe -PathType Leaf) -and
                 (Test-Path $CodexExe -PathType Leaf) -and
                 ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
 if ($alreadyReady) {
@@ -195,7 +186,6 @@ try {
     $newGoz = Get-ChildItem $gozTemp -Filter 'goz.exe' -File -Recurse | Select-Object -First 1
     $newGozd = Get-ChildItem $gozTemp -Filter 'gozd.exe' -File -Recurse | Select-Object -First 1
     if (-not $newGoz -or -not $newGozd) { throw 'Vendored goz archive is incomplete' }
-
     $replaceGoz = $true
     if ((Test-Path $GozExe -PathType Leaf) -and (Test-Path $GozDaemon -PathType Leaf)) {
         $replaceGoz = (Sha256 $GozExe) -ne (Sha256 $newGoz.FullName) -or (Sha256 $GozDaemon) -ne (Sha256 $newGozd.FullName)
@@ -214,6 +204,7 @@ try {
 finally { Remove-Item $gozTemp -Recurse -Force -ErrorAction SilentlyContinue }
 
 Remove-Item $NodeDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $RelayDir -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $CodexDir -Recurse -Force -ErrorAction SilentlyContinue
 
 $nodeTemp = Join-Path $env:TEMP ('TuringDesk-Node-' + [guid]::NewGuid().ToString('N'))
@@ -232,6 +223,18 @@ if (-not (Test-Path $NodeExe) -or -not (Test-Path $DshBin)) { throw 'Bundled Dee
 & $NodeExe $DshBin --help | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled DeepSeek Harness CLI failed to start' }
 
+$relayTemp = Join-Path $env:TEMP ('TuringDesk-CodexRelay-' + [guid]::NewGuid().ToString('N'))
+try {
+    Expand-BundleArchive $relayArchive $relayTemp
+    $foundRelay = Get-ChildItem $relayTemp -Filter 'codex-relay.exe' -File -Recurse | Select-Object -First 1
+    if (-not $foundRelay) { throw 'Vendored codex-relay payload is incomplete' }
+    New-Item -ItemType Directory -Force -Path $RelayDir | Out-Null
+    Copy-Item $foundRelay.FullName $RelayExe -Force
+}
+finally { Remove-Item $relayTemp -Recurse -Force -ErrorAction SilentlyContinue }
+& $RelayExe --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Bundled codex-relay failed to execute' }
+
 $codexTemp = Join-Path $env:TEMP ('TuringDesk-Codex-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $codexArchive $codexTemp
@@ -249,12 +252,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server command is unavai
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
-
 Ensure-GozService $GozExe $GozDaemon
+
 Write-Host 'Repository-vendored ARM64 RuntimeBundle ready.' -ForegroundColor Green
 Write-Host "Node:    $NodeExe" -ForegroundColor DarkGray
 Write-Host "Harness: $DshBin" -ForegroundColor DarkGray
 Write-Host "goz:     $GozExe" -ForegroundColor DarkGray
 Write-Host "gozd:    $GozDaemon" -ForegroundColor DarkGray
+Write-Host "Relay:   $RelayExe" -ForegroundColor DarkGray
 Write-Host "Codex:   $CodexExe" -ForegroundColor DarkGray
 Write-Host 'No third-party network download or system Node installation was performed.' -ForegroundColor Green

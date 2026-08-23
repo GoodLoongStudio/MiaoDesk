@@ -35,7 +35,6 @@ private:
     void MergeResults();
     void ExecuteSelected(bool forceL3);
     void StartL3(const std::wstring& prompt);
-    void OpenModelSettings();
     void OpenSettingsCenter();
     void Draw();
     void ResizeRenderTarget(UINT width, UINT height);
@@ -56,7 +55,6 @@ private:
     HWND edit_{};
     HWND searchIcon_{};
     HWND settingsButton_{};
-    HWND wallpaperButton_{};
     WNDPROC oldEditProc_{};
     AppSearch apps_;
     GozSearch files_;
@@ -79,7 +77,6 @@ private:
     bool trayAdded_{false};
     UINT taskbarCreated_{0};
     HBRUSH editBrush_{};
-    HBRUSH buttonBrush_{};
     HBRUSH staticBrush_{};
     HFONT uiFont_{};
     HFONT smallFont_{};

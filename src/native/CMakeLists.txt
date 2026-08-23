@@ -37,7 +37,6 @@ add_executable(TuringDesk WIN32
     src/SettingsCenterWindow.cpp
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
-    src/CodexRuntime.cpp
     src/DirectAgentRuntimeV2.cpp
     src/NativeTools.cpp
     src/WallpaperPackage.cpp

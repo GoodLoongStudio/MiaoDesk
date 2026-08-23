@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'
+$searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'
 $mainPath = Join-Path $root 'src/native/src/main.cpp'
 $codexPath = Join-Path $root 'src/native/src/CodexRuntime.cpp'
 $cmakePath = Join-Path $root 'src/native/CMakeLists.txt'
@@ -20,7 +21,7 @@ $retiredRuntimeV2Path = Join-Path $root 'src/native/src/DirectAgentRuntimeV2.cpp
 $retiredRuntimeStubPath = Join-Path $root 'src/native/src/DirectToolRuntimeDisabled.cpp'
 
 $requiredFiles = @(
-    $l3Path, $mainPath, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
+    $l3Path, $searchPath, $mainPath, $codexPath, $cmakePath, $armWorkflowPath, $x64WorkflowPath,
     $deployCmdPath, $deployPs1Path, $productBaselinePath, $nativeBaselinePath,
     $contractDocPath, $readmePath
 )
@@ -42,6 +43,7 @@ foreach ($path in @(
 }
 
 $l3 = Get-Content $l3Path -Raw
+$search = Get-Content $searchPath -Raw
 $main = Get-Content $mainPath -Raw
 $codex = Get-Content $codexPath -Raw
 $cmake = Get-Content $cmakePath -Raw
@@ -85,6 +87,26 @@ foreach ($marker in $forbiddenRuntimeMarkers) {
         throw "Retired L3 runtime marker returned: $marker"
     }
 }
+
+# 1b) L3 CLI must share the application message loop and must not steal focus back to Search.
+foreach ($forbidden in @(
+    'while (IsWindow(window))',
+    'GetMessageW(&msg'
+)) {
+    if ($l3.Contains($forbidden)) { throw "L3 window must not own a nested message loop: $forbidden" }
+}
+foreach ($required in @(
+    'auto* state = new CliState{};',
+    'case WM_NCDESTROY:',
+    'reinterpret_cast<LONG_PTR>(state)'
+)) {
+    if (-not $l3.Contains($required)) { throw "L3 nonblocking lifecycle marker missing: $required" }
+}
+$startL3Start = $search.IndexOf('void SearchWindow::StartL3')
+$startL3End = $search.IndexOf('void SearchWindow::SetStatus', $startL3Start)
+if ($startL3Start -lt 0 -or $startL3End -le $startL3Start) { throw 'SearchWindow::StartL3 contract block missing.' }
+$startL3Body = $search.Substring($startL3Start, $startL3End - $startL3Start)
+if ($startL3Body.Contains('ShowAndFocus();')) { throw 'Closing/opening L3 must not force Search focus.' }
 
 # 2) Build graph: CodexRuntime and NativeTools must be compiled into TuringDesk.
 foreach ($marker in @(

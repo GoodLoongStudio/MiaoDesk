@@ -1,0 +1,52 @@
+name: Guard L3 nonblocking lifecycle
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/guard-l3-nonblocking.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Add lifecycle contract to L3 verifier
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('scripts/verify-l3-runtime-contract.ps1')
+          s = p.read_text(encoding='utf-8')
+          search_decl = "$searchPath = Join-Path $root 'src/native/src/SearchWindow.cpp'\n"
+          if search_decl not in s:
+              anchor = "$l3Path = Join-Path $root 'src/native/src/L3CliWindow.cpp'\n"
+              assert anchor in s
+              s = s.replace(anchor, anchor + search_decl, 1)
+          if '$searchPath, $mainPath' not in s:
+              s = s.replace('$l3Path, $mainPath, $codexPath', '$l3Path, $searchPath, $mainPath, $codexPath', 1)
+          if '$search = Get-Content $searchPath -Raw' not in s:
+              anchor = '$l3 = Get-Content $l3Path -Raw\n'
+              assert anchor in s
+              s = s.replace(anchor, anchor + '$search = Get-Content $searchPath -Raw\n', 1)
+          marker = '# 1b) L3 CLI must share the application message loop and must not steal focus back to Search.\n'
+          if marker not in s:
+              anchor = '# 2) Build graph:'
+              idx = s.index(anchor)
+              block = '''# 1b) L3 CLI must share the application message loop and must not steal focus back to Search.\nforeach ($forbidden in @(\n    'while (IsWindow(window))',\n    'GetMessageW(&msg'\n)) {\n    if ($l3.Contains($forbidden)) { throw "L3 window must not own a nested message loop: $forbidden" }\n}\nforeach ($required in @(\n    'auto* state = new CliState{};',\n    'case WM_NCDESTROY:',\n    'reinterpret_cast<LONG_PTR>(state)'\n)) {\n    if (-not $l3.Contains($required)) { throw "L3 nonblocking lifecycle marker missing: $required" }\n}\n$startL3Start = $search.IndexOf('void SearchWindow::StartL3')\n$startL3End = $search.IndexOf('void SearchWindow::SetStatus', $startL3Start)\nif ($startL3Start -lt 0 -or $startL3End -le $startL3Start) { throw 'SearchWindow::StartL3 contract block missing.' }\n$startL3Body = $search.Substring($startL3Start, $startL3End - $startL3Start)\nif ($startL3Body.Contains('ShowAndFocus();')) { throw 'Closing/opening L3 must not force Search focus.' }\n\n'''
+              s = s[:idx] + block + s[idx:]
+          p.write_text(s, encoding='utf-8', newline='\n')
+      - name: Commit guard and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/guard-l3-nonblocking.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/verify-l3-runtime-contract.ps1 .github/workflows/guard-l3-nonblocking.yml
+          git commit -m "test: guard nonblocking L3 window lifecycle"
+          git pull --rebase origin main
+          git push origin HEAD:main

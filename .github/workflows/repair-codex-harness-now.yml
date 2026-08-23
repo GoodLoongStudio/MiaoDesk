@@ -1,0 +1,101 @@
+name: Repair Codex and Harness now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/repair-codex-harness.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch Codex final output and Harness background mode
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # ---- Codex: surface final agentMessage when provider emits no deltas ----
+          p = Path('src/native/src/CodexRuntime.cpp')
+          s = p.read_text(encoding='utf-8')
+          old = '''    bool startAccepted = false;\n    std::string line;\n    while (!stopToken.stop_requested() && ReadLine(line)) {'''
+          new = '''    bool startAccepted = false;\n    bool emittedAgentText = false;\n    std::wstring finalAgentText;\n    std::string line;\n    while (!stopToken.stop_requested() && ReadLine(line)) {'''
+          if old in s:
+              s = s.replace(old, new, 1)
+
+          old = '''        if (method == "item/agentMessage/delta") {\n            const auto delta = ExtractJsonString(line, "\\\"delta\\\"");\n            if (!delta.empty() && onDelta) onDelta(Utf8ToWide(delta));\n            continue;\n        }\n        if (method == "turn/completed") {'''
+          new = '''        if (method == "item/agentMessage/delta") {\n            const auto delta = ExtractJsonString(line, "\\\"delta\\\"");\n            if (!delta.empty()) {\n                emittedAgentText = true;\n                if (onDelta) onDelta(Utf8ToWide(delta));\n            }\n            continue;\n        }\n        if (method == "item/completed") {\n            const auto type = ExtractJsonString(line, "\\\"type\\\"");\n            if (type == "agentMessage") {\n                const auto text = ExtractJsonString(line, "\\\"text\\\"");\n                if (!text.empty()) finalAgentText = Utf8ToWide(text);\n            }\n            continue;\n        }\n        if (method == "turn/completed") {'''
+          if old in s:
+              s = s.replace(old, new, 1)
+
+          old = '''            if (onDone) onDone(std::move(done));\n            return;\n        }'''
+          new = '''            if (done.empty() && !emittedAgentText && !finalAgentText.empty()) {\n                emittedAgentText = true;\n                if (onDelta) onDelta(finalAgentText);\n            }\n            if (done.empty() && !emittedAgentText)\n                done = L"Codex turn 已完成，但模型没有返回可显示文本";\n            if (onDone) onDone(std::move(done));\n            return;\n        }'''
+          pos = s.find('        if (method == "turn/completed") {')
+          if pos < 0:
+              raise SystemExit('Codex turn/completed anchor missing')
+          tail = s[pos:]
+          if old in tail:
+              tail = tail.replace(old, new, 1)
+              s = s[:pos] + tail
+          if 'method == "item/completed"' not in s or 'finalAgentText' not in s:
+              raise SystemExit('Codex final-message repair did not apply')
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          # ---- Harness: default invocation is background; --ui opens WebView ----
+          p = Path('src/native/src/HarnessHost.cpp')
+          s = p.read_text(encoding='utf-8')
+
+          # Existing instance activation must only happen for explicit UI requests.
+          old = '''    if (GetLastError() == ERROR_ALREADY_EXISTS) {\n        ActivateExistingHarnessWindow();\n        CloseHandle(mutex);\n        if (SUCCEEDED(com)) CoUninitialize();\n        return 0;\n    }\n\n    HarnessHost host(instance);'''
+          new = '''    const bool showUi = args.find(L"--ui") != std::wstring_view::npos;\n    if (GetLastError() == ERROR_ALREADY_EXISTS) {\n        if (showUi) ActivateExistingHarnessWindow();\n        CloseHandle(mutex);\n        if (SUCCEEDED(com)) CoUninitialize();\n        return 0;\n    }\n\n    if (!showUi) {\n        turingdesk::HarnessProcessManager harness;\n        if (!harness.Start()) {\n            CloseHandle(mutex);\n            if (SUCCEEDED(com)) CoUninitialize();\n            return 6;\n        }\n        // Keep the owner process alive invisibly so the managed Harness child\n        // is not torn down by HarnessProcessManager destruction.\n        while (harness.Running()) Sleep(500);\n        const DWORD exitCode = harness.ExitCode();\n        CloseHandle(mutex);\n        if (SUCCEEDED(com)) CoUninitialize();\n        return exitCode == STILL_ACTIVE ? 0 : static_cast<int>(exitCode);\n    }\n\n    HarnessHost host(instance);'''
+          if old not in s:
+              raise SystemExit('Harness main anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          # Settings center is the explicit UI entry.
+          p = Path('src/native/src/SettingsCenterWindow.cpp')
+          s = p.read_text(encoding='utf-8')
+          old = 'LaunchSibling(*state, L"TuringDeskHarness.exe", nullptr, L"DeepSeek Harness");'
+          new = 'LaunchSibling(*state, L"TuringDeskHarness.exe", L"--ui", L"DeepSeek Harness");'
+          if old not in s:
+              raise SystemExit('Settings Harness launch anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          # Native self-test guards: Codex-first remains in place, and Harness UI is explicit.
+          l3 = Path('src/native/src/L3CliWindow.cpp').read_text(encoding='utf-8')
+          if 'if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;' not in l3:
+              raise SystemExit('Codex-first routing regressed before repair commit')
+          if 'state.codex->AskAsync(*state.agent' not in l3:
+              raise SystemExit('Codex AskAsync routing regressed before repair commit')
+
+      - name: Validate source guards
+        shell: bash
+        run: |
+          grep -q 'method == "item/completed"' src/native/src/CodexRuntime.cpp
+          grep -q 'finalAgentText' src/native/src/CodexRuntime.cpp
+          grep -q 'const bool showUi = args.find(L"--ui")' src/native/src/HarnessHost.cpp
+          grep -q 'TuringDeskHarness.exe", L"--ui"' src/native/src/SettingsCenterWindow.cpp
+          grep -q 'state.codex->AskAsync' src/native/src/L3CliWindow.cpp
+
+      - name: Commit repair directly to main
+        shell: bash
+        run: |
+          rm -f .github/workflows/repair-codex-harness-now.yml .github/repair-codex-harness.trigger
+          rm -f .github/workflows/fix-codex-final-output.yml .github/codex-final-output-trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: stabilize Codex output and background Harness"
+          git pull --rebase origin main
+          git push origin HEAD:main

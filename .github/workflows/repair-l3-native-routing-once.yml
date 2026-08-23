@@ -1,0 +1,106 @@
+name: Repair native L3 routing boundary once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-l3-native-routing-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Keep ordinary L3 on TuringDesk runtime
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/native/src/L3CliWindow.cpp')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''ActiveRuntime ChooseRuntime(CliState& state) {
+              // Codex CLI is the preferred L3 agent runtime. Direct runtimes are retained
+              // only as compatibility fallbacks for providers that do not yet expose the
+              // Responses wire protocol required by Codex.
+              if (state.codex->CanHandle(*state.agent)) return ActiveRuntime::Codex;
+              if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+              return ActiveRuntime::DirectModel;
+          }
+
+          std::wstring RuntimeStatusText(CliState& state) {
+              const auto status = state.codex->Status(*state.agent);
+              const auto selected = ChooseRuntime(state);
+              std::wstring text = L"当前路由：" + RuntimeName(state, selected);
+              text += L" · " + RuntimeExecutionLabel(selected);
+              text += L"\\r\\nCodex CLI：";
+              text += status.binaryAvailable ? L"已安装" : L"未安装";
+              text += L"\\r\\nProvider → Codex：";
+              text += status.providerCompatible ? L"Responses 可直连（默认使用 Codex CLI）" : L"等待 Responses 协议桥";
+              text += L"\\r\\nDirect Tools fallback：" + state.directTools->StatusText(*state.agent);
+              text += L"\\r\\n" + status.message;
+              return text;
+          }
+          '''
+          new = '''ActiveRuntime ChooseRuntime(CliState& state) {
+              // L3 is deliberately owned by TuringDesk. External Agent runtimes belong to
+              // L4 and must never become the implicit path for an ordinary L3 prompt.
+              if (state.directTools->CanHandle(*state.agent)) return ActiveRuntime::DirectTools;
+              return ActiveRuntime::DirectModel;
+          }
+
+          std::wstring RuntimeStatusText(CliState& state) {
+              const auto selected = ChooseRuntime(state);
+              std::wstring text = L"当前路由：" + RuntimeName(state, selected);
+              text += L" · " + RuntimeExecutionLabel(selected);
+              text += L"\\r\\nNative Tools：" + state.directTools->StatusText(*state.agent);
+              text += L"\\r\\nL3 外部 Agent/Harness：不参与；深度任务请交给 L4。";
+              return text;
+          }
+          '''
+          if old not in text:
+              raise SystemExit('L3 runtime selection anchor changed; refusing blind rewrite')
+          text = text.replace(old, new, 1)
+
+          old_retry = '''    if (retry) {
+                  if (state.lastRuntime == ActiveRuntime::Codex && state.codex->CanHandle(*state.agent)) runtime = ActiveRuntime::Codex;
+                  else if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+                  else if (state.lastRuntime == ActiveRuntime::DirectModel) runtime = ActiveRuntime::DirectModel;
+              }
+          '''
+          new_retry = '''    if (retry) {
+                  if (state.lastRuntime == ActiveRuntime::DirectTools && state.directTools->CanHandle(*state.agent)) runtime = ActiveRuntime::DirectTools;
+                  else runtime = ActiveRuntime::DirectModel;
+              }
+          '''
+          if old_retry not in text:
+              raise SystemExit('L3 retry routing anchor changed; refusing blind rewrite')
+          text = text.replace(old_retry, new_retry, 1)
+
+          text = text.replace('L"图灵智能桌面 · Codex CLI Agent"', 'L"图灵智能桌面 · AI Agent"', 1)
+
+          path.write_text(text, encoding='utf-8', newline='')
+
+          # Source-level guard for this regression: ordinary selection must not select Codex.
+          selected = text[text.index('ActiveRuntime ChooseRuntime'):text.index('void StopTurn')]
+          if 'return ActiveRuntime::Codex' in selected or 'codex->CanHandle' in selected:
+              raise SystemExit('ordinary L3 still routes to Codex')
+          if 'L3 外部 Agent/Harness：不参与' not in selected:
+              raise SystemExit('L3 boundary status missing')
+
+      - name: Remove one-shot workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/repair-l3-native-routing-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/L3CliWindow.cpp .github/workflows/repair-l3-native-routing-once.yml
+          git diff --cached --check
+          git commit -m "fix: keep ordinary L3 on native runtime"
+          git push origin HEAD:main

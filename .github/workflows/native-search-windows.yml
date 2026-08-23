@@ -32,12 +32,19 @@ jobs:
         with:
           ref: main
 
-      - name: Guard L3/L4 source boundary
+      - name: Guard Codex-first AI baseline
         shell: pwsh
         run: |
           $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
-          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
-            if ($source.Contains($marker)) { throw "Ordinary L3 must not depend on external Agent/Harness runtime marker: $marker" }
+          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime')) {
+            if (-not $source.Contains($marker)) { throw "Codex-first L3 marker missing: $marker" }
+          }
+          $cmake = Get-Content 'src/native/CMakeLists.txt' -Raw
+          foreach ($marker in @('src/CodexRuntime.cpp', 'src/DirectToolRuntimeDisabled.cpp')) {
+            if (-not $cmake.Contains($marker)) { throw "Required AI runtime source missing: $marker" }
+          }
+          if ($cmake.Contains('src/DirectAgentRuntimeV2.cpp')) {
+            throw 'DirectAgentRuntimeV2 must not be compiled into the default AI route.'
           }
 
       - name: Check RuntimeBundle freshness

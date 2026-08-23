@@ -1,0 +1,29 @@
+name: Retrigger packaged Scene implementation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retrigger-packaged-scene.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  retrigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Retrigger existing packaged Scene migration
+        shell: bash
+        run: |
+          printf '\n# retriggered by release convergence %s\n' "${GITHUB_SHA}" >> .github/workflows/enable-packaged-scene-alias.yml
+          rm .github/workflows/retrigger-packaged-scene.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/enable-packaged-scene-alias.yml .github/workflows/retrigger-packaged-scene.yml
+          git diff --cached --check
+          git commit -m "ci: retrigger packaged Scene implementation"
+          git push origin HEAD:main

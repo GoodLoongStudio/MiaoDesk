@@ -91,6 +91,20 @@ add_custom_target(TuringDeskL3ContractCheck ALL
 )
 add_dependencies(TuringDesk TuringDeskL3ContractCheck)
 
+set(TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-runtime-log-paths.ps1")
+if (NOT EXISTS "${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing runtime log contract guard: ${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskRuntimeLogContractCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying Desktop runtime log routing"
+    VERBATIM
+)
+add_dependencies(TuringDesk TuringDeskRuntimeLogContractCheck)
+add_dependencies(TuringDeskWallpaper TuringDeskRuntimeLogContractCheck)
+add_dependencies(TuringDeskHarness TuringDeskRuntimeLogContractCheck)
+
 target_include_directories(TuringDesk PRIVATE include)
 target_compile_features(TuringDesk PRIVATE cxx_std_23)
 target_compile_definitions(TuringDesk PRIVATE

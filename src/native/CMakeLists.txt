@@ -131,6 +131,7 @@ target_link_libraries(TuringDeskWallpaper PRIVATE
     gdi32
     shell32
     ole32
+    comctl32
     d2d1
     windowscodecs
     comdlg32

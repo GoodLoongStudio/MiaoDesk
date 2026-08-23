@@ -179,9 +179,17 @@ struct WallpaperLibraryWindow::Impl {
         DestroyResources();
     }
 
-    int FontHeight(int logicalPixels) const {
+    UINT CurrentDpi() const {
         const UINT dpi = window ? GetDpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
-        return -MulDiv(logicalPixels, static_cast<int>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI), USER_DEFAULT_SCREEN_DPI);
+        return dpi ? dpi : USER_DEFAULT_SCREEN_DPI;
+    }
+
+    int Scale(int logicalPixels) const {
+        return MulDiv(logicalPixels, static_cast<int>(CurrentDpi()), USER_DEFAULT_SCREEN_DPI);
+    }
+
+    int FontHeight(int logicalPixels) const {
+        return -Scale(logicalPixels);
     }
 
     HFONT MakeFont(int logicalPixels, int weight, const wchar_t* face) const {
@@ -194,6 +202,61 @@ struct WallpaperLibraryWindow::Impl {
         for (HFONT* font : {&titleFont, &pageTitleFont, &bodyFont, &smallFont, &cardTitleFont, &sectionFont}) {
             if (*font) { DeleteObject(*font); *font = nullptr; }
         }
+    }
+
+    void RebuildFonts() {
+        DestroyResources();
+        // Keep settings typography on the same visual scale as the Search Bar.
+        // Search uses roughly 18px primary text and 15px secondary text at 96 DPI.
+        titleFont = MakeFont(24, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        pageTitleFont = MakeFont(20, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        sectionFont = MakeFont(18, FW_SEMIBOLD, L"Segoe UI Variable Text");
+        bodyFont = MakeFont(18, FW_NORMAL, L"Segoe UI Variable Text");
+        smallFont = MakeFont(15, FW_NORMAL, L"Segoe UI Variable Text");
+        cardTitleFont = MakeFont(17, FW_SEMIBOLD, L"Segoe UI Variable Text");
+    }
+
+    void ApplyFonts() const {
+        auto set = [](HWND control, HFONT use) {
+            if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
+        };
+        set(headerTitle, titleFont);
+        set(headerSubtitle, smallFont);
+        set(importButton, bodyFont);
+        set(tabs, bodyFont);
+        set(pageTitle, pageTitleFont);
+        set(pageSubtitle, smallFont);
+        set(search, bodyFont);
+        set(list, bodyFont);
+        set(detailFrame, bodyFont);
+        set(selectedTitle, pageTitleFont);
+        set(selectedMeta, smallFont);
+        set(selectedDescription, bodyFont);
+        set(targetLabel, smallFont);
+        set(targetCombo, bodyFont);
+        set(applyButton, bodyFont);
+        set(favoriteButton, bodyFont);
+        set(removeButton, bodyFont);
+        set(webLabel, smallFont);
+        set(webUrl, bodyFont);
+        set(importWebButton, bodyFont);
+        set(status, smallFont);
+        set(aiUrlLabel, sectionFont);
+        set(aiUrl, bodyFont);
+        set(aiKeyLabel, sectionFont);
+        set(aiKey, bodyFont);
+        set(aiModelLabel, sectionFont);
+        set(aiModel, bodyFont);
+        set(aiProviderLabel, bodyFont);
+        set(aiProviderValue, bodyFont);
+        set(aiProbeButton, bodyFont);
+        set(aiSaveButton, bodyFont);
+        set(aiClearKeyButton, bodyFont);
+        set(aiStatus, bodyFont);
+        set(aiRuntimeTitle, pageTitleFont);
+        set(aiRuntimeStatus, bodyFont);
+        set(aiHarnessButton, bodyFont);
+        if (list) ListView_SetIconSpacing(list, Scale(240), Scale(170));
     }
 
     void SetStatus(const std::wstring& text) const {
@@ -568,7 +631,8 @@ struct WallpaperLibraryWindow::Impl {
 
         RECT rc{};
         if (!ListView_GetItemRect(list, index, &rc, LVIR_BOUNDS)) return CDRF_DODEFAULT;
-        rc.left += 6; rc.top += 6; rc.right -= 10; rc.bottom -= 10;
+        const int inset = Scale(6);
+        rc.left += inset; rc.top += inset; rc.right -= Scale(10); rc.bottom -= Scale(10);
         HDC dc = draw->nmcd.hdc;
         const bool selected = (ListView_GetItemState(list, index, LVIS_SELECTED) & LVIS_SELECTED) != 0;
 
@@ -576,34 +640,34 @@ struct WallpaperLibraryWindow::Impl {
         HPEN borderPen = CreatePen(PS_SOLID, selected ? 2 : 1, selected ? RGB(37, 99, 235) : RGB(216, 222, 232));
         HGDIOBJ oldBrush = SelectObject(dc, cardBrush);
         HGDIOBJ oldPen = SelectObject(dc, borderPen);
-        RoundRect(dc, rc.left, rc.top, rc.right, rc.bottom, 16, 16);
+        RoundRect(dc, rc.left, rc.top, rc.right, rc.bottom, Scale(16), Scale(16));
         SelectObject(dc, oldBrush); SelectObject(dc, oldPen);
         DeleteObject(cardBrush); DeleteObject(borderPen);
 
-        RECT preview{rc.left + 12, rc.top + 12, rc.right - 12, rc.top + 104};
+        RECT preview{rc.left + Scale(10), rc.top + Scale(10), rc.right - Scale(10), rc.top + Scale(92)};
         HBRUSH previewBrush = CreateSolidBrush(RGB(242, 245, 252));
         HPEN previewPen = CreatePen(PS_SOLID, 1, RGB(218, 227, 249));
         oldBrush = SelectObject(dc, previewBrush); oldPen = SelectObject(dc, previewPen);
-        RoundRect(dc, preview.left, preview.top, preview.right, preview.bottom, 12, 12);
+        RoundRect(dc, preview.left, preview.top, preview.right, preview.bottom, Scale(10), Scale(10));
         SelectObject(dc, oldBrush); SelectObject(dc, oldPen);
         DeleteObject(previewBrush); DeleteObject(previewPen);
 
         SetBkMode(dc, TRANSPARENT);
         HGDIOBJ oldFont = SelectObject(dc, smallFont);
         SetTextColor(dc, RGB(92, 112, 153));
-        RECT kindRect{preview.left + 12, preview.bottom - 30, preview.right - 8, preview.bottom - 8};
+        RECT kindRect{preview.left + Scale(10), preview.bottom - Scale(26), preview.right - Scale(8), preview.bottom - Scale(6)};
         DrawTextW(dc, KindLabel(item->kind), -1, &kindRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
         SelectObject(dc, cardTitleFont);
         SetTextColor(dc, RGB(26, 30, 38));
         std::wstring title = item->favorite ? L"★ " + item->title : item->title;
-        RECT titleRect{rc.left + 12, preview.bottom + 9, rc.right - 12, preview.bottom + 40};
+        RECT titleRect{rc.left + Scale(10), preview.bottom + Scale(7), rc.right - Scale(10), preview.bottom + Scale(34)};
         DrawTextW(dc, title.c_str(), -1, &titleRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(dc, smallFont);
         SetTextColor(dc, RGB(95, 105, 126));
         const std::wstring description = SourceMissing(*item) ? L"资源不可用" : DescriptionFor(*item);
-        RECT descRect{rc.left + 12, preview.bottom + 43, rc.right - 12, rc.bottom - 8};
+        RECT descRect{rc.left + Scale(10), preview.bottom + Scale(35), rc.right - Scale(10), rc.bottom - Scale(6)};
         DrawTextW(dc, description.c_str(), -1, &descRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         SelectObject(dc, oldFont);
         return CDRF_SKIPDEFAULT;
@@ -611,63 +675,76 @@ struct WallpaperLibraryWindow::Impl {
 
     void Layout() {
         if (!window) return;
-        RECT rc{}; GetClientRect(window, &rc);
-        const int width = std::max(1080L, rc.right - rc.left);
-        const int height = std::max(720L, rc.bottom - rc.top);
-        constexpr int margin = 24;
-        constexpr int headerHeight = 122;
-        constexpr int tabsHeight = 58;
-        const int contentTop = headerHeight + tabsHeight + 22;
+        RECT rc{};
+        if (!GetClientRect(window, &rc)) return;
+        const int width = std::max(1L, rc.right - rc.left);
+        const int height = std::max(1L, rc.bottom - rc.top);
+        const int margin = Scale(20);
+        const int headerHeight = Scale(88);
+        const int tabsHeight = Scale(44);
+        const int contentTop = headerHeight + tabsHeight + Scale(16);
 
-        MoveWindow(headerTitle, margin, 18, 500, 48, TRUE);
-        MoveWindow(headerSubtitle, margin, 68, 760, 34, TRUE);
-        MoveWindow(importButton, width - margin - 160, 28, 160, 50, TRUE);
+        MoveWindow(headerTitle, margin, Scale(14), Scale(420), Scale(34), TRUE);
+        MoveWindow(headerSubtitle, margin, Scale(50), std::max(Scale(360), width - margin * 2 - Scale(180)), Scale(24), TRUE);
+        MoveWindow(importButton, std::max(margin, width - margin - Scale(138)), Scale(22), Scale(138), Scale(38), TRUE);
         MoveWindow(tabs, 0, headerHeight, width, tabsHeight, TRUE);
-        MoveWindow(pageTitle, margin, contentTop, 420, 46, TRUE);
-        MoveWindow(pageSubtitle, margin, contentTop + 48, 820, 34, TRUE);
+        MoveWindow(pageTitle, margin, contentTop, Scale(360), Scale(32), TRUE);
+        MoveWindow(pageSubtitle, margin, contentTop + Scale(32), std::max(Scale(360), width - margin * 2), Scale(24), TRUE);
 
         if (!aiPage) {
-            constexpr int detailWidth = 380;
-            constexpr int gap = 24;
+            const int detailWidth = std::clamp(width * 30 / 100, Scale(300), Scale(370));
+            const int gap = Scale(18);
             const int detailX = width - margin - detailWidth;
-            const int libraryWidth = std::max(540, detailX - gap - margin);
-            MoveWindow(search, margin + libraryWidth - 280, contentTop + 2, 280, 46, TRUE);
-            MoveWindow(list, margin, contentTop + 92, libraryWidth, height - (contentTop + 92) - 52, TRUE);
-            MoveWindow(detailFrame, detailX, contentTop, detailWidth, height - contentTop - 52, TRUE);
-            MoveWindow(selectedTitle, detailX + 22, contentTop + 24, detailWidth - 44, 42, TRUE);
-            MoveWindow(selectedMeta, detailX + 22, contentTop + 70, detailWidth - 44, 32, TRUE);
-            MoveWindow(selectedDescription, detailX + 22, contentTop + 112, detailWidth - 44, 126, TRUE);
-            MoveWindow(targetLabel, detailX + 22, contentTop + 250, detailWidth - 44, 32, TRUE);
-            MoveWindow(targetCombo, detailX + 22, contentTop + 286, detailWidth - 44, 220, TRUE);
-            MoveWindow(applyButton, detailX + 22, contentTop + 340, detailWidth - 44, 48, TRUE);
-            MoveWindow(favoriteButton, detailX + 22, contentTop + 400, 156, 42, TRUE);
-            MoveWindow(removeButton, detailX + 188, contentTop + 400, detailWidth - 210, 42, TRUE);
-            MoveWindow(webLabel, detailX + 22, contentTop + 466, detailWidth - 44, 32, TRUE);
-            MoveWindow(webUrl, detailX + 22, contentTop + 502, detailWidth - 44, 44, TRUE);
-            MoveWindow(importWebButton, detailX + 22, contentTop + 558, detailWidth - 44, 46, TRUE);
-        } else {
-            const int leftWidth = std::min(790, width - 450);
-            const int rightX = margin + leftWidth + 44;
-            const int rightWidth = std::max(320, width - rightX - margin);
-            int y = contentTop + 96;
-            MoveWindow(aiUrlLabel, margin, y, 250, 34, TRUE); y += 38;
-            MoveWindow(aiUrl, margin, y, leftWidth, 46, TRUE); y += 64;
-            MoveWindow(aiKeyLabel, margin, y, 250, 34, TRUE); y += 38;
-            MoveWindow(aiKey, margin, y, leftWidth - 164, 46, TRUE);
-            MoveWindow(aiClearKeyButton, margin + leftWidth - 152, y, 152, 46, TRUE); y += 64;
-            MoveWindow(aiModelLabel, margin, y, 250, 34, TRUE); y += 38;
-            MoveWindow(aiModel, margin, y, leftWidth - 164, 200, TRUE);
-            MoveWindow(aiProbeButton, margin + leftWidth - 152, y, 152, 46, TRUE); y += 66;
-            MoveWindow(aiProviderLabel, margin, y, 124, 34, TRUE);
-            MoveWindow(aiProviderValue, margin + 132, y, leftWidth - 132, 34, TRUE); y += 52;
-            MoveWindow(aiSaveButton, margin, y, 200, 50, TRUE); y += 66;
-            MoveWindow(aiStatus, margin, y, leftWidth, 80, TRUE);
+            const int libraryWidth = std::max(Scale(430), detailX - gap - margin);
+            const int searchWidth = std::clamp(libraryWidth / 3, Scale(220), Scale(300));
+            const int listTop = contentTop + Scale(66);
+            const int bottomMargin = Scale(38);
+            const int listHeight = std::max(Scale(180), height - listTop - bottomMargin);
+            const int detailHeight = std::max(Scale(300), height - contentTop - bottomMargin);
 
-            MoveWindow(aiRuntimeTitle, rightX, contentTop + 96, rightWidth, 42, TRUE);
-            MoveWindow(aiRuntimeStatus, rightX, contentTop + 146, rightWidth, 140, TRUE);
-            MoveWindow(aiHarnessButton, rightX, contentTop + 306, rightWidth, 50, TRUE);
+            MoveWindow(search, margin + libraryWidth - searchWidth, contentTop, searchWidth, Scale(36), TRUE);
+            MoveWindow(list, margin, listTop, libraryWidth, listHeight, TRUE);
+            MoveWindow(detailFrame, detailX, contentTop, detailWidth, detailHeight, TRUE);
+            MoveWindow(selectedTitle, detailX + Scale(18), contentTop + Scale(18), detailWidth - Scale(36), Scale(30), TRUE);
+            MoveWindow(selectedMeta, detailX + Scale(18), contentTop + Scale(50), detailWidth - Scale(36), Scale(24), TRUE);
+            MoveWindow(selectedDescription, detailX + Scale(18), contentTop + Scale(80), detailWidth - Scale(36), Scale(92), TRUE);
+            MoveWindow(targetLabel, detailX + Scale(18), contentTop + Scale(180), detailWidth - Scale(36), Scale(24), TRUE);
+            MoveWindow(targetCombo, detailX + Scale(18), contentTop + Scale(208), detailWidth - Scale(36), Scale(180), TRUE);
+            MoveWindow(applyButton, detailX + Scale(18), contentTop + Scale(252), detailWidth - Scale(36), Scale(38), TRUE);
+            const int half = (detailWidth - Scale(44)) / 2;
+            MoveWindow(favoriteButton, detailX + Scale(18), contentTop + Scale(300), half, Scale(34), TRUE);
+            MoveWindow(removeButton, detailX + Scale(26) + half, contentTop + Scale(300), half, Scale(34), TRUE);
+            MoveWindow(webLabel, detailX + Scale(18), contentTop + Scale(350), detailWidth - Scale(36), Scale(24), TRUE);
+            MoveWindow(webUrl, detailX + Scale(18), contentTop + Scale(378), detailWidth - Scale(36), Scale(36), TRUE);
+            MoveWindow(importWebButton, detailX + Scale(18), contentTop + Scale(424), detailWidth - Scale(36), Scale(38), TRUE);
+        } else {
+            const int gap = Scale(28);
+            const int rightWidth = std::clamp(width * 28 / 100, Scale(300), Scale(380));
+            const int leftWidth = std::max(Scale(420), width - margin * 2 - gap - rightWidth);
+            const int rightX = margin + leftWidth + gap;
+            const int fieldHeight = Scale(36);
+            const int labelHeight = Scale(24);
+            const int buttonWidth = Scale(128);
+            int y = contentTop + Scale(64);
+
+            MoveWindow(aiUrlLabel, margin, y, Scale(220), labelHeight, TRUE); y += Scale(26);
+            MoveWindow(aiUrl, margin, y, leftWidth, fieldHeight, TRUE); y += Scale(48);
+            MoveWindow(aiKeyLabel, margin, y, Scale(220), labelHeight, TRUE); y += Scale(26);
+            MoveWindow(aiKey, margin, y, std::max(Scale(180), leftWidth - buttonWidth - Scale(10)), fieldHeight, TRUE);
+            MoveWindow(aiClearKeyButton, margin + leftWidth - buttonWidth, y, buttonWidth, fieldHeight, TRUE); y += Scale(48);
+            MoveWindow(aiModelLabel, margin, y, Scale(220), labelHeight, TRUE); y += Scale(26);
+            MoveWindow(aiModel, margin, y, std::max(Scale(180), leftWidth - buttonWidth - Scale(10)), Scale(170), TRUE);
+            MoveWindow(aiProbeButton, margin + leftWidth - buttonWidth, y, buttonWidth, fieldHeight, TRUE); y += Scale(50);
+            MoveWindow(aiProviderLabel, margin, y, Scale(110), labelHeight, TRUE);
+            MoveWindow(aiProviderValue, margin + Scale(116), y, std::max(Scale(180), leftWidth - Scale(116)), labelHeight, TRUE); y += Scale(38);
+            MoveWindow(aiSaveButton, margin, y, Scale(166), Scale(40), TRUE); y += Scale(50);
+            MoveWindow(aiStatus, margin, y, leftWidth, Scale(62), TRUE);
+
+            MoveWindow(aiRuntimeTitle, rightX, contentTop + Scale(64), rightWidth, Scale(30), TRUE);
+            MoveWindow(aiRuntimeStatus, rightX, contentTop + Scale(100), rightWidth, Scale(108), TRUE);
+            MoveWindow(aiHarnessButton, rightX, contentTop + Scale(222), rightWidth, Scale(40), TRUE);
         }
-        MoveWindow(status, margin, height - 38, width - margin * 2, 32, TRUE);
+        MoveWindow(status, margin, std::max(0, height - Scale(30)), std::max(1, width - margin * 2), Scale(24), TRUE);
     }
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -683,6 +760,27 @@ struct WallpaperLibraryWindow::Impl {
         if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
 
         switch (message) {
+        case WM_GETMINMAXINFO: {
+            auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+            if (info) {
+                info->ptMinTrackSize.x = self->Scale(980);
+                info->ptMinTrackSize.y = self->Scale(680);
+            }
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+            if (suggested) {
+                SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+                             suggested->right - suggested->left, suggested->bottom - suggested->top,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            self->RebuildFonts();
+            self->ApplyFonts();
+            self->Layout();
+            InvalidateRect(hwnd, nullptr, TRUE);
+            return 0;
+        }
         case WM_SIZE:
             self->Layout();
             return 0;
@@ -748,16 +846,11 @@ struct WallpaperLibraryWindow::Impl {
 
         window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"TuringDesk 设置",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-                                 CW_USEDEFAULT, CW_USEDEFAULT, 1360, 900,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, 1180, 780,
                                  nullptr, nullptr, instance, this);
         if (!window) return false;
 
-        titleFont = MakeFont(38, FW_SEMIBOLD, L"Segoe UI Variable Display");
-        pageTitleFont = MakeFont(32, FW_SEMIBOLD, L"Segoe UI Variable Display");
-        sectionFont = MakeFont(26, FW_SEMIBOLD, L"Segoe UI Variable Text");
-        bodyFont = MakeFont(24, FW_NORMAL, L"Segoe UI Variable Text");
-        smallFont = MakeFont(20, FW_NORMAL, L"Segoe UI Variable Text");
-        cardTitleFont = MakeFont(24, FW_SEMIBOLD, L"Segoe UI Variable Text");
+        RebuildFonts();
 
         auto font = [&](HWND control, HFONT use) {
             if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
@@ -794,7 +887,6 @@ struct WallpaperLibraryWindow::Impl {
                                    LVS_ICON | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE,
                                    0, 0, 10, 10, window, ControlId(kListId), instance, nullptr), bodyFont);
         ListView_SetExtendedListViewStyle(list, LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP | LVS_EX_BORDERSELECT);
-        ListView_SetIconSpacing(list, 270, 190);
 
         detailFrame = label(L"", SS_ETCHEDFRAME, bodyFont);
         selectedTitle = label(L"选择一个桌面", 0, pageTitleFont);
@@ -832,6 +924,7 @@ struct WallpaperLibraryWindow::Impl {
         aiHarnessButton = button(L"打开 DeepSeek Harness 工作台", kAiHarnessId, false);
 
         aiAgent = std::make_unique<turingdesk::L3Agent>();
+        ApplyFonts();
         ShowAiPage(false);
         RebuildTargets();
         RebuildList();

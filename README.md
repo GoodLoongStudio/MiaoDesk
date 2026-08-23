@@ -15,8 +15,6 @@ TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部�
 - `TuringDeskWallpaper.exe` — 桌面壁纸引擎
 - `TuringDeskHarness.exe` — DeepSeek Harness WebView2 宿主
 
-旧 C# / .NET / WPF 实现已冻结在 `legacy/turingdesk-wpf/`，只用于历史参考。
-
 ## L3 AI 固定运行链
 
 普通 L3 AI 请求的默认主路由固定为：
@@ -40,22 +38,27 @@ API 不绑定 DeepSeek 品牌，路由按 Provider 的协议能力判断。
 
 详细强制契约见：`docs/L3-CODEX-RUNTIME-CONTRACT.md`。
 
-## 本地与云端构建保护
+## 自动化边界
+
+GitHub Actions 只负责检查、编译、测试、打包和固定第三方 RuntimeBundle；不得通过 workflow 自动改产品源码、设计基线或架构 Guard 后再 push `main`。
+
+当前长期保留的 workflow：
+
+- ARM64 正式构建与端到端验证；
+- x64 源码兼容性验证；
+- PowerShell 语法与当前基线检查；
+- ARM64 RuntimeBundle vendoring。
 
 本地 CMake 和 GitHub Actions 共用：
 
 ```powershell
 scripts/verify-l3-runtime-contract.ps1
+scripts/verify-codex-jsonl-wire.ps1
+scripts/verify-runtime-log-paths.ps1
+scripts/verify-arm64-runtime-bundle.ps1
 ```
 
-这个 guard 会阻止以下回归：
-
-- Codex CLI 被移出 L3；
-- Direct API 被重新改成默认主路由；
-- `CodexRuntime.cpp` 不再参与 TuringDesk 编译；
-- Codex / Relay 被从 ARM64 Artifact 删除；
-- 日志链路被移除；
-- 主路由被硬编码到某个 Provider 品牌。
+这些 guard 只验证当前代码，不修改源码。
 
 ## 一键测试
 
@@ -68,8 +71,8 @@ DEPLOY-NATIVE-ARM64.cmd
 脚本会：
 
 1. `git pull --ff-only` 同步 `main`；
-2. 先验证 L3 Codex-first 架构契约；
-3. 从仓库自身 `runtime/arm64/` 校验并展开固定 RuntimeBundle；
+2. 验证 L3 Codex-first 架构契约；
+3. 校验并展开仓库固定的 RuntimeBundle；
 4. 获取当前 `main` 已通过 CI 的 ARM64 原生构建；
 5. 运行 Search / Wallpaper / Harness self-test；
 6. 验证 Codex CLI、Codex Relay 和 Harness Runtime；
@@ -104,39 +107,11 @@ Harness UI 只在用户明确点击“打开 Harness 工作台”时由 `TuringD
 powershell -ExecutionPolicy Bypass -File scripts/verify-arm64-runtime-bundle.ps1
 ```
 
-L3 架构检查：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/verify-l3-runtime-contract.ps1
-```
-
 RuntimeBundle 的生成、版本和目录约定见 `runtime/arm64/README.md`。
-
-## 日志
-
-L3 路由：
-
-```text
-%LOCALAPPDATA%\TuringDesk\Logs\l3-runtime.log
-```
-
-Codex / Relay 详情：
-
-```text
-%LOCALAPPDATA%\TuringDesk\Logs\codex-runtime.log
-```
-
-日志不得记录 API Key 或 Token。
-
-## 文档
-
-当前产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`  
-L3 强制架构契约：`docs/L3-CODEX-RUNTIME-CONTRACT.md`  
-Native 技术基线：`docs/TURINGDESK-NATIVE-TECH-BASELINE.md`
 
 ## Runtime diagnostics
 
-All native runtime logs are written to the user's actual Windows Desktop known folder:
+所有 Native 运行日志统一写入用户实际 Windows Desktop known folder：
 
 ```text
 Desktop\TuringDesk-Logs\l3-runtime.log
@@ -144,4 +119,10 @@ Desktop\TuringDesk-Logs\codex-runtime.log
 Desktop\TuringDesk-Logs\harness.log
 ```
 
-API keys and credentials must never be written to these logs.
+API Key、Token 和其他凭据不得写入日志。
+
+## 当前正式文档
+
+- `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线
+- `docs/TURINGDESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
+- `docs/L3-CODEX-RUNTIME-CONTRACT.md` — L3 强制架构契约

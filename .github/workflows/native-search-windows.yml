@@ -10,6 +10,8 @@ on:
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-l3-runtime-contract.ps1
+      - scripts/verify-codex-jsonl-wire.ps1
+      - scripts/verify-runtime-log-paths.ps1
       - .github/workflows/native-search-windows.yml
   workflow_run:
     workflows: ["Vendor ARM64 Runtime Bundle"]
@@ -368,7 +370,8 @@ jobs:
         run: |
           $p = Start-Process -FilePath '.\build\package\TuringDeskHarness.exe' -ArgumentList '--harness-smoke-test' -Wait -PassThru
           if ($p.ExitCode -ne 0) {
-            $log = Join-Path $env:LOCALAPPDATA 'TuringDesk\Logs\harness.log'
+            $desktop = [Environment]::GetFolderPath('Desktop')
+            $log = Join-Path $desktop 'TuringDesk-Logs\harness.log'
             if (Test-Path $log) { Get-Content $log -Tail 200 | Out-Host }
             throw "Bundled DeepSeek Harness smoke test failed: $($p.ExitCode)"
           }

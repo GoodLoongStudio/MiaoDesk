@@ -7,6 +7,11 @@ on:
       - CMakeLists.txt
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
+      - docs/L3-CODEX-RUNTIME-CONTRACT.md
+      - docs/TURINGDESK-PRODUCT-BASELINE.md
+      - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
+      - DEPLOY-NATIVE-ARM64.cmd
+      - README.md
       - .github/workflows/native-x64-validation.yml
   workflow_dispatch:
 

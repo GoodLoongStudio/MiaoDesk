@@ -3,13 +3,9 @@ include(FetchContent)
 set(TURINGDESK_WEBVIEW2_VERSION "1.0.4129.50")
 
 if (CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
-    # ARM64 release builds are intentionally network-free. The pinned WebView2
-    # headers and static loader live inside the repository RuntimeBundle.
     set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/runtime/arm64/webview2-sdk")
     set(WEBVIEW2_NATIVE_ARCH "arm64")
 else()
-    # x64 validation/release builds use the same pinned SDK version. Keeping this
-    # path separate avoids weakening the repository-owned ARM64 offline bundle.
     FetchContent_Declare(
         webview2sdk
         URL "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${TURINGDESK_WEBVIEW2_VERSION}"
@@ -37,7 +33,8 @@ add_executable(TuringDesk WIN32
     src/SettingsCenterWindow.cpp
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
-    src/DirectAgentRuntimeV2.cpp
+    src/CodexRuntime.cpp
+    src/DirectToolRuntimeDisabled.cpp
     src/NativeTools.cpp
     src/WallpaperPackage.cpp
     src/AppSearch.cpp
@@ -69,6 +66,7 @@ add_executable(TuringDeskWallpaper WIN32
     src/WallpaperPackage.cpp
     src/VideoWallpaperPlayer.cpp
     src/VideoWallpaperSet.cpp
+    src/L3Agent.cpp
 )
 
 set_source_files_properties(src/WallpaperEngine.cpp PROPERTIES
@@ -130,6 +128,7 @@ target_link_libraries(TuringDeskWallpaper PRIVATE
     gdi32
     shell32
     ole32
+    advapi32
     comctl32
     d2d1
     windowscodecs
@@ -141,6 +140,7 @@ target_link_libraries(TuringDeskWallpaper PRIVATE
     mfuuid
     shlwapi
     version
+    winhttp
     "${WEBVIEW2_LOADER_STATIC}"
 )
 

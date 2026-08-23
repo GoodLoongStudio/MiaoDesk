@@ -647,9 +647,10 @@ private:
         next.image.clear();
         next.video.clear();
         if (item.kind == Kind::Scene) {
-            if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) next.scene = L"neon";
+            if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) next.scene = L"aurora";
+            else if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) next.scene = L"neon";
             else if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) next.scene = L"grid";
-            else next.scene = L"aurora";
+            else return false;
             return true;
         }
         if (item.kind == Kind::Image) {
@@ -706,7 +707,13 @@ private:
         } else {
             Config next = config_;
             next.enabled = true;
-            if (!ApplyWallpaperItemToConfig(next, item)) return;
+            if (!ApplyWallpaperItemToConfig(next, item)) {
+                libraryError_ = item.kind == Kind::Scene
+                    ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
+                    : L"该壁纸类型当前不可运行。";
+                RefreshSettings();
+                return;
+            }
             ApplyConfig(next);
         }
 

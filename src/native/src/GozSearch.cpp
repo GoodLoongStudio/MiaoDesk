@@ -15,6 +15,7 @@ namespace {
 
 constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\goz-v1";
 constexpr DWORD kQueryTimeoutMs = 5000;
+constexpr DWORD kL3SyncQueryTimeoutMs = 2500;
 
 #pragma pack(push, 1)
 struct GozReplyHeader {
@@ -102,7 +103,7 @@ std::vector<std::wstring> SplitPaths(const std::string& output, DWORD maxResults
 }
 
 bool RunGozQuery(const std::wstring& binary, const std::wstring& query, DWORD maxResults,
-                 std::vector<std::wstring>& paths) {
+                 std::vector<std::wstring>& paths, DWORD timeoutMs = kQueryTimeoutMs) {
     SECURITY_ATTRIBUTES security{};
     security.nLength = sizeof(security);
     security.bInheritHandle = TRUE;
@@ -139,7 +140,7 @@ bool RunGozQuery(const std::wstring& binary, const std::wstring& query, DWORD ma
         return false;
     }
 
-    const DWORD wait = WaitForSingleObject(process.hProcess, kQueryTimeoutMs);
+    const DWORD wait = WaitForSingleObject(process.hProcess, timeoutMs);
     if (wait == WAIT_TIMEOUT) {
         TerminateProcess(process.hProcess, 1);
         WaitForSingleObject(process.hProcess, 1000);
@@ -254,7 +255,7 @@ std::vector<SearchResult> GozSearch::QuerySync(const std::wstring& query, DWORD 
     if (binary.empty() || !PipeAvailable()) return results;
 
     std::vector<std::wstring> paths;
-    if (!RunGozQuery(binary, query, maxResults, paths)) return results;
+    if (!RunGozQuery(binary, query, maxResults, paths, kL3SyncQueryTimeoutMs)) return results;
     results.reserve(paths.size());
     for (std::size_t i = 0; i < paths.size(); ++i) {
         const auto& fullPath = paths[i];

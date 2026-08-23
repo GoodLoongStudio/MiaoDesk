@@ -1,0 +1,129 @@
+name: Apply packaged Scene implementation now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-packaged-scene-now.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch packaged Scene runtime
+        shell: python
+        run: |
+          from pathlib import Path
+
+          h = Path('src/native/include/turingdesk/WallpaperPackage.h')
+          s = h.read_text(encoding='utf-8')
+          if 'std::wstring sceneKey;' not in s:
+              s = s.replace('    std::wstring provenance;\n    int fpsCap{30};', '    std::wstring provenance;\n    std::wstring sceneKey;\n    int fpsCap{30};', 1)
+          if 'static bool CreateScene(' not in s:
+              anchor = '    static bool Validate(\n'
+              decl = '''    static bool CreateScene(\n        const std::filesystem::path& packageDirectory,\n        std::wstring title,\n        std::wstring sceneKey,\n        std::wstring provenance = L"user-authored",\n        std::wstring author = L"TuringDesk",\n        std::wstring* error = nullptr);\n\n'''
+              if anchor not in s: raise SystemExit('WallpaperPackage.h Validate anchor missing')
+              s = s.replace(anchor, decl + anchor, 1)
+          h.write_text(s, encoding='utf-8', newline='\n')
+
+          p = Path('src/native/src/WallpaperPackage.cpp')
+          s = p.read_text(encoding='utf-8')
+          if 'WallpaperPackage::CreateScene(' not in s:
+              anchor = 'bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPackageManifest* manifest,\n                                std::wstring* error) {\n'
+              creator = r'''bool WallpaperPackage::CreateScene(const fs::path& packageDirectory, std::wstring title,
+                                   std::wstring sceneKey, std::wstring provenance,
+                                   std::wstring author, std::wstring* error) {
+    SetError(error, L"");
+    sceneKey = Lower(std::move(sceneKey));
+    if (sceneKey != L"aurora" && sceneKey != L"neon" && sceneKey != L"grid") {
+        SetError(error, L"Scene 包当前只支持 aurora / neon / grid 原生 Renderer");
+        return false;
+    }
+    if (packageDirectory.empty()) { SetError(error, L"壁纸包目录不能为空"); return false; }
+    if (title.empty()) title = L"TuringDesk Scene";
+    if (title.size() > 256) title.resize(256);
+    if (author.empty()) author = L"TuringDesk";
+    if (provenance.empty()) provenance = L"user-authored";
+    std::error_code ec;
+    fs::create_directories(packageDirectory, ec);
+    if (ec) { SetError(error, L"无法创建 .tdwall 目录：" + packageDirectory.wstring()); return false; }
+    const fs::path entry = packageDirectory / L"scene.json";
+    std::ofstream scene(entry, std::ios::binary | std::ios::trunc);
+    if (!scene) { SetError(error, L"无法写入 Scene 入口文件"); return false; }
+    scene << "{\n  \"scene\": \"" << WideToUtf8(sceneKey) << "\"\n}\n";
+    scene.close();
+    WallpaperPackageManifest manifest;
+    manifest.schema = 1;
+    manifest.type = WallpaperPackageType::Scene;
+    manifest.title = std::move(title);
+    manifest.author = std::move(author);
+    manifest.entry = L"scene.json";
+    manifest.provenance = std::move(provenance);
+    manifest.sceneKey = std::move(sceneKey);
+    manifest.fpsCap = 30;
+    manifest.audio = false;
+    if (!WriteManifest(packageDirectory / L"manifest.json", manifest)) {
+        SetError(error, L"无法写入 Scene 壁纸包 manifest.json");
+        return false;
+    }
+    return Validate(packageDirectory, nullptr, error);
+}
+
+'''
+              if anchor not in s: raise SystemExit('WallpaperPackage.cpp Validate anchor missing')
+              s = s.replace(anchor, creator + anchor, 1)
+          if 'parsed.sceneKey = Lower(Utf8ToWide(ExtractJsonString(sceneJson, "scene")))' not in s:
+              old = '''    if (parsed.type == WallpaperPackageType::Web) {\n        const auto extension = Lower(resolvedEntry.extension().wstring());\n        if (extension != L".html" && extension != L".htm") {\n            SetError(error, L"Web .tdwall 的 entry 必须是 HTML 文件");\n            return false;\n        }\n    }\n\n    if (manifest) *manifest = std::move(parsed);\n'''
+              new = '''    if (parsed.type == WallpaperPackageType::Web) {\n        const auto extension = Lower(resolvedEntry.extension().wstring());\n        if (extension != L".html" && extension != L".htm") {\n            SetError(error, L"Web .tdwall 的 entry 必须是 HTML 文件");\n            return false;\n        }\n    } else if (parsed.type == WallpaperPackageType::Scene) {\n        if (Lower(resolvedEntry.extension().wstring()) != L".json") {\n            SetError(error, L"Scene .tdwall 的 entry 必须是 JSON 文件");\n            return false;\n        }\n        const std::string sceneJson = ReadTextFile(resolvedEntry, 64 * 1024);\n        parsed.sceneKey = Lower(Utf8ToWide(ExtractJsonString(sceneJson, "scene")));\n        if (parsed.sceneKey != L"aurora" && parsed.sceneKey != L"neon" && parsed.sceneKey != L"grid") {\n            SetError(error, L"Scene 包引用了当前不可用的 Renderer");\n            return false;\n        }\n    }\n\n    if (manifest) *manifest = std::move(parsed);\n'''
+              if old not in s: raise SystemExit('WallpaperPackage type validation anchor missing')
+              s = s.replace(old, new, 1)
+          if 'Scene Self Test' not in s:
+              old = '''    const bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&\n                       manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";\n    fs::remove_all(root, ec);\n    return valid;\n'''
+              new = '''    bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&\n                 manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";\n    const fs::path sceneRoot = root.parent_path() / (root.stem().wstring() + L"-scene.tdwall");\n    fs::remove_all(sceneRoot, ec);\n    WallpaperPackageManifest sceneManifest;\n    valid = valid && CreateScene(sceneRoot, L"Scene Self Test", L"neon", L"self-test", L"TuringDesk", &error) &&\n            Validate(sceneRoot, &sceneManifest, &error) && sceneManifest.type == WallpaperPackageType::Scene &&\n            sceneManifest.entry == fs::path(L"scene.json") && sceneManifest.sceneKey == L"neon";\n    fs::remove_all(sceneRoot, ec);\n    fs::remove_all(root, ec);\n    return valid;\n'''
+              if old not in s: raise SystemExit('WallpaperPackage self-test anchor missing')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = Path('src/native/src/WallpaperLibrary.cpp')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('        case WallpaperPackageType::Scene:\n        case WallpaperPackageType::Unknown: continue;\n', '        case WallpaperPackageType::Scene: kind = LibraryWallpaperKind::Scene; break;\n        case WallpaperPackageType::Unknown: continue;\n', 1)
+          if 'Package Scene' not in s:
+              old = '    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"TuringDesk", &error);\n\n    WallpaperLibrary reloaded(root / L"Library");\n'
+              new = '    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"TuringDesk", &error);\n    const fs::path scenePackage = library.PackageDirectory() / L"scene-selftest.tdwall";\n    ok = ok && WallpaperPackage::CreateScene(scenePackage, L"Package Scene", L"grid", L"self-test", L"TuringDesk", &error);\n\n    WallpaperLibrary reloaded(root / L"Library");\n'
+              if old not in s: raise SystemExit('WallpaperLibrary package self-test anchor missing')
+              s = s.replace(old, new, 1)
+              old = '    const auto packageItems = reloaded.Search(L"Package Web");\n    ok = ok && !packageItems.empty();\n'
+              new = old + '    const auto sceneItems = reloaded.Search(L"Package Scene");\n    ok = ok && !sceneItems.empty() && sceneItems.front().kind == LibraryWallpaperKind::Scene;\n'
+              if old not in s: raise SystemExit('WallpaperLibrary search self-test anchor missing')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = Path('src/native/src/WallpaperEngine.cpp')
+          s = p.read_text(encoding='utf-8')
+          if '#include "turingdesk/WallpaperPackage.h"' not in s:
+              anchor = '#include "turingdesk/WallpaperMonitorLayout.h"\n'
+              if anchor not in s: raise SystemExit('WallpaperEngine include anchor missing')
+              s = s.replace(anchor, anchor + '#include "turingdesk/WallpaperPackage.h"\n', 1)
+          old = '''            if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) next.scene = L"aurora";\n            else if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) next.scene = L"neon";\n            else if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) next.scene = L"grid";\n            else return false;\n            return true;\n'''
+          if old in s:
+              new = '''            if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) next.scene = L"aurora";\n            else if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) next.scene = L"neon";\n            else if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) next.scene = L"grid";\n            else {\n                turingdesk::wallpaper::WallpaperPackageManifest manifest;\n                std::wstring packageError;\n                if (item.source.empty() ||\n                    !turingdesk::wallpaper::WallpaperPackage::Validate(item.source.parent_path(), &manifest, &packageError) ||\n                    manifest.type != turingdesk::wallpaper::WallpaperPackageType::Scene || manifest.sceneKey.empty()) return false;\n                next.scene = manifest.sceneKey;\n            }\n            return true;\n'''
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-packaged-scene-now.yml .github/workflows/enable-packaged-scene-alias.yml .github/workflows/retrigger-packaged-scene.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: run packaged Scenes on native renderers"
+          git push origin HEAD:main

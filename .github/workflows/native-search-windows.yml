@@ -163,6 +163,191 @@ jobs:
             $env:CODEX_RELAY_API_KEY=$oldKey; $env:Path=$oldPath
           }
 
+      - name: Real Codex app-server through Relay end-to-end smoke test
+        shell: pwsh
+        run: |
+          $node = (Resolve-Path '.\build\package\Runtime\Node\node.exe').Path
+          $relay = (Resolve-Path '.\build\package\CodexRelay\codex-relay.exe').Path
+          $codex = (Resolve-Path '.\build\package\Codex\codex.exe').Path
+          $codexDir = Split-Path $codex -Parent
+          $upstreamPort = 46161
+          $relayPort = 46162
+          $fake = Join-Path $env:RUNNER_TEMP 'turingdesk-codex-e2e-upstream.js'
+          @'
+          const http=require('http');
+          const port=Number(process.argv[2]);
+          http.createServer((req,res)=>{
+            if(req.method==='GET' && req.url==='/v1/models'){
+              res.writeHead(200,{'content-type':'application/json'});
+              return res.end(JSON.stringify({object:'list',data:[{id:'ci-model',object:'model'}]}));
+            }
+            if(req.method==='POST' && req.url==='/v1/chat/completions'){
+              let raw='';
+              req.on('data',c=>raw+=c);
+              req.on('end',()=>{
+                let body={}; try{body=JSON.parse(raw)}catch{}
+                if(body.stream){
+                  res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache','connection':'keep-alive'});
+                  const chunk=(delta,finish=null)=>JSON.stringify({id:'chatcmpl-e2e',object:'chat.completion.chunk',created:1,model:'ci-model',choices:[{index:0,delta,finish_reason:finish}]});
+                  res.write('data: '+chunk({role:'assistant',content:''})+'\n\n');
+                  res.write('data: '+chunk({content:'codex-appserver-ok'})+'\n\n');
+                  res.write('data: '+chunk({},'stop')+'\n\n');
+                  res.write('data: [DONE]\n\n');
+                  return res.end();
+                }
+                res.writeHead(200,{'content-type':'application/json'});
+                return res.end(JSON.stringify({id:'chatcmpl-e2e',object:'chat.completion',created:1,model:'ci-model',choices:[{index:0,message:{role:'assistant',content:'codex-appserver-ok'},finish_reason:'stop'}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}}));
+              });
+              return;
+            }
+            res.writeHead(404); res.end();
+          }).listen(port,'127.0.0.1');
+          '@ | Set-Content $fake -Encoding UTF8
+
+          $upstream = $null
+          $relayProc = $null
+          $codexProc = $null
+          $oldPath=$env:Path; $oldBind=$env:CODEX_RELAY_BIND; $oldPort=$env:CODEX_RELAY_PORT
+          $oldUp=$env:CODEX_RELAY_UPSTREAM; $oldKey=$env:CODEX_RELAY_API_KEY
+          try {
+            $upstream = Start-Process -FilePath $node -ArgumentList @($fake, $upstreamPort) -PassThru -NoNewWindow
+            $env:Path="$codexDir;$oldPath"
+            $env:CODEX_RELAY_BIND='127.0.0.1'
+            $env:CODEX_RELAY_PORT="$relayPort"
+            $env:CODEX_RELAY_UPSTREAM="http://127.0.0.1:$upstreamPort/v1"
+            $env:CODEX_RELAY_API_KEY='ci-key'
+
+            $catalog = Join-Path $env:RUNNER_TEMP 'turingdesk-codex-e2e-models.json'
+            Remove-Item $catalog -Force -ErrorAction SilentlyContinue
+            & $relay --print-config --model-catalog $catalog | Out-Host
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $catalog) -or (Get-Content $catalog -Raw) -notmatch 'ci-model') {
+              throw 'E2E model catalog generation failed'
+            }
+
+            $relayProc = Start-Process -FilePath $relay -PassThru -NoNewWindow
+            $relayReady = $false
+            for($i=0; $i -lt 80; $i++) {
+              try {
+                $probe = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$relayPort/v1/models" -TimeoutSec 1
+                if($probe.StatusCode -eq 200){ $relayReady=$true; break }
+              } catch {}
+              if($relayProc.HasExited){ throw "codex-relay exited before ready: $($relayProc.ExitCode)" }
+              Start-Sleep -Milliseconds 100
+            }
+            if(-not $relayReady){ throw 'codex-relay E2E listener did not become ready' }
+
+            $codexHome = Join-Path $env:RUNNER_TEMP 'turingdesk-codex-e2e-home'
+            Remove-Item $codexHome -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $codexHome | Out-Null
+            $catalogToml = (Resolve-Path $catalog).Path.Replace('\','/')
+            @"
+          model = "ci-model"
+          model_provider = "turingdesk"
+          approval_policy = "never"
+          sandbox_mode = "workspace-write"
+          model_catalog_json = "$catalogToml"
+
+          [model_providers.turingdesk]
+          name = "TuringDesk Codex Provider"
+          base_url = "http://127.0.0.1:$relayPort/v1"
+          env_key = "TURINGDESK_MODEL_API_KEY"
+          wire_api = "responses"
+          requires_openai_auth = false
+          "@ | Set-Content (Join-Path $codexHome 'config.toml') -Encoding UTF8
+
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $codex
+            $psi.ArgumentList.Add('app-server')
+            $psi.ArgumentList.Add('--stdio')
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.WorkingDirectory = $env:RUNNER_TEMP
+            $psi.Environment['CODEX_HOME'] = $codexHome
+            $psi.Environment['TURINGDESK_MODEL_API_KEY'] = 'ci-key'
+            $psi.Environment['RUST_LOG'] = 'codex_app_server=warn,codex_core=warn'
+            $codexProc = [System.Diagnostics.Process]::new()
+            $codexProc.StartInfo = $psi
+            if(-not $codexProc.Start()){ throw 'Failed to start Codex app-server' }
+
+            function Send-CodexMessage([object]$message) {
+              $line = $message | ConvertTo-Json -Depth 30 -Compress
+              Write-Host "client> $line"
+              $codexProc.StandardInput.WriteLine($line)
+              $codexProc.StandardInput.Flush()
+            }
+            function Read-CodexMessage([int]$timeoutMs) {
+              $task = $codexProc.StandardOutput.ReadLineAsync()
+              if(-not $task.Wait($timeoutMs)) { throw "Codex app-server output timeout after ${timeoutMs}ms" }
+              $line = $task.Result
+              if($null -eq $line) {
+                $stderr = $codexProc.StandardError.ReadToEnd()
+                throw "Codex app-server stdout closed. stderr=$stderr"
+              }
+              Write-Host "server> $line"
+              return ($line | ConvertFrom-Json)
+            }
+            function Wait-CodexResponse([int]$id,[int]$timeoutMs) {
+              $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+              while([DateTime]::UtcNow -lt $deadline) {
+                $remaining = [Math]::Max(1,[int]($deadline-[DateTime]::UtcNow).TotalMilliseconds)
+                $msg = Read-CodexMessage $remaining
+                if($null -ne $msg.id -and [int]$msg.id -eq $id) {
+                  if($null -ne $msg.error){ throw "Codex RPC $id failed: $($msg.error | ConvertTo-Json -Compress)" }
+                  return $msg
+                }
+              }
+              throw "Codex response $id timed out"
+            }
+
+            Send-CodexMessage @{ id=1; method='initialize'; params=@{ clientInfo=@{name='turingdesk';title='Turing Intelligent Desktop';version='0.1'}; capabilities=@{experimentalApi=$true} } }
+            $null = Wait-CodexResponse 1 30000
+            Send-CodexMessage @{ method='initialized' }
+
+            $dynamicTools = @(@{ type='function'; name='ci_echo'; description='CI-only dynamic tool that is not expected to be called.'; inputSchema=@{type='object';properties=@{};additionalProperties=$false} })
+            Send-CodexMessage @{ id=2; method='thread/start'; params=@{ model='ci-model'; modelProvider='turingdesk'; cwd=$env:RUNNER_TEMP; developerInstructions='You are TuringDesk CI. Return the upstream answer.'; dynamicTools=$dynamicTools; ephemeral=$true } }
+            $threadResponse = Wait-CodexResponse 2 60000
+            $threadId = $threadResponse.result.thread.id
+            if([string]::IsNullOrWhiteSpace($threadId)){ throw 'thread/start returned no thread id' }
+
+            Send-CodexMessage @{ id=3; method='turn/start'; params=@{ threadId=$threadId; input=@(@{type='text';text='Return the upstream test answer.'}) } }
+            $turnAccepted=$false
+            $completed=$false
+            $text=''
+            $deadline=[DateTime]::UtcNow.AddSeconds(90)
+            while([DateTime]::UtcNow -lt $deadline -and -not $completed) {
+              $remaining=[Math]::Max(1,[int]($deadline-[DateTime]::UtcNow).TotalMilliseconds)
+              $msg=Read-CodexMessage $remaining
+              if($null -ne $msg.id -and [int]$msg.id -eq 3) {
+                if($null -ne $msg.error){ throw "turn/start failed: $($msg.error | ConvertTo-Json -Compress)" }
+                $turnAccepted=$true
+                continue
+              }
+              if($msg.method -eq 'item/agentMessage/delta') {
+                $text += [string]$msg.params.delta
+                continue
+              }
+              if($msg.method -eq 'item/completed' -and $msg.params.item.type -eq 'agentMessage') {
+                if($msg.params.item.text){ $text += [string]$msg.params.item.text }
+                continue
+              }
+              if($msg.method -eq 'turn/completed') { $completed=$true; break }
+            }
+            if(-not $turnAccepted){ throw 'Codex turn/start was never accepted' }
+            if(-not $completed){ throw 'Codex turn/completed was never received' }
+            if($text -notmatch 'codex-appserver-ok') { throw "Codex app-server E2E text mismatch: $text" }
+            Write-Host 'Codex app-server -> Relay -> Chat Completions E2E: OK'
+          }
+          finally {
+            if($codexProc -and -not $codexProc.HasExited){ try{$codexProc.Kill($true)}catch{} }
+            if($relayProc -and -not $relayProc.HasExited){ Stop-Process -Id $relayProc.Id -Force -ErrorAction SilentlyContinue }
+            if($upstream -and -not $upstream.HasExited){ Stop-Process -Id $upstream.Id -Force -ErrorAction SilentlyContinue }
+            $env:Path=$oldPath; $env:CODEX_RELAY_BIND=$oldBind; $env:CODEX_RELAY_PORT=$oldPort
+            $env:CODEX_RELAY_UPSTREAM=$oldUp; $env:CODEX_RELAY_API_KEY=$oldKey
+          }
+
       - name: Real goz MFT/USN integration test
         shell: pwsh
         run: |

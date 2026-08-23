@@ -18,7 +18,7 @@ concurrency:
 jobs:
   vendor:
     runs-on: windows-11-arm
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v5
         with:
@@ -45,7 +45,6 @@ jobs:
             Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
             if (-not (Test-Path $Path -PathType Leaf)) { throw "Download missing: $Path" }
           }
-
           function Sha256([string]$Path) {
             return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
           }
@@ -53,7 +52,7 @@ jobs:
           try {
             $lockHash = Sha256 $lockPath
 
-            # Node.js portable ARM64
+            # Node.js portable ARM64.
             $nodeDir = Join-Path $runtime 'node'
             if (Test-Path $nodeDir) { Remove-Item $nodeDir -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
@@ -68,7 +67,6 @@ jobs:
             if (-not $sumLine) { throw "Node checksum missing for $nodeArchiveName" }
             $expectedNode = (($sumLine -split '\s+')[0]).ToLowerInvariant()
             if ((Sha256 $nodeArchive) -ne $expectedNode) { throw 'Node ARM64 checksum mismatch' }
-
             $nodeExpanded = Join-Path $stage 'node'
             Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
             $nodeHome = Get-ChildItem $nodeExpanded -Directory | Select-Object -First 1
@@ -79,7 +77,7 @@ jobs:
             & $nodeExe --version | Out-Host
             if ($LASTEXITCODE -ne 0) { throw 'Portable ARM64 Node failed to execute' }
 
-            # DeepSeek Harness production tree
+            # DeepSeek Harness production tree.
             $harnessDir = Join-Path $runtime 'harness'
             if (Test-Path $harnessDir) { Remove-Item $harnessDir -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
@@ -99,7 +97,16 @@ jobs:
             & tar.exe -a -c -f $harnessZip -C $harnessStage .
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $harnessZip)) { throw 'Unable to package Harness runtime tree' }
 
-            # goz: build the pinned MIT source for native Windows ARM64.
+            # Rust is shared by goz and codex-relay source builds.
+            if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+              $rustupInit = Join-Path $stage 'rustup-init.exe'
+              Download 'https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe' $rustupInit
+              & $rustupInit -y --profile minimal --default-toolchain none
+              if ($LASTEXITCODE -ne 0) { throw 'Unable to install rustup on ARM64 vendor runner' }
+              $env:Path = (Join-Path $env:USERPROFILE '.cargo\bin') + ';' + $env:Path
+            }
+
+            # goz native Windows ARM64.
             $gozDir = Join-Path $runtime 'goz'
             if (Test-Path $gozDir) { Remove-Item $gozDir -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $gozDir | Out-Null
@@ -114,14 +121,6 @@ jobs:
             Expand-Archive $gozSourceZip -DestinationPath $gozExpanded -Force
             $gozRoot = Get-ChildItem $gozExpanded -Directory | Select-Object -First 1
             if (-not $gozRoot -or -not (Test-Path (Join-Path $gozRoot.FullName 'Cargo.toml'))) { throw 'goz source archive layout is invalid' }
-
-            if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
-              $rustupInit = Join-Path $stage 'rustup-init.exe'
-              Download 'https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe' $rustupInit
-              & $rustupInit -y --profile minimal --default-toolchain none
-              if ($LASTEXITCODE -ne 0) { throw 'Unable to install rustup for ARM64 goz build' }
-              $env:Path = (Join-Path $env:USERPROFILE '.cargo\bin') + ';' + $env:Path
-            }
             & rustup toolchain install $gozRust --profile minimal --target aarch64-pc-windows-msvc
             if ($LASTEXITCODE -ne 0) { throw "Unable to install Rust $gozRust ARM64 toolchain" }
             Push-Location $gozRoot.FullName
@@ -130,18 +129,14 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw 'goz ARM64 source build failed' }
             }
             finally { Pop-Location }
-
             $gozBuild = Join-Path $gozRoot.FullName 'target\aarch64-pc-windows-msvc\release'
             $gozExe = Join-Path $gozBuild 'goz.exe'
             $gozdExe = Join-Path $gozBuild 'gozd.exe'
             if (-not (Test-Path $gozExe) -or -not (Test-Path $gozdExe)) { throw 'goz ARM64 binaries are missing after build' }
-            # goz intentionally mirrors es.exe and does not implement --help. Probe a
-            # real supported command instead; exit 8 is expected before gozd is running.
             & $gozExe --status | Out-Host
             if ($LASTEXITCODE -notin @(0, 8)) { throw "goz ARM64 CLI execution probe failed with exit $LASTEXITCODE" }
             & $gozdExe --help | Out-Host
             if ($LASTEXITCODE -ne 0) { throw 'gozd ARM64 daemon failed --help' }
-
             $gozPackage = Join-Path $stage 'goz-package'
             New-Item -ItemType Directory -Force -Path $gozPackage | Out-Null
             Copy-Item $gozExe (Join-Path $gozPackage 'goz.exe') -Force
@@ -155,6 +150,45 @@ jobs:
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path $gozArchive)) { throw 'Unable to package goz ARM64 runtime' }
             Copy-Item $gozLicense (Join-Path $gozDir 'LICENSE.txt') -Force
 
+            # codex-relay: pinned MIT Responses <-> Chat Completions bridge.
+            $relayDir = Join-Path $runtime 'codex-relay'
+            if (Test-Path $relayDir) { Remove-Item $relayDir -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $relayDir | Out-Null
+            $relayVersion = [string]$lock.codexRelay.version
+            $relayCommit = [string]$lock.codexRelay.commit
+            $relayRust = [string]$lock.codexRelay.rustToolchain
+            $relaySourceZip = Join-Path $stage 'codex-relay-source.zip'
+            $relayBase = [string]$lock.codexRelay.source
+            if (-not $relayBase.EndsWith('/')) { $relayBase += '/' }
+            Download ($relayBase + $relayCommit + '.zip') $relaySourceZip
+            $relayExpanded = Join-Path $stage 'codex-relay-source'
+            Expand-Archive $relaySourceZip -DestinationPath $relayExpanded -Force
+            $relayRoot = Get-ChildItem $relayExpanded -Directory | Select-Object -First 1
+            if (-not $relayRoot -or -not (Test-Path (Join-Path $relayRoot.FullName 'Cargo.toml'))) { throw 'codex-relay source archive layout is invalid' }
+            & rustup toolchain install $relayRust --profile minimal --target aarch64-pc-windows-msvc
+            if ($LASTEXITCODE -ne 0) { throw "Unable to install Rust $relayRust for codex-relay" }
+            Push-Location $relayRoot.FullName
+            try {
+              & rustup run $relayRust cargo build --release --locked --target aarch64-pc-windows-msvc --bin codex-relay
+              if ($LASTEXITCODE -ne 0) { throw 'codex-relay ARM64 source build failed' }
+            }
+            finally { Pop-Location }
+            $relayExe = Join-Path $relayRoot.FullName 'target\aarch64-pc-windows-msvc\release\codex-relay.exe'
+            if (-not (Test-Path $relayExe -PathType Leaf)) { throw 'codex-relay ARM64 binary is missing after build' }
+            & $relayExe --help | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'codex-relay ARM64 binary failed --help' }
+            $relayPackage = Join-Path $stage 'codex-relay-package'
+            New-Item -ItemType Directory -Force -Path $relayPackage | Out-Null
+            Copy-Item $relayExe (Join-Path $relayPackage 'codex-relay.exe') -Force
+            $relayLicense = Join-Path $relayRoot.FullName 'LICENSE'
+            if (-not (Test-Path $relayLicense -PathType Leaf)) { throw 'codex-relay MIT LICENSE is missing' }
+            Copy-Item $relayLicense (Join-Path $relayPackage 'LICENSE.txt') -Force
+            $relayArchiveName = [string]$lock.codexRelay.archive
+            $relayArchive = Join-Path $relayDir $relayArchiveName
+            & tar.exe -a -c -f $relayArchive -C $relayPackage .
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $relayArchive)) { throw 'Unable to package codex-relay ARM64 runtime' }
+            Copy-Item $relayLicense (Join-Path $relayDir 'LICENSE.txt') -Force
+
             # Full OpenAI Codex CLI. TuringDesk invokes `codex app-server --stdio`.
             $codexDir = Join-Path $runtime 'codex'
             if (Test-Path $codexDir) { Remove-Item $codexDir -Recurse -Force }
@@ -164,11 +198,9 @@ jobs:
             $codexUrl = "https://github.com/openai/codex/releases/download/$($lock.codex.release)/$codexArchiveName"
             Download $codexUrl $codexArchive
             $expectedCodex = ([string]$lock.codex.sha256).ToLowerInvariant()
-            if ([string]::IsNullOrWhiteSpace($expectedCodex) -or (Sha256 $codexArchive) -ne $expectedCodex) {
-              throw 'Codex ARM64 checksum mismatch'
-            }
+            if ([string]::IsNullOrWhiteSpace($expectedCodex) -or (Sha256 $codexArchive) -ne $expectedCodex) { throw 'Codex ARM64 checksum mismatch' }
 
-            # WebView2 build SDK / static loader
+            # WebView2 SDK / ARM64 static loader.
             $webSdkDir = Join-Path $runtime 'webview2-sdk'
             if (Test-Path $webSdkDir) { Remove-Item $webSdkDir -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $webSdkDir | Out-Null
@@ -197,6 +229,7 @@ jobs:
               node = [ordered]@{ version = [string]$lock.node.version; archive = "node/$nodeArchiveName"; sha256 = Sha256 $nodeArchive }
               deepseekHarness = [ordered]@{ version = $harnessVersion; archive = "harness/$(Split-Path $harnessZip -Leaf)"; sha256 = Sha256 $harnessZip }
               goz = [ordered]@{ version = $gozVersion; tag = $gozTag; archive = "goz/$gozArchiveName"; sha256 = Sha256 $gozArchive }
+              codexRelay = [ordered]@{ version = $relayVersion; commit = $relayCommit; archive = "codex-relay/$relayArchiveName"; sha256 = Sha256 $relayArchive }
               codex = [ordered]@{ release = [string]$lock.codex.release; archive = "codex/$codexArchiveName"; sha256 = Sha256 $codexArchive; mode = 'cli-app-server' }
               webview2Sdk = [ordered]@{ version = $webVersion; loader = 'webview2-sdk/build/native/arm64/WebView2LoaderStatic.lib'; sha256 = Sha256 (Join-Path $webSdkDir 'build\native\arm64\WebView2LoaderStatic.lib') }
             }
@@ -217,7 +250,7 @@ jobs:
             Write-Host 'Runtime bundle already matches the lock.'
             exit 0
           }
-          git commit -m "runtime: vendor goz and full Codex CLI for ARM64"
+          git commit -m "runtime: vendor goz, Codex Relay and Codex CLI for ARM64"
           for ($i = 1; $i -le 5; $i++) {
             git pull --rebase origin main
             if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
@@ -244,7 +277,7 @@ jobs:
           cat > "ci/runtime-vendor-${GITHUB_SHA}.json" <<EOF
           {
             "sha": "${GITHUB_SHA}",
-            "mode": "runtime-vendor-arm64-goz-codex-cli",
+            "mode": "runtime-vendor-arm64-goz-codex-relay-codex-cli",
             "result": "${VENDOR_RESULT}",
             "run_id": "${GITHUB_RUN_ID}"
           }

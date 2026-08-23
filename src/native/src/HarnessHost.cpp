@@ -16,7 +16,12 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"TuringDesk.Native.HarnessWindow";
-constexpr wchar_t kMutexName[] = L"Local\\TuringDesk.Native.Harness.Singleton";
+const wchar_t* kMutexName = []() -> const wchar_t* {
+    const wchar_t* commandLine = GetCommandLineW();
+    return commandLine && std::wstring_view(commandLine).find(L"--ui") != std::wstring_view::npos
+        ? L"Local\\TuringDesk.Native.Harness.Ui.Singleton"
+        : L"Local\\TuringDesk.Native.Harness.Background.Singleton";
+}();
 constexpr UINT_PTR kReadyTimerId = 1;
 constexpr UINT kReadyPollMs = 250;
 constexpr DWORD kSmokeTimeoutMs = 120000;
@@ -311,7 +316,7 @@ private:
                                 ResizeWebView();
                                 ShowWindow(status_, SW_HIDE);
                                 const std::wstring url = turingdesk::HarnessProcessManager::DefaultUrl();
-                                // DSH runs with --no-open; TuringDesk alone owns UI presentation here.
+                                // TuringDesk owns UI presentation; the background Harness owner never opens a window.
                                 hr = webview_->Navigate(url.c_str());
                                 if (FAILED(hr)) SetStatus(L"打开 Harness Web UI 失败：" + HrText(hr));
                                 return S_OK;

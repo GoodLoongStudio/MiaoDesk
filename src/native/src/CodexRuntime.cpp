@@ -347,13 +347,11 @@ std::wstring StripResponsesSuffix(std::wstring url) {
 std::wstring OpenAiResponsesBase(const L3Agent& agent) {
     auto url = Trim(agent.CurrentApiUrl());
     if (url.empty()) return {};
-    const auto provider = Lower(agent.Config().providerId);
+    // Only an explicitly configured Responses endpoint is safe to use directly.
+    // A /chat/completions endpoint must always go through codex-relay, even when
+    // the provider id is "openai" (that id is also used for OpenAI-compatible
+    // providers such as DeepSeek in the TuringDesk settings UI).
     if (EndsWithInsensitive(url, L"/responses")) return StripResponsesSuffix(url);
-    if (provider == L"openai" && EndsWithInsensitive(url, L"/chat/completions")) {
-        url.resize(url.size() - std::wstring(L"/chat/completions").size());
-        while (url.size() > 1 && url.back() == L'/') url.pop_back();
-        return url;
-    }
     return {};
 }
 

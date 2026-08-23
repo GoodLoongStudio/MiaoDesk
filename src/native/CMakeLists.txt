@@ -33,6 +33,7 @@ add_executable(TuringDesk WIN32
     src/SettingsCenterWindow.cpp
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
+    src/CodexRuntime.cpp
     src/NativeTools.cpp
     src/WallpaperPackage.cpp
     src/AppSearch.cpp
@@ -91,7 +92,7 @@ endif()
 add_custom_target(TuringDeskL3ContractCheck ALL
     COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_L3_CONTRACT_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    COMMENT "Verifying canonical lightweight L3 runtime contract"
+    COMMENT "Verifying Codex-first L3 runtime contract"
     VERBATIM
 )
 add_dependencies(TuringDesk TuringDeskL3ContractCheck)

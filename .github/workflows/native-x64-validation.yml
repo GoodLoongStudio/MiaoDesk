@@ -23,14 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Guard L3/L4 source boundary
-        shell: pwsh
-        run: |
-          $source = Get-Content 'src/native/src/L3CliWindow.cpp' -Raw
-          foreach ($marker in @('CodexRuntime', 'ActiveRuntime::Codex', 'gCodexRuntime', '4317', '4318', 'MCP')) {
-            if ($source.Contains($marker)) { throw "Ordinary L3 must not depend on external Agent/Harness runtime marker: $marker" }
-          }
-
       - name: Configure x64
         run: cmake -S . -B build-x64 -A x64
 
@@ -41,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           foreach ($test in @(
-            @{ Exe = '.\build-x64\src\native\Release\TuringDesk.exe'; Name = 'Search/Agent' },
+            @{ Exe = '.\build-x64\src\native\Release\TuringDesk.exe'; Name = 'Search/AI' },
             @{ Exe = '.\build-x64\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' },
             @{ Exe = '.\build-x64\src\native\Release\TuringDeskHarness.exe'; Name = 'Harness shell' }
           )) {

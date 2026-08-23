@@ -5,10 +5,6 @@ on:
     branches: [main]
     paths:
       - 'scripts/**/*.ps1'
-      - 'docs/TURINGDESK-DESIGN-SPEC.md'
-      - 'docs/V1-SCENE-RELEASE-SCOPE.md'
-      - 'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
-      - 'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md'
       - 'docs/TURINGDESK-PRODUCT-BASELINE.md'
       - 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
       - 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
@@ -28,21 +24,39 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v5
-      - name: Verify release baselines
+
+      - name: Verify current release baselines
         shell: pwsh
         run: |
           $required = @(
-            'docs/TURINGDESK-DESIGN-SPEC.md',
-            'docs/V1-SCENE-RELEASE-SCOPE.md',
-            'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md',
-            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
             'docs/TURINGDESK-PRODUCT-BASELINE.md',
             'docs/TURINGDESK-NATIVE-TECH-BASELINE.md',
             'docs/L3-CODEX-RUNTIME-CONTRACT.md'
           )
           foreach ($path in $required) {
-            if (-not (Test-Path $path -PathType Leaf)) { throw "Required release baseline missing: $path" }
+            if (-not (Test-Path $path -PathType Leaf)) {
+              throw "Required current release baseline missing: $path"
+            }
           }
+
+      - name: Reject retired restore and self-modifying workflows
+        shell: pwsh
+        run: |
+          $forbidden = @(
+            'docs/TURINGDESK-DESIGN-SPEC.md',
+            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
+            '.github/workflows/apply-codex-reconnect-diagnostics.yml',
+            '.github/workflows/implement-l4-handoff.yml',
+            '.github/workflows/repair-release-doc-contract.yml',
+            '.github/workflows/repair-canonical-l3-boundary.yml',
+            '.github/workflows/repair-l3-direct-runtime.yml'
+          )
+          foreach ($path in $forbidden) {
+            if (Test-Path $path) {
+              throw "Retired architecture or self-modifying automation must not return: $path"
+            }
+          }
+
       - name: Parse PowerShell scripts
         shell: pwsh
         run: |

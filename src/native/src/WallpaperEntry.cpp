@@ -1,5 +1,6 @@
 #include <windows.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <iterator>
 #include <string>
@@ -22,11 +23,64 @@ extern "C" int WINAPI TuringDeskWallpaperMain(HINSTANCE instance, HINSTANCE prev
 namespace {
 
 constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
+constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
 
 std::wstring ReadProfileValue(const fs::path& path, const wchar_t* key) {
     wchar_t buffer[32768]{};
     GetPrivateProfileStringW(L"Wallpaper", key, L"", buffer, static_cast<DWORD>(std::size(buffer)), path.c_str());
     return buffer;
+}
+
+RECT ClampRectToWorkArea(RECT windowRect, const RECT& work) {
+    const LONG workWidth = std::max<LONG>(1, work.right - work.left);
+    const LONG workHeight = std::max<LONG>(1, work.bottom - work.top);
+    LONG width = std::clamp<LONG>(windowRect.right - windowRect.left, 1, workWidth);
+    LONG height = std::clamp<LONG>(windowRect.bottom - windowRect.top, 1, workHeight);
+    LONG left = std::clamp<LONG>(windowRect.left, work.left, work.right - width);
+    LONG top = std::clamp<LONG>(windowRect.top, work.top, work.bottom - height);
+    return RECT{left, top, left + width, top + height};
+}
+
+bool IsDesktopLibraryWindow(HWND window) {
+    if (!window || !IsWindow(window)) return false;
+    wchar_t className[128]{};
+    return GetClassNameW(window, className, static_cast<int>(std::size(className))) > 0 &&
+           _wcsicmp(className, kDesktopLibraryClass) == 0;
+}
+
+void ClampDesktopLibraryToWorkArea(HWND window) {
+    if (!IsDesktopLibraryWindow(window) || IsIconic(window)) return;
+    const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(info)};
+    RECT current{};
+    if (!monitor || !GetMonitorInfoW(monitor, &info) || !GetWindowRect(window, &current)) return;
+    const RECT bounded = ClampRectToWorkArea(current, info.rcWork);
+    if (EqualRect(&current, &bounded)) return;
+    SetWindowPos(window, nullptr, bounded.left, bounded.top,
+                 bounded.right - bounded.left, bounded.bottom - bounded.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
+void CALLBACK WorkAreaEventProc(HWINEVENTHOOK, DWORD event, HWND window,
+                                LONG objectId, LONG childId, DWORD, DWORD) {
+    if (event != EVENT_OBJECT_SHOW && event != EVENT_OBJECT_LOCATIONCHANGE) return;
+    if (childId != CHILDID_SELF || (objectId != OBJID_WINDOW && objectId != OBJID_CLIENT)) return;
+    ClampDesktopLibraryToWorkArea(window);
+}
+
+HWINEVENTHOOK InstallWorkAreaGuard() {
+    return SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_LOCATIONCHANGE, nullptr, WorkAreaEventProc,
+                           GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
+}
+
+bool WorkAreaSelfTest() {
+    const RECT work{0, 0, 1920, 1040};
+    const RECT tooLarge{-20, -10, 2000, 1100};
+    const RECT clamped = ClampRectToWorkArea(tooLarge, work);
+    if (clamped.left != 0 || clamped.top != 0 || clamped.right != 1920 || clamped.bottom != 1040) return false;
+    const RECT normal{100, 100, 1200, 800};
+    const RECT same = ClampRectToWorkArea(normal, work);
+    return EqualRect(&normal, &same) != FALSE;
 }
 
 bool WebLibrarySelfTest() {
@@ -89,6 +143,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
         if (!turingdesk::wallpaper::WebWallpaperProcessSet::SelfTest()) return 37;
         if (!WebLibrarySelfTest()) return 38;
         if (!turingdesk::wallpaper::WallpaperWebRuntimeCoordinator::SelfTest()) return 39;
+        if (!WorkAreaSelfTest()) return 40;
         if (!turingdesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
         if (!turingdesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
         return TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
@@ -100,9 +155,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
     if (FindWindowW(kWallpaperControlClass, nullptr))
         return TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
 
+    const HWINEVENTHOOK workAreaHook = InstallWorkAreaGuard();
     turingdesk::wallpaper::WallpaperWebRuntimeCoordinator webCoordinator;
-    if (!webCoordinator.Start()) return 40;
+    if (!webCoordinator.Start()) {
+        if (workAreaHook) UnhookWinEvent(workAreaHook);
+        return 43;
+    }
     const int result = TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
     webCoordinator.Stop();
+    if (workAreaHook) UnhookWinEvent(workAreaHook);
     return result;
 }

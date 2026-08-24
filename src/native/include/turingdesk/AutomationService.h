@@ -17,6 +17,7 @@ struct AutomationServiceResult {
 struct AutomationState {
     bool enabled{true};
     std::wstring activePlaylistId;
+    std::wstring lastMatchedScheduleId;
     std::vector<wallpaper::WallpaperProfile> profiles;
     std::vector<wallpaper::WallpaperPlaylist> playlists;
     std::vector<wallpaper::WallpaperSchedule> schedules;
@@ -39,6 +40,11 @@ public:
     AutomationServiceResult RemoveProfile(std::wstring_view id) const;
     AutomationServiceResult RemovePlaylist(std::wstring_view id) const;
     AutomationServiceResult RemoveSchedule(std::wstring_view id) const;
+
+    AutomationServiceResult ForceNextPlaylist(
+        std::wstring_view playlistId,
+        unsigned long long unixSeconds,
+        wallpaper::AutomationDecision* decision) const;
 };
 
 } // namespace turingdesk::desktop

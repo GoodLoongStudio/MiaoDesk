@@ -109,7 +109,7 @@ $ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe
          ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
 if ($ready) {
     Ensure-IndexService $GozExe $GozDaemon
-    Write-Host "图灵智能桌面 RuntimeBundle 已就绪：$DeployDir" -ForegroundColor Green
+    Write-Host "TuringDesk RuntimeBundle is ready: $DeployDir" -ForegroundColor Green
     exit 0
 }
 
@@ -164,9 +164,9 @@ Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
 Ensure-IndexService $GozExe $GozDaemon
 
-Write-Host '图灵智能桌面 ARM64 RuntimeBundle 已就绪。' -ForegroundColor Green
-Write-Host "AI Runtime:       $NodeExe" -ForegroundColor DarkGray
-Write-Host "Agent Runtime:    $PiCli" -ForegroundColor DarkGray
-Write-Host "Advanced Workbench: $DshBin" -ForegroundColor DarkGray
-Write-Host "File Search:      $GozExe" -ForegroundColor DarkGray
+Write-Host 'TuringDesk ARM64 RuntimeBundle is ready.' -ForegroundColor Green
+Write-Host "AI Runtime:          $NodeExe" -ForegroundColor DarkGray
+Write-Host "Agent Runtime:       $PiCli" -ForegroundColor DarkGray
+Write-Host "Advanced Workbench:  $DshBin" -ForegroundColor DarkGray
+Write-Host "File Search:          $GozExe" -ForegroundColor DarkGray
 Write-Host 'No third-party network download or system Node installation was performed.' -ForegroundColor Green

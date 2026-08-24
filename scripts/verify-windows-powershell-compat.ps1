@@ -33,10 +33,12 @@ foreach ($file in $powerShellScripts) {
 
 $updateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
 $deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
+$updateScript = Join-Path $scriptRoot 'update-turingdesk-arm64.ps1'
 foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
 
 $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
 $deployText = [IO.File]::ReadAllText($deployCmd, [Text.Encoding]::ASCII)
+$updateScriptText = [IO.File]::ReadAllText($updateScript, [Text.Encoding]::ASCII)
 
 foreach ($forbidden in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
     if ($updateText.Contains($forbidden) -or $deployText.Contains($forbidden)) {
@@ -49,5 +51,13 @@ foreach ($required in @('update-turingdesk-arm64.ps1', '$env:TD_UPDATE_URL', '$e
 foreach ($required in @('scripts\deploy-native-arm64.ps1', 'git pull --ff-only')) {
     if (-not $deployText.Contains($required)) { throw "Deploy bootstrap marker missing: $required" }
 }
+foreach ($required in @(
+    'NativeTest.previous-',
+    'Rolling back TuringDesk installation',
+    'Rollback completed.',
+    'Move-Item -LiteralPath $DeployDir -Destination $previous'
+)) {
+    if (-not $updateScriptText.Contains($required)) { throw "Updater rollback marker missing: $required" }
+}
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: all PowerShell entrypoints are ASCII-only and parse successfully.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: all PowerShell entrypoints are ASCII-only, parse successfully, and preserve automatic updater rollback.' -ForegroundColor Green

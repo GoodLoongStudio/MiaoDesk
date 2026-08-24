@@ -24,7 +24,7 @@ function Assert-BundleHash([string]$Path, [string]$Expected) {
     }
 }
 function Assert-File([string]$Path, [string]$Label) {
-    if (-not (Test-Path $Path -PathType Leaf)) { throw ("Full Codex package is missing {0}: {1}" -f $Label, $Path) }
+    if (-not (Test-Path $Path -PathType Leaf)) { throw ("Runtime is missing {0}: {1}" -f $Label, $Path) }
 }
 function Test-InDeploy([string]$Candidate) {
     try {
@@ -35,7 +35,7 @@ function Test-InDeploy([string]$Candidate) {
     } catch { return $false }
 }
 function Stop-OwnedProcesses {
-    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe','codex-command-runner.exe','codex-windows-sandbox-setup.exe','codex-code-mode-host.exe')
+    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','goz.exe','gozd.exe')
     try {
         foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
             if ($names -notcontains [string]$p.Name) { continue }
@@ -48,27 +48,6 @@ function Stop-OwnedProcesses {
 }
 function Expand-BundleArchive([string]$Archive, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    if ($Archive.EndsWith('.tar.zst', [StringComparison]::OrdinalIgnoreCase)) {
-        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Codex tar.zst payload' }
-        $tarPath = Join-Path $env:TEMP ('td-codex-' + [guid]::NewGuid().ToString('N') + '.tar')
-        $js = "const fs=require('node:fs');const z=require('node:zlib');const [s,d]=process.argv.slice(1);fs.writeFileSync(d,z.zstdDecompressSync(fs.readFileSync(s)));"
-        try {
-            & $script:NodeExe -e $js $Archive $tarPath
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tarPath -PathType Leaf)) { throw "Failed to materialize $Archive" }
-            & tar.exe -xf $tarPath -C $Destination
-            if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
-        }
-        finally { Remove-Item $tarPath -Force -ErrorAction SilentlyContinue }
-        return
-    }
-    if ($Archive.EndsWith('.zst', [StringComparison]::OrdinalIgnoreCase)) {
-        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Zstd payload' }
-        $out = Join-Path $Destination ([IO.Path]::GetFileNameWithoutExtension($Archive))
-        $js = "const fs=require('node:fs');const z=require('node:zlib');const [s,d]=process.argv.slice(1);fs.writeFileSync(d,z.zstdDecompressSync(fs.readFileSync(s)));"
-        & $script:NodeExe -e $js $Archive $out
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out -PathType Leaf)) { throw "Failed to materialize $Archive" }
-        return
-    }
     & tar.exe -xf $Archive -C $Destination
     if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
 }
@@ -100,46 +79,39 @@ if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $Manifes
     throw 'TuringDesk ARM64 RuntimeBundle is not vendored yet.'
 }
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 goz/Codex bundle' }
+if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 Pi bundle' }
+if (-not $manifest.pi) { throw 'RuntimeBundle manifest does not contain Pi' }
 
 $nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)
 $harnessArchive = Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)
 $gozArchive = Resolve-BundleFile ([string]$manifest.goz.archive)
-$relayArchive = Resolve-BundleFile ([string]$manifest.codexRelay.archive)
-$codexArchive = Resolve-BundleFile ([string]$manifest.codex.archive)
+$piArchive = Resolve-BundleFile ([string]$manifest.pi.archive)
 Assert-BundleHash $nodeArchive ([string]$manifest.node.sha256)
 Assert-BundleHash $harnessArchive ([string]$manifest.deepseekHarness.sha256)
 Assert-BundleHash $gozArchive ([string]$manifest.goz.sha256)
-Assert-BundleHash $relayArchive ([string]$manifest.codexRelay.sha256)
-Assert-BundleHash $codexArchive ([string]$manifest.codex.sha256)
+Assert-BundleHash $piArchive ([string]$manifest.pi.sha256)
 
 $RuntimeDir = Join-Path $DeployDir 'Runtime'
 $NodeDir = Join-Path $RuntimeDir 'Node'
+$PiDir = Join-Path $DeployDir 'Pi'
 $GozDir = Join-Path $DeployDir 'Goz'
-$RelayDir = Join-Path $DeployDir 'CodexRelay'
-$CodexDir = Join-Path $DeployDir 'Codex'
 $NodeExe = Join-Path $NodeDir 'node.exe'
 $DshBin = Join-Path $NodeDir 'node_modules\@deepseek-ai\dsh\lib\bin.js'
+$PiCli = Join-Path $PiDir 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
 $GozExe = Join-Path $GozDir 'goz.exe'
 $GozDaemon = Join-Path $GozDir 'gozd.exe'
-$RelayExe = Join-Path $RelayDir 'codex-relay.exe'
-$CodexExe = Join-Path $CodexDir 'codex.exe'
-$CodexPackage = Join-Path $CodexDir 'codex-package.json'
-$CodexCommandRunner = Join-Path $CodexDir 'codex-resources\codex-command-runner.exe'
-$CodexSandboxSetup = Join-Path $CodexDir 'codex-resources\codex-windows-sandbox-setup.exe'
-$CodexCodeModeHost = Join-Path $CodexDir 'codex-code-mode-host.exe'
-$CodexRg = Join-Path $CodexDir 'codex-path\rg.exe'
 $DeployManifestHash = Join-Path $RuntimeDir 'runtime-manifest.sha256'
 $sourceManifestHash = Sha256 $ManifestPath
 
 $ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe -PathType Leaf) -and
-         (Test-Path $DshBin -PathType Leaf) -and (Test-Path $GozExe -PathType Leaf) -and
-         (Test-Path $GozDaemon -PathType Leaf) -and (Test-Path $RelayExe -PathType Leaf) -and
-         (Test-Path $CodexExe -PathType Leaf) -and (Test-Path $CodexPackage -PathType Leaf) -and
-         (Test-Path $CodexCommandRunner -PathType Leaf) -and (Test-Path $CodexSandboxSetup -PathType Leaf) -and
-         (Test-Path $CodexCodeModeHost -PathType Leaf) -and (Test-Path $CodexRg -PathType Leaf) -and
+         (Test-Path $DshBin -PathType Leaf) -and (Test-Path $PiCli -PathType Leaf) -and
+         (Test-Path $GozExe -PathType Leaf) -and (Test-Path $GozDaemon -PathType Leaf) -and
          ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
-if ($ready) { Ensure-GozService $GozExe $GozDaemon; Write-Host "RuntimeBundle ready: $DeployDir" -ForegroundColor Green; exit 0 }
+if ($ready) {
+    Ensure-GozService $GozExe $GozDaemon
+    Write-Host "RuntimeBundle ready: $DeployDir" -ForegroundColor Green
+    exit 0
+}
 
 Step 'Installing repository-vendored ARM64 RuntimeBundle (offline)'
 Stop-OwnedProcesses
@@ -164,7 +136,7 @@ try {
     }
 } finally { Remove-Item $gozTemp -Recurse -Force -ErrorAction SilentlyContinue }
 
-Remove-Item $NodeDir,$RelayDir,$CodexDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $NodeDir,$PiDir -Recurse -Force -ErrorAction SilentlyContinue
 
 $nodeTemp = Join-Path $env:TEMP ('TuringDesk-Node-' + [guid]::NewGuid().ToString('N'))
 try {
@@ -174,80 +146,28 @@ try {
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
     Copy-Item (Join-Path $root.FullName '*') $NodeDir -Recurse -Force
 } finally { Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue }
+
+# Harness keeps its own npm dependency tree inside the portable Node folder.
 Expand-BundleArchive $harnessArchive $NodeDir
-if (-not (Test-Path $NodeExe) -or -not (Test-Path $DshBin)) { throw 'Bundled Harness runtime is incomplete' }
+Assert-File $NodeExe 'bundled Node'
+Assert-File $DshBin 'DeepSeek Harness'
 & $NodeExe $DshBin --help | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled DeepSeek Harness CLI failed to start' }
 
-$relayTemp = Join-Path $env:TEMP ('TuringDesk-Relay-' + [guid]::NewGuid().ToString('N'))
-try {
-    Expand-BundleArchive $relayArchive $relayTemp
-    $relay = Get-ChildItem $relayTemp -Filter codex-relay.exe -File -Recurse | Select-Object -First 1
-    if (-not $relay) { throw 'Vendored codex-relay archive is incomplete' }
-    New-Item -ItemType Directory -Force -Path $RelayDir | Out-Null
-    Copy-Item $relay.FullName $RelayExe -Force
-} finally { Remove-Item $relayTemp -Recurse -Force -ErrorAction SilentlyContinue }
-& $RelayExe --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled codex-relay failed to execute' }
-
-$codexTemp = Join-Path $env:TEMP ('TuringDesk-Codex-' + [guid]::NewGuid().ToString('N'))
-try {
-    Expand-BundleArchive $codexArchive $codexTemp
-    $packageRoot = $null
-    if (Test-Path (Join-Path $codexTemp 'codex-package.json') -PathType Leaf) {
-        $packageRoot = Get-Item $codexTemp
-    } else {
-        $packageRoot = Get-ChildItem $codexTemp -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'codex-package.json') -PathType Leaf } | Select-Object -First 1
-    }
-    if (-not $packageRoot) { throw 'Vendored Codex package is missing codex-package.json' }
-
-    $packageCodex = Join-Path $packageRoot.FullName 'bin\codex.exe'
-    $packageCodeModeHost = Join-Path $packageRoot.FullName 'bin\codex-code-mode-host.exe'
-    $packageCommandRunner = Join-Path $packageRoot.FullName 'codex-resources\codex-command-runner.exe'
-    $packageSandboxSetup = Join-Path $packageRoot.FullName 'codex-resources\codex-windows-sandbox-setup.exe'
-    $packageRg = Join-Path $packageRoot.FullName 'codex-path\rg.exe'
-    Assert-File $packageCodex 'bin/codex.exe'
-    Assert-File $packageCodeModeHost 'bin/codex-code-mode-host.exe'
-    Assert-File $packageCommandRunner 'codex-resources/codex-command-runner.exe'
-    Assert-File $packageSandboxSetup 'codex-resources/codex-windows-sandbox-setup.exe'
-    Assert-File $packageRg 'codex-path/rg.exe'
-
-    New-Item -ItemType Directory -Force -Path $CodexDir | Out-Null
-    Copy-Item (Join-Path $packageRoot.FullName '*') $CodexDir -Recurse -Force
-
-    # Compatibility projection: current TuringDesk launches Codex\codex.exe. Keeping
-    # codex-resources and codex-package.json beside it preserves the official helper lookup.
-    Copy-Item (Join-Path $CodexDir 'bin\codex.exe') $CodexExe -Force
-    Copy-Item (Join-Path $CodexDir 'bin\codex-code-mode-host.exe') $CodexCodeModeHost -Force
-} finally { Remove-Item $codexTemp -Recurse -Force -ErrorAction SilentlyContinue }
-
-Assert-File $CodexPackage 'codex-package.json'
-Assert-File $CodexCommandRunner 'codex-command-runner.exe'
-Assert-File $CodexSandboxSetup 'codex-windows-sandbox-setup.exe'
-Assert-File $CodexCodeModeHost 'codex-code-mode-host.exe'
-Assert-File $CodexRg 'rg.exe'
-& $CodexExe --version | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI failed to execute' }
-& $CodexExe app-server --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server is unavailable' }
-& $CodexRg --version | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex ripgrep failed to execute' }
-# The Windows helpers are IPC/payload entrypoints, not standalone CLIs. Running
-# them with --help is expected to fail (for example command-runner reports
-# "runner: no pipe-in provided"). Their presence and package integrity are
-# verified here; the subsequent app-server E2E exercises the real execution path.
-Write-Host 'Bundled Codex Windows command runner and sandbox setup helpers are present.' -ForegroundColor Green
+# Pi uses an isolated dependency tree to avoid npm dependency collisions with Harness.
+Expand-BundleArchive $piArchive $PiDir
+Assert-File $PiCli 'Pi Agent CLI'
+& $NodeExe $PiCli --version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Pi Agent CLI failed to start' }
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
 Ensure-GozService $GozExe $GozDaemon
+
 Write-Host 'Repository-vendored ARM64 RuntimeBundle ready.' -ForegroundColor Green
 Write-Host "Node:    $NodeExe" -ForegroundColor DarkGray
+Write-Host "Pi:      $PiCli" -ForegroundColor DarkGray
 Write-Host "Harness: $DshBin" -ForegroundColor DarkGray
 Write-Host "goz:     $GozExe" -ForegroundColor DarkGray
 Write-Host "gozd:    $GozDaemon" -ForegroundColor DarkGray
-Write-Host "Relay:   $RelayExe" -ForegroundColor DarkGray
-Write-Host "Codex:   $CodexExe" -ForegroundColor DarkGray
-Write-Host "Runner:  $CodexCommandRunner" -ForegroundColor DarkGray
-Write-Host "Sandbox: $CodexSandboxSetup" -ForegroundColor DarkGray
 Write-Host 'No third-party network download or system Node installation was performed.' -ForegroundColor Green

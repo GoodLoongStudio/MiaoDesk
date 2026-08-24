@@ -10,26 +10,27 @@ struct NativeToolResult {
     std::wstring message;
 };
 
-// NativeTools.cpp owns the raw pretty-printed registry. Every consumer gets the
-// compact wrapper below so Codex app-server stdio (one JSON-RPC message per line)
-// can never have thread/start split by CR/LF inside dynamicTools.
+// NativeTools.cpp still owns implementations for compatibility/worker tests, but
+// Codex app-server only receives TuringDesk-specific product capabilities. Generic
+// file/document/shell work belongs to the full Codex CLI runtime (shell, file
+// change, Skills and MCP), not a parallel bespoke TuringDesk agent stack.
 std::string NativeToolDefinitionsJsonRaw();
 
 #ifdef TURINGDESK_NATIVE_TOOLS_IMPL
 #define NativeToolDefinitionsJson NativeToolDefinitionsJsonRaw
 #else
 inline std::string NativeToolDefinitionsJson() {
-    auto json = NativeToolDefinitionsJsonRaw();
+    std::string json = R"JSON([
+{"type":"function","name":"settings_open","description":"Open the native TuringDesk Settings Center. Use this only for TuringDesk settings/configuration UI.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+{"type":"function","name":"wallpaper_create_web_package","description":"Create a validated TuringDesk .tdwall Web wallpaper package. This is a TuringDesk-specific package format.","inputSchema":{"type":"object","properties":{"name":{"type":"string"},"title":{"type":"string"},"html":{"type":"string"},"open_after_create":{"type":"boolean"}},"required":["name","title","html"],"additionalProperties":false}},
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing TuringDesk .tdwall package directory.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
+])JSON";
     json.erase(std::remove(json.begin(), json.end(), '\r'), json.end());
     json.erase(std::remove(json.begin(), json.end(), '\n'), json.end());
     return json;
 }
 #endif
 
-// NativeTools.cpp is compiled with TURINGDESK_NATIVE_TOOLS_IMPL, so its existing
-// ExecuteNativeTool definition becomes the in-process/raw implementation. Normal
-// consumers use the isolated worker wrapper instead. A blocked Office/WPS COM
-// server (or any future native tool) therefore cannot freeze the Codex read loop.
 NativeToolResult ExecuteNativeToolRaw(std::string_view toolName, std::string_view argumentsJson);
 
 #ifdef TURINGDESK_NATIVE_TOOLS_IMPL

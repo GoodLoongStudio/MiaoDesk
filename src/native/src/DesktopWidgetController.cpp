@@ -1,6 +1,7 @@
 #include "turingdesk/DesktopWidgetController.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace turingdesk::desktop {
 
@@ -17,7 +18,7 @@ DesktopControlResult DesktopWidgetController::Find(std::wstring_view id, wallpap
     if (!result.success) return result;
 
     const auto found = std::find_if(widgets.begin(), widgets.end(), [&](const auto& candidate) {
-        return _wcsicmp(candidate.id.c_str(), std::wstring(id).c_str()) == 0;
+        return candidate.id == id;
     });
     if (found == widgets.end()) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
     *widget = *found;

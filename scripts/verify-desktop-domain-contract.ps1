@@ -27,6 +27,7 @@ $header = Get-Content -LiteralPath $serviceHeader -Raw
 $source = Get-Content -LiteralPath $serviceSource -Raw
 $wallpaper = Get-Content -LiteralPath $wallpaperSource -Raw
 $widget = Get-Content -LiteralPath $widgetSource -Raw
+$widgetControllerHeaderText = Get-Content -LiteralPath $widgetControllerHeader -Raw
 $widgetController = Get-Content -LiteralPath $widgetControllerSource -Raw
 $adapter = Get-Content -LiteralPath $toolAdapter -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
@@ -52,8 +53,11 @@ foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'Widg
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
 
-foreach ($marker in @('DesktopWidgetController', 'CreateClock', 'SetEnabled', 'DesktopControlService')) {
-    if (-not $widgetController.Contains($marker)) { throw "Widget UI controller missing marker: $marker" }
+foreach ($marker in @('DesktopWidgetController', 'DesktopControlService.h', 'DesktopControlService service_')) {
+    if (-not $widgetControllerHeaderText.Contains($marker)) { throw "Widget UI controller header missing marker: $marker" }
+}
+foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.CreateWebWidget', 'service_.UpdateWidget')) {
+    if (-not $widgetController.Contains($marker)) { throw "Widget UI controller source missing marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
     if ($widgetController.Contains($forbidden)) { throw "Widget UI controller regained domain ownership: $forbidden" }

@@ -7,80 +7,55 @@ $ProgressPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $DeployDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
+$DeployParent = Split-Path $DeployDir -Parent
 $ArtifactName = "TuringDesk-Native-Search-ARM64"
 $Workflow = "native-search-windows.yml"
-$ExeName = "TuringDesk.exe"
-$WallpaperExeName = "TuringDeskWallpaper.exe"
-$HarnessExeName = "TuringDeskHarness.exe"
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 
-function Assert-L3RuntimeContract {
+function Assert-TuringDeskRuntimeContract {
     $guard = Join-Path $RepoRoot "scripts\verify-l3-runtime-contract.ps1"
-    if (-not (Test-Path $guard -PathType Leaf)) { throw "Missing L3 runtime contract guard: $guard" }
-    Step "Verifying Pi-first L3 runtime contract"
+    if (-not (Test-Path $guard -PathType Leaf)) { throw "Missing TuringDesk AI runtime guard: $guard" }
+    Step "Verifying TuringDesk AI runtime contract"
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $guard | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "L3 Pi-first runtime contract failed" }
+    if ($LASTEXITCODE -ne 0) { throw "TuringDesk AI runtime contract failed" }
 }
 
-function Assert-DeployedPiRuntime {
-    $node = Join-Path $DeployDir "Runtime\Node\node.exe"
-    $pi = Join-Path $DeployDir "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
-    if (-not (Test-Path $node -PathType Leaf)) { throw "Local runtime is missing bundled Node: $node" }
-    if (-not (Test-Path $pi -PathType Leaf)) { throw "Local runtime is missing Pi Agent: $pi" }
-    & $node $pi --version | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "Local Pi Agent failed --version" }
+function Assert-File([string]$Path, [string]$Label) {
+    if (-not (Test-Path $Path -PathType Leaf)) { throw ("Package is missing {0}: {1}" -f $Label, $Path) }
 }
 
-function Stop-DeployedInstance {
-    Step "Stopping previous TuringDesk processes"
-    foreach ($processName in @("TuringDesk", "TuringDeskWallpaper", "TuringDeskHarness")) {
-        foreach ($process in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
-            try { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue } catch { }
-        }
-    }
-    try {
-        $runtimeRoot = [System.IO.Path]::GetFullPath($DeployDir).TrimEnd("\") + "\"
-        foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Stop)) {
-            $exe = [string]$process.ExecutablePath
-            if (-not $exe) { continue }
-            $full = [System.IO.Path]::GetFullPath($exe)
-            if ($full.StartsWith($runtimeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
-            }
-        }
-    } catch { }
-    Start-Sleep -Milliseconds 500
+function Test-Binary([string]$Exe, [string]$Name, [string[]]$Arguments = @("--self-test")) {
+    Write-Host ("Testing {0}..." -f $Name) -ForegroundColor DarkGray
+    $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow
+    if ($process.ExitCode -ne 0) { throw ("{0} test failed with exit code {1}" -f $Name, $process.ExitCode) }
 }
 
-function Copy-WithRetry([string]$Source, [string]$Destination) {
-    $lastError = $null
-    for ($i = 1; $i -le 25; $i++) {
-        try {
-            Copy-Item $Source $Destination -Force -ErrorAction Stop
-            return
-        } catch {
-            $lastError = $_
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    throw "Unable to replace $Destination after retries: $($lastError.Exception.Message)"
-}
+function Test-StagedPackage([string]$Root) {
+    Step "Running full TuringDesk package self-tests before deployment"
+    $search = Join-Path $Root "TuringDesk.exe"
+    $wallpaper = Join-Path $Root "TuringDeskWallpaper.exe"
+    $workbench = Join-Path $Root "TuringDeskHarness.exe"
+    $node = Join-Path $Root "Runtime\Node\node.exe"
+    $workbenchCli = Join-Path $Root "Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js"
+    $agentCli = Join-Path $Root "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
+    $goz = Join-Path $Root "Goz\goz.exe"
+    $gozd = Join-Path $Root "Goz\gozd.exe"
 
-function Test-Binary([string]$Exe, [string]$Name) {
-    Step "Running $Name self-test"
-    $process = Start-Process -FilePath $Exe -ArgumentList "--self-test" -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "$Name self-test failed with exit code $($process.ExitCode)" }
-}
+    Assert-File $search "TuringDesk.exe"
+    Assert-File $wallpaper "TuringDeskWallpaper.exe"
+    Assert-File $workbench "TuringDeskHarness.exe"
+    Assert-File $node "bundled AI runtime"
+    Assert-File $workbenchCli "advanced workbench runtime"
+    Assert-File $agentCli "agent runtime"
+    Assert-File $goz "file index client"
+    Assert-File $gozd "file index service"
 
-function Test-HarnessSmoke([string]$Exe) {
-    Step "Running bundled DeepSeek Harness smoke test"
-    $process = Start-Process -FilePath $Exe -ArgumentList "--harness-smoke-test" -Wait -PassThru
-    if ($process.ExitCode -ne 0) {
-        $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
-        $log = Join-Path $desktop "TuringDesk-Logs\harness.log"
-        throw "Bundled DeepSeek Harness smoke test failed with exit code $($process.ExitCode). Log: $log"
-    }
+    Test-Binary $search "TuringDesk"
+    Test-Binary $wallpaper "TuringDesk Wallpaper"
+    Test-Binary $workbench "TuringDesk Advanced Workbench"
+    Test-Binary $node "TuringDesk Agent Runtime" @($agentCli, "--version")
+    Test-Binary $workbench "TuringDesk Advanced Workbench smoke" @("--harness-smoke-test")
 }
 
 function Get-MainSha {
@@ -109,20 +84,20 @@ function Get-RunsForCommit([string]$Sha) {
 }
 
 function Wait-ForRun([long]$RunId) {
-    Step "Waiting for ARM64 GitHub Actions run $RunId"
+    Step "Waiting for TuringDesk ARM64 validation run $RunId"
     & gh run watch $RunId --repo $Repo --exit-status | Out-Host
     if ($LASTEXITCODE -ne 0) {
         & gh run view $RunId --repo $Repo --log-failed | Out-Host
-        throw "ARM64 GitHub Actions build failed (run $RunId)"
+        throw "TuringDesk ARM64 validation failed (run $RunId)"
     }
     return $RunId
 }
 
 function Start-And-WaitForRun([string]$Sha) {
     $before = @((Get-RunsForCommit -Sha $Sha) | ForEach-Object { [long]$_.databaseId })
-    Step "Starting ARM64-only native validation"
+    Step "Starting ARM64 validation"
     & gh workflow run $Workflow --repo $Repo --ref main | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "Unable to start ARM64 GitHub Actions workflow" }
+    if ($LASTEXITCODE -ne 0) { throw "Unable to start ARM64 validation workflow" }
     $run = $null
     for ($i = 0; $i -lt 45; $i++) {
         Start-Sleep -Seconds 2
@@ -131,7 +106,7 @@ function Start-And-WaitForRun([string]$Sha) {
             Sort-Object createdAt -Descending | Select-Object -First 1
         if ($run) { break }
     }
-    if (-not $run) { throw "ARM64 workflow was started but its run could not be found" }
+    if (-not $run) { throw "ARM64 validation was started but its run could not be found" }
     return (Wait-ForRun -RunId ([long]$run.databaseId))
 }
 
@@ -140,7 +115,7 @@ function Resolve-Run([string]$Sha) {
     $successful = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
         Sort-Object createdAt -Descending | Select-Object -First 1
     if ($successful) {
-        Step "Found successful ARM64 build for current main: run $($successful.databaseId)"
+        Step "Found validated ARM64 build for current main: run $($successful.databaseId)"
         return [long]$successful.databaseId
     }
     $running = $runs | Where-Object { $_.status -ne "completed" } | Sort-Object createdAt -Descending | Select-Object -First 1
@@ -148,86 +123,158 @@ function Resolve-Run([string]$Sha) {
     return (Start-And-WaitForRun -Sha $Sha)
 }
 
-function Download-Artifact([long]$RunId) {
-    $temp = Join-Path $env:TEMP ("TuringDesk-ARM64-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Force -Path $temp | Out-Null
-    Step "Downloading verified ARM64 artifact from TuringDesk run $RunId"
-    & gh run download $RunId --repo $Repo --name $ArtifactName --dir $temp | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
-        throw "Unable to download ARM64 artifact"
-    }
+function Download-Artifact([long]$RunId, [string]$Destination) {
+    Step "Downloading validated TuringDesk ARM64 binaries"
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    & gh run download $RunId --repo $Repo --name $ArtifactName --dir $Destination | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Unable to download TuringDesk ARM64 artifact" }
+}
 
-    $searchExe = Get-ChildItem -Path $temp -Filter $ExeName -Recurse | Select-Object -First 1
-    $wallpaperExe = Get-ChildItem -Path $temp -Filter $WallpaperExeName -Recurse | Select-Object -First 1
-    $harnessExe = Get-ChildItem -Path $temp -Filter $HarnessExeName -Recurse | Select-Object -First 1
-    foreach ($required in @($searchExe, $wallpaperExe, $harnessExe)) {
-        if (-not $required) {
-            Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
-            throw "ARM64 artifact is missing a required TuringDesk executable"
+function Materialize-Runtime([string]$Destination, [string]$ExpectedSha) {
+    Step "Staging pinned TuringDesk RuntimeBundle"
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
+
+    $runtimeRepo = Join-Path $env:TEMP ("TuringDesk-RuntimeSource-" + [guid]::NewGuid().ToString("N"))
+    try {
+        & git clone --filter=blob:none --no-checkout --depth 1 --branch main "https://github.com/$Repo.git" $runtimeRepo | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Unable to fetch TuringDesk RuntimeBundle source." }
+        & git -C $runtimeRepo sparse-checkout init --cone | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to initialize sparse checkout." }
+        & git -C $runtimeRepo sparse-checkout set runtime/arm64 scripts | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to select RuntimeBundle files." }
+        & git -C $runtimeRepo checkout main | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout RuntimeBundle files." }
+        $runtimeSha = (& git -C $runtimeRepo rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $runtimeSha -ne $ExpectedSha) {
+            throw "main changed while deploying. Re-run deployment so binaries and RuntimeBundle use the same commit."
         }
+
+        $prepare = Join-Path $runtimeRepo "scripts\prepare-third-party-runtime-arm64.ps1"
+        if (-not (Test-Path $prepare -PathType Leaf)) { throw "Runtime preparation script is missing." }
+        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $prepare -DeployDir $Destination -SkipGozServiceInstall | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "TuringDesk RuntimeBundle preparation failed." }
     }
-    return @{ Exe=$searchExe.FullName; WallpaperExe=$wallpaperExe.FullName; HarnessExe=$harnessExe.FullName; Temp=$temp }
+    finally { Remove-Item $runtimeRepo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+function Stop-DeployedProcesses {
+    Step "Stopping currently deployed TuringDesk processes"
+    $names = @("TuringDesk.exe", "TuringDeskWallpaper.exe", "TuringDeskHarness.exe", "node.exe", "goz.exe", "gozd.exe")
+    try {
+        $deployRoot = [IO.Path]::GetFullPath($DeployDir).TrimEnd("\") + "\"
+        foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
+            if ($names -notcontains [string]$process.Name) { continue }
+            $exe = [string]$process.ExecutablePath
+            if (-not $exe) { continue }
+            try {
+                $full = [IO.Path]::GetFullPath($exe)
+                if ($full.StartsWith($deployRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                    & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
+                }
+            } catch { }
+        }
+    } catch { }
+    foreach ($name in @("TuringDesk", "TuringDeskWallpaper", "TuringDeskHarness")) {
+        Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 750
+}
+
+function Invoke-ElevatedIndexService([string]$Exe, [string]$Arguments, [switch]$IgnoreFailure) {
+    if (-not (Test-Path $Exe -PathType Leaf)) {
+        if ($IgnoreFailure) { return }
+        throw "File index service executable is missing: $Exe"
+    }
+    try {
+        $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
+        if (-not $process -or $process.ExitCode -ne 0) {
+            if (-not $IgnoreFailure) { throw ("File index service operation failed: {0}" -f $Arguments) }
+        }
+    } catch { if (-not $IgnoreFailure) { throw } }
+}
+
+function Probe([string]$Exe, [string[]]$Arguments) {
+    $out = Join-Path $env:TEMP ('td-deploy-probe-o-' + [guid]::NewGuid().ToString('N'))
+    $err = Join-Path $env:TEMP ('td-deploy-probe-e-' + [guid]::NewGuid().ToString('N'))
+    try {
+        $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err -ErrorAction SilentlyContinue
+        if (-not $p) { return -1 }
+        return [int]$p.ExitCode
+    } catch { return -1 }
+    finally { Remove-Item $out,$err -Force -ErrorAction SilentlyContinue }
+}
+
+function Wait-IndexReady([string]$Exe) {
+    Assert-File $Exe "installed file index client"
+    for ($i = 0; $i -lt 120; $i++) {
+        if ((Probe $Exe @("--status")) -eq 0) { return }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "TuringDesk file index service did not become reachable after installation."
 }
 
 function Should-ShowWallpaperSettings {
     $config = Join-Path $env:LOCALAPPDATA "TuringDesk\wallpaper.ini"
-    if (-not (Test-Path $config)) { return $true }
-    try { return -not [bool](Select-String -Path $config -Pattern '^Version=3$' -ErrorAction Stop) }
+    if (-not (Test-Path $config -PathType Leaf)) { return $true }
+    try { return -not [bool](Select-String -Path $config -Pattern "^Version=3$" -ErrorAction Stop) }
     catch { return $true }
 }
 
-Assert-L3RuntimeContract
+Assert-TuringDeskRuntimeContract
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH" }
-Step "Checking GitHub CLI authentication"
+Step "Checking GitHub authentication"
 & gh auth status 2>$null | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
 
-Assert-DeployedPiRuntime
-$bundledNode = Join-Path $DeployDir "Runtime\Node\node.exe"
-$bundledHarness = Join-Path $DeployDir "Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js"
-if (-not (Test-Path $bundledHarness -PathType Leaf)) { throw "Bundled DeepSeek Harness is missing: $bundledHarness" }
-Write-Host "Pi Agent mode: repository-vendored official package + bundled ARM64 Node + Windows PowerShell shell backend" -ForegroundColor Green
-Write-Host "Bundled Node: $bundledNode" -ForegroundColor DarkGray
-Write-Host "AI route: Pi Agent primary; Direct API fallback only" -ForegroundColor Green
-
-Step "Resolving current main commit"
+Step "Resolving current TuringDesk main"
 $mainSha = Get-MainSha
 Write-Host "main: $mainSha" -ForegroundColor DarkGray
 $runId = [long](Resolve-Run -Sha $mainSha)
-$downloaded = Download-Artifact -RunId $runId
+
+$work = Join-Path $env:TEMP ("TuringDesk-Deploy-" + [guid]::NewGuid().ToString("N"))
+$artifact = Join-Path $work "artifact"
+$next = Join-Path $DeployParent ("NativeTest.next-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $work, $next, $DeployParent | Out-Null
+
 try {
-    Test-Binary -Exe $downloaded.Exe -Name "Native Search"
-    Test-Binary -Exe $downloaded.WallpaperExe -Name "Native Wallpaper"
-    Test-Binary -Exe $downloaded.HarnessExe -Name "Native Harness shell"
+    Download-Artifact -RunId $runId -Destination $artifact
+    Materialize-Runtime -Destination $next -ExpectedSha $mainSha
+    Copy-Item (Join-Path $artifact "*") $next -Recurse -Force
+    Set-Content (Join-Path $next ".installed-build-sha") -Value $mainSha -Encoding ASCII
 
-    Step "Deploying ARM64 binaries to $DeployDir"
-    Stop-DeployedInstance
-    New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null
-    $deployedExe = Join-Path $DeployDir $ExeName
-    $deployedWallpaper = Join-Path $DeployDir $WallpaperExeName
-    $deployedHarness = Join-Path $DeployDir $HarnessExeName
-    Copy-WithRetry -Source $downloaded.Exe -Destination $deployedExe
-    Copy-WithRetry -Source $downloaded.WallpaperExe -Destination $deployedWallpaper
-    Copy-WithRetry -Source $downloaded.HarnessExe -Destination $deployedHarness
+    Test-StagedPackage $next
 
-    Assert-DeployedPiRuntime
-    Test-Binary -Exe $deployedExe -Name "Deployed Search"
-    Test-Binary -Exe $deployedWallpaper -Name "Deployed Wallpaper"
-    Test-Binary -Exe $deployedHarness -Name "Deployed Harness shell"
-    Test-HarnessSmoke -Exe $deployedHarness
+    $oldIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+    Stop-DeployedProcesses
+    Invoke-ElevatedIndexService $oldIndexService "uninstall" -IgnoreFailure
+    Stop-DeployedProcesses
 
-    Step "Starting TuringDesk Wallpaper"
-    if (Should-ShowWallpaperSettings) { Start-Process -FilePath $deployedWallpaper -ArgumentList "--settings" }
-    else { Start-Process -FilePath $deployedWallpaper }
-    Step "Starting TuringDesk Native Search"
-    Start-Process $deployedExe
+    Step "Deploying validated TuringDesk ARM64 package"
+    if (Test-Path $DeployDir) { Remove-Item -LiteralPath $DeployDir -Recurse -Force -ErrorAction Stop }
+    if (Test-Path $DeployDir) { throw "Existing TuringDesk deployment could not be removed: $DeployDir" }
+    Move-Item -LiteralPath $next -Destination $DeployDir -ErrorAction Stop
 
-    Write-Host "`nDeployment complete. Press Alt+Space to open Search." -ForegroundColor Green
-    Write-Host "AI: Pi Agent primary; Direct API is fallback only." -ForegroundColor Green
-    Write-Host "DeepSeek Harness and Pi are running from the pinned RuntimeBundle; no npm install occurs on the user machine." -ForegroundColor Green
-    Write-Host "Path: $DeployDir" -ForegroundColor DarkGray
+    $newIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+    $newIndexClient = Join-Path $DeployDir "Goz\goz.exe"
+    Invoke-ElevatedIndexService $newIndexService "install"
+    Wait-IndexReady $newIndexClient
+
+    Step "Running installed TuringDesk self-tests"
+    Test-Binary (Join-Path $DeployDir "TuringDesk.exe") "TuringDesk"
+    Test-Binary (Join-Path $DeployDir "TuringDeskWallpaper.exe") "TuringDesk Wallpaper"
+    Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench"
+
+    Step "Starting TuringDesk"
+    $wallpaper = Join-Path $DeployDir "TuringDeskWallpaper.exe"
+    if (Should-ShowWallpaperSettings) { Start-Process -FilePath $wallpaper -ArgumentList "--settings" }
+    else { Start-Process -FilePath $wallpaper }
+    Start-Process -FilePath (Join-Path $DeployDir "TuringDesk.exe")
+
+    Write-Host "`n图灵智能桌面部署完成。按 Alt+Space 打开。" -ForegroundColor Green
+    Write-Host ("已部署版本：{0}" -f $mainSha) -ForegroundColor DarkGray
+    Write-Host ("安装目录：{0}" -f $DeployDir) -ForegroundColor DarkGray
 }
 finally {
-    if ($downloaded -and $downloaded.Temp) { Remove-Item $downloaded.Temp -Recurse -Force -ErrorAction SilentlyContinue }
+    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $next) { Remove-Item $next -Recurse -Force -ErrorAction SilentlyContinue }
 }

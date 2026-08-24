@@ -64,9 +64,7 @@ DesktopSurfaceRole DesktopShellHost::InferRole(HWND window) noexcept {
 HWND DesktopShellHost::LastChild(HWND parent) noexcept {
     if (!parent || !IsWindow(parent)) return nullptr;
     HWND last = nullptr;
-    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-        last = child;
-    }
+    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) last = child;
     return last;
 }
 
@@ -79,10 +77,7 @@ bool DesktopShellHost::TrySetParent(HWND child, HWND parent) noexcept {
 
 RECT DesktopShellHost::MapDesktopRectToParent(HWND parent, const RECT& desktopBounds) noexcept {
     if (!parent || !IsWindow(parent)) return desktopBounds;
-    POINT points[2] = {
-        {desktopBounds.left, desktopBounds.top},
-        {desktopBounds.right, desktopBounds.bottom},
-    };
+    POINT points[2] = {{desktopBounds.left, desktopBounds.top}, {desktopBounds.right, desktopBounds.bottom}};
     SetLastError(ERROR_SUCCESS);
     const int mapped = MapWindowPoints(HWND_DESKTOP, parent, points, 2);
     if (mapped == 0 && GetLastError() != ERROR_SUCCESS) return desktopBounds;
@@ -99,15 +94,10 @@ void DesktopShellHost::RequestWallpaperLayer() const noexcept {
     if (!snapshot_.progman || !IsWindow(snapshot_.progman)) return;
     DWORD_PTR ignored = 0;
     if (HasExtendedStyle(snapshot_.progman, kRaisedDesktopFlag)) {
-        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0xD, 0x1,
-                            SMTO_NORMAL, 1000, &ignored);
+        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0xD, 0x1, SMTO_NORMAL, 1000, &ignored);
     } else {
-        // Keep the two-step legacy request because older Explorer revisions can
-        // require the first message before the wallpaper WorkerW is materialized.
-        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0, 0,
-                            SMTO_NORMAL, 1000, &ignored);
-        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0xD, 0x1,
-                            SMTO_NORMAL, 1000, &ignored);
+        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0, 0, SMTO_NORMAL, 1000, &ignored);
+        SendMessageTimeoutW(snapshot_.progman, kSpawnWorkerMessage, 0xD, 0x1, SMTO_NORMAL, 1000, &ignored);
     }
 }
 
@@ -129,12 +119,7 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
         next.workerW = FindWindowExW(next.progman, nullptr, kWorkerWClass, nullptr);
     }
 
-    struct LegacySearch {
-        HWND defView{};
-        HWND parent{};
-        HWND worker{};
-    } legacy;
-
+    struct LegacySearch { HWND defView{}; HWND parent{}; HWND worker{}; } legacy;
     EnumWindows([](HWND top, LPARAM raw) -> BOOL {
         auto* result = reinterpret_cast<LegacySearch*>(raw);
         const HWND defView = FindWindowExW(top, nullptr, kDefViewClass, nullptr);
@@ -150,18 +135,12 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
     if (!next.workerW) next.workerW = legacy.worker;
     next.explorerPid = ExplorerProcessId(next.progman);
 
-    if (raised && next.shellDefView) {
-        next.mode = DesktopShellMode::RaisedDesktop;
-    } else if (next.workerW) {
-        next.mode = DesktopShellMode::LegacyWorkerW;
-    } else {
-        next.mode = DesktopShellMode::ProgmanFallback;
-    }
+    if (raised && next.shellDefView) next.mode = DesktopShellMode::RaisedDesktop;
+    else if (next.workerW) next.mode = DesktopShellMode::LegacyWorkerW;
+    else next.mode = DesktopShellMode::ProgmanFallback;
 
-    const bool generationChanged = snapshot_.progman != next.progman ||
-                                   snapshot_.workerW != next.workerW ||
-                                   snapshot_.shellDefView != next.shellDefView ||
-                                   snapshot_.explorerPid != next.explorerPid ||
+    const bool generationChanged = snapshot_.progman != next.progman || snapshot_.workerW != next.workerW ||
+                                   snapshot_.shellDefView != next.shellDefView || snapshot_.explorerPid != next.explorerPid ||
                                    snapshot_.mode != next.mode;
     if (generationChanged) ++generation_;
     next.generation = generation_;
@@ -177,12 +156,9 @@ bool DesktopShellHost::EnsureCurrent(std::wstring* error) {
     if (!snapshot_.Valid()) return Refresh(error);
     if (ExplorerProcessId(snapshot_.progman) != snapshot_.explorerPid) return Refresh(error);
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop) {
-        if (!snapshot_.shellDefView || !IsWindow(snapshot_.shellDefView) ||
-            !snapshot_.workerW || !IsWindow(snapshot_.workerW) ||
-            GetParent(snapshot_.shellDefView) != snapshot_.progman ||
-            GetParent(snapshot_.workerW) != snapshot_.progman) {
+        if (!snapshot_.shellDefView || !IsWindow(snapshot_.shellDefView) || !snapshot_.workerW || !IsWindow(snapshot_.workerW) ||
+            GetParent(snapshot_.shellDefView) != snapshot_.progman || GetParent(snapshot_.workerW) != snapshot_.progman)
             return Refresh(error);
-        }
     } else if (snapshot_.mode == DesktopShellMode::LegacyWorkerW) {
         if (!snapshot_.workerW || !IsWindow(snapshot_.workerW)) return Refresh(error);
     }
@@ -193,24 +169,18 @@ bool DesktopShellHost::EnsureCurrent(std::wstring* error) {
 HWND DesktopShellHost::SurfaceParent() const noexcept {
     switch (snapshot_.mode) {
     case DesktopShellMode::RaisedDesktop:
-    case DesktopShellMode::ProgmanFallback:
-        return snapshot_.progman;
-    case DesktopShellMode::LegacyWorkerW:
-        return snapshot_.workerW;
-    case DesktopShellMode::None:
-        break;
+    case DesktopShellMode::ProgmanFallback: return snapshot_.progman;
+    case DesktopShellMode::LegacyWorkerW: return snapshot_.workerW;
+    case DesktopShellMode::None: break;
     }
     return nullptr;
 }
 
-bool DesktopShellHost::PrepareSurface(HWND surface,
-                                      bool clickThrough,
-                                      std::wstring* error) const {
+bool DesktopShellHost::PrepareSurface(HWND surface, bool clickThrough, std::wstring* error) const {
     if (!surface || !IsWindow(surface)) {
         if (error) *error = L"DesktopShellHost: invalid surface HWND";
         return false;
     }
-
     LONG_PTR style = GetWindowLongPtrW(surface, GWL_STYLE);
     style &= ~static_cast<LONG_PTR>(WS_POPUP);
     style |= WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
@@ -219,7 +189,6 @@ bool DesktopShellHost::PrepareSurface(HWND surface,
         if (error) *error = L"DesktopShellHost: failed to set child style, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-
     LONG_PTR exStyle = GetWindowLongPtrW(surface, GWL_EXSTYLE);
     exStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
     if (clickThrough) exStyle |= WS_EX_TRANSPARENT;
@@ -238,8 +207,7 @@ bool DesktopShellHost::PrepareSurface(HWND surface,
 }
 
 void DesktopShellHost::RepairRaisedDesktopWorkerOrder() const noexcept {
-    if (snapshot_.mode != DesktopShellMode::RaisedDesktop ||
-        !snapshot_.progman || !snapshot_.workerW ||
+    if (snapshot_.mode != DesktopShellMode::RaisedDesktop || !snapshot_.progman || !snapshot_.workerW ||
         !IsWindow(snapshot_.progman) || !IsWindow(snapshot_.workerW)) return;
     if (LastChild(snapshot_.progman) == snapshot_.workerW) return;
     SetWindowPos(snapshot_.workerW, HWND_BOTTOM, 0, 0, 0, 0,
@@ -248,41 +216,27 @@ void DesktopShellHost::RepairRaisedDesktopWorkerOrder() const noexcept {
 
 void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     if (!parent || !IsWindow(parent)) return;
-
     std::vector<HWND> wallpapers;
     std::vector<HWND> widgets;
     for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (!IsWindow(child)) continue;
         const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass);
         if (!known) continue;
+        PrepareSurface(child, true, nullptr);
         (InferRole(child) == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
     }
 
-    if (snapshot_.mode == DesktopShellMode::RaisedDesktop ||
-        snapshot_.mode == DesktopShellMode::ProgmanFallback) {
-        HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent
-            ? snapshot_.shellDefView
-            : HWND_TOP;
-
-        // Repeatedly inserting directly below the icon layer means later calls
-        // become higher in the TuringDesk stack. Wallpaper first, Widgets last.
-        for (HWND window : wallpapers) {
-            SetWindowPos(window, anchor, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        }
-        for (HWND window : widgets) {
-            SetWindowPos(window, anchor, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        }
+    if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
+        const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
+        for (HWND window : wallpapers)
+            SetWindowPos(window, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        for (HWND window : widgets)
+            SetWindowPos(window, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     } else {
-        for (HWND window : wallpapers) {
-            SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        }
-        for (HWND window : widgets) {
-            SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        }
+        for (HWND window : wallpapers)
+            SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        for (HWND window : widgets)
+            SetWindowPos(window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
 }
 
@@ -293,11 +247,8 @@ void DesktopShellHost::RepairKnownTuringDeskSurfaces() const {
     RepairRoleOrder(parent);
 }
 
-bool DesktopShellHost::AttachSurface(HWND surface,
-                                     DesktopSurfaceRole role,
-                                     const RECT& desktopBounds,
-                                     bool visible,
-                                     std::wstring* error) {
+bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, const RECT& desktopBounds,
+                                     bool visible, std::wstring* error) {
     if (!EnsureCurrent(error)) return false;
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) {
@@ -309,7 +260,6 @@ bool DesktopShellHost::AttachSurface(HWND surface,
         if (error) *error = L"DesktopShellHost: SetParent failed, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-
     const RECT mapped = MapDesktopRectToParent(parent, desktopBounds);
     const LONG width = mapped.right - mapped.left;
     const LONG height = mapped.bottom - mapped.top;
@@ -317,38 +267,21 @@ bool DesktopShellHost::AttachSurface(HWND surface,
         if (error) *error = L"DesktopShellHost: mapped surface geometry is invalid";
         return false;
     }
-
-    const UINT flags = SWP_NOACTIVATE | SWP_FRAMECHANGED |
-                       (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW) | SWP_NOOWNERZORDER;
-    if (!SetWindowPos(surface, nullptr, mapped.left, mapped.top, width, height,
-                      flags | SWP_NOZORDER)) {
+    const UINT flags = SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOOWNERZORDER |
+                       (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
+    if (!SetWindowPos(surface, nullptr, mapped.left, mapped.top, width, height, flags | SWP_NOZORDER)) {
         if (error) *error = L"DesktopShellHost: SetWindowPos failed, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-
     RepairKnownTuringDeskSurfaces();
-    // If this is a newly-created surface, the role may not yet be inferable from
-    // class/title conventions. Apply one explicit role-aware placement too.
-    if (snapshot_.mode == DesktopShellMode::RaisedDesktop ||
-        snapshot_.mode == DesktopShellMode::ProgmanFallback) {
-        HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent
-            ? snapshot_.shellDefView
-            : HWND_TOP;
-        if (role == DesktopSurfaceRole::Wallpaper) {
-            SetWindowPos(surface, anchor, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        } else {
-            SetWindowPos(surface, anchor, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-            RepairKnownTuringDeskSurfaces();
-        }
+    if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
+        const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
+        SetWindowPos(surface, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        if (role == DesktopSurfaceRole::Widget) RepairKnownTuringDeskSurfaces();
     } else {
-        SetWindowPos(surface,
-                     role == DesktopSurfaceRole::Widget ? HWND_TOP : HWND_BOTTOM,
-                     0, 0, 0, 0,
+        SetWindowPos(surface, role == DesktopSurfaceRole::Widget ? HWND_TOP : HWND_BOTTOM, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
-
     const auto health = InspectSurface(surface, role);
     if (!health.window || !health.parent || !health.childStyle || !health.layered || !health.geometry) {
         if (error) *error = health.detail.empty() ? L"DesktopShellHost: surface verification failed" : health.detail;
@@ -376,7 +309,6 @@ DesktopSurfaceHealth DesktopShellHost::InspectSurface(HWND surface, DesktopSurfa
     health.visible = IsWindowVisible(surface) != FALSE;
     RECT rect{};
     health.geometry = GetClientRect(surface, &rect) != FALSE && rect.right > rect.left && rect.bottom > rect.top;
-
     if (!health.parent) health.detail = L"surface parent is not current DesktopShellHost parent";
     else if (!health.childStyle) health.detail = L"surface is missing WS_CHILD";
     else if (!health.layered) health.detail = L"surface is missing WS_EX_LAYERED";
@@ -386,11 +318,10 @@ DesktopSurfaceHealth DesktopShellHost::InspectSurface(HWND surface, DesktopSurfa
 }
 
 bool DesktopShellHost::SelfTest() noexcept {
-    if (_wcsicmp(ModeKey(DesktopShellMode::RaisedDesktop), L"raised-desktop") != 0) return false;
-    if (_wcsicmp(ModeKey(DesktopShellMode::LegacyWorkerW), L"legacy-workerw") != 0) return false;
-    if (_wcsicmp(RoleKey(DesktopSurfaceRole::Wallpaper), L"wallpaper") != 0) return false;
-    if (_wcsicmp(RoleKey(DesktopSurfaceRole::Widget), L"widget") != 0) return false;
-    return true;
+    return _wcsicmp(ModeKey(DesktopShellMode::RaisedDesktop), L"raised-desktop") == 0 &&
+           _wcsicmp(ModeKey(DesktopShellMode::LegacyWorkerW), L"legacy-workerw") == 0 &&
+           _wcsicmp(RoleKey(DesktopSurfaceRole::Wallpaper), L"wallpaper") == 0 &&
+           _wcsicmp(RoleKey(DesktopSurfaceRole::Widget), L"widget") == 0;
 }
 
 } // namespace turingdesk::wallpaper

@@ -9,7 +9,6 @@ $ArtifactName = "TuringDesk-Native-Search-ARM64"
 $Workflow = "native-search-windows.yml"
 $DeployDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
 $DeployParent = Split-Path $DeployDir -Parent
-$installTouched = $false
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
@@ -223,8 +222,21 @@ function Should-ShowWallpaperSettings {
     catch { return $true }
 }
 
+function Start-DeployedTuringDesk([string]$Root) {
+    $wallpaper = Join-Path $Root "TuringDeskWallpaper.exe"
+    $search = Join-Path $Root "TuringDesk.exe"
+    Assert-File $wallpaper "TuringDeskWallpaper.exe"
+    Assert-File $search "TuringDesk.exe"
+    if (Should-ShowWallpaperSettings) { Start-Process -FilePath $wallpaper -ArgumentList "--settings" }
+    else { Start-Process -FilePath $wallpaper }
+    Start-Process -FilePath $search
+}
+
 $work = $null
 $next = $null
+$previous = $null
+$swapStarted = $false
+$hadExistingInstall = $false
 try {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH." }
 
@@ -250,15 +262,19 @@ try {
 
     Test-StagedPackage $next
 
-    $installTouched = $true
+    $hadExistingInstall = Test-Path $DeployDir -PathType Container
+    $swapStarted = $true
     $oldIndexService = Join-Path $DeployDir "Goz\gozd.exe"
     Stop-DeployedProcesses
     Invoke-ElevatedIndexService $oldIndexService "uninstall" -IgnoreFailure
     Stop-DeployedProcesses
 
     Step "Installing validated TuringDesk ARM64 package"
-    if (Test-Path $DeployDir) { Remove-Item -LiteralPath $DeployDir -Recurse -Force -ErrorAction Stop }
-    if (Test-Path $DeployDir) { throw "Existing TuringDesk installation directory could not be removed: $DeployDir" }
+    if ($hadExistingInstall) {
+        $previous = Join-Path $DeployParent ("NativeTest.previous-" + [guid]::NewGuid().ToString("N"))
+        Move-Item -LiteralPath $DeployDir -Destination $previous -ErrorAction Stop
+    }
+    if (Test-Path $DeployDir) { throw "TuringDesk install directory still exists after backup move: $DeployDir" }
     Move-Item -LiteralPath $next -Destination $DeployDir -ErrorAction Stop
     $next = $null
 
@@ -276,10 +292,12 @@ try {
     Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench smoke" @("--harness-smoke-test")
 
     Step "Starting TuringDesk"
-    $wallpaper = Join-Path $DeployDir "TuringDeskWallpaper.exe"
-    if (Should-ShowWallpaperSettings) { Start-Process -FilePath $wallpaper -ArgumentList "--settings" }
-    else { Start-Process -FilePath $wallpaper }
-    Start-Process -FilePath (Join-Path $DeployDir "TuringDesk.exe")
+    Start-DeployedTuringDesk $DeployDir
+
+    if ($previous -and (Test-Path $previous)) {
+        Remove-Item $previous -Recurse -Force -ErrorAction Stop
+        $previous = $null
+    }
 
     Write-Host "`nTuringDesk update completed successfully." -ForegroundColor Green
     Write-Host ("Installed validated build: {0}" -f $validated.BuildSha) -ForegroundColor Green
@@ -287,10 +305,44 @@ try {
     Write-Host ("Install path: {0}" -f $DeployDir) -ForegroundColor DarkGray
 }
 catch {
+    $failure = $_.Exception.Message
     Write-Host "`nTuringDesk update failed." -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
-    if ($installTouched) {
-        Write-Host "The install phase had started. Automatic rollback is not performed; run the updater again after fixing the reported error." -ForegroundColor Yellow
+    Write-Host $failure -ForegroundColor Red
+
+    if ($swapStarted) {
+        try {
+            Step "Rolling back TuringDesk installation"
+            Stop-DeployedProcesses
+            $failedIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+            Invoke-ElevatedIndexService $failedIndexService "uninstall" -IgnoreFailure
+
+            if ($previous -and (Test-Path $previous -PathType Container)) {
+                if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }
+                Move-Item -LiteralPath $previous -Destination $DeployDir -ErrorAction Stop
+                $previous = $null
+            } elseif (-not $hadExistingInstall) {
+                if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }
+            }
+
+            if ($hadExistingInstall -and (Test-Path $DeployDir -PathType Container)) {
+                $restoredIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+                $restoredIndexClient = Join-Path $DeployDir "Goz\goz.exe"
+                if (Test-Path $restoredIndexService -PathType Leaf) {
+                    Invoke-ElevatedIndexService $restoredIndexService "install"
+                    if (Test-Path $restoredIndexClient -PathType Leaf) { Wait-IndexReady $restoredIndexClient }
+                }
+                Start-DeployedTuringDesk $DeployDir
+                Write-Host "Rollback completed. The previous TuringDesk installation was restored." -ForegroundColor Green
+            } else {
+                Write-Host "Rollback completed. No previous installation existed, so the failed package was removed." -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host ("Automatic rollback failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            if ($previous -and (Test-Path $previous -PathType Container)) {
+                Write-Host ("Previous installation is preserved at: {0}" -f $previous) -ForegroundColor Yellow
+            }
+        }
     } else {
         Write-Host "The existing installation was not modified." -ForegroundColor Yellow
     }

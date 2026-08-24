@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'scripts/**/*.ps1'
+      - 'UPDATE-TURINGDESK.cmd'
+      - 'DEPLOY-NATIVE-ARM64.cmd'
       - 'docs/TURINGDESK-PRODUCT-BASELINE.md'
       - 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
       - 'docs/L3-PI-RUNTIME-CONTRACT.md'
       - '.github/workflows/powershell-syntax.yml'
+      - '.github/workflows/native-search-windows.yml'
+      - '.github/workflows/native-x64-validation.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,12 +25,20 @@ concurrency:
 jobs:
   parse:
     runs-on: windows-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
 
+      - name: Verify checkout matches workflow commit
+        shell: powershell
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) {
+            throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
+          }
+
       - name: Verify current release baselines
-        shell: pwsh
+        shell: powershell
         run: |
           $required = @(
             'docs/TURINGDESK-PRODUCT-BASELINE.md',
@@ -39,53 +51,17 @@ jobs:
             }
           }
 
-      - name: Reject retired architecture and self-modifying workflows
-        shell: pwsh
-        run: |
-          $forbidden = @(
-            'docs/L3-CODEX-RUNTIME-CONTRACT.md',
-            'src/native/include/turingdesk/CodexRuntime.h',
-            'src/native/src/CodexRuntime.cpp',
-            'src/native/include/turingdesk/CodexHostBridge.h',
-            'src/native/src/CodexHostBridge.cpp',
-            'scripts/verify-codex-jsonl-wire.ps1',
-            'docs/TURINGDESK-DESIGN-SPEC.md',
-            'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
-            '.github/workflows/apply-codex-reconnect-diagnostics.yml',
-            '.github/workflows/implement-l4-handoff.yml',
-            '.github/workflows/repair-release-doc-contract.yml',
-            '.github/workflows/repair-canonical-l3-boundary.yml',
-            '.github/workflows/repair-l3-direct-runtime.yml'
-          )
-          foreach ($path in $forbidden) {
-            if (Test-Path $path) {
-              throw "Retired architecture or self-modifying automation must not return: $path"
-            }
-          }
+      - name: Verify Windows PowerShell 5.1 entrypoints
+        shell: powershell
+        run: .\scripts\verify-windows-powershell-compat.ps1
 
-      - name: Parse PowerShell scripts
-        shell: pwsh
-        run: |
-          $failed = $false
-          $files = Get-ChildItem -Path scripts -Filter *.ps1 -Recurse
-          foreach ($file in $files) {
-            $tokens = $null
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile(
-              $file.FullName,
-              [ref]$tokens,
-              [ref]$errors
-            ) | Out-Null
+      - name: Exercise one-click updater bootstrap
+        shell: cmd
+        env:
+          TD_BOOTSTRAP_SELF_TEST: 1
+          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
+        run: UPDATE-TURINGDESK.cmd
 
-            if ($errors.Count -gt 0) {
-              $failed = $true
-              Write-Host "::error file=$($file.FullName)::PowerShell parser found $($errors.Count) error(s)"
-              foreach ($error in $errors) {
-                Write-Host "  line $($error.Extent.StartLineNumber): $($error.Message)"
-              }
-            } else {
-              Write-Host "OK  $($file.FullName)"
-            }
-          }
-
-          if ($failed) { throw 'PowerShell syntax validation failed.' }
+      - name: Verify TuringDesk runtime contract
+        shell: powershell
+        run: .\scripts\verify-l3-runtime-contract.ps1

@@ -7,11 +7,16 @@ on:
       - CMakeLists.txt
       - src/native/**
       - runtime/arm64/**
+      - scripts/deploy-native-arm64.ps1
+      - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/verify-windows-powershell-compat.ps1
       - scripts/pi-agent-e2e.mjs
+      - DEPLOY-NATIVE-ARM64.cmd
+      - UPDATE-TURINGDESK.cmd
       - .github/workflows/native-search-windows.yml
   workflow_run:
     workflows: ["Vendor ARM64 Runtime Bundle"]
@@ -34,6 +39,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: main
+
+      - name: Verify Windows PowerShell 5.1 entrypoints
+        shell: powershell
+        run: .\scripts\verify-windows-powershell-compat.ps1
 
       - name: Verify Pi-first L3 runtime contract
         shell: pwsh

@@ -100,7 +100,11 @@ foreach ($marker in @(
     '\"type\":\"prompt\"',
     '\"type\":\"abort\"',
     '\"type\":\"new_session\"',
-    '\"type\":\"agent_settled\"'
+    '\"type\":\"agent_settled\"',
+    'auto url = agent.CurrentApiUrl();',
+    'std::hash<std::wstring>{}(setup.apiKey)',
+    'turingdesk-local',
+    '未找到 Bundled Node Runtime'
 )) {
     if (-not $pi.Contains($marker)) {
         throw "Pi runtime contract marker missing: $marker"
@@ -110,6 +114,9 @@ foreach ($marker in @('providerId == L"deepseek"', 'providerId) == L"deepseek"')
     if ($pi.Contains($marker)) {
         throw "Pi transport must not be hard-wired to a provider brand: $marker"
     }
+}
+if ($pi.Contains('return SearchExecutable(L"node.exe")')) {
+    throw 'Pi Runtime must not fall back to a system Node installation.'
 }
 
 # The ARM64 real E2E must wait for the session-level settled event, not low-level agent_end.
@@ -143,4 +150,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: Pi Agent primary, provider-neutral API routing, settled RPC turns, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: Pi Agent primary, provider-neutral API routing, settled RPC turns, self-contained Node, Direct API fallback only.'

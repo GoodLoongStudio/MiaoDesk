@@ -19,6 +19,7 @@ struct WallpaperLibraryTarget {
 
 enum class WallpaperSettingsSection {
     Installed,
+    Widgets,
     Playlists,
     Displays,
     Rules,

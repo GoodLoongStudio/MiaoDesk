@@ -132,6 +132,8 @@ Owns policy inputs and decisions:
 - lock / idle
 - Normal / Throttle / Pause / Stop
 
+`PerformanceService` owns persisted performance-policy configuration. `PerformanceUiAdapter` is the UI-facing compatibility boundary; performance controls must use it instead of reading or writing `wallpaper.ini` directly.
+
 Renderers consume the resulting policy; renderers do not independently rediscover system policy.
 
 ### 3.6 AI
@@ -168,6 +170,7 @@ The current concrete boundary is:
 - `DesktopWidgetController` — direct UI controller for new Widget UI code
 - `DesktopWidgetUiAdapter` — transitional compatibility adapter for the current production legacy library window
 - `AutomationUiAdapter` — transitional compatibility adapter for the current automation window
+- `PerformanceUiAdapter` — UI-facing adapter for performance settings while the legacy settings surface is migrated
 
 Current DesktopControl facade responsibilities:
 
@@ -187,6 +190,7 @@ Current or staged clients:
 - production legacy Widget UI through `WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
 - new Widget UI through `DesktopWidgetController`
 - automation UI through `AutomationUiAdapter -> AutomationService` as the staged replacement path
+- performance UI through `PerformanceUiAdapter -> PerformanceService` as the staged replacement path
 - Desktop Library V2 / Widget UI
 - future Scene / Widget Editor
 
@@ -238,6 +242,20 @@ WallpaperAutomationStore
 
 `AutomationUiAdapter` may preserve the old store-shaped method names for migration, but it must not instantiate `WallpaperAutomationStore`, read INI files, or own scheduling rules. The runtime may continue to own an automation store for periodic evaluation until runtime execution itself is moved behind the service boundary.
 
+Performance follows the same migration rule:
+
+```text
+Legacy Performance controls
+    ↓
+PerformanceUiAdapter
+    ↓
+PerformanceService
+    ↓
+wallpaper.ini persistence
+```
+
+`PerformanceUiAdapter` only translates UI intent and errors. It must not call Win32 profile APIs itself.
+
 Similarly, `WallpaperLibraryWindowV2.cpp` should become:
 
 ```text
@@ -271,10 +289,10 @@ A visual redesign is never allowed to remove a product capability.
 ## 7. Next refactor slices
 
 1. Wire the existing automation window to `AutomationUiAdapter` without exposing `WallpaperAutomationStore*` in the window API.
-2. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
-3. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
-4. Make Desktop Library V2 depend on controllers/services only.
-5. Move Performance UI and remaining engine settings ownership through `PerformanceService`.
+2. Route the existing performance controls through `PerformanceUiAdapter` and remove their direct performance-policy INI ownership from `WallpaperEngine.cpp`.
+3. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
+4. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
+5. Make Desktop Library V2 depend on controllers/services only.
 6. Remove legacy direct shell attachment from `WallpaperEngine.cpp` after `DesktopShellHost` is sole owner.
 7. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
 
@@ -290,6 +308,7 @@ UI moves Widget -> Pi reads updated geometry
 UI applies wallpaper -> Pi reads same current state
 Pi applies wallpaper -> UI shows same current state
 Automation UI edits playlist -> runtime evaluates the same persisted playlist
+Performance UI changes fullscreen action -> runtime consumes the same persisted policy
 Explorer restarts -> runtime recovers without UI/AI special handling
 ```
 

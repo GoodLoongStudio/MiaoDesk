@@ -35,6 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Verify checkout matches workflow commit
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) {
+            throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
+          }
+          Write-Host "Validating exact workflow commit: $actual"
+
       - name: Verify Windows PowerShell 5.1 entrypoints
         shell: powershell
         run: .\scripts\verify-windows-powershell-compat.ps1

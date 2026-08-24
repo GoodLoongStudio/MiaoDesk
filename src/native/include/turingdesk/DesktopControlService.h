@@ -1,12 +1,12 @@
 #pragma once
 
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/WallpaperService.h"
+#include "turingdesk/WidgetService.h"
 
 namespace turingdesk::desktop {
 
@@ -26,31 +26,9 @@ struct DesktopState {
     std::size_t widgetCount{};
 };
 
-struct WebWidgetCreateRequest {
-    std::wstring title{L"Desktop Widget"};
-    std::string htmlUtf8;
-    std::wstring monitorId;
-    float x{0.68f};
-    float y{0.05f};
-    float width{0.28f};
-    float height{0.18f};
-};
-
-struct WidgetUpdateRequest {
-    std::wstring id;
-    std::optional<std::wstring> title;
-    std::optional<std::string> htmlUtf8;
-    std::optional<std::wstring> monitorId;
-    std::optional<float> x;
-    std::optional<float> y;
-    std::optional<float> width;
-    std::optional<float> height;
-    std::optional<int> zIndex;
-    std::optional<bool> enabled;
-};
-
-// Domain boundary shared by UI, Pi native tools and future editor clients.
-// Callers describe intent; this service owns persistence/runtime activation.
+// Facade shared by UI, Pi native tools and future editor clients. Domain
+// ownership remains in WallpaperService / WidgetService; this class coordinates
+// cross-domain intent and runtime activation only.
 class DesktopControlService {
 public:
     DesktopControlService() = default;
@@ -64,8 +42,8 @@ public:
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;
     DesktopControlResult RemoveWidget(std::wstring_view id) const;
     DesktopControlResult ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const;
+    DesktopControlResult FindWidget(std::wstring_view id, wallpaper::DesktopWidget* widget) const;
 
-    // Runtime activation belongs here rather than in UI/tool adapters.
     DesktopControlResult EnsureRuntime() const;
 };
 

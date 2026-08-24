@@ -55,6 +55,7 @@ set_source_files_properties(src/NativeTools.cpp PROPERTIES
 add_executable(TuringDeskWallpaper WIN32
     src/WallpaperEntry.cpp
     src/WallpaperEngine.cpp
+    src/DesktopShellHost.cpp
     src/WallpaperMonitorLayout.cpp
     src/WallpaperMonitorAssignments.cpp
     src/WallpaperIndependentLayout.cpp

@@ -41,49 +41,74 @@ function Invoke-GhText([string[]]$Arguments) {
     throw "GitHub query failed after retries."
 }
 
-function Test-BuildRelevantPath([string]$Path) {
-    if ($Path -eq "CMakeLists.txt") { return $true }
-    if ($Path -like "src/native/*") { return $true }
-    if ($Path -like "runtime/arm64/*") { return $true }
-    if ($Path -eq "scripts/prepare-third-party-runtime-arm64.ps1") { return $true }
-    if ($Path -eq "scripts/verify-arm64-runtime-bundle.ps1") { return $true }
-    if ($Path -eq "scripts/verify-l3-runtime-contract.ps1") { return $true }
-    if ($Path -eq "scripts/verify-runtime-log-paths.ps1") { return $true }
-    if ($Path -eq ".github/workflows/native-search-windows.yml") { return $true }
-    if ($Path -eq ".github/workflows/vendor-arm64-runtime.yml") { return $true }
-    return $false
+function Get-RunsForCommit([string]$Sha) {
+    $result = Invoke-GhJson @(
+        "run", "list", "--repo", $Repo, "--workflow", $Workflow, "--commit", $Sha, "--limit", "50",
+        "--json", "databaseId,headSha,status,conclusion,event,createdAt"
+    )
+    if (-not $result) { return @() }
+    return @($result)
+}
+
+function Wait-ForRun([long]$RunId) {
+    Step ("Waiting for ARM64 validation run {0}" -f $RunId)
+    & gh run watch $RunId --repo $Repo --exit-status | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "`nARM64 validation failed. Failed job log follows." -ForegroundColor Red
+        & gh run view $RunId --repo $Repo --log-failed | Out-Host
+        throw ("ARM64 validation failed in run {0}." -f $RunId)
+    }
 }
 
 function Resolve-ValidatedRun([string]$MainSha) {
-    Step "Finding latest validated TuringDesk ARM64 package"
-    $runs = @(Invoke-GhJson @(
-        "run", "list", "--repo", $Repo, "--workflow", $Workflow, "--branch", "main", "--limit", "30",
-        "--json", "databaseId,headSha,status,conclusion,createdAt"
-    ))
-    $run = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
+    Step "Resolving validated ARM64 package for current main"
+    $runs = @(Get-RunsForCommit $MainSha)
+    $success = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
         Sort-Object createdAt -Descending | Select-Object -First 1
-    if (-not $run) { throw "No validated TuringDesk ARM64 build is available." }
-
-    $buildSha = [string]$run.headSha
-    if ($buildSha -ne $MainSha) {
-        $compare = Invoke-GhJson @("api", "repos/$Repo/compare/$buildSha...$MainSha")
-        if (-not $compare) { throw "Unable to compare the validated build with current main." }
-        if ([string]$compare.status -notin @("ahead", "identical")) {
-            throw "Current main is not a clean forward descendant of the validated build."
-        }
-        $relevant = @($compare.files | Where-Object { Test-BuildRelevantPath ([string]$_.filename) })
-        if ($relevant.Count -gt 0) {
-            $names = ($relevant | ForEach-Object { [string]$_.filename }) -join ", "
-            throw ("Current main contains unvalidated build/runtime changes: {0}" -f $names)
-        }
-        Write-Host "Latest validated package is still valid; newer changes are updater/docs only." -ForegroundColor DarkGray
+    if ($success) {
+        return [pscustomobject]@{ RunId = [long]$success.databaseId; BuildSha = $MainSha }
     }
 
-    return [pscustomobject]@{ RunId = [long]$run.databaseId; BuildSha = $buildSha }
+    $running = $runs | Where-Object { $_.status -ne "completed" } |
+        Sort-Object createdAt -Descending | Select-Object -First 1
+    if (-not $running) {
+        $before = @($runs | ForEach-Object { [long]$_.databaseId })
+        Step "Starting ARM64 validation for current main"
+        & gh workflow run $Workflow --repo $Repo --ref main | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Unable to start ARM64 validation workflow." }
+
+        for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 2
+            $candidateRuns = @(Get-RunsForCommit $MainSha)
+            $running = $candidateRuns | Where-Object {
+                ([long]$_.databaseId -notin $before) -and $_.status -ne "completed"
+            } | Sort-Object createdAt -Descending | Select-Object -First 1
+            if ($running) { break }
+
+            $completed = $candidateRuns | Where-Object {
+                ([long]$_.databaseId -notin $before) -and $_.status -eq "completed"
+            } | Sort-Object createdAt -Descending | Select-Object -First 1
+            if ($completed) {
+                if ($completed.conclusion -eq "success") {
+                    return [pscustomobject]@{ RunId = [long]$completed.databaseId; BuildSha = $MainSha }
+                }
+                & gh run view ([long]$completed.databaseId) --repo $Repo --log-failed | Out-Host
+                throw ("ARM64 validation failed in run {0}." -f $completed.databaseId)
+            }
+        }
+        if (-not $running) { throw "ARM64 validation was started but its run could not be resolved." }
+    }
+
+    Wait-ForRun ([long]$running.databaseId)
+    $verifiedRuns = @(Get-RunsForCommit $MainSha)
+    $verified = $verifiedRuns | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
+        Sort-Object createdAt -Descending | Select-Object -First 1
+    if (-not $verified) { throw "ARM64 validation completed without a successful current-main run." }
+    return [pscustomobject]@{ RunId = [long]$verified.databaseId; BuildSha = $MainSha }
 }
 
 function Download-Artifact([long]$RunId, [string]$Destination) {
-    Step ("Downloading validated ARM64 binaries from run {0}" -f $RunId)
+    Step ("Downloading validated ARM64 package from run {0}" -f $RunId)
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & gh run download $RunId --repo $Repo --name $ArtifactName --dir $Destination | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Unable to download validated ARM64 artifact." }
@@ -102,11 +127,9 @@ function Materialize-Runtime([string]$Destination, [string]$BuildSha) {
         & git -C $runtimeRepo sparse-checkout set runtime/arm64 scripts | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Unable to select RuntimeBundle files." }
         & git -C $runtimeRepo checkout $BuildSha | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout RuntimeBundle revision $BuildSha." }
+        if ($LASTEXITCODE -ne 0) { throw ("Unable to checkout RuntimeBundle revision {0}." -f $BuildSha) }
         $runtimeSha = (& git -C $runtimeRepo rev-parse HEAD).Trim()
-        if ($LASTEXITCODE -ne 0 -or $runtimeSha -ne $BuildSha) {
-            throw "RuntimeBundle revision mismatch."
-        }
+        if ($LASTEXITCODE -ne 0 -or $runtimeSha -ne $BuildSha) { throw "RuntimeBundle revision mismatch." }
 
         $prepare = Join-Path $runtimeRepo "scripts\prepare-third-party-runtime-arm64.ps1"
         if (-not (Test-Path $prepare -PathType Leaf)) { throw "Runtime preparation script is missing." }
@@ -155,33 +178,33 @@ function Test-StagedPackage([string]$Root) {
     Test-Binary $workbench "TuringDesk Advanced Workbench smoke" @("--harness-smoke-test")
 }
 
+function Test-InDeploy([string]$Candidate) {
+    try {
+        $rootPath = [IO.Path]::GetFullPath($DeployDir).TrimEnd("\")
+        $candidatePath = [IO.Path]::GetFullPath($Candidate)
+        return $candidatePath.Equals($rootPath, [StringComparison]::OrdinalIgnoreCase) -or
+            $candidatePath.StartsWith($rootPath + "\", [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
+}
+
 function Stop-DeployedProcesses {
     Step "Stopping currently installed TuringDesk processes"
     $names = @("TuringDesk.exe", "TuringDeskWallpaper.exe", "TuringDeskHarness.exe", "node.exe", "goz.exe", "gozd.exe")
     try {
-        $deployRoot = [IO.Path]::GetFullPath($DeployDir).TrimEnd("\") + "\"
         foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
             if ($names -notcontains [string]$process.Name) { continue }
             $exe = [string]$process.ExecutablePath
-            if (-not $exe) { continue }
-            try {
-                $full = [IO.Path]::GetFullPath($exe)
-                if ($full.StartsWith($deployRoot, [StringComparison]::OrdinalIgnoreCase)) {
-                    & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
-                }
-            } catch { }
+            if (-not $exe -or -not (Test-InDeploy $exe)) { continue }
+            & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
         }
     } catch { }
-    foreach ($name in @("TuringDesk", "TuringDeskWallpaper", "TuringDeskHarness")) {
-        Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Milliseconds 750
+    Start-Sleep -Milliseconds 500
 }
 
 function Invoke-ElevatedIndexService([string]$Exe, [string]$Arguments, [switch]$IgnoreFailure) {
     if (-not (Test-Path $Exe -PathType Leaf)) {
         if ($IgnoreFailure) { return }
-        throw "File index service executable is missing: $Exe"
+        throw ("File index service executable is missing: {0}" -f $Exe)
     }
     try {
         $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
@@ -200,12 +223,8 @@ function Probe([string]$Exe, [string[]]$Arguments) {
         $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err -ErrorAction SilentlyContinue
         if (-not $p) { return -1 }
         return [int]$p.ExitCode
-    } catch {
-        return -1
-    }
-    finally {
-        Remove-Item $out,$err -Force -ErrorAction SilentlyContinue
-    }
+    } catch { return -1 }
+    finally { Remove-Item $out,$err -Force -ErrorAction SilentlyContinue }
 }
 
 function Wait-IndexReady([string]$IndexExe) {
@@ -246,9 +265,7 @@ function Write-UpdateJournal([string]$PreviousPath, [bool]$HadExistingInstall) {
 }
 
 function Remove-UpdateJournal {
-    if (Test-Path $JournalPath -PathType Leaf) {
-        Remove-Item $JournalPath -Force -ErrorAction Stop
-    }
+    if (Test-Path $JournalPath -PathType Leaf) { Remove-Item $JournalPath -Force -ErrorAction Stop }
 }
 
 function Recover-InterruptedUpdate {
@@ -273,11 +290,11 @@ function Recover-InterruptedUpdate {
     }
 
     if ($hadExisting -and (Test-Path $DeployDir -PathType Container)) {
-        $restoredIndexService = Join-Path $DeployDir "Goz\gozd.exe"
-        $restoredIndexClient = Join-Path $DeployDir "Goz\goz.exe"
-        if (Test-Path $restoredIndexService -PathType Leaf) {
-            Invoke-ElevatedIndexService $restoredIndexService "install"
-            if (Test-Path $restoredIndexClient -PathType Leaf) { Wait-IndexReady $restoredIndexClient }
+        $restoredService = Join-Path $DeployDir "Goz\gozd.exe"
+        $restoredClient = Join-Path $DeployDir "Goz\goz.exe"
+        if (Test-Path $restoredService -PathType Leaf) {
+            Invoke-ElevatedIndexService $restoredService "install"
+            if (Test-Path $restoredClient -PathType Leaf) { Wait-IndexReady $restoredClient }
         }
         Start-DeployedTuringDesk $DeployDir
     }
@@ -295,23 +312,23 @@ $hadExistingInstall = $false
 $updateMutex = $null
 $mutexHeld = $false
 $recoveryPerformed = $false
+
 try {
     New-Item -ItemType Directory -Force -Path $DeployParent | Out-Null
     $updateMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, $MutexName
-    try {
-        $mutexHeld = $updateMutex.WaitOne(0)
-    } catch [System.Threading.AbandonedMutexException] {
-        $mutexHeld = $true
-    }
+    try { $mutexHeld = $updateMutex.WaitOne(0) }
+    catch [System.Threading.AbandonedMutexException] { $mutexHeld = $true }
     if (-not $mutexHeld) { throw "Another TuringDesk update is already running." }
 
     $recoveryPerformed = Recover-InterruptedUpdate
 
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH." }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 
     Step "Checking GitHub authentication"
-    & gh auth status | Out-Host
+    & gh auth status 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
+    Write-Host "GitHub authentication OK." -ForegroundColor Green
 
     Step "Resolving current TuringDesk main"
     $mainSha = Invoke-GhText @("api", "repos/$Repo/commits/main", "--jq", ".sha")
@@ -328,26 +345,20 @@ try {
     Materialize-Runtime $next $validated.BuildSha
     Copy-Item (Join-Path $artifact "*") $next -Recurse -Force
     Set-Content (Join-Path $next ".installed-build-sha") -Value $validated.BuildSha -Encoding ASCII
-
     Test-StagedPackage $next
 
     $hadExistingInstall = Test-Path $DeployDir -PathType Container
-    if ($hadExistingInstall) {
-        $previous = Join-Path $DeployParent ("NativeTest.previous-" + [guid]::NewGuid().ToString("N"))
-    }
+    if ($hadExistingInstall) { $previous = Join-Path $DeployParent ("NativeTest.previous-" + [guid]::NewGuid().ToString("N")) }
     Write-UpdateJournal $previous $hadExistingInstall
     $swapStarted = $true
 
-    $oldIndexService = Join-Path $DeployDir "Goz\gozd.exe"
     Stop-DeployedProcesses
-    Invoke-ElevatedIndexService $oldIndexService "uninstall" -IgnoreFailure
+    Invoke-ElevatedIndexService (Join-Path $DeployDir "Goz\gozd.exe") "uninstall" -IgnoreFailure
     Stop-DeployedProcesses
 
     Step "Installing validated TuringDesk ARM64 package"
-    if ($hadExistingInstall) {
-        Move-Item -LiteralPath $DeployDir -Destination $previous -ErrorAction Stop
-    }
-    if (Test-Path $DeployDir) { throw "TuringDesk install directory still exists after backup move: $DeployDir" }
+    if ($hadExistingInstall) { Move-Item -LiteralPath $DeployDir -Destination $previous -ErrorAction Stop }
+    if (Test-Path $DeployDir) { throw ("TuringDesk install directory still exists after backup move: {0}" -f $DeployDir) }
     Move-Item -LiteralPath $next -Destination $DeployDir -ErrorAction Stop
     $next = $null
 
@@ -367,7 +378,6 @@ try {
     Step "Starting TuringDesk"
     Start-DeployedTuringDesk $DeployDir
 
-    # Commit the new installation before best-effort backup cleanup.
     Remove-UpdateJournal
     $swapStarted = $false
 
@@ -394,8 +404,7 @@ catch {
         try {
             Step "Rolling back TuringDesk installation"
             Stop-DeployedProcesses
-            $failedIndexService = Join-Path $DeployDir "Goz\gozd.exe"
-            Invoke-ElevatedIndexService $failedIndexService "uninstall" -IgnoreFailure
+            Invoke-ElevatedIndexService (Join-Path $DeployDir "Goz\gozd.exe") "uninstall" -IgnoreFailure
 
             if ($previous -and (Test-Path $previous -PathType Container)) {
                 if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }
@@ -406,16 +415,16 @@ catch {
             }
 
             if ($hadExistingInstall -and (Test-Path $DeployDir -PathType Container)) {
-                $restoredIndexService = Join-Path $DeployDir "Goz\gozd.exe"
-                $restoredIndexClient = Join-Path $DeployDir "Goz\goz.exe"
-                if (Test-Path $restoredIndexService -PathType Leaf) {
-                    Invoke-ElevatedIndexService $restoredIndexService "install"
-                    if (Test-Path $restoredIndexClient -PathType Leaf) { Wait-IndexReady $restoredIndexClient }
+                $restoredService = Join-Path $DeployDir "Goz\gozd.exe"
+                $restoredClient = Join-Path $DeployDir "Goz\goz.exe"
+                if (Test-Path $restoredService -PathType Leaf) {
+                    Invoke-ElevatedIndexService $restoredService "install"
+                    if (Test-Path $restoredClient -PathType Leaf) { Wait-IndexReady $restoredClient }
                 }
                 Start-DeployedTuringDesk $DeployDir
                 Write-Host "Rollback completed. The previous TuringDesk installation was restored." -ForegroundColor Green
             } else {
-                Write-Host "Rollback completed. No previous installation existed, so the failed package was removed." -ForegroundColor Yellow
+                Write-Host "Rollback completed. The failed package was removed." -ForegroundColor Yellow
             }
             Remove-UpdateJournal
         }
@@ -427,19 +436,14 @@ catch {
             }
         }
     } else {
-        if ($recoveryPerformed) {
-            Write-Host "An earlier interrupted update was recovered before this failure." -ForegroundColor Yellow
-        } else {
-            Write-Host "The existing installation was not modified." -ForegroundColor Yellow
-        }
+        if ($recoveryPerformed) { Write-Host "An earlier interrupted update was recovered before this failure." -ForegroundColor Yellow }
+        else { Write-Host "The existing installation was not modified." -ForegroundColor Yellow }
     }
     exit 1
 }
 finally {
     if ($work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
     if ($next -and (Test-Path $next)) { Remove-Item $next -Recurse -Force -ErrorAction SilentlyContinue }
-    if ($mutexHeld -and $updateMutex) {
-        try { $updateMutex.ReleaseMutex() } catch { }
-    }
+    if ($mutexHeld -and $updateMutex) { try { $updateMutex.ReleaseMutex() } catch { } }
     if ($updateMutex) { $updateMutex.Dispose() }
 }

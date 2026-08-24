@@ -12,6 +12,7 @@ on:
       - docs/TURINGDESK-PRODUCT-BASELINE.md
       - docs/WALLPAPER_ENGINE_PARITY.md
       - docs/DESKTOP_COMPOSITION_ARCHITECTURE.md
+      - docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md
       - scripts/deploy-native-arm64.ps1
       - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
@@ -160,6 +161,7 @@ jobs:
           }
           finally {
             Remove-Item $probePath -Force -ErrorAction SilentlyContinue
+            & $goz --status | Out-Null
             & $gozd uninstall | Out-Host
           }
 

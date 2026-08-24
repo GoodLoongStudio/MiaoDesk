@@ -53,6 +53,8 @@ foreach ($forbidden in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
 }
 foreach ($required in @(
     'update-turingdesk-arm64.ps1',
+    'if not defined TD_UPDATER',
+    'if not defined TD_UPDATE_URL',
     '$env:TD_UPDATE_URL',
     '$env:TD_UPDATER',
     '-File "%TD_UPDATER%"',
@@ -68,9 +70,15 @@ foreach ($required in @(
     'NativeTest.previous-',
     'Rolling back TuringDesk installation',
     'Rollback completed.',
-    'Move-Item -LiteralPath $DeployDir -Destination $previous'
+    'Move-Item -LiteralPath $DeployDir -Destination $previous',
+    'NativeTest.update-state.json',
+    'Recover-InterruptedUpdate',
+    'Interrupted update recovery completed.',
+    'TuringDeskArm64Updater',
+    'WaitOne(0)',
+    'Another TuringDesk update is already running.'
 )) {
-    if (-not $updateScriptText.Contains($required)) { throw "Updater rollback marker missing: $required" }
+    if (-not $updateScriptText.Contains($required)) { throw "Updater safety marker missing: $required" }
 }
 foreach ($required in @(
     'verify-windows-powershell-compat.ps1',
@@ -80,7 +88,12 @@ foreach ($required in @(
     if (-not $deployScriptText.Contains($required)) { throw "Local deploy compatibility preflight marker missing: $required" }
 }
 foreach ($workflowText in @($armWorkflowText, $x64WorkflowText)) {
-    foreach ($required in @('Exercise one-click updater bootstrap', 'TD_BOOTSTRAP_SELF_TEST: 1', 'UPDATE-TURINGDESK.cmd')) {
+    foreach ($required in @(
+        'Exercise one-click updater bootstrap',
+        'TD_BOOTSTRAP_SELF_TEST: 1',
+        'TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1',
+        'UPDATE-TURINGDESK.cmd'
+    )) {
         if (-not $workflowText.Contains($required)) { throw "Windows workflow updater smoke marker missing: $required" }
     }
 }
@@ -91,4 +104,4 @@ foreach ($forbidden in @('workflow_run:', 'ref: main')) {
     if ($armWorkflowText.Contains($forbidden)) { throw "ARM64 workflow may drift away from the triggering commit: $forbidden" }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, preserve automatic rollback, run local deployment preflight, execute the one-click bootstrap in Windows CI, and pin ARM64 artifacts to the triggering SHA.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a single-instance crash-recoverable updater, run local deployment preflight, exercise the exact-SHA one-click bootstrap in Windows CI, and pin ARM64 artifacts to the triggering SHA.' -ForegroundColor Green

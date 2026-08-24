@@ -23,6 +23,9 @@ function Assert-BundleHash([string]$Path, [string]$Expected) {
         throw "Vendored runtime integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
     }
 }
+function Assert-File([string]$Path, [string]$Label) {
+    if (-not (Test-Path $Path -PathType Leaf)) { throw "Full Codex package is missing $Label: $Path" }
+}
 function Test-InDeploy([string]$Candidate) {
     try {
         $root = [IO.Path]::GetFullPath($DeployDir).TrimEnd('\')
@@ -32,7 +35,7 @@ function Test-InDeploy([string]$Candidate) {
     } catch { return $false }
 }
 function Stop-OwnedProcesses {
-    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe')
+    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','codex.exe','codex-relay.exe','codex-command-runner.exe','codex-windows-sandbox-setup.exe','codex-code-mode-host.exe')
     try {
         foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
             if ($names -notcontains [string]$p.Name) { continue }
@@ -45,8 +48,21 @@ function Stop-OwnedProcesses {
 }
 function Expand-BundleArchive([string]$Archive, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    if ($Archive.EndsWith('.tar.zst', [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Codex tar.zst payload' }
+        $tarPath = Join-Path $env:TEMP ('td-codex-' + [guid]::NewGuid().ToString('N') + '.tar')
+        $js = "const fs=require('node:fs');const z=require('node:zlib');const [s,d]=process.argv.slice(1);fs.writeFileSync(d,z.zstdDecompressSync(fs.readFileSync(s)));"
+        try {
+            & $script:NodeExe -e $js $Archive $tarPath
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tarPath -PathType Leaf)) { throw "Failed to materialize $Archive" }
+            & tar.exe -xf $tarPath -C $Destination
+            if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
+        }
+        finally { Remove-Item $tarPath -Force -ErrorAction SilentlyContinue }
+        return
+    }
     if ($Archive.EndsWith('.zst', [StringComparison]::OrdinalIgnoreCase)) {
-        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Codex Zstd payload' }
+        if (-not (Test-Path $script:NodeExe -PathType Leaf)) { throw 'Node 24 is required to materialize Zstd payload' }
         $out = Join-Path $Destination ([IO.Path]::GetFileNameWithoutExtension($Archive))
         $js = "const fs=require('node:fs');const z=require('node:zlib');const [s,d]=process.argv.slice(1);fs.writeFileSync(d,z.zstdDecompressSync(fs.readFileSync(s)));"
         & $script:NodeExe -e $js $Archive $out
@@ -108,13 +124,20 @@ $GozExe = Join-Path $GozDir 'goz.exe'
 $GozDaemon = Join-Path $GozDir 'gozd.exe'
 $RelayExe = Join-Path $RelayDir 'codex-relay.exe'
 $CodexExe = Join-Path $CodexDir 'codex.exe'
+$CodexPackage = Join-Path $CodexDir 'codex-package.json'
+$CodexCommandRunner = Join-Path $CodexDir 'codex-resources\codex-command-runner.exe'
+$CodexSandboxSetup = Join-Path $CodexDir 'codex-resources\codex-windows-sandbox-setup.exe'
+$CodexCodeModeHost = Join-Path $CodexDir 'codex-code-mode-host.exe'
+$CodexRg = Join-Path $CodexDir 'codex-path\rg.exe'
 $DeployManifestHash = Join-Path $RuntimeDir 'runtime-manifest.sha256'
 $sourceManifestHash = Sha256 $ManifestPath
 
 $ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe -PathType Leaf) -and
          (Test-Path $DshBin -PathType Leaf) -and (Test-Path $GozExe -PathType Leaf) -and
          (Test-Path $GozDaemon -PathType Leaf) -and (Test-Path $RelayExe -PathType Leaf) -and
-         (Test-Path $CodexExe -PathType Leaf) -and
+         (Test-Path $CodexExe -PathType Leaf) -and (Test-Path $CodexPackage -PathType Leaf) -and
+         (Test-Path $CodexCommandRunner -PathType Leaf) -and (Test-Path $CodexSandboxSetup -PathType Leaf) -and
+         (Test-Path $CodexCodeModeHost -PathType Leaf) -and (Test-Path $CodexRg -PathType Leaf) -and
          ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
 if ($ready) { Ensure-GozService $GozExe $GozDaemon; Write-Host "RuntimeBundle ready: $DeployDir" -ForegroundColor Green; exit 0 }
 
@@ -170,15 +193,49 @@ if ($LASTEXITCODE -ne 0) { throw 'Bundled codex-relay failed to execute' }
 $codexTemp = Join-Path $env:TEMP ('TuringDesk-Codex-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $codexArchive $codexTemp
-    $codex = Get-ChildItem $codexTemp -Filter 'codex-aarch64-pc-windows-msvc.exe' -File -Recurse | Select-Object -First 1
-    if (-not $codex) { throw 'Vendored Codex CLI payload is incomplete' }
+    $packageRoot = $null
+    if (Test-Path (Join-Path $codexTemp 'codex-package.json') -PathType Leaf) {
+        $packageRoot = Get-Item $codexTemp
+    } else {
+        $packageRoot = Get-ChildItem $codexTemp -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'codex-package.json') -PathType Leaf } | Select-Object -First 1
+    }
+    if (-not $packageRoot) { throw 'Vendored Codex package is missing codex-package.json' }
+
+    $packageCodex = Join-Path $packageRoot.FullName 'bin\codex.exe'
+    $packageCodeModeHost = Join-Path $packageRoot.FullName 'bin\codex-code-mode-host.exe'
+    $packageCommandRunner = Join-Path $packageRoot.FullName 'codex-resources\codex-command-runner.exe'
+    $packageSandboxSetup = Join-Path $packageRoot.FullName 'codex-resources\codex-windows-sandbox-setup.exe'
+    $packageRg = Join-Path $packageRoot.FullName 'codex-path\rg.exe'
+    Assert-File $packageCodex 'bin/codex.exe'
+    Assert-File $packageCodeModeHost 'bin/codex-code-mode-host.exe'
+    Assert-File $packageCommandRunner 'codex-resources/codex-command-runner.exe'
+    Assert-File $packageSandboxSetup 'codex-resources/codex-windows-sandbox-setup.exe'
+    Assert-File $packageRg 'codex-path/rg.exe'
+
     New-Item -ItemType Directory -Force -Path $CodexDir | Out-Null
-    Copy-Item $codex.FullName $CodexExe -Force
+    Copy-Item (Join-Path $packageRoot.FullName '*') $CodexDir -Recurse -Force
+
+    # Compatibility projection: current TuringDesk launches Codex\codex.exe. Keeping
+    # codex-resources and codex-package.json beside it preserves the official helper lookup.
+    Copy-Item (Join-Path $CodexDir 'bin\codex.exe') $CodexExe -Force
+    Copy-Item (Join-Path $CodexDir 'bin\codex-code-mode-host.exe') $CodexCodeModeHost -Force
 } finally { Remove-Item $codexTemp -Recurse -Force -ErrorAction SilentlyContinue }
+
+Assert-File $CodexPackage 'codex-package.json'
+Assert-File $CodexCommandRunner 'codex-command-runner.exe'
+Assert-File $CodexSandboxSetup 'codex-windows-sandbox-setup.exe'
+Assert-File $CodexCodeModeHost 'codex-code-mode-host.exe'
+Assert-File $CodexRg 'rg.exe'
 & $CodexExe --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI failed to execute' }
 & $CodexExe app-server --help | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server is unavailable' }
+& $CodexRg --version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex ripgrep failed to execute' }
+& $CodexCommandRunner --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex command runner failed to execute' }
+& $CodexSandboxSetup --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex Windows sandbox setup failed to execute' }
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
@@ -190,4 +247,6 @@ Write-Host "goz:     $GozExe" -ForegroundColor DarkGray
 Write-Host "gozd:    $GozDaemon" -ForegroundColor DarkGray
 Write-Host "Relay:   $RelayExe" -ForegroundColor DarkGray
 Write-Host "Codex:   $CodexExe" -ForegroundColor DarkGray
+Write-Host "Runner:  $CodexCommandRunner" -ForegroundColor DarkGray
+Write-Host "Sandbox: $CodexSandboxSetup" -ForegroundColor DarkGray
 Write-Host 'No third-party network download or system Node installation was performed.' -ForegroundColor Green

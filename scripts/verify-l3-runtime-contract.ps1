@@ -6,6 +6,7 @@ $paths = @{
     L3 = Join-Path $root 'src/native/src/L3CliWindow.cpp'
     Pi = Join-Path $root 'src/native/src/PiRuntime.cpp'
     PiTools = Join-Path $root 'src/native/src/PiNativeToolsExtension.cpp'
+    PiE2E = Join-Path $root 'scripts/pi-agent-e2e.mjs'
     NativeToolsHeader = Join-Path $root 'src/native/include/turingdesk/NativeTools.h'
     NativeToolIsolation = Join-Path $root 'src/native/src/NativeToolIsolation.cpp'
     Main = Join-Path $root 'src/native/src/main.cpp'
@@ -51,6 +52,7 @@ foreach ($relative in $forbiddenPaths) {
 $l3 = Get-Content $paths.L3 -Raw
 $pi = Get-Content $paths.Pi -Raw
 $piTools = Get-Content $paths.PiTools -Raw
+$piE2E = Get-Content $paths.PiE2E -Raw
 $nativeToolsHeader = Get-Content $paths.NativeToolsHeader -Raw
 $nativeToolIsolation = Get-Content $paths.NativeToolIsolation -Raw
 $main = Get-Content $paths.Main -Raw
@@ -144,7 +146,8 @@ foreach ($marker in @('ppt_create', 'file_create', 'folder_list', 'file_open')) 
     if ($nativeToolsHeader.Contains($marker)) {
         throw "Generic C++ tool must not be exposed by the current NativeTools interface: $marker"
     }
-    if ($main.Contains('tool == "' + $marker + '"')) {
+    $workerMarker = 'tool == "' + $marker + '"'
+    if ($main.Contains($workerMarker)) {
         throw "Generic C++ tool must not be allowed through the Pi native worker: $marker"
     }
 }
@@ -166,9 +169,23 @@ if ($nativeToolIsolation.Contains('codex-runtime.log') -or $nativeToolsHeader.Co
     throw 'Retired Codex native-tool wording/log routing returned.'
 }
 
-# The ARM64 real E2E must wait for the session-level settled event, not low-level agent_end.
-if (-not $arm.Contains('msg.type === "agent_settled"')) {
-    throw 'ARM64 Pi E2E must wait for agent_settled before validating tool results.'
+# ARM64 E2E must use the real generated Pi extension, wait for agent_settled and execute a TuringDesk native .tdwall tool.
+if (-not $arm.Contains('scripts\pi-agent-e2e.mjs')) {
+    throw 'ARM64 workflow must execute the dedicated Pi Agent E2E script.'
+}
+foreach ($marker in @(
+    'agent_settled',
+    'settings_open',
+    'wallpaper_create_web_package',
+    'wallpaper_validate_package',
+    'TURINGDESK_NATIVE_TOOL_HOST',
+    'manifest.json',
+    'PI_WRITE_OK',
+    'PI_SHELL_OK'
+)) {
+    if (-not $piE2E.Contains($marker)) {
+        throw "Pi Agent E2E marker missing: $marker"
+    }
 }
 
 # Harness stays local and never opens an external browser itself.
@@ -197,4 +214,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, real native-tool E2E, Direct API fallback only.'

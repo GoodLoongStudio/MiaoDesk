@@ -34,6 +34,7 @@ foreach ($file in $powerShellScripts) {
 $updateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
 $deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
 $updateScript = Join-Path $scriptRoot 'update-turingdesk-arm64.ps1'
+$deployScript = Join-Path $scriptRoot 'deploy-native-arm64.ps1'
 $armWorkflow = Join-Path $root '.github\workflows\native-search-windows.yml'
 $x64Workflow = Join-Path $root '.github\workflows\native-x64-validation.yml'
 foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
@@ -41,6 +42,7 @@ foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
 $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
 $deployText = [IO.File]::ReadAllText($deployCmd, [Text.Encoding]::ASCII)
 $updateScriptText = [IO.File]::ReadAllText($updateScript, [Text.Encoding]::ASCII)
+$deployScriptText = [IO.File]::ReadAllText($deployScript, [Text.Encoding]::ASCII)
 $armWorkflowText = [IO.File]::ReadAllText($armWorkflow)
 $x64WorkflowText = [IO.File]::ReadAllText($x64Workflow)
 
@@ -70,10 +72,17 @@ foreach ($required in @(
 )) {
     if (-not $updateScriptText.Contains($required)) { throw "Updater rollback marker missing: $required" }
 }
+foreach ($required in @(
+    'verify-windows-powershell-compat.ps1',
+    '$PowerShellGuard',
+    'Verifying Windows PowerShell 5.1 entrypoints'
+)) {
+    if (-not $deployScriptText.Contains($required)) { throw "Local deploy compatibility preflight marker missing: $required" }
+}
 foreach ($workflowText in @($armWorkflowText, $x64WorkflowText)) {
     foreach ($required in @('Exercise one-click updater bootstrap', 'TD_BOOTSTRAP_SELF_TEST: 1', 'UPDATE-TURINGDESK.cmd')) {
         if (-not $workflowText.Contains($required)) { throw "Windows workflow updater smoke marker missing: $required" }
     }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, preserve automatic rollback, and execute the one-click bootstrap in Windows CI.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, preserve automatic rollback, run local deployment preflight, and execute the one-click bootstrap in Windows CI.' -ForegroundColor Green

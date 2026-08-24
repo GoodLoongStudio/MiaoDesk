@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <filesystem>
+#include <iterator>
 #include <system_error>
 #include <vector>
 

@@ -55,6 +55,12 @@ std::string WideToUtf8(std::wstring_view value) {
     return out;
 }
 
+bool IsAllowedPiNativeTool(std::string_view tool) {
+    return tool == "settings_open" ||
+           tool == "wallpaper_create_web_package" ||
+           tool == "wallpaper_validate_package";
+}
+
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
     const auto lower = Lower(raw);
     const auto wanted = Lower(std::wstring(token));
@@ -160,12 +166,15 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const fs::path outputPath(argv[4]);
     LocalFree(argv);
 
+    const auto toolUtf8 = WideToUtf8(tool);
+    if (!IsAllowedPiNativeTool(toolUtf8)) return 26;
+
     std::ifstream input(inputPath, std::ios::binary);
     if (!input) return 22;
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    const auto result = turingdesk::ExecuteNativeToolRaw(WideToUtf8(tool), arguments);
+    const auto result = turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
     std::string payload = result.success ? "1\n" : "0\n";
     payload += WideToUtf8(result.message);
 

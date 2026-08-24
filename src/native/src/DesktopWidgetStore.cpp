@@ -23,6 +23,22 @@ fs::path DefaultRoot() {
     return base / L"TuringDesk" / L"DesktopWidgets";
 }
 
+bool HasUtf16LeBom(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return false;
+    unsigned char bom[2]{};
+    stream.read(reinterpret_cast<char*>(bom), 2);
+    return stream.gcount() == 2 && bom[0] == 0xff && bom[1] == 0xfe;
+}
+
+bool CreateUnicodeIni(const fs::path& path) {
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) return false;
+    const unsigned char bom[2]{0xff, 0xfe};
+    stream.write(reinterpret_cast<const char*>(bom), 2);
+    return static_cast<bool>(stream);
+}
+
 std::wstring ReadText(const fs::path& path, const std::wstring& section,
                       const wchar_t* key, const wchar_t* fallback = L"") {
     std::vector<wchar_t> buffer(32768);
@@ -92,6 +108,27 @@ bool WriteUtf8(const fs::path& path, std::string_view value) {
     return static_cast<bool>(stream);
 }
 
+bool IsLostLegacyTitle(std::wstring_view title) {
+    bool sawQuestion = false;
+    for (const wchar_t ch : title) {
+        if (ch == L'?') {
+            sawQuestion = true;
+            continue;
+        }
+        if (!std::iswspace(ch)) return false;
+    }
+    return sawQuestion;
+}
+
+bool LooksLikeClockWidget(const fs::path& source) {
+    std::ifstream stream(source, std::ios::binary);
+    if (!stream) return false;
+    std::string html((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    if (html.size() > 256 * 1024) html.resize(256 * 1024);
+    return html.find("toLocaleTimeString") != std::string::npos &&
+           html.find("id=\"time\"") != std::string::npos;
+}
+
 } // namespace
 
 DesktopWidgetStore::DesktopWidgetStore() : root_(DefaultRoot()) {}
@@ -158,6 +195,8 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
 
     const fs::path manifest = ManifestPath();
     if (!fs::exists(manifest, ec)) return true;
+    const bool legacyAnsi = !HasUtf16LeBom(manifest);
+    bool repairedLegacyText = false;
 
     const std::wstring ids = ReadText(manifest, L"Widgets", L"Ids", L"");
     for (const auto& id : SplitIds(ids)) {
@@ -175,9 +214,22 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         widget.zIndex = ReadInt(manifest, section, L"ZIndex", 100);
         widget.enabled = ReadInt(manifest, section, L"Enabled", 1) != 0;
         widget.managedSource = ReadInt(manifest, section, L"ManagedSource", 0) != 0;
+        if (legacyAnsi && widget.managedSource && IsLostLegacyTitle(widget.title)) {
+            widget.title = LooksLikeClockWidget(widget.source) ? L"桌面时钟" : L"桌面小组件";
+            repairedLegacyText = true;
+        }
         widget = Normalize(std::move(widget));
         if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty()) continue;
         items_.push_back(std::move(widget));
+    }
+
+    if (legacyAnsi) {
+        std::wstring migrationError;
+        if (!Save(&migrationError)) {
+            if (error) *error = migrationError.empty() ? L"Unable to migrate desktop widget storage to Unicode." : migrationError;
+            return false;
+        }
+        (void)repairedLegacyText;
     }
     return true;
 }
@@ -193,6 +245,10 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
 
     const fs::path manifest = ManifestPath();
     DeleteFileW(manifest.c_str());
+    if (!CreateUnicodeIni(manifest)) {
+        if (error) *error = L"Unable to create Unicode desktop widget manifest.";
+        return false;
+    }
 
     std::wstring ids;
     for (const auto& widget : items_) {
@@ -351,8 +407,9 @@ bool DesktopWidgetStore::SelfTest() {
     DesktopWidgetStore store(root);
     std::wstring error;
     const auto created = store.CreateManagedWeb(
-        L"Widget Test", "<!doctype html><html><body>OK</body></html>", L"", 0.1f, 0.2f, 0.3f, 0.4f, &error);
-    bool ok = created.has_value() && fs::exists(created->source, ec);
+        L"桌面时钟", "<!doctype html><html><body><div id=\"time\"></div><script>new Date().toLocaleTimeString()</script></body></html>",
+        L"monitor-test", 0.1f, 0.2f, 0.3f, 0.4f, &error);
+    bool ok = created.has_value() && fs::exists(created->source, ec) && HasUtf16LeBom(store.ManifestPath());
     if (created) {
         DesktopWidget changed = *created;
         changed.x = 0.9f;
@@ -365,7 +422,8 @@ bool DesktopWidgetStore::SelfTest() {
         DesktopWidgetStore reloaded(root);
         ok = ok && reloaded.Load(&error);
         const auto persisted = reloaded.Find(created->id);
-        ok = ok && persisted.has_value() && !persisted->enabled && persisted->managedSource;
+        ok = ok && persisted.has_value() && !persisted->enabled && persisted->managedSource &&
+             persisted->title == L"桌面时钟" && persisted->monitorId == L"monitor-test";
         ok = ok && reloaded.Remove(created->id, true, &error);
         ok = ok && !fs::exists(root / L"Packages" / (created->id + L".tdwidget"), ec);
     }

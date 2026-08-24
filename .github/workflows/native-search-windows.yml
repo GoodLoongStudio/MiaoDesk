@@ -12,12 +12,14 @@ on:
       - docs/TURINGDESK-PRODUCT-BASELINE.md
       - docs/WALLPAPER_ENGINE_PARITY.md
       - docs/DESKTOP_COMPOSITION_ARCHITECTURE.md
+      - docs/DESKTOP_DOMAIN_ARCHITECTURE.md
       - docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md
       - scripts/deploy-native-arm64.ps1
       - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-l3-runtime-contract.ps1
+      - scripts/verify-desktop-domain-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
       - scripts/verify-windows-powershell-compat.ps1
       - scripts/pi-agent-e2e.mjs
@@ -63,6 +65,10 @@ jobs:
       - name: Verify Pi-first L3 runtime contract
         shell: pwsh
         run: .\scripts\verify-l3-runtime-contract.ps1
+
+      - name: Verify desktop domain contract
+        shell: powershell
+        run: .\scripts\verify-desktop-domain-contract.ps1
 
       - name: Check RuntimeBundle freshness
         shell: pwsh

@@ -167,12 +167,13 @@ $desktopToolNames = @(
     'desktop_widget_remove',
     'desktop_widget_list'
 )
-foreach ($marker in @(
+$piToolMarkers = @(
     'pi.registerTool({',
     'pi.setActiveTools',
     'TURINGDESK_NATIVE_TOOL_HOST',
     '--native-tool-worker'
-) + $desktopToolNames) {
+) + $desktopToolNames
+foreach ($marker in $piToolMarkers) {
     if (-not $piTools.Contains($marker)) { throw "Pi desktop tools extension marker missing: $marker" }
 }
 
@@ -195,7 +196,7 @@ foreach ($marker in @(
 )) {
     if (-not $main.Contains($marker)) { throw "Pi native worker marker missing: $marker" }
 }
-foreach ($marker in @(
+$desktopBridgeMarkers = @(
     'IsDesktopControlTool',
     'ExecuteDesktopControlTool',
     'WallpaperStateGet',
@@ -204,7 +205,8 @@ foreach ($marker in @(
     'WidgetUpdate',
     'WidgetRemove',
     'WidgetList'
-) + $desktopToolNames[3..8]) {
+) + $desktopToolNames[3..8]
+foreach ($marker in $desktopBridgeMarkers) {
     if (-not $desktopTools.Contains($marker)) { throw "Desktop Control bridge marker missing: $marker" }
 }
 foreach ($marker in @(

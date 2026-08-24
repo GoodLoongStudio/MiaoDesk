@@ -43,7 +43,7 @@ foreach ($forbidden in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
         throw "One-click entrypoint contains a retired or fragile marker: $forbidden"
     }
 }
-foreach ($required in @('update-turingdesk-arm64.ps1', '-File "%UPDATER%"')) {
+foreach ($required in @('update-turingdesk-arm64.ps1', '$env:TD_UPDATE_URL', '$env:TD_UPDATER', '-File "%TD_UPDATER%"')) {
     if (-not $updateText.Contains($required)) { throw "Updater bootstrap marker missing: $required" }
 }
 foreach ($required in @('scripts\deploy-native-arm64.ps1', 'git pull --ff-only')) {

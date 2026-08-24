@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 
 namespace fs = std::filesystem;
 
@@ -72,19 +73,20 @@ async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal
       });
 
       let finished = false;
-      const finish = (error?: Error) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", abort);
-        if (error) reject(error);
-        else resolve();
-      };
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const abort = () => {
         try { child.kill(); } catch {}
         finish(new Error(`TuringDesk native tool cancelled: ${tool}`));
       };
-      const timer = setTimeout(() => {
+      const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error);
+        else resolve();
+      };
+      timer = setTimeout(() => {
         try { child.kill(); } catch {}
         finish(new Error(`TuringDesk native tool timed out: ${tool}`));
       }, 30000);

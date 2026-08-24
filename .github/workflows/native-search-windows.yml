@@ -18,9 +18,6 @@ on:
       - DEPLOY-NATIVE-ARM64.cmd
       - UPDATE-TURINGDESK.cmd
       - .github/workflows/native-search-windows.yml
-  workflow_run:
-    workflows: ["Vendor ARM64 Runtime Bundle"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -32,13 +29,19 @@ concurrency:
 
 jobs:
   build-arm64:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-11-arm
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: main
+
+      - name: Verify checkout matches workflow commit
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) {
+            throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
+          }
+          Write-Host "Building exact workflow commit: $actual"
 
       - name: Verify Windows PowerShell 5.1 entrypoints
         shell: powershell

@@ -16,7 +16,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorAction
 if errorlevel 1 goto :failed
 
 echo Validating updater encoding and syntax...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p='%UPDATER%'; $u=New-Object System.Text.UTF8Encoding($false,$true); $t=[IO.File]::ReadAllText($p,$u); [scriptblock]::Create($t) ^| Out-Null; [IO.File]::WriteAllText($p,$t,[Text.Encoding]::Unicode)"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p='%UPDATER%'; $t=[IO.File]::ReadAllText($p,[Text.Encoding]::UTF8); [scriptblock]::Create($t) ^| Out-Null; [IO.File]::WriteAllText($p,$t,[Text.Encoding]::Unicode)"
 if errorlevel 1 goto :failed
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%UPDATER%"

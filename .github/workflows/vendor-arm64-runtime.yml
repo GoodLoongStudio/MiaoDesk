@@ -59,28 +59,16 @@ jobs:
             if (-not $path -or -not (Test-Path $path -PathType Leaf) -or [string]::IsNullOrWhiteSpace($ExpectedHash)) { return $false }
             return (Sha256 $path) -eq $ExpectedHash.ToLowerInvariant()
           }
-          function Ensure-Rust([string]$Toolchain) {
-            if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
-              $rustupInit = Join-Path $stage 'rustup-init.exe'
-              Download 'https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe' $rustupInit
-              & $rustupInit -y --profile minimal --default-toolchain none
-              if ($LASTEXITCODE -ne 0) { throw 'Unable to install rustup on ARM64 vendor runner' }
-              $env:Path = (Join-Path $env:USERPROFILE '.cargo\bin') + ';' + $env:Path
-            }
-            & rustup toolchain install $Toolchain --profile minimal --target aarch64-pc-windows-msvc
-            if ($LASTEXITCODE -ne 0) { throw "Unable to install Rust $Toolchain ARM64 toolchain" }
-          }
 
           try {
             $lockHash = Sha256 $lockPath
 
-            # Node.js portable ARM64. Reuse the already-vendored archive when the pin did not change.
+            # Node.js portable ARM64.
             $nodeDir = Join-Path $runtime 'node'
             New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
             $nodeVersion = [string]$lock.node.version
             $nodeArchiveName = [string]$lock.node.archive
-            $nodeArchive = Join-Path $nodeDir $nodeArchiveName
-            $reuseNode = $old -and ([string]$old.node.version -eq $nodeVersion) -and (Reusable ([string]$old.node.archive) ([string]$old.node.sha256))
+            $reuseNode = $old -and $old.node -and ([string]$old.node.version -eq $nodeVersion) -and (Reusable ([string]$old.node.archive) ([string]$old.node.sha256))
             if ($reuseNode) {
               $nodeArchive = Resolve-Bundle ([string]$old.node.archive)
               $nodeHash = [string]$old.node.sha256
@@ -101,11 +89,19 @@ jobs:
             }
             $nodeRel = 'node/' + (Split-Path $nodeArchive -Leaf)
 
-            # DeepSeek Harness. Only run npm when its pin changed.
+            $nodeExpanded = Join-Path $stage 'node'
+            Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
+            $nodeHome = Get-ChildItem $nodeExpanded -Directory | Select-Object -First 1
+            if (-not $nodeHome) { throw 'Node archive did not contain a directory' }
+            $nodeExe = Join-Path $nodeHome.FullName 'node.exe'
+            $npmCmd = Join-Path $nodeHome.FullName 'npm.cmd'
+            if (-not (Test-Path $nodeExe) -or -not (Test-Path $npmCmd)) { throw 'Portable Node/npm is incomplete' }
+
+            # DeepSeek Harness production runtime.
             $harnessDir = Join-Path $runtime 'harness'
             New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
             $harnessVersion = [string]$lock.deepseekHarness.version
-            $reuseHarness = $old -and ([string]$old.deepseekHarness.version -eq $harnessVersion) -and (Reusable ([string]$old.deepseekHarness.archive) ([string]$old.deepseekHarness.sha256))
+            $reuseHarness = $old -and $old.deepseekHarness -and ([string]$old.deepseekHarness.version -eq $harnessVersion) -and (Reusable ([string]$old.deepseekHarness.archive) ([string]$old.deepseekHarness.sha256))
             if ($reuseHarness) {
               $harnessZip = Resolve-Bundle ([string]$old.deepseekHarness.archive)
               $harnessHash = [string]$old.deepseekHarness.sha256
@@ -113,13 +109,6 @@ jobs:
             } else {
               Remove-Item $harnessDir -Recurse -Force -ErrorAction SilentlyContinue
               New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
-              $nodeExpanded = Join-Path $stage 'node'
-              Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
-              $nodeHome = Get-ChildItem $nodeExpanded -Directory | Select-Object -First 1
-              if (-not $nodeHome) { throw 'Node archive did not contain a directory' }
-              $nodeExe = Join-Path $nodeHome.FullName 'node.exe'
-              $npmCmd = Join-Path $nodeHome.FullName 'npm.cmd'
-              if (-not (Test-Path $nodeExe) -or -not (Test-Path $npmCmd)) { throw 'Portable Node/npm is incomplete' }
               $harnessStage = Join-Path $stage 'harness'
               New-Item -ItemType Directory -Force -Path $harnessStage | Out-Null
               @{ name = 'turingdesk-deepseek-harness-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $harnessStage 'package.json') -Encoding UTF8
@@ -136,220 +125,124 @@ jobs:
             }
             $harnessRel = 'harness/' + (Split-Path $harnessZip -Leaf)
 
-            # goz. Reuse the proven MFT/USN binaries unless the goz pin changed.
-            $gozDir = Join-Path $runtime 'goz'
-            New-Item -ItemType Directory -Force -Path $gozDir | Out-Null
+            # goz MFT/USN runtime. Its pin is unchanged in this migration, so reuse the verified archive.
             $gozVersion = [string]$lock.goz.version
-            $gozTag = [string]$lock.goz.tag
-            $reuseGoz = $old -and ([string]$old.goz.version -eq $gozVersion) -and ([string]$old.goz.tag -eq $gozTag) -and (Reusable ([string]$old.goz.archive) ([string]$old.goz.sha256))
-            if ($reuseGoz) {
-              $gozArchive = Resolve-Bundle ([string]$old.goz.archive)
-              $gozHash = [string]$old.goz.sha256
-              Write-Host "Reusing goz $gozVersion"
-            } else {
-              Remove-Item $gozDir -Recurse -Force -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Force -Path $gozDir | Out-Null
-              $gozRust = [string]$lock.goz.rustToolchain
-              Ensure-Rust $gozRust
-              $gozSourceZip = Join-Path $stage 'goz-source.zip'
-              $gozBase = [string]$lock.goz.source
-              if (-not $gozBase.EndsWith('/')) { $gozBase += '/' }
-              Download ($gozBase + $gozTag + '.zip') $gozSourceZip
-              $gozExpanded = Join-Path $stage 'goz-source'
-              Expand-Archive $gozSourceZip -DestinationPath $gozExpanded -Force
-              $gozRoot = Get-ChildItem $gozExpanded -Directory | Select-Object -First 1
-              Push-Location $gozRoot.FullName
-              try {
-                & rustup run $gozRust cargo build --release --locked --target aarch64-pc-windows-msvc -p goz-cli -p goz-daemon
-                if ($LASTEXITCODE -ne 0) { throw 'goz ARM64 source build failed' }
-              } finally { Pop-Location }
-              $gozBuild = Join-Path $gozRoot.FullName 'target\aarch64-pc-windows-msvc\release'
-              $gozExe = Join-Path $gozBuild 'goz.exe'
-              $gozdExe = Join-Path $gozBuild 'gozd.exe'
-              & $gozExe --status | Out-Host
-              if ($LASTEXITCODE -notin @(0, 8)) { throw "goz ARM64 CLI execution probe failed with exit $LASTEXITCODE" }
-              & $gozdExe --help | Out-Host
-              if ($LASTEXITCODE -ne 0) { throw 'gozd ARM64 daemon failed --help' }
-              $gozPackage = Join-Path $stage 'goz-package'
-              New-Item -ItemType Directory -Force -Path $gozPackage | Out-Null
-              Copy-Item $gozExe (Join-Path $gozPackage 'goz.exe') -Force
-              Copy-Item $gozdExe (Join-Path $gozPackage 'gozd.exe') -Force
-              $gozLicense = Join-Path $gozRoot.FullName 'LICENSE'
-              Copy-Item $gozLicense (Join-Path $gozPackage 'LICENSE.txt') -Force
-              $gozArchive = Join-Path $gozDir ([string]$lock.goz.archive)
-              & tar.exe -a -c -f $gozArchive -C $gozPackage .
-              if ($LASTEXITCODE -ne 0) { throw 'Unable to package goz ARM64 runtime' }
-              Copy-Item $gozLicense (Join-Path $gozDir 'LICENSE.txt') -Force
-              $gozHash = Sha256 $gozArchive
+            if (-not $old -or -not $old.goz -or ([string]$old.goz.version -ne $gozVersion) -or -not (Reusable ([string]$old.goz.archive) ([string]$old.goz.sha256))) {
+              throw 'goz pin changed or verified archive missing; update the vendor workflow for the new goz pin before changing it.'
             }
-            $gozRel = 'goz/' + (Split-Path $gozArchive -Leaf)
+            $gozArchive = Resolve-Bundle ([string]$old.goz.archive)
+            $gozHash = [string]$old.goz.sha256
+            $gozRel = [string]$old.goz.archive
+            Write-Host "Reusing goz $gozVersion"
 
-            # Codex Relay. Prefer the upstream Trusted-Publishing PyPI Windows ARM64 wheel.
-            $relayDir = Join-Path $runtime 'codex-relay'
-            New-Item -ItemType Directory -Force -Path $relayDir | Out-Null
-            $relayVersion = [string]$lock.codexRelay.version
-            $relayCommit = [string]$lock.codexRelay.commit
-            $reuseRelay = $old -and $old.codexRelay -and ([string]$old.codexRelay.version -eq $relayVersion) -and (Reusable ([string]$old.codexRelay.archive) ([string]$old.codexRelay.sha256))
-            if ($reuseRelay) {
-              $relayArchive = Resolve-Bundle ([string]$old.codexRelay.archive)
-              $relayHash = [string]$old.codexRelay.sha256
-              Write-Host "Reusing Codex Relay $relayVersion"
+            # Pi Agent Runtime. Package all production npm dependencies for offline deployment.
+            $piDir = Join-Path $runtime 'pi'
+            New-Item -ItemType Directory -Force -Path $piDir | Out-Null
+            $piVersion = [string]$lock.pi.version
+            $reusePi = $old -and $old.pi -and ([string]$old.pi.version -eq $piVersion) -and (Reusable ([string]$old.pi.archive) ([string]$old.pi.sha256))
+            if ($reusePi) {
+              $piZip = Resolve-Bundle ([string]$old.pi.archive)
+              $piHash = [string]$old.pi.sha256
+              Write-Host "Reusing Pi $piVersion"
             } else {
-              Remove-Item $relayDir -Recurse -Force -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Force -Path $relayDir | Out-Null
-              $wheelName = [string]$lock.codexRelay.wheel
-              $expectedWheel = ([string]$lock.codexRelay.wheelSha256).ToLowerInvariant()
-              $metadata = Invoke-RestMethod -Uri ("https://pypi.org/pypi/codex-relay/$relayVersion/json")
-              $asset = @($metadata.urls | Where-Object { $_.filename -eq $wheelName }) | Select-Object -First 1
-              if (-not $asset) { throw "PyPI ARM64 wheel not found: $wheelName" }
-              if (([string]$asset.digests.sha256).ToLowerInvariant() -ne $expectedWheel) { throw 'PyPI metadata hash does not match runtime lock' }
-              $wheel = Join-Path $stage $wheelName
-              Download ([string]$asset.url) $wheel
-              if ((Sha256 $wheel) -ne $expectedWheel) { throw 'Codex Relay ARM64 wheel checksum mismatch' }
-              $wheelZip = Join-Path $stage 'codex-relay-wheel.zip'
-              Copy-Item $wheel $wheelZip -Force
-              $wheelExpanded = Join-Path $stage 'codex-relay-wheel'
-              Expand-Archive $wheelZip -DestinationPath $wheelExpanded -Force
-              $relayExe = Get-ChildItem $wheelExpanded -Filter 'codex-relay.exe' -File -Recurse | Select-Object -First 1
-              if (-not $relayExe) { throw 'Codex Relay wheel does not contain codex-relay.exe' }
-              & $relayExe.FullName --help | Out-Host
-              if ($LASTEXITCODE -ne 0) { throw 'Codex Relay ARM64 binary failed --help' }
-              $relayPackage = Join-Path $stage 'codex-relay-package'
-              New-Item -ItemType Directory -Force -Path $relayPackage | Out-Null
-              Copy-Item $relayExe.FullName (Join-Path $relayPackage 'codex-relay.exe') -Force
-              $relayLicense = Get-ChildItem $wheelExpanded -File -Recurse | Where-Object { $_.Name -match '^LICENSE(\.|$)' } | Select-Object -First 1
-              if ($relayLicense) {
-                Copy-Item $relayLicense.FullName (Join-Path $relayPackage 'LICENSE.txt') -Force
-              } else {
-                Download ("https://raw.githubusercontent.com/MetaFARS/codex-relay/$relayCommit/LICENSE") (Join-Path $relayPackage 'LICENSE.txt')
+              Remove-Item $piDir -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $piDir | Out-Null
+              $piStage = Join-Path $stage 'pi'
+              New-Item -ItemType Directory -Force -Path $piStage | Out-Null
+              @{ name = 'turingdesk-pi-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $piStage 'package.json') -Encoding UTF8
+              $env:npm_config_cache = Join-Path $stage 'npm-cache'
+              & $npmCmd install --prefix $piStage ("@earendil-works/pi-coding-agent@" + $piVersion) --omit=dev --no-audit --no-fund --save-exact
+              if ($LASTEXITCODE -ne 0) { throw 'Pi production install failed' }
+              $piCli = Join-Path $piStage 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+              if (-not (Test-Path $piCli -PathType Leaf)) { throw 'Pi CLI is missing after npm install' }
+              & $nodeExe $piCli --version | Out-Host
+              if ($LASTEXITCODE -ne 0) { throw 'Vendored Pi CLI failed --version' }
+              $piZip = Join-Path $piDir ([string]$lock.pi.archive)
+              & tar.exe -a -c -f $piZip -C $piStage .
+              if ($LASTEXITCODE -ne 0 -or -not (Test-Path $piZip)) { throw 'Unable to package Pi runtime tree' }
+              $piHash = Sha256 $piZip
+            }
+            $piRel = 'pi/' + (Split-Path $piZip -Leaf)
+
+            # The old Agent runtime is retired and must not remain in the repository bundle.
+            Remove-Item (Join-Path $runtime 'codex') -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $runtime 'codex-relay') -Recurse -Force -ErrorAction SilentlyContinue
+
+            # WebView2 SDK. Reuse the already verified ARM64 loader when the pin is unchanged.
+            $wvVersion = [string]$lock.webview2Sdk.version
+            $wvDir = Join-Path $runtime 'webview2-sdk'
+            $wvLoader = Join-Path $wvDir 'build\native\arm64\WebView2LoaderStatic.lib'
+            $reuseWv = $old -and $old.webview2Sdk -and ([string]$old.webview2Sdk.version -eq $wvVersion) -and
+                       (Test-Path $wvLoader -PathType Leaf) -and ((Sha256 $wvLoader) -eq ([string]$old.webview2Sdk.sha256).ToLowerInvariant())
+            if (-not $reuseWv) {
+              Remove-Item $wvDir -Recurse -Force -ErrorAction SilentlyContinue
+              $wvPackage = Join-Path $stage 'webview2.zip'
+              Download ("https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$wvVersion") $wvPackage
+              $wvExpanded = Join-Path $stage 'webview2'
+              Expand-Archive $wvPackage -DestinationPath $wvExpanded -Force
+              New-Item -ItemType Directory -Force -Path $wvDir | Out-Null
+              Copy-Item (Join-Path $wvExpanded 'build') $wvDir -Recurse -Force
+              foreach ($name in @('LICENSE.txt','NOTICE.txt')) {
+                $candidate = Get-ChildItem $wvExpanded -Filter $name -File -Recurse | Select-Object -First 1
+                if ($candidate) { Copy-Item $candidate.FullName (Join-Path $wvDir $name) -Force }
               }
-              $relayArchive = Join-Path $relayDir ([string]$lock.codexRelay.archive)
-              & tar.exe -a -c -f $relayArchive -C $relayPackage .
-              if ($LASTEXITCODE -ne 0) { throw 'Unable to package Codex Relay ARM64 runtime' }
-              Copy-Item (Join-Path $relayPackage 'LICENSE.txt') (Join-Path $relayDir 'LICENSE.txt') -Force
-              $relayHash = Sha256 $relayArchive
+              $wvLoader = Join-Path $wvDir 'build\native\arm64\WebView2LoaderStatic.lib'
             }
-            $relayRel = 'codex-relay/' + (Split-Path $relayArchive -Leaf)
-
-            # Full OpenAI Codex CLI.
-            $codexDir = Join-Path $runtime 'codex'
-            New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
-            $codexRelease = [string]$lock.codex.release
-            $reuseCodex = $old -and ([string]$old.codex.release -eq $codexRelease) -and (Reusable ([string]$old.codex.archive) ([string]$old.codex.sha256))
-            if ($reuseCodex) {
-              $codexArchive = Resolve-Bundle ([string]$old.codex.archive)
-              $codexHash = [string]$old.codex.sha256
-              Write-Host "Reusing Codex $codexRelease"
-            } else {
-              Remove-Item $codexDir -Recurse -Force -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
-              $codexArchiveName = [string]$lock.codex.archive
-              $codexArchive = Join-Path $codexDir $codexArchiveName
-              Download ("https://github.com/openai/codex/releases/download/$codexRelease/$codexArchiveName") $codexArchive
-              $codexHash = ([string]$lock.codex.sha256).ToLowerInvariant()
-              if ((Sha256 $codexArchive) -ne $codexHash) { throw 'Codex ARM64 checksum mismatch' }
-            }
-            $codexRel = 'codex/' + (Split-Path $codexArchive -Leaf)
-
-            # WebView2 build SDK / static loader.
-            $webSdkDir = Join-Path $runtime 'webview2-sdk'
-            New-Item -ItemType Directory -Force -Path $webSdkDir | Out-Null
-            $webVersion = [string]$lock.webview2Sdk.version
-            $reuseWeb = $old -and ([string]$old.webview2Sdk.version -eq $webVersion) -and (Reusable ([string]$old.webview2Sdk.loader) ([string]$old.webview2Sdk.sha256))
-            if ($reuseWeb) {
-              $webLoader = Resolve-Bundle ([string]$old.webview2Sdk.loader)
-              $webHash = [string]$old.webview2Sdk.sha256
-              $webRel = [string]$old.webview2Sdk.loader
-              Write-Host "Reusing WebView2 SDK $webVersion"
-            } else {
-              Remove-Item $webSdkDir -Recurse -Force -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Force -Path $webSdkDir | Out-Null
-              $nupkg = Join-Path $stage 'webview2.nupkg'
-              Download "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$webVersion" $nupkg
-              $nugetZip = Join-Path $stage 'webview2.zip'
-              Copy-Item $nupkg $nugetZip -Force
-              $nugetExpanded = Join-Path $stage 'webview2'
-              Expand-Archive $nugetZip -DestinationPath $nugetExpanded -Force
-              New-Item -ItemType Directory -Force -Path (Join-Path $webSdkDir 'build\native') | Out-Null
-              Copy-Item (Join-Path $nugetExpanded 'build\native\include') (Join-Path $webSdkDir 'build\native\include') -Recurse -Force
-              New-Item -ItemType Directory -Force -Path (Join-Path $webSdkDir 'build\native\arm64') | Out-Null
-              $webLoader = Join-Path $webSdkDir 'build\native\arm64\WebView2LoaderStatic.lib'
-              Copy-Item (Join-Path $nugetExpanded 'build\native\arm64\WebView2LoaderStatic.lib') $webLoader -Force
-              foreach ($license in @(Get-ChildItem $nugetExpanded -File | Where-Object { $_.Name -match 'license|notice' })) { Copy-Item $license.FullName (Join-Path $webSdkDir $license.Name) -Force }
-              $webHash = Sha256 $webLoader
-              $webRel = 'webview2-sdk/build/native/arm64/WebView2LoaderStatic.lib'
-            }
-
-            Remove-Item (Join-Path $runtime 'everything') -Recurse -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path $wvLoader -PathType Leaf)) { throw 'WebView2 ARM64 loader is missing' }
+            $wvHash = Sha256 $wvLoader
 
             $manifest = [ordered]@{
               schema = 2
               architecture = 'arm64'
               generatedUtc = [DateTime]::UtcNow.ToString('o')
               lockSha256 = $lockHash
-              node = [ordered]@{ version = $nodeVersion; archive = $nodeRel; sha256 = $nodeHash }
-              deepseekHarness = [ordered]@{ version = $harnessVersion; archive = $harnessRel; sha256 = $harnessHash }
-              goz = [ordered]@{ version = $gozVersion; tag = $gozTag; archive = $gozRel; sha256 = $gozHash }
-              codexRelay = [ordered]@{ version = $relayVersion; commit = $relayCommit; archive = $relayRel; sha256 = $relayHash; wheelSha256 = [string]$lock.codexRelay.wheelSha256; source = 'pypi-win-arm64-wheel' }
-              codex = [ordered]@{ release = $codexRelease; archive = $codexRel; sha256 = $codexHash; mode = 'cli-app-server' }
-              webview2Sdk = [ordered]@{ version = $webVersion; loader = $webRel; sha256 = $webHash }
+              node = [ordered]@{
+                version = $nodeVersion
+                archive = $nodeRel
+                sha256 = $nodeHash
+              }
+              deepseekHarness = [ordered]@{
+                version = $harnessVersion
+                archive = $harnessRel
+                sha256 = $harnessHash
+              }
+              goz = [ordered]@{
+                version = $gozVersion
+                tag = [string]$lock.goz.tag
+                archive = $gozRel
+                sha256 = $gozHash
+              }
+              pi = [ordered]@{
+                package = [string]$lock.pi.package
+                version = $piVersion
+                archive = $piRel
+                sha256 = $piHash
+                mode = 'node-rpc'
+              }
+              webview2Sdk = [ordered]@{
+                version = $wvVersion
+                loader = 'webview2-sdk/build/native/arm64/WebView2LoaderStatic.lib'
+                sha256 = $wvHash
+              }
             }
-            $manifest | ConvertTo-Json -Depth 6 | Set-Content $manifestPath -Encoding UTF8
-            Set-Content (Join-Path $runtime '.complete') -Value "TuringDesk ARM64 RuntimeBundle v2`n" -Encoding ASCII
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content $manifestPath -Encoding UTF8
+            Set-Content (Join-Path $runtime '.complete') -Value ("lock-sha256=" + $lockHash) -Encoding ASCII
           }
           finally {
             Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Commit vendored ARM64 runtime to main
+      - name: Commit runtime bundle changes
         shell: pwsh
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -f runtime/arm64
-          if ((git status --porcelain).Length -eq 0) {
-            Write-Host 'Runtime bundle already matches the lock.'
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/arm64
+          if (git diff --cached --quiet) {
+            Write-Host 'Runtime bundle already matches lock.'
             exit 0
           }
-          git commit -m "runtime: vendor incremental ARM64 runtime bundle"
-          for ($i = 1; $i -le 5; $i++) {
-            git pull --rebase origin main
-            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            Start-Sleep -Seconds 2
-          }
-          throw 'Unable to push vendored ARM64 runtime to main'
-
-  report:
-    if: always()
-    needs: [vendor]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ci-status
-      - name: Write runtime vendor status
-        shell: bash
-        env:
-          VENDOR_RESULT: ${{ needs.vendor.result }}
-        run: |
-          mkdir -p ci
-          cat > "ci/runtime-vendor-${GITHUB_SHA}.json" <<EOF
-          {
-            "sha": "${GITHUB_SHA}",
-            "mode": "runtime-vendor-arm64-incremental-goz-codex-relay-codex-cli",
-            "result": "${VENDOR_RESULT}",
-            "run_id": "${GITHUB_RUN_ID}"
-          }
-          EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "ci/runtime-vendor-${GITHUB_SHA}.json"
-          git commit -m "ci: report ARM64 runtime vendor ${GITHUB_SHA}" || exit 0
-          for i in 1 2 3; do
-            git pull --rebase origin ci-status || true
-            if git push origin HEAD:ci-status; then exit 0; fi
-            sleep 2
-          done
-          exit 1
+          git commit -m 'runtime: vendor Pi ARM64 agent runtime'
+          git pull --rebase origin main
+          git push origin HEAD:main

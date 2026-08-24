@@ -4,6 +4,7 @@
 #include "turingdesk/L3Agent.h"
 #include "turingdesk/NativeTools.h"
 #include "turingdesk/SearchWindow.h"
+
 #include <windows.h>
 #include <shellapi.h>
 #include <algorithm>
@@ -70,7 +71,7 @@ bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
     return false;
 }
 
-void EnsureCodexLoopbackProxyBypass() {
+void EnsureLoopbackProxyBypass() {
     std::wstring noProxy = ReadEnvironmentValue(L"NO_PROXY");
     if (noProxy.empty()) noProxy = ReadEnvironmentValue(L"no_proxy");
     for (const wchar_t* host : {L"localhost", L"127.0.0.1", L"::1"}) {
@@ -82,7 +83,7 @@ void EnsureCodexLoopbackProxyBypass() {
     SetEnvironmentVariableW(L"NO_PROXY", noProxy.c_str());
 }
 
-bool HasCodexLoopbackProxyBypass() {
+bool HasLoopbackProxyBypass() {
     const auto noProxy = ReadEnvironmentValue(L"NO_PROXY");
     return NoProxyContains(noProxy, L"localhost") &&
            NoProxyContains(noProxy, L"127.0.0.1") &&
@@ -114,47 +115,27 @@ bool PathContainsDirectory(const std::wstring& rawPath, const fs::path& director
     return false;
 }
 
-void EnsureCodexPackagePath() {
+void EnsureBundledRuntimePath() {
     const auto module = ModuleDirectory();
     if (module.empty()) return;
-    const auto codexRoot = module / L"Codex";
-    const auto bundledNode = module / L"Runtime" / L"Node";
-    const fs::path entries[] = {
-        codexRoot,
-        codexRoot / L"bin",
-        codexRoot / L"codex-path",
-        codexRoot / L"codex-resources",
-        bundledNode,
-    };
-
-    std::wstring path = ReadEnvironmentValue(L"PATH");
-    std::wstring prefix;
-    for (const auto& entry : entries) {
-        std::error_code ec;
-        if (!fs::exists(entry, ec) || !fs::is_directory(entry, ec) || PathContainsDirectory(path, entry)) continue;
-        if (!prefix.empty()) prefix.push_back(L';');
-        prefix += entry.wstring();
-    }
-    if (prefix.empty()) return;
-    if (!path.empty()) prefix += L";" + path;
-    SetEnvironmentVariableW(L"PATH", prefix.c_str());
-}
-
-bool HasCodexPackagePathIfInstalled() {
-    const auto module = ModuleDirectory();
-    if (module.empty()) return true;
-    const auto codexRoot = module / L"Codex";
     const auto bundledNode = module / L"Runtime" / L"Node";
     std::error_code ec;
-    const auto path = ReadEnvironmentValue(L"PATH");
-    if (fs::exists(codexRoot, ec)) {
-        if (!PathContainsDirectory(path, codexRoot) ||
-            !PathContainsDirectory(path, codexRoot / L"codex-path") ||
-            !PathContainsDirectory(path, codexRoot / L"codex-resources")) return false;
-    }
-    ec.clear();
-    if (fs::exists(bundledNode, ec) && !PathContainsDirectory(path, bundledNode)) return false;
-    return true;
+    if (!fs::exists(bundledNode, ec) || !fs::is_directory(bundledNode, ec)) return;
+
+    std::wstring path = ReadEnvironmentValue(L"PATH");
+    if (PathContainsDirectory(path, bundledNode)) return;
+    std::wstring updated = bundledNode.wstring();
+    if (!path.empty()) updated += L";" + path;
+    SetEnvironmentVariableW(L"PATH", updated.c_str());
+}
+
+bool HasBundledRuntimePathIfInstalled() {
+    const auto module = ModuleDirectory();
+    if (module.empty()) return true;
+    const auto bundledNode = module / L"Runtime" / L"Node";
+    std::error_code ec;
+    if (!fs::exists(bundledNode, ec)) return true;
+    return PathContainsDirectory(ReadEnvironmentValue(L"PATH"), bundledNode);
 }
 
 int RunNativeToolWorkerIfRequested(bool& handled) {
@@ -195,8 +176,8 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
 }
 
 bool RunNativeSelfTest() {
-    if (!HasCodexLoopbackProxyBypass()) return false;
-    if (!HasCodexPackagePathIfInstalled()) return false;
+    if (!HasLoopbackProxyBypass()) return false;
+    if (!HasBundledRuntimePathIfInstalled()) return false;
 
     turingdesk::AppSearch apps;
     apps.BuildIndex();
@@ -258,8 +239,8 @@ void ActivateExistingSearchWindow() {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
-    EnsureCodexLoopbackProxyBypass();
-    EnsureCodexPackagePath();
+    EnsureLoopbackProxyBypass();
+    EnsureBundledRuntimePath();
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(com) && com != RPC_E_CHANGED_MODE) return 3;

@@ -4,6 +4,7 @@
 #include <shellapi.h>
 
 #include <filesystem>
+#include <iterator>
 #include <system_error>
 
 namespace fs = std::filesystem;

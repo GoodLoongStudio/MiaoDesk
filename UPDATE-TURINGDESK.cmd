@@ -15,6 +15,8 @@ echo Downloading latest updater logic...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} $env:TD_UPDATE_URL -OutFile $env:TD_UPDATER"
 if errorlevel 1 goto :failed
 
+if "%TD_BOOTSTRAP_SELF_TEST%"=="1" goto :bootstrap_self_test
+
 echo Running validated updater...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%TD_UPDATER%"
 set "RC=%ERRORLEVEL%"
@@ -27,10 +29,19 @@ echo Update finished successfully.
 pause
 exit /b 0
 
+:bootstrap_self_test
+echo Parsing downloaded updater with Windows PowerShell...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $t=[IO.File]::ReadAllText($env:TD_UPDATER,[Text.Encoding]::ASCII); $null=[scriptblock]::Create($t)"
+set "RC=%ERRORLEVEL%"
+del /q "%TD_UPDATER%" >nul 2>nul
+if not "%RC%"=="0" exit /b %RC%
+echo Updater bootstrap self-test passed.
+exit /b 0
+
 :failed_code
 echo.
 echo Update failed with exit code %RC%.
-echo The updater reports whether the installed package was touched.
+echo Automatic rollback is attempted if the install swap has started.
 pause
 exit /b %RC%
 

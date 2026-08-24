@@ -23,6 +23,7 @@ AutomationServiceResult AutomationService::GetState(AutomationState* state) cons
     AutomationState next;
     next.enabled = store.Enabled();
     next.activePlaylistId = store.ActivePlaylistId();
+    next.lastMatchedScheduleId = store.LastMatchedScheduleId();
     next.profiles = store.Profiles();
     next.playlists = store.Playlists();
     next.schedules = store.Schedules();
@@ -105,6 +106,20 @@ AutomationServiceResult AutomationService::RemoveSchedule(std::wstring_view id) 
     std::wstring error;
     if (!store.RemoveSchedule(id, &error)) return {false, error.empty() ? L"无法删除定时规则。" : error};
     return {true, L"定时规则已删除。"};
+}
+
+AutomationServiceResult AutomationService::ForceNextPlaylist(
+    std::wstring_view playlistId,
+    unsigned long long unixSeconds,
+    wallpaper::AutomationDecision* decision) const {
+    if (!decision) return {false, L"AutomationDecision 输出不能为空。"};
+    wallpaper::WallpaperAutomationStore store;
+    const auto loaded = LoadStore(&store);
+    if (!loaded.success) return loaded;
+    *decision = store.ForceNextPlaylist(playlistId, unixSeconds);
+    return {true, decision->kind == wallpaper::AutomationDecisionKind::None
+        ? L"播放列表没有可切换的项目。"
+        : L"播放列表已切换到下一项。"};
 }
 
 } // namespace turingdesk::desktop

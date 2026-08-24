@@ -84,6 +84,26 @@ if ($l3.Contains('ActiveRuntime::Codex') -or $l3.Contains('CodexRuntime')) {
     throw 'Architecture regression: retired Codex runtime returned to L3 UI.'
 }
 
+# Normal product UI must not expose implementation routing. /runtime remains an explicit diagnostics surface.
+foreach ($marker in @(
+    'state.transcriptPrefix += L"[Runtime] "',
+    'state.transcriptPrefix += L"[Fallback]',
+    'RuntimeExecutionLabel('
+)) {
+    if ($l3.Contains($marker)) {
+        throw "Internal runtime branding leaked back into the normal TuringDesk AI transcript: $marker"
+    }
+}
+foreach ($marker in @(
+    'UserFacingLocalReply',
+    'ShowL3CliWindow',
+    '/runtime'
+)) {
+    if (-not $l3.Contains($marker)) {
+        throw "TuringDesk user-facing AI/diagnostics boundary marker missing: $marker"
+    }
+}
+
 # PiRuntime, Pi extension bridge and TuringDesk product tools must be part of the ordinary binary.
 foreach ($marker in @('src/PiRuntime.cpp', 'src/PiNativeToolsExtension.cpp', 'src/NativeTools.cpp')) {
     if (-not $cmake.Contains($marker)) {
@@ -214,4 +234,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, real native-tool E2E, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: TuringDesk-only normal UI, Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, real native-tool E2E, Direct API fallback only.'

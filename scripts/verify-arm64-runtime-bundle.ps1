@@ -32,7 +32,7 @@ foreach ($required in @($LockPath, $ManifestPath, $CompleteMarker)) {
 $lock = Get-Content $LockPath -Raw | ConvertFrom-Json
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 if ($lock.architecture -ne 'arm64' -or $manifest.architecture -ne 'arm64') { throw 'RuntimeBundle architecture is not ARM64' }
-if ([int]$manifest.schema -lt 2) { throw 'RuntimeBundle manifest predates the goz/Codex CLI migration' }
+if ([int]$manifest.schema -lt 2) { throw 'RuntimeBundle manifest is too old' }
 
 $lockHash = Sha256 $LockPath
 if ($manifest.lockSha256.ToLowerInvariant() -ne $lockHash) {
@@ -42,15 +42,19 @@ if ($manifest.lockSha256.ToLowerInvariant() -ne $lockHash) {
 Assert-Hash (Resolve-BundleFile ([string]$manifest.node.archive)) ([string]$manifest.node.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)) ([string]$manifest.deepseekHarness.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.goz.archive)) ([string]$manifest.goz.sha256)
-Assert-Hash (Resolve-BundleFile ([string]$manifest.codexRelay.archive)) ([string]$manifest.codexRelay.sha256)
-Assert-Hash (Resolve-BundleFile ([string]$manifest.codex.archive)) ([string]$manifest.codex.sha256)
+Assert-Hash (Resolve-BundleFile ([string]$manifest.pi.archive)) ([string]$manifest.pi.sha256)
 Assert-Hash (Resolve-BundleFile ([string]$manifest.webview2Sdk.loader)) ([string]$manifest.webview2Sdk.sha256)
 
-if (Test-Path (Join-Path $BundleRoot 'everything')) {
-    throw 'Legacy Everything payload is still present in the ARM64 RuntimeBundle'
+foreach ($retired in @('everything', 'codex', 'codex-relay')) {
+    if (Test-Path (Join-Path $BundleRoot $retired)) {
+        throw "Retired runtime payload is still present in the ARM64 RuntimeBundle: $retired"
+    }
+}
+
+if ([string]$manifest.pi.package -ne '@earendil-works/pi-coding-agent') {
+    throw 'RuntimeBundle Pi package is not the approved package.'
 }
 
 Write-Host 'TuringDesk ARM64 RuntimeBundle verified.' -ForegroundColor Green
-Write-Host "goz:         $($manifest.goz.version) ($($manifest.goz.tag))" -ForegroundColor DarkGray
-Write-Host "Codex Relay: $($manifest.codexRelay.version) ($($manifest.codexRelay.commit))" -ForegroundColor DarkGray
-Write-Host "Codex:       $($manifest.codex.release) / full CLI" -ForegroundColor DarkGray
+Write-Host "goz:  $($manifest.goz.version) ($($manifest.goz.tag))" -ForegroundColor DarkGray
+Write-Host "Pi:   $($manifest.pi.version) / $($manifest.pi.mode)" -ForegroundColor DarkGray

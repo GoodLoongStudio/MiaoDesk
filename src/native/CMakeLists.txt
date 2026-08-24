@@ -33,8 +33,7 @@ add_executable(TuringDesk WIN32
     src/SettingsCenterWindow.cpp
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
-    src/CodexRuntime.cpp
-    src/CodexHostBridge.cpp
+    src/PiRuntime.cpp
     src/NativeTools.cpp
     src/NativeToolIsolation.cpp
     src/WallpaperPackage.cpp
@@ -46,8 +45,6 @@ add_executable(TuringDesk WIN32
     src/HarnessSettingsBridge.cpp
 )
 
-# NativeTools.cpp owns the pretty-printed raw registry symbol. Consumers include
-# NativeTools.h normally and receive the CR/LF-free wrapper used on Codex JSONL.
 set_source_files_properties(src/NativeTools.cpp PROPERTIES
     COMPILE_DEFINITIONS "TURINGDESK_NATIVE_TOOLS_IMPL"
 )
@@ -96,22 +93,10 @@ endif()
 add_custom_target(TuringDeskL3ContractCheck ALL
     COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_L3_CONTRACT_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    COMMENT "Verifying Codex-first L3 runtime contract"
+    COMMENT "Verifying Pi-first L3 runtime contract"
     VERBATIM
 )
 add_dependencies(TuringDesk TuringDeskL3ContractCheck)
-
-set(TURINGDESK_CODEX_JSONL_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-codex-jsonl-wire.ps1")
-if (NOT EXISTS "${TURINGDESK_CODEX_JSONL_CONTRACT_SCRIPT}")
-    message(FATAL_ERROR "Missing Codex JSONL contract guard: ${TURINGDESK_CODEX_JSONL_CONTRACT_SCRIPT}")
-endif()
-add_custom_target(TuringDeskCodexJsonlContractCheck ALL
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_CODEX_JSONL_CONTRACT_SCRIPT}"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    COMMENT "Verifying Codex stdio JSONL framing"
-    VERBATIM
-)
-add_dependencies(TuringDesk TuringDeskCodexJsonlContractCheck)
 
 set(TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-runtime-log-paths.ps1")
 if (NOT EXISTS "${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")

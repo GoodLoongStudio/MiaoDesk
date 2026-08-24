@@ -2,8 +2,8 @@
 setlocal EnableExtensions
 
 title TuringDesk ARM64 Updater
-set "TD_UPDATER=%TEMP%\TuringDesk-update-arm64.ps1"
-set "TD_UPDATE_URL=https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/main/scripts/update-turingdesk-arm64.ps1"
+if not defined TD_UPDATER set "TD_UPDATER=%TEMP%\TuringDesk-update-arm64.ps1"
+if not defined TD_UPDATE_URL set "TD_UPDATE_URL=https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/main/scripts/update-turingdesk-arm64.ps1"
 
 echo.
 echo ========================================

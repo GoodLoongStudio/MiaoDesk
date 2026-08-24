@@ -236,8 +236,8 @@ foreach ($legacyText in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
         throw "One-click entrypoint contains retired or fragile text: $legacyText"
     }
 }
-if (-not $updateCmd.Contains('update-turingdesk-arm64.ps1') -or -not $updateCmd.Contains('-File "%UPDATER%"')) {
-    throw 'One-click updater must directly execute the ASCII-safe updater script.'
+foreach ($marker in @('update-turingdesk-arm64.ps1', '$env:TD_UPDATE_URL', '$env:TD_UPDATER', '-File "%TD_UPDATER%"')) {
+    if (-not $updateCmd.Contains($marker)) { throw "One-click updater marker missing: $marker" }
 }
 if (-not $deployCmd.Contains('scripts\deploy-native-arm64.ps1')) {
     throw 'One-click deploy must delegate to the current deploy wrapper.'

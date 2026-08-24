@@ -17,6 +17,8 @@ $wallpaperHeader = Require-File 'src/native/include/turingdesk/WallpaperService.
 $wallpaperSource = Require-File 'src/native/src/WallpaperService.cpp'
 $widgetHeader = Require-File 'src/native/include/turingdesk/WidgetService.h'
 $widgetSource = Require-File 'src/native/src/WidgetService.cpp'
+$widgetControllerHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetController.h'
+$widgetControllerSource = Require-File 'src/native/src/DesktopWidgetController.cpp'
 $toolAdapter = Require-File 'src/native/src/DesktopWidgetTools.cpp'
 $cmakePath = Require-File 'src/native/CMakeLists.txt'
 $docPath = Require-File 'docs/DESKTOP_DOMAIN_ARCHITECTURE.md'
@@ -25,6 +27,7 @@ $header = Get-Content -LiteralPath $serviceHeader -Raw
 $source = Get-Content -LiteralPath $serviceSource -Raw
 $wallpaper = Get-Content -LiteralPath $wallpaperSource -Raw
 $widget = Get-Content -LiteralPath $widgetSource -Raw
+$widgetController = Get-Content -LiteralPath $widgetControllerSource -Raw
 $adapter = Get-Content -LiteralPath $toolAdapter -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 $doc = Get-Content -LiteralPath $docPath -Raw
@@ -49,6 +52,13 @@ foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'Widg
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
 
+foreach ($marker in @('DesktopWidgetController', 'CreateClock', 'SetEnabled', 'DesktopControlService')) {
+    if (-not $widgetController.Contains($marker)) { throw "Widget UI controller missing marker: $marker" }
+}
+foreach ($forbidden in @('DesktopWidgetStore', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
+    if ($widgetController.Contains($forbidden)) { throw "Widget UI controller regained domain ownership: $forbidden" }
+}
+
 if (-not $adapter.Contains('DesktopControlService.h')) { throw 'Pi desktop tool adapter must include DesktopControlService.' }
 if (-not $adapter.Contains('DesktopControlService service')) { throw 'Pi desktop tool adapter must delegate through DesktopControlService.' }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
@@ -58,6 +68,9 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService.cpp', 'src/WidgetService.cpp')) {
     $count = ([regex]::Matches($cmake, [regex]::Escape($sourceName))).Count
     if ($count -lt 2) { throw "$sourceName must be linked into both TuringDesk and TuringDeskWallpaper." }
+}
+if (([regex]::Matches($cmake, [regex]::Escape('src/DesktopWidgetController.cpp'))).Count -lt 1) {
+    throw 'DesktopWidgetController must be linked into TuringDeskWallpaper.'
 }
 
 foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'DesktopWidgetTools.cpp', 'WallpaperLibraryWindowV2.cpp')) {

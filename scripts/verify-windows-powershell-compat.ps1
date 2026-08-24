@@ -1,3 +1,4 @@
+# verify-windows-powershell-compat.ps1
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot

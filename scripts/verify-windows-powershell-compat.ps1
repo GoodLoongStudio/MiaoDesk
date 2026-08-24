@@ -45,7 +45,14 @@ foreach ($forbidden in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
         throw "One-click entrypoint contains a retired or fragile marker: $forbidden"
     }
 }
-foreach ($required in @('update-turingdesk-arm64.ps1', '$env:TD_UPDATE_URL', '$env:TD_UPDATER', '-File "%TD_UPDATER%"')) {
+foreach ($required in @(
+    'update-turingdesk-arm64.ps1',
+    '$env:TD_UPDATE_URL',
+    '$env:TD_UPDATER',
+    '-File "%TD_UPDATER%"',
+    'TD_BOOTSTRAP_SELF_TEST',
+    '[scriptblock]::Create($t)'
+)) {
     if (-not $updateText.Contains($required)) { throw "Updater bootstrap marker missing: $required" }
 }
 foreach ($required in @('scripts\deploy-native-arm64.ps1', 'git pull --ff-only')) {
@@ -60,4 +67,4 @@ foreach ($required in @(
     if (-not $updateScriptText.Contains($required)) { throw "Updater rollback marker missing: $required" }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: all PowerShell entrypoints are ASCII-only, parse successfully, and preserve automatic updater rollback.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: all PowerShell entrypoints are ASCII-only, parse successfully, preserve automatic rollback, and expose a real one-click bootstrap smoke mode.' -ForegroundColor Green

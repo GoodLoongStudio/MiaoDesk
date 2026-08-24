@@ -7,7 +7,7 @@ on:
       - 'scripts/**/*.ps1'
       - 'docs/TURINGDESK-PRODUCT-BASELINE.md'
       - 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
-      - 'docs/L3-CODEX-RUNTIME-CONTRACT.md'
+      - 'docs/L3-PI-RUNTIME-CONTRACT.md'
       - '.github/workflows/powershell-syntax.yml'
   workflow_dispatch:
 
@@ -31,7 +31,7 @@ jobs:
           $required = @(
             'docs/TURINGDESK-PRODUCT-BASELINE.md',
             'docs/TURINGDESK-NATIVE-TECH-BASELINE.md',
-            'docs/L3-CODEX-RUNTIME-CONTRACT.md'
+            'docs/L3-PI-RUNTIME-CONTRACT.md'
           )
           foreach ($path in $required) {
             if (-not (Test-Path $path -PathType Leaf)) {
@@ -39,10 +39,16 @@ jobs:
             }
           }
 
-      - name: Reject retired restore and self-modifying workflows
+      - name: Reject retired architecture and self-modifying workflows
         shell: pwsh
         run: |
           $forbidden = @(
+            'docs/L3-CODEX-RUNTIME-CONTRACT.md',
+            'src/native/include/turingdesk/CodexRuntime.h',
+            'src/native/src/CodexRuntime.cpp',
+            'src/native/include/turingdesk/CodexHostBridge.h',
+            'src/native/src/CodexHostBridge.cpp',
+            'scripts/verify-codex-jsonl-wire.ps1',
             'docs/TURINGDESK-DESIGN-SPEC.md',
             'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
             '.github/workflows/apply-codex-reconnect-diagnostics.yml',

@@ -34,6 +34,7 @@ add_executable(TuringDesk WIN32
     src/ModelSettingsWindow.cpp
     src/L3CliWindow.cpp
     src/PiRuntime.cpp
+    src/PiNativeToolsExtension.cpp
     src/NativeTools.cpp
     src/NativeToolIsolation.cpp
     src/WallpaperPackage.cpp

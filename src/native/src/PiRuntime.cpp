@@ -9,6 +9,7 @@
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <string_view>
 #include <utility>
@@ -237,7 +238,7 @@ std::wstring FindNodePath() {
     const auto bundled = ModuleDirectory() / L"Runtime" / L"Node" / L"node.exe";
     std::error_code ec;
     if (fs::exists(bundled, ec) && fs::is_regular_file(bundled, ec)) return bundled.wstring();
-    return SearchExecutable(L"node.exe");
+    return {};
 }
 
 std::wstring FindPiPath() {
@@ -268,9 +269,20 @@ std::wstring DesktopDirectory() {
     return ModuleDirectory().wstring();
 }
 
+bool IsLoopbackUrl(const std::wstring& raw) {
+    if (raw.empty()) return false;
+    URL_COMPONENTS parts{};
+    parts.dwStructSize = sizeof(parts);
+    parts.dwHostNameLength = static_cast<DWORD>(-1);
+    if (!WinHttpCrackUrl(raw.c_str(), 0, 0, &parts) || !parts.lpszHostName || parts.dwHostNameLength == 0) return false;
+    const auto host = Lower(std::wstring(parts.lpszHostName, parts.dwHostNameLength));
+    return host == L"localhost" || host == L"127.0.0.1" || host == L"::1";
+}
+
 std::wstring NormalizeBaseUrl(const L3Agent& agent) {
-    if (!agent.Config().baseUrl.empty()) return agent.Config().baseUrl;
     auto url = agent.CurrentApiUrl();
+    if (url.empty()) url = agent.Config().baseUrl;
+    while (url.size() > 1 && url.back() == L'/') url.pop_back();
     const auto lower = Lower(url);
     for (const wchar_t* suffix : {L"/chat/completions", L"/responses", L"/messages"}) {
         const std::wstring value(suffix);
@@ -279,6 +291,7 @@ std::wstring NormalizeBaseUrl(const L3Agent& agent) {
             break;
         }
     }
+    while (url.size() > 1 && url.back() == L'/') url.pop_back();
     return url;
 }
 
@@ -346,15 +359,18 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.model = agent.Config().model;
     setup.apiType = DetectApiType(agent);
     setup.apiKey = LoadApiKey();
+    if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"turingdesk-local";
 
-    if (setup.nodePath.empty()) { setup.message = L"未找到 Node Runtime"; return setup; }
+    if (setup.nodePath.empty()) { setup.message = L"未找到 Bundled Node Runtime"; return setup; }
     if (setup.piPath.empty()) { setup.message = L"未找到 Pi Runtime"; return setup; }
     if (PowerShellPath().empty()) { setup.message = L"未找到 Windows PowerShell"; return setup; }
     if (setup.baseUrl.empty()) { setup.message = L"未配置 Base URL"; return setup; }
     if (setup.model.empty()) { setup.message = L"未配置 Model"; return setup; }
     if (setup.apiKey.empty()) { setup.message = L"未配置 API Key"; return setup; }
 
-    setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model;
+    const auto credentialHash = std::hash<std::wstring>{}(setup.apiKey);
+    setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
+                      std::to_wstring(static_cast<unsigned long long>(credentialHash));
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
     return setup;

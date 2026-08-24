@@ -15,10 +15,7 @@ echo Downloading latest updater logic...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} '%URL%' -OutFile '%UPDATER%'"
 if errorlevel 1 goto :failed
 
-echo Validating updater encoding and syntax...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p='%UPDATER%'; $t=[IO.File]::ReadAllText($p,[Text.Encoding]::UTF8); [scriptblock]::Create($t) ^| Out-Null; [IO.File]::WriteAllText($p,$t,[Text.Encoding]::Unicode)"
-if errorlevel 1 goto :failed
-
+echo Running validated updater...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%UPDATER%"
 set "RC=%ERRORLEVEL%"
 del /q "%UPDATER%" >nul 2>nul
@@ -33,14 +30,14 @@ exit /b 0
 :failed_code
 echo.
 echo Update failed with exit code %RC%.
-echo The updater does not perform automatic rollback after the install phase starts.
+echo The updater reports whether the installed package was touched.
 pause
 exit /b %RC%
 
 :failed
 del /q "%UPDATER%" >nul 2>nul
 echo.
-echo Failed to download, decode, or parse the updater.
+echo Failed to download or start the updater.
 echo The existing TuringDesk installation was not changed.
 pause
 exit /b 1

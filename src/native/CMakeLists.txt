@@ -37,6 +37,7 @@ add_executable(TuringDesk WIN32
     src/PiNativeToolsExtension.cpp
     src/NativeTools.cpp
     src/NativeToolIsolation.cpp
+    src/DesktopControlService.cpp
     src/DesktopWidgetStore.cpp
     src/DesktopWidgetTools.cpp
     src/WallpaperPackage.cpp
@@ -56,6 +57,7 @@ add_executable(TuringDeskWallpaper WIN32
     src/WallpaperEntry.cpp
     src/WallpaperEngine.cpp
     src/DesktopShellHost.cpp
+    src/DesktopControlService.cpp
     src/WallpaperMonitorLayout.cpp
     src/WallpaperMonitorAssignments.cpp
     src/WallpaperIndependentLayout.cpp

@@ -53,6 +53,7 @@ Forbidden long-term paths:
 ```text
 UI -> wallpaper.ini
 UI -> DesktopWidgetStore
+UI -> WallpaperAutomationStore
 UI -> WorkerW / Progman
 UI -> WebView2 runtime process
 Pi adapter -> wallpaper.ini
@@ -113,6 +114,10 @@ Owns:
 - schedules
 - profiles
 - application rules
+- persisted active playlist / last matched schedule state
+- manual next-playlist state transition
+
+`WallpaperAutomationStore` is persistence/execution infrastructure, not a UI API. `AutomationService` owns persistence access. `AutomationUiAdapter` is the temporary compatibility surface for the current Win32 automation UI while that window is migrated.
 
 Automation produces desktop intents; it does not directly manipulate WorkerW or renderer HWNDs.
 
@@ -158,10 +163,13 @@ The current concrete boundary is:
 - `DesktopControlService` — shared facade for product clients
 - `WallpaperService` — wallpaper state/package ownership
 - `WidgetService` — Widget CRUD/persistence ownership
+- `AutomationService` — playlist/profile/schedule persistence and manual playlist transition ownership
+- `PerformanceService` — performance-policy persistence ownership
 - `DesktopWidgetController` — direct UI controller for new Widget UI code
 - `DesktopWidgetUiAdapter` — transitional compatibility adapter for the current production legacy library window
+- `AutomationUiAdapter` — transitional compatibility adapter for the current automation window
 
-Current facade responsibilities:
+Current DesktopControl facade responsibilities:
 
 ```text
 GetState
@@ -178,6 +186,7 @@ Current or staged clients:
 - Pi native desktop tool adapter (`DesktopWidgetTools.cpp`)
 - production legacy Widget UI through `WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
 - new Widget UI through `DesktopWidgetController`
+- automation UI through `AutomationUiAdapter -> AutomationService` as the staged replacement path
 - Desktop Library V2 / Widget UI
 - future Scene / Widget Editor
 
@@ -215,6 +224,20 @@ It must never include or instantiate `DesktopWidgetStore`.
 
 The current production `WallpaperLibraryWindow.cpp` is a large legacy source file. To avoid a risky mechanical rewrite while V2 is still incomplete, production no longer compiles that file directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
 
+Automation follows the same migration rule:
+
+```text
+Legacy Automation Window action
+    ↓
+AutomationUiAdapter
+    ↓
+AutomationService
+    ↓
+WallpaperAutomationStore
+```
+
+`AutomationUiAdapter` may preserve the old store-shaped method names for migration, but it must not instantiate `WallpaperAutomationStore`, read INI files, or own scheduling rules. The runtime may continue to own an automation store for periodic evaluation until runtime execution itself is moved behind the service boundary.
+
 Similarly, `WallpaperLibraryWindowV2.cpp` should become:
 
 ```text
@@ -247,10 +270,10 @@ A visual redesign is never allowed to remove a product capability.
 
 ## 7. Next refactor slices
 
-1. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
-2. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
-3. Make Desktop Library V2 depend on controllers/services only.
-4. Separate Automation UI from automation persistence and execution through `AutomationService`.
+1. Wire the existing automation window to `AutomationUiAdapter` without exposing `WallpaperAutomationStore*` in the window API.
+2. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
+3. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
+4. Make Desktop Library V2 depend on controllers/services only.
 5. Move Performance UI and remaining engine settings ownership through `PerformanceService`.
 6. Remove legacy direct shell attachment from `WallpaperEngine.cpp` after `DesktopShellHost` is sole owner.
 7. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
@@ -266,6 +289,7 @@ Pi creates Widget -> UI lists same Widget
 UI moves Widget -> Pi reads updated geometry
 UI applies wallpaper -> Pi reads same current state
 Pi applies wallpaper -> UI shows same current state
+Automation UI edits playlist -> runtime evaluates the same persisted playlist
 Explorer restarts -> runtime recovers without UI/AI special handling
 ```
 

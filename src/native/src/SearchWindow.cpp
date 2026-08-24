@@ -54,7 +54,7 @@ const wchar_t* KindLabel(ResultKind kind) {
     case ResultKind::App: return L"应用";
     case ResultKind::File: return L"文件";
     case ResultKind::Folder: return L"文件夹";
-    case ResultKind::Answer: return L"AI";
+    case ResultKind::Answer: return L"图灵 AI";
     case ResultKind::Status: return L"状态";
     }
     return L"";
@@ -193,7 +193,7 @@ bool SearchWindow::Create() {
     if (titleFormat_) titleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     if (subtitleFormat_) subtitleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
 
-    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"TuringDesk Search", WS_POPUP,
+    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"图灵智能桌面", WS_POPUP,
                             CW_USEDEFAULT, CW_USEDEFAULT, kWindowWidth, kCollapsedHeight,
                             nullptr, nullptr, instance_, this);
     if (!hwnd_) return false;
@@ -226,7 +226,7 @@ bool SearchWindow::Create() {
     SendMessageW(edit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
     SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(42, 14));
     SendMessageW(edit_, EM_SETCUEBANNER, TRUE,
-                 reinterpret_cast<LPARAM>(L"搜索应用、文件，或直接问 AI"));
+                 reinterpret_cast<LPARAM>(L"搜索应用、文件，或直接问图灵 AI"));
 
     searchIcon_ = CreateWindowExW(0, L"STATIC", L"\xE721", WS_CHILD | WS_VISIBLE | SS_CENTER,
                                   kLeftMargin + 12, kControlTop + 10, 24, 24, hwnd_, nullptr, instance_, nullptr);
@@ -368,7 +368,7 @@ void SearchWindow::AddTray() {
     tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray_.uCallbackMessage = kTrayMessage;
     tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    wcscpy_s(tray_.szTip, L"TuringDesk");
+    wcscpy_s(tray_.szTip, L"图灵智能桌面");
     trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
 }
 
@@ -386,7 +386,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
     AppendMenuW(menu, MF_STRING, kTrayShow, L"显示搜索");
     AppendMenuW(menu, MF_STRING, kTraySettings, L"设置中心");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kTrayExit, L"退出 TuringDesk");
+    AppendMenuW(menu, MF_STRING, kTrayExit, L"退出图灵智能桌面");
     POINT point{};
     GetCursorPos(&point);
     SetForegroundWindow(hwnd_);
@@ -401,7 +401,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
 void SearchWindow::OpenSettingsCenter() {
     if (l3_.Busy()) l3_.Stop();
     if (!ShowSettingsCenterWindow(instance_, hwnd_, l3_))
-        SetStatus(L"设置中心启动失败", L"无法创建 TuringDesk 设置中心窗口。");
+        SetStatus(L"设置中心启动失败", L"无法创建图灵智能桌面设置中心窗口。");
 }
 
 void SearchWindow::ExitApplication() {
@@ -528,7 +528,7 @@ void SearchWindow::OnQueryChanged() {
     }
     SetExpanded(true);
     if (query.front() == L'/') {
-        results_.push_back({ResultKind::Status, L"L3 命令", L"按 Enter 执行 · /help 查看可用命令", L"", 0});
+        results_.push_back({ResultKind::Status, L"图灵智能桌面命令", L"按 Enter 执行 · /help 查看可用命令", L"", 0});
         InvalidateRect(hwnd_, nullptr, FALSE); return;
     }
     appResults_ = apps_.Query(query, 5);
@@ -541,8 +541,8 @@ void SearchWindow::MergeResults() {
     results_.clear();
     for (const auto& result : appResults_) results_.push_back(result);
     for (const auto& result : fileResults_) { if (results_.size() >= 9) break; results_.push_back(result); }
-    if (!fileSearchAvailable_) results_.push_back({ResultKind::Status, L"文件搜索正在启动", L"goz 索引服务暂不可用。", L"", -1000});
-    else if (fileSearchQueryFailed_) results_.push_back({ResultKind::Status, L"文件查询失败", L"goz 已连接，但本次 IPC 查询没有成功。", L"", -1000});
+    if (!fileSearchAvailable_) results_.push_back({ResultKind::Status, L"文件搜索正在启动", L"文件索引服务暂不可用。", L"", -1000});
+    else if (fileSearchQueryFailed_) results_.push_back({ResultKind::Status, L"文件查询失败", L"文件索引服务已连接，但本次查询没有成功。", L"", -1000});
     selected_ = -1;
     for (std::size_t i = 0; i < results_.size(); ++i) if (IsLaunchable(results_[i].kind)) { selected_ = static_cast<int>(i); break; }
     InvalidateRect(hwnd_, nullptr, FALSE);
@@ -566,7 +566,7 @@ void SearchWindow::ExecuteSelected(bool forceL3) {
 void SearchWindow::StartL3(const std::wstring& prompt) {
     if (l3_.Busy()) l3_.Stop();
     SetExpanded(false);
-    if (!ShowL3CliWindow(instance_, hwnd_, l3_, prompt)) { SetStatus(L"AI 启动失败", L"请检查模型配置后重试。"); return; }
+    if (!ShowL3CliWindow(instance_, hwnd_, l3_, prompt)) { SetStatus(L"图灵 AI 启动失败", L"请检查模型配置后重试。"); return; }
     SetWindowTextW(edit_, L""); SetExpanded(false);
 }
 
@@ -606,7 +606,7 @@ void SearchWindow::Draw() {
     float y = 72.0f;
     std::wstring persistentStatus = L"应用与文件";
     persistentStatus += fileSearchAvailable_ ? L"已就绪" : L"正在启动";
-    persistentStatus += L"   ·   AI ";
+    persistentStatus += L"   ·   图灵 AI ";
     persistentStatus += l3_.HasApiKey() ? l3_.Config().model : L"未配置";
 
     if (!expanded_) {
@@ -614,7 +614,7 @@ void SearchWindow::Draw() {
                                 D2D1::RectF(22, y, width - 20, y + 20), secondaryBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     } else if (results_.empty()) {
         const std::wstring title = currentQuery_.empty() ? L"准备就绪" : L"没有本地结果";
-        const std::wstring hint = currentQuery_.empty() ? persistentStatus : L"按 Enter 交给 AI   ·   Ctrl + Enter 强制进入 AI";
+        const std::wstring hint = currentQuery_.empty() ? persistentStatus : L"按 Enter 交给图灵 AI   ·   Ctrl + Enter 强制进入图灵 AI";
         renderTarget_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
                                 D2D1::RectF(22, y + 8, width - 20, y + 34), textBrush_.Get());
         renderTarget_->DrawText(hint.c_str(), static_cast<UINT32>(hint.size()), subtitleFormat_.Get(),

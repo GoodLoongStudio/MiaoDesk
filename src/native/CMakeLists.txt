@@ -36,6 +36,7 @@ add_executable(TuringDesk WIN32
     src/CodexRuntime.cpp
     src/CodexHostBridge.cpp
     src/NativeTools.cpp
+    src/NativeToolIsolation.cpp
     src/WallpaperPackage.cpp
     src/AppSearch.cpp
     src/GozSearch.cpp

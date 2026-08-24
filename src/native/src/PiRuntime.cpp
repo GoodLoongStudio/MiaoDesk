@@ -4,11 +4,12 @@
 #include <wincred.h>
 #include <shlobj.h>
 #include <algorithm>
-#include <chrono>
+#include <cstdio>
 #include <cwchar>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -20,7 +21,6 @@ namespace {
 
 constexpr wchar_t kCredentialTarget[] = L"TuringDesk/ModelApiKey";
 constexpr wchar_t kApiKeyEnvironment[] = L"TURINGDESK_MODEL_API_KEY";
-constexpr DWORD kStartupTimeoutMs = 30000;
 constexpr DWORD kTurnTimeoutMs = 600000;
 
 std::wstring Lower(std::wstring value) {
@@ -241,10 +241,21 @@ std::wstring FindNodePath() {
 }
 
 std::wstring FindPiPath() {
-    const auto bundled = ModuleDirectory() / L"Runtime" / L"Node" / L"node_modules" / L"@earendil-works" / L"pi-coding-agent" / L"dist" / L"cli.js";
+    const auto bundled = ModuleDirectory() / L"Pi" / L"node_modules" / L"@earendil-works" / L"pi-coding-agent" / L"dist" / L"cli.js";
     std::error_code ec;
     if (fs::exists(bundled, ec) && fs::is_regular_file(bundled, ec)) return bundled.wstring();
     return {};
+}
+
+std::wstring PowerShellPath() {
+    wchar_t windowsDir[32768]{};
+    const UINT count = GetWindowsDirectoryW(windowsDir, static_cast<UINT>(std::size(windowsDir)));
+    if (count > 0 && count < std::size(windowsDir)) {
+        const auto candidate = fs::path(std::wstring(windowsDir, count)) / L"System32" / L"WindowsPowerShell" / L"v1.0" / L"powershell.exe";
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) return candidate.wstring();
+    }
+    return SearchExecutable(L"powershell.exe");
 }
 
 std::wstring DesktopDirectory() {
@@ -262,9 +273,9 @@ std::wstring NormalizeBaseUrl(const L3Agent& agent) {
     auto url = agent.CurrentApiUrl();
     const auto lower = Lower(url);
     for (const wchar_t* suffix : {L"/chat/completions", L"/responses", L"/messages"}) {
-        const std::wstring s(suffix);
-        if (lower.size() >= s.size() && lower.substr(lower.size() - s.size()) == s) {
-            url.resize(url.size() - s.size());
+        const std::wstring value(suffix);
+        if (lower.size() >= value.size() && lower.substr(lower.size() - value.size()) == value) {
+            url.resize(url.size() - value.size());
             break;
         }
     }
@@ -316,8 +327,7 @@ std::vector<wchar_t> BuildEnvironmentBlock(const std::vector<std::pair<std::wstr
 }
 
 bool ProcessAlive(HANDLE process) {
-    if (!process) return false;
-    return WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+    return process && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
 }
 
 } // namespace
@@ -339,6 +349,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
 
     if (setup.nodePath.empty()) { setup.message = L"未找到 Node Runtime"; return setup; }
     if (setup.piPath.empty()) { setup.message = L"未找到 Pi Runtime"; return setup; }
+    if (PowerShellPath().empty()) { setup.message = L"未找到 Windows PowerShell"; return setup; }
     if (setup.baseUrl.empty()) { setup.message = L"未配置 Base URL"; return setup; }
     if (setup.model.empty()) { setup.message = L"未配置 Model"; return setup; }
     if (setup.apiKey.empty()) { setup.message = L"未配置 API Key"; return setup; }
@@ -378,12 +389,14 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     const auto base = EscapeJson(setup.baseUrl);
     const auto api = EscapeJson(setup.apiType);
     const auto model = EscapeJson(setup.model);
+    const auto shell = EscapeJson(PowerShellPath());
 
     std::string models = "{\n  \"providers\": {\n    \"turingdesk\": {\n";
+    models += "      \"name\": \"TuringDesk Provider\",\n";
     models += "      \"baseUrl\": \"" + base + "\",\n";
     models += "      \"api\": \"" + api + "\",\n";
     models += "      \"apiKey\": \"$TURINGDESK_MODEL_API_KEY\",\n";
-    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\" }]\n";
+    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\", \"image\"], \"contextWindow\": 128000, \"maxTokens\": 16384 }]\n";
     models += "    }\n  }\n}\n";
 
     std::ofstream modelsFile(modelsPath, std::ios::binary | std::ios::trunc);
@@ -391,7 +404,13 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     modelsFile.write(models.data(), static_cast<std::streamsize>(models.size()));
     if (!modelsFile) { error = L"写入 Pi models.json 失败"; return false; }
 
-    std::string settings = "{\n  \"defaultProjectTrust\": \"always\",\n  \"defaultProvider\": \"turingdesk\",\n  \"defaultModel\": \"" + model + "\"\n}\n";
+    std::string settings = "{\n";
+    settings += "  \"defaultProjectTrust\": \"always\",\n";
+    settings += "  \"defaultProvider\": \"turingdesk\",\n";
+    settings += "  \"defaultModel\": \"" + model + "\",\n";
+    settings += "  \"shellPath\": \"" + shell + "\",\n";
+    settings += "  \"quietStartup\": true\n";
+    settings += "}\n";
     std::ofstream settingsFile(settingsPath, std::ios::binary | std::ios::trunc);
     if (!settingsFile) { error = L"无法写入 Pi settings.json"; return false; }
     settingsFile.write(settings.data(), static_cast<std::streamsize>(settings.size()));
@@ -406,7 +425,6 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
 
     HANDLE childInRead = nullptr;
     HANDLE childOutWrite = nullptr;
-    HANDLE childErrWrite = nullptr;
     HANDLE inputWrite = nullptr;
     HANDLE outputRead = nullptr;
 
@@ -422,16 +440,19 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     SetHandleInformation(inputWrite, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(outputRead, HANDLE_FLAG_INHERIT, 0);
 
-    const auto logPath = PiLogPath();
-    childErrWrite = CreateFileW(logPath.c_str(), FILE_APPEND_DATA,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                &security, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE childErrWrite = CreateFileW(PiLogPath().c_str(), FILE_APPEND_DATA,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                       &security, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (!childErrWrite || childErrWrite == INVALID_HANDLE_VALUE) childErrWrite = childOutWrite;
+
+    const std::wstring systemPrompt =
+        L"You are Turing Intelligent Desktop AI. Use tools for real file and desktop actions. "
+        L"The tool named bash is backed by Windows PowerShell 5.1 in TuringDesk; use PowerShell syntax, not POSIX shell syntax. "
+        L"Never claim an action succeeded unless the tool result confirms it.";
 
     std::wstring command = QuoteArg(setup.nodePath) + L" " + QuoteArg(setup.piPath) +
         L" --mode rpc --no-session --approve --provider turingdesk --model " + QuoteArg(setup.model) +
-        L" --tools read,bash,edit,write,grep,find,ls --append-system-prompt " +
-        QuoteArg(L"You are Turing Intelligent Desktop AI. Use tools for real desktop/file actions. Never claim an action succeeded unless the tool result confirms it.");
+        L" --tools read,bash,edit,write,grep,find,ls --append-system-prompt " + QuoteArg(systemPrompt);
     std::vector<wchar_t> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back(L'\0');
 
@@ -478,7 +499,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     }
 
     AppendRuntimeLog(L"Pi process started; node=" + setup.nodePath + L"; pi=" + setup.piPath +
-                     L"; api=" + setup.apiType + L"; model=" + setup.model);
+                     L"; api=" + setup.apiType + L"; model=" + setup.model + L"; shell=PowerShell");
     return true;
 }
 
@@ -489,20 +510,7 @@ bool PiRuntime::EnsureSession(const ProviderSetup& setup, std::wstring& error) {
     }
     CleanupProcess();
     if (!ConfigurePiAgent(setup, error)) return false;
-    if (!LaunchProcess(setup, error)) return false;
-
-    const ULONGLONG started = GetTickCount64();
-    while (GetTickCount64() - started < kStartupTimeoutMs) {
-        std::scoped_lock lock(processMutex_);
-        if (!ProcessAlive(process_)) {
-            error = L"Pi Runtime 启动后立即退出";
-            return false;
-        }
-        if (inputWrite_ && outputRead_) return true;
-        Sleep(20);
-    }
-    error = L"Pi Runtime 启动超时";
-    return false;
+    return LaunchProcess(setup, error);
 }
 
 bool PiRuntime::WriteLine(const std::string& line) {
@@ -511,7 +519,8 @@ bool PiRuntime::WriteLine(const std::string& line) {
     std::string payload = line;
     payload.push_back('\n');
     DWORD written = 0;
-    return WriteFile(inputWrite_, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) && written == payload.size();
+    const DWORD size = static_cast<DWORD>(payload.size());
+    return WriteFile(inputWrite_, payload.data(), size, &written, nullptr) && written == size;
 }
 
 bool PiRuntime::ReadLine(std::string& line, DWORD timeoutMs, std::wstring& error) {

@@ -20,6 +20,7 @@ let server;
 let child;
 let finished = false;
 let verifying = false;
+let finalResponseSent = false;
 let stdout = "";
 let stderr = "";
 
@@ -190,6 +191,7 @@ server = http.createServer((req, res) => {
         sendChunk(res, { role: "assistant", content: "PI_E2E_OK" });
         sendChunk(res, {}, "stop");
       }
+      finalResponseSent = true;
     }
 
     res.write("data: [DONE]\n\n");
@@ -250,7 +252,7 @@ server.listen(0, "127.0.0.1", () => {
   });
 
   const timeout = setTimeout(() => {
-    fail(`Pi E2E timed out. turn=${turn} state=${JSON.stringify(artifactState())} stdout=${stdout} stderr=${stderr}`);
+    fail(`Pi E2E timed out. turn=${turn} finalResponseSent=${finalResponseSent} state=${JSON.stringify(artifactState())} stdout=${stdout} stderr=${stderr}`);
   }, 120000);
 
   child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
@@ -265,7 +267,7 @@ server.listen(0, "127.0.0.1", () => {
 
       let message;
       try { message = JSON.parse(line); } catch { continue; }
-      if (message.type !== "agent_settled" || finished || verifying) continue;
+      if (message.type !== "agent_settled" || !finalResponseSent || finished || verifying) continue;
 
       verifying = true;
       clearTimeout(timeout);
@@ -276,7 +278,7 @@ server.listen(0, "127.0.0.1", () => {
   child.on("exit", (code) => {
     if (!finished && code !== null) {
       clearTimeout(timeout);
-      fail(`Pi exited before successful verification: ${code}; turn=${turn}; state=${JSON.stringify(artifactState())}; stderr=${stderr}`);
+      fail(`Pi exited before successful verification: ${code}; turn=${turn}; finalResponseSent=${finalResponseSent}; state=${JSON.stringify(artifactState())}; stderr=${stderr}`);
     }
   });
 

@@ -8,12 +8,19 @@
 namespace turingdesk::wallpaper {
 namespace {
 
+bool IsTuringDeskWindowClass(const wchar_t* className) {
+    if (!className || !*className) return false;
+    constexpr wchar_t prefix[] = L"TuringDesk.Native.";
+    return wcsncmp(className, prefix, std::size(prefix) - 1) == 0;
+}
+
 bool IsIgnoredForeground(HWND foreground, HWND wallpaperWindow, HWND settingsWindow) {
     if (!foreground || foreground == wallpaperWindow || foreground == settingsWindow || IsIconic(foreground)) return true;
 
     wchar_t className[128]{};
     GetClassNameW(foreground, className, static_cast<int>(std::size(className)));
-    return _wcsicmp(className, L"Progman") == 0 ||
+    return IsTuringDeskWindowClass(className) ||
+           _wcsicmp(className, L"Progman") == 0 ||
            _wcsicmp(className, L"WorkerW") == 0 ||
            _wcsicmp(className, L"Shell_TrayWnd") == 0;
 }
@@ -221,6 +228,7 @@ bool WallpaperPerformancePolicy::SelfTest() noexcept {
     if (NormalizeFpsCap(31) != 30 || NormalizeFpsCap(58) != 60 || NormalizeFpsCap(100) != 120) return false;
     if (ParsePerformanceAction(L"pause") != PerformanceAction::Pause) return false;
     if (StrongerAction(PerformanceAction::Throttle, PerformanceAction::Stop) != PerformanceAction::Stop) return false;
+    if (!IsTuringDeskWindowClass(L"TuringDesk.Native.DesktopLibrary") || IsTuringDeskWindowClass(L"Notepad")) return false;
 
     PerformanceConfig config;
     config.fpsCap = 60;

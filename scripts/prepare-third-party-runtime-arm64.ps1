@@ -14,17 +14,17 @@ function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
 function Resolve-BundleFile([string]$RelativePath) {
     $path = Join-Path $BundleRoot ($RelativePath -replace '/', '\')
-    if (-not (Test-Path $path -PathType Leaf)) { throw "Vendored runtime file is missing: $path" }
+    if (-not (Test-Path $path -PathType Leaf)) { throw "TuringDesk RuntimeBundle file is missing: $path" }
     $path
 }
 function Assert-BundleHash([string]$Path, [string]$Expected) {
     $actual = Sha256 $Path
     if ([string]::IsNullOrWhiteSpace($Expected) -or $actual -ne $Expected.ToLowerInvariant()) {
-        throw "Vendored runtime integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
+        throw "TuringDesk RuntimeBundle integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
     }
 }
 function Assert-File([string]$Path, [string]$Label) {
-    if (-not (Test-Path $Path -PathType Leaf)) { throw ("Runtime is missing {0}: {1}" -f $Label, $Path) }
+    if (-not (Test-Path $Path -PathType Leaf)) { throw ("TuringDesk RuntimeBundle is missing {0}: {1}" -f $Label, $Path) }
 }
 function Test-InDeploy([string]$Candidate) {
     try {
@@ -43,17 +43,17 @@ function Stop-OwnedProcesses {
             if (-not $exe -or -not (Test-InDeploy $exe)) { continue }
             & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null
         }
-    } catch { Write-Host "Process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+    } catch { Write-Host "TuringDesk process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
     Start-Sleep -Milliseconds 250
 }
 function Expand-BundleArchive([string]$Archive, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & tar.exe -xf $Archive -C $Destination
-    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract TuringDesk RuntimeBundle archive: $Archive" }
 }
-function Invoke-ElevatedGoz([string]$Exe, [string]$Arguments) {
+function Invoke-ElevatedIndexService([string]$Exe, [string]$Arguments) {
     $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
-    if (-not $p -or $p.ExitCode -ne 0) { throw "Elevated goz operation failed: $Arguments" }
+    if (-not $p -or $p.ExitCode -ne 0) { throw "TuringDesk file index service operation failed: $Arguments" }
 }
 function Probe([string]$Exe, [string[]]$Arguments) {
     $out = Join-Path $env:TEMP ('td-probe-o-' + [guid]::NewGuid().ToString('N'))
@@ -64,23 +64,23 @@ function Probe([string]$Exe, [string[]]$Arguments) {
     } catch { [pscustomobject]@{ ExitCode=-1; Text=$_.Exception.Message } }
     finally { Remove-Item $out,$err -Force -ErrorAction SilentlyContinue }
 }
-function Ensure-GozService([string]$GozExe,[string]$GozDaemon) {
+function Ensure-IndexService([string]$IndexExe,[string]$IndexDaemon) {
     if ($SkipGozServiceInstall) { return }
-    $status = Probe $GozDaemon @('status')
-    if ($status.ExitCode -ne 0 -or $status.Text -notmatch '(?i)Running') { Invoke-ElevatedGoz $GozDaemon 'install' }
+    $status = Probe $IndexDaemon @('status')
+    if ($status.ExitCode -ne 0 -or $status.Text -notmatch '(?i)Running') { Invoke-ElevatedIndexService $IndexDaemon 'install' }
     for ($i=0; $i -lt 120; $i++) {
-        if ((Probe $GozExe @('--status')).ExitCode -eq 0) { Write-Host 'goz index service is reachable.' -ForegroundColor Green; return }
+        if ((Probe $IndexExe @('--status')).ExitCode -eq 0) { Write-Host 'TuringDesk file search is ready.' -ForegroundColor Green; return }
         Start-Sleep -Milliseconds 500
     }
-    throw 'goz service did not become reachable after 60 seconds.'
+    throw 'TuringDesk file search service did not become reachable after 60 seconds.'
 }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {
-    throw 'TuringDesk ARM64 RuntimeBundle is not vendored yet.'
+    throw 'TuringDesk ARM64 RuntimeBundle is not available.'
 }
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'RuntimeBundle is not the ARM64 Pi bundle' }
-if (-not $manifest.pi) { throw 'RuntimeBundle manifest does not contain Pi' }
+if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'TuringDesk RuntimeBundle architecture/schema mismatch.' }
+if (-not $manifest.pi) { throw 'TuringDesk RuntimeBundle is missing the Agent runtime component.' }
 
 $nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)
 $harnessArchive = Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)
@@ -108,28 +108,28 @@ $ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe
          (Test-Path $GozExe -PathType Leaf) -and (Test-Path $GozDaemon -PathType Leaf) -and
          ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
 if ($ready) {
-    Ensure-GozService $GozExe $GozDaemon
-    Write-Host "RuntimeBundle ready: $DeployDir" -ForegroundColor Green
+    Ensure-IndexService $GozExe $GozDaemon
+    Write-Host "图灵智能桌面 RuntimeBundle 已就绪：$DeployDir" -ForegroundColor Green
     exit 0
 }
 
-Step 'Installing repository-vendored ARM64 RuntimeBundle (offline)'
+Step 'Installing pinned TuringDesk ARM64 RuntimeBundle (offline)'
 Stop-OwnedProcesses
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
-# goz is a Windows service: only replace its binaries when content changed.
-$gozTemp = Join-Path $env:TEMP ('TuringDesk-Goz-' + [guid]::NewGuid().ToString('N'))
+# The file index daemon is a Windows service: only replace its binaries when content changed.
+$gozTemp = Join-Path $env:TEMP ('TuringDesk-Index-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $gozArchive $gozTemp
     $newGoz = Get-ChildItem $gozTemp -Filter goz.exe -File -Recurse | Select-Object -First 1
     $newGozd = Get-ChildItem $gozTemp -Filter gozd.exe -File -Recurse | Select-Object -First 1
-    if (-not $newGoz -or -not $newGozd) { throw 'Vendored goz archive is incomplete' }
+    if (-not $newGoz -or -not $newGozd) { throw 'TuringDesk file index archive is incomplete' }
     $replace = $true
     if ((Test-Path $GozExe) -and (Test-Path $GozDaemon)) {
         $replace = (Sha256 $GozExe) -ne (Sha256 $newGoz.FullName) -or (Sha256 $GozDaemon) -ne (Sha256 $newGozd.FullName)
     }
     if ($replace) {
-        if ((Test-Path $GozDaemon) -and -not $SkipGozServiceInstall) { try { Invoke-ElevatedGoz $GozDaemon 'uninstall' } catch {} }
+        if ((Test-Path $GozDaemon) -and -not $SkipGozServiceInstall) { try { Invoke-ElevatedIndexService $GozDaemon 'uninstall' } catch {} }
         Remove-Item $GozDir -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $GozDir | Out-Null
         Copy-Item (Join-Path $gozTemp '*') $GozDir -Recurse -Force
@@ -142,32 +142,31 @@ $nodeTemp = Join-Path $env:TEMP ('TuringDesk-Node-' + [guid]::NewGuid().ToString
 try {
     Expand-BundleArchive $nodeArchive $nodeTemp
     $root = Get-ChildItem $nodeTemp -Directory | Select-Object -First 1
-    if (-not $root -or -not (Test-Path (Join-Path $root.FullName 'node.exe'))) { throw 'Vendored Node archive is invalid' }
+    if (-not $root -or -not (Test-Path (Join-Path $root.FullName 'node.exe'))) { throw 'TuringDesk bundled runtime archive is invalid' }
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
     Copy-Item (Join-Path $root.FullName '*') $NodeDir -Recurse -Force
 } finally { Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue }
 
-# Harness keeps its own npm dependency tree inside the portable Node folder.
+# Advanced Workbench keeps its own dependency tree inside the portable runtime folder.
 Expand-BundleArchive $harnessArchive $NodeDir
-Assert-File $NodeExe 'bundled Node'
-Assert-File $DshBin 'DeepSeek Harness'
+Assert-File $NodeExe 'bundled AI runtime'
+Assert-File $DshBin 'advanced workbench runtime'
 & $NodeExe $DshBin --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled DeepSeek Harness CLI failed to start' }
+if ($LASTEXITCODE -ne 0) { throw 'TuringDesk Advanced Workbench runtime failed to start' }
 
-# Pi uses an isolated dependency tree to avoid npm dependency collisions with Harness.
+# Agent runtime uses an isolated dependency tree to avoid dependency collisions.
 Expand-BundleArchive $piArchive $PiDir
-Assert-File $PiCli 'Pi Agent CLI'
+Assert-File $PiCli 'agent runtime'
 & $NodeExe $PiCli --version | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Pi Agent CLI failed to start' }
+if ($LASTEXITCODE -ne 0) { throw 'TuringDesk Agent runtime failed to start' }
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
-Ensure-GozService $GozExe $GozDaemon
+Ensure-IndexService $GozExe $GozDaemon
 
-Write-Host 'Repository-vendored ARM64 RuntimeBundle ready.' -ForegroundColor Green
-Write-Host "Node:    $NodeExe" -ForegroundColor DarkGray
-Write-Host "Pi:      $PiCli" -ForegroundColor DarkGray
-Write-Host "Harness: $DshBin" -ForegroundColor DarkGray
-Write-Host "goz:     $GozExe" -ForegroundColor DarkGray
-Write-Host "gozd:    $GozDaemon" -ForegroundColor DarkGray
+Write-Host '图灵智能桌面 ARM64 RuntimeBundle 已就绪。' -ForegroundColor Green
+Write-Host "AI Runtime:       $NodeExe" -ForegroundColor DarkGray
+Write-Host "Agent Runtime:    $PiCli" -ForegroundColor DarkGray
+Write-Host "Advanced Workbench: $DshBin" -ForegroundColor DarkGray
+Write-Host "File Search:      $GozExe" -ForegroundColor DarkGray
 Write-Host 'No third-party network download or system Node installation was performed.' -ForegroundColor Green

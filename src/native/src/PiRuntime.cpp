@@ -298,8 +298,12 @@ std::wstring NormalizeBaseUrl(const L3Agent& agent) {
 std::wstring DetectApiType(const L3Agent& agent) {
     const auto provider = Lower(agent.Config().providerId);
     const auto endpoint = Lower(agent.Config().endpoint + L" " + agent.CurrentApiUrl());
+    // Endpoint semantics win over provider branding. This matters for Gemini's official
+    // OpenAI-compatible /v1beta/openai/chat/completions endpoint and branded proxies.
     if (endpoint.find(L"responses") != std::wstring::npos) return L"openai-responses";
-    if (endpoint.find(L"messages") != std::wstring::npos || provider.find(L"anthropic") != std::wstring::npos || provider.find(L"claude") != std::wstring::npos)
+    if (endpoint.find(L"/chat/completions") != std::wstring::npos) return L"openai-completions";
+    if (endpoint.find(L"/messages") != std::wstring::npos) return L"anthropic-messages";
+    if (provider.find(L"anthropic") != std::wstring::npos || provider.find(L"claude") != std::wstring::npos)
         return L"anthropic-messages";
     if (provider.find(L"google") != std::wstring::npos || provider.find(L"gemini") != std::wstring::npos || endpoint.find(L"generativelanguage") != std::wstring::npos)
         return L"google-generative-ai";

@@ -161,7 +161,6 @@ jobs:
           }
           finally {
             Remove-Item $probePath -Force -ErrorAction SilentlyContinue
-            & $goz --status | Out-Null
             & $gozd uninstall | Out-Host
           }
 

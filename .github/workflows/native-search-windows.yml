@@ -11,6 +11,7 @@ on:
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/pi-agent-e2e.mjs
       - .github/workflows/native-search-windows.yml
   workflow_run:
     workflows: ["Vendor ARM64 Runtime Bundle"]
@@ -93,188 +94,25 @@ jobs:
           & $node $pi --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Pi failed --help' }
 
-      - name: Real Pi RPC + file + PowerShell tool end-to-end smoke test
+      - name: Real Pi RPC + built-in + TuringDesk native tool end-to-end smoke test
         shell: pwsh
         run: |
           $node = (Resolve-Path '.\build\package\Runtime\Node\node.exe').Path
           $pi = (Resolve-Path '.\build\package\Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js').Path
+          $nativeHost = (Resolve-Path '.\build\package\TuringDesk.exe').Path
+          $extensionSource = Join-Path $env:LOCALAPPDATA 'TuringDesk\PiAgent\extensions\turingdesk-native-tools.ts'
+          if (-not (Test-Path $extensionSource -PathType Leaf)) {
+            throw 'TuringDesk self-test did not materialize the Pi native tools extension.'
+          }
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'Unable to resolve Desktop known folder for Pi E2E.' }
           $work = Join-Path $env:RUNNER_TEMP ('turingdesk-pi-e2e-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Force -Path $work | Out-Null
-          $script = Join-Path $work 'pi-e2e.mjs'
-          @'
-          import http from "node:http";
-          import fs from "node:fs";
-          import path from "node:path";
-          import { spawn } from "node:child_process";
-
-          const [work, piCli, powershell] = process.argv.slice(2);
-          const writeFile = path.join(work, "pi-write-result.txt");
-          const shellFile = path.join(work, "pi-shell-result.txt");
-          let turn = 0;
-
-          function sendChunk(res, delta, finish = null) {
-            const payload = {
-              id: "chatcmpl-turingdesk-pi",
-              object: "chat.completion.chunk",
-              created: 1,
-              model: "ci-model",
-              choices: [{ index: 0, delta, finish_reason: finish }]
-            };
-            res.write(`data: ${JSON.stringify(payload)}\n\n`);
-          }
-
-          const server = http.createServer((req, res) => {
-            if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
-              res.writeHead(404); res.end(); return;
-            }
-            let raw = "";
-            req.on("data", c => raw += c);
-            req.on("end", () => {
-              const body = JSON.parse(raw || "{}");
-              const names = new Set((body.tools || []).map(t => t?.function?.name));
-              if (!names.has("write") || !names.has("bash")) {
-                res.writeHead(500, { "content-type": "application/json" });
-                res.end(JSON.stringify({ error: { message: "Pi did not expose write/bash tools" } }));
-                return;
-              }
-              turn += 1;
-              res.writeHead(200, {
-                "content-type": "text/event-stream",
-                "cache-control": "no-cache",
-                "connection": "keep-alive"
-              });
-
-              if (turn === 1) {
-                sendChunk(res, {
-                  role: "assistant",
-                  tool_calls: [{ index: 0, id: "call_write", type: "function", function: {
-                    name: "write",
-                    arguments: JSON.stringify({ path: writeFile, content: "PI_WRITE_OK" })
-                  }}]
-                });
-                sendChunk(res, {}, "tool_calls");
-              } else if (turn === 2) {
-                const psPath = shellFile.replace(/'/g, "''");
-                sendChunk(res, {
-                  role: "assistant",
-                  tool_calls: [{ index: 0, id: "call_shell", type: "function", function: {
-                    name: "bash",
-                    arguments: JSON.stringify({ command: `Set-Content -LiteralPath '${psPath}' -Value 'PI_SHELL_OK'` })
-                  }}]
-                });
-                sendChunk(res, {}, "tool_calls");
-              } else {
-                sendChunk(res, { role: "assistant", content: "PI_E2E_OK" });
-                sendChunk(res, {}, "stop");
-              }
-              res.write("data: [DONE]\n\n");
-              res.end();
-            });
-          });
-
-          const fail = (message) => {
-            console.error(message);
-            try { server.close(); } catch {}
-            process.exitCode = 1;
-          };
-
-          server.listen(0, "127.0.0.1", () => {
-            const port = server.address().port;
-            const agentDir = path.join(work, "agent");
-            fs.mkdirSync(agentDir, { recursive: true });
-            fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
-              providers: {
-                turingdesk: {
-                  name: "TuringDesk CI",
-                  baseUrl: `http://127.0.0.1:${port}/v1`,
-                  api: "openai-completions",
-                  apiKey: "$TURINGDESK_MODEL_API_KEY",
-                  models: [{ id: "ci-model", name: "ci-model", input: ["text"], contextWindow: 128000, maxTokens: 4096 }]
-                }
-              }
-            }, null, 2));
-            fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
-              defaultProjectTrust: "always",
-              defaultProvider: "turingdesk",
-              defaultModel: "ci-model",
-              shellPath: powershell,
-              quietStartup: true
-            }, null, 2));
-
-            const child = spawn(process.execPath, [
-              piCli, "--mode", "rpc", "--no-session", "--approve",
-              "--provider", "turingdesk", "--model", "ci-model",
-              "--tools", "read,bash,edit,write,grep,find,ls"
-            ], {
-              cwd: work,
-              windowsHide: true,
-              env: {
-                ...process.env,
-                PI_CODING_AGENT_DIR: agentDir,
-                PI_OFFLINE: "1",
-                PI_SKIP_VERSION_CHECK: "1",
-                PI_TELEMETRY: "0",
-                TURINGDESK_MODEL_API_KEY: "ci-key"
-              },
-              stdio: ["pipe", "pipe", "pipe"]
-            });
-
-            let stdout = "";
-            let stderr = "";
-            let finished = false;
-            const timeout = setTimeout(() => {
-              if (finished) return;
-              finished = true;
-              child.kill();
-              fail(`Pi E2E timed out. stdout=${stdout} stderr=${stderr}`);
-            }, 90000);
-
-            child.stderr.on("data", c => { stderr += c.toString("utf8"); });
-            child.stdout.on("data", c => {
-              stdout += c.toString("utf8");
-              for (;;) {
-                const nl = stdout.indexOf("\n");
-                if (nl < 0) break;
-                const line = stdout.slice(0, nl).replace(/\r$/, "");
-                stdout = stdout.slice(nl + 1);
-                if (!line.trim()) continue;
-                let msg;
-                try { msg = JSON.parse(line); } catch { continue; }
-                if (msg.type === "agent_settled" && !finished) {
-                  finished = true;
-                  clearTimeout(timeout);
-                  setTimeout(() => {
-                    try {
-                      const writeText = fs.readFileSync(writeFile, "utf8").trim();
-                      const shellText = fs.readFileSync(shellFile, "utf8").trim();
-                      if (writeText !== "PI_WRITE_OK") throw new Error(`write tool mismatch: ${writeText}`);
-                      if (shellText !== "PI_SHELL_OK") throw new Error(`PowerShell tool mismatch: ${shellText}`);
-                      console.log("Pi RPC -> provider -> write -> PowerShell -> final response: OK");
-                      child.kill();
-                      server.close(() => process.exit(0));
-                    } catch (error) {
-                      child.kill();
-                      fail(error.stack || String(error));
-                    }
-                  }, 300);
-                }
-              }
-            });
-            child.on("exit", code => {
-              if (!finished && code !== null) {
-                finished = true;
-                clearTimeout(timeout);
-                fail(`Pi exited before agent_settled: ${code}; stderr=${stderr}`);
-              }
-            });
-
-            child.stdin.write(JSON.stringify({ id: "turn-1", type: "prompt", message: "Create the requested files with tools, then finish." }) + "\n");
-          });
-          '@ | Set-Content $script -Encoding UTF8
-
           $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
-          & $node $script $work $pi $powershell | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'Pi Agent E2E failed' }
+          $testScript = (Resolve-Path '.\scripts\pi-agent-e2e.mjs').Path
+
+          & $node $testScript $work $pi $powershell $nativeHost $extensionSource $desktop | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Pi Agent + TuringDesk native tool E2E failed' }
 
       - name: Real goz MFT/USN integration test
         shell: pwsh

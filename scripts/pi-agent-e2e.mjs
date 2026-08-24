@@ -19,6 +19,9 @@ let turn = 0;
 let server;
 let child;
 let finished = false;
+let verifying = false;
+let stdout = "";
+let stderr = "";
 
 function cleanupPackage() {
   try { fs.rmSync(packagePath, { recursive: true, force: true }); } catch {}
@@ -43,6 +46,47 @@ function fail(message) {
   try { server?.close(); } catch {}
   cleanupPackage();
   process.exitCode = 1;
+}
+
+function artifactState() {
+  return {
+    write: fs.existsSync(writeFile),
+    shell: fs.existsSync(shellFile),
+    manifest: fs.existsSync(manifestPath),
+    html: fs.existsSync(htmlPath),
+  };
+}
+
+function verifyArtifacts(attempt = 0) {
+  if (finished) return;
+  const state = artifactState();
+  if (!(state.write && state.shell && state.manifest && state.html)) {
+    if (attempt < 150) {
+      setTimeout(() => verifyArtifacts(attempt + 1), 100);
+      return;
+    }
+    fail(`Pi E2E artifacts did not settle. turn=${turn} state=${JSON.stringify(state)} stderr=${stderr}`);
+    return;
+  }
+
+  try {
+    const writeText = fs.readFileSync(writeFile, "utf8").trim();
+    const shellText = fs.readFileSync(shellFile, "utf8").trim();
+    if (writeText !== "PI_WRITE_OK") throw new Error(`write tool mismatch: ${writeText}`);
+    if (shellText !== "PI_SHELL_OK") throw new Error(`PowerShell tool mismatch: ${shellText}`);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (manifest.type !== "web" || manifest.entry !== "index.html") {
+      throw new Error(`Native .tdwall manifest mismatch: ${JSON.stringify(manifest)}`);
+    }
+
+    finished = true;
+    cleanupPackage();
+    console.log("Pi RPC -> provider -> built-in write -> PowerShell -> TuringDesk Pi extension -> native .tdwall: OK");
+    try { child?.kill(); } catch {}
+    server.close(() => process.exit(0));
+  } catch (error) {
+    fail(error?.stack || String(error));
+  }
 }
 
 server = http.createServer((req, res) => {
@@ -95,13 +139,12 @@ server = http.createServer((req, res) => {
           type: "function",
           function: {
             name: "write",
-            arguments: JSON.stringify({ path: writeFile, content: "PI_WRITE_OK" }),
+            arguments: JSON.stringify({ path: "pi-write-result.txt", content: "PI_WRITE_OK" }),
           },
         }],
       });
       sendChunk(res, {}, "tool_calls");
     } else if (turn === 2) {
-      const psPath = shellFile.replace(/'/g, "''");
       sendChunk(res, {
         role: "assistant",
         tool_calls: [{
@@ -110,7 +153,7 @@ server = http.createServer((req, res) => {
           type: "function",
           function: {
             name: "bash",
-            arguments: JSON.stringify({ command: `Set-Content -LiteralPath '${psPath}' -Value 'PI_SHELL_OK'` }),
+            arguments: JSON.stringify({ command: "Set-Content -LiteralPath 'pi-shell-result.txt' -Value 'PI_SHELL_OK'" }),
           },
         }],
       });
@@ -206,10 +249,8 @@ server.listen(0, "127.0.0.1", () => {
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-  let stdout = "";
-  let stderr = "";
   const timeout = setTimeout(() => {
-    fail(`Pi E2E timed out. stdout=${stdout} stderr=${stderr}`);
+    fail(`Pi E2E timed out. turn=${turn} state=${JSON.stringify(artifactState())} stdout=${stdout} stderr=${stderr}`);
   }, 120000);
 
   child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
@@ -224,37 +265,18 @@ server.listen(0, "127.0.0.1", () => {
 
       let message;
       try { message = JSON.parse(line); } catch { continue; }
-      if (message.type !== "agent_settled" || finished) continue;
+      if (message.type !== "agent_settled" || finished || verifying) continue;
 
-      try {
-        const writeText = fs.readFileSync(writeFile, "utf8").trim();
-        const shellText = fs.readFileSync(shellFile, "utf8").trim();
-        if (writeText !== "PI_WRITE_OK") throw new Error(`write tool mismatch: ${writeText}`);
-        if (shellText !== "PI_SHELL_OK") throw new Error(`PowerShell tool mismatch: ${shellText}`);
-        if (!fs.existsSync(manifestPath)) throw new Error(`Native .tdwall manifest missing: ${manifestPath}`);
-        if (!fs.existsSync(htmlPath)) throw new Error(`Native .tdwall entry missing: ${htmlPath}`);
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-        if (manifest.type !== "web" || manifest.entry !== "index.html") {
-          throw new Error(`Native .tdwall manifest mismatch: ${JSON.stringify(manifest)}`);
-        }
-
-        finished = true;
-        clearTimeout(timeout);
-        cleanupPackage();
-        console.log("Pi RPC -> provider -> built-in write -> PowerShell -> TuringDesk Pi extension -> native .tdwall: OK");
-        try { child.kill(); } catch {}
-        server.close(() => process.exit(0));
-      } catch (error) {
-        clearTimeout(timeout);
-        fail(error?.stack || String(error));
-      }
+      verifying = true;
+      clearTimeout(timeout);
+      verifyArtifacts();
     }
   });
 
   child.on("exit", (code) => {
     if (!finished && code !== null) {
       clearTimeout(timeout);
-      fail(`Pi exited before agent_settled: ${code}; stderr=${stderr}`);
+      fail(`Pi exited before successful verification: ${code}; turn=${turn}; state=${JSON.stringify(artifactState())}; stderr=${stderr}`);
     }
   });
 

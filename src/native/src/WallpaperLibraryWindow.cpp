@@ -1,4 +1,5 @@
 #include "turingdesk/WallpaperLibraryWindow.h"
+#include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/L3Agent.h"
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
 #include "turingdesk/WebWallpaperHost.h"
@@ -12,6 +13,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -45,6 +47,12 @@ constexpr int kAiProbeId = 5204;
 constexpr int kAiSaveId = 5205;
 constexpr int kAiHarnessId = 5206;
 constexpr int kAiClearKeyId = 5207;
+
+constexpr int kWidgetListId = 5301;
+constexpr int kWidgetCreateClockId = 5302;
+constexpr int kWidgetToggleId = 5303;
+constexpr int kWidgetRemoveId = 5304;
+constexpr int kWidgetRefreshId = 5305;
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -100,11 +108,12 @@ std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
 
 WallpaperSettingsSection SectionForTab(int index) {
     switch (index) {
-    case 1: return WallpaperSettingsSection::Playlists;
-    case 2: return WallpaperSettingsSection::Displays;
-    case 3: return WallpaperSettingsSection::Rules;
-    case 4: return WallpaperSettingsSection::Performance;
-    case 5: return WallpaperSettingsSection::AI;
+    case 1: return WallpaperSettingsSection::Widgets;
+    case 2: return WallpaperSettingsSection::Playlists;
+    case 3: return WallpaperSettingsSection::Displays;
+    case 4: return WallpaperSettingsSection::Rules;
+    case 5: return WallpaperSettingsSection::Performance;
+    case 6: return WallpaperSettingsSection::AI;
     default: return WallpaperSettingsSection::Installed;
     }
 }
@@ -112,6 +121,8 @@ WallpaperSettingsSection SectionForTab(int index) {
 } // namespace
 
 struct WallpaperLibraryWindow::Impl {
+    enum class LocalPage { Installed, Widgets, AI };
+
     HINSTANCE instance{};
     HWND window{};
     HWND tabs{};
@@ -137,6 +148,15 @@ struct WallpaperLibraryWindow::Impl {
     HWND importWebButton{};
     HWND status{};
 
+    HWND widgetList{};
+    HWND widgetDetailFrame{};
+    HWND widgetTitle{};
+    HWND widgetMeta{};
+    HWND widgetCreateClockButton{};
+    HWND widgetToggleButton{};
+    HWND widgetRemoveButton{};
+    HWND widgetRefreshButton{};
+
     HWND aiUrlLabel{};
     HWND aiUrl{};
     HWND aiKeyLabel{};
@@ -159,13 +179,17 @@ struct WallpaperLibraryWindow::Impl {
     std::vector<std::wstring> visibleIds;
     std::vector<WallpaperLibraryTarget> targets;
     std::vector<std::wstring> targetIds;
+    std::wstring selectedWallpaperId;
+
+    std::vector<std::wstring> widgetVisibleIds;
+    std::wstring selectedWidgetId;
 
     std::unique_ptr<turingdesk::L3Agent> aiAgent;
     turingdesk::ModelProbeResult aiProbe;
     std::wstring aiProbedUrl;
     bool aiHasProbe{};
     bool aiHadStoredKey{};
-    bool aiPage{};
+    LocalPage localPage{LocalPage::Installed};
 
     HFONT titleFont{};
     HFONT pageTitleFont{};
@@ -188,9 +212,7 @@ struct WallpaperLibraryWindow::Impl {
         return MulDiv(logicalPixels, static_cast<int>(CurrentDpi()), USER_DEFAULT_SCREEN_DPI);
     }
 
-    int FontHeight(int logicalPixels) const {
-        return -Scale(logicalPixels);
-    }
+    int FontHeight(int logicalPixels) const { return -Scale(logicalPixels); }
 
     HFONT MakeFont(int logicalPixels, int weight, const wchar_t* face) const {
         return CreateFontW(FontHeight(logicalPixels), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -218,42 +240,14 @@ struct WallpaperLibraryWindow::Impl {
         auto set = [](HWND control, HFONT use) {
             if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
         };
-        set(headerTitle, titleFont);
-        set(headerSubtitle, smallFont);
-        set(importButton, bodyFont);
-        set(tabs, bodyFont);
-        set(pageTitle, pageTitleFont);
-        set(pageSubtitle, smallFont);
-        set(search, bodyFont);
-        set(list, bodyFont);
-        set(detailFrame, bodyFont);
-        set(selectedTitle, pageTitleFont);
-        set(selectedMeta, smallFont);
-        set(selectedDescription, bodyFont);
-        set(targetLabel, smallFont);
-        set(targetCombo, bodyFont);
-        set(applyButton, bodyFont);
-        set(favoriteButton, bodyFont);
-        set(removeButton, bodyFont);
-        set(webLabel, smallFont);
-        set(webUrl, bodyFont);
-        set(importWebButton, bodyFont);
-        set(status, smallFont);
-        set(aiUrlLabel, sectionFont);
-        set(aiUrl, bodyFont);
-        set(aiKeyLabel, sectionFont);
-        set(aiKey, bodyFont);
-        set(aiModelLabel, sectionFont);
-        set(aiModel, bodyFont);
-        set(aiProviderLabel, bodyFont);
-        set(aiProviderValue, bodyFont);
-        set(aiProbeButton, bodyFont);
-        set(aiSaveButton, bodyFont);
-        set(aiClearKeyButton, bodyFont);
-        set(aiStatus, bodyFont);
-        set(aiRuntimeTitle, pageTitleFont);
-        set(aiRuntimeStatus, bodyFont);
-        set(aiHarnessButton, bodyFont);
+        for (HWND control : {headerSubtitle, selectedMeta, targetLabel, webLabel, status, widgetMeta}) set(control, smallFont);
+        for (HWND control : {headerTitle}) set(control, titleFont);
+        for (HWND control : {pageTitle, selectedTitle, widgetTitle, aiRuntimeTitle}) set(control, pageTitleFont);
+        for (HWND control : {importButton, tabs, search, list, selectedDescription, targetCombo, applyButton, favoriteButton,
+                             removeButton, webUrl, importWebButton, widgetList, widgetCreateClockButton, widgetToggleButton,
+                             widgetRemoveButton, widgetRefreshButton, aiUrl, aiKey, aiModel, aiProviderLabel, aiProviderValue,
+                             aiProbeButton, aiSaveButton, aiClearKeyButton, aiStatus, aiRuntimeStatus, aiHarnessButton}) set(control, bodyFont);
+        for (HWND control : {aiUrlLabel, aiKeyLabel, aiModelLabel}) set(control, sectionFont);
         if (list) ListView_SetIconSpacing(list, Scale(240), Scale(170));
     }
 
@@ -266,10 +260,38 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     std::optional<WallpaperLibraryItem> Selected() const {
-        if (!library || !list) return std::nullopt;
+        if (!library) return std::nullopt;
+        if (!selectedWallpaperId.empty()) {
+            if (auto item = library->Find(selectedWallpaperId)) return item;
+        }
+        if (!list) return std::nullopt;
         const int selected = ListView_GetNextItem(list, -1, LVNI_SELECTED);
         if (selected < 0 || static_cast<std::size_t>(selected) >= visibleIds.size()) return std::nullopt;
         return library->Find(visibleIds[static_cast<std::size_t>(selected)]);
+    }
+
+    void SelectWallpaperIndex(int index) {
+        if (!list || index < 0 || static_cast<std::size_t>(index) >= visibleIds.size()) return;
+        selectedWallpaperId = visibleIds[static_cast<std::size_t>(index)];
+        ListView_SetItemState(list, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_SetItemState(list, index, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_EnsureVisible(list, index, FALSE);
+        SetFocus(list);
+        UpdateSelectionActions();
+        InvalidateRect(list, nullptr, FALSE);
+    }
+
+    bool SelectWallpaperAtPoint(POINT point) {
+        if (!list) return false;
+        for (int index = 0; index < static_cast<int>(visibleIds.size()); ++index) {
+            RECT bounds{};
+            if (!ListView_GetItemRect(list, index, &bounds, LVIR_BOUNDS)) continue;
+            if (PtInRect(&bounds, point)) {
+                SelectWallpaperIndex(index);
+                return true;
+            }
+        }
+        return false;
     }
 
     std::wstring SelectedTargetId() const {
@@ -308,8 +330,7 @@ struct WallpaperLibraryWindow::Impl {
 
     void RebuildList() {
         if (!library || !list) return;
-        const auto selectedBefore = Selected();
-        const std::wstring previous = selectedBefore ? selectedBefore->id : L"";
+        const std::wstring previous = selectedWallpaperId;
         ListView_DeleteAllItems(list);
         visibleIds.clear();
 
@@ -323,18 +344,20 @@ struct WallpaperLibraryWindow::Impl {
             lv.mask = LVIF_TEXT;
             lv.iItem = index;
             lv.pszText = title.data();
-            ListView_InsertItem(list, &lv);
-            visibleIds.push_back(item.id);
-            if (!previous.empty() && _wcsicmp(previous.c_str(), item.id.c_str()) == 0) restore = index;
+            if (ListView_InsertItem(list, &lv) >= 0) {
+                visibleIds.push_back(item.id);
+                if (!previous.empty() && _wcsicmp(previous.c_str(), item.id.c_str()) == 0)
+                    restore = static_cast<int>(visibleIds.size() - 1);
+            }
             ++index;
         }
 
         if (restore < 0 && !visibleIds.empty()) restore = 0;
-        if (restore >= 0) {
-            ListView_SetItemState(list, restore, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
-            ListView_EnsureVisible(list, restore, FALSE);
+        if (restore >= 0) SelectWallpaperIndex(restore);
+        else {
+            selectedWallpaperId.clear();
+            UpdateSelectionActions();
         }
-        UpdateSelectionActions();
         SetStatus(L"已安装 " + std::to_wstring(library->Items().size()) + L" 个桌面资源");
     }
 
@@ -366,15 +389,8 @@ struct WallpaperLibraryWindow::Impl {
 
     void FinishImport(const WallpaperLibraryItem& imported, const std::wstring& message) {
         SetWindowTextW(search, L"");
+        selectedWallpaperId = imported.id;
         RebuildList();
-        for (std::size_t i = 0; i < visibleIds.size(); ++i) {
-            if (_wcsicmp(visibleIds[i].c_str(), imported.id.c_str()) == 0) {
-                ListView_SetItemState(list, static_cast<int>(i), LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
-                ListView_EnsureVisible(list, static_cast<int>(i), FALSE);
-                break;
-            }
-        }
-        UpdateSelectionActions();
         SetStatus(message);
     }
 
@@ -422,6 +438,7 @@ struct WallpaperLibraryWindow::Impl {
             MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
+        selectedWallpaperId = selected->id;
         RebuildList();
     }
 
@@ -435,6 +452,7 @@ struct WallpaperLibraryWindow::Impl {
             MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
+        selectedWallpaperId.clear();
         RebuildList();
     }
 
@@ -445,6 +463,145 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring ignored;
         library->MarkUsed(selected->id, &ignored);
         SetStatus(L"已应用到桌面：" + selected->title);
+    }
+
+    std::wstring DefaultWidgetMonitorId() const {
+        for (const auto& target : targets) if (target.primary) return target.monitorId;
+        return targets.empty() ? L"" : targets.front().monitorId;
+    }
+
+    std::optional<DesktopWidget> SelectedWidget() const {
+        if (selectedWidgetId.empty()) return std::nullopt;
+        DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) return std::nullopt;
+        return store.Find(selectedWidgetId);
+    }
+
+    void UpdateWidgetSelectionActions() {
+        const auto widget = SelectedWidget();
+        if (!widget) {
+            SetWindowTextW(widgetTitle, L"选择一个小组件");
+            SetWindowTextW(widgetMeta, L"小组件独立于壁纸存在。切换壁纸不会删除小组件布局。");
+            EnableWindow(widgetToggleButton, FALSE);
+            EnableWindow(widgetRemoveButton, FALSE);
+            return;
+        }
+
+        SetWindowTextW(widgetTitle, widget->title.c_str());
+        std::wostringstream meta;
+        meta << (widget->enabled ? L"已启用" : L"已停用")
+             << L"\r\n目标：" << (widget->monitorId.empty() ? L"主显示器" : widget->monitorId)
+             << L"\r\n位置：" << widget->x << L", " << widget->y
+             << L"\r\n尺寸：" << widget->width << L" × " << widget->height
+             << L"\r\n类型：Web Widget";
+        SetWindowTextW(widgetMeta, meta.str().c_str());
+        SetWindowTextW(widgetToggleButton, widget->enabled ? L"停用" : L"启用");
+        EnableWindow(widgetToggleButton, TRUE);
+        EnableWindow(widgetRemoveButton, TRUE);
+    }
+
+    void RefreshWidgetList() {
+        if (!widgetList) return;
+        DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) {
+            SetStatus(error.empty() ? L"无法读取小组件。" : error);
+            return;
+        }
+
+        const std::wstring previous = selectedWidgetId;
+        SendMessageW(widgetList, LB_RESETCONTENT, 0, 0);
+        widgetVisibleIds.clear();
+        int restore = -1;
+        for (const auto& widget : store.Items()) {
+            std::wstring text = widget.enabled ? L"● " : L"○ ";
+            text += widget.title;
+            const LRESULT added = SendMessageW(widgetList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+            if (added == LB_ERR || added == LB_ERRSPACE) continue;
+            widgetVisibleIds.push_back(widget.id);
+            if (!previous.empty() && _wcsicmp(previous.c_str(), widget.id.c_str()) == 0)
+                restore = static_cast<int>(widgetVisibleIds.size() - 1);
+        }
+        if (restore < 0 && !widgetVisibleIds.empty()) restore = 0;
+        if (restore >= 0) {
+            SendMessageW(widgetList, LB_SETCURSEL, restore, 0);
+            selectedWidgetId = widgetVisibleIds[static_cast<std::size_t>(restore)];
+        } else {
+            selectedWidgetId.clear();
+        }
+        UpdateWidgetSelectionActions();
+        if (localPage == LocalPage::Widgets)
+            SetStatus(L"已安装 " + std::to_wstring(store.Items().size()) + L" 个小组件");
+    }
+
+    void SelectWidgetFromList() {
+        const LRESULT selected = SendMessageW(widgetList, LB_GETCURSEL, 0, 0);
+        if (selected == LB_ERR || selected < 0 || static_cast<std::size_t>(selected) >= widgetVisibleIds.size()) {
+            selectedWidgetId.clear();
+        } else {
+            selectedWidgetId = widgetVisibleIds[static_cast<std::size_t>(selected)];
+        }
+        UpdateWidgetSelectionActions();
+    }
+
+    void CreateClockWidget() {
+        static constexpr std::string_view html = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px 22px;border-radius:22px;background:rgba(18,24,38,.78);box-shadow:0 10px 30px rgba(0,0,0,.28)}
+#time{font-size:44px;font-weight:650;letter-spacing:-1px;line-height:1}#date{margin-top:10px;font-size:16px;opacity:.78}
+</style></head><body><div class="card"><div id="time"></div><div id="date"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";
+
+        DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) {
+            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            return;
+        }
+        auto created = store.CreateManagedWeb(L"桌面时钟", html, DefaultWidgetMonitorId(), 0.72f, 0.05f, 0.23f, 0.16f, &error);
+        if (!created) {
+            MessageBoxW(window, error.empty() ? L"创建小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            return;
+        }
+        selectedWidgetId = created->id;
+        RefreshWidgetList();
+        SetStatus(L"已创建桌面时钟。运行时将在约 1 秒内刷新。");
+    }
+
+    void ToggleSelectedWidget() {
+        const auto current = SelectedWidget();
+        if (!current) return;
+        DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) return;
+        auto widget = *current;
+        widget.enabled = !widget.enabled;
+        if (!store.Upsert(widget, &error)) {
+            MessageBoxW(window, error.empty() ? L"更新小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            return;
+        }
+        selectedWidgetId = widget.id;
+        RefreshWidgetList();
+        SetStatus(widget.enabled ? L"小组件已启用。" : L"小组件已停用。");
+    }
+
+    void RemoveSelectedWidget() {
+        const auto current = SelectedWidget();
+        if (!current) return;
+        if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"图灵智能桌面",
+                        MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+        DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error) || !store.Remove(current->id, true, &error)) {
+            MessageBoxW(window, error.empty() ? L"删除小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            return;
+        }
+        selectedWidgetId.clear();
+        RefreshWidgetList();
+        SetStatus(L"小组件已删除。");
     }
 
     void RefreshAiFields() {
@@ -495,13 +652,9 @@ struct WallpaperLibraryWindow::Impl {
         aiProbedUrl = url;
         PopulateAiModels(aiProbe);
         SetWindowTextW(aiProviderValue, aiProbe.providerId.empty() ? L"未识别" : aiProbe.providerId.c_str());
-        if (aiProbe.ok) {
-            SetAiStatus(L"✓ " + aiProbe.protocolLabel + L" · 找到 " + std::to_wstring(aiProbe.models.size()) + L" 个模型");
-        } else if (!aiProbe.protocolLabel.empty()) {
-            SetAiStatus(L"⚠ " + aiProbe.protocolLabel + L" · " + aiProbe.message);
-        } else {
-            SetAiStatus(L"无法连接 · " + aiProbe.message);
-        }
+        if (aiProbe.ok) SetAiStatus(L"✓ " + aiProbe.protocolLabel + L" · 找到 " + std::to_wstring(aiProbe.models.size()) + L" 个模型");
+        else if (!aiProbe.protocolLabel.empty()) SetAiStatus(L"⚠ " + aiProbe.protocolLabel + L" · " + aiProbe.message);
+        else SetAiStatus(L"无法连接 · " + aiProbe.message);
     }
 
     void SaveAi() {
@@ -585,6 +738,12 @@ struct WallpaperLibraryWindow::Impl {
         ShowControl(importButton, show);
     }
 
+    void ShowWidgetsPage(bool show) {
+        for (HWND control : {widgetList, widgetDetailFrame, widgetTitle, widgetMeta, widgetCreateClockButton,
+                             widgetToggleButton, widgetRemoveButton, widgetRefreshButton})
+            ShowControl(control, show);
+    }
+
     void ShowAiPage(bool show) {
         for (HWND control : {aiUrlLabel, aiUrl, aiKeyLabel, aiKey, aiModelLabel, aiModel, aiProviderLabel, aiProviderValue,
                              aiProbeButton, aiSaveButton, aiClearKeyButton, aiStatus, aiRuntimeTitle, aiRuntimeStatus, aiHarnessButton})
@@ -592,21 +751,33 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void NavigateToTab(int index) {
-        if (index == 5) {
-            aiPage = true;
+        ShowInstalledPage(false);
+        ShowWidgetsPage(false);
+        ShowAiPage(false);
+        ShowControl(importButton, false);
+
+        if (index == 6) {
+            localPage = LocalPage::AI;
             SetWindowTextW(pageTitle, L"图灵 AI");
             SetWindowTextW(pageSubtitle, L"模型、API 和高级工作台都在这里统一管理。");
-            ShowInstalledPage(false);
             ShowAiPage(true);
             RefreshAiFields();
             Layout();
             return;
         }
+        if (index == 1) {
+            localPage = LocalPage::Widgets;
+            SetWindowTextW(pageTitle, L"小组件");
+            SetWindowTextW(pageSubtitle, L"小组件独立于壁纸，可由你或图灵 AI 创建和调整。");
+            ShowWidgetsPage(true);
+            RefreshWidgetList();
+            Layout();
+            return;
+        }
         if (index == 0) {
-            aiPage = false;
+            localPage = LocalPage::Installed;
             SetWindowTextW(pageTitle, L"你的桌面");
             SetWindowTextW(pageSubtitle, L"把图片、视频、HTML 或 .tdwall 拖进窗口即可导入。");
-            ShowAiPage(false);
             ShowInstalledPage(true);
             Layout();
             return;
@@ -630,9 +801,9 @@ struct WallpaperLibraryWindow::Impl {
         const int inset = Scale(6);
         rc.left += inset; rc.top += inset; rc.right -= Scale(10); rc.bottom -= Scale(10);
         HDC dc = draw->nmcd.hdc;
-        const bool selected = (ListView_GetItemState(list, index, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+        const bool selected = !selectedWallpaperId.empty() && _wcsicmp(selectedWallpaperId.c_str(), item->id.c_str()) == 0;
 
-        HBRUSH cardBrush = CreateSolidBrush(RGB(255, 255, 255));
+        HBRUSH cardBrush = CreateSolidBrush(selected ? RGB(246, 249, 255) : RGB(255, 255, 255));
         HPEN borderPen = CreatePen(PS_SOLID, selected ? 2 : 1, selected ? RGB(37, 99, 235) : RGB(216, 222, 232));
         HGDIOBJ oldBrush = SelectObject(dc, cardBrush);
         HGDIOBJ oldPen = SelectObject(dc, borderPen);
@@ -687,7 +858,7 @@ struct WallpaperLibraryWindow::Impl {
         MoveWindow(pageTitle, margin, contentTop, Scale(360), Scale(32), TRUE);
         MoveWindow(pageSubtitle, margin, contentTop + Scale(32), std::max(Scale(360), width - margin * 2), Scale(24), TRUE);
 
-        if (!aiPage) {
+        if (localPage == LocalPage::Installed) {
             const int detailWidth = std::clamp(width * 30 / 100, Scale(300), Scale(370));
             const int gap = Scale(18);
             const int detailX = width - margin - detailWidth;
@@ -713,6 +884,23 @@ struct WallpaperLibraryWindow::Impl {
             MoveWindow(webLabel, detailX + Scale(18), contentTop + Scale(350), detailWidth - Scale(36), Scale(24), TRUE);
             MoveWindow(webUrl, detailX + Scale(18), contentTop + Scale(378), detailWidth - Scale(36), Scale(36), TRUE);
             MoveWindow(importWebButton, detailX + Scale(18), contentTop + Scale(424), detailWidth - Scale(36), Scale(38), TRUE);
+        } else if (localPage == LocalPage::Widgets) {
+            const int detailWidth = std::clamp(width * 34 / 100, Scale(340), Scale(430));
+            const int gap = Scale(18);
+            const int detailX = width - margin - detailWidth;
+            const int listWidth = std::max(Scale(420), detailX - gap - margin);
+            const int top = contentTop + Scale(66);
+            const int bottom = Scale(42);
+            const int pageHeight = std::max(Scale(240), height - top - bottom);
+            MoveWindow(widgetList, margin, top, listWidth, pageHeight, TRUE);
+            MoveWindow(widgetDetailFrame, detailX, top, detailWidth, pageHeight, TRUE);
+            MoveWindow(widgetTitle, detailX + Scale(18), top + Scale(18), detailWidth - Scale(36), Scale(32), TRUE);
+            MoveWindow(widgetMeta, detailX + Scale(18), top + Scale(58), detailWidth - Scale(36), Scale(142), TRUE);
+            MoveWindow(widgetCreateClockButton, detailX + Scale(18), top + Scale(214), detailWidth - Scale(36), Scale(40), TRUE);
+            MoveWindow(widgetToggleButton, detailX + Scale(18), top + Scale(266), detailWidth - Scale(36), Scale(38), TRUE);
+            const int half = (detailWidth - Scale(44)) / 2;
+            MoveWindow(widgetRefreshButton, detailX + Scale(18), top + Scale(316), half, Scale(36), TRUE);
+            MoveWindow(widgetRemoveButton, detailX + Scale(26) + half, top + Scale(316), half, Scale(36), TRUE);
         } else {
             const int gap = Scale(28);
             const int rightWidth = std::clamp(width * 28 / 100, Scale(300), Scale(380));
@@ -735,7 +923,6 @@ struct WallpaperLibraryWindow::Impl {
             MoveWindow(aiProviderValue, margin + Scale(116), y, std::max(Scale(180), leftWidth - Scale(116)), labelHeight, TRUE); y += Scale(38);
             MoveWindow(aiSaveButton, margin, y, Scale(166), Scale(40), TRUE); y += Scale(50);
             MoveWindow(aiStatus, margin, y, leftWidth, Scale(62), TRUE);
-
             MoveWindow(aiRuntimeTitle, rightX, contentTop + Scale(64), rightWidth, Scale(30), TRUE);
             MoveWindow(aiRuntimeStatus, rightX, contentTop + Scale(100), rightWidth, Scale(108), TRUE);
             MoveWindow(aiHarnessButton, rightX, contentTop + Scale(222), rightWidth, Scale(40), TRUE);
@@ -789,6 +976,11 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kFavoriteId && notification == BN_CLICKED) self->ToggleFavorite();
             else if (id == kRemoveId && notification == BN_CLICKED) self->RemoveSelected();
             else if (id == kApplyId && notification == BN_CLICKED) self->ApplySelected();
+            else if (id == kWidgetListId && notification == LBN_SELCHANGE) self->SelectWidgetFromList();
+            else if (id == kWidgetCreateClockId && notification == BN_CLICKED) self->CreateClockWidget();
+            else if (id == kWidgetToggleId && notification == BN_CLICKED) self->ToggleSelectedWidget();
+            else if (id == kWidgetRemoveId && notification == BN_CLICKED) self->RemoveSelectedWidget();
+            else if (id == kWidgetRefreshId && notification == BN_CLICKED) self->RefreshWidgetList();
             else if (id == kAiProbeId && notification == BN_CLICKED) self->ProbeAi();
             else if (id == kAiSaveId && notification == BN_CLICKED) self->SaveAi();
             else if (id == kAiClearKeyId && notification == BN_CLICKED) self->ClearAiKey();
@@ -805,11 +997,30 @@ struct WallpaperLibraryWindow::Impl {
             if (note->idFrom == kListId && note->code == NM_CUSTOMDRAW)
                 return self->DrawListCustom(reinterpret_cast<NMLVCUSTOMDRAW*>(lParam));
             if (note->idFrom == kListId && note->code == LVN_ITEMCHANGED) {
+                const auto* changed = reinterpret_cast<const NMLISTVIEW*>(lParam);
+                if (changed && changed->iItem >= 0 &&
+                    static_cast<std::size_t>(changed->iItem) < self->visibleIds.size() &&
+                    (changed->uNewState & LVIS_SELECTED) != 0) {
+                    self->selectedWallpaperId = self->visibleIds[static_cast<std::size_t>(changed->iItem)];
+                }
                 self->UpdateSelectionActions();
                 InvalidateRect(self->list, nullptr, FALSE);
                 return 0;
             }
+            if (note->idFrom == kListId && note->code == NM_CLICK) {
+                const auto* activate = reinterpret_cast<const NMITEMACTIVATE*>(lParam);
+                if (activate) {
+                    if (activate->iItem >= 0) self->SelectWallpaperIndex(activate->iItem);
+                    else self->SelectWallpaperAtPoint(activate->ptAction);
+                }
+                return 0;
+            }
             if (note->idFrom == kListId && note->code == NM_DBLCLK) {
+                const auto* activate = reinterpret_cast<const NMITEMACTIVATE*>(lParam);
+                if (activate) {
+                    if (activate->iItem >= 0) self->SelectWallpaperIndex(activate->iItem);
+                    else self->SelectWallpaperAtPoint(activate->ptAction);
+                }
                 self->ApplySelected();
                 return 0;
             }
@@ -847,7 +1058,6 @@ struct WallpaperLibraryWindow::Impl {
         if (!window) return false;
 
         RebuildFonts();
-
         auto font = [&](HWND control, HFONT use) {
             if (control && use) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(use), TRUE);
             return control;
@@ -862,13 +1072,15 @@ struct WallpaperLibraryWindow::Impl {
         };
 
         headerTitle = label(L"桌面设置", 0, titleFont);
-        headerSubtitle = label(L"场景、播放列表、多屏、应用规则、性能和图灵 AI", 0, smallFont);
+        headerSubtitle = label(L"壁纸、小组件、播放列表、多屏、应用规则、性能和图灵 AI", 0, smallFont);
         importButton = button(L"导入壁纸", kImportId);
 
         tabs = font(CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                     0, 0, 10, 10, window, ControlId(kTabsId), instance, nullptr), bodyFont);
-        for (const wchar_t* tabText : {L"已安装", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"图灵 AI"}) {
-            TCITEMW item{}; item.mask = TCIF_TEXT; item.pszText = const_cast<wchar_t*>(tabText);
+        for (const wchar_t* tabText : {L"已安装", L"小组件", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"图灵 AI"}) {
+            TCITEMW item{};
+            item.mask = TCIF_TEXT;
+            item.pszText = const_cast<wchar_t*>(tabText);
             TabCtrl_InsertItem(tabs, TabCtrl_GetItemCount(tabs), &item);
         }
         TabCtrl_SetCurSel(tabs, 0);
@@ -900,6 +1112,17 @@ struct WallpaperLibraryWindow::Impl {
         importWebButton = button(L"导入 Web URL", kImportWebUrlId);
         status = label(L"", 0, smallFont);
 
+        widgetList = font(CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+                                          WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                                          0, 0, 10, 10, window, ControlId(kWidgetListId), instance, nullptr), bodyFont);
+        widgetDetailFrame = label(L"", SS_ETCHEDFRAME, bodyFont, false);
+        widgetTitle = label(L"选择一个小组件", 0, pageTitleFont, false);
+        widgetMeta = label(L"小组件独立于壁纸存在。", SS_LEFT, smallFont, false);
+        widgetCreateClockButton = button(L"新建桌面时钟", kWidgetCreateClockId, false);
+        widgetToggleButton = button(L"启用 / 停用", kWidgetToggleId, false);
+        widgetRemoveButton = button(L"删除", kWidgetRemoveId, false);
+        widgetRefreshButton = button(L"刷新", kWidgetRefreshId, false);
+
         aiUrlLabel = label(L"API 地址", 0, sectionFont, false);
         aiUrl = font(CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL,
                                     0, 0, 10, 10, window, ControlId(kAiUrlId), instance, nullptr), bodyFont);
@@ -921,9 +1144,12 @@ struct WallpaperLibraryWindow::Impl {
 
         aiAgent = std::make_unique<turingdesk::L3Agent>();
         ApplyFonts();
+        ShowWidgetsPage(false);
         ShowAiPage(false);
         RebuildTargets();
         RebuildList();
+        RefreshWidgetList();
+        NavigateToTab(0);
         Layout();
         return true;
     }
@@ -944,6 +1170,7 @@ bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
     impl_->RebuildTargets();
     impl_->RebuildList();
+    impl_->RefreshWidgetList();
     impl_->NavigateToTab(TabCtrl_GetCurSel(impl_->tabs));
     ShowWindow(impl_->window, SW_SHOWNORMAL);
     SetForegroundWindow(impl_->window);
@@ -962,7 +1189,8 @@ void WallpaperLibraryWindow::Close() {
 void WallpaperLibraryWindow::Refresh() {
     impl_->RebuildTargets();
     impl_->RebuildList();
-    if (impl_->aiPage) impl_->RefreshAiFields();
+    impl_->RefreshWidgetList();
+    if (impl_->localPage == Impl::LocalPage::AI) impl_->RefreshAiFields();
 }
 
 bool WallpaperLibraryWindow::Visible() const noexcept {

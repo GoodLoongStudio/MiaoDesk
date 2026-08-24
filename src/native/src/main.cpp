@@ -6,8 +6,11 @@
 #include <windows.h>
 #include <algorithm>
 #include <cwctype>
+#include <filesystem>
 #include <string>
 #include <string_view>
+
+namespace fs = std::filesystem;
 
 namespace turingdesk {
 bool RunL3PersistenceSelfTest();
@@ -71,8 +74,70 @@ bool HasCodexLoopbackProxyBypass() {
            NoProxyContains(noProxy, L"::1");
 }
 
+fs::path ModuleDirectory() {
+    std::wstring path(32768, L'\0');
+    const DWORD count = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    if (count == 0 || count >= path.size()) return {};
+    path.resize(count);
+    return fs::path(path).parent_path();
+}
+
+bool PathContainsDirectory(const std::wstring& rawPath, const fs::path& directory) {
+    const auto target = Lower(directory.wstring());
+    std::size_t start = 0;
+    while (start <= rawPath.size()) {
+        const auto semicolon = rawPath.find(L';', start);
+        const auto end = semicolon == std::wstring::npos ? rawPath.size() : semicolon;
+        auto item = rawPath.substr(start, end - start);
+        if (item.size() >= 2 && item.front() == L'"' && item.back() == L'"') item = item.substr(1, item.size() - 2);
+        while (!item.empty() && std::iswspace(item.front())) item.erase(item.begin());
+        while (!item.empty() && std::iswspace(item.back())) item.pop_back();
+        if (Lower(item) == target) return true;
+        if (semicolon == std::wstring::npos) break;
+        start = semicolon + 1;
+    }
+    return false;
+}
+
+void EnsureCodexPackagePath() {
+    const auto module = ModuleDirectory();
+    if (module.empty()) return;
+    const auto codexRoot = module / L"Codex";
+    const fs::path entries[] = {
+        codexRoot,
+        codexRoot / L"bin",
+        codexRoot / L"codex-path",
+        codexRoot / L"codex-resources",
+    };
+
+    std::wstring path = ReadEnvironmentValue(L"PATH");
+    std::wstring prefix;
+    for (const auto& entry : entries) {
+        std::error_code ec;
+        if (!fs::exists(entry, ec) || !fs::is_directory(entry, ec) || PathContainsDirectory(path, entry)) continue;
+        if (!prefix.empty()) prefix.push_back(L';');
+        prefix += entry.wstring();
+    }
+    if (prefix.empty()) return;
+    if (!path.empty()) prefix += L";" + path;
+    SetEnvironmentVariableW(L"PATH", prefix.c_str());
+}
+
+bool HasCodexPackagePathIfInstalled() {
+    const auto module = ModuleDirectory();
+    if (module.empty()) return true;
+    const auto codexRoot = module / L"Codex";
+    std::error_code ec;
+    if (!fs::exists(codexRoot, ec)) return true;
+    const auto path = ReadEnvironmentValue(L"PATH");
+    return PathContainsDirectory(path, codexRoot) &&
+           PathContainsDirectory(path, codexRoot / L"codex-path") &&
+           PathContainsDirectory(path, codexRoot / L"codex-resources");
+}
+
 bool RunNativeSelfTest() {
     if (!HasCodexLoopbackProxyBypass()) return false;
+    if (!HasCodexPackagePathIfInstalled()) return false;
 
     turingdesk::AppSearch apps;
     apps.BuildIndex();
@@ -135,6 +200,7 @@ void ActivateExistingSearchWindow() {
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     EnsureCodexLoopbackProxyBypass();
+    EnsureCodexPackagePath();
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(com) && com != RPC_E_CHANGED_MODE) return 3;

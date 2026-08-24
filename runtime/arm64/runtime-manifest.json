@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-24T02:47:49.6675300Z",
-  "lockSha256": "314cea3b42a5f5ae68dcf91e960ca6233f137c1ca5e23bfda86be7e4d41df4a2",
+  "generatedUtc": "2026-08-24T05:53:32.2495779Z",
+  "lockSha256": "0a896a3b0d1af1291910d1a7a541c4e0857d1a40ad7accd1ef365e22a1f289ea",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-arm64.zip",
@@ -19,19 +19,12 @@
     "archive": "goz/goz-v0.1.1-win-arm64.zip",
     "sha256": "076cf0234b37327a730c1cf48e9c11b971f39c130ea11fbd28528cbcebed62a1"
   },
-  "codexRelay": {
-    "version": "0.5.7",
-    "commit": "f6b65c4b7a818f215f2aa1dcebb33657716b487f",
-    "archive": "codex-relay/codex-relay-v0.5.7-win-arm64.zip",
-    "sha256": "f4b1b99236a35a338aca45f21073b7fabc263c9b432c85eceaf5b28ae6afde5f",
-    "wheelSha256": "4755de9ff3c4756ebcdce5eb998095f1a27bad515b084aab1bd1bfd4b95dea7b",
-    "source": "pypi-win-arm64-wheel"
-  },
-  "codex": {
-    "release": "rust-v0.146.0",
-    "archive": "codex/codex-package-aarch64-pc-windows-msvc.tar.zst",
-    "sha256": "938f34edbfffdf38dc46de2c10a20c6136f8d87c001f2763f6f85d9594f4fc6b",
-    "mode": "cli-app-server"
+  "pi": {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "0.83.0",
+    "archive": "pi/pi-coding-agent-0.83.0-win-arm64.zip",
+    "sha256": "37f640c2592d46c0e62ce3bff4e0105030fcb185e620b634601c27d9e2c60225",
+    "mode": "node-rpc"
   },
   "webview2Sdk": {
     "version": "1.0.4129.50",

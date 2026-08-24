@@ -7,6 +7,7 @@
 - 产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`
 - AI Runtime 契约：`docs/L3-PI-RUNTIME-CONTRACT.md`
 - Desktop Composition 架构：`docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
+- Windows Wallpaper 实现参考：`docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`
 
 ## 1. 三个核心能力
 
@@ -16,6 +17,8 @@ TuringDesk
 ├─ B. Wallpaper Engine 级 Desktop Composition
 └─ C. DeepSeek Harness 高级工作台
 ```
+
+“Wallpaper Engine 级”只表示产品能力深度。**具体 Windows 壁纸运行时实现不得以 Wallpaper Engine 为工程参考**；统一以 `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`、Lively 的公开行为和 Microsoft Windows API 文档为技术参考，并由 TuringDesk 独立 C++23 实现。
 
 Native 主线以 Windows 性能、稳定性、低常驻资源、清晰故障边界和真实用户可用为优先目标。
 
@@ -33,6 +36,8 @@ Native 主线以 Windows 性能、稳定性、低常驻资源、清晰故障边�
 10. Web Runtime 只在 Web Wallpaper、Widget 或高级工作台等确有需要的场景按需启动。
 11. 普通 Scene 不得因为 AI/Widget 无条件加载 Chromium。
 12. 真实 Windows 设备可用才算完成；编译、CI、Mock 只属于中间验证。
+13. Windows Shell / WorkerW / Progman / Raised Desktop / Explorer recovery 逻辑只能由统一 `DesktopShellHost` 持有，不允许 Wallpaper、Web、Widget 各自实现一套。
+14. Lively 是 GPL-3.0、TuringDesk 是 MIT；只能研究行为和 API 序列，禁止复制或逐行翻译 Lively 源码。
 
 ## 3. Desktop Search / AI
 
@@ -146,7 +151,23 @@ desktop_undo
 
 ## 5. Wallpaper Engine 级 Desktop Composition
 
-### 5.1 总体分层
+### 5.1 实现参考边界
+
+产品功能深度可以对标 Wallpaper Engine-class，但 Windows 实现统一走：
+
+```text
+Product requirement
+  ↓
+Lively public behavior + Microsoft APIs
+  ↓
+TuringDesk DesktopShellHost / Surface Managers
+  ↓
+Independent C++23 implementation
+```
+
+具体 WorkerW / Progman / Raised Desktop / WebView2 surface / Explorer recovery 契约见 `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`。
+
+### 5.2 总体分层
 
 ```text
 Desktop Composition
@@ -167,11 +188,12 @@ Desktop Composition
 
 Wallpaper 与 Widget 独立持久化。切换 Wallpaper 不得删除 Widget 布局。
 
-### 5.2 基础技术栈
+### 5.3 基础技术栈
 
 ```text
 语言                  C++23
 桌面集成              Win32 / Explorer / WorkerW / Progman
+桌面 Shell 抽象       DesktopShellHost
 图形 API              Direct3D 11（新 Scene Renderer 方向）
 2D                    Direct2D
 Shader                HLSL
@@ -185,7 +207,26 @@ Web Widget            独立 WebView2 Host
 
 现有图片/视频/原生 Scene 路径保持轻量；WebView2 只按需创建。
 
-### 5.3 Wallpaper Layer
+### 5.4 DesktopShellHost
+
+所有桌面 surface 共用同一 Shell Host：
+
+```text
+DesktopShellHost
+├─ Discover Progman / SHELLDLL_DefView / WorkerW
+├─ Detect raised desktop via WS_EX_NOREDIRECTIONBITMAP
+├─ Request wallpaper layer via encapsulated shell message
+├─ Attach surface
+├─ Validate parent / style / z-order
+├─ Repair z-order
+└─ Rediscover after Explorer rebuild
+```
+
+Raised Desktop 与 Legacy WorkerW 必须分支处理，不能使用同一套 `SetParent` 假设。
+
+`WallpaperEngine.cpp` 里现有 Shell 逻辑应逐步抽出，不再继续扩张。
+
+### 5.5 Wallpaper Layer
 
 正式资源类型：Image / Video / Web / Scene。
 
@@ -199,9 +240,10 @@ Web Widget            独立 WebView2 Host
 - Web 隔离、导航限制、Crash Recovery；
 - Playlist / Schedule / Profile；
 - per-app performance rules；
-- 全屏、最大化、电池、锁屏、Idle、Remote Desktop 性能策略。
+- 全屏、最大化、电池、锁屏、Idle、Remote Desktop 性能策略；
+- Screensaver。
 
-### 5.4 Widget Layer
+### 5.6 Widget Layer
 
 Widget 第一阶段数据模型：
 
@@ -228,11 +270,13 @@ Widget v1：
 - persistent CRUD；
 - AI CRUD；
 - 默认 click-through，不挡桌面图标；
-- 复用 Web runtime 的 pause/recovery 机制。
+- 复用 Web runtime 的 pause/recovery 机制；
+- 必须通过 `DesktopShellHost` 完成真实桌面挂载；
+- 必须能诊断 configured/process/HWND/parent/style/z-order/WebView/visible/healthy。
 
 未来类型：Text、Clock/Calendar、Image、System Status、Media Controls、Data-bound Widget。
 
-### 5.5 Scene / Widget Editor
+### 5.7 Scene / Widget Editor
 
 两者共享一个编辑器 Shell：
 
@@ -250,7 +294,7 @@ Widget v1：
 
 该 schema 同时供手工 Inspector、序列化、Runtime mutation、AI 编辑和 Undo/Redo 使用。
 
-### 5.6 高级 Scene 能力方向
+### 5.8 高级 Scene 能力方向
 
 ```text
 2D / 3D Scene
@@ -266,7 +310,7 @@ Device Lost Recovery
 
 旧的 Aurora / Neon / Grid 最终应迁移为内置 Scene Project，而不是继续扩大 hard-coded renderer。
 
-### 5.7 包格式
+### 5.9 包格式
 
 ```text
 .tdwall   Wallpaper Project / Package
@@ -296,19 +340,24 @@ GPU Device Lost
 
 性能规则支持 Normal / Throttle / Pause / Stop，并同时作用于需要资源的 Wallpaper 和 Widget runtime。
 
+Explorer 或 WorkerW 重建后必须：重新发现 Shell hierarchy → 重新挂载 Wallpaper → 重新挂载 Widget → 修复 z-order → 验证 visible health。
+
 ## 7. 当前工程推进顺序
 
 ```text
-1. Desktop Composition + Widget Runtime
-2. AI Desktop Control bridge
-3. Installed/Widgets UI 产品化
-4. Typed Property System
-5. Scene / Widget Editor v1
-6. Shader / Particle / Audio / Interaction / 3D
-7. Transactional Desktop Control API + Undo/Redo
+1. DesktopShellHost + Lively-informed Windows shell behavior
+2. Web Wallpaper / Widget shared surface attachment
+3. Visible-surface diagnostics
+4. Desktop Composition + Widget Runtime
+5. AI Desktop Control bridge
+6. Installed/Widgets UI 产品化
+7. Typed Property System
+8. Scene / Widget Editor v1
+9. Shader / Particle / Audio / Interaction / 3D
+10. Transactional Desktop Control API + Undo/Redo
 ```
 
-执行清单以 `docs/WALLPAPER_ENGINE_PARITY.md` 为准。
+能力执行清单以 `docs/WALLPAPER_ENGINE_PARITY.md` 为准；Windows 壁纸运行时实现以 `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` 为准。
 
 ## 8. 完成标准
 

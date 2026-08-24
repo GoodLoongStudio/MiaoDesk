@@ -2,6 +2,17 @@
 
 TuringDesk includes, redistributes, or adapts ideas/code from the following third-party components. Windows ARM64 runtime versions are pinned by `runtime/arm64/runtime-lock.json`; applicable upstream license files are retained in the vendored payloads or alongside them.
 
+## Pi
+
+- Project: Pi
+- Package: `@earendil-works/pi-coding-agent`
+- Source: https://github.com/earendil-works/pi
+- Pinned TuringDesk Agent Runtime: `0.83.0`
+- License: MIT
+- TuringDesk usage: default Agent Runtime for ordinary AI and desktop-agent requests. TuringDesk runs Pi in RPC mode on the bundled Node.js runtime, supplies its own provider/model configuration, and keeps the product identity as Turing Intelligent Desktop / TuringDesk.
+
+TuringDesk's ARM64 RuntimeBundle contains a pinned production install of Pi plus its dependency tree. The end-user machine does not install Pi from npm. Pi's Windows shell setting is configured by TuringDesk to use Windows PowerShell so Git Bash is not a product prerequisite.
+
 ## DeepSeek Harness
 
 - Project: DeepSeek Harness
@@ -19,7 +30,7 @@ TuringDesk's ARM64 RuntimeBundle contains a pinned production install of the off
 - Runtime: official portable Windows ARM64 archive pinned by `runtime-lock.json`
 - License: Node.js project license plus licenses for bundled third-party components, as shipped in the official archive.
 
-Node is private to the TuringDesk RuntimeBundle. TuringDesk does not install or modify system Node.js.
+Node is private to the TuringDesk RuntimeBundle and is shared by the Pi and DeepSeek Harness hosts. TuringDesk does not install or modify system Node.js.
 
 ## goz
 
@@ -27,20 +38,9 @@ Node is private to the TuringDesk RuntimeBundle. TuringDesk does not install or 
 - Source: https://github.com/mustafaahci/goz
 - Pinned TuringDesk version: `v0.1.1`
 - License: MIT
-- TuringDesk usage: L2 instant filename-search backend. `gozd.exe` runs as the LocalSystem Windows service and maintains the NTFS MFT + USN Journal index; the unprivileged `goz.exe` client queries it over its authenticated named pipe. TuringDesk owns the user-facing search UI and ranking.
+- TuringDesk usage: instant filename-search backend. `gozd.exe` runs as the LocalSystem Windows service and maintains the NTFS MFT + USN Journal index; the unprivileged `goz.exe` client queries it over its authenticated named pipe. TuringDesk owns the user-facing search UI and ranking.
 
 TuringDesk builds the pinned goz source on a Windows ARM64 GitHub runner, vendors only the resulting `goz.exe`, `gozd.exe` and MIT notice, and performs a real MFT/USN query smoke test in CI. The previous Everything runtime is no longer part of the TuringDesk RuntimeBundle.
-
-## OpenAI Codex
-
-- Project: OpenAI Codex CLI
-- Source: https://github.com/openai/codex
-- Pinned TuringDesk Agent Runtime: `rust-v0.146.0`
-- Component: full Windows ARM64 `codex.exe`
-- License: Apache License 2.0
-- TuringDesk usage: default L3 agent runtime when the configured provider supports the Responses wire protocol. TuringDesk launches `codex app-server --stdio`, supplies its own provider/model settings and native dynamic tools, and presents the product identity as Turing Intelligent Desktop / TuringDesk.
-
-The official ARM64 Codex CLI release archive is vendored in the TuringDesk RuntimeBundle rather than downloaded on the user machine. Formal distributable packages must retain applicable Apache-2.0 license and notices.
 
 ## Microsoft WebView2 SDK
 
@@ -58,7 +58,7 @@ TuringDesk vendors the SDK headers and ARM64 static loader required to build `Tu
 - Source: https://github.com/microsoft/PowerToys
 - License: MIT
 - Copyright: Copyright (c) Microsoft Corporation. All rights reserved.
-- TuringDesk usage: the L1 application discovery architecture follows the mature PowerToys pattern of combining classic Windows program shortcuts with packaged-app identities/AUMIDs. TuringDesk keeps its own native implementation rather than embedding PowerToys.
+- TuringDesk usage: the application discovery architecture follows the mature PowerToys pattern of combining classic Windows program shortcuts with packaged-app identities/AUMIDs. TuringDesk keeps its own native implementation rather than embedding PowerToys.
 
 The MIT license permits use, modification and redistribution provided the copyright and permission notice are retained in copies or substantial portions of the software.
 
@@ -68,6 +68,6 @@ The MIT license permits use, modification and redistribution provided the copyri
 - Source: https://github.com/Flow-Launcher/Flow.Launcher
 - License: MIT
 - Copyright: Copyright (c) 2019 Flow-Launcher; Copyright (c) 2015 Wox
-- TuringDesk usage: the L1 in-memory matcher is an independent compact adaptation of Flow Launcher's acronym/fuzzy-search strategy: ordered subsequence matching, contiguous-match bonuses, word-boundary bonuses and early-match weighting. Pinyin aliases remain generated locally by TuringDesk.
+- TuringDesk usage: the in-memory matcher is an independent compact adaptation of Flow Launcher's acronym/fuzzy-search strategy: ordered subsequence matching, contiguous-match bonuses, word-boundary bonuses and early-match weighting. Pinyin aliases remain generated locally by TuringDesk.
 
 The MIT license permits use, modification and redistribution provided the copyright and permission notice are retained in copies or substantial portions of the software.

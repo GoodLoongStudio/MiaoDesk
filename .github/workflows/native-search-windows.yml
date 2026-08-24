@@ -240,7 +240,7 @@ jobs:
                 if (!line.trim()) continue;
                 let msg;
                 try { msg = JSON.parse(line); } catch { continue; }
-                if (msg.type === "agent_end" && !finished) {
+                if (msg.type === "agent_settled" && !finished) {
                   finished = true;
                   clearTimeout(timeout);
                   setTimeout(() => {
@@ -264,7 +264,7 @@ jobs:
               if (!finished && code !== null) {
                 finished = true;
                 clearTimeout(timeout);
-                fail(`Pi exited before agent_end: ${code}; stderr=${stderr}`);
+                fail(`Pi exited before agent_settled: ${code}; stderr=${stderr}`);
               }
             });
 

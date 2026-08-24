@@ -43,6 +43,7 @@ jobs:
         shell: cmd
         env:
           TD_BOOTSTRAP_SELF_TEST: 1
+          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
         run: UPDATE-TURINGDESK.cmd
 
       - name: Verify Pi-first TuringDesk runtime contract

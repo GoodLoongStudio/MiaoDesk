@@ -7,6 +7,11 @@ on:
       - CMakeLists.txt
       - src/native/**
       - runtime/arm64/**
+      - docs/L3-PI-RUNTIME-CONTRACT.md
+      - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
+      - docs/TURINGDESK-PRODUCT-BASELINE.md
+      - docs/WALLPAPER_ENGINE_PARITY.md
+      - docs/DESKTOP_COMPOSITION_ARCHITECTURE.md
       - scripts/deploy-native-arm64.ps1
       - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1

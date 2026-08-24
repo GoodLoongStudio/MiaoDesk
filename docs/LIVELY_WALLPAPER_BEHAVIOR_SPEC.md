@@ -15,6 +15,8 @@ Primary behavior references:
 - `src/Lively/Lively/Core/WinDesktopCore.cs` — desktop shell discovery, WorkerW/Progman attachment, raised-desktop handling, per/span/duplicate wallpaper placement, WorkerW destruction recovery.
 - `src/Lively/Lively/Core/Display/DisplayManager.cs` — monitor enumeration, bounds/work-area refresh, virtual screen and display change behavior.
 - `src/Lively/Lively/Core/Suspend/Playback.cs` — fullscreen/foreground/system-state playback policy and per-display pause decisions.
+- `src/Lively/Lively.Player.WebView2/Form1.cs` — WebView2 process lifecycle, navigation completion, process-failure reporting, per-wallpaper user-data folder, scaling and IPC readiness.
+- `src/Lively/Lively/Services/ScreensaverService.cs` — idle activation, multi-monitor screensaver layout, input exit, blank fallback and wallpaper reuse.
 - `README.md` — user-facing capability contract for video/Web/application wallpapers, screensavers, automation, API and pause rules.
 
 Other modules are studied only as needed when a TuringDesk subsystem is implemented.
@@ -242,6 +244,7 @@ validated source
  -> attach/verify desktop parent and z-order
  -> create WebView2 environment/controller
  -> navigate
+ -> wait for navigation-complete success
  -> report readiness
 ```
 
@@ -252,6 +255,7 @@ Configured
 ProcessStarted
 HwndCreated
 DesktopAttached
+WebViewEnvironmentReady
 WebViewControllerReady
 NavigationReady
 Visible
@@ -260,14 +264,52 @@ Healthy
 
 `Enabled=true` in the Widget Store only means Configured. It must never be displayed as equivalent to Visible/Healthy.
 
+### 8.1 What Lively's WebView2 player makes explicit
+
+Useful behavior to preserve independently in C++:
+
+- use a dedicated user-data folder instead of sharing arbitrary browser state across all wallpapers;
+- controller/runtime initialization is asynchronous and must have an explicit failure path;
+- report an HWND only after the WebView control is actually attached to its native host;
+- navigation completion is a separate readiness milestone from controller creation;
+- `ProcessFailed` must be observed as a distinct renderer failure;
+- popups/new windows and downloads are controlled rather than silently opening arbitrary UI;
+- per-wallpaper scaling can require explicit WebView2 rasterization/monitor-DPI handling;
+- pause state changes renderer behavior, and a renderer failure while intentionally suspended should not always be treated as an ordinary crash;
+- optional data services such as audio visualization/system information are initialized only when the loaded project requests them.
+
+TuringDesk v1 remains intentionally stricter: no arbitrary popup/download behavior and no unscoped data service access. Future Widget data providers must go through explicit permissions.
+
+### 8.2 TuringDesk Web child state machine
+
+Target native state machine:
+
+```text
+Starting
+ -> NativeWindowReady
+ -> DesktopAttached
+ -> EnvironmentReady
+ -> ControllerReady
+ -> Navigating
+ -> NavigationReady
+ -> Running
+
+any stage -> Failed(reason, HRESULT/Win32/process code)
+Paused <-> Running
+Stopping -> Stopped
+```
+
+The process supervisor must receive enough state to distinguish a dead process from a live-but-black/unattached WebView2 surface.
+
 Recovery classes must be separated:
 
 - child process exit;
 - WebView2 environment/controller failure;
+- WebView2 renderer-process failure;
 - navigation/source failure;
 - stale desktop parent;
 - wrong z-order/hidden HWND;
-- display topology mismatch.
+- display topology/DPI mismatch.
 
 ## 9. Application/game wallpapers
 
@@ -284,18 +326,35 @@ External owned process HWND (future, permission-gated)
 
 This keeps parity expansion possible without changing DesktopShellHost.
 
-## 10. Screensaver
+## 10. Screensaver behavior
 
-Lively treats screensaver as another presentation mode capable of reusing wallpaper content and supporting multiple monitors.
+Lively treats screensaver as a separate presentation/runtime mode that can reuse wallpaper content across monitors rather than simply moving the ordinary desktop HWND to topmost.
 
-TuringDesk future contract:
+Useful behavior contract:
 
-- current Wallpaper / Playlist / Profile can be selected as screensaver content;
-- screensaver runtime is separate from the ordinary desktop attachment path;
-- ordinary wallpaper playback policy knows when a dedicated screensaver runtime is active;
-- multi-monitor behavior mirrors selected wallpaper arrangement where possible.
+- idle time starts screensaver only when policy permits;
+- user input terminates it;
+- display topology changes stop/rebuild the screensaver session rather than leaving stale full-screen windows;
+- per-monitor arrangement starts one presentation surface per assigned display;
+- span uses the virtual screen as one presentation rectangle;
+- duplicate starts a copy on each display;
+- missing/failed wallpaper content falls back to blank coverage so the screensaver still protects the display;
+- audio is normally emitted only from the primary/selected screensaver surface to avoid duplicated sound;
+- the ordinary wallpaper playback coordinator knows a dedicated screensaver runtime is active and can pause the normal desktop runtime;
+- lock-on-resume/grace-period behavior is separate policy, not a property of the wallpaper renderer itself.
 
-Screensaver is P1 parity, after the shell/surface lifecycle is stable.
+TuringDesk target:
+
+```text
+ScreensaverCoordinator
+  -> chooses Wallpaper / Playlist / Profile snapshot
+  -> creates dedicated full-screen surfaces
+  -> maps per/span/duplicate layout
+  -> listens for input/display/session exit
+  -> tears down atomically
+```
+
+Windows Control Panel preview integration is a later compatibility item. Screensaver remains P1 parity after DesktopShellHost and the ordinary surface lifecycle are stable.
 
 ## 11. TuringDesk refactor mapping
 
@@ -320,6 +379,9 @@ DesktopWidgetStore + Web widget process spawning
 
 WallpaperPerformancePolicy
     -> PlaybackCoordinator (existing policy logic retained and expanded)
+
+future screensaver logic
+    -> ScreensaverCoordinator, not WallpaperEngine.cpp
 ```
 
 ## 12. First implementation slice
@@ -327,12 +389,12 @@ WallpaperPerformancePolicy
 The first C++ refactor after this study is intentionally narrow and testable:
 
 1. Add `DesktopShellHost.h/.cpp`.
-2. Move shell discovery / raised-desktop detection / 0x052C / WorkerW-bottom repair into it.
+2. Move shell discovery / raised-desktop detection / `0x052C` / WorkerW-bottom repair into it.
 3. Add explicit `AttachSurface(..., DesktopSurfaceRole, desktopBounds, visible)` with verification.
-4. Make `WallpaperEngine.cpp` attach the main native wallpaper host through `DesktopShellHost`.
-5. Make WebView2 child host windows layered/full-alpha when the selected shell mode requires desktop composition.
+4. Make the native wallpaper host converge on `DesktopShellHost` rather than owning an independent shell algorithm.
+5. Make WebView2 child host windows layered/full-alpha before WebView2 controller creation when the active desktop composition requires it.
 6. Replace Widget/Web z-order guessing with role-aware ordering.
-7. Add diagnostics for mode, parent, layered style, visible state and role.
+7. Add diagnostics for mode, parent, layered style, visible state, WebView2 state and role.
 8. Preserve existing Image/Video/Web/Scene behavior and ARM64 CI.
 
 The real Windows acceptance test for this slice is:

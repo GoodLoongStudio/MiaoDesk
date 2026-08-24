@@ -9,6 +9,7 @@ $RepoRoot = Split-Path $PSScriptRoot -Parent
 $Workflow = "native-search-windows.yml"
 $Updater = Join-Path $PSScriptRoot "update-turingdesk-arm64.ps1"
 $Guard = Join-Path $PSScriptRoot "verify-l3-runtime-contract.ps1"
+$PowerShellGuard = Join-Path $PSScriptRoot "verify-windows-powershell-compat.ps1"
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
@@ -85,10 +86,15 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 if (-not (Test-Path $Updater -PathType Leaf)) { throw "Updater script is missing: $Updater" }
 if (-not (Test-Path $Guard -PathType Leaf)) { throw "Runtime contract guard is missing: $Guard" }
+if (-not (Test-Path $PowerShellGuard -PathType Leaf)) { throw "PowerShell compatibility guard is missing: $PowerShellGuard" }
 
 Step "Checking GitHub authentication"
 & gh auth status | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
+
+Step "Verifying Windows PowerShell 5.1 entrypoints"
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $PowerShellGuard | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell compatibility guard failed." }
 
 Step "Verifying TuringDesk runtime contract"
 & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Guard | Out-Host

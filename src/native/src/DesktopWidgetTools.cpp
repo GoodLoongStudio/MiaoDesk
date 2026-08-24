@@ -1,16 +1,12 @@
 #include "turingdesk/DesktopWidgetTools.h"
 
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/WallpaperPackage.h"
+#include "turingdesk/DesktopControlService.h"
 
 #include <windows.h>
-#include <shellapi.h>
 
-#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
-#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -21,8 +17,6 @@ namespace fs = std::filesystem;
 
 namespace turingdesk {
 namespace {
-
-constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
 
 std::wstring Utf8ToWide(std::string_view value) {
     if (value.empty()) return {};
@@ -117,10 +111,6 @@ std::optional<std::string> JsonString(std::string_view json, std::string_view ke
     return std::nullopt;
 }
 
-bool HasJsonKey(std::string_view json, std::string_view key) {
-    return json.find('"' + std::string(key) + '"') != std::string_view::npos;
-}
-
 std::optional<double> JsonNumber(std::string_view json, std::string_view key) {
     auto pos = json.find('"' + std::string(key) + '"');
     if (pos == std::string_view::npos) return std::nullopt;
@@ -155,160 +145,94 @@ std::optional<bool> JsonBool(std::string_view json, std::string_view key) {
     return std::nullopt;
 }
 
-fs::path LocalTuringDeskDirectory() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    fs::path directory = base / L"TuringDesk";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory;
-}
-
-fs::path ModuleDirectory() {
-    std::wstring path(32768, L'\0');
-    const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-    if (length == 0 || length >= path.size()) return {};
-    path.resize(length);
-    return fs::path(path).parent_path();
-}
-
-void EnsureWallpaperRuntime() {
-    if (FindWindowW(kWallpaperControlClass, nullptr)) return;
-    const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
-    std::error_code ec;
-    if (fs::exists(executable, ec) && fs::is_regular_file(executable, ec))
-        ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr, executable.parent_path().c_str(), SW_SHOWNOACTIVATE);
-}
-
-std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t* fallback = L"") {
-    std::vector<wchar_t> buffer(32768);
-    GetPrivateProfileStringW(L"Wallpaper", key, fallback, buffer.data(),
-                             static_cast<DWORD>(buffer.size()), path.c_str());
-    return buffer.data();
+NativeToolResult ToNative(desktop::DesktopControlResult result) {
+    return {result.success, std::move(result.message)};
 }
 
 NativeToolResult WallpaperStateGet() {
-    const fs::path config = LocalTuringDeskDirectory() / L"wallpaper.ini";
-    wallpaper::DesktopWidgetStore widgets;
-    std::wstring error;
-    if (!widgets.Load(&error)) return {false, error};
+    desktop::DesktopControlService service;
+    desktop::DesktopState state;
+    const auto result = service.GetState(&state);
+    if (!result.success) return ToNative(result);
 
     std::wostringstream text;
-    text << L"当前桌面状态：scene=" << ReadProfile(config, L"Scene", L"aurora")
-         << L"; layout=" << ReadProfile(config, L"Layout", L"span")
-         << L"; scale=" << ReadProfile(config, L"Scale", L"cover")
-         << L"; fps=" << GetPrivateProfileIntW(L"Wallpaper", L"FpsCap", 30, config.c_str())
-         << L"; widgets=" << widgets.Items().size();
-    const std::wstring image = ReadProfile(config, L"Image", L"");
-    const std::wstring video = ReadProfile(config, L"Video", L"");
-    if (!image.empty()) text << L"; image/web=" << image;
-    if (!video.empty()) text << L"; video=" << video;
+    text << L"当前桌面状态：scene=" << state.scene
+         << L"; layout=" << state.layout
+         << L"; scale=" << state.scale
+         << L"; fps=" << state.fpsCap
+         << L"; widgets=" << state.widgetCount;
+    if (!state.imageOrWebSource.empty()) text << L"; image/web=" << state.imageOrWebSource;
+    if (!state.videoSource.empty()) text << L"; video=" << state.videoSource;
     return {true, text.str()};
 }
 
 NativeToolResult WallpaperApplyWebPackage(std::string_view arguments) {
     const auto rawPath = JsonString(arguments, "path");
     if (!rawPath || rawPath->empty()) return {false, L"缺少 .tdwall package path。"};
-    const fs::path package(Utf8ToWide(*rawPath));
-    wallpaper::WallpaperPackageManifest manifest;
-    std::wstring error;
-    if (!wallpaper::WallpaperPackage::Validate(package, &manifest, &error))
-        return {false, error.empty() ? L".tdwall 校验失败。" : error};
-    if (manifest.type != wallpaper::WallpaperPackageType::Web)
-        return {false, L"当前 AI 直接应用接口只接受 Web 类型 .tdwall；其他类型走桌面库。"};
-
-    std::error_code ec;
-    const fs::path source = fs::absolute(package / manifest.entry, ec).lexically_normal();
-    if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec))
-        return {false, L".tdwall Web entry 不存在。"};
-
-    const fs::path config = LocalTuringDeskDirectory() / L"wallpaper.ini";
-    bool ok = true;
-    ok = WritePrivateProfileStringW(L"Wallpaper", L"Enabled", L"1", config.c_str()) != FALSE && ok;
-    ok = WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"web", config.c_str()) != FALSE && ok;
-    ok = WritePrivateProfileStringW(L"Wallpaper", L"Image", source.c_str(), config.c_str()) != FALSE && ok;
-    ok = WritePrivateProfileStringW(L"Wallpaper", L"Video", L"", config.c_str()) != FALSE && ok;
-    WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
-    if (!ok) return {false, L"无法保存当前 Web 桌面状态。"};
-    EnsureWallpaperRuntime();
-    return {true, L"已应用 Web 桌面：" + manifest.title + L" · " + source.wstring()};
+    desktop::DesktopControlService service;
+    return ToNative(service.ApplyWebPackage(fs::path(Utf8ToWide(*rawPath))));
 }
 
 NativeToolResult WidgetCreate(std::string_view arguments) {
     const auto html = JsonString(arguments, "html");
     if (!html || html->empty()) return {false, L"缺少 desktop widget HTML。"};
-    const auto titleRaw = JsonString(arguments, "title");
-    const auto monitorRaw = JsonString(arguments, "monitor_id");
-    const float x = static_cast<float>(JsonNumber(arguments, "x").value_or(0.68));
-    const float y = static_cast<float>(JsonNumber(arguments, "y").value_or(0.05));
-    const float width = static_cast<float>(JsonNumber(arguments, "width").value_or(0.28));
-    const float height = static_cast<float>(JsonNumber(arguments, "height").value_or(0.18));
 
-    wallpaper::DesktopWidgetStore store;
-    std::wstring error;
-    if (!store.Load(&error)) return {false, error};
-    auto created = store.CreateManagedWeb(
-        titleRaw ? Utf8ToWide(*titleRaw) : L"AI Desktop Widget", *html,
-        monitorRaw ? Utf8ToWide(*monitorRaw) : L"", x, y, width, height, &error);
-    if (!created) return {false, error.empty() ? L"创建桌面小组件失败。" : error};
-    EnsureWallpaperRuntime();
+    desktop::WebWidgetCreateRequest request;
+    if (const auto title = JsonString(arguments, "title")) request.title = Utf8ToWide(*title);
+    if (const auto monitor = JsonString(arguments, "monitor_id")) request.monitorId = Utf8ToWide(*monitor);
+    request.htmlUtf8 = *html;
+    request.x = static_cast<float>(JsonNumber(arguments, "x").value_or(0.68));
+    request.y = static_cast<float>(JsonNumber(arguments, "y").value_or(0.05));
+    request.width = static_cast<float>(JsonNumber(arguments, "width").value_or(0.28));
+    request.height = static_cast<float>(JsonNumber(arguments, "height").value_or(0.18));
+
+    desktop::DesktopControlService service;
+    wallpaper::DesktopWidget created;
+    const auto result = service.CreateWebWidget(request, &created);
+    if (!result.success) return ToNative(result);
+
     std::wostringstream text;
-    text << L"桌面小组件已创建：id=" << created->id << L"; title=" << created->title
-         << L"; rect=" << created->x << L"," << created->y << L"," << created->width << L"," << created->height;
+    text << L"桌面小组件已创建：id=" << created.id << L"; title=" << created.title
+         << L"; rect=" << created.x << L"," << created.y << L"," << created.width << L"," << created.height;
     return {true, text.str()};
 }
 
 NativeToolResult WidgetUpdate(std::string_view arguments) {
-    const auto idRaw = JsonString(arguments, "id");
-    if (!idRaw || idRaw->empty()) return {false, L"缺少 desktop widget id。"};
-    const std::wstring id = Utf8ToWide(*idRaw);
+    const auto id = JsonString(arguments, "id");
+    if (!id || id->empty()) return {false, L"缺少 desktop widget id。"};
 
-    wallpaper::DesktopWidgetStore store;
-    std::wstring error;
-    if (!store.Load(&error)) return {false, error};
-    auto existing = store.Find(id);
-    if (!existing) return {false, L"没有找到桌面小组件：" + id};
-    auto widget = *existing;
+    desktop::WidgetUpdateRequest request;
+    request.id = Utf8ToWide(*id);
+    if (const auto value = JsonString(arguments, "title")) request.title = Utf8ToWide(*value);
+    if (const auto value = JsonString(arguments, "html")) request.htmlUtf8 = *value;
+    if (const auto value = JsonString(arguments, "monitor_id")) request.monitorId = Utf8ToWide(*value);
+    if (const auto value = JsonNumber(arguments, "x")) request.x = static_cast<float>(*value);
+    if (const auto value = JsonNumber(arguments, "y")) request.y = static_cast<float>(*value);
+    if (const auto value = JsonNumber(arguments, "width")) request.width = static_cast<float>(*value);
+    if (const auto value = JsonNumber(arguments, "height")) request.height = static_cast<float>(*value);
+    if (const auto value = JsonNumber(arguments, "z_index")) request.zIndex = static_cast<int>(*value);
+    if (const auto value = JsonBool(arguments, "enabled")) request.enabled = *value;
 
-    if (const auto title = JsonString(arguments, "title")) widget.title = Utf8ToWide(*title);
-    if (const auto monitor = JsonString(arguments, "monitor_id")) widget.monitorId = Utf8ToWide(*monitor);
-    if (const auto value = JsonNumber(arguments, "x")) widget.x = static_cast<float>(*value);
-    if (const auto value = JsonNumber(arguments, "y")) widget.y = static_cast<float>(*value);
-    if (const auto value = JsonNumber(arguments, "width")) widget.width = static_cast<float>(*value);
-    if (const auto value = JsonNumber(arguments, "height")) widget.height = static_cast<float>(*value);
-    if (const auto value = JsonNumber(arguments, "z_index")) widget.zIndex = static_cast<int>(*value);
-    if (const auto value = JsonBool(arguments, "enabled")) widget.enabled = *value;
-
-    auto saved = store.Upsert(widget, &error);
-    if (!saved) return {false, error.empty() ? L"更新桌面小组件失败。" : error};
-    if (HasJsonKey(arguments, "html")) {
-        const auto html = JsonString(arguments, "html");
-        if (!html || html->empty()) return {false, L"desktop widget html 不能为空。"};
-        if (!store.UpdateManagedHtml(id, *html, &error)) return {false, error};
-    }
-    EnsureWallpaperRuntime();
-    return {true, L"桌面小组件已更新：" + id};
+    desktop::DesktopControlService service;
+    return ToNative(service.UpdateWidget(request));
 }
 
 NativeToolResult WidgetRemove(std::string_view arguments) {
-    const auto idRaw = JsonString(arguments, "id");
-    if (!idRaw || idRaw->empty()) return {false, L"缺少 desktop widget id。"};
-    wallpaper::DesktopWidgetStore store;
-    std::wstring error;
-    if (!store.Load(&error)) return {false, error};
-    const std::wstring id = Utf8ToWide(*idRaw);
-    if (!store.Remove(id, true, &error)) return {false, error};
-    return {true, L"桌面小组件已删除：" + id};
+    const auto id = JsonString(arguments, "id");
+    if (!id || id->empty()) return {false, L"缺少 desktop widget id。"};
+    desktop::DesktopControlService service;
+    return ToNative(service.RemoveWidget(Utf8ToWide(*id)));
 }
 
 NativeToolResult WidgetList() {
-    wallpaper::DesktopWidgetStore store;
-    std::wstring error;
-    if (!store.Load(&error)) return {false, error};
+    desktop::DesktopControlService service;
+    std::vector<wallpaper::DesktopWidget> widgets;
+    const auto result = service.ListWidgets(&widgets);
+    if (!result.success) return ToNative(result);
+
     std::wostringstream text;
-    text << L"桌面小组件：" << store.Items().size();
-    for (const auto& widget : store.Items()) {
+    text << L"桌面小组件：" << widgets.size();
+    for (const auto& widget : widgets) {
         text << L"\r\n- id=" << widget.id << L"; title=" << widget.title
              << L"; enabled=" << (widget.enabled ? L"true" : L"false")
              << L"; monitor=" << (widget.monitorId.empty() ? L"primary" : widget.monitorId)

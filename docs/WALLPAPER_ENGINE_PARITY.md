@@ -1,8 +1,22 @@
-# TuringDesk Wallpaper Engine parity roadmap
+# TuringDesk wallpaper capability parity roadmap
 
 Status: current implementation roadmap. This document is subordinate to `TURINGDESK-PRODUCT-BASELINE.md`; if they conflict, the product baseline wins.
 
 Goal: evolve the native TuringDesk desktop subsystem into a polished Wallpaper Engine-class desktop engine, with equivalent functional depth where useful, while keeping TuringDesk branding, assets and implementation original. TuringDesk adds two first-class differentiators: AI desktop control and persistent desktop widgets.
+
+## Implementation source-of-truth rule
+
+**Wallpaper Engine is a product-capability benchmark only. It is not the engineering implementation reference.**
+
+For Windows desktop mounting, WorkerW/Progman behavior, Windows 11 raised desktop, Web wallpaper hosting, multi-monitor lifecycle, pause/recovery and screensaver implementation, engineers must start from:
+
+- `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`
+- the public behavior of `rocksdanister/lively`
+- Microsoft Windows / WebView2 / Media Foundation / DirectX documentation
+
+Lively is GPL-3.0 while TuringDesk is MIT. TuringDesk therefore uses a clean-room-style native C++ reimplementation: study behavior/API sequences and edge cases, then independently implement them. Do not copy or mechanically translate Lively source.
+
+When this roadmap says "Wallpaper Engine-class", it means **feature depth and user experience**, not source-code or implementation guidance.
 
 ## Target product model
 
@@ -48,7 +62,7 @@ Already present on `main`:
 - Persistent Playlist / Schedule / Profile automation.
 - Persistent per-executable wallpaper performance overrides.
 - Isolated WebView2 Web wallpaper runtime with navigation and permission restrictions.
-- Web wallpaper and Widget WebView2 surfaces are mounted as desktop siblings of the native layered wallpaper host rather than children of the layered HWND.
+- Web wallpaper and Widget WebView2 surfaces have a desktop-surface runtime foundation, but raised-desktop visibility is still under active refactor against the Lively-based C++ implementation contract.
 - `.tdwall` Web package creation and validation.
 - Pi Agent can create validated Web `.tdwall` packages.
 - Desktop widget persistence/runtime foundation: managed HTML widgets, normalized monitor-relative geometry, WebView2 overlay surfaces and AI CRUD interfaces.
@@ -91,16 +105,19 @@ Baseline parity also includes:
 - [x] Multi-monitor topology and layout engine.
 - [x] Performance / playback rules.
 - [x] Persistent desktop widget store and Web widget overlay runtime foundation.
-- [x] Separate Web/Widget WebView2 surfaces from the layered native wallpaper HWND.
 - [x] Unicode-safe Widget persistence and legacy ANSI migration.
 - [x] Initial AI desktop control surface: state read, Web wallpaper apply, Widget CRUD.
 - [x] Keep TuringDesk settings/search UI from accidentally pausing its own wallpaper runtime.
 - [x] Keep Settings Center inside the Windows work area above the taskbar.
+- [ ] Extract a dedicated `DesktopShellHost` and rebase WorkerW/Progman/raised-desktop attachment on the Lively-informed C++ implementation contract.
+- [ ] Make Web wallpaper and Widget surfaces use the same verified desktop attachment/z-order service.
+- [ ] Add raised-desktop style checks, including layered-surface requirements, parent validation and z-order repair.
+- [ ] Add structured surface-health diagnostics: configured / process / HWND / parent / styles / z-order / WebView ready / visible / healthy.
 - [ ] Complete scaling/alignment edge cases, including bounded video tile behavior.
 - [ ] Complete video decoder capability diagnostics.
 - [ ] Versioned Desktop Control API with atomic mutation, validation, undo/redo and change events.
 
-### P1 — Wallpaper Engine-class daily use
+### P1 — mature wallpaper-engine-class daily use
 
 - [x] Wallpaper library backend.
 - [x] Per-monitor independent wallpaper assignment.
@@ -117,7 +134,7 @@ Baseline parity also includes:
 - [ ] Add Playing Audio as an application-rule trigger.
 - [ ] Add application-rule actions for loading Wallpaper / Playlist / Profile in addition to performance actions.
 - [ ] Add Windows screensaver integration for current Wallpaper / Playlist / Profile.
-- [ ] Match the useful daily-use settings depth of Wallpaper Engine: playback, monitor, application, performance and general behavior.
+- [ ] Reach mature daily-use settings depth for playback, monitor, application, performance and general behavior.
 
 ### P2 — creation and editing
 
@@ -185,3 +202,4 @@ A roadmap item is not considered complete until:
 6. A feature exposed to AI is also representable in typed state and can be validated before mutation.
 7. User-facing functionality remains operable without AI.
 8. UI wording distinguishes state persistence from actual runtime visibility; "enabled" alone is not considered proof that a Web/Widget surface is visible.
+9. Windows desktop-shell work conforms to `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` rather than inventing a separate WorkerW/Progman strategy.

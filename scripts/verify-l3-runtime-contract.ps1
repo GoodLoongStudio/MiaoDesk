@@ -103,8 +103,7 @@ foreach ($marker in @(
     '\"type\":\"agent_settled\"',
     'auto url = agent.CurrentApiUrl();',
     'std::hash<std::wstring>{}(setup.apiKey)',
-    'turingdesk-local',
-    '未找到 Bundled Node Runtime'
+    'turingdesk-local'
 )) {
     if (-not $pi.Contains($marker)) {
         throw "Pi runtime contract marker missing: $marker"

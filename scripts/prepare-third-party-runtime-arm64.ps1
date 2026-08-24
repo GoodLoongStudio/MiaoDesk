@@ -24,7 +24,7 @@ function Assert-BundleHash([string]$Path, [string]$Expected) {
     }
 }
 function Assert-File([string]$Path, [string]$Label) {
-    if (-not (Test-Path $Path -PathType Leaf)) { throw "Full Codex package is missing $Label: $Path" }
+    if (-not (Test-Path $Path -PathType Leaf)) { throw ("Full Codex package is missing {0}: {1}" -f $Label, $Path) }
 }
 function Test-InDeploy([string]$Candidate) {
     try {

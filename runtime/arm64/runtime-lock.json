@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "vendorRevision": 8,
+  "vendorRevision": 9,
   "architecture": "arm64",
   "node": {
     "version": "24.19.0",
@@ -19,21 +19,11 @@
     "source": "https://github.com/mustafaahci/goz/archive/refs/tags/",
     "rustToolchain": "1.94.0"
   },
-  "codexRelay": {
-    "version": "0.5.7",
-    "commit": "f6b65c4b7a818f215f2aa1dcebb33657716b487f",
-    "archive": "codex-relay-v0.5.7-win-arm64.zip",
-    "wheel": "codex_relay-0.5.7-py3-none-win_arm64.whl",
-    "wheelSha256": "4755de9ff3c4756ebcdce5eb998095f1a27bad515b084aab1bd1bfd4b95dea7b",
-    "source": "https://github.com/MetaFARS/codex-relay/archive/",
-    "rustToolchain": "1.94.0"
-  },
-  "codex": {
-    "release": "rust-v0.146.0",
-    "archive": "codex-package-aarch64-pc-windows-msvc.tar.zst",
-    "sha256": "938f34edbfffdf38dc46de2c10a20c6136f8d87c001f2763f6f85d9594f4fc6b",
-    "source": "https://github.com/openai/codex/releases/",
-    "packageLayout": "official-windows-package-v1"
+  "pi": {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "0.83.0",
+    "archive": "pi-coding-agent-0.83.0-win-arm64.zip",
+    "source": "https://registry.npmjs.org/"
   },
   "webview2Sdk": {
     "version": "1.0.4129.50",
@@ -41,12 +31,12 @@
     "source": "https://www.nuget.org/"
   },
   "notes": [
-    "This lock drives one-time repository vendoring on Windows ARM64.",
-    "Normal ARM64 builds and deployments consume runtime/arm64 only and do not download third-party runtimes.",
-    "goz replaces the previous Everything runtime. gozd is the elevated MFT/USN index service and goz.exe is the unprivileged query client.",
-    "codex-relay is the MIT local Responses-to-Chat-Completions bridge used when a configured provider does not expose the Responses API; TuringDesk vendors the official PyPI Windows ARM64 wheel with a pinned SHA-256.",
-    "Codex is vendored as OpenAI's official Windows ARM64 package, including codex.exe, codex-code-mode-host.exe, codex-command-runner.exe, codex-windows-sandbox-setup.exe, rg.exe, codex-package.json, codex-resources, and codex-path.",
-    "The pinned official Codex tar.zst stays below GitHub's per-file size limit and is expanded offline by bundled Node 24 during deployment.",
+    "This lock drives repository vendoring on Windows ARM64.",
+    "Normal ARM64 builds and deployments consume runtime/arm64 only and do not install third-party runtimes from the network.",
+    "goz is the elevated MFT/USN index service and goz.exe is the unprivileged query client.",
+    "Pi is the default TuringDesk Agent Runtime and is vendored with all production npm dependencies.",
+    "TuringDesk uses its bundled Node 24 to run Pi; end users do not need Node or npm installed.",
+    "DeepSeek Harness remains an independent advanced workbench runtime.",
     "Microsoft Edge WebView2 Runtime is an operating-system prerequisite; only the build SDK/loader is vendored."
   ]
 }

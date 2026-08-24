@@ -131,22 +131,22 @@ function Download-Artifact([long]$RunId, [string]$Destination) {
 }
 
 function Materialize-Runtime([string]$Destination, [string]$ExpectedSha) {
-    Step "Staging pinned TuringDesk RuntimeBundle"
+    Step "Staging the matching TuringDesk RuntimeBundle"
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 
     $runtimeRepo = Join-Path $env:TEMP ("TuringDesk-RuntimeSource-" + [guid]::NewGuid().ToString("N"))
     try {
-        & git clone --filter=blob:none --no-checkout --depth 1 --branch main "https://github.com/$Repo.git" $runtimeRepo | Out-Host
+        & git clone --filter=blob:none --no-checkout "https://github.com/$Repo.git" $runtimeRepo | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "Unable to fetch TuringDesk RuntimeBundle source." }
         & git -C $runtimeRepo sparse-checkout init --cone | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Unable to initialize sparse checkout." }
         & git -C $runtimeRepo sparse-checkout set runtime/arm64 scripts | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Unable to select RuntimeBundle files." }
-        & git -C $runtimeRepo checkout main | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout RuntimeBundle files." }
+        & git -C $runtimeRepo checkout $ExpectedSha | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout the validated RuntimeBundle revision $ExpectedSha." }
         $runtimeSha = (& git -C $runtimeRepo rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0 -or $runtimeSha -ne $ExpectedSha) {
-            throw "main changed while deploying. Re-run deployment so binaries and RuntimeBundle use the same commit."
+            throw "RuntimeBundle revision mismatch. Deployment aborted before touching the installed TuringDesk package."
         }
 
         $prepare = Join-Path $runtimeRepo "scripts\prepare-third-party-runtime-arm64.ps1"

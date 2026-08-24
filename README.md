@@ -1,6 +1,6 @@
 # TuringDesk
 
-TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部搜索入口 + Codex CLI AI + DeepSeek Harness 高级工作台。
+TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部搜索入口 + Pi Agent AI + DeepSeek Harness 高级工作台。
 
 ## 当前正式平台
 
@@ -11,32 +11,51 @@ TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部�
 
 正式原生目标：
 
-- `TuringDesk.exe` — Search / L1-L3 / 设置中心
+- `TuringDesk.exe` — Search / AI / 设置中心
 - `TuringDeskWallpaper.exe` — 桌面壁纸引擎
 - `TuringDeskHarness.exe` — DeepSeek Harness WebView2 宿主
 
-## L3 AI 固定运行链
+## AI 固定运行链
 
-普通 L3 AI 请求的默认主路由固定为：
+普通 AI 和桌面 Agent 请求的默认主路由固定为：
 
 ```text
-TuringDesk L3
+TuringDesk
   ↓
-Codex CLI `app-server --stdio`
+Pi Runtime
   ↓
-  ├─ Responses API → 当前配置 API
-  └─ Chat Completions → Codex Relay → 当前配置 API
+Bundled Node 24
+  ↓
+@earendil-works/pi-coding-agent --mode rpc
+  ↓
+当前配置 Provider / Model / Base URL / API Key
 ```
 
-Codex CLI / Relay / app-server / 协议链失败时，才回退：
+Pi / Node / Provider / Agent Loop 失败时，才回退：
 
 ```text
 Direct Model Runtime → 当前配置 API
 ```
 
-API 不绑定 DeepSeek 品牌，路由按 Provider 的协议能力判断。
+API 不绑定模型品牌，路由按 Provider 的协议能力判断。Pi 支持 TuringDesk 需要的 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Google Generative AI 等协议。
 
-详细强制契约见：`docs/L3-CODEX-RUNTIME-CONTRACT.md`。
+详细强制契约见：`docs/L3-PI-RUNTIME-CONTRACT.md`。
+
+## Pi 工具能力
+
+通用 Agent 能力由 Pi 管理：
+
+```text
+read / write / edit / grep / find / ls
+shell
+Skills
+Extensions
+Pi Packages
+```
+
+Windows 上，Pi 官方 `bash` 工具的 `shellPath` 被 TuringDesk 配置为系统 Windows PowerShell，因此普通用户不需要额外安装 Git Bash。模型会被明确告知该工具后端使用 PowerShell 语法。
+
+TuringDesk 自己只保留真正属于桌面产品的专属工具，例如设置、壁纸、Scene、`.tdwall`、多屏和性能规则。
 
 ## 自动化边界
 
@@ -53,7 +72,6 @@ GitHub Actions 只负责检查、编译、测试、打包和固定第三方 Runt
 
 ```powershell
 scripts/verify-l3-runtime-contract.ps1
-scripts/verify-codex-jsonl-wire.ps1
 scripts/verify-runtime-log-paths.ps1
 scripts/verify-arm64-runtime-bundle.ps1
 ```
@@ -71,16 +89,16 @@ DEPLOY-NATIVE-ARM64.cmd
 脚本会：
 
 1. `git pull --ff-only` 同步 `main`；
-2. 验证 L3 Codex-first 架构契约；
+2. 验证 Pi-first AI 架构契约；
 3. 校验并展开仓库固定的 RuntimeBundle；
 4. 获取当前 `main` 已通过 CI 的 ARM64 原生构建；
 5. 运行 Search / Wallpaper / Harness self-test；
-6. 验证 Codex CLI、Codex Relay 和 Harness Runtime；
+6. 验证 Pi、Node 和 Harness Runtime；
 7. 启动 TuringDesk。
 
-第三方运行时不会在用户机器现场通过 npm、Node 官网、NuGet 或 Codex Release 下载。Node、DeepSeek Harness 完整生产依赖树、goz、Codex Relay、Codex ARM64 和编译所需 WebView2 SDK 都由 `runtime/arm64/` 的固定版本清单管理。
+第三方运行时不会在用户机器现场通过 npm、Node 官网或 NuGet 下载。Node、Pi 完整生产依赖树、DeepSeek Harness 完整生产依赖树、goz 和编译所需 WebView2 SDK 都由 `runtime/arm64/` 的固定版本清单管理。
 
-> Windows 11 自带/系统维护的 Microsoft Edge WebView2 Runtime 视为操作系统组件；仓库内固定的是 WebView2 SDK 和 ARM64 static loader。
+> Windows 11 自带/系统维护的 Microsoft Edge WebView2 Runtime 和 Windows PowerShell 视为操作系统组件；仓库内固定的是 WebView2 SDK 和 ARM64 static loader。
 
 ## DeepSeek Harness
 
@@ -115,7 +133,7 @@ RuntimeBundle 的生成、版本和目录约定见 `runtime/arm64/README.md`。
 
 ```text
 Desktop\TuringDesk-Logs\l3-runtime.log
-Desktop\TuringDesk-Logs\codex-runtime.log
+Desktop\TuringDesk-Logs\pi-runtime.log
 Desktop\TuringDesk-Logs\harness.log
 ```
 
@@ -125,5 +143,5 @@ API Key、Token 和其他凭据不得写入日志。
 
 - `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线
 - `docs/TURINGDESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
-- `docs/L3-CODEX-RUNTIME-CONTRACT.md` — L3 强制架构契约
+- `docs/L3-PI-RUNTIME-CONTRACT.md` — L3 强制架构契约
 - `docs/WALLPAPER_ENGINE_PARITY.md` — 从属于产品基线的壁纸能力路线图，不是独立架构基线

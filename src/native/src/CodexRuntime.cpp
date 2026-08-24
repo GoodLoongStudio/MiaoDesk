@@ -1,4 +1,5 @@
 #include "turingdesk/CodexRuntime.h"
+#include "turingdesk/CodexHostBridge.h"
 #include "turingdesk/NativeTools.h"
 #include "turingdesk/RuntimeLogPaths.h"
 
@@ -24,7 +25,7 @@ constexpr wchar_t kCredentialTarget[] = L"TuringDesk/ModelApiKey";
 constexpr wchar_t kApiKeyEnvironment[] = L"TURINGDESK_MODEL_API_KEY";
 constexpr DWORD kInitializeTimeoutMs = 30000;
 constexpr DWORD kThreadStartTimeoutMs = 60000;
-constexpr DWORD kTurnTimeoutMs = 120000;
+constexpr DWORD kTurnTimeoutMs = 600000;
 constexpr DWORD kRelayReadyTimeoutMs = 10000;
 
 std::wstring Trim(std::wstring value) {
@@ -268,10 +269,9 @@ HANDLE OpenRuntimeLogHandle(bool inheritable) {
     security.nLength = sizeof(security);
     security.bInheritHandle = inheritable ? TRUE : FALSE;
     const auto path = CodexLogPath();
-    HANDLE handle = CreateFileW(path.c_str(), FILE_APPEND_DATA,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                inheritable ? &security : nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    return handle;
+    return CreateFileW(path.c_str(), FILE_APPEND_DATA,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       inheritable ? &security : nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 }
 
 void AppendRuntimeLog(const std::wstring& text) {
@@ -515,6 +515,8 @@ std::wstring CodexRuntime::FindBinary(bool& isCliBinary) const {
     std::error_code ec;
     const auto bundledCli = ModuleDirectory() / L"Codex" / L"codex.exe";
     if (fs::exists(bundledCli, ec)) { isCliBinary = true; return bundledCli.wstring(); }
+    const auto packagedCli = ModuleDirectory() / L"Codex" / L"bin" / L"codex.exe";
+    if (fs::exists(packagedCli, ec)) { isCliBinary = true; return packagedCli.wstring(); }
     const auto bundledServer = ModuleDirectory() / L"Codex" / L"codex-app-server.exe";
     if (fs::exists(bundledServer, ec)) return bundledServer.wstring();
     auto found = SearchExecutable(L"codex.exe");
@@ -552,11 +554,11 @@ CodexRuntimeStatus CodexRuntime::Status(const L3Agent& agent) const {
     else if (!setup.ok) status.message = setup.message;
     else if (!relayAvailable) status.message = L"当前 Provider 需要 Codex Relay，但 codex-relay.exe 尚未部署";
     else if (status.running) status.message = setup.relayRequired
-        ? L"Codex CLI Agent Runtime 正在通过本地 Codex Relay 运行"
-        : L"Codex CLI Agent Runtime 正在直连 Responses API";
+        ? L"完整 Codex CLI Agent Runtime 正在通过本地 Codex Relay 运行"
+        : L"完整 Codex CLI Agent Runtime 正在直连 Responses API";
     else status.message = setup.relayRequired
-        ? L"Codex CLI 可用；下一次请求将通过本地 Codex Relay 接入 Chat Completions"
-        : L"Codex CLI 可用；下一次请求将直连 Responses API";
+        ? L"完整 Codex CLI 可用；包含 Shell/File/Skills/MCP/审批能力，下一次请求将通过 Relay"
+        : L"完整 Codex CLI 可用；包含 Shell/File/Skills/MCP/审批能力，下一次请求将直连 Responses API";
     return status;
 }
 
@@ -571,6 +573,7 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
     const auto home = CodexHomeDirectory();
     std::error_code ec;
     fs::create_directories(home, ec);
+    fs::create_directories(home / L"skills", ec);
     if (ec) {
         error = L"无法创建 Codex Runtime 目录：" + Utf8ToWide(ec.message());
         return false;
@@ -637,10 +640,10 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
         error = L"无法写入 Codex Runtime 配置";
         return false;
     }
+    // Model/provider are managed by TuringDesk. Approval and sandbox policy are
+    // supplied on turn/start so the app-server host remains authoritative.
     stream << L"model = \"" << TomlEscape(setup.model) << L"\"\n"
-           << L"model_provider = \"turingdesk\"\n"
-           << L"approval_policy = \"never\"\n"
-           << L"sandbox_mode = \"workspace-write\"\n";
+           << L"model_provider = \"turingdesk\"\n";
     if (!catalogPath.empty())
         stream << L"model_catalog_json = \"" << TomlEscape(catalogPath.wstring()) << L"\"\n";
     stream << L"\n[model_providers.turingdesk]\n"
@@ -654,7 +657,8 @@ bool CodexRuntime::ConfigureCodexHome(const ProviderSetup& setup, std::wstring& 
         return false;
     }
     AppendRuntimeLog(L"config: provider=turingdesk model=" + setup.model +
-                     (setup.relayRequired ? L" route=relay" : L" route=responses"));
+                     (setup.relayRequired ? L" route=relay" : L" route=responses") +
+                     L" host=full-app-server");
     return true;
 }
 
@@ -776,7 +780,7 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     command += cliBinary ? L" app-server --stdio" : L" --stdio";
     auto environment = BuildCodexEnvironmentBlock(codexHome, setup.apiKey);
     const auto cwd = DesktopDirectory();
-    AppendRuntimeLog(L"app-server: starting binary=" + binary + L" cwd=" + cwd);
+    AppendRuntimeLog(L"app-server: starting binary=" + binary + L" cwd=" + cwd + L" mode=full-host");
     const BOOL created = CreateProcessW(binary.c_str(), command.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
                                         environment.data(), cwd.empty() ? nullptr : cwd.c_str(), &startup, &process);
@@ -806,7 +810,7 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
     const std::string initialize =
         "{\"id\":" + std::to_string(initializeId) +
         ",\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"turingdesk\",\"title\":\"Turing Intelligent Desktop\",\"version\":\"0.1\"},\"capabilities\":{\"experimentalApi\":true}}}";
-    AppendRuntimeLog(L"app-server: initialize ->");
+    AppendRuntimeLog(L"app-server: initialize -> experimentalApi=true");
     if (!WriteLine(initialize)) {
         error = L"Codex initialize 写入失败" + LogHint();
         CleanupProcess();
@@ -827,10 +831,12 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
 
     const long long threadRequest = nextRequestId_++;
     const std::wstring developerInstructions =
-        L"You are 图灵智能桌面 (Turing Intelligent Desktop), the AI agent built into TuringDesk. "
-        L"When the user asks who you are, identify yourself as 图灵智能桌面 / Turing Intelligent Desktop, not as raw Codex CLI. "
-        L"Use TuringDesk native dynamic tools for supported desktop operations. Never report an action as successful until its tool result reports success. "
-        L"Prefer native tools over shell commands for supported operations.";
+        L"You are 图灵智能桌面 (Turing Intelligent Desktop), powered by the complete Codex CLI agent runtime. "
+        L"When the user asks who you are, identify yourself as 图灵智能桌面 / Turing Intelligent Desktop. "
+        L"For generic computer work, use Codex native shell/command execution, file changes, Skills and MCP intelligently. "
+        L"Do not invent bespoke TuringDesk tools for generic files, documents, presentations, spreadsheets, archives or code. "
+        L"Use TuringDesk dynamic tools only for TuringDesk-specific product features such as settings and .tdwall wallpaper packages. "
+        L"Never report an action as successful until the actual command, file-change or tool result confirms success.";
     const std::string threadStart =
         "{\"id\":" + std::to_string(threadRequest) +
         ",\"method\":\"thread/start\",\"params\":{\"model\":\"" + EscapeJson(setup.model) +
@@ -838,7 +844,7 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
         "\",\"developerInstructions\":\"" + EscapeJson(developerInstructions) +
         "\",\"dynamicTools\":" + NativeToolDefinitionsJson() +
         ",\"ephemeral\":true}}";
-    AppendRuntimeLog(L"app-server: thread/start -> model=" + setup.model);
+    AppendRuntimeLog(L"app-server: thread/start -> model=" + setup.model + L" native-tools=turingdesk-only");
     if (!WriteLine(threadStart) || !WaitForResponse(threadRequest, response, error, kThreadStartTimeoutMs)) {
         error = L"Codex thread/start 失败：" + error + LogHint();
         CleanupProcess();
@@ -852,7 +858,7 @@ bool CodexRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error
         CleanupProcess();
         return false;
     }
-    AppendRuntimeLog(L"app-server: thread/start <- ok thread=" + threadId_);
+    AppendRuntimeLog(L"app-server: thread/start <- ok thread=" + threadId_ + L" skills=" + CodexHomeDirectory().wstring() + L"\\skills");
     sessionSignature_ = setup.signature;
     return true;
 }
@@ -865,7 +871,7 @@ bool CodexRuntime::EnsureSession(const ProviderSetup& setup, std::wstring& error
         if (codexAlive && relayAlive && sessionSignature_ == setup.signature && !threadId_.empty()) return true;
     }
     CleanupProcess();
-    AppendRuntimeLog(L"session: creating new Codex session");
+    AppendRuntimeLog(L"session: creating new full Codex session");
     if (setup.relayRequired && !LaunchRelay(setup, error)) {
         CleanupProcess();
         return false;
@@ -935,7 +941,7 @@ bool CodexRuntime::ReadLine(std::string& line, DWORD timeoutMs, std::wstring& er
                 return false;
             }
             readBuffer_.append(buffer, read);
-            if (readBuffer_.size() > 4 * 1024 * 1024) {
+            if (readBuffer_.size() > 8 * 1024 * 1024) {
                 error = L"Codex app-server 单条输出异常过大";
                 return false;
             }
@@ -1002,12 +1008,18 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         if (onDone) onDone(L"Codex Runtime 启动失败：" + error);
         return;
     }
+
+    const auto desktop = DesktopDirectory();
     const long long requestId = nextRequestId_++;
     const std::string request =
         "{\"id\":" + std::to_string(requestId) +
         ",\"method\":\"turn/start\",\"params\":{\"threadId\":\"" + EscapeJson(threadId_) +
-        "\",\"input\":[{\"type\":\"text\",\"text\":\"" + EscapeJson(prompt) + "\"}]}}";
-    AppendRuntimeLog(L"app-server: turn/start ->");
+        "\",\"input\":[{\"type\":\"text\",\"text\":\"" + EscapeJson(prompt) +
+        "\"}],\"cwd\":\"" + EscapeJson(desktop) +
+        "\",\"approvalPolicy\":\"unlessTrusted\",\"approvalsReviewer\":\"user\""
+        ",\"sandboxPolicy\":{\"type\":\"workspaceWrite\",\"writableRoots\":[\"" + EscapeJson(desktop) +
+        "\"],\"networkAccess\":true}}}";
+    AppendRuntimeLog(L"app-server: turn/start -> approval=unlessTrusted sandbox=workspaceWrite network=true");
     if (!WriteLine(request)) {
         if (onDone) onDone(L"Codex turn/start 写入失败" + LogHint());
         CleanupProcess();
@@ -1023,7 +1035,7 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         if (stopToken.stop_requested()) break;
         const ULONGLONG elapsed = GetTickCount64() - turnStarted;
         if (elapsed >= kTurnTimeoutMs) {
-            error = L"Codex turn 等待模型响应超过 " + std::to_wstring(kTurnTimeoutMs / 1000) + L" 秒";
+            error = L"Codex turn 等待完整 Agent 任务超过 " + std::to_wstring(kTurnTimeoutMs / 1000) + L" 秒";
             break;
         }
         if (!ReadLine(line, static_cast<DWORD>(kTurnTimeoutMs - elapsed), error)) break;
@@ -1042,10 +1054,22 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
         }
 
         const auto method = ExtractJsonString(line, "\"method\"");
+
+        std::string hostReply;
+        if (HandleCodexHostRequest(method, line, hostReply)) {
+            AppendRuntimeLog(L"app-server: host request handled method=" + Utf8ToWide(method));
+            if (!WriteLine(hostReply)) {
+                if (onDone) onDone(L"Codex Host Bridge 回传失败" + LogHint());
+                CleanupProcess();
+                return;
+            }
+            continue;
+        }
+
         if (method == "item/tool/call") {
             long long serverRequestId = 0;
             const auto tool = ExtractJsonString(line, "\"tool\"");
-            AppendRuntimeLog(L"app-server: dynamic tool call=" + Utf8ToWide(tool));
+            AppendRuntimeLog(L"app-server: TuringDesk dynamic tool call=" + Utf8ToWide(tool));
             NativeToolResult result;
             if (!TryReadRequestId(line, serverRequestId)) result = {false, L"TuringDesk 无法解析 Codex tool request id。"};
             else if (tool.empty()) result = {false, L"Codex tool request 缺少 tool 名称。"};
@@ -1061,6 +1085,9 @@ void CodexRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallba
                     return;
                 }
             }
+            continue;
+        }
+        if (method == "item/commandExecution/outputDelta") {
             continue;
         }
         if (method == "item/agentMessage/delta") {

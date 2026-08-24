@@ -3,6 +3,7 @@
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/L3Agent.h"
 #include "turingdesk/NativeTools.h"
+#include "turingdesk/PiNativeToolsExtension.h"
 #include "turingdesk/SearchWindow.h"
 
 #include <windows.h>
@@ -252,9 +253,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return workerResult;
     }
 
+    std::wstring piExtensionError;
+    const bool piExtensionReady = turingdesk::EnsurePiNativeToolsExtension(&piExtensionError);
+    if (!piExtensionReady && !piExtensionError.empty()) {
+        OutputDebugStringW((L"TuringDesk Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
+    }
+
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(L"--self-test") != std::wstring_view::npos) {
-        const int result = RunNativeSelfTest() ? 0 : 5;
+        const int result = piExtensionReady && RunNativeSelfTest() ? 0 : 5;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
     }

@@ -20,9 +20,13 @@ let server;
 let child;
 let finished = false;
 let verifying = false;
+let ready = false;
+let promptSent = false;
+let promptAccepted = false;
 let finalResponseSent = false;
-let stdout = "";
+let stdoutBuffer = "";
 let stderr = "";
+const rpcTrace = [];
 
 function cleanupPackage() {
   try { fs.rmSync(packagePath, { recursive: true, force: true }); } catch {}
@@ -39,14 +43,38 @@ function sendChunk(res, delta, finish = null) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function traceRpc(value) {
+  let text;
+  try { text = typeof value === "string" ? value : JSON.stringify(value); }
+  catch { text = String(value); }
+  if (text.length > 1200) text = text.slice(0, 1200) + "...";
+  rpcTrace.push(text);
+  if (rpcTrace.length > 40) rpcTrace.shift();
+}
+
+function diagnostics() {
+  return `turn=${turn} ready=${ready} promptSent=${promptSent} promptAccepted=${promptAccepted} finalResponseSent=${finalResponseSent} state=${JSON.stringify(artifactState())} trace=${JSON.stringify(rpcTrace)} stderr=${stderr}`;
+}
+
 function fail(message) {
   if (finished) return;
   finished = true;
-  console.error(message);
+  console.error(`${message}\n${diagnostics()}`);
   try { child?.kill(); } catch {}
   try { server?.close(); } catch {}
   cleanupPackage();
   process.exitCode = 1;
+}
+
+function sendRpc(command) {
+  if (!child?.stdin || child.stdin.destroyed || !child.stdin.writable) {
+    fail(`Pi RPC stdin is not writable for ${command.type}.`);
+    return;
+  }
+  traceRpc({ direction: "in", ...command });
+  child.stdin.write(JSON.stringify(command) + "\n", "utf8", (error) => {
+    if (error) fail(`Pi RPC write failed for ${command.type}: ${error.message}`);
+  });
 }
 
 function artifactState() {
@@ -66,7 +94,7 @@ function verifyArtifacts(attempt = 0) {
       setTimeout(() => verifyArtifacts(attempt + 1), 100);
       return;
     }
-    fail(`Pi E2E artifacts did not settle. turn=${turn} state=${JSON.stringify(state)} stderr=${stderr}`);
+    fail("Pi E2E artifacts did not settle after final agent_settled.");
     return;
   }
 
@@ -225,7 +253,6 @@ server.listen(0, "127.0.0.1", () => {
     defaultModel: "ci-model",
     shellPath: powershell,
     quietStartup: true,
-    extensions: [extensionTarget],
   }, null, 2));
 
   child = spawn(process.execPath, [
@@ -233,9 +260,16 @@ server.listen(0, "127.0.0.1", () => {
     "--mode", "rpc",
     "--no-session",
     "--approve",
+    "--offline",
     "--provider", "turingdesk",
     "--model", "ci-model",
-    "--tools", "read,bash,edit,write,grep,find,ls",
+    "--no-extensions",
+    "--extension", extensionTarget,
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-themes",
+    "--no-context-files",
+    "--tools", "read,bash,edit,write,grep,find,ls,settings_open,wallpaper_create_web_package,wallpaper_validate_package",
   ], {
     cwd: work,
     windowsHide: true,
@@ -252,22 +286,68 @@ server.listen(0, "127.0.0.1", () => {
   });
 
   const timeout = setTimeout(() => {
-    fail(`Pi E2E timed out. turn=${turn} finalResponseSent=${finalResponseSent} state=${JSON.stringify(artifactState())} stdout=${stdout} stderr=${stderr}`);
+    fail("Pi E2E timed out.");
   }, 120000);
 
   child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
   child.stdout.on("data", (chunk) => {
-    stdout += chunk.toString("utf8");
+    stdoutBuffer += chunk.toString("utf8");
     for (;;) {
-      const newline = stdout.indexOf("\n");
+      const newline = stdoutBuffer.indexOf("\n");
       if (newline < 0) break;
-      const line = stdout.slice(0, newline).replace(/\r$/, "");
-      stdout = stdout.slice(newline + 1);
+      const line = stdoutBuffer.slice(0, newline).replace(/\r$/, "");
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
       if (!line.trim()) continue;
 
       let message;
-      try { message = JSON.parse(line); } catch { continue; }
-      if (message.type !== "agent_settled" || !finalResponseSent || finished || verifying) continue;
+      try { message = JSON.parse(line); }
+      catch {
+        traceRpc({ direction: "out-non-json", line });
+        continue;
+      }
+      traceRpc({ direction: "out", message });
+
+      if (message.type === "extension_error") {
+        clearTimeout(timeout);
+        fail(`Pi extension failed to load or execute: ${message.error || JSON.stringify(message)}`);
+        continue;
+      }
+
+      if (message.type === "response" && message.command === "get_state" && message.id === "ready-1") {
+        if (!message.success) {
+          clearTimeout(timeout);
+          fail(`Pi RPC get_state rejected: ${message.error || "unknown error"}`);
+          continue;
+        }
+        const model = message.data?.model;
+        if (!model || model.id !== "ci-model") {
+          clearTimeout(timeout);
+          fail(`Pi RPC ready state has wrong model: ${JSON.stringify(model)}`);
+          continue;
+        }
+        ready = true;
+        if (!promptSent) {
+          promptSent = true;
+          sendRpc({
+            id: "turn-1",
+            type: "prompt",
+            message: "Use the requested tools, including the TuringDesk wallpaper tool, then finish.",
+          });
+        }
+        continue;
+      }
+
+      if (message.type === "response" && message.command === "prompt" && message.id === "turn-1") {
+        if (!message.success) {
+          clearTimeout(timeout);
+          fail(`Pi RPC rejected prompt: ${message.error || "unknown error"}`);
+          continue;
+        }
+        promptAccepted = true;
+        continue;
+      }
+
+      if (message.type !== "agent_settled" || !promptAccepted || !finalResponseSent || finished || verifying) continue;
 
       verifying = true;
       clearTimeout(timeout);
@@ -275,16 +355,19 @@ server.listen(0, "127.0.0.1", () => {
     }
   });
 
+  child.on("error", (error) => {
+    clearTimeout(timeout);
+    fail(`Pi process spawn failed: ${error.message}`);
+  });
+
   child.on("exit", (code) => {
     if (!finished && code !== null) {
       clearTimeout(timeout);
-      fail(`Pi exited before successful verification: ${code}; turn=${turn}; finalResponseSent=${finalResponseSent}; state=${JSON.stringify(artifactState())}; stderr=${stderr}`);
+      fail(`Pi exited before successful verification: ${code}`);
     }
   });
 
-  child.stdin.write(JSON.stringify({
-    id: "turn-1",
-    type: "prompt",
-    message: "Use the requested tools, including the TuringDesk wallpaper tool, then finish.",
-  }) + "\n");
+  child.once("spawn", () => {
+    sendRpc({ id: "ready-1", type: "get_state" });
+  });
 });

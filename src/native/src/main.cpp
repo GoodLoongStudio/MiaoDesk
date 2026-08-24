@@ -2,11 +2,15 @@
 #include "turingdesk/GozSearch.h"
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/L3Agent.h"
+#include "turingdesk/NativeTools.h"
 #include "turingdesk/SearchWindow.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -36,6 +40,17 @@ std::wstring Lower(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(ch));
     });
     return value;
+}
+
+std::string WideToUtf8(std::wstring_view value) {
+    if (value.empty()) return {};
+    const int count = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                                          nullptr, 0, nullptr, nullptr);
+    if (count <= 0) return {};
+    std::string out(static_cast<std::size_t>(count), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                        out.data(), count, nullptr, nullptr);
+    return out;
 }
 
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
@@ -142,6 +157,43 @@ bool HasCodexPackagePathIfInstalled() {
     return true;
 }
 
+int RunNativeToolWorkerIfRequested(bool& handled) {
+    handled = false;
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) return 20;
+    if (argc < 2 || _wcsicmp(argv[1], L"--native-tool-worker") != 0) {
+        LocalFree(argv);
+        return 0;
+    }
+
+    handled = true;
+    if (argc != 5) {
+        LocalFree(argv);
+        return 21;
+    }
+
+    const std::wstring tool = argv[2];
+    const fs::path inputPath(argv[3]);
+    const fs::path outputPath(argv[4]);
+    LocalFree(argv);
+
+    std::ifstream input(inputPath, std::ios::binary);
+    if (!input) return 22;
+    const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    if (!input.good() && !input.eof()) return 23;
+
+    const auto result = turingdesk::ExecuteNativeToolRaw(WideToUtf8(tool), arguments);
+    std::string payload = result.success ? "1\n" : "0\n";
+    payload += WideToUtf8(result.message);
+
+    std::ofstream output(outputPath, std::ios::binary | std::ios::trunc);
+    if (!output) return 24;
+    output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    if (!output) return 25;
+    return 0;
+}
+
 bool RunNativeSelfTest() {
     if (!HasCodexLoopbackProxyBypass()) return false;
     if (!HasCodexPackagePathIfInstalled()) return false;
@@ -211,6 +263,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(com) && com != RPC_E_CHANGED_MODE) return 3;
+
+    bool workerHandled = false;
+    const int workerResult = RunNativeToolWorkerIfRequested(workerHandled);
+    if (workerHandled) {
+        if (SUCCEEDED(com)) CoUninitialize();
+        return workerResult;
+    }
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(L"--self-test") != std::wstring_view::npos) {

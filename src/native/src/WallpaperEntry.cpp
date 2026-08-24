@@ -9,6 +9,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/DesktopWidgetStore.h"
@@ -145,9 +146,27 @@ bool IsDesktopSurfaceWindow(HWND window) {
     return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0;
 }
 
+std::vector<HWND> CollectDesktopSurfaceWindows() {
+    std::vector<HWND> surfaces;
+    EnumWindows([](HWND top, LPARAM raw) -> BOOL {
+        auto* output = reinterpret_cast<std::vector<HWND>*>(raw);
+        if (IsDesktopSurfaceWindow(top)) output->push_back(top);
+        EnumChildWindows(top, [](HWND child, LPARAM childRaw) -> BOOL {
+            auto* childOutput = reinterpret_cast<std::vector<HWND>*>(childRaw);
+            if (IsDesktopSurfaceWindow(child)) childOutput->push_back(child);
+            return TRUE;
+        }, raw);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&surfaces));
+    std::sort(surfaces.begin(), surfaces.end());
+    surfaces.erase(std::unique(surfaces.begin(), surfaces.end()), surfaces.end());
+    return surfaces;
+}
+
 // Transitional lifecycle owner used while the legacy native wallpaper renderer
-// and Web coordinator converge on DesktopShellHost. It now verifies both parent
-// and shell-compatible layered composition rather than only repairing z-order.
+// and Web coordinator converge on DesktopShellHost. The final desktop attachment
+// decision already flows through DesktopShellHost even if an older renderer first
+// created/reparented the HWND.
 class DesktopShellMaintenance {
 public:
     DesktopShellMaintenance() = default;
@@ -160,17 +179,22 @@ public:
             while (!stop_) {
                 std::wstring ignored;
                 if (shell_.EnsureCurrent(&ignored)) {
-                    const HWND parent = shell_.SurfaceParent();
-                    if (parent && IsWindow(parent)) {
-                        for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-                            if (!IsDesktopSurfaceWindow(child)) continue;
-                            const auto role = turingdesk::wallpaper::DesktopShellHost::InferRole(child);
-                            const auto health = shell_.InspectSurface(child, role);
-                            if (!health.layered || !health.childStyle)
-                                shell_.PrepareSurface(child, true, nullptr);
+                    for (HWND surface : CollectDesktopSurfaceWindows()) {
+                        if (!surface || !IsWindow(surface)) continue;
+                        const auto role = turingdesk::wallpaper::DesktopShellHost::InferRole(surface);
+                        auto health = shell_.InspectSurface(surface, role);
+                        RECT screenRect{};
+                        if (!GetWindowRect(surface, &screenRect) ||
+                            screenRect.right <= screenRect.left || screenRect.bottom <= screenRect.top) continue;
+
+                        if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
+                            shell_.AttachSurface(surface, role, screenRect,
+                                                 IsWindowVisible(surface) != FALSE, nullptr);
+                        } else {
+                            shell_.PrepareSurface(surface, true, nullptr);
                         }
-                        shell_.RepairKnownTuringDeskSurfaces();
                     }
+                    shell_.RepairKnownTuringDeskSurfaces();
                 }
                 for (int i = 0; i < 5 && !stop_; ++i)
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));

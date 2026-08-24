@@ -15,6 +15,7 @@
 #include "turingdesk/WallpaperLibrary.h"
 #include "turingdesk/WallpaperPackage.h"
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
+#include "turingdesk/WebDesktopSurfaceChild.h"
 #include "turingdesk/WebWallpaperHost.h"
 
 namespace fs = std::filesystem;
@@ -144,10 +145,9 @@ bool IsDesktopSurfaceWindow(HWND window) {
     return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0;
 }
 
-// Transitional lifecycle owner used while WallpaperEngine.cpp and the Web
-// coordinator are being migrated to DesktopShellHost. It centralizes shell
-// health/style/z-order repair now, so Web/Widget surfaces no longer each guess
-// Windows 11 raised-desktop behavior independently.
+// Transitional lifecycle owner used while the legacy native wallpaper renderer
+// and Web coordinator converge on DesktopShellHost. It now verifies both parent
+// and shell-compatible layered composition rather than only repairing z-order.
 class DesktopShellMaintenance {
 public:
     DesktopShellMaintenance() = default;
@@ -164,7 +164,10 @@ public:
                     if (parent && IsWindow(parent)) {
                         for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
                             if (!IsDesktopSurfaceWindow(child)) continue;
-                            shell_.PrepareSurface(child, true, nullptr);
+                            const auto role = turingdesk::wallpaper::DesktopShellHost::InferRole(child);
+                            const auto health = shell_.InspectSurface(child, role);
+                            if (!health.layered || !health.childStyle)
+                                shell_.PrepareSurface(child, true, nullptr);
                         }
                         shell_.RepairKnownTuringDeskSurfaces();
                     }
@@ -189,8 +192,12 @@ private:
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, int showCommand) {
-    const int webResult = turingdesk::wallpaper::TryRunWebWallpaperChild(instance);
-    if (webResult >= 0) return webResult;
+    // Prefer the new layered desktop-surface WebView2 path. The legacy handler
+    // remains directly below as a temporary migration fallback only.
+    const int surfaceWebResult = turingdesk::wallpaper::TryRunWebDesktopSurfaceChild(instance);
+    if (surfaceWebResult >= 0) return surfaceWebResult;
+    const int legacyWebResult = turingdesk::wallpaper::TryRunWebWallpaperChild(instance);
+    if (legacyWebResult >= 0) return legacyWebResult;
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     const bool selfTest = args.find(L"--self-test") != std::wstring_view::npos;

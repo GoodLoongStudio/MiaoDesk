@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "vendorRevision": 7,
+  "vendorRevision": 8,
   "architecture": "arm64",
   "node": {
     "version": "24.19.0",
@@ -30,9 +30,10 @@
   },
   "codex": {
     "release": "rust-v0.146.0",
-    "archive": "codex-aarch64-pc-windows-msvc.exe.zst",
-    "sha256": "3ede06f1890b97fcbfafe6153f07045b340e3c966a2de7d0da188e393a1c90ef",
-    "source": "https://github.com/openai/codex/releases/"
+    "archive": "codex-package-aarch64-pc-windows-msvc.tar.zst",
+    "sha256": "938f34edbfffdf38dc46de2c10a20c6136f8d87c001f2763f6f85d9594f4fc6b",
+    "source": "https://github.com/openai/codex/releases/",
+    "packageLayout": "official-windows-package-v1"
   },
   "webview2Sdk": {
     "version": "1.0.4129.50",
@@ -44,7 +45,8 @@
     "Normal ARM64 builds and deployments consume runtime/arm64 only and do not download third-party runtimes.",
     "goz replaces the previous Everything runtime. gozd is the elevated MFT/USN index service and goz.exe is the unprivileged query client.",
     "codex-relay is the MIT local Responses-to-Chat-Completions bridge used when a configured provider does not expose the Responses API; TuringDesk vendors the official PyPI Windows ARM64 wheel with a pinned SHA-256.",
-    "The complete Codex CLI is vendored as the upstream .exe.zst asset so it remains below GitHub's 100 MiB per-file limit; Node 24 materializes codex.exe offline during deployment.",
+    "Codex is vendored as OpenAI's official Windows ARM64 package, including codex.exe, codex-code-mode-host.exe, codex-command-runner.exe, codex-windows-sandbox-setup.exe, rg.exe, codex-package.json, codex-resources, and codex-path.",
+    "The pinned official Codex tar.zst stays below GitHub's per-file size limit and is expanded offline by bundled Node 24 during deployment.",
     "Microsoft Edge WebView2 Runtime is an operating-system prerequisite; only the build SDK/loader is vendored."
   ]
 }

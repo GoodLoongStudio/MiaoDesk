@@ -20,7 +20,7 @@ function Assert-PowerShellParses([string]$Path) {
     [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors) | Out-Null
     if ($errors -and $errors.Count -gt 0) {
         $messages = ($errors | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
-        throw "Windows PowerShell parser rejected $Path: $messages"
+        throw ("Windows PowerShell parser rejected {0}: {1}" -f $Path, $messages)
     }
 }
 

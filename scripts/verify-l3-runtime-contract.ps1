@@ -15,6 +15,9 @@ $paths = @{
     Product = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
     Native = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
     Contract = Join-Path $root 'docs/L3-PI-RUNTIME-CONTRACT.md'
+    Deploy = Join-Path $root 'scripts/deploy-native-arm64.ps1'
+    Update = Join-Path $root 'scripts/update-turingdesk-arm64.ps1'
+    Prepare = Join-Path $root 'scripts/prepare-third-party-runtime-arm64.ps1'
     Arm = Join-Path $root '.github/workflows/native-search-windows.yml'
     X64 = Join-Path $root '.github/workflows/native-x64-validation.yml'
 }
@@ -61,6 +64,9 @@ $cmake = Get-Content $paths.CMake -Raw
 $product = Get-Content $paths.Product -Raw
 $native = Get-Content $paths.Native -Raw
 $contract = Get-Content $paths.Contract -Raw
+$deploy = Get-Content $paths.Deploy -Raw
+$update = Get-Content $paths.Update -Raw
+$prepare = Get-Content $paths.Prepare -Raw
 $arm = Get-Content $paths.Arm -Raw
 $x64 = Get-Content $paths.X64 -Raw
 
@@ -208,6 +214,43 @@ foreach ($marker in @(
     }
 }
 
+# Deployment/update must stage a complete package and align binaries with the exact validated RuntimeBundle revision.
+foreach ($marker in @(
+    'Materialize-Runtime',
+    'Test-StagedPackage',
+    '.installed-build-sha',
+    '-SkipGozServiceInstall',
+    'NativeTest.next-'
+)) {
+    if (-not $deploy.Contains($marker)) { throw "ARM64 deploy staging marker missing: $marker" }
+    if (-not $update.Contains($marker)) { throw "ARM64 updater staging marker missing: $marker" }
+}
+foreach ($marker in @(
+    'ExpectedSha',
+    'main changed while deploying',
+    'rev-parse HEAD'
+)) {
+    if (-not $deploy.Contains($marker)) { throw "ARM64 deploy commit-alignment marker missing: $marker" }
+}
+foreach ($marker in @(
+    'Materialize-Runtime $next $validated.BuildSha',
+    'git -C $runtimeRepo checkout $BuildSha',
+    'RuntimeBundle revision mismatch'
+)) {
+    if (-not $update.Contains($marker)) { throw "ARM64 updater commit-alignment marker missing: $marker" }
+}
+if ($deploy.Contains('Assert-DeployedPiRuntime')) {
+    throw 'Fresh deployment must not depend on an already-installed Pi runtime.'
+}
+foreach ($script in @($deploy, $update, $prepare)) {
+    foreach ($legacyText in @('Codex CLI', 'Codex Relay')) {
+        if ($script.Contains($legacyText)) { throw "Deployment/update user surface still contains retired runtime branding: $legacyText" }
+    }
+}
+if (-not $prepare.Contains('图灵智能桌面 ARM64 RuntimeBundle 已就绪')) {
+    throw 'Runtime preparation script must present the TuringDesk product surface.'
+}
+
 # Harness stays local and never opens an external browser itself.
 $requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";'
 if (-not $harness.Contains($requiredHarnessArgs)) {
@@ -234,4 +277,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: TuringDesk-only normal UI, Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, real native-tool E2E, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: TuringDesk-only normal UI, Pi primary, full-package commit-aligned deploy/update, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, real native-tool E2E, Direct API fallback only.'

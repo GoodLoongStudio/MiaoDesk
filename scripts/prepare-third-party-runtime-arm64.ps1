@@ -232,10 +232,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI failed to execute' }
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex CLI app-server is unavailable' }
 & $CodexRg --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex ripgrep failed to execute' }
-& $CodexCommandRunner --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex command runner failed to execute' }
-& $CodexSandboxSetup --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Codex Windows sandbox setup failed to execute' }
+# The Windows helpers are IPC/payload entrypoints, not standalone CLIs. Running
+# them with --help is expected to fail (for example command-runner reports
+# "runner: no pipe-in provided"). Their presence and package integrity are
+# verified here; the subsequent app-server E2E exercises the real execution path.
+Write-Host 'Bundled Codex Windows command runner and sandbox setup helpers are present.' -ForegroundColor Green
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII

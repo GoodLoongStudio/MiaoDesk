@@ -90,7 +90,7 @@ std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
         if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"柔和流动的极光光带，默认桌面。";
         if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"赛博霓虹与网格流光。";
         if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"深色网格与缓慢脉冲。";
-        return L"TuringDesk Scene 桌面。";
+        return L"图灵智能桌面 Scene 桌面。";
     }
     if (item.kind == LibraryWallpaperKind::Video) return L"视频壁纸。全屏时遵循性能策略。";
     if (item.kind == LibraryWallpaperKind::Web) return L"Web 壁纸。远程地址仅允许 HTTPS。";
@@ -206,8 +206,6 @@ struct WallpaperLibraryWindow::Impl {
 
     void RebuildFonts() {
         DestroyResources();
-        // Keep settings typography on the same visual scale as the Search Bar.
-        // Search uses roughly 18px primary text and 15px secondary text at 96 DPI.
         titleFont = MakeFont(24, FW_SEMIBOLD, L"Segoe UI Variable Display");
         pageTitleFont = MakeFont(20, FW_SEMIBOLD, L"Segoe UI Variable Display");
         sectionFont = MakeFont(18, FW_SEMIBOLD, L"Segoe UI Variable Text");
@@ -354,7 +352,7 @@ struct WallpaperLibraryWindow::Impl {
 
         SetWindowTextW(selectedTitle, selected->title.c_str());
         std::wstring meta = KindLabel(selected->kind);
-        meta += L" · TuringDesk";
+        meta += L" · 图灵智能桌面";
         SetWindowTextW(selectedMeta, meta.c_str());
         std::wstring description = DescriptionFor(*selected);
         if (!selected->source.empty() && selected->kind != LibraryWallpaperKind::Scene)
@@ -396,7 +394,7 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring error;
         auto imported = library->ImportFile(path, {}, &error);
         if (!imported) {
-            MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"TuringDesk 设置", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         FinishImport(*imported, L"已导入：" + imported->title);
@@ -409,7 +407,7 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring error;
         auto imported = library->ImportWebUrl(url, {}, &error);
         if (!imported) {
-            MessageBoxW(window, error.empty() ? L"Web URL 导入失败。" : error.c_str(), L"TuringDesk 设置", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.empty() ? L"Web URL 导入失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         SetWindowTextW(webUrl, L"");
@@ -421,7 +419,7 @@ struct WallpaperLibraryWindow::Impl {
         if (!selected || !library) return;
         std::wstring error;
         if (!library->SetFavorite(selected->id, !selected->favorite, &error)) {
-            MessageBoxW(window, error.c_str(), L"TuringDesk 设置", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         RebuildList();
@@ -430,11 +428,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = Selected();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"TuringDesk 设置",
+        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"图灵智能桌面",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
-            MessageBoxW(window, error.c_str(), L"TuringDesk 设置", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         RebuildList();
@@ -510,30 +508,30 @@ struct WallpaperLibraryWindow::Impl {
         if (!aiAgent) return;
         const auto url = Trim(WindowText(aiUrl));
         if (url.empty()) {
-            MessageBoxW(window, L"请填写 API 地址。", L"TuringDesk AI", MB_OK | MB_ICONWARNING);
+            MessageBoxW(window, L"请填写 API 地址。", L"图灵智能桌面", MB_OK | MB_ICONWARNING);
             return;
         }
         if (!aiHasProbe || aiProbedUrl != url) ProbeAi();
         if (!aiHasProbe) {
-            MessageBoxW(window, L"无法识别这个 API 地址，请检查后重试。", L"TuringDesk AI", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, L"无法识别这个 API 地址，请检查后重试。", L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         const auto model = Trim(WindowText(aiModel));
         if (model.empty()) {
-            MessageBoxW(window, L"请填写或选择模型。", L"TuringDesk AI", MB_OK | MB_ICONWARNING);
+            MessageBoxW(window, L"请填写或选择模型。", L"图灵智能桌面", MB_OK | MB_ICONWARNING);
             return;
         }
         const auto keyText = Trim(WindowText(aiKey));
         const bool preserve = AiUsesStoredKey();
         std::wstring reply;
         if (!aiAgent->ApplyModelConfig(aiProbe, model, preserve ? L"" : keyText, preserve, reply)) {
-            MessageBoxW(window, reply.empty() ? L"保存失败。" : reply.c_str(), L"TuringDesk AI", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, reply.empty() ? L"保存失败。" : reply.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         aiHadStoredKey = aiAgent->HasStoredApiKey();
         SetWindowTextW(aiKey, aiHadStoredKey ? kSavedKeyMask : L"");
         SetWindowTextW(aiProviderValue, aiAgent->Config().providerId.c_str());
-        SetAiStatus(reply + L" · Codex CLI 下次请求立即使用此配置");
+        SetAiStatus(reply + L" · 图灵 AI 下次请求立即使用此配置");
         RefreshAiRuntimeStatus();
     }
 
@@ -551,14 +549,12 @@ struct WallpaperLibraryWindow::Impl {
     void RefreshAiRuntimeStatus() {
         const fs::path root = ModuleDirectory();
         std::error_code ec;
-        const bool codex = fs::is_regular_file(root / L"Codex" / L"codex.exe", ec);
-        ec.clear();
-        const bool relay = fs::is_regular_file(root / L"CodexRelay" / L"codex-relay.exe", ec);
-        std::wstring text = L"Codex CLI：";
-        text += codex ? L"已安装" : L"未安装";
-        text += L"\r\nCodex Relay：";
-        text += relay ? L"已安装（Chat Completions 按需使用）" : L"未安装";
-        text += L"\r\n默认路由：Codex CLI → 轻量问答 fallback";
+        const bool workbenchAvailable = fs::is_regular_file(root / L"TuringDeskHarness.exe", ec);
+        std::wstring text = L"图灵 AI：";
+        text += (aiAgent && !aiAgent->Config().model.empty()) ? L"已配置" : L"待配置";
+        if (aiAgent && !aiAgent->Config().model.empty()) text += L"\r\n当前模型：" + aiAgent->Config().model;
+        text += L"\r\n高级工作台：";
+        text += workbenchAvailable ? L"可用" : L"未安装";
         SetWindowTextW(aiRuntimeStatus, text.c_str());
     }
 
@@ -567,15 +563,15 @@ struct WallpaperLibraryWindow::Impl {
         const fs::path executable = root / L"TuringDeskHarness.exe";
         std::error_code ec;
         if (!fs::is_regular_file(executable, ec)) {
-            MessageBoxW(window, L"当前安装包缺少 TuringDeskHarness.exe。", L"DeepSeek Harness", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, L"当前安装包没有高级工作台组件。", L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", executable.c_str(), L"--ui", root.c_str(), SW_SHOWNORMAL));
         if (result <= 32) {
-            MessageBoxW(window, L"DeepSeek Harness 工作台启动失败。", L"DeepSeek Harness", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, L"高级工作台启动失败。", L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
-        SetAiStatus(L"DeepSeek Harness 工作台已打开；后台服务与 UI 保持分离。");
+        SetAiStatus(L"高级工作台已打开。");
     }
 
     void ShowControl(HWND control, bool show) const {
@@ -598,8 +594,8 @@ struct WallpaperLibraryWindow::Impl {
     void NavigateToTab(int index) {
         if (index == 5) {
             aiPage = true;
-            SetWindowTextW(pageTitle, L"AI 与 Agent");
-            SetWindowTextW(pageSubtitle, L"API、模型、Codex CLI 和 DeepSeek Harness 都在这里统一管理。");
+            SetWindowTextW(pageTitle, L"图灵 AI");
+            SetWindowTextW(pageSubtitle, L"模型、API 和高级工作台都在这里统一管理。");
             ShowInstalledPage(false);
             ShowAiPage(true);
             RefreshAiFields();
@@ -844,7 +840,7 @@ struct WallpaperLibraryWindow::Impl {
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"TuringDesk 设置",
+        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"图灵智能桌面",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 1180, 780,
                                  nullptr, nullptr, instance, this);
@@ -866,12 +862,12 @@ struct WallpaperLibraryWindow::Impl {
         };
 
         headerTitle = label(L"桌面设置", 0, titleFont);
-        headerSubtitle = label(L"场景、播放列表、多屏、应用规则、性能和 AI", 0, smallFont);
+        headerSubtitle = label(L"场景、播放列表、多屏、应用规则、性能和图灵 AI", 0, smallFont);
         importButton = button(L"导入壁纸", kImportId);
 
         tabs = font(CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                     0, 0, 10, 10, window, ControlId(kTabsId), instance, nullptr), bodyFont);
-        for (const wchar_t* tabText : {L"已安装", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"AI"}) {
+        for (const wchar_t* tabText : {L"已安装", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"图灵 AI"}) {
             TCITEMW item{}; item.mask = TCIF_TEXT; item.pszText = const_cast<wchar_t*>(tabText);
             TabCtrl_InsertItem(tabs, TabCtrl_GetItemCount(tabs), &item);
         }
@@ -919,9 +915,9 @@ struct WallpaperLibraryWindow::Impl {
         aiSaveButton = button(L"保存 AI 设置", kAiSaveId, false);
         aiClearKeyButton = button(L"清除 Key", kAiClearKeyId, false);
         aiStatus = label(L"", SS_LEFT, bodyFont, false);
-        aiRuntimeTitle = label(L"AI Runtime", 0, pageTitleFont, false);
+        aiRuntimeTitle = label(L"图灵 AI 状态", 0, pageTitleFont, false);
         aiRuntimeStatus = label(L"", SS_LEFT, bodyFont, false);
-        aiHarnessButton = button(L"打开 DeepSeek Harness 工作台", kAiHarnessId, false);
+        aiHarnessButton = button(L"打开高级工作台", kAiHarnessId, false);
 
         aiAgent = std::make_unique<turingdesk::L3Agent>();
         ApplyFonts();

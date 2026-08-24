@@ -17,6 +17,10 @@ $wallpaperHeader = Require-File 'src/native/include/turingdesk/WallpaperService.
 $wallpaperSource = Require-File 'src/native/src/WallpaperService.cpp'
 $widgetHeader = Require-File 'src/native/include/turingdesk/WidgetService.h'
 $widgetSource = Require-File 'src/native/src/WidgetService.cpp'
+$automationHeader = Require-File 'src/native/include/turingdesk/AutomationService.h'
+$automationSource = Require-File 'src/native/src/AutomationService.cpp'
+$automationUiAdapterHeader = Require-File 'src/native/include/turingdesk/AutomationUiAdapter.h'
+$automationUiAdapterSource = Require-File 'src/native/src/AutomationUiAdapter.cpp'
 $performanceHeader = Require-File 'src/native/include/turingdesk/PerformanceService.h'
 $performanceSource = Require-File 'src/native/src/PerformanceService.cpp'
 $widgetControllerHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetController.h'
@@ -32,6 +36,10 @@ $header = Get-Content -LiteralPath $serviceHeader -Raw
 $source = Get-Content -LiteralPath $serviceSource -Raw
 $wallpaper = Get-Content -LiteralPath $wallpaperSource -Raw
 $widget = Get-Content -LiteralPath $widgetSource -Raw
+$automationHeaderText = Get-Content -LiteralPath $automationHeader -Raw
+$automation = Get-Content -LiteralPath $automationSource -Raw
+$automationUiAdapterHeaderText = Get-Content -LiteralPath $automationUiAdapterHeader -Raw
+$automationUiAdapter = Get-Content -LiteralPath $automationUiAdapterSource -Raw
 $performanceHeaderText = Get-Content -LiteralPath $performanceHeader -Raw
 $performance = Get-Content -LiteralPath $performanceSource -Raw
 $widgetControllerHeaderText = Get-Content -LiteralPath $widgetControllerHeader -Raw
@@ -62,6 +70,23 @@ foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyWebP
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'DesktopWidgetStore store')) {
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
+
+foreach ($marker in @('AutomationService', 'GetState', 'SetEnabled', 'SetActivePlaylist', 'ForceNextPlaylist')) {
+    if (-not $automationHeaderText.Contains($marker)) { throw "Automation service header missing marker: $marker" }
+}
+foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
+    if (-not $automation.Contains($marker)) { throw "Automation domain service missing ownership marker: $marker" }
+}
+foreach ($marker in @('AutomationUiAdapter', 'AutomationService.h', 'AutomationService service_')) {
+    if (-not $automationUiAdapterHeaderText.Contains($marker)) { throw "Automation UI adapter header missing marker: $marker" }
+}
+foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.UpsertPlaylist', 'service_.UpsertSchedule', 'service_.ForceNextPlaylist')) {
+    if (-not $automationUiAdapter.Contains($marker)) { throw "Automation UI adapter is not routed through AutomationService: $marker" }
+}
+foreach ($forbidden in @('WallpaperAutomationStore store', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW')) {
+    if ($automationUiAdapter.Contains($forbidden)) { throw "Automation UI adapter regained persistence ownership: $forbidden" }
+}
+
 foreach ($marker in @('PerformanceService', 'WallpaperPerformancePolicy.h', 'GetConfig', 'SaveConfig')) {
     if (-not $performanceHeaderText.Contains($marker)) { throw "Performance service header missing marker: $marker" }
 }
@@ -94,8 +119,8 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
 if ($cmake.Contains('    src/WallpaperLibraryWindow.cpp')) {
     throw 'Production target must not compile legacy WallpaperLibraryWindow.cpp directly.'
 }
-foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp')) {
-    if (-not $cmake.Contains($marker)) { throw "Production widget UI routing source missing from CMake: $marker" }
+foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp', 'src/AutomationUiAdapter.cpp')) {
+    if (-not $cmake.Contains($marker)) { throw "Production UI routing source missing from CMake: $marker" }
 }
 
 if (-not $adapter.Contains('DesktopControlService.h')) { throw 'Pi desktop tool adapter must include DesktopControlService.' }
@@ -108,7 +133,7 @@ foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService
     $count = ([regex]::Matches($cmake, [regex]::Escape($sourceName))).Count
     if ($count -lt 2) { throw "$sourceName must be linked into both TuringDesk and TuringDeskWallpaper." }
 }
-foreach ($wallpaperOnlySource in @('src/DesktopWidgetController.cpp', 'src/DesktopWidgetUiAdapter.cpp', 'src/AutomationService.cpp', 'src/PerformanceService.cpp')) {
+foreach ($wallpaperOnlySource in @('src/DesktopWidgetController.cpp', 'src/DesktopWidgetUiAdapter.cpp', 'src/AutomationService.cpp', 'src/AutomationUiAdapter.cpp', 'src/PerformanceService.cpp')) {
     if (([regex]::Matches($cmake, [regex]::Escape($wallpaperOnlySource))).Count -lt 1) {
         throw "$wallpaperOnlySource must be linked into TuringDeskWallpaper."
     }

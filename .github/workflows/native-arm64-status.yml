@@ -1,0 +1,35 @@
+name: Report Native ARM64 Status
+
+on:
+  workflow_run:
+    workflows: ["Native Windows ARM64"]
+    types: [completed]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish commit status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          case "$CONCLUSION" in
+            success) STATE=success ;;
+            cancelled) STATE=error ;;
+            *) STATE=failure ;;
+          esac
+          gh api --method POST "repos/${REPO}/statuses/${HEAD_SHA}" \
+            -f state="$STATE" \
+            -f context="TuringDesk/Native-ARM64" \
+            -f description="Native Windows ARM64: ${CONCLUSION}" \
+            -f target_url="$RUN_URL"

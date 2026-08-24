@@ -7,13 +7,16 @@ on:
       - CMakeLists.txt
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
-      - scripts/verify-codex-jsonl-wire.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/verify-windows-powershell-compat.ps1
       - scripts/deploy-native-arm64.ps1
-      - docs/L3-CODEX-RUNTIME-CONTRACT.md
+      - scripts/update-turingdesk-arm64.ps1
+      - scripts/prepare-third-party-runtime-arm64.ps1
       - docs/TURINGDESK-PRODUCT-BASELINE.md
       - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
+      - docs/L3-PI-RUNTIME-CONTRACT.md
       - DEPLOY-NATIVE-ARM64.cmd
+      - UPDATE-TURINGDESK.cmd
       - README.md
       - .github/workflows/native-x64-validation.yml
   workflow_dispatch:
@@ -32,7 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Verify L3 Codex-first runtime contract
+      - name: Verify Windows PowerShell 5.1 entrypoints
+        shell: powershell
+        run: .\scripts\verify-windows-powershell-compat.ps1
+
+      - name: Verify Pi-first TuringDesk runtime contract
         shell: pwsh
         run: .\scripts\verify-l3-runtime-contract.ps1
 
@@ -48,7 +55,7 @@ jobs:
           foreach ($test in @(
             @{ Exe = '.\build-x64\src\native\Release\TuringDesk.exe'; Name = 'Search/AI' },
             @{ Exe = '.\build-x64\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' },
-            @{ Exe = '.\build-x64\src\native\Release\TuringDeskHarness.exe'; Name = 'Harness shell' }
+            @{ Exe = '.\build-x64\src\native\Release\TuringDeskHarness.exe'; Name = 'Advanced Workbench shell' }
           )) {
             $p = Start-Process -FilePath $test.Exe -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$($test.Name) self-test failed: $($p.ExitCode)" }

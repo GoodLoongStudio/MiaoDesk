@@ -1,4 +1,6 @@
 #include "turingdesk/AppSearch.h"
+#include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/DesktopWidgetTools.h"
 #include "turingdesk/GozSearch.h"
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/L3Agent.h"
@@ -58,7 +60,8 @@ std::string WideToUtf8(std::wstring_view value) {
 bool IsAllowedPiNativeTool(std::string_view tool) {
     return tool == "settings_open" ||
            tool == "wallpaper_create_web_package" ||
-           tool == "wallpaper_validate_package";
+           tool == "wallpaper_validate_package" ||
+           turingdesk::IsDesktopControlTool(tool);
 }
 
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
@@ -174,7 +177,9 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    const auto result = turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
+    const auto result = turingdesk::IsDesktopControlTool(toolUtf8)
+        ? turingdesk::ExecuteDesktopControlTool(toolUtf8, arguments)
+        : turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
     std::string payload = result.success ? "1\n" : "0\n";
     payload += WideToUtf8(result.message);
 
@@ -188,6 +193,7 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
 bool RunNativeSelfTest() {
     if (!HasLoopbackProxyBypass()) return false;
     if (!HasBundledRuntimePathIfInstalled()) return false;
+    if (!turingdesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
 
     turingdesk::AppSearch apps;
     apps.BuildIndex();

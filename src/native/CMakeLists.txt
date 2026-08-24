@@ -37,6 +37,8 @@ add_executable(TuringDesk WIN32
     src/PiNativeToolsExtension.cpp
     src/NativeTools.cpp
     src/NativeToolIsolation.cpp
+    src/DesktopWidgetStore.cpp
+    src/DesktopWidgetTools.cpp
     src/WallpaperPackage.cpp
     src/AppSearch.cpp
     src/GozSearch.cpp
@@ -68,6 +70,7 @@ add_executable(TuringDeskWallpaper WIN32
     src/WallpaperLibrary.cpp
     src/WallpaperLibraryWeb.cpp
     src/WallpaperLibraryWindow.cpp
+    src/DesktopWidgetStore.cpp
     src/WallpaperPackage.cpp
     src/VideoWallpaperPlayer.cpp
     src/VideoWallpaperSet.cpp

@@ -6,6 +6,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/WallpaperLibrary.h"
 #include "turingdesk/WallpaperPackage.h"
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
@@ -89,6 +90,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
         if (!WebLibrarySelfTest()) return 38;
         if (!turingdesk::wallpaper::WallpaperWebRuntimeCoordinator::SelfTest()) return 39;
         if (!turingdesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
+        if (!turingdesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
         return TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
     }
 

@@ -50,6 +50,12 @@ const TOOL_NAMES = [
   "settings_open",
   "wallpaper_create_web_package",
   "wallpaper_validate_package",
+  "wallpaper_state_get",
+  "wallpaper_apply_web_package",
+  "desktop_widget_create_web",
+  "desktop_widget_update",
+  "desktop_widget_remove",
+  "desktop_widget_list",
 ] as const;
 
 function textResult(text: string) {
@@ -121,6 +127,13 @@ function activateNativeTools(pi: ExtensionAPI) {
   pi.setActiveTools([...new Set([...active, ...TOOL_NAMES])]);
 }
 
+const normalizedGeometry = {
+  x: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  y: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  width: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
+  height: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
+};
+
 export default function turingDeskNativeTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "settings_open",
@@ -159,6 +172,89 @@ export default function turingDeskNativeTools(pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       return textResult(await runNativeTool("wallpaper_validate_package", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "wallpaper_state_get",
+    label: "Read Desktop State",
+    description: "Read the current TuringDesk wallpaper state and desktop widget count before making desktop changes.",
+    parameters: Type.Object({}, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("wallpaper_state_get", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "wallpaper_apply_web_package",
+    label: "Apply TuringDesk Web Wallpaper",
+    description: "Apply a validated local Web .tdwall package to the current TuringDesk desktop. Use after wallpaper_create_web_package when the user asks to actually change the desktop.",
+    parameters: Type.Object({
+      path: Type.String({ description: "Absolute path to the .tdwall package directory" }),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("wallpaper_apply_web_package", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "desktop_widget_create_web",
+    label: "Create Desktop Widget",
+    description: "Create a persistent TuringDesk desktop widget from self-contained HTML/CSS/JS. Geometry is normalized to the target monitor. Widgets are click-through in the first runtime so they never block desktop icons.",
+    parameters: Type.Object({
+      title: Type.String({ description: "Widget title" }),
+      html: Type.String({ description: "Complete self-contained HTML/CSS/JS for the widget; design it as a compact desktop card" }),
+      monitor_id: Type.Optional(Type.String({ description: "Stable TuringDesk monitor id; omit for primary monitor" })),
+      ...normalizedGeometry,
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("desktop_widget_create_web", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "desktop_widget_update",
+    label: "Adjust Desktop Widget",
+    description: "Move, resize, enable, restyle, or replace the HTML of an existing TuringDesk desktop widget.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Widget id returned by desktop_widget_create_web or desktop_widget_list" }),
+      title: Type.Optional(Type.String()),
+      html: Type.Optional(Type.String({ description: "Replacement self-contained HTML/CSS/JS" })),
+      monitor_id: Type.Optional(Type.String({ description: "Stable monitor id; empty string means primary monitor" })),
+      ...normalizedGeometry,
+      z_index: Type.Optional(Type.Integer({ minimum: -1000, maximum: 1000 })),
+      enabled: Type.Optional(Type.Boolean()),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("desktop_widget_update", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "desktop_widget_remove",
+    label: "Remove Desktop Widget",
+    description: "Remove a TuringDesk desktop widget and its managed HTML package.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Widget id" }),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("desktop_widget_remove", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "desktop_widget_list",
+    label: "List Desktop Widgets",
+    description: "List persistent TuringDesk desktop widgets with ids, monitor targets, enabled state, and normalized geometry.",
+    parameters: Type.Object({}, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("desktop_widget_list", params, signal));
     },
   });
 

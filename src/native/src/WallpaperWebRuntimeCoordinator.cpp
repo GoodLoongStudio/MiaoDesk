@@ -1,5 +1,6 @@
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
 
+#include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/WallpaperIndependentLayout.h"
 #include "turingdesk/WallpaperMonitorAssignments.h"
 #include "turingdesk/WallpaperMonitorLayout.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <iterator>
 #include <string>
@@ -25,6 +27,7 @@ namespace {
 
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWallpaperSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
+constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -130,6 +133,78 @@ std::vector<WebWallpaperRequest> DesiredRequests(HWND host, const RuntimeState& 
     return requests;
 }
 
+const MonitorInfo* PrimaryMonitor(const MonitorTopology& topology) {
+    for (const auto& monitor : topology.monitors) if (monitor.primary) return &monitor;
+    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
+}
+
+RECT WidgetRegionInHost(HWND host, const MonitorInfo& monitor, const DesktopWidget& widget) {
+    POINT corners[2] = {
+        {monitor.desktopRect.left, monitor.desktopRect.top},
+        {monitor.desktopRect.right, monitor.desktopRect.bottom},
+    };
+    MapWindowPoints(HWND_DESKTOP, host, corners, 2);
+    const LONG monitorWidth = std::max<LONG>(1, corners[1].x - corners[0].x);
+    const LONG monitorHeight = std::max<LONG>(1, corners[1].y - corners[0].y);
+    RECT region{};
+    region.left = corners[0].x + static_cast<LONG>(std::lround(widget.x * monitorWidth));
+    region.top = corners[0].y + static_cast<LONG>(std::lround(widget.y * monitorHeight));
+    region.right = region.left + static_cast<LONG>(std::lround(widget.width * monitorWidth));
+    region.bottom = region.top + static_cast<LONG>(std::lround(widget.height * monitorHeight));
+    return region;
+}
+
+std::vector<WebWallpaperRequest> DesiredWidgetRequests(HWND host, const RuntimeState& state, std::wstring& fingerprint) {
+    fingerprint.clear();
+    std::vector<WebWallpaperRequest> requests;
+    if (!host || !IsWindow(host) || !state.enabled) return requests;
+
+    DesktopWidgetStore store;
+    std::wstring ignored;
+    if (!store.Load(&ignored)) return requests;
+    const MonitorTopology topology = QueryMonitorTopology();
+    if (!topology.Valid()) return requests;
+
+    struct RankedRequest {
+        int z{};
+        WebWallpaperRequest request;
+        std::wstring revision;
+    };
+    std::vector<RankedRequest> ranked;
+    for (const auto& raw : store.Items()) {
+        const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
+        if (!widget.enabled || widget.kind != DesktopWidgetKind::Web ||
+            !WebWallpaperProcessSet::IsSupportedSource(widget.source.wstring())) continue;
+
+        const MonitorInfo* monitor = widget.monitorId.empty()
+            ? PrimaryMonitor(topology)
+            : FindMonitorByStableId(topology, widget.monitorId);
+        if (!monitor) continue;
+
+        WebWallpaperRequest request;
+        request.region = WidgetRegionInHost(host, *monitor, widget);
+        request.source = widget.source.wstring();
+        request.itemId = L"widget-" + widget.id;
+        request.muted = true;
+        if (request.region.right <= request.region.left || request.region.bottom <= request.region.top) continue;
+
+        std::error_code ec;
+        const auto writeTime = fs::last_write_time(widget.source, ec);
+        const auto revision = ec ? 0LL : static_cast<long long>(writeTime.time_since_epoch().count());
+        ranked.push_back({widget.zIndex, std::move(request), widget.id + L":" + std::to_wstring(revision)});
+    }
+
+    std::stable_sort(ranked.begin(), ranked.end(), [](const RankedRequest& a, const RankedRequest& b) {
+        return a.z < b.z;
+    });
+    requests.reserve(ranked.size());
+    for (auto& item : ranked) {
+        fingerprint += item.revision + L";";
+        requests.push_back(std::move(item.request));
+    }
+    return requests;
+}
+
 bool SameRequest(const WebWallpaperRequest& a, const WebWallpaperRequest& b) {
     return a.region.left == b.region.left && a.region.top == b.region.top &&
            a.region.right == b.region.right && a.region.bottom == b.region.bottom &&
@@ -143,6 +218,26 @@ bool SameRequests(const std::vector<WebWallpaperRequest>& a, const std::vector<W
 void WriteDiagnostics(const std::wstring& value) {
     const fs::path path = WallpaperConfigPath();
     WritePrivateProfileStringW(L"Diagnostics", L"WebRuntime", value.c_str(), path.c_str());
+}
+
+void WriteWidgetDiagnostics(const std::wstring& value) {
+    const fs::path path = WallpaperConfigPath();
+    WritePrivateProfileStringW(L"Diagnostics", L"WidgetRuntime", value.c_str(), path.c_str());
+}
+
+void KeepWallpaperWebBelowWidgets(HWND host) {
+    if (!host || !IsWindow(host)) return;
+    EnumChildWindows(host, [](HWND child, LPARAM) -> BOOL {
+        wchar_t className[128]{};
+        wchar_t title[256]{};
+        GetClassNameW(child, className, static_cast<int>(std::size(className)));
+        GetWindowTextW(child, title, static_cast<int>(std::size(title)));
+        if (_wcsicmp(className, kWebHostClass) == 0 && wcsncmp(title, L"widget-", 7) != 0) {
+            SetWindowPos(child, HWND_BOTTOM, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
+        return TRUE;
+    }, 0);
 }
 
 void EnsureIndependentHostBounds(HWND host) {
@@ -195,9 +290,12 @@ struct WallpaperWebRuntimeCoordinator::Impl {
     void Run(std::stop_token stopToken) {
         running.store(true, std::memory_order_release);
         WebWallpaperProcessSet web;
+        WebWallpaperProcessSet widgets;
         WallpaperPerformancePolicy performance;
         HWND host = nullptr;
         std::vector<WebWallpaperRequest> activeRequests;
+        std::vector<WebWallpaperRequest> activeWidgetRequests;
+        std::wstring activeWidgetFingerprint;
         RuntimeState state;
         ULONGLONG nextRefresh = 0;
         ULONGLONG nextRecovery = 0;
@@ -232,11 +330,29 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             return true;
         };
 
+        auto startWidgets = [&] {
+            widgets.Stop();
+            if (activeWidgetRequests.empty()) {
+                WriteWidgetDiagnostics(L"未启用桌面小组件");
+                return true;
+            }
+            if (!widgets.Start(host, activeWidgetRequests)) {
+                WriteWidgetDiagnostics(L"Widget runtime 启动失败：" + widgets.LastErrorText());
+                return false;
+            }
+            KeepWallpaperWebBelowWidgets(host);
+            WriteWidgetDiagnostics(widgets.DiagnosticsText());
+            return true;
+        };
+
         while (!stopToken.stop_requested()) {
             HWND currentHost = FindWindowW(kWallpaperHostClass, nullptr);
             if (currentHost != host) {
+                widgets.Stop();
                 web.Stop();
                 activeRequests.clear();
+                activeWidgetRequests.clear();
+                activeWidgetFingerprint.clear();
                 host = currentHost;
                 nextRefresh = 0;
                 resetRecovery();
@@ -246,50 +362,78 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             if (host && IsWindow(host) && now >= nextRefresh) {
                 state = LoadRuntimeState(WallpaperConfigPath());
                 const auto desired = DesiredRequests(host, state);
-                if (!SameRequests(desired, activeRequests)) {
+                std::wstring widgetFingerprint;
+                const auto desiredWidgets = DesiredWidgetRequests(host, state, widgetFingerprint);
+                const bool webChanged = !SameRequests(desired, activeRequests);
+                const bool widgetChanged = !SameRequests(desiredWidgets, activeWidgetRequests) ||
+                                           widgetFingerprint != activeWidgetFingerprint;
+
+                if (webChanged) {
                     activeRequests = desired;
                     resetRecovery();
                     startActiveRequests(now, false);
                 } else if (state.layout == LayoutMode::Independent && !activeRequests.empty()) {
                     EnsureIndependentHostBounds(host);
                 }
+
+                if (widgetChanged || (webChanged && !desiredWidgets.empty())) {
+                    activeWidgetRequests = desiredWidgets;
+                    activeWidgetFingerprint = std::move(widgetFingerprint);
+                    startWidgets();
+                }
                 nextRefresh = now + kStateRefreshMs;
             }
 
-            if (host && IsWindow(host) && !activeRequests.empty()) {
-                web.Tick();
-
-                if (!web.Active()) {
-                    healthySince = 0;
-                    if (recoveryAttempts >= kMaxRecoveryAttempts) {
-                        WriteDiagnostics(L"Web runtime 连续恢复 3 次失败，已停止自动恢复：" + web.LastErrorText());
+            if (host && IsWindow(host)) {
+                if (!activeRequests.empty()) {
+                    web.Tick();
+                    if (!web.Active()) {
+                        healthySince = 0;
+                        if (recoveryAttempts >= kMaxRecoveryAttempts) {
+                            WriteDiagnostics(L"Web runtime 连续恢复 3 次失败，已停止自动恢复：" + web.LastErrorText());
+                        } else {
+                            if (nextRecovery == 0) nextRecovery = now + kRecoveryCooldownMs;
+                            if (now >= nextRecovery) {
+                                startActiveRequests(now, true);
+                                if (!activeWidgetRequests.empty()) startWidgets();
+                            }
+                        }
                     } else {
-                        if (nextRecovery == 0) nextRecovery = now + kRecoveryCooldownMs;
-                        if (now >= nextRecovery) startActiveRequests(now, true);
+                        if (healthySince == 0) healthySince = now;
+                        if (recoveryAttempts > 0 && now - healthySince >= kRecoveryStableResetMs) {
+                            recoveryAttempts = 0;
+                            nextRecovery = 0;
+                            WriteDiagnostics(web.DiagnosticsText() + L" · 已稳定运行，恢复计数已清零");
+                        }
                     }
-                } else {
-                    if (healthySince == 0) healthySince = now;
-                    if (recoveryAttempts > 0 && now - healthySince >= kRecoveryStableResetMs) {
-                        recoveryAttempts = 0;
-                        nextRecovery = 0;
-                        WriteDiagnostics(web.DiagnosticsText() + L" · 已稳定运行，恢复计数已清零");
-                    }
+                    const auto error = web.LastErrorText();
+                    if (!error.empty() && recoveryAttempts < kMaxRecoveryAttempts)
+                        WriteDiagnostics(L"运行异常：" + error);
                 }
 
-                const HWND settings = FindWindowW(kWallpaperSettingsClass, nullptr);
-                const auto snapshot = performance.Evaluate(host, settings, state.performance);
-                const bool pause = !IsWindowVisible(host) ||
-                    snapshot.action == PerformanceAction::Pause || snapshot.action == PerformanceAction::Stop;
-                web.SetPaused(pause);
-                const auto error = web.LastErrorText();
-                if (!error.empty() && recoveryAttempts < kMaxRecoveryAttempts)
-                    WriteDiagnostics(L"运行异常：" + error);
+                if (!activeWidgetRequests.empty()) {
+                    widgets.Tick();
+                    KeepWallpaperWebBelowWidgets(host);
+                    const auto error = widgets.LastErrorText();
+                    WriteWidgetDiagnostics(error.empty() ? widgets.DiagnosticsText() : L"运行异常：" + error);
+                }
+
+                if (!activeRequests.empty() || !activeWidgetRequests.empty()) {
+                    const HWND settings = FindWindowW(kWallpaperSettingsClass, nullptr);
+                    const auto snapshot = performance.Evaluate(host, settings, state.performance);
+                    const bool pause = !IsWindowVisible(host) ||
+                        snapshot.action == PerformanceAction::Pause || snapshot.action == PerformanceAction::Stop;
+                    web.SetPaused(pause);
+                    widgets.SetPaused(pause);
+                }
             }
 
             std::this_thread::sleep_for(kTickInterval);
         }
 
+        widgets.Stop();
         web.Stop();
+        WriteWidgetDiagnostics(L"Widget runtime stopped");
         WriteDiagnostics(L"Web runtime stopped");
         running.store(false, std::memory_order_release);
     }
@@ -317,6 +461,7 @@ bool WallpaperWebRuntimeCoordinator::Running() const noexcept {
 
 bool WallpaperWebRuntimeCoordinator::SelfTest() {
     if (!WebWallpaperProcessSet::SelfTest()) return false;
+    if (!DesktopWidgetStore::SelfTest()) return false;
     if (!WallpaperLibrary::IsTrustedWebUrl(L"https://example.com/wallpaper")) return false;
     if (WallpaperLibrary::IsTrustedWebUrl(L"http://example.com/wallpaper")) return false;
 

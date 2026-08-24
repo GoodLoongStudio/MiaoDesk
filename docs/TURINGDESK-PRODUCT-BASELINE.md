@@ -1,7 +1,7 @@
 # TuringDesk 产品与开发基线
 
 - 状态：唯一当前产品基线
-- 日期：2026-08-23
+- 日期：2026-08-24
 - 正式开发分支：`main`
 - 适用范围：TuringDesk Native 主线
 - 原则：旧文档仅保留历史与技术参考；与本文冲突时，以本文为准。
@@ -21,7 +21,7 @@ TuringDesk
 
 一句话定义：
 
-> TuringDesk = 一个统一的桌面入口 + Wallpaper Engine 级桌面系统 + Codex CLI AI + 可选的 DeepSeek Harness 高级工作台。
+> TuringDesk = 一个统一的桌面入口 + Wallpaper Engine 级桌面系统 + Pi Agent AI + 可选的 DeepSeek Harness 高级工作台。
 
 ---
 
@@ -29,7 +29,7 @@ TuringDesk
 
 ### 2.1 一个输入框，不做两个入口
 
-本地极速搜索和 Codex CLI 使用同一个顶部输入框。
+本地极速搜索和 Pi Agent 使用同一个顶部输入框。
 
 ```text
 Alt + Space
@@ -37,7 +37,7 @@ Alt + Space
 TuringDesk 顶部输入框
   ├─ 应用搜索
   ├─ 文件 / 文件夹极速搜索
-  └─ AI / Codex CLI
+  └─ AI / Pi Agent
 ```
 
 交互原则：
@@ -61,8 +61,6 @@ goz.exe / gozd.exe
 NTFS MFT + USN Journal
 ```
 
-Everything 不再属于当前正式基线。
-
 目标体验：
 
 - Everything 级响应速度；
@@ -77,22 +75,35 @@ Everything 不再属于当前正式基线。
 ```text
 用户问题 / 桌面任务
   ↓
-Codex CLI
+Pi Agent Runtime
   ↓ 不可用 / Provider 不兼容 / 启动失败
 轻量 Direct Model 问答
 ```
 
-不再把 DirectTools 作为默认中间层。
+#### Pi Agent Runtime
 
-#### Codex CLI
+Pi 是普通 AI 请求和桌面操作的首选 Agent Runtime。
 
-Codex CLI 是普通 AI 请求和桌面操作的首选 Agent Runtime。
+正式组件：
 
-- 身份：`图灵智能桌面 AI` / `Turing Intelligent Desktop AI`
-- 可以使用 TuringDesk 注册的 Native Tools；
-- Chat Completions Provider 通过 Codex Relay 转换为 Responses API；
-- Responses Provider 可直接连接；
-- 不允许模型自行声称桌面动作完成，必须以 Tool Result 为准。
+```text
+Bundled Node 24
+  ↓
+@earendil-works/pi-coding-agent
+  ↓
+Pi Agent Loop
+```
+
+产品原则：
+
+- 身份统一为 `图灵智能桌面 AI` / `Turing Intelligent Desktop AI`；
+- Agent 规划、工具循环、上下文、Skills 和 Extensions 由 Pi 管理；
+- Provider / Model / Base URL / API Key 继续由 TuringDesk 设置中心统一管理；
+- API Key 只长期存储在 Windows Credential Manager；
+- Pi 支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Generative AI 等协议；
+- 文件、脚本、Git、文档生成等通用能力优先走 Pi 工具体系；
+- TuringDesk 只保留真正属于桌面产品的专属 Tool；
+- 模型不得自行声称动作完成，必须以真实 Tool Result / 文件结果 / 命令结果为准。
 
 #### 轻量 Direct Model fallback
 
@@ -100,20 +111,20 @@ Codex CLI 是普通 AI 请求和桌面操作的首选 Agent Runtime。
 
 - 普通问答；
 - 简单连续对话；
-- Codex CLI 不可用时保证 AI 入口仍可使用。
+- Pi Runtime 不可用时保证 AI 入口仍可使用。
 
 明确限制：
 
 - 不承担复杂 Agent 工具循环；
 - 不作为第二套桌面自动化架构；
 - 不执行任意 Shell；
-- 身份始终是 `图灵智能桌面 AI`，不能回答成 DeepSeek、OpenAI、Codex CLI 或“TuringDesk L3”。
+- 身份始终是 `图灵智能桌面 AI`。
 
 ---
 
 ## 3. B：设置中心
 
-设置中心一级主页的 UI 和信息架构以当前确认的旧版 DesktopLibrary / Wallpaper Engine 风格布局为准。
+设置中心一级主页的 UI 和信息架构以当前确认的 DesktopLibrary / Wallpaper Engine 风格布局为准。
 
 ### 3.1 一级页面布局
 
@@ -138,9 +149,8 @@ Codex CLI 是普通 AI 请求和桌面操作的首选 Agent Runtime。
 
 ### 3.2 设置中心主要内容
 
-至少包含：
-
 #### 桌面相关
+
 - 已安装桌面资源；
 - 图片 / 视频 / Web / Scene；
 - 导入壁纸；
@@ -172,8 +182,9 @@ Codex CLI 是普通 AI 请求和桌面操作的首选 Agent Runtime。
 - Model；
 - Base URL；
 - API Key；
-- Codex CLI 状态；
-- Codex Relay 状态；
+- Pi Runtime 状态；
+- Node Runtime 状态；
+- Skills / Extensions 状态；
 - API Key 使用 Windows Credential Manager 保存。
 
 #### DeepSeek Harness
@@ -209,7 +220,7 @@ TuringDeskHarness WebView2
 2. Harness 后台可以随 TuringDesk 管理生命周期。
 3. 后台启动不得自动弹 UI。
 4. Harness UI 只在用户明确打开时出现。
-5. Harness 和 Codex CLI 共享 Provider / Model / Base URL / API Key 配置，但运行时互相独立。
+5. Harness 和 Pi Runtime 共享 Provider / Model / Base URL / API Key 配置，但运行时互相独立。
 
 ---
 
@@ -240,46 +251,79 @@ Scene
 
 ---
 
-## 6. 当前完成度
+## 6. Pi 工具体系原则
 
-以“用户真实可用”而不是“代码存在”为标准：
+TuringDesk 不再为每一种通用任务增加一个独立 C++ Tool。
 
-| 模块 | 状态 | 完成度 |
-|---|---|---:|
-| 顶部统一入口 | 已有应用搜索、文件搜索、AI 入口 | 85% |
-| goz 极速文件搜索 | 已接入 MFT/USN 后端，仍需排序/恢复/体验强化 | 80% |
-| Codex CLI 主路由 | 主体已接入，Relay 已有；仍需彻底收口 app-server 解析边界 | 75% |
-| 轻量 Direct Model | 已有流式问答，需统一“图灵智能桌面 AI”身份 | 80% |
-| Native Tools | 文件、PPT、设置、壁纸包等基础工具已存在 | 75% |
-| 设置中心一级主页 | 已恢复卡片库 + 右侧详情的正确方向 | 75% |
-| 桌面编辑器 | 目标结构已明确，真正 Layer/Inspector/Timeline 尚未完整接回 | 40% |
-| Image / Video / Web / Scene 运行时 | 基础能力已存在 | 80% |
-| `.tdwall` | 包结构和 Web 生成基础已存在 | 60% |
-| 多显示器 / 规则 / 性能 | 已有模块，仍需真实机深度验收 | 70% |
-| DeepSeek Harness | 后台、WebView、共享配置基础已存在，生命周期仍需继续稳定 | 80% |
-| 整体“普通用户可用度” | 核心链路成型，仍处于收口阶段 | 70% |
+通用任务优先走 Pi：
+
+```text
+文件读取 / 写入 / 编辑
+目录搜索
+Shell / PowerShell
+Git
+压缩与解压
+CSV / JSON / 文本处理
+PPTX / DOCX / XLSX 生成
+脚本执行
+Skills / Extensions / Pi Packages
+```
+
+TuringDesk 专属 Tool 只负责：
+
+```text
+settings_open
+wallpaper / scene
+.tdwall
+playlist
+multi-monitor
+performance policy
+notifications
+其他真正依赖 TuringDesk 内部状态的桌面操作
+```
+
+Windows Shell 必须由 TuringDesk 提供稳定运行环境，不能要求普通用户预装开发工具。
 
 ---
 
-## 7. 下一阶段只做四件事
+## 7. 当前完成度
 
-不要继续横向增加新模块，先收口：
+以“用户真实可用”而不是“代码存在”为标准：
 
-### P0-1：统一入口稳定
+| 模块 | 状态 |
+|---|---|
+| 顶部统一入口 | 已有应用搜索、文件搜索、AI 入口，继续收口 |
+| goz 极速文件搜索 | MFT/USN 后端已接入，继续优化排序/恢复/体验 |
+| Pi Agent 主路由 | **正在由旧 Runtime 全面迁移到 Pi** |
+| 轻量 Direct Model | 已有流式问答，保留为失败回退 |
+| Agent 通用工具 | 迁移到 Pi read/write/edit/search/shell/Skills/Extensions 体系 |
+| TuringDesk Native Tools | 收缩为桌面产品专属 Tool |
+| 设置中心一级主页 | 已恢复卡片库 + 右侧详情方向 |
+| 桌面编辑器 | Layer/Inspector/Timeline 仍需继续开发 |
+| Image / Video / Web / Scene 运行时 | 基础能力已存在 |
+| `.tdwall` | 包结构和 Web 生成基础已存在 |
+| 多显示器 / 规则 / 性能 | 已有模块，仍需真实机深度验收 |
+| DeepSeek Harness | 后台、WebView、共享配置基础已存在，继续稳定生命周期 |
+
+---
+
+## 8. 下一阶段只做四件事
+
+### P0-1：Pi Runtime 完整迁移
+
+- 删除旧 Agent Runtime、旧协议桥和旧 RuntimeBundle；
+- Bundled Node 直接承载 Pi；
+- Provider / Model / Base URL / API Key 自动映射到 Pi；
+- 接通 Pi SDK/RPC 流式输出；
+- 接通文件工具、Shell、Skills、Extensions；
+- ARM64 真机验证。
+
+### P0-2：统一入口稳定
 
 - goz 搜索体验；
 - 本地结果与 AI 切换逻辑；
 - Alt+Space；
 - 搜索、问答、桌面任务均从同一个输入框进入。
-
-### P0-2：Codex CLI 稳定
-
-- Codex CLI 永远优先；
-- DirectTools 不参与默认路由；
-- 修正 Windows app-server 非 JSON 输出污染；
-- dynamic tool call 只解析真实 `arguments`；
-- 最终消息 / streaming 均正常显示；
-- 身份固定为“图灵智能桌面 AI”。
 
 ### P0-3：设置中心收口
 
@@ -301,7 +345,7 @@ Scene
 
 ---
 
-## 8. 完成标准
+## 9. 完成标准
 
 ```text
 代码写完       ≠ 完成
@@ -309,6 +353,15 @@ Scene
 CI 通过        ≠ 完成
 Mock 通过      ≠ 完成
 真实 Windows 用户流程通过 = 完成
+```
+
+Pi Runtime 的最低真实验收：
+
+```text
+帮我在桌面创建一个 txt 文件
+帮我读取并修改这个文件
+帮我执行 PowerShell 并返回真实输出
+帮我生成一个不依赖 Office 的 PPTX
 ```
 
 当前所有正式交付只进入 `main`。

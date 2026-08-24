@@ -78,7 +78,7 @@ std::string ReadBytes(const fs::path& path) {
 }
 
 void AppendToolLog(const std::wstring& text) {
-    const auto path = RuntimeLogPath(L"codex-runtime.log");
+    const auto path = RuntimeLogPath(L"pi-runtime.log");
     HANDLE handle = CreateFileW(path.c_str(), FILE_APPEND_DATA,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                 nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

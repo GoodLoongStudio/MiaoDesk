@@ -1,7 +1,8 @@
 #include "turingdesk/L3CliWindow.h"
-#include "turingdesk/CodexRuntime.h"
 #include "turingdesk/ModelSettingsWindow.h"
+#include "turingdesk/PiRuntime.h"
 #include "turingdesk/RuntimeLogPaths.h"
+
 #include <CommCtrl.h>
 #include <algorithm>
 #include <atomic>
@@ -23,11 +24,11 @@ constexpr int kInputId = 3102;
 constexpr int kSettingsId = 3103;
 constexpr int kCloseId = 3104;
 constexpr UINT kDeltaMessage = WM_APP + 31;
-constexpr UINT kDoneMessage = WM_APP + 32;
-constexpr UINT kCodexDoneMessage = WM_APP + 33;
+constexpr UINT kDirectDoneMessage = WM_APP + 32;
+constexpr UINT kPiDoneMessage = WM_APP + 33;
 
 enum class ActiveRuntime {
-    Codex,
+    Pi,
     DirectModel,
 };
 
@@ -46,7 +47,7 @@ struct CliState {
     HWND close{};
     WNDPROC oldInputProc{};
     L3Agent* agent{};
-    CodexRuntime* codex{};
+    PiRuntime* pi{};
     HBRUSH backgroundBrush{};
     HFONT monoFont{};
     HFONT uiFont{};
@@ -55,12 +56,12 @@ struct CliState {
     std::wstring lastPrompt;
     std::wstring activePrompt;
     std::uint64_t generation{};
-    ActiveRuntime activeRuntime{ActiveRuntime::Codex};
+    ActiveRuntime activeRuntime{ActiveRuntime::Pi};
     bool busy{};
 };
 
 std::atomic_uint64_t gCliGeneration{0};
-CodexRuntime gCodexRuntime;
+PiRuntime gPiRuntime;
 
 std::wstring Trim(std::wstring value) {
     const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
@@ -86,8 +87,8 @@ fs::path L3RouteLogPath() {
     return RuntimeLogPath(L"l3-runtime.log");
 }
 
-fs::path CodexDetailLogPath() {
-    return RuntimeLogPath(L"codex-runtime.log");
+fs::path PiDetailLogPath() {
+    return RuntimeLogPath(L"pi-runtime.log");
 }
 
 std::string WideToUtf8(const std::wstring& value) {
@@ -123,8 +124,7 @@ bool ContainsHttpStatus(const std::wstring& text, int status) {
 }
 
 bool ShouldOfferRetry(const std::wstring& rawText) {
-    if (rawText.empty()) return false;
-    if (rawText.find(L"已停止") != std::wstring::npos) return false;
+    if (rawText.empty() || rawText.find(L"已停止") != std::wstring::npos) return false;
     if (ContainsHttpStatus(rawText, 400) || ContainsHttpStatus(rawText, 401) ||
         ContainsHttpStatus(rawText, 403) || ContainsHttpStatus(rawText, 404) ||
         ContainsHttpStatus(rawText, 405) || ContainsHttpStatus(rawText, 413) ||
@@ -135,29 +135,22 @@ bool ShouldOfferRetry(const std::wstring& rawText) {
 
 std::wstring ClassifyTransportFailure(std::wstring text) {
     if (text.empty()) return text;
-    if (text.find(L"WinHTTP 错误 12002") != std::wstring::npos || ContainsHttpStatus(text, 408) || ContainsHttpStatus(text, 504)) {
-        return L"L3 请求超时。模型服务在限定时间内没有完成响应；可输入 /retry 重试。";
-    }
-    if (text.find(L"WinHTTP 错误 12007") != std::wstring::npos) {
-        return L"L3 无法解析模型服务地址（DNS）。请检查 Base URL 或网络连接，可输入 /retry 重试。";
-    }
+    if (text.find(L"WinHTTP 错误 12002") != std::wstring::npos || ContainsHttpStatus(text, 408) || ContainsHttpStatus(text, 504))
+        return L"AI 请求超时。模型服务在限定时间内没有完成响应；可输入 /retry 重试。";
+    if (text.find(L"WinHTTP 错误 12007") != std::wstring::npos)
+        return L"AI 无法解析模型服务地址（DNS）。请检查 Base URL 或网络连接，可输入 /retry 重试。";
     if (text.find(L"WinHTTP 错误 12029") != std::wstring::npos ||
         text.find(L"WinHTTP 错误 12030") != std::wstring::npos ||
-        text.find(L"WinHTTP 错误 12031") != std::wstring::npos) {
-        return L"L3 无法连接模型服务，或连接被服务端中断。请检查网络/服务状态，可输入 /retry 重试。";
-    }
-    if (text.find(L"WinHTTP 错误 12175") != std::wstring::npos) {
-        return L"L3 HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
-    }
-    if (ContainsHttpStatus(text, 401) || ContainsHttpStatus(text, 403)) {
-        return L"L3 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限。";
-    }
-    if (ContainsHttpStatus(text, 429)) {
-        return L"L3 模型服务限流（HTTP 429）。稍后可输入 /retry 重试。";
-    }
-    if (ContainsHttpStatus(text, 500) || ContainsHttpStatus(text, 502) || ContainsHttpStatus(text, 503)) {
-        return L"L3 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试。";
-    }
+        text.find(L"WinHTTP 错误 12031") != std::wstring::npos)
+        return L"AI 无法连接模型服务，或连接被服务端中断。请检查网络/服务状态，可输入 /retry 重试。";
+    if (text.find(L"WinHTTP 错误 12175") != std::wstring::npos)
+        return L"AI HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
+    if (ContainsHttpStatus(text, 401) || ContainsHttpStatus(text, 403))
+        return L"AI 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限。";
+    if (ContainsHttpStatus(text, 429))
+        return L"AI 模型服务限流（HTTP 429）。稍后可输入 /retry 重试。";
+    if (ContainsHttpStatus(text, 500) || ContainsHttpStatus(text, 502) || ContainsHttpStatus(text, 503))
+        return L"AI 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试。";
     return text;
 }
 
@@ -191,7 +184,7 @@ void AppendCompleted(CliState& state, const std::wstring& user, const std::wstri
 
 std::wstring RuntimeName(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::Codex: return L"Codex CLI";
+    case ActiveRuntime::Pi: return L"Pi Agent";
     case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
     }
     return L"Unknown Runtime";
@@ -199,21 +192,23 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
 
 std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
     switch (runtime) {
-    case ActiveRuntime::Codex: return L"主路由 · Relay/API";
+    case ActiveRuntime::Pi: return L"主路由 · Provider API";
     case ActiveRuntime::DirectModel: return L"Fallback · SSE 流式";
     }
     return L"";
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
-    const auto status = state.codex->Status(*state.agent);
-    std::wstring text = L"主路由：Codex CLI → Relay/API";
+    const auto status = state.pi->Status(*state.agent);
+    std::wstring text = L"主路由：Pi Agent → 当前配置 API";
     text += L"\r\n失败回退：Direct Model Runtime → 当前配置 API";
     text += L"\r\nProvider：" + (state.agent->Config().providerId.empty() ? std::wstring(L"未识别") : state.agent->Config().providerId);
     text += L" · Model：" + (state.agent->Config().model.empty() ? std::wstring(L"未配置") : state.agent->Config().model);
-    text += L"\r\nCodex：" + status.message;
+    text += L"\r\nPi：" + status.message;
+    if (!status.nodePath.empty()) text += L"\r\nNode：" + status.nodePath;
+    if (!status.piPath.empty()) text += L"\r\nPi CLI：" + status.piPath;
     text += L"\r\n路由日志：" + L3RouteLogPath().wstring();
-    text += L"\r\nCodex 详情：" + CodexDetailLogPath().wstring();
+    text += L"\r\nPi 详情：" + PiDetailLogPath().wstring();
     return text;
 }
 
@@ -236,26 +231,26 @@ void FinishTurn(CliState& state, const std::wstring& rawDone, bool classifyFailu
     SetFocus(state.input);
 }
 
-void StartDirectFallback(CliState& state, const std::wstring& codexError) {
+void StartDirectFallback(CliState& state, const std::wstring& piError) {
     const auto generation = state.generation;
     const HWND hwnd = state.window;
     const std::wstring prompt = state.activePrompt;
     state.activeRuntime = ActiveRuntime::DirectModel;
     state.streaming.clear();
 
-    const std::wstring reason = codexError.empty() ? L"Codex CLI 未返回有效结果" : codexError;
+    const std::wstring reason = piError.empty() ? L"Pi Agent 未返回有效结果" : piError;
     AppendRouteLog(L"fallback: direct api start; reason=" + reason +
                    L"; provider=" + state.agent->Config().providerId +
                    L"; model=" + state.agent->Config().model +
                    L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
-    state.transcriptPrefix += L"[Fallback] Codex CLI 失败，已切换 Direct API；原因已写入日志。\r\nAI  ";
+    state.transcriptPrefix += L"[Fallback] Pi Agent 失败，已切换 Direct API；原因已写入日志。\r\nAI  ";
     RenderTranscript(state, L"…");
 
     auto onDelta = [hwnd, generation](std::wstring delta) {
         PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
     };
     auto onDone = [hwnd, generation](std::wstring done) {
-        PostUi(hwnd, kDoneMessage, generation, std::move(done));
+        PostUi(hwnd, kDirectDoneMessage, generation, std::move(done));
     };
     state.agent->AskAsync(prompt, std::move(onDelta), std::move(onDone));
 }
@@ -263,7 +258,7 @@ void StartDirectFallback(CliState& state, const std::wstring& codexError) {
 void StopTurn(CliState& state) {
     if (!state.busy) return;
     gCliGeneration.fetch_add(1, std::memory_order_relaxed);
-    if (state.activeRuntime == ActiveRuntime::Codex) state.codex->Stop();
+    if (state.activeRuntime == ActiveRuntime::Pi) state.pi->Stop();
     else state.agent->Stop();
     AppendRouteLog(L"route: request cancelled; runtime=" + RuntimeName(state.activeRuntime));
     state.busy = false;
@@ -306,8 +301,8 @@ void SendPrompt(CliState& state) {
         if (state.agent->TryHandleLocal(actualPrompt, localReply, consumedSecret)) {
             if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {
                 state.lastPrompt.clear();
-                state.codex->ResetSession();
-                AppendRouteLog(L"route: Codex session reset by user");
+                state.pi->ResetSession();
+                AppendRouteLog(L"route: Pi session reset by user");
             }
             AppendCompleted(state, typedPrompt, localReply);
             return;
@@ -315,15 +310,15 @@ void SendPrompt(CliState& state) {
     }
 
     if (!state.agent->HasApiKey()) {
-        AppendCompleted(state, typedPrompt, L"L3 未配置。点击右上角“AI 设置”填写 API 地址和 Key。");
+        AppendCompleted(state, typedPrompt, L"AI 未配置。点击右上角“AI 设置”填写 API 地址和 Key。");
         return;
     }
 
     state.lastPrompt = actualPrompt;
     state.activePrompt = actualPrompt;
-    state.activeRuntime = ActiveRuntime::Codex;
+    state.activeRuntime = ActiveRuntime::Pi;
     state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::Codex) + L" · " + RuntimeExecutionLabel(ActiveRuntime::Codex) + L"\r\n";
+    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::Pi) + L" · " + RuntimeExecutionLabel(ActiveRuntime::Pi) + L"\r\n";
     state.transcriptPrefix += L"AI  ";
     state.streaming.clear();
     state.busy = true;
@@ -331,7 +326,7 @@ void SendPrompt(CliState& state) {
     EnableWindow(state.input, FALSE);
     RenderTranscript(state, L"…");
 
-    AppendRouteLog(L"route: primary codex start; provider=" + state.agent->Config().providerId +
+    AppendRouteLog(L"route: primary pi start; provider=" + state.agent->Config().providerId +
                    L"; model=" + state.agent->Config().model +
                    L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
 
@@ -341,9 +336,9 @@ void SendPrompt(CliState& state) {
         PostUi(hwnd, kDeltaMessage, generation, std::move(delta));
     };
     auto onDone = [hwnd, generation](std::wstring done) {
-        PostUi(hwnd, kCodexDoneMessage, generation, std::move(done));
+        PostUi(hwnd, kPiDoneMessage, generation, std::move(done));
     };
-    state.codex->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
+    state.pi->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
 }
 
 LRESULT CALLBACK InputProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -378,7 +373,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (LOWORD(wParam) == kSettingsId && HIWORD(wParam) == BN_CLICKED) {
             if (state->busy) StopTurn(*state);
             if (ShowModelSettingsWindow(state->instance, hwnd, *state->agent)) {
-                state->codex->ResetSession();
+                state->pi->ResetSession();
                 state->lastPrompt.clear();
                 AppendRouteLog(L"route: model settings changed; provider=" + state->agent->Config().providerId +
                                L"; model=" + state->agent->Config().model +
@@ -404,20 +399,20 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         RenderTranscript(*state, state->streaming.empty() ? L"…" : state->streaming);
         return 0;
     }
-    case kCodexDoneMessage: {
+    case kPiDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
         if (!payload || payload->generation != state->generation ||
             payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
         if (payload->text.empty()) {
-            AppendRouteLog(L"route: primary codex success");
+            AppendRouteLog(L"route: primary pi success");
             FinishTurn(*state, L"", false);
         } else {
-            AppendRouteLog(L"route: primary codex failed; error=" + payload->text);
+            AppendRouteLog(L"route: primary pi failed; error=" + payload->text);
             StartDirectFallback(*state, payload->text);
         }
         return 0;
     }
-    case kDoneMessage: {
+    case kDirectDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
         if (!payload || payload->generation != state->generation ||
             payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
@@ -447,7 +442,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
         state->agent->Stop();
-        state->codex->Stop();
+        state->pi->Stop();
         return 0;
     case WM_NCDESTROY:
         if (state->backgroundBrush) DeleteObject(state->backgroundBrush);
@@ -475,7 +470,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     state->instance = instance;
     state->owner = owner;
     state->agent = &agent;
-    state->codex = &gCodexRuntime;
+    state->pi = &gPiRuntime;
     state->backgroundBrush = CreateSolidBrush(RGB(24, 26, 31));
     state->monoFont = CreateFontW(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -489,7 +484,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     const int x = ownerRect.left;
     const int y = ownerRect.top;
 
-    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · AI Agent",
+    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · Pi Agent",
                                   WS_POPUP | WS_BORDER,
                                   x, y, width, height, owner, nullptr, instance, state);
     if (!window) {
@@ -499,7 +494,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · L3 AI", WS_CHILD | WS_VISIBLE,
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Pi Agent", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
     state->settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,
@@ -531,7 +526,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE,
                  reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
 
-    AppendRouteLog(L"window: L3 opened; primary=Codex CLI -> Relay/API; fallback=Direct API");
+    AppendRouteLog(L"window: AI opened; primary=Pi Agent -> Provider API; fallback=Direct API");
     ShowWindow(window, SW_SHOWNORMAL);
     SetForegroundWindow(window);
     SetFocus(state->input);

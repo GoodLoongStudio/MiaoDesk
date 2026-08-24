@@ -58,61 +58,63 @@ function Test-BuildRelevantPath([string]$Path) {
 }
 
 function Resolve-ValidatedRun([string]$MainSha) {
-    Step "Finding latest successful ARM64 package"
+    Step "Finding latest validated TuringDesk ARM64 package"
     $runs = @(Invoke-GhJson @(
         "run", "list", "--repo", $Repo, "--workflow", $Workflow, "--branch", "main", "--limit", "30",
         "--json", "databaseId,headSha,status,conclusion,createdAt"
     ))
     $run = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
         Sort-Object createdAt -Descending | Select-Object -First 1
-    if (-not $run) { throw "No successful ARM64 build is available. The updater will not trigger or wait for CI." }
+    if (-not $run) { throw "No validated TuringDesk ARM64 build is available. The updater will not install an unverified package." }
 
     $buildSha = [string]$run.headSha
     if ($buildSha -ne $MainSha) {
         $compare = Invoke-GhJson @("api", "repos/$Repo/compare/$buildSha...$MainSha")
-        if (-not $compare) { throw "Unable to compare the latest green build with current main." }
+        if (-not $compare) { throw "Unable to compare the latest validated build with current main." }
         if ([string]$compare.status -notin @("ahead", "identical")) {
-            throw "Current main is not a clean forward descendant of the latest green ARM64 build."
+            throw "Current main is not a clean forward descendant of the latest validated ARM64 build."
         }
         $relevant = @($compare.files | Where-Object { Test-BuildRelevantPath ([string]$_.filename) })
         if ($relevant.Count -gt 0) {
             $names = ($relevant | ForEach-Object { [string]$_.filename }) -join ", "
-            throw ("Current main contains build/runtime changes that have not passed ARM64 CI: {0}" -f $names)
+            throw ("Current main contains TuringDesk build/runtime changes that have not passed ARM64 validation: {0}" -f $names)
         }
-        Write-Host "The latest green package is still valid; newer main changes are updater/docs-only." -ForegroundColor DarkGray
+        Write-Host "The latest validated package is still current; newer main changes are non-runtime changes." -ForegroundColor DarkGray
     }
 
     [pscustomobject]@{ RunId = [long]$run.databaseId; BuildSha = $buildSha }
 }
 
 function Download-Artifact([long]$RunId, [string]$Destination) {
-    Step ("Downloading verified ARM64 artifact from run {0}" -f $RunId)
+    Step ("Downloading validated TuringDesk ARM64 binaries from run {0}" -f $RunId)
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & gh run download $RunId --repo $Repo --name $ArtifactName --dir $Destination | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "Unable to download the verified ARM64 artifact." }
+    if ($LASTEXITCODE -ne 0) { throw "Unable to download the validated TuringDesk ARM64 artifact." }
 }
 
-function Materialize-Runtime([string]$Destination) {
-    Step "Materializing pinned ARM64 RuntimeBundle"
+function Materialize-Runtime([string]$Destination, [string]$BuildSha) {
+    Step "Materializing the matching TuringDesk RuntimeBundle"
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 
     $runtimeRepo = Join-Path $env:TEMP ("TuringDesk-RuntimeSource-" + [guid]::NewGuid().ToString("N"))
     try {
-        & git clone --filter=blob:none --no-checkout --depth 1 "https://github.com/$Repo.git" $runtimeRepo | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "Unable to fetch RuntimeBundle source." }
+        & git clone --filter=blob:none --no-checkout "https://github.com/$Repo.git" $runtimeRepo | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Unable to fetch TuringDesk RuntimeBundle source." }
         & git -C $runtimeRepo sparse-checkout init --cone | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Unable to initialize sparse checkout." }
         & git -C $runtimeRepo sparse-checkout set runtime/arm64 scripts | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Unable to select RuntimeBundle files." }
-        & git -C $runtimeRepo checkout main | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout RuntimeBundle files." }
+        & git -C $runtimeRepo checkout $BuildSha | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to checkout the validated RuntimeBundle revision $BuildSha." }
+        $runtimeSha = (& git -C $runtimeRepo rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $runtimeSha -ne $BuildSha) {
+            throw "RuntimeBundle revision mismatch. Update aborted before touching the installed TuringDesk package."
+        }
 
-        $guard = Join-Path $runtimeRepo "scripts\verify-l3-runtime-contract.ps1"
-        # The sparse checkout does not contain src/docs, so the architecture guard was already enforced in CI.
         $prepare = Join-Path $runtimeRepo "scripts\prepare-third-party-runtime-arm64.ps1"
         if (-not (Test-Path $prepare -PathType Leaf)) { throw "Runtime preparation script is missing." }
         & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $prepare -DeployDir $Destination -SkipGozServiceInstall | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "RuntimeBundle preparation failed." }
+        if ($LASTEXITCODE -ne 0) { throw "TuringDesk RuntimeBundle preparation failed." }
     }
     finally { Remove-Item $runtimeRepo -Recurse -Force -ErrorAction SilentlyContinue }
 }
@@ -128,29 +130,29 @@ function Test-Binary([string]$Exe, [string]$Name, [string[]]$Arguments = @("--se
 }
 
 function Test-StagedPackage([string]$Root) {
-    Step "Running staged package self-tests before installation"
+    Step "Running full TuringDesk package self-tests before installation"
     $search = Join-Path $Root "TuringDesk.exe"
     $wallpaper = Join-Path $Root "TuringDeskWallpaper.exe"
-    $harness = Join-Path $Root "TuringDeskHarness.exe"
+    $workbench = Join-Path $Root "TuringDeskHarness.exe"
     $node = Join-Path $Root "Runtime\Node\node.exe"
-    $dsh = Join-Path $Root "Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js"
-    $pi = Join-Path $Root "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
+    $workbenchCli = Join-Path $Root "Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js"
+    $agentCli = Join-Path $Root "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
     $goz = Join-Path $Root "Goz\goz.exe"
     $gozd = Join-Path $Root "Goz\gozd.exe"
 
     Assert-File $search "TuringDesk.exe"
     Assert-File $wallpaper "TuringDeskWallpaper.exe"
-    Assert-File $harness "TuringDeskHarness.exe"
-    Assert-File $node "bundled Node"
-    Assert-File $dsh "DeepSeek Harness"
-    Assert-File $pi "Pi Agent"
-    Assert-File $goz "goz"
-    Assert-File $gozd "gozd"
+    Assert-File $workbench "TuringDeskHarness.exe"
+    Assert-File $node "bundled AI runtime"
+    Assert-File $workbenchCli "advanced workbench runtime"
+    Assert-File $agentCli "agent runtime"
+    Assert-File $goz "file index client"
+    Assert-File $gozd "file index service"
 
-    Test-Binary $search "Native Search"
-    Test-Binary $wallpaper "Native Wallpaper"
-    Test-Binary $harness "Native Harness shell"
-    Test-Binary $node "Pi Agent CLI" @($pi, "--version")
+    Test-Binary $search "TuringDesk"
+    Test-Binary $wallpaper "TuringDesk Wallpaper"
+    Test-Binary $workbench "TuringDesk Advanced Workbench"
+    Test-Binary $node "TuringDesk Agent Runtime" @($agentCli, "--version")
 }
 
 function Stop-DeployedProcesses {
@@ -176,15 +178,15 @@ function Stop-DeployedProcesses {
     Start-Sleep -Milliseconds 750
 }
 
-function Invoke-ElevatedGoz([string]$Exe, [string]$Arguments, [switch]$IgnoreFailure) {
+function Invoke-ElevatedIndexService([string]$Exe, [string]$Arguments, [switch]$IgnoreFailure) {
     if (-not (Test-Path $Exe -PathType Leaf)) {
         if ($IgnoreFailure) { return }
-        throw "gozd executable is missing: $Exe"
+        throw "TuringDesk file index service executable is missing: $Exe"
     }
     try {
         $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
         if (-not $process -or $process.ExitCode -ne 0) {
-            if (-not $IgnoreFailure) { throw ("gozd {0} failed." -f $Arguments) }
+            if (-not $IgnoreFailure) { throw ("TuringDesk file index service operation failed: {0}" -f $Arguments) }
         }
     } catch { if (-not $IgnoreFailure) { throw } }
 }
@@ -200,13 +202,13 @@ function Probe([string]$Exe, [string[]]$Arguments) {
     finally { Remove-Item $out,$err -Force -ErrorAction SilentlyContinue }
 }
 
-function Wait-GozReady([string]$GozExe) {
-    Assert-File $GozExe "installed goz"
+function Wait-IndexReady([string]$IndexExe) {
+    Assert-File $IndexExe "installed file index client"
     for ($i = 0; $i -lt 120; $i++) {
-        if ((Probe $GozExe @("--status")) -eq 0) { return }
+        if ((Probe $IndexExe @("--status")) -eq 0) { return }
         Start-Sleep -Milliseconds 500
     }
-    throw "goz service did not become reachable after installation."
+    throw "TuringDesk file index service did not become reachable after installation."
 }
 
 function Should-ShowWallpaperSettings {
@@ -223,7 +225,7 @@ try {
     & gh auth status | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
 
-    Step "Resolving current main"
+    Step "Resolving current TuringDesk main"
     $mainSha = Invoke-GhText @("api", "repos/$Repo/commits/main", "--jq", ".sha")
     Write-Host ("main: {0}" -f $mainSha) -ForegroundColor DarkGray
     $validated = Resolve-ValidatedRun $mainSha
@@ -236,42 +238,42 @@ try {
 
     try {
         Download-Artifact $validated.RunId $artifact
-        Materialize-Runtime $next
+        Materialize-Runtime $next $validated.BuildSha
         Copy-Item (Join-Path $artifact "*") $next -Recurse -Force
         Set-Content (Join-Path $next ".installed-build-sha") -Value $validated.BuildSha -Encoding ASCII
 
         # All staged tests happen before the current installation is touched.
         Test-StagedPackage $next
 
-        $oldGozd = Join-Path $DeployDir "Goz\gozd.exe"
+        $oldIndexService = Join-Path $DeployDir "Goz\gozd.exe"
         Stop-DeployedProcesses
-        Invoke-ElevatedGoz $oldGozd "uninstall" -IgnoreFailure
+        Invoke-ElevatedIndexService $oldIndexService "uninstall" -IgnoreFailure
         Stop-DeployedProcesses
 
-        Step "Installing validated ARM64 package"
+        Step "Installing validated TuringDesk ARM64 package"
         if (Test-Path $DeployDir) {
             Remove-Item -LiteralPath $DeployDir -Recurse -Force -ErrorAction Stop
         }
-        if (Test-Path $DeployDir) { throw "Existing installation directory could not be removed: $DeployDir" }
-        if (-not (Test-Path $next -PathType Container)) { throw "Staged package disappeared before install: $next" }
+        if (Test-Path $DeployDir) { throw "Existing TuringDesk installation directory could not be removed: $DeployDir" }
+        if (-not (Test-Path $next -PathType Container)) { throw "Staged TuringDesk package disappeared before install: $next" }
         Move-Item -LiteralPath $next -Destination $DeployDir -ErrorAction Stop
-        if (-not (Test-Path $DeployDir -PathType Container)) { throw "Installed package directory is missing after move: $DeployDir" }
+        if (-not (Test-Path $DeployDir -PathType Container)) { throw "Installed TuringDesk package directory is missing after move: $DeployDir" }
 
-        $newGozd = Join-Path $DeployDir "Goz\gozd.exe"
-        $newGoz = Join-Path $DeployDir "Goz\goz.exe"
-        Assert-File $newGozd "installed gozd"
-        Assert-File $newGoz "installed goz"
-        Assert-File (Join-Path $DeployDir "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js") "installed Pi Agent"
-        Invoke-ElevatedGoz $newGozd "install"
-        Wait-GozReady $newGoz
+        $newIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+        $newIndexClient = Join-Path $DeployDir "Goz\goz.exe"
+        Assert-File $newIndexService "installed file index service"
+        Assert-File $newIndexClient "installed file index client"
+        Assert-File (Join-Path $DeployDir "Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js") "installed agent runtime"
+        Invoke-ElevatedIndexService $newIndexService "install"
+        Wait-IndexReady $newIndexClient
 
-        Step "Running installed package self-tests"
-        Test-Binary (Join-Path $DeployDir "TuringDesk.exe") "Installed Native Search"
-        Test-Binary (Join-Path $DeployDir "TuringDeskWallpaper.exe") "Installed Native Wallpaper"
-        Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "Installed Native Harness shell"
+        Step "Running installed TuringDesk self-tests"
+        Test-Binary (Join-Path $DeployDir "TuringDesk.exe") "TuringDesk"
+        Test-Binary (Join-Path $DeployDir "TuringDeskWallpaper.exe") "TuringDesk Wallpaper"
+        Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench"
 
-        Step "Running installed DeepSeek Harness smoke test"
-        Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "DeepSeek Harness smoke" @("--harness-smoke-test")
+        Step "Running advanced workbench smoke test"
+        Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench smoke" @("--harness-smoke-test")
 
         Step "Starting TuringDesk"
         $wallpaper = Join-Path $DeployDir "TuringDeskWallpaper.exe"
@@ -279,10 +281,10 @@ try {
         else { Start-Process -FilePath $wallpaper }
         Start-Process -FilePath (Join-Path $DeployDir "TuringDesk.exe")
 
-        Write-Host "`nUPDATE PASSED" -ForegroundColor Green
-        Write-Host ("Installed validated ARM64 build: {0}" -f $validated.BuildSha) -ForegroundColor Green
-        Write-Host ("GitHub Actions run: {0}" -f $validated.RunId) -ForegroundColor DarkGray
-        Write-Host ("Path: {0}" -f $DeployDir) -ForegroundColor DarkGray
+        Write-Host "`n图灵智能桌面更新完成。" -ForegroundColor Green
+        Write-Host ("已安装验证版本：{0}" -f $validated.BuildSha) -ForegroundColor Green
+        Write-Host ("GitHub Actions：{0}" -f $validated.RunId) -ForegroundColor DarkGray
+        Write-Host ("安装目录：{0}" -f $DeployDir) -ForegroundColor DarkGray
     }
     finally {
         Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
@@ -290,8 +292,8 @@ try {
     }
 }
 catch {
-    Write-Host "`nUPDATE FAILED" -ForegroundColor Red
+    Write-Host "`n图灵智能桌面更新失败。" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
-    Write-Host "No automatic rollback was performed." -ForegroundColor Yellow
+    Write-Host "现有安装在 staging 自测通过前不会被修改；若失败发生在替换阶段，请重新运行更新脚本。" -ForegroundColor Yellow
     exit 1
 }

@@ -158,7 +158,8 @@ The current concrete boundary is:
 - `DesktopControlService` — shared facade for product clients
 - `WallpaperService` — wallpaper state/package ownership
 - `WidgetService` — Widget CRUD/persistence ownership
-- `DesktopWidgetController` — production Widget UI adapter
+- `DesktopWidgetController` — direct UI controller for new Widget UI code
+- `DesktopWidgetUiAdapter` — transitional compatibility adapter for the current production legacy library window
 
 Current facade responsibilities:
 
@@ -175,7 +176,8 @@ EnsureRuntime
 Current or staged clients:
 
 - Pi native desktop tool adapter (`DesktopWidgetTools.cpp`)
-- production Widget UI via `DesktopWidgetController`
+- production legacy Widget UI through `WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
+- new Widget UI through `DesktopWidgetController`
 - Desktop Library V2 / Widget UI
 - future Scene / Widget Editor
 
@@ -197,7 +199,7 @@ Pi text result
 
 It must not regain persistence/runtime ownership.
 
-`DesktopWidgetController` follows the same rule for Win32 UI:
+`DesktopWidgetController` follows the same rule for new Win32 UI:
 
 ```text
 Win32 Widget action
@@ -210,6 +212,8 @@ WidgetService
 ```
 
 It must never include or instantiate `DesktopWidgetStore`.
+
+The current production `WallpaperLibraryWindow.cpp` is a large legacy source file. To avoid a risky mechanical rewrite while V2 is still incomplete, production no longer compiles that file directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
 
 Similarly, `WallpaperLibraryWindowV2.cpp` should become:
 
@@ -225,7 +229,7 @@ rather than another giant business-logic window.
 
 ## 6. UI migration rule
 
-The current production `WallpaperLibraryWindow.cpp` stays active until V2 reaches functional parity.
+The current production `WallpaperLibraryWindow.cpp` behavior stays active until V2 reaches functional parity, but its production Widget CRUD path is now service-routed through `WallpaperLibraryWindowProduction.cpp` and `DesktopWidgetUiAdapter`.
 
 V2 may replace it only after these capabilities are preserved:
 
@@ -243,11 +247,11 @@ A visual redesign is never allowed to remove a product capability.
 
 ## 7. Next refactor slices
 
-1. Finish replacing production `WallpaperLibraryWindow.cpp` Widget CRUD with `DesktopWidgetController` calls; direct Store calls are legacy migration debt only.
+1. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
 2. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
 3. Make Desktop Library V2 depend on controllers/services only.
-4. Separate `AutomationService` from automation windows.
-5. Separate `PerformanceCoordinator` from `WallpaperEngine.cpp`.
+4. Separate Automation UI from automation persistence and execution through `AutomationService`.
+5. Move Performance UI and remaining engine settings ownership through `PerformanceService`.
 6. Remove legacy direct shell attachment from `WallpaperEngine.cpp` after `DesktopShellHost` is sole owner.
 7. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
 

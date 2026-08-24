@@ -1,17 +1,20 @@
-# TuringDesk L3 Pi Runtime Contract
+# TuringDesk Pi Runtime Contract
 
 > 状态：**强制架构契约**  
 > 日期：2026-08-24  
-> 适用范围：TuringDesk Native 主线、L3 AI、构建、CI、打包、部署与验收  
-> 上位产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`
+> 适用范围：TuringDesk Native 主线、图灵 AI、Desktop Control、构建、CI、打包、部署与验收  
+> 上位产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`  
+> Desktop Composition 架构：`docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
 
 ## 1. 目的
 
-本文固定 TuringDesk L3 AI 的默认 Agent Runtime 为 **Pi**，目标是让 TuringDesk 拥有一个轻量、可嵌入、Provider-neutral、可扩展的 Agent 核心，而不是把产品架构绑定在某个单一模型厂商或复杂的外部宿主协议上。
+本文固定图灵智能桌面 AI 的默认 Agent Runtime 为 **Pi**，并固定 AI 与桌面系统之间的控制边界。
 
-如果旧文档、旧注释、旧 CI 规则、旧脚本与本文冲突，以 `TURINGDESK-PRODUCT-BASELINE.md` 和本文为准；冲突内容应删除或改为历史说明，不得继续作为实现依据。
+Pi 负责 Agent Loop、上下文、Skills、Extensions 与通用工具；TuringDesk 负责桌面状态、权限、壁纸、Widget、多屏、性能和其他真正依赖产品内部状态的能力。
 
-## 2. 唯一默认流程
+如果旧文档、旧注释、旧 CI 规则、旧脚本与本文冲突，以 `TURINGDESK-PRODUCT-BASELINE.md`、`DESKTOP_COMPOSITION_ARCHITECTURE.md` 和本文为准。
+
+## 2. 唯一默认 AI 流程
 
 ```text
 用户在 TuringDesk 发起 AI 请求
@@ -24,62 +27,58 @@ Bundled Node 24
         ↓
 Pi Agent Loop
         ├─ read / write / edit / grep / find / ls
-        ├─ TuringDesk Shell Tool
+        ├─ shell / PowerShell
         ├─ Skills / Extensions / Packages
         └─ TuringDesk Desktop Tools
         ↓
 当前配置 Provider / Model / Base URL / API Key
 ```
 
-**Pi 是普通 AI 请求和桌面 Agent 请求的默认 Runtime。**
+Pi 是普通问答和桌面 Agent 请求的默认 Runtime。
 
-轻量 Direct Model 只允许作为失败回退：
+只有 Pi Runtime、Node、Provider、Agent Session 或工具循环失败时，才允许回退：
 
 ```text
-Pi Runtime / Node / Provider / Agent Loop 失败
-        ↓
-记录失败原因
-        ↓
+Pi 失败
+  ↓
+记录真实失败原因
+  ↓
 Direct Model Runtime
-        ↓
+  ↓
 当前配置 API
 ```
 
-不得把 Direct Model 重新定义成默认 Agent 路线。
+Direct Model 只负责轻量 fallback，不得重新成为桌面自动化路线。
 
 ## 3. Pi 版本与分发
 
-TuringDesk 使用 Earendil Works 维护的正式 Pi 包：
+正式 RuntimeBundle 使用并锁定：
 
 ```text
 @earendil-works/pi-coding-agent
 @earendil-works/pi-agent-core
 @earendil-works/pi-ai
+Bundled Node 24
 ```
 
-正式 RuntimeBundle 必须锁定明确版本并离线随 TuringDesk 分发。运行用户不需要自行安装 Node、npm 或 Pi。
+约束：
 
-当前约束：
+- 最终用户不需要安装 Node、npm、Pi 或开发环境；
+- Pi 生产依赖离线随 TuringDesk 分发；
+- 正式构建和更新不得临时联网安装 Pi；
+- Pi 更新必须经过版本锁、Windows CI、真实工具 E2E 后进入 `main`。
 
-- Node 由 TuringDesk RuntimeBundle 提供；
-- Pi 依赖安装发生在 vendor CI，而不是最终用户机器；
-- RuntimeBundle 中保存完整生产依赖；
-- 正式构建和更新流程不得临时联网安装 Pi；
-- Pi 更新必须通过版本锁、CI、E2E 后进入 `main`。
+## 4. Provider-neutral
 
-## 4. Provider 无品牌绑定
-
-Pi Runtime 不按品牌决定主路由。
-
-TuringDesk 统一配置：
+TuringDesk 统一管理：
 
 - Provider；
 - Model；
 - Base URL；
 - API Key；
-- API 协议类型。
+- API 协议。
 
-Pi 自定义 Provider 使用其正式支持的协议类型：
+支持的 Pi Provider 协议至少包括：
 
 ```text
 openai-completions
@@ -88,36 +87,46 @@ anthropic-messages
 google-generative-ai
 ```
 
-TuringDesk 根据已探测出的 API 能力生成 Pi Provider 配置。Provider-specific 兼容参数可以存在，但不得把主 Runtime 绑定到某个品牌。
+不得用 Provider 品牌决定是否绕过 Pi。
 
-API Key 的唯一长期存储仍是 Windows Credential Manager。Pi 配置文件不得写入明文 Key；Pi 子进程通过受控环境变量读取当前凭据。
+API Key 的唯一长期存储是 Windows Credential Manager。Pi 配置文件不得写明文 Key；当前凭据仅通过受控子进程环境注入。
 
-## 5. Pi Host 形态
+## 5. Pi Host 与产品边界
 
 TuringDesk Native 主程序不实现第二套 Agent Loop。
 
-推荐顺序：
+当前生产形态以 Pi RPC 为主，后续可迁移到更深的 Pi SDK Host，但必须保持同一产品边界：
 
-1. **Pi SDK Host**：Bundled Node 进程直接使用 `createAgentSession()` / `AgentSession`，适合注册 TuringDesk 自定义工具和权限层；
-2. **Pi RPC Mode**：作为进程隔离和兼容模式，使用 LF-delimited JSONL over stdio；
-3. 不使用 TUI 作为 TuringDesk 顶部 AI 的宿主界面。
+```text
+Native UI
+  ↓
+Pi Runtime
+  ↓
+Agent Loop
+  ↓
+Desktop Tools / Generic Tools
+```
 
-Native UI 只负责：
+Native UI 负责：
 
-- 输入与流式输出；
+- 输入和流式输出；
 - Runtime 生命周期；
 - Provider 配置桥接；
 - 权限确认；
 - 日志；
-- TuringDesk 专属桌面工具。
+- TuringDesk Desktop Tool Host。
 
-Agent 规划、工具循环、上下文与 Skills/Extensions 由 Pi 管理。
+Pi 负责：
+
+- Agent 规划；
+- 工具循环；
+- Session / Context；
+- Skills / Extensions / Packages；
+- 通用文件和 Shell 能力。
 
 ## 6. 工具边界
 
-### 6.1 通用能力
-
-优先由 Pi 提供或通过 Pi SDK 标准工具接入：
+### 6.1 通用能力归 Pi
 
 ```text
 read
@@ -126,76 +135,111 @@ edit
 grep
 find
 ls
-shell
+shell / PowerShell
 Skills
 Extensions
 Pi Packages
 ```
 
-文件创建、脚本执行、Git、压缩、CSV、PPT/Word/Excel 生成等通用任务，不应继续为每一种任务单独增加 C++ 业务工具。
+文件、脚本、Git、压缩、CSV/JSON、文档处理等通用任务，不得继续为每一种业务单独增加一套 C++ Agent Tool。
 
-### 6.2 Windows Shell
+### 6.2 TuringDesk Desktop Tools
 
-TuringDesk 不要求用户预装独立开发环境。
+TuringDesk 只暴露依赖产品内部状态的能力。
 
-正式 Runtime 必须提供一个稳定的 Windows Shell 路径。推荐实现为：
+当前第一阶段白名单：
 
 ```text
-Pi Agent
-  ↓
-TuringDesk Shell Tool
-  ↓
-PowerShell / cmd / bundled compatible shell
+settings_open
+wallpaper_create_web_package
+wallpaper_validate_package
+wallpaper_state_get
+wallpaper_apply_web_package
+desktop_widget_create_web
+desktop_widget_update
+desktop_widget_remove
+desktop_widget_list
 ```
 
-Shell Tool 必须支持：
+含义：
 
-- cwd；
-- stdout / stderr；
-- exit code；
-- timeout；
-- cancellation；
-- 危险操作权限确认；
-- 不记录 API Key / Token。
+- `settings_open`：打开图灵智能桌面设置；
+- `wallpaper_create_web_package`：生成并校验 Web `.tdwall`；
+- `wallpaper_validate_package`：校验 `.tdwall`；
+- `wallpaper_state_get`：读取真实当前桌面状态；
+- `wallpaper_apply_web_package`：实际应用已校验 Web `.tdwall`；
+- `desktop_widget_create_web`：创建持久桌面 Widget；
+- `desktop_widget_update`：移动、缩放、启停、改样式/HTML；
+- `desktop_widget_remove`：删除 Widget；
+- `desktop_widget_list`：读取 Widget ID、目标显示器和布局。
 
-如果采用 Pi 自带 `bash` 工具，则 RuntimeBundle 必须同时提供兼容 Bash，不能把 Git Bash 作为用户先决条件。
+这些是 **Desktop Control API 的第一阶段桥接工具**，不是最终 API 形状。
 
-### 6.3 TuringDesk 专属工具
+后续壁纸 Scene 参数、播放列表、多屏、性能策略、Widget 属性、编辑器属性都必须逐步收口到同一个版本化 Desktop Control API。
 
-只保留真正属于产品的能力，例如：
+## 7. AI Desktop Control 强制规则
 
-- 打开设置中心；
-- 应用/切换桌面；
-- 创建、校验 `.tdwall`；
-- 场景、播放列表、多屏与性能策略；
-- TuringDesk 通知与桌面状态。
+Settings、Editor 和 AI 最终必须操作同一套状态模型：
 
-这些工具通过 Pi SDK `customTools` 或 Extension 注册，不得重新实现完整 Agent Runtime。
+```text
+Settings Center -----------┐
+Scene / Widget Editor -----+--> Desktop Control API --> Desktop Runtime
+Pi Agent ------------------┘
+```
 
-## 7. 权限与安全
+AI 桌面操作必须满足：
 
-Pi 本身保持轻量，TuringDesk 必须在宿主层补齐桌面产品需要的权限策略。
+1. 重要修改前先读状态；
+2. 所有 mutation 必须校验；
+3. 使用稳定 wallpaper / monitor / widget ID；
+4. Widget 布局使用显示器相对的 normalized geometry；
+5. Tool Result 必须返回真实执行结果，模型不能自行宣称成功；
+6. 更广泛的 Scene/Widget 编辑在开放给 AI 前必须补 transaction 与 undo/redo；
+7. AI 不得把直接修改私有 INI/内部文件作为长期公共控制接口；
+8. 手工 UI、Editor、AI 不允许长期维护三套互不一致的修改逻辑。
+
+## 8. Wallpaper 与 Widget 的关系
+
+Desktop Composition 正式分层：
+
+```text
+Desktop Composition
+├─ Wallpaper Layer: Image / Video / Web / Scene
+├─ Widget Layer: persistent monitor-relative surfaces
+└─ Control Layer: Settings / Editor / AI
+```
+
+Widget 是一等公民，不属于某张壁纸的临时附属物：
+
+- 换壁纸不得删除 Widget；
+- Widget 可以独立创建、移动、缩放、启停；
+- Widget v1 使用隔离本地 WebView2 surface；
+- Widget v1 默认 click-through，不得挡住桌面图标；
+- 后续支持 Native Text、Clock、Calendar、Image、System、Media、Data-bound Widget；
+- `.tdwall` 与未来 `.tdwidget` 应共享安全 package core。
+
+## 9. 权限与安全
 
 最低要求：
 
-- 读文件可默认允许在用户工作区内执行；
-- 写文件、删除、覆盖、执行程序、系统设置修改必须经过风险分类；
-- 高风险 Shell 命令需要用户确认；
-- API Key 绝不出现在提示词、工具参数、日志和会话文件中；
-- 子进程环境只注入当前请求需要的凭据；
-- 权限拒绝必须作为 Tool Result 返回给 Agent，而不是伪装成功。
+- API Key、Token 不得出现在提示词、工具参数、日志和 Session 文件；
+- Native Tool worker 只接受白名单工具；
+- Native Tool 必须隔离执行、支持 timeout/cancellation；
+- 写文件、删除、覆盖、执行程序、系统设置修改按风险分类；
+- 高风险 Shell 操作需要用户确认；
+- 权限拒绝必须作为真实 Tool Result 返回；
+- Widget 数据源、网络能力和未来交互能力必须权限化；
+- AI 生成 `.tdwall` / `.tdwidget` 必须标记 provenance 并验证后才能应用。
 
-## 8. Session / Skills / Extensions
+## 10. Session / Skills / Extensions
 
-Pi 的 Session、Skills、Extensions 和 Pi Packages 是正式扩展机制。
-
-TuringDesk 使用独立目录：
+TuringDesk Pi 目录：
 
 ```text
 %LOCALAPPDATA%\TuringDesk\PiAgent\
 ```
 
-建议结构：
+结构：
 
 ```text
 PiAgent\
@@ -207,24 +251,21 @@ PiAgent\
 └─ packages\
 ```
 
-TuringDesk 管理的 Provider 配置与用户自定义 Skills/Extensions 必须分层保存；更新 Provider 时不能覆盖用户自己的 Skills、Extensions 或 Session。
+Provider 配置、TuringDesk 自带扩展和用户自定义 Skills/Extensions 必须分层，更新不得覆盖用户内容。
 
-## 9. 与 DeepSeek Harness 的边界
-
-DeepSeek Harness 是高级工作台，不是 L3 fallback，也不是 L3 transport。
+## 11. 与高级工作台的边界
 
 ```text
-L3：Pi Runtime → 当前 API → Direct Model fallback
-高级工作台：DeepSeek Harness WebUI
+普通 AI
+  = Pi Runtime → 当前 API → Direct Model fallback
+
+高级工作台
+  = DeepSeek Harness WebUI
 ```
 
-Pi 失败不能自动打开 Harness。
+Pi 失败不得自动打开高级工作台。两者可共享 Provider / Model / Base URL / API Key 设置，但 Runtime 生命周期互相独立。
 
-Harness 后台和 UI 生命周期独立；后台启动不得自动弹浏览器或工作台。
-
-Pi 与 Harness 可以共用 Provider / Model / Base URL / API Key 配置，但运行时互相独立。
-
-## 10. 日志契约
+## 12. 日志契约
 
 统一日志目录：
 
@@ -232,97 +273,79 @@ Pi 与 Harness 可以共用 Provider / Model / Base URL / API Key 配置，但�
 Windows Desktop known folder\TuringDesk-Logs\
 ```
 
-L3 路由日志：
-
 ```text
-l3-runtime.log
+l3-runtime.log   # AI 路由
+pi-runtime.log   # Pi / Tool / Native worker
 ```
 
-Pi 详细日志：
+至少记录：Node/Pi 版本、Provider/model、安全 endpoint、session、prompt、tool 名称与状态、timeout/cancellation、process exit code、fallback 原因。
 
-```text
-pi-runtime.log
-```
+禁止记录 Credential 内容、API Key、Bearer Token。
 
-至少记录：
+## 13. 构建与 CI 契约
 
-- Pi Host 路径；
-- Node 路径与版本；
-- Pi 版本；
-- Provider id / model；
-- 安全处理后的 endpoint；
-- session 创建；
-- prompt 开始/完成；
-- tool call 名称与完成状态；
-- process exit code；
-- timeout / cancellation；
-- Direct Model fallback 原因。
-
-禁止记录 API Key、Credential 内容、Bearer Token。
-
-## 11. 构建与 CI 契约
-
-本地 CMake、x64 验证、ARM64 正式构建和一键部署必须执行同一个架构 guard：
+所有 Windows 构建继续执行：
 
 ```text
 scripts/verify-l3-runtime-contract.ps1
+scripts/verify-windows-powershell-compat.ps1
 ```
 
-Guard 必须验证：
+Guard 必须防止：
 
-- `L3CliWindow` 默认使用 `PiRuntime`；
-- `PiRuntime.cpp` 编译进 `TuringDesk`；
-- Direct Model 只作为 fallback；
-- 当前设计文档均为 Pi-first；
-- RuntimeBundle 锁定 Pi；
-- 正式构建不依赖在线 npm install；
-- Harness 仍保持独立；
-- 旧 Runtime 代码、Relay、旧 RuntimeBundle 目录和旧 guard 不得重新进入主线。
+- Pi-first 被旧 Runtime 替换；
+- Direct Model 重新成为主路由；
+- Native Desktop Tool 白名单回退到旧的三工具状态；
+- Widget/Desktop Control 工具从 Pi Extension 或 Native worker 中意外消失；
+- 通用 C++ Agent Tools 重新暴露；
+- 旧 Codex/Relay 架构重新进入主线。
 
-ARM64 CI 至少验证：
+ARM64 CI 至少持续验证：
 
-1. Bundled Node 可执行；
-2. Pi CLI/SDK 可加载并输出版本；
-3. Pi 自定义 Provider 配置可被解析；
-4. Pi Agent 对模拟 OpenAI-compatible 上游完成真实工具循环 E2E；
-5. 文件读写工具真实产生结果；
-6. Shell Tool 能执行并返回 stdout / stderr / exit code；
-7. Direct Model fallback 仍可用；
-8. Goz 与 Harness 原有测试继续通过；
-9. Artifact 包含 Pi Runtime 与全部生产依赖。
+1. Bundled Node / Pi 可加载；
+2. RPC `get_state` readiness handshake；
+3. Provider loopback 真正收到请求；
+4. Pi built-in `write` 与 Windows Shell 真执行；
+5. TuringDesk Native Tool 真执行并产生 `.tdwall`；
+6. Desktop Control/Widget Tool 保持在白名单和扩展注册表中；
+7. Native wallpaper self-tests；
+8. goz MFT/USN integration；
+9. 高级工作台 smoke；
+10. ARM64 artifact 完整上传。
 
-## 12. 完成标准
+## 14. 完成标准
 
 ```text
 代码存在        ≠ 完成
 编译成功        ≠ 完成
 CI 通过         ≠ 完成
 Mock 通过       ≠ 完成
-真实设备可用    = 完成
+真实 Windows 用户流程通过 = 完成
 ```
 
-真实 Windows ARM64 至少验收：
+桌面控制最低真实验收逐步扩展为：
 
 ```text
-帮我在桌面创建一个 txt 文件
-帮我读取并修改这个文件
-帮我运行一个 PowerShell 命令并返回结果
-帮我生成一个不依赖 Office 的 PPTX
+读取当前桌面状态
+创建一个动态 Web 壁纸并真正应用
+在桌面右上角创建一个时钟 Widget
+把 Widget 移到另一位置并缩放
+删除 Widget
+切换壁纸后确认 Widget 布局仍然存在
 ```
 
-必须看到真实文件/命令结果，不能只根据模型文字判断成功。
-
-## 13. 最终边界
+## 15. 最终边界
 
 ```text
 TuringDesk Search / AI
   = Native UI + goz + Pi Agent Runtime + Direct Model fallback
 
-Wallpaper
-  = Native Win32 + D3D11 / Media Foundation / WASAPI
+Desktop Composition
+  = Wallpaper Layer + Widget Layer + Desktop Control API
+  = Native Win32 / D3D11 / Direct2D / Media Foundation / WASAPI / isolated WebView2
 
 Advanced Workbench
   = Official DeepSeek Harness + WebView2
 ```
 
-TuringDesk 的 Agent 核心从此以 **Pi-first、Provider-neutral、Host-controlled permissions** 为正式方向。
+正式方向固定为：**Pi-first、Provider-neutral、Desktop-Control-unified、Host-controlled permissions**。

@@ -9,6 +9,8 @@ $ArtifactName = "TuringDesk-Native-Search-ARM64"
 $Workflow = "native-search-windows.yml"
 $DeployDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
 $DeployParent = Split-Path $DeployDir -Parent
+$JournalPath = Join-Path $DeployParent "NativeTest.update-state.json"
+$MutexName = "Local\TuringDeskArm64Updater"
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
@@ -232,12 +234,77 @@ function Start-DeployedTuringDesk([string]$Root) {
     Start-Process -FilePath $search
 }
 
+function Write-UpdateJournal([string]$PreviousPath, [bool]$HadExistingInstall) {
+    New-Item -ItemType Directory -Force -Path $DeployParent | Out-Null
+    $state = [ordered]@{
+        schema = 1
+        hadExistingInstall = $HadExistingInstall
+        previousPath = $PreviousPath
+        createdUtc = [DateTime]::UtcNow.ToString("o")
+    }
+    $state | ConvertTo-Json -Compress | Set-Content $JournalPath -Encoding ASCII
+}
+
+function Remove-UpdateJournal {
+    Remove-Item $JournalPath -Force -ErrorAction SilentlyContinue
+}
+
+function Recover-InterruptedUpdate {
+    if (-not (Test-Path $JournalPath -PathType Leaf)) { return $false }
+
+    Step "Recovering an interrupted TuringDesk update"
+    $state = Get-Content $JournalPath -Raw | ConvertFrom-Json
+    if ([int]$state.schema -ne 1) { throw "Unsupported update recovery journal schema." }
+    $hadExisting = [bool]$state.hadExistingInstall
+    $previousPath = [string]$state.previousPath
+
+    Stop-DeployedProcesses
+    Invoke-ElevatedIndexService (Join-Path $DeployDir "Goz\gozd.exe") "uninstall" -IgnoreFailure
+
+    if ($hadExisting -and -not [string]::IsNullOrWhiteSpace($previousPath) -and (Test-Path $previousPath -PathType Container)) {
+        if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }
+        Move-Item -LiteralPath $previousPath -Destination $DeployDir -ErrorAction Stop
+    } elseif (-not $hadExisting) {
+        if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }
+    } elseif (-not (Test-Path $DeployDir -PathType Container)) {
+        throw "Interrupted update recovery could not find either the current or previous installation."
+    }
+
+    if ($hadExisting -and (Test-Path $DeployDir -PathType Container)) {
+        $restoredIndexService = Join-Path $DeployDir "Goz\gozd.exe"
+        $restoredIndexClient = Join-Path $DeployDir "Goz\goz.exe"
+        if (Test-Path $restoredIndexService -PathType Leaf) {
+            Invoke-ElevatedIndexService $restoredIndexService "install"
+            if (Test-Path $restoredIndexClient -PathType Leaf) { Wait-IndexReady $restoredIndexClient }
+        }
+        Start-DeployedTuringDesk $DeployDir
+    }
+
+    Remove-UpdateJournal
+    Write-Host "Interrupted update recovery completed." -ForegroundColor Green
+    return $true
+}
+
 $work = $null
 $next = $null
 $previous = $null
 $swapStarted = $false
 $hadExistingInstall = $false
+$updateMutex = $null
+$mutexHeld = $false
+$recoveryPerformed = $false
 try {
+    New-Item -ItemType Directory -Force -Path $DeployParent | Out-Null
+    $updateMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, $MutexName
+    try {
+        $mutexHeld = $updateMutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $mutexHeld = $true
+    }
+    if (-not $mutexHeld) { throw "Another TuringDesk update is already running." }
+
+    $recoveryPerformed = Recover-InterruptedUpdate
+
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH." }
 
     Step "Checking GitHub authentication"
@@ -263,7 +330,12 @@ try {
     Test-StagedPackage $next
 
     $hadExistingInstall = Test-Path $DeployDir -PathType Container
+    if ($hadExistingInstall) {
+        $previous = Join-Path $DeployParent ("NativeTest.previous-" + [guid]::NewGuid().ToString("N"))
+    }
+    Write-UpdateJournal $previous $hadExistingInstall
     $swapStarted = $true
+
     $oldIndexService = Join-Path $DeployDir "Goz\gozd.exe"
     Stop-DeployedProcesses
     Invoke-ElevatedIndexService $oldIndexService "uninstall" -IgnoreFailure
@@ -271,7 +343,6 @@ try {
 
     Step "Installing validated TuringDesk ARM64 package"
     if ($hadExistingInstall) {
-        $previous = Join-Path $DeployParent ("NativeTest.previous-" + [guid]::NewGuid().ToString("N"))
         Move-Item -LiteralPath $DeployDir -Destination $previous -ErrorAction Stop
     }
     if (Test-Path $DeployDir) { throw "TuringDesk install directory still exists after backup move: $DeployDir" }
@@ -298,6 +369,7 @@ try {
         Remove-Item $previous -Recurse -Force -ErrorAction Stop
         $previous = $null
     }
+    Remove-UpdateJournal
 
     Write-Host "`nTuringDesk update completed successfully." -ForegroundColor Green
     Write-Host ("Installed validated build: {0}" -f $validated.BuildSha) -ForegroundColor Green
@@ -336,19 +408,29 @@ catch {
             } else {
                 Write-Host "Rollback completed. No previous installation existed, so the failed package was removed." -ForegroundColor Yellow
             }
+            Remove-UpdateJournal
         }
         catch {
             Write-Host ("Automatic rollback failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            Write-Host ("Recovery journal is preserved at: {0}" -f $JournalPath) -ForegroundColor Yellow
             if ($previous -and (Test-Path $previous -PathType Container)) {
                 Write-Host ("Previous installation is preserved at: {0}" -f $previous) -ForegroundColor Yellow
             }
         }
     } else {
-        Write-Host "The existing installation was not modified." -ForegroundColor Yellow
+        if ($recoveryPerformed) {
+            Write-Host "An earlier interrupted update was recovered before this failure." -ForegroundColor Yellow
+        } else {
+            Write-Host "The existing installation was not modified." -ForegroundColor Yellow
+        }
     }
     exit 1
 }
 finally {
     if ($work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
     if ($next -and (Test-Path $next)) { Remove-Item $next -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($mutexHeld -and $updateMutex) {
+        try { $updateMutex.ReleaseMutex() } catch { }
+    }
+    if ($updateMutex) { $updateMutex.Dispose() }
 }

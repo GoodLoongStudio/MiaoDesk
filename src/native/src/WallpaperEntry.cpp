@@ -1,12 +1,16 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 
+#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/WallpaperLibrary.h"
 #include "turingdesk/WallpaperPackage.h"
@@ -24,6 +28,8 @@ namespace {
 
 constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
 constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
+constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
 
 std::wstring ReadProfileValue(const fs::path& path, const wchar_t* key) {
     wchar_t buffer[32768]{};
@@ -131,6 +137,55 @@ bool WebLibrarySelfTest() {
     return ok;
 }
 
+bool IsDesktopSurfaceWindow(HWND window) {
+    if (!window || !IsWindow(window)) return false;
+    wchar_t className[160]{};
+    if (!GetClassNameW(window, className, static_cast<int>(std::size(className)))) return false;
+    return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0;
+}
+
+// Transitional lifecycle owner used while WallpaperEngine.cpp and the Web
+// coordinator are being migrated to DesktopShellHost. It centralizes shell
+// health/style/z-order repair now, so Web/Widget surfaces no longer each guess
+// Windows 11 raised-desktop behavior independently.
+class DesktopShellMaintenance {
+public:
+    DesktopShellMaintenance() = default;
+    ~DesktopShellMaintenance() { Stop(); }
+
+    void Start() {
+        if (worker_.joinable()) return;
+        stop_ = false;
+        worker_ = std::thread([this] {
+            while (!stop_) {
+                std::wstring ignored;
+                if (shell_.EnsureCurrent(&ignored)) {
+                    const HWND parent = shell_.SurfaceParent();
+                    if (parent && IsWindow(parent)) {
+                        for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+                            if (!IsDesktopSurfaceWindow(child)) continue;
+                            shell_.PrepareSurface(child, true, nullptr);
+                        }
+                        shell_.RepairKnownTuringDeskSurfaces();
+                    }
+                }
+                for (int i = 0; i < 5 && !stop_; ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        });
+    }
+
+    void Stop() {
+        stop_ = true;
+        if (worker_.joinable()) worker_.join();
+    }
+
+private:
+    std::atomic_bool stop_{false};
+    std::thread worker_;
+    turingdesk::wallpaper::DesktopShellHost shell_;
+};
+
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, int showCommand) {
@@ -146,6 +201,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
         if (!WorkAreaSelfTest()) return 40;
         if (!turingdesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
         if (!turingdesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
+        if (!turingdesk::wallpaper::DesktopShellHost::SelfTest()) return 44;
         return TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
     }
 
@@ -156,13 +212,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
         return TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
 
     const HWINEVENTHOOK workAreaHook = InstallWorkAreaGuard();
+    DesktopShellMaintenance shellMaintenance;
+    shellMaintenance.Start();
     turingdesk::wallpaper::WallpaperWebRuntimeCoordinator webCoordinator;
     if (!webCoordinator.Start()) {
+        shellMaintenance.Stop();
         if (workAreaHook) UnhookWinEvent(workAreaHook);
         return 43;
     }
     const int result = TuringDeskWallpaperMain(instance, previous, commandLine, showCommand);
     webCoordinator.Stop();
+    shellMaintenance.Stop();
     if (workAreaHook) UnhookWinEvent(workAreaHook);
     return result;
 }

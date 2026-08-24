@@ -37,6 +37,7 @@ $updateScript = Join-Path $scriptRoot 'update-turingdesk-arm64.ps1'
 $deployScript = Join-Path $scriptRoot 'deploy-native-arm64.ps1'
 $armWorkflow = Join-Path $root '.github\workflows\native-search-windows.yml'
 $x64Workflow = Join-Path $root '.github\workflows\native-x64-validation.yml'
+$statusWorkflow = Join-Path $root '.github\workflows\native-arm64-status.yml'
 foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
 
 $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
@@ -45,6 +46,7 @@ $updateScriptText = [IO.File]::ReadAllText($updateScript, [Text.Encoding]::ASCII
 $deployScriptText = [IO.File]::ReadAllText($deployScript, [Text.Encoding]::ASCII)
 $armWorkflowText = [IO.File]::ReadAllText($armWorkflow)
 $x64WorkflowText = [IO.File]::ReadAllText($x64Workflow)
+$statusWorkflowText = [IO.File]::ReadAllText($statusWorkflow)
 
 foreach ($forbidden in @('^|', 'Codex-first', 'Codex CLI', 'Codex Relay')) {
     if ($updateText.Contains($forbidden) -or $deployText.Contains($forbidden)) {
@@ -76,7 +78,11 @@ foreach ($required in @(
     'Interrupted update recovery completed.',
     'TuringDeskArm64Updater',
     'WaitOne(0)',
-    'Another TuringDesk update is already running.'
+    'Another TuringDesk update is already running.',
+    'Get-RunsForCommit',
+    'Waiting for ARM64 validation run',
+    'gh workflow run $Workflow --repo $Repo --ref main',
+    'Resolving validated ARM64 package for current main'
 )) {
     if (-not $updateScriptText.Contains($required)) { throw "Updater safety marker missing: $required" }
 }
@@ -103,5 +109,11 @@ foreach ($workflowText in @($armWorkflowText, $x64WorkflowText)) {
 foreach ($forbidden in @('workflow_run:', 'ref: main')) {
     if ($armWorkflowText.Contains($forbidden)) { throw "ARM64 workflow may drift away from the triggering commit: $forbidden" }
 }
+foreach ($required in @('statuses: write', 'TuringDesk/Native-ARM64', 'workflow_run:', 'Publish commit status')) {
+    if (-not $statusWorkflowText.Contains($required)) { throw "Branchless ARM64 status reporter marker missing: $required" }
+}
+foreach ($forbidden in @('ref: ci-status', 'git push origin HEAD:ci-status')) {
+    if ($statusWorkflowText.Contains($forbidden)) { throw "ARM64 status reporting must not create a side branch: $forbidden" }
+}
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a single-instance crash-recoverable updater, run local deployment preflight, exercise exact-SHA one-click bootstrap tests, and pin Windows validation to the triggering commit.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a self-validating crash-recoverable updater, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green

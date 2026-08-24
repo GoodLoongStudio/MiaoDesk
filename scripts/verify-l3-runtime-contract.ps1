@@ -87,6 +87,7 @@ foreach ($marker in @('src/CodexRuntime.cpp', 'src/CodexHostBridge.cpp', 'Turing
 }
 
 # Provider-neutral Pi RPC host and diagnostics.
+# C++ source contains escaped JSON quotes, so the guard must match the literal backslashes too.
 foreach ($marker in @(
     '@earendil-works',
     '--mode rpc',
@@ -96,9 +97,10 @@ foreach ($marker in @(
     'anthropic-messages',
     'google-generative-ai',
     'RuntimeLogPath(L"pi-runtime.log")',
-    '"type":"prompt"',
-    '"type":"abort"',
-    '"type":"new_session"'
+    '\"type\":\"prompt\"',
+    '\"type\":\"abort\"',
+    '\"type\":\"new_session\"',
+    '\"type\":\"agent_settled\"'
 )) {
     if (-not $pi.Contains($marker)) {
         throw "Pi runtime contract marker missing: $marker"
@@ -108,6 +110,11 @@ foreach ($marker in @('providerId == L"deepseek"', 'providerId) == L"deepseek"')
     if ($pi.Contains($marker)) {
         throw "Pi transport must not be hard-wired to a provider brand: $marker"
     }
+}
+
+# The ARM64 real E2E must wait for the session-level settled event, not low-level agent_end.
+if (-not $arm.Contains('msg.type === "agent_settled"')) {
+    throw 'ARM64 Pi E2E must wait for agent_settled before validating tool results.'
 }
 
 # Harness stays local and never opens an external browser itself.
@@ -136,4 +143,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: Pi Agent primary, provider-neutral API routing, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: Pi Agent primary, provider-neutral API routing, settled RPC turns, Direct API fallback only.'

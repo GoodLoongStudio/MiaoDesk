@@ -106,6 +106,19 @@ add_custom_target(TuringDeskL3ContractCheck ALL
 )
 add_dependencies(TuringDesk TuringDeskL3ContractCheck)
 
+set(TURINGDESK_DOMAIN_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-domain-contract.ps1")
+if (NOT EXISTS "${TURINGDESK_DOMAIN_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing desktop domain contract guard: ${TURINGDESK_DOMAIN_CONTRACT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskDesktopDomainContractCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_DOMAIN_CONTRACT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying desktop domain boundaries"
+    VERBATIM
+)
+add_dependencies(TuringDesk TuringDeskDesktopDomainContractCheck)
+add_dependencies(TuringDeskWallpaper TuringDeskDesktopDomainContractCheck)
+
 set(TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-runtime-log-paths.ps1")
 if (NOT EXISTS "${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")
     message(FATAL_ERROR "Missing runtime log contract guard: ${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")

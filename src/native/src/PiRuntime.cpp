@@ -589,8 +589,9 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
 
     AppendRuntimeLog(L"Pi turn started; model=" + setup.model);
     const ULONGLONG turnStarted = GetTickCount64();
-    bool sawAgentEnd = false;
+    bool sawAgentSettled = false;
     bool sawText = false;
+    std::wstring settledFailure;
 
     while (!stopToken.stop_requested()) {
         if (GetTickCount64() - turnStarted >= kTurnTimeoutMs) {
@@ -635,8 +636,34 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
             error = rpcError.empty() ? L"Pi RPC 拒绝 prompt" : rpcError;
             break;
         }
+        if (line.find("\"type\":\"auto_retry_start\"") != std::string::npos) {
+            const auto retryError = Utf8ToWide(ExtractJsonString(line, "\"errorMessage\""));
+            AppendRuntimeLog(retryError.empty() ? L"Pi auto-retry started" : L"Pi auto-retry started: " + retryError);
+            continue;
+        }
+        if (line.find("\"type\":\"auto_retry_end\"") != std::string::npos) {
+            if (line.find("\"success\":false") != std::string::npos) {
+                const auto finalError = Utf8ToWide(ExtractJsonString(line, "\"finalError\""));
+                settledFailure = finalError.empty() ? L"Pi 自动重试最终失败" : finalError;
+                AppendRuntimeLog(L"Pi auto-retry exhausted: " + settledFailure);
+            } else if (line.find("\"success\":true") != std::string::npos) {
+                settledFailure.clear();
+                AppendRuntimeLog(L"Pi auto-retry recovered");
+            }
+            continue;
+        }
         if (line.find("\"type\":\"agent_end\"") != std::string::npos) {
-            sawAgentEnd = true;
+            const bool willRetry = line.find("\"willRetry\":true") != std::string::npos;
+            const bool stoppedWithError = line.find("\"stopReason\":\"error\"") != std::string::npos;
+            const auto agentError = Utf8ToWide(ExtractJsonString(line, "\"errorMessage\""));
+            if (stoppedWithError && !willRetry) {
+                settledFailure = agentError.empty() ? L"Pi Agent 执行失败" : agentError;
+            }
+            AppendRuntimeLog(willRetry ? L"Pi low-level agent_end; retry pending" : L"Pi low-level agent_end");
+            continue;
+        }
+        if (line.find("\"type\":\"agent_settled\"") != std::string::npos) {
+            sawAgentSettled = true;
             break;
         }
     }
@@ -649,11 +676,18 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
     if (!error.empty()) {
         AppendRuntimeLog(L"Pi turn failed: " + error);
         if (onDone) onDone(error);
-    } else if (sawAgentEnd) {
-        AppendRuntimeLog(L"Pi turn completed");
-        if (onDone) onDone(sawText ? L"" : L"[Pi 已完成，无文本输出]");
+    } else if (sawAgentSettled) {
+        if (!settledFailure.empty()) {
+            AppendRuntimeLog(L"Pi turn settled with failure: " + settledFailure);
+            if (onDone) onDone(settledFailure);
+        } else {
+            AppendRuntimeLog(sawText ? L"Pi turn settled with text" : L"Pi turn settled without text");
+            // DoneCallback payload is an error channel for the Native UI. Empty means Pi succeeded,
+            // including successful tool-only turns that intentionally produced no assistant text.
+            if (onDone) onDone(L"");
+        }
     } else {
-        AppendRuntimeLog(L"Pi turn ended without agent_end");
+        AppendRuntimeLog(L"Pi turn ended without agent_settled");
         if (onDone) onDone(L"Pi turn 未正常结束");
     }
     busy_.store(false);

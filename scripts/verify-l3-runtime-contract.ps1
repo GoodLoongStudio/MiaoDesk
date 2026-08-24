@@ -5,6 +5,10 @@ $root = Split-Path -Parent $PSScriptRoot
 $paths = @{
     L3 = Join-Path $root 'src/native/src/L3CliWindow.cpp'
     Pi = Join-Path $root 'src/native/src/PiRuntime.cpp'
+    PiTools = Join-Path $root 'src/native/src/PiNativeToolsExtension.cpp'
+    NativeToolsHeader = Join-Path $root 'src/native/include/turingdesk/NativeTools.h'
+    NativeToolIsolation = Join-Path $root 'src/native/src/NativeToolIsolation.cpp'
+    Main = Join-Path $root 'src/native/src/main.cpp'
     Harness = Join-Path $root 'src/native/src/HarnessProcessManager.cpp'
     CMake = Join-Path $root 'src/native/CMakeLists.txt'
     Product = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
@@ -46,6 +50,10 @@ foreach ($relative in $forbiddenPaths) {
 
 $l3 = Get-Content $paths.L3 -Raw
 $pi = Get-Content $paths.Pi -Raw
+$piTools = Get-Content $paths.PiTools -Raw
+$nativeToolsHeader = Get-Content $paths.NativeToolsHeader -Raw
+$nativeToolIsolation = Get-Content $paths.NativeToolIsolation -Raw
+$main = Get-Content $paths.Main -Raw
 $harness = Get-Content $paths.Harness -Raw
 $cmake = Get-Content $paths.CMake -Raw
 $product = Get-Content $paths.Product -Raw
@@ -74,8 +82,8 @@ if ($l3.Contains('ActiveRuntime::Codex') -or $l3.Contains('CodexRuntime')) {
     throw 'Architecture regression: retired Codex runtime returned to L3 UI.'
 }
 
-# PiRuntime and TuringDesk product tools must be part of the ordinary binary.
-foreach ($marker in @('src/PiRuntime.cpp', 'src/NativeTools.cpp')) {
+# PiRuntime, Pi extension bridge and TuringDesk product tools must be part of the ordinary binary.
+foreach ($marker in @('src/PiRuntime.cpp', 'src/PiNativeToolsExtension.cpp', 'src/NativeTools.cpp')) {
     if (-not $cmake.Contains($marker)) {
         throw "TuringDesk build graph marker missing: $marker"
     }
@@ -118,6 +126,46 @@ if ($pi.Contains('return SearchExecutable(L"node.exe")')) {
     throw 'Pi Runtime must not fall back to a system Node installation.'
 }
 
+# TuringDesk product-specific tools are loaded through a Pi extension and isolated native worker.
+foreach ($marker in @(
+    'pi.registerTool({',
+    'settings_open',
+    'wallpaper_create_web_package',
+    'wallpaper_validate_package',
+    'pi.setActiveTools',
+    'TURINGDESK_NATIVE_TOOL_HOST',
+    '--native-tool-worker'
+)) {
+    if (-not $piTools.Contains($marker)) {
+        throw "Pi native tools extension marker missing: $marker"
+    }
+}
+foreach ($marker in @('ppt_create', 'file_create', 'folder_list', 'file_open')) {
+    if ($nativeToolsHeader.Contains($marker)) {
+        throw "Generic C++ tool must not be exposed by the current NativeTools interface: $marker"
+    }
+    if ($main.Contains('tool == "' + $marker + '"')) {
+        throw "Generic C++ tool must not be allowed through the Pi native worker: $marker"
+    }
+}
+foreach ($marker in @(
+    'EnsurePiNativeToolsExtension',
+    'IsAllowedPiNativeTool',
+    'settings_open',
+    'wallpaper_create_web_package',
+    'wallpaper_validate_package'
+)) {
+    if (-not $main.Contains($marker)) {
+        throw "Pi native worker bootstrap/allowlist marker missing: $marker"
+    }
+}
+if (-not $nativeToolIsolation.Contains('RuntimeLogPath(L"pi-runtime.log")')) {
+    throw 'Native tool worker diagnostics must route to pi-runtime.log.'
+}
+if ($nativeToolIsolation.Contains('codex-runtime.log') -or $nativeToolsHeader.Contains('Codex')) {
+    throw 'Retired Codex native-tool wording/log routing returned.'
+}
+
 # The ARM64 real E2E must wait for the session-level settled event, not low-level agent_end.
 if (-not $arm.Contains('msg.type === "agent_settled"')) {
     throw 'ARM64 Pi E2E must wait for agent_settled before validating tool results.'
@@ -149,4 +197,4 @@ foreach ($doc in @($product, $native, $contract)) {
     }
 }
 
-Write-Host 'L3 runtime contract OK: Pi Agent primary, provider-neutral API routing, settled RPC turns, self-contained Node, Direct API fallback only.'
+Write-Host 'L3 runtime contract OK: Pi primary, provider-neutral routing, settled RPC turns, self-contained Node, Pi native product tools, Direct API fallback only.'

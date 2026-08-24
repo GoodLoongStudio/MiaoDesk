@@ -136,21 +136,21 @@ bool ShouldOfferRetry(const std::wstring& rawText) {
 std::wstring ClassifyTransportFailure(std::wstring text) {
     if (text.empty()) return text;
     if (text.find(L"WinHTTP 错误 12002") != std::wstring::npos || ContainsHttpStatus(text, 408) || ContainsHttpStatus(text, 504))
-        return L"AI 请求超时。模型服务在限定时间内没有完成响应；可输入 /retry 重试。";
+        return L"图灵 AI 请求超时。模型服务在限定时间内没有完成响应；可输入 /retry 重试。";
     if (text.find(L"WinHTTP 错误 12007") != std::wstring::npos)
-        return L"AI 无法解析模型服务地址（DNS）。请检查 Base URL 或网络连接，可输入 /retry 重试。";
+        return L"图灵 AI 无法解析模型服务地址（DNS）。请检查 API 地址或网络连接，可输入 /retry 重试。";
     if (text.find(L"WinHTTP 错误 12029") != std::wstring::npos ||
         text.find(L"WinHTTP 错误 12030") != std::wstring::npos ||
         text.find(L"WinHTTP 错误 12031") != std::wstring::npos)
-        return L"AI 无法连接模型服务，或连接被服务端中断。请检查网络/服务状态，可输入 /retry 重试。";
+        return L"图灵 AI 无法连接模型服务，或连接被服务端中断。请检查网络/服务状态，可输入 /retry 重试。";
     if (text.find(L"WinHTTP 错误 12175") != std::wstring::npos)
-        return L"AI HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
+        return L"图灵 AI HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
     if (ContainsHttpStatus(text, 401) || ContainsHttpStatus(text, 403))
-        return L"AI 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限。";
+        return L"图灵 AI 模型鉴权失败（HTTP 401/403）。请在 AI 设置中检查 API Key 和权限。";
     if (ContainsHttpStatus(text, 429))
-        return L"AI 模型服务限流（HTTP 429）。稍后可输入 /retry 重试。";
+        return L"图灵 AI 模型服务限流（HTTP 429）。稍后可输入 /retry 重试。";
     if (ContainsHttpStatus(text, 500) || ContainsHttpStatus(text, 502) || ContainsHttpStatus(text, 503))
-        return L"AI 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试。";
+        return L"图灵 AI 模型服务暂时不可用（HTTP 5xx）。稍后可输入 /retry 重试。";
     return text;
 }
 
@@ -178,7 +178,7 @@ void RenderTranscript(CliState& state, const std::wstring& tail = {}) {
 
 void AppendCompleted(CliState& state, const std::wstring& user, const std::wstring& assistant) {
     state.transcriptPrefix += L"> " + user + L"\r\n";
-    state.transcriptPrefix += L"AI  " + (assistant.empty() ? L"[完成]" : assistant) + L"\r\n\r\n";
+    state.transcriptPrefix += L"图灵  " + (assistant.empty() ? L"[完成]" : assistant) + L"\r\n\r\n";
     RenderTranscript(state);
 }
 
@@ -188,14 +188,6 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
     case ActiveRuntime::DirectModel: return L"Direct Model Runtime";
     }
     return L"Unknown Runtime";
-}
-
-std::wstring RuntimeExecutionLabel(ActiveRuntime runtime) {
-    switch (runtime) {
-    case ActiveRuntime::Pi: return L"主路由 · Provider API";
-    case ActiveRuntime::DirectModel: return L"Fallback · SSE 流式";
-    }
-    return L"";
 }
 
 std::wstring RuntimeStatusText(CliState& state) {
@@ -210,6 +202,24 @@ std::wstring RuntimeStatusText(CliState& state) {
     text += L"\r\n路由日志：" + L3RouteLogPath().wstring();
     text += L"\r\nPi 详情：" + PiDetailLogPath().wstring();
     return text;
+}
+
+std::wstring UserFacingLocalReply(const std::wstring& command, const CliState& state, const std::wstring& raw) {
+    if (command == L"/status") {
+        const auto& config = state.agent->Config();
+        std::wstring text = L"图灵智能桌面 AI";
+        text += L" · Provider=" + (config.providerId.empty() ? std::wstring(L"未识别") : config.providerId);
+        text += L" · Model=" + (config.model.empty() ? std::wstring(L"未配置") : config.model);
+        text += L" · API Key=" + std::wstring(state.agent->HasStoredApiKey() ? L"已配置" : L"未配置");
+        return text;
+    }
+    if (command == L"/help") {
+        return L"图灵智能桌面命令：/status、/time、/apps <关键词>、/files <关键词>、/open <应用名>、/open-file <文件名>、/new。模型和 API Key 请使用右上角 AI 设置。";
+    }
+    if (command == L"/new" || command == L"/new-chat" || command == L"新对话") {
+        return L"已开始新的图灵智能桌面对话。";
+    }
+    return raw;
 }
 
 void FinishTurn(CliState& state, const std::wstring& rawDone, bool classifyFailure) {
@@ -243,7 +253,7 @@ void StartDirectFallback(CliState& state, const std::wstring& piError) {
                    L"; provider=" + state.agent->Config().providerId +
                    L"; model=" + state.agent->Config().model +
                    L"; endpoint=" + SafeEndpoint(state.agent->CurrentApiUrl()));
-    state.transcriptPrefix += L"[Fallback] Pi Agent 失败，已切换 Direct API；原因已写入日志。\r\nAI  ";
+    state.transcriptPrefix += L"[图灵 AI 正在恢复连接…]\r\n图灵  ";
     RenderTranscript(state, L"…");
 
     auto onDelta = [hwnd, generation](std::wstring delta) {
@@ -304,13 +314,13 @@ void SendPrompt(CliState& state) {
                 state.pi->ResetSession();
                 AppendRouteLog(L"route: Pi session reset by user");
             }
-            AppendCompleted(state, typedPrompt, localReply);
+            AppendCompleted(state, typedPrompt, UserFacingLocalReply(lower, state, localReply));
             return;
         }
     }
 
     if (!state.agent->HasApiKey()) {
-        AppendCompleted(state, typedPrompt, L"AI 未配置。点击右上角“AI 设置”填写 API 地址和 Key。");
+        AppendCompleted(state, typedPrompt, L"图灵 AI 尚未配置。点击右上角“AI 设置”填写 API 地址和 Key。");
         return;
     }
 
@@ -318,8 +328,7 @@ void SendPrompt(CliState& state) {
     state.activePrompt = actualPrompt;
     state.activeRuntime = ActiveRuntime::Pi;
     state.transcriptPrefix += L"> " + typedPrompt + (retry ? L"  [重试上一请求]" : L"") + L"\r\n";
-    state.transcriptPrefix += L"[Runtime] " + RuntimeName(ActiveRuntime::Pi) + L" · " + RuntimeExecutionLabel(ActiveRuntime::Pi) + L"\r\n";
-    state.transcriptPrefix += L"AI  ";
+    state.transcriptPrefix += L"图灵  ";
     state.streaming.clear();
     state.busy = true;
     state.generation = gCliGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -378,8 +387,7 @@ LRESULT CALLBACK CliProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 AppendRouteLog(L"route: model settings changed; provider=" + state->agent->Config().providerId +
                                L"; model=" + state->agent->Config().model +
                                L"; endpoint=" + SafeEndpoint(state->agent->CurrentApiUrl()));
-                state->transcriptPrefix += L"[配置] " + state->agent->Config().model + L" 已保存\r\n";
-                state->transcriptPrefix += L"[Runtime] " + RuntimeStatusText(*state) + L"\r\n\r\n";
+                state->transcriptPrefix += L"[配置] AI 设置已保存 · " + state->agent->Config().model + L"\r\n\r\n";
                 RenderTranscript(*state);
             }
             SetFocus(state->input);
@@ -484,7 +492,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     const int x = ownerRect.left;
     const int y = ownerRect.top;
 
-    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面 · Pi Agent",
+    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW, kCliClass, L"图灵智能桌面",
                                   WS_POPUP | WS_BORDER,
                                   x, y, width, height, owner, nullptr, instance, state);
     if (!window) {
@@ -494,7 +502,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         return false;
     }
 
-    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面 · Pi Agent", WS_CHILD | WS_VISIBLE,
+    HWND title = CreateWindowExW(0, L"STATIC", L"图灵智能桌面", WS_CHILD | WS_VISIBLE,
                                  16, 16, 360, 24, window, nullptr, instance, nullptr);
     state->settings = CreateWindowExW(0, L"BUTTON", L"AI 设置", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                      width - 112, 14, 96, 28, window,
@@ -524,7 +532,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->transcript, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
     SendMessageW(state->input, WM_SETFONT, reinterpret_cast<WPARAM>(state->monoFont), TRUE);
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE,
-                 reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · /runtime 查看运行时 · Esc 返回"));
+                 reinterpret_cast<LPARAM>(L"继续对话… Enter 发送 · /retry 重试 · Esc 返回"));
 
     AppendRouteLog(L"window: AI opened; primary=Pi Agent -> Provider API; fallback=Direct API");
     ShowWindow(window, SW_SHOWNORMAL);

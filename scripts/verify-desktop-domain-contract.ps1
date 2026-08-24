@@ -17,6 +17,8 @@ $wallpaperHeader = Require-File 'src/native/include/turingdesk/WallpaperService.
 $wallpaperSource = Require-File 'src/native/src/WallpaperService.cpp'
 $widgetHeader = Require-File 'src/native/include/turingdesk/WidgetService.h'
 $widgetSource = Require-File 'src/native/src/WidgetService.cpp'
+$performanceHeader = Require-File 'src/native/include/turingdesk/PerformanceService.h'
+$performanceSource = Require-File 'src/native/src/PerformanceService.cpp'
 $widgetControllerHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetController.h'
 $widgetControllerSource = Require-File 'src/native/src/DesktopWidgetController.cpp'
 $toolAdapter = Require-File 'src/native/src/DesktopWidgetTools.cpp'
@@ -27,6 +29,8 @@ $header = Get-Content -LiteralPath $serviceHeader -Raw
 $source = Get-Content -LiteralPath $serviceSource -Raw
 $wallpaper = Get-Content -LiteralPath $wallpaperSource -Raw
 $widget = Get-Content -LiteralPath $widgetSource -Raw
+$performanceHeaderText = Get-Content -LiteralPath $performanceHeader -Raw
+$performance = Get-Content -LiteralPath $performanceSource -Raw
 $widgetControllerHeaderText = Get-Content -LiteralPath $widgetControllerHeader -Raw
 $widgetController = Get-Content -LiteralPath $widgetControllerSource -Raw
 $adapter = Get-Content -LiteralPath $toolAdapter -Raw
@@ -52,6 +56,12 @@ foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyWebP
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'DesktopWidgetStore store')) {
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
+foreach ($marker in @('PerformanceService', 'WallpaperPerformancePolicy.h', 'GetConfig', 'SaveConfig')) {
+    if (-not $performanceHeaderText.Contains($marker)) { throw "Performance service header missing marker: $marker" }
+}
+foreach ($marker in @('PerformanceService::GetConfig', 'PerformanceService::SaveConfig', 'WritePrivateProfileStringW', 'FullscreenAction', 'IdleThresholdSeconds')) {
+    if (-not $performance.Contains($marker)) { throw "Performance domain service missing ownership marker: $marker" }
+}
 
 foreach ($marker in @('DesktopWidgetController', 'DesktopControlService.h', 'DesktopControlService service_')) {
     if (-not $widgetControllerHeaderText.Contains($marker)) { throw "Widget UI controller header missing marker: $marker" }
@@ -73,8 +83,10 @@ foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService
     $count = ([regex]::Matches($cmake, [regex]::Escape($sourceName))).Count
     if ($count -lt 2) { throw "$sourceName must be linked into both TuringDesk and TuringDeskWallpaper." }
 }
-if (([regex]::Matches($cmake, [regex]::Escape('src/DesktopWidgetController.cpp'))).Count -lt 1) {
-    throw 'DesktopWidgetController must be linked into TuringDeskWallpaper.'
+foreach ($wallpaperOnlySource in @('src/DesktopWidgetController.cpp', 'src/AutomationService.cpp', 'src/PerformanceService.cpp')) {
+    if (([regex]::Matches($cmake, [regex]::Escape($wallpaperOnlySource))).Count -lt 1) {
+        throw "$wallpaperOnlySource must be linked into TuringDeskWallpaper."
+    }
 }
 
 foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'DesktopWidgetTools.cpp', 'WallpaperLibraryWindowV2.cpp')) {

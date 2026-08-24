@@ -84,5 +84,11 @@ foreach ($workflowText in @($armWorkflowText, $x64WorkflowText)) {
         if (-not $workflowText.Contains($required)) { throw "Windows workflow updater smoke marker missing: $required" }
     }
 }
+foreach ($required in @('Verify checkout matches workflow commit', 'git rev-parse HEAD', '$env:GITHUB_SHA')) {
+    if (-not $armWorkflowText.Contains($required)) { throw "ARM64 exact-SHA workflow marker missing: $required" }
+}
+foreach ($forbidden in @('workflow_run:', 'ref: main')) {
+    if ($armWorkflowText.Contains($forbidden)) { throw "ARM64 workflow may drift away from the triggering commit: $forbidden" }
+}
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, preserve automatic rollback, run local deployment preflight, and execute the one-click bootstrap in Windows CI.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, preserve automatic rollback, run local deployment preflight, execute the one-click bootstrap in Windows CI, and pin ARM64 artifacts to the triggering SHA.' -ForegroundColor Green

@@ -27,6 +27,7 @@ namespace {
 
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWallpaperSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
+constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
@@ -225,19 +226,74 @@ void WriteWidgetDiagnostics(const std::wstring& value) {
     WritePrivateProfileStringW(L"Diagnostics", L"WidgetRuntime", value.c_str(), path.c_str());
 }
 
-void KeepWallpaperWebBelowWidgets(HWND host) {
-    if (!host || !IsWindow(host)) return;
-    EnumChildWindows(host, [](HWND child, LPARAM) -> BOOL {
-        wchar_t className[128]{};
-        wchar_t title[256]{};
-        GetClassNameW(child, className, static_cast<int>(std::size(className)));
-        GetWindowTextW(child, title, static_cast<int>(std::size(title)));
-        if (_wcsicmp(className, kWebHostClass) == 0 && wcsncmp(title, L"widget-", 7) != 0) {
-            SetWindowPos(child, HWND_BOTTOM, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        }
-        return TRUE;
-    }, 0);
+HWND SurfaceParentForHost(HWND host) {
+    if (!host || !IsWindow(host)) return nullptr;
+    const HWND parent = GetParent(host);
+    return parent && IsWindow(parent) ? parent : nullptr;
+}
+
+RECT MapRegionToParent(HWND host, HWND parent, RECT region) {
+    if (!host || !parent || host == parent) return region;
+    POINT corners[2] = {{region.left, region.top}, {region.right, region.bottom}};
+    if (MapWindowPoints(host, parent, corners, 2) == 0 && GetLastError() != ERROR_SUCCESS) return region;
+    return RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+}
+
+std::vector<WebWallpaperRequest> MapRequestsToParent(HWND host, HWND parent,
+                                                     const std::vector<WebWallpaperRequest>& requests) {
+    std::vector<WebWallpaperRequest> mapped = requests;
+    for (auto& request : mapped) request.region = MapRegionToParent(host, parent, request.region);
+    return mapped;
+}
+
+bool IsWebSurface(HWND window, bool* widget = nullptr) {
+    if (!window || !IsWindow(window)) return false;
+    wchar_t className[128]{};
+    if (!GetClassNameW(window, className, static_cast<int>(std::size(className))) ||
+        _wcsicmp(className, kWebHostClass) != 0) return false;
+    wchar_t title[256]{};
+    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
+    const bool isWidget = wcsncmp(title, L"widget-", 7) == 0;
+    if (widget) *widget = isWidget;
+    return true;
+}
+
+HWND DesktopAnchorAboveHost(HWND host, HWND parent) {
+    if (!host || !parent || GetParent(host) != parent) return nullptr;
+    for (HWND current = GetWindow(host, GW_HWNDPREV); current; current = GetWindow(current, GW_HWNDPREV)) {
+        if (GetParent(current) != parent) continue;
+        if (!IsWebSurface(current)) return current;
+    }
+    return nullptr;
+}
+
+void MaintainDesktopSurfaceZOrder(HWND host, HWND parent) {
+    if (!host || !parent || !IsWindow(host) || !IsWindow(parent) || GetParent(host) != parent) return;
+    std::vector<HWND> widgetWindows;
+    std::vector<HWND> wallpaperWindows;
+    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        bool widget = false;
+        if (!IsWebSurface(child, &widget)) continue;
+        (widget ? widgetWindows : wallpaperWindows).push_back(child);
+    }
+    if (widgetWindows.empty() && wallpaperWindows.empty()) return;
+
+    HWND insertAfter = DesktopAnchorAboveHost(host, parent);
+    if (!insertAfter) insertAfter = HWND_TOP;
+    for (HWND widget : widgetWindows) {
+        if (!IsWindow(widget)) continue;
+        SetWindowPos(widget, insertAfter, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+        insertAfter = widget;
+    }
+    for (HWND wallpaper : wallpaperWindows) {
+        if (!IsWindow(wallpaper)) continue;
+        SetWindowPos(wallpaper, insertAfter, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+        insertAfter = wallpaper;
+    }
+    SetWindowPos(host, insertAfter, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 void EnsureIndependentHostBounds(HWND host) {
@@ -293,6 +349,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         WebWallpaperProcessSet widgets;
         WallpaperPerformancePolicy performance;
         HWND host = nullptr;
+        HWND surfaceParent = nullptr;
         std::vector<WebWallpaperRequest> activeRequests;
         std::vector<WebWallpaperRequest> activeWidgetRequests;
         std::wstring activeWidgetFingerprint;
@@ -309,21 +366,24 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         };
 
         auto startActiveRequests = [&](ULONGLONG now, bool recovery) {
-            if (state.layout == LayoutMode::Independent && !activeRequests.empty())
-                EnsureIndependentHostBounds(host);
             web.Stop();
             if (activeRequests.empty()) {
                 resetRecovery();
                 WriteDiagnostics(L"未启用 Web 壁纸");
                 return true;
             }
+            if (!surfaceParent || !IsWindow(surfaceParent)) {
+                WriteDiagnostics(L"Web runtime 找不到可用桌面 Surface parent");
+                return false;
+            }
             if (recovery) ++recoveryAttempts;
-            if (!web.Start(host, activeRequests)) {
+            if (!web.Start(surfaceParent, activeRequests)) {
                 nextRecovery = now + kRecoveryCooldownMs;
                 healthySince = 0;
                 WriteDiagnostics(L"Web runtime 启动失败：" + web.LastErrorText());
                 return false;
             }
+            MaintainDesktopSurfaceZOrder(host, surfaceParent);
             nextRecovery = 0;
             healthySince = now;
             WriteDiagnostics(web.DiagnosticsText());
@@ -336,34 +396,44 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 WriteWidgetDiagnostics(L"未启用桌面小组件");
                 return true;
             }
-            if (!widgets.Start(host, activeWidgetRequests)) {
+            if (!surfaceParent || !IsWindow(surfaceParent)) {
+                WriteWidgetDiagnostics(L"Widget runtime 找不到可用桌面 Surface parent");
+                return false;
+            }
+            if (!widgets.Start(surfaceParent, activeWidgetRequests)) {
                 WriteWidgetDiagnostics(L"Widget runtime 启动失败：" + widgets.LastErrorText());
                 return false;
             }
-            KeepWallpaperWebBelowWidgets(host);
+            MaintainDesktopSurfaceZOrder(host, surfaceParent);
             WriteWidgetDiagnostics(widgets.DiagnosticsText());
             return true;
         };
 
         while (!stopToken.stop_requested()) {
             HWND currentHost = FindWindowW(kWallpaperHostClass, nullptr);
-            if (currentHost != host) {
+            HWND currentSurfaceParent = SurfaceParentForHost(currentHost);
+            if (currentHost != host || currentSurfaceParent != surfaceParent) {
                 widgets.Stop();
                 web.Stop();
                 activeRequests.clear();
                 activeWidgetRequests.clear();
                 activeWidgetFingerprint.clear();
                 host = currentHost;
+                surfaceParent = currentSurfaceParent;
                 nextRefresh = 0;
                 resetRecovery();
             }
 
             const ULONGLONG now = GetTickCount64();
-            if (host && IsWindow(host) && now >= nextRefresh) {
+            if (host && surfaceParent && IsWindow(host) && IsWindow(surfaceParent) && now >= nextRefresh) {
                 state = LoadRuntimeState(WallpaperConfigPath());
-                const auto desired = DesiredRequests(host, state);
+                if (state.layout == LayoutMode::Independent) EnsureIndependentHostBounds(host);
+
+                const auto desiredInHost = DesiredRequests(host, state);
                 std::wstring widgetFingerprint;
-                const auto desiredWidgets = DesiredWidgetRequests(host, state, widgetFingerprint);
+                const auto desiredWidgetsInHost = DesiredWidgetRequests(host, state, widgetFingerprint);
+                const auto desired = MapRequestsToParent(host, surfaceParent, desiredInHost);
+                const auto desiredWidgets = MapRequestsToParent(host, surfaceParent, desiredWidgetsInHost);
                 const bool webChanged = !SameRequests(desired, activeRequests);
                 const bool widgetChanged = !SameRequests(desiredWidgets, activeWidgetRequests) ||
                                            widgetFingerprint != activeWidgetFingerprint;
@@ -372,8 +442,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     activeRequests = desired;
                     resetRecovery();
                     startActiveRequests(now, false);
-                } else if (state.layout == LayoutMode::Independent && !activeRequests.empty()) {
-                    EnsureIndependentHostBounds(host);
                 }
 
                 if (widgetChanged || (webChanged && !desiredWidgets.empty())) {
@@ -381,10 +449,11 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     activeWidgetFingerprint = std::move(widgetFingerprint);
                     startWidgets();
                 }
+                MaintainDesktopSurfaceZOrder(host, surfaceParent);
                 nextRefresh = now + kStateRefreshMs;
             }
 
-            if (host && IsWindow(host)) {
+            if (host && surfaceParent && IsWindow(host) && IsWindow(surfaceParent)) {
                 if (!activeRequests.empty()) {
                     web.Tick();
                     if (!web.Active()) {
@@ -413,19 +482,20 @@ struct WallpaperWebRuntimeCoordinator::Impl {
 
                 if (!activeWidgetRequests.empty()) {
                     widgets.Tick();
-                    KeepWallpaperWebBelowWidgets(host);
                     const auto error = widgets.LastErrorText();
                     WriteWidgetDiagnostics(error.empty() ? widgets.DiagnosticsText() : L"运行异常：" + error);
                 }
 
                 if (!activeRequests.empty() || !activeWidgetRequests.empty()) {
-                    const HWND settings = FindWindowW(kWallpaperSettingsClass, nullptr);
+                    HWND settings = FindWindowW(kDesktopLibraryClass, nullptr);
+                    if (!settings) settings = FindWindowW(kWallpaperSettingsClass, nullptr);
                     const auto snapshot = performance.Evaluate(host, settings, state.performance);
                     const bool pause = !IsWindowVisible(host) ||
                         snapshot.action == PerformanceAction::Pause || snapshot.action == PerformanceAction::Stop;
                     web.SetPaused(pause);
                     widgets.SetPaused(pause);
                 }
+                MaintainDesktopSurfaceZOrder(host, surfaceParent);
             }
 
             std::this_thread::sleep_for(kTickInterval);

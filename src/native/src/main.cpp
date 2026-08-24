@@ -103,11 +103,13 @@ void EnsureCodexPackagePath() {
     const auto module = ModuleDirectory();
     if (module.empty()) return;
     const auto codexRoot = module / L"Codex";
+    const auto bundledNode = module / L"Runtime" / L"Node";
     const fs::path entries[] = {
         codexRoot,
         codexRoot / L"bin",
         codexRoot / L"codex-path",
         codexRoot / L"codex-resources",
+        bundledNode,
     };
 
     std::wstring path = ReadEnvironmentValue(L"PATH");
@@ -127,12 +129,17 @@ bool HasCodexPackagePathIfInstalled() {
     const auto module = ModuleDirectory();
     if (module.empty()) return true;
     const auto codexRoot = module / L"Codex";
+    const auto bundledNode = module / L"Runtime" / L"Node";
     std::error_code ec;
-    if (!fs::exists(codexRoot, ec)) return true;
     const auto path = ReadEnvironmentValue(L"PATH");
-    return PathContainsDirectory(path, codexRoot) &&
-           PathContainsDirectory(path, codexRoot / L"codex-path") &&
-           PathContainsDirectory(path, codexRoot / L"codex-resources");
+    if (fs::exists(codexRoot, ec)) {
+        if (!PathContainsDirectory(path, codexRoot) ||
+            !PathContainsDirectory(path, codexRoot / L"codex-path") ||
+            !PathContainsDirectory(path, codexRoot / L"codex-resources")) return false;
+    }
+    ec.clear();
+    if (fs::exists(bundledNode, ec) && !PathContainsDirectory(path, bundledNode)) return false;
+    return true;
 }
 
 bool RunNativeSelfTest() {

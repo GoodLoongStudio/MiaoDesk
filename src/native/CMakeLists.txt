@@ -67,6 +67,7 @@ add_executable(TuringDeskWallpaper WIN32
     src/AutomationService.cpp
     src/AutomationUiAdapter.cpp
     src/PerformanceService.cpp
+    src/PerformanceUiAdapter.cpp
     src/WallpaperMonitorLayout.cpp
     src/WallpaperMonitorAssignments.cpp
     src/WallpaperIndependentLayout.cpp

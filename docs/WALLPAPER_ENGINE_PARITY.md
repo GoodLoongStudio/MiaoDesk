@@ -42,15 +42,47 @@ Already present on `main`:
 - Image Cover / Contain / Stretch / Center / Tile with focal alignment.
 - Video Cover / Contain / Stretch / Center via MFPlay source crop/aspect policy.
 - Adaptive performance policy with configurable FPS, fullscreen/maximized actions, Remote Desktop, battery saver, lock and idle handling.
+- TuringDesk-owned UI windows are excluded from fullscreen/maximized wallpaper throttling decisions.
 - Video loop, mute/volume, playback rate, seek/restart and bounded recovery synchronized across monitor surfaces.
 - Persistent local wallpaper library with import, generated thumbnails, search, favorites, recent history and optional managed copies.
 - Persistent Playlist / Schedule / Profile automation.
 - Persistent per-executable wallpaper performance overrides.
 - Isolated WebView2 Web wallpaper runtime with navigation and permission restrictions.
+- Web wallpaper and Widget WebView2 surfaces are mounted as desktop siblings of the native layered wallpaper host rather than children of the layered HWND.
 - `.tdwall` Web package creation and validation.
 - Pi Agent can create validated Web `.tdwall` packages.
 - Desktop widget persistence/runtime foundation: managed HTML widgets, normalized monitor-relative geometry, WebView2 overlay surfaces and AI CRUD interfaces.
+- Desktop widget metadata is persisted through a Unicode-safe manifest, with migration of legacy ANSI manifests.
+- A first Widgets page is available with list/create clock/enable-disable/delete/refresh operations.
+- Desktop settings are constrained to the Windows monitor work area so the taskbar remains unobstructed.
 - Pi Agent desktop control interfaces for reading desktop state, applying validated Web `.tdwall` packages, and creating/updating/removing/listing widgets.
+
+## Baseline parity definition
+
+Before calling the wallpaper subsystem "Wallpaper Engine-class" for normal daily use, the following user flow must be complete without requiring the editor:
+
+```text
+Library
+  -> real thumbnail / current-use badge
+  -> select wallpaper
+  -> live preview
+  -> inspect wallpaper properties
+  -> choose monitor/layout
+  -> apply
+  -> playlist / schedule / per-app behavior
+  -> reliable resume / recovery
+```
+
+Baseline parity also includes:
+
+- image / video / Web / Scene playback;
+- per-monitor and multi-monitor layouts;
+- fullscreen/maximized/per-app performance behavior;
+- playlists, schedules and profiles;
+- screensaver integration;
+- application rules that can react to foreground/running/fullscreen/maximized and playing-audio conditions;
+- diagnostics that distinguish "configured", "process started", "surface visible" and "rendering healthy";
+- widgets as an additional TuringDesk layer, not as a substitute for wallpaper parity.
 
 ## Delivery order
 
@@ -58,8 +90,12 @@ Already present on `main`:
 
 - [x] Multi-monitor topology and layout engine.
 - [x] Performance / playback rules.
-- [x] Persistent desktop widget store and Web widget overlay runtime.
+- [x] Persistent desktop widget store and Web widget overlay runtime foundation.
+- [x] Separate Web/Widget WebView2 surfaces from the layered native wallpaper HWND.
+- [x] Unicode-safe Widget persistence and legacy ANSI migration.
 - [x] Initial AI desktop control surface: state read, Web wallpaper apply, Widget CRUD.
+- [x] Keep TuringDesk settings/search UI from accidentally pausing its own wallpaper runtime.
+- [x] Keep Settings Center inside the Windows work area above the taskbar.
 - [ ] Complete scaling/alignment edge cases, including bounded video tile behavior.
 - [ ] Complete video decoder capability diagnostics.
 - [ ] Versioned Desktop Control API with atomic mutation, validation, undo/redo and change events.
@@ -69,11 +105,18 @@ Already present on `main`:
 - [x] Wallpaper library backend.
 - [x] Per-monitor independent wallpaper assignment.
 - [x] Playlists, schedules and profiles.
-- [x] Application rules.
+- [x] Application rules foundation.
+- [x] Basic Widgets page: list, create clock, enable/disable, delete and refresh.
 - [ ] Rebuild the Installed page as real thumbnail cards with current-use badges, type chips and large previews.
-- [ ] Add live preview and property inspector before applying a wallpaper.
-- [ ] Add a first-class Widgets page with cards, enable/disable, monitor target, move/resize and delete.
-- [ ] Complete Web wallpaper/backend isolation, navigation restrictions and crash recovery.
+- [ ] Add live preview before applying a wallpaper.
+- [ ] Add a typed wallpaper property inspector for Image / Video / Web / Scene.
+- [ ] Add monitor preview cards and make monitor names user-facing instead of exposing raw stable device IDs.
+- [ ] Complete Widgets page with cards, live preview, monitor target, drag/move, resize and property inspector.
+- [ ] Surface Widget runtime health in the UI: configured / process / HWND / WebView ready / visible / last error.
+- [ ] Complete Web wallpaper isolation, navigation restrictions, crash recovery and visible-surface health checks.
+- [ ] Add Playing Audio as an application-rule trigger.
+- [ ] Add application-rule actions for loading Wallpaper / Playlist / Profile in addition to performance actions.
+- [ ] Add Windows screensaver integration for current Wallpaper / Playlist / Profile.
 - [ ] Match the useful daily-use settings depth of Wallpaper Engine: playback, monitor, application, performance and general behavior.
 
 ### P2 — creation and editing
@@ -141,3 +184,4 @@ A roadmap item is not considered complete until:
 5. Native self-test/CI coverage is updated when the behavior is testable without an interactive desktop.
 6. A feature exposed to AI is also representable in typed state and can be validated before mutation.
 7. User-facing functionality remains operable without AI.
+8. UI wording distinguishes state persistence from actual runtime visibility; "enabled" alone is not considered proof that a Web/Widget surface is visible.

@@ -23,6 +23,8 @@ $automationUiAdapterHeader = Require-File 'src/native/include/turingdesk/Automat
 $automationUiAdapterSource = Require-File 'src/native/src/AutomationUiAdapter.cpp'
 $performanceHeader = Require-File 'src/native/include/turingdesk/PerformanceService.h'
 $performanceSource = Require-File 'src/native/src/PerformanceService.cpp'
+$performanceUiAdapterHeader = Require-File 'src/native/include/turingdesk/PerformanceUiAdapter.h'
+$performanceUiAdapterSource = Require-File 'src/native/src/PerformanceUiAdapter.cpp'
 $widgetControllerHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetController.h'
 $widgetControllerSource = Require-File 'src/native/src/DesktopWidgetController.cpp'
 $widgetUiAdapterHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetUiAdapter.h'
@@ -42,6 +44,8 @@ $automationUiAdapterHeaderText = Get-Content -LiteralPath $automationUiAdapterHe
 $automationUiAdapter = Get-Content -LiteralPath $automationUiAdapterSource -Raw
 $performanceHeaderText = Get-Content -LiteralPath $performanceHeader -Raw
 $performance = Get-Content -LiteralPath $performanceSource -Raw
+$performanceUiAdapterHeaderText = Get-Content -LiteralPath $performanceUiAdapterHeader -Raw
+$performanceUiAdapter = Get-Content -LiteralPath $performanceUiAdapterSource -Raw
 $widgetControllerHeaderText = Get-Content -LiteralPath $widgetControllerHeader -Raw
 $widgetController = Get-Content -LiteralPath $widgetControllerSource -Raw
 $widgetUiAdapterHeaderText = Get-Content -LiteralPath $widgetUiAdapterHeader -Raw
@@ -93,6 +97,15 @@ foreach ($marker in @('PerformanceService', 'WallpaperPerformancePolicy.h', 'Get
 foreach ($marker in @('PerformanceService::GetConfig', 'PerformanceService::SaveConfig', 'WritePrivateProfileStringW', 'FullscreenAction', 'IdleThresholdSeconds')) {
     if (-not $performance.Contains($marker)) { throw "Performance domain service missing ownership marker: $marker" }
 }
+foreach ($marker in @('PerformanceUiAdapter', 'PerformanceService.h', 'PerformanceService service_')) {
+    if (-not $performanceUiAdapterHeaderText.Contains($marker)) { throw "Performance UI adapter header missing marker: $marker" }
+}
+foreach ($marker in @('service_.GetConfig', 'service_.SaveConfig')) {
+    if (-not $performanceUiAdapter.Contains($marker)) { throw "Performance UI adapter is not routed through PerformanceService: $marker" }
+}
+foreach ($forbidden in @('WritePrivateProfileStringW', 'GetPrivateProfileStringW', 'GetPrivateProfileIntW')) {
+    if ($performanceUiAdapter.Contains($forbidden)) { throw "Performance UI adapter regained persistence ownership: $forbidden" }
+}
 
 foreach ($marker in @('DesktopWidgetController', 'DesktopControlService.h', 'DesktopControlService service_')) {
     if (-not $widgetControllerHeaderText.Contains($marker)) { throw "Widget UI controller header missing marker: $marker" }
@@ -119,7 +132,7 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
 if ($cmake.Contains('    src/WallpaperLibraryWindow.cpp')) {
     throw 'Production target must not compile legacy WallpaperLibraryWindow.cpp directly.'
 }
-foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp', 'src/AutomationUiAdapter.cpp')) {
+foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp', 'src/AutomationUiAdapter.cpp', 'src/PerformanceUiAdapter.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "Production UI routing source missing from CMake: $marker" }
 }
 
@@ -133,7 +146,7 @@ foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService
     $count = ([regex]::Matches($cmake, [regex]::Escape($sourceName))).Count
     if ($count -lt 2) { throw "$sourceName must be linked into both TuringDesk and TuringDeskWallpaper." }
 }
-foreach ($wallpaperOnlySource in @('src/DesktopWidgetController.cpp', 'src/DesktopWidgetUiAdapter.cpp', 'src/AutomationService.cpp', 'src/AutomationUiAdapter.cpp', 'src/PerformanceService.cpp')) {
+foreach ($wallpaperOnlySource in @('src/DesktopWidgetController.cpp', 'src/DesktopWidgetUiAdapter.cpp', 'src/AutomationService.cpp', 'src/AutomationUiAdapter.cpp', 'src/PerformanceService.cpp', 'src/PerformanceUiAdapter.cpp')) {
     if (([regex]::Matches($cmake, [regex]::Escape($wallpaperOnlySource))).Count -lt 1) {
         throw "$wallpaperOnlySource must be linked into TuringDeskWallpaper."
     }

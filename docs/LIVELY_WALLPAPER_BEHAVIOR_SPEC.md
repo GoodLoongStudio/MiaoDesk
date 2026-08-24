@@ -1,0 +1,350 @@
+# Lively wallpaper behavior study for TuringDesk
+
+Status: clean-room behavior study used before native C++ refactoring.
+Date: 2026-08-24
+Reference repository: `rocksdanister/lively`
+Reference branch: `core-separation`
+Reference revision studied: `c1036feb664960722e34bf4309042c247d6a909d`
+
+This document records behavior, Windows API expectations and failure/recovery contracts learned from Lively. It is intentionally not a source-code port. TuringDesk remains an independent C++23/MIT implementation.
+
+## 1. Source modules studied
+
+Primary behavior references:
+
+- `src/Lively/Lively/Core/WinDesktopCore.cs` — desktop shell discovery, WorkerW/Progman attachment, raised-desktop handling, per/span/duplicate wallpaper placement, WorkerW destruction recovery.
+- `src/Lively/Lively/Core/Display/DisplayManager.cs` — monitor enumeration, bounds/work-area refresh, virtual screen and display change behavior.
+- `src/Lively/Lively/Core/Suspend/Playback.cs` — fullscreen/foreground/system-state playback policy and per-display pause decisions.
+- `README.md` — user-facing capability contract for video/Web/application wallpapers, screensavers, automation, API and pause rules.
+
+Other modules are studied only as needed when a TuringDesk subsystem is implemented.
+
+## 2. Key architectural lesson
+
+The shell hierarchy is infrastructure, not renderer-specific behavior.
+
+Wrong model:
+
+```text
+Image renderer -> finds WorkerW
+Video renderer -> finds WorkerW again
+Web renderer   -> guesses a parent
+Widget runtime -> guesses z-order separately
+```
+
+Target model:
+
+```text
+DesktopShellHost
+  -> discovers one current desktop hierarchy
+  -> exposes validated attachment targets
+  -> attaches all TuringDesk desktop surfaces
+  -> repairs ordering after Explorer/WorkerW changes
+
+WallpaperSurfaceManager / WidgetSurfaceManager
+  -> render only
+```
+
+No renderer is allowed to know the `0x052C` Progman message directly.
+
+## 3. Windows desktop model
+
+### 3.1 Legacy WorkerW model
+
+Expected structure is conceptually:
+
+```text
+Top-level window containing SHELLDLL_DefView
+next WorkerW sibling -> wallpaper target
+Progman
+```
+
+Behavior contract:
+
+1. Ask Explorer to materialize the wallpaper layer.
+2. Enumerate top-level windows.
+3. Find the top-level window containing `SHELLDLL_DefView`.
+4. Find the WorkerW sibling following that window.
+5. Parent the wallpaper surface to that WorkerW.
+6. Map virtual-screen desktop coordinates into the selected parent client coordinates.
+7. Re-run discovery after Explorer or display topology changes.
+
+Do not cache WorkerW indefinitely.
+
+### 3.2 Windows 11 raised desktop
+
+Raised desktop is detected when `Progman` carries `WS_EX_NOREDIRECTIONBITMAP`.
+
+The shell model differs:
+
+```text
+Progman
+├─ SHELLDLL_DefView   # layered icon/text shell surface
+├─ custom TuringDesk surfaces
+└─ WorkerW            # Windows background layer
+```
+
+The compatible surface contract is:
+
+- custom render HWND is a child of `Progman`;
+- the custom surface participates in layered composition;
+- full alpha (`255`) is used for a normal opaque desktop surface;
+- custom wallpaper surfaces must be below `SHELLDLL_DefView`;
+- custom surfaces must remain above the background WorkerW;
+- WorkerW must remain at the back of the raised-desktop child stack;
+- parent/style/z-order must be revalidated after attachment and shell changes.
+
+This is the first implementation rule to apply to TuringDesk Web/Widget surfaces, because an existing process/HWND is not proof that DWM is actually composing it.
+
+## 4. Desktop layer lifecycle
+
+### 4.1 Initial setup
+
+At startup:
+
+```text
+Find Progman
+ -> detect raised vs legacy desktop
+ -> request wallpaper layer
+ -> rediscover DefView / WorkerW
+ -> publish current DesktopShellSnapshot
+ -> attach surfaces
+```
+
+A snapshot must contain at least:
+
+```text
+progman
+shellDefView
+workerW
+legacyDefViewParent
+mode: raised | legacy | fallback
+explorerPid/generation
+```
+
+### 4.2 WorkerW destruction
+
+Lively explicitly observes WorkerW destruction. TuringDesk must model the same failure:
+
+```text
+WorkerW destroyed
+ -> invalidate current shell snapshot
+ -> rediscover shell hierarchy
+ -> raised desktop: reattach/reorder existing surfaces
+ -> legacy desktop: rebuild surfaces when safe reparenting is uncertain
+ -> publish diagnostics/change event
+```
+
+A periodic timer can remain as a secondary health check, but WorkerW/Explorer events should become first-class lifecycle signals.
+
+### 4.3 Explorer restart / TaskbarCreated
+
+Explorer restart invalidates shell HWNDs even if process state for renderers is still alive.
+
+Contract:
+
+- treat `TaskbarCreated` as a shell generation change;
+- rediscover `Progman`, `DefView`, WorkerW and Explorer PID;
+- reattach native wallpaper surfaces;
+- recreate or reattach Web/Widget surfaces based on runtime capability;
+- repair z-order;
+- do not trust old HWND parent comparisons after Explorer generation changes.
+
+## 5. Surface roles and z-order
+
+TuringDesk adds Widgets, so the desired logical composition is:
+
+```text
+SHELLDLL_DefView / desktop icons
+--------------------------------
+TuringDesk Widget surfaces
+--------------------------------
+TuringDesk Web wallpaper surfaces
+TuringDesk native/video/scene wallpaper surfaces
+--------------------------------
+Windows WorkerW/background
+```
+
+Rules:
+
+1. Desktop icons always stay above default TuringDesk surfaces.
+2. Widgets stay above wallpaper surfaces but remain below icons in default click-through mode.
+3. Web wallpaper and Web Widget hosts use the same shell attachment service as native surfaces.
+4. Each surface has an explicit role; z-order repair must not infer role only from random child-window order.
+5. A successful attach requires verification of parent, style, geometry, visible state and expected z-order relation.
+
+Suggested C++ enum:
+
+```text
+DesktopSurfaceRole::Wallpaper
+DesktopSurfaceRole::Widget
+```
+
+Interactive Widget mode is a separate later policy; it must not redefine the default desktop stack.
+
+## 6. Multi-monitor behavior
+
+Lively exposes per-monitor, span and duplicate arrangements. TuringDesk additionally keeps Primary-only and stable DisplayConfig identities.
+
+The shared behavioral contract is:
+
+- enumerate monitors after `WM_DISPLAYCHANGE` rather than mutating stale geometry;
+- maintain virtual-screen bounds including negative coordinates;
+- maintain monitor work area separately from monitor bounds;
+- attach/rerender surfaces after topology changes;
+- per-monitor surfaces use monitor-local geometry derived from current monitor bounds;
+- duplicate mode creates synchronized per-monitor instances where required;
+- span mode treats the virtual desktop as one composition surface;
+- topology changes may require Web/video surface recreation, not only resize.
+
+TuringDesk keeps its stronger stable monitor ID mapping for persisted assignments.
+
+## 7. Playback / performance policy
+
+Lively centralizes policy rather than asking each renderer whether it should pause. TuringDesk keeps this principle with the richer action set `Normal / Throttle / Pause / Stop`.
+
+Inputs:
+
+```text
+foreground window
+visible windows by display
+fullscreen / display coverage
+maximized window
+per-app rule
+lock state
+Remote Desktop
+AC/battery state
+battery saver
+idle state
+screensaver state
+user policy
+```
+
+Important behavior:
+
+- foreground-only evaluation is useful and cheap, but not sufficient for every policy;
+- per-display pause is meaningful for independent wallpapers;
+- span wallpaper is normally treated as one runtime and should pause only according to the span policy;
+- duplicate mode usually behaves as one synchronized wallpaper for pause decisions;
+- audio policy is separate from visual playback policy;
+- TuringDesk-owned UI must be excluded so Settings/Search does not pause its own desktop.
+
+The renderer receives a policy result; it does not rediscover foreground/system state independently.
+
+## 8. Web wallpaper / Web Widget process contract
+
+For each Web surface:
+
+```text
+validated source
+ -> create isolated process
+ -> create native surface HWND with shell-compatible styles
+ -> attach/verify desktop parent and z-order
+ -> create WebView2 environment/controller
+ -> navigate
+ -> report readiness
+```
+
+Runtime state must distinguish:
+
+```text
+Configured
+ProcessStarted
+HwndCreated
+DesktopAttached
+WebViewControllerReady
+NavigationReady
+Visible
+Healthy
+```
+
+`Enabled=true` in the Widget Store only means Configured. It must never be displayed as equivalent to Visible/Healthy.
+
+Recovery classes must be separated:
+
+- child process exit;
+- WebView2 environment/controller failure;
+- navigation/source failure;
+- stale desktop parent;
+- wrong z-order/hidden HWND;
+- display topology mismatch.
+
+## 9. Application/game wallpapers
+
+Lively can host application/game windows as wallpaper. TuringDesk does not need to copy that implementation immediately, but the SurfaceManager must not hard-code all future surfaces as Direct2D/WebView2.
+
+Target abstraction should allow:
+
+```text
+Native render HWND
+Media/video HWND
+WebView2 HWND
+External owned process HWND (future, permission-gated)
+```
+
+This keeps parity expansion possible without changing DesktopShellHost.
+
+## 10. Screensaver
+
+Lively treats screensaver as another presentation mode capable of reusing wallpaper content and supporting multiple monitors.
+
+TuringDesk future contract:
+
+- current Wallpaper / Playlist / Profile can be selected as screensaver content;
+- screensaver runtime is separate from the ordinary desktop attachment path;
+- ordinary wallpaper playback policy knows when a dedicated screensaver runtime is active;
+- multi-monitor behavior mirrors selected wallpaper arrangement where possible.
+
+Screensaver is P1 parity, after the shell/surface lifecycle is stable.
+
+## 11. TuringDesk refactor mapping
+
+Existing responsibility -> target module:
+
+```text
+WallpaperEngine.cpp::DiscoverDesktopLayer
+WallpaperEngine.cpp::SpawnWallpaperLayer
+WallpaperEngine.cpp::PrepareChildWindow
+WallpaperEngine.cpp::AttachToDesktop
+WallpaperEngine.cpp::EnsureWorkerBottom
+    -> DesktopShellHost
+
+WallpaperWebRuntimeCoordinator ad-hoc parent/z-order logic
+    -> DesktopShellHost + DesktopSurfaceStack
+
+IndependentWallpaperHost / VideoWallpaperSet / WebWallpaperProcessSet
+    -> WallpaperSurfaceManager clients
+
+DesktopWidgetStore + Web widget process spawning
+    -> WidgetSurfaceManager client
+
+WallpaperPerformancePolicy
+    -> PlaybackCoordinator (existing policy logic retained and expanded)
+```
+
+## 12. First implementation slice
+
+The first C++ refactor after this study is intentionally narrow and testable:
+
+1. Add `DesktopShellHost.h/.cpp`.
+2. Move shell discovery / raised-desktop detection / 0x052C / WorkerW-bottom repair into it.
+3. Add explicit `AttachSurface(..., DesktopSurfaceRole, desktopBounds, visible)` with verification.
+4. Make `WallpaperEngine.cpp` attach the main native wallpaper host through `DesktopShellHost`.
+5. Make WebView2 child host windows layered/full-alpha when the selected shell mode requires desktop composition.
+6. Replace Widget/Web z-order guessing with role-aware ordering.
+7. Add diagnostics for mode, parent, layered style, visible state and role.
+8. Preserve existing Image/Video/Web/Scene behavior and ARM64 CI.
+
+The real Windows acceptance test for this slice is:
+
+```text
+Start TuringDesk
+ -> wallpaper visible
+ -> create desktop clock Widget
+ -> Widget surface visibly appears above TuringDesk wallpaper and below desktop icons
+ -> open Settings/Search: Widget remains visible
+ -> restart Explorer: wallpaper + Widget recover
+ -> change display topology: both reattach to correct monitor geometry
+```
+
+Until the Widget is visibly rendered on a real Windows desktop, Widget runtime is not considered complete.

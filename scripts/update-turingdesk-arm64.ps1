@@ -246,7 +246,9 @@ function Write-UpdateJournal([string]$PreviousPath, [bool]$HadExistingInstall) {
 }
 
 function Remove-UpdateJournal {
-    Remove-Item $JournalPath -Force -ErrorAction SilentlyContinue
+    if (Test-Path $JournalPath -PathType Leaf) {
+        Remove-Item $JournalPath -Force -ErrorAction Stop
+    }
 }
 
 function Recover-InterruptedUpdate {
@@ -365,11 +367,18 @@ try {
     Step "Starting TuringDesk"
     Start-DeployedTuringDesk $DeployDir
 
-    if ($previous -and (Test-Path $previous)) {
-        Remove-Item $previous -Recurse -Force -ErrorAction Stop
-        $previous = $null
-    }
+    # Commit the new installation before best-effort backup cleanup.
     Remove-UpdateJournal
+    $swapStarted = $false
+
+    if ($previous -and (Test-Path $previous)) {
+        try {
+            Remove-Item $previous -Recurse -Force -ErrorAction Stop
+            $previous = $null
+        } catch {
+            Write-Host ("Previous package cleanup was deferred: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
 
     Write-Host "`nTuringDesk update completed successfully." -ForegroundColor Green
     Write-Host ("Installed validated build: {0}" -f $validated.BuildSha) -ForegroundColor Green

@@ -37,6 +37,8 @@ All product clients use one control path:
 ```text
 UI / Pi / future Editor
         ↓
+UI adapter/controller or Pi adapter
+        ↓
 Desktop Control contract
         ↓
 Domain service
@@ -50,6 +52,7 @@ Forbidden long-term paths:
 
 ```text
 UI -> wallpaper.ini
+UI -> DesktopWidgetStore
 UI -> WorkerW / Progman
 UI -> WebView2 runtime process
 Pi adapter -> wallpaper.ini
@@ -81,6 +84,7 @@ Primary implementation: `DesktopShellHost`.
 
 Owns:
 
+- wallpaper state and package validation through `WallpaperService`
 - wallpaper library and packages
 - Image / Video / Web / Scene selection
 - wallpaper renderer lifecycle
@@ -93,13 +97,13 @@ Wallpaper code does not call Pi.
 
 Owns:
 
-- Widget persistence
+- Widget persistence through `WidgetService`
 - package/source management
 - normalized geometry
 - Widget runtime lifecycle
 - Widget surface management
 
-`DesktopWidgetStore` is persistence, not a public product API. UI and AI should use `DesktopControlService` rather than mutate the Store directly.
+`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly.
 
 ### 3.4 Automation
 
@@ -147,14 +151,16 @@ UI responsibilities are deliberately narrow:
 
 UI does not implement domain rules.
 
-## 4. Desktop Control service
+## 4. Desktop Control facade and domain services
 
-The first concrete boundary is:
+The current concrete boundary is:
 
-- `src/native/include/turingdesk/DesktopControlService.h`
-- `src/native/src/DesktopControlService.cpp`
+- `DesktopControlService` — shared facade for product clients
+- `WallpaperService` — wallpaper state/package ownership
+- `WidgetService` — Widget CRUD/persistence ownership
+- `DesktopWidgetController` — production Widget UI adapter
 
-Current first-slice responsibilities:
+Current facade responsibilities:
 
 ```text
 GetState
@@ -166,17 +172,18 @@ ListWidgets
 EnsureRuntime
 ```
 
-Current clients:
+Current or staged clients:
 
 - Pi native desktop tool adapter (`DesktopWidgetTools.cpp`)
-- future Desktop Library V2 / Widget UI
+- production Widget UI via `DesktopWidgetController`
+- Desktop Library V2 / Widget UI
 - future Scene / Widget Editor
 
 The existing Pi tool names are an adapter protocol and are not the domain API itself.
 
 ## 5. Adapter rule
 
-`DesktopWidgetTools.cpp` is now an adapter only:
+`DesktopWidgetTools.cpp` is an adapter only:
 
 ```text
 Pi JSON arguments
@@ -190,7 +197,21 @@ Pi text result
 
 It must not regain persistence/runtime ownership.
 
-Similarly, future `WallpaperLibraryWindowV2.cpp` should become:
+`DesktopWidgetController` follows the same rule for Win32 UI:
+
+```text
+Win32 Widget action
+    ↓
+DesktopWidgetController
+    ↓
+DesktopControlService
+    ↓
+WidgetService
+```
+
+It must never include or instantiate `DesktopWidgetStore`.
+
+Similarly, `WallpaperLibraryWindowV2.cpp` should become:
 
 ```text
 Win32 input
@@ -222,8 +243,8 @@ A visual redesign is never allowed to remove a product capability.
 
 ## 7. Next refactor slices
 
-1. Migrate Widget UI CRUD from direct `DesktopWidgetStore` access to `DesktopControlService`.
-2. Introduce `WallpaperService` for library item application and monitor assignment.
+1. Finish replacing production `WallpaperLibraryWindow.cpp` Widget CRUD with `DesktopWidgetController` calls; direct Store calls are legacy migration debt only.
+2. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
 3. Make Desktop Library V2 depend on controllers/services only.
 4. Separate `AutomationService` from automation windows.
 5. Separate `PerformanceCoordinator` from `WallpaperEngine.cpp`.

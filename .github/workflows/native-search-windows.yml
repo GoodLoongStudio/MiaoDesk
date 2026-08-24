@@ -44,6 +44,12 @@ jobs:
         shell: powershell
         run: .\scripts\verify-windows-powershell-compat.ps1
 
+      - name: Exercise one-click updater bootstrap
+        shell: cmd
+        env:
+          TD_BOOTSTRAP_SELF_TEST: 1
+        run: UPDATE-TURINGDESK.cmd
+
       - name: Verify Pi-first L3 runtime contract
         shell: pwsh
         run: .\scripts\verify-l3-runtime-contract.ps1

@@ -10,10 +10,9 @@ struct NativeToolResult {
     std::wstring message;
 };
 
-// NativeTools.cpp still owns implementations for compatibility/worker tests, but
-// Codex app-server only receives TuringDesk-specific product capabilities. Generic
-// file/document/shell work belongs to the full Codex CLI runtime (shell, file
-// change, Skills and MCP), not a parallel bespoke TuringDesk agent stack.
+// NativeTools.cpp owns only TuringDesk-specific product capabilities. Generic
+// file/document/shell work belongs to Pi built-in tools, Skills and Extensions,
+// not a parallel bespoke TuringDesk agent stack.
 std::string NativeToolDefinitionsJsonRaw();
 
 #ifdef TURINGDESK_NATIVE_TOOLS_IMPL

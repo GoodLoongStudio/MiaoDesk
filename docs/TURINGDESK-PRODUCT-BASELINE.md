@@ -108,7 +108,23 @@ Wallpaper 与 Widget 是两个独立层。切换壁纸不得删除用户的 Widg
 
 ### 3.2 产品目标
 
-功能深度以 Wallpaper Engine 级体验为目标，可以完整学习成熟产品在壁纸库、多屏、播放列表、应用规则、性能、属性和编辑器方面的功能模型，但 TuringDesk 保持自己的品牌、代码、素材、包格式与交互实现。
+功能深度以 Wallpaper Engine 级体验为目标，可以学习成熟产品在壁纸库、多屏、播放列表、应用规则、性能、属性和编辑器方面的功能模型，但 TuringDesk 保持自己的品牌、代码、素材、包格式与交互实现。
+
+**实现层不得把 Wallpaper Engine 当作工程参考。** Wallpaper Engine 只用于定义“用户最终应该拥有哪些功能”。
+
+Windows 壁纸运行时的正式实现参考顺序是：
+
+```text
+TuringDesk 产品需求
+  ↓
+Lively 的成熟公开行为 + Microsoft Windows API / WebView2 / Media Foundation / DirectX 文档
+  ↓
+TuringDesk 自己的 C++23 clean-room 重实现
+```
+
+详细实现约束以 `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` 为准。
+
+Lively 为 GPL-3.0，TuringDesk 为 MIT，因此禁止复制或逐行翻译 Lively 源码；只允许研究公开行为、Windows API 使用方式和兼容性策略，再由 TuringDesk 独立实现。
 
 TuringDesk 的差异化能力：
 
@@ -159,7 +175,8 @@ TuringDesk 的差异化能力：
 - 拖拽移动与缩放；
 - 数值化位置/尺寸 Inspector；
 - 删除、复制、编辑；
-- AI 创建/修改结果立即同步。
+- AI 创建/修改结果立即同步；
+- 真实 runtime 健康状态：已配置 / 进程 / HWND / WebView / 可见 / 错误。
 
 Widget v1 默认 click-through，不得挡住桌面图标；交互式 Widget 后续作为显式 opt-in 能力。
 
@@ -205,6 +222,7 @@ Scene
 - 播放列表 / Schedule / Profile；
 - 应用规则；
 - 性能策略；
+- Screensaver；
 - Shader / Particle / Animation；
 - Audio Reactive；
 - Interaction；
@@ -227,7 +245,7 @@ Media Controls
 Data-bound Custom Widget
 ```
 
-首版先使用隔离 WebView2 本地 HTML Widget，复用当前 Web runtime 的安全与恢复机制；后续补原生 Widget 类型。
+首版使用隔离 WebView2 本地 HTML Widget，但 WebView2 surface 必须通过与 Wallpaper 共用的 `DesktopShellHost` 挂载到真实 Windows 桌面层，不允许各自猜 WorkerW/Progman 层级。后续补原生 Widget 类型。
 
 ---
 
@@ -336,13 +354,13 @@ notifications
 | goz 极速搜索 | MFT/USN 已接入并进入真实 ARM64 集成测试 |
 | Pi Agent 主路由 | 已接通 Bundled Node + Pi RPC + Native Tool E2E |
 | Direct Model fallback | 保留普通问答 fallback |
-| Image / Video / Web / Scene | 运行时基础已存在 |
+| Image / Video / Web / Scene | 运行时基础已存在；桌面 Shell 挂载正在按 Lively 行为参考重构 |
 | 多显示器 / 规则 / 性能 | 核心模块已存在，继续真实机深度验收 |
 | 壁纸库 / Playlist / Schedule / Profile | 数据和运行链已存在，前台产品化不足 |
 | `.tdwall` | Web 包创建/校验基础已存在 |
 | AI 壁纸能力 | 已能生成 `.tdwall`；正在扩展为读取/应用/编辑桌面状态 |
-| Widget | 已进入持久化 + WebView2 overlay + AI CRUD 的第一阶段 |
-| 设置中心 | 仍需重构为真实缩略图、Live Preview、Properties、Widgets 页 |
+| Widget | 已进入持久化 + WebView2 overlay + AI CRUD；真实可见性仍需按新 Shell Host 契约完成 |
+| 设置中心 | 仍需重构为真实缩略图、Live Preview、Properties、完整 Widgets 页 |
 | Scene / Widget Editor | 共用编辑器目标已确定，尚未进入完整实现 |
 | 高级工作台 | 后台/WebView/共享配置基础已存在 |
 
@@ -351,6 +369,15 @@ notifications
 ## 8. 当前最高优先级
 
 AI 主链已经接通，下一阶段主线切换到 Desktop Composition：
+
+### P0-0：Lively-informed C++ Desktop Shell 重构
+
+- 从 `WallpaperEngine.cpp` 抽出 `DesktopShellHost`；
+- 正确区分 Windows 11 Raised Desktop 与 Legacy WorkerW；
+- Wallpaper / Web / Widget 共用一套 parent/style/z-order 挂载逻辑；
+- Explorer/WorkerW 重建统一恢复；
+- 增加可见性/渲染健康诊断；
+- 详细技术契约见 `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`。
 
 ### P0-1：桌面库产品化
 
@@ -364,7 +391,7 @@ AI 主链已经接通，下一阶段主线切换到 Desktop Composition：
 ### P0-2：Widget 第一版
 
 - Widget 页面；
-- Web Widget runtime 稳定；
+- Web Widget runtime 稳定且真实可见；
 - 拖拽 / Resize；
 - 多屏目标；
 - AI Create / Update / Remove / List；
@@ -385,7 +412,7 @@ AI 主链已经接通，下一阶段主线切换到 Desktop Composition：
 - Undo / Redo；
 - 再进入 Shader / Particle / Audio Reactive / 3D / Interaction。
 
-详细执行清单见 `docs/WALLPAPER_ENGINE_PARITY.md`，架构见 `docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`。
+详细执行清单见 `docs/WALLPAPER_ENGINE_PARITY.md`，Windows 壁纸运行时实现见 `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`，架构见 `docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`。
 
 ---
 
@@ -406,9 +433,10 @@ Mock 通过      ≠ 完成
 指定不同显示器使用不同桌面
 全屏程序触发正确性能策略
 让图灵 AI 生成并真实应用一个 Web 桌面
-让图灵 AI 创建一个桌面小组件
+让图灵 AI 创建一个真正可见的桌面小组件
 手工移动/缩放该小组件后 AI 能读取并继续调整
 重启 TuringDesk 后壁纸和 Widget 状态保持
+Explorer 重启后 Wallpaper / Widget 自动恢复
 ```
 
 当前所有正式交付只进入 `main`。

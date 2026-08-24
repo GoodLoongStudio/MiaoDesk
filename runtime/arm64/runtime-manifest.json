@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-23T03:07:42.2099780Z",
-  "lockSha256": "11dd1d551eb2247075e5138ba57fd569930091134ea8786101330ee5872d15e3",
+  "generatedUtc": "2026-08-24T02:47:49.6675300Z",
+  "lockSha256": "314cea3b42a5f5ae68dcf91e960ca6233f137c1ca5e23bfda86be7e4d41df4a2",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-arm64.zip",
@@ -29,8 +29,8 @@
   },
   "codex": {
     "release": "rust-v0.146.0",
-    "archive": "codex/codex-aarch64-pc-windows-msvc.exe.zst",
-    "sha256": "3ede06f1890b97fcbfafe6153f07045b340e3c966a2de7d0da188e393a1c90ef",
+    "archive": "codex/codex-package-aarch64-pc-windows-msvc.tar.zst",
+    "sha256": "938f34edbfffdf38dc46de2c10a20c6136f8d87c001f2763f6f85d9594f4fc6b",
     "mode": "cli-app-server"
   },
   "webview2Sdk": {

@@ -93,7 +93,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
 
     src/desktop/wallpaper/web/WebWallpaperHost.cpp
     src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp
-    src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinatorProduction.cpp
+    src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
     src/desktop/wallpaper/render/WallpaperScaling.cpp
     src/desktop/wallpaper/render/VideoWallpaperPlayer.cpp

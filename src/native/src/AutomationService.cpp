@@ -136,6 +136,10 @@ AutomationServiceResult AutomationService::ForceNextPlaylist(
         : L"播放列表已切换到下一项。"};
 }
 
+bool AutomationService::SelfTest() {
+    return wallpaper::WallpaperAutomationStore::SelfTest();
+}
+
 std::wstring AutomationService::MakeId(std::wstring_view prefix) {
     return wallpaper::WallpaperAutomationStore::MakeId(prefix);
 }

@@ -65,6 +65,53 @@ function Write-MonitorTransitionEvidence([string]$Path, [string[]]$Before, [stri
     Write-CheckpointLines -Path $Path -Lines $lines
 }
 
+function Capture-DesktopVisualEvidence([string]$DiagnosticsDir, [string]$AcceptancePhase) {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $screens = @([System.Windows.Forms.Screen]::AllScreens)
+    if ($screens.Count -eq 0) {
+        throw 'Visual acceptance evidence could not be captured because no Windows display is available.'
+    }
+
+    $left = ($screens | ForEach-Object { $_.Bounds.Left } | Measure-Object -Minimum).Minimum
+    $top = ($screens | ForEach-Object { $_.Bounds.Top } | Measure-Object -Minimum).Minimum
+    $right = ($screens | ForEach-Object { $_.Bounds.Right } | Measure-Object -Maximum).Maximum
+    $bottom = ($screens | ForEach-Object { $_.Bounds.Bottom } | Measure-Object -Maximum).Maximum
+    $width = [int]($right - $left)
+    $height = [int]($bottom - $top)
+    if ($width -le 0 -or $height -le 0) {
+        throw "Visual acceptance evidence has invalid virtual desktop bounds: $left,$top,$right,$bottom"
+    }
+
+    New-Item -ItemType Directory -Path $DiagnosticsDir -Force | Out-Null
+    $pngPath = Join-Path $DiagnosticsDir "widget-acceptance-$AcceptancePhase.png"
+    $hashPath = Join-Path $DiagnosticsDir "widget-acceptance-$AcceptancePhase.png.sha256"
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+    try {
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.CopyFromScreen($left, $top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+        }
+        finally {
+            $graphics.Dispose()
+        }
+        $bitmap.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $bitmap.Dispose()
+    }
+
+    $hash = (Get-FileHash -LiteralPath $pngPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-CheckpointLines -Path $hashPath -Lines @(
+        "sha256=$hash",
+        "capturedAtUtc=$([DateTime]::UtcNow.ToString('o'))",
+        "phase=$AcceptancePhase",
+        "virtualBounds=$left,$top,$width,$height"
+    )
+    Write-Host "Captured M3 visual evidence: $pngPath (sha256=$hash)"
+}
+
 function Wait-ForMonitorTopologyTransition([string[]]$Before, [string]$EvidencePath) {
     $beforeKey = $Before -join "`n"
     $changeDeadline = [DateTime]::UtcNow.AddMinutes(3)
@@ -120,6 +167,8 @@ if ($Phase -eq 'baseline') {
             Remove-Item -LiteralPath $checkpoint -Force
         }
     }
+    Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.png*' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 if ($Phase -eq 'explorer') {
@@ -168,7 +217,8 @@ if ($code -eq 0) {
         Write-CheckpointLines -Path $monitorCheckpoint -Lines $topology
         Write-Host "Captured monitor recovery checkpoint: $($topology -join '; ')"
     }
-    Write-Host 'Widget acceptance probe passed for this phase and advanced the sequence cursor.'
+    Capture-DesktopVisualEvidence -DiagnosticsDir $diagnostics -AcceptancePhase $Phase
+    Write-Host 'Widget acceptance probe passed for this phase, captured visual evidence, and advanced the sequence cursor.'
     exit 0
 }
 

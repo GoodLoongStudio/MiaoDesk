@@ -42,6 +42,30 @@ src/native/
 └─ include/turingdesk/
 ```
 
+Canonical implementation roots are explicit, reviewable paths:
+
+```text
+src/native/src/app
+src/native/src/ai/pi
+src/native/src/ai/tools
+src/native/src/ai/agent
+src/native/src/search
+src/native/src/harness
+src/native/src/desktop/control
+src/native/src/desktop/shell
+src/native/src/desktop/wallpaper
+src/native/src/desktop/widgets
+src/native/src/desktop/automation
+src/native/src/desktop/performance
+src/native/src/ui/search
+src/native/src/ui/settings
+src/native/src/ui/ai
+src/native/src/ui/wallpaper
+src/native/src/ui/widgets
+src/native/src/ui/automation
+src/native/src/ui/performance
+```
+
 ## Ownership rules
 
 - `app/` owns executable composition and application startup only.
@@ -51,7 +75,7 @@ src/native/
 - `desktop/wallpaper/` owns wallpaper state and runtime. Renderer-specific code lives below `render/`, `web/`, `monitor/`, `library/` or `runtime/`.
 - `desktop/wallpaper/legacy/` is migration-only. No new product behavior may be added there; files leave this directory by deletion/refactor, not by expansion.
 - `desktop/widgets/`, `desktop/automation/` and `desktop/performance/` own their domain services/runtime state.
-- `ui/` owns presentation and intent translation only. UI code must call adapters/controllers/services rather than persistence or WorkerW directly.
+- `ui/wallpaper/`, `ui/widgets/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only. UI code must call adapters/controllers/services rather than persistence or WorkerW directly.
 - `harness/` owns the Advanced Workbench process/runtime bridge.
 - `search/` owns native search/index integration shared by executables.
 

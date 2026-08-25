@@ -45,6 +45,8 @@ public:
         std::wstring_view playlistId,
         unsigned long long unixSeconds,
         wallpaper::AutomationDecision* decision) const;
+
+    static std::wstring MakeId(std::wstring_view prefix);
 };
 
 } // namespace turingdesk::desktop

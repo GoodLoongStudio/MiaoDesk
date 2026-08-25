@@ -34,8 +34,22 @@ if (-not $mainText.Contains('RunWidgetRuntimeAcceptanceProbe') -or -not $mainTex
 }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
-foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')", "60 { 'interactive Windows desktop unavailable' }", "63 { 'one or more Widget surfaces are unhealthy' }", "65 { 'baseline identity set missing; run the baseline phase first' }", "66 { 'enabled Widget identity set changed since baseline' }", "67 { 'acceptance phase is out of order; run baseline -> settings -> search -> explorer -> monitor without skipping a successful phase' }")) {
-    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/exit mapping: $marker" }
+foreach ($marker in @(
+    "ValidateSet('baseline','settings','search','explorer','monitor')",
+    'Get-CurrentSessionExplorerPids',
+    'widget-acceptance-search.explorer-pids',
+    "if (`$Phase -eq 'explorer')",
+    'Explorer recovery is unproven',
+    "if (`$Phase -eq 'search')",
+    "60 { 'interactive Windows desktop unavailable' }",
+    "63 { 'one or more Widget surfaces are unhealthy' }",
+    "65 { 'baseline identity set missing; run the baseline phase first' }",
+    "66 { 'enabled Widget identity set changed since baseline' }",
+    "67 { 'acceptance phase is out of order; run baseline -> settings -> search -> explorer -> monitor without skipping a successful phase' }")) {
+    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence mapping: $marker" }
+}
+foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'SetParent(', 'SetWindowPos(')) {
+    if ($runnerText.Contains($forbidden)) { throw "Widget acceptance runner must not regain shell HWND ownership: $forbidden" }
 }
 
 $cmakeText = Get-Content -LiteralPath $cmake -Raw
@@ -49,8 +63,8 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 
 }
 
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND')) {
+foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires Explorer-restart evidence, and does not regain HWND/shell ownership.'

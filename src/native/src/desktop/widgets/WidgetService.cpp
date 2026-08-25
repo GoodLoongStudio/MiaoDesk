@@ -1,4 +1,5 @@
 #include "turingdesk/WidgetService.h"
+#include "turingdesk/WebDesktopSurfaceChild.h"
 
 #include <windows.h>
 
@@ -88,6 +89,16 @@ HWND FindWidgetSurface(HWND expectedParent, std::wstring_view widgetId) {
     return nullptr;
 }
 
+bool PropertyReady(HWND window, const wchar_t* property) {
+    return window && IsWindow(window) && GetPropW(window, property) != nullptr;
+}
+
+bool HasStructuredLifecycleTelemetry(HWND window) {
+    if (!window || !IsWindow(window)) return false;
+    const auto role = reinterpret_cast<INT_PTR>(GetPropW(window, wallpaper::kWebSurfaceRoleProperty));
+    return role == 2;
+}
+
 WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget, bool compatibilityHealthy) {
     WidgetSurfaceHealth surface;
     surface.widgetId = widget.id;
@@ -112,16 +123,30 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
         surface.childStyleValid = (style & WS_CHILD) != 0;
         surface.visible = IsWindowVisible(window) != FALSE;
+
+        // The preferred WebDesktopSurfaceChild publishes these window properties
+        // from the isolated process. The role property is present before async
+        // WebView2 initialization begins, so a missing ready property means a
+        // real not-ready stage rather than "telemetry unavailable". The legacy
+        // child has no role property and remains explicitly unreported.
+        const bool lifecycleTelemetry = HasStructuredLifecycleTelemetry(window);
+        surface.environmentReported = lifecycleTelemetry;
+        surface.controllerReported = lifecycleTelemetry;
+        surface.navigationReported = lifecycleTelemetry;
+        if (lifecycleTelemetry) {
+            surface.environmentReady = PropertyReady(window, wallpaper::kWebSurfaceEnvironmentReadyProperty);
+            surface.controllerReady = PropertyReady(window, wallpaper::kWebSurfaceControllerReadyProperty);
+            surface.navigationReady = PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty);
+        }
     }
 
-    // WebView2 lifecycle and authoritative sibling z-order are deliberately not
-    // inferred from HWND existence. The child runtime will report those stages
-    // in the next M3 slice behind these already-stable fields.
-    surface.environmentReported = false;
-    surface.controllerReported = false;
-    surface.navigationReported = false;
+    // Authoritative sibling ordering still belongs to DesktopShellHost. It is
+    // intentionally left unreported until the shell/runtime producer exposes a
+    // per-surface z-order result; WidgetService must not independently repair it.
     surface.zOrderReported = false;
-    surface.renderingHealthy = surface.SurfaceReady() && compatibilityHealthy;
+    const bool lifecycleReady = !surface.environmentReported ||
+        (surface.environmentReady && surface.controllerReady && surface.navigationReady);
+    surface.renderingHealthy = surface.SurfaceReady() && lifecycleReady && compatibilityHealthy;
 
     std::wostringstream detail;
     if (!surface.hwndReady) detail << L"等待隔离 Surface HWND";
@@ -129,7 +154,11 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     else if (!surface.parentValid) detail << L"Surface parent 不匹配";
     else if (!surface.childStyleValid) detail << L"Surface 缺少 WS_CHILD";
     else if (!surface.visible) detail << L"Surface 当前不可见";
-    else detail << L"OS Surface 就绪；等待 WebView2 lifecycle/z-order telemetry";
+    else if (!surface.environmentReported) detail << L"OS Surface 就绪；legacy child 未报告 WebView2 lifecycle";
+    else if (!surface.environmentReady) detail << L"等待 WebView2 EnvironmentReady";
+    else if (!surface.controllerReady) detail << L"等待 WebView2 ControllerReady";
+    else if (!surface.navigationReady) detail << L"等待 WebView2 NavigationReady";
+    else detail << L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry";
     surface.detail = detail.str();
     return surface;
 }
@@ -245,11 +274,11 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
         result.surfaces.push_back(InspectWidgetSurface(widget, compatibilityHealthy));
     }
 
-    const bool allOsSurfacesReady = std::all_of(result.surfaces.begin(), result.surfaces.end(),
-        [](const WidgetSurfaceHealth& surface) { return surface.SurfaceReady(); });
+    const bool allSurfacesRendering = std::all_of(result.surfaces.begin(), result.surfaces.end(),
+        [](const WidgetSurfaceHealth& surface) { return surface.renderingHealthy; });
     result.runtimeHealthy = result.enabledWebCount == 0
         ? compatibilityHealthy
-        : compatibilityHealthy && result.surfaces.size() == result.enabledWebCount && allOsSurfacesReady;
+        : compatibilityHealthy && result.surfaces.size() == result.enabledWebCount && allSurfacesRendering;
     *health = std::move(result);
     return {true, L"桌面小组件运行状态读取完成。"};
 }

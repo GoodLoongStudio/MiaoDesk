@@ -51,6 +51,7 @@ public:
         unsigned long long unixSeconds,
         wallpaper::AutomationDecision* decision) const;
 
+    static bool SelfTest();
     static std::wstring MakeId(std::wstring_view prefix);
 };
 

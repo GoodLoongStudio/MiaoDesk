@@ -42,6 +42,10 @@ fs::path BaselinePath() {
     return ReportDirectory() / L"widget-acceptance-baseline.ids";
 }
 
+fs::path SequencePath() {
+    return ReportDirectory() / L"widget-acceptance-sequence.phase";
+}
+
 bool InteractiveDesktopAvailable() {
     HDESK desktop = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS | DESKTOP_SWITCHDESKTOP);
     if (!desktop) return false;
@@ -70,14 +74,25 @@ std::wstring JoinIds(const std::vector<std::wstring>& ids) {
     return out.str();
 }
 
+std::wstring ExpectedPreviousPhase(std::wstring_view phase) {
+    const auto safe = SafePhase(phase);
+    if (safe == L"settings") return L"baseline";
+    if (safe == L"search") return L"settings";
+    if (safe == L"explorer") return L"search";
+    if (safe == L"monitor") return L"explorer";
+    return {};
+}
+
 std::wstring BuildReport(
     std::wstring_view phase,
     const WidgetRuntimeHealth& health,
-    std::wstring_view baselineStatus) {
+    std::wstring_view baselineStatus,
+    std::wstring_view sequenceStatus) {
     std::wostringstream out;
     out << L"TuringDesk M3 Widget Runtime Acceptance\n";
     out << L"phase=" << SafePhase(phase) << L"\n";
     out << L"baselineStatus=" << baselineStatus << L"\n";
+    out << L"sequenceStatus=" << sequenceStatus << L"\n";
     out << L"surfaceIds=" << JoinIds(SurfaceIds(health)) << L"\n";
     out << L"configuredCount=" << health.configuredCount << L"\n";
     out << L"enabledWebCount=" << health.enabledWebCount << L"\n";
@@ -121,17 +136,25 @@ bool WriteBaselineIds(const std::vector<std::wstring>& ids) {
     return WriteUtf16Report(BaselinePath(), JoinIds(ids));
 }
 
-bool ReadBaselineIds(std::vector<std::wstring>* ids) {
-    if (!ids) return false;
-    ids->clear();
-    std::ifstream stream(BaselinePath(), std::ios::binary);
+bool ReadUtf16Text(const fs::path& path, std::wstring* text) {
+    if (!text) return false;
+    text->clear();
+    std::ifstream stream(path, std::ios::binary);
     if (!stream) return false;
     std::vector<char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
     if (bytes.size() < 2 || static_cast<unsigned char>(bytes[0]) != 0xFF || static_cast<unsigned char>(bytes[1]) != 0xFE) return false;
     const std::size_t wcharBytes = bytes.size() - 2;
     if (wcharBytes % sizeof(wchar_t) != 0) return false;
-    std::wstring text(wcharBytes / sizeof(wchar_t), L'\0');
-    if (wcharBytes) std::memcpy(text.data(), bytes.data() + 2, wcharBytes);
+    text->assign(wcharBytes / sizeof(wchar_t), L'\0');
+    if (wcharBytes) std::memcpy(text->data(), bytes.data() + 2, wcharBytes);
+    return true;
+}
+
+bool ReadBaselineIds(std::vector<std::wstring>* ids) {
+    if (!ids) return false;
+    ids->clear();
+    std::wstring text;
+    if (!ReadUtf16Text(BaselinePath(), &text)) return false;
     std::wstringstream parser(text);
     std::wstring id;
     while (std::getline(parser, id, L',')) {
@@ -141,10 +164,21 @@ bool ReadBaselineIds(std::vector<std::wstring>* ids) {
     return true;
 }
 
+bool WriteSequencePhase(std::wstring_view phase) {
+    return WriteUtf16Report(SequencePath(), SafePhase(phase));
+}
+
+bool ReadSequencePhase(std::wstring* phase) {
+    if (!ReadUtf16Text(SequencePath(), phase)) return false;
+    while (!phase->empty() && (phase->back() == L'\r' || phase->back() == L'\n' || phase->back() == L'\0')) phase->pop_back();
+    return !phase->empty();
+}
+
 WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
     std::wstring_view phase,
     const WidgetRuntimeHealth& health,
     std::wstring* baselineStatus,
+    std::wstring* sequenceStatus,
     std::wstring* failure) {
     const std::wstring safePhase = SafePhase(phase);
     const auto currentIds = SurfaceIds(health);
@@ -154,6 +188,7 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
             return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
         }
         if (baselineStatus) *baselineStatus = L"recorded";
+        if (sequenceStatus) *sequenceStatus = L"start";
         return WidgetRuntimeAcceptanceCode::Passed;
     }
 
@@ -161,6 +196,7 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
     if (!ReadBaselineIds(&baselineIds)) {
         if (failure) *failure = L"缺少可读取的 baseline identity set；请先执行 phase=baseline，再执行 settings/search/explorer/monitor。";
         if (baselineStatus) *baselineStatus = L"missing";
+        if (sequenceStatus) *sequenceStatus = L"blocked";
         return WidgetRuntimeAcceptanceCode::BaselineMissing;
     }
     if (baselineIds != currentIds) {
@@ -169,9 +205,22 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
                 + L" current=" + JoinIds(currentIds);
         }
         if (baselineStatus) *baselineStatus = L"mismatch";
+        if (sequenceStatus) *sequenceStatus = L"blocked";
         return WidgetRuntimeAcceptanceCode::BaselineMismatch;
     }
     if (baselineStatus) *baselineStatus = L"matched";
+
+    const std::wstring expected = ExpectedPreviousPhase(safePhase);
+    std::wstring previous;
+    if (expected.empty() || !ReadSequencePhase(&previous) || previous != expected) {
+        if (failure) {
+            *failure = L"M3 acceptance phase 顺序错误；当前 phase=" + safePhase + L" 需要上一成功 phase="
+                + (expected.empty() ? L"<unknown>" : expected) + L"，实际=" + (previous.empty() ? L"<missing>" : previous);
+        }
+        if (sequenceStatus) *sequenceStatus = L"out_of_order";
+        return WidgetRuntimeAcceptanceCode::SequenceOutOfOrder;
+    }
+    if (sequenceStatus) *sequenceStatus = L"previous=" + previous;
     return WidgetRuntimeAcceptanceCode::Passed;
 }
 
@@ -200,9 +249,10 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
     }
 
     std::wstring baselineStatus = L"unchecked";
-    const auto continuity = CheckPhaseContinuity(phase, health, &baselineStatus, failure);
+    std::wstring sequenceStatus = L"unchecked";
+    const auto continuity = CheckPhaseContinuity(phase, health, &baselineStatus, &sequenceStatus, failure);
     const fs::path path = ReportDirectory() / (L"widget-acceptance-" + SafePhase(phase) + L".txt");
-    if (!WriteUtf16Report(path, BuildReport(phase, health, baselineStatus))) {
+    if (!WriteUtf16Report(path, BuildReport(phase, health, baselineStatus, sequenceStatus))) {
         if (failure) *failure = L"无法写入 Widget acceptance report：" + path.wstring();
         return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
     }
@@ -218,6 +268,11 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
             if (failure) *failure = L"至少一个 Widget Surface 未通过 rendering health；查看 acceptance report。";
             return WidgetRuntimeAcceptanceCode::SurfaceUnhealthy;
         }
+    }
+
+    if (!WriteSequencePhase(phase)) {
+        if (failure) *failure = L"无法写入 M3 acceptance sequence cursor：" + SequencePath().wstring();
+        return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
     }
     return WidgetRuntimeAcceptanceCode::Passed;
 }

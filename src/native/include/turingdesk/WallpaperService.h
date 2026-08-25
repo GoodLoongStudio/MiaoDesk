@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include "turingdesk/WallpaperLibrary.h"
 
@@ -22,13 +23,19 @@ struct WallpaperServiceResult {
     std::wstring message;
 };
 
-// Wallpaper domain service. Owns wallpaper persistence/package transitions,
-// but not Windows Shell attachment, UI, Pi protocol or Widget persistence.
+// Wallpaper domain service. Owns wallpaper persistence/package/assignment
+// transitions, but not Windows Shell attachment, UI, Pi protocol or Widget
+// persistence.
 class WallpaperService {
 public:
     WallpaperServiceResult GetState(WallpaperState* state) const;
     WallpaperServiceResult ApplyWebPackage(const std::filesystem::path& package) const;
     WallpaperServiceResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
+    WallpaperServiceResult AssignLibraryItemToMonitor(
+        const wallpaper::WallpaperLibraryItem& item,
+        std::wstring_view monitorId,
+        std::wstring_view friendlyName = {}) const;
+    WallpaperServiceResult ClearMonitorAssignment(std::wstring_view monitorId) const;
 };
 
 } // namespace turingdesk::desktop

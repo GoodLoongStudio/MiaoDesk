@@ -53,8 +53,13 @@ The verifier recomputes the manifest SHA-256, then checks every recorded evidenc
 - all five `baseline/settings/search/explorer/monitor` report, PNG and PNG sidecar artifacts remain present;
 - each PNG still matches its sidecar SHA-256 and phase metadata;
 - visual sidecars retain `capturedAtUtc` and virtual-desktop bounds;
+- `capturedAtUtc` is strictly ordered as `baseline < settings < search < explorer < monitor`;
+- every phase health report was written before its matching screenshot, and the screenshot follows within five minutes;
+- no recorded evidence file is timestamped after the manifest seal;
 - Explorer restart and monitor-topology recovery evidence remain in the sealed set;
 - the baseline Widget identity set still matches the identity set recorded in the manifest.
+
+The chronology checks matter because matching hashes alone can still describe artifacts assembled from different acceptance rounds. They do not replace the sequence cursor or Widget identity checks; together the three mechanisms make accidental or manual evidence mixing substantially harder.
 
 This catches evidence mutation after sealing rather than merely protecting the manifest itself. It also makes the final evidence package independently auditable without discovering product HWNDs or re-running the runtime probe.
 
@@ -62,7 +67,7 @@ This catches evidence mutation after sealing rather than merely protecting the m
 
 The sealer and verifier are diagnostics-only. They must not discover or mutate Progman, WorkerW, DefView, Widget HWNDs or wallpaper HWNDs, and must not call `SetParent` or `SetWindowPos`. Runtime/surface truth remains owned by `WidgetService` and `DesktopShellHost`; these scripts only hash and validate already-produced acceptance artifacts.
 
-A static CI guard, `scripts/verify-widget-acceptance-evidence-verifier-contract.ps1`, prevents the verifier from silently losing required integrity checks or gaining Windows Shell ownership. PowerShell Syntax CI runs that guard on changes to the acceptance scripts.
+A static CI guard, `scripts/verify-widget-acceptance-evidence-verifier-contract.ps1`, prevents the verifier from silently losing required integrity/chronology checks or gaining Windows Shell ownership. PowerShell Syntax CI runs that guard on changes to the acceptance scripts.
 
 ## Completion rule
 

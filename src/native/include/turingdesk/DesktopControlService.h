@@ -45,6 +45,11 @@ public:
     DesktopControlResult GetSnapshot(DesktopSnapshot* snapshot) const;
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
     DesktopControlResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
+    DesktopControlResult AssignLibraryItemToMonitor(
+        const wallpaper::WallpaperLibraryItem& item,
+        std::wstring_view monitorId,
+        std::wstring_view friendlyName = {}) const;
+    DesktopControlResult ClearMonitorAssignment(std::wstring_view monitorId) const;
 
     DesktopControlResult CreateWebWidget(
         const WebWidgetCreateRequest& request,

@@ -24,7 +24,8 @@ struct AutomationState {
 };
 
 // Domain boundary for playlists, schedules and desktop profiles. UI windows
-// should not own WallpaperAutomationStore persistence or evaluation state.
+// and runtime clients should not own WallpaperAutomationStore persistence or
+// evaluation state directly.
 class AutomationService {
 public:
     AutomationService() = default;
@@ -41,6 +42,10 @@ public:
     AutomationServiceResult RemovePlaylist(std::wstring_view id) const;
     AutomationServiceResult RemoveSchedule(std::wstring_view id) const;
 
+    AutomationServiceResult Evaluate(
+        const SYSTEMTIME& localTime,
+        unsigned long long unixSeconds,
+        wallpaper::AutomationDecision* decision) const;
     AutomationServiceResult ForceNextPlaylist(
         std::wstring_view playlistId,
         unsigned long long unixSeconds,

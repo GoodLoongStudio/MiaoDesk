@@ -60,11 +60,14 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $text.Wallpaper.Contains($marker)) { throw "WallpaperService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth', 'environmentReported', 'controllerReported', 'navigationReported', 'zOrderReported')) {
+foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth', 'environmentReported', 'controllerReported', 'navigationReported', 'zOrderReported', 'issueCode', 'recommendedAction')) {
     if (-not $text.WidgetHeader.Contains($marker)) { throw "WidgetService header missing runtime health contract: $marker" }
 }
-foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
+foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'SetAttention', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
+}
+foreach ($marker in @('surface_missing', 'process_stopped', 'parent_invalid', 'webview_environment_pending', 'webview_controller_pending', 'webview_navigation_pending', 'zorder_invalid', 'recommendedAction')) {
+    if (-not $text.Widget.Contains($marker)) { throw "WidgetService actionable health contract missing marker: $marker" }
 }
 foreach ($marker in @('WebDesktopSurfaceChild.h', 'HasStructuredLifecycleTelemetry', 'kWebSurfaceRoleProperty', 'kWebSurfaceEnvironmentReadyProperty', 'kWebSurfaceControllerReadyProperty', 'kWebSurfaceNavigationReadyProperty', 'environmentReported = lifecycleTelemetry', 'controllerReported = lifecycleTelemetry', 'navigationReported = lifecycleTelemetry')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService WebView2 lifecycle telemetry contract missing marker: $marker" }
@@ -118,11 +121,11 @@ foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW
     if ($text.WidgetController.Contains($forbidden)) { throw "DesktopWidgetController regained domain/runtime ownership: $forbidden" }
 }
 
-foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth')) {
-    if (-not $text.WidgetUiHeader.Contains($marker)) { throw "DesktopWidgetUiAdapter header missing facade dependency: $marker" }
+foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth', 'displayItems_', 'DisplayHealthSuffix')) {
+    if (-not $text.WidgetUiHeader.Contains($marker)) { throw "DesktopWidgetUiAdapter header missing facade/actionable-health dependency: $marker" }
 }
-foreach ($marker in @('DesktopWidgetUiAdapter::RuntimeHealth', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
-    if (-not $text.WidgetUi.Contains($marker)) { throw "DesktopWidgetUiAdapter missing facade routing marker: $marker" }
+foreach ($marker in @('DesktopWidgetUiAdapter::RuntimeHealth', 'DesktopWidgetUiAdapter::DisplayHealthSuffix', 'service_.GetSnapshot', 'snapshot.widgets', 'snapshot.widgetRuntime', 'recommendedAction', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
+    if (-not $text.WidgetUi.Contains($marker)) { throw "DesktopWidgetUiAdapter missing facade/actionable-health routing marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
     if ($text.WidgetUi.Contains($forbidden)) { throw "DesktopWidgetUiAdapter regained domain/runtime ownership: $forbidden" }

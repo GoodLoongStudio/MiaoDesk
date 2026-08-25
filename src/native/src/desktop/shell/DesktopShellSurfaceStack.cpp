@@ -144,7 +144,17 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
     // A refreshed Explorer generation always goes through EnsureSurface even if
     // a recycled HWND happens to resemble the old parent. This keeps stale
     // Explorer ownership from surviving a restart by accident.
-    return EnsureSurface(surface, role, desktopBounds, wasVisible, error);
+    std::wstring recoveryError;
+    if (EnsureSurface(surface, role, desktopBounds, wasVisible, &recoveryError)) {
+        if (error) error->clear();
+        return true;
+    }
+    if (error) {
+        *error = sameGeneration
+            ? recoveryError
+            : L"DesktopShellHost: Explorer generation changed; reattach failed: " + recoveryError;
+    }
+    return false;
 }
 
 } // namespace turingdesk::wallpaper

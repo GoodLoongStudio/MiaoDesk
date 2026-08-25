@@ -41,14 +41,10 @@ foreach ($marker in @(
     }
 }
 
-foreach ($marker in @(
-    'WallpaperSettingsSection::Installed',
-    'WallpaperSettingsSection::Widgets',
-    'WallpaperSettingsSection::Playlists',
-    'WallpaperSettingsSection::Displays',
-    'WallpaperSettingsSection::Rules',
-    'WallpaperSettingsSection::Performance',
-    'WallpaperSettingsSection::AI')) {
+if (-not $header.Contains('enum class WallpaperSettingsSection')) {
+    throw 'WallpaperLibraryWindow contract lost WallpaperSettingsSection enum.'
+}
+foreach ($marker in @('Installed,', 'Widgets,', 'Playlists,', 'Displays,', 'Rules,', 'Performance,', 'AI,')) {
     if (-not $header.Contains($marker)) {
         throw "WallpaperLibraryWindow contract lost navigation section: $marker"
     }
@@ -116,13 +112,16 @@ if (-not $cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
 if ($cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindowV2.cpp')) {
     throw 'Do not compile WallpaperLibraryWindowV2.cpp directly into production; switch only through the parity bridge.'
 }
+if (-not $cmake.Contains('WallpaperLibraryWindowV2Candidate.cpp')) {
+    throw 'M4 V2 candidate must compile in normal Windows builds so parity work cannot silently rot.'
+}
 
 # Candidate debt is reported but does not block development while V2 is not the
 # production implementation. The production-switch checks above turn the same
 # debt into a hard error when somebody attempts to ship V2 prematurely.
 $debt = @()
 if ($candidate.Contains('DesktopWidgetStore store') -or $candidate.Contains('#include "turingdesk/DesktopWidgetStore.h"')) {
-    $debt += 'Widget CRUD still bypasses DesktopWidgetController/DesktopControlService'
+    $debt += 'Widget CRUD still bypasses DesktopWidgetController/DesktopControlService in source text'
 }
 if (-not $candidate.Contains('kNavAiId')) { $debt += 'AI navigation missing' }
 

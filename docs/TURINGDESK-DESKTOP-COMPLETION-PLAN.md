@@ -72,7 +72,7 @@ No newly supported operation may require UI or Pi to edit `wallpaper.ini`, `Desk
 
 ### M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner
 
-Current state: **implementation complete; acceptance pending**
+Current state: **implementation complete; real-Windows acceptance pending**
 
 Tasks:
 
@@ -84,6 +84,11 @@ Tasks:
 - [x] Add shell-mode and attachment diagnostics contract.
 - [x] Add a build-time shell ownership guard so renderer/coordinator/Widget surfaces cannot rediscover Progman/WorkerW independently.
 - [x] Physically remove the transitional `EnsureIndependentHostBounds` geometry mutation from `WallpaperWebRuntimeCoordinator.cpp` and delete its production bridge.
+
+Validated implementation baseline:
+- `1ed59a6a9c270408024e7143302a45592d2156a1`
+- Native Windows x64 Source Validation `#298` completed successfully on 2026-08-25.
+- Native Windows ARM64 `#690` completed successfully on 2026-08-25.
 
 Current production state:
 - `WallpaperEngine.cpp` directly owns a `DesktopShellHost` client and no longer contains Progman/WorkerW/DefView discovery, `0x052C`, SetParent, parent-client geometry mapping or WorkerW z-order helpers;
@@ -115,7 +120,7 @@ Exit gate:
 
 ### M3 — Widget visible-runtime acceptance
 
-Current state: **highest user-facing runtime risk**
+Current state: **implementation in progress; real-Windows acceptance pending**
 
 Goal: prove that a persisted Widget is actually rendered on the Windows desktop.
 
@@ -129,6 +134,13 @@ Tasks:
 - [ ] Confirm Settings/Search windows do not hide or pause the Widget.
 - [ ] Confirm Explorer restart restores Widget surfaces.
 - [ ] Confirm monitor disconnect/reconnect restores Widget placement.
+
+M3 implementation landed so far:
+- `WidgetRuntimeHealth` is owned by `WidgetService` rather than UI/Pi reading private runtime diagnostics directly;
+- `DesktopSnapshot` now carries the same Widget runtime health alongside wallpaper state and Widget persistence state;
+- Pi `wallpaper_state_get` consumes `DesktopSnapshot`, so AI and future UI/editor clients share one health contract;
+- current health exposes configured/enabled-Web counts, runtime-report presence, a compatibility health result and runtime detail;
+- the compatibility detail inference is transitional: M3 is not complete until process/HWND/WebView2 Environment/Controller/Navigation/shell/z-order/visible/rendering health is structured per surface.
 
 Real Windows acceptance flow:
 
@@ -411,6 +423,6 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 ## Current active milestone
 
-**M2 — acceptance gate.**
+**M3 — Widget visible-runtime implementation and acceptance.**
 
-M1 is closed. M2 shell ownership is now physically centralized in `DesktopShellHost`; both the coordinator and the native WallpaperEngine have lost their independent Progman/WorkerW/`0x052C`/SetParent/geometry ownership, and the obsolete coordinator production bridge is deleted. M2 still requires a green exact-head ARM64 run plus real-Windows wallpaper/Widget/icon layering and recovery acceptance before it may be marked complete. Only after that gate should implementation advance to **M3 Widget real visibility**, then **M4 new production UI**.
+M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the exact-head implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now owns the highest remaining runtime risk: turn the current domain-owned compatibility health summary into structured per-surface WebView2/process/HWND/shell/z-order/visibility/rendering health, expose the same state to UI/Pi/editor clients, then pass the real ARM64 Widget visibility/recovery flow. M4 does not begin until that gate is satisfied.

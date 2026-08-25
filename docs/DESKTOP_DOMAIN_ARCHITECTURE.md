@@ -134,8 +134,9 @@ Owns:
 - normalized geometry
 - Widget runtime lifecycle
 - Widget surface management
+- caller-facing Widget runtime health through `WidgetRuntimeHealth`
 
-`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly.
+`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read the private INI diagnostics directly; `WidgetService::GetRuntimeHealth` is the current M3 compatibility boundary and will evolve into per-surface WebView2/shell health behind the same domain contract.
 
 ### 3.4 Automation
 
@@ -183,7 +184,7 @@ Owns:
 - native tool registration
 - conversational orchestration
 
-`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence.
+`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence. `wallpaper_state_get` reads `DesktopSnapshot`, including `WidgetRuntimeHealth`, instead of composing a separate AI-only runtime view.
 
 ### 3.7 UI
 
@@ -204,7 +205,7 @@ The current concrete boundary is:
 
 - `DesktopControlService` — shared facade for product clients
 - `WallpaperService` — wallpaper state/package/library apply/per-monitor assignment ownership
-- `WidgetService` — Widget CRUD/persistence ownership
+- `WidgetService` — Widget CRUD/persistence/runtime-health ownership
 - `AutomationService` — playlist/profile/schedule persistence, evaluation and manual playlist transition ownership
 - `PerformanceService` — performance-policy persistence ownership
 - `DesktopWidgetController` — direct UI controller for new Widget UI code
@@ -216,6 +217,9 @@ Current DesktopControl facade responsibilities include:
 
 ```text
 GetState / GetSnapshot
+  -> DesktopState
+  -> Widget list
+  -> WidgetRuntimeHealth
 ApplyWebPackage
 ApplyLibraryItem
 AssignLibraryItemToMonitor
@@ -246,9 +250,9 @@ The existing Pi tool names are an adapter protocol and are not the domain API it
 ```text
 Pi JSON arguments
     ↓ parse
-DesktopControlService request
-    ↓ execute
-DesktopControlResult
+DesktopControlService request / DesktopSnapshot
+    ↓ execute/read
+DesktopControlResult + domain-owned runtime health
     ↓ format
 Pi text result
 ```
@@ -337,12 +341,14 @@ Completed or substantially landed:
 - Wallpaper library item apply and monitor assignment are behind `WallpaperService/DesktopControlService`;
 - Automation UI/runtime evaluation routes through `AutomationUiAdapter/AutomationService`;
 - Performance UI compatibility routes through `PerformanceUiAdapter/PerformanceService`;
-- Widget UI and Pi adapters route through Desktop Control rather than Widget persistence.
+- Widget UI and Pi adapters route through Desktop Control rather than Widget persistence;
+- M2 production shell ownership is physically centralized in `DesktopShellHost`; exact-head `1ed59a6a9c270408024e7143302a45592d2156a1` passed x64 and ARM64 Windows validation;
+- M3 now exposes a domain-owned `WidgetRuntimeHealth` inside `DesktopSnapshot`, and Pi reads the same snapshot contract.
 
 Remaining order:
 
-1. Finish M2: remove obsolete shell discovery/attachment/geometry helpers from the migration-only legacy wallpaper/coordinator sources so `DesktopShellHost` is physically and behaviorally the sole shell owner.
-2. Finish M3: real Widget visibility/health/z-order/Explorer-recovery acceptance.
+1. Preserve M2 real-Windows wallpaper/Widget/icon layering and Explorer-recovery acceptance as an outstanding gate.
+2. Finish M3: replace compatibility runtime-detail inference with per-surface process/HWND/WebView2 Environment/Controller/Navigation/shell/z-order/visible/rendering health, then complete real Widget visibility/recovery acceptance.
 3. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
 4. Replace transitional legacy UI bridges after V2 parity.
 5. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
@@ -357,6 +363,7 @@ Required tests over time:
 ```text
 Pi creates Widget -> UI lists same Widget
 UI moves Widget -> Pi reads updated geometry
+UI/Pi read the same WidgetRuntimeHealth from DesktopSnapshot
 UI applies wallpaper -> Pi reads same current state
 Pi applies wallpaper -> UI shows same current state
 Automation UI edits playlist -> runtime evaluates the same persisted playlist

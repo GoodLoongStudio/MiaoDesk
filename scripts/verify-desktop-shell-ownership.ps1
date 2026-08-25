@@ -11,6 +11,11 @@ function Require-File([string]$relativePath) {
     return $path
 }
 
+$obsoleteCoordinatorBridge = Join-Path $root 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinatorProduction.cpp'
+if (Test-Path -LiteralPath $obsoleteCoordinatorBridge -PathType Leaf) {
+    throw 'Transitional WallpaperWebRuntimeCoordinatorProduction.cpp must remain deleted.'
+}
+
 $paths = @{
     ShellHeader = 'src/native/include/turingdesk/DesktopShellHost.h'
     Shell = 'src/native/src/desktop/shell/DesktopShellHost.cpp'

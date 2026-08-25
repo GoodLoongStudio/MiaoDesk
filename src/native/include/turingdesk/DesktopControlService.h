@@ -44,6 +44,7 @@ public:
     DesktopControlResult GetState(DesktopState* state) const;
     DesktopControlResult GetSnapshot(DesktopSnapshot* snapshot) const;
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
+    DesktopControlResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
 
     DesktopControlResult CreateWebWidget(
         const WebWidgetCreateRequest& request,

@@ -5,6 +5,8 @@ Date: 2026-08-25
 
 This document defines module boundaries for the TuringDesk desktop product. It exists to prevent UI, AI, wallpaper renderers and Windows Shell integration from growing into one coupled subsystem.
 
+The physical implementation layout is defined by `docs/NATIVE_SOURCE_LAYOUT.md`. Domain boundaries and physical folders must agree; `src/native/src/` is a module root, not a flat implementation bucket.
+
 ## 1. Target process architecture
 
 ```text
@@ -29,6 +31,29 @@ TuringDeskHarness.exe
 ```
 
 This is intentionally a small-process architecture, not microservices. Internal modules have strong boundaries; process count stays small.
+
+Current implementation roots:
+
+```text
+src/native/src/
+├─ app/
+├─ ai/
+│  ├─ pi/
+│  ├─ tools/
+│  └─ agent/
+├─ search/
+├─ harness/
+├─ desktop/
+│  ├─ control/
+│  ├─ shell/
+│  ├─ wallpaper/
+│  ├─ widgets/
+│  ├─ automation/
+│  └─ performance/
+└─ ui/
+```
+
+Public C++ headers remain under `src/native/include/turingdesk/` during the current migration so implementation movement does not silently change the API/include contract.
 
 ## 2. Dependency rule
 
@@ -63,11 +88,13 @@ Renderer -> AI runtime
 Wallpaper -> Pi runtime
 ```
 
-During migration, legacy paths may remain only when the replacement path is not yet available. New code must not add another direct path.
+During migration, legacy paths may remain only behind an explicit production bridge when the replacement path is not yet complete. New code must not add another direct path.
 
 ## 3. Domains
 
 ### 3.1 DesktopShell
+
+Physical implementation: `src/native/src/desktop/shell/`.
 
 Owns only Windows desktop infrastructure:
 
@@ -83,6 +110,8 @@ Primary implementation: `DesktopShellHost`.
 
 ### 3.2 Wallpaper
 
+Physical implementation: `src/native/src/desktop/wallpaper/`.
+
 Owns:
 
 - wallpaper state and package validation through `WallpaperService`
@@ -92,9 +121,11 @@ Owns:
 - per-monitor assignment
 - scaling and content properties
 
-Wallpaper code does not call Pi.
+Subfolders separate `library`, `monitor`, `render`, `web`, `runtime` and migration-only `legacy` code. Wallpaper code does not call Pi.
 
 ### 3.3 Widgets
+
+Physical implementation: `src/native/src/desktop/widgets/` with UI adapters under `src/native/src/ui/widgets/`.
 
 Owns:
 
@@ -108,6 +139,8 @@ Owns:
 
 ### 3.4 Automation
 
+Physical implementation: `src/native/src/desktop/automation/` with UI compatibility code under `src/native/src/ui/automation/`.
+
 Owns:
 
 - playlists
@@ -116,12 +149,15 @@ Owns:
 - application rules
 - persisted active playlist / last matched schedule state
 - manual next-playlist state transition
+- runtime evaluation through `AutomationService`
 
-`WallpaperAutomationStore` is persistence/execution infrastructure, not a UI API. `AutomationService` owns persistence access. `AutomationUiAdapter` is the temporary compatibility surface for the current Win32 automation UI while that window is migrated.
+`WallpaperAutomationStore` is persistence/execution infrastructure, not a UI API. `AutomationService` owns persistence/evaluation access. `AutomationUiAdapter` is the temporary compatibility surface for the current Win32 automation UI.
 
 Automation produces desktop intents; it does not directly manipulate WorkerW or renderer HWNDs.
 
 ### 3.5 Performance
+
+Physical implementation: `src/native/src/desktop/performance/` with UI compatibility code under `src/native/src/ui/performance/`.
 
 Owns policy inputs and decisions:
 
@@ -132,11 +168,13 @@ Owns policy inputs and decisions:
 - lock / idle
 - Normal / Throttle / Pause / Stop
 
-`PerformanceService` owns persisted performance-policy configuration. `PerformanceUiAdapter` is the UI-facing compatibility boundary; performance controls must use it instead of reading or writing `wallpaper.ini` directly.
+`PerformanceService` owns persisted performance-policy configuration. `PerformanceUiAdapter` is the UI-facing compatibility boundary; performance controls use it instead of owning persistence directly.
 
 Renderers consume the resulting policy; renderers do not independently rediscover system policy.
 
 ### 3.6 AI
+
+Physical implementation: `src/native/src/ai/`.
 
 Owns:
 
@@ -145,9 +183,11 @@ Owns:
 - native tool registration
 - conversational orchestration
 
-AI is a client of Desktop Control. It does not own wallpaper or Widget persistence.
+`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence.
 
 ### 3.7 UI
+
+Physical implementation: `src/native/src/ui/`.
 
 UI responsibilities are deliberately narrow:
 
@@ -156,27 +196,30 @@ UI responsibilities are deliberately narrow:
 - call a controller/service
 - display returned state/errors
 
-UI does not implement domain rules.
+UI does not implement domain rules. Production compatibility bridges for the old library/automation windows live under their UI domains and are migration-only.
 
 ## 4. Desktop Control facade and domain services
 
 The current concrete boundary is:
 
 - `DesktopControlService` — shared facade for product clients
-- `WallpaperService` — wallpaper state/package ownership
+- `WallpaperService` — wallpaper state/package/library apply/per-monitor assignment ownership
 - `WidgetService` — Widget CRUD/persistence ownership
-- `AutomationService` — playlist/profile/schedule persistence and manual playlist transition ownership
+- `AutomationService` — playlist/profile/schedule persistence, evaluation and manual playlist transition ownership
 - `PerformanceService` — performance-policy persistence ownership
 - `DesktopWidgetController` — direct UI controller for new Widget UI code
 - `DesktopWidgetUiAdapter` — transitional compatibility adapter for the current production legacy library window
 - `AutomationUiAdapter` — transitional compatibility adapter for the current automation window
 - `PerformanceUiAdapter` — UI-facing adapter for performance settings while the legacy settings surface is migrated
 
-Current DesktopControl facade responsibilities:
+Current DesktopControl facade responsibilities include:
 
 ```text
-GetState
+GetState / GetSnapshot
 ApplyWebPackage
+ApplyLibraryItem
+AssignLibraryItemToMonitor
+ClearMonitorAssignment
 CreateWebWidget
 UpdateWidget
 RemoveWidget
@@ -186,11 +229,11 @@ EnsureRuntime
 
 Current or staged clients:
 
-- Pi native desktop tool adapter (`DesktopWidgetTools.cpp`)
-- production legacy Widget UI through `WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
+- Pi native desktop tool adapter (`src/native/src/ai/tools/DesktopWidgetTools.cpp`)
+- production legacy Widget UI through `ui/wallpaper/WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
 - new Widget UI through `DesktopWidgetController`
-- automation UI through `AutomationUiAdapter -> AutomationService` as the staged replacement path
-- performance UI through `PerformanceUiAdapter -> PerformanceService` as the staged replacement path
+- automation UI/runtime through `AutomationUiAdapter -> AutomationService`
+- performance UI through `PerformanceUiAdapter -> PerformanceService`
 - Desktop Library V2 / Widget UI
 - future Scene / Widget Editor
 
@@ -224,9 +267,9 @@ DesktopControlService
 WidgetService
 ```
 
-It must never include or instantiate `DesktopWidgetStore`.
+It must never instantiate `DesktopWidgetStore`.
 
-The current production `WallpaperLibraryWindow.cpp` is a large legacy source file. To avoid a risky mechanical rewrite while V2 is still incomplete, production no longer compiles that file directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
+The current production `WallpaperLibraryWindow.cpp` is a large legacy source file under `ui/wallpaper/`. Production does not compile it directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
 
 Automation follows the same migration rule:
 
@@ -240,7 +283,7 @@ AutomationService
 WallpaperAutomationStore
 ```
 
-`AutomationUiAdapter` may preserve the old store-shaped method names for migration, but it must not instantiate `WallpaperAutomationStore`, read INI files, or own scheduling rules. The runtime may continue to own an automation store for periodic evaluation until runtime execution itself is moved behind the service boundary.
+`AutomationUiAdapter` may preserve the old store-shaped method names for migration, but it must not instantiate `WallpaperAutomationStore`, read INI files, or own scheduling rules. Runtime evaluation is also routed through `AutomationService`.
 
 Performance follows the same migration rule:
 
@@ -251,12 +294,12 @@ PerformanceUiAdapter
     ↓
 PerformanceService
     ↓
-wallpaper.ini persistence
+performance persistence
 ```
 
 `PerformanceUiAdapter` only translates UI intent and errors. It must not call Win32 profile APIs itself.
 
-Similarly, `WallpaperLibraryWindowV2.cpp` should become:
+Similarly, `WallpaperLibraryWindowV2.cpp` must become:
 
 ```text
 Win32 input
@@ -270,7 +313,7 @@ rather than another giant business-logic window.
 
 ## 6. UI migration rule
 
-The current production `WallpaperLibraryWindow.cpp` behavior stays active until V2 reaches functional parity, but its production Widget CRUD path is now service-routed through `WallpaperLibraryWindowProduction.cpp` and `DesktopWidgetUiAdapter`.
+The current production `WallpaperLibraryWindow.cpp` behavior stays active until V2 reaches functional parity, but its production Widget CRUD path is service-routed through `WallpaperLibraryWindowProduction.cpp` and `DesktopWidgetUiAdapter`.
 
 V2 may replace it only after these capabilities are preserved:
 
@@ -286,15 +329,24 @@ V2 may replace it only after these capabilities are preserved:
 
 A visual redesign is never allowed to remove a product capability.
 
-## 7. Next refactor slices
+## 7. Current remaining refactor slices
 
-1. Wire the existing automation window to `AutomationUiAdapter` without exposing `WallpaperAutomationStore*` in the window API.
-2. Route the existing performance controls through `PerformanceUiAdapter` and remove their direct performance-policy INI ownership from `WallpaperEngine.cpp`.
-3. Replace the transitional `DesktopWidgetUiAdapter` bridge with direct `DesktopWidgetController` use when the V2 production window reaches feature parity.
-4. Expand `WallpaperService` from Web package application into library item application and monitor assignment.
-5. Make Desktop Library V2 depend on controllers/services only.
-6. Remove legacy direct shell attachment from `WallpaperEngine.cpp` after `DesktopShellHost` is sole owner.
-7. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
+Completed or substantially landed:
+
+- source implementation is physically grouped by process/domain instead of flat `src/native/src/*.cpp`;
+- Wallpaper library item apply and monitor assignment are behind `WallpaperService/DesktopControlService`;
+- Automation UI/runtime evaluation routes through `AutomationUiAdapter/AutomationService`;
+- Performance UI compatibility routes through `PerformanceUiAdapter/PerformanceService`;
+- Widget UI and Pi adapters route through Desktop Control rather than Widget persistence.
+
+Remaining order:
+
+1. Finish M2: remove obsolete shell discovery/attachment/geometry helpers from the migration-only legacy wallpaper/coordinator sources so `DesktopShellHost` is physically and behaviorally the sole shell owner.
+2. Finish M3: real Widget visibility/health/z-order/Explorer-recovery acceptance.
+3. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
+4. Replace transitional legacy UI bridges after V2 parity.
+5. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
+6. Split public/private headers and CMake library targets only when that change improves enforceable dependency boundaries; do not churn include paths merely for cosmetics.
 
 ## 8. Completion tests
 

@@ -35,10 +35,20 @@ If no topology transition is observed, the monitor phase fails before the Widget
 
 Monitor evidence is display-metadata-only diagnostics. It uses `System.Windows.Forms.Screen`; it does not discover Progman/WorkerW/DefView, enumerate runtime HWNDs, call `SetParent`, call `SetWindowPos`, or repair z-order. `DesktopShellHost` remains the sole Windows desktop attachment owner.
 
+## Visual evidence
+
+After each phase passes the Widget-domain health probe, the runner captures the complete Windows virtual desktop into `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.png`. The capture spans all screens, including negative virtual desktop coordinates, so multi-monitor placement is preserved instead of cropping to the primary display.
+
+Each PNG has a sibling `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.png.sha256` evidence file containing the SHA-256 digest, capture UTC time, phase name and captured virtual desktop bounds. A fresh `baseline` removes stale PNG/hash evidence before beginning a new sequence. The hash is not a semantic visual test; it makes the exact screenshot used for review durable and tamper-evident within the diagnostics bundle.
+
+Screen capture is deliberately read-only acceptance instrumentation. It uses `System.Drawing.Graphics.CopyFromScreen` and display metadata only. It does not discover Progman/WorkerW/DefView, enumerate product HWNDs, mutate parents or change z-order. All Windows desktop attachment ownership remains in `DesktopShellHost`.
+
+The screenshot evidence makes later review reproducible, but it does not replace human visual acceptance. The reviewer still has to inspect the images (or the live desktop) and confirm that Widget pixels are above the TuringDesk wallpaper, below desktop icons, still present with Settings/Search open, restored after Explorer restart, and positioned correctly after the monitor transition.
+
 Stable probe exit codes are `BaselineMissing = 65`, `BaselineMismatch = 66`, and `SequenceOutOfOrder = 67`. The PowerShell runner additionally fails before the `explorer` probe when Explorer restart evidence is missing or unchanged, and before the `monitor` probe when monitor recovery evidence is missing or no display topology transition is observed. These failures require the operator to perform the missing recovery action rather than silently skipping evidence.
 
 PID/HWND values are intentionally excluded from the Widget identity set. Explorer restart and runtime recovery may legitimately recreate processes and HWNDs, while the configured Widget identity must remain stable. The separate explorer.exe PID checkpoint is evidence that the shell process restarted; it is not used as Widget identity and is not product runtime state. The display topology checkpoint and transition evidence are similarly diagnostics-only and are never used as Widget persistence state.
 
-The sequence cursor, Explorer checkpoint, display-topology checkpoint and topology-transition evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
+The sequence cursor, Explorer checkpoint, display-topology checkpoint, topology-transition evidence and visual evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
 
 Passing these probes does not replace visual confirmation. The operator must still verify that the Widget is above the TuringDesk wallpaper, below desktop icons, remains visible while Settings/Search are open, returns after Explorer restart, and restores to the correct display after monitor reconnect/change.

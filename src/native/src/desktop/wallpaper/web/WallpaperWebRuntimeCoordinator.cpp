@@ -241,21 +241,6 @@ std::vector<WebWallpaperRequest> MapRequestsToParent(HWND host, HWND parent,
     return mapped;
 }
 
-void EnsureIndependentHostBounds(HWND host) {
-    if (!host || !IsWindow(host)) return;
-    const HWND parent = GetParent(host);
-    if (!parent || !IsWindow(parent)) return;
-    const MonitorTopology topology = QueryMonitorTopology();
-    if (!topology.Valid()) return;
-    const RECT desktopBounds = HostDesktopBounds(topology, LayoutMode::Independent);
-    const RECT parentBounds = DesktopRectToParentClient(parent, desktopBounds);
-    const LONG width = parentBounds.right - parentBounds.left;
-    const LONG height = parentBounds.bottom - parentBounds.top;
-    if (width <= 0 || height <= 0) return;
-    SetWindowPos(host, nullptr, parentBounds.left, parentBounds.top, width, height,
-                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-}
-
 bool PersistGlobalWeb(const WallpaperLibraryItem& item, std::wstring* error) {
     const fs::path path = WallpaperConfigPath();
     bool ok = true;
@@ -397,7 +382,19 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             const ULONGLONG now = GetTickCount64();
             if (host && surfaceParent && IsWindow(host) && IsWindow(surfaceParent) && now >= nextRefresh) {
                 state = LoadRuntimeState(WallpaperConfigPath());
-                if (state.layout == LayoutMode::Independent) EnsureIndependentHostBounds(host);
+                if (state.layout == LayoutMode::Independent) {
+                    const MonitorTopology topology = QueryMonitorTopology();
+                    if (topology.Valid()) {
+                        const RECT desktopBounds = HostDesktopBounds(topology, LayoutMode::Independent);
+                        std::wstring shellError;
+                        const bool visible = IsWindowVisible(host) != FALSE;
+                        if (!shellHost.EnsureSurface(host, DesktopSurfaceRole::Wallpaper, desktopBounds, visible, &shellError)) {
+                            if (!shellError.empty()) WriteDiagnostics(L"DesktopShellHost independent geometry failed: " + shellError);
+                        } else {
+                            surfaceParent = shellHost.SurfaceParent();
+                        }
+                    }
+                }
 
                 const auto desiredInHost = DesiredRequests(host, state);
                 std::wstring widgetFingerprint;

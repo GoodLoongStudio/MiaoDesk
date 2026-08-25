@@ -1,4 +1,5 @@
 #include "turingdesk/WidgetService.h"
+#include "turingdesk/DesktopSurfaceTelemetry.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
 
 #include <windows.h>
@@ -113,6 +114,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     const HWND window = FindWidgetSurface(expectedParent, widget.id);
     surface.hwndReady = window && IsWindow(window);
     surface.hwndValue = surface.hwndReady ? reinterpret_cast<std::uintptr_t>(window) : 0;
+    wallpaper::DesktopSurfaceZOrderHealth zOrder;
 
     if (surface.hwndReady) {
         DWORD processId = 0;
@@ -138,15 +140,19 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
             surface.controllerReady = PropertyReady(window, wallpaper::kWebSurfaceControllerReadyProperty);
             surface.navigationReady = PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty);
         }
+
+        // Read-only ordering semantics live in the desktop/shell domain. Widget
+        // health consumes the result but never calls SetWindowPos/SetParent.
+        zOrder = wallpaper::InspectDesktopSurfaceZOrder(
+            window, wallpaper::DesktopSurfaceTelemetryRole::Widget);
+        surface.zOrderReported = zOrder.reported;
+        surface.zOrderValid = zOrder.valid;
     }
 
-    // Authoritative sibling ordering still belongs to DesktopShellHost. It is
-    // intentionally left unreported until the shell/runtime producer exposes a
-    // per-surface z-order result; WidgetService must not independently repair it.
-    surface.zOrderReported = false;
     const bool lifecycleReady = !surface.environmentReported ||
         (surface.environmentReady && surface.controllerReady && surface.navigationReady);
-    surface.renderingHealthy = surface.SurfaceReady() && lifecycleReady && compatibilityHealthy;
+    const bool zOrderReady = surface.zOrderReported && surface.zOrderValid;
+    surface.renderingHealthy = surface.SurfaceReady() && lifecycleReady && zOrderReady && compatibilityHealthy;
 
     std::wostringstream detail;
     if (!surface.hwndReady) detail << L"等待隔离 Surface HWND";
@@ -158,7 +164,9 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     else if (!surface.environmentReady) detail << L"等待 WebView2 EnvironmentReady";
     else if (!surface.controllerReady) detail << L"等待 WebView2 ControllerReady";
     else if (!surface.navigationReady) detail << L"等待 WebView2 NavigationReady";
-    else detail << L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry";
+    else if (!surface.zOrderReported) detail << L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry";
+    else if (!surface.zOrderValid) detail << (zOrder.detail.empty() ? L"Widget z-order 无效" : zOrder.detail);
+    else detail << L"Widget WebView2/desktop surface health ready";
     surface.detail = detail.str();
     return surface;
 }

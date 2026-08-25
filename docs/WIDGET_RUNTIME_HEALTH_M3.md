@@ -69,9 +69,37 @@ The production legacy Widget list consumes the same `DesktopSnapshot` through `D
 
 Pi `wallpaper_state_get` now emits every structured surface with process/HWND/parent/style/visible/lifecycle/z-order state plus issue/action text. `desktop_widget_list` also uses `DesktopSnapshot` and attaches runtime issue/action guidance to the matching Widget. Pi remains a read-only consumer of the domain health contract and never enumerates HWNDs itself.
 
+## Real-Windows acceptance probe
+
+M3 now ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another HWND enumeration or shell ownership path.
+
+Run it directly or through:
+
+```powershell
+.\scripts\run-widget-runtime-acceptance.ps1 -Phase baseline
+```
+
+Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Web Widget, a one-to-one healthy surface set, WebView2 lifecycle readiness and valid shared z-order telemetry. It writes a UTF-16 report to:
+
+```text
+%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
+```
+
+The probe intentionally fails in a non-interactive CI session instead of pretending that a successful build proves visible desktop behavior. The intended real-machine sequence is:
+
+```text
+baseline probe
+-> open Settings, settings probe
+-> open Search, search probe
+-> restart Explorer, explorer probe
+-> reconnect/change display, monitor probe
+```
+
+A probe pass is evidence for that phase only. The user-visible acceptance flow still requires the operator to visually confirm that desktop icons remain usable and the Widget appears in the intended layer.
+
 ## Remaining M3 slices
 
-1. Confirm the production UI presentation and Pi structured output on a real ARM64 Windows desktop with an enabled Web Widget.
+1. Run the phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with an enabled Web Widget.
 2. Confirm the read-only z-order interpretation against real ARM64 Windows in Raised Desktop, legacy WorkerW and Progman fallback modes.
 3. Pass the real ARM64 Windows acceptance flow: create clock, keep it visible while Settings/Search open, recover after Explorer restart, and restore after display reconnect/change.
 

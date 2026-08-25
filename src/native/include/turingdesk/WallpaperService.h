@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <string>
 
+#include "turingdesk/WallpaperLibrary.h"
+
 namespace turingdesk::desktop {
 
 struct WallpaperState {
@@ -26,6 +28,7 @@ class WallpaperService {
 public:
     WallpaperServiceResult GetState(WallpaperState* state) const;
     WallpaperServiceResult ApplyWebPackage(const std::filesystem::path& package) const;
+    WallpaperServiceResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
 };
 
 } // namespace turingdesk::desktop

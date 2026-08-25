@@ -153,15 +153,10 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
 }
 
 bool DesktopShellHost::EnsureCurrent(std::wstring* error) {
-    if (!snapshot_.Valid()) return Refresh(error);
-    if (ExplorerProcessId(snapshot_.progman) != snapshot_.explorerPid) return Refresh(error);
-    if (snapshot_.mode == DesktopShellMode::RaisedDesktop) {
-        if (!snapshot_.shellDefView || !IsWindow(snapshot_.shellDefView) || !snapshot_.workerW || !IsWindow(snapshot_.workerW) ||
-            GetParent(snapshot_.shellDefView) != snapshot_.progman || GetParent(snapshot_.workerW) != snapshot_.progman)
-            return Refresh(error);
-    } else if (snapshot_.mode == DesktopShellMode::LegacyWorkerW) {
-        if (!snapshot_.workerW || !IsWindow(snapshot_.workerW)) return Refresh(error);
-    }
+    // Keep one definition of a valid Explorer desktop generation. The stronger
+    // validator also checks mode-specific parent relationships, including the
+    // Progman fallback and legacy DefView parent cases used during recovery.
+    if (!CurrentGenerationValid()) return Refresh(error);
     if (error) error->clear();
     return true;
 }

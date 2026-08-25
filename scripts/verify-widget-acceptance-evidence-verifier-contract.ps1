@@ -28,9 +28,15 @@ foreach ($marker in @(
     'widget-acceptance-explorer.monitor-topology',
     'widget-acceptance-monitor.topology-transition',
     'virtualBounds',
-    'capturedAtUtc')) {
+    'capturedAtUtc',
+    'Parse-UtcTimestamp',
+    'manifest.sealedAtUtc',
+    'phaseOrder',
+    'visual evidence chronology is invalid',
+    'phase evidence chronology is invalid',
+    'more than five minutes after its health report')) {
     if (-not $verifierText.Contains($marker)) {
-        throw "M3 evidence verifier missing integrity marker: $marker"
+        throw "M3 evidence verifier missing integrity/chronology marker: $marker"
     }
 }
 foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'EnumWindows(', 'SetParent(', 'SetWindowPos(', 'Progman', 'WorkerW', 'SHELLDLL_DefView')) {
@@ -46,4 +52,4 @@ foreach ($marker in @('verify-widget-acceptance-evidence.ps1', 'Sealed and verif
     }
 }
 
-Write-Host 'M3 evidence verifier contract OK: sealed evidence can be independently rehashed and phase/recovery artifacts are checked without regaining shell ownership.'
+Write-Host 'M3 evidence verifier contract OK: sealed evidence is independently rehashed, phase/recovery artifacts and chronological coherence are checked, and diagnostics do not regain shell ownership.'

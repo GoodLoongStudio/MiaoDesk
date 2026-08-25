@@ -4,6 +4,7 @@
 
 #include <windows.h>
 
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -17,7 +18,7 @@ namespace {
 std::wstring SafePhase(std::wstring_view phase) {
     std::wstring value = phase.empty() ? L"baseline" : std::wstring(phase);
     for (auto& ch : value) {
-        if (!(iswalnum(ch) || ch == L'-' || ch == L'_')) ch = L'_';
+        if (!(std::iswalnum(ch) || ch == L'-' || ch == L'_')) ch = L'_';
     }
     return value;
 }

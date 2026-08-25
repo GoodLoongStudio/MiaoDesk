@@ -17,6 +17,8 @@ baseline -> settings -> search -> explorer -> monitor
 
 This prevents incomplete acceptance evidence such as running `baseline` and jumping directly to `explorer` or `monitor`. A failed phase never advances the sequence cursor, so the operator must first restore healthy Widget runtime state and rerun that phase successfully.
 
+A fresh `baseline` is also an explicit evidence reset boundary. Before probing the new baseline, the runner removes stale Explorer/monitor checkpoints, old phase health reports, old virtual-desktop screenshots/hash sidecars, and any previously sealed `widget-acceptance-evidence.manifest.json` / `.sha256`. The Widget persistence store is not touched. This prevents a previous successful M3 package from remaining next to a newly-started but incomplete acceptance round.
+
 ## Explorer restart evidence
 
 The PowerShell runner adds phase-specific recovery proof that cannot be inferred from Widget health alone. After a successful `search` phase it records the current interactive-session `explorer.exe` PID set in `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-search.explorer-pids`. Before the `explorer` phase is allowed to invoke the Widget probe, the current-session Explorer PID set must be non-empty and different from that checkpoint. A fresh `baseline` clears any stale Explorer checkpoint. This makes "Explorer restart" an observed recovery event rather than a label that could be passed without actually restarting Explorer.

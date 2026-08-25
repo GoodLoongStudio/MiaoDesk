@@ -92,5 +92,14 @@ Set-Content -LiteralPath $sealPath -Value @(
     "sealedAtUtc=$([DateTime]::UtcNow.ToString('o'))"
 ) -Encoding utf8
 
-Write-Host "Sealed M3 Widget acceptance evidence: $manifestPath"
+$verifier = Join-Path $PSScriptRoot 'verify-widget-acceptance-evidence.ps1'
+if (-not (Test-Path -LiteralPath $verifier -PathType Leaf)) {
+    throw "M3 acceptance evidence verifier is missing: $verifier"
+}
+& $verifier
+if ($LASTEXITCODE -ne 0) {
+    throw "M3 acceptance evidence verifier failed after sealing with exit code $LASTEXITCODE"
+}
+
+Write-Host "Sealed and verified M3 Widget acceptance evidence: $manifestPath"
 Write-Host "Manifest SHA-256: $manifestHash"

@@ -45,6 +45,7 @@ add_executable(TuringDesk WIN32
     src/WallpaperPackage.cpp
     src/WallpaperLibrary.cpp
     src/WallpaperLibraryWeb.cpp
+    src/WallpaperMonitorLayout.cpp
     src/WallpaperMonitorAssignments.cpp
     src/AppSearch.cpp
     src/GozSearch.cpp

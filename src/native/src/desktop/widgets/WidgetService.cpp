@@ -5,12 +5,16 @@
 #include <algorithm>
 #include <filesystem>
 #include <iterator>
+#include <sstream>
 #include <vector>
 
 namespace fs = std::filesystem;
 
 namespace turingdesk::desktop {
 namespace {
+
+constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
 
 WidgetServiceResult LoadFailure(const std::wstring& error) {
     return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -41,6 +45,93 @@ bool RuntimeDetailLooksHealthy(const std::wstring& detail) {
         detail.find(L"unavailable") != std::wstring::npos ||
         detail.find(L"failed") != std::wstring::npos) return false;
     return detail.find(L"WebView2 隔离 Surface") != std::wstring::npos;
+}
+
+std::wstring WindowText(HWND window) {
+    if (!window || !IsWindow(window)) return {};
+    const int length = GetWindowTextLengthW(window);
+    if (length <= 0) return {};
+    std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
+    const int copied = GetWindowTextW(window, text.data(), static_cast<int>(text.size()));
+    if (copied <= 0) return {};
+    text.resize(static_cast<std::size_t>(copied));
+    return text;
+}
+
+bool WindowClassEquals(HWND window, const wchar_t* expected) {
+    wchar_t className[256]{};
+    return window && IsWindow(window) &&
+           GetClassNameW(window, className, static_cast<int>(std::size(className))) > 0 &&
+           _wcsicmp(className, expected) == 0;
+}
+
+bool ProcessRunning(DWORD processId) {
+    if (processId == 0) return false;
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, processId);
+    if (!process) return true; // Same-user runtime can briefly deny a query during startup; HWND/PID are still useful.
+    DWORD exitCode = 0;
+    const bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return running;
+}
+
+HWND FindWidgetSurface(HWND expectedParent, std::wstring_view widgetId) {
+    if (!expectedParent || !IsWindow(expectedParent) || widgetId.empty()) return nullptr;
+    const std::wstring prefix = L"widget-" + std::wstring(widgetId) + L"-";
+    for (HWND child = FindWindowExW(expectedParent, nullptr, nullptr, nullptr);
+         child;
+         child = FindWindowExW(expectedParent, child, nullptr, nullptr)) {
+        if (!WindowClassEquals(child, kWebHostClass)) continue;
+        const auto title = WindowText(child);
+        if (title.size() >= prefix.size() && title.compare(0, prefix.size(), prefix) == 0) return child;
+    }
+    return nullptr;
+}
+
+WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget, bool compatibilityHealthy) {
+    WidgetSurfaceHealth surface;
+    surface.widgetId = widget.id;
+    surface.configured = widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web;
+    if (!surface.configured) {
+        surface.detail = L"Widget 未启用 Web runtime。";
+        return surface;
+    }
+
+    const HWND wallpaperHost = FindWindowW(kWallpaperHostClass, nullptr);
+    const HWND expectedParent = wallpaperHost && IsWindow(wallpaperHost) ? GetParent(wallpaperHost) : nullptr;
+    const HWND window = FindWidgetSurface(expectedParent, widget.id);
+    surface.hwndReady = window && IsWindow(window);
+    surface.hwndValue = surface.hwndReady ? reinterpret_cast<std::uintptr_t>(window) : 0;
+
+    if (surface.hwndReady) {
+        DWORD processId = 0;
+        GetWindowThreadProcessId(window, &processId);
+        surface.processId = processId;
+        surface.processRunning = ProcessRunning(processId);
+        surface.parentValid = expectedParent && GetParent(window) == expectedParent;
+        const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+        surface.childStyleValid = (style & WS_CHILD) != 0;
+        surface.visible = IsWindowVisible(window) != FALSE;
+    }
+
+    // WebView2 lifecycle and authoritative sibling z-order are deliberately not
+    // inferred from HWND existence. The child runtime will report those stages
+    // in the next M3 slice behind these already-stable fields.
+    surface.environmentReported = false;
+    surface.controllerReported = false;
+    surface.navigationReported = false;
+    surface.zOrderReported = false;
+    surface.renderingHealthy = surface.SurfaceReady() && compatibilityHealthy;
+
+    std::wostringstream detail;
+    if (!surface.hwndReady) detail << L"等待隔离 Surface HWND";
+    else if (!surface.processRunning) detail << L"隔离进程未运行";
+    else if (!surface.parentValid) detail << L"Surface parent 不匹配";
+    else if (!surface.childStyleValid) detail << L"Surface 缺少 WS_CHILD";
+    else if (!surface.visible) detail << L"Surface 当前不可见";
+    else detail << L"OS Surface 就绪；等待 WebView2 lifecycle/z-order telemetry";
+    surface.detail = detail.str();
+    return surface;
 }
 
 } // namespace
@@ -143,10 +234,22 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
         }));
     result.detail = ReadWidgetRuntimeDetail();
     result.runtimeReported = !result.detail.empty();
-    result.runtimeHealthy = result.enabledWebCount == 0
+    const bool compatibilityHealthy = result.enabledWebCount == 0
         ? (result.detail.empty() || result.detail.find(L"未启用桌面小组件") != std::wstring::npos ||
            result.detail.find(L"Widget runtime stopped") != std::wstring::npos)
         : RuntimeDetailLooksHealthy(result.detail);
+
+    result.surfaces.reserve(result.enabledWebCount);
+    for (const auto& widget : store.Items()) {
+        if (!widget.enabled || widget.kind != wallpaper::DesktopWidgetKind::Web) continue;
+        result.surfaces.push_back(InspectWidgetSurface(widget, compatibilityHealthy));
+    }
+
+    const bool allOsSurfacesReady = std::all_of(result.surfaces.begin(), result.surfaces.end(),
+        [](const WidgetSurfaceHealth& surface) { return surface.SurfaceReady(); });
+    result.runtimeHealthy = result.enabledWebCount == 0
+        ? compatibilityHealthy
+        : compatibilityHealthy && result.surfaces.size() == result.enabledWebCount && allOsSurfacesReady;
     *health = std::move(result);
     return {true, L"桌面小组件运行状态读取完成。"};
 }

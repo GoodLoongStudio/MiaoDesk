@@ -54,12 +54,15 @@ $cmake = Get-Content -LiteralPath $cmakePath -Raw
 foreach ($marker in @(
     'src/app/main.cpp',
     'src/ai/pi/PiRuntime.cpp',
+    'src/ai/tools/DesktopWidgetTools.cpp',
     'src/desktop/control/DesktopControlService.cpp',
     'src/desktop/shell/DesktopShellHost.cpp',
+    'src/desktop/wallpaper/WallpaperService.cpp',
     'src/desktop/widgets/WidgetService.cpp',
     'src/desktop/automation/AutomationService.cpp',
     'src/desktop/performance/PerformanceService.cpp',
     'src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp',
+    'src/ui/automation/WallpaperAutomationWindowProduction.cpp',
     'src/harness/HarnessHost.cpp',
     'source_group(TREE')) {
     if (-not $cmake.Contains($marker)) { throw "CMake source ownership marker missing: $marker" }
@@ -69,7 +72,17 @@ if ([regex]::IsMatch($cmake, '(?m)^\s+src/[A-Za-z0-9_]+\.cpp\s*$')) {
 }
 
 $doc = Get-Content -LiteralPath $layoutDoc -Raw
-foreach ($marker in @('desktop/shell', 'desktop/wallpaper', 'desktop/widgets', 'ai/pi', 'ui/wallpaper', 'Public headers')) {
+foreach ($marker in @(
+    'src/native/src/ai/pi',
+    'src/native/src/desktop/control',
+    'src/native/src/desktop/shell',
+    'src/native/src/desktop/wallpaper',
+    'src/native/src/desktop/widgets',
+    'src/native/src/desktop/automation',
+    'src/native/src/desktop/performance',
+    'src/native/src/ui/wallpaper',
+    'src/native/src/ui/widgets',
+    'Public headers')) {
     if (-not $doc.Contains($marker)) { throw "Native source layout documentation missing marker: $marker" }
 }
 

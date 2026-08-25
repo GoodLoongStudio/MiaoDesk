@@ -13,26 +13,6 @@ struct WebWallpaperRequest {
     bool muted{true};
 };
 
-// Parent-process view of one isolated WebView2 surface. Lifecycle stages are
-// reported by the child window through process-safe HWND properties so callers
-// can distinguish process creation from WebView2 readiness and rendering.
-struct WebSurfaceRuntimeHealth {
-    std::wstring itemId;
-    DWORD processId{};
-    uintptr_t hwndValue{};
-    bool processRunning{};
-    bool hwndReady{};
-    bool environmentReady{};
-    bool controllerReady{};
-    bool navigationReady{};
-    bool parentValid{};
-    bool childStyleValid{};
-    bool visible{};
-    bool renderingHealthy{};
-    DWORD lastExitCode{STILL_ACTIVE};
-    unsigned recoveryAttempts{};
-};
-
 class WebWallpaperProcessSet {
 public:
     WebWallpaperProcessSet();
@@ -49,7 +29,6 @@ public:
     bool Active() const noexcept;
     std::wstring LastErrorText() const;
     std::wstring DiagnosticsText() const;
-    std::vector<WebSurfaceRuntimeHealth> RuntimeHealth() const;
 
     static bool IsRemoteHttpsSource(const std::wstring& source) noexcept;
     static bool IsSupportedSource(const std::wstring& source) noexcept;

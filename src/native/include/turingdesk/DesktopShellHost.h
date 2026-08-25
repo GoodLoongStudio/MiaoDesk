@@ -72,6 +72,12 @@ public:
                         bool clickThrough,
                         std::wstring* error = nullptr) const;
 
+    // Revalidates Explorer/shell generation and repairs the ordering of all
+    // known TuringDesk wallpaper + Widget surfaces. Coordinators should call
+    // this instead of enumerating desktop siblings or issuing SetWindowPos.
+    bool RepairSurfaceStack(HWND expectedSurface = nullptr,
+                            std::wstring* error = nullptr);
+
     void RepairKnownTuringDeskSurfaces() const;
     DesktopSurfaceHealth InspectSurface(HWND surface, DesktopSurfaceRole role) const;
 

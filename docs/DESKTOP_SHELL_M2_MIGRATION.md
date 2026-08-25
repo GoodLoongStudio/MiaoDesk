@@ -23,24 +23,15 @@ DesktopShellHost::EnsureSurface
 Progman / WorkerW / parent / geometry / visibility / z-order
 ```
 
-Intercepted operations:
+Intercepted operations include Progman/WorkerW/DefView lookup, `0x052C`, WallpaperHost re-parenting, geometry/visibility and desktop z-order intent.
 
-- Progman lookup;
-- WorkerW / `SHELLDLL_DefView` lookup;
-- `0x052C` request;
-- WallpaperHost re-parent;
-- WallpaperHost geometry and visibility changes;
-- WallpaperHost / WorkerW desktop z-order intent.
+`EnsureSurface()` is the idempotent production attachment entry point. The caller supplies only a surface HWND, role, desired desktop-space bounds and visibility. `DesktopShellHost` owns Explorer-generation validation, shell parent choice, child/layered styles, desktop-to-parent mapping, re-parenting and final wallpaper/Widget/icon stack repair.
 
-`EnsureSurface()` is the idempotent production attachment entry point. The caller supplies only a surface HWND, role, desired desktop-space bounds and visibility. `DesktopShellHost` then owns Explorer-generation validation, shell parent choice, child/layered styles, desktop-to-parent mapping, re-parenting and final wallpaper/Widget/icon stack repair.
-
-The production bridge no longer performs its own WallpaperHost `SetWindowPos` after attachment. Both the intercepted `SetParent` path and later geometry/visibility updates converge on `EnsureSurface()`.
-
-The remaining M2 cleanup is to delete `DiscoverDesktopLayer`, `SpawnWallpaperLayer`, `DesktopLayer`, `TrySetParent`, `EnsureWorkerBottom` and the old mount-mode translation from the legacy source itself. Until that deletion lands, the ownership guard requires production interception to remain present.
+The remaining native-engine M2 cleanup is to physically delete `DiscoverDesktopLayer`, `SpawnWallpaperLayer`, `DesktopLayer`, `TrySetParent`, `EnsureWorkerBottom`, the old mount-mode translation and the legacy `AttachToDesktop` shell implementation from `WallpaperEngine.cpp`. Until that deletion lands, the ownership guard requires production interception to remain present.
 
 ### Web wallpaper and Widget runtime
 
-`WallpaperWebRuntimeCoordinator` no longer enumerates Web sibling windows or maintains its own desktop sibling z-order. It owns runtime/process intent and delegates shell state to `DesktopShellHost`:
+The Web/Widget coordinator no longer has a production bridge. `WallpaperWebRuntimeCoordinator.cpp` is compiled directly and owns runtime/process intent only:
 
 ```text
 WallpaperWebRuntimeCoordinator
@@ -48,27 +39,16 @@ WallpaperWebRuntimeCoordinator
 EnsureCurrent
 InspectSurface
 RecoverSurface
+EnsureSurface
 SurfaceParent
 RepairSurfaceStack
         ↓
 DesktopShellHost
 ```
 
-The coordinator still contains a legacy independent-layout helper that expresses its host resize as a parent-client `SetWindowPos`. Production no longer compiles that source directly. `WallpaperWebRuntimeCoordinatorProduction.cpp` intercepts that remaining call, converts the requested parent-client rectangle back into desktop-space coordinates and routes it through `DesktopShellHost::EnsureSurface`.
+Independent-layout host geometry is now expressed directly as desktop-space `HostDesktopBounds(...)` and passed to `DesktopShellHost::EnsureSurface`. The coordinator no longer calls `DesktopRectToParentClient`, `SetParent`, `SetWindowPos`, or any Progman/WorkerW discovery API.
 
-```text
-Independent layout host resize
-        ↓
-WallpaperWebRuntimeCoordinatorProduction
-        ↓
-parent-client rect → desktop-space rect
-        ↓
-DesktopShellHost::EnsureSurface(Wallpaper)
-```
-
-The bridge now preserves visibility semantics exactly: `SWP_SHOWWINDOW` forces visible, `SWP_HIDEWINDOW` forces hidden, and a geometry-only `SetWindowPos` preserves the existing visibility instead of accidentally showing a hidden wallpaper. Invalid zero/negative size requests are normalized before the desktop-space transaction. Failed `EnsureSurface` calls publish a stable Win32 failure code rather than silently pretending the geometry mutation succeeded.
-
-This closes the production geometry-ownership exception without changing the coordinator's runtime/process behavior. The bridge is transitional and must be deleted when `EnsureIndependentHostBounds` is physically removed from the legacy coordinator source.
+The old `EnsureIndependentHostBounds` helper and `WallpaperWebRuntimeCoordinatorProduction.cpp` interception bridge have been physically removed. Geometry-only refresh preserves the host's existing visibility by passing `IsWindowVisible(host)` to `EnsureSurface`; it does not implicitly show a hidden wallpaper.
 
 ### Explorer generation and stale-parent recovery
 
@@ -80,28 +60,25 @@ This closes the production geometry-ownership exception without changing the coo
 
 `RecoverSurface()` records whether the cached Explorer generation was valid before refresh. If the generation changed, the surface always passes through `EnsureSurface()` even when recycled HWND values appear plausible. This prevents stale Explorer ownership from surviving a restart by coincidence.
 
-`RecoverSurface()` therefore shares the same parent/style/geometry/z-order mutation path as first attachment.
-
 This establishes one production attachment family for native wallpaper, Web wallpaper and Widget surfaces: `AttachSurface / EnsureSurface / RecoverSurface`, all implemented by `DesktopShellHost`.
 
 ## Ownership guard
 
 `scripts/verify-desktop-shell-ownership.ps1` rejects:
 
-- Progman / WorkerW / `SHELLDLL_DefView` discovery outside `DesktopShellHost`;
+- Progman / WorkerW / `SHELLDLL_DefView` discovery outside `DesktopShellHost` production ownership;
 - `0x052C` outside `DesktopShellHost`;
 - direct desktop `SetParent` in renderer/coordinator/Widget code;
-- reintroduction of coordinator sibling enumeration / local z-order repair;
-- direct production compilation of legacy `WallpaperWebRuntimeCoordinator.cpp`;
-- removal/bypass of the coordinator `EnsureSurface` production bridge while the legacy resize helper remains;
-- coordinator visibility logic that treats every non-hide resize as an implicit show;
+- coordinator sibling enumeration/local z-order repair;
+- coordinator `EnsureIndependentHostBounds`, `DesktopRectToParentClient` or `SetWindowPos` geometry ownership;
+- reintroduction of `WallpaperWebRuntimeCoordinatorProduction.cpp`;
 - production WallpaperHost geometry mutation that bypasses `EnsureSurface()`;
-- removal of the production engine shell interception before legacy source cleanup is complete.
+- removal of the production engine shell interception before the remaining legacy engine source cleanup is complete.
 
-The guard also requires the mixed-monitor negative-coordinate geometry self-test and the centralized Explorer-generation recovery contract to remain present.
+The guard also requires mixed-monitor negative-coordinate geometry self-tests and the centralized Explorer-generation recovery contract.
 
 ## Completion boundary
 
-M2 is **not complete yet**. Production behavior now has one effective shell attachment/geometry implementation, but `WallpaperEngine.cpp` still physically contains obsolete discovery/attachment helpers and `WallpaperWebRuntimeCoordinator.cpp` still contains the transitional independent-layout resize helper. M2 closes only after those helpers are removed from the legacy sources, the exact `main` SHA passes ARM64 CI, and the shared shell contract remains the only desktop-attachment implementation.
+M2 is **not complete yet**. The coordinator exception is closed and its transitional bridge has been deleted. The remaining blocker is physical removal of obsolete desktop discovery/attachment code from `WallpaperEngine.cpp`, followed by exact-head ARM64 validation and real-Windows layering acceptance.
 
-Real Windows visible behavior remains an acceptance requirement; CI alone does not prove Widget or wallpaper layering correctness.
+CI proves build and architecture contracts; it does not prove that Widget/wallpaper/icon layering is visually correct on a real Windows desktop.

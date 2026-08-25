@@ -72,11 +72,11 @@ No newly supported operation may require UI or Pi to edit `wallpaper.ini`, `Desk
 
 ### M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner
 
-Current state: **in progress**
+Current state: **implementation complete; acceptance pending**
 
 Tasks:
 
-- [ ] Remove remaining legacy Progman/WorkerW discovery and attachment ownership from `WallpaperEngine.cpp`.
+- [x] Remove remaining legacy Progman/WorkerW discovery and attachment ownership from `WallpaperEngine.cpp`.
 - [x] Centralize `0x052C`, Raised Desktop detection, WorkerW discovery, parent validation and z-order repair in `DesktopShellHost` for all production paths.
 - [x] Make native wallpaper, Web wallpaper and Widget production surfaces attach through the shared `DesktopShellHost` contract.
 - [x] Centralize Explorer restart / stale HWND recovery, including generation-aware parent validation.
@@ -86,8 +86,9 @@ Tasks:
 - [x] Physically remove the transitional `EnsureIndependentHostBounds` geometry mutation from `WallpaperWebRuntimeCoordinator.cpp` and delete its production bridge.
 
 Current production state:
-- shell discovery/mutation is behaviorally centralized while only the legacy native engine source still contains migration-only helpers;
-- the Web/Widget coordinator is now compiled directly and passes Independent host desktop-space geometry to `DesktopShellHost::EnsureSurface`;
+- `WallpaperEngine.cpp` directly owns a `DesktopShellHost` client and no longer contains Progman/WorkerW/DefView discovery, `0x052C`, SetParent, parent-client geometry mapping or WorkerW z-order helpers;
+- the production WallpaperEngine compatibility wrapper no longer intercepts Windows shell APIs and remains only for M1 performance/automation persistence adapters;
+- the Web/Widget coordinator is compiled directly and passes Independent host desktop-space geometry to `DesktopShellHost::EnsureSurface`;
 - the coordinator production interception bridge is deleted and guarded from returning;
 - geometry-only updates preserve existing visibility rather than implicitly showing hidden wallpapers;
 - Explorer generation changes force reattachment through `EnsureSurface`, preventing recycled/stale parent HWNDs from being accepted accidentally.
@@ -410,6 +411,6 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 ## Current active milestone
 
-**M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner.**
+**M2 — acceptance gate.**
 
-M1 is closed on the green `fa531697...` baseline. The coordinator ownership exception is now physically closed: it compiles directly, uses `DesktopShellHost::EnsureSurface`, and its interception bridge is deleted. The remaining M2 blocker is physical removal of the legacy native engine shell helpers from `WallpaperEngine.cpp`, followed by exact-head ARM64 and real-Windows layering acceptance. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.
+M1 is closed. M2 shell ownership is now physically centralized in `DesktopShellHost`; both the coordinator and the native WallpaperEngine have lost their independent Progman/WorkerW/`0x052C`/SetParent/geometry ownership, and the obsolete coordinator production bridge is deleted. M2 still requires a green exact-head ARM64 run plus real-Windows wallpaper/Widget/icon layering and recovery acceptance before it may be marked complete. Only after that gate should implementation advance to **M3 Widget real visibility**, then **M4 new production UI**.

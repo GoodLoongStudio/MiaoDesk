@@ -9,8 +9,8 @@
 
 namespace turingdesk::wallpaper {
 
-// Store-shaped adapter used only by legacy UI code while it is migrated.
-// All persistence and mutations are delegated to AutomationService.
+// Store-shaped adapter used only by legacy UI/runtime code while it is migrated.
+// All persistence, mutations and evaluation are delegated to AutomationService.
 class AutomationUiAdapter {
 public:
     AutomationUiAdapter() = default;
@@ -37,6 +37,7 @@ public:
     bool SetActivePlaylist(std::wstring playlistId, std::wstring* error = nullptr);
     const std::wstring& ActivePlaylistId() const noexcept;
 
+    AutomationDecision Evaluate(const SYSTEMTIME& localTime, unsigned long long unixSeconds);
     AutomationDecision ForceNextPlaylist(std::wstring_view playlistId, unsigned long long unixSeconds);
     const std::wstring& LastMatchedScheduleId() const noexcept;
 

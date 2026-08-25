@@ -1,6 +1,19 @@
 #include "turingdesk/DesktopShellHost.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 namespace turingdesk::wallpaper {
+namespace {
+
+bool RectMatchesWithinTolerance(const RECT& actual, const RECT& expected, LONG tolerance = 2) noexcept {
+    return std::abs(actual.left - expected.left) <= tolerance &&
+           std::abs(actual.top - expected.top) <= tolerance &&
+           std::abs(actual.right - expected.right) <= tolerance &&
+           std::abs(actual.bottom - expected.bottom) <= tolerance;
+}
+
+} // namespace
 
 bool DesktopShellHost::CurrentGenerationValid() const noexcept {
     if (!snapshot_.Valid()) return false;
@@ -52,6 +65,18 @@ bool DesktopShellHost::EnsureSurface(HWND surface,
         }
         return false;
     }
+
+    // InspectSurface validates that the HWND has drawable geometry, but M2 also
+    // needs the attachment owner to prove that mixed/negative desktop-space
+    // coordinates survived the parent-client mapping round-trip.
+    RECT actualBounds{};
+    if (!GetWindowRect(surface, &actualBounds) || !RectMatchesWithinTolerance(actualBounds, desktopBounds)) {
+        if (error) {
+            *error = L"DesktopShellHost: ensured surface geometry does not match requested desktop bounds";
+        }
+        return false;
+    }
+
     return RepairSurfaceStack(surface, error);
 }
 

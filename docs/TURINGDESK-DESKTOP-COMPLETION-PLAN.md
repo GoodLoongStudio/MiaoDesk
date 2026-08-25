@@ -129,7 +129,7 @@ Tasks:
 - [~] Complete Web Widget surface lifecycle through `DesktopShellHost`. Production attachment/recovery is centralized; real visible/recovery acceptance is still pending.
 - [x] Surface WebView2 state: EnvironmentReady / ControllerReady / NavigationReady in the domain-owned per-surface health contract for the preferred Web child path.
 - [x] Add configured/process/HWND/parent/style/z-order/visible/rendering-health state to `WidgetSurfaceHealth`; z-order interpretation is read-only shared desktop/shell telemetry while mutation remains in `DesktopShellHost`.
-- [ ] Add actionable error reporting to Widget UI.
+- [x] Add actionable error reporting to Widget UI and Pi through domain-owned `issueCode/detail/recommendedAction`.
 - [ ] Confirm Widget remains above TuringDesk wallpaper but below desktop icons on real Windows.
 - [ ] Confirm Settings/Search windows do not hide or pause the Widget.
 - [ ] Confirm Explorer restart restores Widget surfaces.
@@ -145,8 +145,11 @@ M3 implementation landed so far:
 - shared `desktop/shell/DesktopSurfaceTelemetry.cpp` reports read-only z-order validity: icon DefView stays above TuringDesk surfaces and Widget surfaces stay above TuringDesk wallpaper surfaces; it contains no shell mutation APIs;
 - `renderingHealthy` requires OS surface readiness, lifecycle readiness when reported, reported/valid z-order and the compatibility runtime diagnostic;
 - aggregate `runtimeHealthy` requires a one-to-one structured/rendering-healthy surface set for all enabled Web Widgets;
+- `WidgetService` now maps concrete failures to stable issue codes plus human-readable recommended actions; UI/Pi no longer infer remediation from Win32/WebView2 internals;
+- production `DesktopWidgetUiAdapter` reads one `DesktopSnapshot`, keeps raw persistence items separate from temporary display items, and decorates enabled Widget list entries with health/action text without polluting stored titles;
+- Pi `wallpaper_state_get` emits per-surface process/HWND/lifecycle/z-order/issue/action detail and `desktop_widget_list` reports matching runtime issue/action guidance;
 - UI adapters/controllers and Pi remain forbidden from enumerating HWNDs or reading private runtime diagnostics directly; the Widget domain owns that translation;
-- architecture guard requires lifecycle routing, shared z-order telemetry, no shell mutation in the telemetry reader, and linking the reader into both app and wallpaper targets;
+- architecture guard requires lifecycle routing, shared z-order telemetry, actionable health routing, no shell mutation in the telemetry reader, and linking the reader into both app and wallpaper targets;
 - `docs/WIDGET_RUNTIME_HEALTH_M3.md` describes the active health semantics and remaining acceptance work.
 
 Real Windows acceptance flow:
@@ -432,4 +435,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M3 — Widget visible-runtime implementation and acceptance.**
 
-M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry and combined rendering-health semantics. The next implementation priority is actionable per-surface production UI/Pi reporting, followed by the real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance flow. M4 does not begin until that gate is satisfied.
+M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry, combined rendering-health semantics, stable actionable issue codes, production Widget list health/action display, and Pi per-surface issue/action reporting through the shared snapshot. The remaining gate is real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance. M4 does not begin until that gate is satisfied.

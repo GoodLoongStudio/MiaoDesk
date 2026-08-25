@@ -19,9 +19,7 @@ bool AutomationUiAdapter::Refresh(std::wstring* error) {
     return true;
 }
 
-bool AutomationUiAdapter::Load(std::wstring* error) {
-    return Refresh(error);
-}
+bool AutomationUiAdapter::Load(std::wstring* error) { return Refresh(error); }
 
 const std::vector<WallpaperProfile>& AutomationUiAdapter::Profiles() const noexcept { return state_.profiles; }
 const std::vector<WallpaperPlaylist>& AutomationUiAdapter::Playlists() const noexcept { return state_.playlists; }
@@ -86,6 +84,13 @@ bool AutomationUiAdapter::SetActivePlaylist(std::wstring playlistId, std::wstrin
 
 const std::wstring& AutomationUiAdapter::ActivePlaylistId() const noexcept { return state_.activePlaylistId; }
 
+AutomationDecision AutomationUiAdapter::Evaluate(const SYSTEMTIME& localTime, unsigned long long unixSeconds) {
+    AutomationDecision decision;
+    const auto result = service_.Evaluate(localTime, unixSeconds, &decision);
+    if (result.success) Refresh(nullptr);
+    return decision;
+}
+
 AutomationDecision AutomationUiAdapter::ForceNextPlaylist(std::wstring_view playlistId, unsigned long long unixSeconds) {
     AutomationDecision decision;
     const auto result = service_.ForceNextPlaylist(playlistId, unixSeconds, &decision);
@@ -95,8 +100,6 @@ AutomationDecision AutomationUiAdapter::ForceNextPlaylist(std::wstring_view play
 
 const std::wstring& AutomationUiAdapter::LastMatchedScheduleId() const noexcept { return state_.lastMatchedScheduleId; }
 
-std::wstring AutomationUiAdapter::MakeId(std::wstring_view prefix) {
-    return desktop::AutomationService::MakeId(prefix);
-}
+std::wstring AutomationUiAdapter::MakeId(std::wstring_view prefix) { return desktop::AutomationService::MakeId(prefix); }
 
 } // namespace turingdesk::wallpaper

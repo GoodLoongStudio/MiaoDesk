@@ -45,6 +45,7 @@ set(TURINGDESK_APP_SOURCES
     src/ai/agent/L3PersistenceSelfTest.cpp
 
     src/desktop/control/DesktopControlService.cpp
+    src/desktop/shell/DesktopSurfaceTelemetry.cpp
     src/desktop/wallpaper/WallpaperService.cpp
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
@@ -67,6 +68,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/shell/DesktopShellHost.cpp
     src/desktop/shell/DesktopShellDiagnostics.cpp
     src/desktop/shell/DesktopShellSurfaceStack.cpp
+    src/desktop/shell/DesktopSurfaceTelemetry.cpp
 
     src/desktop/control/DesktopControlService.cpp
     src/desktop/wallpaper/WallpaperService.cpp

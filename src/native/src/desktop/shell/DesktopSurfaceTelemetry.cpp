@@ -1,6 +1,7 @@
 #include "turingdesk/DesktopSurfaceTelemetry.h"
 
 #include <cwchar>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <vector>

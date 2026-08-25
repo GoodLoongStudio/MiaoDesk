@@ -68,6 +68,16 @@ public:
                        bool visible,
                        std::wstring* error = nullptr);
 
+    // Idempotent production attachment entry point. Callers supply only the
+    // desired desktop-space geometry, role and visibility. DesktopShellHost
+    // owns shell generation validation, styles, parent selection, re-parenting,
+    // geometry mapping and final wallpaper/widget/icon z-order repair.
+    bool EnsureSurface(HWND surface,
+                       DesktopSurfaceRole role,
+                       const RECT& desktopBounds,
+                       bool visible,
+                       std::wstring* error = nullptr);
+
     bool PrepareSurface(HWND surface,
                         bool clickThrough,
                         std::wstring* error = nullptr) const;

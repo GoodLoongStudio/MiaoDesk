@@ -204,11 +204,24 @@ add_custom_target(TuringDeskSourceLayoutCheck ALL
     COMMENT "Verifying native source module layout"
     VERBATIM
 )
+
+set(TURINGDESK_WIDGET_ACCEPTANCE_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-widget-acceptance-contract.ps1")
+if (NOT EXISTS "${TURINGDESK_WIDGET_ACCEPTANCE_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing M3 Widget acceptance contract guard: ${TURINGDESK_WIDGET_ACCEPTANCE_CONTRACT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskWidgetAcceptanceContractCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_WIDGET_ACCEPTANCE_CONTRACT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying M3 Widget real-Windows acceptance ownership contract"
+    VERBATIM
+)
+
 add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
+add_dependencies(TuringDeskWidgetAcceptance TuringDeskWidgetAcceptanceContractCheck)
 
 foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidgetAcceptance)
     target_include_directories(${target} PRIVATE include)

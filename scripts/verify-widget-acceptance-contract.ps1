@@ -9,8 +9,9 @@ $header = Join-Path $root 'src/native/include/turingdesk/WidgetRuntimeAcceptance
 $runner = Join-Path $root 'scripts/run-widget-runtime-acceptance.ps1'
 $cmake = Join-Path $root 'src/native/CMakeLists.txt'
 $doc = Join-Path $root 'docs/WIDGET_RUNTIME_HEALTH_M3.md'
+$sequenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
 
-foreach ($path in @($probe, $main, $header, $runner, $cmake, $doc)) {
+foreach ($path in @($probe, $main, $header, $runner, $cmake, $doc, $sequenceDoc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing M3 Widget acceptance contract input: $path" }
 }
 
@@ -43,8 +44,13 @@ foreach ($marker in @('TuringDeskWidgetAcceptance', 'WidgetRuntimeAcceptance.cpp
 }
 
 $docText = Get-Content -LiteralPath $doc -Raw
-foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 'search', 'explorer', 'monitor', 'non-interactive CI', 'identity set', 'baselineStatus')) {
+foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 'search', 'explorer', 'monitor', 'non-interactive CI')) {
     if (-not $docText.Contains($marker)) { throw "M3 acceptance documentation missing marker: $marker" }
+}
+
+$sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
+foreach ($marker in @('identity set', 'baselineStatus', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND')) {
+    if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
 Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity across phases, and does not regain HWND/shell ownership.'

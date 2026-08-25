@@ -37,20 +37,24 @@ Exit gate:
 
 ### M1 — Finish domain ownership and remove remaining direct state paths
 
-Current state: **in progress**
+Current state: **complete**
 
 Goal: finish the structural refactor before the visual rewrite so new UI does not become another business-logic monolith.
 
 Tasks, in order:
 
-- [ ] Route legacy Performance controls completely through `PerformanceUiAdapter -> PerformanceService`.
-- [ ] Remove direct performance-policy INI ownership from legacy engine/UI code where the service replacement exists.
-- [ ] Finish automation UI migration through `AutomationUiAdapter -> AutomationService`.
-- [ ] Ensure automation runtime consumes the same persisted state written through `AutomationService`.
-- [ ] Expand `WallpaperService` from Web-only package application to normal library-item application.
-- [ ] Move per-monitor wallpaper assignment intent behind the Wallpaper domain service.
-- [ ] Make `DesktopControlService` remain a small facade instead of accumulating domain rules.
-- [ ] Add/extend architecture guards that reject new UI/Pi direct access to private stores/INI/runtime launching.
+- [x] Route legacy Performance controls completely through `PerformanceUiAdapter -> PerformanceService`.
+- [x] Remove direct performance-policy INI ownership from the production legacy engine/UI path where the service replacement exists.
+- [x] Finish production automation UI migration through `AutomationUiAdapter -> AutomationService`.
+- [x] Ensure automation runtime consumes the same persisted state written through `AutomationService`.
+- [x] Expand `WallpaperService` from Web-only package application to normal library-item application.
+- [x] Move per-monitor wallpaper assignment intent behind the Wallpaper domain service.
+- [x] Keep `DesktopControlService` as the small shared facade while domain rules remain in Wallpaper/Widget/Automation/Performance services.
+- [x] Add/extend architecture guards that reject new UI/Pi direct access to private stores/INI/runtime launching.
+
+Validated baseline:
+- `fa5316972d2ed4936b06bc0acb67eb42e763ebb5`
+- Native Windows ARM64 run `#653` completed successfully on 2026-08-25.
 
 Exit gate:
 
@@ -68,7 +72,7 @@ No newly supported operation may require UI or Pi to edit `wallpaper.ini`, `Desk
 
 ### M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner
 
-Current state: **partially implemented**
+Current state: **in progress**
 
 Tasks:
 
@@ -77,7 +81,8 @@ Tasks:
 - [ ] Make native wallpaper, Web wallpaper and Widget surfaces all attach through the same contract.
 - [ ] Centralize Explorer restart / stale HWND recovery.
 - [ ] Validate mixed monitor geometry and negative virtual coordinates through the shared shell host.
-- [ ] Add shell-mode and attachment diagnostics.
+- [x] Add shell-mode and attachment diagnostics contract.
+- [x] Add a build-time shell ownership guard so renderer/coordinator/Widget surfaces cannot rediscover Progman/WorkerW independently.
 
 Required diagnostics:
 
@@ -394,6 +399,6 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 ## Current active milestone
 
-**M1 — Finish domain ownership and remove remaining direct state paths.**
+**M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner.**
 
-After M1, proceed immediately to **M2 DesktopShellHost sole ownership**, then **M3 Widget real visibility**, then **M4 new production UI**. These four milestones are the shortest path from the current architecture-heavy state to a visibly improved, reliably working desktop product.
+M1 is closed on the green `fa531697...` baseline. M2 now owns all Progman/WorkerW/desktop-parent migration work. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.

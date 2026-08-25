@@ -21,10 +21,12 @@ $automationHeader = Require-File 'src/native/include/turingdesk/AutomationServic
 $automationSource = Require-File 'src/native/src/AutomationService.cpp'
 $automationUiAdapterHeader = Require-File 'src/native/include/turingdesk/AutomationUiAdapter.h'
 $automationUiAdapterSource = Require-File 'src/native/src/AutomationUiAdapter.cpp'
+$automationProductionWindow = Require-File 'src/native/src/WallpaperAutomationWindowProduction.cpp'
 $performanceHeader = Require-File 'src/native/include/turingdesk/PerformanceService.h'
 $performanceSource = Require-File 'src/native/src/PerformanceService.cpp'
 $performanceUiAdapterHeader = Require-File 'src/native/include/turingdesk/PerformanceUiAdapter.h'
 $performanceUiAdapterSource = Require-File 'src/native/src/PerformanceUiAdapter.cpp'
+$productionEngine = Require-File 'src/native/src/WallpaperEngineProduction.cpp'
 $widgetControllerHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetController.h'
 $widgetControllerSource = Require-File 'src/native/src/DesktopWidgetController.cpp'
 $widgetUiAdapterHeader = Require-File 'src/native/include/turingdesk/DesktopWidgetUiAdapter.h'
@@ -43,10 +45,12 @@ $automationHeaderText = Get-Content -LiteralPath $automationHeader -Raw
 $automation = Get-Content -LiteralPath $automationSource -Raw
 $automationUiAdapterHeaderText = Get-Content -LiteralPath $automationUiAdapterHeader -Raw
 $automationUiAdapter = Get-Content -LiteralPath $automationUiAdapterSource -Raw
+$automationProductionWindowText = Get-Content -LiteralPath $automationProductionWindow -Raw
 $performanceHeaderText = Get-Content -LiteralPath $performanceHeader -Raw
 $performance = Get-Content -LiteralPath $performanceSource -Raw
 $performanceUiAdapterHeaderText = Get-Content -LiteralPath $performanceUiAdapterHeader -Raw
 $performanceUiAdapter = Get-Content -LiteralPath $performanceUiAdapterSource -Raw
+$productionEngineText = Get-Content -LiteralPath $productionEngine -Raw
 $widgetControllerHeaderText = Get-Content -LiteralPath $widgetControllerHeader -Raw
 $widgetController = Get-Content -LiteralPath $widgetControllerSource -Raw
 $widgetUiAdapterHeaderText = Get-Content -LiteralPath $widgetUiAdapterHeader -Raw
@@ -94,6 +98,9 @@ foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.U
 foreach ($forbidden in @('WallpaperAutomationStore', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW')) {
     if ($automationUiAdapter.Contains($forbidden)) { throw "Automation UI adapter regained persistence ownership: $forbidden" }
 }
+foreach ($marker in @('AutomationUiAdapter.h', '#define WallpaperAutomationStore AutomationUiAdapter', '#include "WallpaperAutomationWindow.cpp"')) {
+    if (-not $automationProductionWindowText.Contains($marker)) { throw "Production automation window bridge missing service-routing marker: $marker" }
+}
 
 foreach ($marker in @('PerformanceService', 'WallpaperPerformancePolicy.h', 'GetConfig', 'SaveConfig')) {
     if (-not $performanceHeaderText.Contains($marker)) { throw "Performance service header missing marker: $marker" }
@@ -109,6 +116,12 @@ foreach ($marker in @('service_.GetConfig', 'service_.SaveConfig')) {
 }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'GetPrivateProfileStringW', 'GetPrivateProfileIntW')) {
     if ($performanceUiAdapter.Contains($forbidden)) { throw "Performance UI adapter regained persistence ownership: $forbidden" }
+}
+foreach ($marker in @('PerformanceUiAdapter.h', 'PerformanceUiAdapter adapter', '#define WallpaperAutomationStore AutomationUiAdapter', '#include "WallpaperEngine.cpp"')) {
+    if (-not $productionEngineText.Contains($marker)) { throw "Production wallpaper engine bridge missing domain-routing marker: $marker" }
+}
+if ($productionEngineText.Contains('PerformanceService service')) {
+    throw 'Production WallpaperEngine must route performance controls through PerformanceUiAdapter, not directly through PerformanceService.'
 }
 
 foreach ($marker in @('DesktopWidgetController', 'DesktopControlService.h', 'DesktopControlService service_')) {
@@ -136,7 +149,10 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
 if ($cmake.Contains('    src/WallpaperLibraryWindow.cpp')) {
     throw 'Production target must not compile legacy WallpaperLibraryWindow.cpp directly.'
 }
-foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp', 'src/AutomationUiAdapter.cpp', 'src/PerformanceUiAdapter.cpp')) {
+if ($cmake.Contains('    src/WallpaperAutomationWindow.cpp')) {
+    throw 'Production target must not compile legacy WallpaperAutomationWindow.cpp directly.'
+}
+foreach ($marker in @('src/DesktopWidgetUiAdapter.cpp', 'src/WallpaperLibraryWindowProduction.cpp', 'src/AutomationUiAdapter.cpp', 'src/WallpaperAutomationWindowProduction.cpp', 'src/PerformanceUiAdapter.cpp', 'src/WallpaperEngineProduction.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "Production UI routing source missing from CMake: $marker" }
 }
 

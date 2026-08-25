@@ -106,27 +106,52 @@ foreach ($forbidden in @(
 }
 
 foreach ($marker in @(
-    'DesktopShellHost& ProductionShellHost()',
+    '#include "turingdesk/DesktopShellHost.h"',
+    'DesktopShellHost shellHost_',
+    'shellHost_.EnsureCurrent',
+    'shellHost_.EnsureSurface(host_',
+    'shellHost_.InspectSurface(host_',
+    'shellHost_.CurrentGenerationValid()',
+    'HostDesktopBounds(topology_, layoutMode)',
+    'DesktopShellHost::ModeKey(mode)')) {
+    if (-not $text.LegacyEngine.Contains($marker)) { throw "WallpaperEngine missing direct DesktopShellHost routing marker: $marker" }
+}
+foreach ($forbidden in @(
+    'constexpr LONG_PTR kRaisedDesktopFlag',
+    'enum class MountMode',
+    'struct DesktopLayer',
+    'SpawnWallpaperLayer(',
+    'DiscoverDesktopLayer()',
+    'TrySetParent(',
+    'EnsureWorkerBottom(',
+    'FindWindowW(L"Progman"',
+    'FindWindowExW(',
+    '0x052C',
+    'SetParent(',
+    'DesktopRectToParentClient(')) {
+    if ($text.LegacyEngine.Contains($forbidden)) { throw "WallpaperEngine regained legacy shell ownership: $forbidden" }
+}
+
+foreach ($forbidden in @(
+    'ProductionShellHost',
     'TuringDeskFindWindowW',
     'TuringDeskFindWindowExW',
     'TuringDeskSendMessageTimeoutW',
     'TuringDeskSetParent',
     'TuringDeskSetWindowPos',
-    'shell.EnsureSurface(child',
-    'shell.EnsureSurface(window',
-    '#define FindWindowW TuringDeskFindWindowW',
-    '#define FindWindowExW TuringDeskFindWindowExW',
-    '#define SendMessageTimeoutW TuringDeskSendMessageTimeoutW',
-    '#define SetParent TuringDeskSetParent',
-    '#define SetWindowPos TuringDeskSetWindowPos')) {
-    if (-not $text.ProductionEngine.Contains($marker)) { throw "Production WallpaperEngine shell interception missing marker: $marker" }
+    '#define FindWindowW',
+    '#define FindWindowExW',
+    '#define SendMessageTimeoutW',
+    '#define SetParent',
+    '#define SetWindowPos')) {
+    if ($text.ProductionEngine.Contains($forbidden)) { throw "Production bridge regained Windows shell interception: $forbidden" }
 }
-foreach ($forbidden in @('::SetWindowPos(window, nullptr', 'shell.AttachSurface(child')) {
-    if ($text.ProductionEngine.Contains($forbidden)) { throw "Production WallpaperEngine regained partial attachment ownership: $forbidden" }
-}
-
-foreach ($marker in @('DesktopLayer DiscoverDesktopLayer()', 'SpawnWallpaperLayer(', 'FindWindowW(L"Progman"')) {
-    if (-not $text.LegacyEngine.Contains($marker)) { throw "M2 legacy source-cleanup exception changed unexpectedly: $marker" }
+foreach ($marker in @(
+    'PerformanceUiAdapter.h',
+    'AutomationUiAdapter.h',
+    '#define WallpaperAutomationStore AutomationUiAdapter',
+    '#include "WallpaperEngine.cpp"')) {
+    if (-not $text.ProductionEngine.Contains($marker)) { throw "Production WallpaperEngine compatibility bridge missing M1 adapter marker: $marker" }
 }
 
-Write-Host 'Desktop shell ownership contract OK.'
+Write-Host 'Desktop shell ownership contract OK: DesktopShellHost is the sole native Windows desktop attachment owner.'

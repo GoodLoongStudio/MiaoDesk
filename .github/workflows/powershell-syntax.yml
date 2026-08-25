@@ -55,6 +55,10 @@ jobs:
         shell: powershell
         run: .\scripts\verify-windows-powershell-compat.ps1
 
+      - name: Verify M3 Widget evidence verifier contract
+        shell: powershell
+        run: .\scripts\verify-widget-acceptance-evidence-verifier-contract.ps1
+
       - name: Exercise one-click updater bootstrap
         shell: cmd
         env:

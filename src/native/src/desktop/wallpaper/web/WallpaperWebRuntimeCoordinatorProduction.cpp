@@ -13,6 +13,7 @@
 
 #include "turingdesk/DesktopShellHost.h"
 
+#include <algorithm>
 #include <cwchar>
 #include <iterator>
 #include <string>
@@ -27,7 +28,9 @@ bool IsWallpaperHost(HWND window) noexcept {
 }
 
 RECT ParentClientRectToDesktop(HWND window, int x, int y, int width, int height) noexcept {
-    RECT result{x, y, x + width, y + height};
+    const LONG safeWidth = std::max(1, width);
+    const LONG safeHeight = std::max(1, height);
+    RECT result{x, y, x + safeWidth, y + safeHeight};
     const HWND parent = window ? GetParent(window) : nullptr;
     if (!parent || parent == HWND_DESKTOP) return result;
 
@@ -35,6 +38,12 @@ RECT ParentClientRectToDesktop(HWND window, int x, int y, int width, int height)
     SetLastError(ERROR_SUCCESS);
     if (MapWindowPoints(parent, HWND_DESKTOP, corners, 2) == 0 && GetLastError() != ERROR_SUCCESS) return result;
     return RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+}
+
+bool RequestedVisibility(HWND window, UINT flags) noexcept {
+    if ((flags & SWP_SHOWWINDOW) != 0) return true;
+    if ((flags & SWP_HIDEWINDOW) != 0) return false;
+    return window && IsWindowVisible(window) != FALSE;
 }
 
 BOOL WINAPI TuringDeskCoordinatorSetWindowPos(
@@ -49,15 +58,15 @@ BOOL WINAPI TuringDeskCoordinatorSetWindowPos(
         const RECT desktopBounds = ParentClientRectToDesktop(window, x, y, width, height);
         turingdesk::wallpaper::DesktopShellHost shell;
         std::wstring error;
-        const bool visible = (flags & SWP_HIDEWINDOW) == 0;
-        return shell.EnsureSurface(
-                   window,
-                   turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
-                   desktopBounds,
-                   visible,
-                   &error)
-            ? TRUE
-            : FALSE;
+        const bool visible = RequestedVisibility(window, flags);
+        const bool ok = shell.EnsureSurface(
+            window,
+            turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+            desktopBounds,
+            visible,
+            &error);
+        if (!ok) SetLastError(ERROR_INVALID_WINDOW_HANDLE);
+        return ok ? TRUE : FALSE;
     }
     return ::SetWindowPos(window, insertAfter, x, y, width, height, flags);
 }

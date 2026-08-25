@@ -47,8 +47,8 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     return {true, L"桌面运行时已启动。"};
 }
 
-DesktopControlResult DesktopControlService::GetState(DesktopState* state) const {
-    if (!state) return {false, L"DesktopState 输出不能为空。"};
+DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapshot) const {
+    if (!snapshot) return {false, L"DesktopSnapshot 输出不能为空。"};
 
     WallpaperService wallpaperService;
     WallpaperState wallpaperState;
@@ -60,14 +60,24 @@ DesktopControlResult DesktopControlService::GetState(DesktopState* state) const 
     const auto widgetResult = widgetService.List(&widgets);
     if (!widgetResult.success) return FromWidget(widgetResult);
 
-    state->enabled = wallpaperState.enabled;
-    state->scene = wallpaperState.scene;
-    state->layout = wallpaperState.layout;
-    state->scale = wallpaperState.scale;
-    state->fpsCap = wallpaperState.fpsCap;
-    state->imageOrWebSource = wallpaperState.imageOrWebSource;
-    state->videoSource = wallpaperState.videoSource;
-    state->widgetCount = widgets.size();
+    snapshot->desktop.enabled = wallpaperState.enabled;
+    snapshot->desktop.scene = wallpaperState.scene;
+    snapshot->desktop.layout = wallpaperState.layout;
+    snapshot->desktop.scale = wallpaperState.scale;
+    snapshot->desktop.fpsCap = wallpaperState.fpsCap;
+    snapshot->desktop.imageOrWebSource = wallpaperState.imageOrWebSource;
+    snapshot->desktop.videoSource = wallpaperState.videoSource;
+    snapshot->desktop.widgetCount = widgets.size();
+    snapshot->widgets = std::move(widgets);
+    return {true, L"统一桌面快照读取完成。"};
+}
+
+DesktopControlResult DesktopControlService::GetState(DesktopState* state) const {
+    if (!state) return {false, L"DesktopState 输出不能为空。"};
+    DesktopSnapshot snapshot;
+    const auto result = GetSnapshot(&snapshot);
+    if (!result.success) return result;
+    *state = std::move(snapshot.desktop);
     return {true, L"桌面状态读取完成。"};
 }
 

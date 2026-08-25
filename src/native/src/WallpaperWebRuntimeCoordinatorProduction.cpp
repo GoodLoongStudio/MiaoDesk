@@ -14,6 +14,7 @@
 #include "turingdesk/DesktopShellHost.h"
 
 #include <cwchar>
+#include <iterator>
 #include <string>
 
 namespace {

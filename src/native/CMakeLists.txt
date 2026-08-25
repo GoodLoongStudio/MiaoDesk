@@ -216,10 +216,22 @@ add_custom_target(TuringDeskWidgetAcceptanceContractCheck ALL
     VERBATIM
 )
 
+set(TURINGDESK_DESKTOP_UI_PARITY_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-ui-parity.ps1")
+if (NOT EXISTS "${TURINGDESK_DESKTOP_UI_PARITY_SCRIPT}")
+    message(FATAL_ERROR "Missing M4 Desktop UI parity guard: ${TURINGDESK_DESKTOP_UI_PARITY_SCRIPT}")
+endif()
+add_custom_target(TuringDeskDesktopUiParityCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_DESKTOP_UI_PARITY_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying M4 desktop UI capability parity gate"
+    VERBATIM
+)
+
 add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskWallpaper TuringDeskDesktopUiParityCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopShellContractCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskWidgetAcceptanceContractCheck)

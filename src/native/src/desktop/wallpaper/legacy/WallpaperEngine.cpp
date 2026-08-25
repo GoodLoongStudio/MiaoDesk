@@ -5,6 +5,7 @@
 #include <wrl/client.h>
 #include <wtsapi32.h>
 
+#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/IndependentWallpaperHost.h"
 #include "turingdesk/VideoWallpaperPlayer.h"
 #include "turingdesk/VideoWallpaperSet.h"
@@ -72,7 +73,6 @@ constexpr int kTrayToggle = 4202;
 constexpr int kTrayExit = 4203;
 constexpr int kTrayAutomation = 4204;
 constexpr int kConfigVersion = 9;
-constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 constexpr ULONGLONG kMediaRecoveryCooldownMs = 3000;
 constexpr ULONGLONG kMediaRecoveryStableResetMs = 30000;
 constexpr ULONGLONG kAutomationEvaluationIntervalMs = 1000;
@@ -111,21 +111,6 @@ struct Config {
     bool videoMuted{true};
     float videoVolume{0.0f};
     float videoRate{1.0f};
-};
-
-enum class MountMode {
-    None,
-    RaisedDesktop,
-    LegacyWorkerW,
-    ProgmanFallback,
-};
-
-struct DesktopLayer {
-    HWND progman{};
-    HWND defView{};
-    HWND workerW{};
-    HWND legacyDefViewParent{};
-    bool raised{};
 };
 
 fs::path ConfigPath() {
@@ -256,92 +241,12 @@ Config LoadConfig() {
     return config;
 }
 
-bool HasExtendedStyle(HWND hwnd, LONG_PTR flag) {
-    return hwnd && (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & flag) != 0;
-}
-
-void SpawnWallpaperLayer(HWND progman, bool raised) {
-    if (!progman) return;
-    DWORD_PTR ignored = 0;
-    if (raised) {
-        SendMessageTimeoutW(progman, 0x052C, 0xD, 0x1, SMTO_NORMAL, 1000, &ignored);
-    } else {
-        SendMessageTimeoutW(progman, 0x052C, 0, 0, SMTO_NORMAL, 1000, &ignored);
-        SendMessageTimeoutW(progman, 0x052C, 0xD, 0x1, SMTO_NORMAL, 1000, &ignored);
-    }
-}
-
-DesktopLayer DiscoverDesktopLayer() {
-    DesktopLayer layer;
-    layer.progman = FindWindowW(L"Progman", nullptr);
-    if (!layer.progman) return layer;
-    layer.raised = HasExtendedStyle(layer.progman, kRaisedDesktopFlag);
-    SpawnWallpaperLayer(layer.progman, layer.raised);
-
-    for (int attempt = 0; attempt < 4; ++attempt) {
-        if (layer.raised) {
-            layer.defView = FindWindowExW(layer.progman, nullptr, L"SHELLDLL_DefView", nullptr);
-            layer.workerW = FindWindowExW(layer.progman, nullptr, L"WorkerW", nullptr);
-            if (layer.defView && layer.workerW) return layer;
-        }
-        struct LegacySearch {
-            HWND defView{};
-            HWND defViewParent{};
-            HWND worker{};
-        } search;
-        EnumWindows([](HWND top, LPARAM raw) -> BOOL {
-            auto* result = reinterpret_cast<LegacySearch*>(raw);
-            const HWND defView = FindWindowExW(top, nullptr, L"SHELLDLL_DefView", nullptr);
-            if (!defView) return TRUE;
-            result->defView = defView;
-            result->defViewParent = top;
-            result->worker = FindWindowExW(nullptr, top, L"WorkerW", nullptr);
-            return result->worker ? FALSE : TRUE;
-        }, reinterpret_cast<LPARAM>(&search));
-        if (!layer.defView) layer.defView = search.defView;
-        layer.legacyDefViewParent = search.defViewParent;
-        if (!layer.workerW) layer.workerW = search.worker;
-        if ((layer.raised && layer.defView) || (!layer.raised && layer.workerW)) return layer;
-        Sleep(50);
-        SpawnWallpaperLayer(layer.progman, layer.raised);
-    }
-    return layer;
-}
-
-bool TrySetParent(HWND child, HWND parent) {
-    SetLastError(ERROR_SUCCESS);
-    const HWND previous = SetParent(child, parent);
-    return previous != nullptr || GetLastError() == ERROR_SUCCESS;
-}
-
-HWND LastChildWindow(HWND parent) {
-    HWND last = nullptr;
-    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) last = child;
-    return last;
-}
-
-void EnsureWorkerBottom(const DesktopLayer& layer) {
-    if (!layer.raised || !layer.progman || !layer.workerW) return;
-    if (LastChildWindow(layer.progman) == layer.workerW) return;
-    SetWindowPos(layer.workerW, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-}
-
-std::wstring MountModeText(MountMode mode) {
-    switch (mode) {
-    case MountMode::RaisedDesktop: return L"Windows 11 Raised Desktop";
-    case MountMode::LegacyWorkerW: return L"WorkerW";
-    case MountMode::ProgmanFallback: return L"Progman fallback";
-    case MountMode::None: break;
-    }
-    return L"未挂载";
-}
-
-void SaveMountDiagnostics(MountMode mode, const std::wstring& error,
+void SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode mode, const std::wstring& error,
                           const turingdesk::wallpaper::MonitorTopology* topology = nullptr,
                           turingdesk::wallpaper::LayoutMode layout = turingdesk::wallpaper::LayoutMode::Span) {
     const auto path = ConfigPath().wstring();
-    const auto modeText = MountModeText(mode);
-    WritePrivateProfileStringW(L"Diagnostics", L"MountMode", modeText.c_str(), path.c_str());
+    WritePrivateProfileStringW(L"Diagnostics", L"MountMode",
+                               turingdesk::wallpaper::DesktopShellHost::ModeKey(mode), path.c_str());
     WritePrivateProfileStringW(L"Diagnostics", L"LastMountError", error.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Diagnostics", L"LayoutMode", turingdesk::wallpaper::LayoutModeKey(layout), path.c_str());
     if (topology) {
@@ -1033,9 +938,8 @@ private:
         }
 
         if (performanceStopped_) {
-            AttachToDesktop();
-            ShowWindow(host_, SW_SHOWNOACTIVATE);
             performanceStopped_ = false;
+            AttachToDesktop();
             EnsureRuntimeActive();
         }
         if (snapshot.action == turingdesk::wallpaper::PerformanceAction::Pause) return;
@@ -1228,7 +1132,8 @@ private:
                 ++healthTicks_;
                 if (healthTicks_ >= 150) {
                     healthTicks_ = 0;
-                    if (!mountOk_ || !attachedParent_ || !IsWindow(attachedParent_) || GetParent(host_) != attachedParent_) {
+                    if (!mountOk_ || !shellHost_.CurrentGenerationValid() || !attachedParent_ ||
+                        !IsWindow(attachedParent_) || GetParent(host_) != attachedParent_) {
                         AttachToDesktop();
                         RebuildRuntime();
                     }
@@ -1307,113 +1212,63 @@ private:
         renderTarget_.Reset();
     }
 
-    bool PrepareChildWindow() {
-        LONG_PTR style = GetWindowLongPtrW(host_, GWL_STYLE);
-        style &= ~static_cast<LONG_PTR>(WS_POPUP);
-        style |= WS_CHILD;
-        SetWindowLongPtrW(host_, GWL_STYLE, style);
-        LONG_PTR exStyle = GetWindowLongPtrW(host_, GWL_EXSTYLE);
-        exStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
-        SetWindowLongPtrW(host_, GWL_EXSTYLE, exStyle);
-        return SetLayeredWindowAttributes(host_, 0, 255, LWA_ALPHA) != FALSE;
-    }
-
     bool AttachToDesktop() {
         mountOk_ = false;
         lastMountError_.clear();
         const auto layoutMode = turingdesk::wallpaper::ParseLayoutMode(config_.layout);
         if (!host_ || !IsWindow(host_)) {
             lastMountError_ = L"Wallpaper host window 不存在";
-            SaveMountDiagnostics(MountMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
         topology_ = turingdesk::wallpaper::QueryMonitorTopology();
         if (!topology_.Valid()) {
-            mountMode_ = MountMode::None;
             attachedParent_ = nullptr;
             lastMountError_ = L"没有检测到有效的 Windows 显示器拓扑";
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
-            return false;
-        }
-
-        const DesktopLayer layer = DiscoverDesktopLayer();
-        if (!layer.progman) {
-            mountMode_ = MountMode::None;
-            attachedParent_ = nullptr;
-            lastMountError_ = L"找不到 Windows Progman 桌面窗口";
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
         const HWND oldParent = GetParent(host_);
-        const MountMode oldMode = mountMode_;
-        HWND targetParent = nullptr;
-        HWND insertAfter = HWND_BOTTOM;
-        MountMode nextMode = MountMode::None;
-        if (layer.raised && layer.defView) {
-            targetParent = layer.progman;
-            insertAfter = layer.defView;
-            nextMode = MountMode::RaisedDesktop;
-        } else if (layer.workerW) {
-            targetParent = layer.workerW;
-            insertAfter = HWND_TOP;
-            nextMode = MountMode::LegacyWorkerW;
-        } else {
-            targetParent = layer.progman;
-            insertAfter = (layer.defView && GetParent(layer.defView) == layer.progman) ? layer.defView : HWND_BOTTOM;
-            nextMode = MountMode::ProgmanFallback;
-        }
-
-        if (!targetParent || !PrepareChildWindow()) {
-            lastMountError_ = L"无法准备桌面 Layered HWND";
-            SaveMountDiagnostics(MountMode::None, lastMountError_, &topology_, layoutMode);
+        const auto oldMode = shellHost_.Snapshot().mode;
+        std::wstring shellError;
+        if (!shellHost_.EnsureCurrent(&shellError)) {
+            attachedParent_ = nullptr;
+            lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法解析 Windows 桌面层" : shellError;
+            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
-        if (!TrySetParent(host_, targetParent)) {
-            lastMountError_ = L"SetParent 失败，Win32=" + std::to_wstring(GetLastError());
-            SaveMountDiagnostics(MountMode::None, lastMountError_, &topology_, layoutMode);
-            return false;
-        }
-
-        mountMode_ = nextMode;
-        attachedParent_ = targetParent;
-        if (oldParent != targetParent || oldMode != mountMode_) ResetGraphics();
 
         const RECT desktopBounds = turingdesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
-        const RECT parentBounds = turingdesk::wallpaper::DesktopRectToParentClient(targetParent, desktopBounds);
-        const LONG width = parentBounds.right - parentBounds.left;
-        const LONG height = parentBounds.bottom - parentBounds.top;
-        if (width <= 0 || height <= 0) {
-            lastMountError_ = L"显示器布局映射到桌面层后尺寸无效";
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
+        const bool visible = config_.enabled && !performanceStopped_;
+        if (!shellHost_.EnsureSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+                                      desktopBounds, visible, &shellError)) {
+            attachedParent_ = shellHost_.SurfaceParent();
+            lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法挂载 Wallpaper surface" : shellError;
+            SaveMountDiagnostics(shellHost_.Snapshot().mode, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
-        UINT flags = SWP_NOACTIVATE | SWP_FRAMECHANGED;
-        flags |= config_.enabled ? SWP_SHOWWINDOW : SWP_HIDEWINDOW;
-        if (!SetWindowPos(host_, insertAfter, parentBounds.left, parentBounds.top, width, height, flags)) {
-            lastMountError_ = L"SetWindowPos 失败，Win32=" + std::to_wstring(GetLastError());
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
-            return false;
-        }
-        if (mountMode_ == MountMode::RaisedDesktop) EnsureWorkerBottom(layer);
-        if (GetParent(host_) != targetParent) {
-            lastMountError_ = L"桌面父窗口校验失败";
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
+        attachedParent_ = shellHost_.SurfaceParent();
+        if (oldParent != attachedParent_ || oldMode != shellHost_.Snapshot().mode) ResetGraphics();
+
+        const auto health = shellHost_.InspectSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper);
+        if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
+            lastMountError_ = health.detail.empty() ? L"DesktopShellHost surface health 校验失败" : health.detail;
+            SaveMountDiagnostics(shellHost_.Snapshot().mode, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
         RECT hostRect{};
         if (!GetClientRect(host_, &hostRect) || hostRect.right <= hostRect.left || hostRect.bottom <= hostRect.top) {
             lastMountError_ = L"Wallpaper HWND 没有可绘制区域";
-            SaveMountDiagnostics(mountMode_, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(shellHost_.Snapshot().mode, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
         mountOk_ = true;
-        SaveMountDiagnostics(mountMode_, L"", &topology_, layoutMode);
-        if (config_.enabled && !performanceStopped_) ShowWindow(host_, SW_SHOWNOACTIVATE);
+        SaveMountDiagnostics(shellHost_.Snapshot().mode, L"", &topology_, layoutMode);
         return true;
     }
 
@@ -1622,7 +1477,6 @@ private:
         const bool mounted = AttachToDesktop();
         if (renderTarget_) LoadImage();
         if (config_.enabled && mounted) {
-            ShowWindow(host_, SW_SHOWNOACTIVATE);
             RebuildRuntime();
         } else if (!config_.enabled) {
             ShowWindow(host_, SW_HIDE);
@@ -1820,7 +1674,6 @@ private:
     ULONGLONG lastRecoveryAttemptMs_{};
     ULONGLONG healthySinceMs_{};
     ULONGLONG lastAutomationEvaluationMs_{};
-    MountMode mountMode_{MountMode::None};
     std::wstring lastMountError_;
     std::wstring lastMediaError_;
     std::wstring recoveryNote_;
@@ -1829,6 +1682,7 @@ private:
     std::wstring lastAutomationNote_;
     Config config_;
     turingdesk::wallpaper::MonitorTopology topology_;
+    turingdesk::wallpaper::DesktopShellHost shellHost_;
     turingdesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
     turingdesk::wallpaper::PerformanceSnapshot currentPerformance_;
     turingdesk::wallpaper::WallpaperLibrary library_;
@@ -1895,6 +1749,7 @@ int RunSelfTest(HINSTANCE instance) {
     const bool assignmentsOk = turingdesk::wallpaper::WallpaperMonitorAssignments::SelfTest();
     const bool independentResolutionOk = turingdesk::wallpaper::SelfTestIndependentWallpaperResolution();
     const bool automationOk = turingdesk::wallpaper::WallpaperAutomationStore::SelfTest();
+    const bool shellContractOk = turingdesk::wallpaper::DesktopShellHost::SelfTest();
     const auto topology = turingdesk::wallpaper::QueryMonitorTopology();
     const bool topologyOk = topology.Valid();
     const bool mediaFoundationOk = turingdesk::VideoWallpaperPlayer::MediaFoundationAvailable();
@@ -1912,6 +1767,7 @@ int RunSelfTest(HINSTANCE instance) {
     if (!assignmentsOk) return 34;
     if (!independentResolutionOk) return 35;
     if (!automationOk) return 36;
+    if (!shellContractOk) return 37;
     return mediaFoundationOk ? 0 : 28;
 }
 

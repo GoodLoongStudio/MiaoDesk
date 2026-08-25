@@ -86,14 +86,26 @@ foreach ($marker in @('PerformanceUiAdapter.h', 'PerformanceUiAdapter adapter', 
     if (-not $text.ProductionEngine.Contains($marker)) { throw "Production WallpaperEngine bridge missing domain-routing marker: $marker" }
 }
 
-foreach ($marker in @('DesktopControlService service_', 'service_.ListWidgets', 'service_.CreateWebWidget', 'service_.UpdateWidget')) {
+# Service members live in the public adapter/controller declarations; implementation
+# files are required to demonstrate actual delegation through those members.
+foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_')) {
+    if (-not $text.WidgetControllerHeader.Contains($marker)) { throw "DesktopWidgetController header missing facade dependency: $marker" }
+}
+foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
     if (-not $text.WidgetController.Contains($marker)) { throw "DesktopWidgetController missing facade routing marker: $marker" }
 }
-foreach ($forbidden in @('DesktopWidgetStore', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
+foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
     if ($text.WidgetController.Contains($forbidden)) { throw "DesktopWidgetController regained domain ownership: $forbidden" }
 }
-foreach ($marker in @('DesktopControlService service_', 'service_.ListWidgets', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
+
+foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_')) {
+    if (-not $text.WidgetUiHeader.Contains($marker)) { throw "DesktopWidgetUiAdapter header missing facade dependency: $marker" }
+}
+foreach ($marker in @('service_.ListWidgets', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
     if (-not $text.WidgetUi.Contains($marker)) { throw "DesktopWidgetUiAdapter missing facade routing marker: $marker" }
+}
+foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
+    if ($text.WidgetUi.Contains($forbidden)) { throw "DesktopWidgetUiAdapter regained domain ownership: $forbidden" }
 }
 foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore DesktopWidgetUiAdapter', '#include "WallpaperLibraryWindow.cpp"')) {
     if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow bridge missing marker: $marker" }

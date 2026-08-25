@@ -55,13 +55,13 @@ $adapter = Get-Content -LiteralPath $toolAdapter -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 $doc = Get-Content -LiteralPath $docPath -Raw
 
-foreach ($marker in @('DesktopControlService', 'GetState', 'ApplyWebPackage', 'CreateWebWidget', 'UpdateWidget', 'RemoveWidget', 'ListWidgets')) {
+foreach ($marker in @('DesktopControlService', 'DesktopSnapshot', 'GetState', 'GetSnapshot', 'ApplyWebPackage', 'CreateWebWidget', 'UpdateWidget', 'RemoveWidget', 'ListWidgets')) {
     if (-not $header.Contains($marker)) { throw "Desktop control header missing marker: $marker" }
 }
 foreach ($marker in @('WallpaperService.h', 'WidgetService.h')) {
     if (-not $header.Contains($marker)) { throw "Desktop facade missing domain dependency: $marker" }
 }
-foreach ($marker in @('DesktopControlService::GetState', 'DesktopControlService::ApplyWebPackage', 'DesktopControlService::CreateWebWidget')) {
+foreach ($marker in @('DesktopControlService::GetSnapshot', 'wallpaperService.GetState', 'widgetService.List', 'DesktopControlService::GetState', 'GetSnapshot(&snapshot)', 'DesktopControlService::ApplyWebPackage', 'DesktopControlService::CreateWebWidget')) {
     if (-not $source.Contains($marker)) { throw "Desktop control source missing marker: $marker" }
 }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'WallpaperPackage::Validate')) {

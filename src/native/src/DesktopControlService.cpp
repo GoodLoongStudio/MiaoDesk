@@ -99,6 +99,27 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
     return {true, result.message};
 }
 
+DesktopControlResult DesktopControlService::AssignLibraryItemToMonitor(
+    const wallpaper::WallpaperLibraryItem& item,
+    std::wstring_view monitorId,
+    std::wstring_view friendlyName) const {
+    WallpaperService service;
+    const auto result = service.AssignLibraryItemToMonitor(item, monitorId, friendlyName);
+    if (!result.success) return FromWallpaper(result);
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+    return {true, result.message};
+}
+
+DesktopControlResult DesktopControlService::ClearMonitorAssignment(std::wstring_view monitorId) const {
+    WallpaperService service;
+    const auto result = service.ClearMonitorAssignment(monitorId);
+    if (!result.success) return FromWallpaper(result);
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+    return {true, result.message};
+}
+
 DesktopControlResult DesktopControlService::CreateWebWidget(
     const WebWidgetCreateRequest& request,
     wallpaper::DesktopWidget* created) const {

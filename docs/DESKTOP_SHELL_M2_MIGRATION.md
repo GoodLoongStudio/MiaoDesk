@@ -66,15 +66,27 @@ parent-client rect → desktop-space rect
 DesktopShellHost::EnsureSurface(Wallpaper)
 ```
 
+The bridge now preserves visibility semantics exactly: `SWP_SHOWWINDOW` forces visible, `SWP_HIDEWINDOW` forces hidden, and a geometry-only `SetWindowPos` preserves the existing visibility instead of accidentally showing a hidden wallpaper. Invalid zero/negative size requests are normalized before the desktop-space transaction. Failed `EnsureSurface` calls publish a stable Win32 failure code rather than silently pretending the geometry mutation succeeded.
+
 This closes the production geometry-ownership exception without changing the coordinator's runtime/process behavior. The bridge is transitional and must be deleted when `EnsureIndependentHostBounds` is physically removed from the legacy coordinator source.
 
-`RecoverSurface()` reuses `EnsureSurface()` when a surface has a stale parent/style/geometry, so Explorer restart recovery and normal attachment share the same mutation path.
+### Explorer generation and stale-parent recovery
+
+`CurrentGenerationValid()` validates not only the cached Progman/Explorer PID but also mode-specific parent relationships:
+
+- Raised Desktop requires both `SHELLDLL_DefView` and WorkerW to remain direct Progman children;
+- Legacy WorkerW validates the WorkerW HWND and, when available, the DefView/legacy-parent relationship;
+- Progman fallback rejects a DefView whose parent no longer matches either the cached Progman or cached legacy DefView parent.
+
+`RecoverSurface()` records whether the cached Explorer generation was valid before refresh. If the generation changed, the surface always passes through `EnsureSurface()` even when recycled HWND values appear plausible. This prevents stale Explorer ownership from surviving a restart by coincidence.
+
+`RecoverSurface()` therefore shares the same parent/style/geometry/z-order mutation path as first attachment.
 
 This establishes one production attachment family for native wallpaper, Web wallpaper and Widget surfaces: `AttachSurface / EnsureSurface / RecoverSurface`, all implemented by `DesktopShellHost`.
 
 ## Ownership guard
 
-`scripts/verify-desktop-shell-ownership.ps1` now rejects:
+`scripts/verify-desktop-shell-ownership.ps1` rejects:
 
 - Progman / WorkerW / `SHELLDLL_DefView` discovery outside `DesktopShellHost`;
 - `0x052C` outside `DesktopShellHost`;
@@ -82,6 +94,7 @@ This establishes one production attachment family for native wallpaper, Web wall
 - reintroduction of coordinator sibling enumeration / local z-order repair;
 - direct production compilation of legacy `WallpaperWebRuntimeCoordinator.cpp`;
 - removal/bypass of the coordinator `EnsureSurface` production bridge while the legacy resize helper remains;
+- coordinator visibility logic that treats every non-hide resize as an implicit show;
 - production WallpaperHost geometry mutation that bypasses `EnsureSurface()`;
 - removal of the production engine shell interception before legacy source cleanup is complete.
 

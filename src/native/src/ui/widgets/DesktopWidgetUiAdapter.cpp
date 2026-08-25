@@ -11,11 +11,32 @@ bool DesktopWidgetUiAdapter::AssignError(const desktop::DesktopControlResult& re
     return false;
 }
 
+std::wstring DesktopWidgetUiAdapter::DisplayHealthSuffix(
+    std::wstring_view widgetId,
+    const desktop::WidgetRuntimeHealth& health) {
+    const auto found = std::find_if(health.surfaces.begin(), health.surfaces.end(), [&](const auto& surface) {
+        return surface.widgetId == widgetId;
+    });
+    if (found == health.surfaces.end()) return {};
+    if (found->renderingHealthy) return L" · 运行正常";
+
+    std::wstring suffix = L" · ⚠ ";
+    suffix += found->detail.empty() ? L"运行状态异常" : found->detail;
+    if (!found->recommendedAction.empty()) suffix += L" — " + found->recommendedAction;
+    return suffix;
+}
+
 bool DesktopWidgetUiAdapter::Refresh(std::wstring* error) {
-    std::vector<DesktopWidget> next;
-    const auto result = service_.ListWidgets(&next);
+    desktop::DesktopSnapshot snapshot;
+    const auto result = service_.GetSnapshot(&snapshot);
     if (!AssignError(result, error)) return false;
-    items_ = std::move(next);
+
+    items_ = std::move(snapshot.widgets);
+    displayItems_ = items_;
+    for (auto& widget : displayItems_) {
+        if (!widget.enabled || widget.kind != DesktopWidgetKind::Web) continue;
+        widget.title += DisplayHealthSuffix(widget.id, snapshot.widgetRuntime);
+    }
     return true;
 }
 
@@ -24,10 +45,12 @@ bool DesktopWidgetUiAdapter::Load(std::wstring* error) {
 }
 
 const std::vector<DesktopWidget>& DesktopWidgetUiAdapter::Items() const noexcept {
-    return items_;
+    return displayItems_;
 }
 
 std::optional<DesktopWidget> DesktopWidgetUiAdapter::Find(std::wstring_view id) const {
+    // Always return the unmodified domain item. displayItems_ contains temporary
+    // health text for the legacy list only and must never be persisted by Upsert.
     const auto found = std::find_if(items_.begin(), items_.end(), [&](const auto& widget) {
         return widget.id == id;
     });

@@ -131,10 +131,19 @@ add_executable(TuringDeskWallpaper WIN32 ${TURINGDESK_WALLPAPER_SOURCES})
 add_executable(TuringDeskHarness WIN32 ${TURINGDESK_HARNESS_SOURCES})
 add_executable(TuringDeskWidgetAcceptance ${TURINGDESK_WIDGET_ACCEPTANCE_SOURCES})
 
+# M4 stays non-production until the parity gate is satisfied, but the candidate
+# must compile on every Windows build so it cannot silently rot behind the
+# production compatibility wrapper.
+add_library(TuringDeskDesktopUiV2Candidate OBJECT
+    src/ui/wallpaper/WallpaperLibraryWindowV2Candidate.cpp
+)
+
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_APP_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WALLPAPER_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_HARNESS_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WIDGET_ACCEPTANCE_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES
+    src/ui/wallpaper/WallpaperLibraryWindowV2Candidate.cpp)
 
 set_source_files_properties(src/ai/tools/NativeTools.cpp PROPERTIES
     COMPILE_DEFINITIONS "TURINGDESK_NATIVE_TOOLS_IMPL"
@@ -232,11 +241,14 @@ add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskDesktopUiParityCheck)
+add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopDomainContractCheck)
+add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopUiParityCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopShellContractCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskWidgetAcceptanceContractCheck)
 
-foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidgetAcceptance)
+foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidgetAcceptance TuringDeskDesktopUiV2Candidate)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -253,6 +265,7 @@ if (MSVC)
     target_compile_options(TuringDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(TuringDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(TuringDeskWidgetAcceptance PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(TuringDeskDesktopUiV2Candidate PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(TuringDesk PRIVATE

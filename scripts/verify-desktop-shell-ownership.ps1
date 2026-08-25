@@ -59,8 +59,8 @@ if (-not $cmake.Contains('src/DesktopShellSurfaceStack.cpp')) {
 # M2 migration rule: renderer/coordinator/Widget code may inspect or locate its
 # own TuringDesk child windows, but it must not discover Windows shell classes,
 # send the WorkerW creation message, or directly re-parent a desktop surface.
-# WallpaperEngine.cpp is the one tracked legacy shell-discovery exception until
-# its AttachToDesktop path is replaced with DesktopShellHost.
+# WallpaperEngine.cpp remains the single tracked legacy shell-discovery exception
+# until its AttachToDesktop path is replaced with DesktopShellHost.
 $surfaceSources = @(
     'src/native/src/IndependentWallpaperHost.cpp',
     'src/native/src/WebWallpaperHost.cpp',
@@ -88,11 +88,19 @@ foreach ($relativePath in $surfaceSources) {
     }
 }
 
-# Generic FindWindowExW is intentionally allowed because WebWallpaperHost uses
-# it to locate its own TuringDesk.Native.WebWallpaperHost child by token. That
-# operation is process/surface lifecycle, not Progman/WorkerW discovery.
-if (-not $coordinator.Contains('MaintainDesktopSurfaceZOrder')) {
-    throw 'M2 coordinator z-order exception changed unexpectedly; migrate it intentionally through DesktopShellHost.'
+# The Web/Widget coordinator used to enumerate siblings and maintain its own
+# z-order. That exception is closed: parent validation, stale-parent recovery
+# and stack repair must all route through DesktopShellHost. SetWindowPos remains
+# allowed only for the coordinator's own host geometry (Independent layout).
+foreach ($marker in @('DesktopShellHost shellHost', 'shellHost.EnsureCurrent', 'shellHost.InspectSurface', 'shellHost.RecoverSurface', 'shellHost.SurfaceParent', 'shellHost.RepairSurfaceStack')) {
+    if (-not $coordinator.Contains($marker)) {
+        throw "Web runtime coordinator missing DesktopShellHost routing marker: $marker"
+    }
+}
+foreach ($forbidden in @('MaintainDesktopSurfaceZOrder', 'DesktopAnchorAboveHost', 'IsWebSurface(', 'GetWindow(parent, GW_CHILD)')) {
+    if ($coordinator.Contains($forbidden)) {
+        throw "Web runtime coordinator regained sibling/z-order ownership: $forbidden"
+    }
 }
 
 # Keep the WallpaperEngine temporary shell-discovery exception visible until a
@@ -104,4 +112,4 @@ foreach ($marker in @('DesktopLayer DiscoverDesktopLayer()', 'SpawnWallpaperLaye
     }
 }
 
-Write-Host 'Desktop shell ownership contract OK (central recovery + geometry verified; WallpaperEngine discovery + coordinator z-order exceptions tracked).'
+Write-Host 'Desktop shell ownership contract OK (coordinator centralized; recovery + geometry verified; WallpaperEngine discovery is the only tracked exception).'

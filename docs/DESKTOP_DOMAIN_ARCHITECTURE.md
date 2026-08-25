@@ -105,10 +105,11 @@ Owns only Windows desktop infrastructure:
 - Explorer restart recovery
 - surface attachment and z-order
 - display topology needed for desktop attachment
+- shared read-only surface z-order interpretation through `DesktopSurfaceTelemetry`
 
 It knows surface roles such as Wallpaper and Widget. It does not know Aurora, playlists, AI, widget HTML or library metadata.
 
-Primary implementation: `DesktopShellHost`.
+Primary mutation implementation: `DesktopShellHost`. `DesktopSurfaceTelemetry` is read-only and must never gain `SetParent`, `SetWindowPos`, WorkerW discovery or repair ownership.
 
 ### 3.2 Wallpaper
 
@@ -137,11 +138,19 @@ Owns:
 - Widget runtime lifecycle
 - Widget surface management
 - caller-facing aggregate health through `WidgetRuntimeHealth`
-- caller-facing per-Web-Widget OS/runtime surface health through `WidgetSurfaceHealth`
+- caller-facing per-Web-Widget runtime/surface health through `WidgetSurfaceHealth`
 
-`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read private INI diagnostics or enumerate runtime HWNDs directly.
+`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read private INI diagnostics, inspect WebView2 child properties or enumerate runtime HWNDs directly.
 
-M3 currently structures each enabled Web Widget as configured/process/HWND/parent/child-style/visibility state behind `WidgetService::GetRuntimeHealth`. WebView2 Environment/Controller/Navigation and authoritative z-order fields already exist in the contract with explicit `*Reported` flags; they remain unreported until the child/runtime producer publishes those stages. Callers must not infer these stages from HWND existence. The active contract is documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
+M3 now structures each enabled Web Widget as configured/process/PID/HWND/parent/child-style/visibility/WebView2 lifecycle/z-order state behind `WidgetService::GetRuntimeHealth`:
+
+- `WebDesktopSurfaceChild` publishes EnvironmentReady, ControllerReady and successful NavigationReady as process-safe HWND properties;
+- the child role property is published before asynchronous WebView2 initialization, so not-ready lifecycle stages are distinguished from telemetry absence;
+- legacy child surfaces remain explicitly unreported rather than being guessed ready;
+- `DesktopSurfaceTelemetry` supplies read-only shared z-order semantics: icon DefView remains above TuringDesk surfaces and Widget surfaces remain above TuringDesk wallpaper surfaces;
+- `WidgetService` consumes these sources and computes `renderingHealthy`; it does not mutate shell state.
+
+The active contract is documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
 
 ### 3.4 Automation
 
@@ -350,13 +359,16 @@ Completed or substantially landed:
 - Widget UI and Pi adapters route through Desktop Control rather than Widget persistence;
 - M2 production shell ownership is physically centralized in `DesktopShellHost`; exact-head `1ed59a6a9c270408024e7143302a45592d2156a1` passed x64 and ARM64 Windows validation;
 - M3 exposes `WidgetRuntimeHealth` inside `DesktopSnapshot` and Pi reads the same snapshot contract;
-- M3 now carries per-enabled-Web-Widget process/PID, HWND, parent, child-style and visibility state as `WidgetSurfaceHealth`, while WebView2 lifecycle/z-order remain explicitly unreported rather than guessed.
+- M3 carries per-enabled-Web-Widget process/PID, HWND, parent, child-style and visibility state as `WidgetSurfaceHealth`;
+- M3 consumes the preferred Web child Environment/Controller/Navigation lifecycle properties without allowing UI/Pi to inspect them directly;
+- M3 shares read-only z-order interpretation from `desktop/shell/DesktopSurfaceTelemetry.cpp`, while all mutation stays in `DesktopShellHost`;
+- `renderingHealthy` now requires OS surface readiness, preferred-child lifecycle readiness when reported, valid reported z-order and the compatibility runtime diagnostic.
 
 Remaining order:
 
 1. Preserve M2 real-Windows wallpaper/Widget/icon layering and Explorer-recovery acceptance as an outstanding gate.
-2. Finish M3 child/runtime telemetry for EnvironmentReady / ControllerReady / NavigationReady and authoritative z-order, then make rendering health depend on those reported states.
-3. Surface actionable per-surface runtime failures in production Widget UI and complete real Widget visibility/recovery acceptance.
+2. Expose actionable per-surface lifecycle/z-order/runtime failures in production Widget UI and richer Pi state output through the existing snapshot contract.
+3. Complete real Widget visibility, icon-layer, Settings/Search, Explorer restart and monitor reconnect acceptance on ARM64 Windows.
 4. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
 5. Replace transitional legacy UI bridges after V2 parity.
 6. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
@@ -372,6 +384,7 @@ Required tests over time:
 Pi creates Widget -> UI lists same Widget
 UI moves Widget -> Pi reads updated geometry
 UI/Pi read the same WidgetRuntimeHealth + WidgetSurfaceHealth from DesktopSnapshot
+Widget surface reports process/HWND/Environment/Controller/Navigation/z-order/visible health through WidgetService
 UI applies wallpaper -> Pi reads same current state
 Pi applies wallpaper -> UI shows same current state
 Automation UI edits playlist -> runtime evaluates the same persisted playlist

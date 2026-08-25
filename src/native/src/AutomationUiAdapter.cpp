@@ -100,6 +100,8 @@ AutomationDecision AutomationUiAdapter::ForceNextPlaylist(std::wstring_view play
 
 const std::wstring& AutomationUiAdapter::LastMatchedScheduleId() const noexcept { return state_.lastMatchedScheduleId; }
 
+bool AutomationUiAdapter::SelfTest() { return desktop::AutomationService::SelfTest(); }
+
 std::wstring AutomationUiAdapter::MakeId(std::wstring_view prefix) { return desktop::AutomationService::MakeId(prefix); }
 
 } // namespace turingdesk::wallpaper

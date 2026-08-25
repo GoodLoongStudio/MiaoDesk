@@ -80,11 +80,11 @@ DesktopAttachmentDiagnostics InspectDesktopAttachment(
     diagnostics.detail = health.detail;
 
     if (!surface || !IsWindow(surface)) diagnostics.lastError = ERROR_INVALID_WINDOW_HANDLE;
-    else if (!snapshot.Valid()) diagnostics.lastError = ERROR_INVALID_STATE;
-    else if (!diagnostics.parentValid) diagnostics.lastError = ERROR_INVALID_PARENT;
+    else if (!snapshot.Valid()) diagnostics.lastError = ERROR_INVALID_PARAMETER;
+    else if (!diagnostics.parentValid) diagnostics.lastError = ERROR_INVALID_PARAMETER;
     else if (diagnostics.layeredRequired && !diagnostics.layeredApplied) diagnostics.lastError = ERROR_INVALID_DATA;
     else if (!diagnostics.geometryValid) diagnostics.lastError = ERROR_INVALID_DATA;
-    else if (!diagnostics.zOrderValid) diagnostics.lastError = ERROR_INVALID_STATE;
+    else if (!diagnostics.zOrderValid) diagnostics.lastError = ERROR_INVALID_PARAMETER;
     else diagnostics.lastError = ERROR_SUCCESS;
 
     if (diagnostics.detail.empty() && !diagnostics.zOrderValid)

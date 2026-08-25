@@ -79,16 +79,16 @@ foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'Widg
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
 
-foreach ($marker in @('AutomationService', 'GetState', 'SetEnabled', 'SetActivePlaylist', 'ForceNextPlaylist', 'MakeId')) {
+foreach ($marker in @('AutomationService', 'GetState', 'SetEnabled', 'SetActivePlaylist', 'ForceNextPlaylist', 'SelfTest', 'MakeId')) {
     if (-not $automationHeaderText.Contains($marker)) { throw "Automation service header missing marker: $marker" }
 }
-foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::ForceNextPlaylist', 'AutomationService::MakeId', 'WallpaperAutomationStore store')) {
+foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::ForceNextPlaylist', 'AutomationService::SelfTest', 'AutomationService::MakeId', 'WallpaperAutomationStore store')) {
     if (-not $automation.Contains($marker)) { throw "Automation domain service missing ownership marker: $marker" }
 }
-foreach ($marker in @('AutomationUiAdapter', 'AutomationService.h', 'AutomationService service_')) {
+foreach ($marker in @('AutomationUiAdapter', 'AutomationService.h', 'AutomationService service_', 'SelfTest')) {
     if (-not $automationUiAdapterHeaderText.Contains($marker)) { throw "Automation UI adapter header missing marker: $marker" }
 }
-foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.UpsertPlaylist', 'service_.UpsertSchedule', 'service_.ForceNextPlaylist', 'desktop::AutomationService::MakeId')) {
+foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.UpsertPlaylist', 'service_.UpsertSchedule', 'service_.ForceNextPlaylist', 'desktop::AutomationService::SelfTest', 'desktop::AutomationService::MakeId')) {
     if (-not $automationUiAdapter.Contains($marker)) { throw "Automation UI adapter is not routed through AutomationService: $marker" }
 }
 foreach ($forbidden in @('WallpaperAutomationStore', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW')) {
@@ -146,7 +146,7 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
     if ($adapter.Contains($forbidden)) { throw "Pi desktop tool adapter regained domain ownership: $forbidden" }
 }
 
-foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService.cpp', 'src/WidgetService.cpp')) {
+foreach ($sourceName in @('src/DesktopControlService.cpp', 'src/WallpaperService.cpp', 'src/WidgetService.cpp', 'src/WallpaperMonitorLayout.cpp')) {
     $count = ([regex]::Matches($cmake, [regex]::Escape($sourceName))).Count
     if ($count -lt 2) { throw "$sourceName must be linked into both TuringDesk and TuringDeskWallpaper." }
 }

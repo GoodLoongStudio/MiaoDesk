@@ -49,7 +49,7 @@ A legacy child can still be observed without inventing lifecycle readiness: its 
 
 ## Actionable failure contract
 
-The Widget domain now maps concrete runtime stages to stable issue codes and remediation guidance instead of making UI/Pi infer Windows/WebView2 internals. Current codes include:
+The Widget domain maps concrete runtime stages to stable issue codes and remediation guidance instead of making UI/Pi infer Windows/WebView2 internals. Current codes include:
 
 ```text
 surface_missing
@@ -67,11 +67,11 @@ runtime_diagnostic_unhealthy
 
 The production legacy Widget list consumes the same `DesktopSnapshot` through `DesktopWidgetUiAdapter`. It keeps persistence objects unmodified, but creates a temporary display copy whose title includes either `运行正常` or the per-surface failure detail and recommended action. `Find()` continues to return the raw domain item so health decoration can never leak back into persisted Widget titles.
 
-Pi `wallpaper_state_get` now emits every structured surface with process/HWND/parent/style/visible/lifecycle/z-order state plus issue/action text. `desktop_widget_list` also uses `DesktopSnapshot` and attaches runtime issue/action guidance to the matching Widget. Pi remains a read-only consumer of the domain health contract and never enumerates HWNDs itself.
+Pi `wallpaper_state_get` emits every structured surface with process/HWND/parent/style/visible/lifecycle/z-order state plus issue/action text. `desktop_widget_list` also uses `DesktopSnapshot` and attaches runtime issue/action guidance to the matching Widget. Pi remains a read-only consumer of the domain health contract and never enumerates HWNDs itself.
 
 ## Real-Windows acceptance probe
 
-M3 now ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another HWND enumeration or shell ownership path.
+M3 ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another HWND enumeration or shell ownership path.
 
 Run it directly or through:
 
@@ -85,21 +85,19 @@ Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `mo
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
 ```
 
-The probe intentionally fails in a non-interactive CI session instead of pretending that a successful build proves visible desktop behavior. The intended real-machine sequence is:
+The probe intentionally fails in a non-interactive CI session instead of pretending that a successful build proves visible desktop behavior. It also maintains a diagnostics-only sequence cursor so successful evidence must be collected in order:
 
 ```text
-baseline probe
--> open Settings, settings probe
--> open Search, search probe
--> restart Explorer, explorer probe
--> reconnect/change display, monitor probe
+baseline -> settings -> search -> explorer -> monitor
 ```
+
+A failed or skipped phase does not advance the sequence cursor. This prevents a later Explorer/monitor probe from being accepted when the Settings/Search continuity checks were never successfully completed. Widget identity continuity remains independent from PID/HWND continuity because legitimate recovery may recreate those runtime handles.
 
 A probe pass is evidence for that phase only. The user-visible acceptance flow still requires the operator to visually confirm that desktop icons remain usable and the Widget appears in the intended layer.
 
 ## Remaining M3 slices
 
-1. Run the phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with an enabled Web Widget.
+1. Run the ordered phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with an enabled Web Widget.
 2. Confirm the read-only z-order interpretation against real ARM64 Windows in Raised Desktop, legacy WorkerW and Progman fallback modes.
 3. Pass the real ARM64 Windows acceptance flow: create clock, keep it visible while Settings/Search open, recover after Explorer restart, and restore after display reconnect/change.
 

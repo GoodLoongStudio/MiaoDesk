@@ -69,9 +69,12 @@ public:
                        std::wstring* error = nullptr);
 
     // Idempotent production attachment entry point. Callers supply only the
-    // desired desktop-space geometry, role and visibility. DesktopShellHost
-    // owns shell generation validation, styles, parent selection, re-parenting,
-    // geometry mapping and final wallpaper/widget/icon z-order repair.
+    // desired DESKTOP-SPACE geometry, role and visibility. They must not map
+    // geometry into WorkerW/Progman parent-client coordinates first and must
+    // not perform a follow-up SetWindowPos/SetParent transaction themselves.
+    // DesktopShellHost owns shell generation validation, styles, parent choice,
+    // desktop-to-parent mapping, re-parenting and final wallpaper/widget/icon
+    // z-order repair.
     bool EnsureSurface(HWND surface,
                        DesktopSurfaceRole role,
                        const RECT& desktopBounds,

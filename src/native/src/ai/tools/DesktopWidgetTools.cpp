@@ -151,18 +151,22 @@ NativeToolResult ToNative(desktop::DesktopControlResult result) {
 
 NativeToolResult WallpaperStateGet() {
     desktop::DesktopControlService service;
-    desktop::DesktopState state;
-    const auto result = service.GetState(&state);
+    desktop::DesktopSnapshot snapshot;
+    const auto result = service.GetSnapshot(&snapshot);
     if (!result.success) return ToNative(result);
+    const auto& state = snapshot.desktop;
 
     std::wostringstream text;
     text << L"当前桌面状态：scene=" << state.scene
          << L"; layout=" << state.layout
          << L"; scale=" << state.scale
          << L"; fps=" << state.fpsCap
-         << L"; widgets=" << state.widgetCount;
+         << L"; widgets=" << state.widgetCount
+         << L"; widget_runtime=" << (snapshot.widgetRuntime.Healthy() ? L"healthy" : L"attention")
+         << L"; widget_enabled_web=" << snapshot.widgetRuntime.enabledWebCount;
     if (!state.imageOrWebSource.empty()) text << L"; image/web=" << state.imageOrWebSource;
     if (!state.videoSource.empty()) text << L"; video=" << state.videoSource;
+    if (!snapshot.widgetRuntime.detail.empty()) text << L"; widget_detail=" << snapshot.widgetRuntime.detail;
     return {true, text.str()};
 }
 

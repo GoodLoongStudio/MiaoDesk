@@ -16,6 +16,7 @@ $files = @{
     Control = 'src/native/src/desktop/control/DesktopControlService.cpp'
     WallpaperHeader = 'src/native/include/turingdesk/WallpaperService.h'
     Wallpaper = 'src/native/src/desktop/wallpaper/WallpaperService.cpp'
+    WidgetHeader = 'src/native/include/turingdesk/WidgetService.h'
     Widget = 'src/native/src/desktop/widgets/WidgetService.cpp'
     WidgetControllerHeader = 'src/native/include/turingdesk/DesktopWidgetController.h'
     WidgetController = 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
@@ -44,10 +45,10 @@ foreach ($entry in $files.GetEnumerator()) {
     $text[$entry.Key] = Get-Content -LiteralPath $path -Raw
 }
 
-foreach ($marker in @('DesktopControlService', 'GetSnapshot', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'CreateWebWidget', 'ListWidgets')) {
+foreach ($marker in @('DesktopControlService', 'GetSnapshot', 'WidgetRuntimeHealth', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'CreateWebWidget', 'ListWidgets')) {
     if (-not $text.ControlHeader.Contains($marker)) { throw "Desktop control header missing marker: $marker" }
 }
-foreach ($marker in @('wallpaperService.GetState', 'widgetService.List', 'DesktopControlService::ApplyLibraryItem', 'DesktopControlService::AssignLibraryItemToMonitor')) {
+foreach ($marker in @('wallpaperService.GetState', 'widgetService.List', 'widgetService.GetRuntimeHealth', 'snapshot->widgetRuntime', 'DesktopControlService::ApplyLibraryItem', 'DesktopControlService::AssignLibraryItemToMonitor')) {
     if (-not $text.Control.Contains($marker)) { throw "Desktop control facade missing routing marker: $marker" }
 }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
@@ -57,7 +58,10 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $text.Wallpaper.Contains($marker)) { throw "WallpaperService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'DesktopWidgetStore store')) {
+foreach ($marker in @('WidgetRuntimeHealth', 'GetRuntimeHealth')) {
+    if (-not $text.WidgetHeader.Contains($marker)) { throw "WidgetService header missing runtime health contract: $marker" }
+}
+foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
 }
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
@@ -111,8 +115,8 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
     if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow bridge missing marker: $marker" }
 }
 
-if (-not $text.PiAdapter.Contains('DesktopControlService.h') -or -not $text.PiAdapter.Contains('DesktopControlService service')) {
-    throw 'Pi desktop tool adapter must delegate through DesktopControlService.'
+foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service', 'service.GetSnapshot', 'widgetRuntime')) {
+    if (-not $text.PiAdapter.Contains($marker)) { throw "Pi desktop tool adapter missing Desktop Control snapshot marker: $marker" }
 }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
     if ($text.PiAdapter.Contains($forbidden)) { throw "Pi desktop tool adapter regained domain ownership: $forbidden" }

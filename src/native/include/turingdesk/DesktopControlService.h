@@ -32,6 +32,7 @@ struct DesktopState {
 struct DesktopSnapshot {
     DesktopState desktop;
     std::vector<wallpaper::DesktopWidget> widgets;
+    WidgetRuntimeHealth widgetRuntime;
 };
 
 // Facade shared by UI, Pi native tools and future editor clients. Domain

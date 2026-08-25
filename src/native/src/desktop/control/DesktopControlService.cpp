@@ -60,6 +60,10 @@ DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapsho
     const auto widgetResult = widgetService.List(&widgets);
     if (!widgetResult.success) return FromWidget(widgetResult);
 
+    WidgetRuntimeHealth widgetRuntime;
+    const auto widgetRuntimeResult = widgetService.GetRuntimeHealth(&widgetRuntime);
+    if (!widgetRuntimeResult.success) return FromWidget(widgetRuntimeResult);
+
     snapshot->desktop.enabled = wallpaperState.enabled;
     snapshot->desktop.scene = wallpaperState.scene;
     snapshot->desktop.layout = wallpaperState.layout;
@@ -69,6 +73,7 @@ DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapsho
     snapshot->desktop.videoSource = wallpaperState.videoSource;
     snapshot->desktop.widgetCount = widgets.size();
     snapshot->widgets = std::move(widgets);
+    snapshot->widgetRuntime = std::move(widgetRuntime);
     return {true, L"统一桌面快照读取完成。"};
 }
 

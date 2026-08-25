@@ -34,6 +34,8 @@ M3 Widget health remains owned by `src/desktop/widgets`. Runtime process/HWND/We
 
 The production legacy Widget list is still compatibility UI, but its Widget data and temporary health decoration are supplied by `src/ui/widgets/DesktopWidgetUiAdapter.cpp`. The display copy is deliberately separate from persisted Widget data so runtime warning text cannot leak into stored titles.
 
+The current completion-plan gate is real ARM64 Windows visibility/layering/recovery acceptance. M4 UI replacement does not start merely because the M3 implementation compiles.
+
 ## Guardrails
 
 `scripts/verify-native-source-layout.ps1` fails the build if root-level implementation `.cpp` files return under `src/native/src/`, required module directories disappear, CMake stops mirroring the module tree, or the normative layout documentation drifts from the repository.

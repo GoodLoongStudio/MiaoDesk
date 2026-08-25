@@ -64,6 +64,7 @@ add_executable(TuringDeskWallpaper WIN32
     src/WallpaperEngineProduction.cpp
     src/DesktopShellHost.cpp
     src/DesktopShellDiagnostics.cpp
+    src/DesktopShellSurfaceStack.cpp
     src/DesktopControlService.cpp
     src/WallpaperService.cpp
     src/WidgetService.cpp

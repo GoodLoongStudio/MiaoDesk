@@ -1,0 +1,24 @@
+#pragma once
+
+#include <string>
+#include <string_view>
+
+namespace turingdesk::desktop {
+
+enum class WidgetRuntimeAcceptanceCode : int {
+    Passed = 0,
+    InteractiveDesktopUnavailable = 60,
+    NoEnabledWebWidget = 61,
+    RuntimeHealthUnavailable = 62,
+    SurfaceUnhealthy = 63,
+    ReportWriteFailed = 64,
+};
+
+// Real-Windows M3 probe. This intentionally consumes WidgetService's public
+// runtime-health contract instead of re-enumerating Widget HWNDs here.
+WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
+    std::wstring_view phase,
+    std::wstring* reportPath = nullptr,
+    std::wstring* failure = nullptr);
+
+} // namespace turingdesk::desktop

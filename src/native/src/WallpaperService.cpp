@@ -50,10 +50,20 @@ WallpaperServiceResult PersistWallpaperSelection(
               : WallpaperServiceResult{false, L"无法保存当前壁纸状态。"};
 }
 
+std::wstring RuntimeSceneKey(const wallpaper::WallpaperLibraryItem& item) {
+    if (item.kind != wallpaper::LibraryWallpaperKind::Scene) return {};
+    if (item.id == L"scene-aurora" || item.id == L"aurora") return L"aurora";
+    if (item.id == L"scene-neon" || item.id == L"neon") return L"neon";
+    if (item.id == L"scene-grid" || item.id == L"grid") return L"grid";
+    return {};
+}
+
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
     if (item.id.empty()) return {false, L"壁纸库项目缺少 id。"};
     if (item.kind == wallpaper::LibraryWallpaperKind::Unknown)
         return {false, L"不支持的壁纸库项目类型。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Scene && RuntimeSceneKey(item).empty())
+        return {false, L"未知 Scene 壁纸：" + item.id};
     if (item.kind == wallpaper::LibraryWallpaperKind::Web &&
         !wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
         return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
@@ -110,9 +120,9 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
     std::error_code ec;
     switch (item.kind) {
     case wallpaper::LibraryWallpaperKind::Scene: {
-        if (item.id != L"aurora" && item.id != L"neon" && item.id != L"grid")
-            return {false, L"未知 Scene 壁纸：" + item.id};
-        const auto persisted = PersistWallpaperSelection(item.id, {}, {});
+        const auto scene = RuntimeSceneKey(item);
+        if (scene.empty()) return {false, L"未知 Scene 壁纸：" + item.id};
+        const auto persisted = PersistWallpaperSelection(scene, {}, {});
         return persisted.success ? WallpaperServiceResult{true, L"已选择 Scene：" + item.title} : persisted;
     }
     case wallpaper::LibraryWallpaperKind::Image: {

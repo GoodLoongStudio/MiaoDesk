@@ -128,7 +128,7 @@ Tasks:
 
 - [ ] Complete Web Widget surface lifecycle through `DesktopShellHost`.
 - [ ] Surface WebView2 state: EnvironmentReady / ControllerReady / NavigationReady.
-- [ ] Add configured/process/HWND/parent/style/z-order/visible/rendering-health state.
+- [~] Add configured/process/HWND/parent/style/z-order/visible/rendering-health state. Process/PID, HWND, parent, `WS_CHILD` and visibility are now structured per Widget; WebView2 lifecycle and authoritative z-order remain explicitly unreported.
 - [ ] Add actionable error reporting to Widget UI.
 - [ ] Confirm Widget remains above TuringDesk wallpaper but below desktop icons.
 - [ ] Confirm Settings/Search windows do not hide or pause the Widget.
@@ -137,10 +137,13 @@ Tasks:
 
 M3 implementation landed so far:
 - `WidgetRuntimeHealth` is owned by `WidgetService` rather than UI/Pi reading private runtime diagnostics directly;
-- `DesktopSnapshot` now carries the same Widget runtime health alongside wallpaper state and Widget persistence state;
+- `DesktopSnapshot` carries the same Widget runtime health alongside wallpaper state and Widget persistence state;
 - Pi `wallpaper_state_get` consumes `DesktopSnapshot`, so AI and future UI/editor clients share one health contract;
-- current health exposes configured/enabled-Web counts, runtime-report presence, a compatibility health result and runtime detail;
-- the compatibility detail inference is transitional: M3 is not complete until process/HWND/WebView2 Environment/Controller/Navigation/shell/z-order/visible/rendering health is structured per surface.
+- `WidgetSurfaceHealth` now represents each enabled Web Widget with configured id, isolated PID/process-running state, HWND value/readiness, expected parent validity, `WS_CHILD` validity and current visibility;
+- WebView2 Environment/Controller/Navigation and z-order fields already exist with matching `*Reported` flags and remain explicitly **unreported** until the runtime producer publishes them; they are not guessed from HWND existence;
+- aggregate `runtimeHealthy` now requires the compatibility runtime diagnostic plus a one-to-one set of OS-ready surfaces for all enabled Web Widgets;
+- UI adapters/controllers and Pi remain forbidden from enumerating HWNDs or reading private runtime diagnostics directly; the Widget domain owns that translation;
+- the active contract and remaining telemetry slices are documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
 
 Real Windows acceptance flow:
 
@@ -425,4 +428,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M3 — Widget visible-runtime implementation and acceptance.**
 
-M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the exact-head implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now owns the highest remaining runtime risk: turn the current domain-owned compatibility health summary into structured per-surface WebView2/process/HWND/shell/z-order/visibility/rendering health, expose the same state to UI/Pi/editor clients, then pass the real ARM64 Widget visibility/recovery flow. M4 does not begin until that gate is satisfied.
+M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 has now moved beyond a single compatibility string: `WidgetSurfaceHealth` structures process/PID, HWND, parent, child style and visibility per enabled Web Widget behind `WidgetService` and `DesktopSnapshot`, while WebView2 lifecycle and authoritative z-order are represented as explicitly unreported fields rather than guessed. The next slices are child/runtime Environment/Controller/Navigation telemetry, DesktopShell z-order telemetry, actionable Widget UI errors, and the real ARM64 visibility/recovery flow. M4 does not begin until that gate is satisfied.

@@ -237,6 +237,7 @@ add_custom_target(TuringDeskDesktopUiParityCheck ALL
 )
 
 add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDesk TuringDeskDesktopUiParityCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)

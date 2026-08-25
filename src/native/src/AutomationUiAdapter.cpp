@@ -96,7 +96,7 @@ AutomationDecision AutomationUiAdapter::ForceNextPlaylist(std::wstring_view play
 const std::wstring& AutomationUiAdapter::LastMatchedScheduleId() const noexcept { return state_.lastMatchedScheduleId; }
 
 std::wstring AutomationUiAdapter::MakeId(std::wstring_view prefix) {
-    return WallpaperAutomationStore::MakeId(prefix);
+    return desktop::AutomationService::MakeId(prefix);
 }
 
 } // namespace turingdesk::wallpaper

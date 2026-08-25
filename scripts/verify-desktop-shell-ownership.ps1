@@ -21,7 +21,6 @@ $paths = @{
     LegacyEngine = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngine.cpp'
     ProductionEngine = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp'
     Coordinator = 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp'
-    ProductionCoordinator = 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinatorProduction.cpp'
     CMake = 'src/native/CMakeLists.txt'
 }
 $text = @{}
@@ -54,11 +53,11 @@ foreach ($marker in @(
     'src/desktop/shell/DesktopShellDiagnostics.cpp',
     'src/desktop/shell/DesktopShellSurfaceStack.cpp',
     'src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp',
-    'src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinatorProduction.cpp')) {
+    'src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "Desktop shell production source missing from CMake: $marker" }
 }
-if ($cmake.Contains('src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp')) {
-    throw 'Production target must not compile legacy WallpaperWebRuntimeCoordinator.cpp directly.'
+if ($cmake.Contains('WallpaperWebRuntimeCoordinatorProduction.cpp')) {
+    throw 'Transitional Web coordinator production bridge must not return.'
 }
 
 $surfaceSources = @(
@@ -78,32 +77,27 @@ foreach ($relativePath in $surfaceSources) {
     }
 }
 
-foreach ($marker in @('DesktopShellHost shellHost', 'shellHost.EnsureCurrent', 'shellHost.InspectSurface', 'shellHost.RecoverSurface', 'shellHost.SurfaceParent', 'shellHost.RepairSurfaceStack')) {
+foreach ($marker in @(
+    'DesktopShellHost shellHost',
+    'shellHost.EnsureCurrent',
+    'shellHost.InspectSurface',
+    'shellHost.RecoverSurface',
+    'shellHost.SurfaceParent',
+    'shellHost.RepairSurfaceStack',
+    'shellHost.EnsureSurface(host, DesktopSurfaceRole::Wallpaper',
+    'HostDesktopBounds(topology, LayoutMode::Independent)',
+    'IsWindowVisible(host)')) {
     if (-not $text.Coordinator.Contains($marker)) { throw "Web runtime coordinator missing DesktopShellHost routing marker: $marker" }
 }
-foreach ($forbidden in @('MaintainDesktopSurfaceZOrder', 'DesktopAnchorAboveHost', 'IsWebSurface(', 'GetWindow(parent, GW_CHILD)')) {
-    if ($text.Coordinator.Contains($forbidden)) { throw "Web runtime coordinator regained sibling/z-order ownership: $forbidden" }
-}
-foreach ($marker in @(
-    'TuringDeskCoordinatorSetWindowPos',
-    'ParentClientRectToDesktop',
-    'RequestedVisibility',
-    'SWP_SHOWWINDOW',
-    'SWP_HIDEWINDOW',
-    'IsWindowVisible(window)',
-    'DesktopShellHost shell',
-    'shell.EnsureSurface(',
-    'DesktopSurfaceRole::Wallpaper',
-    'SetLastError(ERROR_INVALID_WINDOW_HANDLE)',
-    '#define SetWindowPos TuringDeskCoordinatorSetWindowPos',
-    '#include "WallpaperWebRuntimeCoordinator.cpp"')) {
-    if (-not $text.ProductionCoordinator.Contains($marker)) { throw "Production Web coordinator shell bridge missing marker: $marker" }
-}
-if ($text.ProductionCoordinator.Contains('shell.AttachSurface(')) {
-    throw 'Production Web coordinator must finish through EnsureSurface, not AttachSurface.'
-}
-if ($text.ProductionCoordinator.Contains('const bool visible = (flags & SWP_HIDEWINDOW) == 0')) {
-    throw 'Production Web coordinator must preserve existing visibility when no show/hide flag is requested.'
+foreach ($forbidden in @(
+    'MaintainDesktopSurfaceZOrder',
+    'DesktopAnchorAboveHost',
+    'IsWebSurface(',
+    'GetWindow(parent, GW_CHILD)',
+    'EnsureIndependentHostBounds',
+    'DesktopRectToParentClient(',
+    'SetWindowPos(')) {
+    if ($text.Coordinator.Contains($forbidden)) { throw "Web runtime coordinator regained shell/geometry ownership: $forbidden" }
 }
 
 foreach ($marker in @(

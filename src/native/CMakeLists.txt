@@ -148,6 +148,18 @@ add_custom_target(TuringDeskDesktopDomainContractCheck ALL
 add_dependencies(TuringDesk TuringDeskDesktopDomainContractCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskDesktopDomainContractCheck)
 
+set(TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-shell-ownership.ps1")
+if (NOT EXISTS "${TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing DesktopShellHost ownership guard: ${TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskDesktopShellContractCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying DesktopShellHost ownership contract"
+    VERBATIM
+)
+add_dependencies(TuringDeskWallpaper TuringDeskDesktopShellContractCheck)
+
 target_include_directories(TuringDesk PRIVATE include)
 target_compile_features(TuringDesk PRIVATE cxx_std_23)
 target_compile_definitions(TuringDesk PRIVATE

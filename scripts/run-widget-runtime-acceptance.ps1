@@ -55,13 +55,23 @@ function Write-CheckpointLines([string]$Path, [string[]]$Lines) {
     Set-Content -LiteralPath $Path -Value $Lines -Encoding utf8
 }
 
-function Wait-ForMonitorTopologyTransition([string[]]$Before) {
+function Write-MonitorTransitionEvidence([string]$Path, [string[]]$Before, [string[]]$Changed, [string[]]$Stable) {
+    $lines = @(
+        "observedAtUtc=$([DateTime]::UtcNow.ToString('o'))",
+        "before=$($Before -join '; ')"
+        "changed=$($Changed -join '; ')"
+        "stable=$($Stable -join '; ')"
+    )
+    Write-CheckpointLines -Path $Path -Lines $lines
+}
+
+function Wait-ForMonitorTopologyTransition([string[]]$Before, [string]$EvidencePath) {
     $beforeKey = $Before -join "`n"
-    $deadline = [DateTime]::UtcNow.AddMinutes(3)
+    $changeDeadline = [DateTime]::UtcNow.AddMinutes(3)
     $changed = $null
 
     Write-Host 'Waiting for an observed display topology change. Disconnect/reconnect a display or change the Windows display topology while this phase is running.'
-    while ([DateTime]::UtcNow -lt $deadline) {
+    while ([DateTime]::UtcNow -lt $changeDeadline) {
         $current = @(Get-CurrentDisplayTopology)
         if ($current.Count -gt 0 -and (($current -join "`n") -ne $beforeKey)) {
             $changed = $current
@@ -73,15 +83,17 @@ function Wait-ForMonitorTopologyTransition([string[]]$Before) {
         throw 'Monitor recovery is unproven: no display topology change was observed during the monitor phase.'
     }
 
+    $stableDeadline = [DateTime]::UtcNow.AddSeconds(30)
     $stableKey = $changed -join "`n"
     $stableSamples = 0
     $last = $changed
-    while ([DateTime]::UtcNow -lt $deadline) {
+    while ([DateTime]::UtcNow -lt $stableDeadline) {
         $current = @(Get-CurrentDisplayTopology)
         $currentKey = $current -join "`n"
         if ($current.Count -gt 0 -and $currentKey -eq $stableKey) {
             $stableSamples++
             if ($stableSamples -ge 4) {
+                Write-MonitorTransitionEvidence -Path $EvidencePath -Before $Before -Changed $changed -Stable $current
                 Write-Host "Observed stable display topology after change: $($current -join '; ')"
                 return $current
             }
@@ -94,15 +106,16 @@ function Wait-ForMonitorTopologyTransition([string[]]$Before) {
         Start-Sleep -Milliseconds 750
     }
 
-    throw "Monitor recovery is unproven: display topology changed but did not stabilize before the acceptance timeout. Last topology: $($last -join '; ')"
+    throw "Monitor recovery is unproven: display topology changed but did not stabilize. Last topology: $($last -join '; ')"
 }
 
 $diagnostics = Get-DiagnosticsDirectory
 $explorerCheckpoint = Join-Path $diagnostics 'widget-acceptance-search.explorer-pids'
 $monitorCheckpoint = Join-Path $diagnostics 'widget-acceptance-explorer.monitor-topology'
+$monitorEvidence = Join-Path $diagnostics 'widget-acceptance-monitor.topology-transition'
 
 if ($Phase -eq 'baseline') {
-    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint)) {
+    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence)) {
         if (Test-Path -LiteralPath $checkpoint -PathType Leaf) {
             Remove-Item -LiteralPath $checkpoint -Force
         }
@@ -126,7 +139,10 @@ if ($Phase -eq 'monitor') {
     if ($beforeTopology.Count -eq 0) {
         throw 'Monitor recovery evidence is unavailable. Run a successful explorer phase before the monitor phase.'
     }
-    $null = Wait-ForMonitorTopologyTransition -Before $beforeTopology
+    if (Test-Path -LiteralPath $monitorEvidence -PathType Leaf) {
+        Remove-Item -LiteralPath $monitorEvidence -Force
+    }
+    $null = Wait-ForMonitorTopologyTransition -Before $beforeTopology -EvidencePath $monitorEvidence
 }
 
 Write-Host "Running real-Windows Widget acceptance probe: phase=$Phase"

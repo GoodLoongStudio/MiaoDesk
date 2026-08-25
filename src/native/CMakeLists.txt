@@ -27,87 +27,108 @@ if (NOT EXISTS "${WEBVIEW2_INCLUDE_DIR}/WebView2.h" OR NOT EXISTS "${WEBVIEW2_LO
         "WebView2 SDK ${TURINGDESK_WEBVIEW2_VERSION} is incomplete at ${WEBVIEW2_SDK_ROOT} for ${WEBVIEW2_NATIVE_ARCH}.")
 endif()
 
-add_executable(TuringDesk WIN32
-    src/main.cpp
-    src/SearchWindow.cpp
-    src/SettingsCenterWindow.cpp
-    src/ModelSettingsWindow.cpp
-    src/L3CliWindow.cpp
-    src/PiRuntime.cpp
-    src/PiNativeToolsExtension.cpp
-    src/NativeTools.cpp
-    src/NativeToolIsolation.cpp
-    src/DesktopControlService.cpp
-    src/WallpaperService.cpp
-    src/WidgetService.cpp
-    src/DesktopWidgetStore.cpp
-    src/DesktopWidgetTools.cpp
-    src/WallpaperPackage.cpp
-    src/WallpaperLibrary.cpp
-    src/WallpaperLibraryWeb.cpp
-    src/WallpaperMonitorLayout.cpp
-    src/WallpaperMonitorAssignments.cpp
-    src/AppSearch.cpp
-    src/GozSearch.cpp
-    src/L3Agent.cpp
-    src/L3PersistenceSelfTest.cpp
-    src/HarnessProcessManager.cpp
-    src/HarnessSettingsBridge.cpp
+# Keep source ownership visible in the build graph. Implementations are grouped
+# by product/domain instead of being flattened under src/native/src.
+set(TURINGDESK_APP_SOURCES
+    src/app/main.cpp
+    src/ui/search/SearchWindow.cpp
+    src/ui/settings/SettingsCenterWindow.cpp
+    src/ui/settings/ModelSettingsWindow.cpp
+    src/ui/ai/L3CliWindow.cpp
+
+    src/ai/pi/PiRuntime.cpp
+    src/ai/pi/PiNativeToolsExtension.cpp
+    src/ai/tools/NativeTools.cpp
+    src/ai/tools/NativeToolIsolation.cpp
+    src/ai/tools/DesktopWidgetTools.cpp
+    src/ai/agent/L3Agent.cpp
+    src/ai/agent/L3PersistenceSelfTest.cpp
+
+    src/desktop/control/DesktopControlService.cpp
+    src/desktop/wallpaper/WallpaperService.cpp
+    src/desktop/widgets/WidgetService.cpp
+    src/desktop/widgets/DesktopWidgetStore.cpp
+    src/desktop/wallpaper/library/WallpaperPackage.cpp
+    src/desktop/wallpaper/library/WallpaperLibrary.cpp
+    src/desktop/wallpaper/library/WallpaperLibraryWeb.cpp
+    src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
+    src/desktop/wallpaper/monitor/WallpaperMonitorAssignments.cpp
+
+    src/search/AppSearch.cpp
+    src/search/GozSearch.cpp
+    src/harness/HarnessProcessManager.cpp
+    src/harness/HarnessSettingsBridge.cpp
 )
 
-set_source_files_properties(src/NativeTools.cpp PROPERTIES
+set(TURINGDESK_WALLPAPER_SOURCES
+    src/desktop/wallpaper/runtime/WallpaperEntry.cpp
+    src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp
+
+    src/desktop/shell/DesktopShellHost.cpp
+    src/desktop/shell/DesktopShellDiagnostics.cpp
+    src/desktop/shell/DesktopShellSurfaceStack.cpp
+
+    src/desktop/control/DesktopControlService.cpp
+    src/desktop/wallpaper/WallpaperService.cpp
+    src/desktop/widgets/WidgetService.cpp
+    src/desktop/widgets/DesktopWidgetStore.cpp
+    src/desktop/widgets/DesktopWidgetController.cpp
+    src/ui/widgets/DesktopWidgetUiAdapter.cpp
+
+    src/desktop/automation/AutomationService.cpp
+    src/desktop/automation/WallpaperAutomation.cpp
+    src/desktop/automation/WallpaperApplicationRules.cpp
+    src/ui/automation/AutomationUiAdapter.cpp
+    src/ui/automation/WallpaperAutomationWindowProduction.cpp
+    src/ui/automation/WallpaperApplicationRulesWindow.cpp
+
+    src/desktop/performance/PerformanceService.cpp
+    src/desktop/performance/WallpaperPerformancePolicy.cpp
+    src/ui/performance/PerformanceUiAdapter.cpp
+
+    src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
+    src/desktop/wallpaper/monitor/WallpaperMonitorAssignments.cpp
+    src/desktop/wallpaper/monitor/WallpaperIndependentLayout.cpp
+    src/desktop/wallpaper/monitor/IndependentWallpaperHost.cpp
+
+    src/desktop/wallpaper/web/WebWallpaperHost.cpp
+    src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp
+    src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinatorProduction.cpp
+
+    src/desktop/wallpaper/render/WallpaperScaling.cpp
+    src/desktop/wallpaper/render/VideoWallpaperPlayer.cpp
+    src/desktop/wallpaper/render/VideoWallpaperSet.cpp
+
+    src/desktop/wallpaper/library/WallpaperLibrary.cpp
+    src/desktop/wallpaper/library/WallpaperLibraryWeb.cpp
+    src/desktop/wallpaper/library/WallpaperPackage.cpp
+    src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp
+
+    src/search/AppSearch.cpp
+    src/search/GozSearch.cpp
+    src/ai/agent/L3Agent.cpp
+)
+
+set(TURINGDESK_HARNESS_SOURCES
+    src/harness/HarnessHost.cpp
+    src/harness/HarnessProcessManager.cpp
+    src/harness/HarnessSettingsBridge.cpp
+    src/harness/HarnessBundledRuntimeBootstrap.cpp
+)
+
+add_executable(TuringDesk WIN32 ${TURINGDESK_APP_SOURCES})
+add_executable(TuringDeskWallpaper WIN32 ${TURINGDESK_WALLPAPER_SOURCES})
+add_executable(TuringDeskHarness WIN32 ${TURINGDESK_HARNESS_SOURCES})
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_APP_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WALLPAPER_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_HARNESS_SOURCES})
+
+set_source_files_properties(src/ai/tools/NativeTools.cpp PROPERTIES
     COMPILE_DEFINITIONS "TURINGDESK_NATIVE_TOOLS_IMPL"
 )
-
-add_executable(TuringDeskWallpaper WIN32
-    src/WallpaperEntry.cpp
-    src/WallpaperEngineProduction.cpp
-    src/DesktopShellHost.cpp
-    src/DesktopShellDiagnostics.cpp
-    src/DesktopShellSurfaceStack.cpp
-    src/DesktopControlService.cpp
-    src/WallpaperService.cpp
-    src/WidgetService.cpp
-    src/DesktopWidgetController.cpp
-    src/DesktopWidgetUiAdapter.cpp
-    src/AutomationService.cpp
-    src/AutomationUiAdapter.cpp
-    src/PerformanceService.cpp
-    src/PerformanceUiAdapter.cpp
-    src/WallpaperMonitorLayout.cpp
-    src/WallpaperMonitorAssignments.cpp
-    src/WallpaperIndependentLayout.cpp
-    src/IndependentWallpaperHost.cpp
-    src/WebWallpaperHost.cpp
-    src/WebDesktopSurfaceChild.cpp
-    src/WallpaperWebRuntimeCoordinatorProduction.cpp
-    src/WallpaperScaling.cpp
-    src/WallpaperPerformancePolicy.cpp
-    src/WallpaperApplicationRules.cpp
-    src/WallpaperApplicationRulesWindow.cpp
-    src/WallpaperAutomation.cpp
-    src/WallpaperAutomationWindowProduction.cpp
-    src/WallpaperLibrary.cpp
-    src/WallpaperLibraryWeb.cpp
-    src/WallpaperLibraryWindowProduction.cpp
-    src/DesktopWidgetStore.cpp
-    src/WallpaperPackage.cpp
-    src/VideoWallpaperPlayer.cpp
-    src/VideoWallpaperSet.cpp
-    src/AppSearch.cpp
-    src/GozSearch.cpp
-    src/L3Agent.cpp
-)
-
-set_source_files_properties(src/WallpaperEngineProduction.cpp PROPERTIES
+set_source_files_properties(src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp PROPERTIES
     COMPILE_DEFINITIONS "wWinMain=TuringDeskWallpaperMain"
-)
-
-add_executable(TuringDeskHarness WIN32
-    src/HarnessHost.cpp
-    src/HarnessProcessManager.cpp
-    src/HarnessSettingsBridge.cpp
-    src/HarnessBundledRuntimeBootstrap.cpp
 )
 
 set(TURINGDESK_L3_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-l3-runtime-contract.ps1")
@@ -160,6 +181,20 @@ add_custom_target(TuringDeskDesktopShellContractCheck ALL
     VERBATIM
 )
 add_dependencies(TuringDeskWallpaper TuringDeskDesktopShellContractCheck)
+
+set(TURINGDESK_SOURCE_LAYOUT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-native-source-layout.ps1")
+if (NOT EXISTS "${TURINGDESK_SOURCE_LAYOUT_SCRIPT}")
+    message(FATAL_ERROR "Missing native source layout guard: ${TURINGDESK_SOURCE_LAYOUT_SCRIPT}")
+endif()
+add_custom_target(TuringDeskSourceLayoutCheck ALL
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_SOURCE_LAYOUT_SCRIPT}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying native source module layout"
+    VERBATIM
+)
+add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
 
 target_include_directories(TuringDesk PRIVATE include)
 target_compile_features(TuringDesk PRIVATE cxx_std_23)

@@ -78,6 +78,18 @@ public:
     bool RepairSurfaceStack(HWND expectedSurface = nullptr,
                             std::wstring* error = nullptr);
 
+    // Central stale-parent recovery entry point. A renderer supplies only its
+    // own HWND/role; DesktopShellHost refreshes Explorer state, detects parent
+    // generation changes and reattaches the existing surface using its current
+    // screen-space bounds. Callers must not rediscover Progman/WorkerW.
+    bool RecoverSurface(HWND surface,
+                        DesktopSurfaceRole role,
+                        std::wstring* error = nullptr);
+
+    // Returns true only when the cached shell snapshot still describes the
+    // current Explorer desktop generation. This is read-only and never repairs.
+    bool CurrentGenerationValid() const noexcept;
+
     void RepairKnownTuringDeskSurfaces() const;
     DesktopSurfaceHealth InspectSurface(HWND surface, DesktopSurfaceRole role) const;
 

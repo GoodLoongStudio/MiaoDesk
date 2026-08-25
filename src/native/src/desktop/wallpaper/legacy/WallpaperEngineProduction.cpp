@@ -1,20 +1,16 @@
 // Production bridge for the legacy WallpaperEngine implementation.
 //
-// The historical engine still contains combined persistence and desktop-shell
-// code. Production routes performance policy through PerformanceUiAdapter ->
-// PerformanceService, automation through AutomationUiAdapter -> AutomationService,
-// and all Windows desktop attachment APIs through DesktopShellHost. The legacy
-// engine source may still spell Progman/WorkerW/0x052C/SetParent while M2 is in
-// progress, but those calls are intercepted here so there is only one effective
-// production shell-discovery/re-parent/geometry/z-order implementation.
+// Desktop attachment is now owned directly by DesktopShellHost from
+// WallpaperEngine.cpp. This bridge remains only for the M1 migration adapters:
+// performance policy routes through PerformanceUiAdapter -> PerformanceService
+// and automation routes through AutomationUiAdapter -> AutomationService.
 //
-// Remove this bridge once WallpaperEngine.cpp no longer contains these legacy
-// persistence/runtime ownership paths.
+// Remove this bridge completely once the remaining persistence compatibility
+// macros are no longer required by the legacy UI implementation.
 
 #include <windows.h>
 
 #include "turingdesk/AutomationUiAdapter.h"
-#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/PerformanceUiAdapter.h"
 
 #include <algorithm>
@@ -26,22 +22,6 @@ namespace {
 
 bool SameText(LPCWSTR left, std::wstring_view right) {
     return left && _wcsicmp(left, std::wstring(right).c_str()) == 0;
-}
-
-bool IsWindowClass(HWND window, std::wstring_view expected) {
-    if (!window || !IsWindow(window)) return false;
-    wchar_t className[160]{};
-    return GetClassNameW(window, className, static_cast<int>(std::size(className))) > 0 &&
-           _wcsicmp(className, std::wstring(expected).c_str()) == 0;
-}
-
-turingdesk::wallpaper::DesktopShellHost& ProductionShellHost() {
-    static turingdesk::wallpaper::DesktopShellHost host;
-    return host;
-}
-
-bool EnsureProductionShell(std::wstring* error = nullptr) {
-    return ProductionShellHost().EnsureCurrent(error);
 }
 
 bool IsWallpaperSection(LPCWSTR section) {
@@ -176,125 +156,13 @@ BOOL WINAPI TuringDeskWritePrivateProfileStringW(
     return ::WritePrivateProfileStringW(section, key, value, fileName);
 }
 
-HWND WINAPI TuringDeskFindWindowW(LPCWSTR className, LPCWSTR windowName) {
-    if (SameText(className, L"Progman")) {
-        std::wstring error;
-        if (!EnsureProductionShell(&error)) return nullptr;
-        return ProductionShellHost().Snapshot().progman;
-    }
-    return ::FindWindowW(className, windowName);
-}
-
-HWND WINAPI TuringDeskFindWindowExW(HWND parent, HWND childAfter, LPCWSTR className, LPCWSTR windowName) {
-    if (SameText(className, L"WorkerW") || SameText(className, L"SHELLDLL_DefView")) {
-        std::wstring error;
-        if (!EnsureProductionShell(&error)) return nullptr;
-        const auto& snapshot = ProductionShellHost().Snapshot();
-        if (SameText(className, L"WorkerW")) return snapshot.workerW;
-        return snapshot.shellDefView;
-    }
-    return ::FindWindowExW(parent, childAfter, className, windowName);
-}
-
-LRESULT WINAPI TuringDeskSendMessageTimeoutW(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                                             UINT flags, UINT timeout, PDWORD_PTR result) {
-    if (message == 0x052C) {
-        std::wstring error;
-        const bool ok = ProductionShellHost().Refresh(&error);
-        if (result) *result = ok ? 1 : 0;
-        return ok ? 1 : 0;
-    }
-    return ::SendMessageTimeoutW(window, message, wParam, lParam, flags, timeout, result);
-}
-
-HWND WINAPI TuringDeskSetParent(HWND child, HWND requestedParent) {
-    if (IsWindowClass(child, L"TuringDesk.Native.WallpaperHost")) {
-        auto& shell = ProductionShellHost();
-        std::wstring error;
-        if (!shell.EnsureCurrent(&error)) {
-            SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-            return nullptr;
-        }
-        RECT bounds{};
-        if (!GetWindowRect(child, &bounds) || bounds.right <= bounds.left || bounds.bottom <= bounds.top)
-            bounds = RECT{0, 0, 1, 1};
-        const HWND previous = GetParent(child);
-        if (!shell.EnsureSurface(child, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
-                                 bounds, IsWindowVisible(child) != FALSE, &error)) {
-            SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-            return nullptr;
-        }
-        SetLastError(ERROR_SUCCESS);
-        return previous;
-    }
-    return ::SetParent(child, requestedParent);
-}
-
-BOOL WINAPI TuringDeskSetWindowPos(HWND window, HWND insertAfter, int x, int y, int width, int height, UINT flags) {
-    if (IsWindowClass(window, L"WorkerW")) {
-        std::wstring error;
-        const bool ok = ProductionShellHost().RepairSurfaceStack(nullptr, &error);
-        if (!ok) SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-        return ok ? TRUE : FALSE;
-    }
-    if (IsWindowClass(window, L"TuringDesk.Native.WallpaperHost")) {
-        auto& shell = ProductionShellHost();
-        std::wstring error;
-        if (!shell.EnsureCurrent(&error)) {
-            SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-            return FALSE;
-        }
-
-        RECT current{};
-        if (!GetWindowRect(window, &current) || current.right <= current.left || current.bottom <= current.top)
-            current = RECT{0, 0, 1, 1};
-
-        RECT desktopBounds = current;
-        const HWND parent = GetParent(window);
-        POINT origin{x, y};
-        if ((flags & SWP_NOMOVE) == 0) {
-            if (parent && IsWindow(parent)) ClientToScreen(parent, &origin);
-            desktopBounds.left = origin.x;
-            desktopBounds.top = origin.y;
-        }
-        if ((flags & SWP_NOSIZE) == 0) {
-            desktopBounds.right = desktopBounds.left + std::max(1, width);
-            desktopBounds.bottom = desktopBounds.top + std::max(1, height);
-        } else {
-            const LONG currentWidth = std::max<LONG>(1, current.right - current.left);
-            const LONG currentHeight = std::max<LONG>(1, current.bottom - current.top);
-            desktopBounds.right = desktopBounds.left + currentWidth;
-            desktopBounds.bottom = desktopBounds.top + currentHeight;
-        }
-
-        bool visible = IsWindowVisible(window) != FALSE;
-        if ((flags & SWP_SHOWWINDOW) != 0) visible = true;
-        if ((flags & SWP_HIDEWINDOW) != 0) visible = false;
-        const bool ok = shell.EnsureSurface(window, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
-                                            desktopBounds, visible, &error);
-        if (!ok) SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-        return ok ? TRUE : FALSE;
-    }
-    return ::SetWindowPos(window, insertAfter, x, y, width, height, flags);
-}
-
 } // namespace
 
 #define WallpaperAutomationStore AutomationUiAdapter
 #define GetPrivateProfileIntW TuringDeskGetPrivateProfileIntW
 #define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW
 #define WritePrivateProfileStringW TuringDeskWritePrivateProfileStringW
-#define FindWindowW TuringDeskFindWindowW
-#define FindWindowExW TuringDeskFindWindowExW
-#define SendMessageTimeoutW TuringDeskSendMessageTimeoutW
-#define SetParent TuringDeskSetParent
-#define SetWindowPos TuringDeskSetWindowPos
 #include "WallpaperEngine.cpp"
-#undef SetWindowPos
-#undef SetParent
-#undef SendMessageTimeoutW
-#undef FindWindowExW
-#undef FindWindowW
 #undef WritePrivateProfileStringW
 #undef GetPrivateProfileStringW
 #undef GetPrivateProfileIntW

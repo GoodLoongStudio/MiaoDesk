@@ -7,11 +7,13 @@ $probe = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptance
 $main = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
 $header = Join-Path $root 'src/native/include/turingdesk/WidgetRuntimeAcceptance.h'
 $runner = Join-Path $root 'scripts/run-widget-runtime-acceptance.ps1'
+$sealer = Join-Path $root 'scripts/seal-widget-acceptance-evidence.ps1'
 $cmake = Join-Path $root 'src/native/CMakeLists.txt'
 $doc = Join-Path $root 'docs/WIDGET_RUNTIME_HEALTH_M3.md'
 $sequenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
+$evidenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md'
 
-foreach ($path in @($probe, $main, $header, $runner, $cmake, $doc, $sequenceDoc)) {
+foreach ($path in @($probe, $main, $header, $runner, $sealer, $cmake, $doc, $sequenceDoc, $evidenceDoc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing M3 Widget acceptance contract input: $path" }
 }
 
@@ -68,6 +70,28 @@ foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'SetParent(', 'SetWin
     if ($runnerText.Contains($forbidden)) { throw "Widget acceptance runner must not regain shell HWND ownership: $forbidden" }
 }
 
+$sealerText = Get-Content -LiteralPath $sealer -Raw
+foreach ($marker in @(
+    "schema = 'turingdesk.widget-acceptance-evidence.v1'",
+    "if (`$sequence -ne 'monitor')",
+    'widget-acceptance-baseline.ids',
+    'widget-acceptance-sequence.phase',
+    'widget-acceptance-search.explorer-pids',
+    'widget-acceptance-explorer.monitor-topology',
+    'widget-acceptance-monitor.topology-transition',
+    'widget-acceptance-$phase.txt',
+    'widget-acceptance-$phase.png',
+    'widget-acceptance-$phase.png.sha256',
+    'Get-FileHash',
+    'SHA256',
+    'widget-acceptance-evidence.manifest.json',
+    'widget-acceptance-evidence.manifest.sha256')) {
+    if (-not $sealerText.Contains($marker)) { throw "Widget acceptance evidence sealer missing marker: $marker" }
+}
+foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'EnumWindows(', 'SetParent(', 'SetWindowPos(', 'Progman', 'WorkerW', 'SHELLDLL_DefView')) {
+    if ($sealerText.Contains($forbidden)) { throw "Widget acceptance evidence sealer must remain diagnostics-only: $forbidden" }
+}
+
 $cmakeText = Get-Content -LiteralPath $cmake -Raw
 foreach ($marker in @('TuringDeskWidgetAcceptance', 'WidgetRuntimeAcceptance.cpp', 'WidgetRuntimeAcceptanceMain.cpp', 'TuringDeskWidgetAcceptanceContractCheck')) {
     if (-not $cmakeText.Contains($marker)) { throw "M3 acceptance probe missing from build graph: $marker" }
@@ -83,4 +107,9 @@ foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'seque
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence and fresh hashed virtual-desktop screenshots, and does not regain HWND/shell ownership.'
+$evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
+foreach ($marker in @('seal-widget-acceptance-evidence.ps1', 'turingdesk.widget-acceptance-evidence.v1', 'widget-acceptance-evidence.manifest.json', 'widget-acceptance-evidence.manifest.sha256', 'real ARM64 Windows', 'Human review')) {
+    if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
+}
+
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence, fresh hashed virtual-desktop screenshots and a sealed coherent evidence manifest, and does not regain HWND/shell ownership.'

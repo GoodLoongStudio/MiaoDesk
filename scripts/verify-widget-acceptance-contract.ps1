@@ -41,6 +41,12 @@ foreach ($marker in @(
     "if (`$Phase -eq 'explorer')",
     'Explorer recovery is unproven',
     "if (`$Phase -eq 'search')",
+    'Get-CurrentDisplayTopology',
+    'System.Windows.Forms.Screen',
+    'widget-acceptance-explorer.monitor-topology',
+    'Wait-ForMonitorTopologyTransition',
+    "if (`$Phase -eq 'monitor')",
+    'Monitor recovery is unproven',
     "60 { 'interactive Windows desktop unavailable' }",
     "63 { 'one or more Widget surfaces are unhealthy' }",
     "65 { 'baseline identity set missing; run the baseline phase first' }",
@@ -48,7 +54,7 @@ foreach ($marker in @(
     "67 { 'acceptance phase is out of order; run baseline -> settings -> search -> explorer -> monitor without skipping a successful phase' }")) {
     if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence mapping: $marker" }
 }
-foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'SetParent(', 'SetWindowPos(')) {
+foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'SetParent(', 'SetWindowPos(', 'Progman', 'WorkerW', 'SHELLDLL_DefView')) {
     if ($runnerText.Contains($forbidden)) { throw "Widget acceptance runner must not regain shell HWND ownership: $forbidden" }
 }
 
@@ -63,8 +69,8 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 
 }
 
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence')) {
+foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence', 'display topology', 'monitor recovery evidence')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires Explorer-restart evidence, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart and display-topology transition evidence, and does not regain HWND/shell ownership.'

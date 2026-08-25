@@ -35,9 +35,13 @@ public:
 private:
     bool Refresh(std::wstring* error = nullptr);
     static bool AssignError(const desktop::DesktopControlResult& result, std::wstring* error);
+    static std::wstring DisplayHealthSuffix(
+        std::wstring_view widgetId,
+        const desktop::WidgetRuntimeHealth& health);
 
     desktop::DesktopControlService service_;
     std::vector<DesktopWidget> items_;
+    std::vector<DesktopWidget> displayItems_;
 };
 
 } // namespace turingdesk::wallpaper

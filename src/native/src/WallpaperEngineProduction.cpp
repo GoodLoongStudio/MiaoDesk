@@ -2,14 +2,18 @@
 //
 // The historical engine still calls Win32 profile APIs for its combined config.
 // In production, performance-policy keys are intercepted here and delegated to
-// PerformanceService. Non-performance wallpaper/video keys keep their existing
-// storage path until their domain migrations are completed.
+// PerformanceService. Automation ownership is also substituted with the
+// store-shaped AutomationUiAdapter, so runtime evaluation and mutations go
+// through AutomationService rather than directly owning WallpaperAutomationStore.
+// Non-performance wallpaper/video keys keep their existing storage path until
+// their domain migrations are completed.
 //
-// Remove this bridge once WallpaperEngine.cpp no longer contains direct
-// performance-policy persistence.
+// Remove this bridge once WallpaperEngine.cpp no longer contains these legacy
+// persistence/runtime ownership paths.
 
 #include <windows.h>
 
+#include "turingdesk/AutomationUiAdapter.h"
 #include "turingdesk/PerformanceService.h"
 
 #include <algorithm>
@@ -157,6 +161,7 @@ BOOL WINAPI TuringDeskWritePrivateProfileStringW(
 
 } // namespace
 
+#define WallpaperAutomationStore AutomationUiAdapter
 #define GetPrivateProfileIntW TuringDeskGetPrivateProfileIntW
 #define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW
 #define WritePrivateProfileStringW TuringDeskWritePrivateProfileStringW
@@ -164,3 +169,4 @@ BOOL WINAPI TuringDeskWritePrivateProfileStringW(
 #undef WritePrivateProfileStringW
 #undef GetPrivateProfileStringW
 #undef GetPrivateProfileIntW
+#undef WallpaperAutomationStore

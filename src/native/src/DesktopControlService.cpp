@@ -90,6 +90,15 @@ DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& pack
     return {true, result.message};
 }
 
+DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const {
+    WallpaperService service;
+    const auto result = service.ApplyLibraryItem(item);
+    if (!result.success) return FromWallpaper(result);
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+    return {true, result.message};
+}
+
 DesktopControlResult DesktopControlService::CreateWebWidget(
     const WebWidgetCreateRequest& request,
     wallpaper::DesktopWidget* created) const {

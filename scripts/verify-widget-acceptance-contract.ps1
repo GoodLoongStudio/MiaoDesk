@@ -49,6 +49,13 @@ foreach ($marker in @(
     'Wait-ForMonitorTopologyTransition',
     "if (`$Phase -eq 'monitor')",
     'Monitor recovery is unproven',
+    'Capture-DesktopVisualEvidence',
+    'System.Drawing.Graphics',
+    'CopyFromScreen',
+    'widget-acceptance-$AcceptancePhase.png',
+    'Get-FileHash',
+    'sha256=',
+    'virtualBounds=',
     "60 { 'interactive Windows desktop unavailable' }",
     "63 { 'one or more Widget surfaces are unhealthy' }",
     "65 { 'baseline identity set missing; run the baseline phase first' }",
@@ -71,8 +78,8 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 
 }
 
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence', 'display topology', 'monitor recovery evidence', 'widget-acceptance-monitor.topology-transition')) {
+foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence', 'display topology', 'monitor recovery evidence', 'widget-acceptance-monitor.topology-transition', 'visual evidence', '.png.sha256', 'virtual desktop')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart and durable display-topology transition evidence, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence and hashed virtual-desktop screenshots, and does not regain HWND/shell ownership.'

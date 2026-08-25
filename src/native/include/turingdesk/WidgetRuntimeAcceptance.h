@@ -14,12 +14,15 @@ enum class WidgetRuntimeAcceptanceCode : int {
     ReportWriteFailed = 64,
     BaselineMissing = 65,
     BaselineMismatch = 66,
+    SequenceOutOfOrder = 67,
 };
 
 // Real-Windows M3 probe. This intentionally consumes WidgetService's public
 // runtime-health contract instead of re-enumerating Widget HWNDs here.
 // The baseline phase records the enabled Widget identity set; later phases must
 // prove the same configured Widgets remain present while runtime surfaces recover.
+// Successful phases also advance a durable sequence cursor so acceptance evidence
+// must be collected in baseline -> settings -> search -> explorer -> monitor order.
 WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
     std::wstring_view phase,
     std::wstring* reportPath = nullptr,

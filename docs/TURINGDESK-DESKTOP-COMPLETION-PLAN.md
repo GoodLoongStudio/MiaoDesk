@@ -83,11 +83,13 @@ Tasks:
 - [x] Validate mixed monitor geometry and negative virtual coordinates through the shared shell host and monitor-layout self-tests.
 - [x] Add shell-mode and attachment diagnostics contract.
 - [x] Add a build-time shell ownership guard so renderer/coordinator/Widget surfaces cannot rediscover Progman/WorkerW independently.
-- [ ] Physically remove the transitional `EnsureIndependentHostBounds` geometry mutation from `WallpaperWebRuntimeCoordinator.cpp` and delete its production bridge.
+- [x] Physically remove the transitional `EnsureIndependentHostBounds` geometry mutation from `WallpaperWebRuntimeCoordinator.cpp` and delete its production bridge.
 
 Current production state:
-- shell discovery/mutation is behaviorally centralized even while the legacy source text still contains migration-only helpers;
-- coordinator geometry-only updates preserve existing visibility rather than implicitly showing hidden wallpapers;
+- shell discovery/mutation is behaviorally centralized while only the legacy native engine source still contains migration-only helpers;
+- the Web/Widget coordinator is now compiled directly and passes Independent host desktop-space geometry to `DesktopShellHost::EnsureSurface`;
+- the coordinator production interception bridge is deleted and guarded from returning;
+- geometry-only updates preserve existing visibility rather than implicitly showing hidden wallpapers;
 - Explorer generation changes force reattachment through `EnsureSurface`, preventing recycled/stale parent HWNDs from being accepted accidentally.
 
 Required diagnostics:
@@ -410,4 +412,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner.**
 
-M1 is closed on the green `fa531697...` baseline. M2 production routing is centralized; the remaining blockers are physical deletion of the migration-only legacy shell helpers/bridge plus exact-head ARM64 and real-Windows layering acceptance. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.
+M1 is closed on the green `fa531697...` baseline. The coordinator ownership exception is now physically closed: it compiles directly, uses `DesktopShellHost::EnsureSurface`, and its interception bridge is deleted. The remaining M2 blocker is physical removal of the legacy native engine shell helpers from `WallpaperEngine.cpp`, followed by exact-head ARM64 and real-Windows layering acceptance. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.

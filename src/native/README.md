@@ -26,10 +26,18 @@ Public headers remain in `include/turingdesk/` for API stability during this mig
 
 Visual Studio also mirrors the directory hierarchy through `source_group(TREE ...)`, so the IDE view and repository layout no longer diverge.
 
-The next build-graph cleanup is intentionally separate from this physical move: after the source-layout wave is green, stable domains can become explicit CMake library/object targets (`desktop_shell`, `desktop_control`, `widgets`, `automation`, `performance`, etc.) so dependency direction is enforced by the linker/build graph rather than only by source ownership guards.
+The next build-graph cleanup is intentionally separate from this physical move: stable domains may become explicit CMake library/object targets (`desktop_shell`, `desktop_control`, `widgets`, `automation`, `performance`, etc.) when doing so improves enforceable dependency direction rather than only cosmetics.
+
+## Active Widget runtime boundary
+
+M3 Widget health remains owned by `src/desktop/widgets`. Runtime process/HWND/WebView2/z-order inspection is translated into `WidgetSurfaceHealth` and exposed through `DesktopControlService::GetSnapshot()`. UI and Pi consume the same `issueCode`, `detail` and `recommendedAction`; they must not enumerate HWNDs or read private runtime diagnostics themselves.
+
+The production legacy Widget list is still compatibility UI, but its Widget data and temporary health decoration are supplied by `src/ui/widgets/DesktopWidgetUiAdapter.cpp`. The display copy is deliberately separate from persisted Widget data so runtime warning text cannot leak into stored titles.
 
 ## Guardrails
 
 `scripts/verify-native-source-layout.ps1` fails the build if root-level implementation `.cpp` files return under `src/native/src/`, required module directories disappear, CMake stops mirroring the module tree, or the normative layout documentation drifts from the repository.
 
-See `docs/NATIVE_SOURCE_LAYOUT.md` and `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` for the normative dependency rules.
+`scripts/verify-desktop-domain-contract.ps1` additionally guards Desktop Control routing, Widget actionable-health ownership, Pi/UI snapshot consumption and the read-only DesktopSurfaceTelemetry boundary.
+
+See `docs/NATIVE_SOURCE_LAYOUT.md`, `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` and `docs/WIDGET_RUNTIME_HEALTH_M3.md` for the normative dependency/runtime contracts.

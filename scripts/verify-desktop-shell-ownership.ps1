@@ -13,25 +13,32 @@ function Require-File([string]$relativePath) {
 
 $shellHeaderPath = Require-File 'src/native/include/turingdesk/DesktopShellHost.h'
 $shellSourcePath = Require-File 'src/native/src/DesktopShellHost.cpp'
+$surfaceStackPath = Require-File 'src/native/src/DesktopShellSurfaceStack.cpp'
 $diagnosticsHeaderPath = Require-File 'src/native/include/turingdesk/DesktopShellDiagnostics.h'
 $diagnosticsSourcePath = Require-File 'src/native/src/DesktopShellDiagnostics.cpp'
+$monitorLayoutPath = Require-File 'src/native/src/WallpaperMonitorLayout.cpp'
 $legacyEnginePath = Require-File 'src/native/src/WallpaperEngine.cpp'
 $coordinatorPath = Require-File 'src/native/src/WallpaperWebRuntimeCoordinator.cpp'
 $cmakePath = Require-File 'src/native/CMakeLists.txt'
 
 $shellHeader = Get-Content -LiteralPath $shellHeaderPath -Raw
 $shellSource = Get-Content -LiteralPath $shellSourcePath -Raw
+$surfaceStack = Get-Content -LiteralPath $surfaceStackPath -Raw
 $diagnosticsHeader = Get-Content -LiteralPath $diagnosticsHeaderPath -Raw
 $diagnosticsSource = Get-Content -LiteralPath $diagnosticsSourcePath -Raw
+$monitorLayout = Get-Content -LiteralPath $monitorLayoutPath -Raw
 $legacyEngine = Get-Content -LiteralPath $legacyEnginePath -Raw
 $coordinator = Get-Content -LiteralPath $coordinatorPath -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 
-foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureCurrent', 'InspectSurface', 'DesktopShellSnapshot')) {
+foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureCurrent', 'InspectSurface', 'DesktopShellSnapshot', 'RecoverSurface', 'CurrentGenerationValid')) {
     if (-not $shellHeader.Contains($marker)) { throw "DesktopShellHost header missing contract marker: $marker" }
 }
 foreach ($marker in @('0x052C', 'FindWindowW(kProgmanClass', 'FindWindowExW', 'RequestWallpaperLayer', 'RepairRaisedDesktopWorkerOrder', 'RepairKnownTuringDeskSurfaces')) {
     if (-not $shellSource.Contains($marker)) { throw "DesktopShellHost no longer owns required shell behavior: $marker" }
+}
+foreach ($marker in @('DesktopShellHost::RepairSurfaceStack', 'DesktopShellHost::RecoverSurface', 'DesktopShellHost::CurrentGenerationValid', 'FindWindowW(L"Progman"', 'AttachSurface(surface')) {
+    if (-not $surfaceStack.Contains($marker)) { throw "Desktop shell recovery contract missing marker: $marker" }
 }
 foreach ($marker in @('shellMode', 'parentValid', 'layeredRequired', 'layeredApplied', 'zOrderValid', 'visible', 'lastError')) {
     if (-not $diagnosticsHeader.Contains($marker)) { throw "Desktop attachment diagnostics missing marker: $marker" }
@@ -39,8 +46,14 @@ foreach ($marker in @('shellMode', 'parentValid', 'layeredRequired', 'layeredApp
 foreach ($marker in @('InspectDesktopAttachment', 'DescribeDesktopAttachment', 'DesktopShellHost::ModeKey', 'ZOrderValid')) {
     if (-not $diagnosticsSource.Contains($marker)) { throw "Desktop attachment diagnostics implementation missing marker: $marker" }
 }
+foreach ($marker in @('topology.virtualBounds = {-1920, -240, 3840, 2160}', 'DrawRegionsInHost(topology, LayoutMode::Clone)', 'LayoutMode::Independent')) {
+    if (-not $monitorLayout.Contains($marker)) { throw "Negative-coordinate / mixed-monitor geometry self-test missing marker: $marker" }
+}
 if (-not $cmake.Contains('src/DesktopShellDiagnostics.cpp')) {
     throw 'TuringDeskWallpaper must compile DesktopShellDiagnostics.cpp.'
+}
+if (-not $cmake.Contains('src/DesktopShellSurfaceStack.cpp')) {
+    throw 'TuringDeskWallpaper must compile DesktopShellSurfaceStack.cpp.'
 }
 
 # M2 migration rule: renderer/coordinator/Widget code may inspect or locate its
@@ -91,4 +104,4 @@ foreach ($marker in @('DesktopLayer DiscoverDesktopLayer()', 'SpawnWallpaperLaye
     }
 }
 
-Write-Host 'Desktop shell ownership contract OK (WallpaperEngine discovery + coordinator z-order exceptions tracked).'
+Write-Host 'Desktop shell ownership contract OK (central recovery + geometry verified; WallpaperEngine discovery + coordinator z-order exceptions tracked).'

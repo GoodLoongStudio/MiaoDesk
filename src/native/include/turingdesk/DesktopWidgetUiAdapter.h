@@ -17,6 +17,7 @@ public:
     bool Load(std::wstring* error = nullptr);
     const std::vector<DesktopWidget>& Items() const noexcept;
     std::optional<DesktopWidget> Find(std::wstring_view id) const;
+    bool RuntimeHealth(desktop::WidgetRuntimeHealth* health, std::wstring* error = nullptr) const;
 
     std::optional<DesktopWidget> CreateManagedWeb(
         std::wstring title,

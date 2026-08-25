@@ -35,6 +35,18 @@ std::optional<DesktopWidget> DesktopWidgetUiAdapter::Find(std::wstring_view id) 
     return *found;
 }
 
+bool DesktopWidgetUiAdapter::RuntimeHealth(desktop::WidgetRuntimeHealth* health, std::wstring* error) const {
+    if (!health) {
+        if (error) *error = L"WidgetRuntimeHealth 输出不能为空。";
+        return false;
+    }
+    desktop::DesktopSnapshot snapshot;
+    const auto result = service_.GetSnapshot(&snapshot);
+    if (!AssignError(result, error)) return false;
+    *health = std::move(snapshot.widgetRuntime);
+    return true;
+}
+
 std::optional<DesktopWidget> DesktopWidgetUiAdapter::CreateManagedWeb(
     std::wstring title,
     std::string_view htmlUtf8,

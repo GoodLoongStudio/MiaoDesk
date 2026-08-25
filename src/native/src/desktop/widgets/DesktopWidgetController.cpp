@@ -25,6 +25,15 @@ DesktopControlResult DesktopWidgetController::Find(std::wstring_view id, wallpap
     return {true, L"桌面小组件读取完成。"};
 }
 
+DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth* health) const {
+    if (!health) return {false, L"WidgetRuntimeHealth 输出不能为空。"};
+    DesktopSnapshot snapshot;
+    const auto result = service_.GetSnapshot(&snapshot);
+    if (!result.success) return result;
+    *health = std::move(snapshot.widgetRuntime);
+    return {true, L"桌面小组件运行状态读取完成。"};
+}
+
 DesktopControlResult DesktopWidgetController::CreateClock(
     std::wstring monitorId,
     wallpaper::DesktopWidget* created) const {

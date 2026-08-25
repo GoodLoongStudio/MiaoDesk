@@ -18,6 +18,7 @@ public:
 
     DesktopControlResult Refresh(std::vector<wallpaper::DesktopWidget>* widgets) const;
     DesktopControlResult Find(std::wstring_view id, wallpaper::DesktopWidget* widget) const;
+    DesktopControlResult RuntimeHealth(WidgetRuntimeHealth* health) const;
     DesktopControlResult CreateClock(std::wstring monitorId, wallpaper::DesktopWidget* created = nullptr) const;
     DesktopControlResult SetEnabled(std::wstring_view id, bool enabled) const;
     DesktopControlResult Remove(std::wstring_view id) const;

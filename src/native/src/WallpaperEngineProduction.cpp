@@ -2,11 +2,11 @@
 //
 // The historical engine still calls Win32 profile APIs for its combined config.
 // In production, performance-policy keys are intercepted here and delegated to
-// PerformanceService. Automation ownership is also substituted with the
-// store-shaped AutomationUiAdapter, so runtime evaluation and mutations go
-// through AutomationService rather than directly owning WallpaperAutomationStore.
-// Non-performance wallpaper/video keys keep their existing storage path until
-// their domain migrations are completed.
+// PerformanceUiAdapter -> PerformanceService. Automation ownership is also
+// substituted with the store-shaped AutomationUiAdapter, so runtime evaluation
+// and mutations go through AutomationService rather than directly owning
+// WallpaperAutomationStore. Non-performance wallpaper/video keys keep their
+// existing storage path until their domain migrations are completed.
 //
 // Remove this bridge once WallpaperEngine.cpp no longer contains these legacy
 // persistence/runtime ownership paths.
@@ -14,7 +14,7 @@
 #include <windows.h>
 
 #include "turingdesk/AutomationUiAdapter.h"
-#include "turingdesk/PerformanceService.h"
+#include "turingdesk/PerformanceUiAdapter.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -124,9 +124,9 @@ bool ApplyPerformanceValue(turingdesk::wallpaper::PerformanceConfig* config, LPC
 UINT WINAPI TuringDeskGetPrivateProfileIntW(
     LPCWSTR section, LPCWSTR key, INT fallback, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        turingdesk::desktop::PerformanceService service;
+        turingdesk::wallpaper::PerformanceUiAdapter adapter;
         turingdesk::wallpaper::PerformanceConfig config;
-        if (service.GetConfig(&config).success) {
+        if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return static_cast<UINT>(_wtoi(value.c_str()));
         }
@@ -137,9 +137,9 @@ UINT WINAPI TuringDeskGetPrivateProfileIntW(
 DWORD WINAPI TuringDeskGetPrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR fallback, LPWSTR output, DWORD size, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        turingdesk::desktop::PerformanceService service;
+        turingdesk::wallpaper::PerformanceUiAdapter adapter;
         turingdesk::wallpaper::PerformanceConfig config;
-        if (service.GetConfig(&config).success) {
+        if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return CopyProfileValue(value, output, size);
         }
@@ -150,11 +150,11 @@ DWORD WINAPI TuringDeskGetPrivateProfileStringW(
 BOOL WINAPI TuringDeskWritePrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR value, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key) && value) {
-        turingdesk::desktop::PerformanceService service;
+        turingdesk::wallpaper::PerformanceUiAdapter adapter;
         turingdesk::wallpaper::PerformanceConfig config;
-        if (!service.GetConfig(&config).success) return FALSE;
+        if (!adapter.Load(&config)) return FALSE;
         if (!ApplyPerformanceValue(&config, key, value)) return FALSE;
-        return service.SaveConfig(config).success ? TRUE : FALSE;
+        return adapter.Save(config) ? TRUE : FALSE;
     }
     return ::WritePrivateProfileStringW(section, key, value, fileName);
 }

@@ -20,6 +20,7 @@ $monitorLayoutPath = Require-File 'src/native/src/WallpaperMonitorLayout.cpp'
 $legacyEnginePath = Require-File 'src/native/src/WallpaperEngine.cpp'
 $productionEnginePath = Require-File 'src/native/src/WallpaperEngineProduction.cpp'
 $coordinatorPath = Require-File 'src/native/src/WallpaperWebRuntimeCoordinator.cpp'
+$productionCoordinatorPath = Require-File 'src/native/src/WallpaperWebRuntimeCoordinatorProduction.cpp'
 $cmakePath = Require-File 'src/native/CMakeLists.txt'
 
 $shellHeader = Get-Content -LiteralPath $shellHeaderPath -Raw
@@ -31,6 +32,7 @@ $monitorLayout = Get-Content -LiteralPath $monitorLayoutPath -Raw
 $legacyEngine = Get-Content -LiteralPath $legacyEnginePath -Raw
 $productionEngine = Get-Content -LiteralPath $productionEnginePath -Raw
 $coordinator = Get-Content -LiteralPath $coordinatorPath -Raw
+$productionCoordinator = Get-Content -LiteralPath $productionCoordinatorPath -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 
 foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureSurface', 'EnsureCurrent', 'InspectSurface', 'DesktopShellSnapshot', 'RecoverSurface', 'CurrentGenerationValid')) {
@@ -59,6 +61,12 @@ if (-not $cmake.Contains('src/DesktopShellSurfaceStack.cpp')) {
 }
 if (-not $cmake.Contains('src/WallpaperEngineProduction.cpp')) {
     throw 'Production target must compile WallpaperEngineProduction.cpp.'
+}
+if (-not $cmake.Contains('src/WallpaperWebRuntimeCoordinatorProduction.cpp')) {
+    throw 'Production target must compile WallpaperWebRuntimeCoordinatorProduction.cpp.'
+}
+if ($cmake.Contains('src/WallpaperWebRuntimeCoordinator.cpp')) {
+    throw 'Production target must not compile legacy WallpaperWebRuntimeCoordinator.cpp directly.'
 }
 
 # M2 migration rule: renderer/coordinator/Widget code may inspect or locate its
@@ -105,6 +113,25 @@ foreach ($forbidden in @('MaintainDesktopSurfaceZOrder', 'DesktopAnchorAboveHost
     }
 }
 
+# The remaining independent-layout SetWindowPos in the legacy coordinator is
+# intercepted in production and converted from parent-client coordinates back
+# to desktop coordinates before entering DesktopShellHost::EnsureSurface.
+foreach ($marker in @(
+    'TuringDeskCoordinatorSetWindowPos',
+    'ParentClientRectToDesktop',
+    'DesktopShellHost shell',
+    'shell.EnsureSurface(',
+    'DesktopSurfaceRole::Wallpaper',
+    '#define SetWindowPos TuringDeskCoordinatorSetWindowPos',
+    '#include "WallpaperWebRuntimeCoordinator.cpp"')) {
+    if (-not $productionCoordinator.Contains($marker)) {
+        throw "Production Web coordinator shell bridge missing marker: $marker"
+    }
+}
+if ($productionCoordinator.Contains('shell.AttachSurface(')) {
+    throw 'Production Web coordinator must finish through EnsureSurface, not AttachSurface.'
+}
+
 # WallpaperEngine.cpp still contains legacy source text while M2 removes it in
 # stages. The production bridge must intercept every shell API used by that code,
 # and the wallpaper host must finish parent + geometry + visibility + z-order via
@@ -144,4 +171,4 @@ foreach ($marker in @('DesktopLayer DiscoverDesktopLayer()', 'SpawnWallpaperLaye
     }
 }
 
-Write-Host 'Desktop shell ownership contract OK (unified EnsureSurface ownership; legacy engine source cleanup remains).'
+Write-Host 'Desktop shell ownership contract OK (production coordinator geometry and engine attachment route through EnsureSurface; legacy source cleanup remains).'

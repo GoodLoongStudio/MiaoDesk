@@ -58,14 +58,14 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $text.Wallpaper.Contains($marker)) { throw "WallpaperService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth')) {
+foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth', 'environmentReported', 'controllerReported', 'navigationReported', 'zOrderReported')) {
     if (-not $text.WidgetHeader.Contains($marker)) { throw "WidgetService header missing runtime health contract: $marker" }
 }
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
 }
-foreach ($marker in @('environmentReported = false', 'controllerReported = false', 'navigationReported = false', 'zOrderReported = false')) {
-    if (-not $text.Widget.Contains($marker)) { throw "WidgetService must represent unreported M3 telemetry explicitly instead of inferring it: $marker" }
+foreach ($marker in @('WebDesktopSurfaceChild.h', 'HasStructuredLifecycleTelemetry', 'kWebSurfaceRoleProperty', 'kWebSurfaceEnvironmentReadyProperty', 'kWebSurfaceControllerReadyProperty', 'kWebSurfaceNavigationReadyProperty', 'environmentReported = lifecycleTelemetry', 'controllerReported = lifecycleTelemetry', 'navigationReported = lifecycleTelemetry', 'zOrderReported = false')) {
+    if (-not $text.Widget.Contains($marker)) { throw "WidgetService WebView2 lifecycle telemetry contract missing marker: $marker" }
 }
 
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
@@ -142,7 +142,7 @@ if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/W
     throw 'Production target must not compile legacy UI implementation files directly.'
 }
 
-foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'DesktopWidgetTools.cpp', 'WallpaperLibraryWindowV2.cpp')) {
+foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'DesktopWidgetTools.cpp', 'WallpaperLibraryWindowV2.cpp', 'WidgetSurfaceHealth')) {
     if (-not $text.Doc.Contains($marker)) { throw "Desktop domain architecture doc missing marker: $marker" }
 }
 foreach ($marker in @('desktop/control', 'desktop/widgets', 'desktop/automation', 'desktop/performance')) {

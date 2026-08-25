@@ -1,5 +1,6 @@
 #include "turingdesk/DesktopShellDiagnostics.h"
 
+#include <iterator>
 #include <sstream>
 
 namespace turingdesk::wallpaper {

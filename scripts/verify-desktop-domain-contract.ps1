@@ -58,12 +58,16 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $text.Wallpaper.Contains($marker)) { throw "WallpaperService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WidgetRuntimeHealth', 'GetRuntimeHealth')) {
+foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth')) {
     if (-not $text.WidgetHeader.Contains($marker)) { throw "WidgetService header missing runtime health contract: $marker" }
 }
-foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'DesktopWidgetStore store')) {
+foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
 }
+foreach ($marker in @('environmentReported = false', 'controllerReported = false', 'navigationReported = false', 'zOrderReported = false')) {
+    if (-not $text.Widget.Contains($marker)) { throw "WidgetService must represent unreported M3 telemetry explicitly instead of inferring it: $marker" }
+}
+
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
     if (-not $text.Automation.Contains($marker)) { throw "AutomationService missing ownership marker: $marker" }
 }
@@ -98,8 +102,8 @@ foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_
 foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::RuntimeHealth', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
     if (-not $text.WidgetController.Contains($marker)) { throw "DesktopWidgetController missing facade routing marker: $marker" }
 }
-foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
-    if ($text.WidgetController.Contains($forbidden)) { throw "DesktopWidgetController regained domain ownership: $forbidden" }
+foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
+    if ($text.WidgetController.Contains($forbidden)) { throw "DesktopWidgetController regained domain/runtime ownership: $forbidden" }
 }
 
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth')) {
@@ -108,8 +112,8 @@ foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_
 foreach ($marker in @('DesktopWidgetUiAdapter::RuntimeHealth', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
     if (-not $text.WidgetUi.Contains($marker)) { throw "DesktopWidgetUiAdapter missing facade routing marker: $marker" }
 }
-foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
-    if ($text.WidgetUi.Contains($forbidden)) { throw "DesktopWidgetUiAdapter regained domain ownership: $forbidden" }
+foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
+    if ($text.WidgetUi.Contains($forbidden)) { throw "DesktopWidgetUiAdapter regained domain/runtime ownership: $forbidden" }
 }
 foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore DesktopWidgetUiAdapter', '#include "WallpaperLibraryWindow.cpp"')) {
     if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow bridge missing marker: $marker" }
@@ -118,8 +122,8 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service', 'service.GetSnapshot', 'widgetRuntime')) {
     if (-not $text.PiAdapter.Contains($marker)) { throw "Pi desktop tool adapter missing Desktop Control snapshot marker: $marker" }
 }
-foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'ShellExecuteW(', 'WallpaperPackage::Validate')) {
-    if ($text.PiAdapter.Contains($forbidden)) { throw "Pi desktop tool adapter regained domain ownership: $forbidden" }
+foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
+    if ($text.PiAdapter.Contains($forbidden)) { throw "Pi desktop tool adapter regained domain/runtime ownership: $forbidden" }
 }
 
 $cmake = $text.CMake

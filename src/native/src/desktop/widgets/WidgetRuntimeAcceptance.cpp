@@ -35,6 +35,9 @@ fs::path ReportDirectory() {
     return root / L"Diagnostics";
 }
 
+// Cross-phase identity semantics are documented in
+// docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md. PID/HWND continuity is intentionally
+// excluded because Explorer recovery may recreate runtime surfaces.
 fs::path BaselinePath() {
     return ReportDirectory() / L"widget-acceptance-baseline.ids";
 }

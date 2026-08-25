@@ -43,6 +43,9 @@ add_executable(TuringDesk WIN32
     src/DesktopWidgetStore.cpp
     src/DesktopWidgetTools.cpp
     src/WallpaperPackage.cpp
+    src/WallpaperLibrary.cpp
+    src/WallpaperLibraryWeb.cpp
+    src/WallpaperMonitorAssignments.cpp
     src/AppSearch.cpp
     src/GozSearch.cpp
     src/L3Agent.cpp
@@ -135,7 +138,7 @@ if (NOT EXISTS "${TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
     message(FATAL_ERROR "Missing Desktop domain contract guard: ${TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
 endif()
 add_custom_target(TuringDeskDesktopDomainContractCheck ALL
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}"
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Verifying Desktop domain ownership contract"
     VERBATIM

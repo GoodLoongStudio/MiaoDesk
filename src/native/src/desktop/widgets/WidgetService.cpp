@@ -100,12 +100,22 @@ bool HasStructuredLifecycleTelemetry(HWND window) {
     return role == 2;
 }
 
+void SetAttention(
+    WidgetSurfaceHealth& surface,
+    std::wstring issueCode,
+    std::wstring detail,
+    std::wstring recommendedAction) {
+    surface.issueCode = std::move(issueCode);
+    surface.detail = std::move(detail);
+    surface.recommendedAction = std::move(recommendedAction);
+}
+
 WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget, bool compatibilityHealthy) {
     WidgetSurfaceHealth surface;
     surface.widgetId = widget.id;
     surface.configured = widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web;
     if (!surface.configured) {
-        surface.detail = L"Widget 未启用 Web runtime。";
+        SetAttention(surface, L"widget_disabled", L"Widget 未启用 Web runtime。", L"在小组件页面启用该 Widget 后刷新运行状态。");
         return surface;
     }
 
@@ -154,20 +164,34 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     const bool zOrderReady = surface.zOrderReported && surface.zOrderValid;
     surface.renderingHealthy = surface.SurfaceReady() && lifecycleReady && zOrderReady && compatibilityHealthy;
 
-    std::wostringstream detail;
-    if (!surface.hwndReady) detail << L"等待隔离 Surface HWND";
-    else if (!surface.processRunning) detail << L"隔离进程未运行";
-    else if (!surface.parentValid) detail << L"Surface parent 不匹配";
-    else if (!surface.childStyleValid) detail << L"Surface 缺少 WS_CHILD";
-    else if (!surface.visible) detail << L"Surface 当前不可见";
-    else if (!surface.environmentReported) detail << L"OS Surface 就绪；legacy child 未报告 WebView2 lifecycle";
-    else if (!surface.environmentReady) detail << L"等待 WebView2 EnvironmentReady";
-    else if (!surface.controllerReady) detail << L"等待 WebView2 ControllerReady";
-    else if (!surface.navigationReady) detail << L"等待 WebView2 NavigationReady";
-    else if (!surface.zOrderReported) detail << L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry";
-    else if (!surface.zOrderValid) detail << (zOrder.detail.empty() ? L"Widget z-order 无效" : zOrder.detail);
-    else detail << L"Widget WebView2/desktop surface health ready";
-    surface.detail = detail.str();
+    if (!surface.hwndReady) {
+        SetAttention(surface, L"surface_missing", L"等待隔离 Surface HWND", L"点击“刷新”；若持续不存在，重启 TuringDesk 桌面运行时。");
+    } else if (!surface.processRunning) {
+        SetAttention(surface, L"process_stopped", L"隔离进程未运行", L"重新启用该 Widget；若仍失败，重启 TuringDesk 桌面运行时。");
+    } else if (!surface.parentValid) {
+        SetAttention(surface, L"parent_invalid", L"Surface parent 不匹配", L"重启 Explorer 或 TuringDesk 桌面运行时以触发 DesktopShellHost 重新挂载。");
+    } else if (!surface.childStyleValid) {
+        SetAttention(surface, L"child_style_invalid", L"Surface 缺少 WS_CHILD", L"重启 TuringDesk 桌面运行时；该 Surface 需要由 DesktopShellHost 重新创建。");
+    } else if (!surface.visible) {
+        SetAttention(surface, L"surface_hidden", L"Surface 当前不可见", L"确认 Widget 已启用并点击“刷新”；若仍隐藏，重启桌面运行时。");
+    } else if (!surface.environmentReported) {
+        surface.detail = L"OS Surface 就绪；legacy child 未报告 WebView2 lifecycle";
+    } else if (!surface.environmentReady) {
+        SetAttention(surface, L"webview_environment_pending", L"等待 WebView2 EnvironmentReady", L"等待数秒后刷新；若持续卡住，检查 WebView2 Runtime 并重启桌面运行时。");
+    } else if (!surface.controllerReady) {
+        SetAttention(surface, L"webview_controller_pending", L"等待 WebView2 ControllerReady", L"等待数秒后刷新；若持续卡住，重启该 Widget 或桌面运行时。");
+    } else if (!surface.navigationReady) {
+        SetAttention(surface, L"webview_navigation_pending", L"等待 WebView2 NavigationReady", L"检查 Widget 内容/资源是否可访问，然后重新启用该 Widget。");
+    } else if (!surface.zOrderReported) {
+        SetAttention(surface, L"zorder_unreported", L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry", L"点击“刷新”；若持续未报告，重启 Explorer 以重建桌面层级。");
+    } else if (!surface.zOrderValid) {
+        SetAttention(surface, L"zorder_invalid", zOrder.detail.empty() ? L"Widget z-order 无效" : zOrder.detail,
+                     L"重启 Explorer 或 TuringDesk 桌面运行时，让 DesktopShellHost 修复 Widget/壁纸/图标层级。");
+    } else if (!compatibilityHealthy) {
+        SetAttention(surface, L"runtime_diagnostic_unhealthy", L"Widget runtime 兼容诊断报告异常", L"查看桌面运行时日志并重启 TuringDeskWallpaper。");
+    } else {
+        surface.detail = L"Widget WebView2/desktop surface health ready";
+    }
     return surface;
 }
 

@@ -108,8 +108,6 @@ foreach ($marker in @('PerformanceUiAdapter.h', 'PerformanceUiAdapter adapter', 
     if (-not $text.ProductionEngine.Contains($marker)) { throw "Production WallpaperEngine bridge missing domain-routing marker: $marker" }
 }
 
-# Service members live in the public adapter/controller declarations; implementation
-# files are required to demonstrate actual delegation through those members.
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth')) {
     if (-not $text.WidgetControllerHeader.Contains($marker)) { throw "DesktopWidgetController header missing facade dependency: $marker" }
 }
@@ -153,7 +151,8 @@ foreach ($marker in @(
     'src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "Production source ownership missing from CMake: $marker" }
 }
-if (($cmake.Split('src/desktop/shell/DesktopSurfaceTelemetry.cpp').Count - 1) -lt 2) {
+$surfaceTelemetryLinkCount = [regex]::Matches($cmake, [regex]::Escape('src/desktop/shell/DesktopSurfaceTelemetry.cpp')).Count
+if ($surfaceTelemetryLinkCount -lt 2) {
     throw 'DesktopSurfaceTelemetry must be linked into both app and wallpaper targets.'
 }
 if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/WallpaperAutomationWindow.cpp')) {

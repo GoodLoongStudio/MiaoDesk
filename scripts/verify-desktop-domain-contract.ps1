@@ -36,6 +36,7 @@ $docPath = Require-File 'docs/DESKTOP_DOMAIN_ARCHITECTURE.md'
 
 $header = Get-Content -LiteralPath $serviceHeader -Raw
 $source = Get-Content -LiteralPath $serviceSource -Raw
+$wallpaperHeaderText = Get-Content -LiteralPath $wallpaperHeader -Raw
 $wallpaper = Get-Content -LiteralPath $wallpaperSource -Raw
 $widget = Get-Content -LiteralPath $widgetSource -Raw
 $automationHeaderText = Get-Content -LiteralPath $automationHeader -Raw
@@ -55,39 +56,42 @@ $adapter = Get-Content -LiteralPath $toolAdapter -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 $doc = Get-Content -LiteralPath $docPath -Raw
 
-foreach ($marker in @('DesktopControlService', 'DesktopSnapshot', 'GetState', 'GetSnapshot', 'ApplyWebPackage', 'CreateWebWidget', 'UpdateWidget', 'RemoveWidget', 'ListWidgets')) {
+foreach ($marker in @('DesktopControlService', 'DesktopSnapshot', 'GetState', 'GetSnapshot', 'ApplyWebPackage', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'ClearMonitorAssignment', 'CreateWebWidget', 'UpdateWidget', 'RemoveWidget', 'ListWidgets')) {
     if (-not $header.Contains($marker)) { throw "Desktop control header missing marker: $marker" }
 }
 foreach ($marker in @('WallpaperService.h', 'WidgetService.h')) {
     if (-not $header.Contains($marker)) { throw "Desktop facade missing domain dependency: $marker" }
 }
-foreach ($marker in @('DesktopControlService::GetSnapshot', 'wallpaperService.GetState', 'widgetService.List', 'DesktopControlService::GetState', 'GetSnapshot(&snapshot)', 'DesktopControlService::ApplyWebPackage', 'DesktopControlService::CreateWebWidget')) {
+foreach ($marker in @('DesktopControlService::GetSnapshot', 'wallpaperService.GetState', 'widgetService.List', 'DesktopControlService::GetState', 'GetSnapshot(&snapshot)', 'DesktopControlService::ApplyWebPackage', 'DesktopControlService::ApplyLibraryItem', 'DesktopControlService::AssignLibraryItemToMonitor', 'DesktopControlService::ClearMonitorAssignment', 'DesktopControlService::CreateWebWidget')) {
     if (-not $source.Contains($marker)) { throw "Desktop control source missing marker: $marker" }
 }
-foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'WallpaperPackage::Validate')) {
+foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if ($source.Contains($forbidden)) { throw "Desktop facade regained domain persistence ownership: $forbidden" }
 }
 
-foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyWebPackage', 'WritePrivateProfileStringW', 'WallpaperPackage::Validate')) {
+foreach ($marker in @('ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'ClearMonitorAssignment')) {
+    if (-not $wallpaperHeaderText.Contains($marker)) { throw "Wallpaper service header missing marker: $marker" }
+}
+foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyWebPackage', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperService::ClearMonitorAssignment', 'WritePrivateProfileStringW', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $wallpaper.Contains($marker)) { throw "Wallpaper domain service missing ownership marker: $marker" }
 }
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'DesktopWidgetStore store')) {
     if (-not $widget.Contains($marker)) { throw "Widget domain service missing ownership marker: $marker" }
 }
 
-foreach ($marker in @('AutomationService', 'GetState', 'SetEnabled', 'SetActivePlaylist', 'ForceNextPlaylist')) {
+foreach ($marker in @('AutomationService', 'GetState', 'SetEnabled', 'SetActivePlaylist', 'ForceNextPlaylist', 'MakeId')) {
     if (-not $automationHeaderText.Contains($marker)) { throw "Automation service header missing marker: $marker" }
 }
-foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
+foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::ForceNextPlaylist', 'AutomationService::MakeId', 'WallpaperAutomationStore store')) {
     if (-not $automation.Contains($marker)) { throw "Automation domain service missing ownership marker: $marker" }
 }
 foreach ($marker in @('AutomationUiAdapter', 'AutomationService.h', 'AutomationService service_')) {
     if (-not $automationUiAdapterHeaderText.Contains($marker)) { throw "Automation UI adapter header missing marker: $marker" }
 }
-foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.UpsertPlaylist', 'service_.UpsertSchedule', 'service_.ForceNextPlaylist')) {
+foreach ($marker in @('service_.GetState', 'service_.UpsertProfile', 'service_.UpsertPlaylist', 'service_.UpsertSchedule', 'service_.ForceNextPlaylist', 'desktop::AutomationService::MakeId')) {
     if (-not $automationUiAdapter.Contains($marker)) { throw "Automation UI adapter is not routed through AutomationService: $marker" }
 }
-foreach ($forbidden in @('WallpaperAutomationStore store', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW')) {
+foreach ($forbidden in @('WallpaperAutomationStore', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW')) {
     if ($automationUiAdapter.Contains($forbidden)) { throw "Automation UI adapter regained persistence ownership: $forbidden" }
 }
 

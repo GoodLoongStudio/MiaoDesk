@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -37,15 +38,44 @@ struct WidgetUpdateRequest {
     std::optional<bool> enabled;
 };
 
-// Caller-facing Widget runtime summary. This is intentionally owned by the
-// Widget domain instead of UI/Pi reading wallpaper.ini diagnostics directly.
-// Detailed per-surface WebView2 lifecycle fields are added behind this contract
-// during M3; callers can already distinguish configured/running/error states.
+// One configured Web Widget matched to its isolated child surface. M3 grows
+// this contract in-place: process/HWND/shell visibility are reported now;
+// WebView2 lifecycle and authoritative z-order become reported when the child
+// runtime publishes those stages instead of callers inferring them.
+struct WidgetSurfaceHealth {
+    std::wstring widgetId;
+    std::uint32_t processId{};
+    std::uintptr_t hwndValue{};
+    bool configured{};
+    bool processRunning{};
+    bool hwndReady{};
+    bool parentValid{};
+    bool childStyleValid{};
+    bool visible{};
+    bool environmentReady{};
+    bool environmentReported{};
+    bool controllerReady{};
+    bool controllerReported{};
+    bool navigationReady{};
+    bool navigationReported{};
+    bool zOrderValid{};
+    bool zOrderReported{};
+    bool renderingHealthy{};
+    std::wstring detail;
+
+    bool SurfaceReady() const noexcept {
+        return configured && processRunning && hwndReady && parentValid && childStyleValid && visible;
+    }
+};
+
+// Caller-facing Widget runtime summary. UI/Pi/editor clients consume this
+// through DesktopSnapshot rather than reading wallpaper.ini or enumerating HWNDs.
 struct WidgetRuntimeHealth {
     std::size_t configuredCount{};
     std::size_t enabledWebCount{};
     bool runtimeReported{};
     bool runtimeHealthy{};
+    std::vector<WidgetSurfaceHealth> surfaces;
     std::wstring detail;
 
     bool Healthy() const noexcept {

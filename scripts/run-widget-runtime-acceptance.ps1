@@ -12,6 +12,9 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
 }
 
 Write-Host "Running real-Windows Widget acceptance probe: phase=$Phase"
+if ($Phase -ne 'baseline') {
+    Write-Host 'This phase must match the Widget identity set recorded by a prior baseline probe.'
+}
 & $exe "--phase=$Phase"
 $code = $LASTEXITCODE
 if ($code -eq 0) {
@@ -25,6 +28,8 @@ $meaning = switch ($code) {
     62 { 'Widget runtime health unavailable' }
     63 { 'one or more Widget surfaces are unhealthy' }
     64 { 'acceptance report write failed' }
+    65 { 'baseline identity set missing; run the baseline phase first' }
+    66 { 'enabled Widget identity set changed since baseline' }
     default { "unexpected probe exit code $code" }
 }
 throw "Widget acceptance probe failed: $meaning. Read %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-$Phase.txt when present."

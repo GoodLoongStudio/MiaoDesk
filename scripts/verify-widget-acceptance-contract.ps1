@@ -53,6 +53,7 @@ foreach ($marker in @(
     'System.Drawing.Graphics',
     'CopyFromScreen',
     'widget-acceptance-$AcceptancePhase.png',
+    'widget-acceptance-*.png*',
     'Get-FileHash',
     'sha256=',
     'virtualBounds=',
@@ -82,4 +83,4 @@ foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'seque
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence and hashed virtual-desktop screenshots, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence and fresh hashed virtual-desktop screenshots, and does not regain HWND/shell ownership.'

@@ -149,6 +149,7 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
         if (error) error->clear();
         return true;
     }
+    if (recoveryError.empty()) recoveryError = L"surface reattachment failed without a Win32 detail";
     if (error) {
         *error = sameGeneration
             ? recoveryError

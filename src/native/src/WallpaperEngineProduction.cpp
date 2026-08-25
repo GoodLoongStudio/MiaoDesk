@@ -6,7 +6,7 @@
 // and all Windows desktop attachment APIs through DesktopShellHost. The legacy
 // engine source may still spell Progman/WorkerW/0x052C/SetParent while M2 is in
 // progress, but those calls are intercepted here so there is only one effective
-// production shell-discovery/re-parent/z-order implementation.
+// production shell-discovery/re-parent/geometry/z-order implementation.
 //
 // Remove this bridge once WallpaperEngine.cpp no longer contains these legacy
 // persistence/runtime ownership paths.
@@ -219,7 +219,7 @@ HWND WINAPI TuringDeskSetParent(HWND child, HWND requestedParent) {
         if (!GetWindowRect(child, &bounds) || bounds.right <= bounds.left || bounds.bottom <= bounds.top)
             bounds = RECT{0, 0, 1, 1};
         const HWND previous = GetParent(child);
-        if (!shell.AttachSurface(child, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+        if (!shell.EnsureSurface(child, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
                                  bounds, IsWindowVisible(child) != FALSE, &error)) {
             SetLastError(ERROR_INVALID_WINDOW_HANDLE);
             return nullptr;
@@ -238,17 +238,42 @@ BOOL WINAPI TuringDeskSetWindowPos(HWND window, HWND insertAfter, int x, int y, 
         return ok ? TRUE : FALSE;
     }
     if (IsWindowClass(window, L"TuringDesk.Native.WallpaperHost")) {
-        // Geometry remains a renderer concern during the transition, but parent
-        // and z-order are not. Strip the caller's z-order intent, then let the
-        // shared shell host restore the wallpaper/widget/icon stack.
-        const UINT geometryFlags = flags | SWP_NOZORDER;
-        if (!::SetWindowPos(window, nullptr, x, y, width, height, geometryFlags)) return FALSE;
+        auto& shell = ProductionShellHost();
         std::wstring error;
-        if (!ProductionShellHost().RepairSurfaceStack(window, &error)) {
+        if (!shell.EnsureCurrent(&error)) {
             SetLastError(ERROR_INVALID_WINDOW_HANDLE);
             return FALSE;
         }
-        return TRUE;
+
+        RECT current{};
+        if (!GetWindowRect(window, &current) || current.right <= current.left || current.bottom <= current.top)
+            current = RECT{0, 0, 1, 1};
+
+        RECT desktopBounds = current;
+        const HWND parent = GetParent(window);
+        POINT origin{x, y};
+        if ((flags & SWP_NOMOVE) == 0) {
+            if (parent && IsWindow(parent)) ClientToScreen(parent, &origin);
+            desktopBounds.left = origin.x;
+            desktopBounds.top = origin.y;
+        }
+        if ((flags & SWP_NOSIZE) == 0) {
+            desktopBounds.right = desktopBounds.left + std::max(1, width);
+            desktopBounds.bottom = desktopBounds.top + std::max(1, height);
+        } else {
+            const LONG currentWidth = std::max<LONG>(1, current.right - current.left);
+            const LONG currentHeight = std::max<LONG>(1, current.bottom - current.top);
+            desktopBounds.right = desktopBounds.left + currentWidth;
+            desktopBounds.bottom = desktopBounds.top + currentHeight;
+        }
+
+        bool visible = IsWindowVisible(window) != FALSE;
+        if ((flags & SWP_SHOWWINDOW) != 0) visible = true;
+        if ((flags & SWP_HIDEWINDOW) != 0) visible = false;
+        const bool ok = shell.EnsureSurface(window, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+                                            desktopBounds, visible, &error);
+        if (!ok) SetLastError(ERROR_INVALID_WINDOW_HANDLE);
+        return ok ? TRUE : FALSE;
     }
     return ::SetWindowPos(window, insertAfter, x, y, width, height, flags);
 }

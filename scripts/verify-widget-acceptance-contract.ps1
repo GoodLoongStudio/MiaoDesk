@@ -44,6 +44,8 @@ foreach ($marker in @(
     'Get-CurrentDisplayTopology',
     'System.Windows.Forms.Screen',
     'widget-acceptance-explorer.monitor-topology',
+    'widget-acceptance-monitor.topology-transition',
+    'Write-MonitorTransitionEvidence',
     'Wait-ForMonitorTopologyTransition',
     "if (`$Phase -eq 'monitor')",
     'Monitor recovery is unproven',
@@ -69,8 +71,8 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 
 }
 
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence', 'display topology', 'monitor recovery evidence')) {
+foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'sequence cursor', 'SequenceOutOfOrder', 'BaselineMissing', 'BaselineMismatch', 'PID/HWND', 'explorer.exe PID', 'Explorer restart evidence', 'display topology', 'monitor recovery evidence', 'widget-acceptance-monitor.topology-transition')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart and display-topology transition evidence, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart and durable display-topology transition evidence, and does not regain HWND/shell ownership.'

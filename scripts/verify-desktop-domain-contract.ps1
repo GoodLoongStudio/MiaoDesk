@@ -18,6 +18,8 @@ $files = @{
     Wallpaper = 'src/native/src/desktop/wallpaper/WallpaperService.cpp'
     WidgetHeader = 'src/native/include/turingdesk/WidgetService.h'
     Widget = 'src/native/src/desktop/widgets/WidgetService.cpp'
+    SurfaceTelemetryHeader = 'src/native/include/turingdesk/DesktopSurfaceTelemetry.h'
+    SurfaceTelemetry = 'src/native/src/desktop/shell/DesktopSurfaceTelemetry.cpp'
     WidgetControllerHeader = 'src/native/include/turingdesk/DesktopWidgetController.h'
     WidgetController = 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
     WidgetUiHeader = 'src/native/include/turingdesk/DesktopWidgetUiAdapter.h'
@@ -64,8 +66,20 @@ foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WebDesktopSurfaceChild.h', 'HasStructuredLifecycleTelemetry', 'kWebSurfaceRoleProperty', 'kWebSurfaceEnvironmentReadyProperty', 'kWebSurfaceControllerReadyProperty', 'kWebSurfaceNavigationReadyProperty', 'environmentReported = lifecycleTelemetry', 'controllerReported = lifecycleTelemetry', 'navigationReported = lifecycleTelemetry', 'zOrderReported = false')) {
+foreach ($marker in @('WebDesktopSurfaceChild.h', 'HasStructuredLifecycleTelemetry', 'kWebSurfaceRoleProperty', 'kWebSurfaceEnvironmentReadyProperty', 'kWebSurfaceControllerReadyProperty', 'kWebSurfaceNavigationReadyProperty', 'environmentReported = lifecycleTelemetry', 'controllerReported = lifecycleTelemetry', 'navigationReported = lifecycleTelemetry')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService WebView2 lifecycle telemetry contract missing marker: $marker" }
+}
+foreach ($marker in @('DesktopSurfaceTelemetry.h', 'InspectDesktopSurfaceZOrder', 'DesktopSurfaceTelemetryRole::Widget', 'zOrderReported = zOrder.reported', 'zOrderValid = zOrder.valid')) {
+    if (-not $text.Widget.Contains($marker)) { throw "WidgetService z-order telemetry routing missing marker: $marker" }
+}
+foreach ($marker in @('DesktopSurfaceZOrderHealth', 'InspectDesktopSurfaceZOrder', 'Read-only z-order inspection')) {
+    if (-not $text.SurfaceTelemetryHeader.Contains($marker)) { throw "Desktop surface telemetry header missing marker: $marker" }
+}
+foreach ($marker in @('SHELLDLL_DefView', 'TuringDesk.Native.WallpaperHost', 'TuringDesk.Native.WebWallpaperHost', 'DesktopSurfaceTelemetryRole::Widget', 'wallpaper surface is above Widget', 'Widget surface is below wallpaper')) {
+    if (-not $text.SurfaceTelemetry.Contains($marker)) { throw "Desktop surface telemetry implementation missing marker: $marker" }
+}
+foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'SendMessageTimeoutW(', '0x052C')) {
+    if ($text.SurfaceTelemetry.Contains($forbidden)) { throw "Read-only DesktopSurfaceTelemetry gained shell mutation ownership: $forbidden" }
 }
 
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
@@ -129,6 +143,7 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 $cmake = $text.CMake
 foreach ($marker in @(
     'src/desktop/control/DesktopControlService.cpp',
+    'src/desktop/shell/DesktopSurfaceTelemetry.cpp',
     'src/desktop/wallpaper/WallpaperService.cpp',
     'src/desktop/widgets/WidgetService.cpp',
     'src/desktop/automation/AutomationService.cpp',
@@ -137,6 +152,9 @@ foreach ($marker in @(
     'src/ui/automation/WallpaperAutomationWindowProduction.cpp',
     'src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "Production source ownership missing from CMake: $marker" }
+}
+if (($cmake.Split('src/desktop/shell/DesktopSurfaceTelemetry.cpp').Count - 1) -lt 2) {
+    throw 'DesktopSurfaceTelemetry must be linked into both app and wallpaper targets.'
 }
 if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/WallpaperAutomationWindow.cpp')) {
     throw 'Production target must not compile legacy UI implementation files directly.'

@@ -13,6 +13,7 @@ function Require-Text([string]$relativePath) {
 
 $legacy = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindow.cpp'
 $candidate = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
+$candidateBridge = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2Candidate.cpp'
 $production = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
 $header = Require-Text 'src/native/include/turingdesk/WallpaperLibraryWindow.h'
 $cmake = Require-Text 'src/native/CMakeLists.txt'
@@ -50,8 +51,9 @@ foreach ($marker in @('Installed,', 'Widgets,', 'Playlists,', 'Displays,', 'Rule
     }
 }
 
-# The candidate must keep the intended product-shell information architecture
-# visible while it is developed behind the production bridge.
+# M4 candidate contract: vertical product shell, card surfaces and explicit
+# delegation to the existing product sections that have not yet been moved into
+# the shell. These are implementation markers, not user-visible strings.
 foreach ($marker in @(
     'kNavInstalledId',
     'kNavWidgetsId',
@@ -64,45 +66,51 @@ foreach ($marker in @(
     'kWidgetGridId',
     'kSearchId',
     'kAddId',
-    'SectionForNav')) {
+    'SectionForNav',
+    'const int sidebarW',
+    'DesktopWidgetController',
+    'widgetController.RuntimeHealth',
+    'WallpaperSettingsSection::AI',
+    'WallpaperSettingsSection::Playlists',
+    'WallpaperSettingsSection::Displays',
+    'WallpaperSettingsSection::Rules',
+    'WallpaperSettingsSection::Performance')) {
     if (-not $candidate.Contains($marker)) {
-        throw "M4 candidate lost required navigation/layout marker: $marker"
+        throw "M4 candidate lost required shell/parity marker: $marker"
     }
+}
+
+# Once a candidate crosses a domain boundary correctly, it must never regress
+# simply because it is not shipping yet.
+foreach ($forbidden in @(
+    '#include "turingdesk/DesktopWidgetStore.h"',
+    'DesktopWidgetStore store',
+    'WritePrivateProfileStringW',
+    'GetPrivateProfileStringW',
+    'FindWindowW(L"Progman"',
+    'SetParent(')) {
+    if ($candidate.Contains($forbidden)) {
+        throw "M4 candidate regained forbidden persistence/shell ownership: $forbidden"
+    }
+}
+
+foreach ($forbidden in @(
+    '#define DesktopWidgetStore',
+    '#define max(')) {
+    if ($candidateBridge.Contains($forbidden)) {
+        throw "M4 candidate compile bridge regained a compatibility interception shim: $forbidden"
+    }
+}
+if (-not $candidateBridge.Contains('#include "WallpaperLibraryWindowV2.cpp"')) {
+    throw 'M4 candidate bridge must compile the real V2 source.'
 }
 
 $productionUsesV2 = $production.Contains('WallpaperLibraryWindowV2.cpp')
 $productionUsesLegacy = $production.Contains('WallpaperLibraryWindow.cpp')
-
-if ($productionUsesV2) {
-    # Hard gate: V2 may not become the shipping window while it still bypasses
-    # domain boundaries or omits the old AI/advanced-workbench surface.
-    foreach ($forbidden in @(
-        '#include "turingdesk/DesktopWidgetStore.h"',
-        'DesktopWidgetStore store')) {
-        if ($candidate.Contains($forbidden)) {
-            throw "M4 candidate cannot become production while it bypasses Widget domain ownership: $forbidden"
-        }
-    }
-
-    if (-not ($candidate.Contains('DesktopWidgetController') -or $candidate.Contains('DesktopControlService'))) {
-        throw 'M4 candidate cannot become production until Widget actions route through a controller/service.'
-    }
-
-    foreach ($marker in @(
-        'WallpaperSettingsSection::AI',
-        'WallpaperSettingsSection::Playlists',
-        'WallpaperSettingsSection::Displays',
-        'WallpaperSettingsSection::Rules',
-        'WallpaperSettingsSection::Performance')) {
-        if (-not $candidate.Contains($marker)) {
-            throw "M4 production candidate missing delegated product section: $marker"
-        }
-    }
-
-    if ($productionUsesLegacy) {
-        throw 'Production bridge must select exactly one WallpaperLibraryWindow implementation.'
-    }
-} elseif (-not $productionUsesLegacy) {
+if ($productionUsesV2 -and $productionUsesLegacy) {
+    throw 'Production bridge must select exactly one WallpaperLibraryWindow implementation.'
+}
+if (-not $productionUsesV2 -and -not $productionUsesLegacy) {
     throw 'Production bridge must compile either the guarded legacy UI or the parity-complete V2 UI.'
 }
 
@@ -116,17 +124,21 @@ if (-not $cmake.Contains('WallpaperLibraryWindowV2Candidate.cpp')) {
     throw 'M4 V2 candidate must compile in normal Windows builds so parity work cannot silently rot.'
 }
 
-# Candidate debt is reported but does not block development while V2 is not the
-# production implementation. The production-switch checks above turn the same
-# debt into a hard error when somebody attempts to ship V2 prematurely.
-$debt = @()
-if ($candidate.Contains('DesktopWidgetStore store') -or $candidate.Contains('#include "turingdesk/DesktopWidgetStore.h"')) {
-    $debt += 'Widget CRUD still bypasses DesktopWidgetController/DesktopControlService in source text'
+if ($productionUsesV2) {
+    # Shipping V2 additionally requires the candidate's existing delegated
+    # product sections and controller boundaries to remain present. The current
+    # legacy production bridge stays active until a deliberate switch commit.
+    foreach ($marker in @(
+        'DesktopWidgetController',
+        'WallpaperSettingsSection::AI',
+        'WallpaperSettingsSection::Playlists',
+        'WallpaperSettingsSection::Displays',
+        'WallpaperSettingsSection::Rules',
+        'WallpaperSettingsSection::Performance')) {
+        if (-not $candidate.Contains($marker)) {
+            throw "M4 production candidate missing required parity marker: $marker"
+        }
+    }
 }
-if (-not $candidate.Contains('kNavAiId')) { $debt += 'AI navigation missing' }
 
-if ($debt.Count -gt 0) {
-    Write-Host ('M4 candidate debt: ' + ($debt -join '; '))
-}
-
-Write-Host 'Desktop UI parity contract OK: production capabilities are preserved and V2 cannot ship before domain/parity gates pass.'
+Write-Host 'Desktop UI parity contract OK: legacy production capabilities are preserved; V2 is vertical-shell, controller-routed, continuously compiled, and cannot regress to private store/shell ownership.'

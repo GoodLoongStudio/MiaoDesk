@@ -15,12 +15,12 @@ foreach ($path in @($probe, $main, $header, $runner, $cmake, $doc)) {
 }
 
 $headerText = Get-Content -LiteralPath $header -Raw
-foreach ($marker in @('Passed = 0', 'InteractiveDesktopUnavailable = 60', 'NoEnabledWebWidget = 61', 'RuntimeHealthUnavailable = 62', 'SurfaceUnhealthy = 63', 'ReportWriteFailed = 64')) {
+foreach ($marker in @('Passed = 0', 'InteractiveDesktopUnavailable = 60', 'NoEnabledWebWidget = 61', 'RuntimeHealthUnavailable = 62', 'SurfaceUnhealthy = 63', 'ReportWriteFailed = 64', 'BaselineMissing = 65', 'BaselineMismatch = 66')) {
     if (-not $headerText.Contains($marker)) { throw "Widget acceptance exit-code contract missing marker: $marker" }
 }
 
 $probeText = Get-Content -LiteralPath $probe -Raw
-foreach ($marker in @('WidgetService', 'GetRuntimeHealth', 'InteractiveDesktopAvailable', 'OpenInputDesktop', 'renderingHealthy', 'widget-acceptance-')) {
+foreach ($marker in @('WidgetService', 'GetRuntimeHealth', 'InteractiveDesktopAvailable', 'OpenInputDesktop', 'renderingHealthy', 'widget-acceptance-', 'widget-acceptance-baseline.ids', 'CheckPhaseContinuity', 'baselineStatus', 'SurfaceIds')) {
     if (-not $probeText.Contains($marker)) { throw "Widget acceptance probe missing marker: $marker" }
 }
 foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'EnumWindows(', 'SetParent(', 'SetWindowPos(', 'GetPrivateProfileStringW')) {
@@ -33,7 +33,7 @@ if (-not $mainText.Contains('RunWidgetRuntimeAcceptanceProbe') -or -not $mainTex
 }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
-foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')", "60 { 'interactive Windows desktop unavailable' }", "63 { 'one or more Widget surfaces are unhealthy' }")) {
+foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')", "60 { 'interactive Windows desktop unavailable' }", "63 { 'one or more Widget surfaces are unhealthy' }", "65 { 'baseline identity set missing; run the baseline phase first' }", "66 { 'enabled Widget identity set changed since baseline' }")) {
     if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/exit mapping: $marker" }
 }
 
@@ -43,8 +43,8 @@ foreach ($marker in @('TuringDeskWidgetAcceptance', 'WidgetRuntimeAcceptance.cpp
 }
 
 $docText = Get-Content -LiteralPath $doc -Raw
-foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 'search', 'explorer', 'monitor', 'non-interactive CI')) {
+foreach ($marker in @('TuringDeskWidgetAcceptance.exe', 'baseline', 'settings', 'search', 'explorer', 'monitor', 'non-interactive CI', 'identity set', 'baselineStatus')) {
     if (-not $docText.Contains($marker)) { throw "M3 acceptance documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, and preserves stable phase/exit semantics without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity across phases, and does not regain HWND/shell ownership.'

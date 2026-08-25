@@ -84,11 +84,26 @@ foreach ($marker in @('DesktopShellHost shellHost', 'shellHost.EnsureCurrent', '
 foreach ($forbidden in @('MaintainDesktopSurfaceZOrder', 'DesktopAnchorAboveHost', 'IsWebSurface(', 'GetWindow(parent, GW_CHILD)')) {
     if ($text.Coordinator.Contains($forbidden)) { throw "Web runtime coordinator regained sibling/z-order ownership: $forbidden" }
 }
-foreach ($marker in @('TuringDeskCoordinatorSetWindowPos', 'ParentClientRectToDesktop', 'DesktopShellHost shell', 'shell.EnsureSurface(', 'DesktopSurfaceRole::Wallpaper', '#define SetWindowPos TuringDeskCoordinatorSetWindowPos', '#include "WallpaperWebRuntimeCoordinator.cpp"')) {
+foreach ($marker in @(
+    'TuringDeskCoordinatorSetWindowPos',
+    'ParentClientRectToDesktop',
+    'RequestedVisibility',
+    'SWP_SHOWWINDOW',
+    'SWP_HIDEWINDOW',
+    'IsWindowVisible(window)',
+    'DesktopShellHost shell',
+    'shell.EnsureSurface(',
+    'DesktopSurfaceRole::Wallpaper',
+    'SetLastError(ERROR_INVALID_WINDOW_HANDLE)',
+    '#define SetWindowPos TuringDeskCoordinatorSetWindowPos',
+    '#include "WallpaperWebRuntimeCoordinator.cpp"')) {
     if (-not $text.ProductionCoordinator.Contains($marker)) { throw "Production Web coordinator shell bridge missing marker: $marker" }
 }
 if ($text.ProductionCoordinator.Contains('shell.AttachSurface(')) {
     throw 'Production Web coordinator must finish through EnsureSurface, not AttachSurface.'
+}
+if ($text.ProductionCoordinator.Contains('const bool visible = (flags & SWP_HIDEWINDOW) == 0')) {
+    throw 'Production Web coordinator must preserve existing visibility when no show/hide flag is requested.'
 }
 
 foreach ($marker in @(

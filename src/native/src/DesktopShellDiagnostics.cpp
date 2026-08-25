@@ -28,15 +28,12 @@ bool LegacyRoleOrderValid(HWND surface, DesktopSurfaceRole role) noexcept {
     if (!parent || !IsWindow(parent)) return false;
 
     if (role == DesktopSurfaceRole::Wallpaper) {
-        // Wallpaper may have Widgets above it, but should not have another unknown
-        // shell child below it after DesktopShellHost repairs the WorkerW surface.
         for (HWND cursor = GetWindow(surface, GW_HWNDNEXT); cursor; cursor = GetWindow(cursor, GW_HWNDNEXT)) {
             if (!IsKnownWallpaperSurface(cursor)) return false;
         }
         return true;
     }
 
-    // A Widget must not have a known wallpaper surface above it.
     for (HWND cursor = GetWindow(parent, GW_CHILD); cursor && cursor != surface; cursor = GetWindow(cursor, GW_HWNDNEXT)) {
         if (IsKnownWallpaperSurface(cursor)) return false;
     }
@@ -73,9 +70,7 @@ DesktopAttachmentDiagnostics InspectDesktopAttachment(
     diagnostics.shellMode = DesktopShellHost::ModeKey(snapshot.mode);
     diagnostics.shellGeneration = snapshot.generation;
 
-    SetLastError(ERROR_SUCCESS);
     const auto health = shell.InspectSurface(surface, role);
-    diagnostics.lastError = GetLastError();
     diagnostics.parentValid = health.parent;
     diagnostics.layeredApplied = health.layered;
     diagnostics.visible = health.visible;
@@ -83,6 +78,14 @@ DesktopAttachmentDiagnostics InspectDesktopAttachment(
     diagnostics.actualParent = health.actualParent;
     diagnostics.zOrderValid = ZOrderValid(snapshot, surface, role);
     diagnostics.detail = health.detail;
+
+    if (!surface || !IsWindow(surface)) diagnostics.lastError = ERROR_INVALID_WINDOW_HANDLE;
+    else if (!snapshot.Valid()) diagnostics.lastError = ERROR_INVALID_STATE;
+    else if (!diagnostics.parentValid) diagnostics.lastError = ERROR_INVALID_PARENT;
+    else if (diagnostics.layeredRequired && !diagnostics.layeredApplied) diagnostics.lastError = ERROR_INVALID_DATA;
+    else if (!diagnostics.geometryValid) diagnostics.lastError = ERROR_INVALID_DATA;
+    else if (!diagnostics.zOrderValid) diagnostics.lastError = ERROR_INVALID_STATE;
+    else diagnostics.lastError = ERROR_SUCCESS;
 
     if (diagnostics.detail.empty() && !diagnostics.zOrderValid)
         diagnostics.detail = L"desktop surface z-order is outside the DesktopShellHost contract";

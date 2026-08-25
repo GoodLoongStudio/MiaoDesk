@@ -24,6 +24,37 @@ bool DesktopShellHost::CurrentGenerationValid() const noexcept {
     return snapshot_.mode == DesktopShellMode::ProgmanFallback;
 }
 
+bool DesktopShellHost::EnsureSurface(HWND surface,
+                                     DesktopSurfaceRole role,
+                                     const RECT& desktopBounds,
+                                     bool visible,
+                                     std::wstring* error) {
+    if (!surface || !IsWindow(surface)) {
+        if (error) *error = L"DesktopShellHost: cannot ensure a stale surface HWND";
+        return false;
+    }
+    if (desktopBounds.right <= desktopBounds.left || desktopBounds.bottom <= desktopBounds.top) {
+        if (error) *error = L"DesktopShellHost: cannot ensure a surface with invalid desktop geometry";
+        return false;
+    }
+
+    // AttachSurface is deliberately idempotent and is the sole operation that
+    // chooses the shell parent, maps screen geometry to parent client space,
+    // applies child/layered styles and restores the desktop surface stack.
+    if (!AttachSurface(surface, role, desktopBounds, visible, error)) return false;
+
+    const auto health = InspectSurface(surface, role);
+    if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
+        if (error) {
+            *error = health.detail.empty()
+                ? L"DesktopShellHost: ensured surface failed attachment health validation"
+                : health.detail;
+        }
+        return false;
+    }
+    return RepairSurfaceStack(surface, error);
+}
+
 bool DesktopShellHost::RepairSurfaceStack(HWND expectedSurface, std::wstring* error) {
     if (!EnsureCurrent(error)) return false;
 
@@ -69,8 +100,7 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
         return RepairSurfaceStack(surface, error);
     }
 
-    if (!AttachSurface(surface, role, desktopBounds, wasVisible, error)) return false;
-    return RepairSurfaceStack(surface, error);
+    return EnsureSurface(surface, role, desktopBounds, wasVisible, error);
 }
 
 } // namespace turingdesk::wallpaper

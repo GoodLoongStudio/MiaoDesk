@@ -160,14 +160,18 @@ $diagnostics = Get-DiagnosticsDirectory
 $explorerCheckpoint = Join-Path $diagnostics 'widget-acceptance-search.explorer-pids'
 $monitorCheckpoint = Join-Path $diagnostics 'widget-acceptance-explorer.monitor-topology'
 $monitorEvidence = Join-Path $diagnostics 'widget-acceptance-monitor.topology-transition'
+$sealedManifest = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
+$sealedManifestHash = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
 
 if ($Phase -eq 'baseline') {
-    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence)) {
+    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence, $sealedManifest, $sealedManifestHash)) {
         if (Test-Path -LiteralPath $checkpoint -PathType Leaf) {
             Remove-Item -LiteralPath $checkpoint -Force
         }
     }
     Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.png*' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.txt' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 

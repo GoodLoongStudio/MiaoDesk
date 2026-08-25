@@ -33,14 +33,14 @@ $productionEngine = Get-Content -LiteralPath $productionEnginePath -Raw
 $coordinator = Get-Content -LiteralPath $coordinatorPath -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
 
-foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureCurrent', 'InspectSurface', 'DesktopShellSnapshot', 'RecoverSurface', 'CurrentGenerationValid')) {
+foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureSurface', 'EnsureCurrent', 'InspectSurface', 'DesktopShellSnapshot', 'RecoverSurface', 'CurrentGenerationValid')) {
     if (-not $shellHeader.Contains($marker)) { throw "DesktopShellHost header missing contract marker: $marker" }
 }
 foreach ($marker in @('0x052C', 'FindWindowW(kProgmanClass', 'FindWindowExW', 'RequestWallpaperLayer', 'RepairRaisedDesktopWorkerOrder', 'RepairKnownTuringDeskSurfaces')) {
     if (-not $shellSource.Contains($marker)) { throw "DesktopShellHost no longer owns required shell behavior: $marker" }
 }
-foreach ($marker in @('DesktopShellHost::RepairSurfaceStack', 'DesktopShellHost::RecoverSurface', 'DesktopShellHost::CurrentGenerationValid', 'FindWindowW(L"Progman"', 'AttachSurface(surface')) {
-    if (-not $surfaceStack.Contains($marker)) { throw "Desktop shell recovery contract missing marker: $marker" }
+foreach ($marker in @('DesktopShellHost::EnsureSurface', 'DesktopShellHost::RepairSurfaceStack', 'DesktopShellHost::RecoverSurface', 'DesktopShellHost::CurrentGenerationValid', 'FindWindowW(L"Progman"', 'AttachSurface(surface')) {
+    if (-not $surfaceStack.Contains($marker)) { throw "Desktop shell recovery/ensure contract missing marker: $marker" }
 }
 foreach ($marker in @('shellMode', 'parentValid', 'layeredRequired', 'layeredApplied', 'zOrderValid', 'visible', 'lastError')) {
     if (-not $diagnosticsHeader.Contains($marker)) { throw "Desktop attachment diagnostics missing marker: $marker" }
@@ -107,8 +107,8 @@ foreach ($forbidden in @('MaintainDesktopSurfaceZOrder', 'DesktopAnchorAboveHost
 
 # WallpaperEngine.cpp still contains legacy source text while M2 removes it in
 # stages. The production bridge must intercept every shell API used by that code,
-# so no production execution can independently discover Progman/WorkerW, send
-# 0x052C, re-parent the host, or impose desktop z-order outside DesktopShellHost.
+# and the wallpaper host must finish parent + geometry + visibility + z-order via
+# DesktopShellHost::EnsureSurface rather than partially owning SetWindowPos.
 foreach ($marker in @(
     'DesktopShellHost& ProductionShellHost()',
     'TuringDeskFindWindowW',
@@ -116,8 +116,8 @@ foreach ($marker in @(
     'TuringDeskSendMessageTimeoutW',
     'TuringDeskSetParent',
     'TuringDeskSetWindowPos',
-    'shell.AttachSurface(child',
-    'ProductionShellHost().RepairSurfaceStack',
+    'shell.EnsureSurface(child',
+    'shell.EnsureSurface(window',
     '#define FindWindowW TuringDeskFindWindowW',
     '#define FindWindowExW TuringDeskFindWindowExW',
     '#define SendMessageTimeoutW TuringDeskSendMessageTimeoutW',
@@ -125,6 +125,13 @@ foreach ($marker in @(
     '#define SetWindowPos TuringDeskSetWindowPos')) {
     if (-not $productionEngine.Contains($marker)) {
         throw "Production WallpaperEngine shell interception missing marker: $marker"
+    }
+}
+foreach ($forbidden in @(
+    '::SetWindowPos(window, nullptr',
+    'shell.AttachSurface(child')) {
+    if ($productionEngine.Contains($forbidden)) {
+        throw "Production WallpaperEngine regained partial attachment ownership: $forbidden"
     }
 }
 
@@ -137,4 +144,4 @@ foreach ($marker in @('DesktopLayer DiscoverDesktopLayer()', 'SpawnWallpaperLaye
     }
 }
 
-Write-Host 'Desktop shell ownership contract OK (coordinator centralized; production engine shell APIs intercepted; legacy engine source cleanup remains).'
+Write-Host 'Desktop shell ownership contract OK (unified EnsureSurface ownership; legacy engine source cleanup remains).'

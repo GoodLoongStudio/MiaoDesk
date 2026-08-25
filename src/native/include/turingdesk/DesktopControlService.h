@@ -26,6 +26,14 @@ struct DesktopState {
     std::size_t widgetCount{};
 };
 
+// Atomic caller-facing desktop snapshot. UI, Pi and the future editor should
+// read wallpaper + widget state through this contract instead of composing
+// independent store reads that can disagree about the current desktop.
+struct DesktopSnapshot {
+    DesktopState desktop;
+    std::vector<wallpaper::DesktopWidget> widgets;
+};
+
 // Facade shared by UI, Pi native tools and future editor clients. Domain
 // ownership remains in WallpaperService / WidgetService; this class coordinates
 // cross-domain intent and runtime activation only.
@@ -34,6 +42,7 @@ public:
     DesktopControlService() = default;
 
     DesktopControlResult GetState(DesktopState* state) const;
+    DesktopControlResult GetSnapshot(DesktopSnapshot* snapshot) const;
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
 
     DesktopControlResult CreateWebWidget(

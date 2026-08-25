@@ -81,9 +81,11 @@ UI -> DesktopWidgetStore
 UI -> WallpaperAutomationStore
 UI -> WorkerW / Progman
 UI -> WebView2 runtime process
+UI -> runtime HWND enumeration
 Pi adapter -> wallpaper.ini
 Pi adapter -> DesktopWidgetStore
 Pi adapter -> ShellExecute wallpaper runtime
+Pi adapter -> runtime HWND enumeration
 Renderer -> AI runtime
 Wallpaper -> Pi runtime
 ```
@@ -134,9 +136,12 @@ Owns:
 - normalized geometry
 - Widget runtime lifecycle
 - Widget surface management
-- caller-facing Widget runtime health through `WidgetRuntimeHealth`
+- caller-facing aggregate health through `WidgetRuntimeHealth`
+- caller-facing per-Web-Widget OS/runtime surface health through `WidgetSurfaceHealth`
 
-`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read the private INI diagnostics directly; `WidgetService::GetRuntimeHealth` is the current M3 compatibility boundary and will evolve into per-surface WebView2/shell health behind the same domain contract.
+`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read private INI diagnostics or enumerate runtime HWNDs directly.
+
+M3 currently structures each enabled Web Widget as configured/process/HWND/parent/child-style/visibility state behind `WidgetService::GetRuntimeHealth`. WebView2 Environment/Controller/Navigation and authoritative z-order fields already exist in the contract with explicit `*Reported` flags; they remain unreported until the child/runtime producer publishes those stages. Callers must not infer these stages from HWND existence. The active contract is documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
 
 ### 3.4 Automation
 
@@ -184,7 +189,7 @@ Owns:
 - native tool registration
 - conversational orchestration
 
-`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence. `wallpaper_state_get` reads `DesktopSnapshot`, including `WidgetRuntimeHealth`, instead of composing a separate AI-only runtime view.
+`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence. `wallpaper_state_get` reads `DesktopSnapshot`, including `WidgetRuntimeHealth`, instead of composing a separate AI-only runtime view. Pi must not enumerate Widget processes/HWNDs itself; per-surface state is supplied by the Widget domain through the snapshot contract.
 
 ### 3.7 UI
 
@@ -220,6 +225,7 @@ GetState / GetSnapshot
   -> DesktopState
   -> Widget list
   -> WidgetRuntimeHealth
+     -> WidgetSurfaceHealth[]
 ApplyWebPackage
 ApplyLibraryItem
 AssignLibraryItemToMonitor
@@ -271,7 +277,7 @@ DesktopControlService
 WidgetService
 ```
 
-It must never instantiate `DesktopWidgetStore`.
+It must never instantiate `DesktopWidgetStore` or inspect runtime HWNDs.
 
 The current production `WallpaperLibraryWindow.cpp` is a large legacy source file under `ui/wallpaper/`. Production does not compile it directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
 
@@ -343,16 +349,18 @@ Completed or substantially landed:
 - Performance UI compatibility routes through `PerformanceUiAdapter/PerformanceService`;
 - Widget UI and Pi adapters route through Desktop Control rather than Widget persistence;
 - M2 production shell ownership is physically centralized in `DesktopShellHost`; exact-head `1ed59a6a9c270408024e7143302a45592d2156a1` passed x64 and ARM64 Windows validation;
-- M3 now exposes a domain-owned `WidgetRuntimeHealth` inside `DesktopSnapshot`, and Pi reads the same snapshot contract.
+- M3 exposes `WidgetRuntimeHealth` inside `DesktopSnapshot` and Pi reads the same snapshot contract;
+- M3 now carries per-enabled-Web-Widget process/PID, HWND, parent, child-style and visibility state as `WidgetSurfaceHealth`, while WebView2 lifecycle/z-order remain explicitly unreported rather than guessed.
 
 Remaining order:
 
 1. Preserve M2 real-Windows wallpaper/Widget/icon layering and Explorer-recovery acceptance as an outstanding gate.
-2. Finish M3: replace compatibility runtime-detail inference with per-surface process/HWND/WebView2 Environment/Controller/Navigation/shell/z-order/visible/rendering health, then complete real Widget visibility/recovery acceptance.
-3. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
-4. Replace transitional legacy UI bridges after V2 parity.
-5. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
-6. Split public/private headers and CMake library targets only when that change improves enforceable dependency boundaries; do not churn include paths merely for cosmetics.
+2. Finish M3 child/runtime telemetry for EnvironmentReady / ControllerReady / NavigationReady and authoritative z-order, then make rendering health depend on those reported states.
+3. Surface actionable per-surface runtime failures in production Widget UI and complete real Widget visibility/recovery acceptance.
+4. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
+5. Replace transitional legacy UI bridges after V2 parity.
+6. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
+7. Split public/private headers and CMake library targets only when that change improves enforceable dependency boundaries; do not churn include paths merely for cosmetics.
 
 ## 8. Completion tests
 
@@ -363,7 +371,7 @@ Required tests over time:
 ```text
 Pi creates Widget -> UI lists same Widget
 UI moves Widget -> Pi reads updated geometry
-UI/Pi read the same WidgetRuntimeHealth from DesktopSnapshot
+UI/Pi read the same WidgetRuntimeHealth + WidgetSurfaceHealth from DesktopSnapshot
 UI applies wallpaper -> Pi reads same current state
 Pi applies wallpaper -> UI shows same current state
 Automation UI edits playlist -> runtime evaluates the same persisted playlist

@@ -13,6 +13,11 @@ bool RectMatchesWithinTolerance(const RECT& actual, const RECT& expected, LONG t
            std::abs(actual.bottom - expected.bottom) <= tolerance;
 }
 
+bool WindowStillParented(HWND window, HWND expectedParent) noexcept {
+    return window && expectedParent && IsWindow(window) && IsWindow(expectedParent) &&
+           GetParent(window) == expectedParent;
+}
+
 } // namespace
 
 bool DesktopShellHost::CurrentGenerationValid() const noexcept {
@@ -27,14 +32,24 @@ bool DesktopShellHost::CurrentGenerationValid() const noexcept {
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) return false;
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop) {
-        return snapshot_.shellDefView && IsWindow(snapshot_.shellDefView) &&
-               snapshot_.workerW && IsWindow(snapshot_.workerW) &&
-               GetParent(snapshot_.shellDefView) == snapshot_.progman &&
-               GetParent(snapshot_.workerW) == snapshot_.progman;
+        return WindowStillParented(snapshot_.shellDefView, snapshot_.progman) &&
+               WindowStillParented(snapshot_.workerW, snapshot_.progman);
     }
-    if (snapshot_.mode == DesktopShellMode::LegacyWorkerW)
-        return snapshot_.workerW && IsWindow(snapshot_.workerW);
-    return snapshot_.mode == DesktopShellMode::ProgmanFallback;
+    if (snapshot_.mode == DesktopShellMode::LegacyWorkerW) {
+        if (!snapshot_.workerW || !IsWindow(snapshot_.workerW)) return false;
+        if (snapshot_.shellDefView && snapshot_.legacyDefViewParent) {
+            return WindowStillParented(snapshot_.shellDefView, snapshot_.legacyDefViewParent);
+        }
+        return true;
+    }
+    if (snapshot_.mode == DesktopShellMode::ProgmanFallback) {
+        if (snapshot_.shellDefView && GetParent(snapshot_.shellDefView) != snapshot_.progman &&
+            snapshot_.legacyDefViewParent != GetParent(snapshot_.shellDefView)) {
+            return false;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool DesktopShellHost::EnsureSurface(HWND surface,
@@ -118,13 +133,17 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
         return false;
     }
     const bool wasVisible = IsWindowVisible(surface) != FALSE;
+    const bool sameGeneration = CurrentGenerationValid();
 
     if (!EnsureCurrent(error)) return false;
     const auto health = InspectSurface(surface, role);
-    if (health.parent && health.childStyle && health.layered && health.geometry) {
+    if (sameGeneration && health.parent && health.childStyle && health.layered && health.geometry) {
         return RepairSurfaceStack(surface, error);
     }
 
+    // A refreshed Explorer generation always goes through EnsureSurface even if
+    // a recycled HWND happens to resemble the old parent. This keeps stale
+    // Explorer ownership from surviving a restart by accident.
     return EnsureSurface(surface, role, desktopBounds, wasVisible, error);
 }
 

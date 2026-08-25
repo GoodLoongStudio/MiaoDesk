@@ -183,6 +183,12 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
     const std::wstring safePhase = SafePhase(phase);
     const auto currentIds = SurfaceIds(health);
     if (safePhase == L"baseline") {
+        std::error_code ec;
+        fs::remove(SequencePath(), ec);
+        if (ec) {
+            if (failure) *failure = L"无法重置旧的 M3 acceptance sequence cursor：" + SequencePath().wstring();
+            return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
+        }
         if (!WriteBaselineIds(currentIds)) {
             if (failure) *failure = L"无法写入 Widget acceptance baseline identity set：" + BaselinePath().wstring();
             return WidgetRuntimeAcceptanceCode::ReportWriteFailed;

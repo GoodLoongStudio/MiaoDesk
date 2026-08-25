@@ -134,8 +134,8 @@ foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore De
     if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow bridge missing marker: $marker" }
 }
 
-foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service', 'service.GetSnapshot', 'widgetRuntime')) {
-    if (-not $text.PiAdapter.Contains($marker)) { throw "Pi desktop tool adapter missing Desktop Control snapshot marker: $marker" }
+foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service', 'service.GetSnapshot', 'widgetRuntime', 'AppendSurfaceHealth', 'FindSurfaceHealth', 'issueCode', 'recommendedAction')) {
+    if (-not $text.PiAdapter.Contains($marker)) { throw "Pi desktop tool adapter missing Desktop Control actionable snapshot marker: $marker" }
 }
 foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
     if ($text.PiAdapter.Contains($forbidden)) { throw "Pi desktop tool adapter regained domain/runtime ownership: $forbidden" }

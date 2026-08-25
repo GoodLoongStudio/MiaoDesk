@@ -38,10 +38,10 @@ struct WidgetUpdateRequest {
     std::optional<bool> enabled;
 };
 
-// One configured Web Widget matched to its isolated child surface. M3 grows
-// this contract in-place: process/HWND/shell visibility are reported now;
-// WebView2 lifecycle and authoritative z-order become reported when the child
-// runtime publishes those stages instead of callers inferring them.
+// One configured Web Widget matched to its isolated child surface. Runtime
+// inspection remains owned by the Widget domain. UI/Pi receive both machine-
+// readable issueCode and human-readable recommendedAction so callers never
+// need to infer remediation from HWND/WebView2 implementation details.
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
     std::uint32_t processId{};
@@ -61,6 +61,8 @@ struct WidgetSurfaceHealth {
     bool zOrderValid{};
     bool zOrderReported{};
     bool renderingHealthy{};
+    std::wstring issueCode;
+    std::wstring recommendedAction;
     std::wstring detail;
 
     bool SurfaceReady() const noexcept {

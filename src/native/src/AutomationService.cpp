@@ -108,6 +108,20 @@ AutomationServiceResult AutomationService::RemoveSchedule(std::wstring_view id) 
     return {true, L"定时规则已删除。"};
 }
 
+AutomationServiceResult AutomationService::Evaluate(
+    const SYSTEMTIME& localTime,
+    unsigned long long unixSeconds,
+    wallpaper::AutomationDecision* decision) const {
+    if (!decision) return {false, L"AutomationDecision 输出不能为空。"};
+    wallpaper::WallpaperAutomationStore store;
+    const auto loaded = LoadStore(&store);
+    if (!loaded.success) return loaded;
+    *decision = store.Evaluate(localTime, unixSeconds);
+    return {true, decision->kind == wallpaper::AutomationDecisionKind::None
+        ? L"当前没有匹配的自动化动作。"
+        : L"已生成桌面自动化动作。"};
+}
+
 AutomationServiceResult AutomationService::ForceNextPlaylist(
     std::wstring_view playlistId,
     unsigned long long unixSeconds,

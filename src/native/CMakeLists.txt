@@ -118,13 +118,23 @@ set(TURINGDESK_HARNESS_SOURCES
     src/harness/HarnessBundledRuntimeBootstrap.cpp
 )
 
+set(TURINGDESK_WIDGET_ACCEPTANCE_SOURCES
+    src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp
+    src/desktop/widgets/WidgetRuntimeAcceptance.cpp
+    src/desktop/widgets/WidgetService.cpp
+    src/desktop/widgets/DesktopWidgetStore.cpp
+    src/desktop/shell/DesktopSurfaceTelemetry.cpp
+)
+
 add_executable(TuringDesk WIN32 ${TURINGDESK_APP_SOURCES})
 add_executable(TuringDeskWallpaper WIN32 ${TURINGDESK_WALLPAPER_SOURCES})
 add_executable(TuringDeskHarness WIN32 ${TURINGDESK_HARNESS_SOURCES})
+add_executable(TuringDeskWidgetAcceptance ${TURINGDESK_WIDGET_ACCEPTANCE_SOURCES})
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_APP_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WALLPAPER_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_HARNESS_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WIDGET_ACCEPTANCE_SOURCES})
 
 set_source_files_properties(src/ai/tools/NativeTools.cpp PROPERTIES
     COMPILE_DEFINITIONS "TURINGDESK_NATIVE_TOOLS_IMPL"
@@ -197,34 +207,26 @@ add_custom_target(TuringDeskSourceLayoutCheck ALL
 add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
 add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
+add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
 
-target_include_directories(TuringDesk PRIVATE include)
-target_compile_features(TuringDesk PRIVATE cxx_std_23)
-target_compile_definitions(TuringDesk PRIVATE
-    UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
-    WINVER=0x0A00 _WIN32_WINNT=0x0A00
-)
+foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidgetAcceptance)
+    target_include_directories(${target} PRIVATE include)
+    target_compile_features(${target} PRIVATE cxx_std_23)
+    target_compile_definitions(${target} PRIVATE
+        UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00
+    )
+endforeach()
 
-target_include_directories(TuringDeskWallpaper PRIVATE include)
 target_include_directories(TuringDeskWallpaper SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
-target_compile_features(TuringDeskWallpaper PRIVATE cxx_std_23)
-target_compile_definitions(TuringDeskWallpaper PRIVATE
-    UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
-    WINVER=0x0A00 _WIN32_WINNT=0x0A00
-)
-
-target_include_directories(TuringDeskHarness PRIVATE include)
 target_include_directories(TuringDeskHarness SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
-target_compile_features(TuringDeskHarness PRIVATE cxx_std_23)
-target_compile_definitions(TuringDeskHarness PRIVATE
-    UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
-    WINVER=0x0A00 _WIN32_WINNT=0x0A00
-)
 
 if (MSVC)
     target_compile_options(TuringDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(TuringDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(TuringDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(TuringDeskWidgetAcceptance PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(TuringDesk PRIVATE
@@ -272,4 +274,10 @@ target_link_libraries(TuringDeskHarness PRIVATE
     shlwapi
     version
     "${WEBVIEW2_LOADER_STATIC}"
+)
+
+target_link_libraries(TuringDeskWidgetAcceptance PRIVATE
+    user32
+    shell32
+    advapi32
 )

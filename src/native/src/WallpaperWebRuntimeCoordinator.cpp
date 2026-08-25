@@ -1,5 +1,6 @@
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
 
+#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/WallpaperIndependentLayout.h"
 #include "turingdesk/WallpaperMonitorAssignments.h"
@@ -28,7 +29,6 @@ namespace {
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWallpaperSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
 constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
-constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -226,15 +226,10 @@ void WriteWidgetDiagnostics(const std::wstring& value) {
     WritePrivateProfileStringW(L"Diagnostics", L"WidgetRuntime", value.c_str(), path.c_str());
 }
 
-HWND SurfaceParentForHost(HWND host) {
-    if (!host || !IsWindow(host)) return nullptr;
-    const HWND parent = GetParent(host);
-    return parent && IsWindow(parent) ? parent : nullptr;
-}
-
 RECT MapRegionToParent(HWND host, HWND parent, RECT region) {
     if (!host || !parent || host == parent) return region;
     POINT corners[2] = {{region.left, region.top}, {region.right, region.bottom}};
+    SetLastError(ERROR_SUCCESS);
     if (MapWindowPoints(host, parent, corners, 2) == 0 && GetLastError() != ERROR_SUCCESS) return region;
     return RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
 }
@@ -244,56 +239,6 @@ std::vector<WebWallpaperRequest> MapRequestsToParent(HWND host, HWND parent,
     std::vector<WebWallpaperRequest> mapped = requests;
     for (auto& request : mapped) request.region = MapRegionToParent(host, parent, request.region);
     return mapped;
-}
-
-bool IsWebSurface(HWND window, bool* widget = nullptr) {
-    if (!window || !IsWindow(window)) return false;
-    wchar_t className[128]{};
-    if (!GetClassNameW(window, className, static_cast<int>(std::size(className))) ||
-        _wcsicmp(className, kWebHostClass) != 0) return false;
-    wchar_t title[256]{};
-    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
-    const bool isWidget = wcsncmp(title, L"widget-", 7) == 0;
-    if (widget) *widget = isWidget;
-    return true;
-}
-
-HWND DesktopAnchorAboveHost(HWND host, HWND parent) {
-    if (!host || !parent || GetParent(host) != parent) return nullptr;
-    for (HWND current = GetWindow(host, GW_HWNDPREV); current; current = GetWindow(current, GW_HWNDPREV)) {
-        if (GetParent(current) != parent) continue;
-        if (!IsWebSurface(current)) return current;
-    }
-    return nullptr;
-}
-
-void MaintainDesktopSurfaceZOrder(HWND host, HWND parent) {
-    if (!host || !parent || !IsWindow(host) || !IsWindow(parent) || GetParent(host) != parent) return;
-    std::vector<HWND> widgetWindows;
-    std::vector<HWND> wallpaperWindows;
-    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-        bool widget = false;
-        if (!IsWebSurface(child, &widget)) continue;
-        (widget ? widgetWindows : wallpaperWindows).push_back(child);
-    }
-    if (widgetWindows.empty() && wallpaperWindows.empty()) return;
-
-    HWND insertAfter = DesktopAnchorAboveHost(host, parent);
-    if (!insertAfter) insertAfter = HWND_TOP;
-    for (HWND widget : widgetWindows) {
-        if (!IsWindow(widget)) continue;
-        SetWindowPos(widget, insertAfter, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
-        insertAfter = widget;
-    }
-    for (HWND wallpaper : wallpaperWindows) {
-        if (!IsWindow(wallpaper)) continue;
-        SetWindowPos(wallpaper, insertAfter, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
-        insertAfter = wallpaper;
-    }
-    SetWindowPos(host, insertAfter, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 void EnsureIndependentHostBounds(HWND host) {
@@ -348,6 +293,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         WebWallpaperProcessSet web;
         WebWallpaperProcessSet widgets;
         WallpaperPerformancePolicy performance;
+        DesktopShellHost shellHost;
         HWND host = nullptr;
         HWND surfaceParent = nullptr;
         std::vector<WebWallpaperRequest> activeRequests;
@@ -363,6 +309,16 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             nextRecovery = 0;
             healthySince = 0;
             recoveryAttempts = 0;
+        };
+
+        auto repairStack = [&] {
+            if (!host || !IsWindow(host)) return false;
+            std::wstring error;
+            if (!shellHost.RepairSurfaceStack(host, &error)) {
+                if (!error.empty()) WriteDiagnostics(L"DesktopShellHost stack repair failed: " + error);
+                return false;
+            }
+            return true;
         };
 
         auto startActiveRequests = [&](ULONGLONG now, bool recovery) {
@@ -383,7 +339,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 WriteDiagnostics(L"Web runtime 启动失败：" + web.LastErrorText());
                 return false;
             }
-            MaintainDesktopSurfaceZOrder(host, surfaceParent);
+            repairStack();
             nextRecovery = 0;
             healthySince = now;
             WriteDiagnostics(web.DiagnosticsText());
@@ -404,14 +360,28 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 WriteWidgetDiagnostics(L"Widget runtime 启动失败：" + widgets.LastErrorText());
                 return false;
             }
-            MaintainDesktopSurfaceZOrder(host, surfaceParent);
+            repairStack();
             WriteWidgetDiagnostics(widgets.DiagnosticsText());
             return true;
         };
 
         while (!stopToken.stop_requested()) {
             HWND currentHost = FindWindowW(kWallpaperHostClass, nullptr);
-            HWND currentSurfaceParent = SurfaceParentForHost(currentHost);
+            HWND currentSurfaceParent = nullptr;
+            if (currentHost && IsWindow(currentHost)) {
+                std::wstring shellError;
+                if (shellHost.EnsureCurrent(&shellError)) {
+                    auto health = shellHost.InspectSurface(currentHost, DesktopSurfaceRole::Wallpaper);
+                    if (!health.parent) {
+                        if (!shellHost.RecoverSurface(currentHost, DesktopSurfaceRole::Wallpaper, &shellError) && !shellError.empty())
+                            WriteDiagnostics(L"DesktopShellHost recovery failed: " + shellError);
+                    }
+                    currentSurfaceParent = shellHost.SurfaceParent();
+                } else if (!shellError.empty()) {
+                    WriteDiagnostics(L"DesktopShellHost unavailable: " + shellError);
+                }
+            }
+
             if (currentHost != host || currentSurfaceParent != surfaceParent) {
                 widgets.Stop();
                 web.Stop();
@@ -449,7 +419,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     activeWidgetFingerprint = std::move(widgetFingerprint);
                     startWidgets();
                 }
-                MaintainDesktopSurfaceZOrder(host, surfaceParent);
+                repairStack();
                 nextRefresh = now + kStateRefreshMs;
             }
 
@@ -495,7 +465,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     web.SetPaused(pause);
                     widgets.SetPaused(pause);
                 }
-                MaintainDesktopSurfaceZOrder(host, surfaceParent);
+                repairStack();
             }
 
             std::this_thread::sleep_for(kTickInterval);

@@ -44,26 +44,14 @@ struct WidgetUpdateRequest {
 // need to infer remediation from HWND/WebView2 implementation details.
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
-    std::wstring monitorId;
     std::uint32_t processId{};
     std::uintptr_t hwndValue{};
-    long expectedLeft{};
-    long expectedTop{};
-    long expectedRight{};
-    long expectedBottom{};
-    long actualLeft{};
-    long actualTop{};
-    long actualRight{};
-    long actualBottom{};
     bool configured{};
     bool processRunning{};
     bool hwndReady{};
     bool parentValid{};
     bool childStyleValid{};
     bool visible{};
-    bool monitorResolved{};
-    bool geometryReported{};
-    bool geometryValid{};
     bool environmentReady{};
     bool environmentReported{};
     bool controllerReady{};
@@ -78,7 +66,7 @@ struct WidgetSurfaceHealth {
     std::wstring detail;
 
     bool SurfaceReady() const noexcept {
-        return configured && processRunning && hwndReady && parentValid && childStyleValid && visible && geometryValid;
+        return configured && processRunning && hwndReady && parentValid && childStyleValid && visible;
     }
 };
 

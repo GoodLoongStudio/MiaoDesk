@@ -18,6 +18,15 @@ function Read-KeyValueFile([string]$Path) {
     $map
 }
 
+function Parse-UtcTimestamp([string]$Value, [string]$Description) {
+    if (-not $Value) { throw "M3 acceptance evidence is missing timestamp: $Description" }
+    $parsed = [DateTimeOffset]::MinValue
+    if (-not [DateTimeOffset]::TryParse($Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) {
+        throw "M3 acceptance evidence has invalid timestamp for ${Description}: '$Value'"
+    }
+    $parsed.ToUniversalTime()
+}
+
 $diagnostics = Get-DiagnosticsDirectory
 $manifestPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
 $sealPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
@@ -50,6 +59,7 @@ if ($manifest.sequence -ne 'monitor') {
 if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) {
     throw 'M3 acceptance evidence manifest contains no files.'
 }
+$sealedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.sealedAtUtc) -Description 'manifest.sealedAtUtc'
 
 $seen = @{}
 foreach ($entry in @($manifest.files)) {
@@ -69,9 +79,15 @@ foreach ($entry in @($manifest.files)) {
     if ($hash -ne ([string]$entry.sha256).ToLowerInvariant()) {
         throw "M3 acceptance evidence hash mismatch after sealing: $name"
     }
+    $entryWriteUtc = Parse-UtcTimestamp -Value ([string]$entry.lastWriteUtc) -Description "$name lastWriteUtc"
+    if ($entryWriteUtc -gt $sealedAtUtc.AddSeconds(1)) {
+        throw "M3 acceptance evidence file is timestamped after the manifest seal: $name"
+    }
 }
 
-foreach ($phase in @('baseline','settings','search','explorer','monitor')) {
+$phaseOrder = @('baseline','settings','search','explorer','monitor')
+$previousCaptureUtc = $null
+foreach ($phase in $phaseOrder) {
     foreach ($suffix in @('.txt','.png','.png.sha256')) {
         $name = "widget-acceptance-$phase$suffix"
         if (-not $seen.ContainsKey($name)) {
@@ -90,6 +106,25 @@ foreach ($phase in @('baseline','settings','search','explorer','monitor')) {
     if (-not $sidecar.ContainsKey('virtualBounds') -or -not $sidecar.ContainsKey('capturedAtUtc')) {
         throw "M3 visual evidence sidecar metadata is incomplete for $phase."
     }
+
+    $capturedAtUtc = Parse-UtcTimestamp -Value ([string]$sidecar['capturedAtUtc']) -Description "$phase capturedAtUtc"
+    if ($null -ne $previousCaptureUtc -and $capturedAtUtc -le $previousCaptureUtc) {
+        throw "M3 visual evidence chronology is invalid: $phase was not captured after the previous successful phase."
+    }
+    if ($capturedAtUtc -gt $sealedAtUtc) {
+        throw "M3 visual evidence chronology is invalid: $phase capture is after the manifest seal."
+    }
+
+    $reportPath = Join-Path $diagnostics "widget-acceptance-$phase.txt"
+    $reportWriteUtc = (Get-Item -LiteralPath $reportPath).LastWriteTimeUtc
+    $captureUtcDateTime = $capturedAtUtc.UtcDateTime
+    if ($reportWriteUtc -gt $captureUtcDateTime.AddSeconds(5)) {
+        throw "M3 phase evidence chronology is invalid: $phase report was written after its visual capture."
+    }
+    if ($captureUtcDateTime -gt $reportWriteUtc.AddMinutes(5)) {
+        throw "M3 phase evidence chronology is suspicious: $phase visual capture is more than five minutes after its health report."
+    }
+    $previousCaptureUtc = $capturedAtUtc
 }
 
 foreach ($required in @(
@@ -119,5 +154,5 @@ if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) {
     throw 'M3 baseline Widget identity set no longer matches the sealed manifest.'
 }
 
-Write-Host "Verified sealed M3 Widget acceptance evidence integrity: $manifestPath"
+Write-Host "Verified sealed M3 Widget acceptance evidence integrity and phase chronology: $manifestPath"
 Write-Host "Manifest SHA-256: $actualManifestHash"

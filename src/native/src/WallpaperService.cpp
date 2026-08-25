@@ -1,5 +1,6 @@
 #include "turingdesk/WallpaperService.h"
 
+#include "turingdesk/WallpaperMonitorAssignments.h"
 #include "turingdesk/WallpaperPackage.h"
 
 #include <windows.h>
@@ -47,6 +48,24 @@ WallpaperServiceResult PersistWallpaperSelection(
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
     return ok ? WallpaperServiceResult{true, L"壁纸选择已保存。"}
               : WallpaperServiceResult{false, L"无法保存当前壁纸状态。"};
+}
+
+WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
+    if (item.id.empty()) return {false, L"壁纸库项目缺少 id。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Unknown)
+        return {false, L"不支持的壁纸库项目类型。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Web &&
+        !wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
+        return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Image ||
+        item.kind == wallpaper::LibraryWallpaperKind::Video) {
+        std::error_code ec;
+        const auto source = fs::absolute(item.source, ec).lexically_normal();
+        if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec))
+            return {false, item.kind == wallpaper::LibraryWallpaperKind::Image
+                ? L"图片壁纸文件不存在。" : L"视频壁纸文件不存在。"};
+    }
+    return {true, L"壁纸库项目可用于显示器分配。"};
 }
 
 } // namespace
@@ -116,6 +135,34 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
         break;
     }
     return {false, L"不支持的壁纸库项目类型。"};
+}
+
+WallpaperServiceResult WallpaperService::AssignLibraryItemToMonitor(
+    const wallpaper::WallpaperLibraryItem& item,
+    std::wstring_view monitorId,
+    std::wstring_view friendlyName) const {
+    if (monitorId.empty()) return {false, L"显示器 id 不能为空。"};
+    const auto valid = ValidateAssignableItem(item);
+    if (!valid.success) return valid;
+
+    wallpaper::WallpaperMonitorAssignments assignments;
+    std::wstring error;
+    if (!assignments.Load(&error))
+        return {false, error.empty() ? L"无法读取显示器壁纸分配。" : error};
+    if (!assignments.AssignById(std::wstring(monitorId), item.id, std::wstring(friendlyName), &error))
+        return {false, error.empty() ? L"无法保存显示器壁纸分配。" : error};
+    return {true, L"已将壁纸分配到显示器：" + item.title};
+}
+
+WallpaperServiceResult WallpaperService::ClearMonitorAssignment(std::wstring_view monitorId) const {
+    if (monitorId.empty()) return {false, L"显示器 id 不能为空。"};
+    wallpaper::WallpaperMonitorAssignments assignments;
+    std::wstring error;
+    if (!assignments.Load(&error))
+        return {false, error.empty() ? L"无法读取显示器壁纸分配。" : error};
+    if (!assignments.Clear(monitorId, &error))
+        return {false, error.empty() ? L"无法清除显示器壁纸分配。" : error};
+    return {true, L"显示器壁纸分配已清除。"};
 }
 
 } // namespace turingdesk::desktop

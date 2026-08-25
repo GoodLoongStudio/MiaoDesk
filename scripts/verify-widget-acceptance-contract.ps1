@@ -56,6 +56,11 @@ foreach ($marker in @(
     'CopyFromScreen',
     'widget-acceptance-$AcceptancePhase.png',
     'widget-acceptance-*.png*',
+    'widget-acceptance-*.txt',
+    'widget-acceptance-evidence.manifest.json',
+    'widget-acceptance-evidence.manifest.sha256',
+    '$sealedManifest',
+    '$sealedManifestHash',
     'Get-FileHash',
     'sha256=',
     'virtualBounds=',
@@ -108,8 +113,8 @@ foreach ($marker in @('identity set', 'baselineStatus', 'sequenceStatus', 'seque
 }
 
 $evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
-foreach ($marker in @('seal-widget-acceptance-evidence.ps1', 'turingdesk.widget-acceptance-evidence.v1', 'widget-acceptance-evidence.manifest.json', 'widget-acceptance-evidence.manifest.sha256', 'real ARM64 Windows', 'Human review')) {
+foreach ($marker in @('seal-widget-acceptance-evidence.ps1', 'turingdesk.widget-acceptance-evidence.v1', 'widget-acceptance-evidence.manifest.json', 'widget-acceptance-evidence.manifest.sha256', 'real ARM64 Windows', 'Human review', 'chronology')) {
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence, fresh hashed virtual-desktop screenshots and a sealed coherent evidence manifest, and does not regain HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: real-Windows probe consumes WidgetService health, rejects non-interactive sessions, preserves Widget identity continuity, enforces ordered phase evidence, requires observed Explorer restart, durable display-topology transition evidence, fresh hashed virtual-desktop screenshots, resets stale reports/seals at a new baseline, and requires a sealed coherent evidence manifest without regaining HWND/shell ownership.'

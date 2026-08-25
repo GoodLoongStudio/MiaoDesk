@@ -1,11 +1,10 @@
 #include "turingdesk/WallpaperLibraryWindow.h"
-#include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/DesktopWidgetController.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
-#include <wincodec.h>
-#include <wrl/client.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <array>
@@ -16,11 +15,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
-using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
 namespace turingdesk::wallpaper {
@@ -60,6 +57,14 @@ constexpr UINT kMenuRemove = 6212;
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
+}
+
+int RectWidth(const RECT& rect) {
+    return std::max(1, static_cast<int>(rect.right - rect.left));
+}
+
+int RectHeight(const RECT& rect) {
+    return std::max(1, static_cast<int>(rect.bottom - rect.top));
 }
 
 std::wstring Trim(std::wstring value) {
@@ -123,51 +128,6 @@ WallpaperSettingsSection SectionForNav(int id) {
     }
 }
 
-HBITMAP LoadScaledBitmap(const fs::path& path, int width, int height) {
-    if (path.empty() || width <= 0 || height <= 0) return nullptr;
-    std::error_code ec;
-    if (!fs::exists(path, ec) || !fs::is_regular_file(path, ec)) return nullptr;
-
-    ComPtr<IWICImagingFactory> factory;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(factory.GetAddressOf()))) || !factory) return nullptr;
-    ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
-                                                  WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf())) || !decoder) return nullptr;
-    ComPtr<IWICBitmapFrameDecode> frame;
-    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())) || !frame) return nullptr;
-    ComPtr<IWICBitmapScaler> scaler;
-    if (FAILED(factory->CreateBitmapScaler(scaler.GetAddressOf())) || !scaler) return nullptr;
-    if (FAILED(scaler->Initialize(frame.Get(), static_cast<UINT>(width), static_cast<UINT>(height),
-                                  WICBitmapInterpolationModeFant))) return nullptr;
-    ComPtr<IWICFormatConverter> converter;
-    if (FAILED(factory->CreateFormatConverter(converter.GetAddressOf())) || !converter) return nullptr;
-    if (FAILED(converter->Initialize(scaler.Get(), GUID_WICPixelFormat32bppBGRA,
-                                     WICBitmapDitherTypeNone, nullptr, 0.0,
-                                     WICBitmapPaletteTypeCustom))) return nullptr;
-
-    BITMAPINFO info{};
-    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    info.bmiHeader.biWidth = width;
-    info.bmiHeader.biHeight = -height;
-    info.bmiHeader.biPlanes = 1;
-    info.bmiHeader.biBitCount = 32;
-    info.bmiHeader.biCompression = BI_RGB;
-    void* bits = nullptr;
-    HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!bitmap || !bits) {
-        if (bitmap) DeleteObject(bitmap);
-        return nullptr;
-    }
-    const UINT stride = static_cast<UINT>(width * 4);
-    const UINT bytes = stride * static_cast<UINT>(height);
-    if (FAILED(converter->CopyPixels(nullptr, stride, bytes, static_cast<BYTE*>(bits)))) {
-        DeleteObject(bitmap);
-        return nullptr;
-    }
-    return bitmap;
-}
-
 void FillSolid(HDC dc, const RECT& rect, COLORREF color) {
     HBRUSH brush = CreateSolidBrush(color);
     FillRect(dc, &rect, brush);
@@ -191,6 +151,7 @@ struct WallpaperLibraryWindow::Impl {
     HINSTANCE instance{};
     HWND window{};
     HWND title{};
+    HWND sectionTitle{};
     HWND search{};
     HWND addButton{};
     std::array<HWND, 7> nav{};
@@ -216,26 +177,28 @@ struct WallpaperLibraryWindow::Impl {
     std::vector<std::wstring> targetIds;
     std::vector<WallpaperLibraryItem> visibleWallpapers;
     std::vector<DesktopWidget> visibleWidgets;
+    desktop::WidgetRuntimeHealth widgetHealth;
+    desktop::DesktopWidgetController widgetController;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
     Page page{Page::Installed};
+    int activeNavId{kNavInstalledId};
     bool webBarVisible{};
     int wallpaperScroll{};
     int widgetScroll{};
     int wallpaperHover{-1};
     int widgetHover{-1};
 
+    HFONT brandFont{};
     HFONT titleFont{};
     HFONT bodyFont{};
     HFONT smallFont{};
     HFONT cardTitleFont{};
     HFONT cardSmallFont{};
-    std::unordered_map<std::wstring, HBITMAP> bitmapCache;
 
     ~Impl() {
         if (window && IsWindow(window)) DestroyWindow(window);
-        ClearBitmaps();
-        for (HFONT* font : {&titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
+        for (HFONT* font : {&brandFont, &titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
             if (*font) DeleteObject(*font);
         }
     }
@@ -254,32 +217,29 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void RebuildFonts() {
-        for (HFONT* font : {&titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
+        for (HFONT* font : {&brandFont, &titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
             if (*font) { DeleteObject(*font); *font = nullptr; }
         }
-        titleFont = MakeFont(16, FW_SEMIBOLD, L"Segoe UI Variable Display");
-        bodyFont = MakeFont(15, FW_NORMAL);
-        smallFont = MakeFont(13, FW_NORMAL);
-        cardTitleFont = MakeFont(15, FW_SEMIBOLD);
-        cardSmallFont = MakeFont(12, FW_NORMAL);
+        brandFont = MakeFont(18, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        titleFont = MakeFont(20, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        bodyFont = MakeFont(14, FW_NORMAL);
+        smallFont = MakeFont(12, FW_NORMAL);
+        cardTitleFont = MakeFont(14, FW_SEMIBOLD);
+        cardSmallFont = MakeFont(11, FW_NORMAL);
     }
 
     void ApplyFonts() const {
         auto set = [](HWND control, HFONT font) {
             if (control && font) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         };
-        set(title, titleFont);
+        set(title, brandFont);
+        set(sectionTitle, titleFont);
         set(search, bodyFont);
         set(addButton, bodyFont);
         for (HWND button : nav) set(button, bodyFont);
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
-    }
-
-    void ClearBitmaps() {
-        for (auto& [_, bitmap] : bitmapCache) if (bitmap) DeleteObject(bitmap);
-        bitmapCache.clear();
     }
 
     std::wstring SelectedTargetId() const {
@@ -327,12 +287,20 @@ struct WallpaperLibraryWindow::Impl {
 
     std::optional<DesktopWidget> SelectedWidget() const {
         if (selectedWidgetId.empty()) return std::nullopt;
-        for (const auto& widget : visibleWidgets)
+        for (const auto& widget : visibleWidgets) {
             if (_wcsicmp(widget.id.c_str(), selectedWidgetId.c_str()) == 0) return widget;
-        DesktopWidgetStore store;
-        std::wstring error;
-        if (!store.Load(&error)) return std::nullopt;
-        return store.Find(selectedWidgetId);
+        }
+        DesktopWidget widget;
+        const auto result = widgetController.Find(selectedWidgetId, &widget);
+        if (!result.success) return std::nullopt;
+        return widget;
+    }
+
+    const desktop::WidgetSurfaceHealth* HealthFor(std::wstring_view id) const {
+        for (const auto& surface : widgetHealth.surfaces) {
+            if (_wcsicmp(surface.widgetId.c_str(), std::wstring(id).c_str()) == 0) return &surface;
+        }
+        return nullptr;
     }
 
     void SetStatus(std::wstring text) const {
@@ -357,15 +325,15 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void RefreshWidgets() {
-        DesktopWidgetStore store;
-        std::wstring error;
-        if (!store.Load(&error)) {
-            SetStatus(error.empty() ? L"无法读取小组件。" : error);
+        const auto previous = selectedWidgetId;
+        std::vector<DesktopWidget> widgets;
+        const auto result = widgetController.Refresh(&widgets);
+        if (!result.success) {
             visibleWidgets.clear();
             selectedWidgetId.clear();
+            SetStatus(result.message.empty() ? L"无法读取小组件。" : result.message);
         } else {
-            const auto previous = selectedWidgetId;
-            visibleWidgets = store.Items();
+            visibleWidgets = std::move(widgets);
             if (!previous.empty()) {
                 const auto it = std::find_if(visibleWidgets.begin(), visibleWidgets.end(), [&](const auto& item) {
                     return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;
@@ -374,6 +342,8 @@ struct WallpaperLibraryWindow::Impl {
             }
             if (selectedWidgetId.empty() && !visibleWidgets.empty()) selectedWidgetId = visibleWidgets.front().id;
         }
+        widgetHealth = {};
+        widgetController.RuntimeHealth(&widgetHealth);
         widgetScroll = 0;
         UpdateGridScroll(widgetGrid, true);
         UpdateFooter();
@@ -382,12 +352,12 @@ struct WallpaperLibraryWindow::Impl {
 
     int CardWidth() const { return S(272); }
     int CardHeight() const { return S(153); }
-    int CardGap() const { return S(10); }
+    int CardGap() const { return S(12); }
 
     int GridColumns(HWND grid) const {
         RECT rc{};
         GetClientRect(grid, &rc);
-        const int width = std::max(1L, rc.right - rc.left);
+        const int width = RectWidth(rc);
         return std::max(1, (width - CardGap()) / (CardWidth() + CardGap()));
     }
 
@@ -405,7 +375,7 @@ struct WallpaperLibraryWindow::Impl {
         if (!grid) return;
         RECT rc{};
         GetClientRect(grid, &rc);
-        const int pageHeight = std::max(1L, rc.bottom - rc.top);
+        const int pageHeight = RectHeight(rc);
         const int contentHeight = GridContentHeight(grid, widgets);
         int& offset = GridScrollRef(widgets);
         offset = std::clamp(offset, 0, std::max(0, contentHeight - pageHeight));
@@ -438,28 +408,24 @@ struct WallpaperLibraryWindow::Impl {
         return -1;
     }
 
-    HBITMAP BitmapFor(const WallpaperLibraryItem& item) {
-        fs::path source = item.thumbnail;
-        if (source.empty() && item.kind == LibraryWallpaperKind::Image) source = item.source;
-        if (source.empty()) return nullptr;
-        const std::wstring key = source.wstring() + L"#" + std::to_wstring(CardWidth()) + L"x" + std::to_wstring(CardHeight());
-        const auto found = bitmapCache.find(key);
-        if (found != bitmapCache.end()) return found->second;
-        HBITMAP bitmap = LoadScaledBitmap(source, CardWidth(), CardHeight());
-        bitmapCache[key] = bitmap;
-        return bitmap;
-    }
-
-    void DrawScenePlaceholder(HDC dc, const RECT& rect, const WallpaperLibraryItem& item) const {
-        COLORREF base = RGB(24, 32, 48);
-        COLORREF accent = RGB(55, 180, 220);
-        if (item.id.find(L"aurora") != std::wstring::npos) { base = RGB(8, 18, 38); accent = RGB(42, 210, 170); }
-        else if (item.id.find(L"neon") != std::wstring::npos) { base = RGB(10, 8, 28); accent = RGB(214, 55, 225); }
-        else if (item.id.find(L"grid") != std::wstring::npos) { base = RGB(26, 31, 38); accent = RGB(60, 125, 150); }
+    void DrawWallpaperPreview(HDC dc, const RECT& rect, const WallpaperLibraryItem& item) const {
+        COLORREF base = RGB(36, 42, 54);
+        COLORREF accent = RGB(92, 135, 255);
+        if (item.kind == LibraryWallpaperKind::Scene) {
+            if (item.id.find(L"aurora") != std::wstring::npos) { base = RGB(8, 18, 38); accent = RGB(42, 210, 170); }
+            else if (item.id.find(L"neon") != std::wstring::npos) { base = RGB(10, 8, 28); accent = RGB(214, 55, 225); }
+            else if (item.id.find(L"grid") != std::wstring::npos) { base = RGB(26, 31, 38); accent = RGB(60, 125, 150); }
+        } else if (item.kind == LibraryWallpaperKind::Web) {
+            base = RGB(25, 46, 72); accent = RGB(76, 170, 235);
+        } else if (item.kind == LibraryWallpaperKind::Video) {
+            base = RGB(45, 34, 60); accent = RGB(181, 100, 235);
+        } else if (item.kind == LibraryWallpaperKind::Image) {
+            base = RGB(42, 58, 48); accent = RGB(99, 190, 132);
+        }
         FillSolid(dc, rect, base);
         HPEN pen = CreatePen(PS_SOLID, 1, accent);
         HGDIOBJ oldPen = SelectObject(dc, pen);
-        const int step = std::max(S(22), 1);
+        const int step = std::max(S(24), 1);
         for (int x = rect.left; x < rect.right; x += step) {
             MoveToEx(dc, x, rect.top, nullptr); LineTo(dc, x, rect.bottom);
         }
@@ -475,56 +441,33 @@ struct WallpaperLibraryWindow::Impl {
         const auto& item = visibleWallpapers[static_cast<std::size_t>(index)];
         const bool selected = _wcsicmp(item.id.c_str(), selectedWallpaperId.c_str()) == 0;
         const bool hover = wallpaperHover == index;
-        RECT inner = card;
-        FillSolid(dc, inner, RGB(255, 255, 255));
 
-        if (HBITMAP bitmap = BitmapFor(item)) {
-            HDC memory = CreateCompatibleDC(dc);
-            HGDIOBJ old = SelectObject(memory, bitmap);
-            BitBlt(dc, card.left, card.top, CardWidth(), CardHeight(), memory, 0, 0, SRCCOPY);
-            SelectObject(memory, old);
-            DeleteDC(memory);
-        } else if (item.kind == LibraryWallpaperKind::Scene) {
-            DrawScenePlaceholder(dc, card, item);
-        } else {
-            FillSolid(dc, card, item.kind == LibraryWallpaperKind::Web ? RGB(25, 46, 72) : RGB(45, 45, 50));
-            SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, RGB(220, 225, 235));
-            HGDIOBJ old = SelectObject(dc, cardTitleFont);
-            RECT center = card;
-            DrawTextW(dc, item.kind == LibraryWallpaperKind::Web ? L"WEB" : L"MEDIA", -1, &center,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            SelectObject(dc, old);
-        }
+        RECT preview = card;
+        preview.bottom -= S(50);
+        DrawWallpaperPreview(dc, preview, item);
 
-        const int textHeight = S(50);
-        RECT textRect{card.left, card.bottom - textHeight, card.right, card.bottom};
-        FillSolid(dc, textRect, RGB(24, 24, 28));
+        RECT textRect{card.left, card.bottom - S(50), card.right, card.bottom};
+        FillSolid(dc, textRect, RGB(250, 250, 252));
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(255, 255, 255));
         HGDIOBJ old = SelectObject(dc, cardTitleFont);
-        RECT titleRect{card.left + S(8), card.bottom - S(46), card.right - S(32), card.bottom - S(25)};
-        std::wstring titleText = item.title;
-        DrawTextW(dc, titleText.c_str(), -1, &titleRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
+        SetTextColor(dc, RGB(30, 30, 34));
+        RECT titleRect{card.left + S(9), card.bottom - S(45), card.right - S(34), card.bottom - S(24)};
+        DrawTextW(dc, item.title.c_str(), -1, &titleRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
         SelectObject(dc, cardSmallFont);
-        SetTextColor(dc, RGB(190, 195, 205));
-        RECT descRect{card.left + S(8), card.bottom - S(25), card.right - S(8), card.bottom - S(5)};
-        std::wstring desc = DescriptionFor(item);
-        if (SourceMissing(item)) desc += L" · 不可用";
-        DrawTextW(dc, desc.c_str(), -1, &descRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
+        SetTextColor(dc, RGB(105, 108, 118));
+        std::wstring meta = DescriptionFor(item);
+        if (SourceMissing(item)) meta += L" · 不可用";
+        RECT metaRect{card.left + S(9), card.bottom - S(24), card.right - S(8), card.bottom - S(5)};
+        DrawTextW(dc, meta.c_str(), -1, &metaRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
         if (item.favorite) {
             SelectObject(dc, cardTitleFont);
-            SetTextColor(dc, RGB(255, 215, 64));
-            RECT star{card.right - S(28), card.top + S(6), card.right - S(5), card.top + S(30)};
+            SetTextColor(dc, RGB(230, 170, 24));
+            RECT star{card.right - S(30), card.bottom - S(46), card.right - S(6), card.bottom - S(20)};
             DrawTextW(dc, L"★", -1, &star, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
         SelectObject(dc, old);
 
-        FrameSolid(dc, card, hover ? RGB(130, 130, 140) : RGB(215, 215, 220), 1);
-        if (selected) {
-            RECT accent{card.left, card.bottom - S(3), card.right, card.bottom};
-            FillSolid(dc, accent, GetSysColor(COLOR_HIGHLIGHT));
-        }
+        FrameSolid(dc, card, selected ? GetSysColor(COLOR_HIGHLIGHT) : (hover ? RGB(155, 160, 170) : RGB(222, 224, 230)), selected ? 2 : 1);
     }
 
     void DrawWidgetCard(HDC dc, int index, const RECT& card) {
@@ -532,33 +475,36 @@ struct WallpaperLibraryWindow::Impl {
         const auto& widget = visibleWidgets[static_cast<std::size_t>(index)];
         const bool selected = _wcsicmp(widget.id.c_str(), selectedWidgetId.c_str()) == 0;
         const bool hover = widgetHover == index;
-        FillSolid(dc, card, RGB(24, 28, 38));
+        const auto* health = HealthFor(widget.id);
 
+        RECT preview = card;
+        preview.bottom -= S(50);
+        FillSolid(dc, preview, RGB(24, 28, 38));
         SetBkMode(dc, TRANSPARENT);
         HGDIOBJ old = SelectObject(dc, titleFont);
         SetTextColor(dc, RGB(245, 247, 252));
-        RECT preview{card.left + S(10), card.top + S(14), card.right - S(10), card.top + S(78)};
         const bool clock = widget.title.find(L"时钟") != std::wstring::npos;
         DrawTextW(dc, clock ? L"12:34" : L"WEB", -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         RECT textRect{card.left, card.bottom - S(50), card.right, card.bottom};
-        FillSolid(dc, textRect, RGB(34, 38, 50));
+        FillSolid(dc, textRect, RGB(250, 250, 252));
         SelectObject(dc, cardTitleFont);
-        RECT titleRect{card.left + S(8), card.bottom - S(46), card.right - S(8), card.bottom - S(25)};
+        SetTextColor(dc, RGB(30, 30, 34));
+        RECT titleRect{card.left + S(9), card.bottom - S(45), card.right - S(8), card.bottom - S(24)};
         DrawTextW(dc, widget.title.c_str(), -1, &titleRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
         SelectObject(dc, cardSmallFont);
-        SetTextColor(dc, widget.enabled ? RGB(105, 220, 150) : RGB(165, 170, 180));
-        std::wstring meta = widget.enabled ? L"● 已启用 · " : L"○ 已停用 · ";
-        meta += FriendlyMonitor(widget.monitorId);
-        RECT metaRect{card.left + S(8), card.bottom - S(25), card.right - S(8), card.bottom - S(5)};
+        const bool healthy = health && health->renderingHealthy;
+        SetTextColor(dc, healthy ? RGB(28, 145, 78) : (widget.enabled ? RGB(205, 115, 40) : RGB(120, 124, 134)));
+        std::wstring meta;
+        if (!widget.enabled) meta = L"○ 已停用";
+        else if (healthy) meta = L"● 运行正常";
+        else meta = L"● 等待桌面运行时";
+        meta += L" · " + FriendlyMonitor(widget.monitorId);
+        RECT metaRect{card.left + S(9), card.bottom - S(24), card.right - S(8), card.bottom - S(5)};
         DrawTextW(dc, meta.c_str(), -1, &metaRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER);
         SelectObject(dc, old);
 
-        FrameSolid(dc, card, hover ? RGB(130, 130, 140) : RGB(75, 80, 92), 1);
-        if (selected) {
-            RECT accent{card.left, card.bottom - S(3), card.right, card.bottom};
-            FillSolid(dc, accent, GetSysColor(COLOR_HIGHLIGHT));
-        }
+        FrameSolid(dc, card, selected ? GetSysColor(COLOR_HIGHLIGHT) : (hover ? RGB(155, 160, 170) : RGB(222, 224, 230)), selected ? 2 : 1);
     }
 
     void PaintGrid(HWND grid, bool widgets) {
@@ -566,7 +512,7 @@ struct WallpaperLibraryWindow::Impl {
         HDC dc = BeginPaint(grid, &ps);
         RECT client{};
         GetClientRect(grid, &client);
-        FillSolid(dc, client, GetSysColor(COLOR_WINDOW));
+        FillSolid(dc, client, RGB(255, 255, 255));
         const int count = static_cast<int>(widgets ? visibleWidgets.size() : visibleWallpapers.size());
         for (int i = 0; i < count; ++i) {
             RECT card = CardRect(grid, i, widgets);
@@ -577,10 +523,10 @@ struct WallpaperLibraryWindow::Impl {
         }
         if (count == 0) {
             SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
+            SetTextColor(dc, RGB(115, 118, 128));
             HGDIOBJ old = SelectObject(dc, bodyFont);
-            std::wstring empty = widgets ? L"还没有小组件。点击下方“新建桌面时钟”开始。" : L"没有找到桌面资源。";
-            DrawTextW(dc, empty.c_str(), -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            const wchar_t* empty = widgets ? L"还没有小组件。使用右下角按钮创建桌面时钟。" : L"桌面库为空。使用右上角“添加”导入壁纸。";
+            DrawTextW(dc, empty, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(dc, old);
         }
         EndPaint(grid, &ps);
@@ -590,7 +536,7 @@ struct WallpaperLibraryWindow::Impl {
         int& offset = GridScrollRef(widgets);
         RECT rc{};
         GetClientRect(grid, &rc);
-        const int maxOffset = std::max(0, GridContentHeight(grid, widgets) - (rc.bottom - rc.top));
+        const int maxOffset = std::max(0, GridContentHeight(grid, widgets) - RectHeight(rc));
         offset = std::clamp(offset + delta, 0, maxOffset);
         UpdateGridScroll(grid, widgets);
         InvalidateRect(grid, nullptr, TRUE);
@@ -624,13 +570,18 @@ struct WallpaperLibraryWindow::Impl {
             const auto widget = SelectedWidget();
             EnableWindow(widgetToggleButton, widget ? TRUE : FALSE);
             EnableWindow(widgetRemoveButton, widget ? TRUE : FALSE);
-            if (!widget) SetStatus(L"小组件独立于壁纸存在。切换壁纸不会删除小组件布局。");
-            else {
+            if (!widget) {
+                SetStatus(L"小组件独立于壁纸存在。切换壁纸不会删除小组件布局。");
+            } else {
+                const auto* health = HealthFor(widget->id);
                 std::wostringstream text;
                 text << widget->title << L" · " << (widget->enabled ? L"已启用" : L"已停用")
-                     << L" · " << FriendlyMonitor(widget->monitorId)
-                     << L" · " << widget->x << L", " << widget->y
-                     << L" · " << widget->width << L" × " << widget->height;
+                     << L" · " << FriendlyMonitor(widget->monitorId);
+                if (widget->enabled && health) {
+                    if (health->renderingHealthy) text << L" · 运行正常";
+                    else if (!health->detail.empty()) text << L" · " << health->detail;
+                    if (!health->recommendedAction.empty()) text << L" · " << health->recommendedAction;
+                }
                 SetStatus(text.str());
                 SetWindowTextW(widgetToggleButton, widget->enabled ? L"停用" : L"启用");
             }
@@ -640,12 +591,15 @@ struct WallpaperLibraryWindow::Impl {
 
     void SetPage(Page next) {
         page = next;
+        activeNavId = page == Page::Installed ? kNavInstalledId : kNavWidgetsId;
+        SetWindowTextW(sectionTitle, page == Page::Installed ? L"壁纸库" : L"小组件");
         ShowWindow(wallpaperGrid, page == Page::Installed ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetGrid, page == Page::Widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(search, page == Page::Installed ? SW_SHOW : SW_HIDE);
         if (page != Page::Installed) HideWebBar();
         UpdateFooter();
         InvalidateRect(window, nullptr, TRUE);
+        for (HWND button : nav) InvalidateRect(button, nullptr, TRUE);
     }
 
     void ApplySelected() {
@@ -673,15 +627,14 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(),
-                        L"图灵智能桌面", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"图灵智能桌面",
+                        MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
             MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWallpaperId.clear();
-        ClearBitmaps();
         RefreshWallpapers();
     }
 
@@ -694,7 +647,6 @@ struct WallpaperLibraryWindow::Impl {
             return;
         }
         selectedWallpaperId = imported->id;
-        ClearBitmaps();
         RefreshWallpapers();
         SetStatus(L"已导入：" + imported->title);
     }
@@ -757,46 +709,32 @@ struct WallpaperLibraryWindow::Impl {
         DestroyMenu(menu);
     }
 
+    std::wstring PrimaryMonitorId() const {
+        for (const auto& target : targets) if (target.primary) return target.monitorId;
+        return targets.empty() ? std::wstring{} : targets.front().monitorId;
+    }
+
     void CreateClockWidget() {
-        static constexpr std::string_view html = R"HTML(<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px 22px;border-radius:22px;background:rgba(18,24,38,.78);box-shadow:0 10px 30px rgba(0,0,0,.28)}
-#time{font-size:44px;font-weight:650;letter-spacing:-1px;line-height:1}#date{margin-top:10px;font-size:16px;opacity:.78}
-</style></head><body><div class="card"><div id="time"></div><div id="date"></div></div><script>
-function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
-</script></body></html>)HTML";
-        std::wstring monitor;
-        for (const auto& target : targets) if (target.primary) { monitor = target.monitorId; break; }
-        if (monitor.empty() && !targets.empty()) monitor = targets.front().monitorId;
-        DesktopWidgetStore store;
-        std::wstring error;
-        if (!store.Load(&error)) {
-            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+        DesktopWidget created;
+        const auto result = widgetController.CreateClock(PrimaryMonitorId(), &created);
+        if (!result.success) {
+            MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
-        auto created = store.CreateManagedWeb(L"桌面时钟", html, monitor, 0.72f, 0.05f, 0.23f, 0.16f, &error);
-        if (!created) {
-            MessageBoxW(window, error.empty() ? L"创建小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
-            return;
-        }
-        selectedWidgetId = created->id;
+        selectedWidgetId = created.id;
         RefreshWidgets();
-        SetStatus(L"已创建桌面时钟。正在等待桌面运行时显示。 ");
+        SetStatus(L"已创建桌面时钟。运行状态会在卡片和状态栏中显示。");
     }
 
     void ToggleWidget() {
         const auto current = SelectedWidget();
         if (!current) return;
-        DesktopWidgetStore store;
-        std::wstring error;
-        if (!store.Load(&error)) return;
-        auto widget = *current;
-        widget.enabled = !widget.enabled;
-        if (!store.Upsert(widget, &error)) {
-            MessageBoxW(window, error.empty() ? L"更新小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+        const auto result = widgetController.SetEnabled(current->id, !current->enabled);
+        if (!result.success) {
+            MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
-        selectedWidgetId = widget.id;
+        selectedWidgetId = current->id;
         RefreshWidgets();
     }
 
@@ -805,10 +743,9 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
         if (!current) return;
         if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"图灵智能桌面",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
-        DesktopWidgetStore store;
-        std::wstring error;
-        if (!store.Load(&error) || !store.Remove(current->id, true, &error)) {
-            MessageBoxW(window, error.empty() ? L"删除小组件失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+        const auto result = widgetController.Remove(current->id);
+        if (!result.success) {
+            MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWidgetId.clear();
@@ -818,6 +755,11 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
     void HandleNav(int id) {
         if (id == kNavInstalledId) { SetPage(Page::Installed); return; }
         if (id == kNavWidgetsId) { RefreshWidgets(); SetPage(Page::Widgets); return; }
+        activeNavId = id;
+        for (HWND button : nav) InvalidateRect(button, nullptr, TRUE);
+        // The remaining product sections stay on their established production
+        // implementations while M4 replaces only the outer shell. This keeps
+        // AI, playlists, displays, rules and performance reachable during migration.
         if (navigateCallback) navigateCallback(SectionForNav(id));
     }
 
@@ -837,48 +779,50 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
         if (!window) return;
         RECT rc{};
         GetClientRect(window, &rc);
-        const int width = std::max(1L, rc.right - rc.left);
-        const int height = std::max(1L, rc.bottom - rc.top);
-        const int margin = S(12);
-        const int headerH = S(48);
-        const int navH = S(46);
+        const int width = RectWidth(rc);
+        const int height = RectHeight(rc);
+        const int sidebarW = S(208);
+        const int topH = S(58);
         const int footerH = S(58);
-        const int webH = webBarVisible && page == Page::Installed ? S(46) : 0;
+        const int margin = S(18);
+        const int webH = webBarVisible && page == Page::Installed ? S(48) : 0;
 
-        MoveWindow(title, margin, S(12), S(190), S(26), TRUE);
-        const int searchW = std::clamp(width * 36 / 100, S(260), S(420));
-        MoveWindow(search, (width - searchW) / 2, S(8), searchW, S(32), TRUE);
-        MoveWindow(addButton, width - margin - S(92), S(7), S(92), S(34), TRUE);
+        MoveWindow(title, S(18), S(16), sidebarW - S(36), S(28), TRUE);
 
-        const int navTop = headerH;
-        int x = margin;
-        const std::array<int, 7> widths{S(76), S(76), S(88), S(66), S(88), S(66), S(82)};
-        for (std::size_t i = 0; i < nav.size(); ++i) {
-            MoveWindow(nav[i], x, navTop + S(5), widths[i], S(35), TRUE);
-            x += widths[i] + S(4);
+        int navY = topH + S(18);
+        for (HWND button : nav) {
+            MoveWindow(button, S(12), navY, sidebarW - S(24), S(38), TRUE);
+            navY += S(42);
         }
+
+        const int contentLeft = sidebarW;
+        const int contentWidth = std::max(1, width - contentLeft);
+        MoveWindow(sectionTitle, contentLeft + margin, S(17), S(220), S(30), TRUE);
+        const int searchW = std::clamp(contentWidth * 38 / 100, S(250), S(430));
+        MoveWindow(search, contentLeft + (contentWidth - searchW) / 2, S(12), searchW, S(34), TRUE);
+        MoveWindow(addButton, width - margin - S(96), S(11), S(96), S(36), TRUE);
 
         if (webBarVisible && page == Page::Installed) {
-            const int webTop = headerH + navH;
-            MoveWindow(webUrl, margin, webTop + S(6), std::max(S(240), width - margin * 2 - S(210)), S(32), TRUE);
-            MoveWindow(webConfirm, width - margin - S(200), webTop + S(6), S(94), S(32), TRUE);
-            MoveWindow(webCancel, width - margin - S(98), webTop + S(6), S(98), S(32), TRUE);
+            const int webTop = topH;
+            MoveWindow(webUrl, contentLeft + margin, webTop + S(7), std::max(S(240), contentWidth - margin * 2 - S(214)), S(34), TRUE);
+            MoveWindow(webConfirm, width - margin - S(202), webTop + S(7), S(96), S(34), TRUE);
+            MoveWindow(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34), TRUE);
         }
 
-        const int contentTop = headerH + navH + webH;
+        const int contentTop = topH + webH;
         const int contentBottom = std::max(contentTop, height - footerH);
         const int contentH = std::max(1, contentBottom - contentTop);
-        MoveWindow(wallpaperGrid, 0, contentTop, width, contentH, TRUE);
-        MoveWindow(widgetGrid, 0, contentTop, width, contentH, TRUE);
+        MoveWindow(wallpaperGrid, contentLeft, contentTop, contentWidth, contentH, TRUE);
+        MoveWindow(widgetGrid, contentLeft, contentTop, contentWidth, contentH, TRUE);
         UpdateGridScroll(wallpaperGrid, false);
         UpdateGridScroll(widgetGrid, true);
 
         const int footerTop = height - footerH;
-        MoveWindow(status, margin, footerTop + S(17), std::max(S(220), width - S(620)), S(28), TRUE);
+        MoveWindow(status, contentLeft + margin, footerTop + S(18), std::max(S(180), contentWidth - S(600)), S(26), TRUE);
         if (page == Page::Installed) {
-            const int targetW = S(180);
-            const int actionW = S(106);
-            const int smallW = S(90);
+            const int targetW = S(182);
+            const int actionW = S(108);
+            const int smallW = S(88);
             const int right = width - margin;
             MoveWindow(applyButton, right - actionW, footerTop + S(11), actionW, S(36), TRUE);
             MoveWindow(removeButton, right - actionW - S(8) - smallW, footerTop + S(11), smallW, S(36), TRUE);
@@ -895,18 +839,19 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
 
     LRESULT DrawNavButton(const DRAWITEMSTRUCT* draw) {
         if (!draw) return FALSE;
-        const bool active = (page == Page::Installed && draw->CtlID == kNavInstalledId) ||
-                            (page == Page::Widgets && draw->CtlID == kNavWidgetsId);
-        FillSolid(draw->hDC, draw->rcItem, GetSysColor(COLOR_WINDOW));
+        const bool active = static_cast<int>(draw->CtlID) == activeNavId;
+        const COLORREF background = active ? RGB(230, 239, 255) : RGB(247, 248, 250);
+        FillSolid(draw->hDC, draw->rcItem, background);
         SetBkMode(draw->hDC, TRANSPARENT);
-        SetTextColor(draw->hDC, GetSysColor(COLOR_WINDOWTEXT));
-        HGDIOBJ old = SelectObject(draw->hDC, bodyFont);
+        SetTextColor(draw->hDC, active ? RGB(26, 86, 190) : RGB(54, 57, 64));
+        HGDIOBJ old = SelectObject(draw->hDC, active ? cardTitleFont : bodyFont);
         wchar_t text[64]{};
         GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
         RECT label = draw->rcItem;
-        DrawTextW(draw->hDC, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        label.left += S(14);
+        DrawTextW(draw->hDC, text, -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         if (active) {
-            RECT line{draw->rcItem.left + S(10), draw->rcItem.bottom - S(3), draw->rcItem.right - S(10), draw->rcItem.bottom};
+            RECT line{draw->rcItem.left, draw->rcItem.top + S(7), draw->rcItem.left + S(3), draw->rcItem.bottom - S(7)};
             FillSolid(draw->hDC, line, GetSysColor(COLOR_HIGHLIGHT));
         }
         if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
@@ -1013,7 +958,7 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(760);
+                info->ptMinTrackSize.x = self->S(860);
                 info->ptMinTrackSize.y = self->S(620);
             }
             return 0;
@@ -1025,7 +970,6 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
                              suggested->right - suggested->left, suggested->bottom - suggested->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
-            self->ClearBitmaps();
             self->RebuildFonts();
             self->ApplyFonts();
             self->Layout();
@@ -1071,27 +1015,26 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
             DragFinish(drop);
             return 0;
         }
-        case WM_ERASEBKGND:
-            return 1;
+        case WM_ERASEBKGND: return 1;
         case WM_PAINT: {
             PAINTSTRUCT ps{};
             HDC dc = BeginPaint(hwnd, &ps);
             RECT client{};
             GetClientRect(hwnd, &client);
-            FillSolid(dc, client, GetSysColor(COLOR_WINDOW));
-            const int headerH = self->S(48);
-            const int navH = self->S(46);
+            const int sidebarW = self->S(208);
+            const int topH = self->S(58);
             const int footerH = self->S(58);
-            RECT header{0, 0, client.right, headerH};
-            RECT navBand{0, headerH, client.right, headerH + navH};
-            RECT footer{0, std::max(0L, client.bottom - footerH), client.right, client.bottom};
-            FillSolid(dc, header, GetSysColor(COLOR_WINDOW));
-            FillSolid(dc, navBand, GetSysColor(COLOR_WINDOW));
-            FillSolid(dc, footer, RGB(248, 248, 250));
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(225, 225, 230));
+            RECT whole = client;
+            FillSolid(dc, whole, RGB(255, 255, 255));
+            RECT sidebar{0, 0, sidebarW, client.bottom};
+            FillSolid(dc, sidebar, RGB(247, 248, 250));
+            RECT footer{sidebarW, std::max<LONG>(0, client.bottom - footerH), client.right, client.bottom};
+            FillSolid(dc, footer, RGB(249, 249, 251));
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(226, 228, 233));
             HGDIOBJ oldPen = SelectObject(dc, pen);
-            MoveToEx(dc, 0, headerH + navH - 1, nullptr); LineTo(dc, client.right, headerH + navH - 1);
-            MoveToEx(dc, 0, footer.top, nullptr); LineTo(dc, client.right, footer.top);
+            MoveToEx(dc, sidebarW - 1, 0, nullptr); LineTo(dc, sidebarW - 1, client.bottom);
+            MoveToEx(dc, sidebarW, topH - 1, nullptr); LineTo(dc, client.right, topH - 1);
+            MoveToEx(dc, sidebarW, footer.top, nullptr); LineTo(dc, client.right, footer.top);
             SelectObject(dc, oldPen);
             DeleteObject(pen);
             EndPaint(hwnd, &ps);
@@ -1130,7 +1073,7 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
 
         window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"图灵智能桌面",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-                                 CW_USEDEFAULT, CW_USEDEFAULT, S(1120), S(780),
+                                 CW_USEDEFAULT, CW_USEDEFAULT, S(1160), S(790),
                                  nullptr, nullptr, instance, this);
         if (!window) return false;
         DragAcceptFiles(window, TRUE);
@@ -1150,14 +1093,17 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
                                         window, ControlId(id), instance, nullptr), bodyFont);
         };
 
-        title = label(L"图灵智能桌面", titleFont);
+        title = label(L"图灵智能桌面", brandFont);
+        sectionTitle = label(L"壁纸库", titleFont);
         search = font(CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                                      0, 0, 10, 10, window, ControlId(kSearchId), instance, nullptr), bodyFont);
-        SendMessageW(search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索桌面"));
+        SendMessageW(search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索壁纸"));
         addButton = button(L"＋ 添加", kAddId);
 
-        const std::array<const wchar_t*, 7> navLabels{L"桌面库", L"小组件", L"播放列表", L"多屏", L"应用规则", L"性能", L"图灵 AI"};
-        const std::array<int, 7> navIds{kNavInstalledId, kNavWidgetsId, kNavPlaylistsId, kNavDisplaysId, kNavRulesId, kNavPerformanceId, kNavAiId};
+        const std::array<const wchar_t*, 7> navLabels{
+            L"壁纸", L"小组件", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"图灵 AI"};
+        const std::array<int, 7> navIds{
+            kNavInstalledId, kNavWidgetsId, kNavPlaylistsId, kNavDisplaysId, kNavRulesId, kNavPerformanceId, kNavAiId};
         for (std::size_t i = 0; i < nav.size(); ++i)
             nav[i] = button(navLabels[i], navIds[i], BS_OWNERDRAW);
 
@@ -1228,7 +1174,6 @@ void WallpaperLibraryWindow::Close() {
 
 void WallpaperLibraryWindow::Refresh() {
     impl_->RebuildTargets();
-    impl_->ClearBitmaps();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
 }

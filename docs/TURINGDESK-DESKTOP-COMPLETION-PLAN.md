@@ -77,12 +77,18 @@ Current state: **in progress**
 Tasks:
 
 - [ ] Remove remaining legacy Progman/WorkerW discovery and attachment ownership from `WallpaperEngine.cpp`.
-- [ ] Centralize `0x052C`, Raised Desktop detection, WorkerW discovery, parent validation and z-order repair in `DesktopShellHost`.
-- [ ] Make native wallpaper, Web wallpaper and Widget surfaces all attach through the same contract.
-- [ ] Centralize Explorer restart / stale HWND recovery.
-- [ ] Validate mixed monitor geometry and negative virtual coordinates through the shared shell host.
+- [x] Centralize `0x052C`, Raised Desktop detection, WorkerW discovery, parent validation and z-order repair in `DesktopShellHost` for all production paths.
+- [x] Make native wallpaper, Web wallpaper and Widget production surfaces attach through the shared `DesktopShellHost` contract.
+- [x] Centralize Explorer restart / stale HWND recovery, including generation-aware parent validation.
+- [x] Validate mixed monitor geometry and negative virtual coordinates through the shared shell host and monitor-layout self-tests.
 - [x] Add shell-mode and attachment diagnostics contract.
 - [x] Add a build-time shell ownership guard so renderer/coordinator/Widget surfaces cannot rediscover Progman/WorkerW independently.
+- [ ] Physically remove the transitional `EnsureIndependentHostBounds` geometry mutation from `WallpaperWebRuntimeCoordinator.cpp` and delete its production bridge.
+
+Current production state:
+- shell discovery/mutation is behaviorally centralized even while the legacy source text still contains migration-only helpers;
+- coordinator geometry-only updates preserve existing visibility rather than implicitly showing hidden wallpapers;
+- Explorer generation changes force reattachment through `EnsureSurface`, preventing recycled/stale parent HWNDs from being accepted accidentally.
 
 Required diagnostics:
 
@@ -97,7 +103,10 @@ lastError
 ```
 
 Exit gate:
-- there is one Windows desktop attachment implementation, not parallel implementations in renderer/coordinator files.
+- legacy shell helper implementations are physically removed;
+- there is one Windows desktop attachment implementation, not parallel implementations in renderer/coordinator files;
+- exact-head ARM64 is green;
+- user-visible layering remains a real-Windows acceptance gate.
 
 ---
 
@@ -401,4 +410,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M2 — Make `DesktopShellHost` the sole Windows desktop attachment owner.**
 
-M1 is closed on the green `fa531697...` baseline. M2 now owns all Progman/WorkerW/desktop-parent migration work. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.
+M1 is closed on the green `fa531697...` baseline. M2 production routing is centralized; the remaining blockers are physical deletion of the migration-only legacy shell helpers/bridge plus exact-head ARM64 and real-Windows layering acceptance. After M2, proceed immediately to **M3 Widget real visibility**, then **M4 new production UI**.

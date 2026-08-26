@@ -20,6 +20,7 @@ on:
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-desktop-domain-contract.ps1
+      - scripts/verify-widget-acceptance-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
       - scripts/verify-windows-powershell-compat.ps1
       - scripts/pi-agent-e2e.mjs

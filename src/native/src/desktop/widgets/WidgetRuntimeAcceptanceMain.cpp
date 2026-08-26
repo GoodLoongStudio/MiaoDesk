@@ -20,21 +20,39 @@ std::wstring_view ReadPhase(int argc, wchar_t** argv) {
 
 struct PhaseContextExpectation {
     const wchar_t* windowClass = nullptr;
+    const wchar_t* processName = nullptr;
     const wchar_t* description = nullptr;
 };
 
 PhaseContextExpectation ExpectedPhaseContext(std::wstring_view phase) {
     if (phase == L"settings") {
-        return {L"TuringDesk.Native.DesktopLibrary", L"TuringDesk desktop library/settings window"};
+        return {L"TuringDesk.Native.DesktopLibrary", L"TuringDeskWallpaper.exe", L"TuringDesk desktop library/settings window"};
     }
     if (phase == L"search") {
-        return {L"TuringDesk.Native.SearchWindow", L"TuringDesk search window"};
+        return {L"TuringDesk.Native.SearchWindow", L"TuringDesk.exe", L"TuringDesk search window"};
     }
     return {};
 }
 
+bool ProcessImageMatches(DWORD processId, const wchar_t* expectedProcessName) {
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (!process) return false;
+
+    wchar_t imagePath[32768]{};
+    DWORD length = static_cast<DWORD>(std::size(imagePath));
+    const bool queried = QueryFullProcessImageNameW(process, 0, imagePath, &length) != FALSE;
+    CloseHandle(process);
+    if (!queried || length == 0 || length >= std::size(imagePath)) return false;
+
+    const std::wstring_view path(imagePath, length);
+    const auto slash = path.find_last_of(L"\\/");
+    const std::wstring fileName(path.substr(slash == std::wstring_view::npos ? 0 : slash + 1));
+    return CompareStringOrdinal(fileName.c_str(), -1, expectedProcessName, -1, TRUE) == CSTR_EQUAL;
+}
+
 struct PhaseContextSearch {
     const wchar_t* expectedClass = nullptr;
+    const wchar_t* expectedProcessName = nullptr;
     DWORD sessionId = 0;
     bool found = false;
 };
@@ -53,6 +71,7 @@ BOOL CALLBACK FindVisiblePhaseContextWindow(HWND hwnd, LPARAM parameter) {
 
     DWORD windowSessionId = 0;
     if (!ProcessIdToSessionId(processId, &windowSessionId) || windowSessionId != search->sessionId) return TRUE;
+    if (!ProcessImageMatches(processId, search->expectedProcessName)) return TRUE;
 
     search->found = true;
     return FALSE;
@@ -68,13 +87,13 @@ bool PhaseContextReady(std::wstring_view phase, std::wstring* failure) {
         return false;
     }
 
-    PhaseContextSearch search{expected.windowClass, sessionId, false};
+    PhaseContextSearch search{expected.windowClass, expected.processName, sessionId, false};
     EnumWindows(FindVisiblePhaseContextWindow, reinterpret_cast<LPARAM>(&search));
     if (search.found) return true;
 
     if (failure) {
         *failure = L"M3 " + std::wstring(phase) + L" 阶段缺少同一 Windows session 内可见的 "
-            + expected.description + L"（class=" + expected.windowClass
+            + expected.description + L"（class=" + expected.windowClass + L" process=" + expected.processName
             + L"）。健康取样不能脱离要求的产品窗口上下文。";
     }
     return false;

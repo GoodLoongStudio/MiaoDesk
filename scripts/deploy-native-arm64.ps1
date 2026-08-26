@@ -141,12 +141,17 @@ $wallpaper = $globalNative -or (Any $files @("src/native/src/desktop/wallpaper/*
 $harness = $globalNative -or (Any $files @("src/native/src/harness/*"))
 $widgetProbe = $globalNative -or (Any $files @("src/native/src/desktop/widgets/*Acceptance*"))
 
-$targets = @()
-if ($app -or $Mode -eq "preview") { $targets += "TuringDesk" }
-if ($wallpaper) { $targets += "TuringDeskWallpaper" }
-if ($harness) { $targets += "TuringDeskHarness" }
-if ($widgetProbe) { $targets += "TuringDeskWidgetAcceptance" }
-$targets = @($targets | Select-Object -Unique)
+if ($Mode -eq "preview") {
+    $targets = @("TuringDesk")
+}
+else {
+    $targets = @()
+    if ($app) { $targets += "TuringDesk" }
+    if ($wallpaper) { $targets += "TuringDeskWallpaper" }
+    if ($harness) { $targets += "TuringDeskHarness" }
+    if ($widgetProbe) { $targets += "TuringDeskWidgetAcceptance" }
+    $targets = @($targets | Select-Object -Unique)
+}
 
 if ($targets.Count -eq 0) {
     Write-Host "`nNo native binary relevant to this development task changed. Nothing to compile." -ForegroundColor Green

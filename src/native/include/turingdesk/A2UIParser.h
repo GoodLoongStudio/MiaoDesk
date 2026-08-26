@@ -5,9 +5,18 @@
 
 namespace turingdesk::a2ui {
 
+struct WidgetPlacement {
+    float x{0.68f};
+    float y{0.05f};
+    float width{0.28f};
+    float height{0.18f};
+};
+
 struct ValidationResult {
     bool success{};
     std::string normalizedJson;
+    std::wstring title;
+    WidgetPlacement placement;
     std::wstring message;
 };
 

@@ -122,7 +122,9 @@ foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-sequ
 $expectedSessionId = [int]$manifest.machine.sessionId
 $settingsWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'settings' -ExpectedClass 'TuringDesk.Native.DesktopLibrary' -ExpectedProcess 'TuringDeskWallpaper' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
 $searchWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'search' -ExpectedClass 'TuringDesk.Native.SearchWindow' -ExpectedProcess 'TuringDesk' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
+if ($settingsWindowUtc -le $phaseCaptureUtc['baseline']) { throw 'M3 Settings product-window evidence was not observed after the baseline screenshot.' }
 if ($settingsWindowUtc -gt $phaseCaptureUtc['settings']) { throw 'M3 Settings product-window evidence was captured after the Settings phase screenshot.' }
+if ($searchWindowUtc -le $phaseCaptureUtc['settings']) { throw 'M3 Search product-window evidence was not observed after the Settings phase screenshot.' }
 if ($searchWindowUtc -gt $phaseCaptureUtc['search']) { throw 'M3 Search product-window evidence was captured after the Search phase screenshot.' }
 if ($searchWindowUtc -le $settingsWindowUtc) { throw 'M3 observed product-window evidence chronology is invalid: Search was not observed after Settings.' }
 

@@ -11,6 +11,7 @@ function Get-RequiredEvidencePaths([string]$DiagnosticsDir) {
     $paths = @(
         'widget-acceptance-baseline.ids',
         'widget-acceptance-baseline.session',
+        'widget-acceptance-baseline.config',
         'widget-acceptance-sequence.phase',
         'widget-acceptance-binary.sha256',
         'widget-acceptance-settings.window.json',
@@ -142,11 +143,19 @@ if ($baselineIds.Count -eq 0) {
     throw 'M3 acceptance baseline identity set is empty; evidence cannot be sealed.'
 }
 
+$configEntry = @($files | Where-Object { $_.path -eq 'widget-acceptance-baseline.config' }) | Select-Object -First 1
+if ($null -eq $configEntry) { throw 'M3 acceptance placement configuration checkpoint is missing from the evidence set.' }
+
 $manifest = [ordered]@{
     schema = 'turingdesk.widget-acceptance-evidence.v1'
     sealedAtUtc = [DateTime]::UtcNow.ToString('o')
     sequence = $sequence
     baselineSessionId = $baselineSessionId
+    placementConfig = [ordered]@{
+        fileName = 'widget-acceptance-baseline.config'
+        sha256 = [string]$configEntry.sha256
+        length = [int64]$configEntry.length
+    }
     acceptanceBinary = [ordered]@{
         fileName = 'TuringDeskWidgetAcceptance.exe'
         sha256 = ([string]$binaryCheckpoint['sha256']).ToLowerInvariant()
@@ -195,5 +204,6 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Sealed and verified M3 Widget acceptance evidence: $manifestPath"
 Write-Host "Windows session: $baselineSessionId"
 Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
+Write-Host "Placement config SHA-256: $($manifest.placementConfig.sha256)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $manifestHash"

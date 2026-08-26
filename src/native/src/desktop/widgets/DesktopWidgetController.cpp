@@ -18,6 +18,9 @@ struct PresetGeometry {
     float height;
 };
 
+constexpr float kPlacementMargin = 0.03f;
+constexpr float kPlacementGap = 0.025f;
+
 PresetGeometry GeometryFor(WidgetSizePreset size) noexcept {
     switch (size) {
     case WidgetSizePreset::Small: return {0.18f, 0.11f};
@@ -34,24 +37,33 @@ bool SameMonitor(const wallpaper::DesktopWidget& widget, std::wstring_view monit
 std::pair<float, float> AutomaticPlacement(
     const std::vector<wallpaper::DesktopWidget>& widgets,
     std::wstring_view monitorId,
-    PresetGeometry geometry) {
-    // Product rule: start at the top-right with a 3% logical margin, then stack
+    PresetGeometry geometry,
+    std::wstring_view excludeId = {}) {
+    // Product rule: start at the top-right with a logical margin, then stack
     // downward. When a column is full, continue one column to the left. Users do
     // not need to understand normalized desktop coordinates.
-    constexpr float margin = 0.03f;
-    constexpr float gap = 0.025f;
     std::size_t occupied = 0;
     for (const auto& widget : widgets) {
+        if (!excludeId.empty() && _wcsicmp(widget.id.c_str(), std::wstring(excludeId).c_str()) == 0) continue;
         if (widget.enabled && SameMonitor(widget, monitorId)) ++occupied;
     }
 
-    const float rowStep = geometry.height + gap;
-    const int rows = std::max(1, static_cast<int>((1.0f - 2.0f * margin + gap) / rowStep));
+    const float rowStep = geometry.height + kPlacementGap;
+    const int rows = std::max(1, static_cast<int>((1.0f - 2.0f * kPlacementMargin + kPlacementGap) / rowStep));
     const int row = static_cast<int>(occupied % static_cast<std::size_t>(rows));
     const int column = static_cast<int>(occupied / static_cast<std::size_t>(rows));
-    const float x = std::max(margin, 1.0f - margin - geometry.width - column * (geometry.width + gap));
-    const float y = std::min(1.0f - margin - geometry.height, margin + row * rowStep);
+    const float x = std::max(kPlacementMargin,
+        1.0f - kPlacementMargin - geometry.width - column * (geometry.width + kPlacementGap));
+    const float y = std::min(1.0f - kPlacementMargin - geometry.height,
+        kPlacementMargin + row * rowStep);
     return {x, y};
+}
+
+std::pair<float, float> ClampPlacement(float x, float y, PresetGeometry geometry) noexcept {
+    return {
+        std::clamp(x, kPlacementMargin, std::max(kPlacementMargin, 1.0f - kPlacementMargin - geometry.width)),
+        std::clamp(y, kPlacementMargin, std::max(kPlacementMargin, 1.0f - kPlacementMargin - geometry.height)),
+    };
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
@@ -207,9 +219,16 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
 }
 
 DesktopControlResult DesktopWidgetController::SetSize(std::wstring_view id, WidgetSizePreset size) const {
+    wallpaper::DesktopWidget current;
+    const auto found = Find(id, &current);
+    if (!found.success) return found;
+
     const auto geometry = GeometryFor(size);
+    const auto [x, y] = ClampPlacement(current.x, current.y, geometry);
     WidgetUpdateRequest request;
     request.id = std::wstring(id);
+    request.x = x;
+    request.y = y;
     request.width = geometry.width;
     request.height = geometry.height;
     return service_.UpdateWidget(request);
@@ -223,7 +242,7 @@ DesktopControlResult DesktopWidgetController::MoveToMonitor(std::wstring_view id
     const auto found = Find(id, &current);
     if (!found.success) return found;
     const PresetGeometry geometry{current.width, current.height};
-    const auto [x, y] = AutomaticPlacement(existing, monitorId, geometry);
+    const auto [x, y] = AutomaticPlacement(existing, monitorId, geometry, id);
     WidgetUpdateRequest request;
     request.id = std::wstring(id);
     request.monitorId = std::move(monitorId);

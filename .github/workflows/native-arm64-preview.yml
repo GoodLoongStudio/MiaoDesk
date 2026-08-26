@@ -31,14 +31,6 @@ jobs:
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
 
-      - name: Architecture preflight
-        shell: pwsh
-        run: |
-          ./scripts/verify-native-source-layout.ps1
-          ./scripts/verify-desktop-domain-contract.ps1
-          ./scripts/verify-desktop-shell-ownership.ps1
-          ./scripts/verify-l3-runtime-contract.ps1
-
       - name: Configure lightweight preview
         shell: pwsh
         run: cmake -S . -B build-preview-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON

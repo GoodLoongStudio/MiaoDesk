@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://turingdesk.local/schemas/a2ui-widget.schema.json",
+  "title": "TuringDesk A2UI Widget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "props", "layout"],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "const": "Card" },
+    "props": { "$ref": "#/$defs/cardProps" },
+    "layout": { "$ref": "#/$defs/layout" }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$",
+      "maxLength": 9
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "minimum": 0.05, "maximum": 1 },
+        "height": { "type": "number", "minimum": 0.05, "maximum": 1 },
+        "horizontal": { "enum": ["start", "center", "end", "stretch"] },
+        "vertical": { "enum": ["start", "center", "end", "stretch"] }
+      }
+    },
+    "commonStyle": {
+      "type": "object",
+      "properties": {
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] }
+      }
+    },
+    "cardProps": {
+      "allOf": [
+        { "$ref": "#/$defs/commonStyle" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": { "type": "string", "maxLength": 120 },
+            "subtitle": { "type": "string", "maxLength": 240 },
+            "background": { "$ref": "#/$defs/color" },
+            "foreground": { "$ref": "#/$defs/color" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+            "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+            "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+            "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] },
+            "children": {
+              "type": "array",
+              "maxItems": 16,
+              "items": { "$ref": "#/$defs/node" }
+            }
+          }
+        }
+      ]
+    },
+    "textProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 1000 },
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] }
+      }
+    },
+    "buttonProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 80 },
+        "action": { "enum": ["none"] },
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] }
+      }
+    },
+    "weatherProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "unit"],
+      "properties": {
+        "location": { "type": "string", "maxLength": 120 },
+        "unit": { "enum": ["celsius", "fahrenheit"] },
+        "showForecast": { "type": "boolean" },
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] }
+      }
+    },
+    "listProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "maxLength": 240 }
+        },
+        "ordered": { "type": "boolean" },
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 32 },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 48 },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] }
+      }
+    },
+    "node": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "props", "layout"],
+          "properties": {
+            "type": { "const": "Card" },
+            "props": { "$ref": "#/$defs/cardProps" },
+            "layout": { "$ref": "#/$defs/layout" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "props", "layout"],
+          "properties": {
+            "type": { "const": "Text" },
+            "props": { "$ref": "#/$defs/textProps" },
+            "layout": { "$ref": "#/$defs/layout" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "props", "layout"],
+          "properties": {
+            "type": { "const": "Button" },
+            "props": { "$ref": "#/$defs/buttonProps" },
+            "layout": { "$ref": "#/$defs/layout" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "props", "layout"],
+          "properties": {
+            "type": { "const": "Weather" },
+            "props": { "$ref": "#/$defs/weatherProps" },
+            "layout": { "$ref": "#/$defs/layout" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "props", "layout"],
+          "properties": {
+            "type": { "const": "List" },
+            "props": { "$ref": "#/$defs/listProps" },
+            "layout": { "$ref": "#/$defs/layout" }
+          }
+        }
+      ]
+    }
+  }
+}

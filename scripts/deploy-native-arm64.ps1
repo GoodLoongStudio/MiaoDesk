@@ -50,16 +50,27 @@ function Ensure-Junction([string]$Link, [string]$Target) {
     New-Item -ItemType Junction -Path $Link -Target $Target | Out-Null
 }
 
+function Ensure-FastDeveloperConfigure {
+    $cache = Join-Path $BuildDir "CMakeCache.txt"
+    $needsConfigure = -not (Test-Path $cache -PathType Leaf)
+    if (-not $needsConfigure) {
+        $cacheText = [string](Get-Content $cache -Raw -ErrorAction SilentlyContinue)
+        $needsConfigure = $cacheText -notmatch '(?m)^TURINGDESK_DEV_FAST:BOOL=ON$'
+    }
+
+    if ($needsConfigure) {
+        Step "Configuring fast local ARM64 developer build"
+        & cmake -S $RepoRoot -B $BuildDir -A ARM64 -DTURINGDESK_DEV_FAST=ON
+        if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
+    }
+}
+
 function Invoke-LocalPreview([string[]]$Targets, [string]$HeadSha) {
     if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
         throw "cmake was not found in PATH. Install Visual Studio C++/CMake tools first."
     }
 
-    if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt") -PathType Leaf)) {
-        Step "Configuring local ARM64 developer build"
-        & cmake -S $RepoRoot -B $BuildDir -A ARM64
-        if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
-    }
+    Ensure-FastDeveloperConfigure
 
     foreach ($target in $Targets) {
         Step ("Incremental build: {0}" -f $target)

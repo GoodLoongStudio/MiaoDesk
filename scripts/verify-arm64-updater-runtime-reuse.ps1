@@ -17,7 +17,14 @@ $required = @(
     'function Promote-ReusedRuntimeBundle',
     'Move-Item -LiteralPath $source',
     'Link-RuntimeBundle $StagedRoot $RuntimeStoreDir',
-    'Materializing changed TuringDesk RuntimeBundle'
+    'Materializing changed TuringDesk RuntimeBundle',
+    'function Remove-Junction',
+    '[IO.Directory]::Delete($Path, $false)',
+    'function Remove-DeploymentTree',
+    'if (Test-ReparsePoint $child) { Remove-Junction $child }',
+    'Remove-DeploymentTree $DeployDir',
+    'Remove-DeploymentTree $previous',
+    'Remove-DeploymentTree $next'
 )
 
 foreach ($marker in $required) {
@@ -49,4 +56,29 @@ if ($text -notmatch 'if \(-not \$reusedRuntime\) \{ Materialize-Runtime') {
     throw 'ARM64 updater must materialize the RuntimeBundle only when the persisted bundle changed.'
 }
 
-Write-Host 'ARM64 updater shared RuntimeBundle contract verified.' -ForegroundColor Green
+$removeJunctionMatch = [regex]::Match(
+    $text,
+    'function Remove-Junction\(\[string\]\$Path\) \{(?<body>[\s\S]*?)\r?\n\}',
+    [Text.RegularExpressions.RegexOptions]::CultureInvariant
+)
+if (-not $removeJunctionMatch.Success) {
+    throw 'ARM64 updater junction cleanup helper could not be inspected.'
+}
+$removeJunctionBody = $removeJunctionMatch.Groups['body'].Value
+if ($removeJunctionBody -match 'Remove-Item') {
+    throw 'Remove-Junction must never use Windows PowerShell Remove-Item; it can prompt or traverse a non-empty junction.'
+}
+if ($removeJunctionBody -notmatch '\[IO\.Directory\]::Delete\(\$Path, \$false\)') {
+    throw 'Remove-Junction must delete only the reparse-point directory entry with Directory.Delete(path, false).'
+}
+
+$unsafeDeploymentCleanup = [regex]::Matches(
+    $text,
+    'Remove-Item[^\r\n]+(?:\$DeployDir|\$previous|\$next)[^\r\n]*-Recurse',
+    [Text.RegularExpressions.RegexOptions]::IgnoreCase
+)
+if ($unsafeDeploymentCleanup.Count -gt 0) {
+    throw 'Updater deployment cleanup must detach Runtime/Pi/Goz junctions before recursively deleting a deployment tree.'
+}
+
+Write-Host 'ARM64 updater shared RuntimeBundle and prompt-free junction cleanup contract verified.' -ForegroundColor Green

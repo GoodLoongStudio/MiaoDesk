@@ -34,6 +34,7 @@ on:
       - scripts/verify-widget-product-model.ps1
       - scripts/verify-search-input-contract.ps1
       - scripts/run-widget-runtime-acceptance.ps1
+      - scripts/run-installed-widget-acceptance.ps1
       - scripts/confirm-widget-visual-acceptance.ps1
       - scripts/seal-widget-acceptance-evidence.ps1
       - scripts/verify-widget-acceptance-evidence.ps1

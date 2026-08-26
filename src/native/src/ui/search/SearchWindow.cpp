@@ -115,7 +115,6 @@ void DrawMicrophoneGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
         D2D1::RoundedRect(D2D1::RectF(x - 4.5f, 23.0f, x + 4.5f, 38.5f), 4.5f, 4.5f), brush, 1.8f);
     target->DrawLine(D2D1::Point2F(x - 9.0f, 34.0f), D2D1::Point2F(x - 9.0f, 37.0f), brush, 1.8f);
     target->DrawLine(D2D1::Point2F(x + 9.0f, 34.0f), D2D1::Point2F(x + 9.0f, 37.0f), brush, 1.8f);
-    target->DrawArc; // intentionally unavailable: lower microphone bowl is approximated with lines below.
 }
 
 void DrawMicrophoneBase(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
@@ -497,7 +496,7 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         HandleTray(static_cast<UINT>(lParam)); return 0;
     case WM_COPYDATA: {
         std::vector<SearchResult> received;
-        if (files_.HandleCopyData(reinterpret_cast<COPYDATASTRUCT*>(lParam), received)) {
+        if (files_.HandleCopyData(reinterpret_cast<COPYDATASTRUCTW*>(lParam), received)) {
             fileSearchAvailable_ = true; fileSearchQueryFailed_ = false; fileResults_ = std::move(received); MergeResults(); return TRUE;
         }
         break;

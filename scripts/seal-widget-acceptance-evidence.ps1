@@ -68,7 +68,7 @@ function Read-BaselineSessionId([string]$DiagnosticsDir) {
     $sessionId
 }
 
-function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$BinaryCheckpoint) {
+function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$BinaryCheckpoint, [int]$BaselineSessionId) {
     $path = Join-Path $DiagnosticsDir 'widget-acceptance-human-visual.json'
     $sealPath = "$path.sha256"
     if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or -not (Test-Path -LiteralPath $sealPath -PathType Leaf)) {
@@ -82,6 +82,9 @@ function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$Bina
     $attestation = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1' -or -not $attestation.reviewer) {
         throw 'M3 human visual acceptance attestation is malformed.'
+    }
+    if ([int]$attestation.sessionId -ne $BaselineSessionId) {
+        throw "M3 human visual acceptance came from a different Windows session. baselineSession=$BaselineSessionId reviewSession=$($attestation.sessionId)"
     }
     if (([string]$attestation.acceptanceBinary.sha256).ToLowerInvariant() -ne ([string]$BinaryCheckpoint['sha256']).ToLowerInvariant() -or [int64]$attestation.acceptanceBinary.length -ne [int64]$BinaryCheckpoint['length']) {
         throw 'M3 human visual acceptance was recorded against a different acceptance binary.'
@@ -121,7 +124,7 @@ $binaryCheckpoint = Read-KeyValueFile -Path $binaryCheckpointPath
 if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
     throw 'M3 acceptance binary checkpoint is incomplete; start a new baseline with the intended TuringDeskWidgetAcceptance.exe.'
 }
-$humanAttestation = Assert-HumanVisualAttestation -DiagnosticsDir $diagnostics -BinaryCheckpoint $binaryCheckpoint
+$humanAttestation = Assert-HumanVisualAttestation -DiagnosticsDir $diagnostics -BinaryCheckpoint $binaryCheckpoint -BaselineSessionId $baselineSessionId
 
 $files = @()
 foreach ($path in @(Get-RequiredEvidencePaths -DiagnosticsDir $diagnostics)) {
@@ -156,6 +159,7 @@ $manifest = [ordered]@{
     humanVisualAcceptance = [ordered]@{
         reviewer = [string]$humanAttestation.reviewer
         reviewedAtUtc = [string]$humanAttestation.reviewedAtUtc
+        sessionId = [int]$humanAttestation.sessionId
     }
     baselineWidgetIds = $baselineIds
     machine = [ordered]@{

@@ -25,7 +25,7 @@ foreach ($marker in @('Passed = 0','InteractiveDesktopUnavailable = 60','NoEnabl
 }
 
 $probeText = Get-Content -LiteralPath $probe -Raw
-foreach ($marker in @('WidgetService','GetRuntimeHealth','InteractiveDesktopAvailable','OpenInputDesktop','renderingHealthy','widget-acceptance-','widget-acceptance-baseline.ids','widget-acceptance-sequence.phase','CheckPhaseContinuity','baselineStatus','sequenceStatus','ExpectedPreviousPhase','WriteSequencePhase','SurfaceIds')) {
+foreach ($marker in @('WidgetService','GetRuntimeHealth','InteractiveDesktopAvailable','OpenInputDesktop','renderingHealthy','widget-acceptance-','widget-acceptance-baseline.ids','widget-acceptance-baseline.session','BaselineSessionPath','ProcessIdToSessionId','CurrentSessionId','sessionStatus','sessionId=','widget-acceptance-sequence.phase','CheckPhaseContinuity','baselineStatus','sequenceStatus','ExpectedPreviousPhase','WriteSequencePhase','SurfaceIds')) {
     if (-not $probeText.Contains($marker)) { throw "Widget acceptance probe missing marker: $marker" }
 }
 foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','GetPrivateProfileStringW')) {
@@ -71,7 +71,7 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe','baseline','settings','se
     if (-not $docText.Contains($marker)) { throw "M3 acceptance documentation missing marker: $marker" }
 }
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set','baselineStatus','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop')) {
+foreach ($marker in @('identity set','Windows session','baselineStatus','sessionStatus','sessionId','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 $evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
@@ -79,4 +79,4 @@ foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visu
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health, ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation are required before sealing, without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health, same-session ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation are required before sealing, without regaining HWND/shell ownership.'

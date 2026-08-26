@@ -166,6 +166,11 @@ void AppendSurfaceHealth(std::wostringstream& text, const desktop::WidgetSurface
          << L"; parent=" << (surface.parentValid ? L"ok" : L"bad")
          << L"; child_style=" << (surface.childStyleValid ? L"ok" : L"bad")
          << L"; visible=" << (surface.visible ? L"true" : L"false")
+         << L"; monitor=" << (surface.monitorId.empty() ? L"unresolved" : surface.monitorId)
+         << L"; monitor_state=" << (surface.monitorReported ? (surface.monitorValid ? L"ok" : L"bad") : L"unreported")
+         << L"; geometry=" << (surface.geometryReported ? (surface.geometryValid ? L"ok" : L"bad") : L"unreported")
+         << L"; expected_rect=" << surface.expectedLeft << L"," << surface.expectedTop << L"," << surface.expectedRight << L"," << surface.expectedBottom
+         << L"; actual_rect=" << surface.actualLeft << L"," << surface.actualTop << L"," << surface.actualRight << L"," << surface.actualBottom
          << L"; environment=" << (surface.environmentReported ? (surface.environmentReady ? L"ready" : L"pending") : L"unreported")
          << L"; controller=" << (surface.controllerReported ? (surface.controllerReady ? L"ready" : L"pending") : L"unreported")
          << L"; navigation=" << (surface.navigationReported ? (surface.navigationReady ? L"ready" : L"pending") : L"unreported")
@@ -270,7 +275,10 @@ NativeToolResult WidgetList() {
              << L"; monitor=" << (widget.monitorId.empty() ? L"primary" : widget.monitorId)
              << L"; rect=" << widget.x << L"," << widget.y << L"," << widget.width << L"," << widget.height;
         if (const auto* surface = FindSurfaceHealth(snapshot.widgetRuntime, widget.id)) {
-            text << L"; runtime=" << (surface->renderingHealthy ? L"healthy" : L"attention");
+            text << L"; runtime=" << (surface->renderingHealthy ? L"healthy" : L"attention")
+                 << L"; resolved_monitor=" << (surface->monitorId.empty() ? L"unresolved" : surface->monitorId)
+                 << L"; monitor_state=" << (surface->monitorReported ? (surface->monitorValid ? L"ok" : L"bad") : L"unreported")
+                 << L"; geometry=" << (surface->geometryReported ? (surface->geometryValid ? L"ok" : L"bad") : L"unreported");
             if (!surface->issueCode.empty()) text << L"; issue=" << surface->issueCode;
             if (!surface->recommendedAction.empty()) text << L"; action=" << surface->recommendedAction;
         }

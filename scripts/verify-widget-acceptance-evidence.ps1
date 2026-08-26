@@ -59,6 +59,9 @@ if ($manifest.sequence -ne 'monitor') {
 if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) {
     throw 'M3 acceptance evidence manifest contains no files.'
 }
+if ($null -eq $manifest.acceptanceBinary -or -not $manifest.acceptanceBinary.sha256 -or -not $manifest.acceptanceBinary.length) {
+    throw 'M3 acceptance evidence manifest is missing the acceptance binary identity.'
+}
 $sealedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.sealedAtUtc) -Description 'manifest.sealedAtUtc'
 
 $seen = @{}
@@ -83,6 +86,24 @@ foreach ($entry in @($manifest.files)) {
     if ($entryWriteUtc -gt $sealedAtUtc.AddSeconds(1)) {
         throw "M3 acceptance evidence file is timestamped after the manifest seal: $name"
     }
+}
+
+$binaryCheckpointName = 'widget-acceptance-binary.sha256'
+if (-not $seen.ContainsKey($binaryCheckpointName)) {
+    throw "M3 sealed evidence manifest is missing required acceptance binary checkpoint: $binaryCheckpointName"
+}
+$binaryCheckpoint = Read-KeyValueFile -Path (Join-Path $diagnostics $binaryCheckpointName)
+if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
+    throw 'M3 acceptance binary checkpoint is malformed.'
+}
+if (([string]$binaryCheckpoint['sha256']).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant()) {
+    throw 'M3 acceptance binary SHA-256 no longer matches the sealed manifest.'
+}
+if ([int64]$binaryCheckpoint['length'] -ne [int64]$manifest.acceptanceBinary.length) {
+    throw 'M3 acceptance binary length no longer matches the sealed manifest.'
+}
+if ([string]$manifest.acceptanceBinary.fileName -ne 'TuringDeskWidgetAcceptance.exe') {
+    throw "Unexpected M3 acceptance binary name: '$($manifest.acceptanceBinary.fileName)'"
 }
 
 $phaseOrder = @('baseline','settings','search','explorer','monitor')
@@ -154,5 +175,6 @@ if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) {
     throw 'M3 baseline Widget identity set no longer matches the sealed manifest.'
 }
 
-Write-Host "Verified sealed M3 Widget acceptance evidence integrity and phase chronology: $manifestPath"
+Write-Host "Verified sealed M3 Widget acceptance evidence integrity, binary continuity and phase chronology: $manifestPath"
+Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $actualManifestHash"

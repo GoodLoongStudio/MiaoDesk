@@ -14,6 +14,8 @@ $paths = @{
     NativeToolIsolation = Join-Path $root 'src/native/src/ai/tools/NativeToolIsolation.cpp'
     Main = Join-Path $root 'src/native/src/app/main.cpp'
     DesktopTools = Join-Path $root 'src/native/src/ai/tools/DesktopWidgetTools.cpp'
+    GeneratedPreview = Join-Path $root 'src/native/src/desktop/preview/GeneratedDesktopPreview.cpp'
+    A2UI = Join-Path $root 'src/native/src/ai/a2ui/A2UIParser.cpp'
     WidgetStore = Join-Path $root 'src/native/src/desktop/widgets/DesktopWidgetStore.cpp'
     Harness = Join-Path $root 'src/native/src/harness/HarnessProcessManager.cpp'
     CMake = Join-Path $root 'src/native/CMakeLists.txt'
@@ -22,6 +24,8 @@ $paths = @{
     Contract = Join-Path $root 'docs/L3-PI-RUNTIME-CONTRACT.md'
     DesktopComposition = Join-Path $root 'docs/DESKTOP_COMPOSITION_ARCHITECTURE.md'
     WallpaperParity = Join-Path $root 'docs/WALLPAPER_ENGINE_PARITY.md'
+    Sandbox = Join-Path $root 'docs/AI_GENERATED_DESKTOP_SANDBOX.md'
+    Schema = Join-Path $root 'docs/schemas/a2ui-widget.schema.json'
     Deploy = Join-Path $root 'scripts/deploy-native-arm64.ps1'
     Update = Join-Path $root 'scripts/update-turingdesk-arm64.ps1'
     Prepare = Join-Path $root 'scripts/prepare-third-party-runtime-arm64.ps1'
@@ -33,9 +37,7 @@ $paths = @{
 }
 
 foreach ($entry in $paths.GetEnumerator()) {
-    if (-not (Test-Path $entry.Value -PathType Leaf)) {
-        throw "Required current architecture input missing: $($entry.Value)"
-    }
+    if (-not (Test-Path $entry.Value -PathType Leaf)) { throw "Required current architecture input missing: $($entry.Value)" }
 }
 
 $forbiddenPaths = @(
@@ -50,9 +52,7 @@ $forbiddenPaths = @(
     'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
 )
 foreach ($relative in $forbiddenPaths) {
-    if (Test-Path (Join-Path $root $relative)) {
-        throw "Retired architecture artifact must stay removed: $relative"
-    }
+    if (Test-Path (Join-Path $root $relative)) { throw "Retired architecture artifact must stay removed: $relative" }
 }
 
 $conversation = Get-Content $paths.Conversation -Raw
@@ -66,6 +66,8 @@ $nativeToolsHeader = Get-Content $paths.NativeToolsHeader -Raw
 $nativeToolIsolation = Get-Content $paths.NativeToolIsolation -Raw
 $main = Get-Content $paths.Main -Raw
 $desktopTools = Get-Content $paths.DesktopTools -Raw
+$generatedPreview = Get-Content $paths.GeneratedPreview -Raw
+$a2ui = Get-Content $paths.A2UI -Raw
 $widgetStore = Get-Content $paths.WidgetStore -Raw
 $harness = Get-Content $paths.Harness -Raw
 $cmake = Get-Content $paths.CMake -Raw
@@ -74,72 +76,44 @@ $native = Get-Content $paths.Native -Raw
 $contract = Get-Content $paths.Contract -Raw
 $desktopComposition = Get-Content $paths.DesktopComposition -Raw
 $wallpaperParity = Get-Content $paths.WallpaperParity -Raw
+$sandbox = Get-Content $paths.Sandbox -Raw
+$schema = Get-Content $paths.Schema -Raw
 $deploy = Get-Content $paths.Deploy -Raw
 $update = Get-Content $paths.Update -Raw
 $prepare = Get-Content $paths.Prepare -Raw
 $windowsCompat = Get-Content $paths.WindowsCompat -Raw
-$updateCmd = Get-Content $paths.UpdateCmd -Raw
 $deployCmd = Get-Content $paths.DeployCmd -Raw
 $arm = Get-Content $paths.Arm -Raw
 $x64 = Get-Content $paths.X64 -Raw
 
 foreach ($marker in @(
-    '#include "turingdesk/PiRuntime.h"',
-    'ActiveRuntime::Pi',
-    'gPiRuntime',
-    'state.pi->AskAsync',
-    'StartDirectFallback',
-    'state.agent->AskAsync',
-    'route: primary pi start',
-    'fallback: direct api start')) {
+    '#include "turingdesk/PiRuntime.h"', 'ActiveRuntime::Pi', 'gPiRuntime', 'state.pi->AskAsync',
+    'StartDirectFallback', 'state.agent->AskAsync', 'route: primary pi start', 'fallback: direct api start')) {
     if (-not $l3.Contains($marker)) { throw "Pi-first AI marker missing: $marker" }
 }
-if ($l3.Contains('ActiveRuntime::Codex') -or $l3.Contains('CodexRuntime')) {
-    throw 'Architecture regression: retired Codex runtime returned to the AI UI.'
-}
+if ($l3.Contains('ActiveRuntime::Codex') -or $l3.Contains('CodexRuntime')) { throw 'Architecture regression: retired Codex runtime returned to the AI UI.' }
 foreach ($marker in @('UserFacingLocalReply', 'ShowL3CliWindow', '/runtime')) {
     if (-not $l3.Contains($marker)) { throw "AI/diagnostics boundary marker missing: $marker" }
 }
 
-foreach ($marker in @(
-    '#include "turingdesk/ConversationPanel.h"',
-    '#define ShowL3CliWindow ShowConversationPanel',
-    '#include "ConversationPanelImpl.inc"')) {
+foreach ($marker in @('#include "turingdesk/ConversationPanel.h"', '#define ShowL3CliWindow ShowConversationPanel', '#include "ConversationPanelImpl.inc"')) {
     if (-not $conversation.Contains($marker)) { throw "Conversation Panel canonical wrapper marker missing: $marker" }
 }
 foreach ($marker in @('bool ShowConversationPanel(', 'return ShowConversationPanel(')) {
     if (-not $conversationHeader.Contains($marker)) { throw "Conversation Panel canonical API marker missing: $marker" }
 }
-if (-not $legacyHeader.Contains('#include "turingdesk/ConversationPanel.h"')) {
-    throw 'Legacy L3CliWindow.h must remain a compatibility-only include of ConversationPanel.h.'
-}
-
-# The terminal-style AI window is retired. Keep this guard in the runtime contract because
-# the UI is the entry point to the Pi-first route and must not silently regress to a second
-# legacy presentation path while M3/M4 work continues.
-foreach ($marker in @(
-    'TuringDesk.Native.ConversationPanel',
-    'ConversationState',
-    'kSendId',
-    'SetBusyVisual')) {
+if (-not $legacyHeader.Contains('#include "turingdesk/ConversationPanel.h"')) { throw 'Legacy L3CliWindow.h must remain a compatibility-only include of ConversationPanel.h.' }
+foreach ($marker in @('TuringDesk.Native.ConversationPanel', 'ConversationState', 'kSendId', 'SetBusyVisual')) {
     if (-not $l3.Contains($marker)) { throw "Conversation Panel marker missing: $marker" }
 }
-foreach ($forbidden in @(
-    'TuringDesk.Native.L3CliWindow',
-    'kCliClass',
-    'Consolas',
-    '#include "turingdesk/ModelSettingsWindow.h"',
-    'kSettingsId')) {
+foreach ($forbidden in @('TuringDesk.Native.L3CliWindow', 'kCliClass', 'Consolas', '#include "turingdesk/ModelSettingsWindow.h"', 'kSettingsId')) {
     if ($l3.Contains($forbidden)) { throw "Retired terminal AI UI marker returned: $forbidden" }
 }
 
 foreach ($marker in @(
-    'src/ui/ai/ConversationPanel.cpp',
-    'src/ai/pi/PiRuntime.cpp',
-    'src/ai/pi/PiNativeToolsExtension.cpp',
-    'src/ai/tools/NativeTools.cpp',
-    'src/desktop/widgets/DesktopWidgetStore.cpp',
-    'src/ai/tools/DesktopWidgetTools.cpp')) {
+    'src/ui/ai/ConversationPanel.cpp', 'src/ai/pi/PiRuntime.cpp', 'src/ai/pi/PiNativeToolsExtension.cpp',
+    'src/ai/tools/NativeTools.cpp', 'src/ai/a2ui/A2UIParser.cpp', 'src/desktop/preview/GeneratedDesktopPreview.cpp',
+    'src/desktop/widgets/DesktopWidgetStore.cpp', 'src/ai/tools/DesktopWidgetTools.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "TuringDesk build graph marker missing: $marker" }
 }
 foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHostBridge.cpp', 'TuringDeskCodexJsonlContractCheck')) {
@@ -147,41 +121,63 @@ foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHos
 }
 
 foreach ($marker in @(
-    '@earendil-works', '--mode rpc', 'PI_CODING_AGENT_DIR',
-    'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai',
-    'RuntimeLogPath(L"pi-runtime.log")', '\"type\":\"prompt\"', '\"type\":\"abort\"',
-    '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'turingdesk-local')) {
+    '@earendil-works', '--mode rpc', 'PI_CODING_AGENT_DIR', 'openai-completions', 'openai-responses',
+    'anthropic-messages', 'google-generative-ai', 'RuntimeLogPath(L"pi-runtime.log")',
+    '\"type\":\"prompt\"', '\"type\":\"abort\"', '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'turingdesk-local')) {
     if (-not $pi.Contains($marker)) { throw "Pi runtime contract marker missing: $marker" }
 }
-if ($pi.Contains('return SearchExecutable(L"node.exe")')) {
-    throw 'Pi Runtime must not fall back to a system Node installation.'
-}
+if ($pi.Contains('return SearchExecutable(L"node.exe")')) { throw 'Pi Runtime must not fall back to a system Node installation.' }
 
-$desktopToolNames = @(
-    'settings_open',
-    'wallpaper_create_web_package',
-    'wallpaper_validate_package',
-    'wallpaper_state_get',
-    'wallpaper_apply_web_package',
-    'desktop_widget_create_web',
-    'desktop_widget_update',
-    'desktop_widget_remove',
-    'desktop_widget_list'
+$piPreviewTools = @(
+    'settings_open', 'wallpaper_validate_package', 'wallpaper_state_get', 'desktop_widget_list',
+    'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples'
 )
-$piToolMarkers = @('pi.registerTool({', 'pi.setActiveTools', 'TURINGDESK_NATIVE_TOOL_HOST', '--native-tool-worker') + $desktopToolNames
-foreach ($marker in $piToolMarkers) {
-    if (-not $piTools.Contains($marker)) { throw "Pi desktop tools extension marker missing: $marker" }
+foreach ($marker in @('pi.registerTool({', 'pi.setActiveTools', 'TURINGDESK_NATIVE_TOOL_HOST', '--native-tool-worker') + $piPreviewTools) {
+    if (-not $piTools.Contains($marker)) { throw "Pi preview tool marker missing: $marker" }
+}
+$forbiddenPiMutationTools = @(
+    'wallpaper_create_web_package', 'wallpaper_apply_web_package',
+    'desktop_widget_create_web', 'desktop_widget_update', 'desktop_widget_remove'
+)
+foreach ($tool in $forbiddenPiMutationTools) {
+    if ($piTools.Contains("`"$tool`"")) { throw "Pi must not expose direct desktop mutation tool: $tool" }
+}
+foreach ($marker in @('PREVIEW-FIRST', 'native Apply button', 'A2UI JSON only')) {
+    if (-not $piTools.Contains($marker)) { throw "Pi desktop safety prompt marker missing: $marker" }
 }
 
 foreach ($marker in @('ppt_create', 'file_create', 'folder_list', 'file_open')) {
-    if ($nativeToolsHeader.Contains($marker)) { throw "Generic C++ tool must not be exposed by NativeTools: $marker" }
+    if ($nativeToolsHeader.Contains($marker)) { throw "Generic C++ tool must not be exposed by NativeTools header: $marker" }
 }
-foreach ($marker in @('EnsurePiNativeToolsExtension', 'IsAllowedPiNativeTool', 'turingdesk::IsDesktopControlTool', 'turingdesk::ExecuteDesktopControlTool')) {
-    if (-not $main.Contains($marker)) { throw "Pi native worker marker missing: $marker" }
+foreach ($marker in @('EnsurePiNativeToolsExtension', 'IsAllowedPiNativeTool', 'preview::IsGeneratedPreviewTool', 'preview::ExecuteGeneratedPreviewTool', 'ExecuteDesktopControlTool')) {
+    if (-not $main.Contains($marker)) { throw "Pi native worker safety marker missing: $marker" }
 }
-foreach ($marker in @('IsDesktopControlTool', 'ExecuteDesktopControlTool', 'WallpaperStateGet', 'WallpaperApplyWebPackage', 'WidgetCreate', 'WidgetUpdate', 'WidgetRemove', 'WidgetList')) {
-    if (-not $desktopTools.Contains($marker)) { throw "Desktop Control bridge marker missing: $marker" }
+foreach ($tool in $forbiddenPiMutationTools) {
+    $allowlistArea = $main.Substring($main.IndexOf('bool IsAllowedPiNativeTool'), $main.IndexOf('bool NoProxyContains') - $main.IndexOf('bool IsAllowedPiNativeTool'))
+    if ($allowlistArea.Contains("`"$tool`"")) { throw "Native Pi worker allowlist contains direct mutation tool: $tool" }
 }
+
+# Internal desktop mutation APIs remain available to the host-owned Apply boundary.
+foreach ($marker in @('IsDesktopControlTool', 'ExecuteDesktopControlTool', 'WallpaperApplyWebPackage', 'WidgetCreate', 'WidgetUpdate', 'WidgetRemove', 'WidgetList')) {
+    if (-not $desktopTools.Contains($marker)) { throw "Internal Desktop Control bridge marker missing: $marker" }
+}
+foreach ($marker in @(
+    'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples',
+    'ValidateWidgetDocument', 'AI_Generated', 'HandleGeneratedPreviewCopyData',
+    'put_DefaultBackgroundColor', 'kApplyButtonId', 'kRejectButtonId',
+    'CreateWebWidget', 'ApplyWebPackage', 'CleanupPreview')) {
+    if (-not $generatedPreview.Contains($marker)) { throw "Generated desktop sandbox marker missing: $marker" }
+}
+foreach ($marker in @('additional', 'A2UI', 'ValidateNode', 'nodeCount', 'depth > 4', 'Button')) {
+    if (-not $a2ui.Contains($marker)) { throw "A2UI parser safety marker missing: $marker" }
+}
+foreach ($marker in @('additionalProperties', 'Card', 'Text', 'Button', 'Weather', 'List')) {
+    if (-not $schema.Contains($marker)) { throw "A2UI schema marker missing: $marker" }
+}
+foreach ($marker in @('Apply', 'Reject', 'AI_Generated', 'WebView2', 'declarative', 'Aurora Flow', 'Ocean Glass', 'Today Tasks', 'System Pulse')) {
+    if (-not $sandbox.Contains($marker)) { throw "AI desktop sandbox documentation marker missing: $marker" }
+}
+
 foreach ($marker in @('DesktopWidgetStore::SelfTest', 'CreateManagedWeb', 'UpdateManagedHtml')) {
     if (-not $widgetStore.Contains($marker)) { throw "Desktop widget persistence marker missing: $marker" }
 }
@@ -189,8 +185,11 @@ if (-not $main.Contains('DesktopWidgetStore::SelfTest')) { throw 'Native self-te
 if (-not $nativeToolIsolation.Contains('RuntimeLogPath(L"pi-runtime.log")')) { throw 'Native tool worker diagnostics must route to pi-runtime.log.' }
 
 if (-not $arm.Contains('scripts\pi-agent-e2e.mjs')) { throw 'ARM64 workflow must execute Pi Agent E2E.' }
-foreach ($marker in @('get_state', 'agent_settled', 'settings_open', 'wallpaper_create_web_package', 'wallpaper_validate_package', 'TURINGDESK_NATIVE_TOOL_HOST', 'PI_WRITE_OK', 'PI_SHELL_OK')) {
+foreach ($marker in @('get_state', 'agent_settled', 'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples', 'forbiddenTools', 'TURINGDESK_NATIVE_TOOL_HOST', 'PI_WRITE_OK', 'PI_SHELL_OK')) {
     if (-not $piE2E.Contains($marker)) { throw "Pi Agent E2E marker missing: $marker" }
+}
+foreach ($forbidden in $forbiddenPiMutationTools) {
+    if (-not $piE2E.Contains($forbidden)) { throw "Pi E2E must explicitly guard forbidden mutation tool: $forbidden" }
 }
 
 foreach ($marker in @('Materialize-Runtime', 'Test-StagedPackage', '.installed-build-sha', 'Materialize-Runtime $next $validated.BuildSha', 'RuntimeBundle revision mismatch')) {
@@ -204,16 +203,13 @@ foreach ($script in @($deploy, $update, $prepare)) {
         if ($script.Contains($legacyText)) { throw "Deployment/update surface contains retired runtime branding: $legacyText" }
     }
 }
-
 foreach ($marker in @('verify-windows-powershell-compat.ps1', 'ASCII-only', 'ParseFile')) {
     if (-not $windowsCompat.Contains($marker)) { throw "Windows PowerShell compatibility guard marker missing: $marker" }
 }
 if (-not $deployCmd.Contains('scripts\deploy-native-arm64.ps1')) { throw 'One-click deploy must delegate to the current deploy wrapper.' }
 
 $requiredHarnessArgs = 'constexpr wchar_t kHarnessArgs[] = L"web --host 127.0.0.1 --port 3080 --no-open";'
-if (-not $harness.Contains($requiredHarnessArgs)) {
-    throw 'Harness launch arguments must be loopback-only and include --no-open.'
-}
+if (-not $harness.Contains($requiredHarnessArgs)) { throw 'Harness launch arguments must be loopback-only and include --no-open.' }
 
 foreach ($workflow in @($arm, $x64)) {
     if (-not $workflow.Contains('verify-l3-runtime-contract.ps1')) { throw 'Cloud build is missing the AI runtime contract guard.' }
@@ -230,8 +226,5 @@ foreach ($doc in @($product, $native, $contract, $desktopComposition, $wallpaper
         if (-not $doc.Contains($marker)) { throw "Desktop composition documentation marker missing: $marker" }
     }
 }
-foreach ($marker in $desktopToolNames) {
-    if (-not $contract.Contains($marker)) { throw "Pi runtime contract is missing current Desktop Tool: $marker" }
-}
 
-Write-Host 'Runtime contract OK: Pi-first AI, canonical Conversation Panel, Direct fallback, Desktop Control/Widget plane and native source layout remain intact.'
+Write-Host 'Runtime contract OK: Pi-first AI, preview-only generated desktop boundary, A2UI validation, host-owned Apply/Reject, Direct fallback and native source layout remain intact.'

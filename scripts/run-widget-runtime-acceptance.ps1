@@ -38,6 +38,86 @@ function Get-CurrentDisplayTopology {
     )
 }
 
+function Initialize-ForegroundWindowInterop {
+    if ('TuringDesk.Acceptance.ForegroundWindowNative' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace TuringDesk.Acceptance {
+    public static class ForegroundWindowNative {
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+    }
+}
+'@
+}
+
+function Get-ForegroundWindowObservation {
+    Initialize-ForegroundWindowInterop
+    $hwnd = [TuringDesk.Acceptance.ForegroundWindowNative]::GetForegroundWindow()
+    if ($hwnd -eq [IntPtr]::Zero) { return $null }
+
+    [uint32]$processId = 0
+    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetWindowThreadProcessId($hwnd, [ref]$processId)
+    if ($processId -eq 0) { return $null }
+
+    $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return $null }
+
+    $className = New-Object Text.StringBuilder 256
+    $title = New-Object Text.StringBuilder 1024
+    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetClassName($hwnd, $className, $className.Capacity)
+    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetWindowText($hwnd, $title, $title.Capacity)
+
+    [pscustomobject]@{
+        capturedAtUtc = [DateTime]::UtcNow.ToString('o')
+        processName = $process.ProcessName
+        processId = [int]$processId
+        sessionId = $process.SessionId
+        className = $className.ToString()
+        title = $title.ToString()
+    }
+}
+
+function Wait-ForExpectedTuringDeskWindowEvidence([string]$AcceptancePhase, [string]$DiagnosticsDir) {
+    if ($AcceptancePhase -notin @('settings','search')) { return }
+
+    $expectedClass = if ($AcceptancePhase -eq 'settings') { 'TuringDesk.Native.DesktopLibrary' } else { 'TuringDesk.Native.SearchWindow' }
+    $expectedProcess = if ($AcceptancePhase -eq 'settings') { 'TuringDeskWallpaper' } else { 'TuringDesk' }
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    Write-Host "Waiting for foreground TuringDesk $AcceptancePhase window evidence: class=$expectedClass process=$expectedProcess"
+    Write-Host 'Keep the required product window foreground while this phase observes it; the health probe runs immediately afterwards.'
+
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $observation = Get-ForegroundWindowObservation
+        if ($null -ne $observation -and
+            $observation.className -eq $expectedClass -and
+            $observation.processName -eq $expectedProcess -and
+            $observation.sessionId -eq [System.Diagnostics.Process]::GetCurrentProcess().SessionId) {
+            $path = Join-Path $DiagnosticsDir "widget-acceptance-$AcceptancePhase.window.json"
+            $evidence = [ordered]@{
+                schema = 'turingdesk.widget-window-evidence.v1'
+                phase = $AcceptancePhase
+                capturedAtUtc = $observation.capturedAtUtc
+                processName = $observation.processName
+                processId = $observation.processId
+                sessionId = $observation.sessionId
+                className = $observation.className
+                title = $observation.title
+            }
+            $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path -Encoding utf8
+            Write-Host "Observed required TuringDesk $AcceptancePhase foreground window: $($observation.className) pid=$($observation.processId)"
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+
+    throw "M3 $AcceptancePhase acceptance is unproven: the expected foreground product window was not observed within 60 seconds (class=$expectedClass process=$expectedProcess)."
+}
+
 function Read-CheckpointLines([string]$Path, [string]$Description) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "$Description evidence is missing."
@@ -206,6 +286,8 @@ if ($Phase -eq 'baseline') {
         Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.txt' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.window.json' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 
     $binary = Get-AcceptanceBinaryFingerprint -Path $exe
     Write-CheckpointLines -Path $binaryCheckpoint -Lines @(
@@ -218,6 +300,10 @@ if ($Phase -eq 'baseline') {
 }
 else {
     Assert-AcceptanceBinaryContinuity -Path $binaryCheckpoint -ExecutablePath $exe
+}
+
+if ($Phase -in @('settings','search')) {
+    Wait-ForExpectedTuringDeskWindowEvidence -AcceptancePhase $Phase -DiagnosticsDir $diagnostics
 }
 
 if ($Phase -eq 'explorer') {

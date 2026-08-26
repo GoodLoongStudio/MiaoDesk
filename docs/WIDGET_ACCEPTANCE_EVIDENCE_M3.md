@@ -12,15 +12,31 @@ Passing probes and CI are not visual product acceptance. A real ARM64 Windows op
 
 ## Durable evidence set
 
-The successful `baseline` phase now fingerprints the exact `TuringDeskWidgetAcceptance.exe` used to start the sequence. The runner writes `widget-acceptance-binary.sha256` with the executable SHA-256 and byte length. Every later phase refuses to run if that executable differs. This prevents reports from different acceptance builds being combined into one apparently valid sequence.
+The successful `baseline` phase fingerprints the exact `TuringDeskWidgetAcceptance.exe` used to start the sequence. The runner writes `widget-acceptance-binary.sha256` with the executable SHA-256 and byte length. Every later phase refuses to run if that executable differs.
 
-After the `monitor` phase succeeds, run:
+After the `monitor` phase succeeds, the operator must explicitly record the human visual gate:
+
+```powershell
+.\scripts\confirm-widget-visual-acceptance.ps1 `
+  -Reviewer '<name>' `
+  -WallpaperBelowWidget `
+  -IconsAboveWidget `
+  -DesktopIconsUsable `
+  -SettingsKeepsWidgetVisible `
+  -SearchKeepsWidgetVisible `
+  -ExplorerRecoveryVisible `
+  -MonitorRecoveryVisible
+```
+
+This command is intentionally explicit. It records `widget-acceptance-human-visual.json` plus a SHA-256 sidecar using schema `turingdesk.widget-visual-acceptance.v1`. The attestation is bound to the exact acceptance binary and to the SHA-256 of all five phase screenshots, so a review from another run cannot be silently reused.
+
+Only after that attestation exists may the evidence package be sealed:
 
 ```powershell
 .\scripts\seal-widget-acceptance-evidence.ps1
 ```
 
-The sealer refuses to run unless the acceptance sequence cursor is exactly `monitor`. It requires one coherent evidence set containing:
+The sealer refuses to run unless the sequence cursor is exactly `monitor` and the human visual attestation matches the current binary and screenshot set. It requires:
 
 - baseline Widget identity set;
 - ordered sequence cursor;
@@ -28,7 +44,8 @@ The sealer refuses to run unless the acceptance sequence cursor is exactly `moni
 - all five phase health reports;
 - all five full virtual-desktop screenshots and their SHA-256 sidecars;
 - Explorer PID restart checkpoint;
-- monitor topology checkpoint and observed topology-transition evidence.
+- monitor topology checkpoint and observed topology-transition evidence;
+- explicit human visual acceptance JSON and its SHA-256 sidecar.
 
 It writes:
 
@@ -37,42 +54,41 @@ It writes:
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-evidence.manifest.sha256
 ```
 
-The manifest schema is `turingdesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records the acceptance binary identity, baseline Widget identity set, Windows session id, OS version and process architecture.
+The manifest schema is `turingdesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records acceptance binary identity, baseline Widget identity set, Windows session/machine metadata and the human reviewer/timestamp.
 
-The sealer immediately runs the independent verifier after writing the manifest. A seal is therefore not considered produced unless the just-written package can be re-read and validated successfully.
+The sealer immediately runs the independent verifier after writing the manifest.
 
 ## Independent verification
 
-A previously sealed package can be checked again at any time with:
+A sealed package can be checked again with:
 
 ```powershell
 .\scripts\verify-widget-acceptance-evidence.ps1
 ```
 
-The verifier recomputes the manifest SHA-256, then checks every recorded evidence file for continued existence, byte length and SHA-256 equality. It additionally checks:
+The verifier recomputes the manifest SHA-256 and checks every recorded file for existence, byte length and SHA-256 equality. It additionally checks:
 
-- the manifest and seal use schema `turingdesk.widget-acceptance-evidence.v1`;
-- the sequence remains completed at `monitor`;
-- the acceptance binary checkpoint is present and still matches the binary SHA-256/length recorded in the manifest;
-- all five `baseline/settings/search/explorer/monitor` report, PNG and PNG sidecar artifacts remain present;
-- each PNG still matches its sidecar SHA-256 and phase metadata;
-- visual sidecars retain `capturedAtUtc` and virtual-desktop bounds;
-- `capturedAtUtc` is strictly ordered as `baseline < settings < search < explorer < monitor`;
-- every phase health report was written before its matching screenshot, and the screenshot follows within five minutes;
-- no recorded evidence file is timestamped after the manifest seal;
-- Explorer restart and monitor-topology recovery evidence remain in the sealed set;
-- the baseline Widget identity set still matches the identity set recorded in the manifest.
+- the completed `monitor` sequence;
+- acceptance binary continuity;
+- all five report/PNG/sidecar groups;
+- screenshot sidecar metadata and strict phase chronology;
+- report-before-screenshot timing;
+- Explorer restart and monitor topology recovery evidence;
+- baseline Widget identity continuity;
+- human attestation schema/hash/reviewer/timestamp;
+- all seven human confirmations are true;
+- human attestation binary identity matches the manifest;
+- human-attested screenshot hashes still match all five sealed PNGs;
+- visual review occurred after the final monitor screenshot and before sealing.
 
-The chronology, Widget identity and acceptance-binary checks solve different problems. Matching hashes alone can still describe artifacts assembled from different acceptance rounds; stable Widget identities do not prove that the same test binary was used; and using the same binary does not prove the phases ran in order. All three are required.
-
-This catches evidence mutation after sealing rather than merely protecting the manifest itself. It also makes the final evidence package independently auditable without discovering product HWNDs or re-running the runtime probe.
+Widget identity, acceptance binary identity, phase chronology and human visual attestation solve different problems; all are required.
 
 ## Ownership boundary
 
-The runner, sealer and verifier are diagnostics-only. They must not discover or mutate Progman, WorkerW, DefView, Widget HWNDs or wallpaper HWNDs, and must not call `SetParent` or `SetWindowPos`. Runtime/surface truth remains owned by `WidgetService` and `DesktopShellHost`; these scripts only fingerprint the acceptance executable and hash/validate already-produced acceptance artifacts.
+The runner, confirmer, sealer and verifier are diagnostics-only. They must not discover or mutate Progman, WorkerW, DefView, Widget HWNDs or wallpaper HWNDs, and must not call `SetParent` or `SetWindowPos`. Runtime/surface truth remains owned by `WidgetService` and `DesktopShellHost`.
 
-Static CI guards prevent the runner/verifier from silently losing required binary/integrity/chronology checks or gaining Windows Shell ownership. PowerShell Syntax CI runs those guards on changes to the acceptance scripts.
+Static CI guards prevent these tools from silently losing integrity checks or gaining Windows Shell ownership.
 
 ## Completion rule
 
-A sealed and independently verified manifest, bound to one acceptance binary, is required evidence for closing the M3 real-Windows gate, but it does not itself prove visual correctness. Human review of the five screenshots and the live interactive flow is still mandatory before M3 is marked complete.
+A sealed and independently verified manifest is required evidence for closing the M3 real-Windows gate, and sealing now requires explicit human review of the same five screenshots and interactive recovery flow. CI still cannot substitute for the real ARM64 Windows visual acceptance itself.

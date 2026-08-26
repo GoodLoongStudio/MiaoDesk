@@ -58,17 +58,19 @@ foreach ($marker in @('humanVisualAcceptance','widget-acceptance-human-visual.js
 }
 
 $sessionVerifierText = Get-Content -LiteralPath $sessionVerifier -Raw
-foreach ($marker in @('widget-acceptance-baseline.session','baselineStatus','sessionStatus','sessionId','enabledWebCount','runtimeReported','runtimeHealthy','renderingHealthy=true','phaseOrder')) {
-    if (-not $sessionVerifierText.Contains($marker)) { throw "Widget acceptance session verifier missing health/session marker: $marker" }
+foreach ($marker in @('widget-acceptance-baseline.session','baselineStatus','sessionStatus','sessionId','enabledWebCount','runtimeReported','runtimeHealthy','phaseOrder','Count-WidgetTruth','monitorValid','geometryValid','visible','zOrderValid','renderingHealthy')) {
+    if (-not $sessionVerifierText.Contains($marker)) { throw "Widget acceptance session verifier missing health/session/placement marker: $marker" }
 }
 foreach ($semanticCheck in @(
     "`$phaseOrder = @('baseline','settings','search','explorer','monitor')",
     "[int]`$report['sessionId'] -ne `$baselineSessionId",
     '[string]$report[''sessionStatus''] -ne $expectedSessionStatus',
-    '[int]$attestation.sessionId -ne $baselineSessionId'
+    '[int]$attestation.sessionId -ne $baselineSessionId',
+    "foreach (`$field in @('monitorValid','geometryValid','visible','zOrderValid','renderingHealthy'))",
+    'if ($healthyCount -ne $widgetCount)'
 )) {
     if (-not $sessionVerifierText.Contains($semanticCheck)) {
-        throw "Widget acceptance session verifier is missing executable phase/session validation: $semanticCheck"
+        throw "Widget acceptance session verifier is missing executable phase/session/placement validation: $semanticCheck"
     }
 }
 
@@ -96,8 +98,8 @@ foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visu
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 $placementText = Get-Content -LiteralPath $placementDoc -Raw
-foreach ($marker in @('monitorReported','monitorValid','geometryReported','geometryValid','expectedLeft','actualLeft','geometry_mismatch','monitor reconnect acceptance','real-Windows visual gate')) {
+foreach ($marker in @('monitorReported','monitorValid','geometryReported','geometryValid','expectedLeft','actualLeft','geometry_mismatch','monitor reconnect acceptance','real-Windows visual gate','Independent acceptance verification','zOrderValid=true')) {
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus executable phase-order and same-session validation for phase reports and human review, observed Settings/Search windows bound between adjacent phase screenshots, ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation, observed Settings/Search windows bound between adjacent phase screenshots, ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'

@@ -13,14 +13,20 @@ $required = @(
     'inputProxyWorks',
     'SendMessageW(edit_, WM_CHAR',
     'case WM_LBUTTONDOWN:',
-    'SetFocus(edit_)',
-    'if (message == WM_PAINT) { ValidateRect(hwnd, nullptr); return 0; }'
+    'SetFocus(edit_)'
 )
 
 foreach ($marker in $required) {
     if (-not $text.Contains($marker)) {
         throw "Search input contract marker missing: $marker"
     }
+}
+
+# The hidden native EDIT must suppress its own painting so it can provide IME/keyboard/clipboard
+# input without ever becoming a visible rectangle. Match semantics rather than one formatting style.
+$paintSuppressed = $text -match '(?s)if\s*\(message\s*==\s*WM_PAINT\)\s*\{\s*ValidateRect\(hwnd,\s*nullptr\);\s*return\s+0;\s*\}'
+if (-not $paintSuppressed) {
+    throw 'Search input contract missing hidden EDIT WM_PAINT suppression.'
 }
 
 $forbidden = @(

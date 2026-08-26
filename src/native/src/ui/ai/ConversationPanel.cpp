@@ -16,9 +16,21 @@
 namespace turingdesk {
 
 bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
-    const bool shown = ShowConversationPanelCore(instance, owner, agent, initialPrompt);
-    if (shown) EnsureConversationInputOverlay(instance);
-    return shown;
+    // Install input/semantic bridges before the first model turn so even the prompt coming
+    // directly from Search Bar gets real tool activity events instead of log polling.
+    const bool shown = ShowConversationPanelCore(instance, owner, agent, L"");
+    if (!shown) return false;
+
+    EnsureConversationInputOverlay(instance);
+    if (gConversationState && IsWindow(gConversationState->window)) {
+        EnsureConversationActivityBridge(gConversationState->window);
+        if (!Trim(initialPrompt).empty() && !gConversationState->busy && !gConversationState->pendingConfirmation) {
+            SetWindowTextW(gConversationState->input, initialPrompt.c_str());
+            SendPrompt(*gConversationState);
+        }
+        SetFocus(gConversationState->input);
+    }
+    return true;
 }
 
 } // namespace turingdesk

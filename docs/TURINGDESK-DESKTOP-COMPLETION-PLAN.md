@@ -132,6 +132,9 @@ Tasks:
 - [x] Add actionable error reporting to Widget UI and Pi through domain-owned `issueCode/detail/recommendedAction`.
 - [x] Bind the five-phase acceptance round to one Widget identity set, one persisted placement configuration, one Windows session and one acceptance binary without treating runtime PID/HWND recreation as a failure.
 - [x] Seal and independently verify explicit per-surface monitor/geometry/visibility/z-order health plus the baseline placement configuration hash/length.
+- [x] Temporarily remove freeform Widget editing from the M3 product surface and ship three fixed clock showcase formats (`MinimalClock`, `DateClock`, `GlassClock`) with preset-owned geometry.
+- [x] Make fixed-format automatic placement collision-aware across enabled Widgets on the same display and keep unrelated Widget records from disrupting the three-format showcase cycle.
+- [x] Add `verify-widget-product-model.ps1` to exact-head x64/ARM64 workflows so Small/Medium/Large, `SetSize`, `MoveToMonitor` or shell-attachment ownership cannot silently return during M3.
 - [ ] Confirm Widget remains above TuringDesk wallpaper but below desktop icons on real Windows.
 - [ ] Confirm Settings/Search windows do not hide or pause the Widget.
 - [ ] Confirm Explorer restart restores Widget surfaces.
@@ -155,26 +158,29 @@ M3 implementation landed so far:
 - production `DesktopWidgetUiAdapter` reads one `DesktopSnapshot`, keeps raw persistence items separate from temporary display items, and decorates enabled Widget list entries with health/action text without polluting stored titles;
 - Pi `wallpaper_state_get` emits per-surface process/HWND/lifecycle/z-order/issue/action detail and `desktop_widget_list` reports matching runtime issue/action guidance;
 - UI adapters/controllers and Pi remain forbidden from enumerating HWNDs or reading private runtime diagnostics directly; the Widget domain owns that translation;
+- the current beginner surface intentionally uses fixed presets only: `极简时钟`, `日期时钟`, and `玻璃时钟`; drag/resize/edit-mode work is deferred until visible-runtime acceptance is proven;
+- fixed preset placement scans normalized desktop space from the top-right, rejects candidates intersecting existing enabled Widgets plus the product gap, and falls back deterministically only when the display is too crowded to find a free slot;
+- `scripts/verify-widget-product-model.ps1` guards the fixed-format/no-editor contract and is run by both exact-head x64 and ARM64 workflows;
 - `TuringDeskWidgetAcceptance.exe` and the phase runner enforce `baseline -> settings -> search -> explorer -> monitor`, same Widget identity, same interactive Windows session and the same acceptance binary;
 - `WidgetAcceptanceConfigContinuity.cpp` reads enabled Web Widget configuration through `WidgetService::List` and freezes `id/monitorId/kind/x/y/width/height/zIndex/enabled` across the five-phase round while intentionally allowing runtime PID/HWND recreation;
 - the sealed evidence package now contains the baseline placement configuration checkpoint and manifest `placementConfig` SHA-256/length, and the independent verifier checks it again after sealing;
 - the independent phase verifier explicitly requires every enabled Widget section to report `monitorValid=true`, `geometryValid=true`, `visible=true`, `zOrderValid=true` and `renderingHealthy=true` in every phase instead of trusting only an aggregate boolean;
 - Settings/Search TuringDesk native foreground windows remain excluded from performance pause detection, and the M3 guard protects that invariant;
 - architecture guards reject acceptance diagnostics regaining private Widget Store/INI or Shell HWND ownership, and native x64/ARM64 workflows are triggered by all M3 acceptance scripts/docs consumed by the build-time contract;
-- `docs/WIDGET_RUNTIME_HEALTH_M3.md`, `docs/WIDGET_PLACEMENT_HEALTH_M3.md`, `docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md` and `docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md` describe the active health/evidence semantics and remaining acceptance work.
+- `docs/WIDGET_RUNTIME_HEALTH_M3.md`, `docs/WIDGET_PLACEMENT_HEALTH_M3.md`, `docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md`, `docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md` and `docs/WIDGET_PRODUCT_MODEL_M3.md` describe the active health/product/evidence semantics and remaining acceptance work.
 
 Real Windows acceptance flow:
 
 ```text
-create desktop clock
--> clock is visibly rendered
+create the three fixed desktop clock formats
+-> all three are visibly rendered without overlap
 -> desktop icons remain usable
 -> open TuringDesk settings
--> clock remains visible
+-> clocks remain visible
 -> open TuringDesk search
--> clock remains visible
+-> clocks remain visible
 -> restart Explorer
--> clock returns
+-> clocks return
 -> reconnect/change display
 -> unchanged Widget placement configuration returns to correct monitor/geometry
 -> record same-session human visual attestation
@@ -450,4 +456,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M3 — Widget visible-runtime implementation and acceptance.**
 
-M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry, combined rendering-health semantics, stable actionable issue codes, production Widget list health/action display, Pi per-surface issue/action reporting through the shared snapshot, observed Settings/Search/Explorer/monitor evidence, same-session and same-binary continuity, service-routed placement-configuration continuity sealed into the final evidence manifest, Settings/Search acceptance pinned to the expected visible product class/process in the same session, and a strict reported-and-ready lifecycle precondition that is failure-atomic with respect to durable phase advancement. The remaining gate is real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance followed by same-session human visual attestation and sealed independent verification. M4 does not begin until that gate is satisfied.
+M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry, combined rendering-health semantics, stable actionable issue codes, production Widget list health/action display, Pi per-surface issue/action reporting through the shared snapshot, observed Settings/Search/Explorer/monitor evidence, same-session and same-binary continuity, service-routed placement-configuration continuity sealed into the final evidence manifest, Settings/Search acceptance pinned to the expected visible product class/process in the same session, and a strict reported-and-ready lifecycle precondition that is failure-atomic with respect to durable phase advancement. The M3 beginner product surface is now deliberately narrowed to three fixed clock formats with collision-safe automatic placement; drag/resize/monitor-edit APIs are deferred and guarded by `verify-widget-product-model.ps1` in both exact-head Windows workflows. The remaining gate is real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance followed by same-session human visual attestation and sealed independent verification. M4 does not begin until that gate is satisfied.

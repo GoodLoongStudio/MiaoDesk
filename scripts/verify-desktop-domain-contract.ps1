@@ -18,6 +18,7 @@ $files = @{
     Wallpaper = 'src/native/src/desktop/wallpaper/WallpaperService.cpp'
     WidgetHeader = 'src/native/include/turingdesk/WidgetService.h'
     Widget = 'src/native/src/desktop/widgets/WidgetService.cpp'
+    WidgetRuntime = 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp'
     SurfaceTelemetryHeader = 'src/native/include/turingdesk/DesktopSurfaceTelemetry.h'
     SurfaceTelemetry = 'src/native/src/desktop/shell/DesktopSurfaceTelemetry.cpp'
     WidgetControllerHeader = 'src/native/include/turingdesk/DesktopWidgetController.h'
@@ -93,6 +94,13 @@ foreach ($marker in @('SHELLDLL_DefView', 'TuringDesk.Native.WallpaperHost', 'Tu
 }
 foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'SendMessageTimeoutW(', '0x052C')) {
     if ($text.SurfaceTelemetry.Contains($forbidden)) { throw "Read-only DesktopSurfaceTelemetry gained shell mutation ownership: $forbidden" }
+}
+
+foreach ($marker in @('DesiredWidgetRequests(HWND host, std::wstring& fingerprint)', 'widgets.SetPaused(policyPause)', 'web.SetPaused(!IsWindowVisible(host) || policyPause)')) {
+    if (-not $text.WidgetRuntime.Contains($marker)) { throw "Widget runtime independence contract missing marker: $marker" }
+}
+foreach ($forbidden in @('DesiredWidgetRequests(HWND host, const RuntimeState& state', 'widgets.SetPaused(!IsWindowVisible(host)')) {
+    if ($text.WidgetRuntime.Contains($forbidden)) { throw "Widget runtime regained wallpaper visibility/enabled coupling: $forbidden" }
 }
 
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
@@ -195,4 +203,4 @@ foreach ($marker in @('monitorReported', 'monitorValid', 'geometryReported', 'ge
     if (-not $text.PlacementDoc.Contains($marker)) { throw "Widget placement health doc missing marker: $marker" }
 }
 
-Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Widget UI remains controller/service-routed, Pi remains snapshot-routed, and runtime diagnostics do not regain private Store/Shell ownership.'
+Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Widget runtime is wallpaper-state independent, UI remains controller/service-routed, Pi remains snapshot-routed, and runtime diagnostics do not regain private Store/Shell ownership.'

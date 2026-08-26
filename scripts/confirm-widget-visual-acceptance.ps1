@@ -46,6 +46,19 @@ function Read-KeyValueFile([string]$Path) {
     $map
 }
 
+function Read-BaselineSessionId([string]$DiagnosticsDir) {
+    $path = Join-Path $DiagnosticsDir 'widget-acceptance-baseline.session'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw 'M3 baseline Windows session checkpoint is missing. Start a new baseline in the interactive session used for the full sequence.'
+    }
+    $value = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop).Trim()
+    $sessionId = 0
+    if (-not [int]::TryParse($value, [ref]$sessionId) -or $sessionId -lt 0) {
+        throw "M3 baseline Windows session checkpoint is malformed: '$value'"
+    }
+    $sessionId
+}
+
 foreach ($flag in @(
     $WallpaperBelowWidget,
     $IconsAboveWidget,
@@ -67,6 +80,12 @@ if (-not (Test-Path -LiteralPath $sequencePath -PathType Leaf)) {
 $sequence = (Get-Content -LiteralPath $sequencePath -Raw).Trim()
 if ($sequence -ne 'monitor') {
     throw "Visual acceptance cannot be confirmed before the complete monitor phase. Current sequence='$sequence'."
+}
+
+$baselineSessionId = Read-BaselineSessionId -DiagnosticsDir $diagnostics
+$currentSessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+if ($currentSessionId -ne $baselineSessionId) {
+    throw "Human visual acceptance must be recorded in the same Windows session as the M3 baseline. baselineSession=$baselineSessionId currentSession=$currentSessionId"
 }
 
 $binary = Read-KeyValueFile -Path (Join-Path $diagnostics 'widget-acceptance-binary.sha256')
@@ -96,7 +115,7 @@ $attestation = [ordered]@{
     schema = 'turingdesk.widget-visual-acceptance.v1'
     reviewedAtUtc = [DateTime]::UtcNow.ToString('o')
     reviewer = $Reviewer.Trim()
-    sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+    sessionId = $baselineSessionId
     acceptanceBinary = [ordered]@{
         sha256 = ([string]$binary['sha256']).ToLowerInvariant()
         length = [int64]$binary['length']
@@ -120,9 +139,11 @@ $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvarian
 Set-Content -LiteralPath "$path.sha256" -Value @(
     "sha256=$hash",
     'schema=turingdesk.widget-visual-acceptance.v1',
-    "reviewedAtUtc=$($attestation.reviewedAtUtc)"
+    "reviewedAtUtc=$($attestation.reviewedAtUtc)",
+    "sessionId=$baselineSessionId"
 ) -Encoding utf8
 
 Write-Host "Recorded explicit M3 human visual acceptance: $path"
+Write-Host "Windows session: $baselineSessionId"
 Write-Host "Reviewer: $($attestation.reviewer)"
 Write-Host "Attestation SHA-256: $hash"

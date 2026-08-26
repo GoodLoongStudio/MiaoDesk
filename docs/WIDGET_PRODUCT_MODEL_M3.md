@@ -69,8 +69,10 @@ The M3 product path now includes:
 - balanced production `CreateClock` selection across the three fixed showcase formats;
 - no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
-- `scripts/verify-widget-product-model.ps1` guarding the fixed-format/no-editor contract and preventing the controller from regaining shell attachment ownership;
-- x64/ARM64 exact-head workflows running the Widget product guard in addition to source-layout/domain/shell contracts.
+- `TuringDeskWidgetAcceptance.exe` now requires exactly one enabled `极简时钟`, `日期时钟`, and `玻璃时钟`, verifies their preset-owned sizes, and rejects same-monitor overlap before any phase cursor can advance;
+- a single arbitrary Web Widget can no longer satisfy M3 real-Windows acceptance;
+- `scripts/verify-widget-product-model.ps1` guards both the fixed-format/no-editor controller contract and the strict three-clock acceptance set, while preventing the controller from regaining shell attachment ownership;
+- x64/ARM64 exact-head workflows run the Widget product guard in addition to source-layout/domain/shell contracts.
 
 These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
 
@@ -80,16 +82,19 @@ The first acceptance pass is deliberately small:
 
 ```text
 click create three times
--> 极简时钟 visibly renders
--> 日期时钟 visibly renders
--> 玻璃时钟 visibly renders
--> all three occupy non-overlapping automatic placements
+-> exactly one 极简时钟 is enabled at preset size
+-> exactly one 日期时钟 is enabled at preset size
+-> exactly one 玻璃时钟 is enabled at preset size
+-> all three visibly render
+-> all three occupy non-overlapping automatic placements on each display
 -> all remain above TuringDesk wallpaper and below desktop icons
--> hide/show works
--> delete works
--> restart keeps enabled Widgets
+-> settings window does not hide or pause them
+-> search window does not hide or pause them
 -> Explorer restart restores them
+-> monitor reconnect restores the same persisted placement configuration
 ```
+
+The acceptance executable rejects extra enabled Web Widgets during this M3 round so evidence cannot accidentally describe a different product configuration. Runtime PID/HWND recreation remains allowed; persisted Widget identity, placement configuration, Windows session, phase order, preferred WebView2 lifecycle readiness, geometry/monitor visibility and z-order health remain continuous evidence requirements.
 
 Only after this fixed-format path is stable should drag/resize/edit-mode work resume.
 

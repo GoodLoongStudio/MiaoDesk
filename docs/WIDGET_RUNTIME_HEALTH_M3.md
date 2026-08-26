@@ -45,7 +45,7 @@ An enabled Web Widget is OS-surface-ready only when its isolated process is runn
 
 For the preferred child path, lifecycle readiness additionally requires EnvironmentReady + ControllerReady + NavigationReady. Rendering health also requires reported/valid shared z-order telemetry and the existing compatibility runtime diagnostic. Aggregate `WidgetRuntimeHealth::runtimeHealthy` requires a one-to-one structured surface for every enabled Web Widget and every surface to be rendering healthy.
 
-A legacy child can still be observed without inventing lifecycle readiness: its lifecycle fields remain unreported, so clients can distinguish a compatibility fallback from the preferred fully-telemetried path.
+A legacy child can still be observed without inventing lifecycle readiness: its lifecycle fields remain unreported, so ordinary UI/Pi diagnostics can distinguish a compatibility fallback from the preferred fully-telemetried path. **M3 real-Windows acceptance is stricter than that compatibility view:** every accepted Web Widget must explicitly report Environment/Controller/Navigation telemetry and all three stages must be ready. A legacy/unreported child can be diagnosed, but it cannot satisfy the M3 visible-runtime gate.
 
 ## Actionable failure contract
 
@@ -79,15 +79,17 @@ Run it directly or through:
 .\scripts\run-widget-runtime-acceptance.ps1 -Phase baseline
 ```
 
-Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Web Widget, a one-to-one healthy surface set, WebView2 lifecycle readiness and valid shared z-order telemetry. It writes a UTF-16 report to:
+Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Web Widget, a one-to-one healthy surface set, explicitly reported-and-ready WebView2 lifecycle telemetry and valid shared z-order telemetry. It writes a UTF-16 report to:
 
 ```text
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
 ```
 
-For `settings` and `search`, the acceptance executable itself now requires the corresponding visible TuringDesk top-level product window to exist in the same Windows session immediately before **and** immediately after the runtime-health sample. The PowerShell runner still records foreground-window evidence, but that wrapper observation is no longer trusted as the only proof that the required product surface was present while Widget health was measured. This closes the race where the observed Settings/Search window could disappear between wrapper observation and the C++ probe.
+For `settings` and `search`, the acceptance executable itself requires the corresponding visible TuringDesk top-level product window in the same Windows session immediately before entering the runtime-health probe. The Settings context is pinned to class `TuringDesk.Native.DesktopLibrary` owned by `TuringDeskWallpaper.exe`; Search is pinned to class `TuringDesk.Native.SearchWindow` owned by `TuringDesk.exe`. The PowerShell runner still records foreground-window evidence, but a matching class from another process cannot satisfy the C++ acceptance precondition.
 
-This context check is acceptance-only. It observes the named top-level Settings/Search product window and does not discover, attach, reorder or repair Widget/wallpaper/Progman/WorkerW surfaces; runtime Widget truth continues to come only from `WidgetService`, while desktop attachment ownership remains solely in `DesktopShellHost`.
+All additional fallible checks introduced by the acceptance executable—placement continuity, product-window/process context and strict WebView2 lifecycle readiness—run **before** `RunWidgetRuntimeAcceptanceProbe`. The runtime probe owns durable phase advancement, so an extra acceptance failure cannot return an error after the sequence cursor has already advanced. This preserves the contract that a failed phase does not advance the ordered acceptance round.
+
+These context checks are acceptance-only. They observe the named top-level Settings/Search product window and do not discover, attach, reorder or repair Widget/wallpaper/Progman/WorkerW surfaces; runtime Widget truth continues to come only from `WidgetService`, while desktop attachment ownership remains solely in `DesktopShellHost`.
 
 The probe intentionally fails in a non-interactive CI session instead of pretending that a successful build proves visible desktop behavior. It also maintains a diagnostics-only sequence cursor so successful evidence must be collected in order:
 

@@ -50,6 +50,7 @@ private:
     void HandleTray(UINT mouseMessage);
     void ExitApplication();
     void UpdateFocusVisual();
+    void SetHoverVisual(bool hovered);
     bool HitVoiceButton(POINT point) const;
     bool HitAiButton(POINT point) const;
 
@@ -70,6 +71,8 @@ private:
     bool exiting_{false};
     bool positionLoaded_{false};
     bool editFocused_{false};
+    bool hovered_{false};
+    bool caretVisible_{true};
     int savedX_{0};
     int savedY_{0};
     std::wstring currentQuery_;
@@ -77,13 +80,15 @@ private:
     NOTIFYICONDATAW tray_{};
     bool trayAdded_{false};
     UINT taskbarCreated_{0};
-    HBRUSH editBrush_{};
     HFONT uiFont_{};
     HFONT smallFont_{};
 
     Microsoft::WRL::ComPtr<ID2D1Factory> d2dFactory_;
     Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> renderTarget_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> glassBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> hoverGlassBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> focusGlassBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> secondaryBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush_;
@@ -91,6 +96,7 @@ private:
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dividerBrush_;
     Microsoft::WRL::ComPtr<IDWriteFactory> writeFactory_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> inputFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> titleFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> subtitleFormat_;
 };

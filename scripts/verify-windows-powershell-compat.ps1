@@ -35,12 +35,14 @@ $updateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
 $deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
 $updateScript = Join-Path $scriptRoot 'update-turingdesk-arm64.ps1'
 $deployScript = Join-Path $scriptRoot 'deploy-native-arm64.ps1'
+$runtimeReuseGuard = Join-Path $scriptRoot 'verify-arm64-updater-runtime-reuse.ps1'
 $updaterDoc = Join-Path $root 'docs\ARM64_ACCEPTANCE_UPDATER.md'
 $armWorkflow = Join-Path $root '.github\workflows\native-search-windows.yml'
 $x64Workflow = Join-Path $root '.github\workflows\native-x64-validation.yml'
 $statusWorkflow = Join-Path $root '.github\workflows\native-arm64-status.yml'
 foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
 if (-not (Test-Path $updaterDoc -PathType Leaf)) { throw "ARM64 acceptance updater contract is missing: $updaterDoc" }
+if (-not (Test-Path $runtimeReuseGuard -PathType Leaf)) { throw "ARM64 RuntimeBundle reuse guard is missing: $runtimeReuseGuard" }
 
 $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
 $deployText = [IO.File]::ReadAllText($deployCmd, [Text.Encoding]::ASCII)
@@ -143,4 +145,6 @@ foreach ($forbidden in @('ref: ci-status', 'git push origin HEAD:ci-status')) {
     if ($statusWorkflowText.Contains($forbidden)) { throw "ARM64 status reporting must not create a side branch: $forbidden" }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a stderr-safe authenticated acceptance updater, document the M12 consumer-update boundary, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green
+& $runtimeReuseGuard
+
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a stderr-safe authenticated acceptance updater, enforce shared RuntimeBundle junction reuse without deep node_modules copies, document the M12 consumer-update boundary, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green

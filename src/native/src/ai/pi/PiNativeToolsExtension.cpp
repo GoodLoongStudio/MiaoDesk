@@ -40,7 +40,7 @@ std::string ReadFile(const fs::path& path) {
                        std::istreambuf_iterator<char>());
 }
 
-constexpr std::string_view kExtensionSource = R"PIEXT(import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+constexpr std::string_view kExtensionSourcePart1 = R"PIEXT(import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -232,8 +232,9 @@ const normalizedGeometry = {
   width: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
   height: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
 };
+)PIEXT";
 
-export default function turingDeskNativeTools(pi: ExtensionAPI) {
+constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default function turingDeskNativeTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "settings_open",
     label: "Open TuringDesk Settings",
@@ -473,7 +474,10 @@ bool EnsurePiNativeToolsExtension(std::wstring* error) {
     }
 
     const auto target = extensions / L"turingdesk-native-tools.ts";
-    const std::string expected(kExtensionSource);
+    std::string expected;
+    expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
+    expected.append(kExtensionSourcePart1);
+    expected.append(kExtensionSourcePart2);
     if (ReadFile(target) == expected) return true;
 
     auto temporary = target;

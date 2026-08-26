@@ -3,8 +3,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 $paths = @{
-    L3 = Join-Path $root 'src/native/src/ui/ai/ConversationPanel.cpp'
-    LegacyL3Shim = Join-Path $root 'src/native/src/ui/ai/L3CliWindow.cpp'
+    Conversation = Join-Path $root 'src/native/src/ui/ai/ConversationPanel.cpp'
+    ConversationImpl = Join-Path $root 'src/native/src/ui/ai/ConversationPanelImpl.inc'
+    ConversationHeader = Join-Path $root 'src/native/include/turingdesk/ConversationPanel.h'
+    LegacyHeader = Join-Path $root 'src/native/include/turingdesk/L3CliWindow.h'
     Pi = Join-Path $root 'src/native/src/ai/pi/PiRuntime.cpp'
     PiTools = Join-Path $root 'src/native/src/ai/pi/PiNativeToolsExtension.cpp'
     PiE2E = Join-Path $root 'scripts/pi-agent-e2e.mjs'
@@ -38,6 +40,7 @@ foreach ($entry in $paths.GetEnumerator()) {
 
 $forbiddenPaths = @(
     'legacy',
+    'src/native/src/ui/ai/L3CliWindow.cpp',
     'docs/L3-CODEX-RUNTIME-CONTRACT.md',
     'src/native/include/turingdesk/CodexRuntime.h',
     'src/native/include/turingdesk/CodexHostBridge.h',
@@ -52,8 +55,10 @@ foreach ($relative in $forbiddenPaths) {
     }
 }
 
-$l3 = Get-Content $paths.L3 -Raw
-$legacyL3Shim = Get-Content $paths.LegacyL3Shim -Raw
+$conversation = Get-Content $paths.Conversation -Raw
+$l3 = Get-Content $paths.ConversationImpl -Raw
+$conversationHeader = Get-Content $paths.ConversationHeader -Raw
+$legacyHeader = Get-Content $paths.LegacyHeader -Raw
 $pi = Get-Content $paths.Pi -Raw
 $piTools = Get-Content $paths.PiTools -Raw
 $piE2E = Get-Content $paths.PiE2E -Raw
@@ -96,6 +101,19 @@ foreach ($marker in @('UserFacingLocalReply', 'ShowL3CliWindow', '/runtime')) {
     if (-not $l3.Contains($marker)) { throw "AI/diagnostics boundary marker missing: $marker" }
 }
 
+foreach ($marker in @(
+    '#include "turingdesk/ConversationPanel.h"',
+    '#define ShowL3CliWindow ShowConversationPanel',
+    '#include "ConversationPanelImpl.inc"')) {
+    if (-not $conversation.Contains($marker)) { throw "Conversation Panel canonical wrapper marker missing: $marker" }
+}
+foreach ($marker in @('bool ShowConversationPanel(', 'return ShowConversationPanel(')) {
+    if (-not $conversationHeader.Contains($marker)) { throw "Conversation Panel canonical API marker missing: $marker" }
+}
+if (-not $legacyHeader.Contains('#include "turingdesk/ConversationPanel.h"')) {
+    throw 'Legacy L3CliWindow.h must remain a compatibility-only include of ConversationPanel.h.'
+}
+
 # The terminal-style AI window is retired. Keep this guard in the runtime contract because
 # the UI is the entry point to the Pi-first route and must not silently regress to a second
 # legacy presentation path while M3/M4 work continues.
@@ -115,16 +133,8 @@ foreach ($forbidden in @(
     if ($l3.Contains($forbidden)) { throw "Retired terminal AI UI marker returned: $forbidden" }
 }
 
-if (-not $legacyL3Shim.Contains('#include "ConversationPanel.cpp"')) {
-    throw 'Legacy L3CliWindow.cpp must remain a thin compatibility build shim for ConversationPanel.cpp.'
-}
-foreach ($forbidden in @('PiRuntime.h', 'ConversationState', 'CreateWindowExW', 'Consolas', 'ModelSettingsWindow')) {
-    if ($legacyL3Shim.Contains($forbidden)) {
-        throw "Legacy L3CliWindow.cpp regained implementation ownership: $forbidden"
-    }
-}
-
 foreach ($marker in @(
+    'src/ui/ai/ConversationPanel.cpp',
     'src/ai/pi/PiRuntime.cpp',
     'src/ai/pi/PiNativeToolsExtension.cpp',
     'src/ai/tools/NativeTools.cpp',
@@ -132,8 +142,8 @@ foreach ($marker in @(
     'src/ai/tools/DesktopWidgetTools.cpp')) {
     if (-not $cmake.Contains($marker)) { throw "TuringDesk build graph marker missing: $marker" }
 }
-foreach ($marker in @('CodexRuntime.cpp', 'CodexHostBridge.cpp', 'TuringDeskCodexJsonlContractCheck')) {
-    if ($cmake.Contains($marker)) { throw "Retired Codex build marker is still active: $marker" }
+foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHostBridge.cpp', 'TuringDeskCodexJsonlContractCheck')) {
+    if ($cmake.Contains($marker)) { throw "Retired build marker is still active: $marker" }
 }
 
 foreach ($marker in @(
@@ -224,4 +234,4 @@ foreach ($marker in $desktopToolNames) {
     if (-not $contract.Contains($marker)) { throw "Pi runtime contract is missing current Desktop Tool: $marker" }
 }
 
-Write-Host 'Runtime contract OK: Pi-first AI, Conversation Panel, Direct fallback, Desktop Control/Widget plane and native source layout remain intact.'
+Write-Host 'Runtime contract OK: Pi-first AI, canonical Conversation Panel, Direct fallback, Desktop Control/Widget plane and native source layout remain intact.'

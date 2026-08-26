@@ -34,9 +34,9 @@ foreach ($forbidden in @('WidgetSizePreset', 'SetSize(', 'MoveToMonitor(')) {
 
 $controllerText = Get-Content -LiteralPath $controller -Raw
 foreach ($marker in @(
-    '极简时钟',
-    '日期时钟',
-    '玻璃时钟',
+    'WidgetFixedPreset::MinimalClock',
+    'WidgetFixedPreset::DateClock',
+    'WidgetFixedPreset::GlassClock',
     'PlacementFree',
     'IntersectsWithGap',
     'AutomaticPlacement',
@@ -55,10 +55,9 @@ foreach ($forbidden in @('SetSize(', 'MoveToMonitor(', 'SetParent(', 'FindWindow
 $docText = Get-Content -LiteralPath $doc -Raw
 foreach ($marker in @(
     'Current M3 simplification',
-    '极简时钟',
-    '日期时钟',
-    '玻璃时钟',
+    'Fixed showcase formats',
     'Freeform editing is explicitly deferred',
+    'click create three times',
     'real ARM64 Windows visible-runtime acceptance')) {
     if (-not $docText.Contains($marker)) {
         throw "Widget product documentation missing fixed-format contract marker: $marker"

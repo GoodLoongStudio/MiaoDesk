@@ -122,9 +122,9 @@ RECT ExpectedWidgetDesktopRect(const wallpaper::MonitorInfo& monitor, const wall
 }
 
 bool RectNear(const RECT& expected, const RECT& actual) {
-    const auto near = [](LONG a, LONG b) { return std::abs(a - b) <= kGeometryTolerancePx; };
-    return near(expected.left, actual.left) && near(expected.top, actual.top) &&
-           near(expected.right, actual.right) && near(expected.bottom, actual.bottom);
+    const auto closeEnough = [](LONG a, LONG b) { return std::abs(a - b) <= kGeometryTolerancePx; };
+    return closeEnough(expected.left, actual.left) && closeEnough(expected.top, actual.top) &&
+           closeEnough(expected.right, actual.right) && closeEnough(expected.bottom, actual.bottom);
 }
 
 std::wstring RectText(const RECT& rect) {

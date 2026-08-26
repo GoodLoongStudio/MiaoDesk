@@ -31,4 +31,13 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
     std::wstring* reportPath = nullptr,
     std::wstring* failure = nullptr);
 
+// Binds one acceptance round to the same persisted enabled-Web-Widget placement
+// configuration. The implementation reads configuration only through WidgetService;
+// it intentionally excludes runtime PID/HWND identity because recovery may recreate
+// those surfaces. Baseline writes the canonical snapshot; later phases compare it.
+WidgetRuntimeAcceptanceCode CheckWidgetAcceptanceConfigContinuity(
+    std::wstring_view phase,
+    bool recordBaseline,
+    std::wstring* failure = nullptr);
+
 } // namespace turingdesk::desktop

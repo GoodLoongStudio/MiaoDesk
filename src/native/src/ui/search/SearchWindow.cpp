@@ -16,15 +16,15 @@ namespace {
 
 constexpr int kHotkeyId = 1;
 constexpr int kSearchEditId = 100;
+constexpr int kCaretTimerId = 2;
 constexpr int kWindowWidth = 720;
 constexpr int kCollapsedHeight = 56;
 constexpr int kExpandedHeight = 408;
-constexpr int kBarTop = 0;
 constexpr int kBarHeight = 56;
-constexpr int kEditLeft = 50;
-constexpr int kEditTop = 8;
-constexpr int kEditRight = 596;
-constexpr int kEditHeight = 40;
+constexpr int kEditLeft = 52;
+constexpr int kEditTop = 6;
+constexpr int kEditRight = 594;
+constexpr int kEditHeight = 44;
 constexpr int kVoiceCenterX = 628;
 constexpr int kDividerX = 658;
 constexpr int kAiCenterX = 688;
@@ -37,9 +37,6 @@ constexpr DWM_WINDOW_ATTRIBUTE kDwmUseImmersiveDarkMode = static_cast<DWM_WINDOW
 constexpr DWM_WINDOW_ATTRIBUTE kDwmWindowCornerPreference = static_cast<DWM_WINDOW_ATTRIBUTE>(33);
 constexpr DWM_WINDOW_ATTRIBUTE kDwmBorderColor = static_cast<DWM_WINDOW_ATTRIBUTE>(34);
 constexpr DWM_WINDOW_ATTRIBUTE kDwmSystemBackdropType = static_cast<DWM_WINDOW_ATTRIBUTE>(38);
-
-constexpr COLORREF kText = RGB(38, 43, 52);
-constexpr COLORREF kEditSurface = RGB(246, 248, 251);
 
 bool IsLaunchable(ResultKind kind) {
     return kind == ResultKind::App || kind == ResultKind::File || kind == ResultKind::Folder;
@@ -97,44 +94,52 @@ fs::path SearchIniPath() {
     return directory / L"search.ini";
 }
 
-void ApplyRoundedWindowRegion(HWND hwnd, bool expanded) {
-    if (!hwnd) return;
-    const int height = expanded ? kExpandedHeight : kCollapsedHeight;
-    HRGN region = CreateRoundRectRgn(0, 0, kWindowWidth + 1, height + 1, 56, 56);
-    if (!region) return;
-    if (!SetWindowRgn(hwnd, region, TRUE)) DeleteObject(region);
-}
-
 void DrawSearchGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
     if (!target || !brush) return;
-    target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(24.0f, 27.0f), 8.0f, 8.0f), brush, 1.8f);
-    target->DrawLine(D2D1::Point2F(29.8f, 32.8f), D2D1::Point2F(35.5f, 38.5f), brush, 1.8f);
+    target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(25.0f, 26.5f), 8.7f, 8.7f), brush, 1.75f);
+    target->DrawLine(D2D1::Point2F(31.3f, 32.8f), D2D1::Point2F(37.1f, 38.6f), brush, 1.75f);
 }
 
 void DrawMicrophoneGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
     if (!target || !brush) return;
     const float x = static_cast<float>(kVoiceCenterX);
     target->DrawRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(x - 4.5f, 16.0f, x + 4.5f, 31.5f), 4.5f, 4.5f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x - 8.0f, 28.0f), D2D1::Point2F(x - 8.0f, 31.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x + 8.0f, 28.0f), D2D1::Point2F(x + 8.0f, 31.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x - 8.0f, 31.0f), D2D1::Point2F(x - 5.0f, 36.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x + 8.0f, 31.0f), D2D1::Point2F(x + 5.0f, 36.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x - 5.0f, 36.0f), D2D1::Point2F(x + 5.0f, 36.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x, 36.0f), D2D1::Point2F(x, 41.0f), brush, 1.7f);
-    target->DrawLine(D2D1::Point2F(x - 4.5f, 41.0f), D2D1::Point2F(x + 4.5f, 41.0f), brush, 1.7f);
+        D2D1::RoundedRect(D2D1::RectF(x - 4.2f, 15.5f, x + 4.2f, 31.0f), 4.2f, 4.2f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x - 8.0f, 27.5f), D2D1::Point2F(x - 8.0f, 30.7f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x + 8.0f, 27.5f), D2D1::Point2F(x + 8.0f, 30.7f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x - 8.0f, 30.7f), D2D1::Point2F(x - 5.0f, 35.3f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x + 8.0f, 30.7f), D2D1::Point2F(x + 5.0f, 35.3f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x - 5.0f, 35.3f), D2D1::Point2F(x + 5.0f, 35.3f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x, 35.3f), D2D1::Point2F(x, 40.5f), brush, 1.55f);
+    target->DrawLine(D2D1::Point2F(x - 4.4f, 40.5f), D2D1::Point2F(x + 4.4f, 40.5f), brush, 1.55f);
 }
 
-void DrawSparkleGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
-    if (!target || !brush) return;
+void DrawSparkleGlyph(ID2D1Factory* factory, ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
+    if (!factory || !target || !brush) return;
     const float x = static_cast<float>(kAiCenterX);
-    const float y = 28.0f;
-    target->DrawLine(D2D1::Point2F(x, y - 9), D2D1::Point2F(x, y + 9), brush, 1.6f);
-    target->DrawLine(D2D1::Point2F(x - 9, y), D2D1::Point2F(x + 9, y), brush, 1.6f);
-    target->DrawLine(D2D1::Point2F(x - 5.5f, y - 5.5f), D2D1::Point2F(x + 5.5f, y + 5.5f), brush, 1.2f);
-    target->DrawLine(D2D1::Point2F(x + 5.5f, y - 5.5f), D2D1::Point2F(x - 5.5f, y + 5.5f), brush, 1.2f);
-    target->DrawLine(D2D1::Point2F(x - 12, y - 8), D2D1::Point2F(x - 12, y - 3), brush, 1.1f);
-    target->DrawLine(D2D1::Point2F(x - 14.5f, y - 5.5f), D2D1::Point2F(x - 9.5f, y - 5.5f), brush, 1.1f);
+    const float y = 27.5f;
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> geometry;
+    if (FAILED(factory->CreatePathGeometry(geometry.GetAddressOf()))) return;
+    Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(geometry->Open(sink.GetAddressOf()))) return;
+    sink->BeginFigure(D2D1::Point2F(x, y - 10.0f), D2D1_FIGURE_BEGIN_HOLLOW);
+    sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(x + 1.2f, y - 3.7f),
+                                        D2D1::Point2F(x + 3.7f, y - 1.2f),
+                                        D2D1::Point2F(x + 10.0f, y)));
+    sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(x + 3.7f, y + 1.2f),
+                                        D2D1::Point2F(x + 1.2f, y + 3.7f),
+                                        D2D1::Point2F(x, y + 10.0f)));
+    sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(x - 1.2f, y + 3.7f),
+                                        D2D1::Point2F(x - 3.7f, y + 1.2f),
+                                        D2D1::Point2F(x - 10.0f, y)));
+    sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(x - 3.7f, y - 1.2f),
+                                        D2D1::Point2F(x - 1.2f, y - 3.7f),
+                                        D2D1::Point2F(x, y - 10.0f)));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    if (FAILED(sink->Close())) return;
+    target->DrawGeometry(geometry.Get(), brush, 1.45f);
+    target->DrawLine(D2D1::Point2F(x - 14.0f, y + 5.0f), D2D1::Point2F(x - 14.0f, y + 10.0f), brush, 1.0f);
+    target->DrawLine(D2D1::Point2F(x - 16.5f, y + 7.5f), D2D1::Point2F(x - 11.5f, y + 7.5f), brush, 1.0f);
 }
 
 } // namespace
@@ -145,8 +150,10 @@ SearchWindow::~SearchWindow() {
     l3_.Stop();
     files_.Shutdown();
     RemoveTray();
-    if (hwnd_) UnregisterHotKey(hwnd_, kHotkeyId);
-    if (editBrush_) DeleteObject(editBrush_);
+    if (hwnd_) {
+        KillTimer(hwnd_, kCaretTimerId);
+        UnregisterHotKey(hwnd_, kHotkeyId);
+    }
     if (uiFont_) DeleteObject(uiFont_);
     if (smallFont_) DeleteObject(smallFont_);
 }
@@ -165,6 +172,14 @@ bool SearchWindow::Create() {
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                    reinterpret_cast<IUnknown**>(writeFactory_.GetAddressOf())))) return false;
 
+    writeFactory_->CreateTextFormat(L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                                    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                    16.0f, L"zh-CN", inputFormat_.GetAddressOf());
+    if (!inputFormat_) {
+        writeFactory_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                                        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                        16.0f, L"zh-CN", inputFormat_.GetAddressOf());
+    }
     writeFactory_->CreateTextFormat(L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                     DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
                                     15.5f, L"zh-CN", titleFormat_.GetAddressOf());
@@ -180,6 +195,10 @@ bool SearchWindow::Create() {
         writeFactory_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
                                         12.5f, L"zh-CN", subtitleFormat_.GetAddressOf());
+    }
+    if (inputFormat_) {
+        inputFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        inputFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
     if (titleFormat_) titleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     if (subtitleFormat_) subtitleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
@@ -198,9 +217,8 @@ bool SearchWindow::Create() {
     smallFont_ = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
-    editBrush_ = CreateSolidBrush(kEditSurface);
 
-    edit_ = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+    edit_ = CreateWindowExW(WS_EX_LAYERED, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                             kEditLeft, kEditTop, kEditRight - kEditLeft, kEditHeight, hwnd_,
                             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)), instance_, nullptr);
     if (!edit_) return false;
@@ -208,14 +226,13 @@ bool SearchWindow::Create() {
     oldEditProc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(edit_, GWLP_WNDPROC,
                                                                reinterpret_cast<LONG_PTR>(&SearchWindow::EditProc)));
     SendMessageW(edit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
-    SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(4, 4));
-    SendMessageW(edit_, EM_SETCUEBANNER, TRUE,
-                 reinterpret_cast<LPARAM>(L"搜索应用、文件或图灵 AI"));
+    SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
+    SetLayeredWindowAttributes(edit_, 0, 0, LWA_ALPHA);
 
     ApplyWindows11Style();
-    ApplyRoundedWindowRegion(hwnd_, false);
     ChangeWindowMessageFilterEx(hwnd_, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
     if (!RegisterHotKey(hwnd_, kHotkeyId, MOD_ALT | MOD_NOREPEAT, VK_SPACE)) return false;
+    SetTimer(hwnd_, kCaretTimerId, 530, nullptr);
 
     taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
     AddTray();
@@ -257,6 +274,7 @@ void SearchWindow::ShowAndFocus() {
     SetForegroundWindow(hwnd_);
     SetFocus(edit_);
     SendMessageW(edit_, EM_SETSEL, 0, -1);
+    caretVisible_ = true;
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
@@ -271,6 +289,13 @@ int SearchWindow::RunMessageLoop() {
 
 void SearchWindow::UpdateFocusVisual() {
     editFocused_ = GetFocus() == edit_;
+    caretVisible_ = true;
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SearchWindow::SetHoverVisual(bool hovered) {
+    if (hovered_ == hovered) return;
+    hovered_ = hovered;
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
@@ -281,7 +306,6 @@ void SearchWindow::SetExpanded(bool expanded) {
     GetWindowRect(hwnd_, &rect);
     const int height = expanded_ ? kExpandedHeight : kCollapsedHeight;
     SetWindowPos(hwnd_, nullptr, rect.left, rect.top, kWindowWidth, height, SWP_NOZORDER | SWP_NOACTIVATE);
-    ApplyRoundedWindowRegion(hwnd_, expanded_);
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
@@ -385,27 +409,19 @@ void SearchWindow::StartWindowsVoiceTyping() {
     SetForegroundWindow(hwnd_);
     SetFocus(edit_);
     INPUT inputs[4]{};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_LWIN;
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = 'H';
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = 'H';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_LWIN;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[0].type = INPUT_KEYBOARD; inputs[0].ki.wVk = VK_LWIN;
+    inputs[1].type = INPUT_KEYBOARD; inputs[1].ki.wVk = 'H';
+    inputs[2].type = INPUT_KEYBOARD; inputs[2].ki.wVk = 'H'; inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[3].type = INPUT_KEYBOARD; inputs[3].ki.wVk = VK_LWIN; inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(static_cast<UINT>(std::size(inputs)), inputs, sizeof(INPUT));
 }
 
 bool SearchWindow::HitVoiceButton(POINT point) const {
-    return point.x >= kVoiceCenterX - 21 && point.x <= kVoiceCenterX + 21 &&
-           point.y >= kBarTop && point.y <= kBarTop + kBarHeight;
+    return point.x >= kVoiceCenterX - 21 && point.x <= kVoiceCenterX + 21 && point.y >= 0 && point.y <= kBarHeight;
 }
 
 bool SearchWindow::HitAiButton(POINT point) const {
-    return point.x >= kAiCenterX - 19 && point.x <= kWindowWidth &&
-           point.y >= kBarTop && point.y <= kBarTop + kBarHeight;
+    return point.x >= kAiCenterX - 19 && point.x <= kWindowWidth && point.y >= 0 && point.y <= kBarHeight;
 }
 
 void SearchWindow::ExitApplication() {
@@ -430,6 +446,13 @@ LRESULT CALLBACK SearchWindow::EditProc(HWND hwnd, UINT message, WPARAM wParam, 
     auto* self = reinterpret_cast<SearchWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
     if (message == WM_SETFOCUS || message == WM_KILLFOCUS) self->UpdateFocusVisual();
+    if (message == WM_MOUSEMOVE) {
+        TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0};
+        TrackMouseEvent(&tme);
+        self->SetHoverVisual(true);
+    } else if (message == WM_MOUSELEAVE) {
+        self->SetHoverVisual(false);
+    }
     if (message == WM_KEYDOWN) {
         if (wParam == VK_DOWN && !self->results_.empty()) {
             self->SetExpanded(true);
@@ -457,6 +480,14 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_ACTIVATE:
         if (LOWORD(wParam) == WA_INACTIVE && expanded_) SetExpanded(false);
         return 0;
+    case WM_MOUSEMOVE: {
+        TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd_, 0};
+        TrackMouseEvent(&tme);
+        SetHoverVisual(true);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        SetHoverVisual(false); return 0;
     case WM_SETCURSOR: {
         POINT point{};
         GetCursorPos(&point);
@@ -473,17 +504,18 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         if (HitAiButton(point)) { StartL3(ReadText(edit_)); return 0; }
         break;
     }
+    case WM_TIMER:
+        if (wParam == kCaretTimerId && editFocused_) {
+            caretVisible_ = !caretVisible_;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return 0;
+        }
+        break;
     case WM_EXITSIZEMOVE:
         SavePosition(); return 0;
     case WM_COMMAND:
         if (LOWORD(wParam) == kSearchEditId && HIWORD(wParam) == EN_CHANGE) { OnQueryChanged(); return 0; }
         break;
-    case WM_CTLCOLOREDIT: {
-        const HDC dc = reinterpret_cast<HDC>(wParam);
-        SetTextColor(dc, kText);
-        SetBkColor(dc, kEditSurface);
-        return reinterpret_cast<LRESULT>(editBrush_);
-    }
     case kTrayMessage:
         HandleTray(static_cast<UINT>(lParam)); return 0;
     case WM_COPYDATA: {
@@ -509,6 +541,7 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_ENDSESSION:
         if (wParam) { exiting_ = true; DestroyWindow(hwnd_); } return 0;
     case WM_DESTROY:
+        KillTimer(hwnd_, kCaretTimerId);
         l3_.Stop(); files_.Shutdown(); RemoveTray(); UnregisterHotKey(hwnd_, kHotkeyId); hwnd_ = nullptr; PostQuitMessage(0); return 0;
     }
     return DefWindowProcW(hwnd_, message, wParam, lParam);
@@ -517,6 +550,7 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
 void SearchWindow::OnQueryChanged() {
     const auto query = ReadText(edit_);
     currentQuery_ = query;
+    caretVisible_ = true;
     appResults_.clear(); fileResults_.clear(); results_.clear(); selected_ = -1; fileSearchQueryFailed_ = false;
     if (query.empty()) {
         fileSearchAvailable_ = files_.Available(); SetExpanded(false); InvalidateRect(hwnd_, nullptr, FALSE); return;
@@ -582,47 +616,86 @@ void SearchWindow::Draw() {
     if (!renderTarget_) {
         RECT rc{};
         GetClientRect(hwnd_, &rc);
-        const auto props = D2D1::RenderTargetProperties();
+        auto props = D2D1::RenderTargetProperties();
+        props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
         const auto hwndProps = D2D1::HwndRenderTargetProperties(hwnd_, D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top));
         if (FAILED(d2dFactory_->CreateHwndRenderTarget(props, hwndProps, renderTarget_.GetAddressOf()))) return;
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0xF6F8FB, 0.94f), glassBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x262B34, 0.94f), textBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x6B7280, 0.92f), secondaryBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x5B9CFF, 0.12f), selectionBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.78f), borderBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x4285F4, 0.68f), accentBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x4B5563, 0.16f), dividerBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.46f), glassBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.53f), hoverGlassBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.58f), focusGlassBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.64f), panelBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x303642, 0.96f), textBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x6B7280, 0.88f), secondaryBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x5B9CFF, 0.11f), selectionBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.64f), borderBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x4285F4, 0.64f), accentBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x111827, 0.08f), dividerBrush_.GetAddressOf());
     }
 
     renderTarget_->BeginDraw();
-    renderTarget_->Clear(D2D1::ColorF(0xF3F6FA));
+    renderTarget_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    renderTarget_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
+    renderTarget_->Clear(D2D1::ColorF(0.0f, 0.0f));
     const float width = renderTarget_->GetSize().width;
     const float height = renderTarget_->GetSize().height;
 
     if (expanded_) {
         renderTarget_->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, width, height), 28.0f, 28.0f), glassBrush_.Get());
+            D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, width, height), 28.0f, 28.0f), panelBrush_.Get());
         renderTarget_->DrawRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, width - 0.5f, height - 0.5f), 28.0f, 28.0f),
+            D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, width - 0.5f, height - 0.5f), 27.5f, 27.5f),
             borderBrush_.Get(), 1.0f);
     }
 
-    const D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, width, 56.0f), 28.0f, 28.0f);
-    renderTarget_->FillRoundedRectangle(bar, glassBrush_.Get());
+    ID2D1Brush* fill = editFocused_ ? static_cast<ID2D1Brush*>(focusGlassBrush_.Get())
+                                    : hovered_ ? static_cast<ID2D1Brush*>(hoverGlassBrush_.Get())
+                                               : static_cast<ID2D1Brush*>(glassBrush_.Get());
+    const auto bar = D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, width, 56.0f), 28.0f, 28.0f);
+    renderTarget_->FillRoundedRectangle(bar, fill);
     renderTarget_->DrawRoundedRectangle(
         D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, width - 0.5f, 55.5f), 27.5f, 27.5f),
-        editFocused_ ? accentBrush_.Get() : borderBrush_.Get(), editFocused_ ? 1.35f : 1.0f);
+        editFocused_ ? accentBrush_.Get() : borderBrush_.Get(), editFocused_ ? 1.2f : 1.0f);
     if (editFocused_) {
         renderTarget_->DrawRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(1.5f, 1.5f, width - 1.5f, 54.5f), 26.5f, 26.5f),
-            accentBrush_.Get(), 0.65f);
+            accentBrush_.Get(), 0.45f);
     }
 
     DrawSearchGlyph(renderTarget_.Get(), secondaryBrush_.Get());
     DrawMicrophoneGlyph(renderTarget_.Get(), secondaryBrush_.Get());
     renderTarget_->DrawLine(D2D1::Point2F(static_cast<float>(kDividerX), 15.0f),
                             D2D1::Point2F(static_cast<float>(kDividerX), 41.0f), dividerBrush_.Get(), 1.0f);
-    DrawSparkleGlyph(renderTarget_.Get(), secondaryBrush_.Get());
+    DrawSparkleGlyph(d2dFactory_.Get(), renderTarget_.Get(), secondaryBrush_.Get());
+
+    const D2D1_RECT_F inputRect = D2D1::RectF(static_cast<float>(kEditLeft), 0.0f,
+                                               static_cast<float>(kEditRight), 56.0f);
+    if (currentQuery_.empty()) {
+        static constexpr wchar_t placeholder[] = L"搜索应用、文件或图灵 AI";
+        renderTarget_->DrawText(placeholder, static_cast<UINT32>(std::size(placeholder) - 1), inputFormat_.Get(),
+                                inputRect, secondaryBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    } else {
+        renderTarget_->DrawText(currentQuery_.c_str(), static_cast<UINT32>(currentQuery_.size()), inputFormat_.Get(),
+                                inputRect, textBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+
+    if (editFocused_ && caretVisible_) {
+        DWORD selectionStart = 0, selectionEnd = 0;
+        SendMessageW(edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart), reinterpret_cast<LPARAM>(&selectionEnd));
+        const UINT32 caretIndex = std::min<UINT32>(static_cast<UINT32>(selectionEnd), static_cast<UINT32>(currentQuery_.size()));
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        if (SUCCEEDED(writeFactory_->CreateTextLayout(currentQuery_.c_str(), static_cast<UINT32>(currentQuery_.size()),
+                                                       inputFormat_.Get(), static_cast<float>(kEditRight - kEditLeft), 56.0f,
+                                                       layout.GetAddressOf())) && layout) {
+            FLOAT caretX = 0.0f, caretY = 0.0f;
+            DWRITE_HIT_TEST_METRICS metrics{};
+            if (SUCCEEDED(layout->HitTestTextPosition(caretIndex, FALSE, &caretX, &caretY, &metrics))) {
+                const float x = static_cast<float>(kEditLeft) + caretX;
+                const float top = std::max(16.0f, caretY + 17.0f);
+                renderTarget_->DrawLine(D2D1::Point2F(x, top), D2D1::Point2F(x, std::min(40.0f, top + 20.0f)),
+                                        accentBrush_.Get(), 1.2f);
+            }
+        }
+    }
 
     float y = 70.0f;
     if (expanded_ && results_.empty()) {
@@ -649,8 +722,7 @@ void SearchWindow::Draw() {
             std::wstring title = result.title;
             if (title.size() > 100) title.resize(100);
             renderTarget_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
-                                    D2D1::RectF(textLeft, y + 4, width - 26, y + 28), textBrush_.Get(),
-                                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                                    D2D1::RectF(textLeft, y + 4, width - 26, y + 28), textBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
             std::wstring subtitle = KindLabel(result.kind);
             if (!result.subtitle.empty()) subtitle += L"  ·  " + result.subtitle;
             if (subtitle.size() > 150) subtitle.resize(150);
@@ -664,8 +736,8 @@ void SearchWindow::Draw() {
 
     const HRESULT hr = renderTarget_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
-        renderTarget_.Reset(); glassBrush_.Reset(); textBrush_.Reset(); secondaryBrush_.Reset();
-        selectionBrush_.Reset(); borderBrush_.Reset(); accentBrush_.Reset(); dividerBrush_.Reset();
+        renderTarget_.Reset(); glassBrush_.Reset(); hoverGlassBrush_.Reset(); focusGlassBrush_.Reset(); panelBrush_.Reset();
+        textBrush_.Reset(); secondaryBrush_.Reset(); selectionBrush_.Reset(); borderBrush_.Reset(); accentBrush_.Reset(); dividerBrush_.Reset();
     } else if (SUCCEEDED(hr) && expanded_) {
         HDC dc = GetDC(hwnd_);
         if (dc) {

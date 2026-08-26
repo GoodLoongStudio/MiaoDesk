@@ -39,6 +39,7 @@ $files = @{
     CMake = 'src/native/CMakeLists.txt'
     Doc = 'docs/DESKTOP_DOMAIN_ARCHITECTURE.md'
     LayoutDoc = 'docs/NATIVE_SOURCE_LAYOUT.md'
+    PlacementDoc = 'docs/WIDGET_PLACEMENT_HEALTH_M3.md'
 }
 
 $text = @{}
@@ -60,14 +61,17 @@ foreach ($forbidden in @('WritePrivateProfileStringW', 'DesktopWidgetStore store
 foreach ($marker in @('WallpaperService::GetState', 'WallpaperService::ApplyLibraryItem', 'WallpaperService::AssignLibraryItemToMonitor', 'WallpaperPackage::Validate', 'WallpaperMonitorAssignments assignments')) {
     if (-not $text.Wallpaper.Contains($marker)) { throw "WallpaperService missing ownership marker: $marker" }
 }
-foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth', 'environmentReported', 'controllerReported', 'navigationReported', 'zOrderReported', 'issueCode', 'recommendedAction')) {
+foreach ($marker in @('WidgetSurfaceHealth', 'WidgetRuntimeHealth', 'surfaces', 'GetRuntimeHealth', 'environmentReported', 'controllerReported', 'navigationReported', 'zOrderReported', 'issueCode', 'recommendedAction', 'monitorReported', 'monitorValid', 'geometryReported', 'geometryValid', 'expectedLeft', 'actualLeft')) {
     if (-not $text.WidgetHeader.Contains($marker)) { throw "WidgetService header missing runtime health contract: $marker" }
 }
 foreach ($marker in @('WidgetService::CreateWeb', 'WidgetService::Update', 'WidgetService::Remove', 'WidgetService::GetRuntimeHealth', 'ReadWidgetRuntimeDetail', 'InspectWidgetSurface', 'SetAttention', 'processRunning', 'hwndReady', 'parentValid', 'childStyleValid', 'visible', 'DesktopWidgetStore store')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService missing ownership marker: $marker" }
 }
-foreach ($marker in @('surface_missing', 'process_stopped', 'parent_invalid', 'webview_environment_pending', 'webview_controller_pending', 'webview_navigation_pending', 'zorder_invalid', 'recommendedAction')) {
+foreach ($marker in @('surface_missing', 'process_stopped', 'parent_invalid', 'webview_environment_pending', 'webview_controller_pending', 'webview_navigation_pending', 'zorder_invalid', 'recommendedAction', 'monitor_topology_unavailable', 'monitor_missing', 'geometry_unreported', 'geometry_mismatch')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService actionable health contract missing marker: $marker" }
+}
+foreach ($marker in @('WallpaperMonitorLayout.h', 'QueryMonitorTopology', 'FindMonitorByStableId', 'StableMonitorKey', 'ExpectedWidgetDesktopRect', 'GetWindowRect', 'RectNear', 'monitorReported = topology.Valid', 'geometryValid = RectNear')) {
+    if (-not $text.Widget.Contains($marker)) { throw "WidgetService monitor/geometry health contract missing marker: $marker" }
 }
 foreach ($marker in @('WebDesktopSurfaceChild.h', 'HasStructuredLifecycleTelemetry', 'kWebSurfaceRoleProperty', 'kWebSurfaceEnvironmentReadyProperty', 'kWebSurfaceControllerReadyProperty', 'kWebSurfaceNavigationReadyProperty', 'environmentReported = lifecycleTelemetry', 'controllerReported = lifecycleTelemetry', 'navigationReported = lifecycleTelemetry')) {
     if (-not $text.Widget.Contains($marker)) { throw "WidgetService WebView2 lifecycle telemetry contract missing marker: $marker" }
@@ -158,6 +162,10 @@ $surfaceTelemetryLinkCount = [regex]::Matches($cmake, [regex]::Escape('src/deskt
 if ($surfaceTelemetryLinkCount -lt 2) {
     throw 'DesktopSurfaceTelemetry must be linked into both app and wallpaper targets.'
 }
+$monitorLayoutLinkCount = [regex]::Matches($cmake, [regex]::Escape('src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp')).Count
+if ($monitorLayoutLinkCount -lt 3) {
+    throw 'WallpaperMonitorLayout must be linked into app, wallpaper and Widget acceptance targets.'
+}
 if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/WallpaperAutomationWindow.cpp')) {
     throw 'Production target must not compile legacy UI implementation files directly.'
 }
@@ -167,6 +175,9 @@ foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'De
 }
 foreach ($marker in @('desktop/control', 'desktop/widgets', 'desktop/automation', 'desktop/performance')) {
     if (-not $text.LayoutDoc.Contains($marker)) { throw "Native source layout doc missing domain marker: $marker" }
+}
+foreach ($marker in @('monitorReported', 'monitorValid', 'geometryReported', 'geometryValid', 'geometry_mismatch', 'DesktopShellHost', 'real-Windows visual gate')) {
+    if (-not $text.PlacementDoc.Contains($marker)) { throw "Widget placement health doc missing marker: $marker" }
 }
 
 Write-Host 'Desktop domain contract OK.'

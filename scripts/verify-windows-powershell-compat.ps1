@@ -82,9 +82,23 @@ foreach ($required in @(
     'Get-RunsForCommit',
     'Waiting for ARM64 validation run',
     'gh workflow run $Workflow --repo $Repo --ref main',
-    'Resolving validated ARM64 package for current main'
+    'Resolving validated ARM64 package for current main',
+    'function Test-GhAuthentication',
+    'Start-Process -FilePath $gh',
+    'RedirectStandardOutput $stdout',
+    'RedirectStandardError $stderr',
+    'GitHub CLI is not authenticated for github.com.',
+    'gh auth login -h github.com --web'
 )) {
     if (-not $updateScriptText.Contains($required)) { throw "Updater safety marker missing: $required" }
+}
+foreach ($forbidden in @(
+    'gh auth status 2>&1',
+    '& gh auth status 2>&1'
+)) {
+    if ($updateScriptText.Contains($forbidden)) {
+        throw "Updater must not pipe gh auth status stderr into Windows PowerShell's error stream: $forbidden"
+    }
 }
 foreach ($required in @(
     'verify-windows-powershell-compat.ps1',
@@ -116,4 +130,4 @@ foreach ($forbidden in @('ref: ci-status', 'git push origin HEAD:ci-status')) {
     if ($statusWorkflowText.Contains($forbidden)) { throw "ARM64 status reporting must not create a side branch: $forbidden" }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a self-validating crash-recoverable updater, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a stderr-safe authenticated updater, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green

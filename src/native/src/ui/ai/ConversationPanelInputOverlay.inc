@@ -4,22 +4,12 @@ namespace turingdesk {
 namespace {
 
 constexpr int kConversationInputControlId = 3102;
-constexpr int kConversationAttachControlId = 3191;
-constexpr int kConversationMicControlId = 3192;
 constexpr UINT kConversationPiActivityMessage = WM_APP + 34;
-constexpr wchar_t kConversationInputActionClass[] = L"TuringDesk.Native.ConversationInputAction";
 constexpr wchar_t kConversationCoreProcProperty[] = L"TuringDesk.Conversation.CoreProc";
 
 struct ConversationActivityPayload {
     PiActivityEvent event;
 };
-
-HFONT gConversationActionFont{};
-
-int OverlayPx(HWND hwnd, int value) {
-    const UINT dpi = (std::max)(96u, GetDpiForWindow(hwnd));
-    return MulDiv(value, static_cast<int>(dpi), 96);
-}
 
 void AppendAttachmentToInput(HWND input, const std::wstring& path) {
     const int length = GetWindowTextLengthW(input);
@@ -33,8 +23,7 @@ void AppendAttachmentToInput(HWND input, const std::wstring& path) {
     SetFocus(input);
 }
 
-void PickConversationAttachment(HWND actionWindow) {
-    HWND panel = GetParent(actionWindow);
+void PickConversationAttachment(HWND panel) {
     HWND input = GetDlgItem(panel, kConversationInputControlId);
     if (!input) return;
 
@@ -57,10 +46,10 @@ void PickConversationAttachment(HWND actionWindow) {
     if (picked && path[0]) AppendAttachmentToInput(input, path);
 }
 
-void StartWindowsVoiceTyping(HWND actionWindow) {
-    HWND panel = GetParent(actionWindow);
+void StartWindowsVoiceTyping(HWND panel) {
     HWND input = GetDlgItem(panel, kConversationInputControlId);
     if (!input) return;
+    SetForegroundWindow(panel);
     SetFocus(input);
 
     INPUT keys[4]{};
@@ -75,97 +64,14 @@ void StartWindowsVoiceTyping(HWND actionWindow) {
     SendInput(static_cast<UINT>(std::size(keys)), keys, sizeof(INPUT));
 }
 
-LRESULT CALLBACK ConversationInputActionProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_SETCURSOR:
-        SetCursor(LoadCursorW(nullptr, IDC_HAND));
-        return TRUE;
-    case WM_LBUTTONUP: {
-        const int action = GetDlgCtrlID(hwnd);
-        if (action == kConversationAttachControlId) PickConversationAttachment(hwnd);
-        else if (action == kConversationMicControlId) StartWindowsVoiceTyping(hwnd);
-        return 0;
-    }
-    case WM_PAINT: {
-        PAINTSTRUCT ps{};
-        HDC dc = BeginPaint(hwnd, &ps);
-        RECT client{};
-        GetClientRect(hwnd, &client);
-        HBRUSH background = CreateSolidBrush(RGB(255, 255, 255));
-        FillRect(dc, &client, background);
-        DeleteObject(background);
-        SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(103, 115, 135));
-        if (gConversationActionFont) SelectObject(dc, gConversationActionFont);
-        const wchar_t* glyph = GetDlgCtrlID(hwnd) == kConversationAttachControlId ? L"\xE723" : L"\xE720";
-        DrawTextW(dc, glyph, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    }
-    return DefWindowProcW(hwnd, message, wParam, lParam);
-}
-
-void RegisterConversationInputActionClass(HINSTANCE instance, HWND panel) {
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.hInstance = instance;
-    wc.lpfnWndProc = &ConversationInputActionProc;
-    wc.lpszClassName = kConversationInputActionClass;
-    wc.hCursor = LoadCursorW(nullptr, IDC_HAND);
-    wc.hbrBackground = nullptr;
-    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
-    if (!gConversationActionFont) {
-        gConversationActionFont = CreateFontW(-OverlayPx(panel, 18), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                                              CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe MDL2 Assets");
-    }
-}
-
-void EnsureConversationInputOverlay(HINSTANCE instance) {
+void EnsureConversationInputOverlay(HINSTANCE) {
     HWND panel = FindWindowW(L"TuringDesk.Native.ConversationPanel", nullptr);
     if (!panel) return;
-    HWND input = GetDlgItem(panel, kConversationInputControlId);
-    if (!input) return;
-
-    RegisterConversationInputActionClass(instance, panel);
-    RECT client{};
-    GetClientRect(panel, &client);
-    const int inputTop = client.bottom - OverlayPx(panel, 64) - OverlayPx(panel, 16);
-    const int sendSize = OverlayPx(panel, 42);
-    const int inputRight = client.right - OverlayPx(panel, 22);
-    const int sendLeft = inputRight - sendSize - OverlayPx(panel, 10);
-    const int actionSize = OverlayPx(panel, 34);
-    const int gap = OverlayPx(panel, 4);
-    const int micLeft = sendLeft - OverlayPx(panel, 8) - actionSize;
-    const int attachLeft = micLeft - gap - actionSize;
-    const int actionTop = inputTop + OverlayPx(panel, 15);
-
-    HWND attach = GetDlgItem(panel, kConversationAttachControlId);
-    if (!attach) {
-        attach = CreateWindowExW(0, kConversationInputActionClass, L"", WS_CHILD | WS_VISIBLE,
-                                 attachLeft, actionTop, actionSize, actionSize, panel,
-                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConversationAttachControlId)), instance, nullptr);
-    }
-    HWND mic = GetDlgItem(panel, kConversationMicControlId);
-    if (!mic) {
-        mic = CreateWindowExW(0, kConversationInputActionClass, L"", WS_CHILD | WS_VISIBLE,
-                              micLeft, actionTop, actionSize, actionSize, panel,
-                              reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConversationMicControlId)), instance, nullptr);
-    }
-    if (attach) MoveWindow(attach, attachLeft, actionTop, actionSize, actionSize, TRUE);
-    if (mic) MoveWindow(mic, micLeft, actionTop, actionSize, actionSize, TRUE);
-
-    const int inputX = OverlayPx(panel, 38);
-    const int inputY = inputTop + OverlayPx(panel, 13);
-    const int inputWidth = (std::max)(OverlayPx(panel, 120), attachLeft - inputX - OverlayPx(panel, 6));
-    MoveWindow(input, inputX, inputY, inputWidth, OverlayPx(panel, 38), TRUE);
+    auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
+    if (state) PositionConversationInputProxy(*state);
 }
 
 void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& event) {
-    // Keep the debug log for diagnostics, but semantic events are now the UI source of truth.
     state.activityLogOffset = CurrentPiLogSize();
     switch (event.kind) {
     case PiActivityKind::Understanding:
@@ -219,28 +125,100 @@ void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& even
     InvalidateConversation(state, true);
 }
 
+bool KeepStreamingDelta(ConversationState& state, UiMessage& payload) {
+    if (!state.streaming.empty() || payload.text.empty()) return !payload.text.empty();
+    const auto firstVisible = std::find_if(payload.text.begin(), payload.text.end(), [](wchar_t ch) {
+        return !std::iswspace(ch);
+    });
+    if (firstVisible == payload.text.end()) return false;
+    payload.text.erase(payload.text.begin(), firstVisible);
+    return !payload.text.empty();
+}
+
 LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     const auto core = reinterpret_cast<WNDPROC>(GetPropW(hwnd, kConversationCoreProcProperty));
     if (!core) return DefWindowProcW(hwnd, message, wParam, lParam);
+    auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     if (message == kConversationPiActivityMessage) {
         std::unique_ptr<ConversationActivityPayload> payload(reinterpret_cast<ConversationActivityPayload*>(lParam));
-        auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (payload && state && state->activeRuntime == ActiveRuntime::Pi) ApplySemanticActivity(*state, payload->event);
+        if (payload && state && state->activeRuntime == ActiveRuntime::Pi) {
+            ApplySemanticActivity(*state, payload->event);
+            RenderConversationLayerSurface(*state);
+        }
         return 0;
     }
 
-    // The original implementation still owns this timer as a migration fallback. Once the
-    // semantic bridge is installed, suppress log polling so the same tool event is never shown twice.
+    if (message == kDeltaMessage && state) {
+        auto* payload = reinterpret_cast<UiMessage*>(lParam);
+        if (payload && !KeepStreamingDelta(*state, *payload)) {
+            delete payload;
+            return 0;
+        }
+        const LRESULT result = CallWindowProcW(core, hwnd, message, wParam, lParam);
+        RenderConversationLayerSurface(*state);
+        return result;
+    }
+
+    if (message == WM_PAINT) {
+        PAINTSTRUCT ps{};
+        BeginPaint(hwnd, &ps);
+        if (state) RenderConversationLayerSurface(*state);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    if (message == WM_ERASEBKGND) return 1;
+
+    if (message == WM_NCHITTEST && state) {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (!ConversationPointInsideRoundedPanel(hwnd, point, Px(*state, 24))) return HTTRANSPARENT;
+    }
+
+    if (message == WM_LBUTTONUP && state) {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (PointIn(gConversationSurface.attachRect, point)) {
+            PickConversationAttachment(hwnd);
+            RenderConversationLayerSurface(*state);
+            return 0;
+        }
+        if (PointIn(gConversationSurface.micRect, point)) {
+            StartWindowsVoiceTyping(hwnd);
+            return 0;
+        }
+    }
+
+    if (message == WM_SETCURSOR && state) {
+        POINT point{};
+        GetCursorPos(&point);
+        ScreenToClient(hwnd, &point);
+        if (PointIn(gConversationSurface.attachRect, point) || PointIn(gConversationSurface.micRect, point)) {
+            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+            return TRUE;
+        }
+    }
+
+    // Semantic events are the UI source of truth. Keep pi-runtime.log for diagnostics only.
     if (message == WM_TIMER && wParam == kActivityTimer) return 0;
 
     if (message == WM_NCDESTROY) {
         gPiRuntime.SetActivityCallback({});
+        ReleaseConversationLayerSurface();
         RemovePropW(hwnd, kConversationCoreProcProperty);
         return CallWindowProcW(core, hwnd, message, wParam, lParam);
     }
 
-    return CallWindowProcW(core, hwnd, message, wParam, lParam);
+    const LRESULT result = CallWindowProcW(core, hwnd, message, wParam, lParam);
+    if (!state) return result;
+
+    if (message == WM_SIZE) {
+        PositionConversationInputProxy(*state);
+        RenderConversationLayerSurface(*state);
+    } else if (message == WM_MOUSEWHEEL ||
+               message == kPiDoneMessage || message == kDirectDoneMessage ||
+               (message == WM_COMMAND && LOWORD(wParam) == kConversationInputControlId && HIWORD(wParam) == EN_CHANGE)) {
+        RenderConversationLayerSurface(*state);
+    }
+    return result;
 }
 
 void EnsureConversationActivityBridge(HWND panel) {

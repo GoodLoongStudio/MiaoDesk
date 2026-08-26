@@ -58,6 +58,14 @@ jobs:
         shell: powershell
         run: .\scripts\verify-windows-powershell-compat.ps1
 
+      - name: Verify ARM64 updater RuntimeBundle reuse contract
+        shell: powershell
+        run: .\scripts\verify-arm64-updater-runtime-reuse.ps1
+
+      - name: Exercise ARM64 updater junction cleanup
+        shell: powershell
+        run: .\scripts\test-arm64-updater-junction-cleanup.ps1
+
       - name: Verify M3 Widget evidence verifier contract
         shell: powershell
         run: .\scripts\verify-widget-acceptance-evidence-verifier-contract.ps1

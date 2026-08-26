@@ -1,0 +1,66 @@
+name: Native Windows ARM64 Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - src/native/**
+      - .github/workflows/native-arm64-preview.yml
+      - scripts/download-arm64-preview.ps1
+      - PREVIEW-TURINGDESK-ARM64.cmd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-windows-arm64-preview
+  cancel-in-progress: true
+
+jobs:
+  preview-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify exact head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+
+      - name: Architecture preflight
+        shell: pwsh
+        run: |
+          ./scripts/verify-native-source-layout.ps1
+          ./scripts/verify-desktop-domain-contract.ps1
+          ./scripts/verify-desktop-shell-ownership.ps1
+          ./scripts/verify-l3-runtime-contract.ps1
+
+      - name: Configure lightweight preview
+        shell: pwsh
+        run: cmake -S . -B build-preview-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
+
+      - name: Build TuringDesk only
+        shell: pwsh
+        run: cmake --build build-preview-arm64 --config Release --target TuringDesk --parallel
+
+      - name: Prepare preview artifact
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'build-preview-arm64\src\native\Release'
+          $dest = Join-Path $PWD 'preview-arm64'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item (Join-Path $source 'TuringDesk.exe') $dest -Force
+          Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+          Set-Content -Path (Join-Path $dest '.preview-build-sha') -Value $env:GITHUB_SHA -Encoding ASCII
+
+      - name: Upload lightweight preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: turingdesk-arm64-preview-${{ github.sha }}
+          path: preview-arm64/
+          if-no-files-found: error
+          retention-days: 7

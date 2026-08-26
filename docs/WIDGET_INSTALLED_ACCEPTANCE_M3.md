@@ -26,6 +26,17 @@ After a validated update, the acceptance probe is therefore available at:
 
 The installed build marker at `%LOCALAPPDATA%\TuringDesk\NativeTest\.installed-build-sha` identifies the validated package that owns the probe.
 
+## Exact-build and architecture gate
+
+The installed wrapper refuses to collect M3 evidence unless the installation can be tied to the exact source revision being reviewed:
+
+- `.installed-build-sha` must exist and contain a valid 40-character Git commit SHA;
+- the installed `TuringDeskWidgetAcceptance.exe` must be an ARM64 PE image with PE machine `0xAA64`;
+- when the wrapper is run from a Git checkout, the installed build SHA must match the checkout `HEAD` exactly;
+- if the installed package and checkout differ, update TuringDesk or switch the checkout before starting/restarting the baseline phase.
+
+This prevents a visually successful acceptance round from being attributed to a different binary or architecture than the exact `main` revision under review.
+
 ## Operator entrypoint
 
 Run the installed acceptance wrapper from a checkout of the same `main` revision:
@@ -38,7 +49,7 @@ Run the installed acceptance wrapper from a checkout of the same `main` revision
 .\scripts\run-installed-widget-acceptance.ps1 -Phase monitor
 ```
 
-The wrapper resolves `%LOCALAPPDATA%\TuringDesk\NativeTest`, requires the installed `TuringDeskWidgetAcceptance.exe`, reports the installed validated build SHA when present, and delegates to `run-widget-runtime-acceptance.ps1`. It does not bypass the existing M3 continuity rules.
+The wrapper resolves `%LOCALAPPDATA%\TuringDesk\NativeTest`, requires the installed `TuringDeskWidgetAcceptance.exe`, verifies the installed validated build marker and ARM64 PE machine, checks checkout/build identity when Git is available, and delegates to `run-widget-runtime-acceptance.ps1`. It does not bypass the existing M3 continuity rules.
 
 The sequence remains strictly:
 

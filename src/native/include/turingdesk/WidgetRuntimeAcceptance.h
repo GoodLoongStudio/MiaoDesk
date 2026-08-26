@@ -22,6 +22,8 @@ enum class WidgetRuntimeAcceptanceCode : int {
 // The baseline phase records the enabled Widget identity set and current
 // interactive Windows session; later phases must prove both remain continuous
 // while runtime processes/HWNDs are still allowed to be recreated during recovery.
+// Missing session evidence maps to BaselineMissing; a changed session maps to
+// BaselineMismatch, keeping session continuity inside the existing baseline contract.
 // Successful phases also advance a durable sequence cursor so acceptance evidence
 // must be collected in baseline -> settings -> search -> explorer -> monitor order.
 WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(

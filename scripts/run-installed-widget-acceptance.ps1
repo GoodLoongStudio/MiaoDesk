@@ -1,6 +1,7 @@
 param(
     [ValidateSet('baseline','settings','search','explorer','monitor')]
-    [string]$Phase = 'baseline'
+    [string]$Phase = 'baseline',
+    [switch]$VerifyOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,6 +48,7 @@ if ($machine -ne 0xAA64) {
     throw ('Installed M3 acceptance probe is not ARM64. PE machine=0x{0:X4} expected=0xAA64 path={1}' -f $machine, $probe)
 }
 
+$checkoutSha = $null
 if (Get-Command git.exe -ErrorAction SilentlyContinue) {
     $checkoutSha = (& git.exe -C $root rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($checkoutSha)) {
@@ -57,10 +59,17 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
     }
 }
 
-Write-Host "Running installed ARM64 M3 Widget acceptance: phase=$Phase" -ForegroundColor Cyan
+Write-Host "Installed ARM64 M3 Widget acceptance preflight OK." -ForegroundColor Green
 Write-Host "Probe: $probe" -ForegroundColor DarkGray
 Write-Host "Installed validated build: $buildSha" -ForegroundColor DarkGray
+if ($checkoutSha) { Write-Host "Checkout HEAD: $checkoutSha" -ForegroundColor DarkGray }
 Write-Host 'Probe architecture: ARM64 (PE machine 0xAA64)' -ForegroundColor DarkGray
 
+if ($VerifyOnly) {
+    Write-Host 'VerifyOnly requested: no acceptance phase was executed and no durable phase cursor was advanced.' -ForegroundColor Cyan
+    exit 0
+}
+
+Write-Host "Running installed ARM64 M3 Widget acceptance: phase=$Phase" -ForegroundColor Cyan
 & $runner -BuildDir $installedDir -Phase $Phase
 exit $LASTEXITCODE

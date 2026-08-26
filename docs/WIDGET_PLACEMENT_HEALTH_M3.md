@@ -57,7 +57,7 @@ geometry_mismatch
 
 These issue codes and recommended actions are generated inside the Widget domain so UI/Pi do not infer monitor or HWND remediation rules.
 
-## Monitor reconnect acceptance
+## monitor reconnect acceptance
 
 The M3 `monitor` phase is valid only when the display topology transition evidence exists and the post-transition Widget health is healthy. Because placement consistency is now part of `renderingHealthy`, the phase cannot pass merely because a surface is visible: it must also resolve the configured target monitor and recover to the expected geometry.
 

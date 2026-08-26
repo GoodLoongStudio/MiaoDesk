@@ -155,10 +155,10 @@ RECT WidgetRegionInHost(HWND host, const MonitorInfo& monitor, const DesktopWidg
     return region;
 }
 
-std::vector<WebWallpaperRequest> DesiredWidgetRequests(HWND host, const RuntimeState& state, std::wstring& fingerprint) {
+std::vector<WebWallpaperRequest> DesiredWidgetRequests(HWND host, std::wstring& fingerprint) {
     fingerprint.clear();
     std::vector<WebWallpaperRequest> requests;
-    if (!host || !IsWindow(host) || !state.enabled) return requests;
+    if (!host || !IsWindow(host)) return requests;
 
     DesktopWidgetStore store;
     std::wstring ignored;
@@ -398,7 +398,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
 
                 const auto desiredInHost = DesiredRequests(host, state);
                 std::wstring widgetFingerprint;
-                const auto desiredWidgetsInHost = DesiredWidgetRequests(host, state, widgetFingerprint);
+                const auto desiredWidgetsInHost = DesiredWidgetRequests(host, widgetFingerprint);
                 const auto desired = MapRequestsToParent(host, surfaceParent, desiredInHost);
                 const auto desiredWidgets = MapRequestsToParent(host, surfaceParent, desiredWidgetsInHost);
                 const bool webChanged = !SameRequests(desired, activeRequests);
@@ -457,10 +457,10 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     HWND settings = FindWindowW(kDesktopLibraryClass, nullptr);
                     if (!settings) settings = FindWindowW(kWallpaperSettingsClass, nullptr);
                     const auto snapshot = performance.Evaluate(host, settings, state.performance);
-                    const bool pause = !IsWindowVisible(host) ||
+                    const bool policyPause =
                         snapshot.action == PerformanceAction::Pause || snapshot.action == PerformanceAction::Stop;
-                    web.SetPaused(pause);
-                    widgets.SetPaused(pause);
+                    web.SetPaused(!IsWindowVisible(host) || policyPause);
+                    widgets.SetPaused(policyPause);
                 }
                 repairStack();
             }

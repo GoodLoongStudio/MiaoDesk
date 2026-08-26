@@ -7,37 +7,36 @@ Date: 2026-08-26
 
 A TuringDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, WebView2 processes, normalized coordinates, z-index values, or runtime attachment details.
 
-## Creation contract
+## Current M3 simplification
 
-The beginner creation flow asks only:
+The first visible-runtime phase intentionally removes freeform editing. There is no drag editor, resize handle, numeric x/y input, monitor reassignment editor, or Small/Medium/Large selector in the beginner surface.
 
-1. which Widget to add;
-2. which display to use;
-3. size preset: Small / Medium / Large.
+The goal is to prove visual rendering and desktop layering first with a few fixed formats. Editing returns only after the fixed-format experience is visibly stable on real Windows.
 
-Position is automatic. The first Widget starts near the top-right of the selected display with a logical margin. Additional Widgets stack downward and then continue in columns to the left. Raw x/y/width/height remain domain persistence details, not beginner UI fields.
+## Fixed showcase formats
 
-The first production template is `桌面时钟`. Its default size is Medium.
+The current production showcase contains three clock formats:
 
-## Size presets
+- `极简时钟` — compact single-line time card;
+- `日期时钟` — time plus full date card;
+- `玻璃时钟` — larger translucent/glass visual treatment.
 
-Presets are logical proportions of the target display and remain DPI/resolution independent:
+Each format owns its own fixed logical size and HTML/CSS appearance. Position remains automatic: Widgets start near the top-right of the selected display and stack downward, then continue in columns to the left.
 
-- Small: compact glance card;
-- Medium: default clock card;
-- Large: expanded card.
+The existing `＋ 新建桌面时钟` entry is intentionally kept simple during M3. Repeated creation rotates through the three fixed formats so a tester can add three Widgets and compare real desktop rendering without opening an editor.
 
-The controller translates presets into persisted normalized geometry. UI, Pi, and a future editor must not duplicate that translation.
+## Allowed management actions
 
-## Placement and display changes
+The Widget page currently exposes only the operations needed for visible-runtime validation:
 
-Changing display re-runs automatic placement on the destination display. It must not require a user to type coordinates. Changing size preserves the Widget identity and updates its persisted geometry through the shared Desktop control/domain path.
+```text
+add fixed format
+hide / show
+delete
+refresh runtime state
+```
 
-## Normal and edit modes
-
-Normal desktop mode shows only the Widget content. Selection borders, resize handles and placement controls belong to a future explicit desktop edit mode, not normal rendering.
-
-The management UI may expose `编辑 / 隐藏 / 删除 / 重新显示`, while implementation diagnostics remain behind a details surface.
+Freeform editing is explicitly deferred.
 
 ## Runtime independence
 
@@ -64,30 +63,32 @@ TuringDesk wallpaper
 
 The M3 product path now includes:
 
-- `WidgetSizePreset::{Small, Medium, Large}` in `DesktopWidgetController`;
-- Medium default size for the first desktop clock template;
+- `WidgetFixedPreset::{MinimalClock, DateClock, GlassClock}` in `DesktopWidgetController`;
+- fixed preset-owned visual geometry instead of public editing APIs;
 - automatic top-right placement with downward stacking and leftward overflow columns;
-- controller-owned `SetSize` and `MoveToMonitor`, keeping raw normalized geometry out of beginner UI;
+- production `CreateClock` rotating through the three fixed showcase formats;
+- no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
 - x64/ARM64 exact-head workflows triggered by source-layout/domain/shell/UI-parity guards and this product contract.
 
 These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
 
-## First-template acceptance
+## Fixed-format acceptance
 
-The desktop clock is the reference lifecycle:
+The first acceptance pass is deliberately small:
 
 ```text
-add
--> automatically placed on selected display
--> visibly rendered
--> change Small / Medium / Large
--> move to another display
--> hide/show
--> delete
--> survives TuringDesk restart
--> recovers after Explorer restart
--> recovers after monitor reconnect
+click create three times
+-> 极简时钟 visibly renders
+-> 日期时钟 visibly renders
+-> 玻璃时钟 visibly renders
+-> all remain above TuringDesk wallpaper and below desktop icons
+-> hide/show works
+-> delete works
+-> restart keeps enabled Widgets
+-> Explorer restart restores them
 ```
+
+Only after this fixed-format path is stable should drag/resize/edit-mode work resume.
 
 M3 remains open until the real ARM64 Windows visible-runtime acceptance passes. This product contract does not replace that gate.

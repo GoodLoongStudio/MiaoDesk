@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -91,11 +92,12 @@ WidgetRuntimeAcceptanceCode CheckWidgetAcceptanceConfigContinuity(
     std::wstring_view phase,
     bool recordBaseline,
     std::wstring* failure) {
+    const std::wstring phaseName = phase.empty() ? L"baseline" : std::wstring(phase);
     std::vector<wallpaper::DesktopWidget> widgets;
     const WidgetService service;
     const auto result = service.List(&widgets);
     if (!result.success) {
-        if (failure) *failure = L"无法读取 Widget 配置连续性状态：" + result.message;
+        if (failure) *failure = L"无法读取 Widget 配置连续性状态（phase=" + phaseName + L"）：" + result.message;
         return WidgetRuntimeAcceptanceCode::RuntimeHealthUnavailable;
     }
 
@@ -116,7 +118,8 @@ WidgetRuntimeAcceptanceCode CheckWidgetAcceptanceConfigContinuity(
     }
     if (baseline != current) {
         if (failure) {
-            *failure = L"M3 Widget placement 配置在 baseline 后发生变化；monitorId/位置/尺寸/zIndex/enabled/kind 必须保持不变。请重新执行 baseline。";
+            *failure = L"M3 Widget placement 配置在 baseline 后发生变化（phase=" + phaseName +
+                L"）；monitorId/位置/尺寸/zIndex/enabled/kind 必须保持不变。请重新执行 baseline。";
         }
         return WidgetRuntimeAcceptanceCode::BaselineMismatch;
     }

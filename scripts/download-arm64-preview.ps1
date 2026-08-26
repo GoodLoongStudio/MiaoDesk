@@ -46,6 +46,9 @@ if ($runs.Count -eq 0) {
 }
 if ($runs.Count -eq 0) { throw 'Preview workflow was dispatched but its run did not appear in time.' }
 $run = $runs[0]
+if ([string]$run.headSha -ne $headSha) {
+    throw "Preview run SHA mismatch: run=$($run.headSha) checkout=$headSha"
+}
 
 if ($run.status -ne 'completed') {
     Step "Waiting for GitHub ARM64 preview run $($run.databaseId)"
@@ -60,20 +63,38 @@ Step 'Downloading exact-head preview artifact'
 $temp = Join-Path $env:TEMP ("TuringDeskPreview-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
-    & gh run download $run.databaseId --repo $Repository --name "turingdesk-arm64-preview-$headSha" --dir $temp
+    $artifactName = "turingdesk-arm64-preview-$headSha"
+    & gh run download $run.databaseId --repo $Repository --name $artifactName --dir $temp
     if ($LASTEXITCODE -ne 0) { throw 'Preview artifact download failed.' }
-    $marker = Join-Path $temp '.preview-build-sha'
+
     $exe = Join-Path $temp 'TuringDesk.exe'
     if (-not (Test-Path $exe -PathType Leaf)) { throw 'Downloaded preview does not contain TuringDesk.exe.' }
-    if (-not (Test-Path $marker -PathType Leaf)) { throw 'Downloaded preview has no build marker.' }
-    $artifactSha = ([string](Get-Content $marker -Raw)).Trim()
-    if ($artifactSha -ne $headSha) { throw "Preview SHA mismatch: artifact=$artifactSha checkout=$headSha" }
+
+    $marker = $null
+    foreach ($candidate in @('preview-build-sha.txt', '.preview-build-sha')) {
+        $candidatePath = Join-Path $temp $candidate
+        if (Test-Path $candidatePath -PathType Leaf) {
+            $marker = $candidatePath
+            break
+        }
+    }
+
+    if ($marker) {
+        $artifactSha = ([string](Get-Content $marker -Raw)).Trim()
+        if ($artifactSha -ne $headSha) { throw "Preview SHA mismatch: artifact=$artifactSha checkout=$headSha" }
+    }
+    else {
+        # upload-artifact v4 ignores hidden files by default. Older preview artifacts
+        # therefore may lack .preview-build-sha. The run was already queried by exact
+        # commit and the artifact name is exact-SHA scoped, so this remains safe.
+        Write-Host 'Preview marker is absent in this older artifact; exact run SHA and artifact name matched.' -ForegroundColor Yellow
+    }
 
     Get-Process TuringDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     if (Test-Path $PreviewRoot) { Remove-Item $PreviewRoot -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
     Copy-Item (Join-Path $temp '*') $PreviewRoot -Recurse -Force
-    Copy-Item $marker $PreviewRoot -Force
+    Set-Content -Path (Join-Path $PreviewRoot 'preview-build-sha.txt') -Value $headSha -Encoding ASCII
 
     foreach ($name in @('Runtime','Pi','Goz')) {
         Ensure-Junction (Join-Path $PreviewRoot $name) (Join-Path $InstalledRoot $name)

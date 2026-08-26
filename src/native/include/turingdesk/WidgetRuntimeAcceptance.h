@@ -19,8 +19,9 @@ enum class WidgetRuntimeAcceptanceCode : int {
 
 // Real-Windows M3 probe. This intentionally consumes WidgetService's public
 // runtime-health contract instead of re-enumerating Widget HWNDs here.
-// The baseline phase records the enabled Widget identity set; later phases must
-// prove the same configured Widgets remain present while runtime surfaces recover.
+// The baseline phase records the enabled Widget identity set and current
+// interactive Windows session; later phases must prove both remain continuous
+// while runtime processes/HWNDs are still allowed to be recreated during recovery.
 // Successful phases also advance a durable sequence cursor so acceptance evidence
 // must be collected in baseline -> settings -> search -> explorer -> monitor order.
 WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(

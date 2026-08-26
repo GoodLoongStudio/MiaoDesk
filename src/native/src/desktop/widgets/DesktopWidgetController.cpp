@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <string_view>
 #include <utility>
 
 namespace turingdesk::desktop {
@@ -13,19 +14,53 @@ namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
 
-struct PresetGeometry {
+struct FixedPresetSpec {
+    const wchar_t* title;
     float width;
     float height;
+    std::string_view html;
 };
 
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
 
-PresetGeometry GeometryFor(WidgetSizePreset size) noexcept {
-    switch (size) {
-    case WidgetSizePreset::Small: return {0.18f, 0.11f};
-    case WidgetSizePreset::Large: return {0.32f, 0.22f};
-    case WidgetSizePreset::Medium: default: return {0.23f, 0.16f};
+constexpr std::string_view kMinimalClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:22px;background:rgba(14,18,26,.78);box-shadow:0 10px 28px rgba(0,0,0,.30);backdrop-filter:blur(18px)}
+#time{font-size:clamp(34px,20vw,58px);font-weight:650;letter-spacing:-1.5px;line-height:1}
+</style></head><body><div class="card"><div id="time"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";
+
+constexpr std::string_view kDateClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px 22px;border-radius:24px;background:linear-gradient(145deg,rgba(24,31,48,.92),rgba(13,17,27,.82));box-shadow:0 12px 34px rgba(0,0,0,.32)}
+#time{font-size:clamp(32px,14vw,54px);font-weight:680;letter-spacing:-1.2px;line-height:1}#date{margin-top:11px;font-size:clamp(12px,5vw,17px);opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style></head><body><div class="card"><div id="time"></div><div id="date"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";
+
+constexpr std::string_view kGlassClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:24px 26px;border:1px solid rgba(255,255,255,.20);border-radius:30px;background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.06));box-shadow:0 18px 42px rgba(0,0,0,.28);backdrop-filter:blur(26px)}
+.glow{position:absolute;width:46%;aspect-ratio:1;border-radius:999px;right:-8%;top:-24%;background:rgba(94,140,255,.32);filter:blur(24px)}
+#time{position:relative;font-size:clamp(42px,14vw,72px);font-weight:620;letter-spacing:-2px;line-height:1}#date{position:relative;margin-top:12px;font-size:clamp(13px,4vw,18px);opacity:.82}
+</style></head><body><div class="card"><div class="glow"></div><div id="time"></div><div id="date"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";
+
+FixedPresetSpec PresetSpec(WidgetFixedPreset preset) noexcept {
+    switch (preset) {
+    case WidgetFixedPreset::MinimalClock:
+        return {L"极简时钟", 0.18f, 0.10f, kMinimalClockHtml};
+    case WidgetFixedPreset::GlassClock:
+        return {L"玻璃时钟", 0.30f, 0.20f, kGlassClockHtml};
+    case WidgetFixedPreset::DateClock:
+    default:
+        return {L"日期时钟", 0.23f, 0.16f, kDateClockHtml};
     }
 }
 
@@ -37,33 +72,22 @@ bool SameMonitor(const wallpaper::DesktopWidget& widget, std::wstring_view monit
 std::pair<float, float> AutomaticPlacement(
     const std::vector<wallpaper::DesktopWidget>& widgets,
     std::wstring_view monitorId,
-    PresetGeometry geometry,
-    std::wstring_view excludeId = {}) {
-    // Product rule: start at the top-right with a logical margin, then stack
-    // downward. When a column is full, continue one column to the left. Users do
-    // not need to understand normalized desktop coordinates.
+    float width,
+    float height) {
     std::size_t occupied = 0;
     for (const auto& widget : widgets) {
-        if (!excludeId.empty() && _wcsicmp(widget.id.c_str(), std::wstring(excludeId).c_str()) == 0) continue;
         if (widget.enabled && SameMonitor(widget, monitorId)) ++occupied;
     }
 
-    const float rowStep = geometry.height + kPlacementGap;
+    const float rowStep = height + kPlacementGap;
     const int rows = std::max(1, static_cast<int>((1.0f - 2.0f * kPlacementMargin + kPlacementGap) / rowStep));
     const int row = static_cast<int>(occupied % static_cast<std::size_t>(rows));
     const int column = static_cast<int>(occupied / static_cast<std::size_t>(rows));
     const float x = std::max(kPlacementMargin,
-        1.0f - kPlacementMargin - geometry.width - column * (geometry.width + kPlacementGap));
-    const float y = std::min(1.0f - kPlacementMargin - geometry.height,
+        1.0f - kPlacementMargin - width - column * (width + kPlacementGap));
+    const float y = std::min(1.0f - kPlacementMargin - height,
         kPlacementMargin + row * rowStep);
     return {x, y};
-}
-
-std::pair<float, float> ClampPlacement(float x, float y, PresetGeometry geometry) noexcept {
-    return {
-        std::clamp(x, kPlacementMargin, std::max(kPlacementMargin, 1.0f - kPlacementMargin - geometry.width)),
-        std::clamp(y, kPlacementMargin, std::max(kPlacementMargin, 1.0f - kPlacementMargin - geometry.height)),
-    };
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
@@ -182,73 +206,25 @@ DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth*
     return {true, L"桌面小组件运行状态读取完成。"};
 }
 
-DesktopControlResult DesktopWidgetController::CreateClock(
+DesktopControlResult DesktopWidgetController::CreatePreset(
+    WidgetFixedPreset preset,
     std::wstring monitorId,
     wallpaper::DesktopWidget* created) const {
-    return CreateClock(std::move(monitorId), WidgetSizePreset::Medium, created);
-}
-
-DesktopControlResult DesktopWidgetController::CreateClock(
-    std::wstring monitorId,
-    WidgetSizePreset size,
-    wallpaper::DesktopWidget* created) const {
-    static constexpr std::string_view html = R"HTML(<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px 22px;border-radius:22px;background:rgba(18,24,38,.78);box-shadow:0 10px 30px rgba(0,0,0,.28)}
-#time{font-size:clamp(30px,14vw,52px);font-weight:650;letter-spacing:-1px;line-height:1}#date{margin-top:10px;font-size:clamp(12px,5vw,17px);opacity:.78}
-</style></head><body><div class="card"><div id="time"></div><div id="date"></div></div><script>
-function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
-</script></body></html>)HTML";
-
     std::vector<wallpaper::DesktopWidget> existing;
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    const auto geometry = GeometryFor(size);
-    const auto [x, y] = AutomaticPlacement(existing, monitorId, geometry);
+    const auto spec = PresetSpec(preset);
+    const auto [x, y] = AutomaticPlacement(existing, monitorId, spec.width, spec.height);
     WebWidgetCreateRequest request;
-    request.title = L"桌面时钟";
-    request.htmlUtf8.assign(html.begin(), html.end());
+    request.title = spec.title;
+    request.htmlUtf8.assign(spec.html.begin(), spec.html.end());
     request.monitorId = std::move(monitorId);
     request.x = x;
     request.y = y;
-    request.width = geometry.width;
-    request.height = geometry.height;
+    request.width = spec.width;
+    request.height = spec.height;
     return service_.CreateWebWidget(request, created);
-}
-
-DesktopControlResult DesktopWidgetController::SetSize(std::wstring_view id, WidgetSizePreset size) const {
-    wallpaper::DesktopWidget current;
-    const auto found = Find(id, &current);
-    if (!found.success) return found;
-
-    const auto geometry = GeometryFor(size);
-    const auto [x, y] = ClampPlacement(current.x, current.y, geometry);
-    WidgetUpdateRequest request;
-    request.id = std::wstring(id);
-    request.x = x;
-    request.y = y;
-    request.width = geometry.width;
-    request.height = geometry.height;
-    return service_.UpdateWidget(request);
-}
-
-DesktopControlResult DesktopWidgetController::MoveToMonitor(std::wstring_view id, std::wstring monitorId) const {
-    std::vector<wallpaper::DesktopWidget> existing;
-    const auto listed = service_.ListWidgets(&existing);
-    if (!listed.success) return listed;
-    wallpaper::DesktopWidget current;
-    const auto found = Find(id, &current);
-    if (!found.success) return found;
-    const PresetGeometry geometry{current.width, current.height};
-    const auto [x, y] = AutomaticPlacement(existing, monitorId, geometry, id);
-    WidgetUpdateRequest request;
-    request.id = std::wstring(id);
-    request.monitorId = std::move(monitorId);
-    request.x = x;
-    request.y = y;
-    return service_.UpdateWidget(request);
 }
 
 DesktopControlResult DesktopWidgetController::SetEnabled(std::wstring_view id, bool enabled) const {

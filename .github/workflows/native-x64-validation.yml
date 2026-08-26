@@ -8,6 +8,10 @@ on:
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/verify-desktop-domain-contract.ps1
+      - scripts/verify-desktop-shell-ownership.ps1
+      - scripts/verify-native-source-layout.ps1
+      - scripts/verify-desktop-ui-parity.ps1
       - scripts/run-widget-runtime-acceptance.ps1
       - scripts/confirm-widget-visual-acceptance.ps1
       - scripts/seal-widget-acceptance-evidence.ps1
@@ -22,15 +26,19 @@ on:
       - docs/TURINGDESK-PRODUCT-BASELINE.md
       - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
       - docs/TURINGDESK-DESKTOP-COMPLETION-PLAN.md
+      - docs/NATIVE_SOURCE_LAYOUT.md
+      - docs/DESKTOP_DOMAIN_ARCHITECTURE.md
       - docs/L3-PI-RUNTIME-CONTRACT.md
       - docs/WIDGET_RUNTIME_HEALTH_M3.md
       - docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md
       - docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md
       - docs/WIDGET_PLACEMENT_HEALTH_M3.md
+      - docs/WIDGET_PRODUCT_MODEL_M3.md
       - DEPLOY-NATIVE-ARM64.cmd
       - UPDATE-TURINGDESK.cmd
       - README.md
       - .github/workflows/native-x64-validation.yml
+      - .github/workflows/native-search-windows.yml
   workflow_dispatch:
 
 permissions:

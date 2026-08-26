@@ -25,7 +25,8 @@ fs::path ModulePath() {
 
 fs::path PiAgentDirectory() {
     wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
+    const DWORD count = GetEnvironmentVariableW(
+        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
     if (count > 0 && count < std::size(localAppData)) {
         return fs::path(std::wstring(localAppData, count)) / L"TuringDesk" / L"PiAgent";
     }
@@ -35,23 +36,26 @@ fs::path PiAgentDirectory() {
 std::string ReadFile(const fs::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return {};
-    return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+    return std::string(std::istreambuf_iterator<char>(stream),
+                       std::istreambuf_iterator<char>());
 }
 
 constexpr std::string_view kExtensionSource = R"PIEXT(import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
 const HOST = process.env.TURINGDESK_NATIVE_TOOL_HOST ?? "";
+const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 const TOOL_NAMES = [
   "settings_open",
   "ppt_create",
   "file_create",
   "folder_list",
   "file_open",
+  "image_generate",
   "wallpaper_create_web_package",
   "wallpaper_validate_package",
   "wallpaper_state_get",
@@ -118,12 +122,103 @@ async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal
     if (newline < 1) throw new Error(`TuringDesk native tool returned an invalid result: ${tool}`);
 
     const success = raw.slice(0, newline).trim() === "1";
-    const message = raw.slice(newline + 1).trim() || (success ? "TuringDesk native tool completed." : "TuringDesk native tool failed.");
+    const message = raw.slice(newline + 1).trim() ||
+      (success ? "TuringDesk native tool completed." : "TuringDesk native tool failed.");
     if (!success) throw new Error(message);
     return message;
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+function safeFileStem(value: string): string {
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .trim()
+    .slice(0, 96);
+  return cleaned || `TuringDesk-Image-${Date.now()}`;
+}
+
+function extensionForMime(mimeType: string): string {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes("jpeg") || lower.includes("jpg")) return ".jpg";
+  if (lower.includes("webp")) return ".webp";
+  if (lower.includes("gif")) return ".gif";
+  return ".png";
+}
+
+async function currentTuringDeskBaseUrl(): Promise<string> {
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  if (!agentDir) return "";
+  try {
+    const raw = await readFile(join(agentDir, "models.json"), "utf8");
+    const models = JSON.parse(raw);
+    return String(models?.providers?.turingdesk?.baseUrl ?? "");
+  } catch {
+    return "";
+  }
+}
+
+async function resolveOpenRouterApiKey(): Promise<string> {
+  const explicit = process.env.OPENROUTER_API_KEY?.trim();
+  if (explicit) return explicit;
+
+  // Only reuse the normal TuringDesk key when the configured provider really is
+  // OpenRouter. Never leak an unrelated provider credential to another service.
+  const baseUrl = (await currentTuringDeskBaseUrl()).toLowerCase();
+  if (baseUrl.includes("openrouter.ai")) {
+    return process.env.TURINGDESK_MODEL_API_KEY?.trim() ?? "";
+  }
+  return "";
+}
+
+async function generateImage(
+  prompt: string,
+  fileName: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const apiKey = await resolveOpenRouterApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "图片生成能力当前未配置：需要 OpenRouter API Key。聊天和其他 Pi 工具仍可正常使用。",
+    );
+  }
+
+  console.error(`[TuringDesk][artifact] image_generate start model=${DEFAULT_IMAGE_MODEL}`);
+
+  const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
+  const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
+  if (!model) throw new Error(`Pi 图片模型不可用：${DEFAULT_IMAGE_MODEL}`);
+
+  const result = await generateImages(
+    model,
+    { input: [{ type: "text", text: prompt }] },
+    { apiKey, signal },
+  );
+
+  if (result.stopReason === "error") {
+    const providerText = result.output
+      .filter((block: any) => block?.type === "text")
+      .map((block: any) => String(block.text ?? ""))
+      .filter(Boolean)
+      .join("\n");
+    throw new Error(providerText || "Pi 图片生成 Provider 返回失败。");
+  }
+
+  const image = result.output.find((block: any) => block?.type === "image") as
+    | { type: "image"; data: string; mimeType: string }
+    | undefined;
+  if (!image?.data) throw new Error("Pi 图片生成完成，但 Provider 没有返回图片数据。");
+
+  const outputDir = join(process.cwd(), "TuringDesk Images");
+  await mkdir(outputDir, { recursive: true });
+  const stem = safeFileStem(fileName.replace(/\.[A-Za-z0-9]+$/, ""));
+  const output = join(outputDir, stem + extensionForMime(image.mimeType || "image/png"));
+  await writeFile(output, Buffer.from(image.data, "base64"));
+
+  console.error(`[TuringDesk][artifact] image_generate success path=${output}`);
+  return output;
 }
 
 function activateNativeTools(pi: ExtensionAPI) {
@@ -153,7 +248,7 @@ export default function turingDeskNativeTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "ppt_create",
     label: "Create PowerPoint Presentation",
-    description: "Create a real .pptx presentation on the Windows desktop using the installed Microsoft PowerPoint or WPS Presentation COM backend. Use this whenever the user asks to generate a PPT/presentation file, instead of only writing an outline.",
+    description: "Create a real .pptx presentation on the Windows desktop using installed Microsoft PowerPoint or WPS Presentation. Use this whenever the user asks for a real PPT/presentation file instead of only writing an outline.",
     parameters: Type.Object({
       file_name: Type.String({ description: "Output filename; .pptx is added when missing" }),
       title: Type.String({ description: "Presentation title" }),
@@ -206,6 +301,31 @@ export default function turingDeskNativeTools(pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       return textResult(await runNativeTool("file_open", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "image_generate",
+    label: "Generate Image",
+    description: "Generate a real image file through Pi's image-generation API and save it under the user's desktop. Use this whenever the user asks to create, draw, render, or generate an image. Never claim image creation succeeded unless this tool returns a concrete saved file path.",
+    parameters: Type.Object({
+      prompt: Type.String({ description: "Detailed image-generation prompt" }),
+      file_name: Type.Optional(Type.String({ description: "Desired output filename or stem" })),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      try {
+        const output = await generateImage(
+          params.prompt,
+          params.file_name ?? `TuringDesk-Image-${Date.now()}`,
+          signal,
+        );
+        return textResult(`图片已生成：${output}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[TuringDesk][artifact] image_generate failed: ${message}`);
+        throw new Error(message);
+      }
     },
   });
 
@@ -322,7 +442,12 @@ export default function turingDeskNativeTools(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", () => activateNativeTools(pi));
-  pi.on("before_agent_start", () => activateNativeTools(pi));
+  pi.on("before_agent_start", async (event) => {
+    activateNativeTools(pi);
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n## TuringDesk Artifact Capabilities\n- When the user asks for a real PPT/PowerPoint presentation file, use the ppt_create tool.\n- When the user asks to create, draw, render, or generate an image, use the image_generate tool.\n- Never claim an artifact was created unless the corresponding tool reports success and a concrete output path.\n- If an artifact tool reports that its provider/backend is unavailable, explain that limitation clearly instead of improvising a fake success.`,
+    };
+  });
 }
 )PIEXT";
 
@@ -366,7 +491,9 @@ bool EnsurePiNativeToolsExtension(std::wstring* error) {
         }
     }
 
-    if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (!MoveFileExW(
+            temporary.c_str(), target.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         fs::remove(temporary, ec);
         if (error) *error = L"Unable to install TuringDesk Pi extension.";
         return false;

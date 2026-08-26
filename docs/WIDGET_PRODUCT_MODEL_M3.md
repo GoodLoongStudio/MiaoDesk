@@ -43,6 +43,15 @@ The management UI may expose `编辑 / 隐藏 / 删除 / 重新显示`, while im
 
 An enabled Widget is an independent desktop surface. Its existence must not semantically depend on whether a dynamic wallpaper is enabled. Wallpaper and Widget share `DesktopShellHost` attachment/layering infrastructure, but they are separate product states.
 
+The production Web/Widget coordinator therefore keeps two separate runtime decisions:
+
+- Web wallpaper requests still honor Wallpaper `Enabled` and wallpaper-host visibility;
+- Widget requests are generated from enabled Widget state regardless of Wallpaper `Enabled`;
+- wallpaper-host invisibility may pause Web wallpaper rendering, but it must not pause enabled Widgets by itself;
+- shared Performance `Pause` / `Stop` policy may still pause both domains when the policy itself requires that behavior.
+
+`scripts/verify-desktop-domain-contract.ps1` guards this independence so the Widget runtime cannot silently regain Wallpaper Enabled/visibility coupling.
+
 Expected visual order remains:
 
 ```text
@@ -50,6 +59,19 @@ desktop icons
 Widget
 TuringDesk wallpaper
 ```
+
+## Landed implementation
+
+The M3 product path now includes:
+
+- `WidgetSizePreset::{Small, Medium, Large}` in `DesktopWidgetController`;
+- Medium default size for the first desktop clock template;
+- automatic top-right placement with downward stacking and leftward overflow columns;
+- controller-owned `SetSize` and `MoveToMonitor`, keeping raw normalized geometry out of beginner UI;
+- runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
+- x64/ARM64 exact-head workflows triggered by source-layout/domain/shell/UI-parity guards and this product contract.
+
+These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
 
 ## First-template acceptance
 

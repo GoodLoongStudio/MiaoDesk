@@ -18,29 +18,10 @@ struct PiRuntimeStatus {
     std::wstring message;
 };
 
-enum class PiActivityKind {
-    Understanding,
-    ToolStarted,
-    ToolFinished,
-    Retrying,
-    Recovered,
-    Succeeded,
-    Failed,
-    Cancelled,
-};
-
-struct PiActivityEvent {
-    PiActivityKind kind{PiActivityKind::Understanding};
-    std::wstring toolName;
-    std::wstring message;
-    bool error{};
-};
-
 class PiRuntime {
 public:
     using DeltaCallback = std::function<void(std::wstring)>;
     using DoneCallback = std::function<void(std::wstring)>;
-    using ActivityCallback = std::function<void(PiActivityEvent)>;
 
     PiRuntime() = default;
     ~PiRuntime();
@@ -50,9 +31,7 @@ public:
 
     PiRuntimeStatus Status(const L3Agent& agent) const;
     bool CanHandle(const L3Agent& agent) const;
-    void AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
-                  ActivityCallback onActivity = {});
-    void SetActivityCallback(ActivityCallback callback);
+    void AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone);
     void Stop();
     void ResetSession();
     bool Busy() const noexcept { return busy_.load(); }
@@ -78,15 +57,12 @@ private:
     bool ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error) const;
     bool WriteLine(const std::string& line);
     bool ReadLine(std::string& line, DWORD timeoutMs, std::wstring& error);
-    void RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
-                 ActivityCallback onActivity, std::stop_token stopToken);
+    void RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken);
     void CleanupProcess();
 
     std::jthread worker_;
     std::atomic_bool busy_{false};
     mutable std::mutex processMutex_;
-    mutable std::mutex callbackMutex_;
-    ActivityCallback activityCallback_;
     HANDLE process_{};
     HANDLE processThread_{};
     HANDLE inputWrite_{};

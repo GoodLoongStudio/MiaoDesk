@@ -100,14 +100,26 @@ function Invoke-LocalPreview([string[]]$Targets, [string]$HeadSha) {
     Set-Content -Path $PreviewMarker -Value $HeadSha -Encoding ASCII
 }
 
+function Ensure-ValidatedCurrentMain {
+    $Updater = Join-Path $RepoRoot "scripts\update-turingdesk-arm64.ps1"
+    if (-not (Test-Path $Updater -PathType Leaf)) {
+        throw "Validated ARM64 updater is missing: $Updater"
+    }
+
+    Step "Installing the exact validated current main build"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Updater
+    if ($LASTEXITCODE -ne 0) {
+        throw "Validated ARM64 updater failed: $LASTEXITCODE"
+    }
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git was not found in PATH." }
 Set-Location $RepoRoot
 
 $headSha = (& git rev-parse HEAD).Trim()
 if ($Mode -eq "full") {
-    Step "Formal validation/install requested"
-    & cmd.exe /d /c (Join-Path $RepoRoot "UPDATE-TURINGDESK.cmd")
-    exit $LASTEXITCODE
+    Ensure-ValidatedCurrentMain
+    exit 0
 }
 
 $baseSha = Read-Sha $PreviewMarker

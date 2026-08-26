@@ -1,6 +1,7 @@
 #include "turingdesk/AppSearch.h"
 #include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/DesktopWidgetTools.h"
+#include "turingdesk/GeneratedDesktopPreview.h"
 #include "turingdesk/GozSearch.h"
 #include "turingdesk/HarnessProcessManager.h"
 #include "turingdesk/L3Agent.h"
@@ -58,14 +59,18 @@ std::string WideToUtf8(std::wstring_view value) {
 }
 
 bool IsAllowedPiNativeTool(std::string_view tool) {
+    // Product-state mutation is intentionally NOT allowed through the worker.
+    // Pi may read state and create sandbox previews; only the host-owned Apply
+    // button can cross the commit boundary.
     return tool == "settings_open" ||
            tool == "ppt_create" ||
            tool == "file_create" ||
            tool == "folder_list" ||
            tool == "file_open" ||
-           tool == "wallpaper_create_web_package" ||
            tool == "wallpaper_validate_package" ||
-           turingdesk::IsDesktopControlTool(tool);
+           tool == "wallpaper_state_get" ||
+           tool == "desktop_widget_list" ||
+           turingdesk::preview::IsGeneratedPreviewTool(tool);
 }
 
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
@@ -181,9 +186,15 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    const auto result = turingdesk::IsDesktopControlTool(toolUtf8)
-        ? turingdesk::ExecuteDesktopControlTool(toolUtf8, arguments)
-        : turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
+    NativeToolResult result;
+    if (turingdesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
+        result = turingdesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
+    } else if (toolUtf8 == "wallpaper_state_get" || toolUtf8 == "desktop_widget_list") {
+        result = turingdesk::ExecuteDesktopControlTool(toolUtf8, arguments);
+    } else {
+        result = turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
+    }
+
     std::string payload = result.success ? "1\n" : "0\n";
     payload += WideToUtf8(result.message);
 

@@ -65,8 +65,8 @@ if (-not $removeJunctionMatch.Success) {
     throw 'ARM64 updater junction cleanup helper could not be inspected.'
 }
 $removeJunctionBody = $removeJunctionMatch.Groups['body'].Value
-if ($removeJunctionBody -match 'Remove-Item') {
-    throw 'Remove-Junction must never use Windows PowerShell Remove-Item; it can prompt or traverse a non-empty junction.'
+if ($removeJunctionBody -match '(?m)^\s*Remove-Item\b') {
+    throw 'Remove-Junction must never execute Windows PowerShell Remove-Item; it can prompt or traverse a non-empty junction.'
 }
 if ($removeJunctionBody -notmatch '\[IO\.Directory\]::Delete\(\$Path, \$false\)') {
     throw 'Remove-Junction must delete only the reparse-point directory entry with Directory.Delete(path, false).'

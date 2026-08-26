@@ -1,9 +1,86 @@
 #include "turingdesk/DesktopWidgetController.h"
+#include "turingdesk/RuntimeLogPaths.h"
+
+#include <windows.h>
 
 #include <algorithm>
+#include <fstream>
+#include <iomanip>
 #include <utility>
 
 namespace turingdesk::desktop {
+namespace {
+
+const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
+
+void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
+    const auto path = turingdesk::RuntimeLogPath(L"widget-runtime.log");
+    if (path.empty()) return;
+
+    std::wofstream log(path, std::ios::app);
+    if (!log) return;
+
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    log << L"\n=== "
+        << std::setfill(L'0') << std::setw(4) << now.wYear << L'-'
+        << std::setw(2) << now.wMonth << L'-' << std::setw(2) << now.wDay << L' '
+        << std::setw(2) << now.wHour << L':' << std::setw(2) << now.wMinute << L':'
+        << std::setw(2) << now.wSecond << L" Widget snapshot ===\n";
+
+    log << L"desktop.enabled=" << BoolText(snapshot.desktop.enabled)
+        << L" scene=" << snapshot.desktop.scene
+        << L" layout=" << snapshot.desktop.layout
+        << L" configuredWidgets=" << snapshot.widgets.size()
+        << L" enabledWeb=" << snapshot.widgetRuntime.enabledWebCount
+        << L" runtimeReported=" << BoolText(snapshot.widgetRuntime.runtimeReported)
+        << L" runtimeHealthy=" << BoolText(snapshot.widgetRuntime.runtimeHealthy)
+        << L" detail=" << snapshot.widgetRuntime.detail << L"\n";
+
+    for (const auto& widget : snapshot.widgets) {
+        log << L"config id=" << widget.id
+            << L" title=\"" << widget.title << L"\""
+            << L" enabled=" << BoolText(widget.enabled)
+            << L" kind=" << (widget.kind == wallpaper::DesktopWidgetKind::Web ? L"web" : L"unknown")
+            << L" monitor=\"" << (widget.monitorId.empty() ? L"<primary>" : widget.monitorId) << L"\""
+            << L" x=" << widget.x << L" y=" << widget.y
+            << L" width=" << widget.width << L" height=" << widget.height
+            << L" zIndex=" << widget.zIndex
+            << L" source=\"" << widget.source.wstring() << L"\"\n";
+    }
+
+    for (const auto& surface : snapshot.widgetRuntime.surfaces) {
+        log << L"surface id=" << surface.widgetId
+            << L" monitor=\"" << surface.monitorId << L"\""
+            << L" configured=" << BoolText(surface.configured)
+            << L" pid=" << surface.processId
+            << L" processRunning=" << BoolText(surface.processRunning)
+            << L" hwnd=0x" << std::hex << surface.hwndValue << std::dec
+            << L" hwndReady=" << BoolText(surface.hwndReady)
+            << L" parentValid=" << BoolText(surface.parentValid)
+            << L" childStyleValid=" << BoolText(surface.childStyleValid)
+            << L" visible=" << BoolText(surface.visible)
+            << L" monitorReported=" << BoolText(surface.monitorReported)
+            << L" monitorValid=" << BoolText(surface.monitorValid)
+            << L" geometryReported=" << BoolText(surface.geometryReported)
+            << L" geometryValid=" << BoolText(surface.geometryValid)
+            << L" expected=[" << surface.expectedLeft << L',' << surface.expectedTop << L','
+            << surface.expectedRight << L',' << surface.expectedBottom << L']'
+            << L" actual=[" << surface.actualLeft << L',' << surface.actualTop << L','
+            << surface.actualRight << L',' << surface.actualBottom << L']'
+            << L" environment=" << BoolText(surface.environmentReported) << L'/' << BoolText(surface.environmentReady)
+            << L" controller=" << BoolText(surface.controllerReported) << L'/' << BoolText(surface.controllerReady)
+            << L" navigation=" << BoolText(surface.navigationReported) << L'/' << BoolText(surface.navigationReady)
+            << L" zOrder=" << BoolText(surface.zOrderReported) << L'/' << BoolText(surface.zOrderValid)
+            << L" renderingHealthy=" << BoolText(surface.renderingHealthy)
+            << L" issue=\"" << surface.issueCode << L"\""
+            << L" detail=\"" << surface.detail << L"\""
+            << L" action=\"" << surface.recommendedAction << L"\"\n";
+    }
+    log.flush();
+}
+
+} // namespace
 
 DesktopControlResult DesktopWidgetController::Refresh(std::vector<wallpaper::DesktopWidget>* widgets) const {
     return service_.ListWidgets(widgets);
@@ -30,6 +107,7 @@ DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth*
     DesktopSnapshot snapshot;
     const auto result = service_.GetSnapshot(&snapshot);
     if (!result.success) return result;
+    AppendWidgetRuntimeLog(snapshot);
     *health = std::move(snapshot.widgetRuntime);
     return {true, L"桌面小组件运行状态读取完成。"};
 }

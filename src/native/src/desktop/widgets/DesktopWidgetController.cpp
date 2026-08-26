@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <string_view>
@@ -19,6 +20,13 @@ struct FixedPresetSpec {
     float width;
     float height;
     std::string_view html;
+};
+
+struct NormalizedRect {
+    float left;
+    float top;
+    float right;
+    float bottom;
 };
 
 constexpr float kPlacementMargin = 0.03f;
@@ -69,25 +77,54 @@ bool SameMonitor(const wallpaper::DesktopWidget& widget, std::wstring_view monit
     return _wcsicmp(widget.monitorId.c_str(), std::wstring(monitorId).c_str()) == 0;
 }
 
+NormalizedRect WidgetRect(const wallpaper::DesktopWidget& widget) noexcept {
+    return {widget.x, widget.y, widget.x + widget.width, widget.y + widget.height};
+}
+
+bool IntersectsWithGap(const NormalizedRect& candidate, const NormalizedRect& occupied) noexcept {
+    return !(candidate.right + kPlacementGap <= occupied.left ||
+             occupied.right + kPlacementGap <= candidate.left ||
+             candidate.bottom + kPlacementGap <= occupied.top ||
+             occupied.bottom + kPlacementGap <= candidate.top);
+}
+
+bool PlacementFree(
+    const std::vector<wallpaper::DesktopWidget>& widgets,
+    std::wstring_view monitorId,
+    const NormalizedRect& candidate) {
+    for (const auto& widget : widgets) {
+        if (!widget.enabled || !SameMonitor(widget, monitorId)) continue;
+        if (IntersectsWithGap(candidate, WidgetRect(widget))) return false;
+    }
+    return true;
+}
+
 std::pair<float, float> AutomaticPlacement(
     const std::vector<wallpaper::DesktopWidget>& widgets,
     std::wstring_view monitorId,
     float width,
     float height) {
-    std::size_t occupied = 0;
-    for (const auto& widget : widgets) {
-        if (widget.enabled && SameMonitor(widget, monitorId)) ++occupied;
+    // Fixed M3 presets can have different sizes. Scan right-to-left and
+    // top-to-bottom in logical desktop space and reject any candidate that
+    // intersects an enabled Widget on the same monitor. This keeps the showcase
+    // deterministic without introducing drag/resize/editor behavior.
+    const float maxX = std::max(kPlacementMargin, 1.0f - kPlacementMargin - width);
+    const float maxY = std::max(kPlacementMargin, 1.0f - kPlacementMargin - height);
+    const int xSteps = std::max(0, static_cast<int>(std::ceil((maxX - kPlacementMargin) / kPlacementGap)));
+    const int ySteps = std::max(0, static_cast<int>(std::ceil((maxY - kPlacementMargin) / kPlacementGap)));
+
+    for (int xStep = 0; xStep <= xSteps; ++xStep) {
+        const float x = std::max(kPlacementMargin, maxX - static_cast<float>(xStep) * kPlacementGap);
+        for (int yStep = 0; yStep <= ySteps; ++yStep) {
+            const float y = std::min(maxY, kPlacementMargin + static_cast<float>(yStep) * kPlacementGap);
+            const NormalizedRect candidate{x, y, x + width, y + height};
+            if (PlacementFree(widgets, monitorId, candidate)) return {x, y};
+        }
     }
 
-    const float rowStep = height + kPlacementGap;
-    const int rows = std::max(1, static_cast<int>((1.0f - 2.0f * kPlacementMargin + kPlacementGap) / rowStep));
-    const int row = static_cast<int>(occupied % static_cast<std::size_t>(rows));
-    const int column = static_cast<int>(occupied / static_cast<std::size_t>(rows));
-    const float x = std::max(kPlacementMargin,
-        1.0f - kPlacementMargin - width - column * (width + kPlacementGap));
-    const float y = std::min(1.0f - kPlacementMargin - height,
-        kPlacementMargin + row * rowStep);
-    return {x, y};
+    // A crowded desktop should still allow creation; use the canonical top-right
+    // slot as a deterministic fallback rather than exposing coordinates to the user.
+    return {maxX, kPlacementMargin};
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
@@ -213,12 +250,21 @@ DesktopControlResult DesktopWidgetController::CreateClock(
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    WidgetFixedPreset preset = WidgetFixedPreset::MinimalClock;
-    switch (existing.size() % 3) {
-    case 1: preset = WidgetFixedPreset::DateClock; break;
-    case 2: preset = WidgetFixedPreset::GlassClock; break;
-    default: break;
+    std::size_t minimalCount = 0;
+    std::size_t dateCount = 0;
+    std::size_t glassCount = 0;
+    for (const auto& widget : existing) {
+        if (_wcsicmp(widget.title.c_str(), L"极简时钟") == 0) ++minimalCount;
+        else if (_wcsicmp(widget.title.c_str(), L"日期时钟") == 0) ++dateCount;
+        else if (_wcsicmp(widget.title.c_str(), L"玻璃时钟") == 0) ++glassCount;
     }
+
+    WidgetFixedPreset preset = WidgetFixedPreset::MinimalClock;
+    if (dateCount < minimalCount && dateCount <= glassCount) preset = WidgetFixedPreset::DateClock;
+    else if (glassCount < minimalCount && glassCount < dateCount) preset = WidgetFixedPreset::GlassClock;
+    else if (minimalCount == dateCount && minimalCount > glassCount) preset = WidgetFixedPreset::GlassClock;
+    else if (minimalCount > dateCount) preset = WidgetFixedPreset::DateClock;
+
     return CreatePreset(preset, std::move(monitorId), created);
 }
 

@@ -18,13 +18,27 @@ foreach ($marker in @(
     "'TuringDesk\NativeTest'",
     "'TuringDeskWidgetAcceptance.exe'",
     "'.installed-build-sha'",
-    "run-widget-runtime-acceptance.ps1",
+    'function Get-PeMachine',
+    '0xAA64',
+    'rev-parse HEAD',
+    'if ($checkoutSha -ne $buildSha)',
+    'run-widget-runtime-acceptance.ps1',
     '-BuildDir $installedDir',
     '-Phase $Phase'
 )) {
     if (-not $runner.Contains($marker)) {
         throw "Installed M3 acceptance runner is missing marker: $marker"
     }
+}
+
+if ($runner -notmatch "buildSha -notmatch '\^\[0-9a-f\]\{40\}\$'") {
+    throw 'Installed M3 acceptance must require a valid 40-character installed build SHA marker.'
+}
+if ($runner -notmatch '\$machine -ne 0xAA64') {
+    throw 'Installed M3 acceptance must reject non-ARM64 acceptance probes.'
+}
+if ($runner -notmatch '\$checkoutSha -ne \$buildSha') {
+    throw 'Installed M3 acceptance must reject evidence collected from a checkout that differs from the installed validated build.'
 }
 
 $workflow = Get-Content -LiteralPath $workflowPath -Raw
@@ -45,6 +59,8 @@ foreach ($marker in @(
     'turingdesk.widget-acceptance-config.v2',
     'baseline -> settings -> search -> explorer -> monitor',
     'real ARM64 Windows',
+    'PE machine `0xAA64`',
+    'installed build SHA must match the checkout `HEAD`',
     'Only after those checks pass may the M2/M3 real-Windows acceptance gates be closed and work advance to M4.'
 )) {
     if (-not $doc.Contains($marker)) {
@@ -63,4 +79,4 @@ foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'Progman', 'WorkerW', 'S
     }
 }
 
-Write-Host 'Installed ARM64 M3 Widget acceptance contract verified.' -ForegroundColor Green
+Write-Host 'Installed exact-build ARM64 M3 Widget acceptance contract verified.' -ForegroundColor Green

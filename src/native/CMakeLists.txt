@@ -1,5 +1,7 @@
 include(FetchContent)
 
+option(TURINGDESK_DEV_FAST "Skip contract-only build dependencies for local developer preview" OFF)
+
 set(TURINGDESK_WEBVIEW2_VERSION "1.0.4129.50")
 
 if (CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
@@ -164,7 +166,6 @@ add_custom_target(TuringDeskL3ContractCheck ALL
     COMMENT "Verifying Pi-first L3 runtime contract"
     VERBATIM
 )
-add_dependencies(TuringDesk TuringDeskL3ContractCheck)
 
 set(TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-runtime-log-paths.ps1")
 if (NOT EXISTS "${TURINGDESK_RUNTIME_LOG_CONTRACT_SCRIPT}")
@@ -176,9 +177,6 @@ add_custom_target(TuringDeskRuntimeLogContractCheck ALL
     COMMENT "Verifying Desktop runtime log routing"
     VERBATIM
 )
-add_dependencies(TuringDesk TuringDeskRuntimeLogContractCheck)
-add_dependencies(TuringDeskWallpaper TuringDeskRuntimeLogContractCheck)
-add_dependencies(TuringDeskHarness TuringDeskRuntimeLogContractCheck)
 
 set(TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-domain-contract.ps1")
 if (NOT EXISTS "${TURINGDESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
@@ -190,8 +188,6 @@ add_custom_target(TuringDeskDesktopDomainContractCheck ALL
     COMMENT "Verifying Desktop domain ownership contract"
     VERBATIM
 )
-add_dependencies(TuringDesk TuringDeskDesktopDomainContractCheck)
-add_dependencies(TuringDeskWallpaper TuringDeskDesktopDomainContractCheck)
 
 set(TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-shell-ownership.ps1")
 if (NOT EXISTS "${TURINGDESK_DESKTOP_SHELL_CONTRACT_SCRIPT}")
@@ -203,7 +199,6 @@ add_custom_target(TuringDeskDesktopShellContractCheck ALL
     COMMENT "Verifying DesktopShellHost ownership contract"
     VERBATIM
 )
-add_dependencies(TuringDeskWallpaper TuringDeskDesktopShellContractCheck)
 
 set(TURINGDESK_SOURCE_LAYOUT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-native-source-layout.ps1")
 if (NOT EXISTS "${TURINGDESK_SOURCE_LAYOUT_SCRIPT}")
@@ -238,18 +233,33 @@ add_custom_target(TuringDeskDesktopUiParityCheck ALL
     VERBATIM
 )
 
-add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
-add_dependencies(TuringDesk TuringDeskDesktopUiParityCheck)
-add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
-add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
-add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
-add_dependencies(TuringDeskWallpaper TuringDeskDesktopUiParityCheck)
-add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskSourceLayoutCheck)
-add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopDomainContractCheck)
-add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopUiParityCheck)
-add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
-add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopShellContractCheck)
-add_dependencies(TuringDeskWidgetAcceptance TuringDeskWidgetAcceptanceContractCheck)
+# CI/release builds keep the contract graph. Local developer preview explicitly
+# opts out so a UI edit only compiles the requested binary target.
+if (NOT TURINGDESK_DEV_FAST)
+    add_dependencies(TuringDesk TuringDeskL3ContractCheck)
+    add_dependencies(TuringDesk TuringDeskRuntimeLogContractCheck)
+    add_dependencies(TuringDesk TuringDeskDesktopDomainContractCheck)
+    add_dependencies(TuringDesk TuringDeskSourceLayoutCheck)
+    add_dependencies(TuringDesk TuringDeskDesktopUiParityCheck)
+
+    add_dependencies(TuringDeskWallpaper TuringDeskRuntimeLogContractCheck)
+    add_dependencies(TuringDeskWallpaper TuringDeskDesktopDomainContractCheck)
+    add_dependencies(TuringDeskWallpaper TuringDeskDesktopShellContractCheck)
+    add_dependencies(TuringDeskWallpaper TuringDeskSourceLayoutCheck)
+    add_dependencies(TuringDeskWallpaper TuringDeskDesktopUiParityCheck)
+
+    add_dependencies(TuringDeskHarness TuringDeskRuntimeLogContractCheck)
+    add_dependencies(TuringDeskHarness TuringDeskSourceLayoutCheck)
+
+    add_dependencies(TuringDeskWidgetAcceptance TuringDeskSourceLayoutCheck)
+    add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopDomainContractCheck)
+    add_dependencies(TuringDeskWidgetAcceptance TuringDeskDesktopShellContractCheck)
+    add_dependencies(TuringDeskWidgetAcceptance TuringDeskWidgetAcceptanceContractCheck)
+
+    add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskSourceLayoutCheck)
+    add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopDomainContractCheck)
+    add_dependencies(TuringDeskDesktopUiV2Candidate TuringDeskDesktopUiParityCheck)
+endif()
 
 foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidgetAcceptance TuringDeskDesktopUiV2Candidate)
     target_include_directories(${target} PRIVATE include)

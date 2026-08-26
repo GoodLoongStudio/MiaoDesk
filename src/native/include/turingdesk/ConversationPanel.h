@@ -1,0 +1,20 @@
+#pragma once
+#include "turingdesk/L3Agent.h"
+#include <windows.h>
+#include <string>
+
+namespace turingdesk {
+
+// Canonical AI conversation surface API. The implementation remains Pi-first and
+// retains Direct Model only as the transport fallback; UI presentation does not own runtime policy.
+bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt);
+
+inline bool ShowConversationPanel(
+    HINSTANCE instance,
+    HWND owner,
+    L3Agent& agent,
+    const std::wstring& initialPrompt) {
+    return ShowL3CliWindow(instance, owner, agent, initialPrompt);
+}
+
+} // namespace turingdesk

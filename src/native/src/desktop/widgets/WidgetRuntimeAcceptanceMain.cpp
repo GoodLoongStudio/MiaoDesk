@@ -17,6 +17,68 @@ std::wstring_view ReadPhase(int argc, wchar_t** argv) {
     return L"baseline";
 }
 
+struct PhaseContextExpectation {
+    const wchar_t* windowClass = nullptr;
+    const wchar_t* description = nullptr;
+};
+
+PhaseContextExpectation ExpectedPhaseContext(std::wstring_view phase) {
+    if (phase == L"settings") {
+        return {L"TuringDesk.Native.DesktopLibrary", L"TuringDesk desktop library/settings window"};
+    }
+    if (phase == L"search") {
+        return {L"TuringDesk.Native.SearchWindow", L"TuringDesk search window"};
+    }
+    return {};
+}
+
+struct PhaseContextSearch {
+    const wchar_t* expectedClass = nullptr;
+    DWORD sessionId = 0;
+    bool found = false;
+};
+
+BOOL CALLBACK FindVisiblePhaseContextWindow(HWND hwnd, LPARAM parameter) {
+    auto* search = reinterpret_cast<PhaseContextSearch*>(parameter);
+    if (!search || search->found || !IsWindowVisible(hwnd) || GetAncestor(hwnd, GA_ROOT) != hwnd) return TRUE;
+
+    wchar_t className[256]{};
+    if (GetClassNameW(hwnd, className, static_cast<int>(std::size(className))) <= 0) return TRUE;
+    if (std::wstring_view(className) != search->expectedClass) return TRUE;
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId == 0) return TRUE;
+
+    DWORD windowSessionId = 0;
+    if (!ProcessIdToSessionId(processId, &windowSessionId) || windowSessionId != search->sessionId) return TRUE;
+
+    search->found = true;
+    return FALSE;
+}
+
+bool PhaseContextReady(std::wstring_view phase, std::wstring* failure) {
+    const auto expected = ExpectedPhaseContext(phase);
+    if (!expected.windowClass) return true;
+
+    DWORD sessionId = 0;
+    if (!ProcessIdToSessionId(GetCurrentProcessId(), &sessionId)) {
+        if (failure) *failure = L"无法解析 M3 acceptance 进程的 Windows session。";
+        return false;
+    }
+
+    PhaseContextSearch search{expected.windowClass, sessionId, false};
+    EnumWindows(FindVisiblePhaseContextWindow, reinterpret_cast<LPARAM>(&search));
+    if (search.found) return true;
+
+    if (failure) {
+        *failure = L"M3 " + std::wstring(phase) + L" 阶段缺少同一 Windows session 内可见的 "
+            + expected.description + L"（class=" + expected.windowClass
+            + L"）。健康取样不能脱离要求的产品窗口上下文。";
+    }
+    return false;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -37,6 +99,14 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
 
+    // Settings/Search acceptance only means something while the requested product
+    // surface is visibly present. Validate immediately before and after the health
+    // sample so a wrapper-level foreground observation cannot race with the probe.
+    if (!PhaseContextReady(phase, &failure)) {
+        if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
+        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+    }
+
     const auto code = turingdesk::desktop::RunWidgetRuntimeAcceptanceProbe(
         phase, &report, &failure);
 
@@ -44,6 +114,12 @@ int wmain(int argc, wchar_t** argv) {
     if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
     if (code != turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed)
         return static_cast<int>(code);
+
+    failure.clear();
+    if (!PhaseContextReady(phase, &failure)) {
+        if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
+        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+    }
 
     // Only a successful baseline runtime probe is allowed to establish the
     // placement config checkpoint. If writing it fails, a new baseline is required.

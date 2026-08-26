@@ -57,8 +57,22 @@ geometry_mismatch
 
 These issue codes and recommended actions are generated inside the Widget domain so UI/Pi do not infer monitor or HWND remediation rules.
 
+## Independent acceptance verification
+
+The sealed-evidence session verifier must not trust only the aggregate `runtimeHealthy` or per-surface `renderingHealthy` flag. For every enabled Widget section in every acceptance phase it independently requires the report to contain all of these successful facts:
+
+```text
+monitorValid=true
+geometryValid=true
+visible=true
+zOrderValid=true
+renderingHealthy=true
+```
+
+The number of successful values for each field must exactly match the number of enabled Widget sections. This keeps monitor placement and desktop layering as explicit evidence even if the implementation of the aggregate health flag evolves later.
+
 ## monitor reconnect acceptance
 
-The M3 `monitor` phase is valid only when the display topology transition evidence exists and the post-transition Widget health is healthy. Because placement consistency is now part of `renderingHealthy`, the phase cannot pass merely because a surface is visible: it must also resolve the configured target monitor and recover to the expected geometry.
+The M3 `monitor` phase is valid only when the display topology transition evidence exists and the post-transition Widget health is healthy. Placement consistency is part of `renderingHealthy`, and the independent verifier also checks target-monitor validity, geometry, visibility and z-order separately. The phase therefore cannot pass merely because a process or surface is alive.
 
 This strengthens automated evidence but does not replace the real-Windows visual gate. A human must still confirm the Widget is visually correct, remains below desktop icons/above TuringDesk wallpaper, and returns to the intended monitor after disconnect/reconnect.

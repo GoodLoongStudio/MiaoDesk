@@ -16,16 +16,19 @@ namespace {
 
 constexpr int kHotkeyId = 1;
 constexpr int kSearchEditId = 100;
-constexpr int kSettingsButtonId = 102;
-constexpr int kWindowWidth = 820;
-constexpr int kCollapsedHeight = 94;
-constexpr int kExpandedHeight = 430;
-constexpr int kControlTop = 14;
-constexpr int kControlHeight = 44;
-constexpr int kLeftMargin = 16;
-constexpr int kRightMargin = 16;
-constexpr int kControlGap = 8;
-constexpr int kSettingsButtonWidth = 94;
+constexpr int kWindowWidth = 760;
+constexpr int kCollapsedHeight = 72;
+constexpr int kExpandedHeight = 408;
+constexpr int kBarInset = 8;
+constexpr int kBarTop = 8;
+constexpr int kBarHeight = 56;
+constexpr int kEditLeft = 58;
+constexpr int kEditTop = 16;
+constexpr int kEditRight = 638;
+constexpr int kEditHeight = 40;
+constexpr int kVoiceCenterX = 670;
+constexpr int kDividerX = 702;
+constexpr int kAiCenterX = 728;
 constexpr UINT kTrayMessage = WM_APP + 91;
 constexpr UINT kTrayShow = 5101;
 constexpr UINT kTraySettings = 5102;
@@ -36,14 +39,8 @@ constexpr DWM_WINDOW_ATTRIBUTE kDwmWindowCornerPreference = static_cast<DWM_WIND
 constexpr DWM_WINDOW_ATTRIBUTE kDwmBorderColor = static_cast<DWM_WINDOW_ATTRIBUTE>(34);
 constexpr DWM_WINDOW_ATTRIBUTE kDwmSystemBackdropType = static_cast<DWM_WINDOW_ATTRIBUTE>(38);
 
-constexpr COLORREF kText = RGB(31, 31, 31);
-constexpr COLORREF kSecondary = RGB(96, 96, 96);
-constexpr COLORREF kSurface = RGB(243, 243, 243);
-constexpr COLORREF kInput = RGB(255, 255, 255);
-constexpr COLORREF kButton = RGB(250, 250, 250);
-constexpr COLORREF kButtonPressed = RGB(232, 232, 232);
-constexpr COLORREF kBorder = RGB(218, 218, 218);
-constexpr COLORREF kAccent = RGB(0, 103, 192);
+constexpr COLORREF kText = RGB(38, 43, 52);
+constexpr COLORREF kEditSurface = RGB(245, 247, 250);
 
 bool IsLaunchable(ResultKind kind) {
     return kind == ResultKind::App || kind == ResultKind::File || kind == ResultKind::Folder;
@@ -94,16 +91,6 @@ std::wstring ReadText(HWND control) {
     return value;
 }
 
-void RoundControl(HWND control, int radius = 12) {
-    if (!control || !IsWindow(control)) return;
-    RECT rc{};
-    if (!GetClientRect(control, &rc)) return;
-    HRGN region = CreateRoundRectRgn(0, 0, std::max(1L, rc.right - rc.left) + 1,
-                                     std::max(1L, rc.bottom - rc.top) + 1, radius, radius);
-    if (!region) return;
-    if (!SetWindowRgn(control, region, TRUE)) DeleteObject(region);
-}
-
 fs::path SearchIniPath() {
     wchar_t localAppData[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData,
@@ -115,33 +102,42 @@ fs::path SearchIniPath() {
     return directory / L"search.ini";
 }
 
-void DrawSettingsButton(const DRAWITEMSTRUCT& item, HFONT textFont, HFONT iconFont) {
-    const bool pressed = (item.itemState & ODS_SELECTED) != 0;
-    const bool disabled = (item.itemState & ODS_DISABLED) != 0;
-    const COLORREF fillColor = pressed ? kButtonPressed : kButton;
-    HBRUSH fill = CreateSolidBrush(fillColor);
-    HPEN pen = CreatePen(PS_SOLID, 1, kBorder);
-    HGDIOBJ oldBrush = SelectObject(item.hDC, fill);
-    HGDIOBJ oldPen = SelectObject(item.hDC, pen);
-    RoundRect(item.hDC, item.rcItem.left, item.rcItem.top, item.rcItem.right, item.rcItem.bottom, 12, 12);
-    SelectObject(item.hDC, oldBrush);
-    SelectObject(item.hDC, oldPen);
-    DeleteObject(fill);
-    DeleteObject(pen);
+void DrawSearchGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
+    if (!target || !brush) return;
+    target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(31.0f, 34.0f), 8.5f, 8.5f), brush, 2.0f);
+    target->DrawLine(D2D1::Point2F(37.2f, 40.2f), D2D1::Point2F(43.2f, 46.2f), brush, 2.0f);
+}
 
-    SetBkMode(item.hDC, TRANSPARENT);
-    SetTextColor(item.hDC, disabled ? RGB(150, 150, 150) : kText);
-    RECT iconRc = item.rcItem;
-    iconRc.left += 12;
-    iconRc.right = iconRc.left + 22;
-    HFONT old = reinterpret_cast<HFONT>(SelectObject(item.hDC, iconFont));
-    DrawTextW(item.hDC, L"\xE713", -1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    SelectObject(item.hDC, old);
-    RECT textRc = item.rcItem;
-    textRc.left += 34;
-    old = reinterpret_cast<HFONT>(SelectObject(item.hDC, textFont));
-    DrawTextW(item.hDC, L"设置", -1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    SelectObject(item.hDC, old);
+void DrawMicrophoneGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
+    if (!target || !brush) return;
+    const float x = static_cast<float>(kVoiceCenterX);
+    target->DrawRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(x - 4.5f, 23.0f, x + 4.5f, 38.5f), 4.5f, 4.5f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x - 9.0f, 34.0f), D2D1::Point2F(x - 9.0f, 37.0f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x + 9.0f, 34.0f), D2D1::Point2F(x + 9.0f, 37.0f), brush, 1.8f);
+    target->DrawArc; // intentionally unavailable: lower microphone bowl is approximated with lines below.
+}
+
+void DrawMicrophoneBase(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
+    if (!target || !brush) return;
+    const float x = static_cast<float>(kVoiceCenterX);
+    target->DrawLine(D2D1::Point2F(x - 9.0f, 37.0f), D2D1::Point2F(x - 5.5f, 42.0f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x + 9.0f, 37.0f), D2D1::Point2F(x + 5.5f, 42.0f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x - 5.5f, 42.0f), D2D1::Point2F(x + 5.5f, 42.0f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x, 42.0f), D2D1::Point2F(x, 47.0f), brush, 1.8f);
+    target->DrawLine(D2D1::Point2F(x - 5.0f, 47.0f), D2D1::Point2F(x + 5.0f, 47.0f), brush, 1.8f);
+}
+
+void DrawSparkleGlyph(ID2D1HwndRenderTarget* target, ID2D1Brush* brush) {
+    if (!target || !brush) return;
+    const float x = static_cast<float>(kAiCenterX);
+    const float y = 35.0f;
+    target->DrawLine(D2D1::Point2F(x, y - 10), D2D1::Point2F(x, y + 10), brush, 1.7f);
+    target->DrawLine(D2D1::Point2F(x - 10, y), D2D1::Point2F(x + 10, y), brush, 1.7f);
+    target->DrawLine(D2D1::Point2F(x - 6.5f, y - 6.5f), D2D1::Point2F(x + 6.5f, y + 6.5f), brush, 1.4f);
+    target->DrawLine(D2D1::Point2F(x + 6.5f, y - 6.5f), D2D1::Point2F(x - 6.5f, y + 6.5f), brush, 1.4f);
+    target->DrawLine(D2D1::Point2F(x - 13, y - 9), D2D1::Point2F(x - 13, y - 3), brush, 1.2f);
+    target->DrawLine(D2D1::Point2F(x - 16, y - 6), D2D1::Point2F(x - 10, y - 6), brush, 1.2f);
 }
 
 } // namespace
@@ -154,10 +150,8 @@ SearchWindow::~SearchWindow() {
     RemoveTray();
     if (hwnd_) UnregisterHotKey(hwnd_, kHotkeyId);
     if (editBrush_) DeleteObject(editBrush_);
-    if (staticBrush_) DeleteObject(staticBrush_);
     if (uiFont_) DeleteObject(uiFont_);
     if (smallFont_) DeleteObject(smallFont_);
-    if (iconFont_) DeleteObject(iconFont_);
 }
 
 bool SearchWindow::Create() {
@@ -207,38 +201,19 @@ bool SearchWindow::Create() {
     smallFont_ = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
-    iconFont_ = CreateFontW(-19, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                            DEFAULT_PITCH | FF_DONTCARE, L"Segoe Fluent Icons");
-    editBrush_ = CreateSolidBrush(kInput);
-    staticBrush_ = CreateSolidBrush(kInput);
-
-    const int settingsX = kWindowWidth - kRightMargin - kSettingsButtonWidth;
-    const int editWidth = settingsX - kControlGap - kLeftMargin;
+    editBrush_ = CreateSolidBrush(kEditSurface);
 
     edit_ = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                            kLeftMargin, kControlTop, editWidth, kControlHeight, hwnd_,
+                            kEditLeft, kEditTop, kEditRight - kEditLeft, kEditHeight, hwnd_,
                             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)), instance_, nullptr);
     if (!edit_) return false;
     SetWindowLongPtrW(edit_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     oldEditProc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(edit_, GWLP_WNDPROC,
                                                                reinterpret_cast<LONG_PTR>(&SearchWindow::EditProc)));
     SendMessageW(edit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
-    SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(42, 14));
+    SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(4, 4));
     SendMessageW(edit_, EM_SETCUEBANNER, TRUE,
-                 reinterpret_cast<LPARAM>(L"搜索应用、文件，或直接问图灵 AI"));
-
-    searchIcon_ = CreateWindowExW(0, L"STATIC", L"\xE721", WS_CHILD | WS_VISIBLE | SS_CENTER,
-                                  kLeftMargin + 12, kControlTop + 10, 24, 24, hwnd_, nullptr, instance_, nullptr);
-    SendMessageW(searchIcon_, WM_SETFONT, reinterpret_cast<WPARAM>(iconFont_), TRUE);
-
-    settingsButton_ = CreateWindowExW(0, L"BUTTON", L"设置",
-                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-                                      settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, hwnd_,
-                                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsButtonId)), instance_, nullptr);
-    if (!settingsButton_) return false;
-    RoundControl(edit_);
-    RoundControl(settingsButton_);
+                 reinterpret_cast<LPARAM>(L"搜索应用、文件或图灵 AI"));
 
     ApplyWindows11Style();
     ChangeWindowMessageFilterEx(hwnd_, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
@@ -269,10 +244,12 @@ void SearchWindow::ApplyWindows11Style() {
     DwmSetWindowAttribute(hwnd_, kDwmUseImmersiveDarkMode, &dark, sizeof(dark));
     const int corner = 2;
     DwmSetWindowAttribute(hwnd_, kDwmWindowCornerPreference, &corner, sizeof(corner));
-    const COLORREF border = RGB(207, 207, 207);
-    DwmSetWindowAttribute(hwnd_, kDwmBorderColor, &border, sizeof(border));
-    const int backdrop = 2;
+    const COLORREF noBorder = 0xFFFFFFFEu;
+    DwmSetWindowAttribute(hwnd_, kDwmBorderColor, &noBorder, sizeof(noBorder));
+    const int backdrop = 3;
     DwmSetWindowAttribute(hwnd_, kDwmSystemBackdropType, &backdrop, sizeof(backdrop));
+    const MARGINS margins{-1, -1, -1, -1};
+    DwmExtendFrameIntoClientArea(hwnd_, &margins);
 }
 
 void SearchWindow::ShowAndFocus() {
@@ -353,7 +330,7 @@ void SearchWindow::PositionWindow() {
     const int bottom = info.rcWork.bottom;
     int x = positionLoaded_ ? std::clamp(savedX_, left, std::max(left, right - kWindowWidth))
                             : left + (right - left - kWindowWidth) / 2;
-    int y = positionLoaded_ ? std::clamp(savedY_, top, std::max(top, bottom - kCollapsedHeight)) : top + 18;
+    int y = positionLoaded_ ? std::clamp(savedY_, top, std::max(top, bottom - kCollapsedHeight)) : top + 22;
     if (!positionLoaded_) { savedX_ = x; savedY_ = y; }
     SetWindowPos(hwnd_, nullptr, x, y, kWindowWidth, expanded_ ? kExpandedHeight : kCollapsedHeight,
                  SWP_NOZORDER | SWP_NOACTIVATE);
@@ -384,7 +361,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
     AppendMenuW(menu, MF_STRING, kTrayShow, L"显示搜索");
-    AppendMenuW(menu, MF_STRING, kTraySettings, L"设置中心");
+    AppendMenuW(menu, MF_STRING, kTraySettings, L"设置");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kTrayExit, L"退出图灵智能桌面");
     POINT point{};
@@ -401,7 +378,35 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
 void SearchWindow::OpenSettingsCenter() {
     if (l3_.Busy()) l3_.Stop();
     if (!ShowSettingsCenterWindow(instance_, hwnd_, l3_))
-        SetStatus(L"设置中心启动失败", L"无法创建图灵智能桌面设置中心窗口。");
+        SetStatus(L"设置启动失败", L"无法创建图灵智能桌面设置窗口。");
+}
+
+void SearchWindow::StartWindowsVoiceTyping() {
+    if (!edit_) return;
+    SetForegroundWindow(hwnd_);
+    SetFocus(edit_);
+    INPUT inputs[4]{};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_LWIN;
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = 'H';
+    inputs[2].type = INPUT_KEYBOARD;
+    inputs[2].ki.wVk = 'H';
+    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[3].type = INPUT_KEYBOARD;
+    inputs[3].ki.wVk = VK_LWIN;
+    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(static_cast<UINT>(std::size(inputs)), inputs, sizeof(INPUT));
+}
+
+bool SearchWindow::HitVoiceButton(POINT point) const {
+    return point.x >= kVoiceCenterX - 22 && point.x <= kVoiceCenterX + 22 &&
+           point.y >= kBarTop && point.y <= kBarTop + kBarHeight;
+}
+
+bool SearchWindow::HitAiButton(POINT point) const {
+    return point.x >= kAiCenterX - 20 && point.x <= kWindowWidth - kBarInset &&
+           point.y >= kBarTop && point.y <= kBarTop + kBarHeight;
 }
 
 void SearchWindow::ExitApplication() {
@@ -458,31 +463,36 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         if (hit != HTCLIENT) return hit;
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(hwnd_, &point);
-        if (!expanded_ && point.y >= 64 && point.y < kCollapsedHeight) return HTCAPTION;
+        if (point.y < kBarTop || point.y > kBarTop + kBarHeight) return HTCAPTION;
         return HTCLIENT;
+    }
+    case WM_SETCURSOR: {
+        POINT point{};
+        GetCursorPos(&point);
+        ScreenToClient(hwnd_, &point);
+        if (HitVoiceButton(point) || HitAiButton(point)) {
+            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+            return TRUE;
+        }
+        break;
+    }
+    case WM_LBUTTONUP: {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (HitVoiceButton(point)) { StartWindowsVoiceTyping(); return 0; }
+        if (HitAiButton(point)) { StartL3(ReadText(edit_)); return 0; }
+        break;
     }
     case WM_EXITSIZEMOVE:
         SavePosition(); return 0;
     case WM_COMMAND:
         if (LOWORD(wParam) == kSearchEditId && HIWORD(wParam) == EN_CHANGE) { OnQueryChanged(); return 0; }
-        if (LOWORD(wParam) == kSettingsButtonId && HIWORD(wParam) == BN_CLICKED) { OpenSettingsCenter(); return 0; }
         break;
-    case WM_DRAWITEM: {
-        const auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (!item || item->CtlID != kSettingsButtonId) break;
-        DrawSettingsButton(*item, uiFont_, iconFont_);
-        return TRUE;
-    }
     case WM_CTLCOLOREDIT: {
         const HDC dc = reinterpret_cast<HDC>(wParam);
-        SetTextColor(dc, kText); SetBkColor(dc, kInput); return reinterpret_cast<LRESULT>(editBrush_);
+        SetTextColor(dc, kText);
+        SetBkColor(dc, kEditSurface);
+        return reinterpret_cast<LRESULT>(editBrush_);
     }
-    case WM_CTLCOLORSTATIC:
-        if (reinterpret_cast<HWND>(lParam) == searchIcon_) {
-            const HDC dc = reinterpret_cast<HDC>(wParam);
-            SetTextColor(dc, RGB(80, 80, 80)); SetBkColor(dc, kInput); return reinterpret_cast<LRESULT>(staticBrush_);
-        }
-        break;
     case kTrayMessage:
         HandleTray(static_cast<UINT>(lParam)); return 0;
     case WM_COPYDATA: {
@@ -494,16 +504,10 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     }
     case WM_DISPLAYCHANGE:
         PositionWindow(); SavePosition(); return 0;
-    case WM_SIZE: {
-        const int width = LOWORD(lParam);
+    case WM_SIZE:
         ResizeRenderTarget(LOWORD(lParam), HIWORD(lParam));
-        const int settingsX = width - kRightMargin - kSettingsButtonWidth;
-        const int editWidth = std::max(120, settingsX - kControlGap - kLeftMargin);
-        if (edit_) { MoveWindow(edit_, kLeftMargin, kControlTop, editWidth, kControlHeight, TRUE); RoundControl(edit_); }
-        if (searchIcon_) MoveWindow(searchIcon_, kLeftMargin + 12, kControlTop + 10, 24, 24, TRUE);
-        if (settingsButton_) { MoveWindow(settingsButton_, settingsX, kControlTop, kSettingsButtonWidth, kControlHeight, TRUE); RoundControl(settingsButton_); }
+        if (edit_) MoveWindow(edit_, kEditLeft, kEditTop, kEditRight - kEditLeft, kEditHeight, TRUE);
         return 0;
-    }
     case WM_PAINT: {
         PAINTSTRUCT ps{}; BeginPaint(hwnd_, &ps); Draw(); EndPaint(hwnd_, &ps); return 0;
     }
@@ -567,12 +571,16 @@ void SearchWindow::StartL3(const std::wstring& prompt) {
     if (l3_.Busy()) l3_.Stop();
     SetExpanded(false);
     if (!ShowL3CliWindow(instance_, hwnd_, l3_, prompt)) { SetStatus(L"图灵 AI 启动失败", L"请检查模型配置后重试。"); return; }
-    SetWindowTextW(edit_, L""); SetExpanded(false);
+    SetWindowTextW(edit_, L"");
+    SetExpanded(false);
 }
 
 void SearchWindow::SetStatus(std::wstring title, std::wstring subtitle) {
-    results_.clear(); results_.push_back({ResultKind::Status, std::move(title), std::move(subtitle), L"", 0});
-    selected_ = -1; SetExpanded(true); InvalidateRect(hwnd_, nullptr, FALSE);
+    results_.clear();
+    results_.push_back({ResultKind::Status, std::move(title), std::move(subtitle), L"", 0});
+    selected_ = -1;
+    SetExpanded(true);
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void SearchWindow::ResizeRenderTarget(UINT width, UINT height) {
@@ -581,85 +589,116 @@ void SearchWindow::ResizeRenderTarget(UINT width, UINT height) {
 
 void SearchWindow::Draw() {
     if (!renderTarget_) {
-        RECT rc{}; GetClientRect(hwnd_, &rc);
-        const auto props = D2D1::RenderTargetProperties();
+        RECT rc{};
+        GetClientRect(hwnd_, &rc);
+        auto props = D2D1::RenderTargetProperties();
+        props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
         const auto hwndProps = D2D1::HwndRenderTargetProperties(hwnd_, D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top));
         if (FAILED(d2dFactory_->CreateHwndRenderTarget(props, hwndProps, renderTarget_.GetAddressOf()))) return;
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x1f1f1f), textBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x606060), secondaryBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0xe8f1fb), selectionBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0xdadada), borderBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x0067c0), accentBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.44f), glassBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x262B34, 0.92f), textBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x6B7280, 0.90f), secondaryBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x5B9CFF, 0.13f), selectionBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 0.72f), borderBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x4285F4, 0.72f), accentBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0x4B5563, 0.18f), dividerBrush_.GetAddressOf());
     }
 
     renderTarget_->BeginDraw();
-    renderTarget_->Clear(D2D1::ColorF(0xf3f3f3));
+    renderTarget_->Clear(D2D1::ColorF(D2D1::ColorF::White, 0.0f));
     const float width = renderTarget_->GetSize().width;
-    const float editRight = width - static_cast<float>(kRightMargin + kSettingsButtonWidth + kControlGap);
+    const float height = renderTarget_->GetSize().height;
 
-    renderTarget_->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(15.5f, 13.5f, editRight + 0.5f, 58.5f), 12, 12),
-                                        borderBrush_.Get(), 1.0f);
-    if (editFocused_) {
-        renderTarget_->DrawLine(D2D1::Point2F(28, 57), D2D1::Point2F(editRight - 12, 57), accentBrush_.Get(), 2.0f);
+    if (expanded_) {
+        renderTarget_->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(4.0f, 4.0f, width - 4.0f, height - 4.0f), 30.0f, 30.0f),
+            glassBrush_.Get());
+        renderTarget_->DrawRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(4.5f, 4.5f, width - 4.5f, height - 4.5f), 30.0f, 30.0f),
+            borderBrush_.Get(), 1.0f);
     }
 
-    float y = 72.0f;
-    std::wstring persistentStatus = L"应用与文件";
-    persistentStatus += fileSearchAvailable_ ? L"已就绪" : L"正在启动";
-    persistentStatus += L"   ·   图灵 AI ";
-    persistentStatus += l3_.HasApiKey() ? l3_.Config().model : L"未配置";
+    const D2D1_ROUNDED_RECT bar = D2D1::RoundedRect(
+        D2D1::RectF(static_cast<float>(kBarInset), static_cast<float>(kBarTop),
+                    width - static_cast<float>(kBarInset), static_cast<float>(kBarTop + kBarHeight)),
+        28.0f, 28.0f);
+    renderTarget_->FillRoundedRectangle(bar, glassBrush_.Get());
+    renderTarget_->DrawRoundedRectangle(bar, editFocused_ ? accentBrush_.Get() : borderBrush_.Get(),
+                                        editFocused_ ? 1.35f : 1.0f);
+    if (editFocused_) {
+        const auto glow = D2D1::RoundedRect(D2D1::RectF(6.5f, 6.5f, width - 6.5f, 65.5f), 29.0f, 29.0f);
+        renderTarget_->DrawRoundedRectangle(glow, accentBrush_.Get(), 0.75f);
+    }
 
-    if (!expanded_) {
-        renderTarget_->DrawText(persistentStatus.c_str(), static_cast<UINT32>(persistentStatus.size()), subtitleFormat_.Get(),
-                                D2D1::RectF(22, y, width - 20, y + 20), secondaryBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-    } else if (results_.empty()) {
-        const std::wstring title = currentQuery_.empty() ? L"准备就绪" : L"没有本地结果";
-        const std::wstring hint = currentQuery_.empty() ? persistentStatus : L"按 Enter 交给图灵 AI   ·   Ctrl + Enter 强制进入图灵 AI";
+    DrawSearchGlyph(renderTarget_.Get(), secondaryBrush_.Get());
+    DrawMicrophoneGlyph(renderTarget_.Get(), secondaryBrush_.Get());
+    DrawMicrophoneBase(renderTarget_.Get(), secondaryBrush_.Get());
+    renderTarget_->DrawLine(D2D1::Point2F(static_cast<float>(kDividerX), 23.0f),
+                            D2D1::Point2F(static_cast<float>(kDividerX), 49.0f), dividerBrush_.Get(), 1.0f);
+    DrawSparkleGlyph(renderTarget_.Get(), secondaryBrush_.Get());
+
+    float y = 82.0f;
+    if (expanded_ && results_.empty()) {
+        const std::wstring title = currentQuery_.empty() ? L"开始搜索" : L"没有本地结果";
+        const std::wstring hint = currentQuery_.empty()
+            ? L"搜索应用、文件，或点击右侧星光进入图灵 AI"
+            : L"按 Enter 交给图灵 AI · Ctrl + Enter 强制进入图灵 AI";
         renderTarget_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
-                                D2D1::RectF(22, y + 8, width - 20, y + 34), textBrush_.Get());
+                                D2D1::RectF(24, y + 8, width - 24, y + 34), textBrush_.Get());
         renderTarget_->DrawText(hint.c_str(), static_cast<UINT32>(hint.size()), subtitleFormat_.Get(),
-                                D2D1::RectF(22, y + 38, width - 20, y + 62), secondaryBrush_.Get());
+                                D2D1::RectF(24, y + 36, width - 24, y + 60), secondaryBrush_.Get());
     }
 
     if (expanded_) {
         for (std::size_t i = 0; i < results_.size(); ++i) {
             const auto& result = results_[i];
-            const float rowHeight = result.kind == ResultKind::Status ? 66.0f : 56.0f;
+            const float rowHeight = result.kind == ResultKind::Status ? 64.0f : 56.0f;
             if (static_cast<int>(i) == selected_) {
-                renderTarget_->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(12, y - 2, width - 12, y + rowHeight - 4), 8, 8), selectionBrush_.Get());
+                renderTarget_->FillRoundedRectangle(
+                    D2D1::RoundedRect(D2D1::RectF(14, y - 2, width - 14, y + rowHeight - 4), 14, 14),
+                    selectionBrush_.Get());
             }
-            const float textLeft = IsLaunchable(result.kind) ? 66.0f : 22.0f;
-            std::wstring title = result.title; if (title.size() > 100) title.resize(100);
+            const float textLeft = IsLaunchable(result.kind) ? 66.0f : 24.0f;
+            std::wstring title = result.title;
+            if (title.size() > 100) title.resize(100);
             renderTarget_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
-                                    D2D1::RectF(textLeft, y + 4, width - 28, y + 28), textBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                                    D2D1::RectF(textLeft, y + 4, width - 28, y + 28), textBrush_.Get(),
+                                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
             std::wstring subtitle = KindLabel(result.kind);
             if (!result.subtitle.empty()) subtitle += L"  ·  " + result.subtitle;
             if (subtitle.size() > 150) subtitle.resize(150);
             renderTarget_->DrawText(subtitle.c_str(), static_cast<UINT32>(subtitle.size()), subtitleFormat_.Get(),
-                                    D2D1::RectF(textLeft, y + 31, width - 28, y + rowHeight), secondaryBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                                    D2D1::RectF(textLeft, y + 31, width - 28, y + rowHeight), secondaryBrush_.Get(),
+                                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
             y += rowHeight;
-            if (y > renderTarget_->GetSize().height - 28) break;
+            if (y > height - 26) break;
         }
     }
 
     const HRESULT hr = renderTarget_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
-        renderTarget_.Reset(); textBrush_.Reset(); secondaryBrush_.Reset(); selectionBrush_.Reset(); borderBrush_.Reset(); accentBrush_.Reset();
+        renderTarget_.Reset();
+        glassBrush_.Reset();
+        textBrush_.Reset();
+        secondaryBrush_.Reset();
+        selectionBrush_.Reset();
+        borderBrush_.Reset();
+        accentBrush_.Reset();
+        dividerBrush_.Reset();
     } else if (SUCCEEDED(hr) && expanded_) {
         HDC dc = GetDC(hwnd_);
         if (dc) {
-            float iconY = 72.0f;
+            float iconY = 82.0f;
             for (const auto& result : results_) {
-                const float rowHeight = result.kind == ResultKind::Status ? 66.0f : 56.0f;
+                const float rowHeight = result.kind == ResultKind::Status ? 64.0f : 56.0f;
                 if (IsLaunchable(result.kind)) {
                     if (HICON icon = ResolveShellIcon(result)) {
-                        DrawIconEx(dc, 22, static_cast<int>(iconY + 10.0f), icon,
-                                   32, 32, 0, nullptr, DI_NORMAL);
+                        DrawIconEx(dc, 24, static_cast<int>(iconY + 9.0f), icon, 30, 30, 0, nullptr, DI_NORMAL);
                         DestroyIcon(icon);
                     }
                 }
                 iconY += rowHeight;
-                if (iconY > renderTarget_->GetSize().height - 28) break;
+                if (iconY > height - 26) break;
             }
             ReleaseDC(hwnd_, dc);
         }

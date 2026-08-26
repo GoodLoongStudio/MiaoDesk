@@ -21,11 +21,13 @@ on:
       - docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md
       - docs/WIDGET_PLACEMENT_HEALTH_M3.md
       - docs/WIDGET_PRODUCT_MODEL_M3.md
+      - docs/WIDGET_INSTALLED_ACCEPTANCE_M3.md
       - scripts/deploy-native-arm64.ps1
       - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-arm64-updater-runtime-reuse.ps1
+      - scripts/verify-installed-widget-acceptance-contract.ps1
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-desktop-domain-contract.ps1
       - scripts/verify-desktop-shell-ownership.ps1
@@ -83,6 +85,14 @@ jobs:
           TD_BOOTSTRAP_SELF_TEST: 1
           TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
         run: UPDATE-TURINGDESK.cmd
+
+      - name: Verify native physical source layout
+        shell: powershell
+        run: .\scripts\verify-native-source-layout.ps1
+
+      - name: Verify DesktopShellHost ownership
+        shell: powershell
+        run: .\scripts\verify-desktop-shell-ownership.ps1
 
       - name: Verify Pi-first L3 runtime contract
         shell: pwsh

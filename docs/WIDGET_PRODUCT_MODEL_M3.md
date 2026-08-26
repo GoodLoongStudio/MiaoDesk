@@ -21,9 +21,9 @@ The current production showcase contains three clock formats:
 - `日期时钟` — time plus full date card;
 - `玻璃时钟` — larger translucent/glass visual treatment.
 
-Each format owns its own fixed logical size and HTML/CSS appearance. Position remains automatic: Widgets start near the top-right of the selected display and stack downward, then continue in columns to the left.
+Each format owns its own fixed logical size and HTML/CSS appearance. Position remains automatic. Placement is collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. Raw coordinates remain an implementation detail and are not exposed to normal users.
 
-The existing `＋ 新建桌面时钟` entry is intentionally kept simple during M3. Repeated creation rotates through the three fixed formats so a tester can add three Widgets and compare real desktop rendering without opening an editor.
+The existing `＋ 新建桌面时钟` entry is intentionally kept simple during M3. Repeated creation balances the three fixed formats so a tester can add three Widgets and compare real desktop rendering without opening an editor. Unrelated Widget records do not change which fixed format comes next.
 
 ## Allowed management actions
 
@@ -65,11 +65,12 @@ The M3 product path now includes:
 
 - `WidgetFixedPreset::{MinimalClock, DateClock, GlassClock}` in `DesktopWidgetController`;
 - fixed preset-owned visual geometry instead of public editing APIs;
-- automatic top-right placement with downward stacking and leftward overflow columns;
-- production `CreateClock` rotating through the three fixed showcase formats;
+- collision-safe automatic placement in normalized display space;
+- balanced production `CreateClock` selection across the three fixed showcase formats;
 - no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
-- x64/ARM64 exact-head workflows triggered by source-layout/domain/shell/UI-parity guards and this product contract.
+- `scripts/verify-widget-product-model.ps1` guarding the fixed-format/no-editor contract and preventing the controller from regaining shell attachment ownership;
+- x64/ARM64 exact-head workflows running the Widget product guard in addition to source-layout/domain/shell contracts.
 
 These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
 
@@ -82,6 +83,7 @@ click create three times
 -> 极简时钟 visibly renders
 -> 日期时钟 visibly renders
 -> 玻璃时钟 visibly renders
+-> all three occupy non-overlapping automatic placements
 -> all remain above TuringDesk wallpaper and below desktop icons
 -> hide/show works
 -> delete works

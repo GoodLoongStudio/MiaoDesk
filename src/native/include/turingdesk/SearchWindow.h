@@ -6,7 +6,6 @@
 #include <windows.h>
 #include <CommCtrl.h>
 #include <shellapi.h>
-#include <dwmapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -14,8 +13,6 @@
 #include <vector>
 
 namespace turingdesk {
-
-using DWM_WINDOW_ATTRIBUTE = DWMWINDOWATTRIBUTE;
 
 class SearchWindow {
 public:
@@ -38,13 +35,15 @@ private:
     void StartWindowsVoiceTyping();
     void OpenSettingsCenter();
     void Draw();
+    bool EnsureLayerSurface(UINT width, UINT height);
+    void ReleaseLayerSurface();
+    bool PresentLayerSurface(UINT width, UINT height);
     void ResizeRenderTarget(UINT width, UINT height);
     void PositionWindow();
     void LoadPosition();
     void SavePosition();
     void SetStatus(std::wstring title, std::wstring subtitle = {});
     void SetExpanded(bool expanded);
-    void ApplyWindows11Style();
     void AddTray();
     void RemoveTray();
     void HandleTray(UINT mouseMessage);
@@ -84,17 +83,14 @@ private:
     HFONT smallFont_{};
 
     Microsoft::WRL::ComPtr<ID2D1Factory> d2dFactory_;
-    Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> renderTarget_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> glassBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> hoverGlassBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> focusGlassBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> secondaryBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> borderBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dividerBrush_;
+    Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> renderTarget_;
+    HDC layerDc_{};
+    HBITMAP layerBitmap_{};
+    HGDIOBJ layerOldBitmap_{};
+    void* layerBits_{};
+    UINT layerWidth_{};
+    UINT layerHeight_{};
+
     Microsoft::WRL::ComPtr<IDWriteFactory> writeFactory_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> inputFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> titleFormat_;

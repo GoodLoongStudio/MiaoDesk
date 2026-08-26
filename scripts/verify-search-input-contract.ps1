@@ -8,7 +8,13 @@ if (-not (Test-Path $source -PathType Leaf)) {
 $text = Get-Content $source -Raw
 
 $required = @(
-    'CreateWindowExW(0, L"EDIT"',
+    'CreateWindowExW(',
+    'WS_EX_TOOLWINDOW | WS_EX_LAYERED',
+    'CreateDCRenderTarget',
+    'D2D1_ALPHA_MODE_PREMULTIPLIED',
+    'UpdateLayeredWindow',
+    'ULW_ALPHA',
+    '0, L"EDIT"',
     'kInputProxyY, 1, 1',
     'inputProxyWorks',
     'SendMessageW(edit_, WM_CHAR',
@@ -18,7 +24,7 @@ $required = @(
 
 foreach ($marker in $required) {
     if (-not $text.Contains($marker)) {
-        throw "Search input contract marker missing: $marker"
+        throw "Search input/rendering contract marker missing: $marker"
     }
 }
 
@@ -32,13 +38,16 @@ if (-not $paintSuppressed) {
 $forbidden = @(
     'CreateWindowExW(WS_EX_LAYERED, L"EDIT"',
     'SetLayeredWindowAttributes(edit_',
-    'LWA_ALPHA'
+    'CreateRoundRectRgn',
+    'SetWindowRgn',
+    'ApplyWindowShape',
+    'ID2D1HwndRenderTarget'
 )
 
 foreach ($marker in $forbidden) {
     if ($text.Contains($marker)) {
-        throw "Forbidden Search input implementation returned: $marker"
+        throw "Forbidden Search input/rendering implementation returned: $marker"
     }
 }
 
-Write-Host 'Search input proxy contract verified.'
+Write-Host 'Search input proxy and per-pixel-alpha rendering contract verified.'

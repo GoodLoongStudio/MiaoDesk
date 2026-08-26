@@ -186,7 +186,7 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    NativeToolResult result;
+    turingdesk::NativeToolResult result;
     if (turingdesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
         result = turingdesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
     } else if (toolUtf8 == "wallpaper_state_get" || toolUtf8 == "desktop_widget_list") {

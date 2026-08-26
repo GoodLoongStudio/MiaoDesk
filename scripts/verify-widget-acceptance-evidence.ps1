@@ -27,6 +27,21 @@ function Parse-UtcTimestamp([string]$Value, [string]$Description) {
     $parsed.ToUniversalTime()
 }
 
+function Assert-ObservedProductWindow([string]$DiagnosticsDir, [string]$Phase, [string]$ExpectedClass, [string]$ExpectedProcess, [int]$ExpectedSessionId, [DateTimeOffset]$SealedAtUtc) {
+    $name = "widget-acceptance-$Phase.window.json"
+    $path = Join-Path $DiagnosticsDir $name
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "M3 observed product-window evidence is missing: $name" }
+    $evidence = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    if ($evidence.schema -ne 'turingdesk.widget-window-evidence.v1') { throw "Unexpected M3 product-window evidence schema for $Phase: '$($evidence.schema)'" }
+    if ([string]$evidence.phase -ne $Phase) { throw "M3 product-window evidence phase mismatch for $Phase." }
+    if ([string]$evidence.className -ne $ExpectedClass) { throw "M3 $Phase window evidence class mismatch: '$($evidence.className)'" }
+    if ([string]$evidence.processName -ne $ExpectedProcess) { throw "M3 $Phase window evidence process mismatch: '$($evidence.processName)'" }
+    if ([int]$evidence.sessionId -ne $ExpectedSessionId) { throw "M3 $Phase window evidence came from a different Windows session." }
+    $capturedAtUtc = Parse-UtcTimestamp -Value ([string]$evidence.capturedAtUtc) -Description "$Phase observed product window"
+    if ($capturedAtUtc -gt $SealedAtUtc) { throw "M3 $Phase window evidence was captured after the manifest seal." }
+    return $capturedAtUtc
+}
+
 $diagnostics = Get-DiagnosticsDirectory
 $manifestPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
 $sealPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
@@ -44,6 +59,7 @@ if ($manifest.schema -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Un
 if ($manifest.sequence -ne 'monitor') { throw "M3 acceptance evidence is not a completed sequence: '$($manifest.sequence)'" }
 if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) { throw 'M3 acceptance evidence manifest contains no files.' }
 if ($null -eq $manifest.acceptanceBinary -or -not $manifest.acceptanceBinary.sha256 -or -not $manifest.acceptanceBinary.length) { throw 'M3 acceptance evidence manifest is missing the acceptance binary identity.' }
+if ($null -eq $manifest.observedProductWindows -or $manifest.observedProductWindows.settings -ne 'widget-acceptance-settings.window.json' -or $manifest.observedProductWindows.search -ne 'widget-acceptance-search.window.json') { throw 'M3 acceptance evidence manifest is missing observed Settings/Search product-window evidence mapping.' }
 if ($null -eq $manifest.humanVisualAcceptance -or -not $manifest.humanVisualAcceptance.reviewer -or -not $manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 acceptance evidence manifest is missing explicit human visual acceptance.' }
 $sealedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.sealedAtUtc) -Description 'manifest.sealedAtUtc'
 $reviewedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.humanVisualAcceptance.reviewedAtUtc) -Description 'manifest.humanVisualAcceptance.reviewedAtUtc'
@@ -75,6 +91,7 @@ if ([string]$manifest.acceptanceBinary.fileName -ne 'TuringDeskWidgetAcceptance.
 
 $phaseOrder = @('baseline','settings','search','explorer','monitor')
 $previousCaptureUtc = $null
+$phaseCaptureUtc = @{}
 foreach ($phase in $phaseOrder) {
     foreach ($suffix in @('.txt','.png','.png.sha256')) {
         $name = "widget-acceptance-$phase$suffix"
@@ -87,6 +104,7 @@ foreach ($phase in $phaseOrder) {
     if ($pngHash -ne ([string]$sidecar['sha256']).ToLowerInvariant()) { throw "M3 visual evidence PNG hash mismatch for $phase." }
     if (-not $sidecar.ContainsKey('virtualBounds') -or -not $sidecar.ContainsKey('capturedAtUtc')) { throw "M3 visual evidence sidecar metadata is incomplete for $phase." }
     $capturedAtUtc = Parse-UtcTimestamp -Value ([string]$sidecar['capturedAtUtc']) -Description "$phase capturedAtUtc"
+    $phaseCaptureUtc[$phase] = $capturedAtUtc
     if ($null -ne $previousCaptureUtc -and $capturedAtUtc -le $previousCaptureUtc) { throw "M3 visual evidence chronology is invalid: $phase was not captured after the previous successful phase." }
     if ($capturedAtUtc -gt $sealedAtUtc) { throw "M3 visual evidence chronology is invalid: $phase capture is after the manifest seal." }
     $reportPath = Join-Path $diagnostics "widget-acceptance-$phase.txt"
@@ -97,9 +115,16 @@ foreach ($phase in $phaseOrder) {
     $previousCaptureUtc = $capturedAtUtc
 }
 
-foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-sequence.phase','widget-acceptance-search.explorer-pids','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256')) {
-    if (-not $seen.ContainsKey($required)) { throw "M3 sealed evidence manifest is missing required recovery/visual evidence: $required" }
+foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-sequence.phase','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','widget-acceptance-search.explorer-pids','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256')) {
+    if (-not $seen.ContainsKey($required)) { throw "M3 sealed evidence manifest is missing required recovery/visual/window evidence: $required" }
 }
+
+$expectedSessionId = [int]$manifest.machine.sessionId
+$settingsWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'settings' -ExpectedClass 'TuringDesk.Native.DesktopLibrary' -ExpectedProcess 'TuringDeskWallpaper' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
+$searchWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'search' -ExpectedClass 'TuringDesk.Native.SearchWindow' -ExpectedProcess 'TuringDesk' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
+if ($settingsWindowUtc -gt $phaseCaptureUtc['settings']) { throw 'M3 Settings product-window evidence was captured after the Settings phase screenshot.' }
+if ($searchWindowUtc -gt $phaseCaptureUtc['search']) { throw 'M3 Search product-window evidence was captured after the Search phase screenshot.' }
+if ($searchWindowUtc -le $settingsWindowUtc) { throw 'M3 observed product-window evidence chronology is invalid: Search was not observed after Settings.' }
 
 $attestationPath = Join-Path $diagnostics 'widget-acceptance-human-visual.json'
 $attestationSeal = Read-KeyValueFile -Path "$attestationPath.sha256"
@@ -123,7 +148,7 @@ $baselineIds = @(Get-Content -LiteralPath (Join-Path $diagnostics 'widget-accept
 $manifestIds = @($manifest.baselineWidgetIds | ForEach-Object { [string]$_ } | Sort-Object -Unique)
 if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) { throw 'M3 baseline Widget identity set no longer matches the sealed manifest.' }
 
-Write-Host "Verified sealed M3 Widget acceptance evidence integrity, binary continuity, phase chronology and explicit human visual acceptance: $manifestPath"
+Write-Host "Verified sealed M3 Widget acceptance evidence integrity, observed Settings/Search product windows, binary continuity, phase chronology and explicit human visual acceptance: $manifestPath"
 Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $actualManifestHash"

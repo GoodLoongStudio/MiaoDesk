@@ -11,13 +11,14 @@ $confirmer = Join-Path $root 'scripts/confirm-widget-visual-acceptance.ps1'
 $sealer = Join-Path $root 'scripts/seal-widget-acceptance-evidence.ps1'
 $verifier = Join-Path $root 'scripts/verify-widget-acceptance-evidence.ps1'
 $sessionVerifier = Join-Path $root 'scripts/verify-widget-acceptance-session-evidence.ps1'
+$performancePolicy = Join-Path $root 'src/native/src/desktop/performance/WallpaperPerformancePolicy.cpp'
 $cmake = Join-Path $root 'src/native/CMakeLists.txt'
 $doc = Join-Path $root 'docs/WIDGET_RUNTIME_HEALTH_M3.md'
 $sequenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
 $evidenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md'
 $placementDoc = Join-Path $root 'docs/WIDGET_PLACEMENT_HEALTH_M3.md'
 
-foreach ($path in @($probe, $main, $header, $runner, $confirmer, $sealer, $verifier, $sessionVerifier, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
+foreach ($path in @($probe, $main, $header, $runner, $confirmer, $sealer, $verifier, $sessionVerifier, $performancePolicy, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing M3 Widget acceptance contract input: $path" }
 }
 
@@ -74,6 +75,13 @@ foreach ($semanticCheck in @(
     }
 }
 
+$performanceText = Get-Content -LiteralPath $performancePolicy -Raw
+foreach ($marker in @('IsTuringDeskWindowClass','TuringDesk.Native.','IsIgnoredForeground','foreground == settingsWindow','IsTuringDeskWindowClass(className)','TuringDesk.Native.DesktopLibrary')) {
+    if (-not $performanceText.Contains($marker)) {
+        throw "M3 Settings/Search foreground must remain excluded from wallpaper performance pause detection: $marker"
+    }
+}
+
 foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText, $sessionVerifierText)) {
     foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
         if ($text.Contains($forbidden)) { throw "M3 acceptance diagnostics must not regain shell HWND ownership: $forbidden" }
@@ -102,4 +110,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation, observed Settings/Search windows bound between adjacent phase screenshots, ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation; TuringDesk Settings/Search foreground windows remain excluded from performance pause detection; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining HWND/shell ownership.'

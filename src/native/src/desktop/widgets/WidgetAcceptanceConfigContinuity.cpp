@@ -44,9 +44,11 @@ std::wstring CanonicalPlacementConfig(const std::vector<wallpaper::DesktopWidget
     std::sort(enabled.begin(), enabled.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
 
     std::wostringstream out;
-    out << L"turingdesk.widget-acceptance-config.v1\n";
+    out << L"turingdesk.widget-acceptance-config.v2\n";
     for (const auto& widget : enabled) {
         AppendSized(out, widget.id);
+        out << L'|';
+        AppendSized(out, widget.title);
         out << L'|';
         AppendSized(out, widget.monitorId);
         out << L"|kind=" << static_cast<int>(widget.kind)
@@ -118,8 +120,8 @@ WidgetRuntimeAcceptanceCode CheckWidgetAcceptanceConfigContinuity(
     }
     if (baseline != current) {
         if (failure) {
-            *failure = L"M3 Widget placement 配置在 baseline 后发生变化（phase=" + phaseName +
-                L"）；monitorId/位置/尺寸/zIndex/enabled/kind 必须保持不变。请重新执行 baseline。";
+            *failure = L"M3 Widget showcase 配置在 baseline 后发生变化（phase=" + phaseName +
+                L"）；id/title/monitorId/位置/尺寸/zIndex/enabled/kind 必须保持不变。请重新执行 baseline。";
         }
         return WidgetRuntimeAcceptanceCode::BaselineMismatch;
     }

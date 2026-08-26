@@ -2,11 +2,11 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-title TuringDesk ARM64 One-Click Deploy
+title TuringDesk ARM64 Smart Developer Runner
 
 echo.
 echo ========================================
-echo   TuringDesk ARM64 One-Click Deploy
+echo   TuringDesk ARM64 Smart Developer Runner
 echo ========================================
 echo.
 
@@ -22,24 +22,24 @@ if errorlevel 1 (
   goto :fail
 )
 
-where gh >nul 2>nul
-if errorlevel 1 (
-  echo [ERROR] GitHub CLI ^(gh^) was not found in PATH.
-  goto :fail
-)
-
 echo [1/2] Updating TuringDesk main...
 git pull --ff-only
 if errorlevel 1 goto :fail
 
 echo.
-echo [2/2] Validating and deploying the complete TuringDesk ARM64 package...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1"
+echo [2/2] Selecting the lightest development path...
+if /I "%~1"=="full" (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode full
+) else if /I "%~1"=="preview" (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode preview
+) else (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode auto
+)
 if errorlevel 1 goto :fail
 
 echo.
 echo ========================================
-echo   SUCCESS - TuringDesk ARM64 is running
+echo   SUCCESS - Development task completed
 echo ========================================
 timeout /t 2 /nobreak >nul
 exit /b 0
@@ -47,7 +47,7 @@ exit /b 0
 :fail
 echo.
 echo ========================================
-echo   DEPLOY FAILED
+echo   DEVELOPMENT TASK FAILED
 echo   See the error above.
 echo ========================================
 echo.

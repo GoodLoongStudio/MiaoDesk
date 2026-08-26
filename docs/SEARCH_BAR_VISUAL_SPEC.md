@@ -8,6 +8,14 @@ This document is the authoritative visual contract for the TuringDesk Search Bar
 
 The image above is the visual acceptance source. When implementation values and the rendered result disagree, the rendered result must be adjusted until the ARM64 real-Windows screenshot is visually aligned with this reference.
 
+## Rendering implementation baseline
+
+The reusable Windows rendering method behind the approved clean-edge implementation is documented in:
+
+- [`WINDOWS_LAYERED_DIRECT2D_UI_RENDERING.md`](WINDOWS_LAYERED_DIRECT2D_UI_RENDERING.md)
+
+Future floating/glass native UI should reuse that layered Direct2D baseline rather than reintroducing GDI window-region clipping or multiple competing edge-shaping systems.
+
 ## Geometry
 
 - Visible pill: **720 × 56 logical px**.

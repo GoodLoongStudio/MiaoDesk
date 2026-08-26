@@ -8,6 +8,12 @@ on:
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/run-widget-runtime-acceptance.ps1
+      - scripts/confirm-widget-visual-acceptance.ps1
+      - scripts/seal-widget-acceptance-evidence.ps1
+      - scripts/verify-widget-acceptance-evidence.ps1
+      - scripts/verify-widget-acceptance-session-evidence.ps1
+      - scripts/verify-widget-acceptance-evidence-verifier-contract.ps1
       - scripts/verify-widget-acceptance-contract.ps1
       - scripts/verify-windows-powershell-compat.ps1
       - scripts/deploy-native-arm64.ps1
@@ -15,7 +21,12 @@ on:
       - scripts/prepare-third-party-runtime-arm64.ps1
       - docs/TURINGDESK-PRODUCT-BASELINE.md
       - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
+      - docs/TURINGDESK-DESKTOP-COMPLETION-PLAN.md
       - docs/L3-PI-RUNTIME-CONTRACT.md
+      - docs/WIDGET_RUNTIME_HEALTH_M3.md
+      - docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md
+      - docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md
+      - docs/WIDGET_PLACEMENT_HEALTH_M3.md
       - DEPLOY-NATIVE-ARM64.cmd
       - UPDATE-TURINGDESK.cmd
       - README.md

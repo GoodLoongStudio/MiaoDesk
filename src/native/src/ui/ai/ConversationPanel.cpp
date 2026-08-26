@@ -5,6 +5,8 @@
 #include <dwmapi.h>
 #include <windowsx.h>
 #include <wrl/client.h>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 
 namespace {
@@ -87,6 +89,51 @@ Microsoft::WRL::ComPtr<IDWriteTextLayout> ConversationRawInputLayout(
     return layout;
 }
 
+RECT ConversationInputHitRect(const ConversationState& state) {
+    const auto& surface = gConversationSurface;
+    const int inputContainerH = Px(state, 64);
+    const int inputTop = static_cast<int>(surface.height) - inputContainerH - Px(state, 16);
+    const int actionSize = Px(state, 34);
+    const int micLeft = state.sendRect.left - Px(state, 8) - actionSize;
+    const int attachLeft = micLeft - Px(state, 4) - actionSize;
+    return RECT{
+        Px(state, 30), inputTop + Px(state, 8),
+        attachLeft - Px(state, 6), inputTop + inputContainerH - Px(state, 8)};
+}
+
+void FocusConversationInputAtPoint(ConversationState& state, POINT point) {
+    if (!state.input) return;
+    SetFocus(state.input);
+
+    const std::wstring inputText = ReadText(state.input);
+    UINT32 caretIndex = static_cast<UINT32>(inputText.size());
+    if (!inputText.empty()) {
+        const RECT hitRect = ConversationInputHitRect(state);
+        const float inputLeft = static_cast<float>(Px(state, 38));
+        const int inputContainerH = Px(state, 64);
+        const int inputTop = static_cast<int>(gConversationSurface.height) - inputContainerH - Px(state, 16);
+        const float layoutTop = inputTop + Px(state, 16.0f);
+        const float layoutHeight = static_cast<float>(Px(state, 36));
+        const float layoutWidth = static_cast<float>((std::max)(Px(state, 40), hitRect.right - Px(state, 38)));
+        auto format = LayerFormat(static_cast<float>(Px(state, 15)));
+        auto layout = ConversationRawInputLayout(inputText, format.Get(), layoutWidth, layoutHeight);
+        if (layout) {
+            BOOL trailing = FALSE;
+            BOOL inside = FALSE;
+            DWRITE_HIT_TEST_METRICS metrics{};
+            if (SUCCEEDED(layout->HitTestPoint(
+                    static_cast<float>(point.x) - inputLeft,
+                    static_cast<float>(point.y) - layoutTop,
+                    &trailing, &inside, &metrics))) {
+                caretIndex = metrics.textPosition + (trailing ? metrics.length : 0u);
+                caretIndex = (std::min)(caretIndex, static_cast<UINT32>(inputText.size()));
+            }
+        }
+    }
+    SendMessageW(state.input, EM_SETSEL, static_cast<WPARAM>(caretIndex), static_cast<LPARAM>(caretIndex));
+    gConversationCaretVisible = true;
+}
+
 void DrawConversationInputFocusAndCaret() {
     auto* state = gConversationState;
     auto& surface = gConversationSurface;
@@ -140,25 +187,85 @@ void DrawConversationInputFocusAndCaret() {
             SendMessageW(
                 state->input, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart),
                 reinterpret_cast<LPARAM>(&selectionEnd));
-            const UINT32 caretIndex = std::min<UINT32>(
+            const UINT32 caretIndex = (std::min)(
                 static_cast<UINT32>(selectionEnd), static_cast<UINT32>(inputText.size()));
+            const bool atEnd = caretIndex >= inputText.size();
+            const UINT32 hitPosition = atEnd
+                ? static_cast<UINT32>(inputText.size() - 1)
+                : caretIndex;
             FLOAT hitX = 0.0f;
             FLOAT hitY = 0.0f;
             DWRITE_HIT_TEST_METRICS metrics{};
             if (SUCCEEDED(layout->HitTestTextPosition(
-                    caretIndex, FALSE, &hitX, &hitY, &metrics))) {
+                    hitPosition, atEnd ? TRUE : FALSE, &hitX, &hitY, &metrics))) {
                 caretX += hitX;
                 caretTop = layoutTop + hitY + 1.0f;
-                caretBottom = layoutTop + hitY + std::max(18.0f, metrics.height - 1.0f);
+                caretBottom = layoutTop + hitY + (std::max)(18.0f, metrics.height - 1.0f);
             }
         }
+        caretX = (std::clamp)(caretX, inputLeft, inputRight - 1.0f);
         target->DrawLine(
             D2D1::Point2F(caretX, caretTop),
-            D2D1::Point2F(caretX, caretBottom), caret.Get(), 1.15f);
+            D2D1::Point2F(caretX, caretBottom), caret.Get(), 1.25f);
     }
 
     const HRESULT drawResult = target->EndDraw();
     if (drawResult == D2DERR_RECREATE_TARGET) ReleaseConversationLayerSurface();
+}
+
+void LimitPremultipliedPixelAlpha(std::uint8_t* pixel, std::uint8_t maskAlpha) {
+    const std::uint8_t oldAlpha = pixel[3];
+    if (oldAlpha <= maskAlpha) return;
+    if (oldAlpha == 0 || maskAlpha == 0) {
+        pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0;
+        return;
+    }
+    for (int channel = 0; channel < 3; ++channel) {
+        pixel[channel] = static_cast<std::uint8_t>(
+            (static_cast<unsigned int>(pixel[channel]) * maskAlpha + oldAlpha / 2u) / oldAlpha);
+    }
+    pixel[3] = maskAlpha;
+}
+
+void ApplyConversationRoundedAlphaMask() {
+    auto* state = gConversationState;
+    auto& surface = gConversationSurface;
+    if (!state || !surface.bits || surface.width < 2 || surface.height < 2) return;
+
+    const float radius = static_cast<float>(Px(*state, 24));
+    const float left = 0.5f;
+    const float top = 0.5f;
+    const float right = static_cast<float>(surface.width) - 0.5f;
+    const float bottom = static_cast<float>(surface.height) - 0.5f;
+    const int edge = (std::min)(
+        static_cast<int>(std::ceil(radius + 1.5f)),
+        static_cast<int>((std::min)(surface.width, surface.height) / 2u));
+    auto* pixels = static_cast<std::uint8_t*>(surface.bits);
+
+    const auto maskCorner = [&](int xBegin, int xEnd, int yBegin, int yEnd, float cx, float cy) {
+        for (int y = yBegin; y < yEnd; ++y) {
+            const float py = static_cast<float>(y) + 0.5f;
+            for (int x = xBegin; x < xEnd; ++x) {
+                const float px = static_cast<float>(x) + 0.5f;
+                const float dx = px - cx;
+                const float dy = py - cy;
+                const float distance = std::sqrt(dx * dx + dy * dy);
+                const float coverage = (std::clamp)(radius + 0.5f - distance, 0.0f, 1.0f);
+                const auto maskAlpha = static_cast<std::uint8_t>(std::lround(coverage * 255.0f));
+                auto* pixel = pixels + (static_cast<std::size_t>(y) * surface.width + static_cast<std::size_t>(x)) * 4u;
+                LimitPremultipliedPixelAlpha(pixel, maskAlpha);
+            }
+        }
+    };
+
+    maskCorner(0, edge, 0, edge, left + radius, top + radius);
+    maskCorner(static_cast<int>(surface.width) - edge, static_cast<int>(surface.width), 0, edge,
+               right - radius, top + radius);
+    maskCorner(0, edge, static_cast<int>(surface.height) - edge, static_cast<int>(surface.height),
+               left + radius, bottom - radius);
+    maskCorner(static_cast<int>(surface.width) - edge, static_cast<int>(surface.width),
+               static_cast<int>(surface.height) - edge, static_cast<int>(surface.height),
+               right - radius, bottom - radius);
 }
 
 BOOL TuringDeskPresentConversationLayered(
@@ -166,6 +273,10 @@ BOOL TuringDeskPresentConversationLayered(
     HDC hdcSrc, POINT* source, COLORREF colorKey,
     BLENDFUNCTION* blend, DWORD flags) {
     DrawConversationInputFocusAndCaret();
+    // Final premultiplied-alpha mask is the last owner of the four visible outer corners.
+    // Any legacy/native rectangular residue outside the Direct2D rounded geometry becomes
+    // true transparent pixels before UpdateLayeredWindow reaches DWM.
+    ApplyConversationRoundedAlphaMask();
     return ::UpdateLayeredWindow(
         hwnd, hdcDst, destination, size, hdcSrc, source,
         colorKey, blend, flags);

@@ -172,6 +172,18 @@ function Get-RemoteRuntimeBundleKey([string]$BuildSha) {
     }
 }
 
+function Copy-TreeLongPath([string]$Source, [string]$Destination) {
+    if (-not (Get-Command robocopy.exe -ErrorAction SilentlyContinue)) {
+        throw "robocopy.exe was not found; long-path RuntimeBundle reuse is unavailable."
+    }
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    & robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Host
+    $code = $LASTEXITCODE
+    if ($code -ge 8) {
+        throw ("RuntimeBundle cache copy failed with robocopy exit code {0}: {1} -> {2}" -f $code, $Source, $Destination)
+    }
+}
+
 function Copy-UnchangedRuntimeBundle([string]$Destination, [string]$BuildSha) {
     if (-not (Test-Path $DeployDir -PathType Container)) { return $false }
     foreach ($relative in @("Runtime", "Pi", "Goz")) {
@@ -188,7 +200,7 @@ function Copy-UnchangedRuntimeBundle([string]$Destination, [string]$BuildSha) {
 
     Step "Reusing unchanged local ARM64 RuntimeBundle"
     foreach ($relative in @("Runtime", "Pi", "Goz")) {
-        Copy-Item -LiteralPath (Join-Path $DeployDir $relative) -Destination (Join-Path $Destination $relative) -Recurse -Force
+        Copy-TreeLongPath (Join-Path $DeployDir $relative) (Join-Path $Destination $relative)
     }
     Write-Host "RuntimeBundle unchanged; skipped repository clone and runtime download." -ForegroundColor Green
     return $true

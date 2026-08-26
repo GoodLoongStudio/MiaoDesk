@@ -206,6 +206,22 @@ DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth*
     return {true, L"桌面小组件运行状态读取完成。"};
 }
 
+DesktopControlResult DesktopWidgetController::CreateClock(
+    std::wstring monitorId,
+    wallpaper::DesktopWidget* created) const {
+    std::vector<wallpaper::DesktopWidget> existing;
+    const auto listed = service_.ListWidgets(&existing);
+    if (!listed.success) return listed;
+
+    WidgetFixedPreset preset = WidgetFixedPreset::MinimalClock;
+    switch (existing.size() % 3) {
+    case 1: preset = WidgetFixedPreset::DateClock; break;
+    case 2: preset = WidgetFixedPreset::GlassClock; break;
+    default: break;
+    }
+    return CreatePreset(preset, std::move(monitorId), created);
+}
+
 DesktopControlResult DesktopWidgetController::CreatePreset(
     WidgetFixedPreset preset,
     std::wstring monitorId,

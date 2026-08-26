@@ -32,7 +32,7 @@ function Assert-ObservedProductWindow([string]$DiagnosticsDir, [string]$Phase, [
     $path = Join-Path $DiagnosticsDir $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "M3 observed product-window evidence is missing: $name" }
     $evidence = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-    if ($evidence.schema -ne 'turingdesk.widget-window-evidence.v1') { throw "Unexpected M3 product-window evidence schema for $Phase: '$($evidence.schema)'" }
+    if ($evidence.schema -ne 'turingdesk.widget-window-evidence.v1') { throw "Unexpected M3 product-window evidence schema for ${Phase}: '$($evidence.schema)'" }
     if ([string]$evidence.phase -ne $Phase) { throw "M3 product-window evidence phase mismatch for $Phase." }
     if ([string]$evidence.className -ne $ExpectedClass) { throw "M3 $Phase window evidence class mismatch: '$($evidence.className)'" }
     if ([string]$evidence.processName -ne $ExpectedProcess) { throw "M3 $Phase window evidence process mismatch: '$($evidence.processName)'" }

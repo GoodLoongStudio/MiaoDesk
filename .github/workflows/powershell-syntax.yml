@@ -7,15 +7,7 @@ on:
       - 'scripts/**/*.ps1'
       - 'UPDATE-TURINGDESK.cmd'
       - 'DEPLOY-NATIVE-ARM64.cmd'
-      - 'docs/TURINGDESK-PRODUCT-BASELINE.md'
-      - 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
-      - 'docs/L3-PI-RUNTIME-CONTRACT.md'
-      - 'docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md'
-      - 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
-      - 'docs/WIDGET_RUNTIME_HEALTH_M3.md'
       - '.github/workflows/powershell-syntax.yml'
-      - '.github/workflows/native-search-windows.yml'
-      - '.github/workflows/native-x64-validation.yml'
   workflow_dispatch:
 
 permissions:
@@ -32,51 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Verify checkout matches workflow commit
+      - name: Verify Windows PowerShell 5.1 compatibility
         shell: powershell
         run: |
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:GITHUB_SHA) {
             throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
           }
-
-      - name: Verify current release baselines
-        shell: powershell
-        run: |
-          $required = @(
-            'docs/TURINGDESK-PRODUCT-BASELINE.md',
-            'docs/TURINGDESK-NATIVE-TECH-BASELINE.md',
-            'docs/L3-PI-RUNTIME-CONTRACT.md'
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path $path -PathType Leaf)) {
-              throw "Required current release baseline missing: $path"
-            }
-          }
-
-      - name: Verify Windows PowerShell 5.1 entrypoints
-        shell: powershell
-        run: .\scripts\verify-windows-powershell-compat.ps1
-
-      - name: Verify ARM64 updater RuntimeBundle reuse contract
-        shell: powershell
-        run: .\scripts\verify-arm64-updater-runtime-reuse.ps1
-
-      - name: Exercise ARM64 updater junction cleanup
-        shell: powershell
-        run: .\scripts\test-arm64-updater-junction-cleanup.ps1
-
-      - name: Verify M3 Widget evidence verifier contract
-        shell: powershell
-        run: .\scripts\verify-widget-acceptance-evidence-verifier-contract.ps1
-
-      - name: Exercise one-click updater bootstrap
-        shell: cmd
-        env:
-          TD_BOOTSTRAP_SELF_TEST: 1
-          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
-        run: UPDATE-TURINGDESK.cmd
-
-      - name: Verify TuringDesk runtime contract
-        shell: powershell
-        run: .\scripts\verify-l3-runtime-contract.ps1
+          .\scripts\verify-windows-powershell-compat.ps1

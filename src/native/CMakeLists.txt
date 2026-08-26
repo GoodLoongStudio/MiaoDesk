@@ -34,7 +34,7 @@ set(TURINGDESK_APP_SOURCES
     src/ui/search/SearchWindow.cpp
     src/ui/settings/SettingsCenterWindow.cpp
     src/ui/settings/ModelSettingsWindow.cpp
-    src/ui/ai/L3CliWindow.cpp
+    src/ui/ai/ConversationPanel.cpp
 
     src/ai/pi/PiRuntime.cpp
     src/ai/pi/PiNativeToolsExtension.cpp

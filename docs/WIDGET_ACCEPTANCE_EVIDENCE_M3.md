@@ -14,6 +14,15 @@ Passing probes and CI are not visual product acceptance. A real ARM64 Windows op
 
 The successful `baseline` phase fingerprints the exact `TuringDeskWidgetAcceptance.exe` used to start the sequence. The runner writes `widget-acceptance-binary.sha256` with the executable SHA-256 and byte length. Every later phase refuses to run if that executable differs.
 
+The `settings` and `search` phases also require observed product-window evidence before their Widget health probe runs. The runner must see `TuringDesk.Native.DesktopLibrary` from `TuringDeskWallpaper` during `settings`, and `TuringDesk.Native.SearchWindow` from `TuringDesk` during `search`, in the same interactive Windows session. Those observations are persisted as:
+
+```text
+widget-acceptance-settings.window.json
+widget-acceptance-search.window.json
+```
+
+Both use schema `turingdesk.widget-window-evidence.v1` and record phase, UTC observation time, process name/PID, session id, class name and title. This proves the Settings/Search phases correspond to actual observed TuringDesk windows rather than labels alone.
+
 After the `monitor` phase succeeds, the operator must explicitly record the human visual gate:
 
 ```powershell
@@ -43,6 +52,7 @@ The sealer refuses to run unless the sequence cursor is exactly `monitor` and th
 - baseline Widget identity set;
 - ordered sequence cursor;
 - acceptance binary SHA-256/length checkpoint;
+- observed Settings/Search product window evidence;
 - all five phase health reports;
 - all five full virtual-desktop screenshots and their SHA-256 sidecars;
 - Explorer PID restart checkpoint;
@@ -56,7 +66,7 @@ It writes:
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-evidence.manifest.sha256
 ```
 
-The manifest schema is `turingdesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records acceptance binary identity, baseline Widget identity set, Windows session/machine metadata and the human reviewer/timestamp.
+The manifest schema is `turingdesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records acceptance binary identity, observed Settings/Search evidence mapping, baseline Widget identity set, Windows session/machine metadata and the human reviewer/timestamp.
 
 The sealer immediately runs the independent verifier after writing the manifest.
 
@@ -72,6 +82,7 @@ The verifier recomputes the manifest SHA-256 and checks every recorded file for 
 
 - the completed `monitor` sequence;
 - acceptance binary continuity;
+- observed Settings/Search product-window schema, expected process/class, same-session binding and chronology;
 - all five report/PNG/sidecar groups;
 - screenshot sidecar metadata and strict phase chronology;
 - report-before-screenshot timing;
@@ -83,11 +94,11 @@ The verifier recomputes the manifest SHA-256 and checks every recorded file for 
 - human-attested screenshot hashes still match all five sealed PNGs;
 - visual review occurred after the final monitor screenshot and before sealing.
 
-Widget identity, acceptance binary identity, phase chronology and human visual attestation solve different problems; all are required.
+Widget identity, acceptance binary identity, observed Settings/Search windows, phase chronology and human visual attestation solve different problems; all are required.
 
 ## Ownership boundary
 
-The runner, confirmer, sealer and verifier are diagnostics-only. They must not discover or mutate Progman, WorkerW, DefView, Widget HWNDs or wallpaper HWNDs, and must not call `SetParent` or `SetWindowPos`. Runtime/surface truth remains owned by `WidgetService` and `DesktopShellHost`.
+The runner, confirmer, sealer and verifier are diagnostics-only. They must not discover or mutate Progman, WorkerW, DefView, Widget HWNDs or wallpaper HWNDs, and must not call `SetParent` or `SetWindowPos`. The foreground-window observation reads the currently active product window only; it does not become a shell attachment implementation. Runtime/surface truth remains owned by `WidgetService` and `DesktopShellHost`.
 
 Static CI guards prevent these tools from silently losing integrity checks or gaining Windows Shell ownership.
 

@@ -1,14 +1,9 @@
-// Production bridge for the legacy WallpaperLibraryWindow implementation.
+// Production Desktop Library entry.
 //
-// The old implementation still uses the DesktopWidgetStore-shaped API in its
-// source text. For production builds we compile it through DesktopWidgetUiAdapter,
-// which routes all widget CRUD through DesktopControlService. This keeps the
-// shipping UI on the domain boundary without a risky 58k-line mechanical edit.
-// Remove this bridge when WallpaperLibraryWindowV2 reaches full parity.
+// The legacy WallpaperLibraryWindow implementation has been retired from the
+// shipping path. Production now compiles the V2 product shell directly so
+// users and real-Windows acceptance always exercise the same UI implementation.
+// Persistence and Widget runtime state continue to flow through domain
+// controllers/services; this translation unit owns no Store/INI/Shell state.
 
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/DesktopWidgetUiAdapter.h"
-
-#define DesktopWidgetStore DesktopWidgetUiAdapter
-#include "WallpaperLibraryWindow.cpp"
-#undef DesktopWidgetStore
+#include "WallpaperLibraryWindowV2.cpp"

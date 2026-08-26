@@ -35,15 +35,18 @@ $updateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
 $deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
 $updateScript = Join-Path $scriptRoot 'update-turingdesk-arm64.ps1'
 $deployScript = Join-Path $scriptRoot 'deploy-native-arm64.ps1'
+$updaterDoc = Join-Path $root 'docs\ARM64_ACCEPTANCE_UPDATER.md'
 $armWorkflow = Join-Path $root '.github\workflows\native-search-windows.yml'
 $x64Workflow = Join-Path $root '.github\workflows\native-x64-validation.yml'
 $statusWorkflow = Join-Path $root '.github\workflows\native-arm64-status.yml'
 foreach ($cmd in @($updateCmd, $deployCmd)) { Assert-AsciiFile $cmd }
+if (-not (Test-Path $updaterDoc -PathType Leaf)) { throw "ARM64 acceptance updater contract is missing: $updaterDoc" }
 
 $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
 $deployText = [IO.File]::ReadAllText($deployCmd, [Text.Encoding]::ASCII)
 $updateScriptText = [IO.File]::ReadAllText($updateScript, [Text.Encoding]::ASCII)
 $deployScriptText = [IO.File]::ReadAllText($deployScript, [Text.Encoding]::ASCII)
+$updaterDocText = [IO.File]::ReadAllText($updaterDoc)
 $armWorkflowText = [IO.File]::ReadAllText($armWorkflow)
 $x64WorkflowText = [IO.File]::ReadAllText($x64Workflow)
 $statusWorkflowText = [IO.File]::ReadAllText($statusWorkflow)
@@ -101,6 +104,16 @@ foreach ($forbidden in @(
     }
 }
 foreach ($required in @(
+    'real ARM64 Windows acceptance',
+    'still requires an authenticated `gh` session',
+    'gh auth login -h github.com --web',
+    'must not implement authentication as',
+    'no `gh` requirement',
+    'no GitHub login requirement'
+)) {
+    if (-not $updaterDocText.Contains($required)) { throw "ARM64 acceptance updater documentation marker missing: $required" }
+}
+foreach ($required in @(
     'verify-windows-powershell-compat.ps1',
     '$PowerShellGuard',
     'Verifying Windows PowerShell 5.1 entrypoints'
@@ -130,4 +143,4 @@ foreach ($forbidden in @('ref: ci-status', 'git push origin HEAD:ci-status')) {
     if ($statusWorkflowText.Contains($forbidden)) { throw "ARM64 status reporting must not create a side branch: $forbidden" }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a stderr-safe authenticated updater, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: entrypoints are ASCII-only, parse successfully, use a stderr-safe authenticated acceptance updater, document the M12 consumer-update boundary, run local deployment preflight, execute exact-SHA Windows CI, and report ARM64 status without side branches.' -ForegroundColor Green

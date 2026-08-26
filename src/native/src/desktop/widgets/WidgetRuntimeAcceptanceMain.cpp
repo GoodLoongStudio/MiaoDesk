@@ -151,8 +151,9 @@ int wmain(int argc, wchar_t** argv) {
     }
 
     // Settings/Search acceptance only means something while the requested product
-    // surface is visibly present. Validate immediately before and after the health
-    // sample so a wrapper-level foreground observation cannot race with the probe.
+    // surface is visibly present in the expected product process. Keep this check
+    // immediately before the health probe so every extra acceptance failure occurs
+    // before RunWidgetRuntimeAcceptanceProbe can advance the durable phase cursor.
     if (!PhaseContextReady(phase, &failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
         return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
@@ -175,12 +176,6 @@ int wmain(int argc, wchar_t** argv) {
     if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
     if (code != turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed)
         return static_cast<int>(code);
-
-    failure.clear();
-    if (!PhaseContextReady(phase, &failure)) {
-        if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
-        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
-    }
 
     // Only a successful baseline runtime probe is allowed to establish the
     // placement config checkpoint. If writing it fails, a new baseline is required.

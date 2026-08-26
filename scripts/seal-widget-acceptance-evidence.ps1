@@ -10,6 +10,7 @@ function Get-DiagnosticsDirectory {
 function Get-RequiredEvidencePaths([string]$DiagnosticsDir) {
     $paths = @(
         'widget-acceptance-baseline.ids',
+        'widget-acceptance-baseline.session',
         'widget-acceptance-sequence.phase',
         'widget-acceptance-binary.sha256',
         'widget-acceptance-settings.window.json',
@@ -48,6 +49,23 @@ function Read-KeyValueFile([string]$Path) {
         if ($parts.Count -eq 2) { $map[$parts[0]] = $parts[1] }
     }
     $map
+}
+
+function Read-BaselineSessionId([string]$DiagnosticsDir) {
+    $path = Join-Path $DiagnosticsDir 'widget-acceptance-baseline.session'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw 'M3 baseline Windows session checkpoint is missing; start a new baseline in the interactive session used for the full sequence.'
+    }
+    $value = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop).Trim()
+    $sessionId = 0
+    if (-not [int]::TryParse($value, [ref]$sessionId) -or $sessionId -lt 0) {
+        throw "M3 baseline Windows session checkpoint is malformed: '$value'"
+    }
+    $currentSessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+    if ($sessionId -ne $currentSessionId) {
+        throw "M3 evidence cannot be sealed from a different Windows session. baselineSession=$sessionId currentSession=$currentSessionId"
+    }
+    $sessionId
 }
 
 function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$BinaryCheckpoint) {
@@ -97,6 +115,7 @@ if ($sequence -ne 'monitor') {
     throw "M3 acceptance evidence cannot be sealed before the monitor phase succeeds. Current sequence cursor: '$sequence'"
 }
 
+$baselineSessionId = Read-BaselineSessionId -DiagnosticsDir $diagnostics
 $binaryCheckpointPath = Join-Path $diagnostics 'widget-acceptance-binary.sha256'
 $binaryCheckpoint = Read-KeyValueFile -Path $binaryCheckpointPath
 if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
@@ -124,6 +143,7 @@ $manifest = [ordered]@{
     schema = 'turingdesk.widget-acceptance-evidence.v1'
     sealedAtUtc = [DateTime]::UtcNow.ToString('o')
     sequence = $sequence
+    baselineSessionId = $baselineSessionId
     acceptanceBinary = [ordered]@{
         fileName = 'TuringDeskWidgetAcceptance.exe'
         sha256 = ([string]$binaryCheckpoint['sha256']).ToLowerInvariant()
@@ -141,7 +161,7 @@ $manifest = [ordered]@{
     machine = [ordered]@{
         computerName = $env:COMPUTERNAME
         userDomain = $env:USERDOMAIN
-        sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+        sessionId = $baselineSessionId
         osVersion = [Environment]::OSVersion.VersionString
         processArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
     }
@@ -169,6 +189,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Sealed and verified M3 Widget acceptance evidence: $manifestPath"
+Write-Host "Windows session: $baselineSessionId"
 Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $manifestHash"

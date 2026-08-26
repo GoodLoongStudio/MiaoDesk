@@ -35,6 +35,7 @@ $files = @{
     PerformanceUi = 'src/native/src/ui/performance/PerformanceUiAdapter.cpp'
     ProductionEngine = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp'
     LibraryWindow = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
+    LibraryV2 = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
     PiAdapter = 'src/native/src/ai/tools/DesktopWidgetTools.cpp'
     CMake = 'src/native/CMakeLists.txt'
     Doc = 'docs/DESKTOP_DOMAIN_ARCHITECTURE.md'
@@ -46,6 +47,11 @@ $text = @{}
 foreach ($entry in $files.GetEnumerator()) {
     $path = Require-File $entry.Value
     $text[$entry.Key] = Get-Content -LiteralPath $path -Raw
+}
+
+$retiredLibrary = Join-Path $root 'src/native/src/ui/wallpaper/WallpaperLibraryWindow.cpp'
+if (Test-Path -LiteralPath $retiredLibrary -PathType Leaf) {
+    throw 'Retired legacy WallpaperLibraryWindow.cpp must not return.'
 }
 
 foreach ($marker in @('DesktopControlService', 'GetSnapshot', 'WidgetRuntimeHealth', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'CreateWebWidget', 'ListWidgets')) {
@@ -118,13 +124,15 @@ foreach ($marker in @('PerformanceUiAdapter.h', 'PerformanceUiAdapter adapter', 
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth')) {
     if (-not $text.WidgetControllerHeader.Contains($marker)) { throw "DesktopWidgetController header missing facade dependency: $marker" }
 }
-foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::RuntimeHealth', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget')) {
-    if (-not $text.WidgetController.Contains($marker)) { throw "DesktopWidgetController missing facade routing marker: $marker" }
+foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::RuntimeHealth', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget', 'RuntimeLogPath(L"widget-runtime.log")', 'AppendWidgetRuntimeLog')) {
+    if (-not $text.WidgetController.Contains($marker)) { throw "DesktopWidgetController missing facade/log routing marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
     if ($text.WidgetController.Contains($forbidden)) { throw "DesktopWidgetController regained domain/runtime ownership: $forbidden" }
 }
 
+# The compatibility adapter remains domain-safe for any residual callers, but
+# the production Desktop Library no longer compiles the legacy Store-shaped UI.
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth', 'displayItems_', 'DisplayHealthSuffix')) {
     if (-not $text.WidgetUiHeader.Contains($marker)) { throw "DesktopWidgetUiAdapter header missing facade/actionable-health dependency: $marker" }
 }
@@ -134,8 +142,15 @@ foreach ($marker in @('DesktopWidgetUiAdapter::RuntimeHealth', 'DesktopWidgetUiA
 foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {
     if ($text.WidgetUi.Contains($forbidden)) { throw "DesktopWidgetUiAdapter regained domain/runtime ownership: $forbidden" }
 }
-foreach ($marker in @('DesktopWidgetUiAdapter.h', '#define DesktopWidgetStore DesktopWidgetUiAdapter', '#include "WallpaperLibraryWindow.cpp"')) {
-    if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow bridge missing marker: $marker" }
+
+foreach ($marker in @('#include "WallpaperLibraryWindowV2.cpp"')) {
+    if (-not $text.LibraryWindow.Contains($marker)) { throw "Production WallpaperLibraryWindow must compile V2: $marker" }
+}
+foreach ($marker in @('DesktopWidgetController', 'widgetController.RuntimeHealth', 'widgetController.CreateClock', 'widgetController.SetEnabled', 'widgetController.Remove')) {
+    if (-not $text.LibraryV2.Contains($marker)) { throw "Production WallpaperLibraryWindow V2 missing controller-routed Widget marker: $marker" }
+}
+foreach ($forbidden in @('DesktopWidgetStore store', '#include "turingdesk/DesktopWidgetStore.h"', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW', 'FindWindowW(L"Progman"', 'SetParent(')) {
+    if ($text.LibraryV2.Contains($forbidden)) { throw "Production WallpaperLibraryWindow V2 regained store/shell ownership: $forbidden" }
 }
 
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service', 'service.GetSnapshot', 'widgetRuntime', 'AppendSurfaceHealth', 'FindSurfaceHealth', 'issueCode', 'recommendedAction')) {
@@ -166,8 +181,8 @@ $monitorLayoutLinkCount = [regex]::Matches($cmake, [regex]::Escape('src/desktop/
 if ($monitorLayoutLinkCount -lt 3) {
     throw 'WallpaperMonitorLayout must be linked into app, wallpaper and Widget acceptance targets.'
 }
-if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/WallpaperAutomationWindow.cpp')) {
-    throw 'Production target must not compile legacy UI implementation files directly.'
+if ($cmake.Contains('src/WallpaperLibraryWindow.cpp') -or $cmake.Contains('src/WallpaperAutomationWindow.cpp') -or $cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindow.cpp')) {
+    throw 'Production target must not compile retired legacy UI implementation files.'
 }
 
 foreach ($marker in @('UI / Pi / future Editor', 'Desktop Control contract', 'DesktopWidgetTools.cpp', 'WallpaperLibraryWindowV2.cpp', 'WidgetSurfaceHealth')) {
@@ -180,4 +195,4 @@ foreach ($marker in @('monitorReported', 'monitorValid', 'geometryReported', 'ge
     if (-not $text.PlacementDoc.Contains($marker)) { throw "Widget placement health doc missing marker: $marker" }
 }
 
-Write-Host 'Desktop domain contract OK.'
+Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Widget UI remains controller/service-routed, Pi remains snapshot-routed, and runtime diagnostics do not regain private Store/Shell ownership.'

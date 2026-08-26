@@ -1,7 +1,7 @@
 # TuringDesk M3 Widget runtime health contract
 
 Status: active implementation contract
-Date: 2026-08-25
+Date: 2026-08-26
 
 M3 turns Widget runtime health from a single compatibility string into a caller-facing per-surface contract shared by UI, Pi and the future editor through `DesktopControlService::GetSnapshot()`.
 
@@ -71,7 +71,7 @@ Pi `wallpaper_state_get` emits every structured surface with process/HWND/parent
 
 ## Real-Windows acceptance probe
 
-M3 ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another HWND enumeration or shell ownership path.
+M3 ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another Widget-runtime HWND or shell ownership path.
 
 Run it directly or through:
 
@@ -84,6 +84,10 @@ Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `mo
 ```text
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
 ```
+
+For `settings` and `search`, the acceptance executable itself now requires the corresponding visible TuringDesk top-level product window to exist in the same Windows session immediately before **and** immediately after the runtime-health sample. The PowerShell runner still records foreground-window evidence, but that wrapper observation is no longer trusted as the only proof that the required product surface was present while Widget health was measured. This closes the race where the observed Settings/Search window could disappear between wrapper observation and the C++ probe.
+
+This context check is acceptance-only. It observes the named top-level Settings/Search product window and does not discover, attach, reorder or repair Widget/wallpaper/Progman/WorkerW surfaces; runtime Widget truth continues to come only from `WidgetService`, while desktop attachment ownership remains solely in `DesktopShellHost`.
 
 The probe intentionally fails in a non-interactive CI session instead of pretending that a successful build proves visible desktop behavior. It also maintains a diagnostics-only sequence cursor so successful evidence must be collected in order:
 

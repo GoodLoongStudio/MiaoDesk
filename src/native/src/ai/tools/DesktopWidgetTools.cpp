@@ -278,7 +278,9 @@ NativeToolResult WidgetList() {
             text << L"; runtime=" << (surface->renderingHealthy ? L"healthy" : L"attention")
                  << L"; resolved_monitor=" << (surface->monitorId.empty() ? L"unresolved" : surface->monitorId)
                  << L"; monitor_state=" << (surface->monitorReported ? (surface->monitorValid ? L"ok" : L"bad") : L"unreported")
-                 << L"; geometry=" << (surface->geometryReported ? (surface->geometryValid ? L"ok" : L"bad") : L"unreported");
+                 << L"; geometry=" << (surface->geometryReported ? (surface->geometryValid ? L"ok" : L"bad") : L"unreported")
+                 << L"; expected_rect=" << surface->expectedLeft << L"," << surface->expectedTop << L"," << surface->expectedRight << L"," << surface->expectedBottom
+                 << L"; actual_rect=" << surface->actualLeft << L"," << surface->actualTop << L"," << surface->actualRight << L"," << surface->actualBottom;
             if (!surface->issueCode.empty()) text << L"; issue=" << surface->issueCode;
             if (!surface->recommendedAction.empty()) text << L"; action=" << surface->recommendedAction;
         }

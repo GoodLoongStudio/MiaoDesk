@@ -15,7 +15,7 @@ foreach ($path in @($runnerPath, $phaseRunnerPath, $workflowPath, $docPath)) {
 $runner = Get-Content -LiteralPath $runnerPath -Raw
 foreach ($marker in @(
     "ValidateSet('baseline','settings','search','explorer','monitor')",
-    "'TuringDesk\\NativeTest'",
+    "'TuringDesk\NativeTest'",
     "'TuringDeskWidgetAcceptance.exe'",
     "'.installed-build-sha'",
     "run-widget-runtime-acceptance.ps1",

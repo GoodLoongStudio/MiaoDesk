@@ -121,6 +121,7 @@ set(TURINGDESK_HARNESS_SOURCES
 set(TURINGDESK_WIDGET_ACCEPTANCE_SOURCES
     src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp
     src/desktop/widgets/WidgetRuntimeAcceptance.cpp
+    src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
     src/desktop/shell/DesktopSurfaceTelemetry.cpp

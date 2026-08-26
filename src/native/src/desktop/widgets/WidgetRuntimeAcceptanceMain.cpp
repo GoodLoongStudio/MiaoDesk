@@ -1,4 +1,5 @@
 #include "turingdesk/WidgetRuntimeAcceptance.h"
+#include "turingdesk/WidgetService.h"
 
 #include <windows.h>
 
@@ -99,6 +100,36 @@ bool PhaseContextReady(std::wstring_view phase, std::wstring* failure) {
     return false;
 }
 
+bool StructuredLifecycleReady(std::wstring* failure) {
+    turingdesk::desktop::WidgetRuntimeHealth health;
+    const turingdesk::desktop::WidgetService service;
+    const auto result = service.GetRuntimeHealth(&health);
+    if (!result.success) {
+        if (failure) *failure = result.message.empty() ? L"无法读取 M3 Widget lifecycle health。" : result.message;
+        return false;
+    }
+
+    for (const auto& surface : health.surfaces) {
+        if (!surface.environmentReported || !surface.controllerReported || !surface.navigationReported) {
+            if (failure) {
+                *failure = L"M3 real-Windows acceptance 不接受 legacy/unreported WebView2 lifecycle：widget="
+                    + surface.widgetId + L"。必须由 preferred WebDesktopSurfaceChild 明确报告 Environment/Controller/Navigation telemetry。";
+            }
+            return false;
+        }
+        if (!surface.environmentReady || !surface.controllerReady || !surface.navigationReady) {
+            if (failure) {
+                *failure = L"M3 WebView2 lifecycle 尚未 ready：widget=" + surface.widgetId
+                    + L" environment=" + (surface.environmentReady ? L"true" : L"false")
+                    + L" controller=" + (surface.controllerReady ? L"true" : L"false")
+                    + L" navigation=" + (surface.navigationReady ? L"true" : L"false") + L"。";
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -123,6 +154,16 @@ int wmain(int argc, wchar_t** argv) {
     // surface is visibly present. Validate immediately before and after the health
     // sample so a wrapper-level foreground observation cannot race with the probe.
     if (!PhaseContextReady(phase, &failure)) {
+        if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
+        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+    }
+
+    // General runtime health keeps legacy children observable for compatibility,
+    // but M3 acceptance is stricter: an unreported lifecycle must never be treated
+    // as proof of visible WebView2 readiness. Check before the probe so a failure
+    // cannot advance the durable phase sequence cursor.
+    failure.clear();
+    if (!StructuredLifecycleReady(&failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
         return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
     }

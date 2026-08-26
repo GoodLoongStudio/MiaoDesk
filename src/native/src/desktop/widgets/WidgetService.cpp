@@ -1,10 +1,12 @@
 #include "turingdesk/WidgetService.h"
 #include "turingdesk/DesktopSurfaceTelemetry.h"
+#include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
 
 #include <windows.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iterator>
 #include <sstream>
@@ -17,6 +19,7 @@ namespace {
 
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr LONG kGeometryTolerancePx = 4;
 
 WidgetServiceResult LoadFailure(const std::wstring& error) {
     return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -100,6 +103,35 @@ bool HasStructuredLifecycleTelemetry(HWND window) {
     return role == 2;
 }
 
+const wallpaper::MonitorInfo* PrimaryMonitor(const wallpaper::MonitorTopology& topology) {
+    for (const auto& monitor : topology.monitors) {
+        if (monitor.primary) return &monitor;
+    }
+    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
+}
+
+RECT ExpectedWidgetDesktopRect(const wallpaper::MonitorInfo& monitor, const wallpaper::DesktopWidget& widget) {
+    const LONG monitorWidth = std::max<LONG>(1, monitor.desktopRect.right - monitor.desktopRect.left);
+    const LONG monitorHeight = std::max<LONG>(1, monitor.desktopRect.bottom - monitor.desktopRect.top);
+    RECT rect{};
+    rect.left = monitor.desktopRect.left + static_cast<LONG>(std::lround(widget.x * monitorWidth));
+    rect.top = monitor.desktopRect.top + static_cast<LONG>(std::lround(widget.y * monitorHeight));
+    rect.right = rect.left + static_cast<LONG>(std::lround(widget.width * monitorWidth));
+    rect.bottom = rect.top + static_cast<LONG>(std::lround(widget.height * monitorHeight));
+    return rect;
+}
+
+bool RectNear(const RECT& expected, const RECT& actual) {
+    const auto near = [](LONG a, LONG b) { return std::abs(a - b) <= kGeometryTolerancePx; };
+    return near(expected.left, actual.left) && near(expected.top, actual.top) &&
+           near(expected.right, actual.right) && near(expected.bottom, actual.bottom);
+}
+
+std::wstring RectText(const RECT& rect) {
+    return L"[" + std::to_wstring(rect.left) + L"," + std::to_wstring(rect.top) + L"," +
+           std::to_wstring(rect.right) + L"," + std::to_wstring(rect.bottom) + L"]";
+}
+
 void SetAttention(
     WidgetSurfaceHealth& surface,
     std::wstring issueCode,
@@ -113,6 +145,7 @@ void SetAttention(
 WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget, bool compatibilityHealthy) {
     WidgetSurfaceHealth surface;
     surface.widgetId = widget.id;
+    surface.monitorId = widget.monitorId.empty() ? L"primary" : widget.monitorId;
     surface.configured = widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web;
     if (!surface.configured) {
         SetAttention(surface, L"widget_disabled", L"Widget 未启用 Web runtime。", L"在小组件页面启用该 Widget 后刷新运行状态。");
@@ -126,6 +159,24 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     surface.hwndValue = surface.hwndReady ? reinterpret_cast<std::uintptr_t>(window) : 0;
     wallpaper::DesktopSurfaceZOrderHealth zOrder;
 
+    const auto topology = wallpaper::QueryMonitorTopology();
+    surface.monitorReported = topology.Valid();
+    const wallpaper::MonitorInfo* monitor = nullptr;
+    if (surface.monitorReported) {
+        monitor = widget.monitorId.empty()
+            ? PrimaryMonitor(topology)
+            : wallpaper::FindMonitorByStableId(topology, widget.monitorId);
+        surface.monitorValid = monitor != nullptr;
+        if (monitor) {
+            surface.monitorId = monitor->stableId.empty() ? wallpaper::StableMonitorKey(*monitor) : monitor->stableId;
+            const RECT expected = ExpectedWidgetDesktopRect(*monitor, widget);
+            surface.expectedLeft = expected.left;
+            surface.expectedTop = expected.top;
+            surface.expectedRight = expected.right;
+            surface.expectedBottom = expected.bottom;
+        }
+    }
+
     if (surface.hwndReady) {
         DWORD processId = 0;
         GetWindowThreadProcessId(window, &processId);
@@ -135,6 +186,20 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
         surface.childStyleValid = (style & WS_CHILD) != 0;
         surface.visible = IsWindowVisible(window) != FALSE;
+
+        if (monitor) {
+            RECT actual{};
+            surface.geometryReported = GetWindowRect(window, &actual) != FALSE;
+            if (surface.geometryReported) {
+                const RECT expected{
+                    surface.expectedLeft, surface.expectedTop, surface.expectedRight, surface.expectedBottom};
+                surface.actualLeft = actual.left;
+                surface.actualTop = actual.top;
+                surface.actualRight = actual.right;
+                surface.actualBottom = actual.bottom;
+                surface.geometryValid = RectNear(expected, actual);
+            }
+        }
 
         // The preferred WebDesktopSurfaceChild publishes these window properties
         // from the isolated process. The role property is present before async
@@ -174,8 +239,21 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         SetAttention(surface, L"child_style_invalid", L"Surface 缺少 WS_CHILD", L"重启 TuringDesk 桌面运行时；该 Surface 需要由 DesktopShellHost 重新创建。");
     } else if (!surface.visible) {
         SetAttention(surface, L"surface_hidden", L"Surface 当前不可见", L"确认 Widget 已启用并点击“刷新”；若仍隐藏，重启桌面运行时。");
+    } else if (!surface.monitorReported) {
+        SetAttention(surface, L"monitor_topology_unavailable", L"无法读取当前显示器 topology", L"确认显示器已连接并在 Windows 中启用，然后刷新 Widget 运行状态。");
+    } else if (!surface.monitorValid) {
+        SetAttention(surface, L"monitor_missing", L"Widget 配置的目标显示器当前不存在：" + surface.monitorId,
+                     L"重新连接目标显示器，或在小组件设置中重新选择当前可用显示器。");
+    } else if (!surface.geometryReported) {
+        SetAttention(surface, L"geometry_unreported", L"无法读取 Widget Surface 实际桌面坐标", L"刷新运行状态；若持续失败，重启 TuringDesk 桌面运行时。");
+    } else if (!surface.geometryValid) {
+        const RECT expected{surface.expectedLeft, surface.expectedTop, surface.expectedRight, surface.expectedBottom};
+        const RECT actual{surface.actualLeft, surface.actualTop, surface.actualRight, surface.actualBottom};
+        SetAttention(surface, L"geometry_mismatch",
+                     L"Widget Surface 未恢复到配置位置；expected=" + RectText(expected) + L" actual=" + RectText(actual),
+                     L"等待显示器拓扑稳定后刷新；若仍不一致，重启 Explorer 或 TuringDesk 桌面运行时以重新应用显示器布局。");
     } else if (!surface.environmentReported) {
-        surface.detail = L"OS Surface 就绪；legacy child 未报告 WebView2 lifecycle";
+        surface.detail = L"OS Surface/monitor/geometry 就绪；legacy child 未报告 WebView2 lifecycle";
     } else if (!surface.environmentReady) {
         SetAttention(surface, L"webview_environment_pending", L"等待 WebView2 EnvironmentReady", L"等待数秒后刷新；若持续卡住，检查 WebView2 Runtime 并重启桌面运行时。");
     } else if (!surface.controllerReady) {
@@ -190,7 +268,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     } else if (!compatibilityHealthy) {
         SetAttention(surface, L"runtime_diagnostic_unhealthy", L"Widget runtime 兼容诊断报告异常", L"查看桌面运行时日志并重启 TuringDeskWallpaper。");
     } else {
-        surface.detail = L"Widget WebView2/desktop surface health ready";
+        surface.detail = L"Widget WebView2/desktop surface/monitor geometry health ready";
     }
     return surface;
 }

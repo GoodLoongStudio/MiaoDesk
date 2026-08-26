@@ -5,6 +5,7 @@ namespace {
 
 constexpr int kConversationInputControlId = 3102;
 constexpr UINT kConversationPiActivityMessage = WM_APP + 34;
+constexpr UINT_PTR kConversationCaretTimer = 42;
 constexpr wchar_t kConversationCoreProcProperty[] = L"TuringDesk.Conversation.CoreProc";
 
 struct ConversationActivityPayload {
@@ -21,6 +22,7 @@ void AppendAttachmentToInput(HWND input, const std::wstring& path) {
     SetWindowTextW(input, current.c_str());
     SendMessageW(input, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
     SetFocus(input);
+    gConversationCaretVisible = true;
 }
 
 void PickConversationAttachment(HWND panel) {
@@ -51,6 +53,7 @@ void StartWindowsVoiceTyping(HWND panel) {
     if (!input) return;
     SetForegroundWindow(panel);
     SetFocus(input);
+    gConversationCaretVisible = true;
 
     INPUT keys[4]{};
     keys[0].type = INPUT_KEYBOARD;
@@ -174,6 +177,15 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         if (!ConversationPointInsideRoundedPanel(hwnd, point, Px(*state, 24))) return HTTRANSPARENT;
     }
 
+    if (message == WM_LBUTTONDOWN && state) {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (PointIn(ConversationInputHitRect(*state), point)) {
+            FocusConversationInputAtPoint(*state, point);
+            RenderConversationLayerSurface(*state);
+            return 0;
+        }
+    }
+
     if (message == WM_LBUTTONUP && state) {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         if (PointIn(gConversationSurface.attachRect, point)) {
@@ -183,6 +195,7 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         }
         if (PointIn(gConversationSurface.micRect, point)) {
             StartWindowsVoiceTyping(hwnd);
+            RenderConversationLayerSurface(*state);
             return 0;
         }
     }
@@ -191,16 +204,31 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         POINT point{};
         GetCursorPos(&point);
         ScreenToClient(hwnd, &point);
+        if (PointIn(ConversationInputHitRect(*state), point)) {
+            SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
+            return TRUE;
+        }
         if (PointIn(gConversationSurface.attachRect, point) || PointIn(gConversationSurface.micRect, point)) {
             SetCursor(LoadCursorW(nullptr, IDC_HAND));
             return TRUE;
         }
     }
 
+    if (message == WM_TIMER && wParam == kConversationCaretTimer) {
+        if (state && GetFocus() == state->input) {
+            gConversationCaretVisible = !gConversationCaretVisible;
+            RenderConversationLayerSurface(*state);
+        } else {
+            gConversationCaretVisible = true;
+        }
+        return 0;
+    }
+
     // Semantic events are the UI source of truth. Keep pi-runtime.log for diagnostics only.
     if (message == WM_TIMER && wParam == kActivityTimer) return 0;
 
     if (message == WM_NCDESTROY) {
+        KillTimer(hwnd, kConversationCaretTimer);
         gPiRuntime.SetActivityCallback({});
         ReleaseConversationLayerSurface();
         RemovePropW(hwnd, kConversationCoreProcProperty);
@@ -214,9 +242,14 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         PositionConversationInputProxy(*state);
         RenderConversationLayerSurface(*state);
     } else if (message == WM_MOUSEWHEEL ||
-               message == kPiDoneMessage || message == kDirectDoneMessage ||
-               (message == WM_COMMAND && LOWORD(wParam) == kConversationInputControlId && HIWORD(wParam) == EN_CHANGE)) {
+               message == kPiDoneMessage || message == kDirectDoneMessage) {
         RenderConversationLayerSurface(*state);
+    } else if (message == WM_COMMAND && LOWORD(wParam) == kConversationInputControlId) {
+        const WORD notification = HIWORD(wParam);
+        if (notification == EN_CHANGE || notification == EN_SETFOCUS || notification == EN_KILLFOCUS) {
+            if (notification != EN_KILLFOCUS) gConversationCaretVisible = true;
+            RenderConversationLayerSurface(*state);
+        }
     }
     return result;
 }
@@ -228,6 +261,10 @@ void EnsureConversationActivityBridge(HWND panel) {
             SetWindowLongPtrW(panel, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&ConversationOverlayPanelProc)));
         if (core) SetPropW(panel, kConversationCoreProcProperty, reinterpret_cast<HANDLE>(core));
     }
+
+    UINT blinkMs = GetCaretBlinkTime();
+    if (blinkMs == 0 || blinkMs == INFINITE) blinkMs = 530;
+    SetTimer(panel, kConversationCaretTimer, (std::max)(250u, blinkMs), nullptr);
 
     gPiRuntime.SetActivityCallback([panel](PiActivityEvent event) {
         auto payload = std::make_unique<ConversationActivityPayload>();

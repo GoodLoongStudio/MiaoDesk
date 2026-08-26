@@ -43,10 +43,12 @@ set(TURINGDESK_APP_SOURCES
     src/ai/tools/NativeTools.cpp
     src/ai/tools/NativeToolIsolation.cpp
     src/ai/tools/DesktopWidgetTools.cpp
+    src/ai/a2ui/A2UIParser.cpp
     src/ai/agent/L3Agent.cpp
     src/ai/agent/L3PersistenceSelfTest.cpp
 
     src/desktop/control/DesktopControlService.cpp
+    src/desktop/preview/GeneratedDesktopPreview.cpp
     src/desktop/shell/DesktopSurfaceTelemetry.cpp
     src/desktop/wallpaper/WallpaperService.cpp
     src/desktop/widgets/WidgetService.cpp
@@ -270,6 +272,7 @@ foreach(target TuringDesk TuringDeskWallpaper TuringDeskHarness TuringDeskWidget
     )
 endforeach()
 
+target_include_directories(TuringDesk SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 target_include_directories(TuringDeskWallpaper SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 target_include_directories(TuringDeskHarness SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 
@@ -293,6 +296,7 @@ target_link_libraries(TuringDesk PRIVATE
     dwrite
     dwmapi
     winhttp
+    "${WEBVIEW2_LOADER_STATIC}"
 )
 
 target_link_libraries(TuringDeskWallpaper PRIVATE

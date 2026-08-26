@@ -5,9 +5,9 @@ Date: 2026-08-26
 
 The phase-labelled Widget acceptance probe verifies continuity across the full real-Windows M3 flow instead of treating each phase as an unrelated snapshot.
 
-`baseline` records the sorted enabled Widget identity set in `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-baseline.ids`. Later `settings`, `search`, `explorer`, and `monitor` phases must match the same identity set while also passing `WidgetService::GetRuntimeHealth()`.
+`baseline` records the sorted enabled Widget identity set in `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-baseline.ids`. It also records the current interactive Windows session id in `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-baseline.session`. Later `settings`, `search`, `explorer`, and `monitor` phases must match both the same Widget identity set and the same Windows session while also passing `WidgetService::GetRuntimeHealth()`.
 
-Each report includes `baselineStatus`, `sequenceStatus`, and `surfaceIds`. `baselineStatus=recorded` means the baseline was written; `matched` means the current Widget ids match it; `missing` and `mismatch` are hard failures.
+Each report includes `baselineStatus`, `sessionStatus`, `sessionId`, `sequenceStatus`, and `surfaceIds`. `baselineStatus=recorded` means the baseline Widget identity was written; `matched` means the current Widget ids match it; `missing` and `mismatch` are hard failures. `sessionStatus=recorded` records the baseline Windows session, while `sessionStatus=matched` proves the current phase is still running in that same interactive Windows session. A missing or changed session is treated as a baseline continuity failure and requires a fresh `baseline`.
 
 Successful phases also advance a durable sequence cursor at `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-sequence.phase`. The probe requires the exact previous successful phase before it accepts the next one:
 
@@ -16,6 +16,8 @@ baseline -> settings -> search -> explorer -> monitor
 ```
 
 This prevents incomplete acceptance evidence such as running `baseline` and jumping directly to `explorer` or `monitor`. A failed phase never advances the sequence cursor, so the operator must first restore healthy Widget runtime state and rerun that phase successfully.
+
+The same-session requirement prevents another class of invalid evidence: a baseline captured in one RDP/console/login session cannot be combined with later phases from another interactive Windows session even when the same persisted Widget ids and the same binary are present. PID/HWND recreation inside one session remains allowed; the session contract is about the interactive desktop context, not runtime-process identity.
 
 A fresh `baseline` is also an explicit evidence reset boundary. Before probing the new baseline, the runner removes stale Explorer/monitor checkpoints, old phase health reports, old virtual-desktop screenshots/hash sidecars, and any previously sealed `widget-acceptance-evidence.manifest.json` / `.sha256`. The Widget persistence store is not touched. This prevents a previous successful M3 package from remaining next to a newly-started but incomplete acceptance round.
 
@@ -47,10 +49,10 @@ Screen capture is deliberately read-only acceptance instrumentation. It uses `Sy
 
 The screenshot evidence makes later review reproducible, but it does not replace human visual acceptance. The reviewer still has to inspect the images (or the live desktop) and confirm that Widget pixels are above the TuringDesk wallpaper, below desktop icons, still present with Settings/Search open, restored after Explorer restart, and positioned correctly after the monitor transition.
 
-Stable probe exit codes are `BaselineMissing = 65`, `BaselineMismatch = 66`, and `SequenceOutOfOrder = 67`. The PowerShell runner additionally fails before the `explorer` probe when Explorer restart evidence is missing or unchanged, and before the `monitor` probe when monitor recovery evidence is missing or no display topology transition is observed. These failures require the operator to perform the missing recovery action rather than silently skipping evidence.
+Stable probe exit codes are `BaselineMissing = 65`, `BaselineMismatch = 66`, and `SequenceOutOfOrder = 67`. A missing or changed baseline Windows session uses the baseline continuity failures rather than introducing a parallel session-specific product state. The PowerShell runner additionally fails before the `explorer` probe when Explorer restart evidence is missing or unchanged, and before the `monitor` probe when monitor recovery evidence is missing or no display topology transition is observed. These failures require the operator to perform the missing recovery action rather than silently skipping evidence.
 
-PID/HWND values are intentionally excluded from the Widget identity set. Explorer restart and runtime recovery may legitimately recreate processes and HWNDs, while the configured Widget identity must remain stable. The separate explorer.exe PID checkpoint is evidence that the shell process restarted; it is not used as Widget identity and is not product runtime state. The display topology checkpoint and transition evidence are similarly diagnostics-only and are never used as Widget persistence state.
+PID/HWND values are intentionally excluded from the Widget identity set. Explorer restart and runtime recovery may legitimately recreate processes and HWNDs, while the configured Widget identity must remain stable. The separate explorer.exe PID checkpoint is evidence that the shell process restarted; it is not used as Widget identity and is not product runtime state. The display topology checkpoint and transition evidence are similarly diagnostics-only and are never used as Widget persistence state. The baseline Windows session checkpoint is also diagnostics-only and exists solely to prevent cross-session acceptance evidence from being combined.
 
-The sequence cursor, Explorer checkpoint, display-topology checkpoint, topology-transition evidence and visual evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
+The sequence cursor, baseline Windows session checkpoint, Explorer checkpoint, display-topology checkpoint, topology-transition evidence and visual evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
 
 Passing these probes does not replace visual confirmation. The operator must still verify that the Widget is above the TuringDesk wallpaper, below desktop icons, remains visible while Settings/Search are open, returns after Explorer restart, and restores to the correct display after monitor reconnect/change.

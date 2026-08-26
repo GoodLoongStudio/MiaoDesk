@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 $paths = @{
-    L3 = Join-Path $root 'src/native/src/ui/ai/L3CliWindow.cpp'
+    L3 = Join-Path $root 'src/native/src/ui/ai/ConversationPanel.cpp'
+    LegacyL3Shim = Join-Path $root 'src/native/src/ui/ai/L3CliWindow.cpp'
     Pi = Join-Path $root 'src/native/src/ai/pi/PiRuntime.cpp'
     PiTools = Join-Path $root 'src/native/src/ai/pi/PiNativeToolsExtension.cpp'
     PiE2E = Join-Path $root 'scripts/pi-agent-e2e.mjs'
@@ -52,6 +53,7 @@ foreach ($relative in $forbiddenPaths) {
 }
 
 $l3 = Get-Content $paths.L3 -Raw
+$legacyL3Shim = Get-Content $paths.LegacyL3Shim -Raw
 $pi = Get-Content $paths.Pi -Raw
 $piTools = Get-Content $paths.PiTools -Raw
 $piE2E = Get-Content $paths.PiE2E -Raw
@@ -111,6 +113,15 @@ foreach ($forbidden in @(
     '#include "turingdesk/ModelSettingsWindow.h"',
     'kSettingsId')) {
     if ($l3.Contains($forbidden)) { throw "Retired terminal AI UI marker returned: $forbidden" }
+}
+
+if (-not $legacyL3Shim.Contains('#include "ConversationPanel.cpp"')) {
+    throw 'Legacy L3CliWindow.cpp must remain a thin compatibility build shim for ConversationPanel.cpp.'
+}
+foreach ($forbidden in @('PiRuntime.h', 'ConversationState', 'CreateWindowExW', 'Consolas', 'ModelSettingsWindow')) {
+    if ($legacyL3Shim.Contains($forbidden)) {
+        throw "Legacy L3CliWindow.cpp regained implementation ownership: $forbidden"
+    }
 }
 
 foreach ($marker in @(

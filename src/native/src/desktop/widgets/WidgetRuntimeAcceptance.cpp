@@ -121,6 +121,15 @@ std::wstring BuildReport(
         out << L"parentValid=" << BoolText(surface.parentValid) << L"\n";
         out << L"childStyleValid=" << BoolText(surface.childStyleValid) << L"\n";
         out << L"visible=" << BoolText(surface.visible) << L"\n";
+        out << L"monitorId=" << surface.monitorId << L"\n";
+        out << L"monitorReported=" << BoolText(surface.monitorReported) << L"\n";
+        out << L"monitorValid=" << BoolText(surface.monitorValid) << L"\n";
+        out << L"geometryReported=" << BoolText(surface.geometryReported) << L"\n";
+        out << L"geometryValid=" << BoolText(surface.geometryValid) << L"\n";
+        out << L"expectedRect=" << surface.expectedLeft << L"," << surface.expectedTop << L","
+            << surface.expectedRight << L"," << surface.expectedBottom << L"\n";
+        out << L"actualRect=" << surface.actualLeft << L"," << surface.actualTop << L","
+            << surface.actualRight << L"," << surface.actualBottom << L"\n";
         out << L"environmentReady=" << BoolText(surface.environmentReady) << L"\n";
         out << L"controllerReady=" << BoolText(surface.controllerReady) << L"\n";
         out << L"navigationReady=" << BoolText(surface.navigationReady) << L"\n";

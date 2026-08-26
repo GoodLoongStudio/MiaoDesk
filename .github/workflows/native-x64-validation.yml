@@ -13,7 +13,10 @@ on:
       - scripts/verify-native-source-layout.ps1
       - scripts/verify-desktop-ui-parity.ps1
       - scripts/verify-widget-product-model.ps1
+      - scripts/verify-arm64-updater-runtime-reuse.ps1
+      - scripts/verify-installed-widget-acceptance-contract.ps1
       - scripts/run-widget-runtime-acceptance.ps1
+      - scripts/run-installed-widget-acceptance.ps1
       - scripts/confirm-widget-visual-acceptance.ps1
       - scripts/seal-widget-acceptance-evidence.ps1
       - scripts/verify-widget-acceptance-evidence.ps1
@@ -35,6 +38,7 @@ on:
       - docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md
       - docs/WIDGET_PLACEMENT_HEALTH_M3.md
       - docs/WIDGET_PRODUCT_MODEL_M3.md
+      - docs/WIDGET_INSTALLED_ACCEPTANCE_M3.md
       - DEPLOY-NATIVE-ARM64.cmd
       - UPDATE-TURINGDESK.cmd
       - README.md
@@ -75,6 +79,18 @@ jobs:
           TD_BOOTSTRAP_SELF_TEST: 1
           TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
         run: UPDATE-TURINGDESK.cmd
+
+      - name: Verify native physical source layout
+        shell: powershell
+        run: .\scripts\verify-native-source-layout.ps1
+
+      - name: Verify desktop domain contract
+        shell: powershell
+        run: .\scripts\verify-desktop-domain-contract.ps1
+
+      - name: Verify DesktopShellHost ownership
+        shell: powershell
+        run: .\scripts\verify-desktop-shell-ownership.ps1
 
       - name: Verify Pi-first TuringDesk runtime contract
         shell: pwsh

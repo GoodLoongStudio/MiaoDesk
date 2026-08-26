@@ -144,7 +144,10 @@ function Test-ReparsePoint([string]$Path) {
 function Remove-Junction([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return }
     if (-not (Test-ReparsePoint $Path)) { throw ("Refusing to remove non-junction RuntimeBundle path: {0}" -f $Path) }
-    Remove-Item -LiteralPath $Path -Force
+    # Windows PowerShell 5.1 Remove-Item prompts for non-empty directory junctions and can
+    # traverse reparse points. Directory.Delete maps to RemoveDirectory and removes only the
+    # junction itself; the shared RuntimeBundle target is never enumerated or deleted.
+    [IO.Directory]::Delete($Path, $false)
 }
 
 function New-Junction([string]$Link, [string]$Target) {
@@ -158,6 +161,15 @@ function Link-RuntimeBundle([string]$Destination, [string]$SourceRoot) {
     foreach ($relative in @("Runtime", "Pi", "Goz")) {
         New-Junction (Join-Path $Destination $relative) (Join-Path $SourceRoot $relative)
     }
+}
+
+function Remove-DeploymentTree([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    foreach ($relative in @("Runtime", "Pi", "Goz")) {
+        $child = Join-Path $Path $relative
+        if (Test-ReparsePoint $child) { Remove-Junction $child }
+    }
+    Remove-Item -LiteralPath $Path -Recurse -Force -Confirm:$false -ErrorAction Stop
 }
 
 function Try-LinkUnchangedRuntimeBundle([string]$Destination, [string]$BuildSha) {
@@ -274,7 +286,7 @@ function Recover-InterruptedUpdate {
     if (-not (Test-Path $JournalPath -PathType Leaf)) { return $false }
     Step "Recovering an interrupted TuringDesk update"; $state = Get-Content $JournalPath -Raw | ConvertFrom-Json; if ([int]$state.schema -ne 1) { throw "Unsupported update recovery journal schema." }
     $hadExisting = [bool]$state.hadExistingInstall; $previousPath = [string]$state.previousPath; Stop-DeployedProcesses; Invoke-ElevatedIndexService (Join-Path $DeployDir "Goz\gozd.exe") "uninstall" -IgnoreFailure
-    if ($hadExisting -and -not [string]::IsNullOrWhiteSpace($previousPath) -and (Test-Path $previousPath -PathType Container)) { if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }; Move-Item -LiteralPath $previousPath -Destination $DeployDir -ErrorAction Stop } elseif (-not $hadExisting) { if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop } } elseif (-not (Test-Path $DeployDir -PathType Container)) { throw "Interrupted update recovery could not find either the current or previous installation." }
+    if ($hadExisting -and -not [string]::IsNullOrWhiteSpace($previousPath) -and (Test-Path $previousPath -PathType Container)) { if (Test-Path $DeployDir) { Remove-DeploymentTree $DeployDir }; Move-Item -LiteralPath $previousPath -Destination $DeployDir -ErrorAction Stop } elseif (-not $hadExisting) { if (Test-Path $DeployDir) { Remove-DeploymentTree $DeployDir } } elseif (-not (Test-Path $DeployDir -PathType Container)) { throw "Interrupted update recovery could not find either the current or previous installation." }
     if ($hadExisting -and (Test-Path $DeployDir -PathType Container)) { $restoredService=Join-Path $DeployDir "Goz\gozd.exe"; $restoredClient=Join-Path $DeployDir "Goz\goz.exe"; if (Test-Path $restoredService -PathType Leaf) { Invoke-ElevatedIndexService $restoredService "install"; if (Test-Path $restoredClient -PathType Leaf) { Wait-IndexReady $restoredClient } }; Start-DeployedTuringDesk $DeployDir }
     Remove-UpdateJournal; Write-Host "Interrupted update recovery completed." -ForegroundColor Green; return $true
 }
@@ -312,14 +324,14 @@ try {
     $newIndexService=Join-Path $DeployDir "Goz\gozd.exe"; $newIndexClient=Join-Path $DeployDir "Goz\goz.exe"; Assert-File $newIndexService "installed file index service"; Assert-File $newIndexClient "installed file index client"; Invoke-ElevatedIndexService $newIndexService "install"; Wait-IndexReady $newIndexClient
     Step "Running installed package self-tests"; Test-Binary (Join-Path $DeployDir "TuringDesk.exe") "TuringDesk"; Test-Binary (Join-Path $DeployDir "TuringDeskWallpaper.exe") "TuringDesk Wallpaper"; Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench"; Test-Binary (Join-Path $DeployDir "TuringDeskHarness.exe") "TuringDesk Advanced Workbench smoke" @("--harness-smoke-test")
     Step "Starting TuringDesk"; Start-DeployedTuringDesk $DeployDir; Remove-UpdateJournal; $swapStarted=$false
-    if ($previous -and (Test-Path $previous)) { try { Remove-Item $previous -Recurse -Force -ErrorAction Stop; $previous=$null } catch { Write-Host ("Previous package cleanup was deferred: {0}" -f $_.Exception.Message) -ForegroundColor Yellow } }
+    if ($previous -and (Test-Path $previous)) { try { Remove-DeploymentTree $previous; $previous=$null } catch { Write-Host ("Previous package cleanup was deferred: {0}" -f $_.Exception.Message) -ForegroundColor Yellow } }
     Write-Host "`nTuringDesk update completed successfully." -ForegroundColor Green; Write-Host ("Installed validated build: {0}" -f $validated.BuildSha) -ForegroundColor Green; Write-Host ("GitHub Actions run: {0}" -f $validated.RunId) -ForegroundColor DarkGray; Write-Host ("Install path: {0}" -f $DeployDir) -ForegroundColor DarkGray
 } catch {
     $failure=$_.Exception.Message; Write-Host "`nTuringDesk update failed." -ForegroundColor Red; Write-Host $failure -ForegroundColor Red
     if ($swapStarted) {
         try {
             Step "Rolling back TuringDesk installation"; Stop-DeployedProcesses; Invoke-ElevatedIndexService (Join-Path $DeployDir "Goz\gozd.exe") "uninstall" -IgnoreFailure
-            if ($previous -and (Test-Path $previous -PathType Container)) { if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop }; Move-Item -LiteralPath $previous -Destination $DeployDir -ErrorAction Stop; $previous=$null } elseif (-not $hadExistingInstall) { if (Test-Path $DeployDir) { Remove-Item $DeployDir -Recurse -Force -ErrorAction Stop } }
+            if ($previous -and (Test-Path $previous -PathType Container)) { if (Test-Path $DeployDir) { Remove-DeploymentTree $DeployDir }; Move-Item -LiteralPath $previous -Destination $DeployDir -ErrorAction Stop; $previous=$null } elseif (-not $hadExistingInstall) { if (Test-Path $DeployDir) { Remove-DeploymentTree $DeployDir } }
             if ($hadExistingInstall -and (Test-Path $DeployDir -PathType Container)) { $restoredService=Join-Path $DeployDir "Goz\gozd.exe"; $restoredClient=Join-Path $DeployDir "Goz\goz.exe"; if (Test-Path $restoredService -PathType Leaf) { Invoke-ElevatedIndexService $restoredService "install"; if (Test-Path $restoredClient -PathType Leaf) { Wait-IndexReady $restoredClient } }; Start-DeployedTuringDesk $DeployDir; Write-Host "Rollback completed. The previous TuringDesk installation was restored." -ForegroundColor Green } else { Write-Host "Rollback completed. The failed package was removed." -ForegroundColor Yellow }
             Remove-UpdateJournal
         } catch { Write-Host ("Automatic rollback failed: {0}" -f $_.Exception.Message) -ForegroundColor Red; Write-Host ("Recovery journal is preserved at: {0}" -f $JournalPath) -ForegroundColor Yellow; if ($previous -and (Test-Path $previous -PathType Container)) { Write-Host ("Previous installation is preserved at: {0}" -f $previous) -ForegroundColor Yellow } }
@@ -327,7 +339,7 @@ try {
     exit 1
 } finally {
     if ($work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
-    if ($next -and (Test-Path $next)) { Remove-Item $next -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($next -and (Test-Path $next)) { try { Remove-DeploymentTree $next } catch { Write-Host ("Staging cleanup deferred: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray } }
     if ($mutexHeld -and $updateMutex) { try { $updateMutex.ReleaseMutex() } catch { } }
     if ($updateMutex) { $updateMutex.Dispose() }
 }

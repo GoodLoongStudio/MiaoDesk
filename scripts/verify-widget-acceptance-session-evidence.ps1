@@ -25,6 +25,10 @@ function Read-ReportMap([string]$Path) {
     $map
 }
 
+function Count-WidgetTruth([string]$Raw, [string]$Field) {
+    return ([regex]::Matches($Raw, "(?m)^$([regex]::Escape($Field))=true\s*$" )).Count
+}
+
 $baselineSessionPath = Join-Path $DiagnosticsDir 'widget-acceptance-baseline.session'
 if (-not (Test-Path -LiteralPath $baselineSessionPath -PathType Leaf)) {
     throw 'M3 baseline Windows session checkpoint is missing.'
@@ -67,9 +71,15 @@ foreach ($phase in $phaseOrder) {
 
     $raw = Get-Content -LiteralPath $reportPath -Raw -ErrorAction Stop
     $widgetCount = ([regex]::Matches($raw, '(?m)^\[widget\s+')).Count
-    $healthyCount = ([regex]::Matches($raw, '(?m)^renderingHealthy=true\s*$')).Count
-    if ($widgetCount -ne [int]$report['enabledWebCount'] -or $healthyCount -ne $widgetCount) {
-        throw "M3 $phase report does not prove every enabled Widget surface rendered healthy. enabled=$($report['enabledWebCount']) sections=$widgetCount renderingHealthy=$healthyCount"
+    if ($widgetCount -ne [int]$report['enabledWebCount']) {
+        throw "M3 $phase report surface count mismatch. enabled=$($report['enabledWebCount']) sections=$widgetCount"
+    }
+
+    foreach ($field in @('monitorValid','geometryValid','visible','zOrderValid','renderingHealthy')) {
+        $healthyCount = Count-WidgetTruth -Raw $raw -Field $field
+        if ($healthyCount -ne $widgetCount) {
+            throw "M3 $phase report does not prove every enabled Widget has $field=true. widgets=$widgetCount healthy=$healthyCount"
+        }
     }
 }
 
@@ -85,4 +95,4 @@ if ([int]$attestation.sessionId -ne $baselineSessionId) {
     throw "M3 human visual acceptance came from a different Windows session. baselineSession=$baselineSessionId reviewSession=$($attestation.sessionId)"
 }
 
-Write-Host "Verified M3 phase reports and human visual review are healthy and bound to one Windows session: $baselineSessionId"
+Write-Host "Verified M3 phase reports and human visual review are healthy, explicitly placement/layering-valid, and bound to one Windows session: $baselineSessionId"

@@ -288,6 +288,7 @@ BOOL TuringDeskPresentConversationLayered(
 #include "ConversationPanelInputOverlay.inc"
 #include "ConversationPanelCornerResize.inc"
 #include "ConversationPanelImageIntent.inc"
+#include "ConversationPanelPreviewBridge.inc"
 
 namespace turingdesk {
 
@@ -301,6 +302,7 @@ bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const
         EnsureConversationActivityBridge(gConversationState->window);
         EnsureConversationCornerResizeBridge(gConversationState->window);
         EnsureConversationImageIntentBridge(*gConversationState);
+        EnsureConversationPreviewBridge(gConversationState->window);
         PositionConversationInputProxy(*gConversationState);
         RenderConversationLayerSurface(*gConversationState);
         if (!Trim(initialPrompt).empty() && !gConversationState->busy && !gConversationState->pendingConfirmation) {

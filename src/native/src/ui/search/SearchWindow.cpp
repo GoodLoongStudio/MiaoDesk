@@ -22,9 +22,8 @@ constexpr int kCollapsedHeight = 56;
 constexpr int kExpandedHeight = 408;
 constexpr int kBarHeight = 56;
 constexpr int kEditLeft = 52;
-constexpr int kEditTop = 6;
 constexpr int kEditRight = 594;
-constexpr int kEditHeight = 44;
+constexpr int kInputProxyY = 27;
 constexpr int kVoiceCenterX = 628;
 constexpr int kDividerX = 658;
 constexpr int kAiCenterX = 688;
@@ -188,13 +187,16 @@ bool SearchWindow::Create() {
     if (!uiFont_) uiFont_ = CreateFontW(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     smallFont_ = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
 
-    edit_ = CreateWindowExW(WS_EX_LAYERED, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, kEditLeft, kEditTop, kEditRight - kEditLeft, kEditHeight, hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)), instance_, nullptr);
+    // The native EDIT is input infrastructure only. It stays 1x1 and never paints the visible Search Bar.
+    // Keeping a real EDIT preserves keyboard/IME/clipboard/Win+H behavior without the previous alpha=0 layered-child regression.
+    edit_ = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                            kEditLeft, kInputProxyY, 1, 1, hwnd_,
+                            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)), instance_, nullptr);
     if (!edit_) return false;
     SetWindowLongPtrW(edit_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     oldEditProc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(edit_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&SearchWindow::EditProc)));
     SendMessageW(edit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
     SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
-    SetLayeredWindowAttributes(edit_, 0, 0, LWA_ALPHA);
 
     ApplyWindows11Style();
     ApplyWindowShape(hwnd_, false);
@@ -218,7 +220,17 @@ bool SearchWindow::SelfTest() {
     std::wstring reply;
     bool secret = false;
     const bool local = l3_.TryHandleLocal(L"/time", reply, secret);
-    return apps_.Count() >= 5 && files_.SelfTest() && local && !reply.empty() && !secret && ShellIconSelfTest();
+
+    bool inputProxyWorks = false;
+    if (edit_) {
+        SetWindowTextW(edit_, L"");
+        SendMessageW(edit_, WM_CHAR, static_cast<WPARAM>(L'X'), 1);
+        inputProxyWorks = ReadText(edit_) == L"X";
+        SetWindowTextW(edit_, L"");
+    }
+
+    return apps_.Count() >= 5 && files_.SelfTest() && local && !reply.empty() && !secret &&
+           ShellIconSelfTest() && inputProxyWorks;
 }
 
 void SearchWindow::ApplyWindows11Style() {
@@ -370,6 +382,8 @@ LRESULT CALLBACK SearchWindow::EditProc(HWND hwnd, UINT message, WPARAM wParam, 
     auto* self = reinterpret_cast<SearchWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
     if (message == WM_SETFOCUS || message == WM_KILLFOCUS) self->UpdateFocusVisual();
+    if (message == WM_PAINT) { ValidateRect(hwnd, nullptr); return 0; }
+    if (message == WM_ERASEBKGND) return 1;
     if (message == WM_MOUSEMOVE) { TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0}; TrackMouseEvent(&tme); self->SetHoverVisual(true); }
     else if (message == WM_MOUSELEAVE) self->SetHoverVisual(false);
     if (message == WM_KEYDOWN) {
@@ -388,15 +402,39 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_ACTIVATE: if (LOWORD(wParam) == WA_INACTIVE && expanded_) SetExpanded(false); return 0;
     case WM_MOUSEMOVE: { TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd_, 0}; TrackMouseEvent(&tme); SetHoverVisual(true); return 0; }
     case WM_MOUSELEAVE: SetHoverVisual(false); return 0;
-    case WM_SETCURSOR: { POINT point{}; GetCursorPos(&point); ScreenToClient(hwnd_, &point); if (HitVoiceButton(point) || HitAiButton(point)) { SetCursor(LoadCursorW(nullptr, IDC_HAND)); return TRUE; } break; }
-    case WM_LBUTTONUP: { POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}; if (HitVoiceButton(point)) { StartWindowsVoiceTyping(); return 0; } if (HitAiButton(point)) { StartL3(ReadText(edit_)); return 0; } break; }
+    case WM_SETCURSOR: {
+        POINT point{}; GetCursorPos(&point); ScreenToClient(hwnd_, &point);
+        if (HitVoiceButton(point) || HitAiButton(point)) { SetCursor(LoadCursorW(nullptr, IDC_HAND)); return TRUE; }
+        if (point.x >= kEditLeft && point.x < kEditRight && point.y >= 0 && point.y <= kBarHeight) {
+            SetCursor(LoadCursorW(nullptr, IDC_IBEAM)); return TRUE;
+        }
+        break;
+    }
+    case WM_LBUTTONDOWN: {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (point.x >= kEditLeft && point.x < kEditRight && point.y >= 0 && point.y <= kBarHeight) {
+            SetForegroundWindow(hwnd_);
+            SetFocus(edit_);
+            SendMessageW(edit_, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+            caretVisible_ = true;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return 0;
+        }
+        break;
+    }
+    case WM_LBUTTONUP: {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (HitVoiceButton(point)) { StartWindowsVoiceTyping(); return 0; }
+        if (HitAiButton(point)) { StartL3(ReadText(edit_)); return 0; }
+        break;
+    }
     case WM_TIMER: if (wParam == kCaretTimerId && editFocused_) { caretVisible_ = !caretVisible_; InvalidateRect(hwnd_, nullptr, FALSE); return 0; } break;
     case WM_EXITSIZEMOVE: SavePosition(); return 0;
     case WM_COMMAND: if (LOWORD(wParam) == kSearchEditId && HIWORD(wParam) == EN_CHANGE) { OnQueryChanged(); return 0; } break;
     case kTrayMessage: HandleTray(static_cast<UINT>(lParam)); return 0;
     case WM_COPYDATA: { std::vector<SearchResult> received; if (files_.HandleCopyData(reinterpret_cast<COPYDATASTRUCT*>(lParam), received)) { fileSearchAvailable_ = true; fileSearchQueryFailed_ = false; fileResults_ = std::move(received); MergeResults(); return TRUE; } break; }
     case WM_DISPLAYCHANGE: PositionWindow(); SavePosition(); return 0;
-    case WM_SIZE: ResizeRenderTarget(LOWORD(lParam), HIWORD(lParam)); if (edit_) MoveWindow(edit_, kEditLeft, kEditTop, kEditRight - kEditLeft, kEditHeight, TRUE); return 0;
+    case WM_SIZE: ResizeRenderTarget(LOWORD(lParam), HIWORD(lParam)); if (edit_) MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE); return 0;
     case WM_PAINT: { PAINTSTRUCT ps{}; BeginPaint(hwnd_, &ps); Draw(); EndPaint(hwnd_, &ps); return 0; }
     case WM_ERASEBKGND: return 1;
     case WM_CLOSE: if (exiting_) DestroyWindow(hwnd_); else SetExpanded(false); return 0;

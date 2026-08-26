@@ -6,9 +6,10 @@ $root = Split-Path -Parent $PSScriptRoot
 $header = Join-Path $root 'src/native/include/turingdesk/DesktopWidgetController.h'
 $controller = Join-Path $root 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
 $acceptance = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
+$configContinuity = Join-Path $root 'src/native/src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp'
 $doc = Join-Path $root 'docs/WIDGET_PRODUCT_MODEL_M3.md'
 
-foreach ($path in @($header, $controller, $acceptance, $doc)) {
+foreach ($path in @($header, $controller, $acceptance, $configContinuity, $doc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing Widget product-model contract input: $path"
     }
@@ -65,6 +66,16 @@ foreach ($marker in @(
     }
 }
 
+$configText = Get-Content -LiteralPath $configContinuity -Raw
+foreach ($marker in @(
+    'turingdesk.widget-acceptance-config.v2',
+    'AppendSized(out, widget.title)',
+    'id/title/monitorId/')) {
+    if (-not $configText.Contains($marker)) {
+        throw "M3 acceptance no longer freezes fixed showcase identity across phases: $marker"
+    }
+}
+
 $docText = Get-Content -LiteralPath $doc -Raw
 foreach ($marker in @(
     'Current M3 simplification',
@@ -77,4 +88,4 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe, requires the full three-clock acceptance set, and remains free of drag/resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'
+Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe, requires the full three-clock acceptance set, freezes showcase identity across phases, and remains free of drag/resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'

@@ -30,39 +30,24 @@ function Parse-UtcTimestamp([string]$Value, [string]$Description) {
 $diagnostics = Get-DiagnosticsDirectory
 $manifestPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
 $sealPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
-if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-    throw "M3 sealed evidence manifest is missing: $manifestPath"
-}
-if (-not (Test-Path -LiteralPath $sealPath -PathType Leaf)) {
-    throw "M3 sealed evidence manifest hash is missing: $sealPath"
-}
+if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "M3 sealed evidence manifest is missing: $manifestPath" }
+if (-not (Test-Path -LiteralPath $sealPath -PathType Leaf)) { throw "M3 sealed evidence manifest hash is missing: $sealPath" }
 
 $seal = Read-KeyValueFile -Path $sealPath
-if ($seal['schema'] -ne 'turingdesk.widget-acceptance-evidence.v1') {
-    throw "Unexpected M3 acceptance evidence schema in seal file: '$($seal['schema'])'"
-}
-if (-not $seal.ContainsKey('sha256')) {
-    throw 'M3 acceptance evidence seal is missing sha256.'
-}
+if ($seal['schema'] -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence schema in seal file: '$($seal['schema'])'" }
+if (-not $seal.ContainsKey('sha256')) { throw 'M3 acceptance evidence seal is missing sha256.' }
 $actualManifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualManifestHash -ne ([string]$seal['sha256']).ToLowerInvariant()) {
-    throw 'M3 acceptance evidence manifest hash mismatch; the sealed manifest changed after sealing.'
-}
+if ($actualManifestHash -ne ([string]$seal['sha256']).ToLowerInvariant()) { throw 'M3 acceptance evidence manifest hash mismatch; the sealed manifest changed after sealing.' }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.schema -ne 'turingdesk.widget-acceptance-evidence.v1') {
-    throw "Unexpected M3 acceptance evidence manifest schema: '$($manifest.schema)'"
-}
-if ($manifest.sequence -ne 'monitor') {
-    throw "M3 acceptance evidence is not a completed sequence: '$($manifest.sequence)'"
-}
-if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) {
-    throw 'M3 acceptance evidence manifest contains no files.'
-}
-if ($null -eq $manifest.acceptanceBinary -or -not $manifest.acceptanceBinary.sha256 -or -not $manifest.acceptanceBinary.length) {
-    throw 'M3 acceptance evidence manifest is missing the acceptance binary identity.'
-}
+if ($manifest.schema -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence manifest schema: '$($manifest.schema)'" }
+if ($manifest.sequence -ne 'monitor') { throw "M3 acceptance evidence is not a completed sequence: '$($manifest.sequence)'" }
+if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) { throw 'M3 acceptance evidence manifest contains no files.' }
+if ($null -eq $manifest.acceptanceBinary -or -not $manifest.acceptanceBinary.sha256 -or -not $manifest.acceptanceBinary.length) { throw 'M3 acceptance evidence manifest is missing the acceptance binary identity.' }
+if ($null -eq $manifest.humanVisualAcceptance -or -not $manifest.humanVisualAcceptance.reviewer -or -not $manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 acceptance evidence manifest is missing explicit human visual acceptance.' }
 $sealedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.sealedAtUtc) -Description 'manifest.sealedAtUtc'
+$reviewedAtUtc = Parse-UtcTimestamp -Value ([string]$manifest.humanVisualAcceptance.reviewedAtUtc) -Description 'manifest.humanVisualAcceptance.reviewedAtUtc'
+if ($reviewedAtUtc -gt $sealedAtUtc) { throw 'M3 visual acceptance review timestamp is after the manifest seal.' }
 
 $seen = @{}
 foreach ($entry in @($manifest.files)) {
@@ -71,110 +56,74 @@ foreach ($entry in @($manifest.files)) {
     if ($seen.ContainsKey($name)) { throw "Duplicate M3 acceptance evidence entry: $name" }
     $seen[$name] = $true
     $path = Join-Path $diagnostics $name
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "M3 acceptance evidence file disappeared after sealing: $name"
-    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "M3 acceptance evidence file disappeared after sealing: $name" }
     $item = Get-Item -LiteralPath $path
-    if ([int64]$item.Length -ne [int64]$entry.length) {
-        throw "M3 acceptance evidence length mismatch after sealing: $name"
-    }
+    if ([int64]$item.Length -ne [int64]$entry.length) { throw "M3 acceptance evidence length mismatch after sealing: $name" }
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($hash -ne ([string]$entry.sha256).ToLowerInvariant()) {
-        throw "M3 acceptance evidence hash mismatch after sealing: $name"
-    }
+    if ($hash -ne ([string]$entry.sha256).ToLowerInvariant()) { throw "M3 acceptance evidence hash mismatch after sealing: $name" }
     $entryWriteUtc = Parse-UtcTimestamp -Value ([string]$entry.lastWriteUtc) -Description "$name lastWriteUtc"
-    if ($entryWriteUtc -gt $sealedAtUtc.AddSeconds(1)) {
-        throw "M3 acceptance evidence file is timestamped after the manifest seal: $name"
-    }
+    if ($entryWriteUtc -gt $sealedAtUtc.AddSeconds(1)) { throw "M3 acceptance evidence file is timestamped after the manifest seal: $name" }
 }
 
 $binaryCheckpointName = 'widget-acceptance-binary.sha256'
-if (-not $seen.ContainsKey($binaryCheckpointName)) {
-    throw "M3 sealed evidence manifest is missing required acceptance binary checkpoint: $binaryCheckpointName"
-}
+if (-not $seen.ContainsKey($binaryCheckpointName)) { throw "M3 sealed evidence manifest is missing required acceptance binary checkpoint: $binaryCheckpointName" }
 $binaryCheckpoint = Read-KeyValueFile -Path (Join-Path $diagnostics $binaryCheckpointName)
-if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
-    throw 'M3 acceptance binary checkpoint is malformed.'
-}
-if (([string]$binaryCheckpoint['sha256']).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant()) {
-    throw 'M3 acceptance binary SHA-256 no longer matches the sealed manifest.'
-}
-if ([int64]$binaryCheckpoint['length'] -ne [int64]$manifest.acceptanceBinary.length) {
-    throw 'M3 acceptance binary length no longer matches the sealed manifest.'
-}
-if ([string]$manifest.acceptanceBinary.fileName -ne 'TuringDeskWidgetAcceptance.exe') {
-    throw "Unexpected M3 acceptance binary name: '$($manifest.acceptanceBinary.fileName)'"
-}
+if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) { throw 'M3 acceptance binary checkpoint is malformed.' }
+if (([string]$binaryCheckpoint['sha256']).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant()) { throw 'M3 acceptance binary SHA-256 no longer matches the sealed manifest.' }
+if ([int64]$binaryCheckpoint['length'] -ne [int64]$manifest.acceptanceBinary.length) { throw 'M3 acceptance binary length no longer matches the sealed manifest.' }
+if ([string]$manifest.acceptanceBinary.fileName -ne 'TuringDeskWidgetAcceptance.exe') { throw "Unexpected M3 acceptance binary name: '$($manifest.acceptanceBinary.fileName)'" }
 
 $phaseOrder = @('baseline','settings','search','explorer','monitor')
 $previousCaptureUtc = $null
 foreach ($phase in $phaseOrder) {
     foreach ($suffix in @('.txt','.png','.png.sha256')) {
         $name = "widget-acceptance-$phase$suffix"
-        if (-not $seen.ContainsKey($name)) {
-            throw "M3 sealed evidence manifest is missing required phase artifact: $name"
-        }
+        if (-not $seen.ContainsKey($name)) { throw "M3 sealed evidence manifest is missing required phase artifact: $name" }
     }
     $sidecar = Read-KeyValueFile -Path (Join-Path $diagnostics "widget-acceptance-$phase.png.sha256")
-    if ($sidecar['phase'] -ne $phase) {
-        throw "M3 visual evidence sidecar phase mismatch for $phase."
-    }
+    if ($sidecar['phase'] -ne $phase) { throw "M3 visual evidence sidecar phase mismatch for $phase." }
     $pngPath = Join-Path $diagnostics "widget-acceptance-$phase.png"
     $pngHash = (Get-FileHash -LiteralPath $pngPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($pngHash -ne ([string]$sidecar['sha256']).ToLowerInvariant()) {
-        throw "M3 visual evidence PNG hash mismatch for $phase."
-    }
-    if (-not $sidecar.ContainsKey('virtualBounds') -or -not $sidecar.ContainsKey('capturedAtUtc')) {
-        throw "M3 visual evidence sidecar metadata is incomplete for $phase."
-    }
-
+    if ($pngHash -ne ([string]$sidecar['sha256']).ToLowerInvariant()) { throw "M3 visual evidence PNG hash mismatch for $phase." }
+    if (-not $sidecar.ContainsKey('virtualBounds') -or -not $sidecar.ContainsKey('capturedAtUtc')) { throw "M3 visual evidence sidecar metadata is incomplete for $phase." }
     $capturedAtUtc = Parse-UtcTimestamp -Value ([string]$sidecar['capturedAtUtc']) -Description "$phase capturedAtUtc"
-    if ($null -ne $previousCaptureUtc -and $capturedAtUtc -le $previousCaptureUtc) {
-        throw "M3 visual evidence chronology is invalid: $phase was not captured after the previous successful phase."
-    }
-    if ($capturedAtUtc -gt $sealedAtUtc) {
-        throw "M3 visual evidence chronology is invalid: $phase capture is after the manifest seal."
-    }
-
+    if ($null -ne $previousCaptureUtc -and $capturedAtUtc -le $previousCaptureUtc) { throw "M3 visual evidence chronology is invalid: $phase was not captured after the previous successful phase." }
+    if ($capturedAtUtc -gt $sealedAtUtc) { throw "M3 visual evidence chronology is invalid: $phase capture is after the manifest seal." }
     $reportPath = Join-Path $diagnostics "widget-acceptance-$phase.txt"
     $reportWriteUtc = (Get-Item -LiteralPath $reportPath).LastWriteTimeUtc
     $captureUtcDateTime = $capturedAtUtc.UtcDateTime
-    if ($reportWriteUtc -gt $captureUtcDateTime.AddSeconds(5)) {
-        throw "M3 phase evidence chronology is invalid: $phase report was written after its visual capture."
-    }
-    if ($captureUtcDateTime -gt $reportWriteUtc.AddMinutes(5)) {
-        throw "M3 phase evidence chronology is suspicious: $phase visual capture is more than five minutes after its health report."
-    }
+    if ($reportWriteUtc -gt $captureUtcDateTime.AddSeconds(5)) { throw "M3 phase evidence chronology is invalid: $phase report was written after its visual capture." }
+    if ($captureUtcDateTime -gt $reportWriteUtc.AddMinutes(5)) { throw "M3 phase evidence chronology is suspicious: $phase visual capture is more than five minutes after its health report." }
     $previousCaptureUtc = $capturedAtUtc
 }
 
-foreach ($required in @(
-    'widget-acceptance-baseline.ids',
-    'widget-acceptance-sequence.phase',
-    'widget-acceptance-search.explorer-pids',
-    'widget-acceptance-explorer.monitor-topology',
-    'widget-acceptance-monitor.topology-transition')) {
-    if (-not $seen.ContainsKey($required)) {
-        throw "M3 sealed evidence manifest is missing required recovery evidence: $required"
-    }
+foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-sequence.phase','widget-acceptance-search.explorer-pids','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256')) {
+    if (-not $seen.ContainsKey($required)) { throw "M3 sealed evidence manifest is missing required recovery/visual evidence: $required" }
 }
+
+$attestationPath = Join-Path $diagnostics 'widget-acceptance-human-visual.json'
+$attestationSeal = Read-KeyValueFile -Path "$attestationPath.sha256"
+$attestationHash = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($attestationSeal['schema'] -ne 'turingdesk.widget-visual-acceptance.v1' -or $attestationHash -ne ([string]$attestationSeal['sha256']).ToLowerInvariant()) { throw 'M3 human visual acceptance seal is invalid.' }
+$attestation = Get-Content -LiteralPath $attestationPath -Raw | ConvertFrom-Json
+if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1' -or [string]$attestation.reviewer -ne [string]$manifest.humanVisualAcceptance.reviewer -or [string]$attestation.reviewedAtUtc -ne [string]$manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 human visual acceptance metadata no longer matches the sealed manifest.' }
+if (([string]$attestation.acceptanceBinary.sha256).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant() -or [int64]$attestation.acceptanceBinary.length -ne [int64]$manifest.acceptanceBinary.length) { throw 'M3 human visual acceptance binary identity does not match the sealed manifest.' }
+foreach ($name in @('wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible')) {
+    if (-not [bool]$attestation.confirmations.$name) { throw "M3 human visual acceptance is missing confirmation: $name" }
+}
+foreach ($phase in $phaseOrder) {
+    $actual = (Get-FileHash -LiteralPath (Join-Path $diagnostics "widget-acceptance-$phase.png") -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne ([string]$attestation.screenshotSha256.$phase).ToLowerInvariant()) { throw "M3 human visual acceptance screenshot identity mismatch for phase '$phase'." }
+}
+if ($reviewedAtUtc -lt $previousCaptureUtc) { throw 'M3 human visual acceptance was recorded before the final monitor screenshot existed.' }
 
 $sequence = (Get-Content -LiteralPath (Join-Path $diagnostics 'widget-acceptance-sequence.phase') -Raw).Trim()
-if ($sequence -ne 'monitor') {
-    throw "M3 acceptance sequence cursor changed after sealing: '$sequence'"
-}
-
-$baselineIds = @(
-    Get-Content -LiteralPath (Join-Path $diagnostics 'widget-acceptance-baseline.ids') |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ } |
-        Sort-Object -Unique
-)
+if ($sequence -ne 'monitor') { throw "M3 acceptance sequence cursor changed after sealing: '$sequence'" }
+$baselineIds = @(Get-Content -LiteralPath (Join-Path $diagnostics 'widget-acceptance-baseline.ids') | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
 $manifestIds = @($manifest.baselineWidgetIds | ForEach-Object { [string]$_ } | Sort-Object -Unique)
-if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) {
-    throw 'M3 baseline Widget identity set no longer matches the sealed manifest.'
-}
+if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) { throw 'M3 baseline Widget identity set no longer matches the sealed manifest.' }
 
-Write-Host "Verified sealed M3 Widget acceptance evidence integrity, binary continuity and phase chronology: $manifestPath"
+Write-Host "Verified sealed M3 Widget acceptance evidence integrity, binary continuity, phase chronology and explicit human visual acceptance: $manifestPath"
+Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $actualManifestHash"

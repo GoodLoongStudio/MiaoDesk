@@ -55,6 +55,38 @@ function Write-CheckpointLines([string]$Path, [string[]]$Lines) {
     Set-Content -LiteralPath $Path -Value $Lines -Encoding utf8
 }
 
+function Get-AcceptanceBinaryFingerprint([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    [ordered]@{
+        sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+        length = [int64]$item.Length
+        path = $item.FullName
+    }
+}
+
+function Read-AcceptanceBinaryCheckpoint([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw 'Acceptance binary checkpoint is missing. Start a new phase=baseline with the exact executable that will be used for the full M3 sequence.'
+    }
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $Path -ErrorAction Stop) {
+        $parts = $line.Trim().Split('=', 2)
+        if ($parts.Count -eq 2) { $values[$parts[0]] = $parts[1] }
+    }
+    if (-not $values.ContainsKey('sha256') -or -not $values.ContainsKey('length')) {
+        throw 'Acceptance binary checkpoint is malformed. Start a new baseline.'
+    }
+    $values
+}
+
+function Assert-AcceptanceBinaryContinuity([string]$Path, [string]$ExecutablePath) {
+    $expected = Read-AcceptanceBinaryCheckpoint -Path $Path
+    $current = Get-AcceptanceBinaryFingerprint -Path $ExecutablePath
+    if (([string]$expected['sha256']).ToLowerInvariant() -ne $current.sha256 -or [int64]$expected['length'] -ne $current.length) {
+        throw "M3 acceptance binary changed after baseline. expectedSha256=$($expected['sha256']) currentSha256=$($current.sha256) expectedLength=$($expected['length']) currentLength=$($current.length). Start a new baseline; evidence from different builds cannot be combined."
+    }
+}
+
 function Write-MonitorTransitionEvidence([string]$Path, [string[]]$Before, [string[]]$Changed, [string[]]$Stable) {
     $lines = @(
         "observedAtUtc=$([DateTime]::UtcNow.ToString('o'))",
@@ -160,11 +192,12 @@ $diagnostics = Get-DiagnosticsDirectory
 $explorerCheckpoint = Join-Path $diagnostics 'widget-acceptance-search.explorer-pids'
 $monitorCheckpoint = Join-Path $diagnostics 'widget-acceptance-explorer.monitor-topology'
 $monitorEvidence = Join-Path $diagnostics 'widget-acceptance-monitor.topology-transition'
+$binaryCheckpoint = Join-Path $diagnostics 'widget-acceptance-binary.sha256'
 $sealedManifest = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
 $sealedManifestHash = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
 
 if ($Phase -eq 'baseline') {
-    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence, $sealedManifest, $sealedManifestHash)) {
+    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence, $binaryCheckpoint, $sealedManifest, $sealedManifestHash)) {
         if (Test-Path -LiteralPath $checkpoint -PathType Leaf) {
             Remove-Item -LiteralPath $checkpoint -Force
         }
@@ -173,6 +206,18 @@ if ($Phase -eq 'baseline') {
         Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem -LiteralPath $diagnostics -Filter 'widget-acceptance-*.txt' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
+
+    $binary = Get-AcceptanceBinaryFingerprint -Path $exe
+    Write-CheckpointLines -Path $binaryCheckpoint -Lines @(
+        "sha256=$($binary.sha256)",
+        "length=$($binary.length)",
+        "capturedAtUtc=$([DateTime]::UtcNow.ToString('o'))",
+        "fileName=TuringDeskWidgetAcceptance.exe"
+    )
+    Write-Host "Captured M3 acceptance binary checkpoint: sha256=$($binary.sha256) length=$($binary.length)"
+}
+else {
+    Assert-AcceptanceBinaryContinuity -Path $binaryCheckpoint -ExecutablePath $exe
 }
 
 if ($Phase -eq 'explorer') {
@@ -200,7 +245,7 @@ if ($Phase -eq 'monitor') {
 
 Write-Host "Running real-Windows Widget acceptance probe: phase=$Phase"
 if ($Phase -ne 'baseline') {
-    Write-Host 'This phase must match the baseline Widget identity set and follow baseline -> settings -> search -> explorer -> monitor.'
+    Write-Host 'This phase must match the baseline Widget identity set, use the same acceptance binary, and follow baseline -> settings -> search -> explorer -> monitor.'
 }
 & $exe "--phase=$Phase"
 $code = $LASTEXITCODE

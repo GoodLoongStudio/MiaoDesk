@@ -273,11 +273,12 @@ $explorerCheckpoint = Join-Path $diagnostics 'widget-acceptance-search.explorer-
 $monitorCheckpoint = Join-Path $diagnostics 'widget-acceptance-explorer.monitor-topology'
 $monitorEvidence = Join-Path $diagnostics 'widget-acceptance-monitor.topology-transition'
 $binaryCheckpoint = Join-Path $diagnostics 'widget-acceptance-binary.sha256'
+$configCheckpoint = Join-Path $diagnostics 'widget-acceptance-baseline.config'
 $sealedManifest = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.json'
 $sealedManifestHash = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
 
 if ($Phase -eq 'baseline') {
-    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence, $binaryCheckpoint, $sealedManifest, $sealedManifestHash)) {
+    foreach ($checkpoint in @($explorerCheckpoint, $monitorCheckpoint, $monitorEvidence, $binaryCheckpoint, $configCheckpoint, $sealedManifest, $sealedManifestHash)) {
         if (Test-Path -LiteralPath $checkpoint -PathType Leaf) {
             Remove-Item -LiteralPath $checkpoint -Force
         }
@@ -331,7 +332,7 @@ if ($Phase -eq 'monitor') {
 
 Write-Host "Running real-Windows Widget acceptance probe: phase=$Phase"
 if ($Phase -ne 'baseline') {
-    Write-Host 'This phase must match the baseline Widget identity set, use the same acceptance binary, and follow baseline -> settings -> search -> explorer -> monitor.'
+    Write-Host 'This phase must match the baseline Widget identity and placement configuration, use the same acceptance binary, and follow baseline -> settings -> search -> explorer -> monitor.'
 }
 & $exe "--phase=$Phase"
 $code = $LASTEXITCODE
@@ -362,9 +363,9 @@ $meaning = switch ($code) {
     61 { 'no enabled Web Widget' }
     62 { 'Widget runtime health unavailable' }
     63 { 'one or more Widget surfaces are unhealthy' }
-    64 { 'acceptance report/sequence write failed' }
-    65 { 'baseline identity set missing; run the baseline phase first' }
-    66 { 'enabled Widget identity set changed since baseline' }
+    64 { 'acceptance report/sequence/config write failed' }
+    65 { 'baseline identity/config set missing; run the baseline phase first' }
+    66 { 'enabled Widget identity or placement configuration changed since baseline' }
     67 { 'acceptance phase is out of order; run baseline -> settings -> search -> explorer -> monitor without skipping a successful phase' }
     default { "unexpected probe exit code $code" }
 }

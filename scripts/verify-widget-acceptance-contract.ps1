@@ -71,11 +71,15 @@ foreach ($marker in @(
 foreach ($forbidden in @('SetParent(','SetWindowPos(','SendMessageTimeoutW(','0x052C','Progman','WorkerW','SHELLDLL_DefView','DesktopWidgetStore store','GetPrivateProfileStringW')) {
     if ($mainText.Contains($forbidden)) { throw "Widget acceptance executable regained Widget store or desktop attachment ownership: $forbidden" }
 }
+$runtimeProbeCall = 'const auto code = turingdesk::desktop::RunWidgetRuntimeAcceptanceProbe('
 $firstConfigCheck = $mainText.IndexOf('CheckWidgetAcceptanceConfigContinuity')
-$runtimeProbe = $mainText.IndexOf('RunWidgetRuntimeAcceptanceProbe')
+$runtimeProbe = $mainText.IndexOf($runtimeProbeCall)
+if ($runtimeProbe -lt 0) {
+    throw 'Widget acceptance executable is missing the concrete runtime probe call used for phase advancement.'
+}
 $phaseContextCheck = $mainText.LastIndexOf('PhaseContextReady(phase, &failure)', $runtimeProbe)
 $lifecycleCheck = $mainText.LastIndexOf('StructuredLifecycleReady(&failure)', $runtimeProbe)
-if ($firstConfigCheck -lt 0 -or $runtimeProbe -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
+if ($firstConfigCheck -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
     throw 'Non-baseline Widget config continuity must be checked before the runtime probe can advance the phase sequence.'
 }
 if ($phaseContextCheck -lt 0 -or $phaseContextCheck -gt $runtimeProbe) {
@@ -84,7 +88,7 @@ if ($phaseContextCheck -lt 0 -or $phaseContextCheck -gt $runtimeProbe) {
 if ($lifecycleCheck -lt 0 -or $lifecycleCheck -gt $runtimeProbe) {
     throw 'Strict reported-and-ready WebView2 lifecycle must be checked before the runtime probe can advance the phase sequence.'
 }
-$afterRuntime = $mainText.Substring($runtimeProbe)
+$afterRuntime = $mainText.Substring($runtimeProbe + $runtimeProbeCall.Length)
 if ($afterRuntime.Contains('PhaseContextReady(phase, &failure)') -or $afterRuntime.Contains('StructuredLifecycleReady(&failure)')) {
     throw 'Fallible product-context/lifecycle gates must not run after the runtime probe has had a chance to advance the phase cursor.'
 }

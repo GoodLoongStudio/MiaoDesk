@@ -50,7 +50,6 @@ on:
       - DEPLOY-NATIVE-ARM64.cmd
       - UPDATE-TURINGDESK.cmd
       - .github/workflows/native-search-windows.yml
-      - .github/workflows/native-x64-validation.yml
   workflow_dispatch:
 
 permissions:
@@ -67,87 +66,88 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Verify checkout matches workflow commit
+      - name: Preflight contracts
         shell: pwsh
         run: |
-          $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $env:GITHUB_SHA) {
-            throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
-          }
-          Write-Host "Building exact workflow commit: $actual"
+          $ErrorActionPreference = 'Stop'
 
-      - name: Verify Windows PowerShell 5.1 entrypoints
-        shell: powershell
-        run: .\scripts\verify-windows-powershell-compat.ps1
-
-      - name: Exercise one-click updater bootstrap
-        shell: cmd
-        env:
-          TD_BOOTSTRAP_SELF_TEST: 1
-          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
-        run: UPDATE-TURINGDESK.cmd
-
-      - name: Verify ARM64 updater RuntimeBundle reuse contract
-        shell: powershell
-        run: .\scripts\verify-arm64-updater-runtime-reuse.ps1
-
-      - name: Exercise ARM64 updater junction cleanup
-        shell: powershell
-        run: .\scripts\test-arm64-updater-junction-cleanup.ps1
-
-      - name: Verify installed M3 acceptance contract
-        shell: powershell
-        run: .\scripts\verify-installed-widget-acceptance-contract.ps1
-
-      - name: Verify native physical source layout
-        shell: powershell
-        run: .\scripts\verify-native-source-layout.ps1
-
-      - name: Verify DesktopShellHost ownership
-        shell: powershell
-        run: .\scripts\verify-desktop-shell-ownership.ps1
-
-      - name: Verify Pi-first L3 runtime contract
-        shell: pwsh
-        run: .\scripts\verify-l3-runtime-contract.ps1
-
-      - name: Verify desktop domain contract
-        shell: powershell
-        run: .\scripts\verify-desktop-domain-contract.ps1
-
-      - name: Verify fixed-format Widget product contract
-        shell: powershell
-        run: .\scripts\verify-widget-product-model.ps1
-
-      - name: Verify Search input contract
-        shell: powershell
-        run: .\scripts\verify-search-input-contract.ps1
-
-      - name: Check RuntimeBundle freshness
-        shell: pwsh
-        run: |
-          $lock = 'runtime/arm64/runtime-lock.json'
-          $manifest = 'runtime/arm64/runtime-manifest.json'
-          if (-not (Test-Path $lock) -or -not (Test-Path $manifest)) { throw 'ARM64 RuntimeBundle is incomplete' }
-          $hash = (Get-FileHash -Algorithm SHA256 $lock).Hash.ToLowerInvariant()
-          $m = Get-Content $manifest -Raw | ConvertFrom-Json
-          if ([int]$m.schema -lt 2 -or $m.lockSha256 -ne $hash -or -not $m.pi) {
-            throw 'ARM64 RuntimeBundle is stale. Vendor ARM64 Runtime Bundle must succeed first.'
+          function Invoke-Group([string]$Name, [scriptblock]$Action) {
+            Write-Host "::group::$Name"
+            try { & $Action }
+            finally { Write-Host '::endgroup::' }
           }
 
-      - name: Verify repository ARM64 RuntimeBundle
-        shell: pwsh
-        run: .\scripts\verify-arm64-runtime-bundle.ps1
+          function Invoke-PS51([string]$Script) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
+            if ($LASTEXITCODE -ne 0) { throw "$Script failed with exit code $LASTEXITCODE" }
+          }
 
-      - name: Configure ARM64 offline
-        run: cmake -S . -B build -A ARM64
+          Invoke-Group 'Exact checkout' {
+            $actual = (git rev-parse HEAD).Trim()
+            if ($actual -ne $env:GITHUB_SHA) {
+              throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA"
+            }
+            Write-Host "Building exact workflow commit: $actual"
+          }
+
+          Invoke-Group 'Windows PowerShell 5.1 compatibility' {
+            Invoke-PS51 '.\scripts\verify-windows-powershell-compat.ps1'
+          }
+
+          Invoke-Group 'Updater contracts' {
+            $env:TD_BOOTSTRAP_SELF_TEST = '1'
+            $env:TD_UPDATE_URL = "https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/$env:GITHUB_SHA/scripts/update-turingdesk-arm64.ps1"
+            & cmd.exe /d /c UPDATE-TURINGDESK.cmd
+            if ($LASTEXITCODE -ne 0) { throw "Updater bootstrap failed: $LASTEXITCODE" }
+            Invoke-PS51 '.\scripts\verify-arm64-updater-runtime-reuse.ps1'
+            Invoke-PS51 '.\scripts\test-arm64-updater-junction-cleanup.ps1'
+          }
+
+          Invoke-Group 'Native product contracts' {
+            Invoke-PS51 '.\scripts\verify-installed-widget-acceptance-contract.ps1'
+            Invoke-PS51 '.\scripts\verify-native-source-layout.ps1'
+            Invoke-PS51 '.\scripts\verify-desktop-shell-ownership.ps1'
+            & pwsh -NoProfile -File '.\scripts\verify-l3-runtime-contract.ps1'
+            if ($LASTEXITCODE -ne 0) { throw "Pi-first runtime contract failed: $LASTEXITCODE" }
+            Invoke-PS51 '.\scripts\verify-desktop-domain-contract.ps1'
+            Invoke-PS51 '.\scripts\verify-widget-product-model.ps1'
+            Invoke-PS51 '.\scripts\verify-search-input-contract.ps1'
+          }
+
+          Invoke-Group 'ARM64 RuntimeBundle contract' {
+            $lock = 'runtime/arm64/runtime-lock.json'
+            $manifest = 'runtime/arm64/runtime-manifest.json'
+            if (-not (Test-Path $lock) -or -not (Test-Path $manifest)) {
+              throw 'ARM64 RuntimeBundle is incomplete'
+            }
+            $hash = (Get-FileHash -Algorithm SHA256 $lock).Hash.ToLowerInvariant()
+            $m = Get-Content $manifest -Raw | ConvertFrom-Json
+            if ([int]$m.schema -lt 2 -or $m.lockSha256 -ne $hash -or -not $m.pi) {
+              throw 'ARM64 RuntimeBundle is stale. Vendor ARM64 Runtime Bundle must succeed first.'
+            }
+            & pwsh -NoProfile -File '.\scripts\verify-arm64-runtime-bundle.ps1'
+            if ($LASTEXITCODE -ne 0) { throw "RuntimeBundle verification failed: $LASTEXITCODE" }
+          }
 
       - name: Build ARM64
-        run: cmake --build build --config Release --parallel
-
-      - name: Native self-tests
         shell: pwsh
         run: |
+          Write-Host '::group::Configure ARM64 offline'
+          cmake -S . -B build -A ARM64
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
+          Write-Host '::endgroup::'
+
+          Write-Host '::group::Compile Release'
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "ARM64 build failed: $LASTEXITCODE" }
+          Write-Host '::endgroup::'
+
+      - name: Self-test and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          Write-Host '::group::Native self-tests'
           foreach ($test in @(
             @{ Exe = '.\build\src\native\Release\TuringDesk.exe'; Name = 'Search/Agent' },
             @{ Exe = '.\build\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' },
@@ -156,34 +156,34 @@ jobs:
             $p = Start-Process -FilePath $test.Exe -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$($test.Name) self-test failed: $($p.ExitCode)" }
           }
+          Write-Host '::endgroup::'
 
-      - name: Prepare self-contained ARM64 smoke package
-        shell: pwsh
-        run: |
+          Write-Host '::group::Prepare self-contained smoke package'
           New-Item -ItemType Directory -Force -Path build/package | Out-Null
           Copy-Item build/src/native/Release/TuringDesk.exe build/package/TuringDesk.exe -Force
           Copy-Item build/src/native/Release/TuringDeskWallpaper.exe build/package/TuringDeskWallpaper.exe -Force
           Copy-Item build/src/native/Release/TuringDeskHarness.exe build/package/TuringDeskHarness.exe -Force
           Copy-Item build/src/native/Release/TuringDeskWidgetAcceptance.exe build/package/TuringDeskWidgetAcceptance.exe -Force
           .\scripts\prepare-third-party-runtime-arm64.ps1 -DeployDir (Resolve-Path build/package).Path -SkipGozServiceInstall
+          Write-Host '::endgroup::'
 
-      - name: Validate bundled Pi runtime
+      - name: Pi runtime integration
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $node = (Resolve-Path '.\build\package\Runtime\Node\node.exe').Path
           $pi = (Resolve-Path '.\build\package\Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js').Path
+
+          Write-Host '::group::Bundled Pi runtime'
           & $node --version | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Node failed --version' }
           & $node $pi --version | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Pi failed --version' }
           & $node $pi --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Pi failed --help' }
+          Write-Host '::endgroup::'
 
-      - name: Real Pi RPC + built-in + TuringDesk native tool end-to-end smoke test
-        shell: pwsh
-        run: |
-          $node = (Resolve-Path '.\build\package\Runtime\Node\node.exe').Path
-          $pi = (Resolve-Path '.\build\package\Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js').Path
+          Write-Host '::group::Pi RPC + built-in + native tools E2E'
           $nativeHost = (Resolve-Path '.\build\package\TuringDesk.exe').Path
           $extensionSource = Join-Path $env:LOCALAPPDATA 'TuringDesk\PiAgent\extensions\turingdesk-native-tools.ts'
           if (-not (Test-Path $extensionSource -PathType Leaf)) {
@@ -195,13 +195,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
           $testScript = (Resolve-Path '.\scripts\pi-agent-e2e.mjs').Path
-
           & $node $testScript $work $pi $powershell $nativeHost $extensionSource $desktop | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Pi Agent + TuringDesk native tool E2E failed' }
+          Write-Host '::endgroup::'
 
-      - name: Real goz MFT/USN integration test
+      - name: Windows service integrations
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+
+          Write-Host '::group::goz MFT/USN integration'
           $goz = (Resolve-Path '.\build\package\Goz\goz.exe').Path
           $gozd = (Resolve-Path '.\build\package\Goz\gozd.exe').Path
           $probe = "turingdesk-goz-ci-$env:GITHUB_RUN_ID.txt"
@@ -223,10 +226,9 @@ jobs:
             Remove-Item $probePath -Force -ErrorAction SilentlyContinue
             & $gozd uninstall | Out-Host
           }
+          Write-Host '::endgroup::'
 
-      - name: Real bundled DeepSeek Harness smoke test
-        shell: pwsh
-        run: |
+          Write-Host '::group::Bundled DeepSeek Harness smoke test'
           $p = Start-Process -FilePath '.\build\package\TuringDeskHarness.exe' -ArgumentList '--harness-smoke-test' -Wait -PassThru
           if ($p.ExitCode -ne 0) {
             $desktop = [Environment]::GetFolderPath('Desktop')
@@ -234,8 +236,9 @@ jobs:
             if (Test-Path $log) { Get-Content $log -Tail 200 | Out-Host }
             throw "Bundled DeepSeek Harness smoke test failed: $($p.ExitCode)"
           }
+          Write-Host '::endgroup::'
 
-      - name: Prepare compact ARM64 artifact
+      - name: Prepare compact artifact
         shell: pwsh
         run: |
           Remove-Item build/package/Runtime -Recurse -Force -ErrorAction SilentlyContinue

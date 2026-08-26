@@ -94,6 +94,25 @@ foreach ($marker in @('UserFacingLocalReply', 'ShowL3CliWindow', '/runtime')) {
     if (-not $l3.Contains($marker)) { throw "AI/diagnostics boundary marker missing: $marker" }
 }
 
+# The terminal-style AI window is retired. Keep this guard in the runtime contract because
+# the UI is the entry point to the Pi-first route and must not silently regress to a second
+# legacy presentation path while M3/M4 work continues.
+foreach ($marker in @(
+    'TuringDesk.Native.ConversationPanel',
+    'ConversationState',
+    'kSendId',
+    'SetBusyVisual')) {
+    if (-not $l3.Contains($marker)) { throw "Conversation Panel marker missing: $marker" }
+}
+foreach ($forbidden in @(
+    'TuringDesk.Native.L3CliWindow',
+    'kCliClass',
+    'Consolas',
+    '#include "turingdesk/ModelSettingsWindow.h"',
+    'kSettingsId')) {
+    if ($l3.Contains($forbidden)) { throw "Retired terminal AI UI marker returned: $forbidden" }
+}
+
 foreach ($marker in @(
     'src/ai/pi/PiRuntime.cpp',
     'src/ai/pi/PiNativeToolsExtension.cpp',
@@ -194,4 +213,4 @@ foreach ($marker in $desktopToolNames) {
     if (-not $contract.Contains($marker)) { throw "Pi runtime contract is missing current Desktop Tool: $marker" }
 }
 
-Write-Host 'Runtime contract OK: Pi-first AI, Direct fallback, Desktop Control/Widget plane and native source layout remain intact.'
+Write-Host 'Runtime contract OK: Pi-first AI, Conversation Panel, Direct fallback, Desktop Control/Widget plane and native source layout remain intact.'

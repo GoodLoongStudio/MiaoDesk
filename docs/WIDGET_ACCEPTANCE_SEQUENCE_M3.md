@@ -19,7 +19,20 @@ This prevents incomplete acceptance evidence such as running `baseline` and jump
 
 The same-session requirement prevents another class of invalid evidence: a baseline captured in one RDP/console/login session cannot be combined with later phases from another interactive Windows session even when the same persisted Widget ids and the same binary are present. PID/HWND recreation inside one session remains allowed; the session contract is about the interactive desktop context, not runtime-process identity.
 
-A fresh `baseline` is also an explicit evidence reset boundary. Before probing the new baseline, the runner removes stale Explorer/monitor checkpoints, old phase health reports, old virtual-desktop screenshots/hash sidecars, and any previously sealed `widget-acceptance-evidence.manifest.json` / `.sha256`. The Widget persistence store is not touched. This prevents a previous successful M3 package from remaining next to a newly-started but incomplete acceptance round.
+A fresh `baseline` is also an explicit evidence reset boundary. Before probing the new baseline, the runner removes stale Explorer/monitor checkpoints, old phase health reports, old virtual-desktop screenshots/hash sidecars, old observed product window evidence, and any previously sealed `widget-acceptance-evidence.manifest.json` / `.sha256`. The Widget persistence store is not touched. This prevents a previous successful M3 package from remaining next to a newly-started but incomplete acceptance round.
+
+## Observed Settings/Search product-window evidence
+
+The `settings` and `search` phases are no longer accepted as labels alone. Before the Widget health probe runs, the runner must observe the expected TuringDesk product window as the foreground window in the same interactive Windows session:
+
+```text
+settings -> class TuringDesk.Native.DesktopLibrary -> process TuringDeskWallpaper
+search   -> class TuringDesk.Native.SearchWindow  -> process TuringDesk
+```
+
+The runner waits for the required foreground product window and writes `%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-settings.window.json` or `widget-acceptance-search.window.json` using schema `turingdesk.widget-window-evidence.v1`. Each file records the phase, UTC observation time, process name/PID, Windows session id, class name and window title. The later Widget health probe then proves the same configured Widget set is still healthy after the required product window was actually observed.
+
+This observed product window evidence is read-only acceptance instrumentation. It uses `GetForegroundWindow`, window metadata and process metadata only. It does not discover Progman/WorkerW/DefView, mutate a product HWND, call `SetParent`, call `SetWindowPos`, or repair z-order. `DesktopShellHost` remains the sole desktop attachment owner.
 
 ## Explorer restart evidence
 
@@ -49,10 +62,10 @@ Screen capture is deliberately read-only acceptance instrumentation. It uses `Sy
 
 The screenshot evidence makes later review reproducible, but it does not replace human visual acceptance. The reviewer still has to inspect the images (or the live desktop) and confirm that Widget pixels are above the TuringDesk wallpaper, below desktop icons, still present with Settings/Search open, restored after Explorer restart, and positioned correctly after the monitor transition.
 
-Stable probe exit codes are `BaselineMissing = 65`, `BaselineMismatch = 66`, and `SequenceOutOfOrder = 67`. A missing or changed baseline Windows session uses the baseline continuity failures rather than introducing a parallel session-specific product state. The PowerShell runner additionally fails before the `explorer` probe when Explorer restart evidence is missing or unchanged, and before the `monitor` probe when monitor recovery evidence is missing or no display topology transition is observed. These failures require the operator to perform the missing recovery action rather than silently skipping evidence.
+Stable probe exit codes are `BaselineMissing = 65`, `BaselineMismatch = 66`, and `SequenceOutOfOrder = 67`. A missing or changed baseline Windows session uses the baseline continuity failures rather than introducing a parallel session-specific product state. The PowerShell runner additionally fails before the `settings`/`search` probes when the required observed product window is absent, before the `explorer` probe when Explorer restart evidence is missing or unchanged, and before the `monitor` probe when monitor recovery evidence is missing or no display topology transition is observed. These failures require the operator to perform the missing product/recovery action rather than silently skipping evidence.
 
 PID/HWND values are intentionally excluded from the Widget identity set. Explorer restart and runtime recovery may legitimately recreate processes and HWNDs, while the configured Widget identity must remain stable. The separate explorer.exe PID checkpoint is evidence that the shell process restarted; it is not used as Widget identity and is not product runtime state. The display topology checkpoint and transition evidence are similarly diagnostics-only and are never used as Widget persistence state. The baseline Windows session checkpoint is also diagnostics-only and exists solely to prevent cross-session acceptance evidence from being combined.
 
-The sequence cursor, baseline Windows session checkpoint, Explorer checkpoint, display-topology checkpoint, topology-transition evidence and visual evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
+The sequence cursor, baseline Windows session checkpoint, observed Settings/Search product window evidence, Explorer checkpoint, display-topology checkpoint, topology-transition evidence and visual evidence are diagnostics-only. They are never consumed by Wallpaper/Widget behavior. Removing the diagnostics directory resets acceptance evidence without affecting configured Widgets.
 
 Passing these probes does not replace visual confirmation. The operator must still verify that the Widget is above the TuringDesk wallpaper, below desktop icons, remains visible while Settings/Search are open, returns after Explorer restart, and restores to the correct display after monitor reconnect/change.

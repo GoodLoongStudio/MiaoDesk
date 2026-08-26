@@ -5,9 +5,10 @@ $root = Split-Path -Parent $PSScriptRoot
 
 $header = Join-Path $root 'src/native/include/turingdesk/DesktopWidgetController.h'
 $controller = Join-Path $root 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
+$acceptance = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
 $doc = Join-Path $root 'docs/WIDGET_PRODUCT_MODEL_M3.md'
 
-foreach ($path in @($header, $controller, $doc)) {
+foreach ($path in @($header, $controller, $acceptance, $doc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing Widget product-model contract input: $path"
     }
@@ -52,6 +53,18 @@ foreach ($forbidden in @('SetSize(', 'MoveToMonitor(', 'SetParent(', 'FindWindow
     }
 }
 
+$acceptanceText = Get-Content -LiteralPath $acceptance -Raw
+foreach ($marker in @(
+    'FixedShowcaseReady',
+    'kM3Showcase',
+    'enabledWeb.size() != kM3Showcase.size()',
+    'preset-owned geometry',
+    'Overlaps')) {
+    if (-not $acceptanceText.Contains($marker)) {
+        throw "M3 acceptance no longer proves the full fixed showcase set: $marker"
+    }
+}
+
 $docText = Get-Content -LiteralPath $doc -Raw
 foreach ($marker in @(
     'Current M3 simplification',
@@ -64,4 +77,4 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe and free of drag/resize/monitor-edit APIs while DesktopShellHost remains the only desktop attachment owner.'
+Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe, requires the full three-clock acceptance set, and remains free of drag/resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'

@@ -347,6 +347,12 @@ bool ProcessAlive(HANDLE process) {
     return process && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
 }
 
+void EmitActivity(const PiRuntime::ActivityCallback& callback, PiActivityKind kind,
+                  std::wstring toolName = {}, std::wstring message = {}, bool error = false) {
+    if (!callback) return;
+    callback(PiActivityEvent{kind, std::move(toolName), std::move(message), error});
+}
+
 } // namespace
 
 PiRuntime::~PiRuntime() {
@@ -416,7 +422,9 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     models += "      \"baseUrl\": \"" + base + "\",\n";
     models += "      \"api\": \"" + api + "\",\n";
     models += "      \"apiKey\": \"$TURINGDESK_MODEL_API_KEY\",\n";
-    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\", \"image\"], \"contextWindow\": 128000, \"maxTokens\": 16384 }]\n";
+    // Chat capability is conservative by default. Image generation is a separate Pi tool/provider
+    // and must not cause every arbitrary chat endpoint to be advertised as vision-capable.
+    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\"], \"contextWindow\": 128000, \"maxTokens\": 16384 }]\n";
     models += "    }\n  }\n}\n";
 
     std::ofstream modelsFile(modelsPath, std::ios::binary | std::ios::trunc);
@@ -589,10 +597,13 @@ bool PiRuntime::ReadLine(std::string& line, DWORD timeoutMs, std::wstring& error
     }
 }
 
-void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken) {
+void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
+                        ActivityCallback onActivity, std::stop_token stopToken) {
+    EmitActivity(onActivity, PiActivityKind::Understanding, {}, L"Pi Agent 正在理解请求");
     std::wstring error;
     if (!EnsureSession(setup, error)) {
         AppendRuntimeLog(L"Pi session failed: " + error);
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, error, true);
         if (onDone) onDone(error);
         busy_.store(false);
         return;
@@ -602,6 +613,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
     if (!WriteLine(request)) {
         error = L"发送 Pi prompt 失败";
         AppendRuntimeLog(error);
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, error, true);
         if (onDone) onDone(error);
         busy_.store(false);
         return;
@@ -639,14 +651,19 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         }
 
         if (line.find("\"type\":\"tool_execution_start\"") != std::string::npos) {
-            const auto tool = Utf8ToWide(ExtractJsonString(line, "\"toolName\""));
-            AppendRuntimeLog(L"tool start: " + (tool.empty() ? std::wstring(L"unknown") : tool));
+            auto tool = Utf8ToWide(ExtractJsonString(line, "\"toolName\""));
+            if (tool.empty()) tool = L"unknown";
+            AppendRuntimeLog(L"tool start: " + tool);
+            EmitActivity(onActivity, PiActivityKind::ToolStarted, tool, L"工具开始执行");
             continue;
         }
         if (line.find("\"type\":\"tool_execution_end\"") != std::string::npos) {
-            const auto tool = Utf8ToWide(ExtractJsonString(line, "\"toolName\""));
+            auto tool = Utf8ToWide(ExtractJsonString(line, "\"toolName\""));
+            if (tool.empty()) tool = L"unknown";
             const bool isError = line.find("\"isError\":true") != std::string::npos;
-            AppendRuntimeLog(L"tool end: " + (tool.empty() ? std::wstring(L"unknown") : tool) + (isError ? L"; error=true" : L"; error=false"));
+            AppendRuntimeLog(L"tool end: " + tool + (isError ? L"; error=true" : L"; error=false"));
+            EmitActivity(onActivity, PiActivityKind::ToolFinished, tool,
+                         isError ? L"工具执行失败" : L"工具执行完成", isError);
             continue;
         }
         if (line.find("\"type\":\"response\"") != std::string::npos &&
@@ -659,6 +676,8 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         if (line.find("\"type\":\"auto_retry_start\"") != std::string::npos) {
             const auto retryError = Utf8ToWide(ExtractJsonString(line, "\"errorMessage\""));
             AppendRuntimeLog(retryError.empty() ? L"Pi auto-retry started" : L"Pi auto-retry started: " + retryError);
+            EmitActivity(onActivity, PiActivityKind::Retrying, {},
+                         retryError.empty() ? L"模型服务暂时未响应，正在自动重试" : retryError);
             continue;
         }
         if (line.find("\"type\":\"auto_retry_end\"") != std::string::npos) {
@@ -669,6 +688,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
             } else if (line.find("\"success\":true") != std::string::npos) {
                 settledFailure.clear();
                 AppendRuntimeLog(L"Pi auto-retry recovered");
+                EmitActivity(onActivity, PiActivityKind::Recovered, {}, L"连接已恢复，继续执行");
             }
             continue;
         }
@@ -691,43 +711,61 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
     if (stopToken.stop_requested()) {
         WriteLine("{\"type\":\"abort\"}");
         error = L"已停止";
+        EmitActivity(onActivity, PiActivityKind::Cancelled, {}, error);
     }
 
     if (!error.empty()) {
         AppendRuntimeLog(L"Pi turn failed: " + error);
+        if (!stopToken.stop_requested()) EmitActivity(onActivity, PiActivityKind::Failed, {}, error, true);
         if (onDone) onDone(error);
     } else if (sawAgentSettled) {
         if (!settledFailure.empty()) {
             AppendRuntimeLog(L"Pi turn settled with failure: " + settledFailure);
+            EmitActivity(onActivity, PiActivityKind::Failed, {}, settledFailure, true);
             if (onDone) onDone(settledFailure);
         } else {
             AppendRuntimeLog(sawText ? L"Pi turn settled with text" : L"Pi turn settled without text");
+            EmitActivity(onActivity, PiActivityKind::Succeeded, {}, L"Pi Agent 已完成");
             // DoneCallback payload is an error channel for the Native UI. Empty means Pi succeeded,
             // including successful tool-only turns that intentionally produced no assistant text.
             if (onDone) onDone(L"");
         }
     } else {
         AppendRuntimeLog(L"Pi turn ended without agent_settled");
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, L"Pi turn 未正常结束", true);
         if (onDone) onDone(L"Pi turn 未正常结束");
     }
     busy_.store(false);
 }
 
-void PiRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone) {
+void PiRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
+                         ActivityCallback onActivity) {
+    if (!onActivity) {
+        std::scoped_lock lock(callbackMutex_);
+        onActivity = activityCallback_;
+    }
     if (busy_.exchange(true)) {
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, L"Pi Runtime 正忙", true);
         if (onDone) onDone(L"Pi Runtime 正忙");
         return;
     }
     const auto setup = BuildProviderSetup(agent);
     if (!setup.ok) {
         busy_.store(false);
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, setup.message, true);
         if (onDone) onDone(setup.message);
         return;
     }
     if (worker_.joinable()) worker_.request_stop();
-    worker_ = std::jthread([this, setup, prompt = std::move(prompt), onDelta = std::move(onDelta), onDone = std::move(onDone)](std::stop_token token) mutable {
-        RunTurn(setup, std::move(prompt), std::move(onDelta), std::move(onDone), token);
+    worker_ = std::jthread([this, setup, prompt = std::move(prompt), onDelta = std::move(onDelta),
+                            onDone = std::move(onDone), onActivity = std::move(onActivity)](std::stop_token token) mutable {
+        RunTurn(setup, std::move(prompt), std::move(onDelta), std::move(onDone), std::move(onActivity), token);
     });
+}
+
+void PiRuntime::SetActivityCallback(ActivityCallback callback) {
+    std::scoped_lock lock(callbackMutex_);
+    activityCallback_ = std::move(callback);
 }
 
 void PiRuntime::Stop() {

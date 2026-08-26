@@ -15,6 +15,7 @@ foreach ($path in @($runnerPath, $phaseRunnerPath, $workflowPath, $docPath)) {
 $runner = Get-Content -LiteralPath $runnerPath -Raw
 foreach ($marker in @(
     "ValidateSet('baseline','settings','search','explorer','monitor')",
+    '[switch]$VerifyOnly',
     "'TuringDesk\NativeTest'",
     "'TuringDeskWidgetAcceptance.exe'",
     "'.installed-build-sha'",
@@ -22,6 +23,8 @@ foreach ($marker in @(
     '0xAA64',
     'rev-parse HEAD',
     'if ($checkoutSha -ne $buildSha)',
+    'if ($VerifyOnly)',
+    'no acceptance phase was executed and no durable phase cursor was advanced',
     'run-widget-runtime-acceptance.ps1',
     '-BuildDir $installedDir',
     '-Phase $Phase'
@@ -40,10 +43,13 @@ if ($runner -notmatch '\$machine -ne 0xAA64') {
 if ($runner -notmatch '\$checkoutSha -ne \$buildSha') {
     throw 'Installed M3 acceptance must reject evidence collected from a checkout that differs from the installed validated build.'
 }
+if ($runner -notmatch 'if \(\$VerifyOnly\)[\s\S]*?exit 0[\s\S]*?Running installed ARM64 M3 Widget acceptance') {
+    throw 'Installed M3 acceptance VerifyOnly mode must exit before the phase runner can execute.'
+}
 
 $workflow = Get-Content -LiteralPath $workflowPath -Raw
 foreach ($marker in @(
-    'Copy-Item build/src/native/Release/TuringDeskWidgetAcceptance.exe build/package/TuringDeskWidgetAcceptance.exe -Force',
+    'TuringDeskWidgetAcceptance.exe',
     'name: TuringDesk-Native-Search-ARM64',
     'scripts/run-installed-widget-acceptance.ps1'
 )) {
@@ -56,6 +62,7 @@ $doc = Get-Content -LiteralPath $docPath -Raw
 foreach ($marker in @(
     'TuringDeskWidgetAcceptance.exe',
     'run-installed-widget-acceptance.ps1',
+    '-VerifyOnly',
     'turingdesk.widget-acceptance-config.v2',
     'baseline -> settings -> search -> explorer -> monitor',
     'real ARM64 Windows',

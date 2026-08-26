@@ -45,13 +45,48 @@ foreach ($forbidden in @('DesktopWidgetStore store','GetPrivateProfile','FindWin
 }
 
 $mainText = Get-Content -LiteralPath $main -Raw
-foreach ($marker in @('RunWidgetRuntimeAcceptanceProbe','--phase=','CheckWidgetAcceptanceConfigContinuity','if (!baseline)','if (baseline)')) {
-    if (-not $mainText.Contains($marker)) { throw "Widget acceptance executable missing runtime/config continuity routing: $marker" }
+foreach ($marker in @(
+    'RunWidgetRuntimeAcceptanceProbe',
+    '--phase=',
+    'CheckWidgetAcceptanceConfigContinuity',
+    'if (!baseline)',
+    'if (baseline)',
+    'PhaseContextReady',
+    'ProcessImageMatches',
+    'EnumWindows(',
+    'TuringDesk.Native.DesktopLibrary',
+    'TuringDeskWallpaper.exe',
+    'TuringDesk.Native.SearchWindow',
+    'TuringDesk.exe',
+    'StructuredLifecycleReady',
+    'service.GetRuntimeHealth(&health)',
+    'environmentReported',
+    'controllerReported',
+    'navigationReported',
+    'environmentReady',
+    'controllerReady',
+    'navigationReady')) {
+    if (-not $mainText.Contains($marker)) { throw "Widget acceptance executable missing strict runtime/config/context/lifecycle routing: $marker" }
+}
+foreach ($forbidden in @('SetParent(','SetWindowPos(','SendMessageTimeoutW(','0x052C','Progman','WorkerW','SHELLDLL_DefView','DesktopWidgetStore store','GetPrivateProfileStringW')) {
+    if ($mainText.Contains($forbidden)) { throw "Widget acceptance executable regained Widget store or desktop attachment ownership: $forbidden" }
 }
 $firstConfigCheck = $mainText.IndexOf('CheckWidgetAcceptanceConfigContinuity')
 $runtimeProbe = $mainText.IndexOf('RunWidgetRuntimeAcceptanceProbe')
+$phaseContextCheck = $mainText.LastIndexOf('PhaseContextReady(phase, &failure)', $runtimeProbe)
+$lifecycleCheck = $mainText.LastIndexOf('StructuredLifecycleReady(&failure)', $runtimeProbe)
 if ($firstConfigCheck -lt 0 -or $runtimeProbe -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
     throw 'Non-baseline Widget config continuity must be checked before the runtime probe can advance the phase sequence.'
+}
+if ($phaseContextCheck -lt 0 -or $phaseContextCheck -gt $runtimeProbe) {
+    throw 'Settings/Search product process/window context must be checked before the runtime probe can advance the phase sequence.'
+}
+if ($lifecycleCheck -lt 0 -or $lifecycleCheck -gt $runtimeProbe) {
+    throw 'Strict reported-and-ready WebView2 lifecycle must be checked before the runtime probe can advance the phase sequence.'
+}
+$afterRuntime = $mainText.Substring($runtimeProbe)
+if ($afterRuntime.Contains('PhaseContextReady(phase, &failure)') -or $afterRuntime.Contains('StructuredLifecycleReady(&failure)')) {
+    throw 'Fallible product-context/lifecycle gates must not run after the runtime probe has had a chance to advance the phase cursor.'
 }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
@@ -126,4 +161,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery, service-routed stable Widget placement configuration sealed by hash/length, executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation; TuringDesk Settings/Search foreground windows remain excluded from performance pause detection; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery; Settings/Search acceptance is pinned to the expected visible product class/process in the same session; real acceptance rejects legacy/unreported WebView2 lifecycle; all fallible preconditions remain before durable phase advancement; stable Widget placement configuration is service-routed and sealed by hash/length; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'

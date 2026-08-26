@@ -41,6 +41,25 @@ function Invoke-GhText([string[]]$Arguments) {
     throw "GitHub query failed after retries."
 }
 
+function Test-GhAuthentication {
+    $stdout = Join-Path $env:TEMP ("td-gh-auth-out-" + [guid]::NewGuid().ToString("N") + ".txt")
+    $stderr = Join-Path $env:TEMP ("td-gh-auth-err-" + [guid]::NewGuid().ToString("N") + ".txt")
+    try {
+        $gh = (Get-Command gh -ErrorAction Stop).Source
+        $process = Start-Process -FilePath $gh -ArgumentList @("auth", "status", "-h", "github.com") -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        if (-not $process -or $process.ExitCode -ne 0) {
+            $detail = ""
+            if (Test-Path $stderr -PathType Leaf) { $detail = ([string](Get-Content $stderr -Raw -ErrorAction SilentlyContinue)).Trim() }
+            if ([string]::IsNullOrWhiteSpace($detail)) { $detail = "GitHub CLI authentication is missing or invalid." }
+            throw ("GitHub CLI is not authenticated for github.com. Run: gh auth login -h github.com --web`n{0}" -f $detail)
+        }
+        return $true
+    }
+    finally {
+        Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-RunsForCommit([string]$Sha) {
     $result = Invoke-GhJson @(
         "run", "list", "--repo", $Repo, "--workflow", $Workflow, "--commit", $Sha, "--limit", "50",
@@ -326,8 +345,7 @@ try {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 
     Step "Checking GitHub authentication"
-    & gh auth status 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
+    [void](Test-GhAuthentication)
     Write-Host "GitHub authentication OK." -ForegroundColor Green
 
     Step "Resolving current TuringDesk main"

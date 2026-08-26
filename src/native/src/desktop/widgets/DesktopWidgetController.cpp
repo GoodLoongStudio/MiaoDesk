@@ -13,6 +13,21 @@ namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
 
+void AppendControllerErrorLog(std::wstring_view message) {
+    const auto path = turingdesk::RuntimeLogPath(L"widget-runtime.log");
+    if (path.empty()) return;
+    std::wofstream log(path, std::ios::app);
+    if (!log) return;
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    log << L"\n=== "
+        << std::setfill(L'0') << std::setw(4) << now.wYear << L'-'
+        << std::setw(2) << now.wMonth << L'-' << std::setw(2) << now.wDay << L' '
+        << std::setw(2) << now.wHour << L':' << std::setw(2) << now.wMinute << L':'
+        << std::setw(2) << now.wSecond << L" Widget controller error ===\n"
+        << message << L"\n";
+}
+
 void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
     const auto path = turingdesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
@@ -104,9 +119,19 @@ DesktopControlResult DesktopWidgetController::Find(std::wstring_view id, wallpap
 
 DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth* health) const {
     if (!health) return {false, L"WidgetRuntimeHealth 输出不能为空。"};
+
+    const auto runtime = service_.EnsureRuntime();
+    if (!runtime.success) {
+        AppendControllerErrorLog(L"EnsureRuntime failed: " + runtime.message);
+        return runtime;
+    }
+
     DesktopSnapshot snapshot;
     const auto result = service_.GetSnapshot(&snapshot);
-    if (!result.success) return result;
+    if (!result.success) {
+        AppendControllerErrorLog(L"GetSnapshot failed: " + result.message);
+        return result;
+    }
     AppendWidgetRuntimeLog(snapshot);
     *health = std::move(snapshot.widgetRuntime);
     return {true, L"桌面小组件运行状态读取完成。"};

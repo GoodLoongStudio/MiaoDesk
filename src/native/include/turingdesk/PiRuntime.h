@@ -52,6 +52,7 @@ public:
     bool CanHandle(const L3Agent& agent) const;
     void AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
                   ActivityCallback onActivity = {});
+    void SetActivityCallback(ActivityCallback callback);
     void Stop();
     void ResetSession();
     bool Busy() const noexcept { return busy_.load(); }
@@ -84,6 +85,8 @@ private:
     std::jthread worker_;
     std::atomic_bool busy_{false};
     mutable std::mutex processMutex_;
+    mutable std::mutex callbackMutex_;
+    ActivityCallback activityCallback_;
     HANDLE process_{};
     HANDLE processThread_{};
     HANDLE inputWrite_{};

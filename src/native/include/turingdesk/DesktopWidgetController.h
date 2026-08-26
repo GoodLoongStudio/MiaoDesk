@@ -28,6 +28,13 @@ public:
     DesktopControlResult Find(std::wstring_view id, wallpaper::DesktopWidget* widget) const;
     DesktopControlResult RuntimeHealth(WidgetRuntimeHealth* health) const;
 
+    // Temporary M3 showcase entry used by the production Widget page. Repeated
+    // creation rotates through the three fixed presets so a user can compare
+    // real desktop rendering before any editor is reintroduced.
+    DesktopControlResult CreateClock(
+        std::wstring monitorId,
+        wallpaper::DesktopWidget* created = nullptr) const;
+
     // Fixed-template creation. The preset owns visual style and geometry; the
     // controller auto-places it on the requested display.
     DesktopControlResult CreatePreset(

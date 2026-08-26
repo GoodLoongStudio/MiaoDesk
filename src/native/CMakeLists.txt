@@ -124,6 +124,7 @@ set(TURINGDESK_WIDGET_ACCEPTANCE_SOURCES
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
     src/desktop/shell/DesktopSurfaceTelemetry.cpp
+    src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
 )
 
 add_executable(TuringDesk WIN32 ${TURINGDESK_APP_SOURCES})

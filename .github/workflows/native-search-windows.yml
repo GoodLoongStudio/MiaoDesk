@@ -25,6 +25,7 @@ on:
       - scripts/update-turingdesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
+      - scripts/verify-arm64-updater-runtime-reuse.ps1
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-desktop-domain-contract.ps1
       - scripts/verify-desktop-shell-ownership.ps1
@@ -139,6 +140,7 @@ jobs:
           Copy-Item build/src/native/Release/TuringDesk.exe build/package/TuringDesk.exe -Force
           Copy-Item build/src/native/Release/TuringDeskWallpaper.exe build/package/TuringDeskWallpaper.exe -Force
           Copy-Item build/src/native/Release/TuringDeskHarness.exe build/package/TuringDeskHarness.exe -Force
+          Copy-Item build/src/native/Release/TuringDeskWidgetAcceptance.exe build/package/TuringDeskWidgetAcceptance.exe -Force
           .\scripts\prepare-third-party-runtime-arm64.ps1 -DeployDir (Resolve-Path build/package).Path -SkipGozServiceInstall
 
       - name: Validate bundled Pi runtime

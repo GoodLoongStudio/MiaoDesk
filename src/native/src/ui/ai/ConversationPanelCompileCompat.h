@@ -18,6 +18,6 @@ inline int clamp(int value, LONG low, LONG high) noexcept {
 }
 } // namespace std
 
-// The panel has one fixed-layout child edit; repaint is always required after layout.
-#define TURINGDESK_MOVE_WINDOW5(hwnd, x, y, width, height) \
-    ::MoveWindow((hwnd), (x), (y), (width), (height), TRUE)
+inline BOOL TuringDeskMoveWindow(HWND hwnd, int x, int y, int width, int height) noexcept {
+    return ::MoveWindow(hwnd, x, y, width, height, TRUE);
+}

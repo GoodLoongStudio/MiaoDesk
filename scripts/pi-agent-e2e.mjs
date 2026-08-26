@@ -142,6 +142,10 @@ server = http.createServer((req, res) => {
       "write",
       "bash",
       "settings_open",
+      "ppt_create",
+      "file_create",
+      "folder_list",
+      "file_open",
       "wallpaper_create_web_package",
       "wallpaper_validate_package",
     ];
@@ -269,7 +273,7 @@ server.listen(0, "127.0.0.1", () => {
     "--no-prompt-templates",
     "--no-themes",
     "--no-context-files",
-    "--tools", "read,bash,edit,write,grep,find,ls,settings_open,wallpaper_create_web_package,wallpaper_validate_package",
+    "--tools", "read,bash,edit,write,grep,find,ls,settings_open,ppt_create,file_create,folder_list,file_open,wallpaper_create_web_package,wallpaper_validate_package",
   ], {
     cwd: work,
     windowsHide: true,

@@ -3,10 +3,14 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -100,6 +104,88 @@ bool PhaseContextReady(std::wstring_view phase, std::wstring* failure) {
     return false;
 }
 
+struct ShowcaseSpec {
+    const wchar_t* title;
+    float width;
+    float height;
+};
+
+constexpr std::array<ShowcaseSpec, 3> kM3Showcase = {{
+    {L"极简时钟", 0.18f, 0.10f},
+    {L"日期时钟", 0.23f, 0.16f},
+    {L"玻璃时钟", 0.30f, 0.20f},
+}};
+
+bool NearlyEqual(float lhs, float rhs) noexcept {
+    return std::fabs(lhs - rhs) <= 0.001f;
+}
+
+bool SameMonitor(const turingdesk::wallpaper::DesktopWidget& lhs,
+                 const turingdesk::wallpaper::DesktopWidget& rhs) {
+    return CompareStringOrdinal(lhs.monitorId.c_str(), -1, rhs.monitorId.c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
+bool Overlaps(const turingdesk::wallpaper::DesktopWidget& lhs,
+              const turingdesk::wallpaper::DesktopWidget& rhs) noexcept {
+    const float lhsRight = lhs.x + lhs.width;
+    const float lhsBottom = lhs.y + lhs.height;
+    const float rhsRight = rhs.x + rhs.width;
+    const float rhsBottom = rhs.y + rhs.height;
+    return lhs.x < rhsRight && rhs.x < lhsRight && lhs.y < rhsBottom && rhs.y < lhsBottom;
+}
+
+bool FixedShowcaseReady(std::wstring* failure) {
+    std::vector<turingdesk::wallpaper::DesktopWidget> widgets;
+    const turingdesk::desktop::WidgetService service;
+    const auto result = service.List(&widgets);
+    if (!result.success) {
+        if (failure) *failure = result.message.empty() ? L"无法读取 M3 Widget showcase 配置。" : result.message;
+        return false;
+    }
+
+    std::vector<const turingdesk::wallpaper::DesktopWidget*> enabledWeb;
+    for (const auto& widget : widgets) {
+        if (widget.enabled && widget.kind == turingdesk::wallpaper::DesktopWidgetKind::Web) enabledWeb.push_back(&widget);
+    }
+    if (enabledWeb.size() != kM3Showcase.size()) {
+        if (failure) {
+            *failure = L"M3 real-Windows acceptance 必须同时启用且仅启用三个固定时钟 showcase；当前 enabledWeb="
+                + std::to_wstring(enabledWeb.size()) + L"，需要 极简时钟/日期时钟/玻璃时钟 各一个。";
+        }
+        return false;
+    }
+
+    for (const auto& spec : kM3Showcase) {
+        const auto it = std::find_if(enabledWeb.begin(), enabledWeb.end(), [&](const auto* widget) {
+            return widget->title == spec.title;
+        });
+        if (it == enabledWeb.end()) {
+            if (failure) *failure = L"M3 fixed showcase 缺少启用模板：" + std::wstring(spec.title) + L"。";
+            return false;
+        }
+        if (!NearlyEqual((*it)->width, spec.width) || !NearlyEqual((*it)->height, spec.height)) {
+            if (failure) {
+                *failure = L"M3 fixed showcase 模板尺寸被修改：" + std::wstring(spec.title)
+                    + L"。当前阶段必须使用 preset-owned geometry，不接受自由缩放后的配置。";
+            }
+            return false;
+        }
+    }
+
+    for (std::size_t i = 0; i < enabledWeb.size(); ++i) {
+        for (std::size_t j = i + 1; j < enabledWeb.size(); ++j) {
+            if (SameMonitor(*enabledWeb[i], *enabledWeb[j]) && Overlaps(*enabledWeb[i], *enabledWeb[j])) {
+                if (failure) {
+                    *failure = L"M3 fixed showcase 存在同屏重叠：" + enabledWeb[i]->title + L" 与 "
+                        + enabledWeb[j]->title + L"。真实可视验收要求三个固定时钟无重叠。";
+                }
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool StructuredLifecycleReady(std::wstring* failure) {
     turingdesk::desktop::WidgetRuntimeHealth health;
     const turingdesk::desktop::WidgetService service;
@@ -137,6 +223,13 @@ int wmain(int argc, wchar_t** argv) {
     const bool baseline = phase == L"baseline";
     std::wstring report;
     std::wstring failure;
+
+    // M3 is deliberately a fixed three-clock showcase until real desktop visibility
+    // is proven. A single arbitrary Web Widget must never satisfy the acceptance gate.
+    if (!FixedShowcaseReady(&failure)) {
+        if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
+        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+    }
 
     // Later phases validate persisted placement configuration before the runtime
     // probe can advance the durable sequence cursor. PID/HWND identity is not

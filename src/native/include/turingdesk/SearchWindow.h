@@ -35,6 +35,7 @@ private:
     void MergeResults();
     void ExecuteSelected(bool forceL3);
     void StartL3(const std::wstring& prompt);
+    void StartWindowsVoiceTyping();
     void OpenSettingsCenter();
     void Draw();
     void ResizeRenderTarget(UINT width, UINT height);
@@ -49,12 +50,12 @@ private:
     void HandleTray(UINT mouseMessage);
     void ExitApplication();
     void UpdateFocusVisual();
+    bool HitVoiceButton(POINT point) const;
+    bool HitAiButton(POINT point) const;
 
     HINSTANCE instance_{};
     HWND hwnd_{};
     HWND edit_{};
-    HWND searchIcon_{};
-    HWND settingsButton_{};
     WNDPROC oldEditProc_{};
     AppSearch apps_;
     GozSearch files_;
@@ -77,18 +78,18 @@ private:
     bool trayAdded_{false};
     UINT taskbarCreated_{0};
     HBRUSH editBrush_{};
-    HBRUSH staticBrush_{};
     HFONT uiFont_{};
     HFONT smallFont_{};
-    HFONT iconFont_{};
 
     Microsoft::WRL::ComPtr<ID2D1Factory> d2dFactory_;
     Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> renderTarget_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> glassBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> secondaryBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> borderBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dividerBrush_;
     Microsoft::WRL::ComPtr<IDWriteFactory> writeFactory_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> titleFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> subtitleFormat_;

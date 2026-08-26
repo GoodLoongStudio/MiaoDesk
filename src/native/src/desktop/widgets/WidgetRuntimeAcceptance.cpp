@@ -42,6 +42,10 @@ fs::path BaselinePath() {
     return ReportDirectory() / L"widget-acceptance-baseline.ids";
 }
 
+fs::path BaselineSessionPath() {
+    return ReportDirectory() / L"widget-acceptance-baseline.session";
+}
+
 fs::path SequencePath() {
     return ReportDirectory() / L"widget-acceptance-sequence.phase";
 }
@@ -51,6 +55,11 @@ bool InteractiveDesktopAvailable() {
     if (!desktop) return false;
     CloseDesktop(desktop);
     return true;
+}
+
+bool CurrentSessionId(DWORD* sessionId) {
+    if (!sessionId) return false;
+    return ProcessIdToSessionId(GetCurrentProcessId(), sessionId) != FALSE;
 }
 
 std::wstring BoolText(bool value) {
@@ -87,11 +96,15 @@ std::wstring BuildReport(
     std::wstring_view phase,
     const WidgetRuntimeHealth& health,
     std::wstring_view baselineStatus,
+    std::wstring_view sessionStatus,
+    DWORD sessionId,
     std::wstring_view sequenceStatus) {
     std::wostringstream out;
     out << L"TuringDesk M3 Widget Runtime Acceptance\n";
     out << L"phase=" << SafePhase(phase) << L"\n";
     out << L"baselineStatus=" << baselineStatus << L"\n";
+    out << L"sessionStatus=" << sessionStatus << L"\n";
+    out << L"sessionId=" << sessionId << L"\n";
     out << L"sequenceStatus=" << sequenceStatus << L"\n";
     out << L"surfaceIds=" << JoinIds(SurfaceIds(health)) << L"\n";
     out << L"configuredCount=" << health.configuredCount << L"\n";
@@ -164,6 +177,26 @@ bool ReadBaselineIds(std::vector<std::wstring>* ids) {
     return true;
 }
 
+bool WriteBaselineSession(DWORD sessionId) {
+    return WriteUtf16Report(BaselineSessionPath(), std::to_wstring(sessionId));
+}
+
+bool ReadBaselineSession(DWORD* sessionId) {
+    if (!sessionId) return false;
+    std::wstring text;
+    if (!ReadUtf16Text(BaselineSessionPath(), &text)) return false;
+    while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n' || text.back() == L'\0')) text.pop_back();
+    if (text.empty()) return false;
+    try {
+        const unsigned long value = std::stoul(text);
+        if (value > MAXDWORD) return false;
+        *sessionId = static_cast<DWORD>(value);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 bool WriteSequencePhase(std::wstring_view phase) {
     return WriteUtf16Report(SequencePath(), SafePhase(phase));
 }
@@ -177,7 +210,9 @@ bool ReadSequencePhase(std::wstring* phase) {
 WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
     std::wstring_view phase,
     const WidgetRuntimeHealth& health,
+    DWORD currentSessionId,
     std::wstring* baselineStatus,
+    std::wstring* sessionStatus,
     std::wstring* sequenceStatus,
     std::wstring* failure) {
     const std::wstring safePhase = SafePhase(phase);
@@ -193,7 +228,12 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
             if (failure) *failure = L"无法写入 Widget acceptance baseline identity set：" + BaselinePath().wstring();
             return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
         }
+        if (!WriteBaselineSession(currentSessionId)) {
+            if (failure) *failure = L"无法写入 Widget acceptance baseline Windows session：" + BaselineSessionPath().wstring();
+            return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
+        }
         if (baselineStatus) *baselineStatus = L"recorded";
+        if (sessionStatus) *sessionStatus = L"recorded";
         if (sequenceStatus) *sequenceStatus = L"start";
         return WidgetRuntimeAcceptanceCode::Passed;
     }
@@ -202,6 +242,7 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
     if (!ReadBaselineIds(&baselineIds)) {
         if (failure) *failure = L"缺少可读取的 baseline identity set；请先执行 phase=baseline，再执行 settings/search/explorer/monitor。";
         if (baselineStatus) *baselineStatus = L"missing";
+        if (sessionStatus) *sessionStatus = L"blocked";
         if (sequenceStatus) *sequenceStatus = L"blocked";
         return WidgetRuntimeAcceptanceCode::BaselineMissing;
     }
@@ -211,10 +252,30 @@ WidgetRuntimeAcceptanceCode CheckPhaseContinuity(
                 + L" current=" + JoinIds(currentIds);
         }
         if (baselineStatus) *baselineStatus = L"mismatch";
+        if (sessionStatus) *sessionStatus = L"blocked";
         if (sequenceStatus) *sequenceStatus = L"blocked";
         return WidgetRuntimeAcceptanceCode::BaselineMismatch;
     }
     if (baselineStatus) *baselineStatus = L"matched";
+
+    DWORD baselineSessionId = 0;
+    if (!ReadBaselineSession(&baselineSessionId)) {
+        if (failure) *failure = L"缺少可读取的 baseline Windows session；请从当前交互会话重新执行 phase=baseline。";
+        if (sessionStatus) *sessionStatus = L"missing";
+        if (sequenceStatus) *sequenceStatus = L"blocked";
+        return WidgetRuntimeAcceptanceCode::BaselineMissing;
+    }
+    if (baselineSessionId != currentSessionId) {
+        if (failure) {
+            *failure = L"当前 Windows session 与 baseline 不一致；baselineSession=" + std::to_wstring(baselineSessionId)
+                + L" currentSession=" + std::to_wstring(currentSessionId)
+                + L"。M3 五阶段必须在同一交互式 Windows session 内完成。";
+        }
+        if (sessionStatus) *sessionStatus = L"mismatch";
+        if (sequenceStatus) *sequenceStatus = L"blocked";
+        return WidgetRuntimeAcceptanceCode::BaselineMismatch;
+    }
+    if (sessionStatus) *sessionStatus = L"matched";
 
     const std::wstring expected = ExpectedPreviousPhase(safePhase);
     std::wstring previous;
@@ -241,6 +302,12 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
         return WidgetRuntimeAcceptanceCode::InteractiveDesktopUnavailable;
     }
 
+    DWORD sessionId = 0;
+    if (!CurrentSessionId(&sessionId)) {
+        if (failure) *failure = L"无法解析当前 Windows session；M3 五阶段无法证明来自同一交互式桌面会话。";
+        return WidgetRuntimeAcceptanceCode::InteractiveDesktopUnavailable;
+    }
+
     WidgetRuntimeHealth health;
     const WidgetService service;
     const auto result = service.GetRuntimeHealth(&health);
@@ -255,10 +322,12 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
     }
 
     std::wstring baselineStatus = L"unchecked";
+    std::wstring sessionStatus = L"unchecked";
     std::wstring sequenceStatus = L"unchecked";
-    const auto continuity = CheckPhaseContinuity(phase, health, &baselineStatus, &sequenceStatus, failure);
+    const auto continuity = CheckPhaseContinuity(
+        phase, health, sessionId, &baselineStatus, &sessionStatus, &sequenceStatus, failure);
     const fs::path path = ReportDirectory() / (L"widget-acceptance-" + SafePhase(phase) + L".txt");
-    if (!WriteUtf16Report(path, BuildReport(phase, health, baselineStatus, sequenceStatus))) {
+    if (!WriteUtf16Report(path, BuildReport(phase, health, baselineStatus, sessionStatus, sessionId, sequenceStatus))) {
         if (failure) *failure = L"无法写入 Widget acceptance report：" + path.wstring();
         return WidgetRuntimeAcceptanceCode::ReportWriteFailed;
     }

@@ -1,7 +1,7 @@
 # TuringDesk Pi Runtime Contract
 
 > 状态：**强制架构契约**  
-> 日期：2026-08-24  
+> 日期：2026-08-26  
 > 适用范围：TuringDesk Native 主线、图灵 AI、Desktop Control、构建、CI、打包、部署与验收  
 > 上位产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`  
 > Desktop Composition 架构：`docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
@@ -123,6 +123,33 @@ Pi 负责：
 - Session / Context；
 - Skills / Extensions / Packages；
 - 通用文件和 Shell 能力。
+
+### 5.1 Conversation Panel UI contract
+
+普通图灵 AI 的唯一生产展示面是 `TuringDesk.Native.ConversationPanel`。旧终端式 `TuringDesk.Native.L3CliWindow` 已退休，不得作为第二条 UI 路径恢复。
+
+当前迁移期间允许保留 `L3CliWindow` 的兼容文件名/函数名作为内部 ABI/构建 shim，但它们不得重新拥有旧终端视觉或独立 Runtime 策略。新的 UI 代码以 `ConversationPanel.h` 为 canonical include；legacy header 只允许继续缩减。
+
+禁止恢复：
+
+```text
+TuringDesk.Native.L3CliWindow window class
+Consolas terminal presentation
+AI window-local ModelSettingsWindow entry
+separate terminal transcript/input product surface
+UI-specific provider routing that bypasses Pi-first
+```
+
+Conversation Panel 可以演进视觉、布局、富文本和工具结果展示，但运行时路由仍必须保持：
+
+```text
+Conversation Panel
+  -> Pi Runtime
+  -> current Provider / Model / Base URL / API Key
+  -> Direct Model only on real Pi failure
+```
+
+这项 UI 清理不代表 M4 完成；M4 仍必须在 M3 真实 Windows gate 关闭后按完整产品 shell parity 规则推进。
 
 ## 6. 工具边界
 
@@ -298,7 +325,8 @@ Guard 必须防止：
 - Native Desktop Tool 白名单回退到旧的三工具状态；
 - Widget/Desktop Control 工具从 Pi Extension 或 Native worker 中意外消失；
 - 通用 C++ Agent Tools 重新暴露；
-- 旧 Codex/Relay 架构重新进入主线。
+- 旧 Codex/Relay 架构重新进入主线；
+- 旧终端 AI UI class、Consolas 展示和 window-local AI 设置入口重新进入生产路径。
 
 ARM64 CI 至少持续验证：
 

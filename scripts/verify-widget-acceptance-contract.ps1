@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 $probe = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptance.cpp'
+$configContinuity = Join-Path $root 'src/native/src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp'
 $main = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
 $header = Join-Path $root 'src/native/include/turingdesk/WidgetRuntimeAcceptance.h'
 $runner = Join-Path $root 'scripts/run-widget-runtime-acceptance.ps1'
@@ -18,13 +19,13 @@ $sequenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
 $evidenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md'
 $placementDoc = Join-Path $root 'docs/WIDGET_PLACEMENT_HEALTH_M3.md'
 
-foreach ($path in @($probe, $main, $header, $runner, $confirmer, $sealer, $verifier, $sessionVerifier, $performancePolicy, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
+foreach ($path in @($probe, $configContinuity, $main, $header, $runner, $confirmer, $sealer, $verifier, $sessionVerifier, $performancePolicy, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing M3 Widget acceptance contract input: $path" }
 }
 
 $headerText = Get-Content -LiteralPath $header -Raw
-foreach ($marker in @('Passed = 0','InteractiveDesktopUnavailable = 60','NoEnabledWebWidget = 61','RuntimeHealthUnavailable = 62','SurfaceUnhealthy = 63','ReportWriteFailed = 64','BaselineMissing = 65','BaselineMismatch = 66','SequenceOutOfOrder = 67')) {
-    if (-not $headerText.Contains($marker)) { throw "Widget acceptance exit-code contract missing marker: $marker" }
+foreach ($marker in @('Passed = 0','InteractiveDesktopUnavailable = 60','NoEnabledWebWidget = 61','RuntimeHealthUnavailable = 62','SurfaceUnhealthy = 63','ReportWriteFailed = 64','BaselineMissing = 65','BaselineMismatch = 66','SequenceOutOfOrder = 67','CheckWidgetAcceptanceConfigContinuity')) {
+    if (-not $headerText.Contains($marker)) { throw "Widget acceptance exit-code/config contract missing marker: $marker" }
 }
 
 $probeText = Get-Content -LiteralPath $probe -Raw
@@ -35,12 +36,27 @@ foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetPare
     if ($probeText.Contains($forbidden)) { throw "Widget acceptance probe bypasses Widget/DesktopShell domain ownership: $forbidden" }
 }
 
+$configText = Get-Content -LiteralPath $configContinuity -Raw
+foreach ($marker in @('WidgetService','service.List(&widgets)','widget-acceptance-baseline.config','turingdesk.widget-acceptance-config.v1','widget.monitorId','widget.x','widget.y','widget.width','widget.height','widget.zIndex','widget.enabled','widget.kind','std::bit_cast','BaselineMismatch')) {
+    if (-not $configText.Contains($marker)) { throw "Widget acceptance config continuity missing service-routed placement marker: $marker" }
+}
+foreach ($forbidden in @('DesktopWidgetStore store','GetPrivateProfile','FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
+    if ($configText.Contains($forbidden)) { throw "Widget acceptance config continuity regained private store/shell ownership: $forbidden" }
+}
+
 $mainText = Get-Content -LiteralPath $main -Raw
-if (-not $mainText.Contains('RunWidgetRuntimeAcceptanceProbe') -or -not $mainText.Contains('--phase=')) { throw 'Widget acceptance executable must delegate to the Widget-domain probe and preserve phase labels.' }
+foreach ($marker in @('RunWidgetRuntimeAcceptanceProbe','--phase=','CheckWidgetAcceptanceConfigContinuity','if (!baseline)','if (baseline)')) {
+    if (-not $mainText.Contains($marker)) { throw "Widget acceptance executable missing runtime/config continuity routing: $marker" }
+}
+$firstConfigCheck = $mainText.IndexOf('CheckWidgetAcceptanceConfigContinuity')
+$runtimeProbe = $mainText.IndexOf('RunWidgetRuntimeAcceptanceProbe')
+if ($firstConfigCheck -lt 0 -or $runtimeProbe -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
+    throw 'Non-baseline Widget config continuity must be checked before the runtime probe can advance the phase sequence.'
+}
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
-foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=','Initialize-ForegroundWindowInterop','GetForegroundWindow','Wait-ForExpectedTuringDeskWindowEvidence','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','turingdesk.widget-window-evidence.v1','widget-acceptance-$AcceptancePhase.window.json')) {
-    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence/binary/window mapping: $marker" }
+foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=','Initialize-ForegroundWindowInterop','GetForegroundWindow','Wait-ForExpectedTuringDeskWindowEvidence','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','turingdesk.widget-window-evidence.v1','widget-acceptance-$AcceptancePhase.window.json','widget-acceptance-baseline.config','$configCheckpoint')) {
+    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence/binary/config/window mapping: $marker" }
 }
 
 $confirmerText = Get-Content -LiteralPath $confirmer -Raw
@@ -82,14 +98,14 @@ foreach ($marker in @('IsTuringDeskWindowClass','TuringDesk.Native.','IsIgnoredF
     }
 }
 
-foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText, $sessionVerifierText)) {
+foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText, $sessionVerifierText, $configText)) {
     foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
         if ($text.Contains($forbidden)) { throw "M3 acceptance diagnostics must not regain shell HWND ownership: $forbidden" }
     }
 }
 
 $cmakeText = Get-Content -LiteralPath $cmake -Raw
-foreach ($marker in @('TuringDeskWidgetAcceptance','WidgetRuntimeAcceptance.cpp','WidgetRuntimeAcceptanceMain.cpp','TuringDeskWidgetAcceptanceContractCheck','src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp')) {
+foreach ($marker in @('TuringDeskWidgetAcceptance','WidgetRuntimeAcceptance.cpp','WidgetRuntimeAcceptanceMain.cpp','WidgetAcceptanceConfigContinuity.cpp','TuringDeskWidgetAcceptanceContractCheck','src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp')) {
     if (-not $cmakeText.Contains($marker)) { throw "M3 acceptance probe missing from build graph: $marker" }
 }
 
@@ -110,4 +126,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation; TuringDesk Settings/Search foreground windows remain excluded from performance pause detection; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery, stable Widget placement configuration, executable phase-order, same-session and explicit per-surface monitor/geometry/visibility/z-order validation; TuringDesk Settings/Search foreground windows remain excluded from performance pause detection; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'

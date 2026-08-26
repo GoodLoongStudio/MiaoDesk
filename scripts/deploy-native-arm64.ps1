@@ -1,113 +1,150 @@
 param(
-    [string]$Repo = "GoodLoongStudio/TuringDesk"
+    [ValidateSet("auto", "preview", "full")]
+    [string]$Mode = "auto"
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$Workflow = "native-search-windows.yml"
-$Updater = Join-Path $PSScriptRoot "update-turingdesk-arm64.ps1"
-$Guard = Join-Path $PSScriptRoot "verify-l3-runtime-contract.ps1"
-$PowerShellGuard = Join-Path $PSScriptRoot "verify-windows-powershell-compat.ps1"
+$BuildDir = Join-Path $RepoRoot "build-dev-arm64"
+$InstalledDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
+$InstalledMarker = Join-Path $InstalledDir ".installed-build-sha"
+$PreviewMarker = Join-Path $BuildDir ".last-preview-sha"
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
 }
 
-function Get-MainSha {
-    for ($attempt = 1; $attempt -le 5; $attempt++) {
-        $output = @(& gh api "repos/$Repo/commits/main" --jq ".sha" 2>$null)
-        $sha = [string]($output | Select-Object -First 1)
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($sha)) { return $sha.Trim() }
-        if ($attempt -lt 5) { Start-Sleep -Seconds ([Math]::Min($attempt * 2, 6)) }
-    }
-    throw "Unable to resolve main commit SHA."
+function Read-Sha([string]$Path) {
+    if (-not (Test-Path $Path -PathType Leaf)) { return $null }
+    $value = ([string](Get-Content $Path -Raw -ErrorAction SilentlyContinue)).Trim()
+    if ($value -match '^[0-9a-fA-F]{40}$') { return $value }
+    return $null
 }
 
-function Get-RunsForCommit([string]$Sha) {
-    for ($attempt = 1; $attempt -le 5; $attempt++) {
-        $json = @(& gh run list --repo $Repo --workflow $Workflow --commit $Sha --limit 20 --json databaseId,headSha,status,conclusion,event,createdAt 2>$null)
-        if ($LASTEXITCODE -eq 0) {
-            try {
-                if ($json.Count -eq 0) { return @() }
-                return @(($json -join "`n") | ConvertFrom-Json)
-            } catch { }
-        }
-        if ($attempt -lt 5) { Start-Sleep -Seconds ([Math]::Min($attempt * 2, 6)) }
-    }
-    throw "Unable to query ARM64 validation runs."
+function Test-Commit([string]$Sha) {
+    if ([string]::IsNullOrWhiteSpace($Sha)) { return $false }
+    & git -C $RepoRoot cat-file -e "$Sha^{commit}" 2>$null
+    return $LASTEXITCODE -eq 0
 }
 
-function Wait-ForRun([long]$RunId) {
-    Step ("Waiting for ARM64 validation run {0}" -f $RunId)
-    & gh run watch $RunId --repo $Repo --exit-status | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        & gh run view $RunId --repo $Repo --log-failed | Out-Host
-        throw ("ARM64 validation failed: run {0}." -f $RunId)
-    }
+function Get-ChangedFiles([string]$BaseSha, [string]$HeadSha) {
+    if (-not (Test-Commit $BaseSha)) { return @("__UNKNOWN_BASE__") }
+    return @(& git -C $RepoRoot diff --name-only $BaseSha $HeadSha | ForEach-Object { $_.Trim().Replace('\','/') } | Where-Object { $_ })
 }
 
-function Ensure-ValidatedCurrentMain([string]$Sha) {
-    $runs = @(Get-RunsForCommit $Sha)
-    $success = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "success" } |
-        Sort-Object createdAt -Descending | Select-Object -First 1
-    if ($success) {
-        Step ("Current main already passed ARM64 validation: run {0}" -f $success.databaseId)
-        return
-    }
-
-    $running = $runs | Where-Object { $_.status -ne "completed" } |
-        Sort-Object createdAt -Descending | Select-Object -First 1
-    if ($running) {
-        Wait-ForRun ([long]$running.databaseId)
-        return
-    }
-
-    $before = @($runs | ForEach-Object { [long]$_.databaseId })
-    Step "Starting ARM64 validation for current main"
-    & gh workflow run $Workflow --repo $Repo --ref main | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "Unable to start ARM64 validation workflow." }
-
-    for ($i = 0; $i -lt 45; $i++) {
-        Start-Sleep -Seconds 2
-        $run = (Get-RunsForCommit $Sha) |
-            Where-Object { ([long]$_.databaseId -notin $before) -and $_.event -eq "workflow_dispatch" } |
-            Sort-Object createdAt -Descending | Select-Object -First 1
-        if ($run) {
-            Wait-ForRun ([long]$run.databaseId)
-            return
+function Any([string[]]$Files, [string[]]$Patterns) {
+    if ($Files -contains "__UNKNOWN_BASE__") { return $true }
+    foreach ($file in $Files) {
+        foreach ($pattern in $Patterns) {
+            if ($file -like $pattern) { return $true }
         }
     }
-    throw "ARM64 validation was started but its workflow run could not be found."
+    return $false
 }
 
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH." }
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
-if (-not (Test-Path $Updater -PathType Leaf)) { throw "Updater script is missing: $Updater" }
-if (-not (Test-Path $Guard -PathType Leaf)) { throw "Runtime contract guard is missing: $Guard" }
-if (-not (Test-Path $PowerShellGuard -PathType Leaf)) { throw "PowerShell compatibility guard is missing: $PowerShellGuard" }
+function Ensure-Junction([string]$Link, [string]$Target) {
+    if (-not (Test-Path $Target -PathType Container)) { return }
+    if (Test-Path $Link) { return }
+    New-Item -ItemType Junction -Path $Link -Target $Target | Out-Null
+}
 
-Step "Checking GitHub authentication"
-& gh auth status | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
+function Invoke-LocalPreview([string[]]$Targets, [string]$HeadSha) {
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        throw "cmake was not found in PATH. Install Visual Studio C++/CMake tools first."
+    }
 
-Step "Verifying Windows PowerShell 5.1 entrypoints"
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $PowerShellGuard | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell compatibility guard failed." }
+    if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt") -PathType Leaf)) {
+        Step "Configuring local ARM64 developer build"
+        & cmake -S $RepoRoot -B $BuildDir -A ARM64
+        if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
+    }
 
-Step "Verifying TuringDesk runtime contract"
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Guard | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "TuringDesk runtime contract failed." }
+    foreach ($target in $Targets) {
+        Step ("Incremental build: {0}" -f $target)
+        & cmake --build $BuildDir --config Release --target $target --parallel
+        if ($LASTEXITCODE -ne 0) { throw ("Local ARM64 build failed for {0}: {1}" -f $target, $LASTEXITCODE) }
+    }
 
-Step "Resolving current main"
-$mainSha = Get-MainSha
-Write-Host ("main: {0}" -f $mainSha) -ForegroundColor DarkGray
-Ensure-ValidatedCurrentMain $mainSha
+    if ($Targets -contains "TuringDesk") {
+        $outputDir = Join-Path $BuildDir "src\native\Release"
+        $exe = Join-Path $outputDir "TuringDesk.exe"
+        if (-not (Test-Path $exe -PathType Leaf)) { throw "Developer TuringDesk.exe was not produced: $exe" }
 
-Step "Installing validated TuringDesk package"
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Updater -Repo $Repo | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "TuringDesk installation failed." }
+        foreach ($name in @("Runtime", "Pi", "Goz")) {
+            Ensure-Junction (Join-Path $outputDir $name) (Join-Path $InstalledDir $name)
+        }
 
-Write-Host "`nTuringDesk ARM64 deployment completed successfully." -ForegroundColor Green
-Write-Host ("Validated main: {0}" -f $mainSha) -ForegroundColor DarkGray
+        Step "Restarting developer preview"
+        Get-Process TuringDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Process -FilePath $exe -WorkingDirectory $outputDir
+        Write-Host ("Preview: {0}" -f $exe) -ForegroundColor Green
+        if (-not (Test-Path (Join-Path $outputDir "Pi") -PathType Container)) {
+            Write-Host "Pi Runtime is not installed beside the developer build; UI preview works, Pi calls may be unavailable." -ForegroundColor Yellow
+        }
+    }
+
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+    Set-Content -Path $PreviewMarker -Value $HeadSha -Encoding ASCII
+}
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git was not found in PATH." }
+Set-Location $RepoRoot
+
+$headSha = (& git rev-parse HEAD).Trim()
+if ($Mode -eq "full") {
+    Step "Formal validation/install requested"
+    & cmd.exe /d /c (Join-Path $RepoRoot "UPDATE-TURINGDESK.cmd")
+    exit $LASTEXITCODE
+}
+
+$baseSha = Read-Sha $PreviewMarker
+if (-not (Test-Commit $baseSha)) { $baseSha = Read-Sha $InstalledMarker }
+if (-not (Test-Commit $baseSha)) {
+    $parent = @(& git rev-parse "$headSha^" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $parent.Count -gt 0) { $baseSha = ([string]$parent[0]).Trim() }
+}
+
+$files = @(Get-ChangedFiles $baseSha $headSha)
+Write-Host "Development scope:" -ForegroundColor DarkGray
+$files | ForEach-Object { Write-Host ("  {0}" -f $_) -ForegroundColor DarkGray }
+
+$globalNative = Any $files @("CMakeLists.txt", "src/native/CMakeLists.txt", "src/native/include/*")
+$app = $globalNative -or (Any $files @(
+    "src/native/src/app/*",
+    "src/native/src/ui/search/*",
+    "src/native/src/ui/ai/*",
+    "src/native/src/ui/settings/*",
+    "src/native/src/ai/*",
+    "src/native/src/search/*",
+    "src/native/src/desktop/control/*",
+    "src/native/src/desktop/widgets/WidgetService.cpp",
+    "src/native/src/desktop/widgets/DesktopWidgetStore.cpp",
+    "src/native/src/desktop/wallpaper/WallpaperService.cpp",
+    "src/native/src/desktop/wallpaper/library/*",
+    "src/native/src/desktop/wallpaper/monitor/*",
+    "src/native/src/harness/HarnessProcessManager.cpp",
+    "src/native/src/harness/HarnessSettingsBridge.cpp"))
+$wallpaper = $globalNative -or (Any $files @("src/native/src/desktop/wallpaper/*", "src/native/src/ui/wallpaper/*", "src/native/src/ui/widgets/*", "src/native/src/desktop/shell/*"))
+$harness = $globalNative -or (Any $files @("src/native/src/harness/*"))
+$widgetProbe = $globalNative -or (Any $files @("src/native/src/desktop/widgets/*Acceptance*"))
+
+$targets = @()
+if ($app -or $Mode -eq "preview") { $targets += "TuringDesk" }
+if ($wallpaper) { $targets += "TuringDeskWallpaper" }
+if ($harness) { $targets += "TuringDeskHarness" }
+if ($widgetProbe) { $targets += "TuringDeskWidgetAcceptance" }
+$targets = @($targets | Select-Object -Unique)
+
+if ($targets.Count -eq 0) {
+    Write-Host "`nNo native binary relevant to this development task changed. Nothing to compile." -ForegroundColor Green
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+    Set-Content -Path $PreviewMarker -Value $headSha -Encoding ASCII
+    Write-Host "Use DEPLOY-NATIVE-ARM64.cmd full only for formal package validation/install." -ForegroundColor DarkGray
+    exit 0
+}
+
+Write-Host ("Selected lightweight targets: {0}" -f ($targets -join ", ")) -ForegroundColor Green
+Invoke-LocalPreview $targets $headSha
+Write-Host "`nDeveloper preview completed. No GitHub Actions artifact or updater was used." -ForegroundColor Green

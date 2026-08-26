@@ -96,7 +96,7 @@ fs::path SearchIniPath() {
 void ApplyWindowShape(HWND hwnd, bool expanded) {
     if (!hwnd || !IsWindow(hwnd)) return;
     const int height = expanded ? kExpandedHeight : kCollapsedHeight;
-    HRGN region = CreateRoundRectRgn(0, 0, kWindowWidth + 1, height + 1, 56, 56);
+    HRGN region = CreateRoundRectRgn(0, 0, kWindowWidth + 1, height + 1, kBarHeight + 1, kBarHeight + 1);
     if (!region) return;
     if (!SetWindowRgn(hwnd, region, TRUE)) DeleteObject(region);
 }
@@ -237,14 +237,17 @@ void SearchWindow::ApplyWindows11Style() {
     if (!hwnd_) return;
     const BOOL dark = FALSE;
     DwmSetWindowAttribute(hwnd_, kDwmUseImmersiveDarkMode, &dark, sizeof(dark));
-    const int corner = 2;
+
+    // SearchWindow owns the complete pill silhouette. Do not let DWM paint a rectangular
+    // transient/acrylic sheet behind it: that was the source of the four gray corner fragments.
+    const int corner = 1; // DWMWCP_DONOTROUND; the explicit window region provides the 28px pill.
     DwmSetWindowAttribute(hwnd_, kDwmWindowCornerPreference, &corner, sizeof(corner));
     const COLORREF noBorder = 0xFFFFFFFEu;
     DwmSetWindowAttribute(hwnd_, kDwmBorderColor, &noBorder, sizeof(noBorder));
-    const int backdrop = 3;
+    const int backdrop = 1; // DWMSBT_NONE
     DwmSetWindowAttribute(hwnd_, kDwmSystemBackdropType, &backdrop, sizeof(backdrop));
-    const MARGINS margins{-1, -1, -1, -1};
-    DwmExtendFrameIntoClientArea(hwnd_, &margins);
+    const MARGINS noFrame{0, 0, 0, 0};
+    DwmExtendFrameIntoClientArea(hwnd_, &noFrame);
 }
 
 void SearchWindow::ShowAndFocus() {
@@ -574,7 +577,8 @@ void SearchWindow::Draw() {
     renderTarget_->DrawLine(D2D1::Point2F(static_cast<float>(kDividerX), 15.0f), D2D1::Point2F(static_cast<float>(kDividerX), 41.0f), dividerBrush_.Get(), 1.0f);
     DrawSparkleGlyph(d2dFactory_.Get(), renderTarget_.Get(), secondaryBrush_.Get());
 
-    const D2D1_RECT_F inputRect = D2D1::RectF(static_cast<float>(kEditLeft), 0.0f, static_cast<float>(kEditRight), 56.0f);
+    const float textLeft = static_cast<float>(kEditLeft) + ((currentQuery_.empty() && editFocused_) ? 6.0f : 0.0f);
+    const D2D1_RECT_F inputRect = D2D1::RectF(textLeft, 0.0f, static_cast<float>(kEditRight), 56.0f);
     if (currentQuery_.empty()) {
         static constexpr wchar_t placeholder[] = L"搜索应用、文件或图灵 AI";
         renderTarget_->DrawText(placeholder, static_cast<UINT32>(std::size(placeholder) - 1), inputFormat_.Get(), inputRect, secondaryBrush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -583,16 +587,23 @@ void SearchWindow::Draw() {
     }
 
     if (editFocused_ && caretVisible_) {
-        DWORD selectionStart = 0, selectionEnd = 0;
-        SendMessageW(edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart), reinterpret_cast<LPARAM>(&selectionEnd));
-        const UINT32 caretIndex = std::min<UINT32>(static_cast<UINT32>(selectionEnd), static_cast<UINT32>(currentQuery_.size()));
-        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-        if (SUCCEEDED(writeFactory_->CreateTextLayout(currentQuery_.c_str(), static_cast<UINT32>(currentQuery_.size()), inputFormat_.Get(), static_cast<float>(kEditRight - kEditLeft), 56.0f, layout.GetAddressOf())) && layout) {
-            FLOAT caretX = 0.0f, caretY = 0.0f; DWRITE_HIT_TEST_METRICS metrics{};
-            if (SUCCEEDED(layout->HitTestTextPosition(caretIndex, FALSE, &caretX, &caretY, &metrics))) {
-                const float x = static_cast<float>(kEditLeft) + caretX;
-                const float top = std::max(16.0f, caretY + 17.0f);
-                renderTarget_->DrawLine(D2D1::Point2F(x, top), D2D1::Point2F(x, std::min(40.0f, top + 20.0f)), accentBrush_.Get(), 1.2f);
+        if (currentQuery_.empty()) {
+            renderTarget_->DrawLine(D2D1::Point2F(static_cast<float>(kEditLeft), 18.0f),
+                                    D2D1::Point2F(static_cast<float>(kEditLeft), 38.0f), accentBrush_.Get(), 1.2f);
+        } else {
+            DWORD selectionStart = 0, selectionEnd = 0;
+            SendMessageW(edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart), reinterpret_cast<LPARAM>(&selectionEnd));
+            const UINT32 caretIndex = std::min<UINT32>(static_cast<UINT32>(selectionEnd), static_cast<UINT32>(currentQuery_.size()));
+            Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            if (SUCCEEDED(writeFactory_->CreateTextLayout(currentQuery_.c_str(), static_cast<UINT32>(currentQuery_.size()), inputFormat_.Get(), static_cast<float>(kEditRight - kEditLeft), 56.0f, layout.GetAddressOf())) && layout) {
+                FLOAT caretX = 0.0f, caretY = 0.0f; DWRITE_HIT_TEST_METRICS metrics{};
+                if (SUCCEEDED(layout->HitTestTextPosition(caretIndex, FALSE, &caretX, &caretY, &metrics))) {
+                    const float x = static_cast<float>(kEditLeft) + caretX;
+                    const float top = std::clamp(caretY + 1.0f, 17.0f, 22.0f);
+                    const float glyphHeight = std::clamp(metrics.height - 2.0f, 18.0f, 21.0f);
+                    const float bottom = std::min(39.0f, top + glyphHeight);
+                    renderTarget_->DrawLine(D2D1::Point2F(x, top), D2D1::Point2F(x, bottom), accentBrush_.Get(), 1.2f);
+                }
             }
         }
     }

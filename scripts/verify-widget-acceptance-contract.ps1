@@ -10,13 +10,14 @@ $runner = Join-Path $root 'scripts/run-widget-runtime-acceptance.ps1'
 $confirmer = Join-Path $root 'scripts/confirm-widget-visual-acceptance.ps1'
 $sealer = Join-Path $root 'scripts/seal-widget-acceptance-evidence.ps1'
 $verifier = Join-Path $root 'scripts/verify-widget-acceptance-evidence.ps1'
+$sessionVerifier = Join-Path $root 'scripts/verify-widget-acceptance-session-evidence.ps1'
 $cmake = Join-Path $root 'src/native/CMakeLists.txt'
 $doc = Join-Path $root 'docs/WIDGET_RUNTIME_HEALTH_M3.md'
 $sequenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_SEQUENCE_M3.md'
 $evidenceDoc = Join-Path $root 'docs/WIDGET_ACCEPTANCE_EVIDENCE_M3.md'
 $placementDoc = Join-Path $root 'docs/WIDGET_PLACEMENT_HEALTH_M3.md'
 
-foreach ($path in @($probe, $main, $header, $runner, $confirmer, $sealer, $verifier, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
+foreach ($path in @($probe, $main, $header, $runner, $confirmer, $sealer, $verifier, $sessionVerifier, $cmake, $doc, $sequenceDoc, $evidenceDoc, $placementDoc)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing M3 Widget acceptance contract input: $path" }
 }
 
@@ -47,16 +48,21 @@ foreach ($marker in @('turingdesk.widget-visual-acceptance.v1','Reviewer','Wallp
 }
 
 $sealerText = Get-Content -LiteralPath $sealer -Raw
-foreach ($marker in @("schema = 'turingdesk.widget-acceptance-evidence.v1'",'widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','turingdesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
+foreach ($marker in @("schema = 'turingdesk.widget-acceptance-evidence.v1'",'widget-acceptance-baseline.session','Read-BaselineSessionId','baselineSessionId','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','turingdesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
     if (-not $sealerText.Contains($marker)) { throw "Widget acceptance evidence sealer missing marker: $marker" }
 }
 
 $verifierText = Get-Content -LiteralPath $verifier -Raw
-foreach ($marker in @('humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','turingdesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256','Assert-ObservedProductWindow','turingdesk.widget-window-evidence.v1','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','Settings product-window evidence was not observed after the baseline screenshot','Search product-window evidence was not observed after the Settings phase screenshot')) {
-    if (-not $verifierText.Contains($marker)) { throw "Widget acceptance evidence verifier missing visual/window attestation marker: $marker" }
+foreach ($marker in @('humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','turingdesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256','Assert-ObservedProductWindow','turingdesk.widget-window-evidence.v1','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-baseline.session','baselineSessionId','verify-widget-acceptance-session-evidence.ps1','Settings product-window evidence was not observed after the baseline screenshot','Search product-window evidence was not observed after the Settings phase screenshot')) {
+    if (-not $verifierText.Contains($marker)) { throw "Widget acceptance evidence verifier missing visual/window/session attestation marker: $marker" }
 }
 
-foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText)) {
+$sessionVerifierText = Get-Content -LiteralPath $sessionVerifier -Raw
+foreach ($marker in @('widget-acceptance-baseline.session','baselineStatus','sessionStatus','sessionId','enabledWebCount','runtimeReported','runtimeHealthy','renderingHealthy=true','same Windows session')) {
+    if (-not $sessionVerifierText.Contains($marker)) { throw "Widget acceptance session verifier missing health/session marker: $marker" }
+}
+
+foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText, $sessionVerifierText)) {
     foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
         if ($text.Contains($forbidden)) { throw "M3 acceptance diagnostics must not regain shell HWND ownership: $forbidden" }
     }
@@ -76,7 +82,7 @@ foreach ($marker in @('identity set','Windows session','baselineStatus','session
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 $evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
-foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','turingdesk.widget-acceptance-evidence.v1','turingdesk.widget-visual-acceptance.v1','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observed Settings/Search')) {
+foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','verify-widget-acceptance-session-evidence.ps1','turingdesk.widget-acceptance-evidence.v1','turingdesk.widget-visual-acceptance.v1','widget-acceptance-baseline.session','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary','same Windows session','healthy phase reports','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observed Settings/Search')) {
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 $placementText = Get-Content -LiteralPath $placementDoc -Raw
@@ -84,4 +90,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus observed Settings/Search windows bound between adjacent phase screenshots, same-session ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus sealed same-session healthy phase reports, observed Settings/Search windows bound between adjacent phase screenshots, ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'

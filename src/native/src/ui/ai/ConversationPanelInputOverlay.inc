@@ -6,7 +6,13 @@ namespace {
 constexpr int kConversationInputControlId = 3102;
 constexpr int kConversationAttachControlId = 3191;
 constexpr int kConversationMicControlId = 3192;
+constexpr UINT kConversationPiActivityMessage = WM_APP + 34;
 constexpr wchar_t kConversationInputActionClass[] = L"TuringDesk.Native.ConversationInputAction";
+constexpr wchar_t kConversationCoreProcProperty[] = L"TuringDesk.Conversation.CoreProc";
+
+struct ConversationActivityPayload {
+    PiActivityEvent event;
+};
 
 HFONT gConversationActionFont{};
 
@@ -156,6 +162,100 @@ void EnsureConversationInputOverlay(HINSTANCE instance) {
     const int inputY = inputTop + OverlayPx(panel, 13);
     const int inputWidth = (std::max)(OverlayPx(panel, 120), attachLeft - inputX - OverlayPx(panel, 6));
     MoveWindow(input, inputX, inputY, inputWidth, OverlayPx(panel, 38), TRUE);
+}
+
+void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& event) {
+    // Keep the debug log for diagnostics, but semantic events are now the UI source of truth.
+    state.activityLogOffset = CurrentPiLogSize();
+    switch (event.kind) {
+    case PiActivityKind::Understanding:
+        state.activity.visible = true;
+        state.activity.failed = false;
+        state.activity.title = L"正在理解你的请求";
+        state.activity.detail = L"Pi Agent 正在分析并准备执行";
+        break;
+    case PiActivityKind::ToolStarted:
+        UpdateToolStart(state, event.toolName);
+        return;
+    case PiActivityKind::ToolFinished:
+        UpdateToolEnd(state, event.toolName, event.error);
+        return;
+    case PiActivityKind::Retrying:
+        state.activity.visible = true;
+        state.activity.failed = false;
+        state.activity.title = L"正在重试";
+        state.activity.detail = event.message.empty() ? L"服务暂时没有响应，图灵正在自动恢复" : event.message;
+        break;
+    case PiActivityKind::Recovered:
+        state.activity.visible = true;
+        state.activity.failed = false;
+        state.activity.title = L"连接已恢复";
+        state.activity.detail = L"继续执行你的任务";
+        break;
+    case PiActivityKind::Succeeded:
+        if (!state.activity.steps.empty()) {
+            state.activity.visible = true;
+            state.activity.terminal = true;
+            state.activity.failed = false;
+            state.activity.title = L"任务完成";
+            state.activity.detail = L"所有操作均已反馈";
+        }
+        break;
+    case PiActivityKind::Failed:
+        state.activity.visible = true;
+        state.activity.terminal = true;
+        state.activity.failed = true;
+        state.activity.title = L"任务遇到问题";
+        state.activity.detail = event.message.empty() ? L"图灵未能完成这次任务" : event.message;
+        break;
+    case PiActivityKind::Cancelled:
+        state.activity.visible = true;
+        state.activity.terminal = true;
+        state.activity.failed = true;
+        state.activity.title = L"已停止";
+        state.activity.detail = L"任务已由你取消";
+        break;
+    }
+    InvalidateConversation(state, true);
+}
+
+LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    const auto core = reinterpret_cast<WNDPROC>(GetPropW(hwnd, kConversationCoreProcProperty));
+    if (!core) return DefWindowProcW(hwnd, message, wParam, lParam);
+
+    if (message == kConversationPiActivityMessage) {
+        std::unique_ptr<ConversationActivityPayload> payload(reinterpret_cast<ConversationActivityPayload*>(lParam));
+        auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (payload && state && state->activeRuntime == ActiveRuntime::Pi) ApplySemanticActivity(*state, payload->event);
+        return 0;
+    }
+
+    // The original implementation still owns this timer as a migration fallback. Once the
+    // semantic bridge is installed, suppress log polling so the same tool event is never shown twice.
+    if (message == WM_TIMER && wParam == kActivityTimer) return 0;
+
+    if (message == WM_NCDESTROY) {
+        gPiRuntime.SetActivityCallback({});
+        RemovePropW(hwnd, kConversationCoreProcProperty);
+        return CallWindowProcW(core, hwnd, message, wParam, lParam);
+    }
+
+    return CallWindowProcW(core, hwnd, message, wParam, lParam);
+}
+
+void EnsureConversationActivityBridge(HWND panel) {
+    if (!panel) return;
+    if (!GetPropW(panel, kConversationCoreProcProperty)) {
+        const auto core = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(panel, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&ConversationOverlayPanelProc)));
+        if (core) SetPropW(panel, kConversationCoreProcProperty, reinterpret_cast<HANDLE>(core));
+    }
+
+    gPiRuntime.SetActivityCallback([panel](PiActivityEvent event) {
+        auto payload = std::make_unique<ConversationActivityPayload>();
+        payload->event = std::move(event);
+        if (PostMessageW(panel, kConversationPiActivityMessage, 0, reinterpret_cast<LPARAM>(payload.get()))) payload.release();
+    });
 }
 
 } // namespace

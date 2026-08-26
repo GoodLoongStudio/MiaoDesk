@@ -13,6 +13,8 @@ namespace turingdesk::desktop {
 namespace {
 
 constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
+constexpr DWORD kRuntimeReadyTimeoutMs = 5000;
+constexpr DWORD kRuntimeReadyPollMs = 100;
 
 fs::path ModuleDirectory() {
     std::wstring path(32768, L'\0');
@@ -20,6 +22,15 @@ fs::path ModuleDirectory() {
     if (length == 0 || length >= path.size()) return {};
     path.resize(length);
     return fs::path(path).parent_path();
+}
+
+bool WaitForRuntimeControl() {
+    const ULONGLONG deadline = GetTickCount64() + kRuntimeReadyTimeoutMs;
+    do {
+        if (FindWindowW(kWallpaperControlClass, nullptr)) return true;
+        Sleep(kRuntimeReadyPollMs);
+    } while (GetTickCount64() < deadline);
+    return FindWindowW(kWallpaperControlClass, nullptr) != nullptr;
 }
 
 DesktopControlResult FromWallpaper(WallpaperServiceResult result) {
@@ -44,7 +55,9 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
                                              executable.parent_path().c_str(), SW_SHOWNOACTIVATE);
     if (reinterpret_cast<INT_PTR>(launched) <= 32)
         return {false, L"无法启动桌面运行时。"};
-    return {true, L"桌面运行时已启动。"};
+    if (!WaitForRuntimeControl())
+        return {false, L"桌面运行时进程已启动，但控制窗口在 5 秒内没有就绪。请查看 TuringDesk-Logs。"};
+    return {true, L"桌面运行时已启动并就绪。"};
 }
 
 DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapshot) const {

@@ -37,8 +37,8 @@ foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetPare
 }
 
 $configText = Get-Content -LiteralPath $configContinuity -Raw
-foreach ($marker in @('WidgetService','service.List(&widgets)','widget-acceptance-baseline.config','turingdesk.widget-acceptance-config.v1','widget.monitorId','widget.x','widget.y','widget.width','widget.height','widget.zIndex','widget.enabled','widget.kind','std::bit_cast','BaselineMismatch')) {
-    if (-not $configText.Contains($marker)) { throw "Widget acceptance config continuity missing service-routed placement marker: $marker" }
+foreach ($marker in @('WidgetService','service.List(&widgets)','widget-acceptance-baseline.config','turingdesk.widget-acceptance-config.v2','widget.title','widget.monitorId','widget.x','widget.y','widget.width','widget.height','widget.zIndex','widget.enabled','widget.kind','std::bit_cast','BaselineMismatch')) {
+    if (-not $configText.Contains($marker)) { throw "Widget acceptance config continuity missing service-routed showcase marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore store','GetPrivateProfile','FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
     if ($configText.Contains($forbidden)) { throw "Widget acceptance config continuity regained private store/shell ownership: $forbidden" }
@@ -51,6 +51,8 @@ foreach ($marker in @(
     'CheckWidgetAcceptanceConfigContinuity',
     'if (!baseline)',
     'if (baseline)',
+    'FixedShowcaseReady',
+    'kM3Showcase',
     'PhaseContextReady',
     'ProcessImageMatches',
     'EnumWindows(',
@@ -66,12 +68,13 @@ foreach ($marker in @(
     'environmentReady',
     'controllerReady',
     'navigationReady')) {
-    if (-not $mainText.Contains($marker)) { throw "Widget acceptance executable missing strict runtime/config/context/lifecycle routing: $marker" }
+    if (-not $mainText.Contains($marker)) { throw "Widget acceptance executable missing strict showcase/runtime/config/context/lifecycle routing: $marker" }
 }
 foreach ($forbidden in @('SetParent(','SetWindowPos(','SendMessageTimeoutW(','0x052C','Progman','WorkerW','SHELLDLL_DefView','DesktopWidgetStore store','GetPrivateProfileStringW')) {
     if ($mainText.Contains($forbidden)) { throw "Widget acceptance executable regained Widget store or desktop attachment ownership: $forbidden" }
 }
 $runtimeProbeCall = 'const auto code = turingdesk::desktop::RunWidgetRuntimeAcceptanceProbe('
+$firstShowcaseCheck = $mainText.LastIndexOf('FixedShowcaseReady(&failure)')
 $firstConfigCheck = $mainText.IndexOf('CheckWidgetAcceptanceConfigContinuity')
 $runtimeProbe = $mainText.IndexOf($runtimeProbeCall)
 if ($runtimeProbe -lt 0) {
@@ -79,6 +82,9 @@ if ($runtimeProbe -lt 0) {
 }
 $phaseContextCheck = $mainText.LastIndexOf('PhaseContextReady(phase, &failure)', $runtimeProbe)
 $lifecycleCheck = $mainText.LastIndexOf('StructuredLifecycleReady(&failure)', $runtimeProbe)
+if ($firstShowcaseCheck -lt 0 -or $firstShowcaseCheck -gt $runtimeProbe) {
+    throw 'Fixed three-clock showcase validation must run before the runtime probe can advance the phase sequence.'
+}
 if ($firstConfigCheck -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
     throw 'Non-baseline Widget config continuity must be checked before the runtime probe can advance the phase sequence.'
 }
@@ -89,8 +95,8 @@ if ($lifecycleCheck -lt 0 -or $lifecycleCheck -gt $runtimeProbe) {
     throw 'Strict reported-and-ready WebView2 lifecycle must be checked before the runtime probe can advance the phase sequence.'
 }
 $afterRuntime = $mainText.Substring($runtimeProbe + $runtimeProbeCall.Length)
-if ($afterRuntime.Contains('PhaseContextReady(phase, &failure)') -or $afterRuntime.Contains('StructuredLifecycleReady(&failure)')) {
-    throw 'Fallible product-context/lifecycle gates must not run after the runtime probe has had a chance to advance the phase cursor.'
+if ($afterRuntime.Contains('PhaseContextReady(phase, &failure)') -or $afterRuntime.Contains('StructuredLifecycleReady(&failure)') -or $afterRuntime.Contains('FixedShowcaseReady(&failure)')) {
+    throw 'Fallible showcase/product-context/lifecycle gates must not run after the runtime probe has had a chance to advance the phase cursor.'
 }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
@@ -165,4 +171,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery; Settings/Search acceptance is pinned to the expected visible product class/process in the same session; real acceptance rejects legacy/unreported WebView2 lifecycle; all fallible preconditions remain before durable phase advancement; stable Widget placement configuration is service-routed and sealed by hash/length; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery; the full fixed three-clock showcase and v2 identity/placement configuration are checked before phase advancement; Settings/Search acceptance is pinned to the expected visible product class/process in the same session; real acceptance rejects legacy/unreported WebView2 lifecycle; stable Widget showcase configuration is service-routed and sealed by hash/length; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'

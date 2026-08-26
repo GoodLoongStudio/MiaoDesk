@@ -31,6 +31,7 @@ on:
       - scripts/verify-native-source-layout.ps1
       - scripts/verify-desktop-ui-parity.ps1
       - scripts/verify-widget-product-model.ps1
+      - scripts/verify-search-input-contract.ps1
       - scripts/run-widget-runtime-acceptance.ps1
       - scripts/confirm-widget-visual-acceptance.ps1
       - scripts/seal-widget-acceptance-evidence.ps1
@@ -92,6 +93,10 @@ jobs:
       - name: Verify fixed-format Widget product contract
         shell: powershell
         run: .\scripts\verify-widget-product-model.ps1
+
+      - name: Verify Search input contract
+        shell: powershell
+        run: .\scripts\verify-search-input-contract.ps1
 
       - name: Check RuntimeBundle freshness
         shell: pwsh

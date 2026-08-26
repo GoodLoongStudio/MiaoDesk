@@ -48,6 +48,10 @@ import { spawn } from "node:child_process";
 const HOST = process.env.TURINGDESK_NATIVE_TOOL_HOST ?? "";
 const TOOL_NAMES = [
   "settings_open",
+  "ppt_create",
+  "file_create",
+  "folder_list",
+  "file_open",
   "wallpaper_create_web_package",
   "wallpaper_validate_package",
   "wallpaper_state_get",
@@ -143,6 +147,65 @@ export default function turingDeskNativeTools(pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       return textResult(await runNativeTool("settings_open", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "ppt_create",
+    label: "Create PowerPoint Presentation",
+    description: "Create a real .pptx presentation on the Windows desktop using the installed Microsoft PowerPoint or WPS Presentation COM backend. Use this whenever the user asks to generate a PPT/presentation file, instead of only writing an outline.",
+    parameters: Type.Object({
+      file_name: Type.String({ description: "Output filename; .pptx is added when missing" }),
+      title: Type.String({ description: "Presentation title" }),
+      subtitle: Type.Optional(Type.String({ description: "Optional subtitle for the title slide" })),
+      slides_markdown: Type.String({ description: "Content slides. Start each slide with '# Slide title'; following lines become bullets." }),
+      open_after_create: Type.Optional(Type.Boolean({ description: "Open the generated presentation after saving" })),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("ppt_create", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "file_create",
+    label: "Create User File",
+    description: "Create a UTF-8 text file in Desktop, Documents, or Downloads. Use this deterministic tool for user-requested text/markdown/html/json artifacts in those folders.",
+    parameters: Type.Object({
+      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
+      file_name: Type.String(),
+      content: Type.String(),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("file_create", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "folder_list",
+    label: "List User Folder",
+    description: "List files and folders from Desktop, Documents, or Downloads through TuringDesk's constrained native file surface.",
+    parameters: Type.Object({
+      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("folder_list", params, signal));
+    },
+  });
+
+  pi.registerTool({
+    name: "file_open",
+    label: "Open User File",
+    description: "Open an existing file from Desktop, Documents, or Downloads with its registered Windows application.",
+    parameters: Type.Object({
+      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
+      file_name: Type.String(),
+    }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal) {
+      return textResult(await runNativeTool("file_open", params, signal));
     },
   });
 

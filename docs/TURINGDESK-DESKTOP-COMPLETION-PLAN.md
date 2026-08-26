@@ -1,7 +1,7 @@
 # TuringDesk Desktop Completion Plan
 
 Status: normative execution queue
-Date: 2026-08-25
+Date: 2026-08-26
 Branch policy: formal delivery goes to `main` only
 
 This plan converts the current desktop backlog into a strict completion queue. Work should proceed milestone by milestone instead of expanding multiple unfinished areas in parallel.
@@ -144,6 +144,10 @@ M3 implementation landed so far:
 - `WidgetSurfaceHealth` represents each enabled Web Widget with configured id, isolated PID/process-running state, HWND value/readiness, expected parent validity, `WS_CHILD` validity and current visibility;
 - the preferred `WebDesktopSurfaceChild` publishes EnvironmentReady, ControllerReady and successful NavigationReady as HWND properties; the role property exists before async initialization, so not-ready stages are distinguished from telemetry absence;
 - legacy child surfaces remain explicitly lifecycle-unreported instead of being guessed ready;
+- M3 real-Windows acceptance is stricter than the compatibility health view: every accepted Web Widget must explicitly report Environment/Controller/Navigation telemetry and all three stages must be ready before the durable phase probe runs;
+- Settings acceptance is pinned to visible class `TuringDesk.Native.DesktopLibrary` owned by `TuringDeskWallpaper.exe` in the same Windows session, and Search acceptance is pinned to visible class `TuringDesk.Native.SearchWindow` owned by `TuringDesk.exe` in that session;
+- all extra fallible acceptance gates—placement continuity, product window/process context and strict lifecycle readiness—execute before `RunWidgetRuntimeAcceptanceProbe`, so an overall phase failure cannot occur after the durable phase cursor has already advanced;
+- the M3 build-time contract guard locks those ordering/process/lifecycle invariants and rejects acceptance code regaining Widget-store or desktop-attachment ownership;
 - shared `desktop/shell/DesktopSurfaceTelemetry.cpp` reports read-only z-order validity: icon DefView stays above TuringDesk surfaces and Widget surfaces stay above TuringDesk wallpaper surfaces; it contains no shell mutation APIs;
 - `renderingHealthy` requires OS surface readiness, lifecycle readiness when reported, reported/valid z-order and the compatibility runtime diagnostic;
 - aggregate `runtimeHealthy` requires a one-to-one structured/rendering-healthy surface set for all enabled Web Widgets;
@@ -446,4 +450,4 @@ Only after this flow and the relevant failure/recovery scenarios pass on real Wi
 
 **M3 — Widget visible-runtime implementation and acceptance.**
 
-M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry, combined rendering-health semantics, stable actionable issue codes, production Widget list health/action display, Pi per-surface issue/action reporting through the shared snapshot, observed Settings/Search/Explorer/monitor evidence, same-session and same-binary continuity, and service-routed placement-configuration continuity sealed into the final evidence manifest. The remaining gate is real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance followed by same-session human visual attestation and sealed independent verification. M4 does not begin until that gate is satisfied.
+M1 is closed. M2 implementation is physically centralized in `DesktopShellHost` and the implementation baseline `1ed59a6a9c270408024e7143302a45592d2156a1` passed both x64 and ARM64 Windows validation; its real-Windows wallpaper/Widget/icon layering and recovery acceptance remains an outstanding gate and is explicitly carried into M3 acceptance. M3 now has domain-owned per-surface process/HWND/parent/style/visibility, preferred-child Environment/Controller/Navigation telemetry, shared read-only desktop/shell z-order telemetry, combined rendering-health semantics, stable actionable issue codes, production Widget list health/action display, Pi per-surface issue/action reporting through the shared snapshot, observed Settings/Search/Explorer/monitor evidence, same-session and same-binary continuity, service-routed placement-configuration continuity sealed into the final evidence manifest, Settings/Search acceptance pinned to the expected visible product class/process in the same session, and a strict reported-and-ready lifecycle precondition that is failure-atomic with respect to durable phase advancement. The remaining gate is real ARM64 Widget visibility/icon-layer/Settings/Search/Explorer-restart/monitor-reconnect acceptance followed by same-session human visual attestation and sealed independent verification. M4 does not begin until that gate is satisfied.

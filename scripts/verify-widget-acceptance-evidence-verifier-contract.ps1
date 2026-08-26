@@ -16,6 +16,10 @@ foreach ($marker in @(
     'turingdesk.widget-acceptance-evidence.v1',
     'widget-acceptance-evidence.manifest.json',
     'widget-acceptance-evidence.manifest.sha256',
+    'widget-acceptance-baseline.config',
+    'placementConfig',
+    'placement configuration SHA-256 no longer matches',
+    'placement configuration length no longer matches',
     'widget-acceptance-binary.sha256',
     'acceptanceBinary',
     'TuringDeskWidgetAcceptance.exe',
@@ -41,7 +45,7 @@ foreach ($marker in @(
     'phase evidence chronology is invalid',
     'more than five minutes after its health report')) {
     if (-not $verifierText.Contains($marker)) {
-        throw "M3 evidence verifier missing integrity/chronology/binary marker: $marker"
+        throw "M3 evidence verifier missing integrity/chronology/binary/config marker: $marker"
     }
 }
 foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'EnumWindows(', 'SetParent(', 'SetWindowPos(', 'Progman', 'WorkerW', 'SHELLDLL_DefView')) {
@@ -53,14 +57,18 @@ foreach ($forbidden in @('FindWindowW(', 'FindWindowExW(', 'EnumWindows(', 'SetP
 $sealerText = Get-Content -LiteralPath $sealer -Raw
 foreach ($marker in @(
     'verify-widget-acceptance-evidence.ps1',
+    'widget-acceptance-baseline.config',
+    'placementConfig',
+    "fileName = 'widget-acceptance-baseline.config'",
+    'Placement config SHA-256',
     'widget-acceptance-binary.sha256',
     'acceptanceBinary',
     "fileName = 'TuringDeskWidgetAcceptance.exe'",
     'Acceptance binary SHA-256',
     'Sealed and verified M3 Widget acceptance evidence')) {
     if (-not $sealerText.Contains($marker)) {
-        throw "M3 evidence sealer must bind and self-verify the acceptance binary: $marker"
+        throw "M3 evidence sealer must bind and self-verify placement config and acceptance binary: $marker"
     }
 }
 
-Write-Host 'M3 evidence verifier contract OK: sealed evidence is independently rehashed, acceptance binary identity is bound to the full sequence, phase/recovery artifacts and chronological coherence are checked, and diagnostics do not regain shell ownership.'
+Write-Host 'M3 evidence verifier contract OK: sealed evidence independently binds and rehashes stable Widget placement configuration plus acceptance binary identity, phase/recovery artifacts and chronological coherence are checked, and diagnostics do not regain shell ownership.'

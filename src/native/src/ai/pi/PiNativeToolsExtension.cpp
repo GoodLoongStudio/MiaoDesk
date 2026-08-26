@@ -56,14 +56,12 @@ const TOOL_NAMES = [
   "folder_list",
   "file_open",
   "image_generate",
-  "wallpaper_create_web_package",
   "wallpaper_validate_package",
   "wallpaper_state_get",
-  "wallpaper_apply_web_package",
-  "desktop_widget_create_web",
-  "desktop_widget_update",
-  "desktop_widget_remove",
   "desktop_widget_list",
+  "desktop_preview_widget",
+  "desktop_preview_wallpaper",
+  "desktop_preview_examples",
 ] as const;
 
 function textResult(text: string) {
@@ -72,55 +70,43 @@ function textResult(text: string) {
 
 async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal): Promise<string> {
   if (!HOST) throw new Error("TuringDesk native tool host is unavailable.");
-
   const work = await mkdtemp(join(tmpdir(), "turingdesk-pi-tool-"));
   const input = join(work, "input.json");
   const output = join(work, "output.txt");
-
   try {
     await writeFile(input, JSON.stringify(params ?? {}), "utf8");
-
     await new Promise<void>((resolve, reject) => {
       const child = spawn(HOST, ["--native-tool-worker", tool, input, output], {
         windowsHide: true,
         stdio: "ignore",
       });
-
       let finished = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const abort = () => {
-        try { child.kill(); } catch {}
-        finish(new Error(`TuringDesk native tool cancelled: ${tool}`));
-      };
       const finish = (error?: Error) => {
         if (finished) return;
         finished = true;
         if (timer) clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
-        if (error) reject(error);
-        else resolve();
+        error ? reject(error) : resolve();
+      };
+      const abort = () => {
+        try { child.kill(); } catch {}
+        finish(new Error(`TuringDesk native tool cancelled: ${tool}`));
       };
       timer = setTimeout(() => {
         try { child.kill(); } catch {}
         finish(new Error(`TuringDesk native tool timed out: ${tool}`));
       }, 30000);
-
-      if (signal?.aborted) {
-        abort();
-        return;
-      }
+      if (signal?.aborted) return abort();
       signal?.addEventListener("abort", abort, { once: true });
-      child.once("error", (error) => finish(error));
-      child.once("exit", (code) => {
-        if (code === 0) finish();
-        else finish(new Error(`TuringDesk native tool worker exited with code ${code ?? "unknown"}: ${tool}`));
-      });
+      child.once("error", error => finish(error));
+      child.once("exit", code => code === 0
+        ? finish()
+        : finish(new Error(`TuringDesk native tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
     });
-
     const raw = await readFile(output, "utf8");
     const newline = raw.indexOf("\n");
     if (newline < 1) throw new Error(`TuringDesk native tool returned an invalid result: ${tool}`);
-
     const success = raw.slice(0, newline).trim() === "1";
     const message = raw.slice(newline + 1).trim() ||
       (success ? "TuringDesk native tool completed." : "TuringDesk native tool failed.");
@@ -153,50 +139,27 @@ async function currentTuringDeskBaseUrl(): Promise<string> {
   if (!agentDir) return "";
   try {
     const raw = await readFile(join(agentDir, "models.json"), "utf8");
-    const models = JSON.parse(raw);
-    return String(models?.providers?.turingdesk?.baseUrl ?? "");
-  } catch {
-    return "";
-  }
+    return String(JSON.parse(raw)?.providers?.turingdesk?.baseUrl ?? "");
+  } catch { return ""; }
 }
 
 async function resolveOpenRouterApiKey(): Promise<string> {
   const explicit = process.env.OPENROUTER_API_KEY?.trim();
   if (explicit) return explicit;
-
-  // Only reuse the normal TuringDesk key when the configured provider really is
-  // OpenRouter. Never leak an unrelated provider credential to another service.
   const baseUrl = (await currentTuringDeskBaseUrl()).toLowerCase();
-  if (baseUrl.includes("openrouter.ai")) {
-    return process.env.TURINGDESK_MODEL_API_KEY?.trim() ?? "";
-  }
-  return "";
+  return baseUrl.includes("openrouter.ai")
+    ? process.env.TURINGDESK_MODEL_API_KEY?.trim() ?? ""
+    : "";
 }
 
-async function generateImage(
-  prompt: string,
-  fileName: string,
-  signal?: AbortSignal,
-): Promise<string> {
+async function generateImage(prompt: string, fileName: string, signal?: AbortSignal): Promise<string> {
   const apiKey = await resolveOpenRouterApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "图片生成能力当前未配置：需要 OpenRouter API Key。聊天和其他 Pi 工具仍可正常使用。",
-    );
-  }
-
+  if (!apiKey) throw new Error("图片生成能力当前未配置：需要 OpenRouter API Key。聊天和其他 Pi 工具仍可正常使用。");
   console.error(`[TuringDesk][artifact] image_generate start model=${DEFAULT_IMAGE_MODEL}`);
-
   const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
   const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
   if (!model) throw new Error(`Pi 图片模型不可用：${DEFAULT_IMAGE_MODEL}`);
-
-  const result = await generateImages(
-    model,
-    { input: [{ type: "text", text: prompt }] },
-    { apiKey, signal },
-  );
-
+  const result = await generateImages(model, { input: [{ type: "text", text: prompt }] }, { apiKey, signal });
   if (result.stopReason === "error") {
     const providerText = result.output
       .filter((block: any) => block?.type === "text")
@@ -205,18 +168,15 @@ async function generateImage(
       .join("\n");
     throw new Error(providerText || "Pi 图片生成 Provider 返回失败。");
   }
-
   const image = result.output.find((block: any) => block?.type === "image") as
     | { type: "image"; data: string; mimeType: string }
     | undefined;
   if (!image?.data) throw new Error("Pi 图片生成完成，但 Provider 没有返回图片数据。");
-
   const outputDir = join(process.cwd(), "TuringDesk Images");
   await mkdir(outputDir, { recursive: true });
   const stem = safeFileStem(fileName.replace(/\.[A-Za-z0-9]+$/, ""));
   const output = join(outputDir, stem + extensionForMime(image.mimeType || "image/png"));
   await writeFile(output, Buffer.from(image.data, "base64"));
-
   console.error(`[TuringDesk][artifact] image_generate success path=${output}`);
   return output;
 }
@@ -225,102 +185,55 @@ function activateNativeTools(pi: ExtensionAPI) {
   const active = pi.getActiveTools();
   pi.setActiveTools([...new Set([...active, ...TOOL_NAMES])]);
 }
-
-const normalizedGeometry = {
-  x: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-  y: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-  width: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
-  height: Type.Optional(Type.Number({ minimum: 0.05, maximum: 1 })),
-};
 )PIEXT";
 
 constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default function turingDeskNativeTools(pi: ExtensionAPI) {
-  pi.registerTool({
-    name: "settings_open",
-    label: "Open TuringDesk Settings",
-    description: "Open the native TuringDesk Settings Center. Use this for TuringDesk settings, wallpaper settings, preferences, provider configuration, or advanced settings instead of shell commands.",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("settings_open", params, signal));
-    },
-  });
+  const native = (name: string, label: string, description: string, parameters: any) => {
+    pi.registerTool({
+      name, label, description, parameters,
+      executionMode: "sequential",
+      async execute(_toolCallId, params, signal) {
+        return textResult(await runNativeTool(name, params, signal));
+      },
+    });
+  };
 
-  pi.registerTool({
-    name: "ppt_create",
-    label: "Create PowerPoint Presentation",
-    description: "Create a real .pptx presentation on the Windows desktop using installed Microsoft PowerPoint or WPS Presentation. Use this whenever the user asks for a real PPT/presentation file instead of only writing an outline.",
-    parameters: Type.Object({
-      file_name: Type.String({ description: "Output filename; .pptx is added when missing" }),
-      title: Type.String({ description: "Presentation title" }),
-      subtitle: Type.Optional(Type.String({ description: "Optional subtitle for the title slide" })),
-      slides_markdown: Type.String({ description: "Content slides. Start each slide with '# Slide title'; following lines become bullets." }),
-      open_after_create: Type.Optional(Type.Boolean({ description: "Open the generated presentation after saving" })),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("ppt_create", params, signal));
-    },
-  });
+  native("settings_open", "Open TuringDesk Settings",
+    "Open the native TuringDesk Settings Center. Use this for TuringDesk settings or provider configuration instead of shell commands.",
+    Type.Object({}, { additionalProperties: false }));
 
-  pi.registerTool({
-    name: "file_create",
-    label: "Create User File",
-    description: "Create a UTF-8 text file in Desktop, Documents, or Downloads. Use this deterministic tool for user-requested text/markdown/html/json artifacts in those folders.",
-    parameters: Type.Object({
+  native("ppt_create", "Create PowerPoint Presentation",
+    "Create a real .pptx using installed Microsoft PowerPoint or WPS Presentation.",
+    Type.Object({
+      file_name: Type.String(), title: Type.String(),
+      subtitle: Type.Optional(Type.String()), slides_markdown: Type.String(),
+      open_after_create: Type.Optional(Type.Boolean()),
+    }, { additionalProperties: false }));
+
+  native("file_create", "Create User File", "Create a UTF-8 text file in a constrained user folder.",
+    Type.Object({
+      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
+      file_name: Type.String(), content: Type.String(),
+    }, { additionalProperties: false }));
+  native("folder_list", "List User Folder", "List Desktop, Documents, or Downloads.",
+    Type.Object({ location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]) }, { additionalProperties: false }));
+  native("file_open", "Open User File", "Open an existing file from a constrained user folder.",
+    Type.Object({
       location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
       file_name: Type.String(),
-      content: Type.String(),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("file_create", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "folder_list",
-    label: "List User Folder",
-    description: "List files and folders from Desktop, Documents, or Downloads through TuringDesk's constrained native file surface.",
-    parameters: Type.Object({
-      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("folder_list", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "file_open",
-    label: "Open User File",
-    description: "Open an existing file from Desktop, Documents, or Downloads with its registered Windows application.",
-    parameters: Type.Object({
-      location: Type.Union([Type.Literal("desktop"), Type.Literal("documents"), Type.Literal("downloads")]),
-      file_name: Type.String(),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("file_open", params, signal));
-    },
-  });
+    }, { additionalProperties: false }));
 
   pi.registerTool({
     name: "image_generate",
     label: "Generate Image",
-    description: "Generate a real image file through Pi's image-generation API and save it under the user's desktop. Use this whenever the user asks to create, draw, render, or generate an image. Never claim image creation succeeded unless this tool returns a concrete saved file path.",
+    description: "Generate a standalone image file. For a desktop wallpaper request, prefer desktop_preview_wallpaper so the user sees a safe preview before any desktop change.",
     parameters: Type.Object({
-      prompt: Type.String({ description: "Detailed image-generation prompt" }),
-      file_name: Type.Optional(Type.String({ description: "Desired output filename or stem" })),
+      prompt: Type.String(), file_name: Type.Optional(Type.String()),
     }, { additionalProperties: false }),
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       try {
-        const output = await generateImage(
-          params.prompt,
-          params.file_name ?? `TuringDesk-Image-${Date.now()}`,
-          signal,
-        );
+        const output = await generateImage(params.prompt, params.file_name ?? `TuringDesk-Image-${Date.now()}`, signal);
         return textResult(`图片已生成：${output}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -330,123 +243,47 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     },
   });
 
-  pi.registerTool({
-    name: "wallpaper_create_web_package",
-    label: "Create TuringDesk Wallpaper",
-    description: "Create a validated TuringDesk .tdwall Web wallpaper package on the user's desktop from self-contained HTML/CSS/JS.",
-    parameters: Type.Object({
-      name: Type.String({ description: "Package name; .tdwall is added automatically" }),
-      title: Type.String({ description: "User-facing wallpaper title" }),
-      html: Type.String({ description: "Complete self-contained HTML/CSS/JS wallpaper" }),
-      open_after_create: Type.Optional(Type.Boolean({ description: "Open the generated package after creation" })),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("wallpaper_create_web_package", params, signal));
-    },
-  });
+  native("wallpaper_validate_package", "Validate TuringDesk Wallpaper",
+    "Validate an existing local .tdwall package. This does not apply it.",
+    Type.Object({ path: Type.String() }, { additionalProperties: false }));
+  native("wallpaper_state_get", "Read Desktop State",
+    "Read current TuringDesk desktop state. This is read-only.",
+    Type.Object({}, { additionalProperties: false }));
+  native("desktop_widget_list", "List Desktop Widgets",
+    "List current persistent widgets. This is read-only.",
+    Type.Object({}, { additionalProperties: false }));
 
-  pi.registerTool({
-    name: "wallpaper_validate_package",
-    label: "Validate TuringDesk Wallpaper",
-    description: "Validate an existing TuringDesk .tdwall package directory and report its manifest type and entry point.",
-    parameters: Type.Object({
-      path: Type.String({ description: "Absolute path to the .tdwall package directory" }),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("wallpaper_validate_package", params, signal));
-    },
-  });
+  native("desktop_preview_widget", "Preview Desktop Widget",
+    "Create a sandbox preview of a proposed desktop widget. The AI must provide declarative A2UI JSON only: Card/Text/Button/Weather/List with props and normalized layout. NEVER output HTML, CSS, JavaScript, C++, PowerShell, shell commands, or executable code for this tool. This tool cannot apply the widget; only the user's native Apply button can commit it.",
+    Type.Object({
+      title: Type.String({ description: "User-facing preview title" }),
+      a2ui_json: Type.Optional(Type.String({ description: "Strict A2UI JSON document" })),
+      example_key: Type.Optional(Type.Union([
+        Type.Literal("today_tasks"), Type.Literal("focus_clock"),
+        Type.Literal("weather_glass"), Type.Literal("system_pulse"),
+      ])),
+    }, { additionalProperties: false }));
 
-  pi.registerTool({
-    name: "wallpaper_state_get",
-    label: "Read Desktop State",
-    description: "Read the current TuringDesk wallpaper state and desktop widget count before making desktop changes.",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("wallpaper_state_get", params, signal));
-    },
-  });
+  native("desktop_preview_wallpaper", "Preview Desktop Wallpaper",
+    "Create a sandbox preview of a wallpaper without changing the current desktop. Dynamic wallpapers use application-owned safe presets; image/video can reference an existing local file. Only the user's native Apply button can commit it.",
+    Type.Object({
+      title: Type.String(),
+      mode: Type.Optional(Type.Union([Type.Literal("preset"), Type.Literal("image"), Type.Literal("video")])),
+      source: Type.Optional(Type.String({ description: "Preset key or existing local image/video path" })),
+      example_key: Type.Optional(Type.Union([
+        Type.Literal("aurora_flow"), Type.Literal("neon_flow"), Type.Literal("ocean_glass"),
+      ])),
+    }, { additionalProperties: false }));
 
-  pi.registerTool({
-    name: "wallpaper_apply_web_package",
-    label: "Apply TuringDesk Web Wallpaper",
-    description: "Apply a validated local Web .tdwall package to the current TuringDesk desktop. Use after wallpaper_create_web_package when the user asks to actually change the desktop.",
-    parameters: Type.Object({
-      path: Type.String({ description: "Absolute path to the .tdwall package directory" }),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("wallpaper_apply_web_package", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "desktop_widget_create_web",
-    label: "Create Desktop Widget",
-    description: "Create a persistent TuringDesk desktop widget from self-contained HTML/CSS/JS. Geometry is normalized to the target monitor. Widgets are click-through in the first runtime so they never block desktop icons.",
-    parameters: Type.Object({
-      title: Type.String({ description: "Widget title" }),
-      html: Type.String({ description: "Complete self-contained HTML/CSS/JS for the widget; design it as a compact desktop card" }),
-      monitor_id: Type.Optional(Type.String({ description: "Stable TuringDesk monitor id; omit for primary monitor" })),
-      ...normalizedGeometry,
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("desktop_widget_create_web", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "desktop_widget_update",
-    label: "Adjust Desktop Widget",
-    description: "Move, resize, enable, restyle, or replace the HTML of an existing TuringDesk desktop widget.",
-    parameters: Type.Object({
-      id: Type.String({ description: "Widget id returned by desktop_widget_create_web or desktop_widget_list" }),
-      title: Type.Optional(Type.String()),
-      html: Type.Optional(Type.String({ description: "Replacement self-contained HTML/CSS/JS" })),
-      monitor_id: Type.Optional(Type.String({ description: "Stable monitor id; empty string means primary monitor" })),
-      ...normalizedGeometry,
-      z_index: Type.Optional(Type.Integer({ minimum: -1000, maximum: 1000 })),
-      enabled: Type.Optional(Type.Boolean()),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("desktop_widget_update", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "desktop_widget_remove",
-    label: "Remove Desktop Widget",
-    description: "Remove a TuringDesk desktop widget and its managed HTML package.",
-    parameters: Type.Object({
-      id: Type.String({ description: "Widget id" }),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("desktop_widget_remove", params, signal));
-    },
-  });
-
-  pi.registerTool({
-    name: "desktop_widget_list",
-    label: "List Desktop Widgets",
-    description: "List persistent TuringDesk desktop widgets with ids, monitor targets, enabled state, and normalized geometry.",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      return textResult(await runNativeTool("desktop_widget_list", params, signal));
-    },
-  });
+  native("desktop_preview_examples", "List Desktop Showcase Examples",
+    "List built-in wallpaper and widget examples. Examples use the exact same sandbox and Apply/Reject path as AI-generated content.",
+    Type.Object({}, { additionalProperties: false }));
 
   pi.on("session_start", () => activateNativeTools(pi));
   pi.on("before_agent_start", async (event) => {
     activateNativeTools(pi);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## TuringDesk Artifact Capabilities\n- When the user asks for a real PPT/PowerPoint presentation file, use the ppt_create tool.\n- When the user asks to create, draw, render, or generate an image, use the image_generate tool.\n- Never claim an artifact was created unless the corresponding tool reports success and a concrete output path.\n- If an artifact tool reports that its provider/backend is unavailable, explain that limitation clearly instead of improvising a fake success.`,
+      systemPrompt: `${event.systemPrompt}\n\n## TuringDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change a desktop wallpaper or widget, use desktop_preview_wallpaper or desktop_preview_widget. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Widget generation must be declarative A2UI JSON only. Allowed component types: Card, Text, Button, Weather, List. Do not generate HTML/CSS/JavaScript/C++/PowerShell for widgets.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_glass.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_glass; widgets today_tasks, focus_clock, weather_glass, system_pulse.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
     };
   });
 }
@@ -495,9 +332,7 @@ bool EnsurePiNativeToolsExtension(std::wstring* error) {
         }
     }
 
-    if (!MoveFileExW(
-            temporary.c_str(), target.c_str(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         fs::remove(temporary, ec);
         if (error) *error = L"Unable to install TuringDesk Pi extension.";
         return false;

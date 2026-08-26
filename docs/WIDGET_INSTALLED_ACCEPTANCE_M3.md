@@ -1,7 +1,7 @@
 # M3 installed ARM64 Widget acceptance
 
 Status: active real-Windows acceptance entrypoint
-Date: 2026-08-26
+Date: 2026-08-27
 
 M3 is not complete when the Widget acceptance executable merely builds in CI. The exact validated ARM64 package installed by `UPDATE-TURINGDESK.cmd` must carry the same `TuringDeskWidgetAcceptance.exe` used by the five-phase real-Windows acceptance sequence.
 
@@ -37,11 +37,20 @@ The installed wrapper refuses to collect M3 evidence unless the installation can
 
 This prevents a visually successful acceptance round from being attributed to a different binary or architecture than the exact `main` revision under review.
 
+Before advancing any durable acceptance phase, operators can run a non-destructive readiness check:
+
+```powershell
+.\scripts\run-installed-widget-acceptance.ps1 -VerifyOnly
+```
+
+`-VerifyOnly` performs the installed-package, build-SHA, checkout-HEAD and ARM64 PE checks, then exits before `run-widget-runtime-acceptance.ps1` is invoked. It does not collect phase evidence and does not advance the durable phase cursor. Use it after an update, after switching the checkout, or before restarting a partially completed M3 acceptance session.
+
 ## Operator entrypoint
 
 Run the installed acceptance wrapper from a checkout of the same `main` revision:
 
 ```powershell
+.\scripts\run-installed-widget-acceptance.ps1 -VerifyOnly
 .\scripts\run-installed-widget-acceptance.ps1 -Phase baseline
 .\scripts\run-installed-widget-acceptance.ps1 -Phase settings
 .\scripts\run-installed-widget-acceptance.ps1 -Phase search
@@ -49,7 +58,7 @@ Run the installed acceptance wrapper from a checkout of the same `main` revision
 .\scripts\run-installed-widget-acceptance.ps1 -Phase monitor
 ```
 
-The wrapper resolves `%LOCALAPPDATA%\TuringDesk\NativeTest`, requires the installed `TuringDeskWidgetAcceptance.exe`, verifies the installed validated build marker and ARM64 PE machine, checks checkout/build identity when Git is available, and delegates to `run-widget-runtime-acceptance.ps1`. It does not bypass the existing M3 continuity rules.
+The wrapper resolves `%LOCALAPPDATA%\TuringDesk\NativeTest`, requires the installed `TuringDeskWidgetAcceptance.exe`, verifies the installed validated build marker and ARM64 PE machine, checks checkout/build identity when Git is available, and delegates to `run-widget-runtime-acceptance.ps1` only when a real phase is requested. It does not bypass the existing M3 continuity rules.
 
 The sequence remains strictly:
 
@@ -71,4 +80,4 @@ The installed wrapper does not automate the human portions of M3. A real ARM64 W
 - the five phase screenshots and diagnostics are reviewed by a human in the same Windows session;
 - the evidence package is sealed and independently verified.
 
-Only after those checks pass may the M2/M3 real-Windows acceptance gates be closed and work advance to M4. CI, package creation, and a successful non-interactive self-test are not substitutes for this gate.
+Only after those checks pass may the M2/M3 real-Windows acceptance gates be closed and work advance to M4. CI, package creation, `-VerifyOnly`, and a successful non-interactive self-test are not substitutes for this gate.

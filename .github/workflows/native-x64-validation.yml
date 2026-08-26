@@ -8,6 +8,7 @@ on:
       - src/native/**
       - scripts/verify-l3-runtime-contract.ps1
       - scripts/verify-runtime-log-paths.ps1
+      - scripts/verify-widget-acceptance-contract.ps1
       - scripts/verify-windows-powershell-compat.ps1
       - scripts/deploy-native-arm64.ps1
       - scripts/update-turingdesk-arm64.ps1

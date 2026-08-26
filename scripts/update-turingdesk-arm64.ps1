@@ -11,6 +11,7 @@ $DeployDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
 $DeployParent = Split-Path $DeployDir -Parent
 $JournalPath = Join-Path $DeployParent "NativeTest.update-state.json"
 $MutexName = "Local\TuringDeskArm64Updater"
+$InstalledBuildMarker = Join-Path $DeployDir ".installed-build-sha"
 
 function Step([string]$Text) {
     Write-Host "`n==> $Text" -ForegroundColor Cyan
@@ -131,6 +132,66 @@ function Download-Artifact([long]$RunId, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & gh run download $RunId --repo $Repo --name $ArtifactName --dir $Destination | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Unable to download validated ARM64 artifact." }
+}
+
+function Get-RuntimeBundleKeyFromManifest([object]$Manifest) {
+    if (-not $Manifest) { return $null }
+    try {
+        $parts = @(
+            [string]$Manifest.schema,
+            ([string]$Manifest.architecture).ToLowerInvariant(),
+            ([string]$Manifest.node.sha256).ToLowerInvariant(),
+            ([string]$Manifest.deepseekHarness.sha256).ToLowerInvariant(),
+            ([string]$Manifest.goz.sha256).ToLowerInvariant(),
+            ([string]$Manifest.pi.sha256).ToLowerInvariant()
+        )
+        if ($parts | Where-Object { [string]::IsNullOrWhiteSpace($_) }) { return $null }
+        return ($parts -join "|")
+    } catch { return $null }
+}
+
+function Get-LocalRuntimeBundleKey([string]$Root) {
+    $manifestPath = Join-Path $Root "Runtime\runtime-manifest.json"
+    if (-not (Test-Path $manifestPath -PathType Leaf)) { return $null }
+    try {
+        return Get-RuntimeBundleKeyFromManifest (Get-Content $manifestPath -Raw | ConvertFrom-Json)
+    } catch { return $null }
+}
+
+function Get-RemoteRuntimeBundleKey([string]$BuildSha) {
+    $encoded = Invoke-GhText @(
+        "api", "repos/$Repo/contents/runtime/arm64/runtime-manifest.json?ref=$BuildSha", "--jq", ".content"
+    )
+    if ([string]::IsNullOrWhiteSpace($encoded)) { throw "Unable to read RuntimeBundle manifest for validated build." }
+    try {
+        $clean = $encoded -replace "\s", ""
+        $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($clean))
+        return Get-RuntimeBundleKeyFromManifest ($json | ConvertFrom-Json)
+    } catch {
+        throw ("Unable to decode RuntimeBundle manifest for validated build: {0}" -f $_.Exception.Message)
+    }
+}
+
+function Copy-UnchangedRuntimeBundle([string]$Destination, [string]$BuildSha) {
+    if (-not (Test-Path $DeployDir -PathType Container)) { return $false }
+    foreach ($relative in @("Runtime", "Pi", "Goz")) {
+        if (-not (Test-Path (Join-Path $DeployDir $relative) -PathType Container)) { return $false }
+    }
+
+    $localKey = Get-LocalRuntimeBundleKey $DeployDir
+    if ([string]::IsNullOrWhiteSpace($localKey)) { return $false }
+    $remoteKey = Get-RemoteRuntimeBundleKey $BuildSha
+    if ([string]::IsNullOrWhiteSpace($remoteKey) -or $localKey -ne $remoteKey) {
+        Write-Host "RuntimeBundle changed; refreshing pinned runtime." -ForegroundColor DarkGray
+        return $false
+    }
+
+    Step "Reusing unchanged local ARM64 RuntimeBundle"
+    foreach ($relative in @("Runtime", "Pi", "Goz")) {
+        Copy-Item -LiteralPath (Join-Path $DeployDir $relative) -Destination (Join-Path $Destination $relative) -Recurse -Force
+    }
+    Write-Host "RuntimeBundle unchanged; skipped repository clone and runtime download." -ForegroundColor Green
+    return $true
 }
 
 function Materialize-Runtime([string]$Destination, [string]$BuildSha) {
@@ -342,7 +403,6 @@ try {
     $recoveryPerformed = Recover-InterruptedUpdate
 
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) was not found in PATH." }
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git was not found in PATH." }
 
     Step "Checking GitHub authentication"
     [void](Test-GhAuthentication)
@@ -354,13 +414,24 @@ try {
     $validated = Resolve-ValidatedRun $mainSha
     Write-Host ("validated build: {0} / run {1}" -f $validated.BuildSha, $validated.RunId) -ForegroundColor Green
 
+    if (Test-Path $InstalledBuildMarker -PathType Leaf) {
+        $installedSha = ([string](Get-Content $InstalledBuildMarker -Raw -ErrorAction SilentlyContinue)).Trim()
+        if ($installedSha -eq $validated.BuildSha) {
+            Write-Host "`nTuringDesk is already on the latest validated ARM64 build." -ForegroundColor Green
+            Write-Host ("Installed validated build: {0}" -f $validated.BuildSha) -ForegroundColor Green
+            return
+        }
+    }
+
     $work = Join-Path $env:TEMP ("TuringDesk-Updater-" + [guid]::NewGuid().ToString("N"))
     $artifact = Join-Path $work "artifact"
     $next = Join-Path $DeployParent ("NativeTest.next-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $work, $next, $DeployParent | Out-Null
 
     Download-Artifact $validated.RunId $artifact
-    Materialize-Runtime $next $validated.BuildSha
+    if (-not (Copy-UnchangedRuntimeBundle $next $validated.BuildSha)) {
+        Materialize-Runtime $next $validated.BuildSha
+    }
     Copy-Item (Join-Path $artifact "*") $next -Recurse -Force
     Set-Content (Join-Path $next ".installed-build-sha") -Value $validated.BuildSha -Encoding ASCII
     Test-StagedPackage $next

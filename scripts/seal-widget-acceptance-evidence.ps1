@@ -14,7 +14,9 @@ function Get-RequiredEvidencePaths([string]$DiagnosticsDir) {
         'widget-acceptance-binary.sha256',
         'widget-acceptance-search.explorer-pids',
         'widget-acceptance-explorer.monitor-topology',
-        'widget-acceptance-monitor.topology-transition'
+        'widget-acceptance-monitor.topology-transition',
+        'widget-acceptance-human-visual.json',
+        'widget-acceptance-human-visual.json.sha256'
     )
     foreach ($phase in @('baseline','settings','search','explorer','monitor')) {
         $paths += "widget-acceptance-$phase.txt"
@@ -46,6 +48,39 @@ function Read-KeyValueFile([string]$Path) {
     $map
 }
 
+function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$BinaryCheckpoint) {
+    $path = Join-Path $DiagnosticsDir 'widget-acceptance-human-visual.json'
+    $sealPath = "$path.sha256"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or -not (Test-Path -LiteralPath $sealPath -PathType Leaf)) {
+        throw 'M3 evidence cannot be sealed before explicit human visual acceptance is recorded with scripts/confirm-widget-visual-acceptance.ps1.'
+    }
+    $seal = Read-KeyValueFile -Path $sealPath
+    $actualHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not $seal.ContainsKey('sha256') -or $actualHash -ne ([string]$seal['sha256']).ToLowerInvariant()) {
+        throw 'M3 human visual acceptance attestation hash mismatch.'
+    }
+    $attestation = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1' -or -not $attestation.reviewer) {
+        throw 'M3 human visual acceptance attestation is malformed.'
+    }
+    if (([string]$attestation.acceptanceBinary.sha256).ToLowerInvariant() -ne ([string]$BinaryCheckpoint['sha256']).ToLowerInvariant() -or [int64]$attestation.acceptanceBinary.length -ne [int64]$BinaryCheckpoint['length']) {
+        throw 'M3 human visual acceptance was recorded against a different acceptance binary.'
+    }
+    foreach ($name in @('wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible')) {
+        if (-not [bool]$attestation.confirmations.$name) {
+            throw "M3 human visual acceptance is missing required confirmation: $name"
+        }
+    }
+    foreach ($phase in @('baseline','settings','search','explorer','monitor')) {
+        $png = Join-Path $DiagnosticsDir "widget-acceptance-$phase.png"
+        $actual = (Get-FileHash -LiteralPath $png -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne ([string]$attestation.screenshotSha256.$phase).ToLowerInvariant()) {
+            throw "M3 human visual acceptance references a different screenshot for phase '$phase'."
+        }
+    }
+    $attestation
+}
+
 $diagnostics = Get-DiagnosticsDirectory
 if (-not (Test-Path -LiteralPath $diagnostics -PathType Container)) {
     throw "M3 acceptance diagnostics directory is missing: $diagnostics"
@@ -65,6 +100,7 @@ $binaryCheckpoint = Read-KeyValueFile -Path $binaryCheckpointPath
 if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
     throw 'M3 acceptance binary checkpoint is incomplete; start a new baseline with the intended TuringDeskWidgetAcceptance.exe.'
 }
+$humanAttestation = Assert-HumanVisualAttestation -DiagnosticsDir $diagnostics -BinaryCheckpoint $binaryCheckpoint
 
 $files = @()
 foreach ($path in @(Get-RequiredEvidencePaths -DiagnosticsDir $diagnostics)) {
@@ -90,6 +126,10 @@ $manifest = [ordered]@{
         fileName = 'TuringDeskWidgetAcceptance.exe'
         sha256 = ([string]$binaryCheckpoint['sha256']).ToLowerInvariant()
         length = [int64]$binaryCheckpoint['length']
+    }
+    humanVisualAcceptance = [ordered]@{
+        reviewer = [string]$humanAttestation.reviewer
+        reviewedAtUtc = [string]$humanAttestation.reviewedAtUtc
     }
     baselineWidgetIds = $baselineIds
     machine = [ordered]@{
@@ -123,5 +163,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Sealed and verified M3 Widget acceptance evidence: $manifestPath"
+Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $manifestHash"

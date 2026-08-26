@@ -73,4 +73,16 @@ foreach ($phase in $phaseOrder) {
     }
 }
 
-Write-Host "Verified M3 phase reports are healthy and bound to one Windows session: $baselineSessionId"
+$attestationPath = Join-Path $DiagnosticsDir 'widget-acceptance-human-visual.json'
+if (-not (Test-Path -LiteralPath $attestationPath -PathType Leaf)) {
+    throw 'M3 human visual acceptance attestation is missing.'
+}
+$attestation = Get-Content -LiteralPath $attestationPath -Raw -ErrorAction Stop | ConvertFrom-Json
+if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1') {
+    throw "M3 human visual acceptance schema is unexpected: '$($attestation.schema)'"
+}
+if ([int]$attestation.sessionId -ne $baselineSessionId) {
+    throw "M3 human visual acceptance came from a different Windows session. baselineSession=$baselineSessionId reviewSession=$($attestation.sessionId)"
+}
+
+Write-Host "Verified M3 phase reports and human visual review are healthy and bound to one Windows session: $baselineSessionId"

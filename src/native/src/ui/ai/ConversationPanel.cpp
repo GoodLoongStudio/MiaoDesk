@@ -36,6 +36,12 @@ int TuringDeskSkipLegacyWindowRegion(HWND, HRGN region, BOOL) {
 #undef ShowL3CliWindow
 #undef ShowConversationPanel
 
+// rpcndr.h from the Windows SDK still defines `small` as a legacy IDL macro. It must not
+// leak into modern C++ parameter names in the Direct2D renderer.
+#ifdef small
+#undef small
+#endif
+
 #include "ConversationPanelLayeredSurface.inc"
 #include "ConversationPanelInputOverlay.inc"
 

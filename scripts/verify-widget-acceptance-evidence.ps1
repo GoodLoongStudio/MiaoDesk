@@ -58,6 +58,7 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if ($manifest.schema -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence manifest schema: '$($manifest.schema)'" }
 if ($manifest.sequence -ne 'monitor') { throw "M3 acceptance evidence is not a completed sequence: '$($manifest.sequence)'" }
 if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) { throw 'M3 acceptance evidence manifest contains no files.' }
+if ($null -eq $manifest.placementConfig -or -not $manifest.placementConfig.sha256 -or -not $manifest.placementConfig.length -or $manifest.placementConfig.fileName -ne 'widget-acceptance-baseline.config') { throw 'M3 acceptance evidence manifest is missing the placement configuration identity.' }
 if ($null -eq $manifest.acceptanceBinary -or -not $manifest.acceptanceBinary.sha256 -or -not $manifest.acceptanceBinary.length) { throw 'M3 acceptance evidence manifest is missing the acceptance binary identity.' }
 if ($null -eq $manifest.observedProductWindows -or $manifest.observedProductWindows.settings -ne 'widget-acceptance-settings.window.json' -or $manifest.observedProductWindows.search -ne 'widget-acceptance-search.window.json') { throw 'M3 acceptance evidence manifest is missing observed Settings/Search product-window evidence mapping.' }
 if ($null -eq $manifest.humanVisualAcceptance -or -not $manifest.humanVisualAcceptance.reviewer -or -not $manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 acceptance evidence manifest is missing explicit human visual acceptance.' }
@@ -88,6 +89,14 @@ $baselineSessionText = (Get-Content -LiteralPath (Join-Path $diagnostics $baseli
 $baselineSessionId = 0
 if (-not [int]::TryParse($baselineSessionText, [ref]$baselineSessionId) -or $baselineSessionId -lt 0) { throw "M3 baseline Windows session checkpoint is malformed: '$baselineSessionText'" }
 if ($baselineSessionId -ne [int]$manifest.baselineSessionId -or $baselineSessionId -ne [int]$manifest.machine.sessionId) { throw 'M3 baseline Windows session checkpoint no longer matches the sealed manifest.' }
+
+$placementConfigName = 'widget-acceptance-baseline.config'
+if (-not $seen.ContainsKey($placementConfigName)) { throw "M3 sealed evidence manifest is missing required placement configuration checkpoint: $placementConfigName" }
+$placementConfigPath = Join-Path $diagnostics $placementConfigName
+$placementConfigItem = Get-Item -LiteralPath $placementConfigPath
+$placementConfigHash = (Get-FileHash -LiteralPath $placementConfigPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($placementConfigHash -ne ([string]$manifest.placementConfig.sha256).ToLowerInvariant()) { throw 'M3 placement configuration SHA-256 no longer matches the sealed manifest.' }
+if ([int64]$placementConfigItem.Length -ne [int64]$manifest.placementConfig.length) { throw 'M3 placement configuration length no longer matches the sealed manifest.' }
 
 $sessionVerifier = Join-Path $PSScriptRoot 'verify-widget-acceptance-session-evidence.ps1'
 if (-not (Test-Path -LiteralPath $sessionVerifier -PathType Leaf)) { throw "M3 session/phase health verifier is missing: $sessionVerifier" }
@@ -128,8 +137,8 @@ foreach ($phase in $phaseOrder) {
     $previousCaptureUtc = $capturedAtUtc
 }
 
-foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-baseline.session','widget-acceptance-sequence.phase','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','widget-acceptance-search.explorer-pids','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256')) {
-    if (-not $seen.ContainsKey($required)) { throw "M3 sealed evidence manifest is missing required recovery/visual/window/session evidence: $required" }
+foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-baseline.session','widget-acceptance-baseline.config','widget-acceptance-sequence.phase','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','widget-acceptance-search.explorer-pids','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256')) {
+    if (-not $seen.ContainsKey($required)) { throw "M3 sealed evidence manifest is missing required recovery/visual/window/session/config evidence: $required" }
 }
 
 $expectedSessionId = $baselineSessionId
@@ -163,8 +172,9 @@ $baselineIds = @(Get-Content -LiteralPath (Join-Path $diagnostics 'widget-accept
 $manifestIds = @($manifest.baselineWidgetIds | ForEach-Object { [string]$_ } | Sort-Object -Unique)
 if (($baselineIds -join "`n") -ne ($manifestIds -join "`n")) { throw 'M3 baseline Widget identity set no longer matches the sealed manifest.' }
 
-Write-Host "Verified sealed M3 Widget acceptance evidence integrity, same-session healthy phase reports, observed Settings/Search product windows, binary continuity, phase chronology and explicit human visual acceptance: $manifestPath"
+Write-Host "Verified sealed M3 Widget acceptance evidence integrity, same-session healthy phase reports, stable placement configuration, observed Settings/Search product windows, binary continuity, phase chronology and explicit human visual acceptance: $manifestPath"
 Write-Host "Windows session: $baselineSessionId"
+Write-Host "Placement config SHA-256: $placementConfigHash"
 Write-Host "Human reviewer: $($manifest.humanVisualAcceptance.reviewer)"
 Write-Host "Acceptance binary SHA-256: $($manifest.acceptanceBinary.sha256)"
 Write-Host "Manifest SHA-256: $actualManifestHash"

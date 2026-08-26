@@ -9,7 +9,15 @@ echo ========================================
 echo   TuringDesk ARM64 Development Preview
 echo ========================================
 echo.
+echo GitHub builds the preview; this PC only downloads and runs it.
+echo No local CMake or Visual Studio build tools are required.
+echo.
 
-echo Updating main and starting the lightweight local preview...
-call "%~dp0DEPLOY-NATIVE-ARM64.cmd" preview
-exit /b %ERRORLEVEL%
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\download-arm64-preview.ps1"
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  echo.
+  echo Preview failed with exit code %RC%.
+  pause
+)
+exit /b %RC%

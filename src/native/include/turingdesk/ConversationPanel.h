@@ -7,14 +7,19 @@ namespace turingdesk {
 
 // Canonical AI conversation surface API. The implementation remains Pi-first and
 // retains Direct Model only as the transport fallback; UI presentation does not own runtime policy.
-bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt);
+bool ShowConversationPanel(
+    HINSTANCE instance,
+    HWND owner,
+    L3Agent& agent,
+    const std::wstring& initialPrompt);
 
-inline bool ShowConversationPanel(
+// Temporary source/API compatibility only. New UI code must call ShowConversationPanel.
+inline bool ShowL3CliWindow(
     HINSTANCE instance,
     HWND owner,
     L3Agent& agent,
     const std::wstring& initialPrompt) {
-    return ShowL3CliWindow(instance, owner, agent, initialPrompt);
+    return ShowConversationPanel(instance, owner, agent, initialPrompt);
 }
 
 } // namespace turingdesk

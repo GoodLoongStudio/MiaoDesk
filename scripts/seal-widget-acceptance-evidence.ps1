@@ -12,6 +12,8 @@ function Get-RequiredEvidencePaths([string]$DiagnosticsDir) {
         'widget-acceptance-baseline.ids',
         'widget-acceptance-sequence.phase',
         'widget-acceptance-binary.sha256',
+        'widget-acceptance-settings.window.json',
+        'widget-acceptance-search.window.json',
         'widget-acceptance-search.explorer-pids',
         'widget-acceptance-explorer.monitor-topology',
         'widget-acceptance-monitor.topology-transition',
@@ -126,6 +128,10 @@ $manifest = [ordered]@{
         fileName = 'TuringDeskWidgetAcceptance.exe'
         sha256 = ([string]$binaryCheckpoint['sha256']).ToLowerInvariant()
         length = [int64]$binaryCheckpoint['length']
+    }
+    observedProductWindows = [ordered]@{
+        settings = 'widget-acceptance-settings.window.json'
+        search = 'widget-acceptance-search.window.json'
     }
     humanVisualAcceptance = [ordered]@{
         reviewer = [string]$humanAttestation.reviewer

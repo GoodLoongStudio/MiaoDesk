@@ -30,6 +30,8 @@ After the `monitor` phase succeeds, the operator must explicitly record the huma
 
 This command is intentionally explicit. It records `widget-acceptance-human-visual.json` plus a SHA-256 sidecar using schema `turingdesk.widget-visual-acceptance.v1`. The attestation is bound to the exact acceptance binary and to the SHA-256 of all five phase screenshots, so a review from another run cannot be silently reused.
 
+**Human review** is a distinct gate from runtime health and screenshot hashing. The reviewer must inspect the live interactive desktop and/or the exact five hashed screenshots before recording the attestation; a script-generated or CI-only attestation is not acceptable evidence.
+
 Only after that attestation exists may the evidence package be sealed:
 
 ```powershell

@@ -37,8 +37,8 @@ $mainText = Get-Content -LiteralPath $main -Raw
 if (-not $mainText.Contains('RunWidgetRuntimeAcceptanceProbe') -or -not $mainText.Contains('--phase=')) { throw 'Widget acceptance executable must delegate to the Widget-domain probe and preserve phase labels.' }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
-foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=')) {
-    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence/binary mapping: $marker" }
+foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=','Initialize-ForegroundWindowInterop','GetForegroundWindow','Wait-ForExpectedTuringDeskWindowEvidence','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','turingdesk.widget-window-evidence.v1','widget-acceptance-$AcceptancePhase.window.json')) {
+    if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence/binary/window mapping: $marker" }
 }
 
 $confirmerText = Get-Content -LiteralPath $confirmer -Raw
@@ -47,13 +47,13 @@ foreach ($marker in @('turingdesk.widget-visual-acceptance.v1','Reviewer','Wallp
 }
 
 $sealerText = Get-Content -LiteralPath $sealer -Raw
-foreach ($marker in @("schema = 'turingdesk.widget-acceptance-evidence.v1'",'widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','turingdesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
+foreach ($marker in @("schema = 'turingdesk.widget-acceptance-evidence.v1'",'widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','turingdesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
     if (-not $sealerText.Contains($marker)) { throw "Widget acceptance evidence sealer missing marker: $marker" }
 }
 
 $verifierText = Get-Content -LiteralPath $verifier -Raw
-foreach ($marker in @('humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','turingdesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256')) {
-    if (-not $verifierText.Contains($marker)) { throw "Widget acceptance evidence verifier missing visual attestation marker: $marker" }
+foreach ($marker in @('humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','turingdesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256','Assert-ObservedProductWindow','turingdesk.widget-window-evidence.v1','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows')) {
+    if (-not $verifierText.Contains($marker)) { throw "Widget acceptance evidence verifier missing visual/window attestation marker: $marker" }
 }
 
 foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText)) {
@@ -72,11 +72,11 @@ foreach ($marker in @('TuringDeskWidgetAcceptance.exe','baseline','settings','se
     if (-not $docText.Contains($marker)) { throw "M3 acceptance documentation missing marker: $marker" }
 }
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set','Windows session','baselineStatus','sessionStatus','sessionId','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop')) {
+foreach ($marker in @('identity set','Windows session','baselineStatus','sessionStatus','sessionId','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','observed product window')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 $evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
-foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','turingdesk.widget-acceptance-evidence.v1','turingdesk.widget-visual-acceptance.v1','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary')) {
+foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','turingdesk.widget-acceptance-evidence.v1','turingdesk.widget-visual-acceptance.v1','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observed Settings/Search')) {
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 $placementText = Get-Content -LiteralPath $placementDoc -Raw
@@ -84,4 +84,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery, same-session ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery plus observed Settings/Search windows, same-session ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation before sealing, without regaining HWND/shell ownership.'

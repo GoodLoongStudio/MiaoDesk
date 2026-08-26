@@ -59,6 +59,10 @@ std::string WideToUtf8(std::wstring_view value) {
 
 bool IsAllowedPiNativeTool(std::string_view tool) {
     return tool == "settings_open" ||
+           tool == "ppt_create" ||
+           tool == "file_create" ||
+           tool == "folder_list" ||
+           tool == "file_open" ||
            tool == "wallpaper_create_web_package" ||
            tool == "wallpaper_validate_package" ||
            turingdesk::IsDesktopControlTool(tool);

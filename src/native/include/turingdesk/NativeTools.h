@@ -12,7 +12,8 @@ struct NativeToolResult {
 
 // NativeTools.cpp owns only TuringDesk-specific product capabilities. Generic
 // file/document/shell work belongs to Pi built-in tools, Skills and Extensions,
-// not a parallel bespoke TuringDesk agent stack.
+// not a parallel bespoke TuringDesk agent stack. Generated desktop content is
+// deliberately absent here: AI routes may create only host-owned sandbox previews.
 std::string NativeToolDefinitionsJsonRaw();
 
 #ifdef TURINGDESK_NATIVE_TOOLS_IMPL
@@ -21,8 +22,7 @@ std::string NativeToolDefinitionsJsonRaw();
 inline std::string NativeToolDefinitionsJson() {
     std::string json = R"JSON([
 {"type":"function","name":"settings_open","description":"Open the native TuringDesk Settings Center. Use this only for TuringDesk settings/configuration UI.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-{"type":"function","name":"wallpaper_create_web_package","description":"Create a validated TuringDesk .tdwall Web wallpaper package. This is a TuringDesk-specific package format.","inputSchema":{"type":"object","properties":{"name":{"type":"string"},"title":{"type":"string"},"html":{"type":"string"},"open_after_create":{"type":"boolean"}},"required":["name","title","html"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing TuringDesk .tdwall package directory.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing TuringDesk .tdwall package directory without applying it.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
 ])JSON";
     json.erase(std::remove(json.begin(), json.end(), '\r'), json.end());
     json.erase(std::remove(json.begin(), json.end(), '\n'), json.end());

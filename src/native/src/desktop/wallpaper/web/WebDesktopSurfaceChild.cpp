@@ -343,8 +343,8 @@ private:
             HDC dc = BeginPaint(window, &paint);
             RECT rect{};
             GetClientRect(window, &rect);
-            const int gripW = std::min(48, std::max(24, rect.right - rect.left - 12));
-            const int center = (rect.left + rect.right) / 2;
+            const LONG gripW = std::clamp<LONG>(rect.right - rect.left - 12, 24L, 48L);
+            const LONG center = (rect.left + rect.right) / 2;
             RECT grip{center - gripW / 2, 7, center + gripW / 2, 11};
             HBRUSH brush = CreateSolidBrush(RGB(196, 202, 214));
             HPEN pen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));

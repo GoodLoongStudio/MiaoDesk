@@ -13,6 +13,9 @@ namespace turingdesk::desktop {
 namespace {
 
 constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
+constexpr wchar_t kShellMutex[] = L"Local\\TuringDesk.DesktopShellSupervisor.v1";
+constexpr wchar_t kWebRuntimeMutex[] = L"Local\\TuringDesk.WebWallpaperRuntime.v1";
+constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\TuringDesk.WidgetRuntime.v1";
 constexpr DWORD kRuntimeReadyTimeoutMs = 5000;
 constexpr DWORD kRuntimeReadyPollMs = 100;
 
@@ -24,13 +27,27 @@ fs::path ModuleDirectory() {
     return fs::path(path).parent_path();
 }
 
+bool NamedMutexExists(const wchar_t* name) {
+    HANDLE mutex = OpenMutexW(SYNCHRONIZE, FALSE, name);
+    if (!mutex) return false;
+    CloseHandle(mutex);
+    return true;
+}
+
+bool RuntimeInfrastructureReady() {
+    return FindWindowW(kWallpaperControlClass, nullptr) != nullptr &&
+           NamedMutexExists(kShellMutex) &&
+           NamedMutexExists(kWebRuntimeMutex) &&
+           NamedMutexExists(kWidgetRuntimeMutex);
+}
+
 bool WaitForRuntimeControl() {
     const ULONGLONG deadline = GetTickCount64() + kRuntimeReadyTimeoutMs;
     do {
-        if (FindWindowW(kWallpaperControlClass, nullptr)) return true;
+        if (RuntimeInfrastructureReady()) return true;
         Sleep(kRuntimeReadyPollMs);
     } while (GetTickCount64() < deadline);
-    return FindWindowW(kWallpaperControlClass, nullptr) != nullptr;
+    return RuntimeInfrastructureReady();
 }
 
 DesktopControlResult FromWallpaper(WallpaperServiceResult result) {
@@ -44,20 +61,24 @@ DesktopControlResult FromWidget(WidgetServiceResult result) {
 } // namespace
 
 DesktopControlResult DesktopControlService::EnsureRuntime() const {
-    if (FindWindowW(kWallpaperControlClass, nullptr)) return {true, L"桌面运行时已启动。"};
+    if (RuntimeInfrastructureReady())
+        return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已就绪。"};
 
     const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
     std::error_code ec;
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
         return {false, L"找不到 TuringDeskWallpaper.exe。"};
 
+    // Starting the executable while the native wallpaper singleton is already
+    // alive is intentional: WallpaperEntry treats that invocation as a command
+    // sender but first repairs any missing isolated helper fault domains.
     const HINSTANCE launched = ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr,
                                              executable.parent_path().c_str(), SW_SHOWNOACTIVATE);
     if (reinterpret_cast<INT_PTR>(launched) <= 32)
-        return {false, L"无法启动桌面运行时。"};
+        return {false, L"无法启动或修复桌面运行时。"};
     if (!WaitForRuntimeControl())
-        return {false, L"桌面运行时进程已启动，但控制窗口在 5 秒内没有就绪。请查看 TuringDesk-Logs。"};
-    return {true, L"桌面运行时已启动并就绪。"};
+        return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 TuringDesk-Logs。"};
+    return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已启动并就绪。"};
 }
 
 DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapshot) const {

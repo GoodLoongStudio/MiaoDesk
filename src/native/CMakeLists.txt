@@ -109,6 +109,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/wallpaper/library/WallpaperLibraryWeb.cpp
     src/desktop/wallpaper/library/WallpaperPackage.cpp
     src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp
+    src/ui/settings/DesktopAiSettingsPage.cpp
 
     src/search/AppSearch.cpp
     src/search/GozSearch.cpp

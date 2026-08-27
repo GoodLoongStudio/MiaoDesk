@@ -19,6 +19,7 @@ $files = @{
     WidgetHeader = 'src/native/include/turingdesk/WidgetService.h'
     Widget = 'src/native/src/desktop/widgets/WidgetService.cpp'
     WidgetRuntime = 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp'
+    RuntimeEntry = 'src/native/src/desktop/wallpaper/runtime/WallpaperEntry.cpp'
     SurfaceTelemetryHeader = 'src/native/include/turingdesk/DesktopSurfaceTelemetry.h'
     SurfaceTelemetry = 'src/native/src/desktop/shell/DesktopSurfaceTelemetry.cpp'
     WidgetControllerHeader = 'src/native/include/turingdesk/DesktopWidgetController.h'
@@ -96,11 +97,45 @@ foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'SendMessageTimeoutW(', 
     if ($text.SurfaceTelemetry.Contains($forbidden)) { throw "Read-only DesktopSurfaceTelemetry gained shell mutation ownership: $forbidden" }
 }
 
-foreach ($marker in @('DesiredWidgetRequests(HWND host, std::wstring& fingerprint)', 'widgets.SetPaused(policyPause)', 'web.SetPaused(!IsWindowVisible(host) || policyPause)')) {
-    if (-not $text.WidgetRuntime.Contains($marker)) { throw "Widget runtime independence contract missing marker: $marker" }
+# Web wallpaper and Widget share the implementation class, not a process or a
+# WebView2 process set. The executable entrypoint owns three singleton helper
+# fault domains and the coordinator owns exactly one scoped surface set.
+foreach ($marker in @(
+    'WallpaperWebRuntimeScope::Widgets',
+    'WallpaperWebRuntimeScope::WebWallpaper',
+    'WebWallpaperProcessSet surfaces',
+    'DesiredWidgetRequests(host, fingerprint)',
+    'DesiredRequests(host, state)',
+    'scope == WallpaperWebRuntimeScope::Widgets',
+    'scope == WallpaperWebRuntimeScope::WebWallpaper',
+    'surfaces.SetPaused(policyPause || hiddenWallpaper)')) {
+    if (-not $text.WidgetRuntime.Contains($marker)) { throw "Scoped Web/Widget runtime contract missing marker: $marker" }
 }
-foreach ($forbidden in @('DesiredWidgetRequests(HWND host, const RuntimeState& state', 'widgets.SetPaused(!IsWindowVisible(host)')) {
-    if ($text.WidgetRuntime.Contains($forbidden)) { throw "Widget runtime regained wallpaper visibility/enabled coupling: $forbidden" }
+foreach ($forbidden in @(
+    'WebWallpaperProcessSet web;',
+    'WebWallpaperProcessSet widgets;',
+    'widgets.SetPaused(',
+    'web.SetPaused(',
+    'DesiredWidgetRequests(HWND host, const RuntimeState& state')) {
+    if ($text.WidgetRuntime.Contains($forbidden)) { throw "Web/Widget runtime fault domains were coupled again: $forbidden" }
+}
+foreach ($marker in @(
+    '--desktop-shell-supervisor',
+    '--web-wallpaper-runtime',
+    '--widget-runtime',
+    'TuringDesk.DesktopShellSupervisor.v1',
+    'TuringDesk.WebWallpaperRuntime.v1',
+    'TuringDesk.WidgetRuntime.v1',
+    'RunDesktopShellSupervisor()',
+    'RunScopedWebCoordinator(',
+    'LaunchHelper(helper)')) {
+    if (-not $text.RuntimeEntry.Contains($marker)) { throw "Desktop process fault-domain entry contract missing marker: $marker" }
+}
+if ($text.RuntimeEntry.Contains('TryRunWebWallpaperChild(instance)')) {
+    throw 'Legacy WebWallpaper child routing must not return to the production entrypoint.'
+}
+foreach ($marker in @('RepairMissingHelpers', '--desktop-shell-supervisor', '--web-wallpaper-runtime', '--widget-runtime')) {
+    if (-not $text.Control.Contains($marker)) { throw "Desktop runtime self-heal contract missing marker: $marker" }
 }
 
 foreach ($marker in @('AutomationService::GetState', 'AutomationService::UpsertPlaylist', 'AutomationService::Evaluate', 'AutomationService::ForceNextPlaylist', 'WallpaperAutomationStore store')) {
@@ -203,4 +238,4 @@ foreach ($marker in @('monitorReported', 'monitorValid', 'geometryReported', 'ge
     if (-not $text.PlacementDoc.Contains($marker)) { throw "Widget placement health doc missing marker: $marker" }
 }
 
-Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Widget runtime is wallpaper-state independent, UI remains controller/service-routed, Pi remains snapshot-routed, and runtime diagnostics do not regain private Store/Shell ownership.'
+Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Shell/Web Wallpaper/Widget are separate process fault domains, helpers self-heal independently, UI remains controller/service-routed, and Pi remains snapshot-routed.'

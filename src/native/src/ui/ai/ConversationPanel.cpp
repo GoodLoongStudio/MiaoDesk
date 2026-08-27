@@ -1,5 +1,7 @@
 #include "turingdesk/ConversationPanel.h"
+#include "turingdesk/WindowPlacementStore.h"
 #include "ConversationPanelCompileCompat.h"
+#include <commctrl.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <dwmapi.h>
@@ -61,6 +63,28 @@ namespace turingdesk {
 namespace {
 
 bool gConversationCaretVisible = true;
+constexpr wchar_t kConversationPlacementValue[] = L"PiAgentConversationPanel";
+constexpr UINT_PTR kConversationPlacementSubclassId = 0x5444504Cu; // "TDPL"
+
+LRESULT CALLBACK ConversationPlacementSubclass(
+    HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
+    UINT_PTR, DWORD_PTR) {
+    if (message == WM_EXITSIZEMOVE || (message == WM_SHOWWINDOW && wParam == FALSE)) {
+        window_placement::Save(hwnd, kConversationPlacementValue);
+    }
+    if (message == WM_NCDESTROY) {
+        window_placement::Save(hwnd, kConversationPlacementValue);
+        RemoveWindowSubclass(hwnd, ConversationPlacementSubclass, kConversationPlacementSubclassId);
+    }
+    return DefSubclassProc(hwnd, message, wParam, lParam);
+}
+
+void EnsureConversationPlacementPersistence(HWND window) {
+    if (!window) return;
+    SetWindowSubclass(
+        window, ConversationPlacementSubclass,
+        kConversationPlacementSubclassId, 0);
+}
 
 BOOL TuringDeskPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
@@ -293,12 +317,20 @@ BOOL TuringDeskPresentConversationLayered(
 namespace turingdesk {
 
 bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
+    const bool wasVisible = gConversationState && IsWindow(gConversationState->window) &&
+                            IsWindowVisible(gConversationState->window);
     // Install the visible Direct2D surface and semantic bridge before the first model turn.
     const bool shown = ShowConversationPanelCore(instance, owner, agent, L"");
     if (!shown) return false;
 
     EnsureConversationInputOverlay(instance);
     if (gConversationState && IsWindow(gConversationState->window)) {
+        EnsureConversationPlacementPersistence(gConversationState->window);
+        if (!wasVisible) {
+            window_placement::Restore(
+                gConversationState->window, kConversationPlacementValue,
+                Px(*gConversationState, 420), Px(*gConversationState, 420));
+        }
         EnsureConversationActivityBridge(gConversationState->window);
         EnsureConversationCornerResizeBridge(gConversationState->window);
         EnsureConversationImageIntentBridge(*gConversationState);

@@ -4,9 +4,10 @@
 
 namespace turingdesk::wallpaper {
 
-// New shell-compatible WebView2 child path. Returns -1 when the command line is
-// not a Web desktop-surface invocation so the legacy handler can remain as a
-// temporary fallback during migration.
+// Canonical isolated WebView2 desktop-surface entry point. Wallpaper surfaces
+// remain click-through; Widget surfaces expose the native drag grip implemented
+// by WebDesktopSurfaceChild and persist their normalized desktop position.
+// Returns -1 when the command line is not a Web desktop-surface invocation.
 int TryRunWebDesktopSurfaceChild(HINSTANCE instance);
 
 inline constexpr wchar_t kWebSurfaceEnvironmentReadyProperty[] = L"TuringDesk.WebSurface.EnvironmentReady";

@@ -4,16 +4,19 @@
 #include "turingdesk/DesktopControlService.h"
 #include "turingdesk/WallpaperPackage.h"
 
-#include <WebView2.h>
 #include <windows.h>
+#include <objbase.h>
 #include <shlobj.h>
+#include <WebView2.h>
 #include <wrl.h>
+#include <wrl/client.h>
 #include <wrl/event.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -245,7 +248,7 @@ std::string Base64(std::string_view bytes) {
 std::string FileToDataUri(const fs::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return {};
-    const std::string bytes(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+    const std::string bytes{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
     auto ext = Lower(path.extension().wstring());
     std::string mime = "application/octet-stream";
     if (ext == L".png") mime = "image/png";
@@ -614,9 +617,9 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
     case WM_CREATE:
         if (state) {
             state->applyButton = CreateWindowExW(0, L"BUTTON", L"应用", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-                                                 0, 0, 92, 32, hwnd, reinterpret_cast<HMENU>(kApplyButtonId), GetModuleHandleW(nullptr), nullptr);
+                                                 0, 0, 92, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplyButtonId)), GetModuleHandleW(nullptr), nullptr);
             state->rejectButton = CreateWindowExW(0, L"BUTTON", L"拒绝", WS_CHILD | WS_VISIBLE,
-                                                  0, 0, 92, 32, hwnd, reinterpret_cast<HMENU>(kRejectButtonId), GetModuleHandleW(nullptr), nullptr);
+                                                  0, 0, 92, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRejectButtonId)), GetModuleHandleW(nullptr), nullptr);
             BeginWebView(state);
         }
         return 0;
@@ -729,7 +732,7 @@ bool HandleGeneratedPreviewCopyData(HWND owner, const COPYDATASTRUCT* data) {
     const auto* text = static_cast<const wchar_t*>(data->lpData);
     const std::size_t count = data->cbData / sizeof(wchar_t);
     if (text[count - 1] != L'\0') return false;
-    const fs::path dir(std::wstring(text));
+    const fs::path dir{std::wstring(text)};
     return ShowPreviewWindow(owner, dir);
 }
 

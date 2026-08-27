@@ -1,9 +1,8 @@
 #include "turingdesk/A2UIParser.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cctype>
-#include <cstdlib>
+#include <cmath>
 #include <iomanip>
 #include <initializer_list>
 #include <sstream>
@@ -14,29 +13,29 @@
 namespace turingdesk::a2ui {
 namespace {
 
-enum class Kind { Null, Boolean, Number, String, Array, Object };
+enum class JsonKind { Null, Boolean, Number, String, Array, Object };
 
-struct Value {
-    Kind kind{Kind::Null};
+struct JsonValue {
+    JsonKind kind{JsonKind::Null};
     bool boolean{};
     double number{};
     std::string string;
-    std::vector<Value> array;
-    std::vector<std::pair<std::string, Value>> object;
+    std::vector<JsonValue> array;
+    std::vector<std::pair<std::string, JsonValue>> object;
 };
 
-class Parser {
+class JsonParser {
 public:
-    explicit Parser(std::string_view text) : text_(text) {}
+    explicit JsonParser(std::string_view input) : input_(input) {}
 
-    bool Parse(Value& out, std::wstring& error) {
-        SkipSpace();
-        if (!ParseValue(out)) {
+    bool Parse(JsonValue& value, std::wstring& error) {
+        SkipWhitespace();
+        if (!ParseValue(value)) {
             error = error_.empty() ? L"A2UI JSON 解析失败。" : error_;
             return false;
         }
-        SkipSpace();
-        if (pos_ != text_.size()) {
+        SkipWhitespace();
+        if (position_ != input_.size()) {
             error = L"A2UI JSON 根对象之后存在额外内容。";
             return false;
         }
@@ -44,165 +43,177 @@ public:
     }
 
 private:
-    bool ParseValue(Value& out) {
-        SkipSpace();
-        if (pos_ >= text_.size()) return Fail(L"A2UI JSON 意外结束。");
-        const char ch = text_[pos_];
-        if (ch == '{') return ParseObject(out);
-        if (ch == '[') return ParseArray(out);
+    bool ParseValue(JsonValue& value) {
+        SkipWhitespace();
+        if (position_ >= input_.size()) return Fail(L"A2UI JSON 意外结束。");
+        const char ch = input_[position_];
+        if (ch == '{') return ParseObject(value);
+        if (ch == '[') return ParseArray(value);
         if (ch == '"') {
-            out.kind = Kind::String;
-            return ParseString(out.string);
+            value.kind = JsonKind::String;
+            return ParseString(value.string);
         }
-        if (ch == 't' && Consume("true")) { out.kind = Kind::Boolean; out.boolean = true; return true; }
-        if (ch == 'f' && Consume("false")) { out.kind = Kind::Boolean; out.boolean = false; return true; }
-        if (ch == 'n' && Consume("null")) { out.kind = Kind::Null; return true; }
-        if (ch == '-' || (ch >= '0' && ch <= '9')) return ParseNumber(out);
+        if (Consume("true")) {
+            value.kind = JsonKind::Boolean;
+            value.boolean = true;
+            return true;
+        }
+        if (Consume("false")) {
+            value.kind = JsonKind::Boolean;
+            value.boolean = false;
+            return true;
+        }
+        if (Consume("null")) {
+            value.kind = JsonKind::Null;
+            return true;
+        }
+        if (ch == '-' || std::isdigit(static_cast<unsigned char>(ch))) return ParseNumber(value);
         return Fail(L"A2UI JSON 包含非法值。");
     }
 
-    bool ParseObject(Value& out) {
-        ++pos_;
-        out.kind = Kind::Object;
-        SkipSpace();
+    bool ParseObject(JsonValue& value) {
+        ++position_;
+        value.kind = JsonKind::Object;
+        SkipWhitespace();
         if (Take('}')) return true;
-        while (pos_ < text_.size()) {
+        for (;;) {
             std::string key;
             if (!ParseString(key)) return false;
-            for (const auto& entry : out.object) {
-                if (entry.first == key) return Fail(L"A2UI JSON 不允许重复字段。" );
+            for (const auto& existing : value.object) {
+                if (existing.first == key) return Fail(L"A2UI JSON 不允许重复字段。");
             }
-            SkipSpace();
-            if (!Take(':')) return Fail(L"A2UI JSON 对象字段缺少冒号。" );
-            Value value;
-            if (!ParseValue(value)) return false;
-            out.object.emplace_back(std::move(key), std::move(value));
-            SkipSpace();
+            SkipWhitespace();
+            if (!Take(':')) return Fail(L"A2UI JSON 对象字段缺少冒号。");
+            JsonValue child;
+            if (!ParseValue(child)) return false;
+            value.object.emplace_back(std::move(key), std::move(child));
+            SkipWhitespace();
             if (Take('}')) return true;
-            if (!Take(',')) return Fail(L"A2UI JSON 对象字段之间缺少逗号。" );
-            SkipSpace();
+            if (!Take(',')) return Fail(L"A2UI JSON 对象字段之间缺少逗号。");
+            SkipWhitespace();
         }
-        return Fail(L"A2UI JSON 对象未闭合。" );
     }
 
-    bool ParseArray(Value& out) {
-        ++pos_;
-        out.kind = Kind::Array;
-        SkipSpace();
+    bool ParseArray(JsonValue& value) {
+        ++position_;
+        value.kind = JsonKind::Array;
+        SkipWhitespace();
         if (Take(']')) return true;
-        while (pos_ < text_.size()) {
-            Value value;
-            if (!ParseValue(value)) return false;
-            out.array.push_back(std::move(value));
-            SkipSpace();
+        for (;;) {
+            JsonValue child;
+            if (!ParseValue(child)) return false;
+            value.array.push_back(std::move(child));
+            if (value.array.size() > 64) return Fail(L"A2UI JSON 数组元素过多。");
+            SkipWhitespace();
             if (Take(']')) return true;
-            if (!Take(',')) return Fail(L"A2UI JSON 数组元素之间缺少逗号。" );
-            SkipSpace();
+            if (!Take(',')) return Fail(L"A2UI JSON 数组元素之间缺少逗号。");
+            SkipWhitespace();
         }
-        return Fail(L"A2UI JSON 数组未闭合。" );
     }
 
-    bool ParseString(std::string& out) {
-        SkipSpace();
-        if (!Take('"')) return Fail(L"A2UI JSON 字符串缺少引号。" );
-        while (pos_ < text_.size()) {
-            const unsigned char ch = static_cast<unsigned char>(text_[pos_++]);
+    static void AppendUtf8(std::string& output, unsigned codepoint) {
+        if (codepoint <= 0x7F) {
+            output.push_back(static_cast<char>(codepoint));
+        } else if (codepoint <= 0x7FF) {
+            output.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+            output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+        } else {
+            output.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+            output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+        }
+    }
+
+    bool ParseString(std::string& output) {
+        SkipWhitespace();
+        if (!Take('"')) return Fail(L"A2UI JSON 字符串缺少引号。");
+        while (position_ < input_.size()) {
+            const unsigned char ch = static_cast<unsigned char>(input_[position_++]);
             if (ch == '"') return true;
-            if (ch < 0x20) return Fail(L"A2UI JSON 字符串包含控制字符。" );
+            if (ch < 0x20) return Fail(L"A2UI JSON 字符串包含控制字符。");
             if (ch != '\\') {
-                out.push_back(static_cast<char>(ch));
+                output.push_back(static_cast<char>(ch));
                 continue;
             }
-            if (pos_ >= text_.size()) return Fail(L"A2UI JSON 字符串转义不完整。" );
-            const char escaped = text_[pos_++];
+            if (position_ >= input_.size()) return Fail(L"A2UI JSON 字符串转义不完整。");
+            const char escaped = input_[position_++];
             switch (escaped) {
-            case '"': out.push_back('"'); break;
-            case '\\': out.push_back('\\'); break;
-            case '/': out.push_back('/'); break;
-            case 'b': out.push_back('\b'); break;
-            case 'f': out.push_back('\f'); break;
-            case 'n': out.push_back('\n'); break;
-            case 'r': out.push_back('\r'); break;
-            case 't': out.push_back('\t'); break;
+            case '"': output.push_back('"'); break;
+            case '\\': output.push_back('\\'); break;
+            case '/': output.push_back('/'); break;
+            case 'b': output.push_back('\b'); break;
+            case 'f': output.push_back('\f'); break;
+            case 'n': output.push_back('\n'); break;
+            case 'r': output.push_back('\r'); break;
+            case 't': output.push_back('\t'); break;
             case 'u': {
-                if (pos_ + 4 > text_.size()) return Fail(L"A2UI JSON Unicode 转义不完整。" );
-                unsigned code = 0;
+                if (position_ + 4 > input_.size()) return Fail(L"A2UI JSON Unicode 转义不完整。");
+                unsigned codepoint = 0;
                 for (int i = 0; i < 4; ++i) {
-                    const char hex = text_[pos_++];
-                    code <<= 4;
-                    if (hex >= '0' && hex <= '9') code += static_cast<unsigned>(hex - '0');
-                    else if (hex >= 'a' && hex <= 'f') code += static_cast<unsigned>(hex - 'a' + 10);
-                    else if (hex >= 'A' && hex <= 'F') code += static_cast<unsigned>(hex - 'A' + 10);
-                    else return Fail(L"A2UI JSON Unicode 转义非法。" );
+                    const char digit = input_[position_++];
+                    codepoint <<= 4;
+                    if (digit >= '0' && digit <= '9') codepoint += static_cast<unsigned>(digit - '0');
+                    else if (digit >= 'a' && digit <= 'f') codepoint += static_cast<unsigned>(digit - 'a' + 10);
+                    else if (digit >= 'A' && digit <= 'F') codepoint += static_cast<unsigned>(digit - 'A' + 10);
+                    else return Fail(L"A2UI JSON Unicode 转义非法。");
                 }
-                AppendUtf8(out, code);
+                AppendUtf8(output, codepoint);
                 break;
             }
-            default: return Fail(L"A2UI JSON 包含不支持的字符串转义。" );
+            default:
+                return Fail(L"A2UI JSON 包含不支持的字符串转义。");
             }
         }
-        return Fail(L"A2UI JSON 字符串未闭合。" );
+        return Fail(L"A2UI JSON 字符串未闭合。");
     }
 
-    bool ParseNumber(Value& out) {
-        const std::size_t start = pos_;
-        if (text_[pos_] == '-') ++pos_;
-        if (pos_ >= text_.size()) return Fail(L"A2UI JSON 数字不完整。" );
-        if (text_[pos_] == '0') {
-            ++pos_;
+    bool ParseNumber(JsonValue& value) {
+        const std::size_t start = position_;
+        if (input_[position_] == '-') ++position_;
+        if (position_ >= input_.size()) return Fail(L"A2UI JSON 数字不完整。");
+        if (input_[position_] == '0') {
+            ++position_;
         } else {
-            if (!std::isdigit(static_cast<unsigned char>(text_[pos_]))) return Fail(L"A2UI JSON 数字非法。" );
-            while (pos_ < text_.size() && std::isdigit(static_cast<unsigned char>(text_[pos_]))) ++pos_;
+            if (!std::isdigit(static_cast<unsigned char>(input_[position_]))) return Fail(L"A2UI JSON 数字非法。");
+            while (position_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[position_]))) ++position_;
         }
-        if (pos_ < text_.size() && text_[pos_] == '.') {
-            ++pos_;
-            if (pos_ >= text_.size() || !std::isdigit(static_cast<unsigned char>(text_[pos_]))) return Fail(L"A2UI JSON 小数非法。" );
-            while (pos_ < text_.size() && std::isdigit(static_cast<unsigned char>(text_[pos_]))) ++pos_;
+        if (position_ < input_.size() && input_[position_] == '.') {
+            ++position_;
+            if (position_ >= input_.size() || !std::isdigit(static_cast<unsigned char>(input_[position_])))
+                return Fail(L"A2UI JSON 小数非法。");
+            while (position_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[position_]))) ++position_;
         }
-        if (pos_ < text_.size() && (text_[pos_] == 'e' || text_[pos_] == 'E')) {
-            ++pos_;
-            if (pos_ < text_.size() && (text_[pos_] == '+' || text_[pos_] == '-')) ++pos_;
-            if (pos_ >= text_.size() || !std::isdigit(static_cast<unsigned char>(text_[pos_]))) return Fail(L"A2UI JSON 指数非法。" );
-            while (pos_ < text_.size() && std::isdigit(static_cast<unsigned char>(text_[pos_]))) ++pos_;
+        if (position_ < input_.size() && (input_[position_] == 'e' || input_[position_] == 'E')) {
+            ++position_;
+            if (position_ < input_.size() && (input_[position_] == '+' || input_[position_] == '-')) ++position_;
+            if (position_ >= input_.size() || !std::isdigit(static_cast<unsigned char>(input_[position_])))
+                return Fail(L"A2UI JSON 指数非法。");
+            while (position_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[position_]))) ++position_;
         }
         try {
-            const std::string token(text_.substr(start, pos_ - start));
-            const double value = std::stod(token);
-            if (!std::isfinite(value)) return Fail(L"A2UI JSON 不允许 NaN/Infinity。" );
-            out.kind = Kind::Number;
-            out.number = value;
+            value.kind = JsonKind::Number;
+            value.number = std::stod(std::string(input_.substr(start, position_ - start)));
+            if (!std::isfinite(value.number)) return Fail(L"A2UI JSON 不允许 NaN/Infinity。");
             return true;
         } catch (...) {
-            return Fail(L"A2UI JSON 数字解析失败。" );
-        }
-    }
-
-    static void AppendUtf8(std::string& out, unsigned cp) {
-        if (cp <= 0x7f) out.push_back(static_cast<char>(cp));
-        else if (cp <= 0x7ff) {
-            out.push_back(static_cast<char>(0xc0 | (cp >> 6)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-        } else {
-            out.push_back(static_cast<char>(0xe0 | (cp >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
+            return Fail(L"A2UI JSON 数字解析失败。");
         }
     }
 
     bool Consume(std::string_view token) {
-        if (text_.substr(pos_, token.size()) != token) return false;
-        pos_ += token.size();
+        if (input_.substr(position_, token.size()) != token) return false;
+        position_ += token.size();
         return true;
     }
 
-    bool Take(char ch) {
-        if (pos_ >= text_.size() || text_[pos_] != ch) return false;
-        ++pos_;
+    bool Take(char expected) {
+        if (position_ >= input_.size() || input_[position_] != expected) return false;
+        ++position_;
         return true;
     }
 
-    void SkipSpace() {
-        while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) ++pos_;
+    void SkipWhitespace() {
+        while (position_ < input_.size() && std::isspace(static_cast<unsigned char>(input_[position_]))) ++position_;
     }
 
     bool Fail(std::wstring message) {
@@ -210,180 +221,230 @@ private:
         return false;
     }
 
-    std::string_view text_;
-    std::size_t pos_{};
+    std::string_view input_;
+    std::size_t position_{};
     std::wstring error_;
 };
 
-const Value* Member(const Value& object, std::string_view name) {
-    if (object.kind != Kind::Object) return nullptr;
-    for (const auto& entry : object.object) if (entry.first == name) return &entry.second;
+const JsonValue* Member(const JsonValue& object, std::string_view key) {
+    if (object.kind != JsonKind::Object) return nullptr;
+    for (const auto& [name, value] : object.object) if (name == key) return &value;
     return nullptr;
 }
 
-bool HasOnly(const Value& object, std::initializer_list<std::string_view> names, std::wstring& error) {
-    if (object.kind != Kind::Object) { error = L"A2UI 节点必须是对象。"; return false; }
-    for (const auto& entry : object.object) {
-        bool allowed = false;
-        for (const auto name : names) if (entry.first == name) { allowed = true; break; }
-        if (!allowed) {
+bool HasOnly(const JsonValue& object, std::initializer_list<std::string_view> allowed, std::wstring& error) {
+    if (object.kind != JsonKind::Object) {
+        error = L"A2UI 节点必须是对象。";
+        return false;
+    }
+    for (const auto& [name, value] : object.object) {
+        (void)value;
+        if (std::find(allowed.begin(), allowed.end(), name) == allowed.end()) {
             error = L"A2UI 包含未允许字段：";
-            error.append(entry.first.begin(), entry.first.end());
+            error.append(name.begin(), name.end());
             return false;
         }
     }
     return true;
 }
 
-bool StringIn(const Value* value, std::initializer_list<std::string_view> choices) {
-    if (!value || value->kind != Kind::String) return false;
-    for (auto choice : choices) if (value->string == choice) return true;
-    return false;
+bool StringIs(const JsonValue* value, std::initializer_list<std::string_view> choices) {
+    if (!value || value->kind != JsonKind::String) return false;
+    return std::find(choices.begin(), choices.end(), value->string) != choices.end();
 }
 
-bool BoundedString(const Value* value, std::size_t minLength, std::size_t maxLength, std::wstring& error) {
-    if (!value || value->kind != Kind::String) { error = L"A2UI 字段必须是字符串。"; return false; }
-    if (value->string.size() < minLength || value->string.size() > maxLength) { error = L"A2UI 字符串长度超出限制。"; return false; }
-    return true;
-}
-
-bool BoundedNumber(const Value* value, double low, double high, std::wstring& error) {
-    if (!value || value->kind != Kind::Number) { error = L"A2UI 字段必须是数字。"; return false; }
-    if (value->number < low || value->number > high) { error = L"A2UI 数值超出允许范围。"; return false; }
-    return true;
-}
-
-bool IsColor(const Value* value, std::wstring& error) {
-    if (!value) return true;
-    if (value->kind != Kind::String) { error = L"A2UI 颜色必须是字符串。"; return false; }
-    const auto& text = value->string;
-    if (!(text.size() == 7 || text.size() == 9) || text.front() != '#') { error = L"A2UI 颜色必须使用 #RRGGBB 或 #RRGGBBAA。"; return false; }
-    for (std::size_t i = 1; i < text.size(); ++i) if (!std::isxdigit(static_cast<unsigned char>(text[i]))) { error = L"A2UI 颜色包含非法字符。"; return false; }
-    return true;
-}
-
-bool ValidateLayout(const Value* layout, std::wstring& error) {
-    if (!layout || !HasOnly(*layout, {"x","y","width","height","horizontal","vertical"}, error)) return false;
-    if (!BoundedNumber(Member(*layout, "x"), 0, 1, error) ||
-        !BoundedNumber(Member(*layout, "y"), 0, 1, error) ||
-        !BoundedNumber(Member(*layout, "width"), 0.05, 1, error) ||
-        !BoundedNumber(Member(*layout, "height"), 0.05, 1, error)) return false;
-    if (const auto* h = Member(*layout, "horizontal"); h && !StringIn(h, {"start","center","end","stretch"})) { error = L"A2UI horizontal 非法。"; return false; }
-    if (const auto* v = Member(*layout, "vertical"); v && !StringIn(v, {"start","center","end","stretch"})) { error = L"A2UI vertical 非法。"; return false; }
-    return true;
-}
-
-bool ValidateCommonStyle(const Value& props, std::wstring& error) {
-    if (!IsColor(Member(props, "background"), error) || !IsColor(Member(props, "foreground"), error)) return false;
-    if (const auto* v = Member(props, "opacity"); v && !BoundedNumber(v, 0, 1, error)) return false;
-    if (const auto* v = Member(props, "cornerRadius"); v && !BoundedNumber(v, 0, 32, error)) return false;
-    if (const auto* v = Member(props, "padding"); v && !BoundedNumber(v, 0, 32, error)) return false;
-    if (const auto* v = Member(props, "fontSize"); v && !BoundedNumber(v, 10, 48, error)) return false;
-    if (const auto* v = Member(props, "fontWeight"); v && !StringIn(v, {"normal","medium","semibold","bold"})) { error = L"A2UI fontWeight 非法。"; return false; }
-    return true;
-}
-
-bool ValidateNode(const Value& node, int depth, int& nodeCount, std::wstring& error) {
-    if (depth > 4) { error = L"A2UI 嵌套层级超过 4。"; return false; }
-    if (++nodeCount > 32) { error = L"A2UI 组件数量超过 32。"; return false; }
-    if (!HasOnly(node, {"type","props","layout"}, error)) return false;
-    const auto* type = Member(node, "type");
-    const auto* props = Member(node, "props");
-    const auto* layout = Member(node, "layout");
-    if (!type || type->kind != Kind::String || !props || props->kind != Kind::Object || !ValidateLayout(layout, error)) {
-        if (error.empty()) error = L"A2UI 节点缺少 type/props/layout。";
+bool ValidateString(const JsonValue* value, std::size_t minLength, std::size_t maxLength, std::wstring& error) {
+    if (!value || value->kind != JsonKind::String) {
+        error = L"A2UI 字段必须是字符串。";
         return false;
     }
-    if (!ValidateCommonStyle(*props, error)) return false;
+    if (value->string.size() < minLength || value->string.size() > maxLength) {
+        error = L"A2UI 字符串长度超出限制。";
+        return false;
+    }
+    return true;
+}
 
-    constexpr std::initializer_list<std::string_view> cardFields = {
-        "title","subtitle","children","background","foreground","opacity","cornerRadius","padding","fontSize","fontWeight"};
-    constexpr std::initializer_list<std::string_view> textFields = {
-        "text","background","foreground","opacity","cornerRadius","padding","fontSize","fontWeight"};
-    constexpr std::initializer_list<std::string_view> buttonFields = {
-        "text","action","background","foreground","opacity","cornerRadius","padding","fontSize","fontWeight"};
-    constexpr std::initializer_list<std::string_view> weatherFields = {
-        "location","unit","showForecast","background","foreground","opacity","cornerRadius","padding","fontSize","fontWeight"};
-    constexpr std::initializer_list<std::string_view> listFields = {
-        "items","ordered","background","foreground","opacity","cornerRadius","padding","fontSize","fontWeight"};
+bool ValidateNumber(const JsonValue* value, double minimum, double maximum, std::wstring& error) {
+    if (!value || value->kind != JsonKind::Number || value->number < minimum || value->number > maximum) {
+        error = L"A2UI 数值缺失或超出允许范围。";
+        return false;
+    }
+    return true;
+}
+
+bool ValidateColor(const JsonValue* value, std::wstring& error) {
+    if (!value) return true;
+    if (value->kind != JsonKind::String) {
+        error = L"A2UI 颜色必须是字符串。";
+        return false;
+    }
+    const auto& color = value->string;
+    if ((color.size() != 7 && color.size() != 9) || color.front() != '#') {
+        error = L"A2UI 颜色必须使用 #RRGGBB 或 #RRGGBBAA。";
+        return false;
+    }
+    for (std::size_t i = 1; i < color.size(); ++i) {
+        if (!std::isxdigit(static_cast<unsigned char>(color[i]))) {
+            error = L"A2UI 颜色包含非法字符。";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ValidateLayout(const JsonValue* layout, std::wstring& error) {
+    if (!layout || !HasOnly(*layout, {"x", "y", "width", "height", "horizontal", "vertical"}, error)) return false;
+    if (!ValidateNumber(Member(*layout, "x"), 0.0, 1.0, error) ||
+        !ValidateNumber(Member(*layout, "y"), 0.0, 1.0, error) ||
+        !ValidateNumber(Member(*layout, "width"), 0.05, 1.0, error) ||
+        !ValidateNumber(Member(*layout, "height"), 0.05, 1.0, error)) return false;
+    if (const auto* horizontal = Member(*layout, "horizontal"); horizontal &&
+        !StringIs(horizontal, {"start", "center", "end", "stretch"})) {
+        error = L"A2UI horizontal 非法。";
+        return false;
+    }
+    if (const auto* vertical = Member(*layout, "vertical"); vertical &&
+        !StringIs(vertical, {"start", "center", "end", "stretch"})) {
+        error = L"A2UI vertical 非法。";
+        return false;
+    }
+    return true;
+}
+
+bool ValidateCommonStyle(const JsonValue& props, std::wstring& error) {
+    if (!ValidateColor(Member(props, "background"), error) || !ValidateColor(Member(props, "foreground"), error)) return false;
+    if (const auto* value = Member(props, "opacity"); value && !ValidateNumber(value, 0.0, 1.0, error)) return false;
+    if (const auto* value = Member(props, "cornerRadius"); value && !ValidateNumber(value, 0.0, 32.0, error)) return false;
+    if (const auto* value = Member(props, "padding"); value && !ValidateNumber(value, 0.0, 32.0, error)) return false;
+    if (const auto* value = Member(props, "fontSize"); value && !ValidateNumber(value, 10.0, 48.0, error)) return false;
+    if (const auto* value = Member(props, "fontWeight"); value &&
+        !StringIs(value, {"normal", "medium", "semibold", "bold"})) {
+        error = L"A2UI fontWeight 非法。";
+        return false;
+    }
+    return true;
+}
+
+bool ValidateNode(const JsonValue& node, int depth, int& count, std::wstring& error) {
+    if (depth > 4) {
+        error = L"A2UI 嵌套层级超过 4。";
+        return false;
+    }
+    if (++count > 32) {
+        error = L"A2UI 组件数量超过 32。";
+        return false;
+    }
+    if (!HasOnly(node, {"type", "props", "layout"}, error)) return false;
+
+    const auto* type = Member(node, "type");
+    const auto* props = Member(node, "props");
+    if (!type || type->kind != JsonKind::String || !props || props->kind != JsonKind::Object ||
+        !ValidateLayout(Member(node, "layout"), error) || !ValidateCommonStyle(*props, error)) {
+        if (error.empty()) error = L"A2UI 节点缺少合法的 type / props / layout。";
+        return false;
+    }
 
     if (type->string == "Card") {
-        if (!HasOnly(*props, cardFields, error)) return false;
-        if (const auto* title = Member(*props, "title"); title && !BoundedString(title, 0, 120, error)) return false;
-        if (const auto* subtitle = Member(*props, "subtitle"); subtitle && !BoundedString(subtitle, 0, 240, error)) return false;
+        if (!HasOnly(*props, {"title", "subtitle", "children", "background", "foreground", "opacity", "cornerRadius", "padding", "fontSize", "fontWeight"}, error)) return false;
+        if (const auto* title = Member(*props, "title"); title && !ValidateString(title, 0, 120, error)) return false;
+        if (const auto* subtitle = Member(*props, "subtitle"); subtitle && !ValidateString(subtitle, 0, 240, error)) return false;
         if (const auto* children = Member(*props, "children")) {
-            if (children->kind != Kind::Array || children->array.size() > 16) { error = L"A2UI Card.children 必须是不超过 16 项的数组。"; return false; }
-            for (const auto& child : children->array) if (!ValidateNode(child, depth + 1, nodeCount, error)) return false;
+            if (children->kind != JsonKind::Array || children->array.size() > 16) {
+                error = L"A2UI Card.children 必须是不超过 16 项的数组。";
+                return false;
+            }
+            for (const auto& child : children->array) if (!ValidateNode(child, depth + 1, count, error)) return false;
         }
         return true;
     }
     if (type->string == "Text") {
-        if (!HasOnly(*props, textFields, error)) return false;
-        return BoundedString(Member(*props, "text"), 1, 1000, error);
+        if (!HasOnly(*props, {"text", "background", "foreground", "opacity", "cornerRadius", "padding", "fontSize", "fontWeight"}, error)) return false;
+        return ValidateString(Member(*props, "text"), 1, 1000, error);
     }
     if (type->string == "Button") {
-        if (!HasOnly(*props, buttonFields, error) || !BoundedString(Member(*props, "text"), 1, 80, error)) return false;
-        if (const auto* action = Member(*props, "action"); action && !StringIn(action, {"none"})) { error = L"AI 生成的 Button 不允许执行宿主动作。"; return false; }
+        if (!HasOnly(*props, {"text", "action", "background", "foreground", "opacity", "cornerRadius", "padding", "fontSize", "fontWeight"}, error) ||
+            !ValidateString(Member(*props, "text"), 1, 80, error)) return false;
+        if (const auto* action = Member(*props, "action"); action && !StringIs(action, {"none"})) {
+            error = L"AI 生成的 Button 不允许执行宿主动作。";
+            return false;
+        }
         return true;
     }
     if (type->string == "Weather") {
-        if (!HasOnly(*props, weatherFields, error) || !BoundedString(Member(*props, "location"), 1, 120, error)) return false;
-        if (!StringIn(Member(*props, "unit"), {"celsius","fahrenheit"})) { error = L"A2UI Weather.unit 非法。"; return false; }
-        if (const auto* forecast = Member(*props, "showForecast"); forecast && forecast->kind != Kind::Boolean) { error = L"A2UI showForecast 必须是布尔值。"; return false; }
+        if (!HasOnly(*props, {"location", "unit", "showForecast", "background", "foreground", "opacity", "cornerRadius", "padding", "fontSize", "fontWeight"}, error) ||
+            !ValidateString(Member(*props, "location"), 1, 120, error) ||
+            !StringIs(Member(*props, "unit"), {"celsius", "fahrenheit"})) {
+            if (error.empty()) error = L"A2UI Weather 字段非法。";
+            return false;
+        }
+        if (const auto* forecast = Member(*props, "showForecast"); forecast && forecast->kind != JsonKind::Boolean) {
+            error = L"A2UI showForecast 必须是布尔值。";
+            return false;
+        }
         return true;
     }
     if (type->string == "List") {
-        if (!HasOnly(*props, listFields, error)) return false;
+        if (!HasOnly(*props, {"items", "ordered", "background", "foreground", "opacity", "cornerRadius", "padding", "fontSize", "fontWeight"}, error)) return false;
         const auto* items = Member(*props, "items");
-        if (!items || items->kind != Kind::Array || items->array.empty() || items->array.size() > 20) { error = L"A2UI List.items 必须包含 1-20 项。"; return false; }
-        for (const auto& item : items->array) if (!BoundedString(&item, 1, 240, error)) return false;
-        if (const auto* ordered = Member(*props, "ordered"); ordered && ordered->kind != Kind::Boolean) { error = L"A2UI ordered 必须是布尔值。"; return false; }
+        if (!items || items->kind != JsonKind::Array || items->array.empty() || items->array.size() > 20) {
+            error = L"A2UI List.items 必须包含 1-20 项。";
+            return false;
+        }
+        for (const auto& item : items->array) if (!ValidateString(&item, 1, 240, error)) return false;
+        if (const auto* ordered = Member(*props, "ordered"); ordered && ordered->kind != JsonKind::Boolean) {
+            error = L"A2UI ordered 必须是布尔值。";
+            return false;
+        }
         return true;
     }
 
-    error = L"A2UI type 只允许 Card/Text/Button/Weather/List。";
+    error = L"A2UI type 只允许 Card / Text / Button / Weather / List。";
     return false;
 }
 
-void EscapeJson(std::ostringstream& out, std::string_view text) {
-    out << '"';
-    for (unsigned char ch : text) {
+void EscapeJson(std::ostringstream& output, std::string_view text) {
+    output << '"';
+    for (const unsigned char ch : text) {
         switch (ch) {
-        case '"': out << "\\\""; break;
-        case '\\': out << "\\\\"; break;
-        case '\b': out << "\\b"; break;
-        case '\f': out << "\\f"; break;
-        case '\n': out << "\\n"; break;
-        case '\r': out << "\\r"; break;
-        case '\t': out << "\\t"; break;
+        case '"': output << "\\\""; break;
+        case '\\': output << "\\\\"; break;
+        case '\b': output << "\\b"; break;
+        case '\f': output << "\\f"; break;
+        case '\n': output << "\\n"; break;
+        case '\r': output << "\\r"; break;
+        case '\t': output << "\\t"; break;
         default:
-            if (ch < 0x20) out << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(ch) << std::dec;
-            else out << static_cast<char>(ch);
+            if (ch < 0x20) output << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(ch) << std::dec;
+            else output << static_cast<char>(ch);
         }
     }
-    out << '"';
+    output << '"';
 }
 
-void WriteJson(std::ostringstream& out, const Value& value) {
+void WriteJson(std::ostringstream& output, const JsonValue& value) {
     switch (value.kind) {
-    case Kind::Null: out << "null"; break;
-    case Kind::Boolean: out << (value.boolean ? "true" : "false"); break;
-    case Kind::Number: out << std::setprecision(15) << value.number; break;
-    case Kind::String: EscapeJson(out, value.string); break;
-    case Kind::Array:
-        out << '[';
-        for (std::size_t i = 0; i < value.array.size(); ++i) { if (i) out << ','; WriteJson(out, value.array[i]); }
-        out << ']';
-        break;
-    case Kind::Object:
-        out << '{';
-        for (std::size_t i = 0; i < value.object.size(); ++i) {
-            if (i) out << ',';
-            EscapeJson(out, value.object[i].first);
-            out << ':';
-            WriteJson(out, value.object[i].second);
+    case JsonKind::Null: output << "null"; break;
+    case JsonKind::Boolean: output << (value.boolean ? "true" : "false"); break;
+    case JsonKind::Number: output << std::setprecision(15) << value.number; break;
+    case JsonKind::String: EscapeJson(output, value.string); break;
+    case JsonKind::Array:
+        output << '[';
+        for (std::size_t i = 0; i < value.array.size(); ++i) {
+            if (i) output << ',';
+            WriteJson(output, value.array[i]);
         }
-        out << '}';
+        output << ']';
+        break;
+    case JsonKind::Object:
+        output << '{';
+        for (std::size_t i = 0; i < value.object.size(); ++i) {
+            if (i) output << ',';
+            EscapeJson(output, value.object[i].first);
+            output << ':';
+            WriteJson(output, value.object[i].second);
+        }
+        output << '}';
         break;
     }
 }
@@ -402,28 +463,29 @@ ValidationResult ValidateWidgetDocument(std::string_view json) {
         return result;
     }
 
-    Value root;
-    Parser parser(json);
+    JsonValue root;
+    JsonParser parser(json);
     if (!parser.Parse(root, result.message)) return result;
-    if (!HasOnly(root, {"version","type","props","layout"}, result.message)) return result;
+    if (!HasOnly(root, {"version", "type", "props", "layout"}, result.message)) return result;
+
     const auto* version = Member(root, "version");
-    if (!version || version->kind != Kind::Number || std::fabs(version->number - 1.0) > 1e-9) {
+    if (!version || version->kind != JsonKind::Number || std::fabs(version->number - 1.0) > 1e-9) {
         result.message = L"A2UI version 必须为 1。";
         return result;
     }
     const auto* type = Member(root, "type");
-    if (!type || type->kind != Kind::String || type->string != "Card") {
+    if (!type || type->kind != JsonKind::String || type->string != "Card") {
         result.message = L"A2UI 根组件必须是 Card。";
         return result;
     }
 
-    Value node;
-    node.kind = Kind::Object;
-    if (const auto* t = Member(root, "type")) node.object.emplace_back("type", *t);
-    if (const auto* p = Member(root, "props")) node.object.emplace_back("props", *p);
-    if (const auto* l = Member(root, "layout")) node.object.emplace_back("layout", *l);
-    int nodeCount = 0;
-    if (!ValidateNode(node, 0, nodeCount, result.message)) return result;
+    JsonValue node;
+    node.kind = JsonKind::Object;
+    node.object.emplace_back("type", *type);
+    node.object.emplace_back("props", *Member(root, "props"));
+    node.object.emplace_back("layout", *Member(root, "layout"));
+    int count = 0;
+    if (!ValidateNode(node, 0, count, result.message)) return result;
 
     std::ostringstream normalized;
     WriteJson(normalized, root);

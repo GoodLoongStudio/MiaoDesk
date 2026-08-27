@@ -8,6 +8,8 @@ on:
       - CMakePresets.json
       - cmake/**
       - src/native/**
+      - packaging/windows-store/**
+      - scripts/build-arm64-msix.ps1
       - vcpkg.json
       - vcpkg-configuration.json
       - .github/workflows/native-arm64-preview.yml
@@ -63,8 +65,24 @@ jobs:
             'Desktop settings UI'
             'Widget settings UI'
             'AI API settings UI'
-            'DeepSeek Harness UI'
+            '秒喵工作台 UI'
           ) -Encoding UTF8
+
+      - name: Build ARM64 MSIX test package
+        shell: pwsh
+        run: |
+          & "$PWD\scripts\build-arm64-msix.ps1" `
+            -InputDirectory "$PWD\preview-arm64" `
+            -OutputPath "$PWD\miaomiao-arm64.msix" `
+            -Version '0.1.0.0'
+
+      - name: Upload ARM64 MSIX test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-arm64-msix-${{ github.sha }}
+          path: miaomiao-arm64.msix
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload lightweight preview
         uses: actions/upload-artifact@v4

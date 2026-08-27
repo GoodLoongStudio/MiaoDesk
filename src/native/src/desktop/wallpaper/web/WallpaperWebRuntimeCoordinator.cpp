@@ -217,7 +217,7 @@ void WriteDiagnostics(WallpaperWebRuntimeScope scope, const std::wstring& value)
 }
 
 RECT MapRegionToParent(HWND coordinateSpace, HWND parent, RECT region) {
-    if (!coordinateSpace || !parent || coordinateSpace == parent) return region;
+    if (!parent || coordinateSpace == parent) return region;
     POINT corners[2] = {{region.left, region.top}, {region.right, region.bottom}};
     SetLastError(ERROR_SUCCESS);
     if (MapWindowPoints(coordinateSpace, parent, corners, 2) == 0 && GetLastError() != ERROR_SUCCESS) return region;

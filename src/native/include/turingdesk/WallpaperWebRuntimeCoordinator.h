@@ -7,13 +7,18 @@
 
 namespace turingdesk::wallpaper {
 
-// Lightweight companion for the legacy native wallpaper renderer. It observes
-// the already-persisted wallpaper/library/monitor-assignment state and owns only
-// isolated WebView2 wallpaper child processes. Native Scene/image/video rendering
-// remains in WallpaperEngine.cpp.
+// Web wallpaper and Widget coordination intentionally run in different process
+// fault domains. Both reuse the same coordinator implementation and
+// DesktopShellHost contract, but a failure in one scope must not tear down the
+// other scope.
+enum class WallpaperWebRuntimeScope {
+    WebWallpaper,
+    Widgets,
+};
+
 class WallpaperWebRuntimeCoordinator {
 public:
-    WallpaperWebRuntimeCoordinator();
+    explicit WallpaperWebRuntimeCoordinator(WallpaperWebRuntimeScope scope);
     ~WallpaperWebRuntimeCoordinator();
 
     WallpaperWebRuntimeCoordinator(const WallpaperWebRuntimeCoordinator&) = delete;
@@ -22,6 +27,7 @@ public:
     bool Start();
     void Stop();
     bool Running() const noexcept;
+    WallpaperWebRuntimeScope Scope() const noexcept;
 
     static bool SelfTest();
 
@@ -31,9 +37,10 @@ private:
 };
 
 // Persists a Web library item into the same global/per-monitor wallpaper state
-// consumed by the native engine and the coordinator. Global Web uses the legacy
-// Image string as a source carrier while Scene="web" distinguishes the backend;
-// this avoids a breaking wallpaper.ini schema migration.
+// consumed by the native engine and the Web wallpaper coordinator. Global Web
+// uses the legacy Image string as a source carrier while Scene="web"
+// distinguishes the backend; this avoids a breaking wallpaper.ini schema
+// migration.
 bool ActivateWebWallpaperItem(const WallpaperLibraryItem& item,
                               const std::wstring& targetMonitorId,
                               std::wstring* error = nullptr);

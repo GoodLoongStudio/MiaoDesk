@@ -67,8 +67,12 @@ try {
     & gh run download $run.databaseId --repo $Repository --name $artifactName --dir $temp
     if ($LASTEXITCODE -ne 0) { throw 'Preview artifact download failed.' }
 
-    $exe = Join-Path $temp 'TuringDesk.exe'
-    if (-not (Test-Path $exe -PathType Leaf)) { throw 'Downloaded preview does not contain TuringDesk.exe.' }
+    foreach ($requiredExe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe')) {
+        $requiredPath = Join-Path $temp $requiredExe
+        if (-not (Test-Path $requiredPath -PathType Leaf)) {
+            throw "Downloaded preview does not contain $requiredExe. Desktop/Widget settings UI would be unavailable."
+        }
+    }
 
     $marker = $null
     foreach ($candidate in @('preview-build-sha.txt', '.preview-build-sha')) {
@@ -91,6 +95,7 @@ try {
     }
 
     Get-Process TuringDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process TuringDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     if (Test-Path $PreviewRoot) { Remove-Item $PreviewRoot -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
     Copy-Item (Join-Path $temp '*') $PreviewRoot -Recurse -Force
@@ -104,6 +109,7 @@ try {
     Start-Process -FilePath (Join-Path $PreviewRoot 'TuringDesk.exe') -WorkingDirectory $PreviewRoot
     Write-Host "Preview SHA: $headSha" -ForegroundColor Green
     Write-Host "Preview path: $PreviewRoot" -ForegroundColor Green
+    Write-Host 'Desktop and Widget settings UI: included' -ForegroundColor Green
     if (-not (Test-Path (Join-Path $PreviewRoot 'Pi') -PathType Container)) {
         Write-Host 'Installed Pi Runtime was not found; UI preview works, Pi calls may be unavailable.' -ForegroundColor Yellow
     }

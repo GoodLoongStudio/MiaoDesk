@@ -1,4 +1,5 @@
 #include "turingdesk/HarnessProcessManager.h"
+#include "turingdesk/WindowPlacementStore.h"
 #include <windows.h>
 #include <objbase.h>
 #include <WebView2.h>
@@ -16,6 +17,7 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"TuringDesk.Native.HarnessWindow";
+constexpr wchar_t kHarnessPlacementValue[] = L"DeepSeekHarnessWindow";
 const wchar_t* kMutexName = []() -> const wchar_t* {
     const wchar_t* commandLine = GetCommandLineW();
     return commandLine && std::wstring_view(commandLine).find(L"--ui") != std::wstring_view::npos
@@ -142,7 +144,8 @@ public:
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        const RECT initialBounds = InitialHarnessWindowRect();
+        RECT initialBounds = InitialHarnessWindowRect();
+        turingdesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
         hwnd_ = CreateWindowExW(0, kWindowClass, L"TuringDesk · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
@@ -221,13 +224,18 @@ private:
             ResizeWebView();
             ResizeStatus();
             return 0;
+        case WM_EXITSIZEMOVE:
+            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            return 0;
         case WM_SETFOCUS:
             if (webviewController_) webviewController_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
             return 0;
         case WM_CLOSE:
+            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             DestroyWindow(hwnd_);
             return 0;
         case WM_DESTROY:
+            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             KillTimer(hwnd_, kReadyTimerId);
             webview_.Reset();
             if (webviewController_) webviewController_->Close();

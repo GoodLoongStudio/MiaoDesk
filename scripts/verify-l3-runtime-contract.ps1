@@ -168,7 +168,9 @@ foreach ($marker in @(
     'CreateWebWidget', 'ApplyWebPackage', 'CleanupPreview')) {
     if (-not $generatedPreview.Contains($marker)) { throw "Generated desktop sandbox marker missing: $marker" }
 }
-foreach ($marker in @('additional', 'A2UI', 'ValidateNode', 'nodeCount', 'depth > 4', 'Button')) {
+# A2UI rejects unknown object fields through the parser's HasOnly allowlist.
+# The JSON schema independently pins additionalProperties=false.
+foreach ($marker in @('HasOnly', 'A2UI', 'ValidateNode', 'count > 32', 'depth > 4', 'Button')) {
     if (-not $a2ui.Contains($marker)) { throw "A2UI parser safety marker missing: $marker" }
 }
 foreach ($marker in @('additionalProperties', 'Card', 'Text', 'Button', 'Weather', 'List')) {

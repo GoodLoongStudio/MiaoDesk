@@ -28,8 +28,14 @@ jobs:
           end = source.index("\n          PY\n", start)
           block = source[start:end]
           lines = []
-          for line in block.splitlines():
-              lines.append(line[10:] if line.startswith('          ') else line)
+          in_triple = False
+          for raw in block.splitlines():
+              line = raw if in_triple else (raw[10:] if raw.startswith('          ') else raw)
+              lines.append(line)
+              if line.count("'''") % 2 == 1:
+                  in_triple = not in_triple
+          if in_triple:
+              raise SystemExit('unterminated triple-quoted patch string')
           code = '\n'.join(lines) + '\n'
           code = code.replace('SM_CYPADDEDBORDER', 'SM_CXPADDEDBORDER')
           compile(code, 'adaptive-ui-patch.py', 'exec')

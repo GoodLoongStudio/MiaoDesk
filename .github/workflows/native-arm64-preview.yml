@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - CMakeLists.txt
+      - CMakePresets.json
+      - cmake/**
       - src/native/**
+      - vcpkg.json
+      - vcpkg-configuration.json
       - .github/workflows/native-arm64-preview.yml
-      - scripts/download-arm64-preview.ps1
-      - PREVIEW-TURINGDESK-ARM64.cmd
   workflow_dispatch:
 
 permissions:

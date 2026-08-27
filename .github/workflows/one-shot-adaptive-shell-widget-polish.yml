@@ -1,0 +1,34 @@
+name: One-shot adaptive shell and widget polish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/one_shot_adaptive_shell_widget_polish.py
+      - .github/workflows/one-shot-adaptive-shell-widget-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply canonical page and widget fixes
+        run: python scripts/one_shot_adaptive_shell_widget_polish.py
+      - name: Validate patch
+        run: |
+          git diff --check
+          grep -q 'enum class Page { Installed, Widgets, AI };' src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp
+          ! grep -q 'HideHostContent' src/native/src/ui/settings/DesktopAiSettingsPage.cpp
+          grep -q 'client.bottom - client.top' src/native/src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp
+      - name: Commit product fixes
+        run: |
+          git config user.name "GoodLoongStudio"
+          git config user.email "chnmlong@hotmail.com"
+          git add src/native
+          git commit -m "Unify adaptive desktop pages and free widget drag"
+          git push origin HEAD:main

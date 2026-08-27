@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <objbase.h>
 #include <string_view>
 
 #include "turingdesk/NativeTools.h"

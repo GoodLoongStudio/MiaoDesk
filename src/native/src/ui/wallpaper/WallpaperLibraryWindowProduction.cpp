@@ -53,6 +53,37 @@ int ScaleForWindow(HWND window, int logicalPx) {
     return MulDiv(logicalPx, static_cast<int>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI), USER_DEFAULT_SCREEN_DPI);
 }
 
+int DesktopResizeHitTest(HWND window, LPARAM lParam) {
+    if (!window || !IsWindow(window) || IsZoomed(window)) return HTNOWHERE;
+
+    RECT rect{};
+    if (!GetWindowRect(window, &rect)) return HTNOWHERE;
+
+    const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window));
+    const int frameX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
+                       GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    const int frameY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) +
+                       GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    const int gripX = std::max(ScaleForWindow(window, 8), frameX);
+    const int gripY = std::max(ScaleForWindow(window, 8), frameY);
+
+    const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    const bool left = point.x >= rect.left && point.x < rect.left + gripX;
+    const bool right = point.x <= rect.right && point.x > rect.right - gripX;
+    const bool top = point.y >= rect.top && point.y < rect.top + gripY;
+    const bool bottom = point.y <= rect.bottom && point.y > rect.bottom - gripY;
+
+    if (top && left) return HTTOPLEFT;
+    if (top && right) return HTTOPRIGHT;
+    if (bottom && left) return HTBOTTOMLEFT;
+    if (bottom && right) return HTBOTTOMRIGHT;
+    if (left) return HTLEFT;
+    if (right) return HTRIGHT;
+    if (top) return HTTOP;
+    if (bottom) return HTBOTTOM;
+    return HTNOWHERE;
+}
+
 RECT ChildRect(HWND parent, HWND child) {
     RECT rect{};
     if (!parent || !child || !GetWindowRect(child, &rect)) return rect;
@@ -238,6 +269,10 @@ void AttachLayoutSentinel(HWND window) {
 LRESULT CALLBACK DesktopLayoutSubclass(
     HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR) {
+    if (message == WM_NCHITTEST) {
+        const int resizeHit = DesktopResizeHitTest(window, lParam);
+        if (resizeHit != HTNOWHERE) return resizeHit;
+    }
     if (message == kResponsiveLayoutMessage) {
         ApplyResponsiveDesktopLayout(window);
         return 0;

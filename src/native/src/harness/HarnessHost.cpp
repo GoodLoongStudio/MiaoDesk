@@ -146,7 +146,7 @@ public:
 
         RECT initialBounds = InitialHarnessWindowRect();
         turingdesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
-        hwnd_ = CreateWindowExW(0, kWindowClass, L"TuringDesk · DeepSeek Harness",
+        hwnd_ = CreateWindowExW(0, kWindowClass, L"妙喵 · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
                                 initialBounds.right - initialBounds.left,
@@ -279,7 +279,7 @@ private:
     void UpdateStartingStatus(ULONGLONG now) {
         const ULONGLONG elapsedSeconds = startedAt_ == 0 ? 0 : (now - startedAt_) / 1000;
         std::wstring text = L"正在启动仓库内固定版本的 DeepSeek Harness… 已等待 " + std::to_wstring(elapsedSeconds) + L" 秒。";
-        text += L"\r\n不会执行 npm/npx 下载；Node 和 Harness 已随 TuringDesk RuntimeBundle 部署。关闭此窗口即可取消。";
+        text += L"\r\n不会执行 npm/npx 下载；Node 和 Harness 已随妙喵 RuntimeBundle 部署。关闭此窗口即可取消。";
         if (elapsedSeconds >= 45) text += L"\r\n启动时间异常偏长，请检查 RuntimeBundle 完整性和下方日志。";
         text += HarnessLogHint();
         SetStatus(text);

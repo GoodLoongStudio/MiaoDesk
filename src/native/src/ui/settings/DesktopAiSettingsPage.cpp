@@ -244,16 +244,16 @@ struct PageState {
         const fs::path executable = directory / L"TuringDeskHarness.exe";
         std::error_code ec;
         if (directory.empty() || !fs::is_regular_file(executable, ec)) {
-            SetStatus(L"当前安装/预览包缺少 TuringDeskHarness.exe，请更新到最新版本。");
+            SetStatus(L"当前安装/预览包缺少秒喵工作台组件，请更新到最新版本。");
             return;
         }
         const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
             panel, L"open", executable.c_str(), L"--ui", directory.c_str(), SW_SHOWNORMAL));
         if (result <= 32) {
-            SetStatus(L"DeepSeek Harness 启动失败。请检查 RuntimeBundle 或 Harness 日志。");
+            SetStatus(L"秒喵工作台启动失败。请检查 RuntimeBundle 或工作台日志。");
             return;
         }
-        SetStatus(L"正在打开 DeepSeek Harness…");
+        SetStatus(L"正在打开秒喵工作台…");
     }
 
     bool HostNavControl(HWND child) const {
@@ -299,9 +299,6 @@ struct PageState {
         GetClientRect(panel, &area);
         const int width = std::max(1, static_cast<int>(area.right - area.left));
 
-        // Keep one canonical layout at every window height. Width adapts
-        // continuously; vertical positions and visibility no longer jump at
-        // arbitrary compact/ultra-compact breakpoints.
         const int margin = S(22);
         const int labelW = S(82);
         const int rowH = S(30);
@@ -475,10 +472,10 @@ bool CreatePage(PageState& state) {
     state.save = button(L"检测并保存配置", kSaveApiId);
     state.status = label(L"保存后 Pi Agent 与 Direct Model 会立即共用当前配置。",
                          SS_LEFT | SS_NOPREFIX);
-    state.harnessTitle = label(L"DeepSeek Harness");
-    state.harnessText = label(L"打开随妙喵部署的 DeepSeek Harness 管理界面。",
+    state.harnessTitle = label(L"秒喵工作台");
+    state.harnessText = label(L"高级 Agent 工作台，底层基于随应用固定部署的 DeepSeek Harness。",
                               SS_LEFT | SS_NOPREFIX);
-    state.harnessOpen = button(L"打开 DeepSeek Harness", kOpenHarnessId);
+    state.harnessOpen = button(L"打开秒喵工作台", kOpenHarnessId);
 
     if (!state.title || !state.intro || !state.profileLabel || !state.profileCombo || !state.provider ||
         !state.apiLabel || !state.apiUrl || !state.keyLabel || !state.apiKey || !state.modelLabel || !state.model ||

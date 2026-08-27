@@ -1,0 +1,47 @@
+name: One-shot adaptive UI safe runner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-shot-adaptive-ui-runner.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Execute stored source patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/one-shot-adaptive-ui-draggable-widgets.yml').read_text(encoding='utf-8')
+          marker = "          python - <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index("\n          PY\n", start)
+          block = source[start:end]
+          lines = []
+          for line in block.splitlines():
+              lines.append(line[10:] if line.startswith('          ') else line)
+          code = '\n'.join(lines) + '\n'
+          code = code.replace('SM_CYPADDEDBORDER', 'SM_CXPADDEDBORDER')
+          compile(code, 'adaptive-ui-patch.py', 'exec')
+          exec(code, {'__name__': '__main__'})
+          PY
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "GoodLoongStudio"
+          git config user.email "chnmlong@hotmail.com"
+          git add src/native
+          git diff --cached --check
+          git commit -m "Improve adaptive desktop UI and draggable widgets"
+          git push origin HEAD:main

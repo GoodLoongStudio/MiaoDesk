@@ -511,10 +511,10 @@ NativeToolResult OpenSettingsCenter(std::string_view) {
     constexpr wchar_t kSearchWindowClass[] = L"TuringDesk.Native.SearchWindow";
     constexpr int kSettingsButtonId = 102;
     const HWND search = FindWindowW(kSearchWindowClass, nullptr);
-    if (!search) return {false, L"没有找到正在运行的图灵智能桌面主窗口。"};
+    if (!search) return {false, L"没有找到正在运行的妙喵主窗口。"};
     if (!PostMessageW(search, WM_COMMAND, MAKEWPARAM(kSettingsButtonId, BN_CLICKED), 0))
-        return {false, L"无法向图灵智能桌面发送打开设置中心命令。"};
-    return {true, L"已打开图灵智能桌面设置中心。"};
+        return {false, L"无法向妙喵发送打开设置中心命令。"};
+    return {true, L"已打开妙喵设置中心。"};
 }
 
 NativeToolResult CreateWebWallpaperPackage(std::string_view arguments) {
@@ -551,7 +551,7 @@ NativeToolResult CreateWebWallpaperPackage(std::string_view arguments) {
     }
 
     std::wstring error;
-    if (!wallpaper::WallpaperPackage::CreateWeb(package, title, html, L"ai-generated", L"图灵智能桌面", &error)) {
+    if (!wallpaper::WallpaperPackage::CreateWeb(package, title, html, L"ai-generated", L"妙喵", &error)) {
         fs::remove_all(package, ec);
         return {false, error.empty() ? L"AI Web 壁纸包生成失败。" : std::move(error)};
     }

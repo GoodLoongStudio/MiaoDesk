@@ -28,6 +28,7 @@ constexpr int kApiKeyId = 7302;
 constexpr int kModelId = 7303;
 constexpr int kSaveApiId = 7304;
 constexpr int kOpenHarnessId = 7305;
+constexpr wchar_t kStoredKeyMask[] = L"********";
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -152,7 +153,7 @@ struct PageState {
 
         SetWindowTextW(apiUrl, CurrentApi().c_str());
         SetWindowTextW(model, config.model.c_str());
-        SetWindowTextW(apiKey, L"");
+        SetWindowTextW(apiKey, agent.HasStoredApiKey() ? kStoredKeyMask : L"");
         SendMessageW(apiKey, EM_SETCUEBANNER, TRUE,
                      reinterpret_cast<LPARAM>(agent.HasStoredApiKey()
                          ? L"已保存密钥；留空保持现有密钥"
@@ -183,7 +184,8 @@ struct PageState {
 
     void SaveApi() {
         const std::wstring api = WindowText(apiUrl);
-        const std::wstring key = WindowText(apiKey);
+        std::wstring key = WindowText(apiKey);
+        if (key == kStoredKeyMask) key.clear();
         std::wstring chosenModel = WindowText(model);
         const LRESULT selected = profileCombo ? SendMessageW(profileCombo, CB_GETCURSEL, 0, 0) : 0;
         const bool customProfile = !hasSavedProfile || selected > 0;

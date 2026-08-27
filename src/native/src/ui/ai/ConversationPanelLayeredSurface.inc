@@ -356,7 +356,7 @@ bool RenderConversationLayerSurface(ConversationState& state) {
     auto symbolFormat = LayerFormat(static_cast<float>(Px(state, 17)), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     LayerAvatar(target, static_cast<float>(Px(state, 34)), static_cast<float>(Px(state, 34)), static_cast<float>(Px(state, 17)), false);
-    LayerText(target, L"图灵 AI", titleFormat.Get(), text.Get(), Px(state, 60.0f), Px(state, 14.0f), Px(state, 180.0f), Px(state, 28.0f));
+    LayerText(target, L"妙喵 AI", titleFormat.Get(), text.Get(), Px(state, 60.0f), Px(state, 14.0f), Px(state, 180.0f), Px(state, 28.0f));
     auto online = LayerBrush(target, 0x53BE68, 0.98f);
     target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(Px(state, 63.0f), Px(state, 50.0f)), Px(state, 4.0f), Px(state, 4.0f)), online.Get());
     LayerText(target, state.busy ? L"正在工作" : L"在线", smallFormat.Get(), secondary.Get(), Px(state, 74.0f), Px(state, 40.0f), Px(state, 120.0f), Px(state, 20.0f));

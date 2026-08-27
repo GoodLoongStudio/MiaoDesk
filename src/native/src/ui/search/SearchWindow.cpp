@@ -41,7 +41,7 @@ const wchar_t* KindLabel(ResultKind kind) {
     case ResultKind::App: return L"应用";
     case ResultKind::File: return L"文件";
     case ResultKind::Folder: return L"文件夹";
-    case ResultKind::Answer: return L"图灵 AI";
+    case ResultKind::Answer: return L"妙喵 AI";
     case ResultKind::Status: return L"状态";
     }
     return L"";
@@ -237,7 +237,7 @@ bool SearchWindow::Create() {
     // The SearchWindow itself is per-pixel alpha. Direct2D is the only owner of the visible
     // rounded edge; no GDI region or DWM rounded-corner mask is allowed to touch the pill.
     hwnd_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_LAYERED, wc.lpszClassName, L"图灵智能桌面", WS_POPUP,
+        WS_EX_TOOLWINDOW | WS_EX_LAYERED, wc.lpszClassName, L"妙喵", WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT, kWindowWidth, kCollapsedHeight,
         nullptr, nullptr, instance_, this);
     if (!hwnd_) return false;
@@ -430,7 +430,7 @@ void SearchWindow::AddTray() {
     tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray_.uCallbackMessage = kTrayMessage;
     tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    wcscpy_s(tray_.szTip, L"图灵智能桌面");
+    wcscpy_s(tray_.szTip, L"妙喵");
     trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
 }
 
@@ -452,7 +452,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
     AppendMenuW(menu, MF_STRING, kTrayShow, L"显示搜索");
     AppendMenuW(menu, MF_STRING, kTraySettings, L"设置");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kTrayExit, L"退出图灵智能桌面");
+    AppendMenuW(menu, MF_STRING, kTrayExit, L"退出妙喵");
 
     POINT point{};
     GetCursorPos(&point);
@@ -470,7 +470,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
 void SearchWindow::OpenSettingsCenter() {
     if (l3_.Busy()) l3_.Stop();
     if (!ShowSettingsCenterWindow(instance_, hwnd_, l3_))
-        SetStatus(L"设置启动失败", L"无法创建图灵智能桌面设置窗口。");
+        SetStatus(L"设置启动失败", L"无法创建妙喵设置窗口。");
 }
 
 void SearchWindow::StartWindowsVoiceTyping() {
@@ -758,7 +758,7 @@ void SearchWindow::OnQueryChanged() {
 
     if (query.front() == L'/') {
         results_.push_back({
-            ResultKind::Status, L"图灵智能桌面命令",
+            ResultKind::Status, L"妙喵命令",
             L"按 Enter 执行 · /help 查看可用命令", L"", 0});
         Draw();
         return;
@@ -832,7 +832,7 @@ void SearchWindow::StartL3(const std::wstring& prompt) {
     SetExpanded(false);
 
     if (!ShowL3CliWindow(instance_, hwnd_, l3_, prompt)) {
-        SetStatus(L"图灵 AI 启动失败", L"请检查模型配置后重试。");
+        SetStatus(L"妙喵 AI 启动失败", L"请检查模型配置后重试。");
         return;
     }
 
@@ -1129,7 +1129,7 @@ void SearchWindow::Draw() {
                 queryLayout.Get(), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     } else {
-        static constexpr wchar_t placeholder[] = L"搜索应用、文件或图灵 AI";
+        static constexpr wchar_t placeholder[] = L"搜索应用、文件或妙喵 AI";
         const float placeholderX =
             static_cast<float>(kEditLeft) + (editFocused_ ? 6.0f : 0.0f);
         renderTarget_->DrawText(
@@ -1178,8 +1178,8 @@ void SearchWindow::Draw() {
         const std::wstring title =
             currentQuery_.empty() ? L"开始搜索" : L"没有本地结果";
         const std::wstring hint = currentQuery_.empty()
-            ? L"搜索应用、文件，或点击右侧星光进入图灵 AI"
-            : L"按 Enter 交给图灵 AI · Ctrl + Enter 强制进入图灵 AI";
+            ? L"搜索应用、文件，或点击右侧星光进入妙喵 AI"
+            : L"按 Enter 交给妙喵 AI · Ctrl + Enter 强制进入妙喵 AI";
 
         renderTarget_->DrawText(
             title.c_str(), static_cast<UINT32>(title.size()),

@@ -607,7 +607,7 @@ struct WallpaperLibraryWindow::Impl {
         if (!selected || !library) return;
         std::wstring error;
         if (!library->SetFavorite(selected->id, !selected->favorite, &error)) {
-            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWallpaperId = selected->id;
@@ -617,11 +617,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"图灵智能桌面",
+        if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
-            MessageBoxW(window, error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWallpaperId.clear();
@@ -633,7 +633,7 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring error;
         auto imported = library->ImportFile(path, {}, &error);
         if (!imported) {
-            MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWallpaperId = imported->id;
@@ -680,7 +680,7 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring error;
         auto imported = library->ImportWebUrl(url, {}, &error);
         if (!imported) {
-            MessageBoxW(window, error.empty() ? L"Web URL 导入失败。" : error.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, error.empty() ? L"Web URL 导入失败。" : error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWallpaperId = imported->id;
@@ -708,7 +708,7 @@ struct WallpaperLibraryWindow::Impl {
         DesktopWidget created;
         const auto result = widgetController.CreateClock(PrimaryMonitorId(), &created);
         if (!result.success) {
-            MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWidgetId = created.id;
@@ -721,7 +721,7 @@ struct WallpaperLibraryWindow::Impl {
         if (!current) return;
         const auto result = widgetController.SetEnabled(current->id, !current->enabled);
         if (!result.success) {
-            MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWidgetId = current->id;
@@ -731,11 +731,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveWidget() {
         const auto current = SelectedWidget();
         if (!current) return;
-        if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"图灵智能桌面",
+        if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         const auto result = widgetController.Remove(current->id);
         if (!result.success) {
-            MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"图灵智能桌面", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWidgetId.clear();
@@ -943,6 +943,36 @@ struct WallpaperLibraryWindow::Impl {
         if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
 
         switch (message) {
+        case WM_NCHITTEST: {
+            if (IsZoomed(hwnd)) break;
+            RECT bounds{};
+            if (!GetWindowRect(hwnd, &bounds)) break;
+            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            const UINT dpi = self->Dpi();
+            const int systemX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const int systemY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const int edgeX = std::max(self->S(7), systemX);
+            const int edgeY = std::max(self->S(7), systemY);
+            const int cornerX = std::max(edgeX, self->S(16));
+            const int cornerY = std::max(edgeY, self->S(16));
+            const bool leftEdge = point.x >= bounds.left && point.x < bounds.left + edgeX;
+            const bool rightEdge = point.x < bounds.right && point.x >= bounds.right - edgeX;
+            const bool topEdge = point.y >= bounds.top && point.y < bounds.top + edgeY;
+            const bool bottomEdge = point.y < bounds.bottom && point.y >= bounds.bottom - edgeY;
+            const bool leftCorner = point.x >= bounds.left && point.x < bounds.left + cornerX;
+            const bool rightCorner = point.x < bounds.right && point.x >= bounds.right - cornerX;
+            const bool topCorner = point.y >= bounds.top && point.y < bounds.top + cornerY;
+            const bool bottomCorner = point.y < bounds.bottom && point.y >= bounds.bottom - cornerY;
+            if (topCorner && leftCorner) return HTTOPLEFT;
+            if (topCorner && rightCorner) return HTTOPRIGHT;
+            if (bottomCorner && leftCorner) return HTBOTTOMLEFT;
+            if (bottomCorner && rightCorner) return HTBOTTOMRIGHT;
+            if (leftEdge) return HTLEFT;
+            if (rightEdge) return HTRIGHT;
+            if (topEdge) return HTTOP;
+            if (bottomEdge) return HTBOTTOM;
+            break;
+        }
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
@@ -1059,7 +1089,7 @@ struct WallpaperLibraryWindow::Impl {
         gridClass.style = CS_DBLCLKS;
         if (!RegisterClassExW(&gridClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"图灵智能桌面",
+        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"妙喵",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, S(1160), S(790),
                                  nullptr, nullptr, instance, this);
@@ -1081,14 +1111,14 @@ struct WallpaperLibraryWindow::Impl {
                                         window, ControlId(id), instance, nullptr), bodyFont);
         };
 
-        title = label(L"图灵智能桌面", brandFont);
+        title = label(L"妙喵", brandFont);
         sectionTitle = label(L"壁纸库", titleFont);
         search = font(CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                                      0, 0, 10, 10, window, ControlId(kSearchId), instance, nullptr), bodyFont);
         SendMessageW(search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索壁纸"));
         addButton = button(L"＋ 添加", kAddId);
 
-        const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"小组件", L"图灵 AI"};
+        const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"小组件", L"妙喵 AI"};
         const std::array<int, 3> navIds{kNavInstalledId, kNavWidgetsId, kNavAiId};
         for (std::size_t i = 0; i < nav.size(); ++i)
             nav[i] = button(navLabels[i], navIds[i], BS_OWNERDRAW);

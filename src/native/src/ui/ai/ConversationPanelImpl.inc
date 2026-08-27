@@ -361,7 +361,7 @@ std::wstring RuntimeStatusText(ConversationState& state) {
 std::wstring UserFacingLocalReply(const std::wstring& command, const ConversationState& state, const std::wstring& raw) {
     if (command == L"/status") {
         const auto& config = state.agent->Config();
-        std::wstring text = L"图灵智能桌面 AI";
+        std::wstring text = L"妙喵 AI";
         text += L" · Provider=" + (config.providerId.empty() ? std::wstring(L"未识别") : config.providerId);
         text += L" · Model=" + (config.model.empty() ? std::wstring(L"未配置") : config.model);
         text += L" · API Key=" + std::wstring(state.agent->HasStoredApiKey() ? L"已配置" : L"未配置");
@@ -595,7 +595,7 @@ void SendPrompt(ConversationState& state) {
     }
 
     if (!state.agent->HasApiKey()) {
-        AppendCompleted(state, typedPrompt, L"图灵 AI 尚未配置。请从右下角系统托盘进入设置，填写 API 地址和 Key。");
+        AppendCompleted(state, typedPrompt, L"妙喵 AI 尚未配置。请从右下角系统托盘进入设置，填写 API 地址和 Key。");
         return;
     }
 
@@ -851,7 +851,7 @@ void PaintConversation(ConversationState& state, HDC target) {
     const int avatarR = Px(state, 17);
     DrawAvatar(dc, Px(state, 34), Px(state, 34), avatarR, false);
     RECT title{Px(state, 60), Px(state, 15), Px(state, 220), Px(state, 42)};
-    DrawWrapped(dc, state.titleFont, RGB(36, 43, 55), L"图灵 AI", title, DT_SINGLELINE);
+    DrawWrapped(dc, state.titleFont, RGB(36, 43, 55), L"妙喵 AI", title, DT_SINGLELINE);
     HBRUSH online = CreateSolidBrush(RGB(83, 190, 104));
     HGDIOBJ oldBrush = SelectObject(dc, online);
     HPEN noPen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));
@@ -1156,7 +1156,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     CreateFonts(*state);
 
     HWND window = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_LAYERED, kConversationClass, L"图灵 AI",
+        WS_EX_TOOLWINDOW | WS_EX_LAYERED, kConversationClass, L"妙喵 AI",
         WS_POPUP | WS_CLIPCHILDREN,
         0, 0, Px(*state, 560), Px(*state, 620), owner, nullptr, instance, state);
     if (!window) {

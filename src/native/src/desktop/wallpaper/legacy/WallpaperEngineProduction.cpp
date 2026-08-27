@@ -9,6 +9,7 @@
 // macros are no longer required by the legacy UI implementation.
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include "turingdesk/AutomationUiAdapter.h"
 #include "turingdesk/DesktopAiSettingsPage.h"
@@ -20,6 +21,12 @@
 #include <string_view>
 
 namespace {
+
+BOOL WINAPI TuringDeskWallpaperShellNotifyIconW(DWORD, PNOTIFYICONDATAW) {
+    // Production has exactly one tray owner: the main 妙喵 process.
+    // Historical wallpaper-host tray calls become successful no-ops.
+    return TRUE;
+}
 
 bool SameText(LPCWSTR left, std::wstring_view right) {
     return left && _wcsicmp(left, std::wstring(right).c_str()) == 0;
@@ -174,7 +181,9 @@ int WINAPI TuringDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT
 #define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW
 #define WritePrivateProfileStringW TuringDeskWritePrivateProfileStringW
 #define MessageBoxW TuringDeskMessageBoxW
+#define Shell_NotifyIconW TuringDeskWallpaperShellNotifyIconW
 #include "WallpaperEngine.cpp"
+#undef Shell_NotifyIconW
 #undef MessageBoxW
 #undef WritePrivateProfileStringW
 #undef GetPrivateProfileStringW

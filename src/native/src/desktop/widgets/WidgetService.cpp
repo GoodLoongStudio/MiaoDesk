@@ -1,5 +1,4 @@
 #include "turingdesk/WidgetService.h"
-#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/DesktopSurfaceTelemetry.h"
 #include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
@@ -152,12 +151,13 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         return surface;
     }
 
-    // Widget health is anchored directly to the current Explorer desktop
-    // surface parent. It must remain inspectable when Native WallpaperHost is
-    // absent, restarting, or disabled.
-    wallpaper::DesktopShellHost shellHost;
-    std::wstring shellError;
-    const HWND expectedParent = shellHost.EnsureCurrent(&shellError) ? shellHost.SurfaceParent() : nullptr;
+    // Health is read-only: discover Explorer's current desktop parent without
+    // spawning WorkerW, reparenting HWNDs, or repairing z-order. Shell mutation
+    // ownership remains exclusively with DesktopShellHost/Shell supervisor.
+    const auto parentTelemetry = wallpaper::InspectDesktopSurfaceParent();
+    const HWND expectedParent = parentTelemetry.reported && parentTelemetry.parent && IsWindow(parentTelemetry.parent)
+        ? parentTelemetry.parent
+        : nullptr;
     const HWND window = FindWidgetSurface(expectedParent, widget.id);
     surface.hwndReady = window && IsWindow(window);
     surface.hwndValue = surface.hwndReady ? reinterpret_cast<std::uintptr_t>(window) : 0;
@@ -233,7 +233,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
 
     if (!expectedParent) {
         SetAttention(surface, L"desktop_parent_unavailable",
-                     shellError.empty() ? L"无法解析当前 Windows 桌面 Surface parent" : shellError,
+                     parentTelemetry.detail.empty() ? L"无法解析当前 Windows 桌面 Surface parent" : parentTelemetry.detail,
                      L"等待 Explorer 桌面层恢复后刷新；Widget runtime 无需依赖 Native WallpaperHost。");
     } else if (!surface.hwndReady) {
         SetAttention(surface, L"surface_missing", L"等待隔离 Surface HWND", L"点击“刷新”；若持续不存在，重启 Widget runtime helper。");

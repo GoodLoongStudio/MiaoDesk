@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include "turingdesk/AutomationUiAdapter.h"
+#include "turingdesk/DesktopAiSettingsPage.h"
 #include "turingdesk/PerformanceUiAdapter.h"
 
 #include <algorithm>
@@ -156,13 +157,25 @@ BOOL WINAPI TuringDeskWritePrivateProfileStringW(
     return ::WritePrivateProfileStringW(section, key, value, fileName);
 }
 
+int WINAPI TuringDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT type) {
+    // The V2 shell still emits this one historical placeholder callback for its
+    // AI navigation item. Convert only that placeholder into the real in-place
+    // API/Harness page; all other product dialogs retain normal MessageBoxW behavior.
+    if (text && std::wstring_view(text).find(L"AI 模型配置位于 TuringDesk 设置中心") != std::wstring_view::npos) {
+        return turingdesk::wallpaper::ShowDesktopAiSettingsPage(owner) ? IDOK : IDCANCEL;
+    }
+    return ::MessageBoxW(owner, text, caption, type);
+}
+
 } // namespace
 
 #define WallpaperAutomationStore AutomationUiAdapter
 #define GetPrivateProfileIntW TuringDeskGetPrivateProfileIntW
 #define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW
 #define WritePrivateProfileStringW TuringDeskWritePrivateProfileStringW
+#define MessageBoxW TuringDeskMessageBoxW
 #include "WallpaperEngine.cpp"
+#undef MessageBoxW
 #undef WritePrivateProfileStringW
 #undef GetPrivateProfileStringW
 #undef GetPrivateProfileIntW

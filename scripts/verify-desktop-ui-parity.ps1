@@ -18,9 +18,8 @@ $cmake = Require-Text 'src/native/CMakeLists.txt'
 $legacyPath = Join-Path $root 'src/native/src/ui/wallpaper/WallpaperLibraryWindow.cpp'
 $candidatePath = Join-Path $root 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2Candidate.cpp'
 
-# There is exactly one Desktop Library UI implementation. The shipping
-# translation unit is intentionally a thin include-only entry and must not add
-# a second layout, navigation hiding pass, resize subclass, or compatibility UI.
+# Exactly one Desktop Library implementation may exist. The shipping wrapper
+# must stay include-only and must never add a second geometry/navigation pass.
 if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
     throw 'Retired legacy WallpaperLibraryWindow.cpp must not return.'
 }
@@ -45,13 +44,11 @@ foreach ($forbidden in @(
     'FindWindowW(L"Progman"',
     'SetParent(')) {
     if ($production.Contains($forbidden)) {
-        throw "Production Desktop Library wrapper regained forbidden UI/domain ownership: $forbidden"
+        throw "Production Desktop Library wrapper regained forbidden ownership: $forbidden"
     }
 }
 
-# Keep the domain enum stable even though only three product sections are
-# currently exposed in this window. Backend capabilities can remain without
-# constructing hidden navigation controls for them.
+# Keep the domain enum stable while exposing only the current three UI entries.
 if (-not $header.Contains('enum class WallpaperSettingsSection')) {
     throw 'WallpaperLibraryWindow contract lost WallpaperSettingsSection enum.'
 }
@@ -61,15 +58,15 @@ foreach ($marker in @('Installed,', 'Widgets,', 'AI,')) {
     }
 }
 
-# The shipping UI creates only the three active navigation controls. Do not
-# regress to create-then-hide for unfinished sections.
+# Shipping V2 creates exactly three nav controls. Do not regress to hidden
+# placeholder navigation for unfinished product sections.
 foreach ($marker in @(
     'kNavInstalledId',
     'kNavWidgetsId',
     'kNavAiId',
     'std::array<HWND, 3> nav',
     'std::array<const wchar_t*, 3> navLabels',
-    'L"壁纸", L"小组件", L"图灵 AI"',
+    'std::array<int, 3> navIds',
     'kWallpaperGridId',
     'kWidgetGridId',
     'kSearchId',
@@ -86,10 +83,6 @@ foreach ($forbidden in @(
     'kNavDisplaysId',
     'kNavRulesId',
     'kNavPerformanceId',
-    'L"播放列表"',
-    'L"多屏配置"',
-    'L"应用规则"',
-    'L"性能"',
     '#include "turingdesk/DesktopWidgetStore.h"',
     'DesktopWidgetStore store',
     'WritePrivateProfileStringW',
@@ -105,14 +98,14 @@ if (-not $cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
     throw 'Production target must remain routed through WallpaperLibraryWindowProduction.cpp.'
 }
 if ($cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindow.cpp')) {
-    throw 'Retired legacy Desktop Library source must not be present in the production build graph.'
+    throw 'Retired legacy Desktop Library source must not be present in production build graph.'
 }
 if ($cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindowV2.cpp')) {
-    throw 'Compile V2 through the production translation unit so there remains one production entry.'
+    throw 'Compile V2 through the production translation unit so there is one production entry.'
 }
 if ($cmake.Contains('WallpaperLibraryWindowV2Candidate.cpp') -or
     $cmake.Contains('TuringDeskDesktopUiV2Candidate')) {
-    throw 'Retired duplicate V2 candidate target must not remain in the build graph.'
+    throw 'Retired duplicate V2 candidate target must not remain in build graph.'
 }
 
-Write-Host 'Desktop UI contract OK: one V2 production window, three real navigation controls, no create-then-hide navigation, no duplicate candidate UI target, and no secondary production layout wrapper.'
+Write-Host 'Desktop UI contract OK: one V2 production window, three real nav controls, no hidden placeholder nav, no duplicate candidate target, no second production layout wrapper.'

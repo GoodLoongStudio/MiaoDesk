@@ -16,8 +16,22 @@ constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperContro
 constexpr wchar_t kShellMutex[] = L"Local\\TuringDesk.DesktopShellSupervisor.v1";
 constexpr wchar_t kWebRuntimeMutex[] = L"Local\\TuringDesk.WebWallpaperRuntime.v1";
 constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\TuringDesk.WidgetRuntime.v1";
+constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
+constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
+constexpr wchar_t kWidgetRuntimeMode[] = L"--widget-runtime";
 constexpr DWORD kRuntimeReadyTimeoutMs = 5000;
 constexpr DWORD kRuntimeReadyPollMs = 100;
+
+struct RuntimeHelper {
+    const wchar_t* mutexName;
+    const wchar_t* mode;
+};
+
+constexpr RuntimeHelper kRuntimeHelpers[] = {
+    {kShellMutex, kShellMode},
+    {kWebRuntimeMutex, kWebRuntimeMode},
+    {kWidgetRuntimeMutex, kWidgetRuntimeMode},
+};
 
 fs::path ModuleDirectory() {
     std::wstring path(32768, L'\0');
@@ -35,10 +49,10 @@ bool NamedMutexExists(const wchar_t* name) {
 }
 
 bool RuntimeInfrastructureReady() {
-    return FindWindowW(kWallpaperControlClass, nullptr) != nullptr &&
-           NamedMutexExists(kShellMutex) &&
-           NamedMutexExists(kWebRuntimeMutex) &&
-           NamedMutexExists(kWidgetRuntimeMutex);
+    if (!FindWindowW(kWallpaperControlClass, nullptr)) return false;
+    for (const auto& helper : kRuntimeHelpers)
+        if (!NamedMutexExists(helper.mutexName)) return false;
+    return true;
 }
 
 bool WaitForRuntimeControl() {
@@ -48,6 +62,21 @@ bool WaitForRuntimeControl() {
         Sleep(kRuntimeReadyPollMs);
     } while (GetTickCount64() < deadline);
     return RuntimeInfrastructureReady();
+}
+
+bool LaunchRuntime(const fs::path& executable, const wchar_t* arguments) {
+    const HINSTANCE launched = ShellExecuteW(nullptr, L"open", executable.c_str(), arguments,
+                                             executable.parent_path().c_str(), SW_SHOWNOACTIVATE);
+    return reinterpret_cast<INT_PTR>(launched) > 32;
+}
+
+bool RepairMissingHelpers(const fs::path& executable) {
+    bool launched = false;
+    for (const auto& helper : kRuntimeHelpers) {
+        if (NamedMutexExists(helper.mutexName)) continue;
+        launched = LaunchRuntime(executable, helper.mode) || launched;
+    }
+    return launched;
 }
 
 DesktopControlResult FromWallpaper(WallpaperServiceResult result) {
@@ -69,12 +98,19 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
         return {false, L"找不到 TuringDeskWallpaper.exe。"};
 
-    // Starting the executable while the native wallpaper singleton is already
-    // alive is intentional: WallpaperEntry treats that invocation as a command
-    // sender but first repairs any missing isolated helper fault domains.
-    const HINSTANCE launched = ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr,
-                                             executable.parent_path().c_str(), SW_SHOWNOACTIVATE);
-    if (reinterpret_cast<INT_PTR>(launched) <= 32)
+    const bool nativeAlive = FindWindowW(kWallpaperControlClass, nullptr) != nullptr;
+    bool launched = false;
+    if (nativeAlive) {
+        // Repair only the failed fault domain. This avoids restarting Native
+        // Wallpaper, Pi, Harness, Search, or healthy desktop helpers.
+        launched = RepairMissingHelpers(executable);
+    } else {
+        // The primary wallpaper process is responsible for starting all helper
+        // domains on a cold boot.
+        launched = LaunchRuntime(executable, nullptr);
+    }
+
+    if (!launched && !RuntimeInfrastructureReady())
         return {false, L"无法启动或修复桌面运行时。"};
     if (!WaitForRuntimeControl())
         return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 TuringDesk-Logs。"};

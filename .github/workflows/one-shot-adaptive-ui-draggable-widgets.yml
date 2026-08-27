@@ -1,0 +1,657 @@
+name: One-shot adaptive UI and draggable widgets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-shot-adaptive-ui-draggable-widgets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply adaptive UI, visual and widget movement patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          def read(path):
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              (root / path).write_text(text, encoding='utf-8', newline='\n')
+
+          def replace_once(text, old, new, label):
+              hits = text.count(old)
+              if hits != 1:
+                  raise SystemExit(f'{label}: expected 1 occurrence, got {hits}')
+              return text.replace(old, new, 1)
+
+          # 1) Canonical desktop library owns a generous DPI-aware corner/edge hit area.
+          v2_path = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
+          v2 = read(v2_path)
+          old_hit = '''            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            const UINT dpi = self->Dpi();
+            const int systemX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const int systemY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const int edgeX = std::max(self->S(7), systemX);
+            const int edgeY = std::max(self->S(7), systemY);
+            const int cornerX = std::max(edgeX, self->S(16));
+            const int cornerY = std::max(edgeY, self->S(16));
+'''
+          new_hit = '''            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            // Preserve Windows' own caption button/system-menu hit targets first. The
+            // enlarged resize zones extend into client space but never steal Close,
+            // Maximize, Minimize or the system icon from the standard frame.
+            const LRESULT nativeHit = DefWindowProcW(hwnd, message, wParam, lParam);
+            if (nativeHit == HTCLOSE || nativeHit == HTMAXBUTTON || nativeHit == HTMINBUTTON || nativeHit == HTSYSMENU)
+                return nativeHit;
+
+            const UINT dpi = self->Dpi();
+            const int systemX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const int systemY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CYPADDEDBORDER, dpi);
+            const int edgeX = std::max(self->S(12), systemX);
+            const int edgeY = std::max(self->S(12), systemY);
+            const int cornerX = std::max(edgeX, self->S(44));
+            const int cornerY = std::max(edgeY, self->S(44));
+'''
+          # SM_CYPADDEDBORDER exists and mirrors the X metric; avoid a typo guard below.
+          if old_hit in v2:
+              v2 = v2.replace(old_hit, new_hit, 1)
+          else:
+              raise SystemExit('V2 resize hit-test anchor changed')
+          write(v2_path, v2)
+
+          # 2) AI settings: continuous width, measured wrapping, persistent scrollbar,
+          #    and one redraw after repositioning all controls.
+          ai_path = 'src/native/src/ui/settings/DesktopAiSettingsPage.cpp'
+          ai = read(ai_path)
+          ai = replace_once(
+              ai,
+              '    bool hasSavedProfile{};\n    L3Agent agent;\n',
+              '    bool hasSavedProfile{};\n    int scrollY{};\n    int contentHeight{};\n    L3Agent agent;\n',
+              'AI scroll state')
+
+          old_status = '''    void SetStatus(std::wstring text) {
+        if (status) SetWindowTextW(status, text.c_str());
+    }
+'''
+          new_status = '''    void SetStatus(std::wstring text) {
+        if (!status) return;
+        SetWindowTextW(status, text.c_str());
+        if (panel && IsWindow(panel)) Layout();
+    }
+'''
+          ai = replace_once(ai, old_status, new_status, 'AI status relayout')
+
+          layout_start = ai.index('    void Layout() {')
+          layout_end = ai.index('\n};\n\nPageState* StateFor', layout_start)
+          new_layout = r'''    int MeasureTextHeight(HWND control, int width, HFONT font, int minimum) const {
+        if (!control || width <= 0) return minimum;
+        const std::wstring text = WindowText(control);
+        if (text.empty()) return minimum;
+        HDC dc = GetDC(panel);
+        if (!dc) return minimum;
+        HGDIOBJ previous = font ? SelectObject(dc, font) : nullptr;
+        RECT measure{0, 0, width, 0};
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measure,
+                  DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(panel, dc);
+        return std::max(minimum, static_cast<int>(measure.bottom - measure.top) + S(3));
+    }
+
+    void SetScrollPosition(int requested) {
+        if (!panel) return;
+        RECT area{};
+        GetClientRect(panel, &area);
+        const int viewport = std::max(1, static_cast<int>(area.bottom - area.top));
+        const int maxScroll = std::max(0, contentHeight - viewport);
+        const int next = std::clamp(requested, 0, maxScroll);
+        if (next == scrollY) return;
+        scrollY = next;
+        Layout();
+    }
+
+    void Layout() {
+        if (!parent || !panel) return;
+        RECT client{};
+        GetClientRect(parent, &client);
+        const int sidebar = S(208);
+        const int parentWidth = std::max(1, static_cast<int>(client.right - client.left));
+        const int parentHeight = std::max(1, static_cast<int>(client.bottom - client.top));
+        SetWindowPos(panel, nullptr, sidebar, 0, std::max(1, parentWidth - sidebar), parentHeight,
+                     SWP_NOACTIVATE | SWP_NOZORDER);
+
+        RECT area{};
+        GetClientRect(panel, &area);
+        const int width = std::max(1, static_cast<int>(area.right - area.left));
+        const int height = std::max(1, static_cast<int>(area.bottom - area.top));
+
+        // Nothing snaps between compact/normal modes. Every horizontal dimension
+        // is derived continuously from the current client width.
+        const int margin = std::clamp(width / 32, S(16), S(28));
+        const int contentW = std::max(S(220), width - margin * 2);
+        const int labelW = std::clamp(contentW * 16 / 100, S(76), S(112));
+        const int fieldGap = S(10);
+        const int fieldX = margin + labelW + fieldGap;
+        const int fieldW = std::max(S(120), contentW - labelW - fieldGap);
+        const int rowH = S(32);
+        const int rowGap = S(8);
+
+        const int introH = MeasureTextHeight(intro, contentW, bodyFont, S(24));
+        const int providerH = MeasureTextHeight(provider, fieldW, smallFont, S(22));
+        const int statusH = MeasureTextHeight(status, contentW, smallFont, S(24));
+        const int harnessTextH = MeasureTextHeight(harnessText, contentW, bodyFont, S(24));
+
+        int y = S(16);
+        const int titleY = y; const int titleH = S(34); y += titleH + S(5);
+        const int introY = y; y += introH + S(12);
+        const int profileY = y; y += rowH + rowGap;
+        const int providerY = y; y += providerH + S(8);
+        const int apiY = y; y += rowH + rowGap;
+        const int keyY = y; y += rowH + rowGap;
+        const int modelY = y; y += rowH + S(12);
+        const int saveY = y; y += S(38) + S(10);
+        const int statusY = y; y += statusH + S(14);
+        const int harnessTitleY = y; y += S(28) + S(5);
+        const int harnessTextY = y; y += harnessTextH + S(12);
+        const int harnessOpenY = y; y += S(38);
+        contentHeight = y + margin;
+
+        const int maxScroll = std::max(0, contentHeight - height);
+        scrollY = std::clamp(scrollY, 0, maxScroll);
+        SCROLLINFO scroll{};
+        scroll.cbSize = sizeof(scroll);
+        scroll.fMask = SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL;
+        scroll.nMin = 0;
+        scroll.nMax = std::max(0, contentHeight - 1);
+        scroll.nPage = static_cast<UINT>(height);
+        scroll.nPos = scrollY;
+        SetScrollInfo(panel, SB_VERT, &scroll, TRUE);
+
+        auto place = [&](HWND control, int x, int top, int w, int h) {
+            if (!control) return;
+            SetWindowPos(control, nullptr, x, top - scrollY, std::max(1, w), std::max(1, h),
+                         SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
+        };
+
+        place(title, margin, titleY, contentW, titleH);
+        place(intro, margin, introY, contentW, introH);
+        place(profileLabel, margin, profileY + S(5), labelW, S(22));
+        place(profileCombo, fieldX, profileY, fieldW, S(190));
+        place(provider, fieldX, providerY, fieldW, providerH);
+        place(apiLabel, margin, apiY + S(5), labelW, S(22));
+        place(apiUrl, fieldX, apiY, fieldW, rowH);
+        place(keyLabel, margin, keyY + S(5), labelW, S(22));
+        place(apiKey, fieldX, keyY, fieldW, rowH);
+        place(modelLabel, margin, modelY + S(5), labelW, S(22));
+        place(model, fieldX, modelY, fieldW, rowH);
+        place(save, fieldX, saveY, std::min(fieldW, S(190)), S(38));
+        place(status, margin, statusY, contentW, statusH);
+        place(harnessTitle, margin, harnessTitleY, contentW, S(28));
+        place(harnessText, margin, harnessTextY, contentW, harnessTextH);
+        place(harnessOpen, margin, harnessOpenY, std::min(contentW, S(210)), S(38));
+
+        RedrawWindow(panel, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
+'''
+          ai = ai[:layout_start] + new_layout + ai[layout_end:]
+
+          ai = replace_once(
+              ai,
+              '                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,\n',
+              '                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VSCROLL,\n',
+              'AI panel scrollbar')
+
+          page_proc = ai.index('LRESULT CALLBACK PageProc')
+          switch_pos = ai.index('    switch (message) {\n', page_proc)
+          scroll_cases = r'''    switch (message) {
+    case WM_MOUSEWHEEL: {
+        const short delta = static_cast<short>(HIWORD(wParam));
+        const int distance = MulDiv(static_cast<int>(delta), state->S(54), WHEEL_DELTA);
+        state->SetScrollPosition(state->scrollY - distance);
+        return 0;
+    }
+    case WM_VSCROLL: {
+        RECT area{};
+        GetClientRect(window, &area);
+        const int viewport = std::max(1, static_cast<int>(area.bottom - area.top));
+        int next = state->scrollY;
+        switch (LOWORD(wParam)) {
+        case SB_LINEUP: next -= state->S(34); break;
+        case SB_LINEDOWN: next += state->S(34); break;
+        case SB_PAGEUP: next -= std::max(state->S(80), viewport * 4 / 5); break;
+        case SB_PAGEDOWN: next += std::max(state->S(80), viewport * 4 / 5); break;
+        case SB_TOP: next = 0; break;
+        case SB_BOTTOM: next = state->contentHeight; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: {
+            SCROLLINFO info{};
+            info.cbSize = sizeof(info);
+            info.fMask = SIF_TRACKPOS;
+            if (GetScrollInfo(window, SB_VERT, &info)) next = info.nTrackPos;
+            break;
+        }
+        default: return 0;
+        }
+        state->SetScrollPosition(next);
+        return 0;
+    }
+'''
+          ai = ai[:switch_pos] + scroll_cases + ai[switch_pos + len('    switch (message) {\n'):]
+          write(ai_path, ai)
+
+          # 3) Widget WebView surfaces get a native drag grip. Wallpaper surfaces
+          #    remain click-through. Drag commits normalized x/y to DesktopWidgetStore.
+          web_path = 'src/native/src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp'
+          web = read(web_path)
+          web = replace_once(web, '#include "turingdesk/WebDesktopSurfaceChild.h"\n',
+                             '#include "turingdesk/WebDesktopSurfaceChild.h"\n#include "turingdesk/DesktopWidgetStore.h"\n',
+                             'widget store include')
+          web = replace_once(web, '#include <cwctype>\n', '#include <cwctype>\n#include <cmath>\n', 'cmath include')
+          web = replace_once(web, 'constexpr wchar_t kSurfaceClass[] = L"TuringDesk.Native.WebWallpaperHost";\n',
+                             'constexpr wchar_t kSurfaceClass[] = L"TuringDesk.Native.WebWallpaperHost";\nconstexpr wchar_t kWidgetDragClass[] = L"TuringDesk.Native.WidgetDragHandle";\n',
+                             'widget drag class')
+          web = replace_once(
+              web,
+              '        const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW;\n',
+              '        const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOOLWINDOW |\n                              (options_.widget ? 0 : WS_EX_TRANSPARENT);\n',
+              'widget interactive exstyle')
+          web = replace_once(
+              web,
+              '''        SetPropW(hwnd_, kWebSurfaceRoleProperty,
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(options_.widget ? 2 : 1)));
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+        InitializeWebView();
+''',
+              '''        SetPropW(hwnd_, kWebSurfaceRoleProperty,
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(options_.widget ? 2 : 1)));
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+        if (options_.widget && !CreateWidgetDragHandle()) {
+            exitCode_ = 74;
+            DestroyWindow(hwnd_);
+            return false;
+        }
+        InitializeWebView();
+''',
+              'widget drag handle creation')
+          web = replace_once(web,
+                             '        case WM_NCHITTEST:\n            return HTTRANSPARENT;\n',
+                             '        case WM_NCHITTEST:\n            return options_.widget ? HTCLIENT : HTTRANSPARENT;\n',
+                             'widget hit test')
+          web = replace_once(web,
+                             '        case WM_SIZE:\n            ResizeController();\n            return 0;\n',
+                             '        case WM_SIZE:\n            ResizeController();\n            ResizeWidgetDragHandle();\n            return 0;\n',
+                             'widget drag resize')
+
+          insert_point = web.index('    void SetReadyProperty(const wchar_t* name, bool ready) {')
+          drag_methods = r'''    static LRESULT CALLBACK WidgetDragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+        auto* self = reinterpret_cast<WebDesktopSurfaceChild*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            self = static_cast<WebDesktopSurfaceChild*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        if (!self) return DefWindowProcW(window, message, wParam, lParam);
+        switch (message) {
+        case WM_NCHITTEST: return HTCLIENT;
+        case WM_SETCURSOR:
+            SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+            return TRUE;
+        case WM_LBUTTONDOWN:
+            if (self->BeginWidgetDrag()) SetCapture(window);
+            return 0;
+        case WM_MOUSEMOVE:
+            if (self->dragging_ && GetCapture() == window) self->UpdateWidgetDrag();
+            return 0;
+        case WM_LBUTTONUP:
+            if (self->dragging_) self->EndWidgetDrag(true);
+            return 0;
+        case WM_CAPTURECHANGED:
+            if (self->dragging_) self->EndWidgetDrag(true);
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT paint{};
+            HDC dc = BeginPaint(window, &paint);
+            RECT rect{};
+            GetClientRect(window, &rect);
+            const int gripW = std::min(48, std::max(24, rect.right - rect.left - 12));
+            const int center = (rect.left + rect.right) / 2;
+            RECT grip{center - gripW / 2, 7, center + gripW / 2, 11};
+            HBRUSH brush = CreateSolidBrush(RGB(196, 202, 214));
+            HPEN pen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));
+            HGDIOBJ oldBrush = SelectObject(dc, brush);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            RoundRect(dc, grip.left, grip.top, grip.right, grip.bottom, 4, 4);
+            SelectObject(dc, oldPen);
+            SelectObject(dc, oldBrush);
+            DeleteObject(pen);
+            DeleteObject(brush);
+            EndPaint(window, &paint);
+            return 0;
+        }
+        case WM_NCDESTROY:
+            if (self->dragHandle_ == window) self->dragHandle_ = nullptr;
+            break;
+        }
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+
+    bool CreateWidgetDragHandle() {
+        if (!options_.widget || !hwnd_) return true;
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.hInstance = instance_;
+        wc.lpfnWndProc = &WebDesktopSurfaceChild::WidgetDragProc;
+        wc.lpszClassName = kWidgetDragClass;
+        wc.hCursor = LoadCursorW(nullptr, IDC_SIZEALL);
+        if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+        dragHandle_ = CreateWindowExW(
+            WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+            kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
+            0, 0, 10, 10, hwnd_, nullptr, instance_, this);
+        if (!dragHandle_) return false;
+        ResizeWidgetDragHandle();
+        return true;
+    }
+
+    void ResizeWidgetDragHandle() {
+        if (!dragHandle_ || !IsWindow(dragHandle_) || !hwnd_) return;
+        RECT client{};
+        if (!GetClientRect(hwnd_, &client)) return;
+        const UINT dpi = GetDpiForWindow(hwnd_);
+        const int height = MulDiv(28, static_cast<int>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI), USER_DEFAULT_SCREEN_DPI);
+        SetWindowPos(dragHandle_, HWND_TOP, 0, 0, std::max(1L, client.right - client.left), height,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(dragHandle_, nullptr, TRUE);
+    }
+
+    std::wstring WidgetId() const {
+        if (!options_.widget) return {};
+        std::wstring id = options_.itemId;
+        if (id.rfind(L"widget-", 0) == 0 || id.rfind(L"widget_", 0) == 0) id.erase(0, 7);
+        return id;
+    }
+
+    bool BeginWidgetDrag() {
+        const std::wstring id = WidgetId();
+        if (id.empty() || !hwnd_ || !options_.parent) return false;
+        DesktopWidgetStore store;
+        std::wstring ignored;
+        if (!store.Load(&ignored)) return false;
+        const auto found = store.Find(id);
+        if (!found || found->width <= 0.001f || found->height <= 0.001f) return false;
+
+        RECT screenRect{};
+        if (!GetWindowRect(hwnd_, &screenRect)) return false;
+        POINT corners[2] = {{screenRect.left, screenRect.top}, {screenRect.right, screenRect.bottom}};
+        MapWindowPoints(nullptr, options_.parent, corners, 2);
+        dragStartRegion_ = RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+        if (!GetCursorPos(&dragStartCursor_)) return false;
+
+        dragStartWidget_ = *found;
+        dragPreviewX_ = found->x;
+        dragPreviewY_ = found->y;
+        const float widthPx = static_cast<float>(std::max<LONG>(1, dragStartRegion_.right - dragStartRegion_.left));
+        const float heightPx = static_cast<float>(std::max<LONG>(1, dragStartRegion_.bottom - dragStartRegion_.top));
+        dragMonitorWidthPx_ = widthPx / found->width;
+        dragMonitorHeightPx_ = heightPx / found->height;
+        dragging_ = dragMonitorWidthPx_ > 1.0f && dragMonitorHeightPx_ > 1.0f;
+        return dragging_;
+    }
+
+    void UpdateWidgetDrag() {
+        if (!dragging_ || !hwnd_) return;
+        POINT cursor{};
+        if (!GetCursorPos(&cursor)) return;
+        const int dx = cursor.x - dragStartCursor_.x;
+        const int dy = cursor.y - dragStartCursor_.y;
+        const float maxX = std::max(0.0f, 1.0f - dragStartWidget_.width);
+        const float maxY = std::max(0.0f, 1.0f - dragStartWidget_.height);
+        dragPreviewX_ = std::clamp(dragStartWidget_.x + static_cast<float>(dx) / dragMonitorWidthPx_, 0.0f, maxX);
+        dragPreviewY_ = std::clamp(dragStartWidget_.y + static_cast<float>(dy) / dragMonitorHeightPx_, 0.0f, maxY);
+        const LONG appliedX = static_cast<LONG>(std::lround((dragPreviewX_ - dragStartWidget_.x) * dragMonitorWidthPx_));
+        const LONG appliedY = static_cast<LONG>(std::lround((dragPreviewY_ - dragStartWidget_.y) * dragMonitorHeightPx_));
+        const LONG width = dragStartRegion_.right - dragStartRegion_.left;
+        const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
+        SetWindowPos(hwnd_, nullptr, dragStartRegion_.left + appliedX, dragStartRegion_.top + appliedY,
+                     width, height, SWP_NOACTIVATE | SWP_NOZORDER);
+        options_.region = RECT{dragStartRegion_.left + appliedX, dragStartRegion_.top + appliedY,
+                               dragStartRegion_.left + appliedX + width, dragStartRegion_.top + appliedY + height};
+    }
+
+    void EndWidgetDrag(bool persist) {
+        if (!dragging_) return;
+        dragging_ = false;
+        if (GetCapture() == dragHandle_) ReleaseCapture();
+        if (!persist) return;
+        const std::wstring id = WidgetId();
+        if (id.empty()) return;
+        DesktopWidgetStore store;
+        std::wstring ignored;
+        if (!store.Load(&ignored)) return;
+        const auto current = store.Find(id);
+        if (!current) return;
+        auto updated = *current;
+        updated.x = dragPreviewX_;
+        updated.y = dragPreviewY_;
+        store.Upsert(std::move(updated), &ignored);
+    }
+
+'''
+          web = web[:insert_point] + drag_methods + web[insert_point:]
+
+          web = replace_once(
+              web,
+              '''    void ResizeController() {
+        if (!controller_ || !hwnd_) return;
+        RECT bounds{};
+        if (GetClientRect(hwnd_, &bounds)) controller_->put_Bounds(bounds);
+    }
+''',
+              '''    void ResizeController() {
+        if (!controller_ || !hwnd_) return;
+        RECT bounds{};
+        if (GetClientRect(hwnd_, &bounds)) controller_->put_Bounds(bounds);
+        ResizeWidgetDragHandle();
+    }
+''',
+              'raise widget drag handle')
+
+          web = replace_once(
+              web,
+              '''    HINSTANCE instance_{};
+    LaunchOptions options_;
+    HWND hwnd_{};
+    int exitCode_{};
+''',
+              '''    HINSTANCE instance_{};
+    LaunchOptions options_;
+    HWND hwnd_{};
+    HWND dragHandle_{};
+    bool dragging_{};
+    POINT dragStartCursor_{};
+    RECT dragStartRegion_{};
+    DesktopWidget dragStartWidget_{};
+    float dragPreviewX_{};
+    float dragPreviewY_{};
+    float dragMonitorWidthPx_{};
+    float dragMonitorHeightPx_{};
+    int exitCode_{};
+''',
+              'widget drag state')
+          write(web_path, web)
+
+          # 4) Make built-in widgets feel like first-party desktop surfaces.
+          widget_path = 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
+          widgets = read(widget_path)
+
+          minimal = r'''constexpr std::string_view kMinimalClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;border-radius:24px;overflow:hidden;background:linear-gradient(125deg,rgba(9,13,24,.92),rgba(23,25,44,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 16px 40px rgba(0,0,0,.34);backdrop-filter:blur(22px)}
+.card:before{content:"";position:absolute;inset:-80%;background:conic-gradient(from 90deg,transparent,#56f6d2 10%,transparent 24%,#8a64ff 42%,transparent 57%,#46baff 72%,transparent 86%);opacity:.28;animation:spin 12s linear infinite}.inner{position:relative;z-index:1;display:flex;align-items:baseline;gap:8px;text-shadow:0 0 24px rgba(112,207,255,.24)}
+#time{font-size:clamp(34px,20vw,62px);font-weight:680;letter-spacing:-2px;line-height:1}#sec{font-size:clamp(11px,5vw,17px);font-variant-numeric:tabular-nums;opacity:.55}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body><div class="card"><div class="inner"><div id="time"></div><div id="sec"></div></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('sec').textContent=String(d.getSeconds()).padStart(2,'0');}tick();setInterval(tick,1000);
+</script></body></html>)HTML";'''
+          date = r'''constexpr std::string_view kDateClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:34px 22px 18px;border-radius:28px;background:linear-gradient(145deg,rgba(14,18,34,.92),rgba(29,20,48,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.34);backdrop-filter:blur(24px)}
+.orb{position:absolute;border-radius:999px;filter:blur(22px);opacity:.48;animation:float 7s ease-in-out infinite alternate}.a{width:55%;aspect-ratio:1;right:-12%;top:-28%;background:#5d7cff}.b{width:42%;aspect-ratio:1;left:-14%;bottom:-26%;background:#00d8c0;animation-delay:-3s}.eyebrow{position:relative;font-size:10px;font-weight:700;letter-spacing:1.8px;opacity:.6;text-transform:uppercase}.time{position:relative;font-size:clamp(32px,14vw,58px);font-weight:700;letter-spacing:-1.8px;line-height:1;margin-top:5px}.date{position:relative;margin-top:10px;font-size:clamp(12px,5vw,17px);opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes float{to{transform:translate(10px,12px) scale(1.08)}}
+</style></head><body><div class="card"><div class="orb a"></div><div class="orb b"></div><div class="eyebrow">MIAO · TODAY</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";'''
+          glass = r'''constexpr std::string_view kGlassClockHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:38px 26px 24px;border:1px solid rgba(255,255,255,.23);border-radius:32px;background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.045));box-shadow:0 22px 52px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.18);backdrop-filter:blur(30px)}
+.aurora{position:absolute;inset:-35%;background:radial-gradient(circle at 28% 42%,rgba(60,255,205,.52),transparent 28%),radial-gradient(circle at 72% 35%,rgba(92,100,255,.62),transparent 30%),radial-gradient(circle at 55% 75%,rgba(220,69,255,.45),transparent 28%);filter:blur(16px);animation:drift 10s ease-in-out infinite alternate}.mesh{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:28px 28px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 75%)}
+.chip{position:absolute;left:22px;top:22px;padding:5px 9px;border-radius:999px;background:rgba(5,10,22,.28);border:1px solid rgba(255,255,255,.14);font-size:9px;font-weight:750;letter-spacing:1.6px;opacity:.76}.time{position:relative;font-size:clamp(42px,14vw,78px);font-weight:660;letter-spacing:-2.8px;line-height:.94;text-shadow:0 4px 30px rgba(0,0,0,.2)}.date{position:relative;margin-top:13px;font-size:clamp(13px,4vw,18px);opacity:.84}
+@keyframes drift{0%{transform:translate(-3%,-2%) rotate(-4deg) scale(1)}100%{transform:translate(4%,3%) rotate(5deg) scale(1.08)}}
+</style></head><body><div class="card"><div class="aurora"></div><div class="mesh"></div><div class="chip">MIAO · DESKTOP</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+</script></body></html>)HTML";'''
+
+          m_start = widgets.index('constexpr std::string_view kMinimalClockHtml = R"HTML(')
+          d_start = widgets.index('constexpr std::string_view kDateClockHtml = R"HTML(', m_start)
+          g_start = widgets.index('constexpr std::string_view kGlassClockHtml = R"HTML(', d_start)
+          presets_start = widgets.index('FixedPresetSpec PresetSpec(', g_start)
+          widgets = widgets[:m_start] + minimal + '\n\n' + date + '\n\n' + glass + '\n\n' + widgets[presets_start:]
+          widgets = widgets.replace('    // deterministic without introducing drag/resize/editor behavior.\n',
+                                    '    // deterministic before the user freely drags the Widget to a preferred position.\n', 1)
+          old_choice = '''    WidgetFixedPreset preset = WidgetFixedPreset::MinimalClock;
+    if (dateCount < minimalCount && dateCount <= glassCount) preset = WidgetFixedPreset::DateClock;
+    else if (glassCount < minimalCount && glassCount < dateCount) preset = WidgetFixedPreset::GlassClock;
+    else if (minimalCount == dateCount && minimalCount > glassCount) preset = WidgetFixedPreset::GlassClock;
+    else if (minimalCount > dateCount) preset = WidgetFixedPreset::DateClock;
+'''
+          new_choice = '''    // The flagship glass preset wins ties, so the very first built-in Widget
+    // showcases the richer desktop visual instead of the plain clock.
+    WidgetFixedPreset preset = WidgetFixedPreset::GlassClock;
+    if (dateCount < glassCount && dateCount <= minimalCount) preset = WidgetFixedPreset::DateClock;
+    else if (minimalCount < glassCount && minimalCount < dateCount) preset = WidgetFixedPreset::MinimalClock;
+'''
+          widgets = replace_once(widgets, old_choice, new_choice, 'default widget preset')
+          write(widget_path, widgets)
+
+          # 5) Upgrade Aurora in both global and per-monitor renderers. No external
+          #    resources: layered glows, flowing ribbons and deterministic stars.
+          global_path = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngine.cpp'
+          global_text = read(global_path)
+          start = global_text.index('    void DrawAurora(const D2D1_SIZE_F& size) {')
+          end = global_text.index('\n    void DrawNeon(const D2D1_SIZE_F& size) {', start)
+          global_aurora = r'''    void DrawAurora(const D2D1_SIZE_F& size) {
+        FillRegionBackground(size, D2D1::ColorF(0.004f, 0.008f, 0.030f));
+        const std::array<D2D1_COLOR_F, 7> colors = {
+            D2D1::ColorF(0.05f, 1.00f, 0.72f, 0.24f), D2D1::ColorF(0.08f, 0.58f, 1.00f, 0.25f),
+            D2D1::ColorF(0.48f, 0.20f, 1.00f, 0.23f), D2D1::ColorF(0.92f, 0.12f, 0.82f, 0.19f),
+            D2D1::ColorF(0.02f, 0.84f, 0.94f, 0.20f), D2D1::ColorF(0.30f, 1.00f, 0.52f, 0.17f),
+            D2D1::ColorF(0.42f, 0.46f, 1.00f, 0.18f),
+        };
+        for (int i = 0; i < static_cast<int>(colors.size()); ++i) {
+            const float phase = time_ * (0.18f + i * 0.013f) + i * 0.91f;
+            const float x = size.width * (0.08f + i * 0.145f) + static_cast<float>(std::sin(phase)) * size.width * 0.16f;
+            const float y = size.height * (0.24f + 0.30f * static_cast<float>(std::sin(phase * 0.73f + i * 0.61f)));
+            for (int layer = 3; layer >= 0; --layer) {
+                D2D1_COLOR_F color = colors[static_cast<std::size_t>(i)];
+                color.a *= 0.24f + static_cast<float>(3 - layer) * 0.17f;
+                brush_->SetColor(color);
+                const float scale = 1.0f + static_cast<float>(layer) * 0.34f;
+                renderTarget_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y),
+                    size.width * 0.18f * scale, size.height * 0.31f * scale), brush_.Get());
+            }
+        }
+
+        const std::array<D2D1_COLOR_F, 4> ribbons = {
+            D2D1::ColorF(0.20f, 0.96f, 0.82f, 0.34f), D2D1::ColorF(0.20f, 0.62f, 1.00f, 0.30f),
+            D2D1::ColorF(0.66f, 0.30f, 1.00f, 0.27f), D2D1::ColorF(0.96f, 0.28f, 0.76f, 0.22f),
+        };
+        constexpr int segments = 40;
+        for (int band = 0; band < static_cast<int>(ribbons.size()); ++band) {
+            brush_->SetColor(ribbons[static_cast<std::size_t>(band)]);
+            for (int segment = 0; segment < segments; ++segment) {
+                const float x1 = size.width * static_cast<float>(segment) / segments;
+                const float x2 = size.width * static_cast<float>(segment + 1) / segments;
+                const float p1 = static_cast<float>(segment) / segments * 6.28318f;
+                const float p2 = static_cast<float>(segment + 1) / segments * 6.28318f;
+                const float base = size.height * (0.24f + band * 0.15f);
+                const float amplitude = size.height * (0.035f + band * 0.009f);
+                const float y1 = base + static_cast<float>(std::sin(p1 * (1.0f + band * 0.18f) + time_ * (0.42f + band * 0.07f))) * amplitude;
+                const float y2 = base + static_cast<float>(std::sin(p2 * (1.0f + band * 0.18f) + time_ * (0.42f + band * 0.07f))) * amplitude;
+                renderTarget_->DrawLine(D2D1::Point2F(x1, y1), D2D1::Point2F(x2, y2), brush_.Get(), 2.0f + band * 0.45f);
+            }
+        }
+
+        for (int i = 0; i < 46; ++i) {
+            const float x = size.width * static_cast<float>((i * 37 + 11) % 101) / 100.0f;
+            const float y = size.height * static_cast<float>((i * 53 + 7) % 97) / 100.0f;
+            const float twinkle = 0.18f + 0.34f * (0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.9f + i * 1.73f)));
+            brush_->SetColor(D2D1::ColorF(0.78f, 0.92f, 1.0f, twinkle));
+            const float radius = 0.7f + static_cast<float>(i % 3) * 0.45f;
+            renderTarget_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius), brush_.Get());
+        }
+    }
+'''
+          global_text = global_text[:start] + global_aurora + global_text[end:]
+          write(global_path, global_text)
+
+          independent_path = 'src/native/src/desktop/wallpaper/monitor/IndependentWallpaperHost.cpp'
+          independent = read(independent_path)
+          start = independent.index('    void DrawAurora(Slot& slot, const D2D1_SIZE_F& size) {')
+          end = independent.index('\n    void DrawNeon(Slot& slot, const D2D1_SIZE_F& size) {', start)
+          independent_aurora = global_aurora.replace(
+              '    void DrawAurora(const D2D1_SIZE_F& size) {',
+              '    void DrawAurora(Slot& slot, const D2D1_SIZE_F& size) {').replace(
+              'FillRegionBackground(size,', 'FillBackground(slot, size,').replace(
+              'time_', 'time').replace(
+              'brush_->', 'slot.brush->').replace(
+              'renderTarget_->', 'slot.renderTarget->').replace(
+              'brush_.Get()', 'slot.brush.Get()')
+          independent = independent[:start] + independent_aurora + independent[end:]
+          write(independent_path, independent)
+
+          # Guards catch bad anchors before anything reaches main.
+          guards = {
+              v2_path: ['self->S(44)', 'nativeHit == HTCLOSE'],
+              ai_path: ['MeasureTextHeight', 'WM_VSCROLL', 'SIF_DISABLENOSCROLL', 'SWP_NOREDRAW'],
+              web_path: ['CreateWidgetDragHandle', 'BeginWidgetDrag', 'DesktopWidgetStore', '(options_.widget ? 0 : WS_EX_TRANSPARENT)'],
+              widget_path: ['MIAO · DESKTOP', '@keyframes drift', 'WidgetFixedPreset::GlassClock'],
+              global_path: ['constexpr int segments = 40', 'for (int i = 0; i < 46; ++i)'],
+              independent_path: ['constexpr int segments = 40', 'for (int i = 0; i < 46; ++i)'],
+          }
+          for path, needles in guards.items():
+              text = read(path)
+              for needle in needles:
+                  if needle not in text:
+                      raise SystemExit(f'guard failed: {needle!r} missing from {path}')
+
+          print('adaptive UI + draggable widgets patch applied')
+          PY
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "GoodLoongStudio"
+          git config user.email "chnmlong@hotmail.com"
+          git add src/native
+          git diff --cached --check
+          git commit -m "Improve adaptive desktop UI and draggable widgets"
+          git push origin HEAD:main

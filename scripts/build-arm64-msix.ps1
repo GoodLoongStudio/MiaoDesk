@@ -30,7 +30,10 @@ try {
   New-MiaoMiaoLogo (Join-Path $assets 'Square150x150Logo.png') 150 150
   New-MiaoMiaoLogo (Join-Path $assets 'Wide310x150Logo.png') 310 150
   $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
-  $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File | Where-Object { $_.FullName -match '\x64\MakeAppx.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+  $hostArchitecture = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+  $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File |
+    Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq $hostArchitecture } |
+    Sort-Object FullName -Descending | Select-Object -First 1
   if (-not $makeAppx) { $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File | Sort-Object FullName -Descending | Select-Object -First 1 }
   if (-not $makeAppx) { throw 'MakeAppx.exe was not found in the Windows SDK.' }
   $outputDir=Split-Path $OutputPath -Parent; if ($outputDir) { New-Item -ItemType Directory -Force -Path $outputDir | Out-Null }

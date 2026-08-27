@@ -458,7 +458,7 @@ bool CreatePage(PageState& state) {
                                0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
     };
 
-    state.title = label(L"图灵 AI");
+    state.title = label(L"妙喵 AI");
     state.intro = label(L"模型 API 同时供 Pi Agent 与 Direct Model 使用；API Key 安全保存在 Windows Credential Manager。",
                         SS_LEFT | SS_NOPREFIX);
     state.profileLabel = label(L"配置");
@@ -476,7 +476,7 @@ bool CreatePage(PageState& state) {
     state.status = label(L"保存后 Pi Agent 与 Direct Model 会立即共用当前配置。",
                          SS_LEFT | SS_NOPREFIX);
     state.harnessTitle = label(L"DeepSeek Harness");
-    state.harnessText = label(L"打开随 TuringDesk 部署的 DeepSeek Harness 管理界面。",
+    state.harnessText = label(L"打开随妙喵部署的 DeepSeek Harness 管理界面。",
                               SS_LEFT | SS_NOPREFIX);
     state.harnessOpen = button(L"打开 DeepSeek Harness", kOpenHarnessId);
 

@@ -35,9 +35,9 @@ jobs:
         shell: pwsh
         run: cmake -S . -B build-preview-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
 
-      - name: Build TuringDesk only
+      - name: Build preview UI binaries
         shell: pwsh
-        run: cmake --build build-preview-arm64 --config Release --target TuringDesk --parallel
+        run: cmake --build build-preview-arm64 --config Release --target TuringDesk TuringDeskWallpaper --parallel
 
       - name: Prepare preview artifact
         shell: pwsh
@@ -45,9 +45,21 @@ jobs:
           $source = Join-Path $PWD 'build-preview-arm64\src\native\Release'
           $dest = Join-Path $PWD 'preview-arm64'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          Copy-Item (Join-Path $source 'TuringDesk.exe') $dest -Force
+
+          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe')) {
+            $path = Join-Path $source $exe
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Preview build is missing $exe" }
+            Copy-Item $path $dest -Force
+          }
+
           Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
           Set-Content -Path (Join-Path $dest 'preview-build-sha.txt') -Value $env:GITHUB_SHA -Encoding ASCII
+          Set-Content -Path (Join-Path $dest 'preview-components.txt') -Value @(
+            'TuringDesk.exe'
+            'TuringDeskWallpaper.exe'
+            'Desktop settings UI'
+            'Widget settings UI'
+          ) -Encoding UTF8
 
       - name: Upload lightweight preview
         uses: actions/upload-artifact@v4

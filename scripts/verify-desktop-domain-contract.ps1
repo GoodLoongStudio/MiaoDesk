@@ -98,13 +98,14 @@ foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'SendMessageTimeoutW(', 
 }
 
 # Web wallpaper and Widget share the implementation class, not a process or a
-# WebView2 process set. The executable entrypoint owns three singleton helper
-# fault domains and the coordinator owns exactly one scoped surface set.
+# WebView2 process set. Widgets derive geometry from monitor desktop space so a
+# Native Wallpaper crash does not remove their coordinate/parent anchor.
 foreach ($marker in @(
     'WallpaperWebRuntimeScope::Widgets',
     'WallpaperWebRuntimeScope::WebWallpaper',
     'WebWallpaperProcessSet surfaces',
-    'DesiredWidgetRequests(host, fingerprint)',
+    'DesiredWidgetRequests(std::wstring& fingerprint)',
+    'WidgetRegionInDesktop',
     'DesiredRequests(host, state)',
     'scope == WallpaperWebRuntimeScope::Widgets',
     'scope == WallpaperWebRuntimeScope::WebWallpaper',
@@ -116,7 +117,8 @@ foreach ($forbidden in @(
     'WebWallpaperProcessSet widgets;',
     'widgets.SetPaused(',
     'web.SetPaused(',
-    'DesiredWidgetRequests(HWND host, const RuntimeState& state')) {
+    'DesiredWidgetRequests(HWND host',
+    'WidgetRegionInHost')) {
     if ($text.WidgetRuntime.Contains($forbidden)) { throw "Web/Widget runtime fault domains were coupled again: $forbidden" }
 }
 foreach ($marker in @(
@@ -238,4 +240,4 @@ foreach ($marker in @('monitorReported', 'monitorValid', 'geometryReported', 'ge
     if (-not $text.PlacementDoc.Contains($marker)) { throw "Widget placement health doc missing marker: $marker" }
 }
 
-Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Shell/Web Wallpaper/Widget are separate process fault domains, helpers self-heal independently, UI remains controller/service-routed, and Pi remains snapshot-routed.'
+Write-Host 'Desktop domain contract OK: V2 is the sole production Desktop Library UI, Shell/Web Wallpaper/Widget are separate process fault domains, Widget geometry is independent of Native WallpaperHost, helpers self-heal independently, UI remains controller/service-routed, and Pi remains snapshot-routed.'

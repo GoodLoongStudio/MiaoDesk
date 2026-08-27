@@ -10,6 +10,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -19,8 +20,9 @@ namespace {
 constexpr wchar_t kPageClass[] = L"TuringDesk.Native.DesktopAiSettingsPage";
 constexpr wchar_t kStateProperty[] = L"TuringDesk.DesktopAiSettingsPage.State";
 constexpr UINT_PTR kParentSubclassId = 0x54444149; // "TDAI"
-constexpr int kWallpaperNavId = 6110;
-constexpr int kWidgetsNavId = 6111;
+constexpr int kFirstNavId = 6110;
+constexpr int kAiNavId = 6116;
+constexpr int kProfileId = 7300;
 constexpr int kApiUrlId = 7301;
 constexpr int kApiKeyId = 7302;
 constexpr int kModelId = 7303;
@@ -53,6 +55,8 @@ struct PageState {
     HWND panel{};
     HWND title{};
     HWND intro{};
+    HWND profileLabel{};
+    HWND profileCombo{};
     HWND provider{};
     HWND apiLabel{};
     HWND apiUrl{};
@@ -70,6 +74,8 @@ struct PageState {
     HFONT bodyFont{};
     HFONT smallFont{};
     HBRUSH whiteBrush{};
+    std::vector<HWND> hiddenHostChildren;
+    bool hasSavedProfile{};
     L3Agent agent;
 
     ~PageState() {
@@ -97,16 +103,44 @@ struct PageState {
         }
         titleFont = MakeFont(22, FW_SEMIBOLD);
         sectionFont = MakeFont(16, FW_SEMIBOLD);
-        bodyFont = MakeFont(14, FW_NORMAL);
-        smallFont = MakeFont(12, FW_NORMAL);
-        for (HWND control : {title, intro, provider, apiLabel, apiUrl, keyLabel, apiKey, modelLabel, model,
-                             save, status, harnessTitle, harnessText, harnessOpen}) {
+        bodyFont = MakeFont(13, FW_NORMAL);
+        smallFont = MakeFont(11, FW_NORMAL);
+        for (HWND control : {title, intro, profileLabel, profileCombo, provider, apiLabel, apiUrl, keyLabel,
+                             apiKey, modelLabel, model, save, status, harnessTitle, harnessText, harnessOpen}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         if (title) SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
         if (provider) SendMessageW(provider, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
         if (status) SendMessageW(status, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
         if (harnessTitle) SendMessageW(harnessTitle, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont), TRUE);
+    }
+
+    std::wstring CurrentApi() const {
+        std::wstring api = agent.CurrentApiUrl();
+        if (api.empty()) api = agent.Config().baseUrl;
+        return api;
+    }
+
+    void RefreshProfileOptions() {
+        if (!profileCombo) return;
+        const auto& config = agent.Config();
+        const std::wstring api = CurrentApi();
+        hasSavedProfile = !api.empty() || !config.model.empty() || agent.HasStoredApiKey();
+
+        SendMessageW(profileCombo, CB_RESETCONTENT, 0, 0);
+        if (hasSavedProfile) {
+            std::wstring label;
+            if (!config.providerId.empty() && config.providerId != L"unconfigured") label = config.providerId;
+            else label = L"当前 API";
+            if (!config.model.empty()) label += L" · " + config.model;
+            SendMessageW(profileCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+            SendMessageW(profileCombo, CB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(L"＋ 新配置 / 替换当前配置"));
+            SendMessageW(profileCombo, CB_SETCURSEL, 0, 0);
+        } else {
+            SendMessageW(profileCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"＋ 新建模型 API 配置"));
+            SendMessageW(profileCombo, CB_SETCURSEL, 0, 0);
+        }
     }
 
     void RefreshConfigText() {
@@ -116,15 +150,31 @@ struct PageState {
         providerText += agent.HasStoredApiKey() ? L"  ·  API Key 已安全保存" : L"  ·  尚未保存 API Key";
         SetWindowTextW(provider, providerText.c_str());
 
-        std::wstring api = agent.CurrentApiUrl();
-        if (api.empty()) api = config.baseUrl;
-        SetWindowTextW(apiUrl, api.c_str());
+        SetWindowTextW(apiUrl, CurrentApi().c_str());
         SetWindowTextW(model, config.model.c_str());
         SetWindowTextW(apiKey, L"");
         SendMessageW(apiKey, EM_SETCUEBANNER, TRUE,
                      reinterpret_cast<LPARAM>(agent.HasStoredApiKey()
                          ? L"已保存密钥；留空保持现有密钥"
                          : L"粘贴 API Key"));
+        RefreshProfileOptions();
+    }
+
+    void SelectCustomProfile() {
+        SetWindowTextW(apiUrl, L"");
+        SetWindowTextW(apiKey, L"");
+        SetWindowTextW(model, L"");
+        SetWindowTextW(provider, L"新配置：填写 API 地址、API Key 与 Model 后检测并保存。");
+        SendMessageW(apiKey, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"粘贴 API Key"));
+        SetStatus(L"新配置保存后会成为 Pi Agent 与 Direct Model 的当前默认配置。");
+        SetFocus(apiUrl);
+    }
+
+    void OnProfileSelectionChanged() {
+        const LRESULT selected = SendMessageW(profileCombo, CB_GETCURSEL, 0, 0);
+        const bool custom = !hasSavedProfile || selected > 0;
+        if (custom) SelectCustomProfile();
+        else RefreshConfigText();
     }
 
     void SetStatus(std::wstring text) {
@@ -135,9 +185,17 @@ struct PageState {
         const std::wstring api = WindowText(apiUrl);
         const std::wstring key = WindowText(apiKey);
         std::wstring chosenModel = WindowText(model);
+        const LRESULT selected = profileCombo ? SendMessageW(profileCombo, CB_GETCURSEL, 0, 0) : 0;
+        const bool customProfile = !hasSavedProfile || selected > 0;
+
         if (api.empty()) {
-            SetStatus(L"请输入 API 地址，例如 https://api.deepseek.com/v1。 ");
+            SetStatus(L"请输入 API 地址，例如 https://api.deepseek.com/v1。");
             SetFocus(apiUrl);
+            return;
+        }
+        if (customProfile && key.empty()) {
+            SetStatus(L"新配置需要填写 API Key；已有配置的密钥不会自动复制到新配置。");
+            SetFocus(apiKey);
             return;
         }
 
@@ -157,7 +215,7 @@ struct PageState {
         if (chosenModel.empty()) chosenModel = probe.recommendedModel;
         if (chosenModel.empty() && !probe.models.empty()) chosenModel = probe.models.front();
         if (chosenModel.empty()) {
-            SetStatus(L"API 已连接，但没有找到可用模型。请手动填写 Model。 ");
+            SetStatus(L"API 已连接，但没有找到可用模型。请手动填写 Model。");
             EnableWindow(save, TRUE);
             SetCursor(previous);
             SetFocus(model);
@@ -165,7 +223,7 @@ struct PageState {
         }
 
         std::wstring reply;
-        const bool preserveExistingKey = key.empty();
+        const bool preserveExistingKey = !customProfile && key.empty();
         if (!agent.ApplyModelConfig(probe, chosenModel, key, preserveExistingKey, reply)) {
             SetStatus(reply.empty() ? L"保存 AI 配置失败。" : reply);
             EnableWindow(save, TRUE);
@@ -173,11 +231,9 @@ struct PageState {
             return;
         }
 
-        SetWindowTextW(model, chosenModel.c_str());
-        SetWindowTextW(apiKey, L"");
         RefreshConfigText();
         SetStatus(reply.empty()
-            ? L"已保存。Pi Agent 与 Direct Model fallback 将共用这套 Provider / Model / API Key。"
+            ? L"已保存。Pi Agent 与 Direct Model 将共用这套模型配置。"
             : reply);
         EnableWindow(save, TRUE);
         SetCursor(previous);
@@ -188,16 +244,45 @@ struct PageState {
         const fs::path executable = directory / L"TuringDeskHarness.exe";
         std::error_code ec;
         if (directory.empty() || !fs::is_regular_file(executable, ec)) {
-            SetStatus(L"当前安装/预览包缺少 TuringDeskHarness.exe，请更新到最新版本。 ");
+            SetStatus(L"当前安装/预览包缺少 TuringDeskHarness.exe，请更新到最新版本。");
             return;
         }
         const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
             panel, L"open", executable.c_str(), L"--ui", directory.c_str(), SW_SHOWNORMAL));
         if (result <= 32) {
-            SetStatus(L"DeepSeek Harness 启动失败。请检查 RuntimeBundle 或 Harness 日志。 ");
+            SetStatus(L"DeepSeek Harness 启动失败。请检查 RuntimeBundle 或 Harness 日志。");
             return;
         }
         SetStatus(L"正在打开 DeepSeek Harness…");
+    }
+
+    bool HostNavControl(HWND child) const {
+        const int id = GetDlgCtrlID(child);
+        return id >= kFirstNavId && id <= kAiNavId;
+    }
+
+    void HideHostContent() {
+        if (!parent || !panel) return;
+        const int sidebar = S(208);
+        for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+            if (child == panel || HostNavControl(child) || !IsWindowVisible(child)) continue;
+
+            RECT rect{};
+            if (!GetWindowRect(child, &rect)) continue;
+            MapWindowPoints(nullptr, parent, reinterpret_cast<POINT*>(&rect), 2);
+            if (rect.right <= sidebar) continue;
+
+            if (std::find(hiddenHostChildren.begin(), hiddenHostChildren.end(), child) == hiddenHostChildren.end())
+                hiddenHostChildren.push_back(child);
+            ShowWindow(child, SW_HIDE);
+        }
+    }
+
+    void RestoreHostContent() {
+        for (HWND child : hiddenHostChildren) {
+            if (child && IsWindow(child) && GetParent(child) == parent) ShowWindow(child, SW_SHOW);
+        }
+        hiddenHostChildren.clear();
     }
 
     void Layout() {
@@ -207,37 +292,44 @@ struct PageState {
         const int sidebar = S(208);
         const int parentWidth = std::max(1, static_cast<int>(client.right - client.left));
         const int parentHeight = std::max(1, static_cast<int>(client.bottom - client.top));
-        SetWindowPos(panel, HWND_TOP, sidebar, 0, std::max(1, parentWidth - sidebar), parentHeight,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        SetWindowPos(panel, nullptr, sidebar, 0, std::max(1, parentWidth - sidebar), parentHeight,
+                     SWP_NOACTIVATE | SWP_NOZORDER);
 
         RECT area{};
         GetClientRect(panel, &area);
         const int width = std::max(1, static_cast<int>(area.right - area.left));
-        const int margin = S(28);
-        const int labelW = S(88);
-        const int rowH = S(34);
-        const int gap = S(12);
-        const int contentW = std::max(S(260), std::min(S(720), width - margin * 2));
+        const int height = std::max(1, static_cast<int>(area.bottom - area.top));
+        const bool compact = height < S(560);
+        const int margin = S(compact ? 22 : 28);
+        const int labelW = S(82);
+        const int rowH = S(compact ? 30 : 32);
+        const int gap = S(compact ? 6 : 8);
+        const int availableW = std::max(S(220), width - margin * 2);
+        const int contentW = std::min(S(760), availableW);
         const int fieldX = margin + labelW;
-        const int fieldW = std::max(S(180), contentW - labelW);
+        const int fieldW = std::max(S(140), contentW - labelW);
 
-        int y = S(22);
-        MoveWindow(title, margin, y, contentW, S(34), TRUE); y += S(45);
-        MoveWindow(intro, margin, y, contentW, S(44), TRUE); y += S(50);
-        MoveWindow(provider, margin, y, contentW, S(24), TRUE); y += S(38);
+        int y = S(compact ? 14 : 18);
+        MoveWindow(title, margin, y, contentW, S(32), TRUE); y += S(compact ? 36 : 40);
+        MoveWindow(intro, margin, y, contentW, S(compact ? 28 : 32), TRUE); y += S(compact ? 32 : 38);
 
-        MoveWindow(apiLabel, margin, y + S(7), labelW - gap, S(22), TRUE);
+        MoveWindow(profileLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
+        MoveWindow(profileCombo, fieldX, y, fieldW, S(180), TRUE); y += rowH + gap;
+        MoveWindow(provider, fieldX, y, fieldW, S(22), TRUE); y += S(compact ? 25 : 28);
+
+        MoveWindow(apiLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
         MoveWindow(apiUrl, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(keyLabel, margin, y + S(7), labelW - gap, S(22), TRUE);
+        MoveWindow(keyLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
         MoveWindow(apiKey, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(modelLabel, margin, y + S(7), labelW - gap, S(22), TRUE);
-        MoveWindow(model, fieldX, y, fieldW, rowH, TRUE); y += rowH + S(14);
-        MoveWindow(save, fieldX, y, S(150), S(38), TRUE); y += S(50);
-        MoveWindow(status, margin, y, contentW, S(48), TRUE); y += S(70);
+        MoveWindow(modelLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
+        MoveWindow(model, fieldX, y, fieldW, rowH, TRUE); y += rowH + S(compact ? 8 : 10);
 
-        MoveWindow(harnessTitle, margin, y, contentW, S(30), TRUE); y += S(36);
-        MoveWindow(harnessText, margin, y, contentW, S(52), TRUE); y += S(62);
-        MoveWindow(harnessOpen, margin, y, S(190), S(40), TRUE);
+        MoveWindow(save, fieldX, y, S(170), S(34), TRUE); y += S(40);
+        MoveWindow(status, margin, y, contentW, S(compact ? 26 : 32), TRUE); y += S(compact ? 34 : 42);
+
+        MoveWindow(harnessTitle, margin, y, contentW, S(26), TRUE); y += S(30);
+        MoveWindow(harnessText, margin, y, contentW, S(compact ? 26 : 30), TRUE); y += S(compact ? 32 : 38);
+        MoveWindow(harnessOpen, margin, y, S(190), S(36), TRUE);
     }
 };
 
@@ -256,6 +348,10 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
 
     switch (message) {
     case WM_COMMAND:
+        if (LOWORD(wParam) == kProfileId && HIWORD(wParam) == CBN_SELCHANGE) {
+            state->OnProfileSelectionChanged();
+            return 0;
+        }
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == kSaveApiId) {
             state->SaveApi();
             return 0;
@@ -294,13 +390,19 @@ LRESULT CALLBACK ParentSubclass(HWND parent, UINT message, WPARAM wParam, LPARAM
                                 UINT_PTR, DWORD_PTR) {
     if (message == WM_COMMAND && HIWORD(wParam) == BN_CLICKED) {
         const int id = LOWORD(wParam);
-        if (id == kWallpaperNavId || id == kWidgetsNavId) HideDesktopAiSettingsPage(parent);
+        if (id >= kFirstNavId && id < kAiNavId) HideDesktopAiSettingsPage(parent);
     }
 
     const LRESULT result = DefSubclassProc(parent, message, wParam, lParam);
     auto* state = StateFor(parent);
+    if (state && message == WM_DPICHANGED) state->RebuildFonts();
     if (state && (message == WM_SIZE || message == WM_DPICHANGED || message == WM_SHOWWINDOW)) {
         state->Layout();
+        if (state->panel && IsWindowVisible(state->panel)) {
+            state->HideHostContent();
+            SetWindowPos(state->panel, HWND_TOP, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
     }
     if (message == WM_NCDESTROY) {
         RemoveWindowSubclass(parent, ParentSubclass, kParentSubclassId);
@@ -341,8 +443,12 @@ bool CreatePage(PageState& state) {
     };
 
     state.title = label(L"图灵 AI");
-    state.intro = label(L"配置图灵 AI 使用的模型 API。Provider、Model 与 API Key 同时供 Pi Agent 和 Direct Model fallback 使用。",
+    state.intro = label(L"模型 API 同时供 Pi Agent 与 Direct Model 使用；API Key 安全保存在 Windows Credential Manager。",
                         SS_LEFT | SS_NOPREFIX);
+    state.profileLabel = label(L"配置");
+    state.profileCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+                                         0, 0, 10, 10, state.panel, ControlId(kProfileId), wc.hInstance, nullptr);
     state.provider = label(L"");
     state.apiLabel = label(L"API 地址");
     state.apiUrl = edit(kApiUrlId);
@@ -350,15 +456,16 @@ bool CreatePage(PageState& state) {
     state.apiKey = edit(kApiKeyId, ES_PASSWORD);
     state.modelLabel = label(L"Model");
     state.model = edit(kModelId);
-    state.save = button(L"检测并保存 API", kSaveApiId);
-    state.status = label(L"API Key 使用 Windows Credential Manager 保存，不会在这里回显明文。",
+    state.save = button(L"检测并保存配置", kSaveApiId);
+    state.status = label(L"保存后 Pi Agent 与 Direct Model 会立即共用当前配置。",
                          SS_LEFT | SS_NOPREFIX);
     state.harnessTitle = label(L"DeepSeek Harness");
-    state.harnessText = label(L"打开随 TuringDesk 部署的 DeepSeek Harness 管理界面。Harness 使用本机 loopback 服务，不会自动下载 npm/npx 依赖。",
+    state.harnessText = label(L"打开随 TuringDesk 部署的 DeepSeek Harness 管理界面。",
                               SS_LEFT | SS_NOPREFIX);
     state.harnessOpen = button(L"打开 DeepSeek Harness", kOpenHarnessId);
 
-    if (!state.title || !state.intro || !state.provider || !state.apiUrl || !state.apiKey || !state.model ||
+    if (!state.title || !state.intro || !state.profileLabel || !state.profileCombo || !state.provider ||
+        !state.apiLabel || !state.apiUrl || !state.keyLabel || !state.apiKey || !state.modelLabel || !state.model ||
         !state.save || !state.status || !state.harnessTitle || !state.harnessText || !state.harnessOpen) return false;
 
     SendMessageW(state.apiUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://api.deepseek.com/v1"));
@@ -383,16 +490,21 @@ bool ShowDesktopAiSettingsPage(HWND desktopSettingsWindow) {
     }
 
     state->RefreshConfigText();
+    state->HideHostContent();
     state->Layout();
+    ShowWindow(state->panel, SW_SHOW);
     SetWindowPos(state->panel, HWND_TOP, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     InvalidateRect(state->panel, nullptr, TRUE);
+    UpdateWindow(state->panel);
     return true;
 }
 
 void HideDesktopAiSettingsPage(HWND desktopSettingsWindow) {
-    if (auto* state = StateFor(desktopSettingsWindow); state && state->panel)
+    if (auto* state = StateFor(desktopSettingsWindow); state && state->panel) {
         ShowWindow(state->panel, SW_HIDE);
+        state->RestoreHostContent();
+    }
 }
 
 bool DesktopAiSettingsPageVisible(HWND desktopSettingsWindow) {

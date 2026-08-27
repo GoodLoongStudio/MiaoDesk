@@ -34,29 +34,33 @@ constexpr float kPlacementGap = 0.025f;
 
 constexpr std::string_view kMinimalClockHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:22px;background:rgba(14,18,26,.78);box-shadow:0 10px 28px rgba(0,0,0,.30);backdrop-filter:blur(18px)}
-#time{font-size:clamp(34px,20vw,58px);font-weight:650;letter-spacing:-1.5px;line-height:1}
-</style></head><body><div class="card"><div id="time"></div></div><script>
-function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});}tick();setInterval(tick,1000);
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;border-radius:24px;overflow:hidden;background:linear-gradient(125deg,rgba(9,13,24,.92),rgba(23,25,44,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 16px 40px rgba(0,0,0,.34);backdrop-filter:blur(22px)}
+.card:before{content:"";position:absolute;inset:-80%;background:conic-gradient(from 90deg,transparent,#56f6d2 10%,transparent 24%,#8a64ff 42%,transparent 57%,#46baff 72%,transparent 86%);opacity:.28;animation:spin 12s linear infinite}.inner{position:relative;z-index:1;display:flex;align-items:baseline;gap:8px;text-shadow:0 0 24px rgba(112,207,255,.24)}
+#time{font-size:clamp(34px,20vw,62px);font-weight:680;letter-spacing:-2px;line-height:1}#sec{font-size:clamp(11px,5vw,17px);font-variant-numeric:tabular-nums;opacity:.55}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body><div class="card"><div class="inner"><div id="time"></div><div id="sec"></div></div></div><script>
+function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('sec').textContent=String(d.getSeconds()).padStart(2,'0');}tick();setInterval(tick,1000);
 </script></body></html>)HTML";
 
 constexpr std::string_view kDateClockHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px 22px;border-radius:24px;background:linear-gradient(145deg,rgba(24,31,48,.92),rgba(13,17,27,.82));box-shadow:0 12px 34px rgba(0,0,0,.32)}
-#time{font-size:clamp(32px,14vw,54px);font-weight:680;letter-spacing:-1.2px;line-height:1}#date{margin-top:11px;font-size:clamp(12px,5vw,17px);opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-</style></head><body><div class="card"><div id="time"></div><div id="date"></div></div><script>
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:34px 22px 18px;border-radius:28px;background:linear-gradient(145deg,rgba(14,18,34,.92),rgba(29,20,48,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.34);backdrop-filter:blur(24px)}
+.orb{position:absolute;border-radius:999px;filter:blur(22px);opacity:.48;animation:float 7s ease-in-out infinite alternate}.a{width:55%;aspect-ratio:1;right:-12%;top:-28%;background:#5d7cff}.b{width:42%;aspect-ratio:1;left:-14%;bottom:-26%;background:#00d8c0;animation-delay:-3s}.eyebrow{position:relative;font-size:10px;font-weight:700;letter-spacing:1.8px;opacity:.6;text-transform:uppercase}.time{position:relative;font-size:clamp(32px,14vw,58px);font-weight:700;letter-spacing:-1.8px;line-height:1;margin-top:5px}.date{position:relative;margin-top:10px;font-size:clamp(12px,5vw,17px);opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes float{to{transform:translate(10px,12px) scale(1.08)}}
+</style></head><body><div class="card"><div class="orb a"></div><div class="orb b"></div><div class="eyebrow">MIAO · TODAY</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
 function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
 </script></body></html>)HTML";
 
 constexpr std::string_view kGlassClockHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:24px 26px;border:1px solid rgba(255,255,255,.20);border-radius:30px;background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.06));box-shadow:0 18px 42px rgba(0,0,0,.28);backdrop-filter:blur(26px)}
-.glow{position:absolute;width:46%;aspect-ratio:1;border-radius:999px;right:-8%;top:-24%;background:rgba(94,140,255,.32);filter:blur(24px)}
-#time{position:relative;font-size:clamp(42px,14vw,72px);font-weight:620;letter-spacing:-2px;line-height:1}#date{position:relative;margin-top:12px;font-size:clamp(13px,4vw,18px);opacity:.82}
-</style></head><body><div class="card"><div class="glow"></div><div id="time"></div><div id="date"></div></div><script>
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:38px 26px 24px;border:1px solid rgba(255,255,255,.23);border-radius:32px;background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.045));box-shadow:0 22px 52px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.18);backdrop-filter:blur(30px)}
+.aurora{position:absolute;inset:-35%;background:radial-gradient(circle at 28% 42%,rgba(60,255,205,.52),transparent 28%),radial-gradient(circle at 72% 35%,rgba(92,100,255,.62),transparent 30%),radial-gradient(circle at 55% 75%,rgba(220,69,255,.45),transparent 28%);filter:blur(16px);animation:drift 10s ease-in-out infinite alternate}.mesh{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:28px 28px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 75%)}
+.chip{position:absolute;left:22px;top:22px;padding:5px 9px;border-radius:999px;background:rgba(5,10,22,.28);border:1px solid rgba(255,255,255,.14);font-size:9px;font-weight:750;letter-spacing:1.6px;opacity:.76}.time{position:relative;font-size:clamp(42px,14vw,78px);font-weight:660;letter-spacing:-2.8px;line-height:.94;text-shadow:0 4px 30px rgba(0,0,0,.2)}.date{position:relative;margin-top:13px;font-size:clamp(13px,4vw,18px);opacity:.84}
+@keyframes drift{0%{transform:translate(-3%,-2%) rotate(-4deg) scale(1)}100%{transform:translate(4%,3%) rotate(5deg) scale(1.08)}}
+</style></head><body><div class="card"><div class="aurora"></div><div class="mesh"></div><div class="chip">MIAO · DESKTOP</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
 function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
 </script></body></html>)HTML";
 
@@ -107,7 +111,7 @@ std::pair<float, float> AutomaticPlacement(
     // Fixed M3 presets can have different sizes. Scan right-to-left and
     // top-to-bottom in logical desktop space and reject any candidate that
     // intersects an enabled Widget on the same monitor. This keeps the showcase
-    // deterministic without introducing drag/resize/editor behavior.
+    // deterministic before the user freely drags the Widget to a preferred position.
     const float maxX = std::max(kPlacementMargin, 1.0f - kPlacementMargin - width);
     const float maxY = std::max(kPlacementMargin, 1.0f - kPlacementMargin - height);
     const int xSteps = std::max(0, static_cast<int>(std::ceil((maxX - kPlacementMargin) / kPlacementGap)));
@@ -259,11 +263,11 @@ DesktopControlResult DesktopWidgetController::CreateClock(
         else if (_wcsicmp(widget.title.c_str(), L"玻璃时钟") == 0) ++glassCount;
     }
 
-    WidgetFixedPreset preset = WidgetFixedPreset::MinimalClock;
-    if (dateCount < minimalCount && dateCount <= glassCount) preset = WidgetFixedPreset::DateClock;
-    else if (glassCount < minimalCount && glassCount < dateCount) preset = WidgetFixedPreset::GlassClock;
-    else if (minimalCount == dateCount && minimalCount > glassCount) preset = WidgetFixedPreset::GlassClock;
-    else if (minimalCount > dateCount) preset = WidgetFixedPreset::DateClock;
+    // The flagship glass preset wins ties, so the very first built-in Widget
+    // showcases the richer desktop visual instead of the plain clock.
+    WidgetFixedPreset preset = WidgetFixedPreset::GlassClock;
+    if (dateCount < glassCount && dateCount <= minimalCount) preset = WidgetFixedPreset::DateClock;
+    else if (minimalCount < glassCount && minimalCount < dateCount) preset = WidgetFixedPreset::MinimalClock;
 
     return CreatePreset(preset, std::move(monitorId), created);
 }

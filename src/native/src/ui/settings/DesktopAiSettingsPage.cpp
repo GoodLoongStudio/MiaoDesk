@@ -77,6 +77,8 @@ struct PageState {
     HBRUSH whiteBrush{};
     std::vector<HWND> hiddenHostChildren;
     bool hasSavedProfile{};
+    int scrollY{};
+    int contentHeight{};
     L3Agent agent;
 
     ~PageState() {
@@ -179,7 +181,9 @@ struct PageState {
     }
 
     void SetStatus(std::wstring text) {
-        if (status) SetWindowTextW(status, text.c_str());
+        if (!status) return;
+        SetWindowTextW(status, text.c_str());
+        if (panel && IsWindow(panel)) Layout();
     }
 
     void SaveApi() {
@@ -287,6 +291,33 @@ struct PageState {
         hiddenHostChildren.clear();
     }
 
+    int MeasureTextHeight(HWND control, int width, HFONT font, int minimum) const {
+        if (!control || width <= 0) return minimum;
+        const std::wstring text = WindowText(control);
+        if (text.empty()) return minimum;
+        HDC dc = GetDC(panel);
+        if (!dc) return minimum;
+        HGDIOBJ previous = font ? SelectObject(dc, font) : nullptr;
+        RECT measure{0, 0, width, 0};
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measure,
+                  DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(panel, dc);
+        return std::max(minimum, static_cast<int>(measure.bottom - measure.top) + S(3));
+    }
+
+    void SetScrollPosition(int requested) {
+        if (!panel) return;
+        RECT area{};
+        GetClientRect(panel, &area);
+        const int viewport = std::max(1, static_cast<int>(area.bottom - area.top));
+        const int maxScroll = std::max(0, contentHeight - viewport);
+        const int next = std::clamp(requested, 0, maxScroll);
+        if (next == scrollY) return;
+        scrollY = next;
+        Layout();
+    }
+
     void Layout() {
         if (!parent || !panel) return;
         RECT client{};
@@ -300,52 +331,77 @@ struct PageState {
         RECT area{};
         GetClientRect(panel, &area);
         const int width = std::max(1, static_cast<int>(area.right - area.left));
+        const int height = std::max(1, static_cast<int>(area.bottom - area.top));
 
-        const int margin = S(22);
-        const int labelW = S(82);
-        const int rowH = S(30);
-        const int gap = S(6);
-        const int availableW = std::max(S(220), width - margin * 2);
-        const int contentW = std::min(S(920), availableW);
-        const int fieldX = margin + labelW;
-        const int fieldW = std::max(S(140), contentW - labelW);
+        // Nothing snaps between compact/normal modes. Every horizontal dimension
+        // is derived continuously from the current client width.
+        const int margin = std::clamp(width / 32, S(16), S(28));
+        const int contentW = std::max(S(220), width - margin * 2);
+        const int labelW = std::clamp(contentW * 16 / 100, S(76), S(112));
+        const int fieldGap = S(10);
+        const int fieldX = margin + labelW + fieldGap;
+        const int fieldW = std::max(S(120), contentW - labelW - fieldGap);
+        const int rowH = S(32);
+        const int rowGap = S(8);
 
-        ShowWindow(intro, SW_SHOW);
-        ShowWindow(provider, SW_SHOW);
-        ShowWindow(harnessText, SW_SHOW);
+        const int introH = MeasureTextHeight(intro, contentW, bodyFont, S(24));
+        const int providerH = MeasureTextHeight(provider, fieldW, smallFont, S(22));
+        const int statusH = MeasureTextHeight(status, contentW, smallFont, S(24));
+        const int harnessTextH = MeasureTextHeight(harnessText, contentW, bodyFont, S(24));
 
-        int y = S(14);
-        MoveWindow(title, margin, y, contentW, S(32), TRUE);
-        y += S(36);
+        int y = S(16);
+        const int titleY = y; const int titleH = S(34); y += titleH + S(5);
+        const int introY = y; y += introH + S(12);
+        const int profileY = y; y += rowH + rowGap;
+        const int providerY = y; y += providerH + S(8);
+        const int apiY = y; y += rowH + rowGap;
+        const int keyY = y; y += rowH + rowGap;
+        const int modelY = y; y += rowH + S(12);
+        const int saveY = y; y += S(38) + S(10);
+        const int statusY = y; y += statusH + S(14);
+        const int harnessTitleY = y; y += S(28) + S(5);
+        const int harnessTextY = y; y += harnessTextH + S(12);
+        const int harnessOpenY = y; y += S(38);
+        contentHeight = y + margin;
 
-        MoveWindow(intro, margin, y, contentW, S(28), TRUE);
-        y += S(32);
+        const int maxScroll = std::max(0, contentHeight - height);
+        scrollY = std::clamp(scrollY, 0, maxScroll);
+        SCROLLINFO scroll{};
+        scroll.cbSize = sizeof(scroll);
+        scroll.fMask = SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL;
+        scroll.nMin = 0;
+        scroll.nMax = std::max(0, contentHeight - 1);
+        scroll.nPage = static_cast<UINT>(height);
+        scroll.nPos = scrollY;
+        SetScrollInfo(panel, SB_VERT, &scroll, TRUE);
 
-        MoveWindow(profileLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
-        MoveWindow(profileCombo, fieldX, y, fieldW, S(180), TRUE);
-        y += rowH + gap;
+        auto place = [&](HWND control, int x, int top, int w, int h) {
+            if (!control) return;
+            SetWindowPos(control, nullptr, x, top - scrollY, std::max(1, w), std::max(1, h),
+                         SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
+        };
 
-        MoveWindow(provider, fieldX, y, fieldW, S(22), TRUE);
-        y += S(25);
+        place(title, margin, titleY, contentW, titleH);
+        place(intro, margin, introY, contentW, introH);
+        place(profileLabel, margin, profileY + S(5), labelW, S(22));
+        place(profileCombo, fieldX, profileY, fieldW, S(190));
+        place(provider, fieldX, providerY, fieldW, providerH);
+        place(apiLabel, margin, apiY + S(5), labelW, S(22));
+        place(apiUrl, fieldX, apiY, fieldW, rowH);
+        place(keyLabel, margin, keyY + S(5), labelW, S(22));
+        place(apiKey, fieldX, keyY, fieldW, rowH);
+        place(modelLabel, margin, modelY + S(5), labelW, S(22));
+        place(model, fieldX, modelY, fieldW, rowH);
+        place(save, fieldX, saveY, std::min(fieldW, S(190)), S(38));
+        place(status, margin, statusY, contentW, statusH);
+        place(harnessTitle, margin, harnessTitleY, contentW, S(28));
+        place(harnessText, margin, harnessTextY, contentW, harnessTextH);
+        place(harnessOpen, margin, harnessOpenY, std::min(contentW, S(210)), S(38));
 
-        MoveWindow(apiLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
-        MoveWindow(apiUrl, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(keyLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
-        MoveWindow(apiKey, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(modelLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
-        MoveWindow(model, fieldX, y, fieldW, rowH, TRUE); y += rowH + S(8);
-
-        MoveWindow(save, fieldX, y, S(170), S(34), TRUE);
-        y += S(40);
-        MoveWindow(status, margin, y, contentW, S(26), TRUE);
-        y += S(34);
-
-        MoveWindow(harnessTitle, margin, y, contentW, S(26), TRUE);
-        y += S(30);
-        MoveWindow(harnessText, margin, y, contentW, S(26), TRUE);
-        y += S(32);
-        MoveWindow(harnessOpen, margin, y, S(190), S(36), TRUE);
+        RedrawWindow(panel, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     }
+
 };
 
 PageState* StateFor(HWND parent) {
@@ -362,6 +418,37 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
     if (!state) return DefWindowProcW(window, message, wParam, lParam);
 
     switch (message) {
+    case WM_MOUSEWHEEL: {
+        const short delta = static_cast<short>(HIWORD(wParam));
+        const int distance = MulDiv(static_cast<int>(delta), state->S(54), WHEEL_DELTA);
+        state->SetScrollPosition(state->scrollY - distance);
+        return 0;
+    }
+    case WM_VSCROLL: {
+        RECT area{};
+        GetClientRect(window, &area);
+        const int viewport = std::max(1, static_cast<int>(area.bottom - area.top));
+        int next = state->scrollY;
+        switch (LOWORD(wParam)) {
+        case SB_LINEUP: next -= state->S(34); break;
+        case SB_LINEDOWN: next += state->S(34); break;
+        case SB_PAGEUP: next -= std::max(state->S(80), viewport * 4 / 5); break;
+        case SB_PAGEDOWN: next += std::max(state->S(80), viewport * 4 / 5); break;
+        case SB_TOP: next = 0; break;
+        case SB_BOTTOM: next = state->contentHeight; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: {
+            SCROLLINFO info{};
+            info.cbSize = sizeof(info);
+            info.fMask = SIF_TRACKPOS;
+            if (GetScrollInfo(window, SB_VERT, &info)) next = info.nTrackPos;
+            break;
+        }
+        default: return 0;
+        }
+        state->SetScrollPosition(next);
+        return 0;
+    }
     case WM_COMMAND:
         if (LOWORD(wParam) == kProfileId && HIWORD(wParam) == CBN_SELCHANGE) {
             state->OnProfileSelectionChanged();
@@ -438,7 +525,7 @@ bool CreatePage(PageState& state) {
 
     state.whiteBrush = CreateSolidBrush(RGB(255, 255, 255));
     state.panel = CreateWindowExW(WS_EX_CONTROLPARENT, kPageClass, L"",
-                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VSCROLL,
                                   0, 0, 10, 10, state.parent, nullptr, wc.hInstance, &state);
     if (!state.panel) return false;
 

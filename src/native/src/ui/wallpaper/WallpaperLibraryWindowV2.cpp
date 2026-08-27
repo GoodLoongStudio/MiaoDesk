@@ -948,13 +948,20 @@ struct WallpaperLibraryWindow::Impl {
             RECT bounds{};
             if (!GetWindowRect(hwnd, &bounds)) break;
             const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            // Preserve Windows' own caption button/system-menu hit targets first. The
+            // enlarged resize zones extend into client space but never steal Close,
+            // Maximize, Minimize or the system icon from the standard frame.
+            const LRESULT nativeHit = DefWindowProcW(hwnd, message, wParam, lParam);
+            if (nativeHit == HTCLOSE || nativeHit == HTMAXBUTTON || nativeHit == HTMINBUTTON || nativeHit == HTSYSMENU)
+                return nativeHit;
+
             const UINT dpi = self->Dpi();
             const int systemX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
             const int systemY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-            const int edgeX = std::max(self->S(7), systemX);
-            const int edgeY = std::max(self->S(7), systemY);
-            const int cornerX = std::max(edgeX, self->S(16));
-            const int cornerY = std::max(edgeY, self->S(16));
+            const int edgeX = std::max(self->S(12), systemX);
+            const int edgeY = std::max(self->S(12), systemY);
+            const int cornerX = std::max(edgeX, self->S(44));
+            const int cornerY = std::max(edgeY, self->S(44));
             const bool leftEdge = point.x >= bounds.left && point.x < bounds.left + edgeX;
             const bool rightEdge = point.x < bounds.right && point.x >= bounds.right - edgeX;
             const bool topEdge = point.y >= bounds.top && point.y < bounds.top + edgeY;

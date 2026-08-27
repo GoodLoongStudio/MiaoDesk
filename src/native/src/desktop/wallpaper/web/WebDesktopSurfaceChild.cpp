@@ -387,11 +387,11 @@ private:
         if (!dragHandle_ || !IsWindow(dragHandle_) || !hwnd_) return;
         RECT client{};
         if (!GetClientRect(hwnd_, &client)) return;
-        const UINT dpi = GetDpiForWindow(hwnd_);
-        const int height = MulDiv(28, static_cast<int>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI), USER_DEFAULT_SCREEN_DPI);
-        SetWindowPos(dragHandle_, HWND_TOP, 0, 0, std::max(1L, client.right - client.left), height,
+        SetWindowPos(dragHandle_, HWND_TOP, 0, 0,
+                     std::max<LONG>(1, client.right - client.left),
+                     std::max<LONG>(1, client.bottom - client.top),
                      SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        InvalidateRect(dragHandle_, nullptr, TRUE);
+        InvalidateRect(dragHandle_, nullptr, FALSE);
     }
 
     std::wstring WidgetId() const {

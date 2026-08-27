@@ -1452,7 +1452,28 @@ private:
             }
         }
 
-        for (int i = 0; i < 46; ++i) {
+        const float haloPulse = 0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.48f));
+        const D2D1_POINT_2F haloCenter = D2D1::Point2F(
+            size.width * (0.50f + 0.08f * static_cast<float>(std::sin(time_ * 0.19f))),
+            size.height * (0.48f + 0.06f * static_cast<float>(std::cos(time_ * 0.17f))));
+        for (int ring = 0; ring < 4; ++ring) {
+            const float ringScale = 1.0f + ring * 0.22f + haloPulse * 0.08f;
+            brush_->SetColor(D2D1::ColorF(0.28f + ring * 0.06f, 0.62f, 1.0f, 0.10f - ring * 0.014f));
+            renderTarget_->DrawEllipse(
+                D2D1::Ellipse(haloCenter, size.width * 0.12f * ringScale, size.height * 0.20f * ringScale),
+                brush_.Get(), 1.2f + ring * 0.35f);
+        }
+
+        for (int i = 0; i < 18; ++i) {
+            const float progress = static_cast<float>(std::fmod(time_ * (0.020f + (i % 4) * 0.004f) + i * 0.071f, 1.0f));
+            const float x = size.width * (1.10f - progress * 1.25f);
+            const float y = size.height * (0.08f + static_cast<float>((i * 29) % 83) / 100.0f);
+            const float length = size.width * (0.018f + (i % 3) * 0.006f);
+            brush_->SetColor(D2D1::ColorF(0.72f, 0.92f, 1.0f, 0.10f + (i % 4) * 0.035f));
+            renderTarget_->DrawLine(D2D1::Point2F(x, y), D2D1::Point2F(x + length, y - length * 0.16f), brush_.Get(), 1.0f);
+        }
+
+        for (int i = 0; i < 72; ++i) {
             const float x = size.width * static_cast<float>((i * 37 + 11) % 101) / 100.0f;
             const float y = size.height * static_cast<float>((i * 53 + 7) % 97) / 100.0f;
             const float twinkle = 0.18f + 0.34f * (0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.9f + i * 1.73f)));

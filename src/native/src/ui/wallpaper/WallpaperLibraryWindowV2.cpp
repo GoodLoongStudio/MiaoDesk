@@ -1,4 +1,5 @@
 #include "turingdesk/WallpaperLibraryWindow.h"
+#include "turingdesk/DesktopAiSettingsPage.h"
 #include "turingdesk/DesktopWidgetController.h"
 
 #include <commctrl.h>
@@ -136,7 +137,7 @@ void FrameSolid(HDC dc, RECT rect, COLORREF color, int thickness = 1) {
 } // namespace
 
 struct WallpaperLibraryWindow::Impl {
-    enum class Page { Installed, Widgets };
+    enum class Page { Installed, Widgets, AI };
 
     HINSTANCE instance{};
     HWND window{};
@@ -534,14 +535,17 @@ struct WallpaperLibraryWindow::Impl {
 
     void UpdateFooter() {
         const bool installed = page == Page::Installed;
+        const bool widgets = page == Page::Widgets;
+        const bool showFooter = installed || widgets;
+        ShowWindow(status, showFooter ? SW_SHOW : SW_HIDE);
         ShowWindow(targetCombo, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(applyButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(favoriteButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(removeButton, installed ? SW_SHOW : SW_HIDE);
-        ShowWindow(widgetCreateButton, installed ? SW_HIDE : SW_SHOW);
-        ShowWindow(widgetToggleButton, installed ? SW_HIDE : SW_SHOW);
-        ShowWindow(widgetRemoveButton, installed ? SW_HIDE : SW_SHOW);
-        ShowWindow(widgetRefreshButton, installed ? SW_HIDE : SW_SHOW);
+        ShowWindow(widgetCreateButton, widgets ? SW_SHOW : SW_HIDE);
+        ShowWindow(widgetToggleButton, widgets ? SW_SHOW : SW_HIDE);
+        ShowWindow(widgetRemoveButton, widgets ? SW_SHOW : SW_HIDE);
+        ShowWindow(widgetRefreshButton, widgets ? SW_SHOW : SW_HIDE);
 
         if (installed) {
             const auto selected = SelectedWallpaper();
@@ -556,12 +560,12 @@ struct WallpaperLibraryWindow::Impl {
                 SetStatus(std::move(text));
                 SetWindowTextW(favoriteButton, selected->favorite ? L"取消收藏" : L"收藏");
             }
-        } else {
+        } else if (widgets) {
             const auto widget = SelectedWidget();
             EnableWindow(widgetToggleButton, widget ? TRUE : FALSE);
             EnableWindow(widgetRemoveButton, widget ? TRUE : FALSE);
             if (!widget) {
-                SetStatus(L"小组件独立于壁纸存在。切换壁纸不会删除小组件布局。");
+                SetStatus(L"小组件可直接在桌面拖动；位置会自动保存。");
             } else {
                 const auto* health = HealthFor(widget->id);
                 std::wostringstream text;
@@ -581,15 +585,21 @@ struct WallpaperLibraryWindow::Impl {
 
     void SetPage(Page next) {
         page = next;
-        activeNavId = page == Page::Installed ? kNavInstalledId : kNavWidgetsId;
-        SetWindowTextW(sectionTitle, page == Page::Installed ? L"壁纸库" : L"小组件");
-        ShowWindow(wallpaperGrid, page == Page::Installed ? SW_SHOW : SW_HIDE);
-        ShowWindow(widgetGrid, page == Page::Widgets ? SW_SHOW : SW_HIDE);
-        ShowWindow(search, page == Page::Installed ? SW_SHOW : SW_HIDE);
-        if (page != Page::Installed) HideWebBar();
+        const bool installed = page == Page::Installed;
+        const bool widgets = page == Page::Widgets;
+        const bool ai = page == Page::AI;
+        activeNavId = installed ? kNavInstalledId : widgets ? kNavWidgetsId : kNavAiId;
+        SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI");
+        ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
+        ShowWindow(widgetGrid, widgets ? SW_SHOW : SW_HIDE);
+        ShowWindow(search, installed ? SW_SHOW : SW_HIDE);
+        ShowWindow(addButton, installed ? SW_SHOW : SW_HIDE);
+        if (!installed && webBarVisible) HideWebBar();
+        if (ai) ShowDesktopAiSettingsPage(window);
+        else HideDesktopAiSettingsPage(window);
         UpdateFooter();
-        InvalidateRect(window, nullptr, TRUE);
-        for (HWND button : nav) InvalidateRect(button, nullptr, TRUE);
+        InvalidateRect(window, nullptr, FALSE);
+        for (HWND button : nav) InvalidateRect(button, nullptr, FALSE);
     }
 
     void ApplySelected() {
@@ -745,10 +755,7 @@ struct WallpaperLibraryWindow::Impl {
     void HandleNav(int id) {
         if (id == kNavInstalledId) { SetPage(Page::Installed); return; }
         if (id == kNavWidgetsId) { RefreshWidgets(); SetPage(Page::Widgets); return; }
-        if (id != kNavAiId) return;
-        activeNavId = id;
-        for (HWND button : nav) InvalidateRect(button, nullptr, TRUE);
-        if (navigateCallback) navigateCallback(SectionForNav(id));
+        if (id == kNavAiId) { SetPage(Page::AI); return; }
     }
 
     void ShowWallpaperContextMenu(POINT screenPoint) {
@@ -772,57 +779,94 @@ struct WallpaperLibraryWindow::Impl {
         const int sidebarW = S(208);
         const int topH = S(58);
         const int footerH = S(58);
-        const int margin = S(18);
-        const int webH = webBarVisible && page == Page::Installed ? S(48) : 0;
+        const int margin = std::clamp((width - sidebarW) / 36, S(14), S(20));
+        const bool installed = page == Page::Installed;
+        const bool widgets = page == Page::Widgets;
+        const int webH = webBarVisible && installed ? S(48) : 0;
 
-        MoveWindow(title, S(18), S(16), sidebarW - S(36), S(28), TRUE);
+        auto place = [&](HWND child, int x, int y, int w, int h) {
+            if (!child) return;
+            SetWindowPos(child, nullptr, x, y, std::max(1, w), std::max(1, h),
+                         SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
+        };
 
+        place(title, S(18), S(16), sidebarW - S(36), S(28));
         int navY = topH + S(18);
         for (HWND button : nav) {
-            MoveWindow(button, S(12), navY, sidebarW - S(24), S(38), TRUE);
+            place(button, S(12), navY, sidebarW - S(24), S(38));
             navY += S(42);
         }
 
         const int contentLeft = sidebarW;
         const int contentWidth = std::max(1, width - contentLeft);
-        MoveWindow(sectionTitle, contentLeft + margin, S(17), S(220), S(30), TRUE);
-        const int searchW = std::clamp(contentWidth * 38 / 100, S(250), S(430));
-        MoveWindow(search, contentLeft + (contentWidth - searchW) / 2, S(12), searchW, S(34), TRUE);
-        MoveWindow(addButton, width - margin - S(96), S(11), S(96), S(36), TRUE);
+        const int headerLeft = contentLeft + margin;
+        const int headerRight = width - margin;
+        if (installed) {
+            const int addW = S(96);
+            const int titleW = std::clamp(contentWidth * 21 / 100, S(112), S(190));
+            const int titleRight = headerLeft + titleW;
+            const int addLeft = headerRight - addW;
+            const int searchLeft = titleRight + S(12);
+            const int searchW = std::max(S(120), addLeft - S(12) - searchLeft);
+            place(sectionTitle, headerLeft, S(17), titleW, S(30));
+            place(search, searchLeft, S(12), searchW, S(34));
+            place(addButton, addLeft, S(11), addW, S(36));
+        } else {
+            place(sectionTitle, headerLeft, S(17), std::max(S(160), contentWidth - margin * 2), S(30));
+        }
 
-        if (webBarVisible && page == Page::Installed) {
+        if (webBarVisible && installed) {
             const int webTop = topH;
-            MoveWindow(webUrl, contentLeft + margin, webTop + S(7), std::max(S(240), contentWidth - margin * 2 - S(214)), S(34), TRUE);
-            MoveWindow(webConfirm, width - margin - S(202), webTop + S(7), S(96), S(34), TRUE);
-            MoveWindow(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34), TRUE);
+            const int buttonsW = S(202);
+            const int urlW = std::max(S(160), contentWidth - margin * 2 - buttonsW - S(12));
+            place(webUrl, contentLeft + margin, webTop + S(7), urlW, S(34));
+            place(webConfirm, width - margin - S(202), webTop + S(7), S(96), S(34));
+            place(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34));
         }
 
         const int contentTop = topH + webH;
         const int contentBottom = std::max(contentTop, height - footerH);
         const int contentH = std::max(1, contentBottom - contentTop);
-        MoveWindow(wallpaperGrid, contentLeft, contentTop, contentWidth, contentH, TRUE);
-        MoveWindow(widgetGrid, contentLeft, contentTop, contentWidth, contentH, TRUE);
+        place(wallpaperGrid, contentLeft, contentTop, contentWidth, contentH);
+        place(widgetGrid, contentLeft, contentTop, contentWidth, contentH);
         UpdateGridScroll(wallpaperGrid, false);
         UpdateGridScroll(widgetGrid, true);
 
         const int footerTop = height - footerH;
-        MoveWindow(status, contentLeft + margin, footerTop + S(18), std::max(S(180), contentWidth - S(600)), S(26), TRUE);
-        if (page == Page::Installed) {
-            const int targetW = S(182);
-            const int actionW = S(108);
-            const int smallW = S(88);
+        if (installed) {
+            const int gap = S(6);
+            const int actionW = std::clamp(contentWidth * 15 / 100, S(82), S(108));
+            const int smallW = std::clamp(contentWidth * 11 / 100, S(68), S(88));
+            const int targetW = std::clamp(contentWidth * 23 / 100, S(118), S(182));
             const int right = width - margin;
-            MoveWindow(applyButton, right - actionW, footerTop + S(11), actionW, S(36), TRUE);
-            MoveWindow(removeButton, right - actionW - S(8) - smallW, footerTop + S(11), smallW, S(36), TRUE);
-            MoveWindow(favoriteButton, right - actionW - S(16) - smallW * 2, footerTop + S(11), smallW, S(36), TRUE);
-            MoveWindow(targetCombo, right - actionW - S(24) - smallW * 2 - targetW, footerTop + S(11), targetW, S(180), TRUE);
-        } else {
+            const int actionTotal = targetW + actionW + smallW * 2 + gap * 3;
+            const int actionsLeft = right - actionTotal;
+            const int statusLeft = contentLeft + margin;
+            const int statusW = std::max(S(90), actionsLeft - S(10) - statusLeft);
+            place(status, statusLeft, footerTop + S(18), statusW, S(26));
+            int x = actionsLeft;
+            place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
+            place(favoriteButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
+            place(removeButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
+            place(applyButton, x, footerTop + S(11), actionW, S(36));
+        } else if (widgets) {
+            const int gap = S(6);
+            const int buttonW = std::clamp(contentWidth * 11 / 100, S(70), S(84));
+            const int createW = std::clamp(contentWidth * 20 / 100, S(124), S(154));
             const int right = width - margin;
-            MoveWindow(widgetRemoveButton, right - S(84), footerTop + S(11), S(84), S(36), TRUE);
-            MoveWindow(widgetToggleButton, right - S(176), footerTop + S(11), S(84), S(36), TRUE);
-            MoveWindow(widgetRefreshButton, right - S(268), footerTop + S(11), S(84), S(36), TRUE);
-            MoveWindow(widgetCreateButton, right - S(430), footerTop + S(11), S(154), S(36), TRUE);
+            const int actionTotal = createW + buttonW * 3 + gap * 3;
+            const int actionsLeft = right - actionTotal;
+            const int statusLeft = contentLeft + margin;
+            const int statusW = std::max(S(90), actionsLeft - S(10) - statusLeft);
+            place(status, statusLeft, footerTop + S(18), statusW, S(26));
+            int x = actionsLeft;
+            place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
+            place(widgetRefreshButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
+            place(widgetToggleButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
+            place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
         }
+
+        RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
     }
 
     LRESULT DrawNavButton(const DRAWITEMSTRUCT* draw) {

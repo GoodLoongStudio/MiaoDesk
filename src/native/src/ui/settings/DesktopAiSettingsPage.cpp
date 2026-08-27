@@ -75,7 +75,6 @@ struct PageState {
     HFONT bodyFont{};
     HFONT smallFont{};
     HBRUSH whiteBrush{};
-    std::vector<HWND> hiddenHostChildren;
     bool hasSavedProfile{};
     int scrollY{};
     int contentHeight{};
@@ -262,35 +261,6 @@ struct PageState {
         SetStatus(L"正在打开秒喵工作台…");
     }
 
-    bool HostNavControl(HWND child) const {
-        const int id = GetDlgCtrlID(child);
-        return id >= kFirstNavId && id <= kAiNavId;
-    }
-
-    void HideHostContent() {
-        if (!parent || !panel) return;
-        const int sidebar = S(208);
-        for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-            if (child == panel || HostNavControl(child) || !IsWindowVisible(child)) continue;
-
-            RECT rect{};
-            if (!GetWindowRect(child, &rect)) continue;
-            MapWindowPoints(nullptr, parent, reinterpret_cast<POINT*>(&rect), 2);
-            if (rect.right <= sidebar) continue;
-
-            if (std::find(hiddenHostChildren.begin(), hiddenHostChildren.end(), child) == hiddenHostChildren.end())
-                hiddenHostChildren.push_back(child);
-            ShowWindow(child, SW_HIDE);
-        }
-    }
-
-    void RestoreHostContent() {
-        for (HWND child : hiddenHostChildren) {
-            if (child && IsWindow(child) && GetParent(child) == parent) ShowWindow(child, SW_SHOW);
-        }
-        hiddenHostChildren.clear();
-    }
-
     int MeasureTextHeight(HWND control, int width, HFONT font, int minimum) const {
         if (!control || width <= 0) return minimum;
         const std::wstring text = WindowText(control);
@@ -323,10 +293,13 @@ struct PageState {
         RECT client{};
         GetClientRect(parent, &client);
         const int sidebar = S(208);
+        const int top = S(58);
+        const int footer = S(58);
         const int parentWidth = std::max(1, static_cast<int>(client.right - client.left));
         const int parentHeight = std::max(1, static_cast<int>(client.bottom - client.top));
-        SetWindowPos(panel, nullptr, sidebar, 0, std::max(1, parentWidth - sidebar), parentHeight,
-                     SWP_NOACTIVATE | SWP_NOZORDER);
+        SetWindowPos(panel, nullptr, sidebar, top, std::max(1, parentWidth - sidebar),
+                     std::max(1, parentHeight - top - footer),
+                     SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
 
         RECT area{};
         GetClientRect(panel, &area);
@@ -349,8 +322,9 @@ struct PageState {
         const int statusH = MeasureTextHeight(status, contentW, smallFont, S(24));
         const int harnessTextH = MeasureTextHeight(harnessText, contentW, bodyFont, S(24));
 
+        ShowWindow(title, SW_HIDE);
         int y = S(16);
-        const int titleY = y; const int titleH = S(34); y += titleH + S(5);
+        const int titleY = y; const int titleH = 1;
         const int introY = y; y += introH + S(12);
         const int profileY = y; y += rowH + rowGap;
         const int providerY = y; y += providerH + S(8);
@@ -501,7 +475,6 @@ LRESULT CALLBACK ParentSubclass(HWND parent, UINT message, WPARAM wParam, LPARAM
     if (state && (message == WM_SIZE || message == WM_DPICHANGED || message == WM_SHOWWINDOW)) {
         state->Layout();
         if (state->panel && IsWindowVisible(state->panel)) {
-            state->HideHostContent();
             SetWindowPos(state->panel, HWND_TOP, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
@@ -592,7 +565,6 @@ bool ShowDesktopAiSettingsPage(HWND desktopSettingsWindow) {
     }
 
     state->RefreshConfigText();
-    state->HideHostContent();
     state->Layout();
     ShowWindow(state->panel, SW_SHOW);
     SetWindowPos(state->panel, HWND_TOP, 0, 0, 0, 0,
@@ -605,7 +577,6 @@ bool ShowDesktopAiSettingsPage(HWND desktopSettingsWindow) {
 void HideDesktopAiSettingsPage(HWND desktopSettingsWindow) {
     if (auto* state = StateFor(desktopSettingsWindow); state && state->panel) {
         ShowWindow(state->panel, SW_HIDE);
-        state->RestoreHostContent();
     }
 }
 

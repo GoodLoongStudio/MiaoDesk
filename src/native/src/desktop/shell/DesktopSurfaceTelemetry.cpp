@@ -9,9 +9,12 @@
 namespace turingdesk::wallpaper {
 namespace {
 
+constexpr wchar_t kProgmanClass[] = L"Progman";
+constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 
 bool IsClass(HWND window, const wchar_t* expected) noexcept {
     if (!window || !IsWindow(window)) return false;
@@ -46,6 +49,62 @@ struct ChildEntry {
 };
 
 } // namespace
+
+DesktopSurfaceParentTelemetry InspectDesktopSurfaceParent() noexcept {
+    DesktopSurfaceParentTelemetry result;
+    const HWND progman = FindWindowW(kProgmanClass, nullptr);
+    if (!progman || !IsWindow(progman)) {
+        result.detail = L"Progman not found";
+        return result;
+    }
+
+    const bool raisedDesktop =
+        (GetWindowLongPtrW(progman, GWL_EXSTYLE) & kRaisedDesktopFlag) != 0;
+    if (raisedDesktop) {
+        const HWND defView = FindWindowExW(progman, nullptr, kDefViewClass, nullptr);
+        if (defView && IsWindow(defView)) {
+            result.reported = true;
+            result.parent = progman;
+            result.mode = L"raised-desktop";
+            result.detail = L"current Explorer raised-desktop parent is Progman";
+            return result;
+        }
+    }
+
+    struct LegacySearch {
+        HWND defView{};
+        HWND defViewParent{};
+        HWND worker{};
+    } legacy;
+    EnumWindows([](HWND top, LPARAM raw) -> BOOL {
+        auto* found = reinterpret_cast<LegacySearch*>(raw);
+        const HWND defView = FindWindowExW(top, nullptr, kDefViewClass, nullptr);
+        if (!defView) return TRUE;
+        found->defView = defView;
+        found->defViewParent = top;
+        found->worker = FindWindowExW(nullptr, top, kWorkerWClass, nullptr);
+        return found->worker ? FALSE : TRUE;
+    }, reinterpret_cast<LPARAM>(&legacy));
+
+    if (legacy.worker && IsWindow(legacy.worker)) {
+        result.reported = true;
+        result.parent = legacy.worker;
+        result.mode = L"legacy-workerw";
+        result.detail = L"current Explorer legacy desktop parent is WorkerW";
+        return result;
+    }
+
+    // Read-only telemetry never sends the private WorkerW spawn message. If no
+    // WorkerW exists, report the same conservative Progman fallback used by the
+    // shell host after discovery.
+    result.reported = true;
+    result.parent = progman;
+    result.mode = L"progman-fallback";
+    result.detail = legacy.defView
+        ? L"WorkerW absent; using Progman fallback while DefView is present"
+        : L"WorkerW/DefView not observed; using Progman fallback";
+    return result;
+}
 
 DesktopSurfaceZOrderHealth InspectDesktopSurfaceZOrder(
     HWND surface,

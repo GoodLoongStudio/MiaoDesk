@@ -30,10 +30,6 @@ constexpr int kSearchId = 6101;
 constexpr int kAddId = 6102;
 constexpr int kNavInstalledId = 6110;
 constexpr int kNavWidgetsId = 6111;
-constexpr int kNavPlaylistsId = 6112;
-constexpr int kNavDisplaysId = 6113;
-constexpr int kNavRulesId = 6114;
-constexpr int kNavPerformanceId = 6115;
 constexpr int kNavAiId = 6116;
 constexpr int kWallpaperGridId = 6120;
 constexpr int kWidgetGridId = 6121;
@@ -117,15 +113,9 @@ bool SourceMissing(const WallpaperLibraryItem& item) {
 }
 
 WallpaperSettingsSection SectionForNav(int id) {
-    switch (id) {
-    case kNavWidgetsId: return WallpaperSettingsSection::Widgets;
-    case kNavPlaylistsId: return WallpaperSettingsSection::Playlists;
-    case kNavDisplaysId: return WallpaperSettingsSection::Displays;
-    case kNavRulesId: return WallpaperSettingsSection::Rules;
-    case kNavPerformanceId: return WallpaperSettingsSection::Performance;
-    case kNavAiId: return WallpaperSettingsSection::AI;
-    default: return WallpaperSettingsSection::Installed;
-    }
+    if (id == kNavWidgetsId) return WallpaperSettingsSection::Widgets;
+    if (id == kNavAiId) return WallpaperSettingsSection::AI;
+    return WallpaperSettingsSection::Installed;
 }
 
 void FillSolid(HDC dc, const RECT& rect, COLORREF color) {
@@ -154,7 +144,7 @@ struct WallpaperLibraryWindow::Impl {
     HWND sectionTitle{};
     HWND search{};
     HWND addButton{};
-    std::array<HWND, 7> nav{};
+    std::array<HWND, 3> nav{};
     HWND wallpaperGrid{};
     HWND widgetGrid{};
     HWND status{};
@@ -755,11 +745,9 @@ struct WallpaperLibraryWindow::Impl {
     void HandleNav(int id) {
         if (id == kNavInstalledId) { SetPage(Page::Installed); return; }
         if (id == kNavWidgetsId) { RefreshWidgets(); SetPage(Page::Widgets); return; }
+        if (id != kNavAiId) return;
         activeNavId = id;
         for (HWND button : nav) InvalidateRect(button, nullptr, TRUE);
-        // The remaining product sections stay on their established production
-        // implementations while M4 replaces only the outer shell. This keeps
-        // AI, playlists, displays, rules and performance reachable during migration.
         if (navigateCallback) navigateCallback(SectionForNav(id));
     }
 
@@ -1100,10 +1088,8 @@ struct WallpaperLibraryWindow::Impl {
         SendMessageW(search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索壁纸"));
         addButton = button(L"＋ 添加", kAddId);
 
-        const std::array<const wchar_t*, 7> navLabels{
-            L"壁纸", L"小组件", L"播放列表", L"多屏配置", L"应用规则", L"性能", L"图灵 AI"};
-        const std::array<int, 7> navIds{
-            kNavInstalledId, kNavWidgetsId, kNavPlaylistsId, kNavDisplaysId, kNavRulesId, kNavPerformanceId, kNavAiId};
+        const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"小组件", L"图灵 AI"};
+        const std::array<int, 3> navIds{kNavInstalledId, kNavWidgetsId, kNavAiId};
         for (std::size_t i = 0; i < nav.size(); ++i)
             nav[i] = button(navLabels[i], navIds[i], BS_OWNERDRAW);
 

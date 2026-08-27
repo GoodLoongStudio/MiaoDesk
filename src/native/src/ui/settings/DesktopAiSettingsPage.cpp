@@ -299,37 +299,57 @@ struct PageState {
         GetClientRect(panel, &area);
         const int width = std::max(1, static_cast<int>(area.right - area.left));
         const int height = std::max(1, static_cast<int>(area.bottom - area.top));
-        const bool compact = height < S(560);
-        const int margin = S(compact ? 22 : 28);
-        const int labelW = S(82);
-        const int rowH = S(compact ? 30 : 32);
-        const int gap = S(compact ? 6 : 8);
+        const bool ultraCompact = height < S(460);
+        const bool compact = ultraCompact || height < S(560);
+        const int margin = S(ultraCompact ? 18 : (compact ? 22 : 28));
+        const int labelW = S(ultraCompact ? 74 : 82);
+        const int rowH = S(ultraCompact ? 28 : (compact ? 30 : 32));
+        const int gap = S(ultraCompact ? 4 : (compact ? 6 : 8));
         const int availableW = std::max(S(220), width - margin * 2);
         const int contentW = std::min(S(760), availableW);
         const int fieldX = margin + labelW;
         const int fieldW = std::max(S(140), contentW - labelW);
 
-        int y = S(compact ? 14 : 18);
-        MoveWindow(title, margin, y, contentW, S(32), TRUE); y += S(compact ? 36 : 40);
-        MoveWindow(intro, margin, y, contentW, S(compact ? 28 : 32), TRUE); y += S(compact ? 32 : 38);
+        ShowWindow(intro, ultraCompact ? SW_HIDE : SW_SHOW);
+        ShowWindow(provider, ultraCompact ? SW_HIDE : SW_SHOW);
+        ShowWindow(harnessText, ultraCompact ? SW_HIDE : SW_SHOW);
 
-        MoveWindow(profileLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
-        MoveWindow(profileCombo, fieldX, y, fieldW, S(180), TRUE); y += rowH + gap;
-        MoveWindow(provider, fieldX, y, fieldW, S(22), TRUE); y += S(compact ? 25 : 28);
+        int y = S(ultraCompact ? 10 : (compact ? 14 : 18));
+        MoveWindow(title, margin, y, contentW, S(ultraCompact ? 30 : 32), TRUE);
+        y += S(ultraCompact ? 34 : (compact ? 36 : 40));
 
-        MoveWindow(apiLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
+        if (!ultraCompact) {
+            MoveWindow(intro, margin, y, contentW, S(compact ? 28 : 32), TRUE);
+            y += S(compact ? 32 : 38);
+        }
+
+        MoveWindow(profileLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
+        MoveWindow(profileCombo, fieldX, y, fieldW, S(ultraCompact ? 160 : 180), TRUE);
+        y += rowH + gap;
+        if (!ultraCompact) {
+            MoveWindow(provider, fieldX, y, fieldW, S(22), TRUE);
+            y += S(compact ? 25 : 28);
+        }
+
+        MoveWindow(apiLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
         MoveWindow(apiUrl, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(keyLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
+        MoveWindow(keyLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
         MoveWindow(apiKey, fieldX, y, fieldW, rowH, TRUE); y += rowH + gap;
-        MoveWindow(modelLabel, margin, y + S(5), labelW - S(8), S(22), TRUE);
-        MoveWindow(model, fieldX, y, fieldW, rowH, TRUE); y += rowH + S(compact ? 8 : 10);
+        MoveWindow(modelLabel, margin, y + S(4), labelW - S(8), S(22), TRUE);
+        MoveWindow(model, fieldX, y, fieldW, rowH, TRUE); y += rowH + S(ultraCompact ? 6 : (compact ? 8 : 10));
 
-        MoveWindow(save, fieldX, y, S(170), S(34), TRUE); y += S(40);
-        MoveWindow(status, margin, y, contentW, S(compact ? 26 : 32), TRUE); y += S(compact ? 34 : 42);
+        MoveWindow(save, fieldX, y, S(ultraCompact ? 158 : 170), S(ultraCompact ? 32 : 34), TRUE);
+        y += S(ultraCompact ? 36 : 40);
+        MoveWindow(status, margin, y, contentW, S(ultraCompact ? 22 : (compact ? 26 : 32)), TRUE);
+        y += S(ultraCompact ? 28 : (compact ? 34 : 42));
 
-        MoveWindow(harnessTitle, margin, y, contentW, S(26), TRUE); y += S(30);
-        MoveWindow(harnessText, margin, y, contentW, S(compact ? 26 : 30), TRUE); y += S(compact ? 32 : 38);
-        MoveWindow(harnessOpen, margin, y, S(190), S(36), TRUE);
+        MoveWindow(harnessTitle, margin, y, contentW, S(ultraCompact ? 24 : 26), TRUE);
+        y += S(ultraCompact ? 28 : 30);
+        if (!ultraCompact) {
+            MoveWindow(harnessText, margin, y, contentW, S(compact ? 26 : 30), TRUE);
+            y += S(compact ? 32 : 38);
+        }
+        MoveWindow(harnessOpen, margin, y, S(ultraCompact ? 180 : 190), S(ultraCompact ? 32 : 36), TRUE);
     }
 };
 

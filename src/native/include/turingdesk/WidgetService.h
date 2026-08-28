@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/NativeWidgetPreset.h"
 
 namespace turingdesk::desktop {
 
@@ -18,6 +19,16 @@ struct WidgetServiceResult {
 struct WebWidgetCreateRequest {
     std::wstring title{L"Desktop Widget"};
     std::string htmlUtf8;
+    std::wstring monitorId;
+    float x{0.68f};
+    float y{0.05f};
+    float width{0.28f};
+    float height{0.18f};
+};
+
+struct NativeWidgetCreateRequest {
+    wallpaper::NativeWidgetPreset preset{wallpaper::NativeWidgetPreset::GlassClock};
+    std::wstring title;
     std::wstring monitorId;
     float x{0.68f};
     float y{0.05f};
@@ -105,6 +116,9 @@ class WidgetService {
 public:
     WidgetServiceResult CreateWeb(
         const WebWidgetCreateRequest& request,
+        wallpaper::DesktopWidget* created = nullptr) const;
+    WidgetServiceResult CreateNative(
+        const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
     WidgetServiceResult Update(const WidgetUpdateRequest& request) const;
     WidgetServiceResult Remove(std::wstring_view id) const;

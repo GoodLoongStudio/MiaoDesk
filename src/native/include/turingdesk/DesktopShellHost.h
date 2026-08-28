@@ -114,6 +114,7 @@ public:
 private:
     static bool IsWindowClass(HWND window, const wchar_t* expected) noexcept;
     static bool IsWidgetWebSurface(HWND window) noexcept;
+    static bool IsWidgetNativeSurface(HWND window) noexcept;
     static HWND LastChild(HWND parent) noexcept;
     static bool TrySetParent(HWND child, HWND parent) noexcept;
     static RECT MapDesktopRectToParent(HWND parent, const RECT& desktopBounds) noexcept;

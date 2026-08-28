@@ -7,6 +7,8 @@
 #include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WallpaperPerformancePolicy.h"
 #include "turingdesk/WebWallpaperHost.h"
+#include "turingdesk/NativeWidgetHost.h"
+#include "turingdesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -132,6 +134,20 @@ std::vector<WebWallpaperRequest> DesiredRequests(HWND host, const RuntimeState& 
         requests.push_back(std::move(request));
     }
     return requests;
+}
+
+bool HasEnabledNativeWidgets() {
+    DesktopWidgetStore store;
+    std::wstring ignored;
+    if (!store.Load(&ignored)) return false;
+    for (const auto& raw : store.Items()) {
+        const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
+        if (widget.enabled && widget.kind == DesktopWidgetKind::Native &&
+            IsNativePresetSource(widget.source.wstring())) {
+            return true;
+        }
+    }
+    return false;
 }
 
 const MonitorInfo* PrimaryMonitor(const MonitorTopology& topology) {
@@ -269,6 +285,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
     void Run(std::stop_token stopToken) {
         running.store(true, std::memory_order_release);
         WebWallpaperProcessSet surfaces;
+        NativeWidgetProcessSet nativeSurfaces;
         WallpaperPerformancePolicy performance;
         DesktopShellHost shellHost;
         HWND host = nullptr;
@@ -302,8 +319,14 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             surfaces.Stop();
             if (activeRequests.empty()) {
                 resetRecovery();
-                WriteDiagnostics(scope, scope == WallpaperWebRuntimeScope::Widgets
-                    ? L"未启用桌面小组件" : L"未启用 Web 壁纸");
+                if (scope == WallpaperWebRuntimeScope::Widgets && HasEnabledNativeWidgets()) {
+                    if (!nativeSurfaces.Active()) nativeSurfaces.Start(surfaceParent);
+                    WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
+                } else {
+                    if (scope == WallpaperWebRuntimeScope::Widgets) nativeSurfaces.Stop();
+                    WriteDiagnostics(scope, scope == WallpaperWebRuntimeScope::Widgets
+                        ? L"未启用桌面小组件" : L"未启用 Web 壁纸");
+                }
                 return true;
             }
             if (!surfaceParent || !IsWindow(surfaceParent)) {
@@ -358,6 +381,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             const bool parentChanged = currentSurfaceParent != surfaceParent;
             if (parentChanged || (scope == WallpaperWebRuntimeScope::WebWallpaper && hostIdentityChanged)) {
                 surfaces.Stop();
+                if (scope == WallpaperWebRuntimeScope::Widgets) nativeSurfaces.Stop();
                 activeRequests.clear();
                 activeFingerprint.clear();
                 surfaceParent = currentSurfaceParent;
@@ -403,47 +427,82 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     activeFingerprint = std::move(fingerprint);
                     resetRecovery();
                     startRequests(now, false);
+                } else if (scope == WallpaperWebRuntimeScope::Widgets) {
+                    const bool wantNative = HasEnabledNativeWidgets();
+                    if (wantNative && !nativeSurfaces.Active()) {
+                        if (!nativeSurfaces.Start(surfaceParent)) {
+                            WriteDiagnostics(scope, L"Native widget host 启动失败：" + nativeSurfaces.LastErrorText());
+                        } else {
+                            WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
+                        }
+                    } else if (!wantNative && nativeSurfaces.Active()) {
+                        nativeSurfaces.Stop();
+                    }
                 }
                 repairStack();
                 nextRefresh = now + kStateRefreshMs;
             }
 
-            if (scopeCanRun && !activeRequests.empty()) {
-                surfaces.Tick();
-                if (!surfaces.Active()) {
-                    healthySince = 0;
-                    if (recoveryAttempts >= kMaxRecoveryAttempts) {
-                        WriteDiagnostics(scope, (scope == WallpaperWebRuntimeScope::Widgets
-                            ? L"Widget runtime 连续恢复 3 次失败，已停止自动恢复："
-                            : L"Web runtime 连续恢复 3 次失败，已停止自动恢复：") + surfaces.LastErrorText());
+            const bool hasWebWidgets = !activeRequests.empty();
+            const bool hasNativeWidgets = scope == WallpaperWebRuntimeScope::Widgets && HasEnabledNativeWidgets();
+            if (scopeCanRun && (hasWebWidgets || hasNativeWidgets)) {
+                if (hasWebWidgets) {
+                    surfaces.Tick();
+                    if (!surfaces.Active()) {
+                        healthySince = 0;
+                        if (recoveryAttempts >= kMaxRecoveryAttempts) {
+                            WriteDiagnostics(scope, L"Widget runtime 连续恢复 3 次失败，已停止自动恢复：" + surfaces.LastErrorText());
+                        } else {
+                            if (nextRecovery == 0) nextRecovery = now + kRecoveryCooldownMs;
+                            if (now >= nextRecovery) startRequests(now, true);
+                        }
                     } else {
-                        if (nextRecovery == 0) nextRecovery = now + kRecoveryCooldownMs;
-                        if (now >= nextRecovery) startRequests(now, true);
+                        if (healthySince == 0) healthySince = now;
+                        if (recoveryAttempts > 0 && now - healthySince >= kRecoveryStableResetMs) {
+                            recoveryAttempts = 0;
+                            nextRecovery = 0;
+                            WriteDiagnostics(scope, surfaces.DiagnosticsText() + L" · 已稳定运行，恢复计数已清零");
+                        }
                     }
-                } else {
-                    if (healthySince == 0) healthySince = now;
-                    if (recoveryAttempts > 0 && now - healthySince >= kRecoveryStableResetMs) {
-                        recoveryAttempts = 0;
-                        nextRecovery = 0;
-                        WriteDiagnostics(scope, surfaces.DiagnosticsText() + L" · 已稳定运行，恢复计数已清零");
+                }
+
+                if (hasNativeWidgets) {
+                    if (!nativeSurfaces.Active()) {
+                        if (!nativeSurfaces.Start(surfaceParent)) {
+                            WriteDiagnostics(scope, L"Native widget host 启动失败：" + nativeSurfaces.LastErrorText());
+                        }
+                    } else if (!nativeSurfaces.LastErrorText().empty()) {
+                        WriteDiagnostics(scope, L"Native widget 运行异常：" + nativeSurfaces.LastErrorText());
                     }
+                } else if (nativeSurfaces.Active()) {
+                    nativeSurfaces.Stop();
                 }
 
                 const auto error = surfaces.LastErrorText();
-                if (!error.empty() && recoveryAttempts < kMaxRecoveryAttempts)
+                if (hasWebWidgets && !error.empty() && recoveryAttempts < kMaxRecoveryAttempts)
                     WriteDiagnostics(scope, L"运行异常：" + error);
 
                 bool policyPause = false;
-                if (host && IsWindow(host)) {
+                {
                     HWND settings = FindWindowW(kDesktopLibraryClass, nullptr);
                     if (!settings) settings = FindWindowW(kWallpaperSettingsClass, nullptr);
-                    const auto snapshot = performance.Evaluate(host, settings, state.performance);
+                    const HWND policyHost = (host && IsWindow(host)) ? host : nullptr;
+                    const auto snapshot = performance.Evaluate(policyHost, settings, state.performance);
                     policyPause = snapshot.action == PerformanceAction::Pause ||
-                                  snapshot.action == PerformanceAction::Stop;
+                                  snapshot.action == PerformanceAction::Stop ||
+                                  snapshot.action == PerformanceAction::Throttle;
                 }
                 const bool hiddenWallpaper = scope == WallpaperWebRuntimeScope::WebWallpaper &&
                                              (!host || !IsWindow(host) || IsWindowVisible(host) == FALSE);
-                surfaces.SetPaused(policyPause || hiddenWallpaper);
+                if (hasWebWidgets) surfaces.SetPaused(policyPause || hiddenWallpaper);
+                if (hasNativeWidgets) nativeSurfaces.SetPaused(policyPause || hiddenWallpaper);
+                if (hasNativeWidgets && hasWebWidgets) {
+                    WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText() + L" · " + surfaces.DiagnosticsText());
+                } else if (hasNativeWidgets) {
+                    WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
+                } else if (hasWebWidgets && surfaces.Active()) {
+                    WriteDiagnostics(scope, surfaces.DiagnosticsText());
+                }
                 repairStack();
             }
 
@@ -451,6 +510,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         }
 
         surfaces.Stop();
+        if (scope == WallpaperWebRuntimeScope::Widgets) nativeSurfaces.Stop();
         WriteDiagnostics(scope, scope == WallpaperWebRuntimeScope::Widgets
             ? L"Widget runtime stopped" : L"Web runtime stopped");
         running.store(false, std::memory_order_release);
@@ -484,6 +544,7 @@ WallpaperWebRuntimeScope WallpaperWebRuntimeCoordinator::Scope() const noexcept 
 
 bool WallpaperWebRuntimeCoordinator::SelfTest() {
     if (!WebWallpaperProcessSet::SelfTest()) return false;
+    if (!NativeWidgetProcessSet::SelfTest()) return false;
     if (!DesktopWidgetStore::SelfTest()) return false;
     if (!WallpaperLibrary::IsTrustedWebUrl(L"https://example.com/wallpaper")) return false;
     if (WallpaperLibrary::IsTrustedWebUrl(L"http://example.com/wallpaper")) return false;

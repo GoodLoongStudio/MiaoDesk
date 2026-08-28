@@ -566,6 +566,7 @@ private:
                     navigationReady_ = true;
                     SetReadyProperty(kWebSurfaceNavigationReadyProperty, true);
                     if (controller_) controller_->put_IsVisible(TRUE);
+                    RaiseWidgetDragHandle();
                     return S_OK;
                 }).Get(), &navigationCompleted);
 

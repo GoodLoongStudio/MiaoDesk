@@ -34,6 +34,7 @@ struct PiActivityEvent {
     std::wstring toolName;
     std::wstring message;
     bool error{};
+    std::wstring resultText;
 };
 
 class PiRuntime {

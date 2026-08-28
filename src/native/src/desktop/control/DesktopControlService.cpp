@@ -206,6 +206,17 @@ DesktopControlResult DesktopControlService::CreateWebWidget(
     return {true, result.message};
 }
 
+DesktopControlResult DesktopControlService::CreateNativeWidget(
+    const NativeWidgetCreateRequest& request,
+    wallpaper::DesktopWidget* created) const {
+    WidgetService service;
+    const auto result = service.CreateNative(request, created);
+    if (!result.success) return FromWidget(result);
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+    return {true, result.message};
+}
+
 DesktopControlResult DesktopControlService::UpdateWidget(const WidgetUpdateRequest& request) const {
     WidgetService service;
     const auto result = service.Update(request);

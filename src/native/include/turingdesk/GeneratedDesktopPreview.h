@@ -21,7 +21,10 @@ bool HandleGeneratedPreviewCopyData(HWND owner, const COPYDATASTRUCT* data);
 struct WidgetPreviewPromptResult {
     bool success{};
     std::wstring message;
+    std::wstring previewId;
 };
+
+bool OpenPreviewById(HWND owner, std::wstring_view previewId);
 
 // One-sentence widget generation: compose A2UI from natural language, open the
 // sandbox preview window in the current UI process, and wait for user Apply.

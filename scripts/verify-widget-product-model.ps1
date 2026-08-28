@@ -46,7 +46,7 @@ foreach ($marker in @(
     'AutomaticPlacement',
     'CreatePreset',
     'MoveTo',
-    'service_.CreateWebWidget')) {
+    'service_.CreateNativeWidget')) {
     if (-not $controllerText.Contains($marker)) {
         throw "Fixed-format Widget implementation missing marker: $marker"
     }

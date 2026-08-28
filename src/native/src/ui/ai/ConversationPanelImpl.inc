@@ -1,8 +1,10 @@
 #include "turingdesk/L3CliWindow.h"
 #include "turingdesk/PiRuntime.h"
+#include "turingdesk/GeneratedDesktopPreview.h"
 #include "turingdesk/RuntimeLogPaths.h"
 
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -28,28 +30,45 @@ constexpr int kSendId = 3103; // Contract marker: send is custom drawn but keeps
 constexpr UINT kDeltaMessage = WM_APP + 31;
 constexpr UINT kDirectDoneMessage = WM_APP + 32;
 constexpr UINT kPiDoneMessage = WM_APP + 33;
+constexpr UINT kPreviewArtifactMessage = WM_APP + 35;
 constexpr UINT_PTR kActivityTimer = 41;
 constexpr std::size_t kNoIndex = static_cast<std::size_t>(-1);
 
 enum class ActiveRuntime { Pi, DirectModel };
 enum class EntryKind { User, Assistant, System };
 enum class StepStatus { Running, Success, Failed };
+enum class ChatArtifactKind { OpenFile, OpenPreview };
 
-struct UiMessage {
-    std::uint64_t generation{};
-    std::wstring text;
+struct ChatArtifact {
+    std::wstring title;
+    std::wstring subtitle;
+    std::wstring path;
+    ChatArtifactKind kind{ChatArtifactKind::OpenFile};
 };
 
 struct ChatEntry {
     EntryKind kind{EntryKind::Assistant};
     std::wstring text;
     std::wstring time;
+    std::vector<ChatArtifact> artifacts;
+    std::vector<std::wstring> attachments;
+};
+
+struct ArtifactHitTarget {
+    RECT bounds{};
+    std::size_t entryIndex{kNoIndex};
+    std::size_t artifactIndex{kNoIndex};
 };
 
 struct ActivityStep {
     std::wstring tool;
     std::wstring label;
     StepStatus status{StepStatus::Running};
+};
+
+struct UiMessage {
+    std::uint64_t generation{};
+    std::wstring text;
 };
 
 struct ActivityCard {
@@ -78,6 +97,8 @@ struct ConversationState {
     int dpi{96};
     std::vector<ChatEntry> entries;
     ActivityCard activity;
+    std::vector<std::wstring> pendingAttachments;
+    std::vector<ArtifactHitTarget> artifactHits;
     std::size_t assistantIndex{kNoIndex};
     std::wstring streaming;
     std::wstring lastPrompt;
@@ -329,6 +350,89 @@ std::wstring FriendlyToolName(const std::wstring& raw) {
     return raw.empty() ? L"执行操作" : raw;
 }
 
+std::wstring FileNameOnly(const std::wstring& path) {
+    const auto name = fs::path(path).filename().wstring();
+    return name.empty() ? path : name;
+}
+
+std::wstring ExtractPathSuffix(const std::wstring& message) {
+    const auto colon = message.find_last_of(L":：");
+    if (colon == std::wstring::npos || colon + 1 >= message.size()) return {};
+    return Trim(message.substr(colon + 1));
+}
+
+bool TryBuildChatArtifact(const std::wstring& tool, const std::wstring& message, ChatArtifact& out) {
+    const std::wstring text = Trim(message);
+    if (text.empty()) return false;
+
+    if (const auto marker = text.find(L"preview="); marker != std::wstring::npos) {
+        out.kind = ChatArtifactKind::OpenPreview;
+        out.path = Trim(text.substr(marker + 8));
+        out.title = tool.find(L"wallpaper") != std::wstring::npos ? L"壁纸预览" : L"小组件预览";
+        out.subtitle = L"点击查看并应用";
+        return !out.path.empty();
+    }
+
+    const bool looksLikePath = text.find(L":\\") != std::wstring::npos || text.find(L"\\\\") != std::wstring::npos;
+    if (text.find(L"已生成") != std::wstring::npos || text.find(L"已创建") != std::wstring::npos || looksLikePath) {
+        const auto path = ExtractPathSuffix(text);
+        if (path.empty()) return false;
+        out.kind = ChatArtifactKind::OpenFile;
+        out.path = path;
+        out.title = FriendlyToolName(tool);
+        out.subtitle = FileNameOnly(path);
+        if (out.subtitle.empty()) out.subtitle = L"点击打开";
+        return true;
+    }
+    return false;
+}
+
+void AppendAssistantArtifact(ConversationState& state, ChatArtifact artifact) {
+    if (state.assistantIndex != kNoIndex && state.assistantIndex < state.entries.size()) {
+        state.entries[state.assistantIndex].artifacts.push_back(std::move(artifact));
+    } else if (!state.entries.empty() && state.entries.back().kind == EntryKind::Assistant) {
+        state.entries.back().artifacts.push_back(std::move(artifact));
+    } else {
+        ChatEntry entry;
+        entry.kind = EntryKind::Assistant;
+        entry.time = CurrentTimeText();
+        entry.artifacts.push_back(std::move(artifact));
+        state.entries.push_back(std::move(entry));
+        state.assistantIndex = state.entries.size() - 1;
+    }
+    InvalidateConversation(state, true);
+}
+
+void TryAppendAssistantArtifact(ConversationState& state, const std::wstring& tool, const std::wstring& message) {
+    ChatArtifact artifact;
+    if (!TryBuildChatArtifact(tool, message, artifact)) return;
+    AppendAssistantArtifact(state, std::move(artifact));
+}
+
+void OpenChatArtifact(HWND owner, const ChatArtifact& artifact) {
+    if (artifact.path.empty()) return;
+    if (artifact.kind == ChatArtifactKind::OpenPreview) {
+        if (!preview::OpenPreviewById(owner, artifact.path)) {
+            MessageBoxW(owner, L"找不到对应的预览内容，可能已被关闭或清理。", L"妙喵 AI", MB_OK | MB_ICONINFORMATION);
+        }
+        return;
+    }
+    const HINSTANCE result = ShellExecuteW(owner, L"open", artifact.path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+        MessageBoxW(owner, (L"无法打开：" + artifact.path).c_str(), L"妙喵 AI", MB_OK | MB_ICONERROR);
+    }
+}
+
+int ArtifactStackHeight(const ConversationState& state, const ChatEntry& entry) {
+    if (entry.artifacts.empty()) return 0;
+    return static_cast<int>(entry.artifacts.size()) * Px(state, 58) + Px(state, 6);
+}
+
+int AttachmentStackHeight(const ConversationState& state, const ChatEntry& entry) {
+    if (entry.attachments.empty()) return 0;
+    return static_cast<int>(entry.attachments.size()) * Px(state, 26) + Px(state, 6);
+}
+
 void InvalidateConversation(ConversationState& state, bool bottom = false) {
     if (bottom) state.scrollToBottom = true;
     if (state.window) InvalidateRect(state.window, nullptr, FALSE);
@@ -402,28 +506,36 @@ void ResetActivity(ConversationState& state) {
     state.activityLogOffset = CurrentPiLogSize();
 }
 
+void ClearActivityCard(ConversationState& state) {
+    state.activity = {};
+    state.activity.visible = false;
+}
+
 void UpdateToolStart(ConversationState& state, const std::wstring& tool) {
-    auto it = std::find_if(state.activity.steps.rbegin(), state.activity.steps.rend(), [&](const ActivityStep& step) {
-        return step.tool == tool && step.status == StepStatus::Running;
-    });
-    if (it == state.activity.steps.rend()) state.activity.steps.push_back({tool, FriendlyToolName(tool), StepStatus::Running});
+    state.activity.steps = {{tool, FriendlyToolName(tool), StepStatus::Running}};
     state.activity.visible = true;
     state.activity.terminal = false;
+    state.activity.failed = false;
     state.activity.title = L"正在执行：" + FriendlyToolName(tool);
     state.activity.detail = L"图灵正在操作你的电脑";
     InvalidateConversation(state, true);
 }
 
-void UpdateToolEnd(ConversationState& state, const std::wstring& tool, bool failed) {
-    for (auto it = state.activity.steps.rbegin(); it != state.activity.steps.rend(); ++it) {
-        if (it->tool == tool && it->status == StepStatus::Running) {
-            it->status = failed ? StepStatus::Failed : StepStatus::Success;
-            break;
+void UpdateToolEnd(ConversationState& state, const std::wstring& tool, bool failed, const std::wstring& resultText = {}) {
+    if (failed) {
+        for (auto& step : state.activity.steps) {
+            if (step.tool == tool && step.status == StepStatus::Running) step.status = StepStatus::Failed;
         }
+        state.activity.title = L"操作遇到问题";
+        state.activity.detail = FriendlyToolName(tool) + L" 未成功完成";
+        state.activity.failed = true;
+    } else {
+        state.activity.steps.clear();
+        state.activity.title = L"正在继续";
+        state.activity.detail = L"图灵正在处理下一步";
+        state.activity.failed = false;
+        if (!resultText.empty()) TryAppendAssistantArtifact(state, tool, resultText);
     }
-    state.activity.title = failed ? L"操作遇到问题" : L"继续处理";
-    state.activity.detail = failed ? (FriendlyToolName(tool) + L" 未成功完成") : (FriendlyToolName(tool) + L" 已完成");
-    state.activity.failed = failed;
     InvalidateConversation(state, true);
 }
 
@@ -476,15 +588,7 @@ void FinishTurn(ConversationState& state, const std::wstring& rawDone, bool clas
     state.streaming.clear();
     state.activePrompt.clear();
     state.assistantIndex = kNoIndex;
-    if (!state.activity.steps.empty()) {
-        state.activity.visible = true;
-        state.activity.terminal = true;
-        state.activity.title = classifyFailure && !rawDone.empty() ? L"任务未完成" : L"任务完成";
-        state.activity.detail = classifyFailure && !rawDone.empty() ? L"可以查看上方回复了解原因" : L"所有操作均已反馈";
-        state.activity.failed = classifyFailure && !rawDone.empty();
-    } else {
-        state.activity.visible = false;
-    }
+    ClearActivityCard(state);
     SetBusyVisual(state, false);
     InvalidateConversation(state, true);
     if (IsWindowVisible(state.window)) SetFocus(state.input);
@@ -522,17 +626,19 @@ void StopTurn(ConversationState& state) {
     state.streaming.clear();
     state.activePrompt.clear();
     state.assistantIndex = kNoIndex;
-    state.activity.visible = true;
-    state.activity.terminal = true;
-    state.activity.failed = true;
-    state.activity.title = L"已停止";
-    state.activity.detail = L"任务已由你取消";
+    ClearActivityCard(state);
     SetBusyVisual(state, false);
 }
 
 void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
-                    const std::wstring& actualPrompt, bool retry, bool appendUser) {
-    if (appendUser) AddEntry(state, EntryKind::User, typedPrompt + (retry ? L"  · 重试上一请求" : L""));
+                    const std::wstring& actualPrompt, bool retry, bool appendUser,
+                    std::vector<std::wstring> attachments = {}) {
+    if (appendUser) {
+        std::wstring userText = typedPrompt + (retry ? L"  · 重试上一请求" : L"");
+        ChatEntry userEntry{EntryKind::User, std::move(userText), CurrentTimeText()};
+        userEntry.attachments = std::move(attachments);
+        state.entries.push_back(std::move(userEntry));
+    }
     state.entries.push_back({EntryKind::Assistant, L"", CurrentTimeText()});
     state.assistantIndex = state.entries.size() - 1;
     state.lastPrompt = actualPrompt;
@@ -558,6 +664,8 @@ void ClearConversation(ConversationState& state) {
     state.streaming.clear();
     state.entries.clear();
     state.activity = {};
+    state.pendingAttachments.clear();
+    state.artifactHits.clear();
     state.pendingConfirmation = false;
     state.pi->ResetSession();
     if (!state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
@@ -572,14 +680,20 @@ void ClearConversation(ConversationState& state) {
 
 void SendPrompt(ConversationState& state) {
     if (state.busy || state.pendingConfirmation) return;
-    const auto typedPrompt = Trim(ReadText(state.input));
-    if (typedPrompt.empty()) return;
+    std::wstring typedPrompt = Trim(ReadText(state.input));
+    auto attachments = std::move(state.pendingAttachments);
+    state.pendingAttachments.clear();
     SetWindowTextW(state.input, L"");
+    if (typedPrompt.empty() && attachments.empty()) return;
 
     const auto lower = Lower(typedPrompt);
     if (lower == L"/runtime") { AppendCompleted(state, typedPrompt, RuntimeStatusText(state)); return; }
 
     std::wstring actualPrompt = typedPrompt;
+    if (!attachments.empty()) {
+        actualPrompt += L"\n\n[用户附件]\n";
+        for (const auto& path : attachments) actualPrompt += L"- " + path + L"\n";
+    }
     bool retry = false;
     if (lower == L"/retry") {
         if (state.lastPrompt.empty()) { AppendCompleted(state, typedPrompt, L"没有可重试的模型请求。"); return; }
@@ -602,7 +716,20 @@ void SendPrompt(ConversationState& state) {
 
     if (!retry && widget_intent::LooksLikeOneSentenceWidgetRequest(actualPrompt)) {
         const auto preview = preview::ShowWidgetPreviewForPrompt(state.window, actualPrompt);
-        AppendCompleted(state, typedPrompt, preview.message);
+        ChatEntry userEntry{EntryKind::User, typedPrompt, CurrentTimeText()};
+        userEntry.attachments = std::move(attachments);
+        state.entries.push_back(std::move(userEntry));
+        ChatEntry reply{EntryKind::Assistant, preview.message.empty() ? L"已完成。" : preview.message, CurrentTimeText()};
+        if (!preview.previewId.empty()) {
+            ChatArtifact artifact;
+            artifact.kind = ChatArtifactKind::OpenPreview;
+            artifact.path = preview.previewId;
+            artifact.title = L"小组件预览";
+            artifact.subtitle = L"点击打开";
+            reply.artifacts.push_back(std::move(artifact));
+        }
+        state.entries.push_back(std::move(reply));
+        InvalidateConversation(state, true);
         return;
     }
 
@@ -629,7 +756,7 @@ void SendPrompt(ConversationState& state) {
         return;
     }
 
-    StartModelTurn(state, typedPrompt, actualPrompt, retry, true);
+    StartModelTurn(state, typedPrompt, actualPrompt, retry, true, std::move(attachments));
 }
 
 void ConfirmPending(ConversationState& state) {
@@ -674,7 +801,10 @@ int EntryHeight(HDC dc, ConversationState& state, const ChatEntry& entry, int vi
     const int maxBubble = std::max(Px(state, 180), viewportWidth * 72 / 100);
     const int textWidth = maxBubble - Px(state, 32);
     const int textHeight = MeasureTextHeight(dc, state.bodyFont, entry.text.empty() ? L"正在思考…" : entry.text, textWidth);
-    return std::max(avatar + Px(state, 10), textHeight + Px(state, 38));
+    int height = std::max(avatar + Px(state, 10), textHeight + Px(state, 38));
+    height += ArtifactStackHeight(state, entry);
+    height += AttachmentStackHeight(state, entry);
+    return height;
 }
 
 int ActivityHeight(const ConversationState& state) {

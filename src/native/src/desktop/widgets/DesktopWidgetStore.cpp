@@ -1,4 +1,5 @@
 #include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -140,11 +141,18 @@ fs::path DesktopWidgetStore::ManifestPath() const { return root_ / L"widgets.ini
 fs::path DesktopWidgetStore::PackageDirectory() const { return root_ / L"Packages"; }
 
 const wchar_t* DesktopWidgetStore::KindKey(DesktopWidgetKind kind) noexcept {
-    return kind == DesktopWidgetKind::Web ? L"web" : L"unknown";
+    switch (kind) {
+    case DesktopWidgetKind::Web: return L"web";
+    case DesktopWidgetKind::Native: return L"native";
+    case DesktopWidgetKind::Unknown:
+    default: return L"unknown";
+    }
 }
 
 DesktopWidgetKind DesktopWidgetStore::ParseKind(std::wstring_view value) noexcept {
-    return _wcsicmp(std::wstring(value).c_str(), L"web") == 0 ? DesktopWidgetKind::Web : DesktopWidgetKind::Unknown;
+    if (_wcsicmp(std::wstring(value).c_str(), L"web") == 0) return DesktopWidgetKind::Web;
+    if (_wcsicmp(std::wstring(value).c_str(), L"native") == 0) return DesktopWidgetKind::Native;
+    return DesktopWidgetKind::Unknown;
 }
 
 DesktopWidget DesktopWidgetStore::Normalize(DesktopWidget widget) {
@@ -294,14 +302,20 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
         return std::nullopt;
     }
     widget = Normalize(std::move(widget));
-    if (widget.kind != DesktopWidgetKind::Web || widget.source.empty() || !IsHtmlSource(widget.source)) {
+    if (widget.kind == DesktopWidgetKind::Native) {
+        if (!IsNativePresetSource(widget.source.wstring())) {
+            if (error) *error = L"Desktop native widget source is invalid.";
+            return std::nullopt;
+        }
+    } else if (widget.kind != DesktopWidgetKind::Web || widget.source.empty() || !IsHtmlSource(widget.source)) {
         if (error) *error = L"Desktop widget currently requires a local HTML source.";
         return std::nullopt;
-    }
-    std::error_code ec;
-    if (!fs::exists(widget.source, ec) || !fs::is_regular_file(widget.source, ec)) {
-        if (error) *error = L"Desktop widget HTML source does not exist.";
-        return std::nullopt;
+    } else {
+        std::error_code ec;
+        if (!fs::exists(widget.source, ec) || !fs::is_regular_file(widget.source, ec)) {
+            if (error) *error = L"Desktop widget HTML source does not exist.";
+            return std::nullopt;
+        }
     }
 
     const auto index = FindIndex(widget.id);
@@ -351,6 +365,26 @@ std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedWeb(
     return saved;
 }
 
+std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedNative(
+    NativeWidgetPreset preset, std::wstring title, std::wstring monitorId,
+    float x, float y, float width, float height, std::wstring* error) {
+    if (error) error->clear();
+
+    DesktopWidget widget;
+    widget.id = MakeId();
+    widget.kind = DesktopWidgetKind::Native;
+    widget.title = title.empty() ? NativePresetTitle(preset) : std::move(title);
+    widget.source = fs::path(NativePresetSource(preset));
+    widget.monitorId = std::move(monitorId);
+    widget.x = x;
+    widget.y = y;
+    widget.width = width;
+    widget.height = height;
+    widget.managedSource = false;
+    widget = Normalize(std::move(widget));
+    return Upsert(widget, error);
+}
+
 bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_view htmlUtf8, std::wstring* error) {
     if (error) error->clear();
     const auto index = FindIndex(id);
@@ -359,6 +393,10 @@ bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_vie
         return false;
     }
     const DesktopWidget& widget = items_[*index];
+    if (widget.kind == DesktopWidgetKind::Native) {
+        if (error) *error = L"Desktop native widget content is preset-owned and cannot be edited as HTML.";
+        return false;
+    }
     if (!widget.managedSource || widget.source.empty() || htmlUtf8.empty()) {
         if (error) *error = L"Desktop widget HTML is not managed by TuringDesk or is empty.";
         return false;
@@ -410,6 +448,10 @@ bool DesktopWidgetStore::SelfTest() {
         L"桌面时钟", "<!doctype html><html><body><div id=\"time\"></div><script>new Date().toLocaleTimeString()</script></body></html>",
         L"monitor-test", 0.1f, 0.2f, 0.3f, 0.4f, &error);
     bool ok = created.has_value() && fs::exists(created->source, ec) && HasUtf16LeBom(store.ManifestPath());
+    const auto native = store.CreateManagedNative(
+        NativeWidgetPreset::GlassClock, L"原生时钟", L"monitor-test", 0.2f, 0.3f, 0.25f, 0.18f, &error);
+    ok = ok && native.has_value() && native->kind == DesktopWidgetKind::Native;
+    if (native) ok = ok && store.Remove(native->id, false, &error);
     if (created) {
         DesktopWidget changed = *created;
         changed.x = 0.9f;

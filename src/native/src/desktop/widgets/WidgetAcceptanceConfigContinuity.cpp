@@ -39,7 +39,10 @@ void AppendSized(std::wostringstream& out, std::wstring_view value) {
 std::wstring CanonicalPlacementConfig(const std::vector<wallpaper::DesktopWidget>& widgets) {
     std::vector<wallpaper::DesktopWidget> enabled;
     for (const auto& widget : widgets) {
-        if (widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web) enabled.push_back(widget);
+        if (widget.enabled &&
+            (widget.kind == wallpaper::DesktopWidgetKind::Web || widget.kind == wallpaper::DesktopWidgetKind::Native)) {
+            enabled.push_back(widget);
+        }
     }
     std::sort(enabled.begin(), enabled.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
 

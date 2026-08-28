@@ -189,8 +189,10 @@ void LayerTimeline(ID2D1RenderTarget* target, ConversationState& state, const RE
     auto shadow = LayerBrush(target, 0x8290A5, 0.12f);
     auto systemFill = LayerBrush(target, 0xE8F4EB, 0.82f);
     float y = static_cast<float>(viewport.top + Px(state, 8) - state.scrollOffset);
+    state.artifactHits.clear();
 
-    for (const auto& entry : state.entries) {
+    for (std::size_t entryIndex = 0; entryIndex < state.entries.size(); ++entryIndex) {
+        const auto& entry = state.entries[entryIndex];
         const int rowH = EntryHeight(gConversationSurface.dc, state, entry, viewportWidth);
         if (entry.kind == EntryKind::System) {
             const auto note = D2D1::RoundedRect(D2D1::RectF(
@@ -209,7 +211,8 @@ void LayerTimeline(ID2D1RenderTarget* target, ConversationState& state, const RE
         const std::wstring display = entry.text.empty() ? L"正在思考…" : entry.text;
         const float textWidth = LayerTextWidth(display, body, maxBubble - Px(state, 32));
         const float bubbleW = std::clamp(textWidth + Px(state, 32.0f), static_cast<float>(Px(state, 150)), maxBubble);
-        const float bubbleH = static_cast<float>(std::max(Px(state, 54), rowH - Px(state, 2)));
+        const int extraStack = ArtifactStackHeight(state, entry) + AttachmentStackHeight(state, entry);
+        const float bubbleH = static_cast<float>(std::max(Px(state, 54), rowH - extraStack - Px(state, 2)));
         const float avatarX = user ? viewport.right - avatarR : viewport.left + avatarR;
         const float bubbleLeft = user
             ? viewport.right - avatar - Px(state, 10) - bubbleW
@@ -231,6 +234,49 @@ void LayerTimeline(ID2D1RenderTarget* target, ConversationState& state, const RE
         if (timeLayout) {
             timeLayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
             target->DrawTextLayout(D2D1::Point2F(bubble.rect.left + Px(state, 14), bubble.rect.bottom - Px(state, 19)), timeLayout.Get(), secondary);
+        }
+
+        float stackY = bubble.rect.bottom + static_cast<float>(Px(state, 6));
+        if (!entry.attachments.empty()) {
+            for (const auto& path : entry.attachments) {
+                const float chipH = static_cast<float>(Px(state, 22));
+                const auto chip = D2D1::RoundedRect(D2D1::RectF(
+                    bubble.rect.left, stackY, bubble.rect.left + bubbleW, stackY + chipH),
+                    static_cast<float>(Px(state, 10)), static_cast<float>(Px(state, 10)));
+                auto chipFill = LayerBrush(target, user ? 0xCFE4FF : 0xEEF3FA, 0.92f);
+                target->FillRoundedRectangle(chip, chipFill.Get());
+                LayerText(target, L"📎 " + FileNameOnly(path), small, secondary,
+                          chip.rect.left + Px(state, 10), chip.rect.top + Px(state, 4),
+                          bubbleW - Px(state, 20), chipH - Px(state, 6));
+                stackY += chipH + static_cast<float>(Px(state, 4));
+            }
+        }
+
+        auto artifactFill = LayerBrush(target, 0xEFF5FF, 0.94f);
+        auto artifactOutline = LayerBrush(target, 0xBFD0EA, 0.90f);
+        auto artifactAccent = LayerBrush(target, 0x5B8BF4, 0.96f);
+        for (std::size_t artifactIndex = 0; artifactIndex < entry.artifacts.size(); ++artifactIndex) {
+            const auto& artifact = entry.artifacts[artifactIndex];
+            const float cardH = static_cast<float>(Px(state, 52));
+            const float cardW = std::min(maxBubble, bubbleW + static_cast<float>(Px(state, 24)));
+            const auto card = D2D1::RoundedRect(D2D1::RectF(
+                bubble.rect.left, stackY, bubble.rect.left + cardW, stackY + cardH),
+                static_cast<float>(Px(state, 14)), static_cast<float>(Px(state, 14)));
+            target->FillRoundedRectangle(card, artifactFill.Get());
+            target->DrawRoundedRectangle(card, artifactOutline.Get(), 0.85f);
+            target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(card.rect.left + Px(state, 18.0f), stackY + Px(state, 26.0f)),
+                                              Px(state, 8.0f), Px(state, 8.0f)), artifactAccent.Get());
+            LayerText(target, artifact.title, bold, text,
+                      card.rect.left + Px(state, 34), stackY + Px(state, 10), cardW - Px(state, 44), Px(state, 20));
+            LayerText(target, artifact.subtitle, small, secondary,
+                      card.rect.left + Px(state, 34), stackY + Px(state, 28), cardW - Px(state, 44), Px(state, 18));
+            ArtifactHitTarget hit{};
+            hit.bounds = {static_cast<LONG>(card.rect.left), static_cast<LONG>(stackY),
+                          static_cast<LONG>(card.rect.left + cardW), static_cast<LONG>(stackY + cardH)};
+            hit.entryIndex = entryIndex;
+            hit.artifactIndex = artifactIndex;
+            state.artifactHits.push_back(hit);
+            stackY += cardH + static_cast<float>(Px(state, 4));
         }
         y += rowH + gap;
     }
@@ -411,8 +457,23 @@ bool RenderConversationLayerSurface(ConversationState& state) {
     const std::wstring inputText = ReadText(state.input);
     const float inputLeft = static_cast<float>(Px(state, 38));
     const float inputRight = static_cast<float>(attachLeft - Px(state, 8));
-    if (inputText.empty()) LayerText(target, L"输入消息…", bodyFormat.Get(), secondary.Get(), inputLeft, inputTop + Px(state, 19.0f), inputRight - inputLeft, Px(state, 30.0f));
-    else LayerText(target, inputText, bodyFormat.Get(), text.Get(), inputLeft, inputTop + Px(state, 16.0f), inputRight - inputLeft, Px(state, 36.0f));
+    float inputTextTop = inputTop + Px(state, 16.0f);
+    if (!state.pendingAttachments.empty()) {
+        float chipY = static_cast<float>(inputTop + Px(state, 8));
+        for (const auto& path : state.pendingAttachments) {
+            const float chipH = static_cast<float>(Px(state, 20));
+            const auto chip = D2D1::RoundedRect(D2D1::RectF(inputLeft, chipY, inputRight, chipY + chipH),
+                                                static_cast<float>(Px(state, 9)), static_cast<float>(Px(state, 9)));
+            auto chipFill = LayerBrush(target, 0xE8F1FF, 0.95f);
+            target->FillRoundedRectangle(chip, chipFill.Get());
+            LayerText(target, L"📎 " + FileNameOnly(path), smallFormat.Get(), secondary.Get(),
+                      inputLeft + Px(state, 8.0f), chipY + Px(state, 2.0f), inputRight - inputLeft - Px(state, 12.0f), chipH);
+            chipY += chipH + static_cast<float>(Px(state, 3));
+        }
+        inputTextTop = chipY + Px(state, 2.0f);
+    }
+    if (inputText.empty()) LayerText(target, L"输入消息…", bodyFormat.Get(), secondary.Get(), inputLeft, inputTextTop, inputRight - inputLeft, Px(state, 30.0f));
+    else LayerText(target, inputText, bodyFormat.Get(), text.Get(), inputLeft, inputTextTop, inputRight - inputLeft, Px(state, 36.0f));
 
     auto footer = LayerLayout(L"Enter 发送 · Shift + Enter 换行 · Esc 停止 / 收起", smallFormat.Get(), w - Px(state, 80.0f), Px(state, 18.0f));
     if (footer) {

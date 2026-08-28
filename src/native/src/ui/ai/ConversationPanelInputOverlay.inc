@@ -202,14 +202,10 @@ void EnsureConversationInputSubclass(ConversationState& state) {
 }
 
 void AppendAttachmentToInput(HWND input, const std::wstring& path) {
-    const int length = GetWindowTextLengthW(input);
-    std::wstring current(static_cast<std::size_t>(length) + 1, L'\0');
-    if (length > 0) GetWindowTextW(input, current.data(), length + 1);
-    current.resize(static_cast<std::size_t>(length));
-    if (!current.empty() && current.back() != L'\n') current += L"\r\n";
-    current += L"附件：\"" + path + L"\"\r\n";
-    SetWindowTextW(input, current.c_str());
-    SendMessageW(input, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+    if (!gConversationState) return;
+    gConversationState->pendingAttachments.push_back(path);
+    InvalidateConversation(*gConversationState, false);
+    if (gConversationState->window) RenderConversationLayerSurface(*gConversationState);
     SetFocus(input);
     gConversationCaretVisible = true;
     if (gConversationState) PositionConversationInputProxyAnchored(*gConversationState);
@@ -287,7 +283,7 @@ void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& even
         UpdateToolStart(state, event.toolName);
         return;
     case PiActivityKind::ToolFinished:
-        UpdateToolEnd(state, event.toolName, event.error);
+        UpdateToolEnd(state, event.toolName, event.error, event.resultText);
         return;
     case PiActivityKind::Retrying:
         state.activity.visible = true;
@@ -302,27 +298,9 @@ void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& even
         state.activity.detail = L"继续执行你的任务";
         break;
     case PiActivityKind::Succeeded:
-        if (!state.activity.steps.empty()) {
-            state.activity.visible = true;
-            state.activity.terminal = true;
-            state.activity.failed = false;
-            state.activity.title = L"任务完成";
-            state.activity.detail = L"所有操作均已反馈";
-        }
         break;
     case PiActivityKind::Failed:
-        state.activity.visible = true;
-        state.activity.terminal = true;
-        state.activity.failed = true;
-        state.activity.title = L"任务遇到问题";
-        state.activity.detail = event.message.empty() ? L"图灵未能完成这次任务" : event.message;
-        break;
     case PiActivityKind::Cancelled:
-        state.activity.visible = true;
-        state.activity.terminal = true;
-        state.activity.failed = true;
-        state.activity.title = L"已停止";
-        state.activity.detail = L"任务已由你取消";
         break;
     }
     InvalidateConversation(state, true);
@@ -465,6 +443,21 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         return result;
     }
 
+    if (message == kPreviewArtifactMessage && state) {
+        auto* previewId = reinterpret_cast<std::wstring*>(lParam);
+        if (previewId && !previewId->empty()) {
+            ChatArtifact artifact;
+            artifact.kind = ChatArtifactKind::OpenPreview;
+            artifact.path = *previewId;
+            artifact.title = L"桌面预览";
+            artifact.subtitle = L"点击查看并应用";
+            AppendAssistantArtifact(*state, std::move(artifact));
+            RenderConversationLayerSurface(*state);
+        }
+        delete previewId;
+        return 0;
+    }
+
     if (message == WM_PAINT) {
         PAINTSTRUCT ps{};
         BeginPaint(hwnd, &ps);
@@ -519,6 +512,14 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
             RenderConversationLayerSurface(*state);
             return 0;
         }
+        for (const auto& hit : state->artifactHits) {
+            if (!PointIn(hit.bounds, point)) continue;
+            if (hit.entryIndex < state->entries.size() &&
+                hit.artifactIndex < state->entries[hit.entryIndex].artifacts.size()) {
+                OpenChatArtifact(hwnd, state->entries[hit.entryIndex].artifacts[hit.artifactIndex]);
+            }
+            return 0;
+        }
     }
 
     if (message == WM_CAPTURECHANGED && gConversationPointerMode != ConversationPointerMode::None) {
@@ -543,6 +544,12 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
         if (PointIn(gConversationSurface.attachRect, point) || PointIn(gConversationSurface.micRect, point)) {
             SetCursor(LoadCursorW(nullptr, IDC_HAND));
             return TRUE;
+        }
+        for (const auto& hit : state->artifactHits) {
+            if (PointIn(hit.bounds, point)) {
+                SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                return TRUE;
+            }
         }
         if (ConversationHeaderDragPoint(*state, point)) {
             SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));

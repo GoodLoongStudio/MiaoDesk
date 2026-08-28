@@ -14,6 +14,7 @@ constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeWidgetSurfaceClass[] = L"TuringDesk.Native.WidgetSurface";
 constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 constexpr UINT kSpawnWorkerMessage = 0x052C;
 
@@ -50,6 +51,13 @@ bool DesktopShellHost::IsWindowClass(HWND window, const wchar_t* expected) noexc
            _wcsicmp(className, expected) == 0;
 }
 
+bool DesktopShellHost::IsWidgetNativeSurface(HWND window) noexcept {
+    if (!IsWindowClass(window, kNativeWidgetSurfaceClass)) return false;
+    wchar_t title[320]{};
+    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
+    return StartsWith(title, L"widget-") || StartsWith(title, L"widget_");
+}
+
 bool DesktopShellHost::IsWidgetWebSurface(HWND window) noexcept {
     if (!IsWindowClass(window, kWebHostClass)) return false;
     wchar_t title[320]{};
@@ -58,7 +66,8 @@ bool DesktopShellHost::IsWidgetWebSurface(HWND window) noexcept {
 }
 
 DesktopSurfaceRole DesktopShellHost::InferRole(HWND window) noexcept {
-    return IsWidgetWebSurface(window) ? DesktopSurfaceRole::Widget : DesktopSurfaceRole::Wallpaper;
+    return IsWidgetWebSurface(window) || IsWidgetNativeSurface(window) ? DesktopSurfaceRole::Widget
+                                                                         : DesktopSurfaceRole::Wallpaper;
 }
 
 HWND DesktopShellHost::LastChild(HWND parent) noexcept {
@@ -217,7 +226,7 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
         if (!IsWindow(child)) continue;
         const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass);
         if (!known) continue;
-        PrepareSurface(child, true, nullptr);
+        PrepareSurface(child, InferRole(child) != DesktopSurfaceRole::Widget, nullptr);
         (InferRole(child) == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
     }
 
@@ -250,7 +259,7 @@ bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, cons
         if (error) *error = L"DesktopShellHost: no valid surface parent";
         return false;
     }
-    if (!PrepareSurface(surface, true, error)) return false;
+    if (!PrepareSurface(surface, role != DesktopSurfaceRole::Widget, error)) return false;
     if (!TrySetParent(surface, parent)) {
         if (error) *error = L"DesktopShellHost: SetParent failed, Win32=" + std::to_wstring(GetLastError());
         return false;

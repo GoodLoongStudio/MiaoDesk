@@ -1,8 +1,13 @@
 #include "turingdesk/GeneratedDesktopPreview.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 namespace turingdesk {
 namespace {
 
+constexpr UINT kConversationPreviewArtifactMessage = WM_APP + 35;
 constexpr wchar_t kConversationPreviewCoreProcProperty[] = L"TuringDesk.Conversation.PreviewCoreProc";
 constexpr wchar_t kSearchPreviewCoreProcProperty[] = L"TuringDesk.Search.PreviewCoreProc";
 constexpr wchar_t kSearchPreviewPanelProperty[] = L"TuringDesk.Search.PreviewPanel";
@@ -32,6 +37,14 @@ LRESULT CALLBACK ConversationPreviewBridgeProc(HWND hwnd, UINT message, WPARAM w
 
     if (message == WM_COPYDATA) {
         const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+        if (data && data->dwData == preview::kCopyDataTag && data->lpData) {
+            const auto* text = static_cast<const wchar_t*>(data->lpData);
+            const std::wstring previewId = fs::path(text).filename().wstring();
+            if (!previewId.empty()) {
+                auto* payload = new std::wstring(previewId);
+                PostMessageW(hwnd, kConversationPreviewArtifactMessage, 0, reinterpret_cast<LPARAM>(payload));
+            }
+        }
         if (preview::HandleGeneratedPreviewCopyData(hwnd, data)) return TRUE;
     }
 

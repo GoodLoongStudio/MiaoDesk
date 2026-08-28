@@ -908,7 +908,8 @@ struct WallpaperLibraryWindow::Impl {
             const int actionTotal = targetW + actionW + smallW * 2 + gap * 3;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
-            const int statusW = std::max(S(64), actionsLeft - S(10) - statusLeft);
+            const int available = actionsLeft - S(10) - statusLeft;
+            const int statusW = std::max(0, std::min(S(90), available));
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
@@ -924,7 +925,8 @@ struct WallpaperLibraryWindow::Impl {
             const int actionTotal = createW + demoW + buttonW * 3 + gap * 4;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
-            const int statusW = std::max(S(64), actionsLeft - S(10) - statusLeft);
+            const int available = actionsLeft - S(10) - statusLeft;
+            const int statusW = std::max(0, std::min(S(90), available));
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
@@ -1097,8 +1099,8 @@ struct WallpaperLibraryWindow::Impl {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(740);
-                info->ptMinTrackSize.y = self->S(480);
+                info->ptMinTrackSize.x = self->S(860);
+                info->ptMinTrackSize.y = self->S(620);
             }
             return 0;
         }

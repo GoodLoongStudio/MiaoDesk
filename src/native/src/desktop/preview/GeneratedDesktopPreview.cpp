@@ -792,8 +792,19 @@ WidgetPreviewPromptResult ShowWidgetPreviewForPrompt(HWND owner, std::wstring_vi
     }
 
     result.success = true;
+    result.previewId = dir.filename().wstring();
     result.message = L"已根据你的描述打开小组件预览。满意后请点击「应用」；不满意可点「拒绝」。";
     return result;
+}
+
+bool OpenPreviewById(HWND owner, std::wstring_view previewId) {
+    if (previewId.empty()) return false;
+    const auto root = TempPreviewRoot();
+    if (root.empty()) return false;
+    std::error_code ec;
+    const fs::path dir = root / std::wstring(previewId);
+    if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec)) return false;
+    return ShowPreviewWindow(owner, dir);
 }
 
 } // namespace turingdesk::preview

@@ -349,9 +349,10 @@ bool ProcessAlive(HANDLE process) {
 }
 
 void EmitActivity(const PiRuntime::ActivityCallback& callback, PiActivityKind kind,
-                  std::wstring toolName = {}, std::wstring message = {}, bool error = false) {
+                  std::wstring toolName = {}, std::wstring message = {}, bool error = false,
+                  std::wstring resultText = {}) {
     if (!callback) return;
-    callback(PiActivityEvent{kind, std::move(toolName), std::move(message), error});
+    callback(PiActivityEvent{kind, std::move(toolName), std::move(message), error, std::move(resultText)});
 }
 
 } // namespace
@@ -689,9 +690,13 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
             auto tool = Utf8ToWide(ExtractJsonString(line, "\"toolName\""));
             if (tool.empty()) tool = L"unknown";
             const bool isError = line.find("\"isError\":true") != std::string::npos;
+            auto result = Utf8ToWide(ExtractJsonString(line, "\"content\""));
+            if (result.empty()) result = Utf8ToWide(ExtractJsonString(line, "\"text\""));
+            if (result.empty()) result = Utf8ToWide(ExtractJsonString(line, "\"message\""));
+            if (result.empty()) result = Utf8ToWide(ExtractJsonString(line, "\"result\""));
             AppendRuntimeLog(L"tool end: " + tool + (isError ? L"; error=true" : L"; error=false"));
             EmitActivity(onActivity, PiActivityKind::ToolFinished, tool,
-                         isError ? L"工具执行失败" : L"工具执行完成", isError);
+                         isError ? L"工具执行失败" : L"工具执行完成", isError, std::move(result));
             continue;
         }
         if (line.find("\"type\":\"response\"") != std::string::npos &&

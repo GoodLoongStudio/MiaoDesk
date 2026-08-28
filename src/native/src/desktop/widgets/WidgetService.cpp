@@ -18,6 +18,7 @@ namespace turingdesk::desktop {
 namespace {
 
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeHostClass[] = L"TuringDesk.Native.WidgetSurface";
 constexpr LONG kGeometryTolerancePx = 4;
 
 WidgetServiceResult LoadFailure(const std::wstring& error) {
@@ -48,7 +49,8 @@ bool RuntimeDetailLooksHealthy(const std::wstring& detail) {
         detail.find(L"找不到") != std::wstring::npos ||
         detail.find(L"unavailable") != std::wstring::npos ||
         detail.find(L"failed") != std::wstring::npos) return false;
-    return detail.find(L"WebView2 隔离 Surface") != std::wstring::npos;
+    return detail.find(L"WebView2 隔离 Surface") != std::wstring::npos ||
+           detail.find(L"Native Direct2D Widget host") != std::wstring::npos;
 }
 
 std::wstring WindowText(HWND window) {
@@ -85,7 +87,7 @@ HWND FindWidgetSurface(HWND expectedParent, std::wstring_view widgetId) {
     for (HWND child = FindWindowExW(expectedParent, nullptr, nullptr, nullptr);
          child;
          child = FindWindowExW(expectedParent, child, nullptr, nullptr)) {
-        if (!WindowClassEquals(child, kWebHostClass)) continue;
+        if (!WindowClassEquals(child, kWebHostClass) && !WindowClassEquals(child, kNativeHostClass)) continue;
         const auto title = WindowText(child);
         if (title.size() >= prefix.size() && title.compare(0, prefix.size(), prefix) == 0) return child;
     }
@@ -145,9 +147,10 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     WidgetSurfaceHealth surface;
     surface.widgetId = widget.id;
     surface.monitorId = widget.monitorId.empty() ? L"primary" : widget.monitorId;
-    surface.configured = widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web;
+    surface.configured = widget.enabled &&
+        (widget.kind == wallpaper::DesktopWidgetKind::Web || widget.kind == wallpaper::DesktopWidgetKind::Native);
     if (!surface.configured) {
-        SetAttention(surface, L"widget_disabled", L"Widget 未启用 Web runtime。", L"在小组件页面启用该 Widget 后刷新运行状态。");
+        SetAttention(surface, L"widget_disabled", L"Widget 未启用 runtime。", L"在小组件页面启用该 Widget 后刷新运行状态。");
         return surface;
     }
 
@@ -274,7 +277,9 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     } else if (!compatibilityHealthy) {
         SetAttention(surface, L"runtime_diagnostic_unhealthy", L"Widget runtime 兼容诊断报告异常", L"查看 Widget runtime 日志并只重启 Widget helper。");
     } else {
-        surface.detail = L"Widget WebView2/desktop surface/monitor geometry health ready";
+        surface.detail = widget.kind == wallpaper::DesktopWidgetKind::Native
+            ? L"Widget Native Direct2D/desktop surface/monitor geometry health ready"
+            : L"Widget WebView2/desktop surface/monitor geometry health ready";
     }
     return surface;
 }
@@ -301,6 +306,26 @@ WidgetServiceResult WidgetService::CreateWeb(
     if (!widget) return {false, error.empty() ? L"创建桌面小组件失败。" : error};
     if (created) *created = *widget;
     return {true, L"桌面小组件已创建：" + widget->id};
+}
+
+WidgetServiceResult WidgetService::CreateNative(
+    const NativeWidgetCreateRequest& request,
+    wallpaper::DesktopWidget* created) const {
+    wallpaper::DesktopWidgetStore store;
+    std::wstring error;
+    if (!store.Load(&error)) return LoadFailure(error);
+    auto widget = store.CreateManagedNative(
+        request.preset,
+        request.title,
+        request.monitorId,
+        request.x,
+        request.y,
+        request.width,
+        request.height,
+        &error);
+    if (!widget) return {false, error.empty() ? L"创建原生桌面小组件失败。" : error};
+    if (created) *created = *widget;
+    return {true, L"原生桌面小组件已创建：" + widget->id};
 }
 
 WidgetServiceResult WidgetService::Update(const WidgetUpdateRequest& request) const {
@@ -375,7 +400,9 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
     result.configuredCount = store.Items().size();
     result.enabledWebCount = static_cast<std::size_t>(std::count_if(
         store.Items().begin(), store.Items().end(), [](const wallpaper::DesktopWidget& widget) {
-            return widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Web;
+            return widget.enabled &&
+                (widget.kind == wallpaper::DesktopWidgetKind::Web ||
+                 widget.kind == wallpaper::DesktopWidgetKind::Native);
         }));
     result.detail = ReadWidgetRuntimeDetail();
     result.runtimeReported = !result.detail.empty();
@@ -386,7 +413,8 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
 
     result.surfaces.reserve(result.enabledWebCount);
     for (const auto& widget : store.Items()) {
-        if (!widget.enabled || widget.kind != wallpaper::DesktopWidgetKind::Web) continue;
+        if (!widget.enabled) continue;
+        if (widget.kind != wallpaper::DesktopWidgetKind::Web && widget.kind != wallpaper::DesktopWidgetKind::Native) continue;
         result.surfaces.push_back(InspectWidgetSurface(widget, compatibilityHealthy));
     }
 

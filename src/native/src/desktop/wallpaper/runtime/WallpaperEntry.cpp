@@ -17,6 +17,7 @@
 #include "turingdesk/WallpaperWebRuntimeCoordinator.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
 #include "turingdesk/WebWallpaperHost.h"
+#include "turingdesk/NativeWidgetHost.h"
 
 namespace fs = std::filesystem;
 
@@ -297,7 +298,7 @@ int RunDesktopShellSupervisor() {
                 shell.AttachSurface(surface, role, screenRect,
                                     IsWindowVisible(surface) != FALSE, nullptr);
             } else {
-                shell.PrepareSurface(surface, true, nullptr);
+                shell.PrepareSurface(surface, role != turingdesk::wallpaper::DesktopSurfaceRole::Widget, nullptr);
             }
         }
         shell.RepairKnownTuringDeskSurfaces();
@@ -333,6 +334,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
     // reference and is no longer routed from the executable entrypoint.
     const int surfaceWebResult = turingdesk::wallpaper::TryRunWebDesktopSurfaceChild(instance);
     if (surfaceWebResult >= 0) return surfaceWebResult;
+
+    const int nativeWidgetResult = turingdesk::wallpaper::TryRunNativeWidgetHost(instance);
+    if (nativeWidgetResult >= 0) return nativeWidgetResult;
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(kShellMode) != std::wstring_view::npos)

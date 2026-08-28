@@ -6,10 +6,13 @@
 #include <string_view>
 #include <vector>
 
+#include "turingdesk/NativeWidgetPreset.h"
+
 namespace turingdesk::wallpaper {
 
 enum class DesktopWidgetKind {
     Web,
+    Native,
     Unknown,
 };
 
@@ -43,6 +46,15 @@ public:
     std::optional<DesktopWidget> CreateManagedWeb(
         std::wstring title,
         std::string_view htmlUtf8,
+        std::wstring monitorId = {},
+        float x = 0.68f,
+        float y = 0.05f,
+        float width = 0.28f,
+        float height = 0.18f,
+        std::wstring* error = nullptr);
+    std::optional<DesktopWidget> CreateManagedNative(
+        NativeWidgetPreset preset,
+        std::wstring title = {},
         std::wstring monitorId = {},
         float x = 0.68f,
         float y = 0.05f,

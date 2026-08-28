@@ -143,23 +143,28 @@ bool FixedShowcaseReady(std::wstring* failure) {
         return false;
     }
 
-    std::vector<const turingdesk::wallpaper::DesktopWidget*> enabledWeb;
+    std::vector<const turingdesk::wallpaper::DesktopWidget*> enabledShowcase;
     for (const auto& widget : widgets) {
-        if (widget.enabled && widget.kind == turingdesk::wallpaper::DesktopWidgetKind::Web) enabledWeb.push_back(&widget);
+        if (!widget.enabled) continue;
+        if (widget.kind != turingdesk::wallpaper::DesktopWidgetKind::Native &&
+            widget.kind != turingdesk::wallpaper::DesktopWidgetKind::Web) {
+            continue;
+        }
+        enabledShowcase.push_back(&widget);
     }
-    if (enabledWeb.size() != kM3Showcase.size()) {
+    if (enabledShowcase.size() != kM3Showcase.size()) {
         if (failure) {
-            *failure = L"M3 real-Windows acceptance 必须同时启用且仅启用三个固定 showcase 小组件；当前 enabledWeb="
-                + std::to_wstring(enabledWeb.size()) + L"，需要 玻璃时钟/今日待办/玻璃天气 各一个。";
+            *failure = L"M3 real-Windows acceptance 必须同时启用且仅启用三个固定 showcase 小组件；当前 enabledShowcase="
+                + std::to_wstring(enabledShowcase.size()) + L"，需要 玻璃时钟/今日待办/玻璃天气 各一个。";
         }
         return false;
     }
 
     for (const auto& spec : kM3Showcase) {
-        const auto it = std::find_if(enabledWeb.begin(), enabledWeb.end(), [&](const auto* widget) {
+        const auto it = std::find_if(enabledShowcase.begin(), enabledShowcase.end(), [&](const auto* widget) {
             return widget->title == spec.title;
         });
-        if (it == enabledWeb.end()) {
+        if (it == enabledShowcase.end()) {
             if (failure) *failure = L"M3 fixed showcase 缺少启用模板：" + std::wstring(spec.title) + L"。";
             return false;
         }
@@ -170,14 +175,22 @@ bool FixedShowcaseReady(std::wstring* failure) {
             }
             return false;
         }
+        if ((*it)->kind != turingdesk::wallpaper::DesktopWidgetKind::Native) {
+            if (failure) {
+                *failure = L"M3 fixed showcase 必须使用原生 Direct2D preset：" + std::wstring(spec.title)
+                    + L"。WebView2 showcase 不再满足 M3 性能与验收要求。";
+            }
+            return false;
+        }
     }
 
-    for (std::size_t i = 0; i < enabledWeb.size(); ++i) {
-        for (std::size_t j = i + 1; j < enabledWeb.size(); ++j) {
-            if (SameMonitor(*enabledWeb[i], *enabledWeb[j]) && Overlaps(*enabledWeb[i], *enabledWeb[j])) {
+    for (std::size_t i = 0; i < enabledShowcase.size(); ++i) {
+        for (std::size_t j = i + 1; j < enabledShowcase.size(); ++j) {
+            if (SameMonitor(*enabledShowcase[i], *enabledShowcase[j]) &&
+                Overlaps(*enabledShowcase[i], *enabledShowcase[j])) {
                 if (failure) {
-                    *failure = L"M3 fixed showcase 存在同屏重叠：" + enabledWeb[i]->title + L" 与 "
-                        + enabledWeb[j]->title + L"。真实可视验收要求三个固定小组件无重叠。";
+                    *failure = L"M3 fixed showcase 存在同屏重叠：" + enabledShowcase[i]->title + L" 与 "
+                        + enabledShowcase[j]->title + L"。真实可视验收要求三个固定小组件无重叠。";
                 }
                 return false;
             }
@@ -198,14 +211,14 @@ bool StructuredLifecycleReady(std::wstring* failure) {
     for (const auto& surface : health.surfaces) {
         if (!surface.environmentReported || !surface.controllerReported || !surface.navigationReported) {
             if (failure) {
-                *failure = L"M3 real-Windows acceptance 不接受 legacy/unreported WebView2 lifecycle：widget="
-                    + surface.widgetId + L"。必须由 preferred WebDesktopSurfaceChild 明确报告 Environment/Controller/Navigation telemetry。";
+                *failure = L"M3 real-Windows acceptance 不接受 legacy/unreported widget lifecycle：widget="
+                    + surface.widgetId + L"。必须由 preferred native/Web surface child 明确报告 Environment/Controller/Navigation telemetry。";
             }
             return false;
         }
         if (!surface.environmentReady || !surface.controllerReady || !surface.navigationReady) {
             if (failure) {
-                *failure = L"M3 WebView2 lifecycle 尚未 ready：widget=" + surface.widgetId
+                *failure = L"M3 widget lifecycle 尚未 ready：widget=" + surface.widgetId
                     + L" environment=" + (surface.environmentReady ? L"true" : L"false")
                     + L" controller=" + (surface.controllerReady ? L"true" : L"false")
                     + L" navigation=" + (surface.navigationReady ? L"true" : L"false") + L"。";

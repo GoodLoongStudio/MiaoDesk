@@ -55,6 +55,7 @@ public:
     void SetTargets(const std::vector<WallpaperLibraryTarget>& targets);
     void Close();
     void Refresh();
+    void SetWallpaperEnabledState(bool enabled);
     bool Visible() const noexcept;
     HWND Window() const noexcept;
 

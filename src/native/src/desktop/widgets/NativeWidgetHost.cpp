@@ -406,6 +406,7 @@ struct NativeWidgetHostApp {
         slot.dragHandle = CreateWindowExW(
             WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
             0, 0, width, height, hwnd, nullptr, instance, &slot);
+        SetWindowPos(slot.dragHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         ResizeDragHandle(slot);
         PaintSlot(slot);
         AttachSlotSurface(slot, desktopRegion);
@@ -476,6 +477,12 @@ struct NativeWidgetHostApp {
                     slots.end());
 
         RepairDesktopStack();
+        for (const auto& slot : slots) {
+            if (slot && slot->dragHandle && IsWindow(slot->dragHandle)) {
+                SetWindowPos(slot->dragHandle, HWND_TOP, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            }
+        }
         WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()));
     }
 

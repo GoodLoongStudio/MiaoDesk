@@ -235,11 +235,11 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
         const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
         HWND insertAfter = anchor;
-        for (HWND window : wallpapers) {
+        for (HWND window : widgets) {
             SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             insertAfter = window;
         }
-        for (HWND window : widgets) {
+        for (HWND window : wallpapers) {
             SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             insertAfter = window;
         }
@@ -289,13 +289,10 @@ bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, cons
         return false;
     }
     RepairKnownTuringDeskSurfaces();
-    if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
-        const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
-        SetWindowPos(surface, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        if (role == DesktopSurfaceRole::Widget) RepairKnownTuringDeskSurfaces();
-    } else {
+    if (snapshot_.mode != DesktopShellMode::RaisedDesktop && snapshot_.mode != DesktopShellMode::ProgmanFallback) {
         SetWindowPos(surface, role == DesktopSurfaceRole::Widget ? HWND_TOP : HWND_BOTTOM, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        RepairKnownTuringDeskSurfaces();
     }
     const auto health = InspectSurface(surface, role);
     if (!health.window || !health.parent || !health.childStyle || !health.layered || !health.geometry) {

@@ -191,6 +191,7 @@ void SaveConfig(const Config& config) {
     const auto videoRate = FloatText(std::clamp(config.videoRate, 0.25f, 4.0f));
     WritePrivateProfileStringW(L"Wallpaper", L"VideoVolume", videoVolume.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"VideoRate", videoRate.c_str(), path.c_str());
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
 }
 
 Config LoadConfig() {
@@ -479,6 +480,7 @@ public:
             videoSet_.SetPaused(false);
             independentHost_.SetPaused(false);
             InvalidateRect(host_, nullptr, FALSE);
+            shellHost_.RepairKnownTuringDeskSurfaces();
         } else {
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
@@ -486,7 +488,7 @@ public:
             ShowWindow(host_, SW_HIDE);
         }
         RefreshSettings();
-        libraryWindow_.Refresh();
+        libraryWindow_.SetWallpaperEnabledState(config_.enabled);
     }
 
 private:

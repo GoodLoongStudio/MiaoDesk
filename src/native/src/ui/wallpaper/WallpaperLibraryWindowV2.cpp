@@ -314,31 +314,43 @@ struct WallpaperLibraryWindow::Impl {
         if (status) SetWindowTextW(status, text.c_str());
     }
 
+    void SetWallpaperEnabledState(bool enabled) {
+        if (!wallpaperToggleButton) return;
+        SetWindowTextW(wallpaperToggleButton, enabled ? L"停止壁纸" : L"恢复壁纸");
+    }
+
     void RefreshWallpaperToggle() {
         if (!wallpaperToggleButton) return;
         desktop::DesktopState state;
         const bool enabled = desktopControl.GetState(&state).success && state.enabled;
-        SetWindowTextW(wallpaperToggleButton, enabled ? L"停止壁纸" : L"恢复壁纸");
+        SetWallpaperEnabledState(enabled);
     }
 
     void ToggleWallpaper() {
-        desktop::DesktopState state;
-        const bool currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
+        bool currentlyEnabled = true;
+        if (wallpaperToggleButton) {
+            const std::wstring label = WindowText(wallpaperToggleButton);
+            currentlyEnabled = label != L"恢复壁纸";
+        } else {
+            desktop::DesktopState state;
+            currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
+        }
         const bool enable = !currentlyEnabled;
         if (wallpaperEnabledCallback) {
             wallpaperEnabledCallback(enable);
+            SetWallpaperEnabledState(enable);
             SetStatus(enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。");
-        } else {
-            const auto result = desktopControl.SetWallpaperEnabled(enable);
-            SetStatus(result.message.empty()
-                          ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
-                          : result.message);
-            if (!result.success) {
-                RefreshWallpaperToggle();
-                return;
-            }
+            return;
         }
-        RefreshWallpaperToggle();
+        const auto result = desktopControl.SetWallpaperEnabled(enable);
+        SetStatus(result.message.empty()
+                      ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
+                      : result.message);
+        if (!result.success) {
+            RefreshWallpaperToggle();
+            return;
+        }
+        SetWallpaperEnabledState(enable);
     }
 
     void RefreshWallpapers() {
@@ -1400,6 +1412,10 @@ void WallpaperLibraryWindow::Refresh() {
     impl_->RefreshWallpaperToggle();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
+}
+
+void WallpaperLibraryWindow::SetWallpaperEnabledState(const bool enabled) {
+    impl_->SetWallpaperEnabledState(enabled);
 }
 
 bool WallpaperLibraryWindow::Visible() const noexcept {

@@ -1,6 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+function From-B64([string]$Value) {
+    return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
+}
+
 $paths = @{
     Header = Join-Path $root 'src/native/include/turingdesk/StoreDemoExperience.h'
     Demo = Join-Path $root 'src/native/src/desktop/demo/StoreDemoExperience.cpp'
@@ -33,22 +37,36 @@ foreach ($marker in @(
 }
 
 foreach ($marker in @(
-    'store-demo.ini', 'scene-aurora', '玻璃时钟', '今日待办', '玻璃天气',
-    '一键体验', '演示模式', 'WidgetFixedPreset::GlassClock', 'ShowWidgetPreviewForPrompt', 'widget_intent::')) {
+    'store-demo.ini',
+    'scene-aurora',
+    (From-B64 '546755KD5pe26ZKf'),
+    (From-B64 '5LuK5pel5b6F5Yqe'),
+    (From-B64 '546755KD5aSp5rCU'),
+    (From-B64 '5LiA6ZSu5L2T6aqM'),
+    (From-B64 '5ryU56S65qih5byP'),
+    'WidgetFixedPreset::GlassClock',
+    'ShowWidgetPreviewForPrompt',
+    'widget_intent::')) {
     if (-not $demo.Contains($marker)) { throw "StoreDemoExperience.cpp missing marker: $marker" }
 }
 
 foreach ($marker in @(
-    'StoreDemoExperience.h', 'HideAdvancedWorkbench', '立即体验动态桌面', 'kDemoGoldenId',
+    'StoreDemoExperience.h',
+    'HideAdvancedWorkbench',
+    (From-B64 '56uL5Y2z5L2T6aqM5Yqo5oCB5qGM6Z2i'),
+    'kDemoGoldenId',
     'RunDemoGoldenPath')) {
     if (-not $ai.Contains($marker)) { throw "DesktopAiSettingsPage missing Store Demo marker: $marker" }
 }
-if ($ai.Contains('打开秒喵工作台') -and -not $ai.Contains('HideAdvancedWorkbench')) {
+if ($ai.Contains((From-B64 '5omT5byA56eS5Za15bel5L2c5Y+w')) -and -not $ai.Contains('HideAdvancedWorkbench')) {
     throw 'Harness entry must remain gated behind HideAdvancedWorkbench for Store Demo.'
 }
 
 foreach ($marker in @(
-    'TryHandleDemoPrompt', '演示模式', '一键体验', 'StoreDemoExperience.h')) {
+    'TryHandleDemoPrompt',
+    (From-B64 '5ryU56S65qih5byP'),
+    (From-B64 '5LiA6ZSu5L2T6aqM'),
+    'StoreDemoExperience.h')) {
     if (-not $conversation.Contains($marker)) { throw "ConversationPanel missing demo marker: $marker" }
 }
 
@@ -56,7 +74,7 @@ foreach ($marker in @('MaybeShowFirstRun', 'kFirstRunTimerId', 'StoreDemoExperie
     if (-not $search.Contains($marker)) { throw "SearchWindow missing first-run marker: $marker" }
 }
 
-foreach ($marker in @('一键体验套装', 'kWidgetDemoId', 'OfferGoldenPath')) {
+foreach ($marker in @((From-B64 '5LiA6ZSu5L2T6aqM5aWX6KOF'), 'kWidgetDemoId', 'OfferGoldenPath')) {
     if (-not $library.Contains($marker)) { throw "WallpaperLibraryWindowV2 missing showcase marker: $marker" }
 }
 

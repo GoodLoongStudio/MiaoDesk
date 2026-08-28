@@ -176,6 +176,11 @@ int WINAPI TuringDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT
 
 } // namespace
 
+// WallpaperEngine.cpp is still included as a migration implementation unit and
+// historically refers to the desktop namespace as wallpaper::. Keep that alias
+// local to this production bridge instead of leaking it into public headers.
+namespace wallpaper = turingdesk::wallpaper;
+
 #define WallpaperAutomationStore AutomationUiAdapter
 #define GetPrivateProfileIntW TuringDeskGetPrivateProfileIntW
 #define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW

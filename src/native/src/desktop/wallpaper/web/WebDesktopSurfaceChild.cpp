@@ -385,8 +385,15 @@ private:
     }
 
     void RaiseWidgetDragHandle() {
-        if (!dragHandle_ || !IsWindow(dragHandle_)) return;
-        SetWindowPos(dragHandle_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if (!dragHandle_ || !IsWindow(dragHandle_) || !hwnd_) return;
+        HWND topSibling = nullptr;
+        for (HWND child = GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+            if (child == dragHandle_) continue;
+            topSibling = child;
+        }
+        const HWND insertAfter = topSibling ? topSibling : HWND_TOP;
+        SetWindowPos(dragHandle_, insertAfter, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
     void ResizeWidgetDragHandle() {

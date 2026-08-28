@@ -40,14 +40,14 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kControlClass[] = kWallpaperControlWindowClass;
 constexpr wchar_t kHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
 constexpr wchar_t kSelfTestClass[] = L"TuringDesk.Native.WallpaperSelfTest";
 constexpr wchar_t kMutexName[] = L"Local\\TuringDesk.Native.Wallpaper.Singleton";
+constexpr wchar_t kControlClass[] = turingdesk::wallpaper::kWallpaperControlWindowClass;
 constexpr UINT kShowSettings = WM_APP + 81;
 constexpr UINT kTrayMessage = WM_APP + 82;
-constexpr UINT kSetEnabled = kWallpaperSetEnabledMessage;
+constexpr UINT kSetEnabled = turingdesk::wallpaper::kWallpaperSetEnabledMessage;
 constexpr UINT_PTR kRenderTimer = 1;
 constexpr UINT kTrayId = 1;
 constexpr int kSceneComboId = 4101;

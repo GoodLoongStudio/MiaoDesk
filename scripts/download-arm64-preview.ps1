@@ -144,11 +144,14 @@ function Test-StaleWallpaperRuntime {
     if (-not (Test-Path $wallpaperIni -PathType Leaf)) { return $false }
     $text = Get-Content $wallpaperIni -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrWhiteSpace($text)) { return $false }
-    return ($text -match '\[Diagnostics\]') -and (
-        ($text -match 'LastMountError=.+') -or
-        ($text -match 'WidgetRuntime=.+运行异常') -or
-        ($text -match 'WidgetRuntime=.+启动失败')
-    )
+    if ($text -notmatch '\[Diagnostics\]') { return $false }
+    if ($text -match 'LastMountError=\S') { return $true }
+    if ($text -match 'WidgetRuntime=\S' -and
+        $text -notmatch 'WidgetRuntime=.*WebView2' -and
+        $text -notmatch 'WidgetRuntime=.*Native Direct2D') {
+        return $true
+    }
+    return $false
 }
 function Require([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {

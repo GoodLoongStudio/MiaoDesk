@@ -315,6 +315,10 @@ public:
         AttachToDesktop();
         AddTray();
         ApplyConfig(config_, false);
+        if (config_.enabled && mountOk_) {
+            ShowWindow(host_, SW_SHOWNOACTIVATE);
+            InvalidateRect(host_, nullptr, FALSE);
+        }
         SetRenderTimerFps(config_.fpsCap);
         return true;
     }
@@ -1443,6 +1447,9 @@ private:
         if (renderTarget_) LoadImage();
         if (config_.enabled && mounted) {
             RebuildRuntime();
+            ShowWindow(host_, SW_SHOWNOACTIVATE);
+            InvalidateRect(host_, nullptr, FALSE);
+            UpdateWindow(host_);
         } else if (!config_.enabled) {
             ShowWindow(host_, SW_HIDE);
         }

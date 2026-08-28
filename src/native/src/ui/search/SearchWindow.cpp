@@ -1,4 +1,5 @@
 #include "turingdesk/SearchWindow.h"
+#include "turingdesk/DesktopControlService.h"
 #include "turingdesk/L3CliWindow.h"
 #include "turingdesk/SettingsCenterWindow.h"
 #include "turingdesk/StoreDemoExperience.h"
@@ -286,6 +287,10 @@ bool SearchWindow::Create() {
 
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
     Draw();
+
+    desktop::DesktopControlService desktop;
+    desktop.EnsureRuntime();
+
     return true;
 }
 

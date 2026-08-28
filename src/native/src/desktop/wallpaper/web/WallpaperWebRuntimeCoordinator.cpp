@@ -378,18 +378,18 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             }
 
             const bool hostIdentityChanged = currentHost != host;
-            const bool parentChanged = currentSurfaceParent != surfaceParent;
-            if (parentChanged || (scope == WallpaperWebRuntimeScope::WebWallpaper && hostIdentityChanged)) {
+            const bool parentIdentityChanged = surfaceParent && currentSurfaceParent && surfaceParent != currentSurfaceParent;
+            const bool parentBecameNull = surfaceParent && !currentSurfaceParent;
+            if (parentIdentityChanged || parentBecameNull ||
+                (scope == WallpaperWebRuntimeScope::WebWallpaper && hostIdentityChanged)) {
                 surfaces.Stop();
-                if (scope == WallpaperWebRuntimeScope::Widgets) nativeSurfaces.Stop();
+                if (scope == WallpaperWebRuntimeScope::Widgets && parentIdentityChanged) nativeSurfaces.Stop();
                 activeRequests.clear();
                 activeFingerprint.clear();
-                surfaceParent = currentSurfaceParent;
                 nextRefresh = 0;
                 resetRecovery();
-            } else {
-                surfaceParent = currentSurfaceParent;
             }
+            surfaceParent = currentSurfaceParent;
             host = currentHost;
 
             const ULONGLONG now = GetTickCount64();

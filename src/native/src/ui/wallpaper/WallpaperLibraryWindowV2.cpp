@@ -351,22 +351,35 @@ struct WallpaperLibraryWindow::Impl {
         InvalidateRect(widgetGrid, nullptr, TRUE);
     }
 
-    int CardWidth() const { return S(272); }
-    int CardHeight() const { return S(153); }
+    int GridClientWidth(HWND grid) const {
+        RECT rc{};
+        GetClientRect(grid, &rc);
+        return std::max(1, RectWidth(rc));
+    }
+
+    int CardWidth(HWND grid) const {
+        const int width = GridClientWidth(grid);
+        const int gap = CardGap();
+        const int minCard = S(200);
+        const int columns = std::max(1, (width + gap) / (minCard + gap));
+        return std::max(minCard, (width - gap * (columns + 1)) / columns);
+    }
+
+    int CardHeight(HWND grid) const { return MulDiv(CardWidth(grid), 153, 272); }
     int CardGap() const { return S(12); }
 
     int GridColumns(HWND grid) const {
-        RECT rc{};
-        GetClientRect(grid, &rc);
-        const int width = RectWidth(rc);
-        return std::max(1, (width - CardGap()) / (CardWidth() + CardGap()));
+        const int width = GridClientWidth(grid);
+        const int gap = CardGap();
+        const int minCard = S(200);
+        return std::max(1, (width + gap) / (minCard + gap));
     }
 
     int GridContentHeight(HWND grid, bool widgets) const {
         const std::size_t count = widgets ? visibleWidgets.size() : visibleWallpapers.size();
         const int columns = GridColumns(grid);
         const int rows = count == 0 ? 0 : static_cast<int>((count + columns - 1) / columns);
-        return CardGap() + rows * (CardHeight() + CardGap());
+        return CardGap() + rows * (CardHeight(grid) + CardGap());
     }
 
     int& GridScrollRef(bool widgets) { return widgets ? widgetScroll : wallpaperScroll; }
@@ -395,9 +408,11 @@ struct WallpaperLibraryWindow::Impl {
         const int col = index % columns;
         const int row = index / columns;
         const int scroll = widgets ? widgetScroll : wallpaperScroll;
-        const int left = CardGap() + col * (CardWidth() + CardGap());
-        const int top = CardGap() + row * (CardHeight() + CardGap()) - scroll;
-        return RECT{left, top, left + CardWidth(), top + CardHeight()};
+        const int cardW = CardWidth(grid);
+        const int cardH = CardHeight(grid);
+        const int left = CardGap() + col * (cardW + CardGap());
+        const int top = CardGap() + row * (cardH + CardGap()) - scroll;
+        return RECT{left, top, left + cardW, top + cardH};
     }
 
     int HitTest(HWND grid, POINT point, bool widgets) const {
@@ -762,6 +777,8 @@ struct WallpaperLibraryWindow::Impl {
         }
         selectedWidgetId = created.id;
         RefreshWidgets();
+        WidgetRuntimeHealth health;
+        widgetController.RuntimeHealth(&health);
         SetStatus(L"已创建桌面小组件：" + created.title);
     }
 
@@ -842,10 +859,10 @@ struct WallpaperLibraryWindow::Impl {
         GetClientRect(window, &rc);
         const int width = RectWidth(rc);
         const int height = RectHeight(rc);
-        const int sidebarW = S(208);
-        const int topH = S(58);
-        const int footerH = S(58);
-        const int margin = std::clamp((width - sidebarW) / 36, S(14), S(20));
+        const int sidebarW = std::clamp(MulDiv(width, 180, 1000), S(168), S(240));
+        const int topH = std::max(S(48), MulDiv(height, 58, 790));
+        const int footerH = std::max(S(48), MulDiv(height, 58, 790));
+        const int margin = std::max(S(12), MulDiv(width - sidebarW, 16, 1000));
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
         const int webH = webBarVisible && installed ? S(48) : 0;
@@ -901,9 +918,9 @@ struct WallpaperLibraryWindow::Impl {
         const int footerTop = height - footerH;
         if (installed) {
             const int gap = S(6);
-            const int actionW = std::clamp(contentWidth * 15 / 100, S(82), S(108));
-            const int smallW = std::clamp(contentWidth * 11 / 100, S(68), S(88));
-            const int targetW = std::clamp(contentWidth * 23 / 100, S(118), S(182));
+            const int actionW = std::max(S(82), MulDiv(contentWidth, 15, 100));
+            const int smallW = std::max(S(68), MulDiv(contentWidth, 11, 100));
+            const int targetW = std::max(S(118), MulDiv(contentWidth, 23, 100));
             const int right = width - margin;
             const int actionTotal = targetW + actionW + smallW * 2 + gap * 3;
             const int actionsLeft = right - actionTotal;
@@ -918,9 +935,9 @@ struct WallpaperLibraryWindow::Impl {
             place(applyButton, x, footerTop + S(11), actionW, S(36));
         } else if (widgets) {
             const int gap = S(6);
-            const int buttonW = std::clamp(contentWidth * 11 / 100, S(70), S(84));
-            const int createW = std::clamp(contentWidth * 20 / 100, S(124), S(154));
-            const int demoW = std::clamp(contentWidth * 15 / 100, S(96), S(120));
+            const int buttonW = std::max(S(70), MulDiv(contentWidth, 11, 100));
+            const int createW = std::max(S(124), MulDiv(contentWidth, 20, 100));
+            const int demoW = std::max(S(96), MulDiv(contentWidth, 15, 100));
             const int right = width - margin;
             const int actionTotal = createW + demoW + buttonW * 3 + gap * 4;
             const int actionsLeft = right - actionTotal;
@@ -1099,8 +1116,8 @@ struct WallpaperLibraryWindow::Impl {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(860);
-                info->ptMinTrackSize.y = self->S(620);
+                info->ptMinTrackSize.x = self->S(720);
+                info->ptMinTrackSize.y = self->S(520);
             }
             return 0;
         }

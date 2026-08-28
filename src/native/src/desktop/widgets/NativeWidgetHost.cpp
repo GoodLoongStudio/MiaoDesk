@@ -271,6 +271,8 @@ struct NativeWidgetHostApp {
         widget.x = std::clamp(slot.dragPreviewX_, 0.0f, maxX);
         widget.y = std::clamp(slot.dragPreviewY_, 0.0f, maxY);
         store.Upsert(widget, &ignored);
+        RECT screenRect{};
+        if (GetWindowRect(slot.hwnd, &screenRect)) slot.desktopRegion = screenRect;
     }
 
     static LRESULT CALLBACK DragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -477,12 +479,6 @@ struct NativeWidgetHostApp {
         WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()));
     }
 
-    void RepaintClocks() {
-        for (const auto& slot : slots) {
-            if (slot && slot->hwnd && slot->preset == NativeWidgetPreset::GlassClock) PaintSlot(*slot);
-        }
-    }
-
     void SetPaused(bool value) {
         if (paused == value) return;
         paused = value;
@@ -495,10 +491,14 @@ struct NativeWidgetHostApp {
             }
             RepairDesktopStack();
         }
-        const UINT show = value ? SW_HIDE : SW_SHOW;
+        // Keep HWND visible on the desktop. Performance policy must not hide widgets;
+        // "paused" only stops periodic repaints (clocks) to save CPU.
+    }
+
+    void RepaintClocks() {
+        if (paused) return;
         for (const auto& slot : slots) {
-            if (!slot || !slot->hwnd) continue;
-            ShowWindow(slot->hwnd, show);
+            if (slot && slot->hwnd && slot->preset == NativeWidgetPreset::GlassClock) PaintSlot(*slot);
         }
     }
 

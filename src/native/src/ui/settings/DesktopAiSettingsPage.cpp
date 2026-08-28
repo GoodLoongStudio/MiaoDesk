@@ -312,8 +312,8 @@ struct PageState {
         const int fieldGap = std::max(S(8), MulDiv(width, 12, 1000));
         const int fieldX = margin + labelW + fieldGap;
         const int fieldW = std::max(S(120), contentW - labelW - fieldGap);
-        const int rowH = std::max(S(30), MulDiv(height, 34, 700));
-        const int rowGap = std::max(S(6), MulDiv(height, 10, 700));
+        const int rowH = MulDiv(height, 34, 1000) + S(28);
+        const int rowGap = MulDiv(height, 10, 1000) + S(4);
 
         const int introH = MeasureTextHeight(intro, contentW, bodyFont, S(24));
         const int providerH = MeasureTextHeight(provider, fieldW, smallFont, S(22));

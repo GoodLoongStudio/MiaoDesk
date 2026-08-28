@@ -234,15 +234,24 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
 
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
         const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
-        for (HWND window : wallpapers)
-            SetWindowPos(window, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        for (HWND window : widgets)
-            SetWindowPos(window, anchor, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        HWND insertAfter = anchor;
+        for (HWND window : wallpapers) {
+            SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            insertAfter = window;
+        }
+        for (HWND window : widgets) {
+            SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            insertAfter = window;
+        }
     } else {
-        for (HWND window : wallpapers)
-            SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        for (HWND window : widgets)
+        HWND insertAfter = HWND_BOTTOM;
+        for (HWND window : wallpapers) {
+            SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            insertAfter = window;
+        }
+        for (HWND window : widgets) {
             SetWindowPos(window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
     }
 }
 

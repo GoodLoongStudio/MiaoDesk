@@ -81,6 +81,23 @@ bool ProcessRunning(DWORD processId) {
     return running;
 }
 
+bool PropertyReady(HWND window, const wchar_t* property) {
+    return window && IsWindow(window) && GetPropW(window, property) != nullptr;
+}
+
+bool HasStructuredLifecycleTelemetry(HWND window) {
+    if (!window || !IsWindow(window)) return false;
+    const auto role = reinterpret_cast<INT_PTR>(GetPropW(window, wallpaper::kWebSurfaceRoleProperty));
+    return role == 2;
+}
+
+const wallpaper::MonitorInfo* PrimaryMonitor(const wallpaper::MonitorTopology& topology) {
+    for (const auto& monitor : topology.monitors) {
+        if (monitor.primary) return &monitor;
+    }
+    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
+}
+
 HWND FindWidgetSurface(HWND expectedParent, std::wstring_view widgetId) {
     if (widgetId.empty()) return nullptr;
     const std::wstring prefix = L"widget-" + std::wstring(widgetId) + L"-";

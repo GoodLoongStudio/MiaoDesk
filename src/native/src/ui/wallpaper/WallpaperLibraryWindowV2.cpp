@@ -777,7 +777,7 @@ struct WallpaperLibraryWindow::Impl {
         }
         selectedWidgetId = created.id;
         RefreshWidgets();
-        WidgetRuntimeHealth health;
+        desktop::WidgetRuntimeHealth health;
         widgetController.RuntimeHealth(&health);
         SetStatus(L"已创建桌面小组件：" + created.title);
     }

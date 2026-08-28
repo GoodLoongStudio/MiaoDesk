@@ -279,7 +279,7 @@ struct NativeWidgetHostApp {
         DesktopWidgetStore store;
         std::wstring ignored;
         if (store.Load(&ignored)) {
-            if (const auto* updated = store.Find(slot.widgetId)) {
+            if (const auto updated = store.Find(slot.widgetId)) {
                 const DesktopWidget widget = DesktopWidgetStore::Normalize(*updated);
                 const MonitorTopology topology = QueryMonitorTopology();
                 if (topology.Valid()) {

@@ -1,5 +1,6 @@
 #include "turingdesk/WallpaperLibraryWindow.h"
 #include "turingdesk/DesktopAiSettingsPage.h"
+#include "turingdesk/DesktopControlService.h"
 #include "turingdesk/DesktopWidgetController.h"
 #include "turingdesk/StoreDemoExperience.h"
 
@@ -47,6 +48,7 @@ constexpr int kWidgetDemoId = 6144;
 constexpr int kWebUrlId = 6150;
 constexpr int kWebConfirmId = 6151;
 constexpr int kWebCancelId = 6152;
+constexpr int kWallpaperEnabledId = 6160;
 
 constexpr UINT kMenuImportFile = 6201;
 constexpr UINT kMenuImportWeb = 6202;
@@ -169,6 +171,7 @@ struct WallpaperLibraryWindow::Impl {
     HWND webUrl{};
     HWND webConfirm{};
     HWND webCancel{};
+    HWND wallpaperEnabledCheck{};
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
@@ -179,6 +182,7 @@ struct WallpaperLibraryWindow::Impl {
     std::vector<DesktopWidget> visibleWidgets;
     desktop::WidgetRuntimeHealth widgetHealth;
     desktop::DesktopWidgetController widgetController;
+    desktop::DesktopControlService desktopControl;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
     Page page{Page::Installed};
@@ -239,7 +243,7 @@ struct WallpaperLibraryWindow::Impl {
         for (HWND button : nav) set(button, bodyFont);
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
-                             widgetDemoButton,
+                             widgetDemoButton, wallpaperEnabledCheck,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
     }
 
@@ -306,6 +310,23 @@ struct WallpaperLibraryWindow::Impl {
 
     void SetStatus(std::wstring text) const {
         if (status) SetWindowTextW(status, text.c_str());
+    }
+
+    void RefreshWallpaperEnabled() {
+        if (!wallpaperEnabledCheck) return;
+        desktop::DesktopState state;
+        const bool checked = desktopControl.GetState(&state).success && state.enabled;
+        SendMessageW(wallpaperEnabledCheck, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
+
+    void ToggleWallpaperEnabled() {
+        if (!wallpaperEnabledCheck) return;
+        const bool enable = SendMessageW(wallpaperEnabledCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const auto result = desktopControl.SetWallpaperEnabled(enable);
+        SetStatus(result.message.empty()
+                      ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
+                      : result.message);
+        if (!result.success) RefreshWallpaperEnabled();
     }
 
     void RefreshWallpapers() {
@@ -879,6 +900,7 @@ struct WallpaperLibraryWindow::Impl {
             place(button, S(12), navY, sidebarW - S(24), S(38));
             navY += S(42);
         }
+        place(wallpaperEnabledCheck, S(12), navY + S(10), sidebarW - S(24), S(34));
 
         const int contentLeft = sidebarW;
         const int contentWidth = std::max(1, width - contentLeft);
@@ -1155,6 +1177,7 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kWidgetToggleId && notification == BN_CLICKED) self->ToggleWidget();
             else if (id == kWidgetRemoveId && notification == BN_CLICKED) self->RemoveWidget();
             else if (id == kWidgetRefreshId && notification == BN_CLICKED) self->RefreshWidgets();
+            else if (id == kWallpaperEnabledId && notification == BN_CLICKED) self->ToggleWallpaperEnabled();
             else if (id == kWebConfirmId && notification == BN_CLICKED) self->ImportWeb();
             else if (id == kWebCancelId && notification == BN_CLICKED) self->HideWebBar();
             else if (id == kMenuImportFile) self->ImportFile();
@@ -1309,9 +1332,15 @@ struct WallpaperLibraryWindow::Impl {
         SendMessageW(webUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://example.com/wallpaper"));
         webConfirm = button(L"添加 Web", kWebConfirmId, 0, false);
         webCancel = button(L"取消", kWebCancelId, 0, false);
+        wallpaperEnabledCheck = font(CreateWindowExW(0, L"BUTTON", L"启用壁纸",
+                                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                                                     0, 0, 10, 10, window, ControlId(kWallpaperEnabledId), instance,
+                                                     nullptr),
+                                     bodyFont);
 
         ApplyFonts();
         RebuildTargets();
+        RefreshWallpaperEnabled();
         RefreshWallpapers();
         RefreshWidgets();
         SetPage(Page::Installed);
@@ -1334,6 +1363,7 @@ bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
     impl_->navigateCallback = std::move(navigateCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
     impl_->RebuildTargets();
+    impl_->RefreshWallpaperEnabled();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
     impl_->SetPage(impl_->page);
@@ -1354,6 +1384,7 @@ void WallpaperLibraryWindow::Close() {
 
 void WallpaperLibraryWindow::Refresh() {
     impl_->RebuildTargets();
+    impl_->RefreshWallpaperEnabled();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
 }

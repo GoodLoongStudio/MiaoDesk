@@ -29,6 +29,7 @@ struct WallpaperServiceResult {
 class WallpaperService {
 public:
     WallpaperServiceResult GetState(WallpaperState* state) const;
+    WallpaperServiceResult SetEnabled(bool enabled) const;
     WallpaperServiceResult ApplyWebPackage(const std::filesystem::path& package) const;
     WallpaperServiceResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
     WallpaperServiceResult AssignLibraryItemToMonitor(

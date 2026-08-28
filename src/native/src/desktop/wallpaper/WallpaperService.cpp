@@ -96,6 +96,15 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
     return {true, L"壁纸状态读取完成。"};
 }
 
+WallpaperServiceResult WallpaperService::SetEnabled(const bool enabled) const {
+    const fs::path config = LocalTuringDeskDirectory() / L"wallpaper.ini";
+    const wchar_t* value = enabled ? L"1" : L"0";
+    if (WritePrivateProfileStringW(L"Wallpaper", L"Enabled", value, config.c_str()) == FALSE)
+        return {false, L"无法保存壁纸启用状态。"};
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
+    return {true, enabled ? L"壁纸已启用，小组件不受影响。" : L"壁纸已停用，小组件仍可显示。"};
+}
+
 WallpaperServiceResult WallpaperService::ApplyWebPackage(const fs::path& package) const {
     wallpaper::WallpaperPackageManifest manifest;
     std::wstring error;

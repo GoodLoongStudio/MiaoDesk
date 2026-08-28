@@ -63,6 +63,7 @@ public:
     DesktopControlResult ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const;
     DesktopControlResult FindWidget(std::wstring_view id, wallpaper::DesktopWidget* widget) const;
 
+    DesktopControlResult SetWallpaperEnabled(bool enabled) const;
     DesktopControlResult EnsureRuntime() const;
 };
 

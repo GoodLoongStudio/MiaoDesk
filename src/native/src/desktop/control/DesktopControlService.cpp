@@ -241,4 +241,23 @@ DesktopControlResult DesktopControlService::FindWidget(std::wstring_view id, wal
     return FromWidget(service.Find(id, widget));
 }
 
+DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabled) const {
+    WallpaperService service;
+    const auto persisted = service.SetEnabled(enabled);
+    if (!persisted.success) return FromWallpaper(persisted);
+
+    const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
+    std::error_code ec;
+    if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
+        return {true, persisted.message};
+
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+
+    const wchar_t* args = enabled ? L"--resume" : L"--stop";
+    if (!LaunchRuntime(executable, args))
+        return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
+    return {true, persisted.message};
+}
+
 } // namespace turingdesk::desktop

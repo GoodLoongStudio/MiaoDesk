@@ -56,6 +56,7 @@ set(TURINGDESK_APP_SOURCES
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
     src/desktop/widgets/DesktopWidgetController.cpp
+    src/desktop/widgets/NativeWidgetPreset.cpp
     src/desktop/wallpaper/library/WallpaperPackage.cpp
     src/desktop/wallpaper/library/WallpaperLibrary.cpp
     src/desktop/wallpaper/library/WallpaperLibraryWeb.cpp
@@ -86,6 +87,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
     src/desktop/widgets/DesktopWidgetController.cpp
+    src/desktop/widgets/NativeWidgetPreset.cpp
     src/ui/widgets/DesktopWidgetUiAdapter.cpp
 
     src/desktop/automation/AutomationService.cpp
@@ -108,6 +110,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp
     src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
+    src/desktop/widgets/NativeWidgetPreset.cpp
     src/desktop/widgets/NativeWidgetHost.cpp
 
     src/desktop/wallpaper/render/WallpaperScaling.cpp
@@ -138,6 +141,7 @@ set(TURINGDESK_WIDGET_ACCEPTANCE_SOURCES
     src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp
     src/desktop/widgets/WidgetService.cpp
     src/desktop/widgets/DesktopWidgetStore.cpp
+    src/desktop/widgets/NativeWidgetPreset.cpp
     src/desktop/shell/DesktopSurfaceTelemetry.cpp
     src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
 )

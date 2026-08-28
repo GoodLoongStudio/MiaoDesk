@@ -256,8 +256,18 @@ bool IsDesktopSurfaceWindow(HWND window) {
     if (!window || !IsWindow(window)) return false;
     wchar_t className[160]{};
     if (!GetClassNameW(window, className, static_cast<int>(std::size(className)))) return false;
-    return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0 ||
-           _wcsicmp(className, turingdesk::wallpaper::kNativeWidgetSurfaceClass) == 0;
+    if (_wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0) return true;
+    return _wcsicmp(className, turingdesk::wallpaper::kNativeWidgetSurfaceClass) == 0 &&
+           turingdesk::wallpaper::DesktopShellHost::InferRole(window) ==
+               turingdesk::wallpaper::DesktopSurfaceRole::Widget;
+}
+
+void CollectDescendantSurfaces(HWND root, std::vector<HWND>& surfaces) {
+    if (!root || !IsWindow(root)) return;
+    for (HWND child = GetWindow(root, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        if (IsDesktopSurfaceWindow(child)) surfaces.push_back(child);
+        CollectDescendantSurfaces(child, surfaces);
+    }
 }
 
 std::vector<HWND> CollectDesktopSurfaceWindows() {
@@ -265,11 +275,7 @@ std::vector<HWND> CollectDesktopSurfaceWindows() {
     EnumWindows([](HWND top, LPARAM raw) -> BOOL {
         auto* output = reinterpret_cast<std::vector<HWND>*>(raw);
         if (IsDesktopSurfaceWindow(top)) output->push_back(top);
-        EnumChildWindows(top, [](HWND child, LPARAM childRaw) -> BOOL {
-            auto* childOutput = reinterpret_cast<std::vector<HWND>*>(childRaw);
-            if (IsDesktopSurfaceWindow(child)) childOutput->push_back(child);
-            return TRUE;
-        }, raw);
+        CollectDescendantSurfaces(top, *output);
         return TRUE;
     }, reinterpret_cast<LPARAM>(&surfaces));
     std::sort(surfaces.begin(), surfaces.end());

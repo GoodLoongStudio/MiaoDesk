@@ -371,9 +371,17 @@ struct NativeWidgetHostApp {
         slot.desktopRegion = desktopRegion;
         DesktopShellHost shell;
         std::wstring error;
-        if (!shell.AttachSurface(slot.hwnd, DesktopSurfaceRole::Widget, desktopRegion, !paused, &error)) {
-            WriteDiagnostics(L"Native widget attach failed: " + (error.empty() ? L"unknown" : error));
+        if (!shell.EnsureCurrent(&error)) {
+            if (!error.empty()) WriteDiagnostics(L"Native widget shell unavailable: " + error);
             return false;
+        }
+        shell.PrepareSurface(slot.hwnd, false, nullptr);
+        const HWND shellParent = shell.SurfaceParent();
+        if (shellParent && IsWindow(shellParent) && GetParent(slot.hwnd) != shellParent) {
+            SetParent(slot.hwnd, shellParent);
+        }
+        if (!shell.RepairSurfaceStack(slot.hwnd, &error) && !error.empty()) {
+            WriteDiagnostics(L"Native widget stack repair: " + error);
         }
         return true;
     }
@@ -384,7 +392,7 @@ struct NativeWidgetHostApp {
         HWND hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             kNativeWidgetSurfaceClass, title.c_str(),
-            WS_CHILD | WS_CLIPSIBLINGS,
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
             mappedRegion.left, mappedRegion.top, width, height,
             parent, nullptr, instance, &slot);
         if (!hwnd) return false;
@@ -397,11 +405,8 @@ struct NativeWidgetHostApp {
             WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
             0, 0, width, height, hwnd, nullptr, instance, &slot);
         ResizeDragHandle(slot);
-        if (!AttachSlotSurface(slot, desktopRegion)) {
-            DestroySlot(slot);
-            return false;
-        }
         PaintSlot(slot);
+        AttachSlotSurface(slot, desktopRegion);
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         return true;
     }

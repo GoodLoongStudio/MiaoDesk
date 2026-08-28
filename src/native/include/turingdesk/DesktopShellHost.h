@@ -107,14 +107,14 @@ public:
     DesktopSurfaceHealth InspectSurface(HWND surface, DesktopSurfaceRole role) const;
 
     static DesktopSurfaceRole InferRole(HWND window) noexcept;
+    static bool IsWidgetNativeSurface(HWND window) noexcept;
+    static bool IsWidgetWebSurface(HWND window) noexcept;
     static const wchar_t* ModeKey(DesktopShellMode mode) noexcept;
     static const wchar_t* RoleKey(DesktopSurfaceRole role) noexcept;
     static bool SelfTest() noexcept;
 
 private:
     static bool IsWindowClass(HWND window, const wchar_t* expected) noexcept;
-    static bool IsWidgetWebSurface(HWND window) noexcept;
-    static bool IsWidgetNativeSurface(HWND window) noexcept;
     static HWND LastChild(HWND parent) noexcept;
     static bool TrySetParent(HWND child, HWND parent) noexcept;
     static RECT MapDesktopRectToParent(HWND parent, const RECT& desktopBounds) noexcept;

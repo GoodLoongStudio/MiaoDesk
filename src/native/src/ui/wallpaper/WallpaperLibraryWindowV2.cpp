@@ -353,7 +353,7 @@ struct WallpaperLibraryWindow::Impl {
         InvalidateRect(wallpaperGrid, nullptr, TRUE);
     }
 
-    void RefreshWidgets() {
+    void LoadWidgetList() {
         const auto previous = selectedWidgetId;
         std::vector<DesktopWidget> widgets;
         const auto result = widgetController.Refresh(&widgets);
@@ -371,12 +371,22 @@ struct WallpaperLibraryWindow::Impl {
             }
             if (selectedWidgetId.empty() && !visibleWidgets.empty()) selectedWidgetId = visibleWidgets.front().id;
         }
-        widgetHealth = {};
-        widgetController.RuntimeHealth(&widgetHealth);
         widgetScroll = 0;
         UpdateGridScroll(widgetGrid, true);
         UpdateFooter();
         InvalidateRect(widgetGrid, nullptr, TRUE);
+    }
+
+    void RefreshWidgetHealth() {
+        widgetHealth = {};
+        widgetController.RuntimeHealth(&widgetHealth);
+        UpdateFooter();
+        InvalidateRect(widgetGrid, nullptr, FALSE);
+    }
+
+    void RefreshWidgets() {
+        LoadWidgetList();
+        RefreshWidgetHealth();
     }
 
     int GridClientWidth(HWND grid) const {
@@ -632,7 +642,6 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(widgetRefreshButton, widgets ? SW_SHOW : SW_HIDE);
 
         if (installed) {
-            RefreshWallpaperToggle();
             const auto selected = SelectedWallpaper();
             const bool usable = selected && !SourceMissing(*selected);
             EnableWindow(applyButton, usable ? TRUE : FALSE);
@@ -682,6 +691,10 @@ struct WallpaperLibraryWindow::Impl {
         if (!installed && webBarVisible) HideWebBar();
         if (ai) ShowDesktopAiSettingsPage(window);
         else HideDesktopAiSettingsPage(window);
+        if (widgets) {
+            LoadWidgetList();
+            RefreshWidgetHealth();
+        }
         UpdateFooter();
         InvalidateRect(window, nullptr, FALSE);
         for (HWND button : nav) InvalidateRect(button, nullptr, FALSE);
@@ -868,7 +881,7 @@ struct WallpaperLibraryWindow::Impl {
 
     void HandleNav(int id) {
         if (id == kNavInstalledId) { SetPage(Page::Installed); return; }
-        if (id == kNavWidgetsId) { RefreshWidgets(); SetPage(Page::Widgets); return; }
+        if (id == kNavWidgetsId) { SetPage(Page::Widgets); return; }
         if (id == kNavAiId) { SetPage(Page::AI); return; }
     }
 
@@ -1347,9 +1360,7 @@ struct WallpaperLibraryWindow::Impl {
 
         ApplyFonts();
         RebuildTargets();
-        RefreshWallpaperToggle();
         RefreshWallpapers();
-        RefreshWidgets();
         SetPage(Page::Installed);
         Layout();
         return true;
@@ -1369,16 +1380,10 @@ bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
     impl_->applyCallback = std::move(applyCallback);
     impl_->navigateCallback = std::move(navigateCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
-    const bool wasVisible = impl_->window && IsWindowVisible(impl_->window);
+
+    // First CreateWindowUi() already loaded local wallpaper list. Re-showing must
+    // not refresh wallpaper, probe widget runtime, or touch Explorer attachment.
     impl_->RebuildTargets();
-    impl_->RefreshWallpaperToggle();
-    if (!wasVisible) {
-        impl_->RefreshWallpapers();
-        impl_->RefreshWidgets();
-    } else {
-        impl_->RefreshWallpapers();
-    }
-    impl_->SetPage(impl_->page);
     ShowWindow(impl_->window, SW_SHOWNORMAL);
     SetForegroundWindow(impl_->window);
     return true;
@@ -1386,8 +1391,8 @@ bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
 
 void WallpaperLibraryWindow::SetTargets(const std::vector<WallpaperLibraryTarget>& targets) {
     impl_->targets = targets;
+    if (!impl_->window || !IsWindow(impl_->window)) return;
     impl_->RebuildTargets();
-    impl_->RefreshWidgets();
 }
 
 void WallpaperLibraryWindow::Close() {
@@ -1395,10 +1400,11 @@ void WallpaperLibraryWindow::Close() {
 }
 
 void WallpaperLibraryWindow::Refresh() {
+    if (!impl_->window || !IsWindow(impl_->window)) return;
     impl_->RebuildTargets();
     impl_->RefreshWallpaperToggle();
     impl_->RefreshWallpapers();
-    impl_->RefreshWidgets();
+    if (impl_->page == Impl::Page::Widgets) impl_->RefreshWidgets();
 }
 
 void WallpaperLibraryWindow::SetWallpaperEnabledState(const bool enabled) {

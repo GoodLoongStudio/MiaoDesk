@@ -257,11 +257,6 @@ DesktopControlResult DesktopWidgetController::Find(std::wstring_view id, wallpap
 
 DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth* health) const {
     if (!health) return {false, L"WidgetRuntimeHealth 输出不能为空。"};
-    const auto runtime = service_.EnsureRuntime();
-    if (!runtime.success) {
-        AppendControllerErrorLog(L"EnsureRuntime failed: " + runtime.message);
-        return runtime;
-    }
     DesktopSnapshot snapshot;
     const auto result = service_.GetSnapshot(&snapshot);
     if (!result.success) {

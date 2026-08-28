@@ -253,15 +253,19 @@ DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabl
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
         return {true, persisted.message};
 
-    const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
-
-    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(enabled))
+    if (enabled) {
+        const auto runtime = EnsureRuntime();
+        if (!runtime.success) return runtime;
+        if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(true))
+            return {true, persisted.message};
+        if (!LaunchRuntime(executable, L"--resume"))
+            return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
         return {true, persisted.message};
+    }
 
-    const wchar_t* args = enabled ? L"--resume" : L"--stop";
-    if (!LaunchRuntime(executable, args))
-        return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
+    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(false))
+        return {true, persisted.message};
+    // Disable is ini-authoritative. Do not EnsureRuntime or cold-launch just to stop.
     return {true, persisted.message};
 }
 

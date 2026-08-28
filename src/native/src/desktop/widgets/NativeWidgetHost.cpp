@@ -276,8 +276,22 @@ struct NativeWidgetHostApp {
             SetWindowPos(slot.hwnd, nullptr, slot.dragStartRegion_.left, slot.dragStartRegion_.top, width, height, SWP_NOACTIVATE | SWP_NOZORDER);
             return;
         }
-        RECT screenRect{};
-        if (GetWindowRect(slot.hwnd, &screenRect)) slot.desktopRegion = screenRect;
+        DesktopWidgetStore store;
+        std::wstring ignored;
+        if (store.Load(&ignored)) {
+            if (const auto* updated = store.Find(slot.widgetId)) {
+                const DesktopWidget widget = DesktopWidgetStore::Normalize(*updated);
+                const MonitorTopology topology = QueryMonitorTopology();
+                if (topology.Valid()) {
+                    const MonitorInfo* monitor = widget.monitorId.empty() ? PrimaryMonitor(topology)
+                                                                          : FindMonitorByStableId(topology, widget.monitorId);
+                    if (monitor) {
+                        slot.desktopRegion = WidgetRegionInDesktop(*monitor, widget);
+                        slot.region = MapDesktopRectToParent(parent, slot.desktopRegion);
+                    }
+                }
+            }
+        }
     }
 
     static LRESULT CALLBACK DragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -460,16 +474,33 @@ struct NativeWidgetHostApp {
                 CreateSlot(widget, desktopRegion, mappedRegion, preset);
                 continue;
             }
+            if (existing->dragging) continue;
+            const bool presetChanged = existing->preset != preset;
+            const LONG existingWidth = existing->region.right - existing->region.left;
+            const LONG existingHeight = existing->region.bottom - existing->region.top;
+            const LONG mappedWidth = mappedRegion.right - mappedRegion.left;
+            const LONG mappedHeight = mappedRegion.bottom - mappedRegion.top;
             const bool regionChanged = existing->region.left != mappedRegion.left || existing->region.top != mappedRegion.top ||
                                        existing->region.right != mappedRegion.right ||
                                        existing->region.bottom != mappedRegion.bottom;
-            const bool presetChanged = existing->preset != preset;
-            if (regionChanged || presetChanged) {
+            const bool desktopRegionChanged =
+                existing->desktopRegion.left != desktopRegion.left || existing->desktopRegion.top != desktopRegion.top ||
+                existing->desktopRegion.right != desktopRegion.right || existing->desktopRegion.bottom != desktopRegion.bottom;
+            if (presetChanged) {
                 DestroySlot(*existing);
                 existing->preset = preset;
                 if (!CreateSlotWindow(*existing, SlotToken(widget, mappedRegion), mappedRegion, desktopRegion)) continue;
-            } else if (existing->hwnd && IsWindow(existing->hwnd)) {
-                AttachSlotSurface(*existing, desktopRegion);
+            } else if (regionChanged && existing->hwnd && IsWindow(existing->hwnd) &&
+                       existingWidth == mappedWidth && existingHeight == mappedHeight) {
+                SetWindowPos(existing->hwnd, nullptr, mappedRegion.left, mappedRegion.top, mappedWidth, mappedHeight,
+                             SWP_NOACTIVATE | SWP_NOZORDER);
+                existing->region = mappedRegion;
+                existing->desktopRegion = desktopRegion;
+            } else if (regionChanged) {
+                DestroySlot(*existing);
+                if (!CreateSlotWindow(*existing, SlotToken(widget, mappedRegion), mappedRegion, desktopRegion)) continue;
+            } else if (desktopRegionChanged && existing->hwnd && IsWindow(existing->hwnd)) {
+                existing->desktopRegion = desktopRegion;
             }
         }
 

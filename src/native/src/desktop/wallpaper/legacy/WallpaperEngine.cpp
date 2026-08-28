@@ -502,14 +502,6 @@ public:
             StopRuntime();
             if (host_ && IsWindow(host_)) {
                 ShowWindow(host_, SW_HIDE);
-                if (mountOk_) {
-                    topology_ = turingdesk::wallpaper::QueryMonitorTopology();
-                    const auto layoutMode = turingdesk::wallpaper::ParseLayoutMode(config_.layout);
-                    const RECT desktopBounds = turingdesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
-                    std::wstring shellError;
-                    shellHost_.EnsureSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
-                                             desktopBounds, false, &shellError);
-                }
             }
             applied = true;
         }
@@ -583,6 +575,7 @@ private:
     }
 
     void ShowLibrary() {
+        libraryWindow_.SetWallpaperEnabledState(config_.enabled);
         libraryWindow_.Show(
             instance_, &library_, LibraryTargets(),
             [this](const turingdesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
@@ -1178,8 +1171,9 @@ private:
                 ++healthTicks_;
                 if (healthTicks_ >= 150) {
                     healthTicks_ = 0;
-                    if (!mountOk_ || !shellHost_.CurrentGenerationValid() || !attachedParent_ ||
-                        !IsWindow(attachedParent_) || GetParent(host_) != attachedParent_) {
+                    if (config_.enabled &&
+                        (!mountOk_ || !shellHost_.CurrentGenerationValid() || !attachedParent_ ||
+                         !IsWindow(attachedParent_) || GetParent(host_) != attachedParent_)) {
                         AttachToDesktop();
                         RebuildRuntime();
                     }
@@ -1246,9 +1240,11 @@ private:
     void HandleTopologyChanged() {
         topology_ = turingdesk::wallpaper::QueryMonitorTopology();
         TouchAssignments();
-        AttachToDesktop();
-        RebuildRuntime();
         libraryWindow_.SetTargets(LibraryTargets());
+        if (config_.enabled) {
+            AttachToDesktop();
+            RebuildRuntime();
+        }
         RefreshSettings();
     }
 

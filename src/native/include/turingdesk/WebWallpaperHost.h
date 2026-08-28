@@ -25,6 +25,7 @@ public:
     void Stop();
     void Tick();
     void SetPaused(bool paused);
+    bool Reposition(const std::vector<WebWallpaperRequest>& requests);
 
     bool Active() const noexcept;
     std::wstring LastErrorText() const;

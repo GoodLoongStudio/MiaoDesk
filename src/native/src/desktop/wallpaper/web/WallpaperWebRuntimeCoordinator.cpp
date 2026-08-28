@@ -423,10 +423,15 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 const bool changed = !SameRequests(desired, activeRequests) ||
                                      (scope == WallpaperWebRuntimeScope::Widgets && fingerprint != activeFingerprint);
                 if (changed) {
-                    activeRequests = std::move(desired);
-                    activeFingerprint = std::move(fingerprint);
-                    resetRecovery();
-                    startRequests(now, false);
+                    if (!SameRequests(desired, activeRequests) && surfaces.Active() && surfaces.Reposition(desired)) {
+                        activeRequests = std::move(desired);
+                        activeFingerprint = std::move(fingerprint);
+                    } else {
+                        activeRequests = std::move(desired);
+                        activeFingerprint = std::move(fingerprint);
+                        resetRecovery();
+                        startRequests(now, false);
+                    }
                 } else if (scope == WallpaperWebRuntimeScope::Widgets) {
                     const bool wantNative = HasEnabledNativeWidgets();
                     if (wantNative && !nativeSurfaces.Active()) {

@@ -155,4 +155,9 @@ foreach ($marker in @(
     if (-not $text.ProductionEngine.Contains($marker)) { throw "Production WallpaperEngine compatibility bridge missing M1 adapter marker: $marker" }
 }
 
+$nativeHostText = Get-Content -LiteralPath (Require-File 'src/native/src/desktop/widgets/NativeWidgetHost.cpp') -Raw
+foreach ($marker in @('EnsureSurface(slot.hwnd, DesktopSurfaceRole::Widget', 'WidgetService service', 'service.Update(request)')) {
+    if (-not $nativeHostText.Contains($marker)) { throw "Native widget host missing shell/service contract marker: $marker" }
+}
+
 Write-Host 'Desktop shell ownership contract OK: DesktopShellHost is the sole native Windows desktop attachment owner.'

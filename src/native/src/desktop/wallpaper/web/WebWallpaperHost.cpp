@@ -651,6 +651,36 @@ void WebWallpaperProcessSet::SetPaused(bool paused) {
     }
 }
 
+bool WebWallpaperProcessSet::Reposition(const std::vector<WebWallpaperRequest>& requests) {
+    if (!parent_ || !IsWindow(parent_) || slots_.empty() || requests.size() != slots_.size()) return false;
+    for (const auto& next : requests) {
+        const auto found = std::find_if(slots_.begin(), slots_.end(), [&](const Slot& slot) {
+            return slot.request.itemId == next.itemId;
+        });
+        if (found == slots_.end()) return false;
+        const auto& current = found->request;
+        if (current.source != next.source || current.muted != next.muted) return false;
+        const LONG currentWidth = current.region.right - current.region.left;
+        const LONG currentHeight = current.region.bottom - current.region.top;
+        const LONG nextWidth = next.region.right - next.region.left;
+        const LONG nextHeight = next.region.bottom - next.region.top;
+        if (currentWidth != nextWidth || currentHeight != nextHeight) return false;
+    }
+
+    for (const auto& next : requests) {
+        auto& slot = *std::find_if(slots_.begin(), slots_.end(),
+                                   [&](const Slot& candidate) { return candidate.request.itemId == next.itemId; });
+        slot.request.region = next.region;
+        if (!slot.window || !IsWindow(slot.window)) slot.window = FindSlotWindow(slot);
+        if (!slot.window) return false;
+        const LONG width = next.region.right - next.region.left;
+        const LONG height = next.region.bottom - next.region.top;
+        SetWindowPos(slot.window, nullptr, next.region.left, next.region.top, width, height,
+                     SWP_NOACTIVATE | SWP_NOZORDER);
+    }
+    return true;
+}
+
 void WebWallpaperProcessSet::Tick() {
     if (slots_.empty()) return;
     const ULONGLONG now = GetTickCount64();

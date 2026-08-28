@@ -2,6 +2,7 @@
 #include "turingdesk/PiRuntime.h"
 #include "turingdesk/GeneratedDesktopPreview.h"
 #include "turingdesk/RuntimeLogPaths.h"
+#include "turingdesk/StoreDemoExperience.h"
 
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -386,6 +387,8 @@ bool TryBuildChatArtifact(const std::wstring& tool, const std::wstring& message,
     }
     return false;
 }
+
+void InvalidateConversation(ConversationState& state, bool bottom);
 
 void AppendAssistantArtifact(ConversationState& state, ChatArtifact artifact) {
     if (state.assistantIndex != kNoIndex && state.assistantIndex < state.entries.size()) {

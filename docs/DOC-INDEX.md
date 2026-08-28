@@ -89,9 +89,7 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 以下文档仍包含已被产品基线推翻的表述，需在后续提交中同步修正。
 **修正时必须同时更新引用它们的 guard 脚本**，否则 CI 会红。
 
-| 文档 | 问题 | 依据 |
-|---|---|---|
-| `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` | §13 迁移顺序仍引用已删除的函数（`DiscoverDesktopLayer` 等），M2 早已完成 | 产品基线 §6.2 |
+当前无待修项。本表保留作为后续排查的模板。
 
 ### 已修复
 
@@ -102,6 +100,8 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 | `WIDGET_ACCEPTANCE_SEQUENCE_M3.md` | config schema 写作 v1 | 已改为 v2 |
 | `WIDGET_ACCEPTANCE_EVIDENCE_M3.md` | config schema 写作 v1 | 已改为 v2 |
 | `AI_GENERATED_DESKTOP_SANDBOX.md` | 含 WinUI 3 目标架构提案 | 已明确否决，改为 Native C++ / Win32 |
+| `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` | §11 屏保、§13 迁移顺序超出范围或已完成 | §11 标注超出范围；§13 标注 1–3 已完成、8–9 超出范围 |
+| `README.md` | 日志缺 widget-runtime.log；文档清单与现状不符 | 补齐日志，文档清单改为以 DOC-INDEX 为首 |
 
 > 注意：`widget-acceptance-evidence.v1`、`widget-visual-acceptance.v1`、
 > `widget-window-evidence.v1` 这三个 schema **合法保持 v1**，与 config schema 的 v2

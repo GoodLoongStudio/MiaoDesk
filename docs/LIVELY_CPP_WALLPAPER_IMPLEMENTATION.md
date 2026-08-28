@@ -285,6 +285,9 @@ verify visible health
 
 ## 11. Screensaver direction
 
+> **Scope note (2026-08-29)**：屏保已列入产品基线「明确不在范围内」，不属于当前八条产品原则的范围。
+> 本节保留仅作为 Lively 行为研究记录，不构成 TuringDesk 的实施承诺。
+
 Screensaver support is part of basic wallpaper-product parity, not an editor-only feature.
 
 The implementation should reuse the same wallpaper/profile runtime where practical instead of creating a second renderer. Screensaver mode may use a different host/lifecycle, but asset parsing, playback, properties and profiles should remain shared.
@@ -312,17 +315,21 @@ This is particularly important for Widgets. The UI must never show only `已启�
 
 ## 13. Implementation migration order
 
-The current code should be migrated in this order:
+> **Status note (2026-08-29)**：第 1–3 项已完成，由 `scripts/verify-desktop-shell-ownership.ps1`
+> 守卫锁定；不要再把 1–3 当作待办。第 8、9 项已超出产品基线范围（见第 11 节范围说明
+> 与产品基线「明确不在范围内」），不再是迁移目标。
 
-1. Extract `DesktopShellHost` from `WallpaperEngine.cpp`.
-2. Rebuild Web wallpaper / Widget surface attachment on the shared shell host.
-3. Add raised-desktop style and z-order validation based on known-good Windows behavior.
+The migration order was:
+
+1. [已完成] Extract `DesktopShellHost` from `WallpaperEngine.cpp`.
+2. [已完成] Rebuild Web wallpaper / Widget surface attachment on the shared shell host.
+3. [已完成] Add raised-desktop style and z-order validation based on known-good Windows behavior.
 4. Add visible-surface diagnostics and expose them in the Widgets/Wallpaper UI.
 5. Move Explorer/display lifecycle recovery into `DesktopLifecycleMonitor`.
 6. Consolidate multi-monitor surface placement.
 7. Consolidate playback/performance policy.
-8. Add screensaver mode.
-9. Continue higher-level Wallpaper Engine-class features: Properties, Editor, Particle, Shader, Audio Reactive and 3D.
+8. [超出范围] Add screensaver mode.
+9. [超出范围] Continue higher-level Wallpaper Engine-class features: Properties, Editor, Particle, Shader, Audio Reactive and 3D.
 
 ## 14. Acceptance standard
 
@@ -349,11 +356,15 @@ CI and self-tests validate code paths and packaging, but cannot substitute for t
 For future wallpaper implementation work:
 
 ```text
+Document index / status       -> DOC-INDEX.md
 Product behavior target       -> TURINGDESK-PRODUCT-BASELINE.md
 Capability backlog            -> WALLPAPER_ENGINE_PARITY.md
 Windows runtime implementation -> LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md
 Desktop/Widget layering       -> DESKTOP_COMPOSITION_ARCHITECTURE.md
 AI control contract           -> L3-PI-RUNTIME-CONTRACT.md
 ```
+
+Product baseline wins on any conflict. Items listed in the baseline's
+「明确不在范围内」 are not migration targets even if they appear in this document.
 
 Do not create another parallel wallpaper architecture document unless this source-of-truth map is updated first.

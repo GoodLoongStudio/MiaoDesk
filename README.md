@@ -154,13 +154,15 @@ RuntimeBundle 的生成、版本和目录约定见 `runtime/arm64/README.md`。
 Desktop\TuringDesk-Logs\l3-runtime.log
 Desktop\TuringDesk-Logs\pi-runtime.log
 Desktop\TuringDesk-Logs\harness.log
+Desktop\TuringDesk-Logs\widget-runtime.log
 ```
 
 API Key、Token 和其他凭据不得写入日志。
 
 ## 当前正式文档
 
-- `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线
+- `docs/DOC-INDEX.md` — 全部文档索引与状态（先读这篇）
+- `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线，按八条产品原则组织
 - `docs/TURINGDESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
 - `docs/L3-PI-RUNTIME-CONTRACT.md` — L3 强制架构契约
-- `docs/WALLPAPER_ENGINE_PARITY.md` — 从属于产品基线的壁纸能力路线图，不是独立架构基线
+- `docs/STORE_DEMO_V0.1_PLAN.md` — 当前 demo 交付范围

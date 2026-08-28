@@ -127,21 +127,9 @@ bool NativeLifecycleReady(HWND window) {
            PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty);
 }
 
-bool WebLifecycleReady(const WidgetSurfaceHealth& surface, HWND window) {
+bool WebLifecycleReady(const WidgetSurfaceHealth& surface, HWND /*window*/) {
     if (!surface.environmentReported || !surface.controllerReported || !surface.navigationReported) return false;
     return surface.environmentReady && surface.controllerReady && surface.navigationReady;
-}
-
-std::wstring ShortHealthLabel(const WidgetSurfaceHealth& surface) {
-    if (surface.renderingHealthy) return L"运行正常";
-    if (!surface.detail.empty()) {
-        if (surface.issueCode == L"geometry_mismatch") return L"位置同步中";
-        if (surface.issueCode == L"zorder_invalid") return L"层级待修复";
-        if (surface.issueCode == L"surface_missing") return L"等待挂载";
-        if (surface.issueCode == L"monitor_missing") return L"显示器未匹配";
-        return surface.detail;
-    }
-    return L"等待桌面运行时";
 }
 
 bool PropertyReady(HWND window, const wchar_t* property) {

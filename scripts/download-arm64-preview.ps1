@@ -1,13 +1,155 @@
+param(
+    # Clears stale wallpaper runtime diagnostics and re-syncs Enabled=1.
+    # Keeps wallpaper selection, widgets, library media, and AI settings.
+    [switch]$ResetWallpaperRuntime,
+
+    # Resets all persisted desktop state (wallpaper.ini, widgets, library ini).
+    # Keeps DevPreview/NativeTest binaries, Runtime/Pi/Goz, and AI model settings.
+    [switch]$ResetDesktopConfig
+)
+
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$PreviewRoot = Join-Path $env:LOCALAPPDATA 'TuringDesk\DevPreview'
-$InstalledRoot = Join-Path $env:LOCALAPPDATA 'TuringDesk\NativeTest'
+$UserDataRoot = Join-Path $env:LOCALAPPDATA 'TuringDesk'
+$PreviewRoot = Join-Path $UserDataRoot 'DevPreview'
+$InstalledRoot = Join-Path $UserDataRoot 'NativeTest'
 $Workflow = 'native-arm64-preview.yml'
 $Repository = 'GoodLoongStudio/TuringDesk'
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
+function Info([string]$Text) { Write-Host $Text -ForegroundColor DarkGray }
+function Warn([string]$Text) { Write-Host $Text -ForegroundColor Yellow }
+function Show-DesktopConfigGuide {
+    Write-Host ''
+    Write-Host 'TuringDesk user data (under %LOCALAPPDATA%\TuringDesk):' -ForegroundColor Cyan
+    Info '  DevPreview\              preview binaries (this script replaces each run)'
+    Info '  NativeTest\              installed ARM64 test build + Runtime/Pi/Goz'
+    Info '  wallpaper.ini            wallpaper enable/scene/layout + [Diagnostics] mount state'
+    Info '  DesktopWidgets\          widgets.ini + widget packages'
+    Info '  WallpaperLibrary\        library manifest, monitor-assignments, automation rules'
+    Info '  model-settings.json      AI model/API settings (kept by reset switches below)'
+    Info '  l3-sessions\             AI conversation cache (kept by reset switches below)'
+    Info '  HKCU\Software\TuringDesk\WindowPlacement   window positions'
+    Write-Host ''
+    Write-Host 'When wallpaper stop/resume misbehaves after an update, try:' -ForegroundColor Yellow
+    Write-Host '  .\scripts\download-arm64-preview.ps1 -ResetWallpaperRuntime' -ForegroundColor Yellow
+    Write-Host 'For a clean desktop state while keeping AI settings and binaries:' -ForegroundColor Yellow
+    Write-Host '  .\scripts\download-arm64-preview.ps1 -ResetDesktopConfig' -ForegroundColor Yellow
+}
+function Stop-TuringDeskProcesses {
+    foreach ($name in @('TuringDesk', 'TuringDeskWallpaper', 'TuringDeskHarness')) {
+        Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 400
+}
+function Backup-UserDataItem([string]$Source, [string]$BackupRoot) {
+    if (-not (Test-Path $Source)) { return }
+    $leaf = Split-Path $Source -Leaf
+    $destination = Join-Path $BackupRoot $leaf
+    if (Test-Path $Source -PathType Container) {
+        Copy-Item $Source $destination -Recurse -Force
+    } else {
+        Copy-Item $Source $destination -Force
+    }
+}
+function Remove-IniSection([string]$Path, [string]$Section) {
+    if (-not (Test-Path $Path -PathType Leaf)) { return }
+    $encoding = if ((Get-Content $Path -Encoding Byte -TotalCount 2) -join '' -eq '255254') { 'Unicode' } else { 'UTF8' }
+    $lines = Get-Content $Path -Encoding $encoding
+    $output = New-Object System.Collections.Generic.List[string]
+    $skip = $false
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[(.+)\]\s*$') {
+            $skip = ($Matches[1] -eq $Section)
+            if (-not $skip) { [void]$output.Add($line) }
+            continue
+        }
+        if (-not $skip) { [void]$output.Add($line) }
+    }
+    Set-Content -Path $Path -Value $output -Encoding $encoding
+}
+function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Value) {
+    if (-not (Test-Path $Path -PathType Leaf)) { return }
+    $encoding = if ((Get-Content $Path -Encoding Byte -TotalCount 2) -join '' -eq '255254') { 'Unicode' } else { 'UTF8' }
+    $lines = Get-Content $Path -Encoding $encoding
+    $output = New-Object System.Collections.Generic.List[string]
+    $inSection = $false
+    $updated = $false
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[(.+)\]\s*$') {
+            if ($inSection -and -not $updated) {
+                [void]$output.Add("$Key=$Value")
+                $updated = $true
+            }
+            $inSection = ($Matches[1] -eq $Section)
+            [void]$output.Add($line)
+            continue
+        }
+        if ($inSection -and ($line -match "^\s*$([regex]::Escape($Key))\s*=")) {
+            [void]$output.Add("$Key=$Value")
+            $updated = $true
+            continue
+        }
+        [void]$output.Add($line)
+    }
+    if (-not $updated) {
+        if ($output.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($output[$output.Count - 1])) {
+            [void]$output.Add('')
+        }
+        [void]$output.Add("[$Section]")
+        [void]$output.Add("$Key=$Value")
+    }
+    Set-Content -Path $Path -Value $output -Encoding $encoding
+}
+function Reset-WallpaperRuntimeConfig {
+    Step 'Resetting wallpaper runtime config'
+    Stop-TuringDeskProcesses
+    $backupRoot = Join-Path $UserDataRoot ("ConfigBackup-wallpaper-runtime-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+    $wallpaperIni = Join-Path $UserDataRoot 'wallpaper.ini'
+    Backup-UserDataItem $wallpaperIni $backupRoot
+    if (Test-Path $wallpaperIni -PathType Leaf) {
+        Remove-IniSection $wallpaperIni 'Diagnostics'
+        Set-IniValue $wallpaperIni 'Wallpaper' 'Enabled' '1'
+        Warn "Cleared [Diagnostics] and set [Wallpaper] Enabled=1 in wallpaper.ini"
+    } else {
+        Warn 'wallpaper.ini not found; nothing to reset.'
+    }
+    Write-Host "Backup saved to: $backupRoot" -ForegroundColor Green
+}
+function Reset-DesktopConfigState {
+    Step 'Resetting persisted desktop config'
+    Stop-TuringDeskProcesses
+    $backupRoot = Join-Path $UserDataRoot ("ConfigBackup-desktop-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+    foreach ($item in @(
+        (Join-Path $UserDataRoot 'wallpaper.ini'),
+        (Join-Path $UserDataRoot 'store-demo.ini'),
+        (Join-Path $UserDataRoot 'DesktopWidgets'),
+        (Join-Path $UserDataRoot 'WallpaperLibrary\monitor-assignments.ini'),
+        (Join-Path $UserDataRoot 'WallpaperLibrary\automation.ini'),
+        (Join-Path $UserDataRoot 'WallpaperLibrary\application-rules.ini'),
+        (Join-Path $UserDataRoot 'WallpaperLibrary\library.ini')
+    )) {
+        Backup-UserDataItem $item $backupRoot
+        if (Test-Path $item) { Remove-Item $item -Recurse -Force }
+    }
+    Write-Host "Desktop config reset complete. Backup saved to: $backupRoot" -ForegroundColor Green
+    Warn 'Kept: DevPreview, NativeTest binaries, Runtime/Pi/Goz, model-settings.json, l3-sessions, WallpaperLibrary media.'
+}
+function Test-StaleWallpaperRuntime {
+    $wallpaperIni = Join-Path $UserDataRoot 'wallpaper.ini'
+    if (-not (Test-Path $wallpaperIni -PathType Leaf)) { return $false }
+    $text = Get-Content $wallpaperIni -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    return ($text -match '\[Diagnostics\]') -and (
+        ($text -match 'LastMountError=.+') -or
+        ($text -match 'WidgetRuntime=.+运行异常') -or
+        ($text -match 'WidgetRuntime=.+启动失败')
+    )
+}
 function Require([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "$Name is required. Install GitHub CLI once, then run 'gh auth login'. No local CMake or Visual Studio is required for preview."
@@ -68,6 +210,12 @@ function Find-ReusablePreview([string]$HeadSha) {
 Require git
 Require gh
 Set-Location $RepoRoot
+
+if ($ResetDesktopConfig) {
+    Reset-DesktopConfigState
+} elseif ($ResetWallpaperRuntime) {
+    Reset-WallpaperRuntimeConfig
+}
 
 Step 'Updating local main checkout'
 & git pull --ff-only origin main
@@ -188,6 +336,11 @@ try {
     if (-not (Test-Path (Join-Path $PreviewRoot 'Pi') -PathType Container)) {
         Write-Host 'Installed Pi Runtime was not found; UI preview works, Pi calls may be unavailable.' -ForegroundColor Yellow
     }
+    if (Test-StaleWallpaperRuntime) {
+        Warn 'Detected stale wallpaper runtime diagnostics in wallpaper.ini.'
+        Warn 'If stop/resume still fails, rerun with: .\scripts\download-arm64-preview.ps1 -ResetWallpaperRuntime'
+    }
+    Show-DesktopConfigGuide
 }
 finally {
     if (Test-Path $temp) { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }

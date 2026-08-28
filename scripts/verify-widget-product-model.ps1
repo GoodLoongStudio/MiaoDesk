@@ -77,7 +77,7 @@ $acceptanceText = Get-Content -LiteralPath $acceptance -Raw
 foreach ($marker in @(
     'FixedShowcaseReady',
     'kM3Showcase',
-    'enabledWeb.size() != kM3Showcase.size()',
+    'enabledShowcase.size() != kM3Showcase.size()',
     'preset-owned geometry',
     'Overlaps')) {
     if (-not $acceptanceText.Contains($marker)) {

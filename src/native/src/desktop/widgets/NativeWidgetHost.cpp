@@ -8,6 +8,7 @@
 
 #include <d2d1.h>
 #include <dwrite.h>
+#include <shellapi.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -90,6 +91,13 @@ RECT WidgetRegionInDesktop(const MonitorInfo& monitor, const DesktopWidget& widg
     region.right = region.left + static_cast<LONG>(std::lround(widget.width * monitorWidth));
     region.bottom = region.top + static_cast<LONG>(std::lround(widget.height * monitorHeight));
     return region;
+}
+
+const MonitorInfo* PrimaryMonitor(const MonitorTopology& topology) {
+    for (const auto& monitor : topology.monitors) {
+        if (monitor.primary) return &monitor;
+    }
+    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
 }
 
 std::wstring SlotToken(const DesktopWidget& widget, const RECT& region) {
@@ -218,12 +226,12 @@ struct NativeWidgetHostApp {
         const float heightPx = static_cast<float>(std::max<LONG>(1, slot.dragStartRegion_.bottom - slot.dragStartRegion_.top));
         slot.dragMonitorWidthPx_ = widthPx / found->width;
         slot.dragMonitorHeightPx_ = heightPx / found->height;
-        slot.dragging_ = slot.dragMonitorWidthPx_ > 1.0f && slot.dragMonitorHeightPx_ > 1.0f;
-        return slot.dragging_;
+        slot.dragging = slot.dragMonitorWidthPx_ > 1.0f && slot.dragMonitorHeightPx_ > 1.0f;
+        return slot.dragging;
     }
 
     void UpdateDrag(NativeSlot& slot) {
-        if (!slot.dragging_ || !slot.hwnd) return;
+        if (!slot.dragging || !slot.hwnd) return;
         POINT cursor{};
         if (!GetCursorPos(&cursor)) return;
         const int dx = cursor.x - slot.dragStartCursor_.x;
@@ -241,8 +249,8 @@ struct NativeWidgetHostApp {
     }
 
     void EndDrag(NativeSlot& slot, bool persist) {
-        if (!slot.dragging_) return;
-        slot.dragging_ = false;
+        if (!slot.dragging) return;
+        slot.dragging = false;
         if (GetCapture() == slot.dragHandle) ReleaseCapture();
         if (!persist) {
             const LONG width = slot.dragStartRegion_.right - slot.dragStartRegion_.left;
@@ -278,13 +286,13 @@ struct NativeWidgetHostApp {
             if (slot->owner->BeginDrag(*slot)) SetCapture(window);
             return 0;
         case WM_MOUSEMOVE:
-            if (slot->dragging_ && GetCapture() == window) slot->owner->UpdateDrag(*slot);
+            if (slot->dragging && GetCapture() == window) slot->owner->UpdateDrag(*slot);
             return 0;
         case WM_LBUTTONUP:
-            if (slot->dragging_) slot->owner->EndDrag(*slot, true);
+            if (slot->dragging) slot->owner->EndDrag(*slot, true);
             return 0;
         case WM_CAPTURECHANGED:
-            if (slot->dragging_) slot->owner->EndDrag(*slot, true);
+            if (slot->dragging) slot->owner->EndDrag(*slot, true);
             return 0;
         case WM_ERASEBKGND: return 1;
         default: break;

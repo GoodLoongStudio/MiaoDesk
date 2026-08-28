@@ -56,7 +56,7 @@ if (Test-Path -LiteralPath $retiredLibrary -PathType Leaf) {
     throw 'Retired legacy WallpaperLibraryWindow.cpp must not return.'
 }
 
-foreach ($marker in @('DesktopControlService', 'GetSnapshot', 'WidgetRuntimeHealth', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'CreateWebWidget', 'ListWidgets')) {
+foreach ($marker in @('DesktopControlService', 'GetSnapshot', 'WidgetRuntimeHealth', 'ApplyLibraryItem', 'AssignLibraryItemToMonitor', 'CreateWebWidget', 'CreateNativeWidget', 'ListWidgets')) {
     if (-not $text.ControlHeader.Contains($marker)) { throw "Desktop control header missing marker: $marker" }
 }
 foreach ($marker in @('wallpaperService.GetState', 'widgetService.List', 'widgetService.GetRuntimeHealth', 'snapshot->widgetRuntime', 'DesktopControlService::ApplyLibraryItem', 'DesktopControlService::AssignLibraryItemToMonitor')) {
@@ -169,7 +169,7 @@ foreach ($marker in @('PerformanceUiAdapter.h', 'PerformanceUiAdapter adapter', 
 foreach ($marker in @('DesktopControlService.h', 'DesktopControlService service_', 'RuntimeHealth')) {
     if (-not $text.WidgetControllerHeader.Contains($marker)) { throw "DesktopWidgetController header missing facade dependency: $marker" }
 }
-foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::RuntimeHealth', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateWebWidget', 'service_.UpdateWidget', 'service_.RemoveWidget', 'RuntimeLogPath(L"widget-runtime.log")', 'AppendWidgetRuntimeLog')) {
+foreach ($marker in @('DesktopWidgetController::Refresh', 'DesktopWidgetController::RuntimeHealth', 'DesktopWidgetController::CreateClock', 'DesktopWidgetController::SetEnabled', 'service_.ListWidgets', 'service_.GetSnapshot', 'service_.CreateNativeWidget', 'service_.UpdateWidget', 'service_.RemoveWidget', 'RuntimeLogPath(L"widget-runtime.log")', 'AppendWidgetRuntimeLog')) {
     if (-not $text.WidgetController.Contains($marker)) { throw "DesktopWidgetController missing facade/log routing marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore store', 'WritePrivateProfileStringW', 'ShellExecuteW(', 'WallpaperPackage::Validate', 'FindWindowW(', 'FindWindowExW(', 'GetParent(')) {

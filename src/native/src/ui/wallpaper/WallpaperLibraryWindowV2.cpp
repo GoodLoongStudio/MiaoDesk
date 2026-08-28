@@ -478,15 +478,40 @@ struct WallpaperLibraryWindow::Impl {
         const bool hover = widgetHover == index;
         const auto* health = HealthFor(widget.id);
 
-        RECT preview = card;
-        preview.bottom -= S(50);
-        FillSolid(dc, preview, RGB(24, 28, 38));
-        SetBkMode(dc, TRANSPARENT);
-        HGDIOBJ old = SelectObject(dc, titleFont);
-        SetTextColor(dc, RGB(245, 247, 252));
         const bool clock = widget.title.find(L"时钟") != std::wstring::npos;
         const bool tasks = widget.title.find(L"待办") != std::wstring::npos;
         const bool weather = widget.title.find(L"天气") != std::wstring::npos;
+        COLORREF previewBase = RGB(72, 87, 132);
+        COLORREF previewAccent = RGB(153, 190, 255);
+        if (clock) {
+            previewBase = RGB(38, 73, 112);
+            previewAccent = RGB(104, 230, 218);
+        } else if (weather) {
+            previewBase = RGB(73, 151, 204);
+            previewAccent = RGB(178, 229, 255);
+        } else if (tasks) {
+            previewBase = RGB(35, 91, 79);
+            previewAccent = RGB(111, 229, 190);
+        }
+
+        RECT preview = card;
+        preview.bottom -= S(50);
+        FillSolid(dc, preview, previewBase);
+        HBRUSH accentBrush = CreateSolidBrush(previewAccent);
+        HGDIOBJ oldBrush = SelectObject(dc, accentBrush);
+        HPEN accentPen = CreatePen(PS_NULL, 0, previewAccent);
+        HGDIOBJ oldPen = SelectObject(dc, accentPen);
+        const int glow = std::max(S(68), RectHeight(preview));
+        Ellipse(dc, preview.right - glow, preview.top - glow / 3,
+                preview.right + glow / 3, preview.top + glow);
+        SelectObject(dc, oldPen);
+        SelectObject(dc, oldBrush);
+        DeleteObject(accentPen);
+        DeleteObject(accentBrush);
+
+        SetBkMode(dc, TRANSPARENT);
+        HGDIOBJ old = SelectObject(dc, titleFont);
+        SetTextColor(dc, RGB(250, 252, 255));
         const wchar_t* previewLabel = clock ? L"12:34" : tasks ? L"待办" : weather ? L"22°" : L"组件";
         DrawTextW(dc, previewLabel, -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
@@ -579,7 +604,7 @@ struct WallpaperLibraryWindow::Impl {
             EnableWindow(widgetToggleButton, widget ? TRUE : FALSE);
             EnableWindow(widgetRemoveButton, widget ? TRUE : FALSE);
             if (!widget) {
-                SetStatus(L"在桌面按住小组件顶部拖动手柄即可移动位置；也可在此启用/停用或删除。");
+                SetStatus(L"在桌面按住小组件即可拖动位置；也可在此启用、停用或删除。");
             } else {
                 const auto* health = HealthFor(widget->id);
                 std::wostringstream text;
@@ -883,7 +908,7 @@ struct WallpaperLibraryWindow::Impl {
             const int actionTotal = targetW + actionW + smallW * 2 + gap * 3;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
-            const int statusW = std::max(S(90), actionsLeft - S(10) - statusLeft);
+            const int statusW = std::max(S(64), actionsLeft - S(10) - statusLeft);
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
@@ -894,15 +919,16 @@ struct WallpaperLibraryWindow::Impl {
             const int gap = S(6);
             const int buttonW = std::clamp(contentWidth * 11 / 100, S(70), S(84));
             const int createW = std::clamp(contentWidth * 20 / 100, S(124), S(154));
+            const int demoW = std::clamp(contentWidth * 15 / 100, S(96), S(120));
             const int right = width - margin;
-            const int actionTotal = createW + buttonW * 3 + gap * 3;
+            const int actionTotal = createW + demoW + buttonW * 3 + gap * 4;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
-            const int statusW = std::max(S(90), actionsLeft - S(10) - statusLeft);
+            const int statusW = std::max(S(64), actionsLeft - S(10) - statusLeft);
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
-            place(widgetDemoButton, x, footerTop + S(11), S(120), S(36)); x += S(120) + gap;
+            place(widgetDemoButton, x, footerTop + S(11), demoW, S(36)); x += demoW + gap;
             place(widgetRefreshButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
             place(widgetToggleButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
             place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
@@ -1039,9 +1065,6 @@ struct WallpaperLibraryWindow::Impl {
             RECT bounds{};
             if (!GetWindowRect(hwnd, &bounds)) break;
             const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            // Preserve Windows' own caption button/system-menu hit targets first. The
-            // enlarged resize zones extend into client space but never steal Close,
-            // Maximize, Minimize or the system icon from the standard frame.
             const LRESULT nativeHit = DefWindowProcW(hwnd, message, wParam, lParam);
             if (nativeHit == HTCLOSE || nativeHit == HTMAXBUTTON || nativeHit == HTMINBUTTON || nativeHit == HTSYSMENU)
                 return nativeHit;
@@ -1074,8 +1097,8 @@ struct WallpaperLibraryWindow::Impl {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(860);
-                info->ptMinTrackSize.y = self->S(620);
+                info->ptMinTrackSize.x = self->S(740);
+                info->ptMinTrackSize.y = self->S(480);
             }
             return 0;
         }

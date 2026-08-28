@@ -294,6 +294,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         std::wstring activeFingerprint;
         RuntimeState state;
         ULONGLONG nextRefresh = 0;
+        ULONGLONG nextStackRepair = 0;
         ULONGLONG nextRecovery = 0;
         ULONGLONG healthySince = 0;
         unsigned recoveryAttempts = 0;
@@ -422,6 +423,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
 
                 const bool changed = !SameRequests(desired, activeRequests) ||
                                      (scope == WallpaperWebRuntimeScope::Widgets && fingerprint != activeFingerprint);
+                bool stackRepairNeeded = false;
                 if (changed) {
                     if (!SameRequests(desired, activeRequests) && surfaces.Active() && surfaces.Reposition(desired)) {
                         activeRequests = std::move(desired);
@@ -431,6 +433,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                         activeFingerprint = std::move(fingerprint);
                         resetRecovery();
                         startRequests(now, false);
+                        stackRepairNeeded = true;
                     }
                 } else if (scope == WallpaperWebRuntimeScope::Widgets) {
                     const bool wantNative = HasEnabledNativeWidgets();
@@ -444,7 +447,10 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                         nativeSurfaces.Stop();
                     }
                 }
-                repairStack();
+                if (stackRepairNeeded || (nextStackRepair != 0 && now >= nextStackRepair)) {
+                    repairStack();
+                    nextStackRepair = now + 10000;
+                }
                 nextRefresh = now + kStateRefreshMs;
             }
 
@@ -511,7 +517,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 } else if (hasWebWidgets && surfaces.Active()) {
                     WriteDiagnostics(scope, surfaces.DiagnosticsText());
                 }
-                repairStack();
             }
 
             std::this_thread::sleep_for(kTickInterval);

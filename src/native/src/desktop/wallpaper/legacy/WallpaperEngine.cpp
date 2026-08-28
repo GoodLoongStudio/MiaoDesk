@@ -511,8 +511,6 @@ public:
             SaveConfig(config_);
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
-        } else {
-            if (targetEnabled) shellHost_.RepairKnownTuringDeskSurfaces();
         }
 
         RefreshSettings();

@@ -153,6 +153,7 @@ struct NativeSlot {
     float dragPreviewY_{};
     float dragMonitorWidthPx_{};
     float dragMonitorHeightPx_{};
+    ULONGLONG geometryGraceUntil{};
 };
 
 struct NativeWidgetHostApp {
@@ -283,15 +284,22 @@ struct NativeWidgetHostApp {
                 const DesktopWidget widget = DesktopWidgetStore::Normalize(*updated);
                 const MonitorTopology topology = QueryMonitorTopology();
                 if (topology.Valid()) {
-                    const MonitorInfo* monitor = widget.monitorId.empty() ? PrimaryMonitor(topology)
-                                                                          : FindMonitorByStableId(topology, widget.monitorId);
-                    if (monitor) {
+                    if (const MonitorInfo* monitor = widget.monitorId.empty() ? PrimaryMonitor(topology)
+                                                                              : FindMonitorByStableId(topology, widget.monitorId)) {
                         slot.desktopRegion = WidgetRegionInDesktop(*monitor, widget);
-                        slot.region = MapDesktopRectToParent(parent, slot.desktopRegion);
                     }
                 }
             }
         }
+        if (slot.hwnd && IsWindow(slot.hwnd)) {
+            RECT screenRect{};
+            if (GetWindowRect(slot.hwnd, &screenRect)) {
+                POINT corners[2] = {{screenRect.left, screenRect.top}, {screenRect.right, screenRect.bottom}};
+                MapWindowPoints(nullptr, parent, corners, 2);
+                slot.region = RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+            }
+        }
+        slot.geometryGraceUntil = GetTickCount64() + 2000;
     }
 
     static LRESULT CALLBACK DragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -475,6 +483,7 @@ struct NativeWidgetHostApp {
                 continue;
             }
             if (existing->dragging) continue;
+            if (existing->geometryGraceUntil > GetTickCount64()) continue;
             const bool presetChanged = existing->preset != preset;
             const LONG existingWidth = existing->region.right - existing->region.left;
             const LONG existingHeight = existing->region.bottom - existing->region.top;

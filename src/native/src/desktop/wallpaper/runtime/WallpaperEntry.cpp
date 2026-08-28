@@ -290,9 +290,11 @@ int RunDesktopShellSupervisor() {
     if (!stopEvent) return 45;
 
     turingdesk::wallpaper::DesktopShellHost shell;
+    ULONGLONG lastStackRepair = 0;
     while (WaitForSingleObject(stopEvent, 250) == WAIT_TIMEOUT) {
         std::wstring ignored;
         if (!shell.EnsureCurrent(&ignored)) continue;
+        bool stackRepairNeeded = false;
         for (HWND surface : CollectDesktopSurfaceWindows()) {
             if (!surface || !IsWindow(surface)) continue;
             const auto role = turingdesk::wallpaper::DesktopShellHost::InferRole(surface);
@@ -304,11 +306,14 @@ int RunDesktopShellSupervisor() {
             if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
                 shell.AttachSurface(surface, role, screenRect,
                                     IsWindowVisible(surface) != FALSE, nullptr);
-            } else {
-                shell.PrepareSurface(surface, role != turingdesk::wallpaper::DesktopSurfaceRole::Widget, nullptr);
+                stackRepairNeeded = true;
             }
         }
-        shell.RepairKnownTuringDeskSurfaces();
+        const ULONGLONG now = GetTickCount64();
+        if (stackRepairNeeded || (lastStackRepair != 0 && now - lastStackRepair >= 10000)) {
+            shell.RepairKnownTuringDeskSurfaces();
+            lastStackRepair = now;
+        }
     }
 
     CloseHandle(stopEvent);

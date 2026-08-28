@@ -92,12 +92,20 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 | 文档 | 问题 | 依据 |
 |---|---|---|
 | `WIDGET_RUNTIME_HEALTH_M3.md` | 全篇按 Web Widget 描述，实际展示小组件是 Native | 产品基线 §2.3 |
-| `WIDGET_PRODUCT_MODEL_M3.md` | 同上；且被 `verify-widget-product-model.ps1` 作为契约 marker 校验 | 产品基线 §6.3 |
-| `WIDGET_ACCEPTANCE_SEQUENCE_M3.md` | 验收配置 schema 写作 v1，代码与守卫为 v2 | 产品基线 §6.3 |
-| `WIDGET_ACCEPTANCE_EVIDENCE_M3.md` | 同上，schema v1 | 产品基线 §6.3 |
 | `AI_GENERATED_DESKTOP_SANDBOX.md` | 含 WinUI 3 目标架构提案，已被否决 | 产品基线 §2.4 |
 | `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` | §13 迁移顺序仍引用已删除的函数 | 产品基线 §6.2 |
-| `WALLPAPER_ENGINE_PARITY.md` | P1–P3 大量能力超出八条原则 | 产品基线 §14 |
+
+### 已修复
+
+| 文档 | 原问题 | 处理 |
+|---|---|---|
+| `WIDGET_PRODUCT_MODEL_M3.md` | 按 Web Widget 描述 | 已改为 Native 优先，并注明 WebView2 三阶段对 Native 不适用 |
+| `WIDGET_ACCEPTANCE_SEQUENCE_M3.md` | config schema 写作 v1 | 已改为 v2 |
+| `WIDGET_ACCEPTANCE_EVIDENCE_M3.md` | config schema 写作 v1 | 已改为 v2 |
+
+> 注意：`widget-acceptance-evidence.v1`、`widget-visual-acceptance.v1`、
+> `widget-window-evidence.v1` 这三个 schema **合法保持 v1**，与 config schema 的 v2
+> 不是冲突，不要一并改掉。
 
 ---
 

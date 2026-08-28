@@ -247,9 +247,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         // Native Direct2D surfaces publish the same property contract locally, but
         // cross-process reads can lag briefly after attach. Treat a visible native
         // surface as lifecycle-ready once role telemetry is present.
-        const bool lifecycleTelemetry = nativeSurface
-            ? HasStructuredLifecycleTelemetry(window)
-            : HasStructuredLifecycleTelemetry(window);
+        const bool lifecycleTelemetry = HasStructuredLifecycleTelemetry(window);
         surface.environmentReported = lifecycleTelemetry || nativeSurface;
         surface.controllerReported = lifecycleTelemetry || nativeSurface;
         surface.navigationReported = lifecycleTelemetry || nativeSurface;

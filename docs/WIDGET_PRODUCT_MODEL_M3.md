@@ -5,7 +5,9 @@ Date: 2026-08-28
 
 ## User meaning
 
-A TuringDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, WebView2 processes, normalized coordinates, z-index values, or runtime attachment details.
+A TuringDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, renderer processes, normalized coordinates, z-index values, or runtime attachment details.
+
+The three showcase Widgets are **Native** Widgets rendered by `NativeWidgetHost` with Direct2D, not WebView2 surfaces. This follows the product baseline performance principle: Widgets are part of the always-on desktop render layer.
 
 ## Current M3 simplification
 
@@ -21,13 +23,13 @@ The current production showcase contains three distinct widget types:
 - `今日待办` — task list card for daily productivity;
 - `玻璃天气` — weather card with temperature and short forecast.
 
-Each format owns its own fixed logical size and HTML/CSS appearance. **Initial placement** is automatic and collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. After creation, users may drag a widget anywhere within the same monitor's normalized bounds. Raw coordinates remain an implementation detail in settings UI.
+Each format owns its own fixed logical size and Native Direct2D appearance, drawn by `NativeWidgetHost`. **Initial placement** is automatic and collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. After creation, users may drag a widget anywhere within the same monitor's normalized bounds. Raw coordinates remain an implementation detail in settings UI.
 
 The existing `＋ 新建桌面小组件` entry lets users pick a fixed format or auto-rotate the next preset.
 
 ## Desktop drag behavior
 
-Enabled Web Widget surfaces expose a native drag layer (`WebDesktopSurfaceChild`):
+Enabled Widget surfaces expose a native drag layer. Native Widgets use `NativeWidgetHost`; WebView2 Widgets (used only for on-demand complex web content) use `WebDesktopSurfaceChild`:
 
 - drag starts from the widget's top grip / drag handle;
 - movement updates the live HWND position immediately;
@@ -85,7 +87,7 @@ The M3 product path now includes:
 - no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
 - `TuringDeskWidgetAcceptance.exe` requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap at the initial baseline checkpoint;
-- a single arbitrary Web Widget can no longer satisfy M3 real-Windows acceptance;
+- a single arbitrary Widget can no longer satisfy M3 real-Windows acceptance;
 - `scripts/verify-widget-product-model.ps1` guards the fixed-format controller contract, drag persistence path, and strict three-widget acceptance set while preventing the controller from regaining shell attachment ownership;
 - x64/ARM64 exact-head workflows run the Widget product guard in addition to source-layout/domain/shell contracts.
 
@@ -110,7 +112,9 @@ click create three times
 -> monitor reconnect restores the same persisted placement configuration
 ```
 
-The acceptance executable rejects extra enabled Web Widgets during this M3 round so evidence cannot accidentally describe a different product configuration. Runtime PID/HWND recreation remains allowed; persisted Widget identity, placement configuration, Windows session, phase order, preferred WebView2 lifecycle readiness, geometry/monitor visibility and z-order health remain continuous evidence requirements.
+The acceptance executable rejects extra enabled Web Widgets during this M3 round so evidence cannot accidentally describe a different product configuration. Runtime PID/HWND recreation remains allowed; persisted Widget identity, placement configuration, Windows session, phase order, structured lifecycle readiness, geometry/monitor visibility and z-order health remain continuous evidence requirements.
+
+For Native Widgets the WebView2 Environment/Controller/Navigation stages do not apply; `WidgetService` reports those stages as ready from the native surface's own window and visibility state.
 
 Resize/edit-mode work may resume only after this fixed-format + drag path is stable on real Windows.
 

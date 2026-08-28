@@ -8,7 +8,8 @@ M3 turns Widget runtime health from a single compatibility string into a caller-
 ## Ownership
 
 ```text
-WebDesktopSurfaceChild
+NativeWidgetHost        (showcase Widgets, Direct2D)
+WebDesktopSurfaceChild  (on-demand Web Widgets, WebView2)
     -> HWND lifecycle properties
 DesktopShell read-only z-order telemetry
     -> WidgetService
@@ -17,11 +18,14 @@ DesktopShell read-only z-order telemetry
     -> UI / Pi / future Editor
 ```
 
+The three M3 showcase Widgets are Native and render through `NativeWidgetHost`.
+`WebDesktopSurfaceChild` remains the path only for on-demand WebView2 Widgets.
+
 UI and Pi must not read `wallpaper.ini`, enumerate runtime HWNDs, inspect WebView2 processes, or interpret sibling ordering themselves. The Widget domain owns runtime-health translation, while desktop/shell owns shared z-order semantics and all shell mutation remains in `DesktopShellHost`.
 
 ## Current structured surface state
 
-`WidgetSurfaceHealth` exposes, per enabled Web Widget:
+`WidgetSurfaceHealth` exposes, per enabled Widget (Native or Web):
 
 - configured Widget id;
 - isolated process id and running state;
@@ -41,11 +45,16 @@ Z-order inspection is implemented in `desktop/shell/DesktopSurfaceTelemetry.cpp`
 
 ## Health semantics
 
-An enabled Web Widget is OS-surface-ready only when its isolated process is running, its HWND exists, its parent matches the WallpaperHost desktop parent, it has `WS_CHILD`, and it is visible.
+An enabled Widget is OS-surface-ready only when its isolated process is running, its HWND exists, its parent matches the WallpaperHost desktop parent, it has `WS_CHILD`, and it is visible.
 
-For the preferred child path, lifecycle readiness additionally requires EnvironmentReady + ControllerReady + NavigationReady. Rendering health also requires reported/valid shared z-order telemetry and the existing compatibility runtime diagnostic. Aggregate `WidgetRuntimeHealth::runtimeHealthy` requires a one-to-one structured surface for every enabled Web Widget and every surface to be rendering healthy.
+Lifecycle readiness then depends on the render path:
 
-A legacy child can still be observed without inventing lifecycle readiness: its lifecycle fields remain unreported, so ordinary UI/Pi diagnostics can distinguish a compatibility fallback from the preferred fully-telemetried path. **M3 real-Windows acceptance is stricter than that compatibility view:** every accepted Web Widget must explicitly report Environment/Controller/Navigation telemetry and all three stages must be ready. A legacy/unreported child can be diagnosed, but it cannot satisfy the M3 visible-runtime gate.
+- **Web Widget** (`WebDesktopSurfaceChild`): requires WebView2 EnvironmentReady + ControllerReady + NavigationReady, with all three explicitly reported.
+- **Native Widget** (`NativeWidgetHost`): has no WebView2 stage. `WidgetService` reports the three stages as ready from the native surface's own window and visibility state. This follows the product baseline performance principle and is not a degraded fallback.
+
+Rendering health also requires reported/valid shared z-order telemetry and the existing compatibility runtime diagnostic. Aggregate `WidgetRuntimeHealth::runtimeHealthy` requires a one-to-one structured surface for every enabled Widget and every surface to be rendering healthy.
+
+A legacy child can still be observed without inventing lifecycle readiness: its lifecycle fields remain unreported, so ordinary UI/Pi diagnostics can distinguish a compatibility fallback from the telemetried path. **M3 real-Windows acceptance is stricter than that compatibility view:** every accepted Widget must explicitly report lifecycle telemetry and all reported stages must be ready. A legacy/unreported child can be diagnosed, but it cannot satisfy the M3 visible-runtime gate.
 
 ## Actionable failure contract
 
@@ -79,7 +88,7 @@ Run it directly or through:
 .\scripts\run-widget-runtime-acceptance.ps1 -Phase baseline
 ```
 
-Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Web Widget, a one-to-one healthy surface set, explicitly reported-and-ready WebView2 lifecycle telemetry and valid shared z-order telemetry. It writes a UTF-16 report to:
+Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Widget, a one-to-one healthy surface set, explicitly reported-and-ready lifecycle telemetry (WebView2 stages for Web Widgets, native window/visibility state for Native Widgets) and valid shared z-order telemetry. It writes a UTF-16 report to:
 
 ```text
 %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
@@ -103,7 +112,7 @@ A probe pass is evidence for that phase only. The user-visible acceptance flow s
 
 ## Remaining M3 slices
 
-1. Run the ordered phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with an enabled Web Widget.
+1. Run the ordered phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with the three enabled showcase Widgets.
 2. Confirm the read-only z-order interpretation against real ARM64 Windows in Raised Desktop, legacy WorkerW and Progman fallback modes.
 3. Pass the real ARM64 Windows acceptance flow: create the three fixed showcase widgets, drag one to a new position and confirm persistence, keep them visible while Settings/Search open, recover after Explorer restart, and restore after display reconnect/change.
 

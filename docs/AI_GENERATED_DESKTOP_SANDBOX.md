@@ -67,7 +67,9 @@ User natural language
 
 Hard rule: preview creation is not an apply operation. The sandbox must not call `ApplyWebPackage`, `CreateWebWidget`, modify the registry, write system folders, or alter the persisted desktop state. Only the explicit Apply command may cross the commit boundary.
 
-TuringDesk currently has a native Win32 shell. The target host architecture is WinUI 3 / C++/WinRT. The sandbox contract is deliberately host-agnostic: the current native shell can host the same isolated WebView2 preview while the WinUI 3 shell is introduced without changing the A2UI protocol.
+TuringDesk uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
+
+The sandbox contract is deliberately host-agnostic at the protocol level: A2UI JSON and the preview/Apply/Reject boundary do not depend on any particular UI framework, so the sandbox can evolve without changing the protocol.
 
 ## 2. Declarative A2UI JSON protocol
 
@@ -111,11 +113,11 @@ Example:
 
 Apply and Reject buttons are host-owned chrome. The AI is not allowed to manufacture an Apply action inside its JSON.
 
-## 3. Key C++ / WinUI 3 / WebView2 implementation
+## 3. Key C++ / Win32 / WebView2 implementation
 
 ### Transparent WebView2
 
-The preview WebView2 is created by CoreHost/SandboxRenderer, never by AI output. With C++/WinRT the controller is created for a host HWND and the controller background is made transparent:
+The preview WebView2 is created by CoreHost/SandboxRenderer, never by AI output. The controller is created for a host HWND and the controller background is made transparent:
 
 ```cpp
 wil::com_ptr<ICoreWebView2Controller> controller;
@@ -168,7 +170,7 @@ chrome.webview.addEventListener('message', e => {
 });
 ```
 
-Apply/Reject are preferably native WinUI 3 buttons outside the WebView2 content. If a WebView2-hosted preview toolbar is used, it may post only a tiny allowlisted message:
+Apply/Reject are native Win32 buttons owned by the host, outside the WebView2 content. If a WebView2-hosted preview toolbar is used, it may post only a tiny allowlisted message:
 
 ```javascript
 chrome.webview.postMessage({ type: 'previewAction', action: 'apply', previewId });
@@ -233,7 +235,7 @@ Target solution layout:
 TuringDesk.sln
 |
 +-- CoreHost/
-|   +-- App.xaml / MainWindow.xaml        # WinUI 3 host
+|   +-- Win32 host window                 # Native C++23 / Win32
 |   +-- PreviewCoordinator.*              # user intent + Apply/Reject boundary
 |   +-- WallpaperCommitAdapter.*
 |   +-- WidgetCommitAdapter.*

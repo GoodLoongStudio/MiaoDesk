@@ -233,13 +233,14 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     }
 
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
-        const HWND anchor = snapshot_.shellDefView && GetParent(snapshot_.shellDefView) == parent ? snapshot_.shellDefView : HWND_TOP;
-        HWND insertAfter = anchor;
-        for (HWND window : widgets) {
+        // Top -> bottom: widgets (interactive) -> desktop icons -> wallpapers -> WorkerW.
+        HWND insertAfter = HWND_BOTTOM;
+        for (HWND window : wallpapers) {
             SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             insertAfter = window;
         }
-        for (HWND window : wallpapers) {
+        insertAfter = HWND_TOP;
+        for (HWND window : widgets) {
             SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             insertAfter = window;
         }

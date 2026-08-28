@@ -146,12 +146,17 @@ DesktopSurfaceZOrderHealth InspectDesktopSurfaceZOrder(
     }
     result.reported = true;
 
-    // GetWindow(GW_CHILD/GW_HWNDNEXT) enumerates sibling z-order from top to
-    // bottom. If DefView shares this parent it must remain above every TuringDesk
-    // surface so desktop icons stay interactive/visible.
-    if (defViewIndex && *defViewIndex >= *surfaceIndex) {
-        result.detail = L"desktop icon layer is not above surface";
-        return result;
+    // GW_CHILD/GW_HWNDNEXT walks siblings from top to bottom (index 0 = topmost).
+    if (defViewIndex) {
+        if (role == DesktopSurfaceTelemetryRole::Widget) {
+            if (*surfaceIndex >= *defViewIndex) {
+                result.detail = L"widget must be above desktop icon layer for drag/input";
+                return result;
+            }
+        } else if (*defViewIndex >= *surfaceIndex) {
+            result.detail = L"wallpaper must stay below desktop icon layer";
+            return result;
+        }
     }
 
     for (std::size_t index = 0; index < children.size(); ++index) {
@@ -171,8 +176,8 @@ DesktopSurfaceZOrderHealth InspectDesktopSurfaceZOrder(
 
     result.valid = true;
     result.detail = role == DesktopSurfaceTelemetryRole::Widget
-        ? L"Widget is above TuringDesk wallpaper and below icon layer"
-        : L"wallpaper is below Widget/icon layers";
+        ? L"Widget is above icon layer and TuringDesk wallpaper"
+        : L"wallpaper is below icon/widget layers";
     return result;
 }
 

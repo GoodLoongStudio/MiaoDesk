@@ -46,8 +46,10 @@ bool ZOrderValid(const DesktopShellSnapshot& snapshot, HWND surface, DesktopSurf
     if (!parent || !IsWindow(parent)) return false;
 
     if (snapshot.mode == DesktopShellMode::RaisedDesktop || snapshot.mode == DesktopShellMode::ProgmanFallback) {
-        if (snapshot.shellDefView && GetParent(snapshot.shellDefView) == parent)
+        if (snapshot.shellDefView && GetParent(snapshot.shellDefView) == parent) {
+            if (role == DesktopSurfaceRole::Widget) return !AppearsBelow(surface, snapshot.shellDefView);
             return AppearsBelow(surface, snapshot.shellDefView);
+        }
         return parent == snapshot.progman;
     }
     if (snapshot.mode == DesktopShellMode::LegacyWorkerW)

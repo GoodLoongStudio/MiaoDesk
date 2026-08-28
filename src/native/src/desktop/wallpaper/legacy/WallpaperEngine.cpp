@@ -473,20 +473,20 @@ public:
         config_.enabled = enabled;
         SaveConfig(config_);
         if (enabled) {
-            AttachToDesktop();
-            ShowWindow(host_, SW_SHOWNOACTIVATE);
             performanceStopped_ = false;
-            EnsureRuntimeActive();
-            videoSet_.SetPaused(false);
-            independentHost_.SetPaused(false);
-            InvalidateRect(host_, nullptr, FALSE);
-            shellHost_.RepairKnownTuringDeskSurfaces();
+            if (AttachToDesktop()) {
+                RebuildRuntime();
+                ShowWindow(host_, SW_SHOWNOACTIVATE);
+                InvalidateRect(host_, nullptr, FALSE);
+                UpdateWindow(host_);
+            }
         } else {
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
             ShowWindow(host_, SW_HIDE);
         }
+        shellHost_.RepairKnownTuringDeskSurfaces();
         RefreshSettings();
         libraryWindow_.SetWallpaperEnabledState(config_.enabled);
     }

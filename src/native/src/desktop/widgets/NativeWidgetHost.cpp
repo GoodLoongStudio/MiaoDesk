@@ -254,6 +254,7 @@ struct NativeWidgetHostApp {
         if (!slot.dragging) return;
         slot.dragging = false;
         if (GetCapture() == slot.dragHandle) ReleaseCapture();
+        if (GetCapture() == slot.hwnd) ReleaseCapture();
         if (!persist) {
             const LONG width = slot.dragStartRegion_.right - slot.dragStartRegion_.left;
             const LONG height = slot.dragStartRegion_.bottom - slot.dragStartRegion_.top;
@@ -313,7 +314,20 @@ struct NativeWidgetHostApp {
         }
         if (!slot || !slot->owner) return DefWindowProcW(hwnd, message, wParam, lParam);
         switch (message) {
+        case WM_NCHITTEST: return HTCLIENT;
         case WM_ERASEBKGND: return 1;
+        case WM_LBUTTONDOWN:
+            if (slot->owner->BeginDrag(*slot)) SetCapture(hwnd);
+            return 0;
+        case WM_MOUSEMOVE:
+            if (slot->dragging && GetCapture() == hwnd) slot->owner->UpdateDrag(*slot);
+            return 0;
+        case WM_LBUTTONUP:
+            if (slot->dragging) slot->owner->EndDrag(*slot, true);
+            return 0;
+        case WM_CAPTURECHANGED:
+            if (slot->dragging && reinterpret_cast<HWND>(lParam) != hwnd) slot->owner->EndDrag(*slot, true);
+            return 0;
         case WM_SIZE:
             if (slot->target) slot->target->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
             slot->owner->ResizeDragHandle(*slot);

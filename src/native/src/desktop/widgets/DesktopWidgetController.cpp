@@ -1,6 +1,7 @@
 #include "turingdesk/DesktopWidgetController.h"
 #include "turingdesk/NativeWidgetPreset.h"
 #include "turingdesk/RuntimeLogPaths.h"
+#include "turingdesk/WallpaperMonitorLayout.h"
 
 #include <windows.h>
 
@@ -307,6 +308,26 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
 
     const auto spec = PresetSpec(preset);
     const auto [x, y] = AutomaticPlacement(existing, monitorId, spec.width, spec.height);
+    if (!monitorId.empty()) {
+        const auto topology = wallpaper::QueryMonitorTopology();
+        if (topology.Valid()) {
+            const wallpaper::MonitorInfo* primary = nullptr;
+            for (const auto& monitor : topology.monitors) {
+                if (monitor.primary) {
+                    primary = &monitor;
+                    break;
+                }
+            }
+            if (!primary && !topology.monitors.empty()) primary = &topology.monitors.front();
+            if (primary) {
+                const auto key = wallpaper::StableMonitorKey(*primary);
+                if (_wcsicmp(key.c_str(), monitorId.c_str()) == 0 ||
+                    _wcsicmp(primary->deviceName.c_str(), monitorId.c_str()) == 0) {
+                    monitorId.clear();
+                }
+            }
+        }
+    }
     NativeWidgetCreateRequest request;
     request.preset = NativePresetFor(preset);
     request.title = spec.title;

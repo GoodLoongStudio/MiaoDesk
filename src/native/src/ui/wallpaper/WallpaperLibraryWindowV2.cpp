@@ -587,6 +587,7 @@ struct WallpaperLibraryWindow::Impl {
         std::wstring meta;
         if (!widget.enabled) meta = L"○ 已停用";
         else if (healthy) meta = L"● 运行正常";
+        else if (health && !health->detail.empty()) meta = L"● " + health->detail;
         else meta = L"● 等待桌面运行时";
         meta += L" · " + FriendlyMonitor(widget.monitorId);
         RECT metaRect{card.left + S(9), card.bottom - S(24), card.right - S(8), card.bottom - S(5)};

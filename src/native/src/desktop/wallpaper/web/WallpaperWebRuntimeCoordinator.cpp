@@ -483,6 +483,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     WriteDiagnostics(scope, L"运行异常：" + error);
 
                 bool policyPause = false;
+                bool nativePolicyHide = false;
                 {
                     HWND settings = FindWindowW(kDesktopLibraryClass, nullptr);
                     if (!settings) settings = FindWindowW(kWallpaperSettingsClass, nullptr);
@@ -491,11 +492,13 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     policyPause = snapshot.action == PerformanceAction::Pause ||
                                   snapshot.action == PerformanceAction::Stop ||
                                   snapshot.action == PerformanceAction::Throttle;
+                    nativePolicyHide = snapshot.action == PerformanceAction::Pause ||
+                                       snapshot.action == PerformanceAction::Stop;
                 }
                 const bool hiddenWallpaper = scope == WallpaperWebRuntimeScope::WebWallpaper &&
                                              (!host || !IsWindow(host) || IsWindowVisible(host) == FALSE);
                 if (hasWebWidgets) surfaces.SetPaused(policyPause || hiddenWallpaper);
-                if (hasNativeWidgets) nativeSurfaces.SetPaused(policyPause || hiddenWallpaper);
+                if (hasNativeWidgets) nativeSurfaces.SetPaused(nativePolicyHide);
                 if (hasNativeWidgets && hasWebWidgets) {
                     WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText() + L" · " + surfaces.DiagnosticsText());
                 } else if (hasNativeWidgets) {

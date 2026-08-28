@@ -14,6 +14,7 @@ constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeWidgetSurfaceClass[] = L"TuringDesk.Native.WidgetSurface";
 constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 
 bool IsClass(HWND window, const wchar_t* expected) noexcept {
@@ -28,17 +29,21 @@ bool StartsWith(const wchar_t* value, const wchar_t* prefix) noexcept {
     return std::wcsncmp(value, prefix, std::wcslen(prefix)) == 0;
 }
 
+bool IsWidgetSurface(HWND window) noexcept {
+    if (IsClass(window, kNativeWidgetSurfaceClass)) return true;
+    if (!IsClass(window, kWebHostClass)) return false;
+    wchar_t title[320]{};
+    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
+    return StartsWith(title, L"widget-") || StartsWith(title, L"widget_");
+}
+
 bool IsKnownTuringDeskSurface(HWND window) noexcept {
-    return IsClass(window, kWallpaperHostClass) || IsClass(window, kWebHostClass);
+    return IsClass(window, kWallpaperHostClass) || IsClass(window, kWebHostClass) ||
+           IsClass(window, kNativeWidgetSurfaceClass);
 }
 
 DesktopSurfaceTelemetryRole InferRole(HWND window) noexcept {
-    if (!IsClass(window, kWebHostClass)) return DesktopSurfaceTelemetryRole::Wallpaper;
-    wchar_t title[320]{};
-    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
-    return StartsWith(title, L"widget-") || StartsWith(title, L"widget_")
-        ? DesktopSurfaceTelemetryRole::Widget
-        : DesktopSurfaceTelemetryRole::Wallpaper;
+    return IsWidgetSurface(window) ? DesktopSurfaceTelemetryRole::Widget : DesktopSurfaceTelemetryRole::Wallpaper;
 }
 
 struct ChildEntry {

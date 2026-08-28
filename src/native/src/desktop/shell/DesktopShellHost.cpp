@@ -224,10 +224,12 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     std::vector<HWND> widgets;
     for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (!IsWindow(child)) continue;
-        const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass);
+        const DesktopSurfaceRole role = InferRole(child);
+        const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass) ||
+                           role == DesktopSurfaceRole::Widget;
         if (!known) continue;
-        PrepareSurface(child, InferRole(child) != DesktopSurfaceRole::Widget, nullptr);
-        (InferRole(child) == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
+        PrepareSurface(child, role != DesktopSurfaceRole::Widget, nullptr);
+        (role == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
     }
 
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {

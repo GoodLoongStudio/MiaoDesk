@@ -256,7 +256,8 @@ bool IsDesktopSurfaceWindow(HWND window) {
     if (!window || !IsWindow(window)) return false;
     wchar_t className[160]{};
     if (!GetClassNameW(window, className, static_cast<int>(std::size(className)))) return false;
-    return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0;
+    return _wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0 ||
+           _wcsicmp(className, turingdesk::wallpaper::kNativeWidgetSurfaceClass) == 0;
 }
 
 std::vector<HWND> CollectDesktopSurfaceWindows() {

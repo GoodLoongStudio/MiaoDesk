@@ -1,5 +1,6 @@
 #include "turingdesk/NativeWidgetHost.h"
 
+#include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/NativeWidgetPainter.h"
 #include "turingdesk/NativeWidgetPreset.h"
@@ -138,6 +139,7 @@ struct NativeSlot {
     std::wstring widgetId;
     NativeWidgetPreset preset{NativeWidgetPreset::GlassClock};
     RECT region{};
+    RECT desktopRegion{};
     HWND hwnd{};
     HWND dragHandle{};
     ComPtr<ID2D1HwndRenderTarget> target;
@@ -364,31 +366,57 @@ struct NativeWidgetHostApp {
         return nullptr;
     }
 
-    bool CreateSlot(const DesktopWidget& widget, const RECT& mappedRegion, NativeWidgetPreset preset) {
+    bool AttachSlotSurface(NativeSlot& slot, const RECT& desktopRegion) {
+        if (!slot.hwnd || !IsWindow(slot.hwnd)) return false;
+        slot.desktopRegion = desktopRegion;
+        DesktopShellHost shell;
+        std::wstring error;
+        if (!shell.AttachSurface(slot.hwnd, DesktopSurfaceRole::Widget, desktopRegion, !paused, &error)) {
+            WriteDiagnostics(L"Native widget attach failed: " + (error.empty() ? L"unknown" : error));
+            return false;
+        }
+        return true;
+    }
+
+    bool CreateSlotWindow(NativeSlot& slot, const std::wstring& title, const RECT& mappedRegion, const RECT& desktopRegion) {
+        const int width = std::max<LONG>(1, mappedRegion.right - mappedRegion.left);
+        const int height = std::max<LONG>(1, mappedRegion.bottom - mappedRegion.top);
+        HWND hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            kNativeWidgetSurfaceClass, title.c_str(),
+            WS_CHILD | WS_CLIPSIBLINGS,
+            mappedRegion.left, mappedRegion.top, width, height,
+            parent, nullptr, instance, &slot);
+        if (!hwnd) return false;
+        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        MarkNativeSurfaceReady(hwnd);
+        slot.hwnd = hwnd;
+        slot.region = mappedRegion;
+        slot.desktopRegion = desktopRegion;
+        slot.dragHandle = CreateWindowExW(
+            WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
+            0, 0, width, height, hwnd, nullptr, instance, &slot);
+        ResizeDragHandle(slot);
+        if (!AttachSlotSurface(slot, desktopRegion)) {
+            DestroySlot(slot);
+            return false;
+        }
+        PaintSlot(slot);
+        if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        return true;
+    }
+
+    void RepairDesktopStack() {
+        DesktopShellHost shell;
+        shell.RepairSurfaceStack(nullptr, nullptr);
+    }
+
+    bool CreateSlot(const DesktopWidget& widget, const RECT& desktopRegion, const RECT& mappedRegion, NativeWidgetPreset preset) {
         auto slot = std::make_unique<NativeSlot>();
         slot->owner = this;
         slot->widgetId = widget.id;
         slot->preset = preset;
-        slot->region = mappedRegion;
-        const std::wstring title = SlotToken(widget, mappedRegion);
-        const int width = std::max<LONG>(1, mappedRegion.right - mappedRegion.left);
-        const int height = std::max<LONG>(1, mappedRegion.bottom - mappedRegion.top);
-        NativeSlot* raw = slot.get();
-        HWND hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-            kNativeWidgetSurfaceClass, title.c_str(),
-            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-            mappedRegion.left, mappedRegion.top, width, height,
-            parent, nullptr, instance, raw);
-        if (!hwnd) return false;
-        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-        MarkNativeSurfaceReady(hwnd);
-        raw->hwnd = hwnd;
-        raw->dragHandle = CreateWindowExW(
-            WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
-            0, 0, width, height, hwnd, nullptr, instance, raw);
-        ResizeDragHandle(*raw);
-        PaintSlot(*raw);
+        if (!CreateSlotWindow(*slot, SlotToken(widget, mappedRegion), mappedRegion, desktopRegion)) return false;
         slots.push_back(std::move(slot));
         return true;
     }
@@ -415,35 +443,19 @@ struct NativeWidgetHostApp {
             desiredIds.push_back(widget.id);
             NativeSlot* existing = FindSlot(widget.id);
             if (!existing) {
-                CreateSlot(widget, mappedRegion, preset);
+                CreateSlot(widget, desktopRegion, mappedRegion, preset);
                 continue;
             }
             const bool regionChanged = existing->region.left != mappedRegion.left || existing->region.top != mappedRegion.top ||
-                                       existing->region.right != mappedRegion.right || existing->region.bottom != mappedRegion.bottom;
+                                       existing->region.right != mappedRegion.right ||
+                                       existing->region.bottom != mappedRegion.bottom;
             const bool presetChanged = existing->preset != preset;
             if (regionChanged || presetChanged) {
                 DestroySlot(*existing);
                 existing->preset = preset;
-                existing->region = mappedRegion;
-                const std::wstring title = SlotToken(widget, mappedRegion);
-                const int width = mappedRegion.right - mappedRegion.left;
-                const int height = mappedRegion.bottom - mappedRegion.top;
-                NativeSlot* raw = existing;
-                HWND hwnd = CreateWindowExW(
-                    WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                    kNativeWidgetSurfaceClass, title.c_str(),
-                    WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-                    mappedRegion.left, mappedRegion.top, width, height,
-                    parent, nullptr, instance, raw);
-                if (!hwnd) continue;
-                SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-                MarkNativeSurfaceReady(hwnd);
-                raw->hwnd = hwnd;
-                raw->dragHandle = CreateWindowExW(
-                    WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
-                    0, 0, width, height, hwnd, nullptr, instance, raw);
-                ResizeDragHandle(*raw);
-                PaintSlot(*raw);
+                if (!CreateSlotWindow(*existing, SlotToken(widget, mappedRegion), mappedRegion, desktopRegion)) continue;
+            } else if (existing->hwnd && IsWindow(existing->hwnd)) {
+                AttachSlotSurface(*existing, desktopRegion);
             }
         }
 
@@ -456,6 +468,7 @@ struct NativeWidgetHostApp {
                                    }),
                     slots.end());
 
+        RepairDesktopStack();
         WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()));
     }
 
@@ -466,7 +479,17 @@ struct NativeWidgetHostApp {
     }
 
     void SetPaused(bool value) {
+        if (paused == value) return;
         paused = value;
+        if (!value) {
+            for (const auto& slot : slots) {
+                if (!slot || !slot->hwnd || !IsWindow(slot->hwnd)) continue;
+                if (slot->desktopRegion.right <= slot->desktopRegion.left ||
+                    slot->desktopRegion.bottom <= slot->desktopRegion.top) continue;
+                AttachSlotSurface(*slot, slot->desktopRegion);
+            }
+            RepairDesktopStack();
+        }
         const UINT show = value ? SW_HIDE : SW_SHOW;
         for (const auto& slot : slots) {
             if (!slot || !slot->hwnd) continue;

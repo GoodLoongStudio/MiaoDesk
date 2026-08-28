@@ -176,7 +176,6 @@ struct WallpaperLibraryWindow::Impl {
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
     NavigateCallback navigateCallback;
-    WallpaperEnabledCallback wallpaperEnabledCallback;
     std::vector<WallpaperLibraryTarget> targets;
     std::vector<std::wstring> targetIds;
     std::vector<WallpaperLibraryItem> visibleWallpapers;
@@ -1363,14 +1362,12 @@ WallpaperLibraryWindow::~WallpaperLibraryWindow() = default;
 bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
                                   const std::vector<WallpaperLibraryTarget>& targets,
                                   ApplyCallback applyCallback,
-                                  NavigateCallback navigateCallback,
-                                  WallpaperEnabledCallback wallpaperEnabledCallback) {
+                                  NavigateCallback navigateCallback) {
     impl_->instance = instance;
     impl_->library = library;
     impl_->targets = targets;
     impl_->applyCallback = std::move(applyCallback);
     impl_->navigateCallback = std::move(navigateCallback);
-    impl_->wallpaperEnabledCallback = std::move(wallpaperEnabledCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
     const bool wasVisible = impl_->window && IsWindowVisible(impl_->window);
     impl_->RebuildTargets();

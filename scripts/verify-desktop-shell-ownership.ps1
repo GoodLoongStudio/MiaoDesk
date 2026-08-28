@@ -71,6 +71,7 @@ $surfaceSources = @(
     'src/native/src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp',
     'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp',
     'src/native/src/desktop/widgets/DesktopWidgetController.cpp',
+    'src/native/src/desktop/widgets/NativeWidgetHost.cpp',
     'src/native/src/ui/widgets/DesktopWidgetUiAdapter.cpp',
     'src/native/src/desktop/wallpaper/render/VideoWallpaperSet.cpp'
 )

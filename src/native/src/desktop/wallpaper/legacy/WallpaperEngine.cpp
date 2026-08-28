@@ -520,7 +520,7 @@ public:
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
         } else {
-            shellHost_.RepairKnownTuringDeskSurfaces();
+            if (targetEnabled) shellHost_.RepairKnownTuringDeskSurfaces();
         }
 
         RefreshSettings();

@@ -33,7 +33,6 @@ public:
     using ApplyCallback = std::function<void(const WallpaperLibraryItem&, const std::wstring& targetMonitorId)>;
     using GlobalApplyCallback = std::function<void(const WallpaperLibraryItem&)>;
     using NavigateCallback = std::function<void(WallpaperSettingsSection)>;
-    using WallpaperEnabledCallback = std::function<void(bool enabled)>;
 
     WallpaperLibraryWindow();
     ~WallpaperLibraryWindow();
@@ -44,8 +43,7 @@ public:
     bool Show(HINSTANCE instance, WallpaperLibrary* library,
               const std::vector<WallpaperLibraryTarget>& targets,
               ApplyCallback applyCallback,
-              NavigateCallback navigateCallback = {},
-              WallpaperEnabledCallback wallpaperEnabledCallback = {});
+              NavigateCallback navigateCallback = {});
     bool Show(HINSTANCE instance, WallpaperLibrary* library, GlobalApplyCallback applyCallback) {
         return Show(instance, library, {},
                     [callback = std::move(applyCallback)](const WallpaperLibraryItem& item, const std::wstring&) {

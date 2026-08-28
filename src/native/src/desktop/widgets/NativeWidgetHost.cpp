@@ -6,6 +6,7 @@
 #include "turingdesk/NativeWidgetPreset.h"
 #include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
+#include "turingdesk/WidgetService.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -261,17 +262,20 @@ struct NativeWidgetHostApp {
             SetWindowPos(slot.hwnd, nullptr, slot.dragStartRegion_.left, slot.dragStartRegion_.top, width, height, SWP_NOACTIVATE | SWP_NOZORDER);
             return;
         }
-        DesktopWidgetStore store;
-        std::wstring ignored;
-        if (!store.Load(&ignored)) return;
-        auto found = store.Find(slot.widgetId);
-        if (!found) return;
-        auto widget = *found;
-        const float maxX = std::max(0.0f, 1.0f - widget.width);
-        const float maxY = std::max(0.0f, 1.0f - widget.height);
-        widget.x = std::clamp(slot.dragPreviewX_, 0.0f, maxX);
-        widget.y = std::clamp(slot.dragPreviewY_, 0.0f, maxY);
-        store.Upsert(widget, &ignored);
+        const float maxX = std::max(0.0f, 1.0f - slot.dragStartWidget_.width);
+        const float maxY = std::max(0.0f, 1.0f - slot.dragStartWidget_.height);
+        desktop::WidgetUpdateRequest request;
+        request.id = slot.widgetId;
+        request.x = std::clamp(slot.dragPreviewX_, 0.0f, maxX);
+        request.y = std::clamp(slot.dragPreviewY_, 0.0f, maxY);
+        const desktop::WidgetService service;
+        const auto result = service.Update(request);
+        if (!result.success) {
+            const LONG width = slot.dragStartRegion_.right - slot.dragStartRegion_.left;
+            const LONG height = slot.dragStartRegion_.bottom - slot.dragStartRegion_.top;
+            SetWindowPos(slot.hwnd, nullptr, slot.dragStartRegion_.left, slot.dragStartRegion_.top, width, height, SWP_NOACTIVATE | SWP_NOZORDER);
+            return;
+        }
         RECT screenRect{};
         if (GetWindowRect(slot.hwnd, &screenRect)) slot.desktopRegion = screenRect;
     }
@@ -387,17 +391,10 @@ struct NativeWidgetHostApp {
         slot.desktopRegion = desktopRegion;
         DesktopShellHost shell;
         std::wstring error;
-        if (!shell.EnsureCurrent(&error)) {
-            if (!error.empty()) WriteDiagnostics(L"Native widget shell unavailable: " + error);
+        const bool visible = !paused && (IsWindowVisible(slot.hwnd) != FALSE);
+        if (!shell.EnsureSurface(slot.hwnd, DesktopSurfaceRole::Widget, desktopRegion, visible, &error)) {
+            if (!error.empty()) WriteDiagnostics(L"Native widget attach failed: " + error);
             return false;
-        }
-        shell.PrepareSurface(slot.hwnd, false, nullptr);
-        const HWND shellParent = shell.SurfaceParent();
-        if (shellParent && IsWindow(shellParent) && GetParent(slot.hwnd) != shellParent) {
-            SetParent(slot.hwnd, shellParent);
-        }
-        if (!shell.RepairSurfaceStack(slot.hwnd, &error) && !error.empty()) {
-            WriteDiagnostics(L"Native widget stack repair: " + error);
         }
         return true;
     }
@@ -426,11 +423,6 @@ struct NativeWidgetHostApp {
         AttachSlotSurface(slot, desktopRegion);
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         return true;
-    }
-
-    void RepairDesktopStack() {
-        DesktopShellHost shell;
-        shell.RepairSurfaceStack(nullptr, nullptr);
     }
 
     bool CreateSlot(const DesktopWidget& widget, const RECT& desktopRegion, const RECT& mappedRegion, NativeWidgetPreset preset) {
@@ -490,7 +482,6 @@ struct NativeWidgetHostApp {
                                    }),
                     slots.end());
 
-        RepairDesktopStack();
         for (const auto& slot : slots) {
             if (slot && slot->dragHandle && IsWindow(slot->dragHandle)) {
                 SetWindowPos(slot->dragHandle, HWND_TOP, 0, 0, 0, 0,
@@ -510,7 +501,6 @@ struct NativeWidgetHostApp {
                     slot->desktopRegion.bottom <= slot->desktopRegion.top) continue;
                 AttachSlotSurface(*slot, slot->desktopRegion);
             }
-            RepairDesktopStack();
         }
         // Keep HWND visible on the desktop. Performance policy must not hide widgets;
         // "paused" only stops periodic repaints (clocks) to save CPU.

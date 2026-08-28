@@ -470,23 +470,59 @@ public:
     }
 
     void SetEnabled(bool enabled) {
+        if (config_.enabled == enabled) {
+            libraryWindow_.SetWallpaperEnabledState(config_.enabled);
+            return;
+        }
+
+        const bool targetEnabled = enabled;
         config_.enabled = enabled;
         SaveConfig(config_);
+
+        bool applied = false;
         if (enabled) {
             performanceStopped_ = false;
-            if (AttachToDesktop()) {
+            videoSet_.SetPaused(false);
+            independentHost_.SetPaused(false);
+            for (int attempt = 0; attempt < 2 && !applied; ++attempt) {
+                if (attempt > 0) {
+                    std::wstring shellError;
+                    shellHost_.Refresh(&shellError);
+                }
+                if (!AttachToDesktop()) continue;
                 RebuildRuntime();
                 ShowWindow(host_, SW_SHOWNOACTIVATE);
                 InvalidateRect(host_, nullptr, FALSE);
                 UpdateWindow(host_);
+                applied = mountOk_;
             }
         } else {
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
-            ShowWindow(host_, SW_HIDE);
+            if (host_ && IsWindow(host_)) {
+                ShowWindow(host_, SW_HIDE);
+                if (mountOk_) {
+                    topology_ = turingdesk::wallpaper::QueryMonitorTopology();
+                    const auto layoutMode = turingdesk::wallpaper::ParseLayoutMode(config_.layout);
+                    const RECT desktopBounds = turingdesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
+                    std::wstring shellError;
+                    shellHost_.EnsureSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+                                             desktopBounds, false, &shellError);
+                }
+            }
+            applied = true;
         }
-        shellHost_.RepairKnownTuringDeskSurfaces();
+
+        if (!applied) {
+            config_.enabled = !targetEnabled;
+            SaveConfig(config_);
+            StopRuntime();
+            if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
+        } else {
+            shellHost_.RepairKnownTuringDeskSurfaces();
+        }
+
         RefreshSettings();
         libraryWindow_.SetWallpaperEnabledState(config_.enabled);
     }
@@ -563,8 +599,7 @@ private:
                                 L"AI 模型配置位于 TuringDesk 设置中心。桌面 AI 创作入口会在此页继续接入。",
                                 L"TuringDesk 设置", MB_OK | MB_ICONINFORMATION);
                 }
-            },
-            [this](const bool enabled) { SetEnabled(enabled); });
+            });
     }
 
     void ShowAutomation() {

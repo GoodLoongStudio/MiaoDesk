@@ -327,30 +327,14 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void ToggleWallpaper() {
-        bool currentlyEnabled = true;
-        if (wallpaperToggleButton) {
-            const std::wstring label = WindowText(wallpaperToggleButton);
-            currentlyEnabled = label != L"恢复壁纸";
-        } else {
-            desktop::DesktopState state;
-            currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
-        }
+        desktop::DesktopState state{};
+        const bool currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
         const bool enable = !currentlyEnabled;
-        if (wallpaperEnabledCallback) {
-            wallpaperEnabledCallback(enable);
-            SetWallpaperEnabledState(enable);
-            SetStatus(enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。");
-            return;
-        }
         const auto result = desktopControl.SetWallpaperEnabled(enable);
         SetStatus(result.message.empty()
                       ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
                       : result.message);
-        if (!result.success) {
-            RefreshWallpaperToggle();
-            return;
-        }
-        SetWallpaperEnabledState(enable);
+        RefreshWallpaperToggle();
     }
 
     void RefreshWallpapers() {
@@ -1388,10 +1372,15 @@ bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
     impl_->navigateCallback = std::move(navigateCallback);
     impl_->wallpaperEnabledCallback = std::move(wallpaperEnabledCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
+    const bool wasVisible = impl_->window && IsWindowVisible(impl_->window);
     impl_->RebuildTargets();
     impl_->RefreshWallpaperToggle();
-    impl_->RefreshWallpapers();
-    impl_->RefreshWidgets();
+    if (!wasVisible) {
+        impl_->RefreshWallpapers();
+        impl_->RefreshWidgets();
+    } else {
+        impl_->RefreshWallpapers();
+    }
     impl_->SetPage(impl_->page);
     ShowWindow(impl_->window, SW_SHOWNORMAL);
     SetForegroundWindow(impl_->window);

@@ -228,6 +228,7 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
         const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass) ||
                            role == DesktopSurfaceRole::Widget;
         if (!known) continue;
+        if (role != DesktopSurfaceRole::Widget && IsWindowVisible(child) == FALSE) continue;
         PrepareSurface(child, role != DesktopSurfaceRole::Widget, nullptr);
         (role == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
     }

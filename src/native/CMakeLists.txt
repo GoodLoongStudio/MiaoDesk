@@ -50,6 +50,7 @@ set(TURINGDESK_APP_SOURCES
     src/desktop/control/DesktopControlService.cpp
     src/desktop/demo/StoreDemoExperience.cpp
     src/desktop/preview/GeneratedDesktopPreview.cpp
+    src/desktop/preview/WidgetIntentComposer.cpp
     src/desktop/shell/DesktopSurfaceTelemetry.cpp
     src/desktop/wallpaper/WallpaperService.cpp
     src/desktop/widgets/WidgetService.cpp

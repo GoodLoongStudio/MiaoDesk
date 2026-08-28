@@ -34,7 +34,7 @@ foreach ($marker in @(
 
 foreach ($marker in @(
     'store-demo.ini', 'scene-aurora', '玻璃时钟', '今日待办', '玻璃天气',
-    '一键体验', '演示模式', 'WidgetFixedPreset::GlassClock')) {
+    '一键体验', '演示模式', 'WidgetFixedPreset::GlassClock', 'ShowWidgetPreviewForPrompt', 'widget_intent::')) {
     if (-not $demo.Contains($marker)) { throw "StoreDemoExperience.cpp missing marker: $marker" }
 }
 

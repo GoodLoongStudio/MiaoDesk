@@ -1,5 +1,7 @@
 #include "turingdesk/A2UIParser.h"
 
+#include <windows.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -492,6 +494,26 @@ ValidationResult ValidateWidgetDocument(std::string_view json) {
     result.success = true;
     result.normalizedJson = normalized.str();
     result.message = L"A2UI widget validation passed.";
+
+    if (const auto* layout = Member(root, "layout")) {
+        if (const auto* x = Member(*layout, "x"); x && x->kind == JsonKind::Number) result.placement.x = static_cast<float>(x->number);
+        if (const auto* y = Member(*layout, "y"); y && y->kind == JsonKind::Number) result.placement.y = static_cast<float>(y->number);
+        if (const auto* width = Member(*layout, "width"); width && width->kind == JsonKind::Number)
+            result.placement.width = static_cast<float>(width->number);
+        if (const auto* height = Member(*layout, "height"); height && height->kind == JsonKind::Number)
+            result.placement.height = static_cast<float>(height->number);
+    }
+    if (const auto* props = Member(root, "props")) {
+        if (const auto* title = Member(*props, "title"); title && title->kind == JsonKind::String && !title->string.empty()) {
+            const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, title->string.data(),
+                                                  static_cast<int>(title->string.size()), nullptr, 0);
+            if (count > 0) {
+                result.title.assign(static_cast<std::size_t>(count), L'\0');
+                MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, title->string.data(),
+                                    static_cast<int>(title->string.size()), result.title.data(), count);
+            }
+        }
+    }
     return result;
 }
 

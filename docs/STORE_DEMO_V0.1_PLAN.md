@@ -36,7 +36,7 @@
 | AI 对话 | 聊天面板；流式回复；工具状态卡片；Esc 收起不杀会话 | `ConversationPanel` + `PiRuntime` |
 | AI 换壁纸 | 自然语言 → `desktop_preview_wallpaper` → 用户 Apply | `GeneratedDesktopPreview` + showcase presets |
 | AI 加组件 | 自然语言 → `desktop_preview_widget` 或设置页「新建小组件」 | A2UI sandbox + `WidgetFixedPreset` |
-| 壁纸 showcase | Aurora / Neon / Ocean（至少 3 个预设一键应用） | `desktop_preview_examples` + library Scene |
+| 壁纸 showcase | Aurora 极光 / Neon 赛博 / Ocean 深海（各 1 个固定格式） | `desktop_preview_examples` + library Scene |
 | Widget showcase | 玻璃时钟 / 今日待办 / 玻璃天气（各 1 个固定格式） | `WIDGET_PRODUCT_MODEL_M3` |
 | 设置（精简） | Provider/Model/API Key；壁纸库入口；小组件页；开关 | `SettingsCenter` / `DesktopAiSettingsPage` |
 | 托盘与生命周期 | 开机可选；退出不丢桌面状态；日志不进用户脸 | 现有托盘 + persistence |

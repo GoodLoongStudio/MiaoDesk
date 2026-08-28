@@ -562,7 +562,7 @@ void ClearConversation(ConversationState& state) {
     state.pi->ResetSession();
     if (!state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
         AddEntry(state, EntryKind::Assistant,
-                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「加个玻璃时钟」。"
+                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。"
                  L"配置 API Key 后解锁完整 Agent。");
     } else {
         AddEntry(state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
@@ -600,6 +600,12 @@ void SendPrompt(ConversationState& state) {
         }
     }
 
+    if (!retry && widget_intent::LooksLikeOneSentenceWidgetRequest(actualPrompt)) {
+        const auto preview = preview::ShowWidgetPreviewForPrompt(state.window, actualPrompt);
+        AppendCompleted(state, typedPrompt, preview.message);
+        return;
+    }
+
     if (!state.agent->HasApiKey()) {
         std::wstring demoReply;
         if (demo::TryHandleDemoPrompt(actualPrompt, &demoReply)) {
@@ -607,7 +613,7 @@ void SendPrompt(ConversationState& state) {
             return;
         }
         AppendCompleted(state, typedPrompt,
-                        L"妙喵 AI 尚未配置。演示模式可说「一键体验」「换壁纸」「加时钟」；"
+                        L"妙喵 AI 尚未配置。演示模式可说「一键体验」「换壁纸」「右上角加个待办小组件」；"
                         L"完整能力请从系统托盘进入设置 → 妙喵 AI。");
         return;
     }
@@ -1201,7 +1207,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     gConversationState = state;
     if (!state->agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
         AddEntry(*state, EntryKind::Assistant,
-                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「加个玻璃时钟」。"
+                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。"
                  L"配置 API Key 后解锁完整 Agent。");
     } else {
         AddEntry(*state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );

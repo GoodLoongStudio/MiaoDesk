@@ -3,6 +3,7 @@
 #include "turingdesk/A2UIParser.h"
 #include "turingdesk/DesktopControlService.h"
 #include "turingdesk/WallpaperPackage.h"
+#include "turingdesk/WidgetIntentComposer.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -291,11 +292,12 @@ std::string TrustedWallpaperRendererHtml(std::string_view mode, std::string_view
     html.reserve(10000 + encoded.size());
     html += R"HTML(<!doctype html><html><head><meta charset="utf-8"><style>
 html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;background:#07111f}#root{position:relative}img,video{width:100%;height:100%;object-fit:cover}.preset{position:absolute;inset:-12%;filter:saturate(1.12)}
-.aurora_flow{background:radial-gradient(circle at 20% 20%,rgba(81,157,255,.95),transparent 38%),radial-gradient(circle at 75% 35%,rgba(158,104,255,.8),transparent 42%),linear-gradient(135deg,#081b38,#16274e 55%,#071423);animation:drift 10s ease-in-out infinite alternate}
-.neon_flow{background:radial-gradient(circle at 25% 25%,#04d7ff 0,transparent 28%),radial-gradient(circle at 70% 60%,#a341ff 0,transparent 35%),linear-gradient(135deg,#030713,#10152a);animation:drift 8s ease-in-out infinite alternate}
-.ocean_glass{background:radial-gradient(ellipse at 50% -10%,rgba(178,240,255,.95),transparent 34%),linear-gradient(180deg,#2db7df 0,#1178b8 35%,#06598f 62%,#07385e 100%);animation:ocean 7s ease-in-out infinite alternate}
+.aurora_flow{background:radial-gradient(circle at 78% 16%,rgba(236,244,255,.95),transparent 12%),radial-gradient(ellipse at 22% 18%,rgba(81,157,255,.75),transparent 34%),radial-gradient(ellipse at 58% 42%,rgba(158,104,255,.55),transparent 38%),linear-gradient(180deg,#081b38 0%,#0d2a3f 72%,#071423 100%);animation:drift 10s ease-in-out infinite alternate}
+.neon_flow{background:radial-gradient(circle at 50% 58%,rgba(255,170,48,.95),transparent 18%),radial-gradient(circle at 50% 58%,rgba(255,88,120,.55),transparent 28%),linear-gradient(180deg,#12051f 0%,#2a0a2a 58%,#12051f 100%);animation:drift 8s ease-in-out infinite alternate}
+.neon_flow:after{content:"";position:absolute;inset:42% -20% -30%;background:linear-gradient(90deg,transparent,rgba(8,236,255,.35),rgba(255,36,220,.28),transparent),repeating-linear-gradient(90deg,rgba(8,236,255,.22) 0 1px,transparent 1px 56px);transform:perspective(420px) rotateX(68deg);animation:road 5s linear infinite}
+.ocean_glass{background:radial-gradient(ellipse at 50% 0%,rgba(178,240,255,.95),transparent 34%),linear-gradient(180deg,#2db7df 0%,#1178b8 35%,#06598f 62%,#07385e 100%);animation:ocean 7s ease-in-out infinite alternate}
 .ocean_glass:after{content:"";position:absolute;inset:0;background:repeating-radial-gradient(ellipse at 50% 0,rgba(255,255,255,.18) 0 2px,transparent 3px 34px);mix-blend-mode:screen;transform:perspective(500px) rotateX(60deg) scale(1.5);animation:water 4s linear infinite}
-@keyframes drift{to{transform:translate3d(4%,-2%,0) scale(1.08)}}@keyframes ocean{to{filter:hue-rotate(8deg) saturate(1.2);transform:scale(1.04)}}@keyframes water{to{background-position:80px 40px}}
+@keyframes drift{to{transform:translate3d(4%,-2%,0) scale(1.08)}}@keyframes road{to{transform:perspective(420px) rotateX(68deg) translateY(56px)}}@keyframes ocean{to{filter:hue-rotate(8deg) saturate(1.2);transform:scale(1.04)}}@keyframes water{to{background-position:80px 40px}}
 </style></head><body><div id="root"></div><script>
 const raw=Uint8Array.from(atob(')HTML";
     html += encoded;
@@ -347,6 +349,31 @@ NativeToolResult CreateWidgetPreview(std::string_view arguments) {
         return {false, L"沙盒已生成，但没有找到正在运行的 TuringDesk 主进程来展示预览。"};
     }
     return {true, L"小组件已进入沙盒预览。只有你点击“应用”后才会添加到桌面。preview=" + id};
+}
+
+bool WriteWidgetPreviewSandbox(const fs::path& dir, std::wstring_view title, std::string_view document, std::wstring& error) {
+    const auto validated = a2ui::ValidateWidgetDocument(document);
+    if (!validated.success) {
+        error = validated.message.empty() ? L"小组件 JSON 校验失败。" : validated.message;
+        return false;
+    }
+
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    if (ec) {
+        error = L"无法创建小组件沙盒目录。";
+        return false;
+    }
+
+    const std::string titleUtf8 = WideToUtf8(title.empty() ? L"AI Widget" : std::wstring(title));
+    if (!WriteUtf8(dir / L"kind.txt", "widget") ||
+        !WriteUtf8(dir / L"title.txt", titleUtf8) ||
+        !WriteUtf8(dir / L"payload.json", validated.normalizedJson)) {
+        fs::remove_all(dir, ec);
+        error = L"无法写入小组件沙盒描述。";
+        return false;
+    }
+    return true;
 }
 
 NativeToolResult CreateWallpaperPreview(std::string_view arguments) {
@@ -531,7 +558,9 @@ bool ApplyWidget(const std::shared_ptr<PreviewState>& state, std::wstring& messa
     if (!validated.success) { message = validated.message; return false; }
 
     desktop::WebWidgetCreateRequest request;
-    request.title = Utf8ToWide(state->title.empty() ? "AI Widget" : state->title);
+    request.title = validated.title.empty()
+        ? Utf8ToWide(state->title.empty() ? "AI Widget" : state->title)
+        : validated.title;
     request.htmlUtf8 = TrustedWidgetRendererHtml(validated.normalizedJson, true);
     request.x = validated.placement.x;
     request.y = validated.placement.y;
@@ -734,6 +763,37 @@ bool HandleGeneratedPreviewCopyData(HWND owner, const COPYDATASTRUCT* data) {
     if (text[count - 1] != L'\0') return false;
     const fs::path dir{std::wstring(text)};
     return ShowPreviewWindow(owner, dir);
+}
+
+WidgetPreviewPromptResult ShowWidgetPreviewForPrompt(HWND owner, std::wstring_view prompt) {
+    WidgetPreviewPromptResult result;
+    const auto composed = widget_intent::ComposeFromPrompt(prompt);
+    if (!composed.success) {
+        result.message = composed.message.empty() ? L"无法从这句话生成小组件。" : composed.message;
+        return result;
+    }
+
+    const auto root = TempPreviewRoot();
+    if (root.empty()) {
+        result.message = L"无法创建 AI 生成内容临时目录。";
+        return result;
+    }
+
+    const auto dir = root / NewPreviewId();
+    std::wstring error;
+    if (!WriteWidgetPreviewSandbox(dir, composed.title, composed.a2uiJson, error)) {
+        result.message = error.empty() ? L"小组件预览创建失败。" : error;
+        return result;
+    }
+
+    if (!ShowPreviewWindow(owner, dir)) {
+        result.message = L"小组件沙盒已生成，但预览窗口未能打开。";
+        return result;
+    }
+
+    result.success = true;
+    result.message = L"已根据你的描述打开小组件预览。满意后请点击「应用」；不满意可点「拒绝」。";
+    return result;
 }
 
 } // namespace turingdesk::preview

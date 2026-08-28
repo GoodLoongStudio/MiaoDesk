@@ -557,7 +557,7 @@ bool CreatePage(PageState& state) {
     };
 
     state.title = label(L"妙喵 AI");
-    state.intro = label(L"配置模型后，妙喵可用完整 Agent 能力。未配置时仍可一键体验动态壁纸与桌面时钟。"
+    state.intro = label(L"配置模型后，妙喵可用完整 Agent 能力。未配置时仍可一键体验动态壁纸与桌面小组件。"
                         L"API Key 保存在 Windows Credential Manager。",
                         SS_LEFT | SS_NOPREFIX);
     state.profileLabel = label(L"配置");
@@ -575,7 +575,7 @@ bool CreatePage(PageState& state) {
     state.status = label(L"保存后对话与桌面 Agent 共用当前配置。",
                          SS_LEFT | SS_NOPREFIX);
     state.demoTitle = label(L"一键体验");
-    state.demoText = label(L"无需 API Key：应用 Aurora 动态壁纸，并添加三款时钟小组件。",
+    state.demoText = label(L"无需 API Key：应用 Aurora 动态壁纸，并添加玻璃时钟、今日待办、玻璃天气三款小组件。",
                            SS_LEFT | SS_NOPREFIX);
     state.demoOpen = button(L"立即体验动态桌面", kDemoGoldenId);
     state.harnessTitle = label(L"高级工作台");

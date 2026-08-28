@@ -105,6 +105,6 @@ A probe pass is evidence for that phase only. The user-visible acceptance flow s
 
 1. Run the ordered phase-labelled probe and visually confirm the production UI/Pi output on a real ARM64 Windows desktop with an enabled Web Widget.
 2. Confirm the read-only z-order interpretation against real ARM64 Windows in Raised Desktop, legacy WorkerW and Progman fallback modes.
-3. Pass the real ARM64 Windows acceptance flow: create clock, keep it visible while Settings/Search open, recover after Explorer restart, and restore after display reconnect/change.
+3. Pass the real ARM64 Windows acceptance flow: create the three fixed showcase widgets, drag one to a new position and confirm persistence, keep them visible while Settings/Search open, recover after Explorer restart, and restore after display reconnect/change.
 
 CI/self-tests validate contracts and regressions, but real Windows visible behavior remains the M3 exit gate.

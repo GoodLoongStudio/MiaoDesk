@@ -1,5 +1,6 @@
 #include "turingdesk/WebDesktopSurfaceChild.h"
 #include "turingdesk/DesktopWidgetStore.h"
+#include "turingdesk/WidgetService.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -375,12 +376,17 @@ private:
         wc.hCursor = LoadCursorW(nullptr, IDC_SIZEALL);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
         dragHandle_ = CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+            WS_EX_NOACTIVATE,
             kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
             0, 0, 10, 10, hwnd_, nullptr, instance_, this);
         if (!dragHandle_) return false;
         ResizeWidgetDragHandle();
         return true;
+    }
+
+    void RaiseWidgetDragHandle() {
+        if (!dragHandle_ || !IsWindow(dragHandle_)) return;
+        SetWindowPos(dragHandle_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
     void ResizeWidgetDragHandle() {
@@ -391,6 +397,7 @@ private:
                      std::max<LONG>(1, client.right - client.left),
                      std::max<LONG>(1, client.bottom - client.top),
                      SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        RaiseWidgetDragHandle();
         InvalidateRect(dragHandle_, nullptr, FALSE);
     }
 
@@ -452,18 +459,29 @@ private:
         if (!dragging_) return;
         dragging_ = false;
         if (GetCapture() == dragHandle_) ReleaseCapture();
-        if (!persist) return;
+        if (!persist) {
+            const LONG width = dragStartRegion_.right - dragStartRegion_.left;
+            const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
+            SetWindowPos(hwnd_, nullptr, dragStartRegion_.left, dragStartRegion_.top, width, height,
+                         SWP_NOACTIVATE | SWP_NOZORDER);
+            options_.region = dragStartRegion_;
+            return;
+        }
         const std::wstring id = WidgetId();
         if (id.empty()) return;
-        DesktopWidgetStore store;
-        std::wstring ignored;
-        if (!store.Load(&ignored)) return;
-        const auto current = store.Find(id);
-        if (!current) return;
-        auto updated = *current;
-        updated.x = dragPreviewX_;
-        updated.y = dragPreviewY_;
-        store.Upsert(std::move(updated), &ignored);
+        desktop::WidgetUpdateRequest request;
+        request.id = id;
+        request.x = dragPreviewX_;
+        request.y = dragPreviewY_;
+        const desktop::WidgetService service;
+        const auto result = service.Update(request);
+        if (!result.success) {
+            const LONG width = dragStartRegion_.right - dragStartRegion_.left;
+            const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
+            SetWindowPos(hwnd_, nullptr, dragStartRegion_.left, dragStartRegion_.top, width, height,
+                         SWP_NOACTIVATE | SWP_NOZORDER);
+            options_.region = dragStartRegion_;
+        }
     }
 
     void SetReadyProperty(const wchar_t* name, bool ready) {
@@ -645,6 +663,7 @@ private:
         RECT bounds{};
         if (GetClientRect(hwnd_, &bounds)) controller_->put_Bounds(bounds);
         ResizeWidgetDragHandle();
+        RaiseWidgetDragHandle();
     }
 
     void Pause() {

@@ -8,9 +8,8 @@
 
 namespace turingdesk::desktop {
 
-// M3 deliberately starts with fixed visual templates. Editing, freeform sizing,
-// dragging and monitor reassignment stay out of the beginner product surface
-// until the visible-runtime experience is proven on real Windows.
+// M3 ships fixed visual templates with desktop drag repositioning. Resize and
+// monitor reassignment stay out of the beginner product surface for now.
 enum class WidgetFixedPreset {
     GlassClock,
     TodayTasks,
@@ -43,6 +42,7 @@ public:
         wallpaper::DesktopWidget* created = nullptr) const;
 
     DesktopControlResult SetEnabled(std::wstring_view id, bool enabled) const;
+    DesktopControlResult MoveTo(std::wstring_view id, float x, float y) const;
     DesktopControlResult Remove(std::wstring_view id) const;
 
 private:

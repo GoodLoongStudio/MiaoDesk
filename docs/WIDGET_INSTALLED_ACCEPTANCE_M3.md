@@ -72,7 +72,7 @@ The same acceptance binary fingerprint, Widget identity set, `turingdesk.widget-
 
 The installed wrapper does not automate the human portions of M3. A real ARM64 Windows session still must prove:
 
-- the three fixed clock Widgets render above the TuringDesk wallpaper and below desktop icons;
+- the three fixed showcase Widgets (`玻璃时钟`, `今日待办`, `玻璃天气`) render above the TuringDesk wallpaper and below desktop icons;
 - desktop icons remain usable;
 - Settings and Search remain visible without hiding or pausing the Widgets;
 - Explorer restart restores the Widget surfaces;

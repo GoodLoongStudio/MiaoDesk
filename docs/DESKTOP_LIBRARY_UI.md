@@ -94,12 +94,13 @@ V1 requirements:
 - card grid rather than a raw LISTBOX;
 - visible enabled/disabled state;
 - friendly display name, never raw `\\?\DISPLAY#...` identifiers in normal UI;
-- create clock;
+- create one of three fixed formats (`玻璃时钟` / `今日待办` / `玻璃天气`);
+- drag widgets on the desktop via the top grip to reposition (positions persist);
 - enable/disable;
 - remove;
 - runtime health will later show Configured / HWND / WebView / Visible rather than treating `enabled=true` as proof of rendering.
 
-V2 adds drag/move/resize and Inspector.
+V2 adds settings-UI resize, numeric placement editors, monitor reassignment, and Inspector.
 
 ## 5. Navigation
 

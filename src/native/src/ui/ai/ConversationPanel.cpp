@@ -1,6 +1,8 @@
 #include "turingdesk/ConversationPanel.h"
 #include "turingdesk/WindowPlacementStore.h"
 #include "turingdesk/StoreDemoExperience.h"
+#include "turingdesk/GeneratedDesktopPreview.h"
+#include "turingdesk/WidgetIntentComposer.h"
 #include "ConversationPanelCompileCompat.h"
 #include <commctrl.h>
 #include <d2d1.h>

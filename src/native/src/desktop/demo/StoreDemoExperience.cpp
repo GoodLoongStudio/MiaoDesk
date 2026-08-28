@@ -1,7 +1,9 @@
 #include "turingdesk/StoreDemoExperience.h"
 
 #include "turingdesk/DesktopWidgetController.h"
+#include "turingdesk/GeneratedDesktopPreview.h"
 #include "turingdesk/WallpaperLibrary.h"
+#include "turingdesk/WidgetIntentComposer.h"
 
 #include <shlobj.h>
 
@@ -70,8 +72,8 @@ wallpaper::WallpaperLibraryItem SceneItem(std::wstring id, std::wstring title) {
 wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
     if (sceneId == L"scene-neon" || sceneId == L"neon" || sceneId == L"neon_flow")
         return SceneItem(L"scene-neon", L"Neon Flow");
-    if (sceneId == L"scene-grid" || sceneId == L"grid")
-        return SceneItem(L"scene-grid", L"Grid Pulse");
+    if (sceneId == L"scene-grid" || sceneId == L"grid" || sceneId == L"ocean" || sceneId == L"ocean_glass")
+        return SceneItem(L"scene-grid", L"Ocean Flow");
     // Default showcase: Aurora (ocean-like cool tones on Snapdragon demos).
     return SceneItem(L"scene-aurora", L"Aurora Flow");
 }
@@ -178,7 +180,7 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
 
     if (greeting) {
         *reply = L"在。我是妙喵。还没配置 API Key 时也能先体验桌面："
-                 L"可以说「给我一个动态壁纸」或「加个玻璃时钟」，也可以说「一键体验」。";
+                 L"可以说「给我一个动态壁纸」「右上角加个待办小组件」，也可以说「一键体验」。";
         return true;
     }
 
@@ -193,8 +195,8 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
     if (wantsWallpaper) {
         std::wstring scene = L"scene-aurora";
         if (ContainsAny(lower, {L"neon", L"霓虹"})) scene = L"scene-neon";
-        else if (ContainsAny(lower, {L"grid", L"网格"})) scene = L"scene-grid";
-        else if (ContainsAny(lower, {L"ocean", L"海洋", L"海边", L"蓝"})) scene = L"scene-aurora";
+        else if (ContainsAny(lower, {L"ocean", L"海洋", L"海边", L"蓝", L"深海", L"海浪"})) scene = L"scene-grid";
+        else if (ContainsAny(lower, {L"grid", L"网格"})) scene = L"scene-neon";
         const auto result = ApplyShowcaseWallpaper(scene);
         *reply = result.success
             ? (result.message + L"\r\n已直接应用到桌面（演示模式）。配置 API Key 后，AI 会先出预览再让你点 Apply。")
@@ -206,6 +208,12 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         if (ContainsAny(lower, {L"三", L"全部", L"套装"})) {
             const auto result = EnsureShowcaseWidgets();
             *reply = result.success ? result.message : (L"创建小组件失败：" + result.message);
+            return true;
+        }
+        if (widget_intent::LooksLikeOneSentenceWidgetRequest(prompt)) {
+            HWND owner = FindWindowW(L"TuringDesk.Native.SearchWindow", nullptr);
+            const auto preview = preview::ShowWidgetPreviewForPrompt(owner, prompt);
+            *reply = preview.message;
             return true;
         }
         desktop::DesktopWidgetController controller;
@@ -231,8 +239,8 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
 
     // Soft catch-all in demo mode: steer users back to the golden path instead of a dead end.
     if (!ContainsAny(lower, {L"/"})) {
-        *reply = L"当前是演示模式（未配置 API Key），我可以直接帮你换动态壁纸、加桌面小组件。"
-                 L"试试：「给我一个极光壁纸」「加个玻璃时钟」「一键体验」。"
+        *reply = L"当前是演示模式（未配置 API Key），我可以直接帮你换动态壁纸、用一句话生成小组件预览。"
+                 L"试试：「给我一个极光壁纸」「右上角加个天气小组件」「一键体验」。"
                  L"完整 Agent 能力请先在设置里保存模型配置。";
         return true;
     }

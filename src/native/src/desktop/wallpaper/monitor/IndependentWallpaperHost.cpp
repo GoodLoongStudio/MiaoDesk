@@ -1,5 +1,5 @@
 #include "turingdesk/IndependentWallpaperHost.h"
-
+#include "turingdesk/SceneWallpaperPainter.h"
 #include "turingdesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
@@ -214,82 +214,18 @@ struct IndependentWallpaperHost::Impl {
     }
 
     void DrawAurora(Slot& slot, const D2D1_SIZE_F& size) {
-        FillBackground(slot, size, D2D1::ColorF(0.004f, 0.008f, 0.030f));
-        const std::array<D2D1_COLOR_F, 7> colors = {
-            D2D1::ColorF(0.05f, 1.00f, 0.72f, 0.24f), D2D1::ColorF(0.08f, 0.58f, 1.00f, 0.25f),
-            D2D1::ColorF(0.48f, 0.20f, 1.00f, 0.23f), D2D1::ColorF(0.92f, 0.12f, 0.82f, 0.19f),
-            D2D1::ColorF(0.02f, 0.84f, 0.94f, 0.20f), D2D1::ColorF(0.30f, 1.00f, 0.52f, 0.17f),
-            D2D1::ColorF(0.42f, 0.46f, 1.00f, 0.18f),
-        };
-        for (int i = 0; i < static_cast<int>(colors.size()); ++i) {
-            const float phase = time * (0.18f + i * 0.013f) + i * 0.91f;
-            const float x = size.width * (0.08f + i * 0.145f) + static_cast<float>(std::sin(phase)) * size.width * 0.16f;
-            const float y = size.height * (0.24f + 0.30f * static_cast<float>(std::sin(phase * 0.73f + i * 0.61f)));
-            for (int layer = 3; layer >= 0; --layer) {
-                D2D1_COLOR_F color = colors[static_cast<std::size_t>(i)];
-                color.a *= 0.24f + static_cast<float>(3 - layer) * 0.17f;
-                slot.brush->SetColor(color);
-                const float scale = 1.0f + static_cast<float>(layer) * 0.34f;
-                slot.renderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y),
-                    size.width * 0.18f * scale, size.height * 0.31f * scale), slot.brush.Get());
-            }
-        }
-
-        const std::array<D2D1_COLOR_F, 4> ribbons = {
-            D2D1::ColorF(0.20f, 0.96f, 0.82f, 0.34f), D2D1::ColorF(0.20f, 0.62f, 1.00f, 0.30f),
-            D2D1::ColorF(0.66f, 0.30f, 1.00f, 0.27f), D2D1::ColorF(0.96f, 0.28f, 0.76f, 0.22f),
-        };
-        constexpr int segments = 40;
-        for (int band = 0; band < static_cast<int>(ribbons.size()); ++band) {
-            slot.brush->SetColor(ribbons[static_cast<std::size_t>(band)]);
-            for (int segment = 0; segment < segments; ++segment) {
-                const float x1 = size.width * static_cast<float>(segment) / segments;
-                const float x2 = size.width * static_cast<float>(segment + 1) / segments;
-                const float p1 = static_cast<float>(segment) / segments * 6.28318f;
-                const float p2 = static_cast<float>(segment + 1) / segments * 6.28318f;
-                const float base = size.height * (0.24f + band * 0.15f);
-                const float amplitude = size.height * (0.035f + band * 0.009f);
-                const float y1 = base + static_cast<float>(std::sin(p1 * (1.0f + band * 0.18f) + time * (0.42f + band * 0.07f))) * amplitude;
-                const float y2 = base + static_cast<float>(std::sin(p2 * (1.0f + band * 0.18f) + time * (0.42f + band * 0.07f))) * amplitude;
-                slot.renderTarget->DrawLine(D2D1::Point2F(x1, y1), D2D1::Point2F(x2, y2), slot.brush.Get(), 2.0f + band * 0.45f);
-            }
-        }
-
-        for (int i = 0; i < 46; ++i) {
-            const float x = size.width * static_cast<float>((i * 37 + 11) % 101) / 100.0f;
-            const float y = size.height * static_cast<float>((i * 53 + 7) % 97) / 100.0f;
-            const float twinkle = 0.18f + 0.34f * (0.5f + 0.5f * static_cast<float>(std::sin(time * 0.9f + i * 1.73f)));
-            slot.brush->SetColor(D2D1::ColorF(0.78f, 0.92f, 1.0f, twinkle));
-            const float radius = 0.7f + static_cast<float>(i % 3) * 0.45f;
-            slot.renderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius), slot.brush.Get());
-        }
+        wallpaper::scenes::PaintAurora(
+            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
     void DrawNeon(Slot& slot, const D2D1_SIZE_F& size) {
-        FillBackground(slot, size, D2D1::ColorF(0.004f, 0.006f, 0.020f));
-        constexpr float spacing = 58.0f;
-        const float offset = static_cast<float>(std::fmod(time * 30.0f, spacing));
-        slot.brush->SetColor(D2D1::ColorF(0.02f, 0.82f, 1.00f, 0.42f));
-        for (float x = -spacing + offset; x < size.width + spacing; x += spacing)
-            slot.renderTarget->DrawLine(D2D1::Point2F(x, 0), D2D1::Point2F(x, size.height), slot.brush.Get(), 1.4f);
-        slot.brush->SetColor(D2D1::ColorF(0.92f, 0.04f, 0.84f, 0.34f));
-        for (float y = -spacing + offset; y < size.height + spacing; y += spacing)
-            slot.renderTarget->DrawLine(D2D1::Point2F(0, y), D2D1::Point2F(size.width, y), slot.brush.Get(), 1.2f);
+        wallpaper::scenes::PaintNeon(
+            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
     void DrawGrid(Slot& slot, const D2D1_SIZE_F& size) {
-        FillBackground(slot, size, D2D1::ColorF(0.020f, 0.026f, 0.034f));
-        constexpr float spacing = 64.0f;
-        slot.brush->SetColor(D2D1::ColorF(0.22f, 0.32f, 0.40f, 0.62f));
-        for (float x = 0; x < size.width; x += spacing)
-            slot.renderTarget->DrawLine(D2D1::Point2F(x, 0), D2D1::Point2F(x, size.height), slot.brush.Get());
-        for (float y = 0; y < size.height; y += spacing)
-            slot.renderTarget->DrawLine(D2D1::Point2F(0, y), D2D1::Point2F(size.width, y), slot.brush.Get());
-        const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(time * 0.72f));
-        slot.brush->SetColor(D2D1::ColorF(0.15f, 0.66f, 0.82f, 0.14f + pulse * 0.10f));
-        slot.renderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(size.width * 0.5f, size.height * 0.5f),
-                                                     size.width * (0.18f + pulse * 0.05f),
-                                                     size.height * (0.20f + pulse * 0.05f)), slot.brush.Get());
+        wallpaper::scenes::PaintOcean(
+            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
     void DrawSlot(Slot& slot) {

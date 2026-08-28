@@ -53,6 +53,12 @@ constexpr UINT kMenuImportWeb = 6202;
 constexpr UINT kMenuApply = 6210;
 constexpr UINT kMenuFavorite = 6211;
 constexpr UINT kMenuRemove = 6212;
+constexpr UINT kMenuWidgetGlassClock = 6220;
+constexpr UINT kMenuWidgetTodayTasks = 6221;
+constexpr UINT kMenuWidgetWeatherGlass = 6222;
+constexpr UINT kMenuWidgetAuto = 6223;
+constexpr UINT kMenuWidgetToggle = 6230;
+constexpr UINT kMenuWidgetRemove = 6231;
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -96,9 +102,9 @@ const wchar_t* KindLabel(LibraryWallpaperKind kind) {
 
 std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"流动极光 · 原生 Scene";
-        if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"霓虹网格 · 原生 Scene";
-        if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"深色网格 · 原生 Scene";
+        if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"流动极光 · 夜空星幕";
+        if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"霓虹幻境 · 赛博公路";
+        if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"深海浪潮 · 澄蓝海底";
         return L"原生 Scene";
     }
     if (item.kind == LibraryWallpaperKind::Video) return L"视频壁纸";
@@ -407,9 +413,9 @@ struct WallpaperLibraryWindow::Impl {
         COLORREF base = RGB(36, 42, 54);
         COLORREF accent = RGB(92, 135, 255);
         if (item.kind == LibraryWallpaperKind::Scene) {
-            if (item.id.find(L"aurora") != std::wstring::npos) { base = RGB(8, 18, 38); accent = RGB(42, 210, 170); }
-            else if (item.id.find(L"neon") != std::wstring::npos) { base = RGB(10, 8, 28); accent = RGB(214, 55, 225); }
-            else if (item.id.find(L"grid") != std::wstring::npos) { base = RGB(26, 31, 38); accent = RGB(60, 125, 150); }
+            if (item.id.find(L"aurora") != std::wstring::npos) { base = RGB(6, 14, 36); accent = RGB(48, 220, 180); }
+            else if (item.id.find(L"neon") != std::wstring::npos) { base = RGB(18, 6, 32); accent = RGB(255, 96, 48); }
+            else if (item.id.find(L"grid") != std::wstring::npos) { base = RGB(8, 58, 96); accent = RGB(120, 220, 255); }
         } else if (item.kind == LibraryWallpaperKind::Web) {
             base = RGB(25, 46, 72); accent = RGB(76, 170, 235);
         } else if (item.kind == LibraryWallpaperKind::Video) {
@@ -479,7 +485,10 @@ struct WallpaperLibraryWindow::Impl {
         HGDIOBJ old = SelectObject(dc, titleFont);
         SetTextColor(dc, RGB(245, 247, 252));
         const bool clock = widget.title.find(L"时钟") != std::wstring::npos;
-        DrawTextW(dc, clock ? L"12:34" : L"WEB", -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        const bool tasks = widget.title.find(L"待办") != std::wstring::npos;
+        const bool weather = widget.title.find(L"天气") != std::wstring::npos;
+        const wchar_t* previewLabel = clock ? L"12:34" : tasks ? L"待办" : weather ? L"22°" : L"组件";
+        DrawTextW(dc, previewLabel, -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         RECT textRect{card.left, card.bottom - S(50), card.right, card.bottom};
         FillSolid(dc, textRect, RGB(250, 250, 252));
@@ -520,7 +529,7 @@ struct WallpaperLibraryWindow::Impl {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(115, 118, 128));
             HGDIOBJ old = SelectObject(dc, bodyFont);
-            const wchar_t* empty = widgets ? L"还没有小组件。使用右下角按钮创建桌面时钟。" : L"桌面库为空。使用右上角“添加”导入壁纸。";
+            const wchar_t* empty = widgets ? L"还没有小组件。点右下角「新建桌面小组件」选择类型。" : L"桌面库为空。使用右上角“添加”导入壁纸。";
             DrawTextW(dc, empty, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(dc, old);
         }
@@ -570,7 +579,7 @@ struct WallpaperLibraryWindow::Impl {
             EnableWindow(widgetToggleButton, widget ? TRUE : FALSE);
             EnableWindow(widgetRemoveButton, widget ? TRUE : FALSE);
             if (!widget) {
-                SetStatus(L"小组件可直接在桌面拖动；位置会自动保存。");
+                SetStatus(L"在桌面按住小组件顶部拖动手柄即可移动位置；也可在此启用/停用或删除。");
             } else {
                 const auto* health = HealthFor(widget->id);
                 std::wostringstream text;
@@ -719,16 +728,43 @@ struct WallpaperLibraryWindow::Impl {
         return targets.empty() ? std::wstring{} : targets.front().monitorId;
     }
 
-    void CreateClockWidget() {
+    void CreateWidgetPreset(desktop::WidgetFixedPreset preset) {
         DesktopWidget created;
-        const auto result = widgetController.CreateClock(PrimaryMonitorId(), &created);
+        const auto result = widgetController.CreatePreset(preset, PrimaryMonitorId(), &created);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
         selectedWidgetId = created.id;
         RefreshWidgets();
-        SetStatus(L"已创建桌面小组件。运行状态会在卡片和状态栏中显示。");
+        SetStatus(L"已创建桌面小组件：" + created.title);
+    }
+
+    void ShowWidgetCreateMenu() {
+        RECT rect{};
+        GetWindowRect(widgetCreateButton, &rect);
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING, kMenuWidgetGlassClock, L"玻璃时钟");
+        AppendMenuW(menu, MF_STRING, kMenuWidgetTodayTasks, L"今日待办");
+        AppendMenuW(menu, MF_STRING, kMenuWidgetWeatherGlass, L"玻璃天气");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, kMenuWidgetAuto, L"自动轮换下一个");
+        TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
+        DestroyMenu(menu);
+    }
+
+    void ShowWidgetContextMenu(POINT screen) {
+        HMENU menu = CreatePopupMenu();
+        const auto current = SelectedWidget();
+        const wchar_t* toggle = current && current->enabled ? L"停用" : L"启用";
+        AppendMenuW(menu, MF_STRING, kMenuWidgetToggle, toggle);
+        AppendMenuW(menu, MF_STRING, kMenuWidgetRemove, L"删除");
+        TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_TOPALIGN, screen.x, screen.y, 0, window, nullptr);
+        DestroyMenu(menu);
+    }
+
+    void CreateClockWidget() {
+        ShowWidgetCreateMenu();
     }
 
     void ToggleWidget() {
@@ -963,16 +999,21 @@ struct WallpaperLibraryWindow::Impl {
             return 0;
         }
         case WM_RBUTTONUP: {
-            if (!widgets) {
-                POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-                const int hit = self->HitTest(hwnd, pt, false);
-                if (hit >= 0) {
-                    self->selectedWallpaperId = self->visibleWallpapers[static_cast<std::size_t>(hit)].id;
-                    self->UpdateFooter();
-                    POINT screen = pt;
-                    ClientToScreen(hwnd, &screen);
-                    self->ShowWallpaperContextMenu(screen);
-                }
+            POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            const int hit = self->HitTest(hwnd, pt, widgets);
+            if (hit < 0) return 0;
+            if (widgets) {
+                self->selectedWidgetId = self->visibleWidgets[static_cast<std::size_t>(hit)].id;
+                self->UpdateFooter();
+                POINT screen = pt;
+                ClientToScreen(hwnd, &screen);
+                self->ShowWidgetContextMenu(screen);
+            } else {
+                self->selectedWallpaperId = self->visibleWallpapers[static_cast<std::size_t>(hit)].id;
+                self->UpdateFooter();
+                POINT screen = pt;
+                ClientToScreen(hwnd, &screen);
+                self->ShowWallpaperContextMenu(screen);
             }
             return 0;
         }
@@ -1079,6 +1120,22 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kMenuApply) self->ApplySelected();
             else if (id == kMenuFavorite) self->ToggleFavorite();
             else if (id == kMenuRemove) self->RemoveSelected();
+            else if (id == kMenuWidgetGlassClock) self->CreateWidgetPreset(desktop::WidgetFixedPreset::GlassClock);
+            else if (id == kMenuWidgetTodayTasks) self->CreateWidgetPreset(desktop::WidgetFixedPreset::TodayTasks);
+            else if (id == kMenuWidgetWeatherGlass) self->CreateWidgetPreset(desktop::WidgetFixedPreset::WeatherGlass);
+            else if (id == kMenuWidgetAuto) {
+                DesktopWidget created;
+                const auto result = self->widgetController.CreateClock(self->PrimaryMonitorId(), &created);
+                if (!result.success) {
+                    MessageBoxW(self->window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
+                } else {
+                    self->selectedWidgetId = created.id;
+                    self->RefreshWidgets();
+                    self->SetStatus(L"已创建桌面小组件：" + created.title);
+                }
+            }
+            else if (id == kMenuWidgetToggle) self->ToggleWidget();
+            else if (id == kMenuWidgetRemove) self->RemoveWidget();
             return 0;
         }
         case WM_DROPFILES: {

@@ -1,7 +1,7 @@
 # TuringDesk Widget Product Model (M3)
 
 Status: normative product contract
-Date: 2026-08-26
+Date: 2026-08-28
 
 ## User meaning
 
@@ -9,9 +9,9 @@ A TuringDesk Widget is a small information card attached to the Windows desktop.
 
 ## Current M3 simplification
 
-The first visible-runtime phase intentionally removes freeform editing. There is no drag editor, resize handle, numeric x/y input, monitor reassignment editor, or Small/Medium/Large selector in the beginner surface.
+M3 keeps fixed visual templates and a beginner-friendly surface. Users can **drag widgets on the desktop** to reposition them; positions persist across sessions. Resize handles, numeric x/y editors, monitor reassignment editors, and Small/Medium/Large selectors remain deferred.
 
-The goal is to prove visual rendering and desktop layering first with a few fixed formats. Editing returns only after the fixed-format experience is visibly stable on real Windows.
+The goal is to prove visual rendering, desktop layering, and drag persistence on real Windows before richer editing returns.
 
 ## Fixed showcase formats
 
@@ -21,22 +21,35 @@ The current production showcase contains three distinct widget types:
 - `今日待办` — task list card for daily productivity;
 - `玻璃天气` — weather card with temperature and short forecast.
 
-Each format owns its own fixed logical size and HTML/CSS appearance. Position remains automatic. Placement is collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. Raw coordinates remain an implementation detail and are not exposed to normal users.
+Each format owns its own fixed logical size and HTML/CSS appearance. **Initial placement** is automatic and collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. After creation, users may drag a widget anywhere within the same monitor's normalized bounds. Raw coordinates remain an implementation detail in settings UI.
 
-The existing `＋ 新建桌面小组件` entry is intentionally kept simple during M3. Repeated creation balances the three fixed formats so a tester can add three Widgets and compare real desktop rendering without opening an editor. Unrelated Widget records do not change which fixed format comes next.
+The existing `＋ 新建桌面小组件` entry lets users pick a fixed format or auto-rotate the next preset.
+
+## Desktop drag behavior
+
+Enabled Web Widget surfaces expose a native drag layer (`WebDesktopSurfaceChild`):
+
+- drag starts from the widget's top grip / drag handle;
+- movement updates the live HWND position immediately;
+- release persists normalized `x/y` through `WidgetService::Update`;
+- cancel restores the pre-drag placement;
+- drag does not change preset-owned `width/height`.
+
+`DesktopWidgetController::MoveTo` is the controller-facing API for programmatic moves using the same update path.
 
 ## Allowed management actions
 
-The Widget page currently exposes only the operations needed for visible-runtime validation:
+The Widget page currently exposes:
 
 ```text
 add fixed format
+drag on desktop to reposition
 hide / show
 delete
 refresh runtime state
 ```
 
-Freeform editing is explicitly deferred.
+Resize and monitor reassignment editors remain deferred.
 
 ## Runtime independence
 
@@ -64,14 +77,16 @@ TuringDesk wallpaper
 The M3 product path now includes:
 
 - `WidgetFixedPreset::{GlassClock, TodayTasks, WeatherGlass}` in `DesktopWidgetController`;
-- fixed preset-owned visual geometry instead of public editing APIs;
-- collision-safe automatic placement in normalized display space;
+- fixed preset-owned visual geometry instead of public resize APIs;
+- collision-safe automatic placement for newly created widgets;
 - balanced production `CreateClock` selection across the three fixed showcase formats;
+- desktop drag repositioning with persisted normalized coordinates;
+- `DesktopWidgetController::MoveTo` for service-routed placement updates;
 - no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
-- `TuringDeskWidgetAcceptance.exe` now requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap before any phase cursor can advance;
+- `TuringDeskWidgetAcceptance.exe` requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap at the initial baseline checkpoint;
 - a single arbitrary Web Widget can no longer satisfy M3 real-Windows acceptance;
-- `scripts/verify-widget-product-model.ps1` guards both the fixed-format/no-editor controller contract and the strict three-widget acceptance set, while preventing the controller from regaining shell attachment ownership;
+- `scripts/verify-widget-product-model.ps1` guards the fixed-format controller contract, drag persistence path, and strict three-widget acceptance set while preventing the controller from regaining shell attachment ownership;
 - x64/ARM64 exact-head workflows run the Widget product guard in addition to source-layout/domain/shell contracts.
 
 These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
@@ -86,7 +101,8 @@ click create three times
 -> exactly one 今日待办 is enabled at preset size
 -> exactly one 玻璃天气 is enabled at preset size
 -> all three visibly render
--> all three occupy non-overlapping automatic placements on each display
+-> all three occupy non-overlapping automatic placements on each display at baseline
+-> user drag may reposition widgets after baseline without invalidating preset-owned sizes
 -> all remain above TuringDesk wallpaper and below desktop icons
 -> settings window does not hide or pause them
 -> search window does not hide or pause them
@@ -96,6 +112,6 @@ click create three times
 
 The acceptance executable rejects extra enabled Web Widgets during this M3 round so evidence cannot accidentally describe a different product configuration. Runtime PID/HWND recreation remains allowed; persisted Widget identity, placement configuration, Windows session, phase order, preferred WebView2 lifecycle readiness, geometry/monitor visibility and z-order health remain continuous evidence requirements.
 
-Only after this fixed-format path is stable should drag/resize/edit-mode work resume.
+Resize/edit-mode work may resume only after this fixed-format + drag path is stable on real Windows.
 
 M3 remains open until the real ARM64 Windows visible-runtime acceptance passes. This product contract does not replace that gate.

@@ -313,6 +313,20 @@ DesktopControlResult DesktopWidgetController::SetEnabled(std::wstring_view id, b
     return service_.UpdateWidget(request);
 }
 
+DesktopControlResult DesktopWidgetController::MoveTo(std::wstring_view id, float x, float y) const {
+    wallpaper::DesktopWidget widget;
+    const auto found = Find(id, &widget);
+    if (!found.success) return found;
+
+    const float maxX = std::max(0.0f, 1.0f - widget.width);
+    const float maxY = std::max(0.0f, 1.0f - widget.height);
+    WidgetUpdateRequest request;
+    request.id = std::wstring(id);
+    request.x = std::clamp(x, 0.0f, maxX);
+    request.y = std::clamp(y, 0.0f, maxY);
+    return service_.UpdateWidget(request);
+}
+
 DesktopControlResult DesktopWidgetController::Remove(std::wstring_view id) const {
     return service_.RemoveWidget(id);
 }

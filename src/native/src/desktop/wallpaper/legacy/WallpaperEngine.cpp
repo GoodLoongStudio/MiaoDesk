@@ -7,6 +7,7 @@
 
 #include "turingdesk/DesktopShellHost.h"
 #include "turingdesk/IndependentWallpaperHost.h"
+#include "turingdesk/SceneWallpaperPainter.h"
 #include "turingdesk/VideoWallpaperPlayer.h"
 #include "turingdesk/VideoWallpaperSet.h"
 #include "turingdesk/WallpaperAutomation.h"
@@ -368,7 +369,7 @@ public:
                                       116, 58, 350, 180, settings_, ControlId(kSceneComboId), instance_, nullptr);
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Aurora Flow · 极光流动"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Neon Flow · 霓虹网格"));
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Quiet Grid · 静谧网格"));
+        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Ocean Flow · 深海浪潮"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"图片壁纸"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"视频壁纸 · Media Foundation"));
         libraryButton_ = CreateWindowExW(0, L"BUTTON", L"壁纸库…", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -499,7 +500,7 @@ private:
         for (const auto& scene : std::array<std::pair<const wchar_t*, const wchar_t*>, 3>{
                  std::pair{L"scene-aurora", L"Aurora Flow"},
                  std::pair{L"scene-neon", L"Neon Flow"},
-                 std::pair{L"scene-grid", L"Quiet Grid"}}) {
+                 std::pair{L"scene-grid", L"Ocean Flow"}}) {
             error.clear();
             library_.UpsertScene(scene.first, scene.second, &error);
             if (libraryError_.empty() && !error.empty()) libraryError_ = error;
@@ -1411,103 +1412,15 @@ private:
     }
 
     void DrawAurora(const D2D1_SIZE_F& size) {
-        FillRegionBackground(size, D2D1::ColorF(0.004f, 0.008f, 0.030f));
-        const std::array<D2D1_COLOR_F, 7> colors = {
-            D2D1::ColorF(0.05f, 1.00f, 0.72f, 0.24f), D2D1::ColorF(0.08f, 0.58f, 1.00f, 0.25f),
-            D2D1::ColorF(0.48f, 0.20f, 1.00f, 0.23f), D2D1::ColorF(0.92f, 0.12f, 0.82f, 0.19f),
-            D2D1::ColorF(0.02f, 0.84f, 0.94f, 0.20f), D2D1::ColorF(0.30f, 1.00f, 0.52f, 0.17f),
-            D2D1::ColorF(0.42f, 0.46f, 1.00f, 0.18f),
-        };
-        for (int i = 0; i < static_cast<int>(colors.size()); ++i) {
-            const float phase = time_ * (0.18f + i * 0.013f) + i * 0.91f;
-            const float x = size.width * (0.08f + i * 0.145f) + static_cast<float>(std::sin(phase)) * size.width * 0.16f;
-            const float y = size.height * (0.24f + 0.30f * static_cast<float>(std::sin(phase * 0.73f + i * 0.61f)));
-            for (int layer = 3; layer >= 0; --layer) {
-                D2D1_COLOR_F color = colors[static_cast<std::size_t>(i)];
-                color.a *= 0.24f + static_cast<float>(3 - layer) * 0.17f;
-                brush_->SetColor(color);
-                const float scale = 1.0f + static_cast<float>(layer) * 0.34f;
-                renderTarget_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y),
-                    size.width * 0.18f * scale, size.height * 0.31f * scale), brush_.Get());
-            }
-        }
-
-        const std::array<D2D1_COLOR_F, 4> ribbons = {
-            D2D1::ColorF(0.20f, 0.96f, 0.82f, 0.34f), D2D1::ColorF(0.20f, 0.62f, 1.00f, 0.30f),
-            D2D1::ColorF(0.66f, 0.30f, 1.00f, 0.27f), D2D1::ColorF(0.96f, 0.28f, 0.76f, 0.22f),
-        };
-        constexpr int segments = 40;
-        for (int band = 0; band < static_cast<int>(ribbons.size()); ++band) {
-            brush_->SetColor(ribbons[static_cast<std::size_t>(band)]);
-            for (int segment = 0; segment < segments; ++segment) {
-                const float x1 = size.width * static_cast<float>(segment) / segments;
-                const float x2 = size.width * static_cast<float>(segment + 1) / segments;
-                const float p1 = static_cast<float>(segment) / segments * 6.28318f;
-                const float p2 = static_cast<float>(segment + 1) / segments * 6.28318f;
-                const float base = size.height * (0.24f + band * 0.15f);
-                const float amplitude = size.height * (0.035f + band * 0.009f);
-                const float y1 = base + static_cast<float>(std::sin(p1 * (1.0f + band * 0.18f) + time_ * (0.42f + band * 0.07f))) * amplitude;
-                const float y2 = base + static_cast<float>(std::sin(p2 * (1.0f + band * 0.18f) + time_ * (0.42f + band * 0.07f))) * amplitude;
-                renderTarget_->DrawLine(D2D1::Point2F(x1, y1), D2D1::Point2F(x2, y2), brush_.Get(), 2.0f + band * 0.45f);
-            }
-        }
-
-        const float haloPulse = 0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.48f));
-        const D2D1_POINT_2F haloCenter = D2D1::Point2F(
-            size.width * (0.50f + 0.08f * static_cast<float>(std::sin(time_ * 0.19f))),
-            size.height * (0.48f + 0.06f * static_cast<float>(std::cos(time_ * 0.17f))));
-        for (int ring = 0; ring < 4; ++ring) {
-            const float ringScale = 1.0f + ring * 0.22f + haloPulse * 0.08f;
-            brush_->SetColor(D2D1::ColorF(0.28f + ring * 0.06f, 0.62f, 1.0f, 0.10f - ring * 0.014f));
-            renderTarget_->DrawEllipse(
-                D2D1::Ellipse(haloCenter, size.width * 0.12f * ringScale, size.height * 0.20f * ringScale),
-                brush_.Get(), 1.2f + ring * 0.35f);
-        }
-
-        for (int i = 0; i < 18; ++i) {
-            const float progress = static_cast<float>(std::fmod(time_ * (0.020f + (i % 4) * 0.004f) + i * 0.071f, 1.0f));
-            const float x = size.width * (1.10f - progress * 1.25f);
-            const float y = size.height * (0.08f + static_cast<float>((i * 29) % 83) / 100.0f);
-            const float length = size.width * (0.018f + (i % 3) * 0.006f);
-            brush_->SetColor(D2D1::ColorF(0.72f, 0.92f, 1.0f, 0.10f + (i % 4) * 0.035f));
-            renderTarget_->DrawLine(D2D1::Point2F(x, y), D2D1::Point2F(x + length, y - length * 0.16f), brush_.Get(), 1.0f);
-        }
-
-        for (int i = 0; i < 72; ++i) {
-            const float x = size.width * static_cast<float>((i * 37 + 11) % 101) / 100.0f;
-            const float y = size.height * static_cast<float>((i * 53 + 7) % 97) / 100.0f;
-            const float twinkle = 0.18f + 0.34f * (0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.9f + i * 1.73f)));
-            brush_->SetColor(D2D1::ColorF(0.78f, 0.92f, 1.0f, twinkle));
-            const float radius = 0.7f + static_cast<float>(i % 3) * 0.45f;
-            renderTarget_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius), brush_.Get());
-        }
+        wallpaper::scenes::PaintAurora({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
     void DrawNeon(const D2D1_SIZE_F& size) {
-        FillRegionBackground(size, D2D1::ColorF(0.004f, 0.006f, 0.020f));
-        constexpr float spacing = 58.0f;
-        const float offset = static_cast<float>(std::fmod(time_ * 30.0f, spacing));
-        brush_->SetColor(D2D1::ColorF(0.02f, 0.82f, 1.00f, 0.42f));
-        for (float x = -spacing + offset; x < size.width + spacing; x += spacing)
-            renderTarget_->DrawLine(D2D1::Point2F(x, 0), D2D1::Point2F(x, size.height), brush_.Get(), 1.4f);
-        brush_->SetColor(D2D1::ColorF(0.92f, 0.04f, 0.84f, 0.34f));
-        for (float y = -spacing + offset; y < size.height + spacing; y += spacing)
-            renderTarget_->DrawLine(D2D1::Point2F(0, y), D2D1::Point2F(size.width, y), brush_.Get(), 1.2f);
+        wallpaper::scenes::PaintNeon({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
     void DrawGrid(const D2D1_SIZE_F& size) {
-        FillRegionBackground(size, D2D1::ColorF(0.020f, 0.026f, 0.034f));
-        constexpr float spacing = 64.0f;
-        brush_->SetColor(D2D1::ColorF(0.22f, 0.32f, 0.40f, 0.62f));
-        for (float x = 0; x < size.width; x += spacing)
-            renderTarget_->DrawLine(D2D1::Point2F(x, 0), D2D1::Point2F(x, size.height), brush_.Get());
-        for (float y = 0; y < size.height; y += spacing)
-            renderTarget_->DrawLine(D2D1::Point2F(0, y), D2D1::Point2F(size.width, y), brush_.Get());
-        const float pulse = 0.5f + 0.5f * static_cast<float>(std::sin(time_ * 0.72f));
-        brush_->SetColor(D2D1::ColorF(0.15f, 0.66f, 0.82f, 0.14f + pulse * 0.10f));
-        renderTarget_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(size.width * 0.5f, size.height * 0.5f),
-                                                 size.width * (0.18f + pulse * 0.05f),
-                                                 size.height * (0.20f + pulse * 0.05f)), brush_.Get());
+        wallpaper::scenes::PaintOcean({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
     bool ApplyConfig(const Config& next, bool persist = true) {
@@ -1653,7 +1566,7 @@ private:
             status = L"应用失败：" + (lastMountError_.empty() ? L"没有挂载到 Windows 桌面层" : lastMountError_);
         } else {
             const wchar_t* scene = selectedScene == 0 ? L"Aurora Flow" : selectedScene == 1 ? L"Neon Flow" :
-                                   selectedScene == 2 ? L"Quiet Grid" : selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
+                                   selectedScene == 2 ? L"Ocean Flow" : selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
             status = std::wstring(scene) + L" · " + turingdesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
                      turingdesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
             status += L"\r\n性能：" + std::wstring(turingdesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));

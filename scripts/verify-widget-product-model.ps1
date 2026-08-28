@@ -18,9 +18,9 @@ foreach ($path in @($header, $controller, $acceptance, $configContinuity, $doc))
 $headerText = Get-Content -LiteralPath $header -Raw
 foreach ($marker in @(
     'enum class WidgetFixedPreset',
-    'MinimalClock',
-    'DateClock',
     'GlassClock',
+    'TodayTasks',
+    'WeatherGlass',
     'CreatePreset',
     'SetEnabled',
     'Remove')) {
@@ -36,9 +36,9 @@ foreach ($forbidden in @('WidgetSizePreset', 'SetSize(', 'MoveToMonitor(')) {
 
 $controllerText = Get-Content -LiteralPath $controller -Raw
 foreach ($marker in @(
-    'WidgetFixedPreset::MinimalClock',
-    'WidgetFixedPreset::DateClock',
     'WidgetFixedPreset::GlassClock',
+    'WidgetFixedPreset::TodayTasks',
+    'WidgetFixedPreset::WeatherGlass',
     'PlacementFree',
     'IntersectsWithGap',
     'AutomaticPlacement',
@@ -88,4 +88,4 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe, requires the full three-clock acceptance set, freezes showcase identity across phases, and remains free of drag/resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'
+Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe, requires the full three-widget acceptance set, freezes showcase identity across phases, and remains free of drag/resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'

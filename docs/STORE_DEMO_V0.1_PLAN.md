@@ -7,7 +7,7 @@
 
 ## 1. 产品定义
 
-**一句话：** 会说话的动态桌面 —— 一个快捷键搜索电脑，用自然语言预览并换上动态壁纸与玻璃时钟小组件。
+**一句话：** 会说话的动态桌面 —— 一个快捷键搜索电脑，用自然语言预览并换上动态壁纸与桌面小组件。
 
 **Store 定位：** Windows Store 上的 **最初 demo 包**（功能有限，但必须吸睛、稳定、可复现）。
 
@@ -35,9 +35,9 @@
 | 搜索入口 | `Alt+Space`；应用 + 文件极速搜索；Enter 进 AI | `SearchWindow` + `GozSearch` + `AppSearch` |
 | AI 对话 | 聊天面板；流式回复；工具状态卡片；Esc 收起不杀会话 | `ConversationPanel` + `PiRuntime` |
 | AI 换壁纸 | 自然语言 → `desktop_preview_wallpaper` → 用户 Apply | `GeneratedDesktopPreview` + showcase presets |
-| AI 加组件 | 自然语言 → `desktop_preview_widget` 或设置页「新建时钟」 | A2UI sandbox + `WidgetFixedPreset` |
+| AI 加组件 | 自然语言 → `desktop_preview_widget` 或设置页「新建小组件」 | A2UI sandbox + `WidgetFixedPreset` |
 | 壁纸 showcase | Aurora / Neon / Ocean（至少 3 个预设一键应用） | `desktop_preview_examples` + library Scene |
-| Widget showcase | 极简时钟 / 日期时钟 / 玻璃时钟（各 1 个固定格式） | `WIDGET_PRODUCT_MODEL_M3` |
+| Widget showcase | 玻璃时钟 / 今日待办 / 玻璃天气（各 1 个固定格式） | `WIDGET_PRODUCT_MODEL_M3` |
 | 设置（精简） | Provider/Model/API Key；壁纸库入口；小组件页；开关 | `SettingsCenter` / `DesktopAiSettingsPage` |
 | 托盘与生命周期 | 开机可选；退出不丢桌面状态；日志不进用户脸 | 现有托盘 + persistence |
 
@@ -62,7 +62,7 @@
 - **B. 首启强制引导**  
   必须配置 Key 才能用 AI，但提供「先看演示」按钮自动跑黄金路径（无模型调用）。
 
-验收：全新安装、无 Key、无开发者工具，仍能完成壁纸 Apply + 三款时钟创建。
+验收：全新安装、无 Key、无开发者工具，仍能完成壁纸 Apply + 三款小组件创建。
 
 ---
 
@@ -104,7 +104,7 @@ M12 完整消费者更新通道（Store v0.1 可用 MSIX + 手动更新说明）
 
 ```text
 installed SHA == checkout HEAD
-→ 三只固定时钟可见且不重叠
+→ 三款固定小组件可见且不重叠
 → icons > widgets > wallpaper
 → settings + search 阶段通过
 → explorer + monitor 阶段通过
@@ -157,7 +157,7 @@ installed SHA == checkout HEAD
    - [ ] Apply 后 `DesktopSnapshot` 与肉眼一致（Pi `wallpaper_state_get` 可读）
 3. **Widget 黄金路径**  
    - [ ] 对话：「加个玻璃时钟」→ preview widget → Apply → 真桌面出现 `玻璃时钟`  
-   - [ ] 设置页：「＋ 新建桌面时钟」三次 → 三只固定格式且不重叠  
+   - [ ] 设置页：「＋ 新建桌面小组件」三次 → 三种固定格式且不重叠  
 4. **搜索入口统一**  
    - [ ] 搜索栏提交 AI 请求进入同一 `conversationId`，不新开 detached 会话  
    - [ ] 本地 `/apps`、`/files` 与 AI 自然语言行为在帮助里写清差异
@@ -247,7 +247,7 @@ installed SHA == checkout HEAD
 3. TuringDeskWidgetAcceptance.exe 五阶段 == 0
 4. scripts/pi-agent-e2e.mjs（CI 同源）== 0
 5. 手动：Alt+Space → AI 预览壁纸 → Apply → wallpaper_state 变化
-6. 手动：AI 或设置创建三只时钟 → 目视分层正确
+6. 手动：AI 或设置创建三款小组件 → 目视分层正确
 ```
 
 ### 6.2 AI 话术抽检（Agent 模式，有 Key）
@@ -274,7 +274,7 @@ installed SHA == checkout HEAD
 - [ ] 图标与「妙喵」品牌一致  
 - [ ] 截图 1：搜索栏 + 玻璃 UI  
 - [ ] 截图 2：动态壁纸全屏  
-- [ ] 截图 3：三只时钟 + 图标可用  
+- [ ] 截图 3：三款小组件 + 图标可用  
 - [ ] 截图 4：AI 预览卡 + Apply  
 - [ ] 视频：黄金路径 ≤30s  
 - [ ] 描述文案无「Wallpaper Engine 完整替代」表述  

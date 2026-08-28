@@ -21,10 +21,10 @@ void MarkFirstRunCompleted();
 // Applies a built-in Scene showcase wallpaper through DesktopControlService.
 desktop::DesktopControlResult ApplyShowcaseWallpaper(std::wstring_view sceneId = L"scene-aurora");
 
-// Ensures the three fixed M3 clock presets exist (creates any missing ones).
-desktop::DesktopControlResult EnsureShowcaseClocks();
+// Ensures the three fixed M3 widget presets exist (creates any missing ones).
+desktop::DesktopControlResult EnsureShowcaseWidgets();
 
-// Golden path: showcase wallpaper + three clocks + EnsureRuntime.
+// Golden path: showcase wallpaper + three widgets + EnsureRuntime.
 desktop::DesktopControlResult RunGoldenPath();
 
 // Local no-Key demo agent. Returns true when the prompt was handled without Pi.

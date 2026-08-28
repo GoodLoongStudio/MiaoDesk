@@ -111,9 +111,9 @@ struct ShowcaseSpec {
 };
 
 constexpr std::array<ShowcaseSpec, 3> kM3Showcase = {{
-    {L"极简时钟", 0.18f, 0.10f},
-    {L"日期时钟", 0.23f, 0.16f},
     {L"玻璃时钟", 0.30f, 0.20f},
+    {L"今日待办", 0.26f, 0.24f},
+    {L"玻璃天气", 0.24f, 0.20f},
 }};
 
 bool NearlyEqual(float lhs, float rhs) noexcept {
@@ -149,8 +149,8 @@ bool FixedShowcaseReady(std::wstring* failure) {
     }
     if (enabledWeb.size() != kM3Showcase.size()) {
         if (failure) {
-            *failure = L"M3 real-Windows acceptance 必须同时启用且仅启用三个固定时钟 showcase；当前 enabledWeb="
-                + std::to_wstring(enabledWeb.size()) + L"，需要 极简时钟/日期时钟/玻璃时钟 各一个。";
+            *failure = L"M3 real-Windows acceptance 必须同时启用且仅启用三个固定 showcase 小组件；当前 enabledWeb="
+                + std::to_wstring(enabledWeb.size()) + L"，需要 玻璃时钟/今日待办/玻璃天气 各一个。";
         }
         return false;
     }
@@ -177,7 +177,7 @@ bool FixedShowcaseReady(std::wstring* failure) {
             if (SameMonitor(*enabledWeb[i], *enabledWeb[j]) && Overlaps(*enabledWeb[i], *enabledWeb[j])) {
                 if (failure) {
                     *failure = L"M3 fixed showcase 存在同屏重叠：" + enabledWeb[i]->title + L" 与 "
-                        + enabledWeb[j]->title + L"。真实可视验收要求三个固定时钟无重叠。";
+                        + enabledWeb[j]->title + L"。真实可视验收要求三个固定小组件无重叠。";
                 }
                 return false;
             }
@@ -224,7 +224,7 @@ int wmain(int argc, wchar_t** argv) {
     std::wstring report;
     std::wstring failure;
 
-    // M3 is deliberately a fixed three-clock showcase until real desktop visibility
+    // M3 is deliberately a fixed three-widget showcase until real desktop visibility
     // is proven. A single arbitrary Web Widget must never satisfy the acceptance gate.
     if (!FixedShowcaseReady(&failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";

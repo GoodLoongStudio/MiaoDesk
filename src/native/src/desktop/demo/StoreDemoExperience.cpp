@@ -76,7 +76,7 @@ wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
     return SceneItem(L"scene-aurora", L"Aurora Flow");
 }
 
-bool HasClockTitle(const std::vector<wallpaper::DesktopWidget>& widgets, const wchar_t* title) {
+bool HasWidgetTitle(const std::vector<wallpaper::DesktopWidget>& widgets, const wchar_t* title) {
     for (const auto& widget : widgets) {
         if (_wcsicmp(widget.title.c_str(), title) == 0) return true;
     }
@@ -113,7 +113,7 @@ desktop::DesktopControlResult ApplyShowcaseWallpaper(std::wstring_view sceneId) 
     return {true, L"已应用动态壁纸：" + item.title};
 }
 
-desktop::DesktopControlResult EnsureShowcaseClocks() {
+desktop::DesktopControlResult EnsureShowcaseWidgets() {
     desktop::DesktopWidgetController controller;
     std::vector<wallpaper::DesktopWidget> existing;
     const auto listed = controller.Refresh(&existing);
@@ -124,14 +124,14 @@ desktop::DesktopControlResult EnsureShowcaseClocks() {
         const wchar_t* title;
     };
     constexpr std::array<Needed, 3> needed{{
-        {desktop::WidgetFixedPreset::MinimalClock, L"极简时钟"},
-        {desktop::WidgetFixedPreset::DateClock, L"日期时钟"},
         {desktop::WidgetFixedPreset::GlassClock, L"玻璃时钟"},
+        {desktop::WidgetFixedPreset::TodayTasks, L"今日待办"},
+        {desktop::WidgetFixedPreset::WeatherGlass, L"玻璃天气"},
     }};
 
     std::wstring createdTitles;
     for (const auto& item : needed) {
-        if (HasClockTitle(existing, item.title)) continue;
+        if (HasWidgetTitle(existing, item.title)) continue;
         wallpaper::DesktopWidget created;
         const auto result = controller.CreatePreset(item.preset, {}, &created);
         if (!result.success) return result;
@@ -145,16 +145,16 @@ desktop::DesktopControlResult EnsureShowcaseClocks() {
     if (!runtime.success) {
         return {false, L"小组件已创建，但桌面运行时未就绪：" + runtime.message};
     }
-    if (createdTitles.empty()) return {true, L"三款桌面时钟已就绪。"};
-    return {true, L"已创建桌面时钟：" + createdTitles};
+    if (createdTitles.empty()) return {true, L"三款桌面小组件已就绪。"};
+    return {true, L"已创建桌面小组件：" + createdTitles};
 }
 
 desktop::DesktopControlResult RunGoldenPath() {
     auto wallpaper = ApplyShowcaseWallpaper(L"scene-aurora");
     if (!wallpaper.success) return wallpaper;
-    auto clocks = EnsureShowcaseClocks();
-    if (!clocks.success) return clocks;
-    return {true, L"演示桌面已就绪：Aurora 动态壁纸 + 三款时钟小组件。按 Alt+Space 可继续和妙喵聊天。"};
+    auto widgets = EnsureShowcaseWidgets();
+    if (!widgets.success) return widgets;
+    return {true, L"演示桌面已就绪：Aurora 动态壁纸 + 玻璃时钟、今日待办、玻璃天气。按 Alt+Space 可继续和妙喵聊天。"};
 }
 
 bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
@@ -166,8 +166,8 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         L"壁纸", L"桌面背景", L"动态壁纸", L"aurora", L"极光", L"neon", L"霓虹",
         L"ocean", L"海洋", L"海边", L"换个壁纸", L"换壁纸",
     });
-    const bool wantsClock = ContainsAny(lower, {
-        L"时钟", L"小组件", L"组件", L"widget", L"钟",
+    const bool wantsWidget = ContainsAny(lower, {
+        L"时钟", L"小组件", L"组件", L"widget", L"钟", L"待办", L"天气",
     });
     const bool wantsDemo = ContainsAny(lower, {
         L"演示", L"体验", L"demo", L"showcase", L"试试", L"好看", L"装扮桌面",
@@ -182,7 +182,7 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         return true;
     }
 
-    if (wantsDemo && !wantsWallpaper && !wantsClock) {
+    if (wantsDemo && !wantsWallpaper && !wantsWidget) {
         const auto result = RunGoldenPath();
         *reply = result.success
             ? (result.message + L"\r\n（演示模式：无需 API Key。配置模型后可解锁完整 Agent。）")
@@ -202,16 +202,16 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         return true;
     }
 
-    if (wantsClock) {
+    if (wantsWidget) {
         if (ContainsAny(lower, {L"三", L"全部", L"套装"})) {
-            const auto result = EnsureShowcaseClocks();
-            *reply = result.success ? result.message : (L"创建时钟失败：" + result.message);
+            const auto result = EnsureShowcaseWidgets();
+            *reply = result.success ? result.message : (L"创建小组件失败：" + result.message);
             return true;
         }
         desktop::DesktopWidgetController controller;
         desktop::WidgetFixedPreset preset = desktop::WidgetFixedPreset::GlassClock;
-        if (ContainsAny(lower, {L"极简"})) preset = desktop::WidgetFixedPreset::MinimalClock;
-        else if (ContainsAny(lower, {L"日期"})) preset = desktop::WidgetFixedPreset::DateClock;
+        if (ContainsAny(lower, {L"待办", L"任务", L"todo"})) preset = desktop::WidgetFixedPreset::TodayTasks;
+        else if (ContainsAny(lower, {L"天气", L"weather"})) preset = desktop::WidgetFixedPreset::WeatherGlass;
         wallpaper::DesktopWidget created;
         const auto result = controller.CreatePreset(preset, {}, &created);
         if (!result.success) {
@@ -220,18 +220,18 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         }
         desktop::DesktopControlService service;
         service.EnsureRuntime();
-        *reply = L"已在桌面添加「" + created.title + L"」。可以继续说「再加一个极简时钟」。";
+        *reply = L"已在桌面添加「" + created.title + L"」。可以继续说「加个今日待办」或「加个玻璃天气」。";
         return true;
     }
 
     if (ContainsAny(lower, {L"api", L"key", L"密钥", L"模型", L"配置"})) {
-        *reply = L"请打开设置 →「妙喵 AI」，填写 API 地址和 Key。未配置前，壁纸与时钟演示仍可用。";
+        *reply = L"请打开设置 →「妙喵 AI」，填写 API 地址和 Key。未配置前，壁纸与小组件演示仍可用。";
         return true;
     }
 
     // Soft catch-all in demo mode: steer users back to the golden path instead of a dead end.
     if (!ContainsAny(lower, {L"/"})) {
-        *reply = L"当前是演示模式（未配置 API Key），我可以直接帮你换动态壁纸、加桌面时钟。"
+        *reply = L"当前是演示模式（未配置 API Key），我可以直接帮你换动态壁纸、加桌面小组件。"
                  L"试试：「给我一个极光壁纸」「加个玻璃时钟」「一键体验」。"
                  L"完整 Agent 能力请先在设置里保存模型配置。";
         return true;
@@ -244,7 +244,7 @@ void OfferGoldenPath(HWND owner, bool quietStatus) {
         owner,
         L"立即布置演示桌面？\r\n\r\n"
         L"• 应用 Aurora 动态壁纸\r\n"
-        L"• 添加三款时钟小组件（极简 / 日期 / 玻璃）\r\n\r\n"
+        L"• 添加三款小组件（玻璃时钟 / 今日待办 / 玻璃天气）\r\n\r\n"
         L"无需 API Key。之后可用 Alt+Space 继续体验。",
         L"妙喵 · 一键体验",
         MB_OKCANCEL | MB_ICONINFORMATION | MB_DEFBUTTON1);
@@ -267,7 +267,7 @@ void MaybeShowFirstRun(HWND owner) {
         owner,
         L"欢迎使用妙喵 — 会说话的动态桌面。\r\n\r\n"
         L"快捷键 Alt+Space 打开搜索与 AI。\r\n"
-        L"现在可以一键体验动态壁纸和桌面时钟（无需 API Key）。\r\n\r\n"
+        L"现在可以一键体验动态壁纸和桌面小组件（无需 API Key）。\r\n\r\n"
         L"选择「确定」立即体验，「取消」稍后再说。",
         L"妙喵",
         MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);

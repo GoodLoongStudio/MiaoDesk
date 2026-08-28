@@ -83,7 +83,7 @@ if ($runtimeProbe -lt 0) {
 $phaseContextCheck = $mainText.LastIndexOf('PhaseContextReady(phase, &failure)', $runtimeProbe)
 $lifecycleCheck = $mainText.LastIndexOf('StructuredLifecycleReady(&failure)', $runtimeProbe)
 if ($firstShowcaseCheck -lt 0 -or $firstShowcaseCheck -gt $runtimeProbe) {
-    throw 'Fixed three-clock showcase validation must run before the runtime probe can advance the phase sequence.'
+    throw 'Fixed three-widget showcase validation must run before the runtime probe can advance the phase sequence.'
 }
 if ($firstConfigCheck -lt 0 -or $firstConfigCheck -gt $runtimeProbe) {
     throw 'Non-baseline Widget config continuity must be checked before the runtime probe can advance the phase sequence.'
@@ -171,4 +171,4 @@ foreach ($marker in @('monitorReported','monitorValid','geometryReported','geome
     if (-not $placementText.Contains($marker)) { throw "M3 placement health documentation missing marker: $marker" }
 }
 
-Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery; the full fixed three-clock showcase and v2 identity/placement configuration are checked before phase advancement; Settings/Search acceptance is pinned to the expected visible product class/process in the same session; real acceptance rejects legacy/unreported WebView2 lifecycle; stable Widget showcase configuration is service-routed and sealed by hash/length; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'
+Write-Host 'M3 Widget acceptance contract OK: runtime health includes target-monitor geometry recovery; the full fixed three-widget showcase and v2 identity/placement configuration are checked before phase advancement; Settings/Search acceptance is pinned to the expected visible product class/process in the same session; real acceptance rejects legacy/unreported WebView2 lifecycle; stable Widget showcase configuration is service-routed and sealed by hash/length; ordered recovery evidence, binary continuity, hashed screenshots and explicit human visual attestation remain required without regaining store/HWND/shell ownership.'

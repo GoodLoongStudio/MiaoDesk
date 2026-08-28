@@ -32,25 +32,37 @@ struct NormalizedRect {
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
 
-constexpr std::string_view kMinimalClockHtml = R"HTML(<!doctype html>
+constexpr std::string_view kTodayTasksHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;border-radius:24px;overflow:hidden;background:linear-gradient(125deg,rgba(9,13,24,.92),rgba(23,25,44,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 16px 40px rgba(0,0,0,.34);backdrop-filter:blur(22px)}
-.card:before{content:"";position:absolute;inset:-80%;background:conic-gradient(from 90deg,transparent,#56f6d2 10%,transparent 24%,#8a64ff 42%,transparent 57%,#46baff 72%,transparent 86%);opacity:.28;animation:spin 12s linear infinite}.inner{position:relative;z-index:1;display:flex;align-items:baseline;gap:8px;text-shadow:0 0 24px rgba(112,207,255,.24)}
-#time{font-size:clamp(34px,20vw,62px);font-weight:680;letter-spacing:-2px;line-height:1}#sec{font-size:clamp(11px,5vw,17px);font-variant-numeric:tabular-nums;opacity:.55}
-@keyframes spin{to{transform:rotate(360deg)}}
-</style></head><body><div class="card"><div class="inner"><div id="time"></div><div id="sec"></div></div></div><script>
-function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('sec').textContent=String(d.getSeconds()).padStart(2,'0');}tick();setInterval(tick,1000);
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;padding:20px 18px 16px;border-radius:26px;background:linear-gradient(145deg,rgba(12,18,36,.90),rgba(22,28,52,.82));border:1px solid rgba(255,255,255,.15);box-shadow:0 18px 44px rgba(0,0,0,.34);backdrop-filter:blur(24px)}
+.glow{position:absolute;right:-18%;top:-30%;width:55%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(86,246,210,.42),transparent 68%);filter:blur(18px)}
+.head{position:relative;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.title{font-size:11px;font-weight:750;letter-spacing:1.6px;opacity:.72;text-transform:uppercase}.badge{padding:4px 8px;border-radius:999px;background:rgba(100,255,224,.14);border:1px solid rgba(100,255,224,.28);font-size:10px;font-weight:700;color:#8dffe8}
+.list{position:relative;flex:1;display:flex;flex-direction:column;gap:8px}
+.item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+.dot{width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#56f6d2,#8a64ff);box-shadow:0 0 10px rgba(86,246,210,.45);flex-shrink:0}
+.text{font-size:clamp(12px,3.8vw,15px);line-height:1.25;opacity:.92}
+.item.done .text{opacity:.48;text-decoration:line-through}
+</style></head><body><div class="card"><div class="glow"></div><div class="head"><div class="title">MIAO · 今日待办</div><div class="badge">3 项</div></div><div class="list" id="list"></div></div><script>
+const tasks=["整理桌面","完成预览","提交版本"];const list=document.getElementById('list');tasks.forEach((t,i)=>{const el=document.createElement('div');el.className='item'+(i===2?' done':'');el.innerHTML='<div class="dot"></div><div class="text">'+t+'</div>';list.appendChild(el);});
 </script></body></html>)HTML";
 
-constexpr std::string_view kDateClockHtml = R"HTML(<!doctype html>
+constexpr std::string_view kWeatherGlassHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:34px 22px 18px;border-radius:28px;background:linear-gradient(145deg,rgba(14,18,34,.92),rgba(29,20,48,.82));border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.34);backdrop-filter:blur(24px)}
-.orb{position:absolute;border-radius:999px;filter:blur(22px);opacity:.48;animation:float 7s ease-in-out infinite alternate}.a{width:55%;aspect-ratio:1;right:-12%;top:-28%;background:#5d7cff}.b{width:42%;aspect-ratio:1;left:-14%;bottom:-26%;background:#00d8c0;animation-delay:-3s}.eyebrow{position:relative;font-size:10px;font-weight:700;letter-spacing:1.8px;opacity:.6;text-transform:uppercase}.time{position:relative;font-size:clamp(32px,14vw,58px);font-weight:700;letter-spacing:-1.8px;line-height:1;margin-top:5px}.date{position:relative;margin-top:10px;font-size:clamp(12px,5vw,17px);opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@keyframes float{to{transform:translate(10px,12px) scale(1.08)}}
-</style></head><body><div class="card"><div class="orb a"></div><div class="orb b"></div><div class="eyebrow">MIAO · TODAY</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
-function tick(){const d=new Date();document.getElementById('time').textContent=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent=d.toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'});}tick();setInterval(tick,1000);
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
+.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:22px 20px 18px;border-radius:28px;background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.22);box-shadow:0 20px 48px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.16);backdrop-filter:blur(28px)}
+.sky{position:absolute;inset:-30%;background:radial-gradient(circle at 30% 35%,rgba(70,186,255,.55),transparent 32%),radial-gradient(circle at 72% 28%,rgba(137,196,255,.42),transparent 30%),radial-gradient(circle at 50% 80%,rgba(86,246,210,.35),transparent 28%);filter:blur(14px);animation:drift 9s ease-in-out infinite alternate}
+.loc{position:relative;font-size:10px;font-weight:700;letter-spacing:1.4px;opacity:.68;text-transform:uppercase}
+.main{position:relative;display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px}
+.temp{font-size:clamp(38px,16vw,64px);font-weight:680;letter-spacing:-2px;line-height:.9;text-shadow:0 4px 24px rgba(0,0,0,.18)}
+.cond{text-align:right;font-size:clamp(13px,4vw,17px);opacity:.86;line-height:1.35}
+.forecast{position:relative;display:flex;gap:8px;margin-top:10px}
+.day{flex:1;padding:8px 6px;border-radius:14px;background:rgba(5,10,22,.22);border:1px solid rgba(255,255,255,.10);text-align:center;font-size:10px;opacity:.82}
+.day b{display:block;font-size:13px;margin-top:4px;font-weight:650}
+@keyframes drift{to{transform:translate(4%,3%) scale(1.06)}}
+</style></head><body><div class="card"><div class="sky"></div><div class="loc">MIAO · 本地天气</div><div class="main"><div class="temp" id="temp">22°</div><div class="cond" id="cond">晴朗<br>体感 24°</div></div><div class="forecast" id="forecast"></div></div><script>
+const days=[{d:'今天',t:'22°'},{d:'明天',t:'20°'},{d:'后天',t:'18°'}];const fc=document.getElementById('forecast');days.forEach(x=>{const el=document.createElement('div');el.className='day';el.innerHTML=x.d+'<b>'+x.t+'</b>';fc.appendChild(el);});
 </script></body></html>)HTML";
 
 constexpr std::string_view kGlassClockHtml = R"HTML(<!doctype html>
@@ -67,13 +79,13 @@ function tick(){const d=new Date();document.getElementById('time').textContent=d
 
 FixedPresetSpec PresetSpec(WidgetFixedPreset preset) noexcept {
     switch (preset) {
-    case WidgetFixedPreset::MinimalClock:
-        return {L"极简时钟", 0.18f, 0.10f, kMinimalClockHtml};
+    case WidgetFixedPreset::TodayTasks:
+        return {L"今日待办", 0.26f, 0.24f, kTodayTasksHtml};
+    case WidgetFixedPreset::WeatherGlass:
+        return {L"玻璃天气", 0.24f, 0.20f, kWeatherGlassHtml};
     case WidgetFixedPreset::GlassClock:
-        return {L"玻璃时钟", 0.30f, 0.20f, kGlassClockHtml};
-    case WidgetFixedPreset::DateClock:
     default:
-        return {L"日期时钟", 0.23f, 0.16f, kDateClockHtml};
+        return {L"玻璃时钟", 0.30f, 0.20f, kGlassClockHtml};
     }
 }
 
@@ -255,20 +267,20 @@ DesktopControlResult DesktopWidgetController::CreateClock(
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    std::size_t minimalCount = 0;
-    std::size_t dateCount = 0;
     std::size_t glassCount = 0;
+    std::size_t tasksCount = 0;
+    std::size_t weatherCount = 0;
     for (const auto& widget : existing) {
-        if (_wcsicmp(widget.title.c_str(), L"极简时钟") == 0) ++minimalCount;
-        else if (_wcsicmp(widget.title.c_str(), L"日期时钟") == 0) ++dateCount;
-        else if (_wcsicmp(widget.title.c_str(), L"玻璃时钟") == 0) ++glassCount;
+        if (_wcsicmp(widget.title.c_str(), L"玻璃时钟") == 0) ++glassCount;
+        else if (_wcsicmp(widget.title.c_str(), L"今日待办") == 0) ++tasksCount;
+        else if (_wcsicmp(widget.title.c_str(), L"玻璃天气") == 0) ++weatherCount;
     }
 
-    // The flagship glass preset wins ties, so the very first built-in Widget
-    // showcases the richer desktop visual instead of the plain clock.
+    // The flagship glass clock wins ties so the first built-in Widget showcases
+    // the richer desktop visual instead of tasks or weather.
     WidgetFixedPreset preset = WidgetFixedPreset::GlassClock;
-    if (dateCount < glassCount && dateCount <= minimalCount) preset = WidgetFixedPreset::DateClock;
-    else if (minimalCount < glassCount && minimalCount < dateCount) preset = WidgetFixedPreset::MinimalClock;
+    if (tasksCount < glassCount && tasksCount <= weatherCount) preset = WidgetFixedPreset::TodayTasks;
+    else if (weatherCount < glassCount && weatherCount < tasksCount) preset = WidgetFixedPreset::WeatherGlass;
 
     return CreatePreset(preset, std::move(monitorId), created);
 }

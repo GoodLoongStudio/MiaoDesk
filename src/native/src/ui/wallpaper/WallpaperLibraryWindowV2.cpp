@@ -728,7 +728,7 @@ struct WallpaperLibraryWindow::Impl {
         }
         selectedWidgetId = created.id;
         RefreshWidgets();
-        SetStatus(L"已创建桌面时钟。运行状态会在卡片和状态栏中显示。");
+        SetStatus(L"已创建桌面小组件。运行状态会在卡片和状态栏中显示。");
     }
 
     void ToggleWidget() {
@@ -1193,7 +1193,7 @@ struct WallpaperLibraryWindow::Impl {
         favoriteButton = button(L"收藏", kFavoriteId);
         removeButton = button(L"移出库", kRemoveId);
 
-        widgetCreateButton = button(L"＋ 新建桌面时钟", kWidgetCreateId, 0, false);
+        widgetCreateButton = button(L"＋ 新建桌面小组件", kWidgetCreateId, 0, false);
         widgetDemoButton = button(L"一键体验套装", kWidgetDemoId, 0, false);
         widgetToggleButton = button(L"启用 / 停用", kWidgetToggleId, 0, false);
         widgetRemoveButton = button(L"删除", kWidgetRemoveId, 0, false);

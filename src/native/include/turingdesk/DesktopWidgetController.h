@@ -12,9 +12,9 @@ namespace turingdesk::desktop {
 // dragging and monitor reassignment stay out of the beginner product surface
 // until the visible-runtime experience is proven on real Windows.
 enum class WidgetFixedPreset {
-    MinimalClock,
-    DateClock,
     GlassClock,
+    TodayTasks,
+    WeatherGlass,
 };
 
 // UI-facing adapter for widget workflows. Win32 windows depend on this
@@ -29,8 +29,8 @@ public:
     DesktopControlResult RuntimeHealth(WidgetRuntimeHealth* health) const;
 
     // Temporary M3 showcase entry used by the production Widget page. Repeated
-    // creation rotates through the three fixed presets so a user can compare
-    // real desktop rendering before any editor is reintroduced.
+    // creation rotates through the three fixed presets (clock / tasks / weather)
+    // so a user can compare real desktop rendering before any editor is reintroduced.
     DesktopControlResult CreateClock(
         std::wstring monitorId,
         wallpaper::DesktopWidget* created = nullptr) const;

@@ -27,13 +27,13 @@ $cmake = Get-Content $paths.CMake -Raw
 
 foreach ($marker in @(
     'IsStoreDemoScopeEnabled', 'HideAdvancedWorkbench', 'NeedsFirstRun', 'MarkFirstRunCompleted',
-    'ApplyShowcaseWallpaper', 'EnsureShowcaseClocks', 'RunGoldenPath', 'TryHandleDemoPrompt',
+    'ApplyShowcaseWallpaper', 'EnsureShowcaseWidgets', 'RunGoldenPath', 'TryHandleDemoPrompt',
     'MaybeShowFirstRun', 'OfferGoldenPath')) {
     if (-not $header.Contains($marker)) { throw "StoreDemoExperience.h missing API: $marker" }
 }
 
 foreach ($marker in @(
-    'store-demo.ini', 'scene-aurora', '极简时钟', '日期时钟', '玻璃时钟',
+    'store-demo.ini', 'scene-aurora', '玻璃时钟', '今日待办', '玻璃天气',
     '一键体验', '演示模式', 'WidgetFixedPreset::GlassClock')) {
     if (-not $demo.Contains($marker)) { throw "StoreDemoExperience.cpp missing marker: $marker" }
 }

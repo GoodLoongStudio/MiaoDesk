@@ -294,11 +294,10 @@ struct PageState {
         GetClientRect(parent, &client);
         const int sidebar = S(208);
         const int top = S(58);
-        const int footer = S(58);
         const int parentWidth = std::max(1, static_cast<int>(client.right - client.left));
         const int parentHeight = std::max(1, static_cast<int>(client.bottom - client.top));
         SetWindowPos(panel, nullptr, sidebar, top, std::max(1, parentWidth - sidebar),
-                     std::max(1, parentHeight - top - footer),
+                     std::max(1, parentHeight - top),
                      SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
 
         RECT area{};
@@ -306,16 +305,15 @@ struct PageState {
         const int width = std::max(1, static_cast<int>(area.right - area.left));
         const int height = std::max(1, static_cast<int>(area.bottom - area.top));
 
-        // Nothing snaps between compact/normal modes. Every horizontal dimension
-        // is derived continuously from the current client width.
-        const int margin = std::clamp(width / 32, S(16), S(28));
-        const int contentW = std::max(S(220), width - margin * 2);
-        const int labelW = std::clamp(contentW * 16 / 100, S(76), S(112));
-        const int fieldGap = S(10);
+        // Continuous layout: every dimension scales with the current client size.
+        const int margin = std::max(S(12), MulDiv(width, 28, 1000));
+        const int contentW = std::max(S(200), width - margin * 2);
+        const int labelW = std::max(S(68), MulDiv(contentW, 165, 1000));
+        const int fieldGap = std::max(S(8), MulDiv(width, 12, 1000));
         const int fieldX = margin + labelW + fieldGap;
         const int fieldW = std::max(S(120), contentW - labelW - fieldGap);
-        const int rowH = S(32);
-        const int rowGap = S(8);
+        const int rowH = std::max(S(30), MulDiv(height, 34, 700));
+        const int rowGap = std::max(S(6), MulDiv(height, 10, 700));
 
         const int introH = MeasureTextHeight(intro, contentW, bodyFont, S(24));
         const int providerH = MeasureTextHeight(provider, fieldW, smallFont, S(22));
@@ -358,7 +356,7 @@ struct PageState {
         place(title, margin, titleY, contentW, titleH);
         place(intro, margin, introY, contentW, introH);
         place(profileLabel, margin, profileY + S(5), labelW, S(22));
-        place(profileCombo, fieldX, profileY, fieldW, S(190));
+        place(profileCombo, fieldX, profileY, fieldW, rowH);
         place(provider, fieldX, providerY, fieldW, providerH);
         place(apiLabel, margin, apiY + S(5), labelW, S(22));
         place(apiUrl, fieldX, apiY, fieldW, rowH);
@@ -366,11 +364,12 @@ struct PageState {
         place(apiKey, fieldX, keyY, fieldW, rowH);
         place(modelLabel, margin, modelY + S(5), labelW, S(22));
         place(model, fieldX, modelY, fieldW, rowH);
-        place(save, fieldX, saveY, std::min(fieldW, S(190)), S(38));
+        place(save, fieldX, saveY, std::min(fieldW, std::max(S(140), MulDiv(fieldW, 50, 100))), S(38));
         place(status, margin, statusY, contentW, statusH);
         place(harnessTitle, margin, harnessTitleY, contentW, S(28));
         place(harnessText, margin, harnessTextY, contentW, harnessTextH);
-        place(harnessOpen, margin, harnessOpenY, std::min(contentW, S(230)), S(38));
+        place(harnessOpen, margin, harnessOpenY,
+              std::min(contentW, std::max(S(160), MulDiv(contentW, 38, 100))), S(38));
 
         RedrawWindow(panel, nullptr, nullptr,
                      RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
@@ -524,7 +523,7 @@ bool CreatePage(PageState& state) {
     state.profileLabel = label(L"配置");
     state.profileCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-                                         0, 0, 10, 10, state.panel, ControlId(kProfileId), wc.hInstance, nullptr);
+                                         0, 0, 10, 200, state.panel, ControlId(kProfileId), wc.hInstance, nullptr);
     state.provider = label(L"");
     state.apiLabel = label(L"API 地址");
     state.apiUrl = edit(kApiUrlId);

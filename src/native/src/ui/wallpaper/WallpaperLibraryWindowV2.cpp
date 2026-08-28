@@ -1181,18 +1181,24 @@ struct WallpaperLibraryWindow::Impl {
             GetClientRect(hwnd, &client);
             const int sidebarW = self->S(208);
             const int topH = self->S(58);
-            const int footerH = self->S(58);
+            const bool showFooter = self->page != Page::AI;
+            const int footerH = showFooter ? self->S(58) : 0;
             RECT whole = client;
             FillSolid(dc, whole, RGB(255, 255, 255));
             RECT sidebar{0, 0, sidebarW, client.bottom};
             FillSolid(dc, sidebar, RGB(247, 248, 250));
-            RECT footer{sidebarW, std::max<LONG>(0, client.bottom - footerH), client.right, client.bottom};
-            FillSolid(dc, footer, RGB(249, 249, 251));
+            if (showFooter) {
+                RECT footer{sidebarW, std::max<LONG>(0, client.bottom - footerH), client.right, client.bottom};
+                FillSolid(dc, footer, RGB(249, 249, 251));
+            }
             HPEN pen = CreatePen(PS_SOLID, 1, RGB(226, 228, 233));
             HGDIOBJ oldPen = SelectObject(dc, pen);
             MoveToEx(dc, sidebarW - 1, 0, nullptr); LineTo(dc, sidebarW - 1, client.bottom);
             MoveToEx(dc, sidebarW, topH - 1, nullptr); LineTo(dc, client.right, topH - 1);
-            MoveToEx(dc, sidebarW, footer.top, nullptr); LineTo(dc, client.right, footer.top);
+            if (showFooter) {
+                const int footerTop = client.bottom - footerH;
+                MoveToEx(dc, sidebarW, footerTop, nullptr); LineTo(dc, client.right, footerTop);
+            }
             SelectObject(dc, oldPen);
             DeleteObject(pen);
             EndPaint(hwnd, &ps);

@@ -53,6 +53,10 @@ jobs:
         shell: pwsh
         run: .\scripts\verify-l3-runtime-contract.ps1
 
+      - name: Verify Store Demo v0.1 scope
+        shell: pwsh
+        run: .\scripts\verify-store-demo-scope.ps1
+
       - name: Verify fixed-format Widget product contract
         shell: powershell
         run: .\scripts\verify-widget-product-model.ps1

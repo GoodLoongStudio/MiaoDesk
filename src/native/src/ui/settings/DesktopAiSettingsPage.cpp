@@ -1,5 +1,6 @@
 #include "turingdesk/DesktopAiSettingsPage.h"
 #include "turingdesk/L3Agent.h"
+#include "turingdesk/StoreDemoExperience.h"
 
 #include <commctrl.h>
 #include <shellapi.h>
@@ -28,6 +29,7 @@ constexpr int kApiKeyId = 7302;
 constexpr int kModelId = 7303;
 constexpr int kSaveApiId = 7304;
 constexpr int kOpenHarnessId = 7305;
+constexpr int kDemoGoldenId = 7306;
 constexpr wchar_t kStoredKeyMask[] = L"********";
 
 HMENU ControlId(int id) {
@@ -67,6 +69,9 @@ struct PageState {
     HWND model{};
     HWND save{};
     HWND status{};
+    HWND demoTitle{};
+    HWND demoText{};
+    HWND demoOpen{};
     HWND harnessTitle{};
     HWND harnessText{};
     HWND harnessOpen{};
@@ -108,12 +113,14 @@ struct PageState {
         bodyFont = MakeFont(13, FW_NORMAL);
         smallFont = MakeFont(11, FW_NORMAL);
         for (HWND control : {title, intro, profileLabel, profileCombo, provider, apiLabel, apiUrl, keyLabel,
-                             apiKey, modelLabel, model, save, status, harnessTitle, harnessText, harnessOpen}) {
+                             apiKey, modelLabel, model, save, status, demoTitle, demoText, demoOpen,
+                             harnessTitle, harnessText, harnessOpen}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         if (title) SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
         if (provider) SendMessageW(provider, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
         if (status) SendMessageW(status, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
+        if (demoTitle) SendMessageW(demoTitle, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont), TRUE);
         if (harnessTitle) SendMessageW(harnessTitle, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont), TRUE);
     }
 
@@ -245,20 +252,29 @@ struct PageState {
     }
 
     void OpenHarness() {
+        if (demo::HideAdvancedWorkbench()) {
+            SetStatus(L"Store Demo 版本不提供高级工作台入口。请使用妙喵 AI 与一键体验。");
+            return;
+        }
         const fs::path directory = ModuleDirectory();
         const fs::path executable = directory / L"TuringDeskHarness.exe";
         std::error_code ec;
         if (directory.empty() || !fs::is_regular_file(executable, ec)) {
-            SetStatus(L"当前安装/预览包缺少秒喵工作台组件，请更新到最新版本。");
+            SetStatus(L"当前安装/预览包缺少高级工作台组件，请更新到最新版本。");
             return;
         }
         const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
             panel, L"open", executable.c_str(), L"--ui", directory.c_str(), SW_SHOWNORMAL));
         if (result <= 32) {
-            SetStatus(L"秒喵工作台启动失败。请检查 RuntimeBundle 或工作台日志。");
+            SetStatus(L"高级工作台启动失败。请检查 RuntimeBundle 或工作台日志。");
             return;
         }
-        SetStatus(L"正在打开秒喵工作台…");
+        SetStatus(L"正在打开高级工作台…");
+    }
+
+    void RunDemoGoldenPath() {
+        demo::OfferGoldenPath(panel ? panel : parent, false);
+        SetStatus(L"若已确认，演示壁纸与时钟会应用到当前桌面。");
     }
 
     int MeasureTextHeight(HWND control, int width, HFONT font, int minimum) const {
@@ -320,7 +336,10 @@ struct PageState {
         const int introH = MeasureTextHeight(intro, contentW, bodyFont, S(24));
         const int providerH = MeasureTextHeight(provider, fieldW, smallFont, S(22));
         const int statusH = MeasureTextHeight(status, contentW, smallFont, S(24));
-        const int harnessTextH = MeasureTextHeight(harnessText, contentW, bodyFont, S(24));
+        const int demoTextH = MeasureTextHeight(demoText, contentW, bodyFont, S(24));
+        const bool showHarness = harnessTitle && harnessText && harnessOpen &&
+                                 !demo::HideAdvancedWorkbench();
+        const int harnessTextH = showHarness ? MeasureTextHeight(harnessText, contentW, bodyFont, S(24)) : 0;
 
         ShowWindow(title, SW_HIDE);
         int y = S(16);
@@ -333,9 +352,13 @@ struct PageState {
         const int modelY = y; y += rowH + S(12);
         const int saveY = y; y += S(38) + S(10);
         const int statusY = y; y += statusH + S(14);
-        const int harnessTitleY = y; y += S(28) + S(5);
-        const int harnessTextY = y; y += harnessTextH + S(12);
-        const int harnessOpenY = y; y += S(38);
+        const int demoTitleY = y; y += S(28) + S(5);
+        const int demoTextY = y; y += demoTextH + S(12);
+        const int demoOpenY = y; y += S(38) + S(14);
+        const int harnessTitleY = y;
+        const int harnessTextY = showHarness ? (y + S(28) + S(5)) : y;
+        const int harnessOpenY = showHarness ? (harnessTextY + harnessTextH + S(12)) : y;
+        if (showHarness) y = harnessOpenY + S(38);
         contentHeight = y + margin;
 
         const int maxScroll = std::max(0, contentHeight - height);
@@ -368,9 +391,21 @@ struct PageState {
         place(model, fieldX, modelY, fieldW, rowH);
         place(save, fieldX, saveY, std::min(fieldW, S(190)), S(38));
         place(status, margin, statusY, contentW, statusH);
-        place(harnessTitle, margin, harnessTitleY, contentW, S(28));
-        place(harnessText, margin, harnessTextY, contentW, harnessTextH);
-        place(harnessOpen, margin, harnessOpenY, std::min(contentW, S(210)), S(38));
+        place(demoTitle, margin, demoTitleY, contentW, S(28));
+        place(demoText, margin, demoTextY, contentW, demoTextH);
+        place(demoOpen, margin, demoOpenY, std::min(contentW, S(210)), S(38));
+        if (showHarness) {
+            ShowWindow(harnessTitle, SW_SHOW);
+            ShowWindow(harnessText, SW_SHOW);
+            ShowWindow(harnessOpen, SW_SHOW);
+            place(harnessTitle, margin, harnessTitleY, contentW, S(28));
+            place(harnessText, margin, harnessTextY, contentW, harnessTextH);
+            place(harnessOpen, margin, harnessOpenY, std::min(contentW, S(210)), S(38));
+        } else {
+            if (harnessTitle) ShowWindow(harnessTitle, SW_HIDE);
+            if (harnessText) ShowWindow(harnessText, SW_HIDE);
+            if (harnessOpen) ShowWindow(harnessOpen, SW_HIDE);
+        }
 
         RedrawWindow(panel, nullptr, nullptr,
                      RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
@@ -430,6 +465,10 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         }
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == kSaveApiId) {
             state->SaveApi();
+            return 0;
+        }
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == kDemoGoldenId) {
+            state->RunDemoGoldenPath();
             return 0;
         }
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == kOpenHarnessId) {
@@ -518,7 +557,8 @@ bool CreatePage(PageState& state) {
     };
 
     state.title = label(L"妙喵 AI");
-    state.intro = label(L"模型 API 同时供 Pi Agent 与 Direct Model 使用；API Key 安全保存在 Windows Credential Manager。",
+    state.intro = label(L"配置模型后，妙喵可用完整 Agent 能力。未配置时仍可一键体验动态壁纸与桌面时钟。"
+                        L"API Key 保存在 Windows Credential Manager。",
                         SS_LEFT | SS_NOPREFIX);
     state.profileLabel = label(L"配置");
     state.profileCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
@@ -532,16 +572,27 @@ bool CreatePage(PageState& state) {
     state.modelLabel = label(L"Model");
     state.model = edit(kModelId);
     state.save = button(L"检测并保存配置", kSaveApiId);
-    state.status = label(L"保存后 Pi Agent 与 Direct Model 会立即共用当前配置。",
+    state.status = label(L"保存后对话与桌面 Agent 共用当前配置。",
                          SS_LEFT | SS_NOPREFIX);
-    state.harnessTitle = label(L"秒喵工作台");
-    state.harnessText = label(L"高级 Agent 工作台，底层基于随应用固定部署的 DeepSeek Harness。",
+    state.demoTitle = label(L"一键体验");
+    state.demoText = label(L"无需 API Key：应用 Aurora 动态壁纸，并添加三款时钟小组件。",
+                           SS_LEFT | SS_NOPREFIX);
+    state.demoOpen = button(L"立即体验动态桌面", kDemoGoldenId);
+    state.harnessTitle = label(L"高级工作台");
+    state.harnessText = label(L"面向开发者的高级 Agent 工作台（Store Demo 默认隐藏）。",
                               SS_LEFT | SS_NOPREFIX);
-    state.harnessOpen = button(L"打开秒喵工作台", kOpenHarnessId);
+    state.harnessOpen = button(L"打开高级工作台", kOpenHarnessId);
 
     if (!state.title || !state.intro || !state.profileLabel || !state.profileCombo || !state.provider ||
         !state.apiLabel || !state.apiUrl || !state.keyLabel || !state.apiKey || !state.modelLabel || !state.model ||
-        !state.save || !state.status || !state.harnessTitle || !state.harnessText || !state.harnessOpen) return false;
+        !state.save || !state.status || !state.demoTitle || !state.demoText || !state.demoOpen ||
+        !state.harnessTitle || !state.harnessText || !state.harnessOpen) return false;
+
+    if (demo::HideAdvancedWorkbench()) {
+        ShowWindow(state.harnessTitle, SW_HIDE);
+        ShowWindow(state.harnessText, SW_HIDE);
+        ShowWindow(state.harnessOpen, SW_HIDE);
+    }
 
     SendMessageW(state.apiUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://api.deepseek.com/v1"));
     SendMessageW(state.model, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 deepseek-chat"));

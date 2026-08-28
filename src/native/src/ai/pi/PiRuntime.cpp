@@ -1,4 +1,5 @@
 #include "turingdesk/PiRuntime.h"
+#include "turingdesk/PiNativeToolsExtension.h"
 #include "turingdesk/RuntimeLogPaths.h"
 
 #include <wincred.h>
@@ -379,8 +380,10 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     if (setup.apiKey.empty()) { setup.message = L"未配置 API Key"; return setup; }
 
     const auto credentialHash = std::hash<std::wstring>{}(setup.apiKey);
+    // agent-tools-v1 forces existing Pi processes to restart after the fixed Agent tool allowlist landed.
     setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
-                      std::to_wstring(static_cast<unsigned long long>(credentialHash));
+                      std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
+                      L"|agent-tools-v1";
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
     return setup;
@@ -474,13 +477,37 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     if (!childErrWrite || childErrWrite == INVALID_HANDLE_VALUE) childErrWrite = childOutWrite;
 
     const std::wstring systemPrompt =
-        L"You are Turing Intelligent Desktop AI. Use tools for real file and desktop actions. "
+        L"You are TuringDesk's persistent desktop Agent, not a chat-only assistant. "
+        L"For any actionable request involving files, folders, shell, settings, wallpaper, widgets, PPT, images, or desktop state, you MUST call tools first instead of only describing steps. "
+        L"Pure conversational replies are allowed only for greetings, clarification, or explaining prior tool results. "
         L"The tool named bash is backed by Windows PowerShell 5.1 in TuringDesk; use PowerShell syntax, not POSIX shell syntax. "
-        L"Never claim an action succeeded unless the tool result confirms it.";
+        L"Never claim an action succeeded unless the tool result confirms it. "
+        L"Desktop wallpaper/widget changes are preview-first: use desktop_preview_wallpaper or desktop_preview_widget, and never claim the desktop was applied until the user clicks Apply.";
+
+    // Pi treats --tools as a hard allowlist across built-in AND extension tools.
+    // Omitting TuringDesk extension tools here silently strips Agent desktop capabilities.
+    constexpr wchar_t kAgentToolAllowlist[] =
+        L"read,bash,edit,write,grep,find,ls,"
+        L"settings_open,ppt_create,file_create,folder_list,file_open,image_generate,"
+        L"wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,"
+        L"desktop_preview_widget,desktop_preview_wallpaper,desktop_preview_examples";
+
+    std::wstring extensionPath;
+    if (!EnsurePiNativeToolsExtension(&error, &extensionPath) || extensionPath.empty()) {
+        if (error.empty()) error = L"Pi Agent 扩展未就绪";
+        CloseHandle(inputWrite);
+        CloseHandle(outputRead);
+        CloseHandle(childInRead);
+        CloseHandle(childOutWrite);
+        if (childErrWrite && childErrWrite != INVALID_HANDLE_VALUE && childErrWrite != childOutWrite) CloseHandle(childErrWrite);
+        return false;
+    }
 
     std::wstring command = QuoteArg(setup.nodePath) + L" " + QuoteArg(setup.piPath) +
         L" --mode rpc --no-session --approve --provider turingdesk --model " + QuoteArg(setup.model) +
-        L" --tools read,bash,edit,write,grep,find,ls --append-system-prompt " + QuoteArg(systemPrompt);
+        L" --no-extensions --extension " + QuoteArg(extensionPath) +
+        L" --tools " + kAgentToolAllowlist +
+        L" --append-system-prompt " + QuoteArg(systemPrompt);
     std::vector<wchar_t> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back(L'\0');
 
@@ -526,8 +553,9 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         sessionSignature_ = setup.signature;
     }
 
-    AppendRuntimeLog(L"Pi process started; node=" + setup.nodePath + L"; pi=" + setup.piPath +
-                     L"; api=" + setup.apiType + L"; model=" + setup.model + L"; shell=PowerShell");
+    AppendRuntimeLog(L"Pi process started; mode=agent; node=" + setup.nodePath + L"; pi=" + setup.piPath +
+                     L"; api=" + setup.apiType + L"; model=" + setup.model +
+                     L"; shell=PowerShell; extension=" + extensionPath);
     return true;
 }
 

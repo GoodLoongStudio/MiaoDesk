@@ -1,0 +1,279 @@
+#include "turingdesk/StoreDemoExperience.h"
+
+#include "turingdesk/DesktopWidgetController.h"
+#include "turingdesk/WallpaperLibrary.h"
+
+#include <shlobj.h>
+
+#include <algorithm>
+#include <array>
+#include <cwctype>
+#include <filesystem>
+#include <iterator>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace turingdesk::demo {
+namespace {
+
+constexpr wchar_t kIniRelative[] = L"TuringDesk\\store-demo.ini";
+constexpr wchar_t kSection[] = L"StoreDemo";
+constexpr wchar_t kFirstRunKey[] = L"FirstRunCompleted";
+
+std::wstring Lower(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return value;
+}
+
+fs::path ConfigPath() {
+    wchar_t localAppData[32768]{};
+    const DWORD count = GetEnvironmentVariableW(
+        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
+    if (count == 0 || count >= std::size(localAppData)) {
+        return fs::temp_directory_path() / L"TuringDesk" / L"store-demo.ini";
+    }
+    return fs::path(std::wstring(localAppData, count)) / kIniRelative;
+}
+
+bool ReadFlag(const wchar_t* key) {
+    wchar_t buffer[16]{};
+    GetPrivateProfileStringW(kSection, key, L"0", buffer, static_cast<DWORD>(std::size(buffer)),
+                             ConfigPath().c_str());
+    return buffer[0] == L'1';
+}
+
+void WriteFlag(const wchar_t* key, bool value) {
+    std::error_code ec;
+    fs::create_directories(ConfigPath().parent_path(), ec);
+    WritePrivateProfileStringW(kSection, key, value ? L"1" : L"0", ConfigPath().c_str());
+}
+
+bool ContainsAny(const std::wstring& haystack, std::initializer_list<const wchar_t*> needles) {
+    for (const wchar_t* needle : needles) {
+        if (haystack.find(needle) != std::wstring::npos) return true;
+    }
+    return false;
+}
+
+wallpaper::WallpaperLibraryItem SceneItem(std::wstring id, std::wstring title) {
+    wallpaper::WallpaperLibraryItem item;
+    item.id = std::move(id);
+    item.kind = wallpaper::LibraryWallpaperKind::Scene;
+    item.title = std::move(title);
+    return item;
+}
+
+wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
+    if (sceneId == L"scene-neon" || sceneId == L"neon" || sceneId == L"neon_flow")
+        return SceneItem(L"scene-neon", L"Neon Flow");
+    if (sceneId == L"scene-grid" || sceneId == L"grid")
+        return SceneItem(L"scene-grid", L"Grid Pulse");
+    // Default showcase: Aurora (ocean-like cool tones on Snapdragon demos).
+    return SceneItem(L"scene-aurora", L"Aurora Flow");
+}
+
+bool HasClockTitle(const std::vector<wallpaper::DesktopWidget>& widgets, const wchar_t* title) {
+    for (const auto& widget : widgets) {
+        if (_wcsicmp(widget.title.c_str(), title) == 0) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool IsStoreDemoScopeEnabled() noexcept {
+    return true;
+}
+
+bool HideAdvancedWorkbench() noexcept {
+    return IsStoreDemoScopeEnabled();
+}
+
+bool NeedsFirstRun() {
+    return IsStoreDemoScopeEnabled() && !ReadFlag(kFirstRunKey);
+}
+
+void MarkFirstRunCompleted() {
+    WriteFlag(kFirstRunKey, true);
+}
+
+desktop::DesktopControlResult ApplyShowcaseWallpaper(std::wstring_view sceneId) {
+    desktop::DesktopControlService service;
+    const auto item = ResolveScene(sceneId);
+    auto applied = service.ApplyLibraryItem(item);
+    if (!applied.success) return applied;
+    const auto runtime = service.EnsureRuntime();
+    if (!runtime.success) {
+        return {false, L"壁纸已选择，但桌面运行时未就绪：" + runtime.message};
+    }
+    return {true, L"已应用动态壁纸：" + item.title};
+}
+
+desktop::DesktopControlResult EnsureShowcaseClocks() {
+    desktop::DesktopWidgetController controller;
+    std::vector<wallpaper::DesktopWidget> existing;
+    const auto listed = controller.Refresh(&existing);
+    if (!listed.success) return listed;
+
+    struct Needed {
+        desktop::WidgetFixedPreset preset;
+        const wchar_t* title;
+    };
+    constexpr std::array<Needed, 3> needed{{
+        {desktop::WidgetFixedPreset::MinimalClock, L"极简时钟"},
+        {desktop::WidgetFixedPreset::DateClock, L"日期时钟"},
+        {desktop::WidgetFixedPreset::GlassClock, L"玻璃时钟"},
+    }};
+
+    std::wstring createdTitles;
+    for (const auto& item : needed) {
+        if (HasClockTitle(existing, item.title)) continue;
+        wallpaper::DesktopWidget created;
+        const auto result = controller.CreatePreset(item.preset, {}, &created);
+        if (!result.success) return result;
+        existing.push_back(created);
+        if (!createdTitles.empty()) createdTitles += L"、";
+        createdTitles += item.title;
+    }
+
+    desktop::DesktopControlService service;
+    const auto runtime = service.EnsureRuntime();
+    if (!runtime.success) {
+        return {false, L"小组件已创建，但桌面运行时未就绪：" + runtime.message};
+    }
+    if (createdTitles.empty()) return {true, L"三款桌面时钟已就绪。"};
+    return {true, L"已创建桌面时钟：" + createdTitles};
+}
+
+desktop::DesktopControlResult RunGoldenPath() {
+    auto wallpaper = ApplyShowcaseWallpaper(L"scene-aurora");
+    if (!wallpaper.success) return wallpaper;
+    auto clocks = EnsureShowcaseClocks();
+    if (!clocks.success) return clocks;
+    return {true, L"演示桌面已就绪：Aurora 动态壁纸 + 三款时钟小组件。按 Alt+Space 可继续和妙喵聊天。"};
+}
+
+bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
+    if (!reply || !IsStoreDemoScopeEnabled()) return false;
+    const auto lower = Lower(std::wstring(prompt));
+    if (lower.empty()) return false;
+
+    const bool wantsWallpaper = ContainsAny(lower, {
+        L"壁纸", L"桌面背景", L"动态壁纸", L"aurora", L"极光", L"neon", L"霓虹",
+        L"ocean", L"海洋", L"海边", L"换个壁纸", L"换壁纸",
+    });
+    const bool wantsClock = ContainsAny(lower, {
+        L"时钟", L"小组件", L"组件", L"widget", L"钟",
+    });
+    const bool wantsDemo = ContainsAny(lower, {
+        L"演示", L"体验", L"demo", L"showcase", L"试试", L"好看", L"装扮桌面",
+    });
+    const bool greeting = ContainsAny(lower, {
+        L"你好", L"在吗", L"hello", L"hi", L"嗨",
+    }) && lower.size() <= 12;
+
+    if (greeting) {
+        *reply = L"在。我是妙喵。还没配置 API Key 时也能先体验桌面："
+                 L"可以说「给我一个动态壁纸」或「加个玻璃时钟」，也可以说「一键体验」。";
+        return true;
+    }
+
+    if (wantsDemo && !wantsWallpaper && !wantsClock) {
+        const auto result = RunGoldenPath();
+        *reply = result.success
+            ? (result.message + L"\r\n（演示模式：无需 API Key。配置模型后可解锁完整 Agent。）")
+            : (L"演示未能完成：" + result.message);
+        return true;
+    }
+
+    if (wantsWallpaper) {
+        std::wstring scene = L"scene-aurora";
+        if (ContainsAny(lower, {L"neon", L"霓虹"})) scene = L"scene-neon";
+        else if (ContainsAny(lower, {L"grid", L"网格"})) scene = L"scene-grid";
+        else if (ContainsAny(lower, {L"ocean", L"海洋", L"海边", L"蓝"})) scene = L"scene-aurora";
+        const auto result = ApplyShowcaseWallpaper(scene);
+        *reply = result.success
+            ? (result.message + L"\r\n已直接应用到桌面（演示模式）。配置 API Key 后，AI 会先出预览再让你点 Apply。")
+            : (L"换壁纸失败：" + result.message);
+        return true;
+    }
+
+    if (wantsClock) {
+        if (ContainsAny(lower, {L"三", L"全部", L"套装"})) {
+            const auto result = EnsureShowcaseClocks();
+            *reply = result.success ? result.message : (L"创建时钟失败：" + result.message);
+            return true;
+        }
+        desktop::DesktopWidgetController controller;
+        desktop::WidgetFixedPreset preset = desktop::WidgetFixedPreset::GlassClock;
+        if (ContainsAny(lower, {L"极简"})) preset = desktop::WidgetFixedPreset::MinimalClock;
+        else if (ContainsAny(lower, {L"日期"})) preset = desktop::WidgetFixedPreset::DateClock;
+        wallpaper::DesktopWidget created;
+        const auto result = controller.CreatePreset(preset, {}, &created);
+        if (!result.success) {
+            *reply = L"创建小组件失败：" + result.message;
+            return true;
+        }
+        desktop::DesktopControlService service;
+        service.EnsureRuntime();
+        *reply = L"已在桌面添加「" + created.title + L"」。可以继续说「再加一个极简时钟」。";
+        return true;
+    }
+
+    if (ContainsAny(lower, {L"api", L"key", L"密钥", L"模型", L"配置"})) {
+        *reply = L"请打开设置 →「妙喵 AI」，填写 API 地址和 Key。未配置前，壁纸与时钟演示仍可用。";
+        return true;
+    }
+
+    // Soft catch-all in demo mode: steer users back to the golden path instead of a dead end.
+    if (!ContainsAny(lower, {L"/"})) {
+        *reply = L"当前是演示模式（未配置 API Key），我可以直接帮你换动态壁纸、加桌面时钟。"
+                 L"试试：「给我一个极光壁纸」「加个玻璃时钟」「一键体验」。"
+                 L"完整 Agent 能力请先在设置里保存模型配置。";
+        return true;
+    }
+    return false;
+}
+
+void OfferGoldenPath(HWND owner, bool quietStatus) {
+    const int choice = MessageBoxW(
+        owner,
+        L"立即布置演示桌面？\r\n\r\n"
+        L"• 应用 Aurora 动态壁纸\r\n"
+        L"• 添加三款时钟小组件（极简 / 日期 / 玻璃）\r\n\r\n"
+        L"无需 API Key。之后可用 Alt+Space 继续体验。",
+        L"妙喵 · 一键体验",
+        MB_OKCANCEL | MB_ICONINFORMATION | MB_DEFBUTTON1);
+    if (choice != IDOK) return;
+
+    HCURSOR previous = SetCursor(LoadCursorW(nullptr, IDC_WAIT));
+    const auto result = RunGoldenPath();
+    SetCursor(previous);
+    if (quietStatus && result.success) return;
+    MessageBoxW(owner,
+                result.success ? result.message.c_str() : (L"未能完成演示：\r\n" + result.message).c_str(),
+                L"妙喵",
+                result.success ? MB_OK | MB_ICONINFORMATION : MB_OK | MB_ICONWARNING);
+}
+
+void MaybeShowFirstRun(HWND owner) {
+    if (!NeedsFirstRun()) return;
+
+    const int choice = MessageBoxW(
+        owner,
+        L"欢迎使用妙喵 — 会说话的动态桌面。\r\n\r\n"
+        L"快捷键 Alt+Space 打开搜索与 AI。\r\n"
+        L"现在可以一键体验动态壁纸和桌面时钟（无需 API Key）。\r\n\r\n"
+        L"选择「确定」立即体验，「取消」稍后再说。",
+        L"妙喵",
+        MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+
+    MarkFirstRunCompleted();
+    if (choice == IDOK) OfferGoldenPath(owner, false);
+}
+
+} // namespace turingdesk::demo

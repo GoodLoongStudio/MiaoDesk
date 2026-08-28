@@ -1,6 +1,7 @@
 #include "turingdesk/SearchWindow.h"
 #include "turingdesk/L3CliWindow.h"
 #include "turingdesk/SettingsCenterWindow.h"
+#include "turingdesk/StoreDemoExperience.h"
 #include <shellapi.h>
 #include <windowsx.h>
 #include <algorithm>
@@ -17,6 +18,7 @@ namespace {
 constexpr int kHotkeyId = 1;
 constexpr int kSearchEditId = 100;
 constexpr int kCaretTimerId = 2;
+constexpr int kFirstRunTimerId = 3;
 constexpr int kWindowWidth = 720;
 constexpr int kCollapsedHeight = 56;
 constexpr int kExpandedHeight = 408;
@@ -273,6 +275,7 @@ bool SearchWindow::Create() {
     ChangeWindowMessageFilterEx(hwnd_, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
     if (!RegisterHotKey(hwnd_, kHotkeyId, MOD_ALT | MOD_NOREPEAT, VK_SPACE)) return false;
     SetTimer(hwnd_, kCaretTimerId, 530, nullptr);
+    SetTimer(hwnd_, kFirstRunTimerId, 700, nullptr);
 
     taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
     AddTray();
@@ -649,6 +652,11 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_TIMER:
+        if (wParam == kFirstRunTimerId) {
+            KillTimer(hwnd_, kFirstRunTimerId);
+            demo::MaybeShowFirstRun(hwnd_);
+            return 0;
+        }
         if (wParam == kCaretTimerId && editFocused_) {
             caretVisible_ = !caretVisible_;
             Draw();

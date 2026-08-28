@@ -123,8 +123,13 @@ foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHos
 foreach ($marker in @(
     '@earendil-works', '--mode rpc', 'PI_CODING_AGENT_DIR', 'openai-completions', 'openai-responses',
     'anthropic-messages', 'google-generative-ai', 'RuntimeLogPath(L"pi-runtime.log")',
-    '\"type\":\"prompt\"', '\"type\":\"abort\"', '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'turingdesk-local')) {
+    '\"type\":\"prompt\"', '\"type\":\"abort\"', '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'turingdesk-local',
+    '--no-extensions', '--extension', 'agent-tools-v1', 'desktop_preview_examples',
+    'persistent desktop Agent', 'MUST call tools first')) {
     if (-not $pi.Contains($marker)) { throw "Pi runtime contract marker missing: $marker" }
+}
+if ($pi.Contains('--tools read,bash,edit,write,grep,find,ls --append-system-prompt')) {
+    throw 'Pi Runtime still uses the built-in-only --tools allowlist that strips extension Agent tools.'
 }
 if ($pi.Contains('return SearchExecutable(L"node.exe")')) { throw 'Pi Runtime must not fall back to a system Node installation.' }
 

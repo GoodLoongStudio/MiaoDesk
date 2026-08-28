@@ -291,7 +291,7 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
 
 } // namespace
 
-bool EnsurePiNativeToolsExtension(std::wstring* error) {
+bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPath) {
     const auto module = ModulePath();
     if (module.empty()) {
         if (error) *error = L"Unable to resolve TuringDesk native tool host.";
@@ -315,28 +315,30 @@ bool EnsurePiNativeToolsExtension(std::wstring* error) {
     expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
     expected.append(kExtensionSourcePart1);
     expected.append(kExtensionSourcePart2);
-    if (ReadFile(target) == expected) return true;
-
-    auto temporary = target;
-    temporary += L".tmp";
-    {
-        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-        if (!stream) {
-            if (error) *error = L"Unable to write TuringDesk Pi extension.";
-            return false;
+    if (ReadFile(target) != expected) {
+        auto temporary = target;
+        temporary += L".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream) {
+                if (error) *error = L"Unable to write TuringDesk Pi extension.";
+                return false;
+            }
+            stream.write(expected.data(), static_cast<std::streamsize>(expected.size()));
+            if (!stream) {
+                if (error) *error = L"Unable to finish writing TuringDesk Pi extension.";
+                return false;
+            }
         }
-        stream.write(expected.data(), static_cast<std::streamsize>(expected.size()));
-        if (!stream) {
-            if (error) *error = L"Unable to finish writing TuringDesk Pi extension.";
+
+        if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            fs::remove(temporary, ec);
+            if (error) *error = L"Unable to install TuringDesk Pi extension.";
             return false;
         }
     }
 
-    if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        fs::remove(temporary, ec);
-        if (error) *error = L"Unable to install TuringDesk Pi extension.";
-        return false;
-    }
+    if (extensionPath) *extensionPath = target.wstring();
     return true;
 }
 

@@ -350,8 +350,8 @@ std::wstring RuntimeName(ActiveRuntime runtime) {
 
 std::wstring RuntimeStatusText(ConversationState& state) {
     const auto status = state.pi->Status(*state.agent);
-    std::wstring text = L"主路由：Pi Agent → 当前配置 API";
-    text += L"\r\n失败回退：Direct Model Runtime → 当前配置 API";
+    std::wstring text = L"主路由：Pi Agent（固定 Agent 工具模式）→ 当前配置 API";
+    text += L"\r\n失败回退：Direct Model Runtime（无工具）→ 当前配置 API";
     text += L"\r\nProvider：" + (state.agent->Config().providerId.empty() ? std::wstring(L"未识别") : state.agent->Config().providerId);
     text += L" · Model：" + (state.agent->Config().model.empty() ? std::wstring(L"未配置") : state.agent->Config().model);
     text += L"\r\nPi：" + status.message;
@@ -497,8 +497,8 @@ void StartDirectFallback(ConversationState& state, const std::wstring& piError) 
     state.activeRuntime = ActiveRuntime::DirectModel;
     state.streaming.clear();
     state.activity.visible = true;
-    state.activity.title = L"正在恢复连接";
-    state.activity.detail = L"Pi Agent 暂时不可用，正在切换备用模型通道";
+    state.activity.title = L"Agent 暂不可用";
+    state.activity.detail = L"已切换到无工具备用通道，本轮无法执行桌面/文件操作";
     InvalidateConversation(state, true);
 
     const std::wstring reason = piError.empty() ? L"Pi Agent 未返回有效结果" : piError;
@@ -560,7 +560,13 @@ void ClearConversation(ConversationState& state) {
     state.activity = {};
     state.pendingConfirmation = false;
     state.pi->ResetSession();
-    AddEntry(state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+    if (!state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
+        AddEntry(state, EntryKind::Assistant,
+                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「加个玻璃时钟」。"
+                 L"配置 API Key 后解锁完整 Agent。");
+    } else {
+        AddEntry(state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+    }
     AppendRouteLog(L"route: Pi session reset by user");
 }
 
@@ -595,7 +601,14 @@ void SendPrompt(ConversationState& state) {
     }
 
     if (!state.agent->HasApiKey()) {
-        AppendCompleted(state, typedPrompt, L"妙喵 AI 尚未配置。请从右下角系统托盘进入设置，填写 API 地址和 Key。");
+        std::wstring demoReply;
+        if (demo::TryHandleDemoPrompt(actualPrompt, &demoReply)) {
+            AppendCompleted(state, typedPrompt, demoReply);
+            return;
+        }
+        AppendCompleted(state, typedPrompt,
+                        L"妙喵 AI 尚未配置。演示模式可说「一键体验」「换壁纸」「加时钟」；"
+                        L"完整能力请从系统托盘进入设置 → 妙喵 AI。");
         return;
     }
 
@@ -1186,7 +1199,13 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入消息…"));
 
     gConversationState = state;
-    AddEntry(*state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+    if (!state->agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
+        AddEntry(*state, EntryKind::Assistant,
+                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「加个玻璃时钟」。"
+                 L"配置 API Key 后解锁完整 Agent。");
+    } else {
+        AddEntry(*state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+    }
     ApplyWindowGlass(*state);
     PlacePanel(*state);
     SetTimer(window, kActivityTimer, 180, nullptr);

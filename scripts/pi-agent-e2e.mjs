@@ -106,7 +106,7 @@ server = http.createServer((req, res) => {
 
     const names = new Set((body.tools || []).map(tool => tool?.function?.name));
     const requiredTools = [
-      "write", "bash", "settings_open", "ppt_create", "file_create", "folder_list", "file_open",
+      "write", "bash", "settings_open", "ppt_create", "file_create", "folder_list", "file_open", "image_generate",
       "wallpaper_validate_package", "wallpaper_state_get", "desktop_widget_list",
       "desktop_preview_widget", "desktop_preview_wallpaper", "desktop_preview_examples",
     ];
@@ -193,7 +193,7 @@ server.listen(0, "127.0.0.1", () => {
     "--provider", "turingdesk", "--model", "ci-model",
     "--no-extensions", "--extension", extensionTarget,
     "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
-    "--tools", "read,bash,edit,write,grep,find,ls,settings_open,ppt_create,file_create,folder_list,file_open,wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,desktop_preview_widget,desktop_preview_wallpaper,desktop_preview_examples",
+    "--tools", "read,bash,edit,write,grep,find,ls,settings_open,ppt_create,file_create,folder_list,file_open,image_generate,wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,desktop_preview_widget,desktop_preview_wallpaper,desktop_preview_examples",
   ], {
     cwd: work,
     windowsHide: true,

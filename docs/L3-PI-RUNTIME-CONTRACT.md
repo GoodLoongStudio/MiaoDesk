@@ -153,6 +153,25 @@ Conversation Panel
 
 ## 6. 工具边界
 
+### 6.0 固定 Agent 模式（生产强制）
+
+普通 Conversation Panel 必须始终以 **Agent 模式**启动 Pi：
+
+```text
+pi-coding-agent
+  --mode rpc
+  --no-extensions
+  --extension <TuringDesk native tools>
+  --tools <built-in + TuringDesk desktop/preview tools>
+```
+
+约束：
+
+1. Pi 的 `--tools` 是跨内置工具和扩展工具的硬白名单。只列出 `read,bash,...` 会把 TuringDesk 桌面扩展工具静默过滤掉。
+2. 生产启动参数必须与 `scripts/pi-agent-e2e.mjs` 保持同一工具边界；不得再依赖“扩展自动发现但未进入 allowlist”。
+3. System prompt 必须明确要求：可执行请求先调用工具，而不是只口述步骤。
+4. Direct Model 只在 Pi 真实失败时回退，且 UI 必须标明本轮无工具。
+
 ### 6.1 通用能力归 Pi
 
 ```text
@@ -174,31 +193,46 @@ Pi Packages
 
 TuringDesk 只暴露依赖产品内部状态的能力。
 
-当前第一阶段白名单：
+当前第一阶段白名单（生产 `--tools` 必须包含；预览优先，禁止直接 mutation）：
 
 ```text
 settings_open
-wallpaper_create_web_package
+ppt_create
+file_create
+folder_list
+file_open
+image_generate
 wallpaper_validate_package
 wallpaper_state_get
+desktop_widget_list
+desktop_preview_widget
+desktop_preview_wallpaper
+desktop_preview_examples
+```
+
+以及 Pi 内置：`read / bash / edit / write / grep / find / ls`。
+
+禁止通过 Pi 直接暴露：
+
+```text
+wallpaper_create_web_package
 wallpaper_apply_web_package
 desktop_widget_create_web
 desktop_widget_update
 desktop_widget_remove
-desktop_widget_list
 ```
+
+这些 mutation 只允许宿主 Apply 按钮经 Desktop Control API 提交。
 
 含义：
 
 - `settings_open`：打开图灵智能桌面设置；
-- `wallpaper_create_web_package`：生成并校验 Web `.tdwall`；
+- `ppt_create` / `file_create` / `folder_list` / `file_open`：受控用户目录文件能力；
+- `image_generate`：独立图片生成（需对应 Provider 能力）；
 - `wallpaper_validate_package`：校验 `.tdwall`；
 - `wallpaper_state_get`：读取真实当前桌面状态；
-- `wallpaper_apply_web_package`：实际应用已校验 Web `.tdwall`；
-- `desktop_widget_create_web`：创建持久桌面 Widget；
-- `desktop_widget_update`：移动、缩放、启停、改样式/HTML；
-- `desktop_widget_remove`：删除 Widget；
-- `desktop_widget_list`：读取 Widget ID、目标显示器和布局。
+- `desktop_widget_list`：读取 Widget ID、目标显示器和布局；
+- `desktop_preview_*`：沙盒预览；只有用户点击 Apply 才能真正提交桌面变更。
 
 这些是 **Desktop Control API 的第一阶段桥接工具**，不是最终 API 形状。
 

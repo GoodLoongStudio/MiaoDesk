@@ -2,6 +2,25 @@
 
 TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部搜索入口 + Pi Agent AI + DeepSeek Harness 高级工作台。
 
+## Store Demo v0.1（妙喵）
+
+面向 Windows Store 的首发 demo 包范围见：
+
+- `docs/STORE_DEMO_V0.1_PLAN.md`
+- `docs/STORE_DEMO_V0.1_ACCEPTANCE.md`
+
+已实现的产品能力：
+
+- 首启一键体验（动态壁纸 + 三款时钟）
+- 无 API Key 演示模式（对话里可说「一键体验 / 换壁纸 / 加时钟」）
+- 设置页「立即体验动态桌面」；小组件页「一键体验套装」
+- 高级工作台入口默认隐藏
+- Pi Agent 固定工具白名单（有 Key 时）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-store-demo-scope.ps1
+```
+
 ## 当前正式平台
 
 - Windows 11 ARM64

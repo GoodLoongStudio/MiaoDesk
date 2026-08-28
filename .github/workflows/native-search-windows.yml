@@ -30,6 +30,7 @@ on:
       - scripts/test-arm64-updater-junction-cleanup.ps1
       - scripts/verify-installed-widget-acceptance-contract.ps1
       - scripts/verify-l3-runtime-contract.ps1
+      - scripts/verify-store-demo-scope.ps1
       - scripts/verify-desktop-domain-contract.ps1
       - scripts/verify-desktop-shell-ownership.ps1
       - scripts/verify-native-source-layout.ps1
@@ -145,7 +146,11 @@ jobs:
             'src/native/include/turingdesk/NativeTools.h',
             'scripts/pi-agent-e2e.mjs',
             'scripts/verify-l3-runtime-contract.ps1',
+            'scripts/verify-store-demo-scope.ps1',
             'docs/L3-PI-RUNTIME-CONTRACT.md',
+            'docs/STORE_DEMO_V0.1_PLAN.md',
+            'docs/STORE_DEMO_V0.1_ACCEPTANCE.md',
+            'src/native/**/*StoreDemo*',
             'runtime/arm64/Pi/*',
             'runtime/arm64/Runtime/Node/*')
           $widget = Any @(
@@ -269,6 +274,10 @@ jobs:
             Invoke-Group 'Pi-first runtime contract' {
               & pwsh -NoProfile -File '.\scripts\verify-l3-runtime-contract.ps1'
               if ($LASTEXITCODE -ne 0) { throw "Pi-first runtime contract failed: $LASTEXITCODE" }
+            }
+            Invoke-Group 'Store Demo v0.1 scope' {
+              & pwsh -NoProfile -File '.\scripts\verify-store-demo-scope.ps1'
+              if ($LASTEXITCODE -ne 0) { throw "Store Demo scope failed: $LASTEXITCODE" }
             }
           }
 

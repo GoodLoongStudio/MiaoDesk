@@ -51,15 +51,10 @@ foreach ($marker in @(
 }
 
 foreach ($marker in @(
-    'StoreDemoExperience.h',
-    'HideAdvancedWorkbench',
-    (From-B64 '56uL5Y2z5L2T6aqM5Yqo5oCB5qGM6Z2i'),
-    'kDemoGoldenId',
-    'RunDemoGoldenPath')) {
-    if (-not $ai.Contains($marker)) { throw "DesktopAiSettingsPage missing Store Demo marker: $marker" }
-}
-if ($ai.Contains((From-B64 '5omT5byA56eS5Za15bel5L2c5Y+w')) -and -not $ai.Contains('HideAdvancedWorkbench')) {
-    throw 'Harness entry must remain gated behind HideAdvancedWorkbench for Store Demo.'
+    'kOpenHarnessId',
+    'OpenHarness',
+    'DeepSeek Harness')) {
+    if (-not $ai.Contains($marker)) { throw "DesktopAiSettingsPage missing Harness entry marker: $marker" }
 }
 
 foreach ($marker in @(
@@ -85,4 +80,4 @@ if (-not $cmake.Contains('src/desktop/widgets/DesktopWidgetController.cpp')) {
     throw 'App target must include DesktopWidgetController for Store Demo clocks.'
 }
 
-Write-Host 'Store Demo scope OK: first-run, no-Key golden path, hidden advanced workbench, and showcase entry points remain wired.'
+Write-Host 'Store Demo scope OK: first-run, no-Key golden path, wallpaper/widget showcase entry points, and AI settings Harness entry remain wired.'

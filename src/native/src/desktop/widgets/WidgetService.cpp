@@ -149,23 +149,6 @@ bool WebLifecycleReady(const WidgetSurfaceHealth& surface, HWND /*window*/) {
     return surface.environmentReady && surface.controllerReady && surface.navigationReady;
 }
 
-bool PropertyReady(HWND window, const wchar_t* property) {
-    return window && IsWindow(window) && GetPropW(window, property) != nullptr;
-}
-
-bool HasStructuredLifecycleTelemetry(HWND window) {
-    if (!window || !IsWindow(window)) return false;
-    const auto role = reinterpret_cast<INT_PTR>(GetPropW(window, wallpaper::kWebSurfaceRoleProperty));
-    return role == 2;
-}
-
-const wallpaper::MonitorInfo* PrimaryMonitor(const wallpaper::MonitorTopology& topology) {
-    for (const auto& monitor : topology.monitors) {
-        if (monitor.primary) return &monitor;
-    }
-    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
-}
-
 RECT ExpectedWidgetDesktopRect(const wallpaper::MonitorInfo& monitor, const wallpaper::DesktopWidget& widget) {
     const LONG monitorWidth = std::max<LONG>(1, monitor.desktopRect.right - monitor.desktopRect.left);
     const LONG monitorHeight = std::max<LONG>(1, monitor.desktopRect.bottom - monitor.desktopRect.top);

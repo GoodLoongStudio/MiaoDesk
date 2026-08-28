@@ -1,5 +1,7 @@
 #include "turingdesk/DesktopControlService.h"
 
+#include "turingdesk/WallpaperRuntimeControl.h"
+
 #include <windows.h>
 #include <shellapi.h>
 
@@ -253,6 +255,9 @@ DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabl
 
     const auto runtime = EnsureRuntime();
     if (!runtime.success) return runtime;
+
+    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(enabled))
+        return {true, persisted.message};
 
     const wchar_t* args = enabled ? L"--resume" : L"--stop";
     if (!LaunchRuntime(executable, args))

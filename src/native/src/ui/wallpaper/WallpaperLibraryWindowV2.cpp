@@ -48,7 +48,7 @@ constexpr int kWidgetDemoId = 6144;
 constexpr int kWebUrlId = 6150;
 constexpr int kWebConfirmId = 6151;
 constexpr int kWebCancelId = 6152;
-constexpr int kWallpaperEnabledId = 6160;
+constexpr int kWallpaperToggleId = 6160;
 
 constexpr UINT kMenuImportFile = 6201;
 constexpr UINT kMenuImportWeb = 6202;
@@ -171,11 +171,12 @@ struct WallpaperLibraryWindow::Impl {
     HWND webUrl{};
     HWND webConfirm{};
     HWND webCancel{};
-    HWND wallpaperEnabledCheck{};
+    HWND wallpaperToggleButton{};
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
     NavigateCallback navigateCallback;
+    WallpaperEnabledCallback wallpaperEnabledCallback;
     std::vector<WallpaperLibraryTarget> targets;
     std::vector<std::wstring> targetIds;
     std::vector<WallpaperLibraryItem> visibleWallpapers;
@@ -242,8 +243,9 @@ struct WallpaperLibraryWindow::Impl {
         set(addButton, bodyFont);
         for (HWND button : nav) set(button, bodyFont);
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
+                             wallpaperToggleButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
-                             widgetDemoButton, wallpaperEnabledCheck,
+                             widgetDemoButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
     }
 
@@ -312,21 +314,31 @@ struct WallpaperLibraryWindow::Impl {
         if (status) SetWindowTextW(status, text.c_str());
     }
 
-    void RefreshWallpaperEnabled() {
-        if (!wallpaperEnabledCheck) return;
+    void RefreshWallpaperToggle() {
+        if (!wallpaperToggleButton) return;
         desktop::DesktopState state;
-        const bool checked = desktopControl.GetState(&state).success && state.enabled;
-        SendMessageW(wallpaperEnabledCheck, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+        const bool enabled = desktopControl.GetState(&state).success && state.enabled;
+        SetWindowTextW(wallpaperToggleButton, enabled ? L"停止壁纸" : L"恢复壁纸");
     }
 
-    void ToggleWallpaperEnabled() {
-        if (!wallpaperEnabledCheck) return;
-        const bool enable = SendMessageW(wallpaperEnabledCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        const auto result = desktopControl.SetWallpaperEnabled(enable);
-        SetStatus(result.message.empty()
-                      ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
-                      : result.message);
-        if (!result.success) RefreshWallpaperEnabled();
+    void ToggleWallpaper() {
+        desktop::DesktopState state;
+        const bool currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
+        const bool enable = !currentlyEnabled;
+        if (wallpaperEnabledCallback) {
+            wallpaperEnabledCallback(enable);
+            SetStatus(enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。");
+        } else {
+            const auto result = desktopControl.SetWallpaperEnabled(enable);
+            SetStatus(result.message.empty()
+                          ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
+                          : result.message);
+            if (!result.success) {
+                RefreshWallpaperToggle();
+                return;
+            }
+        }
+        RefreshWallpaperToggle();
     }
 
     void RefreshWallpapers() {
@@ -616,6 +628,7 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(applyButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(favoriteButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(removeButton, installed ? SW_SHOW : SW_HIDE);
+        ShowWindow(wallpaperToggleButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetCreateButton, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetDemoButton, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetToggleButton, widgets ? SW_SHOW : SW_HIDE);
@@ -623,6 +636,7 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(widgetRefreshButton, widgets ? SW_SHOW : SW_HIDE);
 
         if (installed) {
+            RefreshWallpaperToggle();
             const auto selected = SelectedWallpaper();
             const bool usable = selected && !SourceMissing(*selected);
             EnableWindow(applyButton, usable ? TRUE : FALSE);
@@ -900,7 +914,6 @@ struct WallpaperLibraryWindow::Impl {
             place(button, S(12), navY, sidebarW - S(24), S(38));
             navY += S(42);
         }
-        place(wallpaperEnabledCheck, S(12), navY + S(10), sidebarW - S(24), S(34));
 
         const int contentLeft = sidebarW;
         const int contentWidth = std::max(1, width - contentLeft);
@@ -942,9 +955,10 @@ struct WallpaperLibraryWindow::Impl {
             const int gap = S(6);
             const int actionW = std::max(S(82), MulDiv(contentWidth, 15, 100));
             const int smallW = std::max(S(68), MulDiv(contentWidth, 11, 100));
+            const int toggleW = std::max(S(82), MulDiv(contentWidth, 12, 100));
             const int targetW = std::max(S(118), MulDiv(contentWidth, 23, 100));
             const int right = width - margin;
-            const int actionTotal = targetW + actionW + smallW * 2 + gap * 3;
+            const int actionTotal = targetW + toggleW + actionW + smallW * 2 + gap * 4;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
             const int available = actionsLeft - S(10) - statusLeft;
@@ -952,6 +966,7 @@ struct WallpaperLibraryWindow::Impl {
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
+            place(wallpaperToggleButton, x, footerTop + S(11), toggleW, S(36)); x += toggleW + gap;
             place(favoriteButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
             place(removeButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
             place(applyButton, x, footerTop + S(11), actionW, S(36));
@@ -1177,7 +1192,7 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kWidgetToggleId && notification == BN_CLICKED) self->ToggleWidget();
             else if (id == kWidgetRemoveId && notification == BN_CLICKED) self->RemoveWidget();
             else if (id == kWidgetRefreshId && notification == BN_CLICKED) self->RefreshWidgets();
-            else if (id == kWallpaperEnabledId && notification == BN_CLICKED) self->ToggleWallpaperEnabled();
+            else if (id == kWallpaperToggleId && notification == BN_CLICKED) self->ToggleWallpaper();
             else if (id == kWebConfirmId && notification == BN_CLICKED) self->ImportWeb();
             else if (id == kWebCancelId && notification == BN_CLICKED) self->HideWebBar();
             else if (id == kMenuImportFile) self->ImportFile();
@@ -1332,15 +1347,11 @@ struct WallpaperLibraryWindow::Impl {
         SendMessageW(webUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://example.com/wallpaper"));
         webConfirm = button(L"添加 Web", kWebConfirmId, 0, false);
         webCancel = button(L"取消", kWebCancelId, 0, false);
-        wallpaperEnabledCheck = font(CreateWindowExW(0, L"BUTTON", L"启用壁纸",
-                                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                                                     0, 0, 10, 10, window, ControlId(kWallpaperEnabledId), instance,
-                                                     nullptr),
-                                     bodyFont);
+        wallpaperToggleButton = button(L"停止壁纸", kWallpaperToggleId, 0, false);
 
         ApplyFonts();
         RebuildTargets();
-        RefreshWallpaperEnabled();
+        RefreshWallpaperToggle();
         RefreshWallpapers();
         RefreshWidgets();
         SetPage(Page::Installed);
@@ -1355,15 +1366,17 @@ WallpaperLibraryWindow::~WallpaperLibraryWindow() = default;
 bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
                                   const std::vector<WallpaperLibraryTarget>& targets,
                                   ApplyCallback applyCallback,
-                                  NavigateCallback navigateCallback) {
+                                  NavigateCallback navigateCallback,
+                                  WallpaperEnabledCallback wallpaperEnabledCallback) {
     impl_->instance = instance;
     impl_->library = library;
     impl_->targets = targets;
     impl_->applyCallback = std::move(applyCallback);
     impl_->navigateCallback = std::move(navigateCallback);
+    impl_->wallpaperEnabledCallback = std::move(wallpaperEnabledCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
     impl_->RebuildTargets();
-    impl_->RefreshWallpaperEnabled();
+    impl_->RefreshWallpaperToggle();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
     impl_->SetPage(impl_->page);
@@ -1384,7 +1397,7 @@ void WallpaperLibraryWindow::Close() {
 
 void WallpaperLibraryWindow::Refresh() {
     impl_->RebuildTargets();
-    impl_->RefreshWallpaperEnabled();
+    impl_->RefreshWallpaperToggle();
     impl_->RefreshWallpapers();
     impl_->RefreshWidgets();
 }

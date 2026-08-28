@@ -15,6 +15,7 @@
 #include "turingdesk/WallpaperIndependentLayout.h"
 #include "turingdesk/WallpaperLibrary.h"
 #include "turingdesk/WallpaperLibraryWindow.h"
+#include "turingdesk/WallpaperRuntimeControl.h"
 #include "turingdesk/WallpaperMonitorAssignments.h"
 #include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WallpaperPerformancePolicy.h"
@@ -39,14 +40,14 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kControlClass[] = L"TuringDesk.Native.WallpaperControl";
+constexpr wchar_t kControlClass[] = kWallpaperControlWindowClass;
 constexpr wchar_t kHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
 constexpr wchar_t kSelfTestClass[] = L"TuringDesk.Native.WallpaperSelfTest";
 constexpr wchar_t kMutexName[] = L"Local\\TuringDesk.Native.Wallpaper.Singleton";
 constexpr UINT kShowSettings = WM_APP + 81;
 constexpr UINT kTrayMessage = WM_APP + 82;
-constexpr UINT kSetEnabled = WM_APP + 83;
+constexpr UINT kSetEnabled = kWallpaperSetEnabledMessage;
 constexpr UINT_PTR kRenderTimer = 1;
 constexpr UINT kTrayId = 1;
 constexpr int kSceneComboId = 4101;
@@ -481,9 +482,11 @@ public:
         } else {
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
+            StopRuntime();
             ShowWindow(host_, SW_HIDE);
         }
         RefreshSettings();
+        libraryWindow_.Refresh();
     }
 
 private:
@@ -558,7 +561,8 @@ private:
                                 L"AI 模型配置位于 TuringDesk 设置中心。桌面 AI 创作入口会在此页继续接入。",
                                 L"TuringDesk 设置", MB_OK | MB_ICONINFORMATION);
                 }
-            });
+            },
+            [this](const bool enabled) { SetEnabled(enabled); });
     }
 
     void ShowAutomation() {

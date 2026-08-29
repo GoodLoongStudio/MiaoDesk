@@ -6,6 +6,8 @@ on:
     paths:
       - CMakeLists.txt
       - src/native/**
+      - assets/wallpapers/**
+      - .gitattributes
       - runtime/arm64/**
       - docs/L3-PI-RUNTIME-CONTRACT.md
       - docs/MIAODESK-NATIVE-TECH-BASELINE.md
@@ -73,6 +75,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 2
+          lfs: true
 
       - name: Analyze change scope
         id: scope
@@ -160,6 +163,8 @@ jobs:
           $wallpaper = Any @(
             'src/native/*Wallpaper*',
             'src/native/**/*Wallpaper*',
+            'assets/wallpapers/*',
+            '.gitattributes',
             'docs/WALLPAPER_ENGINE_PARITY.md',
             'docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md')
           $shell = Any @(
@@ -193,8 +198,10 @@ jobs:
             'src/native/**/*Harness*',
             'runtime/arm64/*Harness*')
 
-          # Build whenever native code or a packaged ARM64 runtime component changed.
-          $build = $native -or $runtimeBundle
+          # Every successful run is a deployable current-main validation target.
+          # The updater resolves by exact main SHA, so a successful run must never
+          # be artifact-less even when only docs/scripts/resource metadata changed.
+          $build = $true
           # Pi E2E is expensive; run only when the agent/tool/runtime path changed.
           $piE2E = $pi -or (Any @('runtime/arm64/Pi/*', 'runtime/arm64/Runtime/Node/*'))
           # Service integrations are intentionally isolated from ordinary UI work.
@@ -360,6 +367,22 @@ jobs:
             $source = Join-Path 'build/src/native/Release' $name
             if (Test-Path $source) { Copy-Item $source (Join-Path 'build/package' $name) -Force }
           }
+
+          $wallpaperRoot = 'assets/wallpapers'
+          $requiredWallpaperAssets = @(
+            'MiaoCloud.mdwall/assets/background.jpg',
+            'MiaoCloud.mdwall/assets/cloud.png',
+            'MiaoCloud.mdwall/assets/cat.png',
+            'MiaoCloud.mdwall/assets/tail.png',
+            'MiaoCloud.mdwall/assets/blink.png'
+          )
+          foreach ($relative in $requiredWallpaperAssets) {
+            $asset = Join-Path $wallpaperRoot $relative
+            if (-not (Test-Path $asset -PathType Leaf)) { throw "Bundled wallpaper asset missing: $asset" }
+            if ((Get-Item $asset).Length -lt 1024) { throw "Bundled wallpaper asset still looks like an LFS pointer: $asset" }
+          }
+          Copy-Item $wallpaperRoot 'build/package/Wallpapers' -Recurse -Force
+
           .\scripts\prepare-third-party-runtime-arm64.ps1 -DeployDir (Resolve-Path build/package).Path -SkipGozServiceInstall
           Write-Host '::endgroup::'
 

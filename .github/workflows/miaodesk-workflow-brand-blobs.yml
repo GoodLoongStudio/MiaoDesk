@@ -1,0 +1,54 @@
+name: Generate MiaoDesk workflow brand blobs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/miaodesk-workflow-brand-blobs.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create updated workflow blobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+
+          root = Path('.github/workflows')
+          skip = {'miaodesk-workflow-brand-blobs.yml'}
+          repl = [
+              ('TURINGDESK','MIAODESK'),
+              ('TuringDesk','MiaoDesk'),
+              ('turingdesk','miaodesk'),
+              ('图灵','妙喵'),
+              ('秒喵','妙喵'),
+          ]
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          endpoint = f'https://api.github.com/repos/{repo}/git/blobs'
+          for path in sorted(root.glob('*.yml')):
+              if path.name in skip:
+                  continue
+              text = path.read_text(encoding='utf-8')
+              for old,new in repl:
+                  text = text.replace(old,new)
+              payload = json.dumps({'content': text, 'encoding': 'utf-8'}).encode()
+              req = urllib.request.Request(endpoint, data=payload, method='POST', headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+              })
+              with urllib.request.urlopen(req) as r:
+                  result = json.load(r)
+              print(f'BLOB {path.as_posix()} {result["sha"]}')
+          PY

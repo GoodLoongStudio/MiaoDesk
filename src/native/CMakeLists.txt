@@ -150,6 +150,18 @@ add_executable(TuringDeskWallpaper WIN32 ${TURINGDESK_WALLPAPER_SOURCES})
 add_executable(TuringDeskHarness WIN32 ${TURINGDESK_HARNESS_SOURCES})
 add_executable(TuringDeskWidgetAcceptance ${TURINGDESK_WIDGET_ACCEPTANCE_SOURCES})
 
+
+# Keep the canonical 妙喵 application icon beside the native host in every
+# build, not only inside MSIX packaging. Tray and assistant chat avatar
+# intentionally consume this same asset.
+add_custom_command(TARGET TuringDesk POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:TuringDesk>/Assets"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/packaging/windows-store/assets/MiaoMiao.ico"
+            "$<TARGET_FILE_DIR:TuringDesk>/Assets/MiaoMiao.ico"
+    VERBATIM
+)
+
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_APP_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_WALLPAPER_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${TURINGDESK_HARNESS_SOURCES})

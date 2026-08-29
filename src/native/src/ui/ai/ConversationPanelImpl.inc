@@ -285,7 +285,31 @@ void StrokeRounded(HDC dc, const RECT& rect, int radius, COLORREF color) {
     DeleteObject(pen);
 }
 
+HICON MiaoMiaoChatIcon() {
+    static HICON icon = []() -> HICON {
+        wchar_t exePath[32768]{};
+        const DWORD length = GetModuleFileNameW(
+            nullptr, exePath, static_cast<DWORD>(std::size(exePath)));
+        if (length == 0 || length >= std::size(exePath)) return nullptr;
+        const fs::path path = fs::path(exePath).parent_path() / L"Assets" / L"MiaoMiao.ico";
+        std::error_code ec;
+        if (!fs::is_regular_file(path, ec)) return nullptr;
+        return reinterpret_cast<HICON>(LoadImageW(
+            nullptr, path.c_str(), IMAGE_ICON, 0, 0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE));
+    }();
+    return icon;
+}
+
 void DrawAvatar(HDC dc, int cx, int cy, int radius, bool user) {
+    if (!user) {
+        if (HICON icon = MiaoMiaoChatIcon()) {
+            const int side = radius * 2;
+            DrawIconEx(dc, cx - radius, cy - radius, icon, side, side, 0, nullptr, DI_NORMAL);
+            return;
+        }
+    }
+
     HBRUSH outer = CreateSolidBrush(user ? RGB(250, 218, 198) : RGB(102, 151, 255));
     HBRUSH inner = CreateSolidBrush(RGB(255, 255, 255));
     HPEN noPen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));

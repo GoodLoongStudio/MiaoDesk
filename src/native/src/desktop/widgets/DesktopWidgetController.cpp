@@ -27,15 +27,6 @@ struct NormalizedRect {
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
 
-wallpaper::NativeWidgetPreset NativePresetFor(WidgetFixedPreset preset) noexcept {
-    switch (preset) {
-    case WidgetFixedPreset::TodayTasks: return wallpaper::NativeWidgetPreset::TodayTasks;
-    case WidgetFixedPreset::WeatherGlass: return wallpaper::NativeWidgetPreset::WeatherGlass;
-    case WidgetFixedPreset::GlassClock:
-    default: return wallpaper::NativeWidgetPreset::GlassClock;
-    }
-}
-
 bool SameMonitor(const wallpaper::DesktopWidget& widget, std::wstring_view monitorId) {
     if (widget.monitorId.empty() && monitorId.empty()) return true;
     return _wcsicmp(widget.monitorId.c_str(), std::wstring(monitorId).c_str()) == 0;
@@ -236,8 +227,7 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    const auto nativePreset = NativePresetFor(preset);
-    const auto* definition = wallpaper::NativePresetDefinition(nativePreset);
+    const auto* definition = wallpaper::NativePresetDefinition(preset);
     if (!definition) return {false, L"未知的原生小组件模板。"};
 
     const auto [x, y] = AutomaticPlacement(existing, monitorId, definition->defaultWidth, definition->defaultHeight);
@@ -262,7 +252,7 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
         }
     }
     NativeWidgetCreateRequest request;
-    request.preset = nativePreset;
+    request.preset = preset;
     request.title = std::wstring(definition->title);
     request.monitorId = std::move(monitorId);
     request.x = x;

@@ -14,6 +14,7 @@
 
 #include "miaodesk/AutomationUiAdapter.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/LayeredSceneRenderer.h"
 #include "miaodesk/PerformanceUiAdapter.h"
 
 #include <algorithm>
@@ -36,6 +37,15 @@ inline D2D1_RENDER_TARGET_PROPERTIES MiaoDeskWallpaperPixelRenderTargetPropertie
 }
 
 } // namespace D2D1
+
+namespace miaodesk::wallpaper::scenes {
+
+inline void PaintMiaoCloudProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
+    if (PaintPackagedScene(L"MiaoCloud.mdwall", context, size)) return;
+    PaintMiaoCloud(context, size);
+}
+
+} // namespace miaodesk::wallpaper::scenes
 
 namespace {
 
@@ -205,7 +215,9 @@ namespace wallpaper = miaodesk::wallpaper;
 #define MessageBoxW MiaoDeskMessageBoxW
 #define Shell_NotifyIconW MiaoDeskWallpaperShellNotifyIconW
 #define RenderTargetProperties MiaoDeskWallpaperPixelRenderTargetProperties
+#define PaintMiaoCloud PaintMiaoCloudProduction
 #include "WallpaperEngine.cpp"
+#undef PaintMiaoCloud
 #undef RenderTargetProperties
 #undef Shell_NotifyIconW
 #undef MessageBoxW

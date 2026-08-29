@@ -1,0 +1,26 @@
+# 默认：文本自动规范化（仓库内统一 LF）
+* text=auto
+
+# Windows 脚本保持 CRLF，避免老版 cmd.exe 解析问题
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 明确标记二进制，防止 git 做行尾转换或 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.node binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.unityweb binary
+
+# 生成物不参与 diff
+*.lock linguist-generated=true

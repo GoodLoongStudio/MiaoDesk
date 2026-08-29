@@ -10,19 +10,12 @@ node_modules/
 dist/
 .pnpm-store/
 
+# CMake build directory（CI 用 cmake -S . -B build）
+build/
+build-*/
+
 # Repository-local verified toolchain cache
 .tools/
-
-# Bootstrapped third-party payload. Root THIRD-PARTY-NOTICES.md remains tracked;
-# official component licenses are downloaded and packaged by the bootstrap script.
-src/TuringDesk.Desktop/ThirdParty/Everything/LICENSE-Everything.txt
-src/TuringDesk.Desktop/ThirdParty/Everything/LICENSE-ES.txt
-src/TuringDesk.Desktop/ThirdParty/Everything/arm64/Everything.exe
-src/TuringDesk.Desktop/ThirdParty/Everything/arm64/es.exe
-src/TuringDesk.Desktop/ThirdParty/Everything/arm64/.component-version
-src/TuringDesk.Desktop/ThirdParty/Everything/x64/Everything.exe
-src/TuringDesk.Desktop/ThirdParty/Everything/x64/es.exe
-src/TuringDesk.Desktop/ThirdParty/Everything/x64/.component-version
 
 # Build/package output
 artifacts/

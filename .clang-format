@@ -1,0 +1,50 @@
+# TuringDesk .clang-format
+# 与现有代码风格对齐；首次全量运行前先在单个文件上试跑，确认 diff 可接受。
+# 运行: clang-format -i <file>
+---
+Language: Cpp
+Standard: c++20
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+
+# 行宽
+ColumnLimit: 120
+
+# 大括号
+BreakBeforeBraces: Attach
+AllowShortBracesOnASingleLine: false
+
+# 指针/引用贴左（Type* name），与现有代码一致
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+# 短语句
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLambdasOnASingleLine: Inline
+
+# 参数与实参换行
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: false
+
+# 排序与对齐
+SortIncludes: CaseInsensitive
+IncludeBlocks: Preserve
+AlignConsecutiveMacros: Consecutive
+AlignTrailingComments: true
+
+# 其他
+SpaceAfterCStyleCast: false
+FixNamespaceComments: true
+IndentCaseLabels: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1

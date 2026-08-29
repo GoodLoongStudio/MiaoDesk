@@ -73,7 +73,12 @@ src/native/src/ui/performance
 - `desktop/control/` owns the shared Desktop Control facade.
 - `desktop/shell/` is the only Windows desktop attachment owner: Progman, WorkerW, raised desktop, Explorer recovery, surface parent/z-order.
 - `desktop/wallpaper/` owns wallpaper state and runtime. Renderer-specific code lives below `render/`, `web/`, `monitor/`, `library/` or `runtime/`.
-- `desktop/wallpaper/legacy/` is migration-only. No new product behavior may be added there; files leave this directory by deletion/refactor, not by expansion.
+- `desktop/wallpaper/legacy/` is **migration-only by intent, but currently load-bearing**.
+  `WallpaperEngine.cpp` (≈89KB) is the de-facto orchestration layer of the wallpaper
+  process and is compiled via `#include` from `WallpaperEngineProduction.cpp` — it is
+  **not** a dead file, and static tools that report it as unreferenced are wrong.
+  No new product behavior may be added there; the real exit is decomposition
+  (see `docs/DOC-INDEX.md` tech-debt list), not expansion.
 - `desktop/widgets/`, `desktop/automation/` and `desktop/performance/` own their domain services/runtime state.
 - `ui/wallpaper/`, `ui/widgets/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only. UI code must call adapters/controllers/services rather than persistence or WorkerW directly.
 - `harness/` owns the Advanced Workbench process/runtime bridge.

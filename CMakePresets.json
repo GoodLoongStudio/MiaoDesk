@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "arm64",
+      "displayName": "Windows ARM64 (Visual Studio)",
+      "description": "与 CI（native-search-windows.yml）一致的官方配置目标",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "ARM64", "strategy": "set" },
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "arm64-release",
+      "displayName": "Build ARM64 Release",
+      "configurePreset": "arm64",
+      "configuration": "Release"
+    }
+  ]
+}

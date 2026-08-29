@@ -18,6 +18,7 @@ constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
     {NativeWidgetPreset::TodayTasks, L"native:today-tasks", L"今日待办", 0.22f, 0.48f, 0},
     {NativeWidgetPreset::WeatherGlass, L"native:weather-glass", L"玻璃天气", 0.28f, 0.28f, 0},
 }};
+static_assert(kDefinitions.size() == 3, "Update the built-in native widget acceptance set when the catalog changes.");
 
 } // namespace
 

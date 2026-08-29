@@ -37,7 +37,8 @@ jobs:
             if (-not $text.Contains($pair[0])) { throw "Missing patch anchor: $($pair[0])" }
             $text = $text.Replace($pair[0], $pair[1])
           }
-          Set-Content -Path $path -Value $text -Encoding UTF8
+          $text = $text.TrimEnd("`r", "`n") + "`n"
+          [System.IO.File]::WriteAllText((Join-Path $PWD $path), $text, (New-Object System.Text.UTF8Encoding($false)))
           git diff --check
       - name: Commit shell style
         shell: bash

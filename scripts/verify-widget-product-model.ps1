@@ -18,10 +18,8 @@ foreach ($path in @($header, $controller, $acceptance, $configContinuity, $surfa
 
 $headerText = Get-Content -LiteralPath $header -Raw
 foreach ($marker in @(
-    'enum class WidgetFixedPreset',
-    'GlassClock',
-    'TodayTasks',
-    'WeatherGlass',
+    'using WidgetFixedPreset = wallpaper::NativeWidgetPreset',
+    'NativeWidgetPreset.h',
     'CreatePreset',
     'MoveTo',
     'SetEnabled',
@@ -29,6 +27,9 @@ foreach ($marker in @(
     if (-not $headerText.Contains($marker)) {
         throw "Fixed-format Widget controller contract missing marker: $marker"
     }
+}
+if ($headerText.Contains('enum class WidgetFixedPreset')) {
+    throw 'Widget controller must reuse NativeWidgetPreset instead of restoring a mirrored WidgetFixedPreset enum.'
 }
 foreach ($forbidden in @('WidgetSizePreset', 'SetSize(', 'MoveToMonitor(')) {
     if ($headerText.Contains($forbidden)) {
@@ -41,6 +42,7 @@ foreach ($marker in @(
     'WidgetFixedPreset::GlassClock',
     'WidgetFixedPreset::TodayTasks',
     'WidgetFixedPreset::WeatherGlass',
+    'NativePresetDefinition(preset)',
     'PlacementFree',
     'IntersectsWithGap',
     'AutomaticPlacement',
@@ -107,4 +109,4 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'Widget product model OK: M3 stays fixed-format, collision-safe on create, supports desktop drag persistence, requires the full three-widget acceptance set, freezes showcase identity across phases, and remains free of resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'
+Write-Host 'Widget product model OK: M3 stays fixed-format, reuses one NativeWidgetPreset identity, is collision-safe on create, supports desktop drag persistence, requires the full three-widget acceptance set, freezes showcase identity across phases, and remains free of resize/monitor-edit APIs while DesktopShellHost is the only desktop attachment owner.'

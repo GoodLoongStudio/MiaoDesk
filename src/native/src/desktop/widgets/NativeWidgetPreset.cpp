@@ -10,6 +10,8 @@ constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
     // Fractions are relative to the target monitor. On a 16:9 desktop these
     // produce the intended product proportions: wide clock/weather cards and a
     // taller task card rather than the old uniformly wide demo rectangles.
+    // Painter geometry is expressed in Direct2D DIPs; the host converts the
+    // HWND render target to DIP size before invoking a renderer on high-DPI PCs.
     // periodicRefreshMs == 0 means static/event-driven: the host does not poll
     // and repaint that widget just because the scheduler heartbeat fired.
     {NativeWidgetPreset::GlassClock, L"native:glass-clock", L"玻璃时钟", 0.30f, 0.30f, 60000},

@@ -10,6 +10,7 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <d2d1.h>
 
 #include "miaodesk/AutomationUiAdapter.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
@@ -19,6 +20,22 @@
 #include <cwchar>
 #include <string>
 #include <string_view>
+
+namespace D2D1 {
+
+inline D2D1_RENDER_TARGET_PROPERTIES MiaoDeskWallpaperPixelRenderTargetProperties() {
+    // DesktopShellHost and WallpaperMonitorLayout intentionally operate in physical
+    // desktop pixels. Direct2D's default desktop DPI converts drawing coordinates
+    // to DIPs, which double-scales a 200% desktop and leaves only the upper-left
+    // portion of the wallpaper visible. Keep the wallpaper canvas pixel-native.
+    return RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        PixelFormat(),
+        96.0f,
+        96.0f);
+}
+
+} // namespace D2D1
 
 namespace {
 
@@ -187,7 +204,9 @@ namespace wallpaper = miaodesk::wallpaper;
 #define WritePrivateProfileStringW MiaoDeskWritePrivateProfileStringW
 #define MessageBoxW MiaoDeskMessageBoxW
 #define Shell_NotifyIconW MiaoDeskWallpaperShellNotifyIconW
+#define RenderTargetProperties MiaoDeskWallpaperPixelRenderTargetProperties
 #include "WallpaperEngine.cpp"
+#undef RenderTargetProperties
 #undef Shell_NotifyIconW
 #undef MessageBoxW
 #undef WritePrivateProfileStringW

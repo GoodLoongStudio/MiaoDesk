@@ -19,6 +19,17 @@ namespace {
 
 constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.IndependentWallpaperSurface";
 
+D2D1_RENDER_TARGET_PROPERTIES PixelRenderTargetProperties() {
+    // Independent wallpaper HWND geometry is expressed in physical desktop pixels.
+    // Keep Direct2D in the same coordinate system instead of letting desktop DPI
+    // reinterpret those pixel dimensions as DIPs (which crops high-DPI wallpapers).
+    return D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(),
+        96.0f,
+        96.0f);
+}
+
 } // namespace
 
 struct IndependentWallpaperHost::Impl {
@@ -112,7 +123,7 @@ struct IndependentWallpaperHost::Impl {
         const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
         const auto properties = D2D1::HwndRenderTargetProperties(
             slot.window, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
-        if (FAILED(d2dFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), properties, slot.renderTarget.GetAddressOf()))) {
+        if (FAILED(d2dFactory->CreateHwndRenderTarget(PixelRenderTargetProperties(), properties, slot.renderTarget.GetAddressOf()))) {
             slot.error = L"创建显示器 Direct2D surface 失败";
             return false;
         }

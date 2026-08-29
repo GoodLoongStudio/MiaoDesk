@@ -3,6 +3,7 @@
 #include "turingdesk/DesktopControlService.h"
 #include "turingdesk/DesktopWidgetController.h"
 #include "turingdesk/RuntimeLogger.h"
+#include "turingdesk/LiveLogWindow.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -338,8 +339,8 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void OpenLogs() {
-        turingdesk::log::Info(L"UI.Library", L"用户点击打开实时日志文件");
-        turingdesk::log::OpenDebugLogFile();
+        turingdesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
+        turingdesk::log::ShowLiveLogConsole(instance, window);
     }
 
     void RefreshWallpapers() {
@@ -1386,7 +1387,7 @@ struct WallpaperLibraryWindow::Impl {
         webConfirm = button(L"添加 Web", kWebConfirmId, 0, false);
         webCancel = button(L"取消", kWebCancelId, 0, false);
         wallpaperToggleButton = button(L"停止壁纸", kWallpaperToggleId, 0, false);
-        logsButton = button(L"实时日志 ↗", kOpenLogsId, 0, true);
+        logsButton = button(L"实时日志面板 ↗", kOpenLogsId, 0, true);
 
         ApplyFonts();
         RebuildTargets();

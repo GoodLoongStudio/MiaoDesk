@@ -8,6 +8,7 @@ on:
       - CMakePresets.json
       - cmake/**
       - src/native/**
+      - assets/wallpapers/**
       - packaging/windows-store/**
       - scripts/build-arm64-msix.ps1
       - vcpkg.json
@@ -28,12 +29,30 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          lfs: true
 
       - name: Verify exact head
         shell: pwsh
         run: |
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+
+      - name: Verify Miao Cloud LFS assets
+        shell: pwsh
+        run: |
+          $required = @(
+            'assets\wallpapers\MiaoCloud.mdwall\assets\background.jpg',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\cloud.png',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\tail.png',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\blink.png'
+          )
+          foreach ($relative in $required) {
+            $path = Join-Path $PWD $relative
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Missing wallpaper asset: $relative" }
+            if ((Get-Item $path).Length -lt 1024) { throw "Wallpaper asset still looks like an LFS pointer: $relative" }
+          }
 
       - name: Configure lightweight preview
         shell: pwsh
@@ -57,11 +76,23 @@ jobs:
           }
 
           Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+
+          $wallpapersSource = Join-Path $PWD 'assets\wallpapers'
+          $wallpapersDest = Join-Path $dest 'Wallpapers'
+          New-Item -ItemType Directory -Force -Path $wallpapersDest | Out-Null
+          Copy-Item (Join-Path $wallpapersSource '*') $wallpapersDest -Recurse -Force
+
+          $miaoCloudBackground = Join-Path $wallpapersDest 'MiaoCloud.mdwall\assets\background.jpg'
+          if (-not (Test-Path $miaoCloudBackground -PathType Leaf)) {
+            throw 'Preview artifact is missing MiaoCloud.mdwall resources.'
+          }
+
           Set-Content -Path (Join-Path $dest 'preview-build-sha.txt') -Value $env:GITHUB_SHA -Encoding ASCII
           Set-Content -Path (Join-Path $dest 'preview-components.txt') -Value @(
             'MiaoDesk.exe'
             'MiaoDeskWallpaper.exe'
             'MiaoDeskHarness.exe'
+            'Wallpapers/MiaoCloud.mdwall'
             'Desktop settings UI'
             'Widget settings UI'
             'AI API settings UI'

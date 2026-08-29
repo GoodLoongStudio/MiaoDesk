@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-29T16:29:25.0772674Z",
+  "generatedUtc": "2026-08-29T16:33:39.3565496Z",
   "lockSha256": "95a84bc3eb1712cc155199201f30371c1021646428d86ee945b07c64203b9c7e",
   "node": {
     "version": "24.19.0",

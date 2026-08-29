@@ -29,6 +29,7 @@ public:
     bool AssignById(std::wstring monitorId, std::wstring wallpaperId,
                     std::wstring friendlyName = {}, std::wstring* error = nullptr);
     bool Clear(std::wstring_view monitorId, std::wstring* error = nullptr);
+    bool ClearAll(std::wstring* error = nullptr);
     void TouchTopology(const MonitorTopology& topology);
 
     std::optional<std::wstring> WallpaperIdFor(std::wstring_view monitorId) const;

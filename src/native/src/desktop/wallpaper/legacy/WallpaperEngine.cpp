@@ -668,7 +668,7 @@ private:
             Config next = config_;
             next.enabled = true;
             next.layout = L"span";
-            assignments_.Clear();
+            assignments_.ClearAll();
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"

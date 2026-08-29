@@ -162,6 +162,12 @@ bool WallpaperMonitorAssignments::Clear(std::wstring_view monitorId, std::wstrin
     return Save(error);
 }
 
+bool WallpaperMonitorAssignments::ClearAll(std::wstring* error) {
+    SetError(error, L"");
+    items_.clear();
+    return Save(error);
+}
+
 void WallpaperMonitorAssignments::TouchTopology(const MonitorTopology& topology) {
     const unsigned long long now = NowUnixSeconds();
     for (const auto& monitor : topology.monitors) {

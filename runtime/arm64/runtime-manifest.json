@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-24T05:53:32.2495779Z",
-  "lockSha256": "0a896a3b0d1af1291910d1a7a541c4e0857d1a40ad7accd1ef365e22a1f289ea",
+  "generatedUtc": "2026-08-29T16:29:25.0772674Z",
+  "lockSha256": "95a84bc3eb1712cc155199201f30371c1021646428d86ee945b07c64203b9c7e",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-arm64.zip",

@@ -17,12 +17,6 @@ namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
 
-struct FixedPresetSpec {
-    const wchar_t* title;
-    float width;
-    float height;
-};
-
 struct NormalizedRect {
     float left;
     float top;
@@ -32,18 +26,6 @@ struct NormalizedRect {
 
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
-
-FixedPresetSpec PresetSpec(WidgetFixedPreset preset) noexcept {
-    switch (preset) {
-    case WidgetFixedPreset::TodayTasks:
-        return {L"今日待办", 0.26f, 0.24f};
-    case WidgetFixedPreset::WeatherGlass:
-        return {L"玻璃天气", 0.24f, 0.20f};
-    case WidgetFixedPreset::GlassClock:
-    default:
-        return {L"玻璃时钟", 0.30f, 0.20f};
-    }
-}
 
 wallpaper::NativeWidgetPreset NativePresetFor(WidgetFixedPreset preset) noexcept {
     switch (preset) {
@@ -254,8 +236,11 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    const auto spec = PresetSpec(preset);
-    const auto [x, y] = AutomaticPlacement(existing, monitorId, spec.width, spec.height);
+    const auto nativePreset = NativePresetFor(preset);
+    const auto* definition = wallpaper::NativePresetDefinition(nativePreset);
+    if (!definition) return {false, L"未知的原生小组件模板。"};
+
+    const auto [x, y] = AutomaticPlacement(existing, monitorId, definition->defaultWidth, definition->defaultHeight);
     if (!monitorId.empty()) {
         const auto topology = wallpaper::QueryMonitorTopology();
         if (topology.Valid()) {
@@ -277,13 +262,13 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
         }
     }
     NativeWidgetCreateRequest request;
-    request.preset = NativePresetFor(preset);
-    request.title = spec.title;
+    request.preset = nativePreset;
+    request.title = std::wstring(definition->title);
     request.monitorId = std::move(monitorId);
     request.x = x;
     request.y = y;
-    request.width = spec.width;
-    request.height = spec.height;
+    request.width = definition->defaultWidth;
+    request.height = definition->defaultHeight;
     return service_.CreateNativeWidget(request, created);
 }
 

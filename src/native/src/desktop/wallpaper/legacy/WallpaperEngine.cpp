@@ -38,6 +38,7 @@
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
+namespace log = turingdesk::log;
 
 namespace {
 

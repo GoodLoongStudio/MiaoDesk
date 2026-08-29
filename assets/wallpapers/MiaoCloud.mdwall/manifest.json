@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "type": "scene",
+  "title": "妙喵云境",
+  "author": "MiaoDesk",
+  "entry": "scene.ini",
+  "provenance": "builtin-miaodesk",
+  "fps_cap": 30,
+  "audio": false
+}

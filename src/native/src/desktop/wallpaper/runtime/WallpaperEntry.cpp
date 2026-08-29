@@ -170,7 +170,7 @@ bool IsDesktopLibraryWindow(HWND window) {
 }
 
 void ClampDesktopLibraryToWorkArea(HWND window) {
-    if (!IsDesktopLibraryWindow(window) || IsIconic(window)) return;
+    if (!IsDesktopLibraryWindow(window) || IsIconic(window) || IsZoomed(window)) return;
     const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(info)};
     RECT current{};

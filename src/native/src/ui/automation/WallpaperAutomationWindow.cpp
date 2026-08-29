@@ -591,7 +591,7 @@ struct WallpaperAutomationWindow::Impl {
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"TuringDesk 壁纸自动化",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"TuringDesk 壁纸自动化",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 960, 790,
                                  nullptr, nullptr, instance, this);

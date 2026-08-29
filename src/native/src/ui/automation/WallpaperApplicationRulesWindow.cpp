@@ -303,7 +303,7 @@ struct WallpaperApplicationRulesWindow::Impl {
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"TuringDesk 应用程序壁纸规则",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"TuringDesk 应用程序壁纸规则",
                                  WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 820, 610,
                                  nullptr, nullptr, instance, this);

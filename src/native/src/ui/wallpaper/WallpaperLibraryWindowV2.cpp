@@ -1159,44 +1159,15 @@ struct WallpaperLibraryWindow::Impl {
 
         switch (message) {
         case WM_NCHITTEST: {
-            if (IsZoomed(hwnd)) break;
-            RECT bounds{};
-            if (!GetWindowRect(hwnd, &bounds)) break;
-            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
             const LRESULT nativeHit = DefWindowProcW(hwnd, message, wParam, lParam);
-            if (nativeHit == HTCLOSE || nativeHit == HTMAXBUTTON || nativeHit == HTMINBUTTON || nativeHit == HTSYSMENU)
-                return nativeHit;
-
-            const UINT dpi = self->Dpi();
-            const int systemX = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-            const int systemY = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-            const int edgeX = std::max(self->S(12), systemX);
-            const int edgeY = std::max(self->S(12), systemY);
-            const int cornerX = std::max(edgeX, self->S(44));
-            const int cornerY = std::max(edgeY, self->S(44));
-            const bool leftEdge = point.x >= bounds.left && point.x < bounds.left + edgeX;
-            const bool rightEdge = point.x < bounds.right && point.x >= bounds.right - edgeX;
-            const bool topEdge = point.y >= bounds.top && point.y < bounds.top + edgeY;
-            const bool bottomEdge = point.y < bounds.bottom && point.y >= bounds.bottom - edgeY;
-            const bool leftCorner = point.x >= bounds.left && point.x < bounds.left + cornerX;
-            const bool rightCorner = point.x < bounds.right && point.x >= bounds.right - cornerX;
-            const bool topCorner = point.y >= bounds.top && point.y < bounds.top + cornerY;
-            const bool bottomCorner = point.y < bounds.bottom && point.y >= bounds.bottom - cornerY;
-            if (topCorner && leftCorner) return HTTOPLEFT;
-            if (topCorner && rightCorner) return HTTOPRIGHT;
-            if (bottomCorner && leftCorner) return HTBOTTOMLEFT;
-            if (bottomCorner && rightCorner) return HTBOTTOMRIGHT;
-            if (leftEdge) return HTLEFT;
-            if (rightEdge) return HTRIGHT;
-            if (topEdge) return HTTOP;
-            if (bottomEdge) return HTBOTTOM;
+            if (nativeHit != HTCLIENT) return nativeHit;
             break;
         }
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(720);
-                info->ptMinTrackSize.y = self->S(520);
+                info->ptMinTrackSize.x = self->S(640);
+                info->ptMinTrackSize.y = self->S(440);
             }
             return 0;
         }
@@ -1207,13 +1178,22 @@ struct WallpaperLibraryWindow::Impl {
                              suggested->right - suggested->left, suggested->bottom - suggested->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
+            turingdesk::log::Info(L"UI.Library", L"显示器 DPI 缩放发生变化: 当前 DPI=" + std::to_wstring(self->Dpi()));
             self->RebuildFonts();
             self->ApplyFonts();
             self->Layout();
             InvalidateRect(hwnd, nullptr, TRUE);
             return 0;
         }
-        case WM_SIZE: self->Layout(); return 0;
+        case WM_SIZE: {
+            const int width = LOWORD(lParam);
+            const int height = HIWORD(lParam);
+            const wchar_t* stateStr = wParam == SIZE_MAXIMIZED ? L"最大化" : (wParam == SIZE_MINIMIZED ? L"最小化" : L"正常自由缩放");
+            turingdesk::log::Info(L"UI.Library", L"设置页面窗口尺寸变更: 宽=" + std::to_wstring(width) +
+                                  L", 高=" + std::to_wstring(height) + L", 状态=" + stateStr);
+            self->Layout();
+            return 0;
+        }
         case WM_DRAWITEM: {
             const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
             if (draw && draw->CtlType == ODT_BUTTON && draw->CtlID >= kNavInstalledId && draw->CtlID <= kNavAiId)
@@ -1332,7 +1312,7 @@ struct WallpaperLibraryWindow::Impl {
         gridClass.style = CS_DBLCLKS;
         if (!RegisterClassExW(&gridClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"妙喵",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"妙喵",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, S(1160), S(790),
                                  nullptr, nullptr, instance, this);

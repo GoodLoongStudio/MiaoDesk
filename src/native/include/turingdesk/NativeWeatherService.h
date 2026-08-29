@@ -8,6 +8,8 @@
 
 namespace turingdesk::wallpaper {
 
+// Network I/O and provider-specific parsing stay outside the Direct2D painter.
+// Consumers read an immutable snapshot so widget painting remains cheap and deterministic.
 class NativeWeatherService {
 public:
     NativeWeatherService();

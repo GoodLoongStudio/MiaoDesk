@@ -44,7 +44,7 @@ The user should be able to do every normal wallpaper task manually. AI is an add
 Already present on `main`:
 
 - Windows 11 WorkerW / Progman desktop mounting with fallback diagnostics.
-- Three native scenes: Aurora Flow, Neon Flow, Quiet Grid.
+- Three native scenes: Aurora Flow, Neon Flow, Ocean Flow (scene id `scene-grid`).
 - Image wallpaper via WIC.
 - Video wallpaper via Media Foundation.
 - Enable / stop / resume and tray controls.

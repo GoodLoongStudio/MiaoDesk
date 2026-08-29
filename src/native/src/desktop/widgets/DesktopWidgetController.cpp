@@ -21,7 +21,6 @@ struct FixedPresetSpec {
     const wchar_t* title;
     float width;
     float height;
-    std::string_view html;
 };
 
 struct NormalizedRect {
@@ -34,61 +33,15 @@ struct NormalizedRect {
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
 
-constexpr std::string_view kTodayTasksHtml = R"HTML(<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;padding:20px 18px 16px;border-radius:26px;background:linear-gradient(145deg,rgba(12,18,36,.94),rgba(22,28,52,.88));border:1px solid rgba(255,255,255,.15);box-shadow:0 18px 44px rgba(0,0,0,.34)}
-.glow{position:absolute;right:-18%;top:-30%;width:55%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(86,246,210,.28),transparent 68%)}
-.head{position:relative;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.title{font-size:11px;font-weight:750;letter-spacing:1.6px;opacity:.72;text-transform:uppercase}.badge{padding:4px 8px;border-radius:999px;background:rgba(100,255,224,.14);border:1px solid rgba(100,255,224,.28);font-size:10px;font-weight:700;color:#8dffe8}
-.list{position:relative;flex:1;display:flex;flex-direction:column;gap:8px}
-.item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
-.dot{width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#56f6d2,#8a64ff);flex-shrink:0}
-.text{font-size:clamp(12px,3.8vw,15px);line-height:1.25;opacity:.92}
-.item.done .text{opacity:.48;text-decoration:line-through}
-</style></head><body><div class="card"><div class="glow"></div><div class="head"><div class="title">MIAO · 今日待办</div><div class="badge">3 项</div></div><div class="list" id="list"></div></div><script>
-const tasks=["整理桌面","完成预览","提交版本"];const list=document.getElementById('list');tasks.forEach((t,i)=>{const el=document.createElement('div');el.className='item'+(i===2?' done':'');el.innerHTML='<div class="dot"></div><div class="text">'+t+'</div>';list.appendChild(el);});
-</script></body></html>)HTML";
-
-constexpr std::string_view kWeatherGlassHtml = R"HTML(<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:#fff}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:22px 20px 18px;border-radius:28px;background:linear-gradient(135deg,rgba(18,42,74,.92),rgba(28,58,96,.86));border:1px solid rgba(255,255,255,.18);box-shadow:0 20px 48px rgba(0,0,0,.30)}
-.sky{position:absolute;inset:0;background:radial-gradient(circle at 30% 35%,rgba(70,186,255,.22),transparent 36%),radial-gradient(circle at 72% 28%,rgba(137,196,255,.16),transparent 34%)}
-.loc{position:relative;font-size:10px;font-weight:700;letter-spacing:1.4px;opacity:.68;text-transform:uppercase}
-.main{position:relative;display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px}
-.temp{font-size:clamp(38px,16vw,64px);font-weight:680;letter-spacing:-2px;line-height:.9}
-.cond{text-align:right;font-size:clamp(13px,4vw,17px);opacity:.86;line-height:1.35}
-.forecast{position:relative;display:flex;gap:8px;margin-top:10px}
-.day{flex:1;padding:8px 6px;border-radius:14px;background:rgba(5,10,22,.22);border:1px solid rgba(255,255,255,.10);text-align:center;font-size:10px;opacity:.82}
-.day b{display:block;font-size:13px;margin-top:4px;font-weight:650}
-</style></head><body><div class="card"><div class="sky"></div><div class="loc">MIAO · 本地天气</div><div class="main"><div class="temp" id="temp">22°</div><div class="cond" id="cond">晴朗<br>体感 24°</div></div><div class="forecast" id="forecast"></div></div><script>
-const days=[{d:'今天',t:'22°'},{d:'明天',t:'20°'},{d:'后天',t:'18°'}];const fc=document.getElementById('forecast');days.forEach(x=>{const el=document.createElement('div');el.className='day';el.innerHTML=x.d+'<b>'+x.t+'</b>';fc.appendChild(el);});
-</script></body></html>)HTML";
-
-constexpr std::string_view kGlassClockHtml = R"HTML(<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;color:white}
-.card{box-sizing:border-box;width:100%;height:100%;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:38px 26px 24px;border:1px solid rgba(255,255,255,.20);border-radius:32px;background:linear-gradient(135deg,rgba(20,36,58,.92),rgba(28,48,78,.86));box-shadow:0 22px 52px rgba(0,0,0,.32)}
-.aurora{position:absolute;inset:0;background:radial-gradient(circle at 28% 42%,rgba(60,255,205,.18),transparent 34%),radial-gradient(circle at 72% 35%,rgba(92,100,255,.20),transparent 32%)}
-.chip{position:absolute;left:22px;top:22px;padding:5px 9px;border-radius:999px;background:rgba(5,10,22,.35);border:1px solid rgba(255,255,255,.14);font-size:9px;font-weight:750;letter-spacing:1.6px;opacity:.76}
-.time{position:relative;font-size:clamp(42px,14vw,78px);font-weight:660;letter-spacing:-2.8px;line-height:.94}
-.date{position:relative;margin-top:13px;font-size:clamp(13px,4vw,18px);opacity:.84}
-.chip:before{content:"";display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#64ffe0;vertical-align:1px}
-</style></head><body><div class="card"><div class="aurora"></div><div class="chip">MIAO · DESKTOP</div><div class="time" id="time"></div><div class="date" id="date"></div></div><script>
-function tick(){const d=new Date();const t=document.getElementById('time');const dt=document.getElementById('date');const h=d.getHours().toString().padStart(2,'0');const m=d.getMinutes().toString().padStart(2,'0');const next=h+':'+m;if(t.textContent!==next){t.textContent=next;const ds=d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});if(dt.textContent!==ds)dt.textContent=ds;}}
-tick();setInterval(tick,1000);
-</script></body></html>)HTML";
-
 FixedPresetSpec PresetSpec(WidgetFixedPreset preset) noexcept {
     switch (preset) {
     case WidgetFixedPreset::TodayTasks:
-        return {L"今日待办", 0.26f, 0.24f, kTodayTasksHtml};
+        return {L"今日待办", 0.26f, 0.24f};
     case WidgetFixedPreset::WeatherGlass:
-        return {L"玻璃天气", 0.24f, 0.20f, kWeatherGlassHtml};
+        return {L"玻璃天气", 0.24f, 0.20f};
     case WidgetFixedPreset::GlassClock:
     default:
-        return {L"玻璃时钟", 0.30f, 0.20f, kGlassClockHtml};
+        return {L"玻璃时钟", 0.30f, 0.20f};
     }
 }
 

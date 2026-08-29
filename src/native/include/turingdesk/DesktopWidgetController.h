@@ -5,16 +5,14 @@
 #include <vector>
 
 #include "turingdesk/DesktopControlService.h"
+#include "turingdesk/NativeWidgetPreset.h"
 
 namespace turingdesk::desktop {
 
-// M3 ships fixed visual templates with desktop drag repositioning. Resize and
-// monitor reassignment stay out of the beginner product surface for now.
-enum class WidgetFixedPreset {
-    GlassClock,
-    TodayTasks,
-    WeatherGlass,
-};
+// Official built-in widgets use the same native preset identity from UI entry
+// through persistence and the Direct2D host. Keeping one type means adding a new
+// C++ widget does not require a second mirrored enum in the controller layer.
+using WidgetFixedPreset = wallpaper::NativeWidgetPreset;
 
 // UI-facing adapter for widget workflows. Win32 windows depend on this
 // controller instead of DesktopWidgetStore so persistence/runtime ownership

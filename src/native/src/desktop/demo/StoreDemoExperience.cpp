@@ -2,13 +2,16 @@
 
 #include "turingdesk/DesktopWidgetController.h"
 #include "turingdesk/GeneratedDesktopPreview.h"
+#include "turingdesk/NativeWidgetPreset.h"
 #include "turingdesk/WallpaperLibrary.h"
 #include "turingdesk/WidgetIntentComposer.h"
+#include "turingdesk/WidgetService.h"
 
 #include <shlobj.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cwctype>
 #include <filesystem>
 #include <iterator>
@@ -78,11 +81,58 @@ wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
     return SceneItem(L"scene-aurora", L"Aurora Flow");
 }
 
-bool HasWidgetTitle(const std::vector<wallpaper::DesktopWidget>& widgets, const wchar_t* title) {
-    for (const auto& widget : widgets) {
-        if (_wcsicmp(widget.title.c_str(), title) == 0) return true;
+bool NearlyEqual(float a, float b) noexcept {
+    return std::fabs(a - b) <= 0.0005f;
+}
+
+bool MatchesLegacyShowcaseGeometry(
+    const wallpaper::DesktopWidget& widget,
+    wallpaper::NativeWidgetPreset preset) noexcept {
+    switch (preset) {
+    case wallpaper::NativeWidgetPreset::GlassClock:
+        return NearlyEqual(widget.width, 0.30f) && NearlyEqual(widget.height, 0.20f);
+    case wallpaper::NativeWidgetPreset::TodayTasks:
+        return NearlyEqual(widget.width, 0.26f) && NearlyEqual(widget.height, 0.24f);
+    case wallpaper::NativeWidgetPreset::WeatherGlass:
+        return NearlyEqual(widget.width, 0.24f) && NearlyEqual(widget.height, 0.20f);
     }
     return false;
+}
+
+std::vector<wallpaper::DesktopWidget>::iterator FindWidgetTitle(
+    std::vector<wallpaper::DesktopWidget>& widgets,
+    const wchar_t* title) {
+    return std::find_if(widgets.begin(), widgets.end(), [&](const auto& widget) {
+        return _wcsicmp(widget.title.c_str(), title) == 0;
+    });
+}
+
+bool MigrateLegacyShowcaseGeometry(
+    wallpaper::DesktopWidget* widget,
+    wallpaper::NativeWidgetPreset preset,
+    std::wstring* error) {
+    if (!widget || !MatchesLegacyShowcaseGeometry(*widget, preset)) return true;
+    const auto* definition = wallpaper::NativePresetDefinition(preset);
+    if (!definition) return true;
+
+    desktop::WidgetUpdateRequest request;
+    request.id = widget->id;
+    request.width = definition->defaultWidth;
+    request.height = definition->defaultHeight;
+    request.x = std::clamp(widget->x, 0.0f, std::max(0.0f, 1.0f - definition->defaultWidth));
+    request.y = std::clamp(widget->y, 0.0f, std::max(0.0f, 1.0f - definition->defaultHeight));
+
+    const desktop::WidgetService service;
+    const auto updated = service.Update(request);
+    if (!updated.success) {
+        if (error) *error = updated.message;
+        return false;
+    }
+    widget->x = *request.x;
+    widget->y = *request.y;
+    widget->width = definition->defaultWidth;
+    widget->height = definition->defaultHeight;
+    return true;
 }
 
 } // namespace
@@ -123,17 +173,25 @@ desktop::DesktopControlResult EnsureShowcaseWidgets() {
 
     struct Needed {
         desktop::WidgetFixedPreset preset;
+        wallpaper::NativeWidgetPreset nativePreset;
         const wchar_t* title;
     };
     constexpr std::array<Needed, 3> needed{{
-        {desktop::WidgetFixedPreset::GlassClock, L"玻璃时钟"},
-        {desktop::WidgetFixedPreset::TodayTasks, L"今日待办"},
-        {desktop::WidgetFixedPreset::WeatherGlass, L"玻璃天气"},
+        {desktop::WidgetFixedPreset::GlassClock, wallpaper::NativeWidgetPreset::GlassClock, L"玻璃时钟"},
+        {desktop::WidgetFixedPreset::TodayTasks, wallpaper::NativeWidgetPreset::TodayTasks, L"今日待办"},
+        {desktop::WidgetFixedPreset::WeatherGlass, wallpaper::NativeWidgetPreset::WeatherGlass, L"玻璃天气"},
     }};
 
     std::wstring createdTitles;
     for (const auto& item : needed) {
-        if (HasWidgetTitle(existing, item.title)) continue;
+        auto found = FindWidgetTitle(existing, item.title);
+        if (found != existing.end()) {
+            std::wstring migrationError;
+            if (!MigrateLegacyShowcaseGeometry(&*found, item.nativePreset, &migrationError)) {
+                return {false, L"更新小组件布局失败：" + migrationError};
+            }
+            continue;
+        }
         wallpaper::DesktopWidget created;
         const auto result = controller.CreatePreset(item.preset, {}, &created);
         if (!result.success) return result;

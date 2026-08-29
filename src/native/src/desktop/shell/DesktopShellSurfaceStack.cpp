@@ -1,9 +1,9 @@
-#include "turingdesk/DesktopShellHost.h"
+#include "miaodesk/DesktopShellHost.h"
 
 #include <algorithm>
 #include <cstdlib>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 bool RectMatchesWithinTolerance(const RECT& actual, const RECT& expected, LONG tolerance = 2) noexcept {
@@ -115,7 +115,7 @@ bool DesktopShellHost::RepairSurfaceStack(HWND expectedSurface, std::wstring* er
         }
     }
 
-    RepairKnownTuringDeskSurfaces();
+    RepairKnownMiaoDeskSurfaces();
     if (error) error->clear();
     return true;
 }
@@ -158,4 +158,4 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
     return false;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://turingdesk.local/schemas/a2ui-widget.schema.json",
-  "title": "TuringDesk A2UI Widget",
+  "$id": "https://miaodesk.local/schemas/a2ui-widget.schema.json",
+  "title": "MiaoDesk A2UI Widget",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "props", "layout"],

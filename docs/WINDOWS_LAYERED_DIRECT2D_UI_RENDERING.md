@@ -1,4 +1,4 @@
-# TuringDesk Windows Layered Direct2D UI Rendering Guide
+# MiaoDesk Windows Layered Direct2D UI Rendering Guide
 
 > Status: **Approved implementation baseline**
 >
@@ -28,7 +28,7 @@ UpdateLayeredWindow(..., ULW_ALPHA)
 Windows compositor
 ```
 
-This path should be reused for future TuringDesk floating native UI when pixel-clean transparent rounded edges are required.
+This path should be reused for future MiaoDesk floating native UI when pixel-clean transparent rounded edges are required.
 
 ## 2. Approved visual result
 
@@ -432,6 +432,6 @@ The main rule learned from the Search Bar work is simple:
 
 > **One visible edge must have one owner.**
 
-For TuringDesk custom floating UI, that owner is Direct2D rendered into a premultiplied-alpha layered surface. Window regions, DWM shaping and other systems must not independently reshape the same visible edge.
+For MiaoDesk custom floating UI, that owner is Direct2D rendered into a premultiplied-alpha layered surface. Window regions, DWM shaping and other systems must not independently reshape the same visible edge.
 
 This rule is more important than any individual radius, border color or glow value.

@@ -1,6 +1,6 @@
-#include "turingdesk/HarnessProcessManager.h"
-#include "turingdesk/HarnessSettingsBridge.h"
-#include "turingdesk/RuntimeLogPaths.h"
+#include "miaodesk/HarnessProcessManager.h"
+#include "miaodesk/HarnessSettingsBridge.h"
+#include "miaodesk/RuntimeLogPaths.h"
 #include <winhttp.h>
 #include <algorithm>
 #include <filesystem>
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr wchar_t kHarnessHost[] = L"127.0.0.1";
@@ -169,7 +169,7 @@ bool ResponseContainsHarnessBootManifest(HINTERNET request) {
 }
 
 bool ProbeHarnessHttp() {
-    HINTERNET session = WinHttpOpen(L"TuringDesk/0.1",
+    HINTERNET session = WinHttpOpen(L"MiaoDesk/0.1",
                                     WINHTTP_ACCESS_TYPE_NO_PROXY,
                                     WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
@@ -241,7 +241,7 @@ HarnessProcessManager::~HarnessProcessManager() { Stop(); }
 bool HarnessProcessManager::Start() {
     const HarnessSettingsBridgeState bridge = PrepareHarnessSettingsBridge();
     if (!bridge.error.empty()) {
-        impl_->lastError = L"无法同步 TuringDesk AI 设置到 DeepSeek Harness：" + bridge.error;
+        impl_->lastError = L"无法同步 MiaoDesk AI 设置到 DeepSeek Harness：" + bridge.error;
         return false;
     }
     if (Running() || ServiceReady()) return true;
@@ -250,7 +250,7 @@ bool HarnessProcessManager::Start() {
 
     const LaunchSpec launch = ResolveLaunchSpec();
     if (!launch.Valid()) {
-        impl_->lastError = L"TuringDesk ARM64 RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新运行 DEPLOY-NATIVE-ARM64.cmd。不会回退到系统 Node/npm。";
+        impl_->lastError = L"MiaoDesk ARM64 RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新运行 DEPLOY-NATIVE-ARM64.cmd。不会回退到系统 Node/npm。";
         return false;
     }
 
@@ -288,29 +288,29 @@ bool HarnessProcessManager::Start() {
         return false;
     }
 
-    WriteLogLine(logHandle, L"[TuringDesk] DeepSeek Harness launch requested");
-    WriteLogLine(logHandle, L"[TuringDesk] mode: " + launch.mode);
-    WriteLogLine(logHandle, L"[TuringDesk] application: " + launch.application);
-    WriteLogLine(logHandle, L"[TuringDesk] command: " + launch.commandLine);
+    WriteLogLine(logHandle, L"[MiaoDesk] DeepSeek Harness launch requested");
+    WriteLogLine(logHandle, L"[MiaoDesk] mode: " + launch.mode);
+    WriteLogLine(logHandle, L"[MiaoDesk] application: " + launch.application);
+    WriteLogLine(logHandle, L"[MiaoDesk] command: " + launch.commandLine);
     if (bridge.configured) {
-        WriteLogLine(logHandle, L"[TuringDesk] shared model: provider=" + bridge.providerId + L" model=" + bridge.model);
-        WriteLogLine(logHandle, L"[TuringDesk] shared base URL: " + bridge.baseUrl);
+        WriteLogLine(logHandle, L"[MiaoDesk] shared model: provider=" + bridge.providerId + L" model=" + bridge.model);
+        WriteLogLine(logHandle, L"[MiaoDesk] shared base URL: " + bridge.baseUrl);
         WriteLogLine(logHandle, bridge.hasApiKey
-            ? L"[TuringDesk] shared API key: injected from Windows Credential Manager"
-            : L"[TuringDesk] shared API key: none (local/keyless provider expected)");
+            ? L"[MiaoDesk] shared API key: injected from Windows Credential Manager"
+            : L"[MiaoDesk] shared API key: none (local/keyless provider expected)");
     } else {
-        WriteLogLine(logHandle, L"[TuringDesk] shared model: TuringDesk AI settings are not configured yet");
+        WriteLogLine(logHandle, L"[MiaoDesk] shared model: MiaoDesk AI settings are not configured yet");
     }
-    WriteLogLine(logHandle, L"[TuringDesk] browser launch: disabled via dsh --no-open; UI is hosted by TuringDesk WebView2");
-    WriteLogLine(logHandle, L"[TuringDesk] network bootstrap: disabled; using repository RuntimeBundle");
-    WriteLogLine(logHandle, L"[TuringDesk] waiting for upstream stdout/stderr...");
+    WriteLogLine(logHandle, L"[MiaoDesk] browser launch: disabled via dsh --no-open; UI is hosted by MiaoDesk WebView2");
+    WriteLogLine(logHandle, L"[MiaoDesk] network bootstrap: disabled; using repository RuntimeBundle");
+    WriteLogLine(logHandle, L"[MiaoDesk] waiting for upstream stdout/stderr...");
     FlushFileBuffers(logHandle);
 
     HANDLE inputHandle = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
                                      &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (inputHandle == INVALID_HANDLE_VALUE) {
-        WriteLogLine(logHandle, L"[TuringDesk] ERROR: unable to open NUL stdin: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: unable to open NUL stdin: " + Win32ErrorText(GetLastError()));
         impl_->lastError = L"无法初始化 Harness 标准输入：" + Win32ErrorText(GetLastError());
         CloseHandle(logHandle);
         CloseHandle(job);
@@ -335,7 +335,7 @@ bool HarnessProcessManager::Start() {
     DWORD createError = ERROR_SUCCESS;
     {
         ScopedEnvironmentOverride dshHome(L"DSH_HOME", bridge.dshHome);
-        ScopedEnvironmentOverride apiKey(L"TURINGDESK_API_KEY", bridge.apiKey);
+        ScopedEnvironmentOverride apiKey(L"MIAODESK_API_KEY", bridge.apiKey);
         created = CreateProcessW(launch.application.c_str(), commandBuffer.data(), nullptr, nullptr, TRUE, flags,
                                  nullptr, home.empty() ? nullptr : home.c_str(), &startup, &processInfo);
         createError = created ? ERROR_SUCCESS : GetLastError();
@@ -343,7 +343,7 @@ bool HarnessProcessManager::Start() {
     CloseHandle(inputHandle);
 
     if (!created) {
-        WriteLogLine(logHandle, L"[TuringDesk] ERROR: CreateProcessW failed: " + Win32ErrorText(createError));
+        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: CreateProcessW failed: " + Win32ErrorText(createError));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法启动 DeepSeek Harness：" + Win32ErrorText(createError) + L" · 日志：" + logPath.wstring();
@@ -352,7 +352,7 @@ bool HarnessProcessManager::Start() {
     }
 
     if (!AssignProcessToJobObject(job, processInfo.hProcess)) {
-        WriteLogLine(logHandle, L"[TuringDesk] ERROR: AssignProcessToJobObject failed: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: AssignProcessToJobObject failed: " + Win32ErrorText(GetLastError()));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法接管 Harness 进程树：" + Win32ErrorText(GetLastError()) + L" · 日志：" + logPath.wstring();
@@ -364,7 +364,7 @@ bool HarnessProcessManager::Start() {
     }
 
     if (ResumeThread(processInfo.hThread) == static_cast<DWORD>(-1)) {
-        WriteLogLine(logHandle, L"[TuringDesk] ERROR: ResumeThread failed: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: ResumeThread failed: " + Win32ErrorText(GetLastError()));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法恢复 Harness 进程：" + Win32ErrorText(GetLastError()) + L" · 日志：" + logPath.wstring();
@@ -375,7 +375,7 @@ bool HarnessProcessManager::Start() {
         return false;
     }
 
-    WriteLogLine(logHandle, L"[TuringDesk] process started, pid=" + std::to_wstring(processInfo.dwProcessId));
+    WriteLogLine(logHandle, L"[MiaoDesk] process started, pid=" + std::to_wstring(processInfo.dwProcessId));
     FlushFileBuffers(logHandle);
     CloseHandle(logHandle);
     CloseHandle(processInfo.hThread);
@@ -445,12 +445,12 @@ std::wstring HarnessProcessManager::LogPath() {
 std::wstring HarnessProcessManager::BuildLaunchCommand() {
     const LaunchSpec resolved = ResolveLaunchSpec();
     if (resolved.Valid()) return resolved.commandLine;
-    return L"<TuringDesk>\\Runtime\\Node\\node.exe <TuringDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
+    return L"<MiaoDesk>\\Runtime\\Node\\node.exe <MiaoDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
 }
 
 bool HarnessProcessManager::SelfTest() {
-    const std::wstring sampleNode = L"C:\\TuringDesk\\Runtime\\Node\\node.exe";
-    const std::wstring sampleDsh = L"C:\\TuringDesk\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js";
+    const std::wstring sampleNode = L"C:\\MiaoDesk\\Runtime\\Node\\node.exe";
+    const std::wstring sampleDsh = L"C:\\MiaoDesk\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js";
     const std::wstring dshCommand = BuildDirectDshCommand(sampleNode, sampleDsh);
 
     const auto bindsOnlyLoopback = [](const std::wstring& command) {
@@ -474,4 +474,4 @@ bool HarnessProcessManager::SelfTest() {
            !LogPath().empty();
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

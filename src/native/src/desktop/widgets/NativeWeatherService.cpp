@@ -1,4 +1,4 @@
-#include "turingdesk/NativeWeatherService.h"
+#include "miaodesk/NativeWeatherService.h"
 
 #include <winhttp.h>
 
@@ -21,7 +21,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr std::chrono::minutes kWeatherRefreshInterval{15};
@@ -32,8 +32,8 @@ fs::path WeatherCachePath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(dir, ec);
     return dir / L"weather-cache.ini";
@@ -547,4 +547,4 @@ bool NativeWeatherService::SelfTest() noexcept {
            times.size() == 2 && WeatherCondition(2) == L"多云";
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

@@ -1,9 +1,9 @@
-#include "turingdesk/DesktopWidgetUiAdapter.h"
+#include "miaodesk/DesktopWidgetUiAdapter.h"
 
 #include <algorithm>
 #include <utility>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 
 bool DesktopWidgetUiAdapter::AssignError(const desktop::DesktopControlResult& result, std::wstring* error) {
     if (result.success) return true;
@@ -125,4 +125,4 @@ bool DesktopWidgetUiAdapter::Remove(std::wstring_view id, bool, std::wstring* er
     return true;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

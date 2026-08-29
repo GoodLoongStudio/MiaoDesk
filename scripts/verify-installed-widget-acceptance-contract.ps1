@@ -16,8 +16,8 @@ $runner = Get-Content -LiteralPath $runnerPath -Raw
 foreach ($marker in @(
     "ValidateSet('baseline','settings','search','explorer','monitor')",
     '[switch]$VerifyOnly',
-    "'TuringDesk\NativeTest'",
-    "'TuringDeskWidgetAcceptance.exe'",
+    "'MiaoDesk\NativeTest'",
+    "'MiaoDeskWidgetAcceptance.exe'",
     "'.installed-build-sha'",
     'function Get-PeMachine',
     '0xAA64',
@@ -49,8 +49,8 @@ if ($runner -notmatch 'if \(\$VerifyOnly\)[\s\S]*?exit 0[\s\S]*?Running installe
 
 $workflow = Get-Content -LiteralPath $workflowPath -Raw
 foreach ($marker in @(
-    'TuringDeskWidgetAcceptance.exe',
-    'name: TuringDesk-Native-Search-ARM64',
+    'MiaoDeskWidgetAcceptance.exe',
+    'name: MiaoDesk-Native-Search-ARM64',
     'scripts/run-installed-widget-acceptance.ps1'
 )) {
     if (-not $workflow.Contains($marker)) {
@@ -60,10 +60,10 @@ foreach ($marker in @(
 
 $doc = Get-Content -LiteralPath $docPath -Raw
 foreach ($marker in @(
-    'TuringDeskWidgetAcceptance.exe',
+    'MiaoDeskWidgetAcceptance.exe',
     'run-installed-widget-acceptance.ps1',
     '-VerifyOnly',
-    'turingdesk.widget-acceptance-config.v2',
+    'miaodesk.widget-acceptance-config.v2',
     'baseline -> settings -> search -> explorer -> monitor',
     'real ARM64 Windows',
     'PE machine `0xAA64`',

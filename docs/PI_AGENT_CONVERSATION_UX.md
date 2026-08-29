@@ -1,12 +1,12 @@
-# TuringDesk Pi Agent Conversation UX
+# MiaoDesk Pi Agent Conversation UX
 
 > Status: Product and interaction baseline
 >
-> Scope: The primary end-user conversation surface for Pi-first Turing AI in TuringDesk.
+> Scope: The primary end-user conversation surface for Pi-first Turing AI in MiaoDesk.
 
 ## 1. Product idea
 
-Pi should feel like a persistent desktop contact: a person-like conversation partner that can continue talking indefinitely, remember the current conversation context, and—when appropriate—operate the user's computer through TuringDesk's controlled native capabilities.
+Pi should feel like a persistent desktop contact: a person-like conversation partner that can continue talking indefinitely, remember the current conversation context, and—when appropriate—operate the user's computer through MiaoDesk's controlled native capabilities.
 
 The experience must not look or behave like a terminal. The terminal/raw session remains an advanced/debug surface only.
 
@@ -17,7 +17,7 @@ The normal user mental model is:
 This combines two modes in one continuous conversation:
 
 1. **Conversation** — natural, ongoing chat.
-2. **Action** — Pi may invoke approved TuringDesk tools to manipulate wallpaper, widgets, files, settings, automation, search, and other desktop capabilities.
+2. **Action** — Pi may invoke approved MiaoDesk tools to manipulate wallpaper, widgets, files, settings, automation, search, and other desktop capabilities.
 
 The user should never need to switch mentally between “chat mode” and “agent mode”. Actions should appear as part of the conversation.
 
@@ -73,7 +73,7 @@ Recent messages (high fidelity)
 + explicit user memory/context allowed by product policy
 ```
 
-The UI still renders the full local history that TuringDesk chooses to retain, even when the model only receives a compressed working context.
+The UI still renders the full local history that MiaoDesk chooses to retain, even when the model only receives a compressed working context.
 
 ## 4. Conversation panel behavior
 
@@ -120,7 +120,7 @@ Example:
 
 ```text
 正在应用壁纸
-Aurora Flow
+妙喵云境
 ● 准备资源
 ● 应用到桌面
 ○ 完成
@@ -134,7 +134,7 @@ Example:
 
 ```text
 ✓ 壁纸已应用
-Aurora Flow 已设置为桌面壁纸
+妙喵云境 已设置为桌面壁纸
 ```
 
 ### 5.5 ConfirmationRequest
@@ -191,7 +191,7 @@ Pi conversation/controller layer
     ↓
 Pi Agent / Harness
     ↓ tool calls
-TuringDesk native tool bridge
+MiaoDesk native tool bridge
     ↓
 DesktopControlService
     ↓
@@ -242,7 +242,7 @@ Examples:
 - apply an already-installed wallpaper
 - show/hide a widget
 - open a file/folder/application
-- change non-destructive TuringDesk preferences
+- change non-destructive MiaoDesk preferences
 
 ### Medium-risk / contextual confirmation may be appropriate
 
@@ -323,8 +323,8 @@ The first production version should restore the current conversation after the p
 
 Recommended later persistence:
 
-- current conversation restored across TuringDesk restart;
-- local conversation history stored under the TuringDesk application data directory;
+- current conversation restored across MiaoDesk restart;
+- local conversation history stored under the MiaoDesk application data directory;
 - secrets/API keys must never be serialized into transcript history;
 - tool results should store user-readable summaries, not sensitive raw runtime payloads.
 
@@ -391,7 +391,7 @@ Pi: 在，怎么了？
 User: 帮我换个舒服一点的壁纸
 Pi: 可以。我先看看你现在的桌面配置。
 [ToolAction]
-Pi: 我建议 Aurora Flow，要直接换吗？
+Pi: 我建议 妙喵云境，要直接换吗？
 User: 换吧
 [ToolAction → success]
 User: 这个还不错，再亮一点有没有？
@@ -414,7 +414,7 @@ This entire sequence must stay in one conversation.
 1. Ask Pi to perform a supported desktop action.
 2. Pi explains the action naturally.
 3. Tool status appears as a card.
-4. The tool runs through TuringDesk's approved service boundary.
+4. The tool runs through MiaoDesk's approved service boundary.
 5. Result appears in the same conversation.
 
 ### Destructive action

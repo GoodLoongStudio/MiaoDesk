@@ -1,4 +1,4 @@
-# Lively wallpaper behavior study for TuringDesk
+# Lively wallpaper behavior study for MiaoDesk
 
 Status: clean-room behavior study used before native C++ refactoring.
 Date: 2026-08-24
@@ -6,7 +6,7 @@ Reference repository: `rocksdanister/lively`
 Reference branch: `core-separation`
 Reference revision studied: `c1036feb664960722e34bf4309042c247d6a909d`
 
-This document records behavior, Windows API expectations and failure/recovery contracts learned from Lively. It is intentionally not a source-code port. TuringDesk remains an independent C++23/MIT implementation.
+This document records behavior, Windows API expectations and failure/recovery contracts learned from Lively. It is intentionally not a source-code port. MiaoDesk remains an independent C++23/MIT implementation.
 
 ## 1. Source modules studied
 
@@ -19,7 +19,7 @@ Primary behavior references:
 - `src/Lively/Lively/Services/ScreensaverService.cs` — idle activation, multi-monitor screensaver layout, input exit, blank fallback and wallpaper reuse.
 - `README.md` — user-facing capability contract for video/Web/application wallpapers, screensavers, automation, API and pause rules.
 
-Other modules are studied only as needed when a TuringDesk subsystem is implemented.
+Other modules are studied only as needed when a MiaoDesk subsystem is implemented.
 
 ## 2. Key architectural lesson
 
@@ -40,7 +40,7 @@ Target model:
 DesktopShellHost
   -> discovers one current desktop hierarchy
   -> exposes validated attachment targets
-  -> attaches all TuringDesk desktop surfaces
+  -> attaches all MiaoDesk desktop surfaces
   -> repairs ordering after Explorer/WorkerW changes
 
 WallpaperSurfaceManager / WidgetSurfaceManager
@@ -82,7 +82,7 @@ The shell model differs:
 ```text
 Progman
 ├─ SHELLDLL_DefView   # layered icon/text shell surface
-├─ custom TuringDesk surfaces
+├─ custom MiaoDesk surfaces
 └─ WorkerW            # Windows background layer
 ```
 
@@ -96,7 +96,7 @@ The compatible surface contract is:
 - WorkerW must remain at the back of the raised-desktop child stack;
 - parent/style/z-order must be revalidated after attachment and shell changes.
 
-This is the first implementation rule to apply to TuringDesk Web/Widget surfaces, because an existing process/HWND is not proof that DWM is actually composing it.
+This is the first implementation rule to apply to MiaoDesk Web/Widget surfaces, because an existing process/HWND is not proof that DWM is actually composing it.
 
 ## 4. Desktop layer lifecycle
 
@@ -126,7 +126,7 @@ explorerPid/generation
 
 ### 4.2 WorkerW destruction
 
-Lively explicitly observes WorkerW destruction. TuringDesk must model the same failure:
+Lively explicitly observes WorkerW destruction. MiaoDesk must model the same failure:
 
 ```text
 WorkerW destroyed
@@ -154,22 +154,22 @@ Contract:
 
 ## 5. Surface roles and z-order
 
-TuringDesk adds Widgets, so the desired logical composition is:
+MiaoDesk adds Widgets, so the desired logical composition is:
 
 ```text
 SHELLDLL_DefView / desktop icons
 --------------------------------
-TuringDesk Widget surfaces
+MiaoDesk Widget surfaces
 --------------------------------
-TuringDesk Web wallpaper surfaces
-TuringDesk native/video/scene wallpaper surfaces
+MiaoDesk Web wallpaper surfaces
+MiaoDesk native/video/scene wallpaper surfaces
 --------------------------------
 Windows WorkerW/background
 ```
 
 Rules:
 
-1. Desktop icons always stay above default TuringDesk surfaces.
+1. Desktop icons always stay above default MiaoDesk surfaces.
 2. Widgets stay above wallpaper surfaces but remain below icons in default click-through mode.
 3. Web wallpaper and Web Widget hosts use the same shell attachment service as native surfaces.
 4. Each surface has an explicit role; z-order repair must not infer role only from random child-window order.
@@ -186,7 +186,7 @@ Interactive Widget mode is a separate later policy; it must not redefine the def
 
 ## 6. Multi-monitor behavior
 
-Lively exposes per-monitor, span and duplicate arrangements. TuringDesk additionally keeps Primary-only and stable DisplayConfig identities.
+Lively exposes per-monitor, span and duplicate arrangements. MiaoDesk additionally keeps Primary-only and stable DisplayConfig identities.
 
 The shared behavioral contract is:
 
@@ -199,11 +199,11 @@ The shared behavioral contract is:
 - span mode treats the virtual desktop as one composition surface;
 - topology changes may require Web/video surface recreation, not only resize.
 
-TuringDesk keeps its stronger stable monitor ID mapping for persisted assignments.
+MiaoDesk keeps its stronger stable monitor ID mapping for persisted assignments.
 
 ## 7. Playback / performance policy
 
-Lively centralizes policy rather than asking each renderer whether it should pause. TuringDesk keeps this principle with the richer action set `Normal / Throttle / Pause / Stop`.
+Lively centralizes policy rather than asking each renderer whether it should pause. MiaoDesk keeps this principle with the richer action set `Normal / Throttle / Pause / Stop`.
 
 Inputs:
 
@@ -229,7 +229,7 @@ Important behavior:
 - span wallpaper is normally treated as one runtime and should pause only according to the span policy;
 - duplicate mode usually behaves as one synchronized wallpaper for pause decisions;
 - audio policy is separate from visual playback policy;
-- TuringDesk-owned UI must be excluded so Settings/Search does not pause its own desktop.
+- MiaoDesk-owned UI must be excluded so Settings/Search does not pause its own desktop.
 
 The renderer receives a policy result; it does not rediscover foreground/system state independently.
 
@@ -278,9 +278,9 @@ Useful behavior to preserve independently in C++:
 - pause state changes renderer behavior, and a renderer failure while intentionally suspended should not always be treated as an ordinary crash;
 - optional data services such as audio visualization/system information are initialized only when the loaded project requests them.
 
-TuringDesk v1 remains intentionally stricter: no arbitrary popup/download behavior and no unscoped data service access. Future Widget data providers must go through explicit permissions.
+MiaoDesk v1 remains intentionally stricter: no arbitrary popup/download behavior and no unscoped data service access. Future Widget data providers must go through explicit permissions.
 
-### 8.2 TuringDesk Web child state machine
+### 8.2 MiaoDesk Web child state machine
 
 Target native state machine:
 
@@ -313,7 +313,7 @@ Recovery classes must be separated:
 
 ## 9. Application/game wallpapers
 
-Lively can host application/game windows as wallpaper. TuringDesk does not need to copy that implementation immediately, but the SurfaceManager must not hard-code all future surfaces as Direct2D/WebView2.
+Lively can host application/game windows as wallpaper. MiaoDesk does not need to copy that implementation immediately, but the SurfaceManager must not hard-code all future surfaces as Direct2D/WebView2.
 
 Target abstraction should allow:
 
@@ -343,7 +343,7 @@ Useful behavior contract:
 - the ordinary wallpaper playback coordinator knows a dedicated screensaver runtime is active and can pause the normal desktop runtime;
 - lock-on-resume/grace-period behavior is separate policy, not a property of the wallpaper renderer itself.
 
-TuringDesk target:
+MiaoDesk target:
 
 ```text
 ScreensaverCoordinator
@@ -356,7 +356,7 @@ ScreensaverCoordinator
 
 Windows Control Panel preview integration is a later compatibility item. Screensaver remains P1 parity after DesktopShellHost and the ordinary surface lifecycle are stable.
 
-## 11. TuringDesk refactor mapping
+## 11. MiaoDesk refactor mapping
 
 Existing responsibility -> target module:
 
@@ -400,10 +400,10 @@ The first C++ refactor after this study is intentionally narrow and testable:
 The real Windows acceptance test for this slice is:
 
 ```text
-Start TuringDesk
+Start MiaoDesk
  -> wallpaper visible
  -> create desktop clock Widget
- -> Widget surface visibly appears above TuringDesk wallpaper and below desktop icons
+ -> Widget surface visibly appears above MiaoDesk wallpaper and below desktop icons
  -> open Settings/Search: Widget remains visible
  -> restart Explorer: wallpaper + Widget recover
  -> change display topology: both reattach to correct monitor geometry

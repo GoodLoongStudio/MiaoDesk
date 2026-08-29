@@ -12,7 +12,7 @@
 |----|------|
 | 设备 | Windows 11 ARM64（Snapdragon 笔电/平板优先） |
 | 版本 | 与 `main` release SHA 一致 |
-| 安装 | `DEPLOY-NATIVE-ARM64.cmd` 或 `UPDATE-TURINGDESK.cmd`（exact-head） |
+| 安装 | `DEPLOY-NATIVE-ARM64.cmd` 或 `UPDATE-MIAODESK.cmd`（exact-head） |
 | 验证 SHA | 安装目录 `.installed-build-sha` == `git rev-parse HEAD` |
 | 网络 | 演示模式验收可断网；完整 AI 验收需 Provider 可达 |
 | 账户 | 干净本地用户；无预装 API Key |
@@ -39,11 +39,11 @@ Windows 版本：
 powershell -ExecutionPolicy Bypass -File scripts\verify-l3-runtime-contract.ps1
 
 # 2. 原生自检
-TuringDesk.exe --self-test
+MiaoDesk.exe --self-test
 # 期望 exit 0
 
 # 3. Widget 五阶段（M3）
-TuringDeskWidgetAcceptance.exe
+MiaoDeskWidgetAcceptance.exe
 # 期望 exit 0；产出证据目录见 WIDGET_ACCEPTANCE_EVIDENCE_M3.md
 
 # 4. 独立校验证据包（若已 seal）
@@ -56,7 +56,7 @@ TuringDeskWidgetAcceptance.exe
 
 ## 3. 黄金路径（人工，连续 3 次）
 
-每次从 **重启 TuringDesk 或新会话** 开始，记录 Pass/Fail。
+每次从 **重启 MiaoDesk 或新会话** 开始，记录 Pass/Fail。
 
 ### 3.1 路径 A — 无 API Key（演示模式，SD3 完成后）
 
@@ -124,7 +124,7 @@ TuringDeskWidgetAcceptance.exe
 | 冷启动 | 启动 10 次 | 0 崩溃 |
 | 会话恢复 | 关面板 5 次 | 消息不丢 |
 | Explorer | `taskkill /f /im explorer.exe` 后等待恢复 | 壁纸+Widget 回来 |
-| 日志 | 打开 `Desktop\TuringDesk-Logs\` | 无 Key/Token 明文 |
+| 日志 | 打开 `Desktop\MiaoDesk-Logs\` | 无 Key/Token 明文 |
 
 ---
 

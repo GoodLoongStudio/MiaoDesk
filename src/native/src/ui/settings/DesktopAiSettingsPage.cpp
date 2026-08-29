@@ -1,5 +1,5 @@
-#include "turingdesk/DesktopAiSettingsPage.h"
-#include "turingdesk/L3Agent.h"
+#include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/L3Agent.h"
 
 #include <commctrl.h>
 #include <shellapi.h>
@@ -21,11 +21,11 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kPageClass[] = L"TuringDesk.Native.ApiConfigurationCenter";
-constexpr wchar_t kStateProperty[] = L"TuringDesk.ApiConfigurationCenter.State";
+constexpr wchar_t kPageClass[] = L"MiaoDesk.Native.ApiConfigurationCenter";
+constexpr wchar_t kStateProperty[] = L"MiaoDesk.ApiConfigurationCenter.State";
 constexpr UINT_PTR kParentSubclassId = 0x54444150; // TDAP
 constexpr int kFirstNavId = 6110;
 constexpr int kAiNavId = 6116;
@@ -49,7 +49,7 @@ constexpr int kDeleteId = 7315;
 constexpr int kRevealId = 7316;
 constexpr int kCopyId = 7317;
 constexpr wchar_t kStoredKeyMask[] = L"************************";
-constexpr wchar_t kActiveCredentialTarget[] = L"TuringDesk/ModelApiKey";
+constexpr wchar_t kActiveCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -71,11 +71,11 @@ fs::path LocalStateRoot() {
         fs::path root(raw);
         CoTaskMemFree(raw);
         std::error_code ec;
-        root /= L"TuringDesk";
+        root /= L"MiaoDesk";
         fs::create_directories(root, ec);
         return root;
     }
-    return fs::temp_directory_path() / L"TuringDesk";
+    return fs::temp_directory_path() / L"MiaoDesk";
 }
 
 fs::path ProfilesPath() {
@@ -120,7 +120,7 @@ int ParseInt(const std::wstring& value, int fallback) {
 }
 
 std::wstring CredentialTarget(std::wstring_view id) {
-    return L"TuringDesk/ApiProfile/" + std::wstring(id);
+    return L"MiaoDesk/ApiProfile/" + std::wstring(id);
 }
 
 std::wstring ReadCredential(std::wstring_view target) {
@@ -144,7 +144,7 @@ bool WriteCredential(std::wstring_view target, const std::wstring& value) {
     credential.CredentialBlobSize = static_cast<DWORD>(value.size() * sizeof(wchar_t));
     credential.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(value.data()));
     credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
-    credential.UserName = const_cast<wchar_t*>(L"TuringDesk");
+    credential.UserName = const_cast<wchar_t*>(L"MiaoDesk");
     return CredWriteW(&credential, 0) != FALSE;
 }
 
@@ -1112,4 +1112,4 @@ bool DesktopAiSettingsPageVisible(HWND desktopSettingsWindow) {
     return state && state->panel && IsWindowVisible(state->panel);
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

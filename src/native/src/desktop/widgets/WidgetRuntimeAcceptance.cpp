@@ -1,6 +1,6 @@
-#include "turingdesk/WidgetRuntimeAcceptance.h"
+#include "miaodesk/WidgetRuntimeAcceptance.h"
 
-#include "turingdesk/WidgetService.h"
+#include "miaodesk/WidgetService.h"
 
 #include <windows.h>
 
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::desktop {
+namespace miaodesk::desktop {
 namespace {
 
 std::wstring SafePhase(std::wstring_view phase) {
@@ -30,8 +30,8 @@ fs::path ReportDirectory() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path root = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     return root / L"Diagnostics";
 }
 
@@ -100,7 +100,7 @@ std::wstring BuildReport(
     DWORD sessionId,
     std::wstring_view sequenceStatus) {
     std::wostringstream out;
-    out << L"TuringDesk M3 Widget Runtime Acceptance\n";
+    out << L"MiaoDesk M3 Widget Runtime Acceptance\n";
     out << L"phase=" << SafePhase(phase) << L"\n";
     out << L"baselineStatus=" << baselineStatus << L"\n";
     out << L"sessionStatus=" << sessionStatus << L"\n";
@@ -361,4 +361,4 @@ WidgetRuntimeAcceptanceCode RunWidgetRuntimeAcceptanceProbe(
     return WidgetRuntimeAcceptanceCode::Passed;
 }
 
-} // namespace turingdesk::desktop
+} // namespace miaodesk::desktop

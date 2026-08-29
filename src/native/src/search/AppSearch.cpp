@@ -1,4 +1,4 @@
-#include "turingdesk/AppSearch.h"
+#include "miaodesk/AppSearch.h"
 #include <windows.h>
 #include <filesystem>
 #include <algorithm>
@@ -9,7 +9,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 std::wstring Lower(std::wstring value) {
@@ -139,4 +139,4 @@ std::vector<SearchResult> AppSearch::Query(const std::wstring& query, std::size_
     return results;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

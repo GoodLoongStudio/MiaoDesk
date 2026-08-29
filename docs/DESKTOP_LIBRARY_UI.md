@@ -1,11 +1,11 @@
-# TuringDesk Desktop Library UI
+# MiaoDesk Desktop Library UI
 
 Status: authoritative product UI contract for the native desktop library/settings shell.
 Date: 2026-08-25
 
 ## 1. Reference boundary
 
-TuringDesk uses the public Lively WinUI layout as a behavioral and information-architecture reference only. Lively is GPL-3.0; TuringDesk remains an independent MIT/C++23 implementation. Do not copy XAML, styles, assets, icons, comments, or implementation code into TuringDesk.
+MiaoDesk uses the public Lively WinUI layout as a behavioral and information-architecture reference only. Lively is GPL-3.0; MiaoDesk remains an independent MIT/C++23 implementation. Do not copy XAML, styles, assets, icons, comments, or implementation code into MiaoDesk.
 
 Reference revision studied: `rocksdanister/lively@c1036feb664960722e34bf4309042c247d6a909d`.
 
@@ -24,9 +24,9 @@ The desktop library converges on:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ 图灵智能桌面          [ 搜索桌面……………… ]          ＋ 添加 │  48px shell header
+│ 妙喵智能桌面          [ 搜索桌面……………… ]          ＋ 添加 │  48px shell header
 ├─────────────────────────────────────────────────────────────┤
-│ 桌面库  小组件  播放列表  多屏  应用规则  性能  图灵 AI     │  lightweight navigation
+│ 桌面库  小组件  播放列表  多屏  应用规则  性能  妙喵 AI     │  lightweight navigation
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐         │
@@ -63,7 +63,7 @@ The desktop library converges on:
 - search is in the top shell, not below a page title;
 - `+ 添加` is a single entry point for file/package/Web import;
 - file drag/drop is accepted over the library and should provide an obvious drop state;
-- `.tdwall`, image, video and local HTML import remain first-class.
+- `.mdwall`, image, video and local HTML import remain first-class.
 
 ### 3.3 Bottom command bar
 
@@ -112,7 +112,7 @@ Top-level native navigation:
 - 多屏
 - 应用规则
 - 性能
-- 图灵 AI
+- 妙喵 AI
 
 `桌面库` and `小组件` are local pages in the desktop library shell. Existing automation/settings pages remain reachable through the navigation callback until they are visually migrated into the same shell.
 
@@ -129,7 +129,7 @@ Top-level native navigation:
 This UI is not complete because the controls exist. It is complete only when a real Windows ARM64 user can:
 
 ```text
-open 图灵智能桌面
+open 妙喵智能桌面
  -> immediately see a visual wallpaper card wall
  -> search
  -> select any visible card

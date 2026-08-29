@@ -5,12 +5,12 @@ $root = Split-Path -Parent $PSScriptRoot
 $paths = @{
     Conversation = Join-Path $root 'src/native/src/ui/ai/ConversationPanel.cpp'
     ConversationImpl = Join-Path $root 'src/native/src/ui/ai/ConversationPanelImpl.inc'
-    ConversationHeader = Join-Path $root 'src/native/include/turingdesk/ConversationPanel.h'
-    LegacyHeader = Join-Path $root 'src/native/include/turingdesk/L3CliWindow.h'
+    ConversationHeader = Join-Path $root 'src/native/include/miaodesk/ConversationPanel.h'
+    LegacyHeader = Join-Path $root 'src/native/include/miaodesk/L3CliWindow.h'
     Pi = Join-Path $root 'src/native/src/ai/pi/PiRuntime.cpp'
     PiTools = Join-Path $root 'src/native/src/ai/pi/PiNativeToolsExtension.cpp'
     PiE2E = Join-Path $root 'scripts/pi-agent-e2e.mjs'
-    NativeToolsHeader = Join-Path $root 'src/native/include/turingdesk/NativeTools.h'
+    NativeToolsHeader = Join-Path $root 'src/native/include/miaodesk/NativeTools.h'
     NativeToolIsolation = Join-Path $root 'src/native/src/ai/tools/NativeToolIsolation.cpp'
     Main = Join-Path $root 'src/native/src/app/main.cpp'
     DesktopTools = Join-Path $root 'src/native/src/ai/tools/DesktopWidgetTools.cpp'
@@ -19,18 +19,18 @@ $paths = @{
     WidgetStore = Join-Path $root 'src/native/src/desktop/widgets/DesktopWidgetStore.cpp'
     Harness = Join-Path $root 'src/native/src/harness/HarnessProcessManager.cpp'
     CMake = Join-Path $root 'src/native/CMakeLists.txt'
-    Product = Join-Path $root 'docs/TURINGDESK-PRODUCT-BASELINE.md'
-    Native = Join-Path $root 'docs/TURINGDESK-NATIVE-TECH-BASELINE.md'
+    Product = Join-Path $root 'docs/MIAODESK-PRODUCT-BASELINE.md'
+    Native = Join-Path $root 'docs/MIAODESK-NATIVE-TECH-BASELINE.md'
     Contract = Join-Path $root 'docs/L3-PI-RUNTIME-CONTRACT.md'
     DesktopComposition = Join-Path $root 'docs/DESKTOP_COMPOSITION_ARCHITECTURE.md'
     WallpaperParity = Join-Path $root 'docs/WALLPAPER_ENGINE_PARITY.md'
     Sandbox = Join-Path $root 'docs/AI_GENERATED_DESKTOP_SANDBOX.md'
     Schema = Join-Path $root 'docs/schemas/a2ui-widget.schema.json'
     Deploy = Join-Path $root 'scripts/deploy-native-arm64.ps1'
-    Update = Join-Path $root 'scripts/update-turingdesk-arm64.ps1'
+    Update = Join-Path $root 'scripts/update-miaodesk-arm64.ps1'
     Prepare = Join-Path $root 'scripts/prepare-third-party-runtime-arm64.ps1'
     WindowsCompat = Join-Path $root 'scripts/verify-windows-powershell-compat.ps1'
-    UpdateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
+    UpdateCmd = Join-Path $root 'UPDATE-MIAODESK.cmd'
     DeployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
     Arm = Join-Path $root '.github/workflows/native-search-windows.yml'
     X64 = Join-Path $root '.github/workflows/native-x64-validation.yml'
@@ -44,10 +44,10 @@ $forbiddenPaths = @(
     'legacy',
     'src/native/src/ui/ai/L3CliWindow.cpp',
     'docs/L3-CODEX-RUNTIME-CONTRACT.md',
-    'src/native/include/turingdesk/CodexRuntime.h',
-    'src/native/include/turingdesk/CodexHostBridge.h',
+    'src/native/include/miaodesk/CodexRuntime.h',
+    'src/native/include/miaodesk/CodexHostBridge.h',
     'scripts/verify-codex-jsonl-wire.ps1',
-    'docs/TURINGDESK-DESIGN-SPEC.md',
+    'docs/MIAODESK-DESIGN-SPEC.md',
     'docs/LEGACY-REDUNDANCY-CLEANUP-PLAN.md',
     'docs/AI-WORKBENCH-CONSOLIDATION-PLAN.md'
 )
@@ -87,7 +87,7 @@ $arm = Get-Content $paths.Arm -Raw
 $x64 = Get-Content $paths.X64 -Raw
 
 foreach ($marker in @(
-    '#include "turingdesk/PiRuntime.h"', 'ActiveRuntime::Pi', 'gPiRuntime', 'state.pi->AskAsync',
+    '#include "miaodesk/PiRuntime.h"', 'ActiveRuntime::Pi', 'gPiRuntime', 'state.pi->AskAsync',
     'StartDirectFallback', 'state.agent->AskAsync', 'route: primary pi start', 'fallback: direct api start')) {
     if (-not $l3.Contains($marker)) { throw "Pi-first AI marker missing: $marker" }
 }
@@ -96,17 +96,17 @@ foreach ($marker in @('UserFacingLocalReply', 'ShowL3CliWindow', '/runtime')) {
     if (-not $l3.Contains($marker)) { throw "AI/diagnostics boundary marker missing: $marker" }
 }
 
-foreach ($marker in @('#include "turingdesk/ConversationPanel.h"', '#define ShowL3CliWindow ShowConversationPanel', '#include "ConversationPanelImpl.inc"')) {
+foreach ($marker in @('#include "miaodesk/ConversationPanel.h"', '#define ShowL3CliWindow ShowConversationPanel', '#include "ConversationPanelImpl.inc"')) {
     if (-not $conversation.Contains($marker)) { throw "Conversation Panel canonical wrapper marker missing: $marker" }
 }
 foreach ($marker in @('bool ShowConversationPanel(', 'return ShowConversationPanel(')) {
     if (-not $conversationHeader.Contains($marker)) { throw "Conversation Panel canonical API marker missing: $marker" }
 }
-if (-not $legacyHeader.Contains('#include "turingdesk/ConversationPanel.h"')) { throw 'Legacy L3CliWindow.h must remain a compatibility-only include of ConversationPanel.h.' }
-foreach ($marker in @('TuringDesk.Native.ConversationPanel', 'ConversationState', 'kSendId', 'SetBusyVisual')) {
+if (-not $legacyHeader.Contains('#include "miaodesk/ConversationPanel.h"')) { throw 'Legacy L3CliWindow.h must remain a compatibility-only include of ConversationPanel.h.' }
+foreach ($marker in @('MiaoDesk.Native.ConversationPanel', 'ConversationState', 'kSendId', 'SetBusyVisual')) {
     if (-not $l3.Contains($marker)) { throw "Conversation Panel marker missing: $marker" }
 }
-foreach ($forbidden in @('TuringDesk.Native.L3CliWindow', 'kCliClass', 'Consolas', '#include "turingdesk/ModelSettingsWindow.h"', 'kSettingsId')) {
+foreach ($forbidden in @('MiaoDesk.Native.L3CliWindow', 'kCliClass', 'Consolas', '#include "miaodesk/ModelSettingsWindow.h"', 'kSettingsId')) {
     if ($l3.Contains($forbidden)) { throw "Retired terminal AI UI marker returned: $forbidden" }
 }
 
@@ -114,16 +114,16 @@ foreach ($marker in @(
     'src/ui/ai/ConversationPanel.cpp', 'src/ai/pi/PiRuntime.cpp', 'src/ai/pi/PiNativeToolsExtension.cpp',
     'src/ai/tools/NativeTools.cpp', 'src/ai/a2ui/A2UIParser.cpp', 'src/desktop/preview/GeneratedDesktopPreview.cpp',
     'src/desktop/widgets/DesktopWidgetStore.cpp', 'src/ai/tools/DesktopWidgetTools.cpp')) {
-    if (-not $cmake.Contains($marker)) { throw "TuringDesk build graph marker missing: $marker" }
+    if (-not $cmake.Contains($marker)) { throw "MiaoDesk build graph marker missing: $marker" }
 }
-foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHostBridge.cpp', 'TuringDeskCodexJsonlContractCheck')) {
+foreach ($marker in @('src/ui/ai/L3CliWindow.cpp', 'CodexRuntime.cpp', 'CodexHostBridge.cpp', 'MiaoDeskCodexJsonlContractCheck')) {
     if ($cmake.Contains($marker)) { throw "Retired build marker is still active: $marker" }
 }
 
 foreach ($marker in @(
     '@earendil-works', '--mode rpc', 'PI_CODING_AGENT_DIR', 'openai-completions', 'openai-responses',
     'anthropic-messages', 'google-generative-ai', 'RuntimeLogPath(L"pi-runtime.log")',
-    '\"type\":\"prompt\"', '\"type\":\"abort\"', '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'turingdesk-local',
+    '\"type\":\"prompt\"', '\"type\":\"abort\"', '\"type\":\"new_session\"', '\"type\":\"agent_settled\"', 'miaodesk-local',
     '--no-extensions', '--extension', 'agent-tools-v1', 'desktop_preview_examples',
     'persistent desktop Agent', 'MUST call tools first')) {
     if (-not $pi.Contains($marker)) { throw "Pi runtime contract marker missing: $marker" }
@@ -137,7 +137,7 @@ $piPreviewTools = @(
     'settings_open', 'wallpaper_validate_package', 'wallpaper_state_get', 'desktop_widget_list',
     'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples'
 )
-foreach ($marker in @('pi.registerTool({', 'pi.setActiveTools', 'TURINGDESK_NATIVE_TOOL_HOST', '--native-tool-worker') + $piPreviewTools) {
+foreach ($marker in @('pi.registerTool({', 'pi.setActiveTools', 'MIAODESK_NATIVE_TOOL_HOST', '--native-tool-worker') + $piPreviewTools) {
     if (-not $piTools.Contains($marker)) { throw "Pi preview tool marker missing: $marker" }
 }
 $forbiddenPiMutationTools = @(
@@ -181,7 +181,7 @@ foreach ($marker in @('HasOnly', 'A2UI', 'ValidateNode', 'count > 32', 'depth > 
 foreach ($marker in @('additionalProperties', 'Card', 'Text', 'Button', 'Weather', 'List')) {
     if (-not $schema.Contains($marker)) { throw "A2UI schema marker missing: $marker" }
 }
-foreach ($marker in @('Apply', 'Reject', 'AI_Generated', 'WebView2', 'declarative', 'Aurora Flow', 'Ocean Flow', 'Today Tasks', 'System Pulse')) {
+foreach ($marker in @('Apply', 'Reject', 'AI_Generated', 'WebView2', 'declarative', '妙喵云境', '月影秘境', 'Today Tasks', 'System Pulse')) {
     if (-not $sandbox.Contains($marker)) { throw "AI desktop sandbox documentation marker missing: $marker" }
 }
 
@@ -192,7 +192,7 @@ if (-not $main.Contains('DesktopWidgetStore::SelfTest')) { throw 'Native self-te
 if (-not $nativeToolIsolation.Contains('RuntimeLogPath(L"pi-runtime.log")')) { throw 'Native tool worker diagnostics must route to pi-runtime.log.' }
 
 if (-not $arm.Contains('scripts\pi-agent-e2e.mjs')) { throw 'ARM64 workflow must execute Pi Agent E2E.' }
-foreach ($marker in @('get_state', 'agent_settled', 'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples', 'forbiddenTools', 'TURINGDESK_NATIVE_TOOL_HOST', 'PI_WRITE_OK', 'PI_SHELL_OK')) {
+foreach ($marker in @('get_state', 'agent_settled', 'desktop_preview_widget', 'desktop_preview_wallpaper', 'desktop_preview_examples', 'forbiddenTools', 'MIAODESK_NATIVE_TOOL_HOST', 'PI_WRITE_OK', 'PI_SHELL_OK')) {
     if (-not $piE2E.Contains($marker)) { throw "Pi Agent E2E marker missing: $marker" }
 }
 foreach ($forbidden in $forbiddenPiMutationTools) {
@@ -202,7 +202,7 @@ foreach ($forbidden in $forbiddenPiMutationTools) {
 foreach ($marker in @('Materialize-Runtime', 'Test-StagedPackage', '.installed-build-sha', 'Materialize-Runtime $next $validated.BuildSha', 'RuntimeBundle revision mismatch')) {
     if (-not $update.Contains($marker)) { throw "ARM64 updater marker missing: $marker" }
 }
-foreach ($marker in @('Ensure-ValidatedCurrentMain', 'update-turingdesk-arm64.ps1', 'powershell.exe', '-File $Updater')) {
+foreach ($marker in @('Ensure-ValidatedCurrentMain', 'update-miaodesk-arm64.ps1', 'powershell.exe', '-File $Updater')) {
     if (-not $deploy.Contains($marker)) { throw "ARM64 deploy wrapper marker missing: $marker" }
 }
 foreach ($script in @($deploy, $update, $prepare)) {

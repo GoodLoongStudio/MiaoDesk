@@ -1,5 +1,5 @@
-#include "turingdesk/WallpaperLibrary.h"
-#include "turingdesk/WallpaperPackage.h"
+#include "miaodesk/WallpaperLibrary.h"
+#include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
 #include <shobjidl.h>
@@ -17,7 +17,7 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kItemPrefix[] = L"Item.";
@@ -34,7 +34,7 @@ fs::path DefaultLibraryRoot() {
     fs::path base = (length > 0 && length < std::size(local))
         ? fs::path(local)
         : fs::temp_directory_path();
-    return base / L"TuringDesk" / L"WallpaperLibrary";
+    return base / L"MiaoDesk" / L"WallpaperLibrary";
 }
 
 unsigned long long NowUnixSeconds() {
@@ -351,7 +351,7 @@ bool WallpaperLibrary::Remove(std::wstring_view id, bool deleteManagedCopy, std:
             fs::remove(item.source, ec);
         } else if (PathIsInside(item.source, PackageDirectory())) {
             const fs::path package = item.source.parent_path();
-            if (Lower(package.extension().wstring()) == L".tdwall" && PathIsInside(package, PackageDirectory()))
+            if (Lower(package.extension().wstring()) == L".mdwall" && PathIsInside(package, PackageDirectory()))
                 fs::remove_all(package, ec);
         }
     }
@@ -440,7 +440,7 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
     if (ec) { SetError(error, L"无法创建壁纸包目录"); return false; }
     for (const auto& entry : fs::directory_iterator(packages, ec)) {
         if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
-        if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".tdwall") continue;
+        if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
         WallpaperPackageManifest manifest;
         std::wstring packageError;
         if (!WallpaperPackage::Validate(entry.path(), &manifest, &packageError)) continue;
@@ -552,14 +552,14 @@ std::optional<std::size_t> WallpaperLibrary::FindSourceIndex(const fs::path& sou
 bool WallpaperLibrary::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-WallpaperLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-WallpaperLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
     const fs::path sample = root / L"sample.html";
     {
         std::ofstream output(sample, std::ios::binary);
-        output << "<html><body>TuringDesk wallpaper library self-test</body></html>";
+        output << "<html><body>MiaoDesk wallpaper library self-test</body></html>";
     }
 
     WallpaperLibrary library(root / L"Library");
@@ -574,9 +574,9 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && library.Favorites().size() == 1;
         ok = ok && !library.RecentlyUsed(1).empty();
     }
-    ok = ok && library.UpsertScene(L"scene-aurora", L"Aurora Flow", &error);
-    const fs::path package = library.PackageDirectory() / L"selftest.tdwall";
-    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"TuringDesk", &error);
+    ok = ok && library.UpsertScene(L"scene-aurora", L"妙喵云境", &error);
+    const fs::path package = library.PackageDirectory() / L"selftest.mdwall";
+    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
 
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
@@ -596,4 +596,4 @@ bool WallpaperLibrary::SelfTest() {
     return ok;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

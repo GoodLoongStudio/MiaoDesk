@@ -1,4 +1,4 @@
-# TuringDesk AI Generated Desktop Sandbox
+# MiaoDesk AI Generated Desktop Sandbox
 
 Status: implementation contract for AI-generated desktop widgets and wallpapers.
 
@@ -29,7 +29,7 @@ User natural language
               v
 +---------------------------+
 | GeneratedContentSandbox   |
-| %TEMP%/TuringDesk/        |
+| %TEMP%/MiaoDesk/        |
 | AI_Generated/<previewId>  |
 | - ephemeral files only    |
 | - no registry writes      |
@@ -67,7 +67,7 @@ User natural language
 
 Hard rule: preview creation is not an apply operation. The sandbox must not call `ApplyWebPackage`, `CreateWebWidget`, modify the registry, write system folders, or alter the persisted desktop state. Only the explicit Apply command may cross the commit boundary.
 
-TuringDesk uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
+MiaoDesk uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
 
 The sandbox contract is deliberately host-agnostic at the protocol level: A2UI JSON and the preview/Apply/Reject boundary do not depend on any particular UI framework, so the sandbox can evolve without changing the protocol.
 
@@ -149,7 +149,7 @@ Equivalent background value is `0x00FFFFFF`: alpha 0, RGB white.
 
 ### Native -> WebView2 data bridge
 
-The native parser first validates AI JSON and then sends a normalized JSON document to a fixed renderer that ships with TuringDesk:
+The native parser first validates AI JSON and then sends a normalized JSON document to a fixed renderer that ships with MiaoDesk:
 
 ```cpp
 std::string normalized;
@@ -166,7 +166,7 @@ The trusted renderer contains fixed application-owned JavaScript. It receives on
 
 ```javascript
 chrome.webview.addEventListener('message', e => {
-  renderA2UI(e.data); // renderA2UI is shipped by TuringDesk, never model-generated
+  renderA2UI(e.data); // renderA2UI is shipped by MiaoDesk, never model-generated
 });
 ```
 
@@ -183,7 +183,7 @@ C++ accepts only `previewAction/apply` or `previewAction/reject` and verifies th
 Temporary assets live only under:
 
 ```text
-%TEMP%/TuringDesk/AI_Generated/<previewId>/
+%TEMP%/MiaoDesk/AI_Generated/<previewId>/
 ```
 
 Preview lifecycle:
@@ -191,12 +191,12 @@ Preview lifecycle:
 1. Download or copy the generated image/video into the preview directory using a random preview id.
 2. Enforce file size, extension/MIME, HTTPS-only remote source, decode timeout and path-canonicalization limits.
 3. Render image previews with Direct2D/DirectX/WIC.
-4. Render video previews with the existing TuringDesk media path (Media Foundation today; libVLC can be an optional backend if later required).
+4. Render video previews with the existing MiaoDesk media path (Media Foundation today; libVLC can be an optional backend if later required).
 5. Do not change the current desktop while previewing.
-6. On Apply, copy the validated asset into a managed TuringDesk library/package directory, then call the existing `WallpaperService`/`DesktopControlService` commit path.
+6. On Apply, copy the validated asset into a managed MiaoDesk library/package directory, then call the existing `WallpaperService`/`DesktopControlService` commit path.
 7. On Reject/close, stop playback, release GPU/decoder resources and recursively delete the preview directory.
 
-For normal Windows static wallpaper, `SystemParametersInfo(SPI_SETDESKWALLPAPER, ...)` is the relevant shell API. `DwmSetWindowAttribute` does not set the Windows wallpaper; it controls window/DWM attributes. TuringDesk should prefer its own WallpaperService because dynamic wallpapers, multi-monitor assignment and package lifecycle are product state, not a raw Windows wallpaper mutation.
+For normal Windows static wallpaper, `SystemParametersInfo(SPI_SETDESKWALLPAPER, ...)` is the relevant shell API. `DwmSetWindowAttribute` does not set the Windows wallpaper; it controls window/DWM attributes. MiaoDesk should prefer its own WallpaperService because dynamic wallpapers, multi-monitor assignment and package lifecycle are product state, not a raw Windows wallpaper mutation.
 
 Raw AI-generated GLSL conflicts with the hard rule that AI must not output executable code. Production-safe policy is therefore `shaderPreset + numeric uniforms`, where shader source is application-owned. If raw GLSL is ever enabled experimentally, it must be a separately gated, out-of-process GPU sandbox and must never be part of the default A2UI path.
 
@@ -232,7 +232,7 @@ Safety requirements:
 Target solution layout:
 
 ```text
-TuringDesk.sln
+MiaoDesk.sln
 |
 +-- CoreHost/
 |   +-- Win32 host window                 # Native C++23 / Win32
@@ -276,9 +276,9 @@ Examples are product-owned, deterministic and always available even with no AI p
 
 Wallpapers:
 
-1. Aurora Flow — soft blue/violet procedural-style visual using an application-owned renderer preset.
-2. Neon Flow — darker neon gradient/motion preset.
-3. Ocean Flow — blue ocean/light-caustics preset suitable for demonstrating dynamic wallpaper preview.
+1. 妙喵云境 — soft blue/violet procedural-style visual using an application-owned renderer preset.
+2. 霓虹之城 — darker neon gradient/motion preset.
+3. 月影秘境 — blue ocean/light-caustics preset suitable for demonstrating dynamic wallpaper preview.
 
 Widgets:
 

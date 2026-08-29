@@ -1,9 +1,9 @@
-#include "turingdesk/AutomationUiAdapter.h"
+#include "miaodesk/AutomationUiAdapter.h"
 
 #include <algorithm>
 #include <utility>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 
 bool AutomationUiAdapter::AssignError(const desktop::AutomationServiceResult& result, std::wstring* error) {
     if (result.success) return true;
@@ -104,4 +104,4 @@ bool AutomationUiAdapter::SelfTest() { return desktop::AutomationService::SelfTe
 
 std::wstring AutomationUiAdapter::MakeId(std::wstring_view prefix) { return desktop::AutomationService::MakeId(prefix); }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

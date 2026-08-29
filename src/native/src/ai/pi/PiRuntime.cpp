@@ -1,6 +1,6 @@
-#include "turingdesk/PiRuntime.h"
-#include "turingdesk/PiNativeToolsExtension.h"
-#include "turingdesk/RuntimeLogPaths.h"
+#include "miaodesk/PiRuntime.h"
+#include "miaodesk/PiNativeToolsExtension.h"
+#include "miaodesk/RuntimeLogPaths.h"
 
 #include <wincred.h>
 #include <shlobj.h>
@@ -18,11 +18,11 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kCredentialTarget[] = L"TuringDesk/ModelApiKey";
-constexpr wchar_t kApiKeyEnvironment[] = L"TURINGDESK_MODEL_API_KEY";
+constexpr wchar_t kCredentialTarget[] = L"MiaoDesk/ModelApiKey";
+constexpr wchar_t kApiKeyEnvironment[] = L"MIAODESK_MODEL_API_KEY";
 constexpr DWORD kTurnTimeoutMs = 600000;
 
 std::wstring Lower(std::wstring value) {
@@ -184,8 +184,8 @@ fs::path ModuleDirectory() {
 fs::path LocalAppDataRoot() {
     wchar_t localAppData[32768]{};
     const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) return fs::path(std::wstring(localAppData, count)) / L"TuringDesk";
-    return fs::temp_directory_path() / L"TuringDesk";
+    if (count > 0 && count < std::size(localAppData)) return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk";
+    return fs::temp_directory_path() / L"MiaoDesk";
 }
 
 fs::path PiAgentDirectory() {
@@ -371,7 +371,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.model = agent.Config().model;
     setup.apiType = DetectApiType(agent);
     setup.apiKey = LoadApiKey();
-    if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"turingdesk-local";
+    if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
 
     if (setup.nodePath.empty()) { setup.message = L"未找到 Bundled Node Runtime"; return setup; }
     if (setup.piPath.empty()) { setup.message = L"未找到 Pi Runtime"; return setup; }
@@ -421,11 +421,11 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     const auto model = EscapeJson(setup.model);
     const auto shell = EscapeJson(PowerShellPath());
 
-    std::string models = "{\n  \"providers\": {\n    \"turingdesk\": {\n";
-    models += "      \"name\": \"TuringDesk Provider\",\n";
+    std::string models = "{\n  \"providers\": {\n    \"miaodesk\": {\n";
+    models += "      \"name\": \"MiaoDesk Provider\",\n";
     models += "      \"baseUrl\": \"" + base + "\",\n";
     models += "      \"api\": \"" + api + "\",\n";
-    models += "      \"apiKey\": \"$TURINGDESK_MODEL_API_KEY\",\n";
+    models += "      \"apiKey\": \"$MIAODESK_MODEL_API_KEY\",\n";
     // Chat capability is conservative by default. Image generation is a separate Pi tool/provider
     // and must not cause every arbitrary chat endpoint to be advertised as vision-capable.
     models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\"], \"contextWindow\": 128000, \"maxTokens\": 16384 }]\n";
@@ -438,7 +438,7 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
 
     std::string settings = "{\n";
     settings += "  \"defaultProjectTrust\": \"always\",\n";
-    settings += "  \"defaultProvider\": \"turingdesk\",\n";
+    settings += "  \"defaultProvider\": \"miaodesk\",\n";
     settings += "  \"defaultModel\": \"" + model + "\",\n";
     settings += "  \"shellPath\": \"" + shell + "\",\n";
     settings += "  \"quietStartup\": true\n";
@@ -478,15 +478,15 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     if (!childErrWrite || childErrWrite == INVALID_HANDLE_VALUE) childErrWrite = childOutWrite;
 
     const std::wstring systemPrompt =
-        L"You are TuringDesk's persistent desktop Agent, not a chat-only assistant. "
+        L"You are MiaoDesk's persistent desktop Agent, not a chat-only assistant. "
         L"For any actionable request involving files, folders, shell, settings, wallpaper, widgets, PPT, images, or desktop state, you MUST call tools first instead of only describing steps. "
         L"Pure conversational replies are allowed only for greetings, clarification, or explaining prior tool results. "
-        L"The tool named bash is backed by Windows PowerShell 5.1 in TuringDesk; use PowerShell syntax, not POSIX shell syntax. "
+        L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
         L"Never claim an action succeeded unless the tool result confirms it. "
         L"Desktop wallpaper/widget changes are preview-first: use desktop_preview_wallpaper or desktop_preview_widget, and never claim the desktop was applied until the user clicks Apply.";
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
-    // Omitting TuringDesk extension tools here silently strips Agent desktop capabilities.
+    // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.
     constexpr wchar_t kAgentToolAllowlist[] =
         L"read,bash,edit,write,grep,find,ls,"
         L"settings_open,ppt_create,file_create,folder_list,file_open,image_generate,"
@@ -505,7 +505,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     }
 
     std::wstring command = QuoteArg(setup.nodePath) + L" " + QuoteArg(setup.piPath) +
-        L" --mode rpc --no-session --approve --provider turingdesk --model " + QuoteArg(setup.model) +
+        L" --mode rpc --no-session --approve --provider miaodesk --model " + QuoteArg(setup.model) +
         L" --no-extensions --extension " + QuoteArg(extensionPath) +
         L" --tools " + kAgentToolAllowlist +
         L" --append-system-prompt " + QuoteArg(systemPrompt);
@@ -638,7 +638,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         return;
     }
 
-    const std::string request = "{\"id\":\"turingdesk-turn\",\"type\":\"prompt\",\"message\":\"" + EscapeJson(prompt) + "\"}";
+    const std::string request = "{\"id\":\"miaodesk-turn\",\"type\":\"prompt\",\"message\":\"" + EscapeJson(prompt) + "\"}";
     if (!WriteLine(request)) {
         error = L"发送 Pi prompt 失败";
         AppendRuntimeLog(error);
@@ -832,4 +832,4 @@ void PiRuntime::CleanupProcess() {
     sessionSignature_.clear();
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

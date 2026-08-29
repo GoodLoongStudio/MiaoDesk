@@ -1,8 +1,8 @@
-#include "turingdesk/L3CliWindow.h"
-#include "turingdesk/PiRuntime.h"
-#include "turingdesk/GeneratedDesktopPreview.h"
-#include "turingdesk/RuntimeLogPaths.h"
-#include "turingdesk/StoreDemoExperience.h"
+#include "miaodesk/L3CliWindow.h"
+#include "miaodesk/PiRuntime.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
+#include "miaodesk/RuntimeLogPaths.h"
+#include "miaodesk/StoreDemoExperience.h"
 
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -22,10 +22,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kConversationClass[] = L"TuringDesk.Native.ConversationPanel";
+constexpr wchar_t kConversationClass[] = L"MiaoDesk.Native.ConversationPanel";
 constexpr int kInputId = 3102;
 constexpr int kSendId = 3103; // Contract marker: send is custom drawn but keeps the stable semantic id.
 constexpr UINT kDeltaMessage = WM_APP + 31;
@@ -359,7 +359,7 @@ std::wstring FriendlyToolName(const std::wstring& raw) {
     if (raw == L"folder_list") return L"查看文件夹";
     if (raw == L"file_open") return L"打开文件";
     if (raw == L"image_generate") return L"生成图片";
-    if (raw == L"settings_open") return L"打开图灵设置";
+    if (raw == L"settings_open") return L"打开妙喵设置";
     if (raw == L"wallpaper_create_web_package") return L"制作动态壁纸";
     if (raw == L"wallpaper_validate_package") return L"检查壁纸包";
     if (raw == L"wallpaper_state_get") return L"读取桌面状态";
@@ -544,7 +544,7 @@ void UpdateToolStart(ConversationState& state, const std::wstring& tool) {
     state.activity.terminal = false;
     state.activity.failed = false;
     state.activity.title = L"正在执行：" + FriendlyToolName(tool);
-    state.activity.detail = L"图灵正在操作你的电脑";
+    state.activity.detail = L"妙喵正在操作你的电脑";
     InvalidateConversation(state, true);
 }
 
@@ -559,7 +559,7 @@ void UpdateToolEnd(ConversationState& state, const std::wstring& tool, bool fail
     } else {
         state.activity.steps.clear();
         state.activity.title = L"正在继续";
-        state.activity.detail = L"图灵正在处理下一步";
+        state.activity.detail = L"妙喵正在处理下一步";
         state.activity.failed = false;
         if (!resultText.empty()) TryAppendAssistantArtifact(state, tool, resultText);
     }
@@ -595,7 +595,7 @@ void PollPiActivity(ConversationState& state) {
         } else if (line.find(L"auto-retry started") != std::wstring::npos) {
             state.activity.visible = true;
             state.activity.title = L"正在重试";
-            state.activity.detail = L"服务暂时没有响应，图灵正在自动恢复";
+            state.activity.detail = L"服务暂时没有响应，妙喵正在自动恢复";
             InvalidateConversation(state, true);
         }
     }
@@ -906,7 +906,7 @@ void DrawConfirmationCard(HDC dc, ConversationState& state, int left, int top, i
     RECT title{left + Px(state, 18), top + Px(state, 14), left + width - Px(state, 18), top + Px(state, 38)};
     DrawWrapped(dc, state.bodyBoldFont, RGB(74, 57, 44), L"需要你确认", title, DT_SINGLELINE);
     RECT detail{left + Px(state, 18), top + Px(state, 42), left + width - Px(state, 18), top + Px(state, 72)};
-    DrawWrapped(dc, state.smallFont, RGB(116, 92, 72), L"这项操作可能删除、覆盖或改变本机内容。确认后图灵才会继续。", detail);
+    DrawWrapped(dc, state.smallFont, RGB(116, 92, 72), L"这项操作可能删除、覆盖或改变本机内容。确认后妙喵才会继续。", detail);
 
     const int buttonW = Px(state, 92);
     const int buttonH = Px(state, 34);
@@ -1152,7 +1152,7 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         if (state->assistantIndex < state->entries.size()) state->entries[state->assistantIndex].text = state->streaming;
         if (state->activity.visible && state->activity.steps.empty()) {
             state->activity.title = L"正在回复";
-            state->activity.detail = L"图灵正在组织回答";
+            state->activity.detail = L"妙喵正在组织回答";
         }
         InvalidateConversation(*state, true);
         return 0;
@@ -1384,4 +1384,4 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     return true;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

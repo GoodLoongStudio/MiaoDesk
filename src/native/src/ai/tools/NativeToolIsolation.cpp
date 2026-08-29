@@ -1,5 +1,5 @@
-#include "turingdesk/NativeTools.h"
-#include "turingdesk/RuntimeLogPaths.h"
+#include "miaodesk/NativeTools.h"
+#include "miaodesk/RuntimeLogPaths.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr DWORD kNativeToolTimeoutMs = 30000;
@@ -106,7 +106,7 @@ void AppendToolLog(const std::wstring& text) {
 
 NativeToolResult ExecuteNativeToolIsolated(std::string_view toolName, std::string_view argumentsJson) {
     const auto module = ModulePath();
-    if (module.empty()) return {false, L"无法定位 TuringDesk Native Tool worker。"};
+    if (module.empty()) return {false, L"无法定位 MiaoDesk Native Tool worker。"};
 
     const auto input = MakeTempPath(L"tdi");
     if (input.empty()) return {false, L"无法创建 Native Tool 临时输入文件。"};
@@ -188,4 +188,4 @@ NativeToolResult ExecuteNativeToolIsolated(std::string_view toolName, std::strin
     return {success, message.empty() ? (success ? L"Native Tool 执行成功。" : L"Native Tool 执行失败。") : message};
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

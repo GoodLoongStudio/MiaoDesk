@@ -1,9 +1,9 @@
-#include "turingdesk/NativeWidgetPreset.h"
+#include "miaodesk/NativeWidgetPreset.h"
 
 #include <array>
 #include <cwchar>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
@@ -69,4 +69,4 @@ std::uint32_t NativePresetRefreshIntervalMs(NativeWidgetPreset preset) noexcept 
     return definition ? definition->periodicRefreshMs : 0;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

@@ -1,11 +1,11 @@
-# TuringDesk ARM64 acceptance updater
+# MiaoDesk ARM64 acceptance updater
 
 Status: M3/M2 real-Windows acceptance support tooling, not the final consumer update channel.
 Date: 2026-08-26
 
 ## Purpose
 
-`UPDATE-TURINGDESK.cmd` downloads `scripts/update-turingdesk-arm64.ps1`, resolves an exact `main` SHA with a successful Native Windows ARM64 workflow, downloads that validated artifact, materializes the matching RuntimeBundle, self-tests the staged package, then swaps the installation with rollback/recovery protection.
+`UPDATE-MIAODESK.cmd` downloads `scripts/update-miaodesk-arm64.ps1`, resolves an exact `main` SHA with a successful Native Windows ARM64 workflow, downloads that validated artifact, materializes the matching RuntimeBundle, self-tests the staged package, then swaps the installation with rollback/recovery protection.
 
 This updater exists so real ARM64 Windows acceptance can install the same exact-head package that CI validated.
 
@@ -44,7 +44,7 @@ During swap:
 
 - hold the updater mutex;
 - write the recovery journal;
-- stop only TuringDesk processes inside the managed deploy directory;
+- stop only MiaoDesk processes inside the managed deploy directory;
 - preserve the previous package until the new package and index service pass installed self-tests;
 - automatically roll back after a failed swap.
 

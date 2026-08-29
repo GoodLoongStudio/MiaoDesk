@@ -1,7 +1,7 @@
-#include "turingdesk/DesktopControlService.h"
+#include "miaodesk/DesktopControlService.h"
 
-#include "turingdesk/WallpaperRuntimeControl.h"
-#include "turingdesk/RuntimeLogger.h"
+#include "miaodesk/WallpaperRuntimeControl.h"
+#include "miaodesk/RuntimeLogger.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -12,13 +12,13 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::desktop {
+namespace miaodesk::desktop {
 namespace {
 
-constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperControl";
-constexpr wchar_t kShellMutex[] = L"Local\\TuringDesk.DesktopShellSupervisor.v1";
-constexpr wchar_t kWebRuntimeMutex[] = L"Local\\TuringDesk.WebWallpaperRuntime.v1";
-constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\TuringDesk.WidgetRuntime.v1";
+constexpr wchar_t kWallpaperControlClass[] = L"MiaoDesk.Native.WallpaperControl";
+constexpr wchar_t kShellMutex[] = L"Local\\MiaoDesk.DesktopShellSupervisor.v1";
+constexpr wchar_t kWebRuntimeMutex[] = L"Local\\MiaoDesk.WebWallpaperRuntime.v1";
+constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\MiaoDesk.WidgetRuntime.v1";
 constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
 constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
 constexpr wchar_t kWidgetRuntimeMode[] = L"--widget-runtime";
@@ -96,10 +96,10 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     if (RuntimeInfrastructureReady())
         return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已就绪。"};
 
-    const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
+    const fs::path executable = ModuleDirectory() / L"MiaoDeskWallpaper.exe";
     std::error_code ec;
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
-        return {false, L"找不到 TuringDeskWallpaper.exe。"};
+        return {false, L"找不到 MiaoDeskWallpaper.exe。"};
 
     const bool nativeAlive = FindWindowW(kWallpaperControlClass, nullptr) != nullptr;
     bool launched = false;
@@ -116,7 +116,7 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     if (!launched && !RuntimeInfrastructureReady())
         return {false, L"无法启动或修复桌面运行时。"};
     if (!WaitForRuntimeControl())
-        return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 TuringDesk-Logs。"};
+        return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 MiaoDesk-Logs。"};
     return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已启动并就绪。"};
 }
 
@@ -171,38 +171,38 @@ DesktopControlResult DesktopControlService::GetState(DesktopState* state) const 
 }
 
 DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& package) const {
-    turingdesk::log::Info(L"DesktopControl", L"ApplyWebPackage: " + package.wstring());
+    miaodesk::log::Info(L"DesktopControl", L"ApplyWebPackage: " + package.wstring());
     WallpaperService service;
     const auto result = service.ApplyWebPackage(package);
     if (!result.success) {
-        turingdesk::log::Error(L"DesktopControl", L"ApplyWebPackage 失败: " + result.message);
+        miaodesk::log::Error(L"DesktopControl", L"ApplyWebPackage 失败: " + result.message);
         return FromWallpaper(result);
     }
     const auto runtime = EnsureRuntime();
     if (!runtime.success) {
-        turingdesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
         return runtime;
     }
-    turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
-    turingdesk::log::Info(L"DesktopControl", L"ApplyWebPackage 成功完成并已通知重载");
+    miaodesk::wallpaper::NotifyWallpaperRuntimeReload();
+    miaodesk::log::Info(L"DesktopControl", L"ApplyWebPackage 成功完成并已通知重载");
     return {true, result.message};
 }
 
 DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const {
-    turingdesk::log::Info(L"DesktopControl", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
+    miaodesk::log::Info(L"DesktopControl", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
     WallpaperService service;
     const auto result = service.ApplyLibraryItem(item);
     if (!result.success) {
-        turingdesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
+        miaodesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
         return FromWallpaper(result);
     }
     const auto runtime = EnsureRuntime();
     if (!runtime.success) {
-        turingdesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
         return runtime;
     }
-    turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
-    turingdesk::log::Info(L"DesktopControl", L"ApplyLibraryItem 成功完成并已通知重载");
+    miaodesk::wallpaper::NotifyWallpaperRuntimeReload();
+    miaodesk::log::Info(L"DesktopControl", L"ApplyLibraryItem 成功完成并已通知重载");
     return {true, result.message};
 }
 
@@ -210,7 +210,7 @@ DesktopControlResult DesktopControlService::AssignLibraryItemToMonitor(
     const wallpaper::WallpaperLibraryItem& item,
     std::wstring_view monitorId,
     std::wstring_view friendlyName) const {
-    turingdesk::log::Info(L"DesktopControl", L"AssignLibraryItemToMonitor: id=" + item.id + L", monitor=" + std::wstring(monitorId));
+    miaodesk::log::Info(L"DesktopControl", L"AssignLibraryItemToMonitor: id=" + item.id + L", monitor=" + std::wstring(monitorId));
     WallpaperService service;
     const auto result = service.AssignLibraryItemToMonitor(item, monitorId, friendlyName);
     if (!result.success) return FromWallpaper(result);
@@ -275,46 +275,46 @@ DesktopControlResult DesktopControlService::FindWidget(std::wstring_view id, wal
 }
 
 DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabled) const {
-    turingdesk::log::Info(L"DesktopControl", L"SetWallpaperEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+    miaodesk::log::Info(L"DesktopControl", L"SetWallpaperEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
     WallpaperService service;
     const auto persisted = service.SetEnabled(enabled);
     if (!persisted.success) {
-        turingdesk::log::Error(L"DesktopControl", L"保存壁纸状态失败: " + persisted.message);
+        miaodesk::log::Error(L"DesktopControl", L"保存壁纸状态失败: " + persisted.message);
         return FromWallpaper(persisted);
     }
 
-    const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
+    const fs::path executable = ModuleDirectory() / L"MiaoDeskWallpaper.exe";
     std::error_code ec;
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec)) {
-        turingdesk::log::Info(L"DesktopControl", L"找不到 TuringDeskWallpaper.exe，状态仅保存至 ini");
+        miaodesk::log::Info(L"DesktopControl", L"找不到 MiaoDeskWallpaper.exe，状态仅保存至 ini");
         return {true, persisted.message};
     }
 
     if (enabled) {
         const auto runtime = EnsureRuntime();
         if (!runtime.success) {
-            turingdesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+            miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
             return runtime;
         }
-        if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(true)) {
-            turingdesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送启用消息");
+        if (miaodesk::wallpaper::NotifyWallpaperRuntimeEnabled(true)) {
+            miaodesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送启用消息");
             return {true, persisted.message};
         }
         if (!LaunchRuntime(executable, L"--resume")) {
-            turingdesk::log::Error(L"DesktopControl", L"启动运行进程 --resume 失败");
+            miaodesk::log::Error(L"DesktopControl", L"启动运行进程 --resume 失败");
             return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
         }
-        turingdesk::log::Info(L"DesktopControl", L"成功通过 --resume 启动壁纸运行时");
+        miaodesk::log::Info(L"DesktopControl", L"成功通过 --resume 启动壁纸运行时");
         return {true, persisted.message};
     }
 
-    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(false)) {
-        turingdesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送停用消息");
+    if (miaodesk::wallpaper::NotifyWallpaperRuntimeEnabled(false)) {
+        miaodesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送停用消息");
         return {true, persisted.message};
     }
     // Disable is ini-authoritative. Do not EnsureRuntime or cold-launch just to stop.
-    turingdesk::log::Info(L"DesktopControl", L"壁纸停用状态已权威保存至 ini");
+    miaodesk::log::Info(L"DesktopControl", L"壁纸停用状态已权威保存至 ini");
     return {true, persisted.message};
 }
 
-} // namespace turingdesk::desktop
+} // namespace miaodesk::desktop

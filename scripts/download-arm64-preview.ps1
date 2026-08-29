@@ -2,16 +2,16 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$UserDataRoot = Join-Path $env:LOCALAPPDATA 'TuringDesk'
+$UserDataRoot = Join-Path $env:LOCALAPPDATA 'MiaoDesk'
 $PreviewRoot = Join-Path $UserDataRoot 'DevPreview'
 $InstalledRoot = Join-Path $UserDataRoot 'NativeTest'
 $Workflow = 'native-arm64-preview.yml'
-$Repository = 'GoodLoongStudio/TuringDesk'
+$Repository = 'GoodLoongStudio/MiaoDesk'
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Warn([string]$Text) { Write-Host $Text -ForegroundColor Yellow }
-function Stop-TuringDeskProcesses {
-    foreach ($name in @('TuringDesk', 'TuringDeskWallpaper', 'TuringDeskHarness')) {
+function Stop-MiaoDeskProcesses {
+    foreach ($name in @('MiaoDesk', 'MiaoDeskWallpaper', 'MiaoDeskHarness')) {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     Start-Sleep -Milliseconds 400
@@ -69,7 +69,7 @@ function Test-StaleWallpaperRuntime {
 }
 function Repair-PreviewDesktopConfig {
     Step 'Preparing local desktop config for preview'
-    Stop-TuringDeskProcesses
+    Stop-MiaoDeskProcesses
     $wallpaperIni = Join-Path $UserDataRoot 'wallpaper.ini'
     if (-not (Test-Path $wallpaperIni -PathType Leaf)) {
         Write-Host 'No wallpaper.ini yet; skipping config repair.' -ForegroundColor DarkGray
@@ -221,14 +221,14 @@ if ([string]$run.headSha -ne $previewSha) {
 }
 
 Step 'Downloading completed ARM64 preview artifact'
-$temp = Join-Path $env:TEMP ("TuringDeskPreview-" + [Guid]::NewGuid().ToString('N'))
+$temp = Join-Path $env:TEMP ("MiaoDeskPreview-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
-    $artifactName = "turingdesk-arm64-preview-$previewSha"
+    $artifactName = "miaodesk-arm64-preview-$previewSha"
     & gh run download $run.databaseId --repo $Repository --name $artifactName --dir $temp
     if ($LASTEXITCODE -ne 0) { throw 'Preview artifact download failed.' }
 
-    foreach ($requiredExe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+    foreach ($requiredExe in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
         $requiredPath = Join-Path $temp $requiredExe
         if (-not (Test-Path $requiredPath -PathType Leaf)) {
             throw "Downloaded preview does not contain $requiredExe. Settings/Harness UI would be unavailable."
@@ -252,7 +252,7 @@ try {
         Write-Host 'Preview marker is absent in this older artifact; workflow run SHA and artifact name still match.' -ForegroundColor Yellow
     }
 
-    Stop-TuringDeskProcesses
+    Stop-MiaoDeskProcesses
     if (Test-Path $PreviewRoot) { Remove-Item $PreviewRoot -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
     Copy-Item (Join-Path $temp '*') $PreviewRoot -Recurse -Force
@@ -264,7 +264,7 @@ try {
     }
 
     Step 'Starting ARM64 developer preview'
-    Start-Process -FilePath (Join-Path $PreviewRoot 'TuringDesk.exe') -WorkingDirectory $PreviewRoot
+    Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
     if ($reusedAncestor) {
         Write-Host "Preview binary SHA: $previewSha (safe ancestor reuse)" -ForegroundColor Green
         Write-Host "Checkout SHA:       $headSha" -ForegroundColor Green

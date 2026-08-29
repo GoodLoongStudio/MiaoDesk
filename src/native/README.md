@@ -14,16 +14,16 @@ Implementation code is grouped under `src/` by process/domain. Do not add new `.
 - `src/desktop/performance` — performance policy
 - `src/ui` — presentation/adapters only
 
-Public headers remain in `include/turingdesk/` for API stability during this migration.
+Public headers remain in `include/miaodesk/` for API stability during this migration.
 
 ## Build organization
 
 `CMakeLists.txt` mirrors the physical tree with separate source ownership sets for:
 
-- `TuringDesk.exe`
-- `TuringDeskWallpaper.exe`
-- `TuringDeskHarness.exe`
-- `TuringDeskWidgetAcceptance.exe` — diagnostic-only M3 real-Windows probe that consumes WidgetService health rather than owning HWND/shell logic
+- `MiaoDesk.exe`
+- `MiaoDeskWallpaper.exe`
+- `MiaoDeskHarness.exe`
+- `MiaoDeskWidgetAcceptance.exe` — diagnostic-only M3 real-Windows probe that consumes WidgetService health rather than owning HWND/shell logic
 
 Visual Studio also mirrors the directory hierarchy through `source_group(TREE ...)`, so the IDE view and repository layout no longer diverge.
 
@@ -35,7 +35,7 @@ M3 Widget health remains owned by `src/desktop/widgets`. Runtime process/HWND/We
 
 The production legacy Widget list is still compatibility UI, but its Widget data and temporary health decoration are supplied by `src/ui/widgets/DesktopWidgetUiAdapter.cpp`. The display copy is deliberately separate from persisted Widget data so runtime warning text cannot leak into stored titles.
 
-The M3 acceptance probe is intentionally phase-labelled (`baseline/settings/search/explorer/monitor`). It writes reports below `%LOCALAPPDATA%\TuringDesk\Diagnostics` and fails when no interactive input desktop is available, so hosted CI cannot be mistaken for visible desktop acceptance.
+The M3 acceptance probe is intentionally phase-labelled (`baseline/settings/search/explorer/monitor`). It writes reports below `%LOCALAPPDATA%\MiaoDesk\Diagnostics` and fails when no interactive input desktop is available, so hosted CI cannot be mistaken for visible desktop acceptance.
 
 The current completion-plan gate is real ARM64 Windows visibility/layering/recovery acceptance. M4 UI replacement does not start merely because the M3 implementation compiles.
 

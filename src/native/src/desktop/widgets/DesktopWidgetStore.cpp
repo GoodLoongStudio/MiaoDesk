@@ -1,5 +1,5 @@
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/NativeWidgetPreset.h"
+#include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -14,14 +14,14 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 fs::path DefaultRoot() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    return base / L"TuringDesk" / L"DesktopWidgets";
+    return base / L"MiaoDesk" / L"DesktopWidgets";
 }
 
 bool HasUtf16LeBom(const fs::path& path) {
@@ -130,7 +130,7 @@ bool LooksLikeClockWidget(const fs::path& source) {
            html.find("id=\"time\"") != std::string::npos;
 }
 
-constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\TuringDesk.DesktopWidgetStore.v1";
+constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\MiaoDesk.DesktopWidgetStore.v1";
 
 class WidgetStoreMutexGuard {
 public:
@@ -488,7 +488,7 @@ bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_vie
         return false;
     }
     if (!widget.managedSource || widget.source.empty() || htmlUtf8.empty()) {
-        if (error) *error = L"Desktop widget HTML is not managed by TuringDesk or is empty.";
+        if (error) *error = L"Desktop widget HTML is not managed by MiaoDesk or is empty.";
         return false;
     }
 
@@ -530,7 +530,7 @@ bool DesktopWidgetStore::Remove(std::wstring_view id, bool deleteManagedSource, 
 
 bool DesktopWidgetStore::SelfTest() {
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-DesktopWidget-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"MiaoDesk-DesktopWidget-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
     std::error_code ec;
     fs::create_directories(root, ec);
@@ -571,4 +571,4 @@ bool DesktopWidgetStore::SelfTest() {
     return ok;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

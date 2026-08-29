@@ -1,4 +1,4 @@
-# TuringDesk 文档索引
+# MiaoDesk 文档索引
 
 - Status: normative index
 - Date: 2026-08-29
@@ -12,9 +12,9 @@
 ## 1. 权威链
 
 ```
-TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为准
+MIAODESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为准
   |- L3-PI-RUNTIME-CONTRACT.md      <- AI 架构强制契约
-  |- TURINGDESK-NATIVE-TECH-BASELINE.md
+  |- MIAODESK-NATIVE-TECH-BASELINE.md
   |- NATIVE_SOURCE_LAYOUT.md
   |- DESKTOP_DOMAIN_ARCHITECTURE.md
   |- DESKTOP_COMPOSITION_ARCHITECTURE.md
@@ -29,8 +29,8 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 
 | 文档 | 角色 | 日期 |
 |---|---|---|
-| `TURINGDESK-PRODUCT-BASELINE.md` | 唯一产品基线，按八条原则组织 | 2026-08-29 |
-| `TURINGDESK-NATIVE-TECH-BASELINE.md` | Native 技术基线 | — |
+| `MIAODESK-PRODUCT-BASELINE.md` | 唯一产品基线，按八条原则组织 | 2026-08-29 |
+| `MIAODESK-NATIVE-TECH-BASELINE.md` | Native 技术基线 | — |
 | `L3-PI-RUNTIME-CONTRACT.md` | AI 架构强制契约 | — |
 | `NATIVE_SOURCE_LAYOUT.md` | 源码布局规范 | 2026-08-25 |
 | `STORE_DEMO_V0.1_PLAN.md` | 当前 demo 交付范围 | — |
@@ -62,7 +62,7 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 
 | 文档 | 角色 | 日期 |
 |---|---|---|
-| `TURINGDESK_GLASS_UI_DESIGN_LANGUAGE.md` | 玻璃拟态设计语言 | — |
+| `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md` | 玻璃拟态设计语言 | — |
 | `SEARCH_BAR_VISUAL_SPEC.md` | Search Bar 视觉规范 | — |
 | `PI_AGENT_CONVERSATION_UX.md` | 对话体验规范（原则 3） | — |
 | `PI_AGENT_ACTIVITY_FEEDBACK.md` | 活动反馈规范（原则 3） | — |
@@ -115,7 +115,7 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 |---|---|
 | `DESKTOP_SHELL_RECOVERY.md` | 整篇过期，称 M2 未完成，与已完成的 M2 及守卫矛盾 |
 | `DESKTOP_SHELL_M2_MIGRATION.md` | M2 已完成，迁移过程文档 |
-| `TURINGDESK-DESKTOP-COMPLETION-PLAN.md` | M4–M13 超出八条原则，是冲突主要来源 |
+| `MIAODESK-DESKTOP-COMPLETION-PLAN.md` | M4–M13 超出八条原则，是冲突主要来源 |
 | `DESKTOP_STATE_CONTRACT.md` | 与 `DESKTOP_DOMAIN_ARCHITECTURE.md` 状态契约重复 |
 | `WALLPAPER_SERVICE_LIBRARY_APPLY.md` | 已实现切片，内容已并入产品基线 |
 | `DESKTOP_UI_V2_PRODUCTION_CUTOVER.md` | 一次性切换记录，切换已完成 |
@@ -149,15 +149,15 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 
 | ID | 项 | 问题 | 证据 | 建议做法 |
 |---|---|---|---|---|
-| **TD-1** | 桥接 include 游离于 CMake 视图外 | `WallpaperEngine.cpp`(89KB)、`WallpaperLibraryWindowV2.cpp`(64KB)、`WallpaperAutomationWindow.cpp`(34KB) 被 `#include` 进 Production 包装 TU，不在源列表里。IDE/clangd 跳转失效、静态工具误判为死文件、文本搜索不可靠 | `WallpaperEngineProduction.cpp:190`、`CMakeLists.txt:73,160` | 把正文文件直接列进 `TURINGDESK_WALLPAPER_SOURCES`，宏重定向移进正文或改为显式调用 |
+| **TD-1** | 桥接 include 游离于 CMake 视图外 | `WallpaperEngine.cpp`(89KB)、`WallpaperLibraryWindowV2.cpp`(64KB)、`WallpaperAutomationWindow.cpp`(34KB) 被 `#include` 进 Production 包装 TU，不在源列表里。IDE/clangd 跳转失效、静态工具误判为死文件、文本搜索不可靠 | `WallpaperEngineProduction.cpp:190`、`CMakeLists.txt:73,160` | 把正文文件直接列进 `MIAODESK_WALLPAPER_SOURCES`，宏重定向移进正文或改为显式调用 |
 | **TD-2** | `MessageBoxW` 全局劫持 | 仅为拦截一条含占位文案的对话框，用字符串匹配重定向整个 Win32 API | `WallpaperEngineProduction.cpp:167-175` | 正文直接调用新设置页 |
 | **TD-3** | UTF-8/UTF-16 转换 15+ 份 TU-local 重复 | 13 文件 15 处各自定义，两种签名混用；另有 16 文件直接内联调 Win32 转换 API | `PiRuntime.cpp:35,44`、`main.cpp:50` 等 | 建共享 `detail/Text.hpp`，参照 `RuntimeLogPaths.h` 的唯一 inline 范式 |
 | **TD-4** | `Trim` 6 份同签名重复 | 6 个文件各自实现 `std::wstring Trim(std::wstring)` | `L3Agent.cpp:29`、`WebWallpaperHost.cpp:47` 等 | 并入 TD-3 的共享头 |
 | **TD-5** | 向 `namespace std` 注入重载 —— **UB** | 程序代码向 std 添加 `max/clamp` 重载是标准明令禁止的未定义行为，MSVC 当前容忍但升级编译器或开 `/permissive-` 可能崩 | `ConversationPanelCompileCompat.h:9-19` | 调用点改显式 `static_cast<LONG>`；升级编译器前必须处理 |
 | **TD-6** | Widget 拖拽逻辑复制粘贴 | `NativeWidgetHost` 与 `WebDesktopSurfaceChild` 的拖拽实现逐行等价（数据成员、`UpdateDrag`/`UpdateWidgetDrag`、`DragProc` 消息分派） | `NativeWidgetHost.cpp:240-251,305-332` vs `WebDesktopSurfaceChild.cpp:445-462` | 抽共享 `WidgetDragHandle` 组件；需真机验证拖拽手感 |
 | **TD-7** | 21 个源文件被 2–3 个 target 重复编译 | 4 个 exe 之间无静态库，公共代码各编译一份，构成 ODR 漂移面（TD-3 正是其症状） | `CMakeLists.txt`：`WidgetService.cpp`×3、`DesktopWidgetStore.cpp`×3 等 | 抽 2–3 个 `add_library(... OBJECT)`，exe 只链接库 |
-| **TD-8** | `include/turingdesk/` 58 头平铺 | 无按模块子目录，随模块增长难导航 | `include/turingdesk/` | 分 `ai/ desktop/ ui/` 子目录；改动面大，不急 |
-| **TD-9** | SelfTest 内嵌产品二进制 | `RunNativeSelfTest()` 在 `main.cpp` 串联各模块 SelfTest，无法独立运行、无断言框架 | `main.cpp:208-225` | 抽独立 `TuringDeskSelfTest.exe`，不进产品体积。**不建议**为此引入 GoogleTest |
+| **TD-8** | `include/miaodesk/` 58 头平铺 | 无按模块子目录，随模块增长难导航 | `include/miaodesk/` | 分 `ai/ desktop/ ui/` 子目录；改动面大，不急 |
+| **TD-9** | SelfTest 内嵌产品二进制 | `RunNativeSelfTest()` 在 `main.cpp` 串联各模块 SelfTest，无法独立运行、无断言框架 | `main.cpp:208-225` | 抽独立 `MiaoDeskSelfTest.exe`，不进产品体积。**不建议**为此引入 GoogleTest |
 
 ### 已完成
 
@@ -166,7 +166,7 @@ TURINGDESK-PRODUCT-BASELINE.md      <- 唯一产品基线，冲突时以其为�
 | — | `NativeWidgetPreset.cpp` 在 WALLPAPER target 重复列出 | 已删其一 |
 | — | `ModelSettingsWindow.cpp/.h` 死入口（零调用方） | 已删除并移出构建 |
 | — | 缺 `.clang-format` / `.clang-tidy` / `.editorconfig` / `.gitattributes` / `CMakePresets.json` | 已补齐 |
-| — | `.gitignore` 缺 `build/`，且含已不存在的 `src/TuringDesk.Desktop/`（.NET 旧布局）条目 | 已补 `build/`、清除陈旧条目 |
+| — | `.gitignore` 缺 `build/`，且含已不存在的 `src/MiaoDesk.Desktop/`（.NET 旧布局）条目 | 已补 `build/`、清除陈旧条目 |
 | — | `.gitignore` 中 `bin/` `obj/` `dist/` 等为 .NET/Node 遗留 | 保留（无害），待后续按需精简 |
 
 ### 明确不做

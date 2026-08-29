@@ -1,4 +1,4 @@
-#include "turingdesk/L3Agent.h"
+#include "miaodesk/L3Agent.h"
 #include <windows.h>
 #include <cstdint>
 #include <cwctype>
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr std::uint32_t kSessionMagic = 0x334c4454;
@@ -45,7 +45,7 @@ std::uint64_t SessionHash(const ModelConfig& config) {
 fs::path SessionPath(const fs::path& localAppData, const ModelConfig& config) {
     wchar_t name[32]{};
     swprintf_s(name, L"%016llx.bin", static_cast<unsigned long long>(SessionHash(config)));
-    return localAppData / L"TuringDesk" / L"l3-sessions" / name;
+    return localAppData / L"MiaoDesk" / L"l3-sessions" / name;
 }
 
 void WriteU32(std::ostream& stream, std::uint32_t value) {
@@ -82,7 +82,7 @@ public:
         wchar_t temp[MAX_PATH]{};
         const DWORD tempCount = GetTempPathW(static_cast<DWORD>(std::size(temp)), temp);
         if (!tempCount || tempCount >= std::size(temp)) return;
-        root_ = fs::path(temp) / (L"TuringDesk-L3SelfTest-" + std::to_wstring(GetCurrentProcessId()));
+        root_ = fs::path(temp) / (L"MiaoDesk-L3SelfTest-" + std::to_wstring(GetCurrentProcessId()));
         std::error_code ec;
         fs::remove_all(root_, ec);
         fs::create_directories(root_, ec);
@@ -120,9 +120,9 @@ bool RunL3PersistenceSelfTest() {
     if (!local.Active()) return false;
 
     L3Agent agent;
-    if (!SetProvider(agent, L"turingdesk-selftest-a")) return false;
+    if (!SetProvider(agent, L"miaodesk-selftest-a")) return false;
     const ModelConfig configA = agent.Config();
-    if (!SetProvider(agent, L"turingdesk-selftest-b")) return false;
+    if (!SetProvider(agent, L"miaodesk-selftest-b")) return false;
     const ModelConfig configB = agent.Config();
 
     const auto pathA = SessionPath(local.Root(), configA);
@@ -130,16 +130,16 @@ bool RunL3PersistenceSelfTest() {
     if (pathA == pathB) return false;
     if (!SeedSession(pathA, L"user-a", L"assistant-a") || !SeedSession(pathB, L"user-b", L"assistant-b")) return false;
 
-    if (!SetProvider(agent, L"turingdesk-selftest-a") || agent.ConversationTurnCountForSelfTest() != 1) return false;
-    if (!SetProvider(agent, L"turingdesk-selftest-b") || agent.ConversationTurnCountForSelfTest() != 1) return false;
+    if (!SetProvider(agent, L"miaodesk-selftest-a") || agent.ConversationTurnCountForSelfTest() != 1) return false;
+    if (!SetProvider(agent, L"miaodesk-selftest-b") || agent.ConversationTurnCountForSelfTest() != 1) return false;
 
     std::wstring reply;
     bool consumedSecret = false;
     if (!agent.TryHandleLocal(L"/new", reply, consumedSecret) || consumedSecret) return false;
     if (agent.ConversationTurnCountForSelfTest() != 0 || fs::exists(pathB) || !fs::exists(pathA)) return false;
 
-    if (!SetProvider(agent, L"turingdesk-selftest-a") || agent.ConversationTurnCountForSelfTest() != 1) return false;
+    if (!SetProvider(agent, L"miaodesk-selftest-a") || agent.ConversationTurnCountForSelfTest() != 1) return false;
     return true;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

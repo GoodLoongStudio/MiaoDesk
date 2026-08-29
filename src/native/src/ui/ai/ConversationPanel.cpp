@@ -1,8 +1,8 @@
-#include "turingdesk/ConversationPanel.h"
-#include "turingdesk/WindowPlacementStore.h"
-#include "turingdesk/StoreDemoExperience.h"
-#include "turingdesk/GeneratedDesktopPreview.h"
-#include "turingdesk/WidgetIntentComposer.h"
+#include "miaodesk/ConversationPanel.h"
+#include "miaodesk/WindowPlacementStore.h"
+#include "miaodesk/StoreDemoExperience.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
+#include "miaodesk/WidgetIntentComposer.h"
 #include "ConversationPanelCompileCompat.h"
 #include <commctrl.h>
 #include <d2d1.h>
@@ -16,20 +16,20 @@
 
 namespace {
 
-BOOL TuringDeskSkipLegacyLayerAlpha(HWND, COLORREF, BYTE, DWORD) {
+BOOL MiaoDeskSkipLegacyLayerAlpha(HWND, COLORREF, BYTE, DWORD) {
     // ConversationPanel is presented with UpdateLayeredWindow + premultiplied alpha.
     // Uniform layered alpha would reintroduce the hard/dirty edge fixed in Search Bar.
     return TRUE;
 }
 
-int TuringDeskSkipLegacyWindowRegion(HWND, HRGN region, BOOL) {
+int MiaoDeskSkipLegacyWindowRegion(HWND, HRGN region, BOOL) {
     // Direct2D is the only owner of the visible rounded edge. The legacy GDI region is
     // intentionally discarded so integer clipping cannot fight per-pixel antialiasing.
     if (region) DeleteObject(region);
     return 1;
 }
 
-HRESULT TuringDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, DWORD) {
+HRESULT MiaoDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, DWORD) {
     // Layered windows must not also receive a DWM corner/backdrop surface. That second owner
     // leaves opaque corner fragments around the Direct2D alpha edge on real Windows ARM64.
     return S_OK;
@@ -41,9 +41,9 @@ HRESULT TuringDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID
 // The second macro keeps the existing runtime-contract marker during the migration.
 #define ShowConversationPanel ShowConversationPanelCore
 #define ShowL3CliWindow ShowConversationPanel
-#define SetLayeredWindowAttributes TuringDeskSkipLegacyLayerAlpha
-#define SetWindowRgn TuringDeskSkipLegacyWindowRegion
-#define DwmSetWindowAttribute TuringDeskSkipLegacyDwmWindowAttribute
+#define SetLayeredWindowAttributes MiaoDeskSkipLegacyLayerAlpha
+#define SetWindowRgn MiaoDeskSkipLegacyWindowRegion
+#define DwmSetWindowAttribute MiaoDeskSkipLegacyDwmWindowAttribute
 #ifdef CS_DROPSHADOW
 #undef CS_DROPSHADOW
 #endif
@@ -62,7 +62,7 @@ HRESULT TuringDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID
 #undef small
 #endif
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 bool gConversationCaretVisible = true;
@@ -89,19 +89,19 @@ void EnsureConversationPlacementPersistence(HWND window) {
         kConversationPlacementSubclassId, 0);
 }
 
-BOOL TuringDeskPresentConversationLayered(
+BOOL MiaoDeskPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
     HDC hdcSrc, POINT* source, COLORREF colorKey,
     BLENDFUNCTION* blend, DWORD flags);
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk
 
-#define UpdateLayeredWindow TuringDeskPresentConversationLayered
+#define UpdateLayeredWindow MiaoDeskPresentConversationLayered
 #include "ConversationPanelLayeredSurface.inc"
 #undef UpdateLayeredWindow
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 Microsoft::WRL::ComPtr<IDWriteTextLayout> ConversationRawInputLayout(
@@ -295,7 +295,7 @@ void ApplyConversationRoundedAlphaMask() {
                right - radius, bottom - radius);
 }
 
-BOOL TuringDeskPresentConversationLayered(
+BOOL MiaoDeskPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
     HDC hdcSrc, POINT* source, COLORREF colorKey,
     BLENDFUNCTION* blend, DWORD flags) {
@@ -310,14 +310,14 @@ BOOL TuringDeskPresentConversationLayered(
 }
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk
 
 #include "ConversationPanelInputOverlay.inc"
 #include "ConversationPanelCornerResize.inc"
 #include "ConversationPanelImageIntent.inc"
 #include "ConversationPanelPreviewBridge.inc"
 
-namespace turingdesk {
+namespace miaodesk {
 
 bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
     const bool wasVisible = gConversationState && IsWindow(gConversationState->window) &&
@@ -351,4 +351,4 @@ bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const
     return true;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

@@ -1,5 +1,5 @@
-#include "turingdesk/WallpaperIndependentLayout.h"
-#include "turingdesk/WebWallpaperHost.h"
+#include "miaodesk/WallpaperIndependentLayout.h"
+#include "miaodesk/WebWallpaperHost.h"
 
 #include <windows.h>
 
@@ -9,7 +9,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 ResolvedMonitorWallpaper MakeFallback(const MonitorInfo& monitor, const RECT& region,
@@ -123,7 +123,7 @@ bool IndependentLayoutHasWeb(const std::vector<ResolvedMonitorWallpaper>& resolv
 bool SelfTestIndependentWallpaperResolution() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-IndependentLayout-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-IndependentLayout-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -175,4 +175,4 @@ bool SelfTestIndependentWallpaperResolution() {
     return ok;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

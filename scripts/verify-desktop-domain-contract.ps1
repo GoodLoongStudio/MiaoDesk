@@ -12,28 +12,28 @@ function Require-File([string]$relativePath) {
 }
 
 $files = @{
-    ControlHeader = 'src/native/include/turingdesk/DesktopControlService.h'
+    ControlHeader = 'src/native/include/miaodesk/DesktopControlService.h'
     Control = 'src/native/src/desktop/control/DesktopControlService.cpp'
-    WallpaperHeader = 'src/native/include/turingdesk/WallpaperService.h'
+    WallpaperHeader = 'src/native/include/miaodesk/WallpaperService.h'
     Wallpaper = 'src/native/src/desktop/wallpaper/WallpaperService.cpp'
-    WidgetHeader = 'src/native/include/turingdesk/WidgetService.h'
+    WidgetHeader = 'src/native/include/miaodesk/WidgetService.h'
     Widget = 'src/native/src/desktop/widgets/WidgetService.cpp'
     WidgetRuntime = 'src/native/src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp'
     RuntimeEntry = 'src/native/src/desktop/wallpaper/runtime/WallpaperEntry.cpp'
-    SurfaceTelemetryHeader = 'src/native/include/turingdesk/DesktopSurfaceTelemetry.h'
+    SurfaceTelemetryHeader = 'src/native/include/miaodesk/DesktopSurfaceTelemetry.h'
     SurfaceTelemetry = 'src/native/src/desktop/shell/DesktopSurfaceTelemetry.cpp'
-    WidgetControllerHeader = 'src/native/include/turingdesk/DesktopWidgetController.h'
+    WidgetControllerHeader = 'src/native/include/miaodesk/DesktopWidgetController.h'
     WidgetController = 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
-    WidgetUiHeader = 'src/native/include/turingdesk/DesktopWidgetUiAdapter.h'
+    WidgetUiHeader = 'src/native/include/miaodesk/DesktopWidgetUiAdapter.h'
     WidgetUi = 'src/native/src/ui/widgets/DesktopWidgetUiAdapter.cpp'
-    AutomationHeader = 'src/native/include/turingdesk/AutomationService.h'
+    AutomationHeader = 'src/native/include/miaodesk/AutomationService.h'
     Automation = 'src/native/src/desktop/automation/AutomationService.cpp'
-    AutomationUiHeader = 'src/native/include/turingdesk/AutomationUiAdapter.h'
+    AutomationUiHeader = 'src/native/include/miaodesk/AutomationUiAdapter.h'
     AutomationUi = 'src/native/src/ui/automation/AutomationUiAdapter.cpp'
     AutomationWindow = 'src/native/src/ui/automation/WallpaperAutomationWindowProduction.cpp'
-    PerformanceHeader = 'src/native/include/turingdesk/PerformanceService.h'
+    PerformanceHeader = 'src/native/include/miaodesk/PerformanceService.h'
     Performance = 'src/native/src/desktop/performance/PerformanceService.cpp'
-    PerformanceUiHeader = 'src/native/include/turingdesk/PerformanceUiAdapter.h'
+    PerformanceUiHeader = 'src/native/include/miaodesk/PerformanceUiAdapter.h'
     PerformanceUi = 'src/native/src/ui/performance/PerformanceUiAdapter.cpp'
     ProductionEngine = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp'
     LibraryWindow = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
@@ -90,7 +90,7 @@ foreach ($marker in @('DesktopSurfaceTelemetry.h', 'InspectDesktopSurfaceZOrder'
 foreach ($marker in @('DesktopSurfaceZOrderHealth', 'InspectDesktopSurfaceZOrder', 'Read-only z-order inspection')) {
     if (-not $text.SurfaceTelemetryHeader.Contains($marker)) { throw "Desktop surface telemetry header missing marker: $marker" }
 }
-foreach ($marker in @('SHELLDLL_DefView', 'TuringDesk.Native.WallpaperHost', 'TuringDesk.Native.WebWallpaperHost', 'DesktopSurfaceTelemetryRole::Widget', 'wallpaper surface is above Widget', 'Widget surface is below wallpaper')) {
+foreach ($marker in @('SHELLDLL_DefView', 'MiaoDesk.Native.WallpaperHost', 'MiaoDesk.Native.WebWallpaperHost', 'DesktopSurfaceTelemetryRole::Widget', 'wallpaper surface is above Widget', 'Widget surface is below wallpaper')) {
     if (-not $text.SurfaceTelemetry.Contains($marker)) { throw "Desktop surface telemetry implementation missing marker: $marker" }
 }
 foreach ($forbidden in @('SetParent(', 'SetWindowPos(', 'SendMessageTimeoutW(', '0x052C')) {
@@ -125,9 +125,9 @@ foreach ($marker in @(
     '--desktop-shell-supervisor',
     '--web-wallpaper-runtime',
     '--widget-runtime',
-    'TuringDesk.DesktopShellSupervisor.v1',
-    'TuringDesk.WebWallpaperRuntime.v1',
-    'TuringDesk.WidgetRuntime.v1',
+    'MiaoDesk.DesktopShellSupervisor.v1',
+    'MiaoDesk.WebWallpaperRuntime.v1',
+    'MiaoDesk.WidgetRuntime.v1',
     'RunDesktopShellSupervisor()',
     'RunScopedWebCoordinator(',
     'LaunchHelper(helper)')) {
@@ -194,7 +194,7 @@ foreach ($marker in @('#include "WallpaperLibraryWindowV2.cpp"')) {
 foreach ($marker in @('DesktopWidgetController', 'widgetController.RuntimeHealth', 'widgetController.CreateClock', 'widgetController.SetEnabled', 'widgetController.Remove')) {
     if (-not $text.LibraryV2.Contains($marker)) { throw "Production WallpaperLibraryWindow V2 missing controller-routed Widget marker: $marker" }
 }
-foreach ($forbidden in @('DesktopWidgetStore store', '#include "turingdesk/DesktopWidgetStore.h"', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW', 'FindWindowW(L"Progman"', 'SetParent(')) {
+foreach ($forbidden in @('DesktopWidgetStore store', '#include "miaodesk/DesktopWidgetStore.h"', 'WritePrivateProfileStringW', 'GetPrivateProfileStringW', 'FindWindowW(L"Progman"', 'SetParent(')) {
     if ($text.LibraryV2.Contains($forbidden)) { throw "Production WallpaperLibraryWindow V2 regained store/shell ownership: $forbidden" }
 }
 

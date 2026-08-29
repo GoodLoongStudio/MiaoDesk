@@ -1,4 +1,4 @@
-#include "turingdesk/PiNativeToolsExtension.h"
+#include "miaodesk/PiNativeToolsExtension.h"
 
 #include <windows.h>
 
@@ -10,10 +10,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kNativeToolHostEnvironment[] = L"TURINGDESK_NATIVE_TOOL_HOST";
+constexpr wchar_t kNativeToolHostEnvironment[] = L"MIAODESK_NATIVE_TOOL_HOST";
 
 fs::path ModulePath() {
     std::wstring path(32768, L'\0');
@@ -28,9 +28,9 @@ fs::path PiAgentDirectory() {
     const DWORD count = GetEnvironmentVariableW(
         L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
     if (count > 0 && count < std::size(localAppData)) {
-        return fs::path(std::wstring(localAppData, count)) / L"TuringDesk" / L"PiAgent";
+        return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk" / L"PiAgent";
     }
-    return fs::temp_directory_path() / L"TuringDesk" / L"PiAgent";
+    return fs::temp_directory_path() / L"MiaoDesk" / L"PiAgent";
 }
 
 std::string ReadFile(const fs::path& path) {
@@ -47,7 +47,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const HOST = process.env.TURINGDESK_NATIVE_TOOL_HOST ?? "";
+const HOST = process.env.MIAODESK_NATIVE_TOOL_HOST ?? "";
 const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 const TOOL_NAMES = [
   "settings_open",
@@ -69,8 +69,8 @@ function textResult(text: string) {
 }
 
 async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal): Promise<string> {
-  if (!HOST) throw new Error("TuringDesk native tool host is unavailable.");
-  const work = await mkdtemp(join(tmpdir(), "turingdesk-pi-tool-"));
+  if (!HOST) throw new Error("MiaoDesk native tool host is unavailable.");
+  const work = await mkdtemp(join(tmpdir(), "miaodesk-pi-tool-"));
   const input = join(work, "input.json");
   const output = join(work, "output.txt");
   try {
@@ -91,25 +91,25 @@ async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal
       };
       const abort = () => {
         try { child.kill(); } catch {}
-        finish(new Error(`TuringDesk native tool cancelled: ${tool}`));
+        finish(new Error(`MiaoDesk native tool cancelled: ${tool}`));
       };
       timer = setTimeout(() => {
         try { child.kill(); } catch {}
-        finish(new Error(`TuringDesk native tool timed out: ${tool}`));
+        finish(new Error(`MiaoDesk native tool timed out: ${tool}`));
       }, 30000);
       if (signal?.aborted) return abort();
       signal?.addEventListener("abort", abort, { once: true });
       child.once("error", error => finish(error));
       child.once("exit", code => code === 0
         ? finish()
-        : finish(new Error(`TuringDesk native tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
+        : finish(new Error(`MiaoDesk native tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
     });
     const raw = await readFile(output, "utf8");
     const newline = raw.indexOf("\n");
-    if (newline < 1) throw new Error(`TuringDesk native tool returned an invalid result: ${tool}`);
+    if (newline < 1) throw new Error(`MiaoDesk native tool returned an invalid result: ${tool}`);
     const success = raw.slice(0, newline).trim() === "1";
     const message = raw.slice(newline + 1).trim() ||
-      (success ? "TuringDesk native tool completed." : "TuringDesk native tool failed.");
+      (success ? "MiaoDesk native tool completed." : "MiaoDesk native tool failed.");
     if (!success) throw new Error(message);
     return message;
   } finally {
@@ -123,7 +123,7 @@ function safeFileStem(value: string): string {
     .replace(/[. ]+$/g, "")
     .trim()
     .slice(0, 96);
-  return cleaned || `TuringDesk-Image-${Date.now()}`;
+  return cleaned || `MiaoDesk-Image-${Date.now()}`;
 }
 
 function extensionForMime(mimeType: string): string {
@@ -134,28 +134,28 @@ function extensionForMime(mimeType: string): string {
   return ".png";
 }
 
-async function currentTuringDeskBaseUrl(): Promise<string> {
+async function currentMiaoDeskBaseUrl(): Promise<string> {
   const agentDir = process.env.PI_CODING_AGENT_DIR;
   if (!agentDir) return "";
   try {
     const raw = await readFile(join(agentDir, "models.json"), "utf8");
-    return String(JSON.parse(raw)?.providers?.turingdesk?.baseUrl ?? "");
+    return String(JSON.parse(raw)?.providers?.miaodesk?.baseUrl ?? "");
   } catch { return ""; }
 }
 
 async function resolveOpenRouterApiKey(): Promise<string> {
   const explicit = process.env.OPENROUTER_API_KEY?.trim();
   if (explicit) return explicit;
-  const baseUrl = (await currentTuringDeskBaseUrl()).toLowerCase();
+  const baseUrl = (await currentMiaoDeskBaseUrl()).toLowerCase();
   return baseUrl.includes("openrouter.ai")
-    ? process.env.TURINGDESK_MODEL_API_KEY?.trim() ?? ""
+    ? process.env.MIAODESK_MODEL_API_KEY?.trim() ?? ""
     : "";
 }
 
 async function generateImage(prompt: string, fileName: string, signal?: AbortSignal): Promise<string> {
   const apiKey = await resolveOpenRouterApiKey();
   if (!apiKey) throw new Error("图片生成能力当前未配置：需要 OpenRouter API Key。聊天和其他 Pi 工具仍可正常使用。");
-  console.error(`[TuringDesk][artifact] image_generate start model=${DEFAULT_IMAGE_MODEL}`);
+  console.error(`[MiaoDesk][artifact] image_generate start model=${DEFAULT_IMAGE_MODEL}`);
   const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
   const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
   if (!model) throw new Error(`Pi 图片模型不可用：${DEFAULT_IMAGE_MODEL}`);
@@ -172,12 +172,12 @@ async function generateImage(prompt: string, fileName: string, signal?: AbortSig
     | { type: "image"; data: string; mimeType: string }
     | undefined;
   if (!image?.data) throw new Error("Pi 图片生成完成，但 Provider 没有返回图片数据。");
-  const outputDir = join(process.cwd(), "TuringDesk Images");
+  const outputDir = join(process.cwd(), "MiaoDesk Images");
   await mkdir(outputDir, { recursive: true });
   const stem = safeFileStem(fileName.replace(/\.[A-Za-z0-9]+$/, ""));
   const output = join(outputDir, stem + extensionForMime(image.mimeType || "image/png"));
   await writeFile(output, Buffer.from(image.data, "base64"));
-  console.error(`[TuringDesk][artifact] image_generate success path=${output}`);
+  console.error(`[MiaoDesk][artifact] image_generate success path=${output}`);
   return output;
 }
 
@@ -198,8 +198,8 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     });
   };
 
-  native("settings_open", "Open TuringDesk Settings",
-    "Open the native TuringDesk Settings Center. Use this for TuringDesk settings or provider configuration instead of shell commands.",
+  native("settings_open", "Open MiaoDesk Settings",
+    "Open the native MiaoDesk Settings Center. Use this for MiaoDesk settings or provider configuration instead of shell commands.",
     Type.Object({}, { additionalProperties: false }));
 
   native("ppt_create", "Create PowerPoint Presentation",
@@ -233,21 +233,21 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       try {
-        const output = await generateImage(params.prompt, params.file_name ?? `TuringDesk-Image-${Date.now()}`, signal);
+        const output = await generateImage(params.prompt, params.file_name ?? `MiaoDesk-Image-${Date.now()}`, signal);
         return textResult(`图片已生成：${output}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[TuringDesk][artifact] image_generate failed: ${message}`);
+        console.error(`[MiaoDesk][artifact] image_generate failed: ${message}`);
         throw new Error(message);
       }
     },
   });
 
-  native("wallpaper_validate_package", "Validate TuringDesk Wallpaper",
-    "Validate an existing local .tdwall package. This does not apply it.",
+  native("wallpaper_validate_package", "Validate MiaoDesk Wallpaper",
+    "Validate an existing local .mdwall package. This does not apply it.",
     Type.Object({ path: Type.String() }, { additionalProperties: false }));
   native("wallpaper_state_get", "Read Desktop State",
-    "Read current TuringDesk desktop state. This is read-only.",
+    "Read current MiaoDesk desktop state. This is read-only.",
     Type.Object({}, { additionalProperties: false }));
   native("desktop_widget_list", "List Desktop Widgets",
     "List current persistent widgets. This is read-only.",
@@ -283,7 +283,7 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
   pi.on("before_agent_start", async (event) => {
     activateNativeTools(pi);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## TuringDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change a desktop wallpaper or widget, use desktop_preview_wallpaper or desktop_preview_widget. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Widget generation must be declarative A2UI JSON only. Allowed component types: Card, Text, Button, Weather, List. Do not generate HTML/CSS/JavaScript/C++/PowerShell for widgets.\n- For one-sentence widget requests (for example \"add a todo widget at the top right\"), call desktop_preview_widget immediately with a concise A2UI Card instead of asking follow-up questions.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow; widgets today_tasks, focus_clock, weather_glass, system_pulse.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
+      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change a desktop wallpaper or widget, use desktop_preview_wallpaper or desktop_preview_widget. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Widget generation must be declarative A2UI JSON only. Allowed component types: Card, Text, Button, Weather, List. Do not generate HTML/CSS/JavaScript/C++/PowerShell for widgets.\n- For one-sentence widget requests (for example \"add a todo widget at the top right\"), call desktop_preview_widget immediately with a concise A2UI Card instead of asking follow-up questions.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow; widgets today_tasks, focus_clock, weather_glass, system_pulse.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
     };
   });
 }
@@ -294,11 +294,11 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
 bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPath) {
     const auto module = ModulePath();
     if (module.empty()) {
-        if (error) *error = L"Unable to resolve TuringDesk native tool host.";
+        if (error) *error = L"Unable to resolve MiaoDesk native tool host.";
         return false;
     }
     if (!SetEnvironmentVariableW(kNativeToolHostEnvironment, module.c_str())) {
-        if (error) *error = L"Unable to export TuringDesk native tool host path.";
+        if (error) *error = L"Unable to export MiaoDesk native tool host path.";
         return false;
     }
 
@@ -310,7 +310,7 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
         return false;
     }
 
-    const auto target = extensions / L"turingdesk-native-tools.ts";
+    const auto target = extensions / L"miaodesk-native-tools.ts";
     std::string expected;
     expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
     expected.append(kExtensionSourcePart1);
@@ -321,19 +321,19 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
         {
             std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
             if (!stream) {
-                if (error) *error = L"Unable to write TuringDesk Pi extension.";
+                if (error) *error = L"Unable to write MiaoDesk Pi extension.";
                 return false;
             }
             stream.write(expected.data(), static_cast<std::streamsize>(expected.size()));
             if (!stream) {
-                if (error) *error = L"Unable to finish writing TuringDesk Pi extension.";
+                if (error) *error = L"Unable to finish writing MiaoDesk Pi extension.";
                 return false;
             }
         }
 
         if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
             fs::remove(temporary, ec);
-            if (error) *error = L"Unable to install TuringDesk Pi extension.";
+            if (error) *error = L"Unable to install MiaoDesk Pi extension.";
             return false;
         }
     }
@@ -342,4 +342,4 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
     return true;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

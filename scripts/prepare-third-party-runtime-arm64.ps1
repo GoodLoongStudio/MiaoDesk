@@ -1,5 +1,5 @@
 param(
-    [string]$DeployDir = (Join-Path $env:LOCALAPPDATA 'TuringDesk\NativeTest'),
+    [string]$DeployDir = (Join-Path $env:LOCALAPPDATA 'MiaoDesk\NativeTest'),
     [switch]$SkipGozServiceInstall
 )
 
@@ -14,17 +14,17 @@ function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
 function Resolve-BundleFile([string]$RelativePath) {
     $path = Join-Path $BundleRoot ($RelativePath -replace '/', '\')
-    if (-not (Test-Path $path -PathType Leaf)) { throw "TuringDesk RuntimeBundle file is missing: $path" }
+    if (-not (Test-Path $path -PathType Leaf)) { throw "MiaoDesk RuntimeBundle file is missing: $path" }
     $path
 }
 function Assert-BundleHash([string]$Path, [string]$Expected) {
     $actual = Sha256 $Path
     if ([string]::IsNullOrWhiteSpace($Expected) -or $actual -ne $Expected.ToLowerInvariant()) {
-        throw "TuringDesk RuntimeBundle integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
+        throw "MiaoDesk RuntimeBundle integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
     }
 }
 function Assert-File([string]$Path, [string]$Label) {
-    if (-not (Test-Path $Path -PathType Leaf)) { throw ("TuringDesk RuntimeBundle is missing {0}: {1}" -f $Label, $Path) }
+    if (-not (Test-Path $Path -PathType Leaf)) { throw ("MiaoDesk RuntimeBundle is missing {0}: {1}" -f $Label, $Path) }
 }
 function Test-InDeploy([string]$Candidate) {
     try {
@@ -35,7 +35,7 @@ function Test-InDeploy([string]$Candidate) {
     } catch { return $false }
 }
 function Stop-OwnedProcesses {
-    $names = @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','node.exe','goz.exe','gozd.exe')
+    $names = @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe','node.exe','goz.exe','gozd.exe')
     try {
         foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
             if ($names -notcontains [string]$p.Name) { continue }
@@ -43,17 +43,17 @@ function Stop-OwnedProcesses {
             if (-not $exe -or -not (Test-InDeploy $exe)) { continue }
             & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null
         }
-    } catch { Write-Host "TuringDesk process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+    } catch { Write-Host "MiaoDesk process scan warning: $($_.Exception.Message)" -ForegroundColor DarkYellow }
     Start-Sleep -Milliseconds 250
 }
 function Expand-BundleArchive([string]$Archive, [string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & tar.exe -xf $Archive -C $Destination
-    if ($LASTEXITCODE -ne 0) { throw "Failed to extract TuringDesk RuntimeBundle archive: $Archive" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract MiaoDesk RuntimeBundle archive: $Archive" }
 }
 function Invoke-ElevatedIndexService([string]$Exe, [string]$Arguments) {
     $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
-    if (-not $p -or $p.ExitCode -ne 0) { throw "TuringDesk file index service operation failed: $Arguments" }
+    if (-not $p -or $p.ExitCode -ne 0) { throw "MiaoDesk file index service operation failed: $Arguments" }
 }
 function Probe([string]$Exe, [string[]]$Arguments) {
     $out = Join-Path $env:TEMP ('td-probe-o-' + [guid]::NewGuid().ToString('N'))
@@ -69,18 +69,18 @@ function Ensure-IndexService([string]$IndexExe,[string]$IndexDaemon) {
     $status = Probe $IndexDaemon @('status')
     if ($status.ExitCode -ne 0 -or $status.Text -notmatch '(?i)Running') { Invoke-ElevatedIndexService $IndexDaemon 'install' }
     for ($i=0; $i -lt 120; $i++) {
-        if ((Probe $IndexExe @('--status')).ExitCode -eq 0) { Write-Host 'TuringDesk file search is ready.' -ForegroundColor Green; return }
+        if ((Probe $IndexExe @('--status')).ExitCode -eq 0) { Write-Host 'MiaoDesk file search is ready.' -ForegroundColor Green; return }
         Start-Sleep -Milliseconds 500
     }
-    throw 'TuringDesk file search service did not become reachable after 60 seconds.'
+    throw 'MiaoDesk file search service did not become reachable after 60 seconds.'
 }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {
-    throw 'TuringDesk ARM64 RuntimeBundle is not available.'
+    throw 'MiaoDesk ARM64 RuntimeBundle is not available.'
 }
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'TuringDesk RuntimeBundle architecture/schema mismatch.' }
-if (-not $manifest.pi) { throw 'TuringDesk RuntimeBundle is missing the Agent runtime component.' }
+if ($manifest.architecture -ne 'arm64' -or [int]$manifest.schema -lt 2) { throw 'MiaoDesk RuntimeBundle architecture/schema mismatch.' }
+if (-not $manifest.pi) { throw 'MiaoDesk RuntimeBundle is missing the Agent runtime component.' }
 
 $nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)
 $harnessArchive = Resolve-BundleFile ([string]$manifest.deepseekHarness.archive)
@@ -109,21 +109,21 @@ $ready = (Test-Path $DeployManifestHash -PathType Leaf) -and (Test-Path $NodeExe
          ((Get-Content $DeployManifestHash -Raw).Trim().ToLowerInvariant() -eq $sourceManifestHash)
 if ($ready) {
     Ensure-IndexService $GozExe $GozDaemon
-    Write-Host "TuringDesk RuntimeBundle is ready: $DeployDir" -ForegroundColor Green
+    Write-Host "MiaoDesk RuntimeBundle is ready: $DeployDir" -ForegroundColor Green
     exit 0
 }
 
-Step 'Installing pinned TuringDesk ARM64 RuntimeBundle (offline)'
+Step 'Installing pinned MiaoDesk ARM64 RuntimeBundle (offline)'
 Stop-OwnedProcesses
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
 # The file index daemon is a Windows service: only replace its binaries when content changed.
-$gozTemp = Join-Path $env:TEMP ('TuringDesk-Index-' + [guid]::NewGuid().ToString('N'))
+$gozTemp = Join-Path $env:TEMP ('MiaoDesk-Index-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $gozArchive $gozTemp
     $newGoz = Get-ChildItem $gozTemp -Filter goz.exe -File -Recurse | Select-Object -First 1
     $newGozd = Get-ChildItem $gozTemp -Filter gozd.exe -File -Recurse | Select-Object -First 1
-    if (-not $newGoz -or -not $newGozd) { throw 'TuringDesk file index archive is incomplete' }
+    if (-not $newGoz -or -not $newGozd) { throw 'MiaoDesk file index archive is incomplete' }
     $replace = $true
     if ((Test-Path $GozExe) -and (Test-Path $GozDaemon)) {
         $replace = (Sha256 $GozExe) -ne (Sha256 $newGoz.FullName) -or (Sha256 $GozDaemon) -ne (Sha256 $newGozd.FullName)
@@ -138,11 +138,11 @@ try {
 
 Remove-Item $NodeDir,$PiDir -Recurse -Force -ErrorAction SilentlyContinue
 
-$nodeTemp = Join-Path $env:TEMP ('TuringDesk-Node-' + [guid]::NewGuid().ToString('N'))
+$nodeTemp = Join-Path $env:TEMP ('MiaoDesk-Node-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-BundleArchive $nodeArchive $nodeTemp
     $root = Get-ChildItem $nodeTemp -Directory | Select-Object -First 1
-    if (-not $root -or -not (Test-Path (Join-Path $root.FullName 'node.exe'))) { throw 'TuringDesk bundled runtime archive is invalid' }
+    if (-not $root -or -not (Test-Path (Join-Path $root.FullName 'node.exe'))) { throw 'MiaoDesk bundled runtime archive is invalid' }
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
     Copy-Item (Join-Path $root.FullName '*') $NodeDir -Recurse -Force
 } finally { Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue }
@@ -152,19 +152,19 @@ Expand-BundleArchive $harnessArchive $NodeDir
 Assert-File $NodeExe 'bundled AI runtime'
 Assert-File $DshBin 'advanced workbench runtime'
 & $NodeExe $DshBin --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'TuringDesk Advanced Workbench runtime failed to start' }
+if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk Advanced Workbench runtime failed to start' }
 
 # Agent runtime uses an isolated dependency tree to avoid dependency collisions.
 Expand-BundleArchive $piArchive $PiDir
 Assert-File $PiCli 'agent runtime'
 & $NodeExe $PiCli --version | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'TuringDesk Agent runtime failed to start' }
+if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk Agent runtime failed to start' }
 
 Copy-Item $ManifestPath (Join-Path $RuntimeDir 'runtime-manifest.json') -Force
 Set-Content $DeployManifestHash -Value $sourceManifestHash -Encoding ASCII
 Ensure-IndexService $GozExe $GozDaemon
 
-Write-Host 'TuringDesk ARM64 RuntimeBundle is ready.' -ForegroundColor Green
+Write-Host 'MiaoDesk ARM64 RuntimeBundle is ready.' -ForegroundColor Green
 Write-Host "AI Runtime:          $NodeExe" -ForegroundColor DarkGray
 Write-Host "Agent Runtime:       $PiCli" -ForegroundColor DarkGray
 Write-Host "Advanced Workbench:  $DshBin" -ForegroundColor DarkGray

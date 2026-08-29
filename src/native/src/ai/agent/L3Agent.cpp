@@ -1,6 +1,6 @@
-#include "turingdesk/L3Agent.h"
-#include "turingdesk/AppSearch.h"
-#include "turingdesk/GozSearch.h"
+#include "miaodesk/L3Agent.h"
+#include "miaodesk/AppSearch.h"
+#include "miaodesk/GozSearch.h"
 #include <shellapi.h>
 #include <wincred.h>
 #include <algorithm>
@@ -17,10 +17,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kCredentialTarget[] = L"TuringDesk/ModelApiKey";
+constexpr wchar_t kCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 constexpr std::size_t kMaxConversationTurns = 6;
 constexpr std::uint32_t kSessionMagic = 0x334c4454; // TDL3
 constexpr std::uint32_t kSessionVersion = 1;
@@ -188,7 +188,7 @@ std::vector<std::wstring> ExtractModelIds(const std::string& json) {
 fs::path SettingsPath() {
     wchar_t localAppData[32768]{};
     const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    fs::path directory = count ? fs::path(localAppData) / L"TuringDesk" : fs::temp_directory_path() / L"TuringDesk";
+    fs::path directory = count ? fs::path(localAppData) / L"MiaoDesk" : fs::temp_directory_path() / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory / L"model-settings.json";
@@ -507,7 +507,7 @@ HttpResponse HttpGet(const std::wstring& url, const std::wstring& headers) {
     std::wstring path = L"/";
     if (parts.lpszUrlPath && parts.dwUrlPathLength) path.assign(parts.lpszUrlPath, parts.dwUrlPathLength);
 
-    HINTERNET session = WinHttpOpen(L"TuringDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    HINTERNET session = WinHttpOpen(L"MiaoDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
         response.error = GetLastError();
@@ -1052,7 +1052,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     if (parts.lpszUrlPath && parts.dwUrlPathLength) basePath.assign(parts.lpszUrlPath, parts.dwUrlPathLength);
     const std::wstring path = BuildRequestPath(basePath, config_.endpoint);
 
-    HINTERNET session = WinHttpOpen(L"TuringDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    HINTERNET session = WinHttpOpen(L"MiaoDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) { onDone(HttpError(GetLastError())); return; }
     WinHttpSetTimeouts(session, 5000, 5000, 15000, 60000);
@@ -1094,7 +1094,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     std::string body;
     if (anthropic) {
         body = "{\"model\":\"" + EscapeJson(config_.model) +
-               "\",\"max_tokens\":1024,\"stream\":true,\"system\":\"You are TuringDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\",\"messages\":[";
+               "\",\"max_tokens\":1024,\"stream\":true,\"system\":\"You are MiaoDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\",\"messages\":[";
         bool first = true;
         for (const auto& turn : history) {
             if (!first) body += ',';
@@ -1106,7 +1106,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
         body += "{\"role\":\"user\",\"content\":\"" + EscapeJson(prompt) + "\"}]}";
     } else {
         body = "{\"model\":\"" + EscapeJson(config_.model) +
-               "\",\"messages\":[{\"role\":\"system\",\"content\":\"You are TuringDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\"}";
+               "\",\"messages\":[{\"role\":\"system\",\"content\":\"You are MiaoDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\"}";
         for (const auto& turn : history) {
             body += ",{\"role\":\"user\",\"content\":\"" + EscapeJson(turn.user) + "\"}";
             body += ",{\"role\":\"assistant\",\"content\":\"" + EscapeJson(turn.assistant) + "\"}";
@@ -1238,4 +1238,4 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     onDone(emitted ? L"" : L"模型返回成功，但没有可显示的文本内容。请检查服务的兼容格式。");
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

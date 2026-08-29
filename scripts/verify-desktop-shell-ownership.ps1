@@ -17,10 +17,10 @@ if (Test-Path -LiteralPath $obsoleteCoordinatorBridge -PathType Leaf) {
 }
 
 $paths = @{
-    ShellHeader = 'src/native/include/turingdesk/DesktopShellHost.h'
+    ShellHeader = 'src/native/include/miaodesk/DesktopShellHost.h'
     Shell = 'src/native/src/desktop/shell/DesktopShellHost.cpp'
     Stack = 'src/native/src/desktop/shell/DesktopShellSurfaceStack.cpp'
-    DiagnosticsHeader = 'src/native/include/turingdesk/DesktopShellDiagnostics.h'
+    DiagnosticsHeader = 'src/native/include/miaodesk/DesktopShellDiagnostics.h'
     Diagnostics = 'src/native/src/desktop/shell/DesktopShellDiagnostics.cpp'
     MonitorLayout = 'src/native/src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp'
     LegacyEngine = 'src/native/src/desktop/wallpaper/legacy/WallpaperEngine.cpp'
@@ -36,7 +36,7 @@ foreach ($entry in $paths.GetEnumerator()) {
 foreach ($marker in @('DesktopShellHost', 'AttachSurface', 'EnsureSurface', 'EnsureCurrent', 'InspectSurface', 'RecoverSurface', 'CurrentGenerationValid')) {
     if (-not $text.ShellHeader.Contains($marker)) { throw "DesktopShellHost header missing marker: $marker" }
 }
-foreach ($marker in @('0x052C', 'FindWindowW(kProgmanClass', 'FindWindowExW', 'RequestWallpaperLayer', 'RepairRaisedDesktopWorkerOrder', 'RepairKnownTuringDeskSurfaces')) {
+foreach ($marker in @('0x052C', 'FindWindowW(kProgmanClass', 'FindWindowExW', 'RequestWallpaperLayer', 'RepairRaisedDesktopWorkerOrder', 'RepairKnownMiaoDeskSurfaces')) {
     if (-not $text.Shell.Contains($marker)) { throw "DesktopShellHost no longer owns required shell behavior: $marker" }
 }
 foreach ($marker in @('DesktopShellHost::EnsureSurface', 'DesktopShellHost::RepairSurfaceStack', 'DesktopShellHost::RecoverSurface', 'DesktopShellHost::CurrentGenerationValid', 'AttachSurface(surface')) {
@@ -107,7 +107,7 @@ foreach ($forbidden in @(
 }
 
 foreach ($marker in @(
-    '#include "turingdesk/DesktopShellHost.h"',
+    '#include "miaodesk/DesktopShellHost.h"',
     'DesktopShellHost shellHost_',
     'shellHost_.EnsureCurrent',
     'shellHost_.EnsureSurface(host_',
@@ -135,11 +135,11 @@ foreach ($forbidden in @(
 
 foreach ($forbidden in @(
     'ProductionShellHost',
-    'TuringDeskFindWindowW',
-    'TuringDeskFindWindowExW',
-    'TuringDeskSendMessageTimeoutW',
-    'TuringDeskSetParent',
-    'TuringDeskSetWindowPos',
+    'MiaoDeskFindWindowW',
+    'MiaoDeskFindWindowExW',
+    'MiaoDeskSendMessageTimeoutW',
+    'MiaoDeskSetParent',
+    'MiaoDeskSetWindowPos',
     '#define FindWindowW',
     '#define FindWindowExW',
     '#define SendMessageTimeoutW',

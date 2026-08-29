@@ -3,7 +3,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
-$header = Join-Path $root 'src/native/include/turingdesk/DesktopWidgetController.h'
+$header = Join-Path $root 'src/native/include/miaodesk/DesktopWidgetController.h'
 $controller = Join-Path $root 'src/native/src/desktop/widgets/DesktopWidgetController.cpp'
 $acceptance = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
 $configContinuity = Join-Path $root 'src/native/src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp'
@@ -89,7 +89,7 @@ foreach ($marker in @(
 
 $configText = Get-Content -LiteralPath $configContinuity -Raw
 foreach ($marker in @(
-    'turingdesk.widget-acceptance-config.v2',
+    'miaodesk.widget-acceptance-config.v2',
     'AppendSized(out, widget.title)',
     'id/title/monitorId/')) {
     if (-not $configText.Contains($marker)) {

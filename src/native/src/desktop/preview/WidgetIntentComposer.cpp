@@ -1,6 +1,6 @@
-#include "turingdesk/WidgetIntentComposer.h"
+#include "miaodesk/WidgetIntentComposer.h"
 
-#include "turingdesk/A2UIParser.h"
+#include "miaodesk/A2UIParser.h"
 
 #include <algorithm>
 #include <array>
@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 
-namespace turingdesk::widget_intent {
+namespace miaodesk::widget_intent {
 namespace {
 
 std::wstring Lower(std::wstring value) {
@@ -147,4 +147,4 @@ ComposedWidget ComposeFromPrompt(std::wstring_view prompt) {
     return result;
 }
 
-} // namespace turingdesk::widget_intent
+} // namespace miaodesk::widget_intent

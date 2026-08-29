@@ -1,5 +1,5 @@
-#include "turingdesk/SettingsCenterWindow.h"
-#include "turingdesk/RuntimeLogger.h"
+#include "miaodesk/SettingsCenterWindow.h"
+#include "miaodesk/RuntimeLogger.h"
 
 #include <shellapi.h>
 #include <filesystem>
@@ -7,10 +7,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kDesktopSettingsClass[] = L"TuringDesk.Native.DesktopLibrary";
+constexpr wchar_t kDesktopSettingsClass[] = L"MiaoDesk.Native.DesktopLibrary";
 
 fs::path ModuleDirectory() {
     wchar_t modulePath[32768]{};
@@ -22,7 +22,7 @@ fs::path ModuleDirectory() {
 bool ActivateExistingDesktopSettings() {
     const HWND existing = FindWindowW(kDesktopSettingsClass, nullptr);
     if (!existing) return false;
-    turingdesk::log::Info(L"App.Settings", L"激活已存在的设置中心窗口");
+    miaodesk::log::Info(L"App.Settings", L"激活已存在的设置中心窗口");
     ShowWindow(existing, SW_SHOWNORMAL);
     SetForegroundWindow(existing);
     return true;
@@ -31,22 +31,22 @@ bool ActivateExistingDesktopSettings() {
 } // namespace
 
 bool ShowSettingsCenterWindow(HINSTANCE, HWND owner, L3Agent&) {
-    turingdesk::log::Info(L"App.Settings", L"请求打开设置中心");
+    miaodesk::log::Info(L"App.Settings", L"请求打开设置中心");
     if (ActivateExistingDesktopSettings()) return true;
 
     const fs::path directory = ModuleDirectory();
     if (directory.empty()) return false;
-    const fs::path executable = directory / L"TuringDeskWallpaper.exe";
+    const fs::path executable = directory / L"MiaoDeskWallpaper.exe";
     std::error_code ec;
     if (!fs::is_regular_file(executable, ec)) {
-        turingdesk::log::Error(L"App.Settings", L"找不到设置可执行文件: " + executable.wstring());
+        miaodesk::log::Error(L"App.Settings", L"找不到设置可执行文件: " + executable.wstring());
         return false;
     }
 
-    turingdesk::log::Info(L"App.Settings", L"启动 TuringDeskWallpaper.exe --settings");
+    miaodesk::log::Info(L"App.Settings", L"启动 MiaoDeskWallpaper.exe --settings");
     const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
         owner, L"open", executable.c_str(), L"--settings", directory.c_str(), SW_SHOWNORMAL));
     return result > 32;
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

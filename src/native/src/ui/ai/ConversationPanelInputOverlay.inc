@@ -2,14 +2,14 @@
 #include <imm.h>
 #pragma comment(lib, "imm32.lib")
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr int kConversationInputControlId = 3102;
 constexpr UINT kConversationPiActivityMessage = WM_APP + 34;
 constexpr UINT_PTR kConversationCaretTimer = 42;
-constexpr wchar_t kConversationCoreProcProperty[] = L"TuringDesk.Conversation.CoreProc";
-constexpr wchar_t kConversationInputCoreProcProperty[] = L"TuringDesk.Conversation.InputCoreProc";
+constexpr wchar_t kConversationCoreProcProperty[] = L"MiaoDesk.Conversation.CoreProc";
+constexpr wchar_t kConversationInputCoreProcProperty[] = L"MiaoDesk.Conversation.InputCoreProc";
 
 enum class ConversationPointerMode { None, Move, Resize };
 
@@ -255,7 +255,7 @@ void StartWindowsVoiceTyping(HWND panel) {
 }
 
 void EnsureConversationInputOverlay(HINSTANCE) {
-    HWND panel = FindWindowW(L"TuringDesk.Native.ConversationPanel", nullptr);
+    HWND panel = FindWindowW(L"MiaoDesk.Native.ConversationPanel", nullptr);
     if (!panel) return;
     auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
     if (!state) return;
@@ -289,7 +289,7 @@ void ApplySemanticActivity(ConversationState& state, const PiActivityEvent& even
         state.activity.visible = true;
         state.activity.failed = false;
         state.activity.title = L"正在重试";
-        state.activity.detail = event.message.empty() ? L"服务暂时没有响应，图灵正在自动恢复" : event.message;
+        state.activity.detail = event.message.empty() ? L"服务暂时没有响应，妙喵正在自动恢复" : event.message;
         break;
     case PiActivityKind::Recovered:
         state.activity.visible = true;
@@ -625,4 +625,4 @@ void EnsureConversationActivityBridge(HWND panel) {
 }
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk

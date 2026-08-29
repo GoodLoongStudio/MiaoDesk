@@ -1,5 +1,5 @@
-#include "turingdesk/WallpaperApplicationRulesWindow.h"
-#include "turingdesk/WallpaperApplicationRules.h"
+#include "miaodesk/WallpaperApplicationRulesWindow.h"
+#include "miaodesk/WallpaperApplicationRules.h"
 
 #include <commdlg.h>
 
@@ -12,10 +12,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"TuringDesk.Native.WallpaperApplicationRules";
+constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.WallpaperApplicationRules";
 constexpr UINT_PTR kRefreshTimer = 1;
 constexpr int kListId = 7001;
 constexpr int kExeId = 7002;
@@ -303,7 +303,7 @@ struct WallpaperApplicationRulesWindow::Impl {
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"TuringDesk 应用程序壁纸规则",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"MiaoDesk 应用程序壁纸规则",
                                  WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 820, 610,
                                  nullptr, nullptr, instance, this);
@@ -413,4 +413,4 @@ HWND WallpaperApplicationRulesWindow::Window() const noexcept {
     return impl_ ? impl_->window : nullptr;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

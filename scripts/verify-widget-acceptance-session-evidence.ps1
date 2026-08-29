@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 if (-not $DiagnosticsDir) {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
-    $DiagnosticsDir = Join-Path (Join-Path $base 'TuringDesk') 'Diagnostics'
+    $DiagnosticsDir = Join-Path (Join-Path $base 'MiaoDesk') 'Diagnostics'
 }
 
 function Read-ReportMap([string]$Path) {
@@ -88,7 +88,7 @@ if (-not (Test-Path -LiteralPath $attestationPath -PathType Leaf)) {
     throw 'M3 human visual acceptance attestation is missing.'
 }
 $attestation = Get-Content -LiteralPath $attestationPath -Raw -ErrorAction Stop | ConvertFrom-Json
-if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1') {
+if ($attestation.schema -ne 'miaodesk.widget-visual-acceptance.v1') {
     throw "M3 human visual acceptance schema is unexpected: '$($attestation.schema)'"
 }
 if ([int]$attestation.sessionId -ne $baselineSessionId) {

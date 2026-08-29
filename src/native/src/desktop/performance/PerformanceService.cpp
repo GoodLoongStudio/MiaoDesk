@@ -1,4 +1,4 @@
-#include "turingdesk/PerformanceService.h"
+#include "miaodesk/PerformanceService.h"
 
 #include <windows.h>
 
@@ -10,15 +10,15 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::desktop {
+namespace miaodesk::desktop {
 namespace {
 
 fs::path ConfigPath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path directory = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory / L"wallpaper.ini";
@@ -83,4 +83,4 @@ PerformanceServiceResult PerformanceService::SaveConfig(const wallpaper::Perform
               : PerformanceServiceResult{false, L"无法保存性能策略。"};
 }
 
-} // namespace turingdesk::desktop
+} // namespace miaodesk::desktop

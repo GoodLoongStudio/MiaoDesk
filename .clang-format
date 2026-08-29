@@ -1,4 +1,4 @@
-# TuringDesk .clang-format
+# MiaoDesk .clang-format
 # 与现有代码风格对齐；首次全量运行前先在单个文件上试跑，确认 diff 可接受。
 # 运行: clang-format -i <file>
 ---

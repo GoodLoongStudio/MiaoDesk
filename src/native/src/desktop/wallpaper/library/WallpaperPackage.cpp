@@ -1,4 +1,4 @@
-#include "turingdesk/WallpaperPackage.h"
+#include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 void SetError(std::wstring* error, std::wstring value) {
@@ -216,15 +216,15 @@ bool WallpaperPackage::CreateWeb(const fs::path& packageDirectory, std::wstring 
         SetError(error, L"Web 壁纸 HTML 不能为空且不能超过 2 MB");
         return false;
     }
-    if (title.empty()) title = L"TuringDesk Wallpaper";
+    if (title.empty()) title = L"MiaoDesk Wallpaper";
     if (title.size() > 256) title.resize(256);
-    if (author.empty()) author = L"TuringDesk";
+    if (author.empty()) author = L"MiaoDesk";
     if (provenance.empty()) provenance = L"user-authored";
 
     std::error_code ec;
     fs::create_directories(packageDirectory, ec);
     if (ec) {
-        SetError(error, L"无法创建 .tdwall 目录：" + packageDirectory.wstring());
+        SetError(error, L"无法创建 .mdwall 目录：" + packageDirectory.wstring());
         return false;
     }
 
@@ -284,7 +284,7 @@ bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPacka
     parsed.audio = ExtractJsonBool(json, "audio", false);
 
     if (parsed.schema != 1) {
-        SetError(error, L"不支持的 .tdwall schema 版本");
+        SetError(error, L"不支持的 .mdwall schema 版本");
         return false;
     }
     if (parsed.type == WallpaperPackageType::Unknown) {
@@ -309,7 +309,7 @@ bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPacka
     if (parsed.type == WallpaperPackageType::Web) {
         const auto extension = Lower(resolvedEntry.extension().wstring());
         if (extension != L".html" && extension != L".htm") {
-            SetError(error, L"Web .tdwall 的 entry 必须是 HTML 文件");
+            SetError(error, L"Web .mdwall 的 entry 必须是 HTML 文件");
             return false;
         }
     }
@@ -321,11 +321,11 @@ bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPacka
 bool WallpaperPackage::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-tdwall-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".tdwall");
+        (L"MiaoDesk-tdwall-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".mdwall");
     fs::remove_all(root, ec);
     std::wstring error;
-    const bool created = CreateWeb(root, L"Self Test", "<!doctype html><html><body>TuringDesk</body></html>",
-                                   L"self-test", L"TuringDesk", &error);
+    const bool created = CreateWeb(root, L"Self Test", "<!doctype html><html><body>MiaoDesk</body></html>",
+                                   L"self-test", L"MiaoDesk", &error);
     WallpaperPackageManifest manifest;
     const bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&
                        manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";
@@ -333,4 +333,4 @@ bool WallpaperPackage::SelfTest() {
     return valid;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

@@ -1,7 +1,7 @@
-#include "turingdesk/WidgetService.h"
-#include "turingdesk/DesktopSurfaceTelemetry.h"
-#include "turingdesk/WallpaperMonitorLayout.h"
-#include "turingdesk/WebDesktopSurfaceChild.h"
+#include "miaodesk/WidgetService.h"
+#include "miaodesk/DesktopSurfaceTelemetry.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
+#include "miaodesk/WebDesktopSurfaceChild.h"
 
 #include <windows.h>
 
@@ -14,11 +14,11 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::desktop {
+namespace miaodesk::desktop {
 namespace {
 
-constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
-constexpr wchar_t kNativeHostClass[] = L"TuringDesk.Native.WidgetSurface";
+constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeHostClass[] = L"MiaoDesk.Native.WidgetSurface";
 constexpr LONG kGeometryTolerancePx = 8;
 
 WidgetServiceResult LoadFailure(const std::wstring& error) {
@@ -29,8 +29,8 @@ fs::path WallpaperConfigPath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     return dir / L"wallpaper.ini";
 }
 
@@ -468,4 +468,4 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
     return {true, L"桌面小组件运行状态读取完成。"};
 }
 
-} // namespace turingdesk::desktop
+} // namespace miaodesk::desktop

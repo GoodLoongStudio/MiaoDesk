@@ -1,14 +1,14 @@
-#include "turingdesk/WallpaperWebRuntimeCoordinator.h"
+#include "miaodesk/WallpaperWebRuntimeCoordinator.h"
 
-#include "turingdesk/DesktopShellHost.h"
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/WallpaperIndependentLayout.h"
-#include "turingdesk/WallpaperMonitorAssignments.h"
-#include "turingdesk/WallpaperMonitorLayout.h"
-#include "turingdesk/WallpaperPerformancePolicy.h"
-#include "turingdesk/WebWallpaperHost.h"
-#include "turingdesk/NativeWidgetHost.h"
-#include "turingdesk/NativeWidgetPreset.h"
+#include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/WallpaperIndependentLayout.h"
+#include "miaodesk/WallpaperMonitorAssignments.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
+#include "miaodesk/WallpaperPerformancePolicy.h"
+#include "miaodesk/WebWallpaperHost.h"
+#include "miaodesk/NativeWidgetHost.h"
+#include "miaodesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -25,12 +25,12 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
-constexpr wchar_t kWallpaperSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
-constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
+constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
+constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
+constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -41,8 +41,8 @@ fs::path WallpaperConfigPath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(dir, ec);
     return dir / L"wallpaper.ini";
@@ -588,4 +588,4 @@ bool ActivateWebWallpaperItem(const WallpaperLibraryItem& item,
                                    : PersistMonitorWeb(item, targetMonitorId, error);
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

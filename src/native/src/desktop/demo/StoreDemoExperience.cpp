@@ -1,11 +1,11 @@
-#include "turingdesk/StoreDemoExperience.h"
+#include "miaodesk/StoreDemoExperience.h"
 
-#include "turingdesk/DesktopWidgetController.h"
-#include "turingdesk/GeneratedDesktopPreview.h"
-#include "turingdesk/NativeWidgetPreset.h"
-#include "turingdesk/WallpaperLibrary.h"
-#include "turingdesk/WidgetIntentComposer.h"
-#include "turingdesk/WidgetService.h"
+#include "miaodesk/DesktopWidgetController.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
+#include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/WallpaperLibrary.h"
+#include "miaodesk/WidgetIntentComposer.h"
+#include "miaodesk/WidgetService.h"
 
 #include <shlobj.h>
 
@@ -20,10 +20,10 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::demo {
+namespace miaodesk::demo {
 namespace {
 
-constexpr wchar_t kIniRelative[] = L"TuringDesk\\store-demo.ini";
+constexpr wchar_t kIniRelative[] = L"MiaoDesk\\store-demo.ini";
 constexpr wchar_t kSection[] = L"StoreDemo";
 constexpr wchar_t kFirstRunKey[] = L"FirstRunCompleted";
 
@@ -39,7 +39,7 @@ fs::path ConfigPath() {
     const DWORD count = GetEnvironmentVariableW(
         L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
     if (count == 0 || count >= std::size(localAppData)) {
-        return fs::temp_directory_path() / L"TuringDesk" / L"store-demo.ini";
+        return fs::temp_directory_path() / L"MiaoDesk" / L"store-demo.ini";
     }
     return fs::path(std::wstring(localAppData, count)) / kIniRelative;
 }
@@ -74,11 +74,11 @@ wallpaper::WallpaperLibraryItem SceneItem(std::wstring id, std::wstring title) {
 
 wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
     if (sceneId == L"scene-neon" || sceneId == L"neon" || sceneId == L"neon_flow")
-        return SceneItem(L"scene-neon", L"Neon Flow");
+        return SceneItem(L"scene-neon", L"霓虹之城");
     if (sceneId == L"scene-grid" || sceneId == L"grid" || sceneId == L"ocean" || sceneId == L"ocean_flow")
-        return SceneItem(L"scene-grid", L"Ocean Flow");
+        return SceneItem(L"scene-grid", L"月影秘境");
     // Default showcase: Aurora (ocean-like cool tones on Snapdragon demos).
-    return SceneItem(L"scene-aurora", L"Aurora Flow");
+    return SceneItem(L"scene-aurora", L"妙喵云境");
 }
 
 bool NearlyEqual(float a, float b) noexcept {
@@ -214,7 +214,7 @@ desktop::DesktopControlResult RunGoldenPath() {
     if (!wallpaper.success) return wallpaper;
     auto widgets = EnsureShowcaseWidgets();
     if (!widgets.success) return widgets;
-    return {true, L"演示桌面已就绪：Aurora 动态壁纸 + 玻璃时钟、今日待办、玻璃天气。按 Alt+Space 可继续和妙喵聊天。"};
+    return {true, L"演示桌面已就绪：妙喵云境动态壁纸 + 玻璃时钟、今日待办、玻璃天气。按 Alt+Space 可继续和妙喵聊天。"};
 }
 
 bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
@@ -253,7 +253,7 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
     if (wantsWallpaper) {
         std::wstring scene = L"scene-aurora";
         if (ContainsAny(lower, {L"neon", L"霓虹"})) scene = L"scene-neon";
-        else if (ContainsAny(lower, {L"ocean", L"海洋", L"海边", L"蓝", L"深海", L"海浪"})) scene = L"scene-grid";
+        else if (ContainsAny(lower, {L"ocean", L"海洋", L"海边", L"蓝", L"深海", L"海浪", L"mystic", L"moon", L"月影", L"秘境", L"森林", L"萤火"})) scene = L"scene-grid";
         else if (ContainsAny(lower, {L"grid", L"网格"})) scene = L"scene-neon";
         const auto result = ApplyShowcaseWallpaper(scene);
         *reply = result.success
@@ -269,7 +269,7 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
             return true;
         }
         if (widget_intent::LooksLikeOneSentenceWidgetRequest(prompt)) {
-            HWND owner = FindWindowW(L"TuringDesk.Native.SearchWindow", nullptr);
+            HWND owner = FindWindowW(L"MiaoDesk.Native.SearchWindow", nullptr);
             const auto preview = preview::ShowWidgetPreviewForPrompt(owner, prompt);
             *reply = preview.message;
             return true;
@@ -309,7 +309,7 @@ void OfferGoldenPath(HWND owner, bool quietStatus) {
     const int choice = MessageBoxW(
         owner,
         L"立即布置演示桌面？\r\n\r\n"
-        L"• 应用 Aurora 动态壁纸\r\n"
+        L"• 应用 妙喵云境动态壁纸\r\n"
         L"• 添加三款小组件（玻璃时钟 / 今日待办 / 玻璃天气）\r\n\r\n"
         L"无需 API Key。之后可用 Alt+Space 继续体验。",
         L"妙喵 · 一键体验",
@@ -342,4 +342,4 @@ void MaybeShowFirstRun(HWND owner) {
     if (choice == IDOK) OfferGoldenPath(owner, false);
 }
 
-} // namespace turingdesk::demo
+} // namespace miaodesk::demo

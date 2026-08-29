@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 function Get-DiagnosticsDirectory {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
-    Join-Path (Join-Path $base 'TuringDesk') 'Diagnostics'
+    Join-Path (Join-Path $base 'MiaoDesk') 'Diagnostics'
 }
 
 function Get-RequiredEvidencePaths([string]$DiagnosticsDir) {
@@ -81,7 +81,7 @@ function Assert-HumanVisualAttestation([string]$DiagnosticsDir, [hashtable]$Bina
         throw 'M3 human visual acceptance attestation hash mismatch.'
     }
     $attestation = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-    if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1' -or -not $attestation.reviewer) {
+    if ($attestation.schema -ne 'miaodesk.widget-visual-acceptance.v1' -or -not $attestation.reviewer) {
         throw 'M3 human visual acceptance attestation is malformed.'
     }
     if ([int]$attestation.sessionId -ne $BaselineSessionId) {
@@ -123,7 +123,7 @@ $baselineSessionId = Read-BaselineSessionId -DiagnosticsDir $diagnostics
 $binaryCheckpointPath = Join-Path $diagnostics 'widget-acceptance-binary.sha256'
 $binaryCheckpoint = Read-KeyValueFile -Path $binaryCheckpointPath
 if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) {
-    throw 'M3 acceptance binary checkpoint is incomplete; start a new baseline with the intended TuringDeskWidgetAcceptance.exe.'
+    throw 'M3 acceptance binary checkpoint is incomplete; start a new baseline with the intended MiaoDeskWidgetAcceptance.exe.'
 }
 $humanAttestation = Assert-HumanVisualAttestation -DiagnosticsDir $diagnostics -BinaryCheckpoint $binaryCheckpoint -BaselineSessionId $baselineSessionId
 
@@ -147,7 +147,7 @@ $configEntry = @($files | Where-Object { $_.path -eq 'widget-acceptance-baseline
 if ($null -eq $configEntry) { throw 'M3 acceptance placement configuration checkpoint is missing from the evidence set.' }
 
 $manifest = [ordered]@{
-    schema = 'turingdesk.widget-acceptance-evidence.v1'
+    schema = 'miaodesk.widget-acceptance-evidence.v1'
     sealedAtUtc = [DateTime]::UtcNow.ToString('o')
     sequence = $sequence
     baselineSessionId = $baselineSessionId
@@ -157,7 +157,7 @@ $manifest = [ordered]@{
         length = [int64]$configEntry.length
     }
     acceptanceBinary = [ordered]@{
-        fileName = 'TuringDeskWidgetAcceptance.exe'
+        fileName = 'MiaoDeskWidgetAcceptance.exe'
         sha256 = ([string]$binaryCheckpoint['sha256']).ToLowerInvariant()
         length = [int64]$binaryCheckpoint['length']
     }
@@ -188,7 +188,7 @@ $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
 $sealPath = Join-Path $diagnostics 'widget-acceptance-evidence.manifest.sha256'
 Set-Content -LiteralPath $sealPath -Value @(
     "sha256=$manifestHash",
-    "schema=turingdesk.widget-acceptance-evidence.v1",
+    "schema=miaodesk.widget-acceptance-evidence.v1",
     "sealedAtUtc=$([DateTime]::UtcNow.ToString('o'))"
 ) -Encoding utf8
 

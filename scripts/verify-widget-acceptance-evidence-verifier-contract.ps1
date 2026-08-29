@@ -13,7 +13,7 @@ foreach ($path in @($verifier, $sealer)) {
 
 $verifierText = Get-Content -LiteralPath $verifier -Raw
 foreach ($marker in @(
-    'turingdesk.widget-acceptance-evidence.v1',
+    'miaodesk.widget-acceptance-evidence.v1',
     'widget-acceptance-evidence.manifest.json',
     'widget-acceptance-evidence.manifest.sha256',
     'widget-acceptance-baseline.config',
@@ -22,7 +22,7 @@ foreach ($marker in @(
     'placement configuration length no longer matches',
     'widget-acceptance-binary.sha256',
     'acceptanceBinary',
-    'TuringDeskWidgetAcceptance.exe',
+    'MiaoDeskWidgetAcceptance.exe',
     'acceptance binary SHA-256 no longer matches',
     'acceptance binary length no longer matches',
     'Get-FileHash',
@@ -63,7 +63,7 @@ foreach ($marker in @(
     'Placement config SHA-256',
     'widget-acceptance-binary.sha256',
     'acceptanceBinary',
-    "fileName = 'TuringDeskWidgetAcceptance.exe'",
+    "fileName = 'MiaoDeskWidgetAcceptance.exe'",
     'Acceptance binary SHA-256',
     'Sealed and verified M3 Widget acceptance evidence')) {
     if (-not $sealerText.Contains($marker)) {

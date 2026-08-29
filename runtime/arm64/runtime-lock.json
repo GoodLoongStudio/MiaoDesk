@@ -34,8 +34,8 @@
     "This lock drives repository vendoring on Windows ARM64.",
     "Normal ARM64 builds and deployments consume runtime/arm64 only and do not install third-party runtimes from the network.",
     "goz is the elevated MFT/USN index service and goz.exe is the unprivileged query client.",
-    "Pi is the default TuringDesk Agent Runtime and is vendored with all production npm dependencies.",
-    "TuringDesk uses its bundled Node 24 to run Pi; end users do not need Node or npm installed.",
+    "Pi is the default MiaoDesk Agent Runtime and is vendored with all production npm dependencies.",
+    "MiaoDesk uses its bundled Node 24 to run Pi; end users do not need Node or npm installed.",
     "DeepSeek Harness remains an independent advanced workbench runtime.",
     "Microsoft Edge WebView2 Runtime is an operating-system prerequisite; only the build SDK/loader is vendored."
   ]

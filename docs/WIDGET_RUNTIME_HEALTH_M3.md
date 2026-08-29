@@ -1,4 +1,4 @@
-# TuringDesk M3 Widget runtime health contract
+# MiaoDesk M3 Widget runtime health contract
 
 Status: active implementation contract
 Date: 2026-08-26
@@ -41,7 +41,7 @@ UI and Pi must not read `wallpaper.ini`, enumerate runtime HWNDs, inspect WebVie
 
 The preferred `WebDesktopSurfaceChild` already publishes process-safe HWND properties when Environment creation, Controller creation and successful NavigationCompleted finish. `WidgetService` consumes those properties. The child role property exists before asynchronous WebView2 initialization, so a missing readiness property is a real not-ready stage rather than an inferred failure. The legacy Web child has no role property and therefore remains explicitly unreported instead of being falsely marked ready.
 
-Z-order inspection is implemented in `desktop/shell/DesktopSurfaceTelemetry.cpp`. It is read-only: it checks sibling order but contains no `SetParent`, `SetWindowPos`, WorkerW discovery or repair behavior. `DesktopShellHost` remains the sole desktop-attachment/z-order mutation owner. The shared telemetry verifies that desktop icon `SHELLDLL_DefView`, when it shares the parent, stays above TuringDesk surfaces and that Widget surfaces stay above TuringDesk wallpaper surfaces.
+Z-order inspection is implemented in `desktop/shell/DesktopSurfaceTelemetry.cpp`. It is read-only: it checks sibling order but contains no `SetParent`, `SetWindowPos`, WorkerW discovery or repair behavior. `DesktopShellHost` remains the sole desktop-attachment/z-order mutation owner. The shared telemetry verifies that desktop icon `SHELLDLL_DefView`, when it shares the parent, stays above MiaoDesk surfaces and that Widget surfaces stay above MiaoDesk wallpaper surfaces.
 
 ## Health semantics
 
@@ -80,7 +80,7 @@ Pi `wallpaper_state_get` emits every structured surface with process/HWND/parent
 
 ## Real-Windows acceptance probe
 
-M3 ships a dedicated diagnostic executable, `TuringDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another Widget-runtime HWND or shell ownership path.
+M3 ships a dedicated diagnostic executable, `MiaoDeskWidgetAcceptance.exe`. The executable is deliberately implemented under `desktop/widgets/` and consumes `WidgetService::GetRuntimeHealth`; it does not add another Widget-runtime HWND or shell ownership path.
 
 Run it directly or through:
 
@@ -91,10 +91,10 @@ Run it directly or through:
 Supported phase labels are `baseline`, `settings`, `search`, `explorer`, and `monitor`. Each invocation requires access to the interactive Windows input desktop, at least one enabled Widget, a one-to-one healthy surface set, explicitly reported-and-ready lifecycle telemetry (WebView2 stages for Web Widgets, native window/visibility state for Native Widgets) and valid shared z-order telemetry. It writes a UTF-16 report to:
 
 ```text
-%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-<phase>.txt
+%LOCALAPPDATA%\MiaoDesk\Diagnostics\widget-acceptance-<phase>.txt
 ```
 
-For `settings` and `search`, the acceptance executable itself requires the corresponding visible TuringDesk top-level product window in the same Windows session immediately before entering the runtime-health probe. The Settings context is pinned to class `TuringDesk.Native.DesktopLibrary` owned by `TuringDeskWallpaper.exe`; Search is pinned to class `TuringDesk.Native.SearchWindow` owned by `TuringDesk.exe`. The PowerShell runner still records foreground-window evidence, but a matching class from another process cannot satisfy the C++ acceptance precondition.
+For `settings` and `search`, the acceptance executable itself requires the corresponding visible MiaoDesk top-level product window in the same Windows session immediately before entering the runtime-health probe. The Settings context is pinned to class `MiaoDesk.Native.DesktopLibrary` owned by `MiaoDeskWallpaper.exe`; Search is pinned to class `MiaoDesk.Native.SearchWindow` owned by `MiaoDesk.exe`. The PowerShell runner still records foreground-window evidence, but a matching class from another process cannot satisfy the C++ acceptance precondition.
 
 All additional fallible checks introduced by the acceptance executable—placement continuity, product-window/process context and strict WebView2 lifecycle readiness—run **before** `RunWidgetRuntimeAcceptanceProbe`. The runtime probe owns durable phase advancement, so an extra acceptance failure cannot return an error after the sequence cursor has already advanced. This preserves the contract that a failed phase does not advance the ordered acceptance round.
 

@@ -1,16 +1,16 @@
-#include "turingdesk/GeneratedDesktopPreview.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
 
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr UINT kConversationPreviewArtifactMessage = WM_APP + 35;
-constexpr wchar_t kConversationPreviewCoreProcProperty[] = L"TuringDesk.Conversation.PreviewCoreProc";
-constexpr wchar_t kSearchPreviewCoreProcProperty[] = L"TuringDesk.Search.PreviewCoreProc";
-constexpr wchar_t kSearchPreviewPanelProperty[] = L"TuringDesk.Search.PreviewPanel";
+constexpr wchar_t kConversationPreviewCoreProcProperty[] = L"MiaoDesk.Conversation.PreviewCoreProc";
+constexpr wchar_t kSearchPreviewCoreProcProperty[] = L"MiaoDesk.Search.PreviewCoreProc";
+constexpr wchar_t kSearchPreviewPanelProperty[] = L"MiaoDesk.Search.PreviewPanel";
 
 LRESULT CALLBACK SearchPreviewBridgeProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     const auto core = reinterpret_cast<WNDPROC>(GetPropW(hwnd, kSearchPreviewCoreProcProperty));
@@ -75,4 +75,4 @@ void EnsureConversationPreviewBridge(HWND panel) {
 }
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk

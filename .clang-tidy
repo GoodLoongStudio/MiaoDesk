@@ -1,4 +1,4 @@
-# TuringDesk .clang-tidy
+# MiaoDesk .clang-tidy
 # 目标：找真实缺陷，不制造噪音。Win32 / C++23 代码库。
 # 运行: clang-tidy -p build <file>
 # 注意：首次全量运行后按实际情况往 Checks 里追加禁用项，不要一次性放宽。

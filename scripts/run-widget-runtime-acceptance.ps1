@@ -6,14 +6,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root (Join-Path $BuildDir 'TuringDeskWidgetAcceptance.exe')
+$exe = Join-Path $root (Join-Path $BuildDir 'MiaoDeskWidgetAcceptance.exe')
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw "Missing M3 acceptance probe executable: $exe"
 }
 
 function Get-DiagnosticsDirectory {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
-    Join-Path (Join-Path $base 'TuringDesk') 'Diagnostics'
+    Join-Path (Join-Path $base 'MiaoDesk') 'Diagnostics'
 }
 
 function Get-CurrentSessionExplorerPids {
@@ -39,12 +39,12 @@ function Get-CurrentDisplayTopology {
 }
 
 function Initialize-ForegroundWindowInterop {
-    if ('TuringDesk.Acceptance.ForegroundWindowNative' -as [type]) { return }
+    if ('MiaoDesk.Acceptance.ForegroundWindowNative' -as [type]) { return }
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-namespace TuringDesk.Acceptance {
+namespace MiaoDesk.Acceptance {
     public static class ForegroundWindowNative {
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
@@ -57,11 +57,11 @@ namespace TuringDesk.Acceptance {
 
 function Get-ForegroundWindowObservation {
     Initialize-ForegroundWindowInterop
-    $hwnd = [TuringDesk.Acceptance.ForegroundWindowNative]::GetForegroundWindow()
+    $hwnd = [MiaoDesk.Acceptance.ForegroundWindowNative]::GetForegroundWindow()
     if ($hwnd -eq [IntPtr]::Zero) { return $null }
 
     [uint32]$processId = 0
-    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetWindowThreadProcessId($hwnd, [ref]$processId)
+    $null = [MiaoDesk.Acceptance.ForegroundWindowNative]::GetWindowThreadProcessId($hwnd, [ref]$processId)
     if ($processId -eq 0) { return $null }
 
     $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
@@ -69,8 +69,8 @@ function Get-ForegroundWindowObservation {
 
     $className = New-Object Text.StringBuilder 256
     $title = New-Object Text.StringBuilder 1024
-    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetClassName($hwnd, $className, $className.Capacity)
-    $null = [TuringDesk.Acceptance.ForegroundWindowNative]::GetWindowText($hwnd, $title, $title.Capacity)
+    $null = [MiaoDesk.Acceptance.ForegroundWindowNative]::GetClassName($hwnd, $className, $className.Capacity)
+    $null = [MiaoDesk.Acceptance.ForegroundWindowNative]::GetWindowText($hwnd, $title, $title.Capacity)
 
     [pscustomobject]@{
         capturedAtUtc = [DateTime]::UtcNow.ToString('o')
@@ -82,13 +82,13 @@ function Get-ForegroundWindowObservation {
     }
 }
 
-function Wait-ForExpectedTuringDeskWindowEvidence([string]$AcceptancePhase, [string]$DiagnosticsDir) {
+function Wait-ForExpectedMiaoDeskWindowEvidence([string]$AcceptancePhase, [string]$DiagnosticsDir) {
     if ($AcceptancePhase -notin @('settings','search')) { return }
 
-    $expectedClass = if ($AcceptancePhase -eq 'settings') { 'TuringDesk.Native.DesktopLibrary' } else { 'TuringDesk.Native.SearchWindow' }
-    $expectedProcess = if ($AcceptancePhase -eq 'settings') { 'TuringDeskWallpaper' } else { 'TuringDesk' }
+    $expectedClass = if ($AcceptancePhase -eq 'settings') { 'MiaoDesk.Native.DesktopLibrary' } else { 'MiaoDesk.Native.SearchWindow' }
+    $expectedProcess = if ($AcceptancePhase -eq 'settings') { 'MiaoDeskWallpaper' } else { 'MiaoDesk' }
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
-    Write-Host "Waiting for foreground TuringDesk $AcceptancePhase window evidence: class=$expectedClass process=$expectedProcess"
+    Write-Host "Waiting for foreground MiaoDesk $AcceptancePhase window evidence: class=$expectedClass process=$expectedProcess"
     Write-Host 'Keep the required product window foreground while this phase observes it; the health probe runs immediately afterwards.'
 
     while ([DateTime]::UtcNow -lt $deadline) {
@@ -99,7 +99,7 @@ function Wait-ForExpectedTuringDeskWindowEvidence([string]$AcceptancePhase, [str
             $observation.sessionId -eq [System.Diagnostics.Process]::GetCurrentProcess().SessionId) {
             $path = Join-Path $DiagnosticsDir "widget-acceptance-$AcceptancePhase.window.json"
             $evidence = [ordered]@{
-                schema = 'turingdesk.widget-window-evidence.v1'
+                schema = 'miaodesk.widget-window-evidence.v1'
                 phase = $AcceptancePhase
                 capturedAtUtc = $observation.capturedAtUtc
                 processName = $observation.processName
@@ -109,7 +109,7 @@ function Wait-ForExpectedTuringDeskWindowEvidence([string]$AcceptancePhase, [str
                 title = $observation.title
             }
             $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path -Encoding utf8
-            Write-Host "Observed required TuringDesk $AcceptancePhase foreground window: $($observation.className) pid=$($observation.processId)"
+            Write-Host "Observed required MiaoDesk $AcceptancePhase foreground window: $($observation.className) pid=$($observation.processId)"
             return
         }
         Start-Sleep -Milliseconds 250
@@ -295,7 +295,7 @@ if ($Phase -eq 'baseline') {
         "sha256=$($binary.sha256)",
         "length=$($binary.length)",
         "capturedAtUtc=$([DateTime]::UtcNow.ToString('o'))",
-        "fileName=TuringDeskWidgetAcceptance.exe"
+        "fileName=MiaoDeskWidgetAcceptance.exe"
     )
     Write-Host "Captured M3 acceptance binary checkpoint: sha256=$($binary.sha256) length=$($binary.length)"
 }
@@ -304,7 +304,7 @@ else {
 }
 
 if ($Phase -in @('settings','search')) {
-    Wait-ForExpectedTuringDeskWindowEvidence -AcceptancePhase $Phase -DiagnosticsDir $diagnostics
+    Wait-ForExpectedMiaoDeskWindowEvidence -AcceptancePhase $Phase -DiagnosticsDir $diagnostics
 }
 
 if ($Phase -eq 'explorer') {
@@ -369,4 +369,4 @@ $meaning = switch ($code) {
     67 { 'acceptance phase is out of order; run baseline -> settings -> search -> explorer -> monitor without skipping a successful phase' }
     default { "unexpected probe exit code $code" }
 }
-throw "Widget acceptance probe failed: $meaning. Read %LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-$Phase.txt when present."
+throw "Widget acceptance probe failed: $meaning. Read %LOCALAPPDATA%\MiaoDesk\Diagnostics\widget-acceptance-$Phase.txt when present."

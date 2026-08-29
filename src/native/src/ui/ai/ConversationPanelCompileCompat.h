@@ -18,6 +18,6 @@ inline int clamp(int value, LONG low, LONG high) noexcept {
 }
 } // namespace std
 
-inline BOOL TuringDeskMoveWindow(HWND hwnd, int x, int y, int width, int height) noexcept {
+inline BOOL MiaoDeskMoveWindow(HWND hwnd, int x, int y, int width, int height) noexcept {
     return ::MoveWindow(hwnd, x, y, width, height, TRUE);
 }

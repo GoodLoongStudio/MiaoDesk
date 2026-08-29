@@ -11,9 +11,9 @@
 #include <windows.h>
 #include <shellapi.h>
 
-#include "turingdesk/AutomationUiAdapter.h"
-#include "turingdesk/DesktopAiSettingsPage.h"
-#include "turingdesk/PerformanceUiAdapter.h"
+#include "miaodesk/AutomationUiAdapter.h"
+#include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/PerformanceUiAdapter.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -22,7 +22,7 @@
 
 namespace {
 
-BOOL WINAPI TuringDeskWallpaperShellNotifyIconW(DWORD, PNOTIFYICONDATAW) {
+BOOL WINAPI MiaoDeskWallpaperShellNotifyIconW(DWORD, PNOTIFYICONDATAW) {
     // Production has exactly one tray owner: the main 妙喵 process.
     // Historical wallpaper-host tray calls become successful no-ops.
     return TRUE;
@@ -62,10 +62,10 @@ DWORD CopyProfileValue(std::wstring_view value, LPWSTR output, DWORD size) {
     return static_cast<DWORD>(copyCount);
 }
 
-std::wstring PerformanceValue(const turingdesk::wallpaper::PerformanceConfig& config, LPCWSTR key) {
-    using turingdesk::wallpaper::PerformanceActionKey;
+std::wstring PerformanceValue(const miaodesk::wallpaper::PerformanceConfig& config, LPCWSTR key) {
+    using miaodesk::wallpaper::PerformanceActionKey;
     if (_wcsicmp(key, L"PauseFullscreen") == 0)
-        return config.fullscreenAction == turingdesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0";
+        return config.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0";
     if (_wcsicmp(key, L"FpsCap") == 0) return std::to_wstring(config.fpsCap);
     if (_wcsicmp(key, L"ThrottleFps") == 0) return std::to_wstring(config.throttleFps);
     if (_wcsicmp(key, L"FullscreenAction") == 0) return PerformanceActionKey(config.fullscreenAction);
@@ -78,10 +78,10 @@ std::wstring PerformanceValue(const turingdesk::wallpaper::PerformanceConfig& co
     return {};
 }
 
-bool ApplyPerformanceValue(turingdesk::wallpaper::PerformanceConfig* config, LPCWSTR key, LPCWSTR value) {
+bool ApplyPerformanceValue(miaodesk::wallpaper::PerformanceConfig* config, LPCWSTR key, LPCWSTR value) {
     if (!config || !key || !value) return false;
-    using turingdesk::wallpaper::ParsePerformanceAction;
-    using turingdesk::wallpaper::PerformanceAction;
+    using miaodesk::wallpaper::ParsePerformanceAction;
+    using miaodesk::wallpaper::PerformanceAction;
 
     if (_wcsicmp(key, L"PauseFullscreen") == 0) {
         config->fullscreenAction = _wtoi(value) != 0 ? PerformanceAction::Pause : PerformanceAction::Normal;
@@ -126,11 +126,11 @@ bool ApplyPerformanceValue(turingdesk::wallpaper::PerformanceConfig* config, LPC
     return false;
 }
 
-UINT WINAPI TuringDeskGetPrivateProfileIntW(
+UINT WINAPI MiaoDeskGetPrivateProfileIntW(
     LPCWSTR section, LPCWSTR key, INT fallback, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        turingdesk::wallpaper::PerformanceUiAdapter adapter;
-        turingdesk::wallpaper::PerformanceConfig config;
+        miaodesk::wallpaper::PerformanceUiAdapter adapter;
+        miaodesk::wallpaper::PerformanceConfig config;
         if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return static_cast<UINT>(_wtoi(value.c_str()));
@@ -139,11 +139,11 @@ UINT WINAPI TuringDeskGetPrivateProfileIntW(
     return ::GetPrivateProfileIntW(section, key, fallback, fileName);
 }
 
-DWORD WINAPI TuringDeskGetPrivateProfileStringW(
+DWORD WINAPI MiaoDeskGetPrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR fallback, LPWSTR output, DWORD size, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        turingdesk::wallpaper::PerformanceUiAdapter adapter;
-        turingdesk::wallpaper::PerformanceConfig config;
+        miaodesk::wallpaper::PerformanceUiAdapter adapter;
+        miaodesk::wallpaper::PerformanceConfig config;
         if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return CopyProfileValue(value, output, size);
@@ -152,11 +152,11 @@ DWORD WINAPI TuringDeskGetPrivateProfileStringW(
     return ::GetPrivateProfileStringW(section, key, fallback, output, size, fileName);
 }
 
-BOOL WINAPI TuringDeskWritePrivateProfileStringW(
+BOOL WINAPI MiaoDeskWritePrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR value, LPCWSTR fileName) {
     if (IsWallpaperSection(section) && IsPerformanceKey(key) && value) {
-        turingdesk::wallpaper::PerformanceUiAdapter adapter;
-        turingdesk::wallpaper::PerformanceConfig config;
+        miaodesk::wallpaper::PerformanceUiAdapter adapter;
+        miaodesk::wallpaper::PerformanceConfig config;
         if (!adapter.Load(&config)) return FALSE;
         if (!ApplyPerformanceValue(&config, key, value)) return FALSE;
         return adapter.Save(config) ? TRUE : FALSE;
@@ -164,12 +164,12 @@ BOOL WINAPI TuringDeskWritePrivateProfileStringW(
     return ::WritePrivateProfileStringW(section, key, value, fileName);
 }
 
-int WINAPI TuringDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT type) {
+int WINAPI MiaoDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT type) {
     // The V2 shell still emits this one historical placeholder callback for its
     // AI navigation item. Convert only that placeholder into the real in-place
     // API/Harness page; all other product dialogs retain normal MessageBoxW behavior.
-    if (text && std::wstring_view(text).find(L"AI 模型配置位于 TuringDesk 设置中心") != std::wstring_view::npos) {
-        return turingdesk::wallpaper::ShowDesktopAiSettingsPage(owner) ? IDOK : IDCANCEL;
+    if (text && std::wstring_view(text).find(L"AI 模型配置位于 MiaoDesk 设置中心") != std::wstring_view::npos) {
+        return miaodesk::wallpaper::ShowDesktopAiSettingsPage(owner) ? IDOK : IDCANCEL;
     }
     return ::MessageBoxW(owner, text, caption, type);
 }
@@ -179,14 +179,14 @@ int WINAPI TuringDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT
 // WallpaperEngine.cpp is still included as a migration implementation unit and
 // historically refers to the desktop namespace as wallpaper::. Keep that alias
 // local to this production bridge instead of leaking it into public headers.
-namespace wallpaper = turingdesk::wallpaper;
+namespace wallpaper = miaodesk::wallpaper;
 
 #define WallpaperAutomationStore AutomationUiAdapter
-#define GetPrivateProfileIntW TuringDeskGetPrivateProfileIntW
-#define GetPrivateProfileStringW TuringDeskGetPrivateProfileStringW
-#define WritePrivateProfileStringW TuringDeskWritePrivateProfileStringW
-#define MessageBoxW TuringDeskMessageBoxW
-#define Shell_NotifyIconW TuringDeskWallpaperShellNotifyIconW
+#define GetPrivateProfileIntW MiaoDeskGetPrivateProfileIntW
+#define GetPrivateProfileStringW MiaoDeskGetPrivateProfileStringW
+#define WritePrivateProfileStringW MiaoDeskWritePrivateProfileStringW
+#define MessageBoxW MiaoDeskMessageBoxW
+#define Shell_NotifyIconW MiaoDeskWallpaperShellNotifyIconW
 #include "WallpaperEngine.cpp"
 #undef Shell_NotifyIconW
 #undef MessageBoxW

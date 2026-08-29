@@ -6,7 +6,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $probe = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptance.cpp'
 $configContinuity = Join-Path $root 'src/native/src/desktop/widgets/WidgetAcceptanceConfigContinuity.cpp'
 $main = Join-Path $root 'src/native/src/desktop/widgets/WidgetRuntimeAcceptanceMain.cpp'
-$header = Join-Path $root 'src/native/include/turingdesk/WidgetRuntimeAcceptance.h'
+$header = Join-Path $root 'src/native/include/miaodesk/WidgetRuntimeAcceptance.h'
 $runner = Join-Path $root 'scripts/run-widget-runtime-acceptance.ps1'
 $confirmer = Join-Path $root 'scripts/confirm-widget-visual-acceptance.ps1'
 $sealer = Join-Path $root 'scripts/seal-widget-acceptance-evidence.ps1'
@@ -37,7 +37,7 @@ foreach ($forbidden in @('FindWindowW(','FindWindowExW(','EnumWindows(','SetPare
 }
 
 $configText = Get-Content -LiteralPath $configContinuity -Raw
-foreach ($marker in @('WidgetService','service.List(&widgets)','widget-acceptance-baseline.config','turingdesk.widget-acceptance-config.v2','widget.title','widget.monitorId','widget.x','widget.y','widget.width','widget.height','widget.zIndex','widget.enabled','widget.kind','std::bit_cast','BaselineMismatch')) {
+foreach ($marker in @('WidgetService','service.List(&widgets)','widget-acceptance-baseline.config','miaodesk.widget-acceptance-config.v2','widget.title','widget.monitorId','widget.x','widget.y','widget.width','widget.height','widget.zIndex','widget.enabled','widget.kind','std::bit_cast','BaselineMismatch')) {
     if (-not $configText.Contains($marker)) { throw "Widget acceptance config continuity missing service-routed showcase marker: $marker" }
 }
 foreach ($forbidden in @('DesktopWidgetStore store','GetPrivateProfile','FindWindowW(','FindWindowExW(','EnumWindows(','SetParent(','SetWindowPos(','Progman','WorkerW','SHELLDLL_DefView')) {
@@ -56,10 +56,10 @@ foreach ($marker in @(
     'PhaseContextReady',
     'ProcessImageMatches',
     'EnumWindows(',
-    'TuringDesk.Native.DesktopLibrary',
-    'TuringDeskWallpaper.exe',
-    'TuringDesk.Native.SearchWindow',
-    'TuringDesk.exe',
+    'MiaoDesk.Native.DesktopLibrary',
+    'MiaoDeskWallpaper.exe',
+    'MiaoDesk.Native.SearchWindow',
+    'MiaoDesk.exe',
     'StructuredLifecycleReady',
     'service.GetRuntimeHealth(&health)',
     'environmentReported',
@@ -73,7 +73,7 @@ foreach ($marker in @(
 foreach ($forbidden in @('SetParent(','SetWindowPos(','SendMessageTimeoutW(','0x052C','Progman','WorkerW','SHELLDLL_DefView','DesktopWidgetStore store','GetPrivateProfileStringW')) {
     if ($mainText.Contains($forbidden)) { throw "Widget acceptance executable regained Widget store or desktop attachment ownership: $forbidden" }
 }
-$runtimeProbeCall = 'const auto code = turingdesk::desktop::RunWidgetRuntimeAcceptanceProbe('
+$runtimeProbeCall = 'const auto code = miaodesk::desktop::RunWidgetRuntimeAcceptanceProbe('
 $firstShowcaseCheck = $mainText.LastIndexOf('FixedShowcaseReady(&failure)')
 $firstConfigCheck = $mainText.IndexOf('CheckWidgetAcceptanceConfigContinuity')
 $runtimeProbe = $mainText.IndexOf($runtimeProbeCall)
@@ -100,22 +100,22 @@ if ($afterRuntime.Contains('PhaseContextReady(phase, &failure)') -or $afterRunti
 }
 
 $runnerText = Get-Content -LiteralPath $runner -Raw
-foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=','Initialize-ForegroundWindowInterop','GetForegroundWindow','Wait-ForExpectedTuringDeskWindowEvidence','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','turingdesk.widget-window-evidence.v1','widget-acceptance-$AcceptancePhase.window.json','widget-acceptance-baseline.config','$configCheckpoint')) {
+foreach ($marker in @("ValidateSet('baseline','settings','search','explorer','monitor')",'Get-CurrentSessionExplorerPids','widget-acceptance-search.explorer-pids','Explorer recovery is unproven','Get-CurrentDisplayTopology','widget-acceptance-explorer.monitor-topology','widget-acceptance-monitor.topology-transition','Wait-ForMonitorTopologyTransition','Monitor recovery is unproven','Capture-DesktopVisualEvidence','CopyFromScreen','widget-acceptance-binary.sha256','Assert-AcceptanceBinaryContinuity','Get-FileHash','virtualBounds=','Initialize-ForegroundWindowInterop','GetForegroundWindow','Wait-ForExpectedMiaoDeskWindowEvidence','MiaoDesk.Native.DesktopLibrary','MiaoDesk.Native.SearchWindow','miaodesk.widget-window-evidence.v1','widget-acceptance-$AcceptancePhase.window.json','widget-acceptance-baseline.config','$configCheckpoint')) {
     if (-not $runnerText.Contains($marker)) { throw "Widget acceptance runner missing stable phase/evidence/binary/config/window mapping: $marker" }
 }
 
 $confirmerText = Get-Content -LiteralPath $confirmer -Raw
-foreach ($marker in @('turingdesk.widget-visual-acceptance.v1','Reviewer','WallpaperBelowWidget','IconsAboveWidget','DesktopIconsUsable','SettingsKeepsWidgetVisible','SearchKeepsWidgetVisible','ExplorerRecoveryVisible','MonitorRecoveryVisible','widget-acceptance-human-visual.json','widget-acceptance-binary.sha256','screenshotSha256','Get-FileHash')) {
+foreach ($marker in @('miaodesk.widget-visual-acceptance.v1','Reviewer','WallpaperBelowWidget','IconsAboveWidget','DesktopIconsUsable','SettingsKeepsWidgetVisible','SearchKeepsWidgetVisible','ExplorerRecoveryVisible','MonitorRecoveryVisible','widget-acceptance-human-visual.json','widget-acceptance-binary.sha256','screenshotSha256','Get-FileHash')) {
     if (-not $confirmerText.Contains($marker)) { throw "Widget human visual acceptance confirmer missing marker: $marker" }
 }
 
 $sealerText = Get-Content -LiteralPath $sealer -Raw
-foreach ($marker in @("schema = 'turingdesk.widget-acceptance-evidence.v1'",'widget-acceptance-baseline.session','widget-acceptance-baseline.config','placementConfig',"fileName = 'widget-acceptance-baseline.config'",'Placement config SHA-256','Read-BaselineSessionId','baselineSessionId','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','turingdesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
+foreach ($marker in @("schema = 'miaodesk.widget-acceptance-evidence.v1'",'widget-acceptance-baseline.session','widget-acceptance-baseline.config','placementConfig',"fileName = 'widget-acceptance-baseline.config'",'Placement config SHA-256','Read-BaselineSessionId','baselineSessionId','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','Assert-HumanVisualAttestation','humanVisualAcceptance','miaodesk.widget-visual-acceptance.v1','widget-acceptance-binary.sha256','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-evidence.manifest.json','widget-acceptance-evidence.manifest.sha256')) {
     if (-not $sealerText.Contains($marker)) { throw "Widget acceptance evidence sealer missing placement/evidence marker: $marker" }
 }
 
 $verifierText = Get-Content -LiteralPath $verifier -Raw
-foreach ($marker in @('placementConfig','widget-acceptance-baseline.config','placement configuration SHA-256 no longer matches','placement configuration length no longer matches','humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','turingdesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256','Assert-ObservedProductWindow','turingdesk.widget-window-evidence.v1','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-baseline.session','baselineSessionId','verify-widget-acceptance-session-evidence.ps1','Settings product-window evidence was not observed after the baseline screenshot','Search product-window evidence was not observed after the Settings phase screenshot')) {
+foreach ($marker in @('placementConfig','widget-acceptance-baseline.config','placement configuration SHA-256 no longer matches','placement configuration length no longer matches','humanVisualAcceptance','widget-acceptance-human-visual.json','widget-acceptance-human-visual.json.sha256','miaodesk.widget-visual-acceptance.v1','wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible','screenshotSha256','Assert-ObservedProductWindow','miaodesk.widget-window-evidence.v1','MiaoDesk.Native.DesktopLibrary','MiaoDesk.Native.SearchWindow','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observedProductWindows','widget-acceptance-baseline.session','baselineSessionId','verify-widget-acceptance-session-evidence.ps1','Settings product-window evidence was not observed after the baseline screenshot','Search product-window evidence was not observed after the Settings phase screenshot')) {
     if (-not $verifierText.Contains($marker)) { throw "Widget acceptance evidence verifier missing placement/visual/window/session attestation marker: $marker" }
 }
 
@@ -137,7 +137,7 @@ foreach ($semanticCheck in @(
 }
 
 $performanceText = Get-Content -LiteralPath $performancePolicy -Raw
-foreach ($marker in @('IsTuringDeskWindowClass','TuringDesk.Native.','IsIgnoredForeground','foreground == settingsWindow','IsTuringDeskWindowClass(className)','TuringDesk.Native.DesktopLibrary')) {
+foreach ($marker in @('IsMiaoDeskWindowClass','MiaoDesk.Native.','IsIgnoredForeground','foreground == settingsWindow','IsMiaoDeskWindowClass(className)','MiaoDesk.Native.DesktopLibrary')) {
     if (-not $performanceText.Contains($marker)) {
         throw "M3 Settings/Search foreground must remain excluded from wallpaper performance pause detection: $marker"
     }
@@ -150,20 +150,20 @@ foreach ($text in @($runnerText, $confirmerText, $sealerText, $verifierText, $se
 }
 
 $cmakeText = Get-Content -LiteralPath $cmake -Raw
-foreach ($marker in @('TuringDeskWidgetAcceptance','WidgetRuntimeAcceptance.cpp','WidgetRuntimeAcceptanceMain.cpp','WidgetAcceptanceConfigContinuity.cpp','TuringDeskWidgetAcceptanceContractCheck','src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp')) {
+foreach ($marker in @('MiaoDeskWidgetAcceptance','WidgetRuntimeAcceptance.cpp','WidgetRuntimeAcceptanceMain.cpp','WidgetAcceptanceConfigContinuity.cpp','MiaoDeskWidgetAcceptanceContractCheck','src/desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp')) {
     if (-not $cmakeText.Contains($marker)) { throw "M3 acceptance probe missing from build graph: $marker" }
 }
 
 $docText = Get-Content -LiteralPath $doc -Raw
-foreach ($marker in @('TuringDeskWidgetAcceptance.exe','baseline','settings','search','explorer','monitor','non-interactive CI','sequence cursor')) {
+foreach ($marker in @('MiaoDeskWidgetAcceptance.exe','baseline','settings','search','explorer','monitor','non-interactive CI','sequence cursor')) {
     if (-not $docText.Contains($marker)) { throw "M3 acceptance documentation missing marker: $marker" }
 }
 $sequenceText = Get-Content -LiteralPath $sequenceDoc -Raw
-foreach ($marker in @('identity set','placement configuration','widget-acceptance-baseline.config','WidgetService::List','Windows session','baselineStatus','sessionStatus','sessionId','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop','TuringDesk.Native.DesktopLibrary','TuringDesk.Native.SearchWindow','observed product window')) {
+foreach ($marker in @('identity set','placement configuration','widget-acceptance-baseline.config','WidgetService::List','Windows session','baselineStatus','sessionStatus','sessionId','sequenceStatus','sequence cursor','SequenceOutOfOrder','BaselineMissing','BaselineMismatch','PID/HWND','explorer.exe PID','Explorer restart evidence','display topology','monitor recovery evidence','visual evidence','.png.sha256','virtual desktop','MiaoDesk.Native.DesktopLibrary','MiaoDesk.Native.SearchWindow','observed product window')) {
     if (-not $sequenceText.Contains($marker)) { throw "M3 acceptance sequence documentation missing marker: $marker" }
 }
 $evidenceText = Get-Content -LiteralPath $evidenceDoc -Raw
-foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','verify-widget-acceptance-session-evidence.ps1','turingdesk.widget-acceptance-evidence.v1','turingdesk.widget-visual-acceptance.v1','widget-acceptance-baseline.session','widget-acceptance-baseline.config','placementConfig','stable placement configuration','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary','same Windows session','healthy phase reports','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observed Settings/Search')) {
+foreach ($marker in @('seal-widget-acceptance-evidence.ps1','confirm-widget-visual-acceptance.ps1','verify-widget-acceptance-session-evidence.ps1','miaodesk.widget-acceptance-evidence.v1','miaodesk.widget-visual-acceptance.v1','widget-acceptance-baseline.session','widget-acceptance-baseline.config','placementConfig','stable placement configuration','widget-acceptance-human-visual.json','real ARM64 Windows','Human review','chronology','acceptance binary','same Windows session','healthy phase reports','widget-acceptance-settings.window.json','widget-acceptance-search.window.json','observed Settings/Search')) {
     if (-not $evidenceText.Contains($marker)) { throw "M3 acceptance evidence documentation missing marker: $marker" }
 }
 $placementText = Get-Content -LiteralPath $placementDoc -Raw

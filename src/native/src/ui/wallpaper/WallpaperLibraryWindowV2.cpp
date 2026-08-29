@@ -1,12 +1,12 @@
-#include "turingdesk/WallpaperLibraryWindow.h"
-#include "turingdesk/DesktopAiSettingsPage.h"
-#include "turingdesk/DesktopControlService.h"
-#include "turingdesk/DesktopWidgetController.h"
-#include "turingdesk/RuntimeLogger.h"
-#include "turingdesk/LiveLogWindow.h"
-#include "turingdesk/NativeWidgetPainter.h"
-#include "turingdesk/NativeWidgetPreset.h"
-#include "turingdesk/NativeWeatherService.h"
+#include "miaodesk/WallpaperLibraryWindow.h"
+#include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/DesktopControlService.h"
+#include "miaodesk/DesktopWidgetController.h"
+#include "miaodesk/RuntimeLogger.h"
+#include "miaodesk/LiveLogWindow.h"
+#include "miaodesk/NativeWidgetPainter.h"
+#include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/NativeWeatherService.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -30,11 +30,11 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"TuringDesk.Native.DesktopLibrary";
-constexpr wchar_t kGridClass[] = L"TuringDesk.Native.DesktopLibraryGrid";
+constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.DesktopLibrary";
+constexpr wchar_t kGridClass[] = L"MiaoDesk.Native.DesktopLibraryGrid";
 
 constexpr int kSearchId = 6101;
 constexpr int kAddId = 6102;
@@ -143,9 +143,9 @@ const wchar_t* KindLabel(LibraryWallpaperKind kind) {
 
 std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"流动极光 · 夜空星幕";
-        if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"霓虹幻境 · 赛博公路";
-        if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"深海浪潮 · 澄蓝海底";
+        if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"云端妙喵 · 星光花瓣";
+        if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"未来都市 · 雨夜光轨";
+        if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"月湖秘境 · 萤火薄雾";
         return L"原生 Scene";
     }
     if (item.kind == LibraryWallpaperKind::Video) return L"视频壁纸";
@@ -372,9 +372,9 @@ struct WallpaperLibraryWindow::Impl {
         desktop::DesktopState state{};
         const bool currentlyEnabled = desktopControl.GetState(&state).success ? state.enabled : true;
         const bool enable = !currentlyEnabled;
-        turingdesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用 (动态壁纸渲染中)" : L"已停用 (原生桌面壁纸)") + L" -> 目标切换为=" + std::wstring(enable ? L"启用壁纸" : L"停止壁纸"));
+        miaodesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用 (动态壁纸渲染中)" : L"已停用 (原生桌面壁纸)") + L" -> 目标切换为=" + std::wstring(enable ? L"启用壁纸" : L"停止壁纸"));
         const auto result = desktopControl.SetWallpaperEnabled(enable);
-        turingdesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
+        miaodesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
         RefreshWallpaperToggle();
         SetStatus(result.message.empty()
                       ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
@@ -382,8 +382,8 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void OpenLogs() {
-        turingdesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
-        turingdesk::log::ShowLiveLogConsole(instance, window);
+        miaodesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
+        miaodesk::log::ShowLiveLogConsole(instance, window);
     }
 
     void RefreshWallpapers() {
@@ -790,7 +790,7 @@ struct WallpaperLibraryWindow::Impl {
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
         const bool ai = page == Page::AI;
-        turingdesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置"));
+        miaodesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置"));
         activeNavId = installed ? kNavInstalledId : widgets ? kNavWidgetsId : kNavAiId;
         SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置");
         ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
@@ -813,17 +813,17 @@ struct WallpaperLibraryWindow::Impl {
     void ApplySelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || SourceMissing(*selected)) {
-            turingdesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸或资源不存在");
+            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸或资源不存在");
             return;
         }
         const std::wstring targetId = SelectedTargetId();
-        turingdesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
+        miaodesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
         if (applyCallback) applyCallback(*selected, targetId);
         else {
             const auto result = targetId.empty()
                 ? desktopControl.ApplyLibraryItem(*selected)
                 : desktopControl.AssignLibraryItemToMonitor(*selected, targetId, FriendlyMonitor(targetId));
-            turingdesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
+            miaodesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
         }
         std::wstring ignored;
         if (library) library->MarkUsed(selected->id, &ignored);
@@ -834,10 +834,10 @@ struct WallpaperLibraryWindow::Impl {
     void ToggleFavorite() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library) return;
-        turingdesk::log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
+        miaodesk::log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
         std::wstring error;
         if (!library->SetFavorite(selected->id, !selected->favorite, &error)) {
-            turingdesk::log::Error(L"UI.Library", L"收藏操作失败: " + error);
+            miaodesk::log::Error(L"UI.Library", L"收藏操作失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
@@ -848,31 +848,31 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        turingdesk::log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
+        miaodesk::log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
         if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
-            turingdesk::log::Error(L"UI.Library", L"移除壁纸失败: " + error);
+            miaodesk::log::Error(L"UI.Library", L"移除壁纸失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        turingdesk::log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
+        miaodesk::log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
         selectedWallpaperId.clear();
         RefreshWallpapers();
     }
 
     void ImportPath(const fs::path& path) {
         if (!library) return;
-        turingdesk::log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
+        miaodesk::log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
         std::wstring error;
         auto imported = library->ImportFile(path, {}, &error);
         if (!imported) {
-            turingdesk::log::Error(L"UI.Library", L"导入失败: " + error);
+            miaodesk::log::Error(L"UI.Library", L"导入失败: " + error);
             MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        turingdesk::log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
+        miaodesk::log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
         selectedWallpaperId = imported->id;
         RefreshWallpapers();
         SetStatus(L"已导入：" + imported->title);
@@ -886,7 +886,7 @@ struct WallpaperLibraryWindow::Impl {
         dialog.lpstrFile = path;
         dialog.nMaxFile = static_cast<DWORD>(std::size(path));
         dialog.lpstrFilter =
-            L"壁纸文件\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.mp4;*.mov;*.wmv;*.m4v;*.avi;*.mkv;*.webm;*.html;*.htm;*.tdwall\0"
+            L"壁纸文件\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.mp4;*.mov;*.wmv;*.m4v;*.avi;*.mkv;*.webm;*.html;*.htm;*.mdwall\0"
             L"所有文件\0*.*\0";
         dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
         if (GetOpenFileNameW(&dialog)) ImportPath(path);
@@ -942,15 +942,15 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void CreateWidgetPreset(desktop::WidgetFixedPreset preset) {
-        turingdesk::log::Info(L"UI.Widgets", L"用户创建小组件预设...");
+        miaodesk::log::Info(L"UI.Widgets", L"用户创建小组件预设...");
         DesktopWidget created;
         const auto result = widgetController.CreatePreset(preset, PrimaryMonitorId(), &created);
         if (!result.success) {
-            turingdesk::log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
+            miaodesk::log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
             MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        turingdesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
+        miaodesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
         selectedWidgetId = created.id;
         RefreshWidgets();
         SetStatus(L"已创建桌面小组件：" + created.title);
@@ -987,9 +987,9 @@ struct WallpaperLibraryWindow::Impl {
         const auto current = SelectedWidget();
         if (!current) return;
         const bool target = !current->enabled;
-        turingdesk::log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
+        miaodesk::log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
         const auto result = widgetController.SetEnabled(current->id, target);
-        turingdesk::log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
+        miaodesk::log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
@@ -1001,11 +1001,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveWidget() {
         const auto current = SelectedWidget();
         if (!current) return;
-        turingdesk::log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
+        miaodesk::log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
         if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         const auto result = widgetController.Remove(current->id);
-        turingdesk::log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
+        miaodesk::log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
@@ -1280,7 +1280,7 @@ struct WallpaperLibraryWindow::Impl {
                              suggested->right - suggested->left, suggested->bottom - suggested->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
-            turingdesk::log::Info(L"UI.Library", L"显示器 DPI 缩放发生变化: 当前 DPI=" + std::to_wstring(self->Dpi()));
+            miaodesk::log::Info(L"UI.Library", L"显示器 DPI 缩放发生变化: 当前 DPI=" + std::to_wstring(self->Dpi()));
             self->RebuildFonts();
             self->ApplyFonts();
             self->Layout();
@@ -1291,7 +1291,7 @@ struct WallpaperLibraryWindow::Impl {
             const int width = LOWORD(lParam);
             const int height = HIWORD(lParam);
             const wchar_t* stateStr = wParam == SIZE_MAXIMIZED ? L"最大化" : (wParam == SIZE_MINIMIZED ? L"最小化" : L"正常自由缩放");
-            turingdesk::log::Info(L"UI.Library", L"设置页面窗口尺寸变更: 宽=" + std::to_wstring(width) +
+            miaodesk::log::Info(L"UI.Library", L"设置页面窗口尺寸变更: 宽=" + std::to_wstring(width) +
                                   L", 高=" + std::to_wstring(height) + L", 状态=" + stateStr);
             self->Layout();
             return 0;
@@ -1534,4 +1534,4 @@ HWND WallpaperLibraryWindow::Window() const noexcept {
     return impl_->window;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

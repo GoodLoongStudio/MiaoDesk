@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$updaterPath = Join-Path $root 'scripts\update-turingdesk-arm64.ps1'
+$updaterPath = Join-Path $root 'scripts\update-miaodesk-arm64.ps1'
 if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf)) {
     throw 'ARM64 updater script is missing.'
 }
@@ -17,7 +17,7 @@ $required = @(
     'function Promote-ReusedRuntimeBundle',
     'Move-Item -LiteralPath $source',
     'Link-RuntimeBundle $StagedRoot $RuntimeStoreDir',
-    'Materializing changed TuringDesk RuntimeBundle',
+    'Materializing changed MiaoDesk RuntimeBundle',
     'function Remove-Junction',
     '[IO.Directory]::Delete($Path, $false)',
     'function Remove-DeploymentTree',

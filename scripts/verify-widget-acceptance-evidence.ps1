@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 function Get-DiagnosticsDirectory {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
-    Join-Path (Join-Path $base 'TuringDesk') 'Diagnostics'
+    Join-Path (Join-Path $base 'MiaoDesk') 'Diagnostics'
 }
 
 function Read-KeyValueFile([string]$Path) {
@@ -32,7 +32,7 @@ function Assert-ObservedProductWindow([string]$DiagnosticsDir, [string]$Phase, [
     $path = Join-Path $DiagnosticsDir $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "M3 observed product-window evidence is missing: $name" }
     $evidence = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-    if ($evidence.schema -ne 'turingdesk.widget-window-evidence.v1') { throw "Unexpected M3 product-window evidence schema for ${Phase}: '$($evidence.schema)'" }
+    if ($evidence.schema -ne 'miaodesk.widget-window-evidence.v1') { throw "Unexpected M3 product-window evidence schema for ${Phase}: '$($evidence.schema)'" }
     if ([string]$evidence.phase -ne $Phase) { throw "M3 product-window evidence phase mismatch for $Phase." }
     if ([string]$evidence.className -ne $ExpectedClass) { throw "M3 $Phase window evidence class mismatch: '$($evidence.className)'" }
     if ([string]$evidence.processName -ne $ExpectedProcess) { throw "M3 $Phase window evidence process mismatch: '$($evidence.processName)'" }
@@ -49,13 +49,13 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "M3 seal
 if (-not (Test-Path -LiteralPath $sealPath -PathType Leaf)) { throw "M3 sealed evidence manifest hash is missing: $sealPath" }
 
 $seal = Read-KeyValueFile -Path $sealPath
-if ($seal['schema'] -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence schema in seal file: '$($seal['schema'])'" }
+if ($seal['schema'] -ne 'miaodesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence schema in seal file: '$($seal['schema'])'" }
 if (-not $seal.ContainsKey('sha256')) { throw 'M3 acceptance evidence seal is missing sha256.' }
 $actualManifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualManifestHash -ne ([string]$seal['sha256']).ToLowerInvariant()) { throw 'M3 acceptance evidence manifest hash mismatch; the sealed manifest changed after sealing.' }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.schema -ne 'turingdesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence manifest schema: '$($manifest.schema)'" }
+if ($manifest.schema -ne 'miaodesk.widget-acceptance-evidence.v1') { throw "Unexpected M3 acceptance evidence manifest schema: '$($manifest.schema)'" }
 if ($manifest.sequence -ne 'monitor') { throw "M3 acceptance evidence is not a completed sequence: '$($manifest.sequence)'" }
 if ($null -eq $manifest.files -or @($manifest.files).Count -eq 0) { throw 'M3 acceptance evidence manifest contains no files.' }
 if ($null -eq $manifest.placementConfig -or -not $manifest.placementConfig.sha256 -or -not $manifest.placementConfig.length -or $manifest.placementConfig.fileName -ne 'widget-acceptance-baseline.config') { throw 'M3 acceptance evidence manifest is missing the placement configuration identity.' }
@@ -109,7 +109,7 @@ $binaryCheckpoint = Read-KeyValueFile -Path (Join-Path $diagnostics $binaryCheck
 if (-not $binaryCheckpoint.ContainsKey('sha256') -or -not $binaryCheckpoint.ContainsKey('length')) { throw 'M3 acceptance binary checkpoint is malformed.' }
 if (([string]$binaryCheckpoint['sha256']).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant()) { throw 'M3 acceptance binary SHA-256 no longer matches the sealed manifest.' }
 if ([int64]$binaryCheckpoint['length'] -ne [int64]$manifest.acceptanceBinary.length) { throw 'M3 acceptance binary length no longer matches the sealed manifest.' }
-if ([string]$manifest.acceptanceBinary.fileName -ne 'TuringDeskWidgetAcceptance.exe') { throw "Unexpected M3 acceptance binary name: '$($manifest.acceptanceBinary.fileName)'" }
+if ([string]$manifest.acceptanceBinary.fileName -ne 'MiaoDeskWidgetAcceptance.exe') { throw "Unexpected M3 acceptance binary name: '$($manifest.acceptanceBinary.fileName)'" }
 
 $phaseOrder = @('baseline','settings','search','explorer','monitor')
 $previousCaptureUtc = $null
@@ -142,8 +142,8 @@ foreach ($required in @('widget-acceptance-baseline.ids','widget-acceptance-base
 }
 
 $expectedSessionId = $baselineSessionId
-$settingsWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'settings' -ExpectedClass 'TuringDesk.Native.DesktopLibrary' -ExpectedProcess 'TuringDeskWallpaper' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
-$searchWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'search' -ExpectedClass 'TuringDesk.Native.SearchWindow' -ExpectedProcess 'TuringDesk' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
+$settingsWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'settings' -ExpectedClass 'MiaoDesk.Native.DesktopLibrary' -ExpectedProcess 'MiaoDeskWallpaper' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
+$searchWindowUtc = Assert-ObservedProductWindow -DiagnosticsDir $diagnostics -Phase 'search' -ExpectedClass 'MiaoDesk.Native.SearchWindow' -ExpectedProcess 'MiaoDesk' -ExpectedSessionId $expectedSessionId -SealedAtUtc $sealedAtUtc
 if ($settingsWindowUtc -le $phaseCaptureUtc['baseline']) { throw 'M3 Settings product-window evidence was not observed after the baseline screenshot.' }
 if ($settingsWindowUtc -gt $phaseCaptureUtc['settings']) { throw 'M3 Settings product-window evidence was captured after the Settings phase screenshot.' }
 if ($searchWindowUtc -le $phaseCaptureUtc['settings']) { throw 'M3 Search product-window evidence was not observed after the Settings phase screenshot.' }
@@ -153,9 +153,9 @@ if ($searchWindowUtc -le $settingsWindowUtc) { throw 'M3 observed product-window
 $attestationPath = Join-Path $diagnostics 'widget-acceptance-human-visual.json'
 $attestationSeal = Read-KeyValueFile -Path "$attestationPath.sha256"
 $attestationHash = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($attestationSeal['schema'] -ne 'turingdesk.widget-visual-acceptance.v1' -or $attestationHash -ne ([string]$attestationSeal['sha256']).ToLowerInvariant()) { throw 'M3 human visual acceptance seal is invalid.' }
+if ($attestationSeal['schema'] -ne 'miaodesk.widget-visual-acceptance.v1' -or $attestationHash -ne ([string]$attestationSeal['sha256']).ToLowerInvariant()) { throw 'M3 human visual acceptance seal is invalid.' }
 $attestation = Get-Content -LiteralPath $attestationPath -Raw | ConvertFrom-Json
-if ($attestation.schema -ne 'turingdesk.widget-visual-acceptance.v1' -or [string]$attestation.reviewer -ne [string]$manifest.humanVisualAcceptance.reviewer -or [string]$attestation.reviewedAtUtc -ne [string]$manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 human visual acceptance metadata no longer matches the sealed manifest.' }
+if ($attestation.schema -ne 'miaodesk.widget-visual-acceptance.v1' -or [string]$attestation.reviewer -ne [string]$manifest.humanVisualAcceptance.reviewer -or [string]$attestation.reviewedAtUtc -ne [string]$manifest.humanVisualAcceptance.reviewedAtUtc) { throw 'M3 human visual acceptance metadata no longer matches the sealed manifest.' }
 if (([string]$attestation.acceptanceBinary.sha256).ToLowerInvariant() -ne ([string]$manifest.acceptanceBinary.sha256).ToLowerInvariant() -or [int64]$attestation.acceptanceBinary.length -ne [int64]$manifest.acceptanceBinary.length) { throw 'M3 human visual acceptance binary identity does not match the sealed manifest.' }
 foreach ($name in @('wallpaperBelowWidget','iconsAboveWidget','desktopIconsUsable','settingsKeepsWidgetVisible','searchKeepsWidgetVisible','explorerRecoveryVisible','monitorRecoveryVisible')) {
     if (-not [bool]$attestation.confirmations.$name) { throw "M3 human visual acceptance is missing confirmation: $name" }

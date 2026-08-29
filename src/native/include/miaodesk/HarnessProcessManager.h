@@ -1,0 +1,34 @@
+#pragma once
+#include <windows.h>
+#include <memory>
+#include <string>
+
+namespace miaodesk {
+
+class HarnessProcessManager {
+public:
+    HarnessProcessManager();
+    ~HarnessProcessManager();
+
+    HarnessProcessManager(const HarnessProcessManager&) = delete;
+    HarnessProcessManager& operator=(const HarnessProcessManager&) = delete;
+
+    bool Start();
+    void Stop();
+    bool Running() const;
+    DWORD ExitCode() const;
+    bool ServiceReady() const;
+    bool WaitUntilReady(DWORD timeoutMs);
+    const std::wstring& LastError() const;
+
+    static std::wstring DefaultUrl();
+    static std::wstring LogPath();
+    static std::wstring BuildLaunchCommand();
+    static bool SelfTest();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace miaodesk

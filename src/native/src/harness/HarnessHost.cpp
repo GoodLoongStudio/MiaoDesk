@@ -1,5 +1,5 @@
-#include "turingdesk/HarnessProcessManager.h"
-#include "turingdesk/WindowPlacementStore.h"
+#include "miaodesk/HarnessProcessManager.h"
+#include "miaodesk/WindowPlacementStore.h"
 #include <windows.h>
 #include <objbase.h>
 #include <WebView2.h>
@@ -16,13 +16,13 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"TuringDesk.Native.HarnessWindow";
+constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.HarnessWindow";
 constexpr wchar_t kHarnessPlacementValue[] = L"DeepSeekHarnessWindow";
 const wchar_t* kMutexName = []() -> const wchar_t* {
     const wchar_t* commandLine = GetCommandLineW();
     return commandLine && std::wstring_view(commandLine).find(L"--ui") != std::wstring_view::npos
-        ? L"Local\\TuringDesk.Native.Harness.Ui.Singleton"
-        : L"Local\\TuringDesk.Native.Harness.Background.Singleton";
+        ? L"Local\\MiaoDesk.Native.Harness.Ui.Singleton"
+        : L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
 }();
 constexpr UINT_PTR kReadyTimerId = 1;
 constexpr UINT kReadyPollMs = 250;
@@ -33,7 +33,7 @@ fs::path UserDataDirectory() {
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData,
                                                   static_cast<DWORD>(std::size(localAppData)));
     if (length == 0 || length >= std::size(localAppData)) return {};
-    const fs::path directory = fs::path(localAppData) / L"TuringDesk" / L"WebView2" / L"Harness";
+    const fs::path directory = fs::path(localAppData) / L"MiaoDesk" / L"WebView2" / L"Harness";
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory;
@@ -46,7 +46,7 @@ std::wstring HrText(HRESULT hr) {
 }
 
 std::wstring HarnessLogHint() {
-    const std::wstring logPath = turingdesk::HarnessProcessManager::LogPath();
+    const std::wstring logPath = miaodesk::HarnessProcessManager::LogPath();
     return logPath.empty() ? std::wstring{} : L"\r\n日志：" + logPath;
 }
 
@@ -123,7 +123,7 @@ bool HarnessWindowLayoutSelfTest() {
 }
 
 int RunHarnessSmokeTest() {
-    turingdesk::HarnessProcessManager harness;
+    miaodesk::HarnessProcessManager harness;
     if (!harness.Start()) return 6;
     const bool ready = harness.WaitUntilReady(kSmokeTimeoutMs);
     harness.Stop();
@@ -145,7 +145,7 @@ public:
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         RECT initialBounds = InitialHarnessWindowRect();
-        turingdesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
+        miaodesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
         hwnd_ = CreateWindowExW(0, kWindowClass, L"妙喵工作台 · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
@@ -225,17 +225,17 @@ private:
             ResizeStatus();
             return 0;
         case WM_EXITSIZEMOVE:
-            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             return 0;
         case WM_SETFOCUS:
             if (webviewController_) webviewController_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
             return 0;
         case WM_CLOSE:
-            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             DestroyWindow(hwnd_);
             return 0;
         case WM_DESTROY:
-            turingdesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             KillTimer(hwnd_, kReadyTimerId);
             webview_.Reset();
             if (webviewController_) webviewController_->Close();
@@ -323,8 +323,8 @@ private:
                                 webviewController_->put_IsVisible(TRUE);
                                 ResizeWebView();
                                 ShowWindow(status_, SW_HIDE);
-                                const std::wstring url = turingdesk::HarnessProcessManager::DefaultUrl();
-                                // TuringDesk owns UI presentation; the background Harness owner never opens a window.
+                                const std::wstring url = miaodesk::HarnessProcessManager::DefaultUrl();
+                                // MiaoDesk owns UI presentation; the background Harness owner never opens a window.
                                 hr = webview_->Navigate(url.c_str());
                                 if (FAILED(hr)) SetStatus(L"打开妙喵工作台 Web UI 失败：" + HrText(hr));
                                 return S_OK;
@@ -366,7 +366,7 @@ private:
     ULONGLONG startedAt_{};
     ULONGLONG nextStatusUpdate_{};
     bool webviewInitializing_{};
-    turingdesk::HarnessProcessManager harness_;
+    miaodesk::HarnessProcessManager harness_;
     ComPtr<ICoreWebView2Controller> webviewController_;
     ComPtr<ICoreWebView2> webview_;
 };
@@ -392,7 +392,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return result;
     }
     if (args.find(L"--self-test") != std::wstring_view::npos) {
-        const bool healthy = turingdesk::HarnessProcessManager::SelfTest() && HarnessWindowLayoutSelfTest();
+        const bool healthy = miaodesk::HarnessProcessManager::SelfTest() && HarnessWindowLayoutSelfTest();
         const int result = healthy ? 0 : 5;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
@@ -412,7 +412,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     if (!showUi) {
-        turingdesk::HarnessProcessManager harness;
+        miaodesk::HarnessProcessManager harness;
         if (!harness.Start()) {
             CloseHandle(mutex);
             if (SUCCEEDED(com)) CoUninitialize();

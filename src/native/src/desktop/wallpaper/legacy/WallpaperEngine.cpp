@@ -5,23 +5,23 @@
 #include <wrl/client.h>
 #include <wtsapi32.h>
 
-#include "turingdesk/DesktopShellHost.h"
-#include "turingdesk/IndependentWallpaperHost.h"
-#include "turingdesk/SceneWallpaperPainter.h"
-#include "turingdesk/VideoWallpaperPlayer.h"
-#include "turingdesk/VideoWallpaperSet.h"
-#include "turingdesk/WallpaperAutomation.h"
-#include "turingdesk/WallpaperAutomationWindow.h"
-#include "turingdesk/WallpaperIndependentLayout.h"
-#include "turingdesk/WallpaperLibrary.h"
-#include "turingdesk/WallpaperLibraryWindow.h"
-#include "turingdesk/WallpaperRuntimeControl.h"
-#include "turingdesk/WallpaperMonitorAssignments.h"
-#include "turingdesk/WallpaperMonitorLayout.h"
-#include "turingdesk/WallpaperPerformancePolicy.h"
-#include "turingdesk/WallpaperScaling.h"
-#include "turingdesk/WallpaperWebRuntimeCoordinator.h"
-#include "turingdesk/RuntimeLogger.h"
+#include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/IndependentWallpaperHost.h"
+#include "miaodesk/SceneWallpaperPainter.h"
+#include "miaodesk/VideoWallpaperPlayer.h"
+#include "miaodesk/VideoWallpaperSet.h"
+#include "miaodesk/WallpaperAutomation.h"
+#include "miaodesk/WallpaperAutomationWindow.h"
+#include "miaodesk/WallpaperIndependentLayout.h"
+#include "miaodesk/WallpaperLibrary.h"
+#include "miaodesk/WallpaperLibraryWindow.h"
+#include "miaodesk/WallpaperRuntimeControl.h"
+#include "miaodesk/WallpaperMonitorAssignments.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
+#include "miaodesk/WallpaperPerformancePolicy.h"
+#include "miaodesk/WallpaperScaling.h"
+#include "miaodesk/WallpaperWebRuntimeCoordinator.h"
+#include "miaodesk/RuntimeLogger.h"
 
 #include <algorithm>
 #include <array>
@@ -41,15 +41,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kControlClass[] = L"TuringDesk.Native.WallpaperControl";
-constexpr wchar_t kHostClass[] = L"TuringDesk.Native.WallpaperHost";
-constexpr wchar_t kSettingsClass[] = L"TuringDesk.Native.WallpaperSettings";
-constexpr wchar_t kSelfTestClass[] = L"TuringDesk.Native.WallpaperSelfTest";
-constexpr wchar_t kMutexName[] = L"Local\\TuringDesk.Native.Wallpaper.Singleton";
+constexpr wchar_t kControlClass[] = L"MiaoDesk.Native.WallpaperControl";
+constexpr wchar_t kHostClass[] = L"MiaoDesk.Native.WallpaperHost";
+constexpr wchar_t kSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
+constexpr wchar_t kSelfTestClass[] = L"MiaoDesk.Native.WallpaperSelfTest";
+constexpr wchar_t kMutexName[] = L"Local\\MiaoDesk.Native.Wallpaper.Singleton";
 constexpr UINT kShowSettings = WM_APP + 81;
 constexpr UINT kTrayMessage = WM_APP + 82;
-constexpr UINT kSetEnabled = turingdesk::wallpaper::kWallpaperSetEnabledMessage;
-constexpr UINT kReloadConfig = turingdesk::wallpaper::kWallpaperReloadMessage;
+constexpr UINT kSetEnabled = miaodesk::wallpaper::kWallpaperSetEnabledMessage;
+constexpr UINT kReloadConfig = miaodesk::wallpaper::kWallpaperReloadMessage;
 constexpr UINT_PTR kRenderTimer = 1;
 constexpr UINT kTrayId = 1;
 constexpr int kSceneComboId = 4101;
@@ -104,12 +104,12 @@ struct Config {
     float focalY{0.5f};
     int fpsCap{30};
     int throttleFps{15};
-    turingdesk::wallpaper::PerformanceAction fullscreenAction{turingdesk::wallpaper::PerformanceAction::Pause};
-    turingdesk::wallpaper::PerformanceAction maximizedAction{turingdesk::wallpaper::PerformanceAction::Throttle};
-    turingdesk::wallpaper::PerformanceAction remoteSessionAction{turingdesk::wallpaper::PerformanceAction::Throttle};
-    turingdesk::wallpaper::PerformanceAction batterySaverAction{turingdesk::wallpaper::PerformanceAction::Throttle};
-    turingdesk::wallpaper::PerformanceAction lockedSessionAction{turingdesk::wallpaper::PerformanceAction::Stop};
-    turingdesk::wallpaper::PerformanceAction idleAction{turingdesk::wallpaper::PerformanceAction::Throttle};
+    miaodesk::wallpaper::PerformanceAction fullscreenAction{miaodesk::wallpaper::PerformanceAction::Pause};
+    miaodesk::wallpaper::PerformanceAction maximizedAction{miaodesk::wallpaper::PerformanceAction::Throttle};
+    miaodesk::wallpaper::PerformanceAction remoteSessionAction{miaodesk::wallpaper::PerformanceAction::Throttle};
+    miaodesk::wallpaper::PerformanceAction batterySaverAction{miaodesk::wallpaper::PerformanceAction::Throttle};
+    miaodesk::wallpaper::PerformanceAction lockedSessionAction{miaodesk::wallpaper::PerformanceAction::Stop};
+    miaodesk::wallpaper::PerformanceAction idleAction{miaodesk::wallpaper::PerformanceAction::Throttle};
     DWORD idleThresholdSeconds{120};
     bool videoLoop{true};
     bool videoMuted{true};
@@ -121,8 +121,8 @@ fs::path ConfigPath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"TuringDesk"
-        : fs::temp_directory_path() / L"TuringDesk";
+        ? fs::path(local) / L"MiaoDesk"
+        : fs::temp_directory_path() / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(dir, ec);
     return dir / L"wallpaper.ini";
@@ -149,7 +149,7 @@ float ReadProfileNumber(const std::wstring& path, const wchar_t* key, float fall
 }
 
 float ReadProfileFloat(const std::wstring& path, const wchar_t* key, float fallback) {
-    return turingdesk::wallpaper::ClampFocal(ReadProfileNumber(path, key, fallback));
+    return miaodesk::wallpaper::ClampFocal(ReadProfileNumber(path, key, fallback));
 }
 
 std::wstring ReadProfileText(const std::wstring& path, const wchar_t* key, const wchar_t* fallback) {
@@ -164,7 +164,7 @@ void SaveConfig(const Config& config) {
     WritePrivateProfileStringW(L"Wallpaper", L"Version", version.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Enabled", config.enabled ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"PauseFullscreen",
-                               config.fullscreenAction == turingdesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0", path.c_str());
+                               config.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Scene", config.scene.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Image", config.image.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Video", config.video.c_str(), path.c_str());
@@ -175,17 +175,17 @@ void SaveConfig(const Config& config) {
     WritePrivateProfileStringW(L"Wallpaper", L"FocalX", focalX.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"FocalY", focalY.c_str(), path.c_str());
 
-    const auto fps = std::to_wstring(turingdesk::wallpaper::NormalizeFpsCap(config.fpsCap));
-    const auto throttleFps = std::to_wstring(turingdesk::wallpaper::NormalizeFpsCap(config.throttleFps));
+    const auto fps = std::to_wstring(miaodesk::wallpaper::NormalizeFpsCap(config.fpsCap));
+    const auto throttleFps = std::to_wstring(miaodesk::wallpaper::NormalizeFpsCap(config.throttleFps));
     const auto idleSeconds = std::to_wstring(config.idleThresholdSeconds);
     WritePrivateProfileStringW(L"Wallpaper", L"FpsCap", fps.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"ThrottleFps", throttleFps.c_str(), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"FullscreenAction", turingdesk::wallpaper::PerformanceActionKey(config.fullscreenAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"MaximizedAction", turingdesk::wallpaper::PerformanceActionKey(config.maximizedAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"RemoteSessionAction", turingdesk::wallpaper::PerformanceActionKey(config.remoteSessionAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"BatterySaverAction", turingdesk::wallpaper::PerformanceActionKey(config.batterySaverAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"LockedSessionAction", turingdesk::wallpaper::PerformanceActionKey(config.lockedSessionAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"IdleAction", turingdesk::wallpaper::PerformanceActionKey(config.idleAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"FullscreenAction", miaodesk::wallpaper::PerformanceActionKey(config.fullscreenAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"MaximizedAction", miaodesk::wallpaper::PerformanceActionKey(config.maximizedAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"RemoteSessionAction", miaodesk::wallpaper::PerformanceActionKey(config.remoteSessionAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"BatterySaverAction", miaodesk::wallpaper::PerformanceActionKey(config.batterySaverAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"LockedSessionAction", miaodesk::wallpaper::PerformanceActionKey(config.lockedSessionAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"IdleAction", miaodesk::wallpaper::PerformanceActionKey(config.idleAction), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"IdleThresholdSeconds", idleSeconds.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"VideoLoop", config.videoLoop ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"VideoMuted", config.videoMuted ? L"1" : L"0", path.c_str());
@@ -206,30 +206,30 @@ Config LoadConfig() {
     config.scene = ReadProfileText(path, L"Scene", L"aurora");
     config.image = ReadProfileText(path, L"Image", L"");
     config.video = ReadProfileText(path, L"Video", L"");
-    config.layout = turingdesk::wallpaper::LayoutModeKey(
-        turingdesk::wallpaper::ParseLayoutMode(ReadProfileText(path, L"Layout", L"span")));
-    config.scale = turingdesk::wallpaper::ScaleModeKey(
-        turingdesk::wallpaper::ParseScaleMode(ReadProfileText(path, L"Scale", L"cover")));
+    config.layout = miaodesk::wallpaper::LayoutModeKey(
+        miaodesk::wallpaper::ParseLayoutMode(ReadProfileText(path, L"Layout", L"span")));
+    config.scale = miaodesk::wallpaper::ScaleModeKey(
+        miaodesk::wallpaper::ParseScaleMode(ReadProfileText(path, L"Scale", L"cover")));
     config.focalX = ReadProfileFloat(path, L"FocalX", 0.5f);
     config.focalY = ReadProfileFloat(path, L"FocalY", 0.5f);
-    config.fpsCap = turingdesk::wallpaper::NormalizeFpsCap(
+    config.fpsCap = miaodesk::wallpaper::NormalizeFpsCap(
         static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"FpsCap", 30, path.c_str())));
-    config.throttleFps = turingdesk::wallpaper::NormalizeFpsCap(
+    config.throttleFps = miaodesk::wallpaper::NormalizeFpsCap(
         static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"ThrottleFps", 15, path.c_str())));
     const int idleSeconds = static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"IdleThresholdSeconds", 120, path.c_str()));
     config.idleThresholdSeconds = static_cast<DWORD>(std::clamp(idleSeconds, 30, 3600));
 
     if (version >= 7) {
-        config.fullscreenAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"FullscreenAction", L"pause"));
-        config.maximizedAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"MaximizedAction", L"throttle"));
-        config.remoteSessionAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"RemoteSessionAction", L"throttle"));
-        config.batterySaverAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"BatterySaverAction", L"throttle"));
-        config.lockedSessionAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"LockedSessionAction", L"stop"));
-        config.idleAction = turingdesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"IdleAction", L"throttle"));
+        config.fullscreenAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"FullscreenAction", L"pause"));
+        config.maximizedAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"MaximizedAction", L"throttle"));
+        config.remoteSessionAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"RemoteSessionAction", L"throttle"));
+        config.batterySaverAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"BatterySaverAction", L"throttle"));
+        config.lockedSessionAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"LockedSessionAction", L"stop"));
+        config.idleAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"IdleAction", L"throttle"));
     } else {
         config.fullscreenAction = config.pauseFullscreen
-            ? turingdesk::wallpaper::PerformanceAction::Pause
-            : turingdesk::wallpaper::PerformanceAction::Normal;
+            ? miaodesk::wallpaper::PerformanceAction::Pause
+            : miaodesk::wallpaper::PerformanceAction::Normal;
     }
 
     if (version >= 8) {
@@ -246,17 +246,17 @@ Config LoadConfig() {
     return config;
 }
 
-void SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode mode, const std::wstring& error,
-                          const turingdesk::wallpaper::MonitorTopology* topology = nullptr,
-                          turingdesk::wallpaper::LayoutMode layout = turingdesk::wallpaper::LayoutMode::Span) {
+void SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode mode, const std::wstring& error,
+                          const miaodesk::wallpaper::MonitorTopology* topology = nullptr,
+                          miaodesk::wallpaper::LayoutMode layout = miaodesk::wallpaper::LayoutMode::Span) {
     const auto path = ConfigPath().wstring();
     WritePrivateProfileStringW(L"Diagnostics", L"MountMode",
-                               turingdesk::wallpaper::DesktopShellHost::ModeKey(mode), path.c_str());
+                               miaodesk::wallpaper::DesktopShellHost::ModeKey(mode), path.c_str());
     WritePrivateProfileStringW(L"Diagnostics", L"LastMountError", error.c_str(), path.c_str());
-    WritePrivateProfileStringW(L"Diagnostics", L"LayoutMode", turingdesk::wallpaper::LayoutModeKey(layout), path.c_str());
+    WritePrivateProfileStringW(L"Diagnostics", L"LayoutMode", miaodesk::wallpaper::LayoutModeKey(layout), path.c_str());
     if (topology) {
         const auto monitorCount = std::to_wstring(topology->monitors.size());
-        const auto description = turingdesk::wallpaper::DescribeMonitorTopology(*topology);
+        const auto description = miaodesk::wallpaper::DescribeMonitorTopology(*topology);
         WritePrivateProfileStringW(L"Diagnostics", L"MonitorCount", monitorCount.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Diagnostics", L"MonitorTopology", description.c_str(), path.c_str());
     }
@@ -285,7 +285,7 @@ public:
 
         InitializeLibraryAssignmentsAndAutomation();
         taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
-        topology_ = turingdesk::wallpaper::QueryMonitorTopology();
+        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
         TouchAssignments();
 
         WNDCLASSEXW controlClass{};
@@ -305,13 +305,13 @@ public:
         if (!RegisterClassExW(&hostClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         control_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kControlClass,
-                                   L"TuringDesk Wallpaper Control", WS_POPUP,
+                                   L"MiaoDesk Wallpaper Control", WS_POPUP,
                                    0, 0, 1, 1, nullptr, nullptr, instance_, this);
         if (!control_) return false;
         WTSRegisterSessionNotification(control_, NOTIFY_FOR_THIS_SESSION);
 
         host_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
-                                kHostClass, L"TuringDesk Wallpaper Host", WS_POPUP,
+                                kHostClass, L"MiaoDesk Wallpaper Host", WS_POPUP,
                                 0, 0, 1, 1, nullptr, nullptr, instance_, this);
         if (!host_) return false;
         if (!SetLayeredWindowAttributes(host_, 0, 255, LWA_ALPHA)) return false;
@@ -357,7 +357,7 @@ public:
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
 
-        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kSettingsClass, L"TuringDesk 壁纸",
+        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kSettingsClass, L"MiaoDesk 壁纸",
                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                                     CW_USEDEFAULT, CW_USEDEFAULT, 780, 820,
                                     nullptr, nullptr, instance_, this);
@@ -371,13 +371,13 @@ public:
             return control;
         };
 
-        label(L"TuringDesk 壁纸", 20, 18, 240, 26);
+        label(L"MiaoDesk 壁纸", 20, 18, 240, 26);
         label(L"场景", 20, 62, 72, 24);
         sceneCombo_ = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
                                       116, 58, 350, 180, settings_, ControlId(kSceneComboId), instance_, nullptr);
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Aurora Flow · 极光流动"));
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Neon Flow · 霓虹网格"));
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Ocean Flow · 深海浪潮"));
+        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"妙喵云境 · 云海星光"));
+        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"霓虹之城 · 雨夜光轨"));
+        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"月影秘境 · 月湖萤火"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"图片壁纸"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"视频壁纸 · Media Foundation"));
         libraryButton_ = CreateWindowExW(0, L"BUTTON", L"壁纸库…", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -472,9 +472,9 @@ public:
     }
 
     void SetEnabled(bool enabled) {
-        turingdesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+        miaodesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
         if (config_.enabled == enabled) {
-            turingdesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
+            miaodesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
             libraryWindow_.SetWallpaperEnabledState(config_.enabled);
             return;
         }
@@ -485,7 +485,7 @@ public:
 
         bool applied = false;
         if (enabled) {
-            turingdesk::log::Info(L"WallpaperEngine", L"正在启动壁纸运行时，挂载桌面图层...");
+            miaodesk::log::Info(L"WallpaperEngine", L"正在启动壁纸运行时，挂载桌面图层...");
             performanceStopped_ = false;
             videoSet_.SetPaused(false);
             independentHost_.SetPaused(false);
@@ -502,10 +502,10 @@ public:
                 applied = mountOk_;
             }
             if (applied) {
-                turingdesk::log::Info(L"WallpaperEngine", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
+                miaodesk::log::Info(L"WallpaperEngine", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
             }
         } else {
-            turingdesk::log::Info(L"WallpaperEngine", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
+            miaodesk::log::Info(L"WallpaperEngine", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
@@ -524,18 +524,18 @@ public:
             }
             SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
 
-            turingdesk::log::Info(L"WallpaperEngine", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
+            miaodesk::log::Info(L"WallpaperEngine", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
             applied = true;
         }
 
         if (!applied) {
-            turingdesk::log::Error(L"WallpaperEngine", L"SetEnabled 挂载失败，回滚状态为 disabled");
+            miaodesk::log::Error(L"WallpaperEngine", L"SetEnabled 挂载失败，回滚状态为 disabled");
             config_.enabled = !targetEnabled;
             SaveConfig(config_);
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
         } else {
-            turingdesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
+            miaodesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
         }
 
         RefreshSettings();
@@ -544,7 +544,7 @@ public:
 
 private:
     bool IsIndependent() const noexcept {
-        return turingdesk::wallpaper::ParseLayoutMode(config_.layout) == turingdesk::wallpaper::LayoutMode::Independent;
+        return miaodesk::wallpaper::ParseLayoutMode(config_.layout) == miaodesk::wallpaper::LayoutMode::Independent;
     }
 
     void InitializeLibraryAssignmentsAndAutomation() {
@@ -558,9 +558,9 @@ private:
         if (!automation_.Load(&error)) automationError_ = error;
 
         for (const auto& scene : std::array<std::pair<const wchar_t*, const wchar_t*>, 3>{
-                 std::pair{L"scene-aurora", L"Aurora Flow"},
-                 std::pair{L"scene-neon", L"Neon Flow"},
-                 std::pair{L"scene-grid", L"Ocean Flow"}}) {
+                 std::pair{L"scene-aurora", L"妙喵云境"},
+                 std::pair{L"scene-neon", L"霓虹之城"},
+                 std::pair{L"scene-grid", L"月影秘境"}}) {
             error.clear();
             library_.UpsertScene(scene.first, scene.second, &error);
             if (libraryError_.empty() && !error.empty()) libraryError_ = error;
@@ -583,12 +583,12 @@ private:
         if (!assignments_.Save(&error) && libraryError_.empty()) libraryError_ = error;
     }
 
-    std::vector<turingdesk::wallpaper::WallpaperLibraryTarget> LibraryTargets() const {
-        std::vector<turingdesk::wallpaper::WallpaperLibraryTarget> targets;
+    std::vector<miaodesk::wallpaper::WallpaperLibraryTarget> LibraryTargets() const {
+        std::vector<miaodesk::wallpaper::WallpaperLibraryTarget> targets;
         targets.reserve(topology_.monitors.size());
         for (const auto& monitor : topology_.monitors) {
-            turingdesk::wallpaper::WallpaperLibraryTarget target;
-            target.monitorId = turingdesk::wallpaper::StableMonitorKey(monitor);
+            miaodesk::wallpaper::WallpaperLibraryTarget target;
+            target.monitorId = miaodesk::wallpaper::StableMonitorKey(monitor);
             target.displayName = !monitor.friendlyName.empty() ? monitor.friendlyName :
                                  (!monitor.deviceName.empty() ? monitor.deviceName : L"显示器");
             target.primary = monitor.primary;
@@ -601,19 +601,19 @@ private:
         libraryWindow_.SetWallpaperEnabledState(config_.enabled);
         libraryWindow_.Show(
             instance_, &library_, LibraryTargets(),
-            [this](const turingdesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
+            [this](const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
                 ApplyLibraryItem(item, targetMonitorId);
             },
-            [this](turingdesk::wallpaper::WallpaperSettingsSection section) {
-                using Section = turingdesk::wallpaper::WallpaperSettingsSection;
+            [this](miaodesk::wallpaper::WallpaperSettingsSection section) {
+                using Section = miaodesk::wallpaper::WallpaperSettingsSection;
                 if (section == Section::Playlists || section == Section::Rules) {
                     ShowAutomation();
                 } else if (section == Section::Displays || section == Section::Performance) {
                     ShowAdvancedSettings();
                 } else if (section == Section::AI) {
                     MessageBoxW(libraryWindow_.Window(),
-                                L"AI 模型配置位于 TuringDesk 设置中心。桌面 AI 创作入口会在此页继续接入。",
-                                L"TuringDesk 设置", MB_OK | MB_ICONINFORMATION);
+                                L"AI 模型配置位于 MiaoDesk 设置中心。桌面 AI 创作入口会在此页继续接入。",
+                                L"MiaoDesk 设置", MB_OK | MB_ICONINFORMATION);
                 }
             });
     }
@@ -622,11 +622,11 @@ private:
         automationWindow_.Show(
             instance_, &automation_, &library_,
             [this](const std::wstring& name) { return CaptureCurrentProfile(name); },
-            [this](const turingdesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); });
+            [this](const miaodesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); });
     }
 
-    static bool ApplyWallpaperItemToConfig(Config& next, const turingdesk::wallpaper::WallpaperLibraryItem& item) {
-        using Kind = turingdesk::wallpaper::LibraryWallpaperKind;
+    static bool ApplyWallpaperItemToConfig(Config& next, const miaodesk::wallpaper::WallpaperLibraryItem& item) {
+        using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
         next.image.clear();
         next.video.clear();
         if (item.kind == Kind::Scene) {
@@ -654,19 +654,19 @@ private:
         return false;
     }
 
-    void ApplyLibraryItem(const turingdesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
-        using Kind = turingdesk::wallpaper::LibraryWallpaperKind;
+    void ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
+        using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
         if (item.kind == Kind::Unknown) {
-            turingdesk::log::Warn(L"WallpaperEngine", L"ApplyLibraryItem 失败: 未知壁纸类型");
+            miaodesk::log::Warn(L"WallpaperEngine", L"ApplyLibraryItem 失败: 未知壁纸类型");
             return;
         }
 
-        turingdesk::log::Info(L"WallpaperEngine", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
+        miaodesk::log::Info(L"WallpaperEngine", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
         std::wstring error;
         if (item.kind == Kind::Web) {
-            if (!turingdesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
+            if (!miaodesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
                 libraryError_ = error.empty() ? L"Web 壁纸应用失败" : error;
-                turingdesk::log::Error(L"WallpaperEngine", L"ActivateWebWallpaperItem 失败: " + libraryError_);
+                miaodesk::log::Error(L"WallpaperEngine", L"ActivateWebWallpaperItem 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
@@ -678,17 +678,17 @@ private:
             libraryWindow_.Refresh();
             automationWindow_.Refresh();
             RefreshSettings();
-            turingdesk::log::Info(L"WallpaperEngine", L"Web 壁纸已成功应用");
+            miaodesk::log::Info(L"WallpaperEngine", L"Web 壁纸已成功应用");
             return;
         }
         if (!targetMonitorId.empty()) {
-            const auto* monitor = turingdesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
+            const auto* monitor = miaodesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
             const std::wstring friendly = monitor ?
                 (!monitor->friendlyName.empty() ? monitor->friendlyName : monitor->deviceName) : L"";
-            turingdesk::log::Info(L"WallpaperEngine", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
+            miaodesk::log::Info(L"WallpaperEngine", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
             if (!assignments_.AssignById(targetMonitorId, item.id, friendly, &error)) {
                 libraryError_ = error;
-                turingdesk::log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
+                miaodesk::log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
                 RefreshSettings();
                 return;
             }
@@ -696,7 +696,7 @@ private:
             config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
-            turingdesk::log::Info(L"WallpaperEngine", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
+            miaodesk::log::Info(L"WallpaperEngine", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
         } else {
             Config next = config_;
             next.enabled = true;
@@ -705,17 +705,17 @@ private:
                                        (item.kind == Kind::Video ? L"Video" :
                                        (item.kind == Kind::Web ? L"Web" :
                                        (item.kind == Kind::Image ? L"Image" : L"Unknown"))));
-            turingdesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
+            miaodesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
                     : L"该壁纸类型当前不可运行。";
-                turingdesk::log::Error(L"WallpaperEngine", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
+                miaodesk::log::Error(L"WallpaperEngine", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
             ApplyConfig(next);
-            turingdesk::log::Info(L"WallpaperEngine", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
+            miaodesk::log::Info(L"WallpaperEngine", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
         }
 
         error.clear();
@@ -734,9 +734,9 @@ private:
         if (source.empty()) return std::nullopt;
         for (const auto& item : library_.Items()) {
             if (item.source.empty()) continue;
-            const bool kindMatches = (config_.scene == L"image" && item.kind == turingdesk::wallpaper::LibraryWallpaperKind::Image) ||
-                                     (config_.scene == L"video" && item.kind == turingdesk::wallpaper::LibraryWallpaperKind::Video) ||
-                                     (config_.scene == L"web" && item.kind == turingdesk::wallpaper::LibraryWallpaperKind::Web);
+            const bool kindMatches = (config_.scene == L"image" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Image) ||
+                                     (config_.scene == L"video" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Video) ||
+                                     (config_.scene == L"web" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Web);
             if (!kindMatches) continue;
             const std::wstring itemPath = item.source.wstring();
             if (_wcsicmp(itemPath.c_str(), source.c_str()) == 0) return item.id;
@@ -744,10 +744,10 @@ private:
         return std::nullopt;
     }
 
-    std::optional<turingdesk::wallpaper::WallpaperProfile> CaptureCurrentProfile(const std::wstring& name) const {
+    std::optional<miaodesk::wallpaper::WallpaperProfile> CaptureCurrentProfile(const std::wstring& name) const {
         const auto wallpaperId = CurrentWallpaperId();
         if (!wallpaperId) return std::nullopt;
-        turingdesk::wallpaper::WallpaperProfile profile;
+        miaodesk::wallpaper::WallpaperProfile profile;
         profile.name = name;
         profile.wallpaperId = *wallpaperId;
         profile.layout = config_.layout;
@@ -770,8 +770,8 @@ private:
         return profile;
     }
 
-    void ApplyAutomationDecision(const turingdesk::wallpaper::AutomationDecision& decision) {
-        using DecisionKind = turingdesk::wallpaper::AutomationDecisionKind;
+    void ApplyAutomationDecision(const miaodesk::wallpaper::AutomationDecision& decision) {
+        using DecisionKind = miaodesk::wallpaper::AutomationDecisionKind;
         if (decision.kind == DecisionKind::None) return;
 
         if (decision.kind == DecisionKind::ApplyWallpaper) {
@@ -819,7 +819,7 @@ private:
             next.videoMuted = profile->videoMuted;
             next.videoVolume = profile->videoVolume;
             next.videoRate = profile->videoRate;
-            next.pauseFullscreen = next.fullscreenAction == turingdesk::wallpaper::PerformanceAction::Pause;
+            next.pauseFullscreen = next.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause;
             if (!ApplyWallpaperItemToConfig(next, *item)) {
                 automationError_ = L"Profile 当前引用的壁纸类型尚不可运行。";
                 RefreshSettings();
@@ -845,7 +845,7 @@ private:
         SYSTEMTIME local{};
         GetLocalTime(&local);
         const auto decision = automation_.Evaluate(local, NowUnixSeconds());
-        if (decision.kind != turingdesk::wallpaper::AutomationDecisionKind::None) ApplyAutomationDecision(decision);
+        if (decision.kind != miaodesk::wallpaper::AutomationDecisionKind::None) ApplyAutomationDecision(decision);
     }
 
     HWND CreateActionCombo(int x, int y, int id) {
@@ -858,20 +858,20 @@ private:
         return combo;
     }
 
-    static int ActionIndex(turingdesk::wallpaper::PerformanceAction action) {
+    static int ActionIndex(miaodesk::wallpaper::PerformanceAction action) {
         return static_cast<int>(action);
     }
 
-    static turingdesk::wallpaper::PerformanceAction ActionFromCombo(HWND combo) {
+    static miaodesk::wallpaper::PerformanceAction ActionFromCombo(HWND combo) {
         const int selected = combo ? static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0)) : 0;
-        if (selected == 3) return turingdesk::wallpaper::PerformanceAction::Stop;
-        if (selected == 2) return turingdesk::wallpaper::PerformanceAction::Pause;
-        if (selected == 1) return turingdesk::wallpaper::PerformanceAction::Throttle;
-        return turingdesk::wallpaper::PerformanceAction::Normal;
+        if (selected == 3) return miaodesk::wallpaper::PerformanceAction::Stop;
+        if (selected == 2) return miaodesk::wallpaper::PerformanceAction::Pause;
+        if (selected == 1) return miaodesk::wallpaper::PerformanceAction::Throttle;
+        return miaodesk::wallpaper::PerformanceAction::Normal;
     }
 
-    turingdesk::wallpaper::PerformanceConfig CurrentPerformanceConfig() const {
-        turingdesk::wallpaper::PerformanceConfig result;
+    miaodesk::wallpaper::PerformanceConfig CurrentPerformanceConfig() const {
+        miaodesk::wallpaper::PerformanceConfig result;
         result.fpsCap = config_.fpsCap;
         result.throttleFps = config_.throttleFps;
         result.fullscreenAction = config_.fullscreenAction;
@@ -884,8 +884,8 @@ private:
         return result;
     }
 
-    turingdesk::IndependentVideoSettings CurrentIndependentVideoSettings() const {
-        turingdesk::IndependentVideoSettings settings;
+    miaodesk::IndependentVideoSettings CurrentIndependentVideoSettings() const {
+        miaodesk::IndependentVideoSettings settings;
         settings.looping = config_.videoLoop;
         settings.muted = config_.videoMuted;
         settings.volume = config_.videoVolume;
@@ -893,19 +893,19 @@ private:
         return settings;
     }
 
-    turingdesk::wallpaper::GlobalWallpaperDescriptor GlobalFallbackDescriptor() const {
-        turingdesk::wallpaper::GlobalWallpaperDescriptor descriptor;
+    miaodesk::wallpaper::GlobalWallpaperDescriptor GlobalFallbackDescriptor() const {
+        miaodesk::wallpaper::GlobalWallpaperDescriptor descriptor;
         if (config_.scene == L"image" && !config_.image.empty()) {
-            descriptor.kind = turingdesk::wallpaper::ResolvedWallpaperKind::Image;
+            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Image;
             descriptor.source = config_.image;
         } else if (config_.scene == L"video" && !config_.video.empty()) {
-            descriptor.kind = turingdesk::wallpaper::ResolvedWallpaperKind::Video;
+            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Video;
             descriptor.source = config_.video;
         } else if (config_.scene == L"web" && !config_.image.empty()) {
-            descriptor.kind = turingdesk::wallpaper::ResolvedWallpaperKind::Web;
+            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Web;
             descriptor.source = config_.image;
         } else {
-            descriptor.kind = turingdesk::wallpaper::ResolvedWallpaperKind::Scene;
+            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Scene;
             descriptor.sceneKey = config_.scene == L"neon" ? L"neon" : config_.scene == L"grid" ? L"grid" : L"aurora";
         }
         return descriptor;
@@ -914,7 +914,7 @@ private:
     void SetRenderTimerFps(int fps) {
         if (!control_) return;
         const UINT interval = fps > 0
-            ? static_cast<UINT>(std::max(8, 1000 / turingdesk::wallpaper::NormalizeFpsCap(fps)))
+            ? static_cast<UINT>(std::max(8, 1000 / miaodesk::wallpaper::NormalizeFpsCap(fps)))
             : 250U;
         if (renderTimerIntervalMs_ == interval) return;
         KillTimer(control_, kRenderTimer);
@@ -933,14 +933,14 @@ private:
     bool StartIndependent(bool recovery = false) {
         if (!recovery) ResetRecoveryState();
         independentHost_.Stop();
-        const auto resolved = turingdesk::wallpaper::ResolveIndependentWallpapers(
+        const auto resolved = miaodesk::wallpaper::ResolveIndependentWallpapers(
             topology_, assignments_, library_, GlobalFallbackDescriptor());
         if (resolved.empty()) {
             lastMediaError_ = L"Independent 模式没有可用显示器";
             return false;
         }
         if (!independentHost_.Start(host_, resolved,
-                                    turingdesk::wallpaper::ParseScaleMode(config_.scale),
+                                    miaodesk::wallpaper::ParseScaleMode(config_.scale),
                                     config_.focalX, config_.focalY,
                                     CurrentIndependentVideoSettings())) {
             lastMediaError_ = independentHost_.LastErrorText();
@@ -962,10 +962,10 @@ private:
         videoSet_.SetMuted(config_.videoMuted);
         videoSet_.SetVolume(config_.videoVolume);
         videoSet_.SetPlaybackRate(config_.videoRate);
-        const auto regions = turingdesk::wallpaper::DrawRegionsInHost(
-            topology_, turingdesk::wallpaper::ParseLayoutMode(config_.layout));
+        const auto regions = miaodesk::wallpaper::DrawRegionsInHost(
+            topology_, miaodesk::wallpaper::ParseLayoutMode(config_.layout));
         if (!videoSet_.Start(host_, config_.video, regions,
-                             turingdesk::wallpaper::ParseScaleMode(config_.scale),
+                             miaodesk::wallpaper::ParseScaleMode(config_.scale),
                              config_.focalX, config_.focalY)) {
             lastMediaError_ = videoSet_.LastErrorText();
             if (lastMediaError_.empty()) lastMediaError_ = L"Media Foundation 无法启动该视频";
@@ -1001,12 +1001,12 @@ private:
         UpdateWindow(host_);
     }
 
-    void ApplyPerformanceSnapshot(const turingdesk::wallpaper::PerformanceSnapshot& snapshot) {
+    void ApplyPerformanceSnapshot(const miaodesk::wallpaper::PerformanceSnapshot& snapshot) {
         if (snapshot.action != lastLoggedAction_) {
-            const wchar_t* actionName = snapshot.action == turingdesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
-                                        (snapshot.action == turingdesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
-                                        (snapshot.action == turingdesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
-            turingdesk::log::Info(L"WallpaperEngine", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
+            const wchar_t* actionName = snapshot.action == miaodesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
+                                        (snapshot.action == miaodesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
+                                        (snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
+            miaodesk::log::Info(L"WallpaperEngine", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
                 L", 目标FPS=" + std::to_wstring(snapshot.targetFps) +
                 (snapshot.reason.empty() ? L"" : (L", 原因=" + snapshot.reason)));
             lastLoggedAction_ = snapshot.action;
@@ -1014,8 +1014,8 @@ private:
 
         currentPerformance_ = snapshot;
         SetRenderTimerFps(snapshot.targetFps);
-        const bool stop = snapshot.action == turingdesk::wallpaper::PerformanceAction::Stop;
-        const bool pause = snapshot.action == turingdesk::wallpaper::PerformanceAction::Pause || stop;
+        const bool stop = snapshot.action == miaodesk::wallpaper::PerformanceAction::Stop;
+        const bool pause = snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause || stop;
         videoSet_.SetPaused(pause);
         independentHost_.SetPaused(pause);
 
@@ -1032,7 +1032,7 @@ private:
             AttachToDesktop();
             EnsureRuntimeActive();
         }
-        if (snapshot.action == turingdesk::wallpaper::PerformanceAction::Pause) return;
+        if (snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause) return;
 
         if (IsIndependent()) {
             independentHost_.Tick(std::max(1, snapshot.targetFps));
@@ -1203,15 +1203,15 @@ private:
 
         switch (message) {
         case kShowSettings:
-            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kShowSettings，显示设置中心");
+            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kShowSettings，显示设置中心");
             ShowSettings();
             return 0;
         case kSetEnabled:
-            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
+            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
             SetEnabled(wParam != 0);
             return 0;
         case kReloadConfig:
-            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
             config_ = LoadConfig();
             config_.enabled = true;
             ApplyConfig(config_, false);
@@ -1241,8 +1241,8 @@ private:
                     EvaluateAutomationIfDue();
                     const auto snapshot = performancePolicy_.Evaluate(host_, settings_, CurrentPerformanceConfig());
                     ApplyPerformanceSnapshot(snapshot);
-                    if (snapshot.action != turingdesk::wallpaper::PerformanceAction::Pause &&
-                        snapshot.action != turingdesk::wallpaper::PerformanceAction::Stop) {
+                    if (snapshot.action != miaodesk::wallpaper::PerformanceAction::Pause &&
+                        snapshot.action != miaodesk::wallpaper::PerformanceAction::Stop) {
                         HandleMediaHealth();
                     }
                 }
@@ -1297,7 +1297,7 @@ private:
     }
 
     void HandleTopologyChanged() {
-        topology_ = turingdesk::wallpaper::QueryMonitorTopology();
+        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
         TouchAssignments();
         libraryWindow_.SetTargets(LibraryTargets());
         if (config_.enabled) {
@@ -1316,18 +1316,18 @@ private:
     bool AttachToDesktop() {
         mountOk_ = false;
         lastMountError_.clear();
-        const auto layoutMode = turingdesk::wallpaper::ParseLayoutMode(config_.layout);
+        const auto layoutMode = miaodesk::wallpaper::ParseLayoutMode(config_.layout);
         if (!host_ || !IsWindow(host_)) {
             lastMountError_ = L"Wallpaper host window 不存在";
-            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
-        topology_ = turingdesk::wallpaper::QueryMonitorTopology();
+        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
         if (!topology_.Valid()) {
             attachedParent_ = nullptr;
             lastMountError_ = L"没有检测到有效的 Windows 显示器拓扑";
-            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
@@ -1337,13 +1337,13 @@ private:
         if (!shellHost_.EnsureCurrent(&shellError)) {
             attachedParent_ = nullptr;
             lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法解析 Windows 桌面层" : shellError;
-            SaveMountDiagnostics(turingdesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
-        const RECT desktopBounds = turingdesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
+        const RECT desktopBounds = miaodesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
         const bool visible = config_.enabled && !performanceStopped_;
-        if (!shellHost_.EnsureSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+        if (!shellHost_.EnsureSurface(host_, miaodesk::wallpaper::DesktopSurfaceRole::Wallpaper,
                                       desktopBounds, visible, &shellError)) {
             attachedParent_ = shellHost_.SurfaceParent();
             lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法挂载 Wallpaper surface" : shellError;
@@ -1354,7 +1354,7 @@ private:
         attachedParent_ = shellHost_.SurfaceParent();
         if (oldParent != attachedParent_ || oldMode != shellHost_.Snapshot().mode) ResetGraphics();
 
-        const auto health = shellHost_.InspectSurface(host_, turingdesk::wallpaper::DesktopSurfaceRole::Wallpaper);
+        const auto health = shellHost_.InspectSurface(host_, miaodesk::wallpaper::DesktopSurfaceRole::Wallpaper);
         if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
             lastMountError_ = health.detail.empty() ? L"DesktopShellHost surface health 校验失败" : health.detail;
             SaveMountDiagnostics(shellHost_.Snapshot().mode, lastMountError_, &topology_, layoutMode);
@@ -1370,10 +1370,10 @@ private:
 
         mountOk_ = true;
         SaveMountDiagnostics(shellHost_.Snapshot().mode, L"", &topology_, layoutMode);
-        turingdesk::log::Info(L"WallpaperEngine", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(turingdesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
+        miaodesk::log::Info(L"WallpaperEngine", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(miaodesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
             L", 桌面父窗口 HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(attachedParent_)) +
             L", 壁纸 Host HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(host_)) +
-            L"\r\n[检测到的系统显示器拓扑]\r\n" + turingdesk::wallpaper::DescribeMonitorTopology(topology_));
+            L"\r\n[检测到的系统显示器拓扑]\r\n" + miaodesk::wallpaper::DescribeMonitorTopology(topology_));
         return true;
     }
 
@@ -1386,7 +1386,7 @@ private:
         tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         tray_.uCallbackMessage = kTrayMessage;
         tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-        wcscpy_s(tray_.szTip, L"TuringDesk Wallpaper");
+        wcscpy_s(tray_.szTip, L"MiaoDesk Wallpaper");
         trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
     }
 
@@ -1458,7 +1458,7 @@ private:
         renderTarget_->BeginDraw();
         renderTarget_->SetTransform(D2D1::Matrix3x2F::Identity());
         renderTarget_->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f));
-        auto regions = turingdesk::wallpaper::DrawRegionsInHost(topology_, turingdesk::wallpaper::ParseLayoutMode(config_.layout));
+        auto regions = miaodesk::wallpaper::DrawRegionsInHost(topology_, miaodesk::wallpaper::ParseLayoutMode(config_.layout));
         if (regions.empty()) {
             const auto size = renderTarget_->GetSize();
             regions.push_back(RECT{0, 0, static_cast<LONG>(size.width), static_cast<LONG>(size.height)});
@@ -1472,9 +1472,9 @@ private:
             const D2D1_SIZE_F size = D2D1::SizeF(static_cast<float>(region.right - region.left),
                                                   static_cast<float>(region.bottom - region.top));
             if (!config_.image.empty() && imageBitmap_) DrawImage(size);
-            else if (config_.scene == L"neon") DrawNeon(size);
-            else if (config_.scene == L"grid") DrawGrid(size);
-            else DrawAurora(size);
+            else if (config_.scene == L"neon") DrawNeonCity(size);
+            else if (config_.scene == L"grid") DrawMysticMoon(size);
+            else DrawMiaoCloud(size);
             renderTarget_->SetTransform(D2D1::Matrix3x2F::Identity());
             renderTarget_->PopAxisAlignedClip();
         }
@@ -1490,9 +1490,9 @@ private:
     void DrawImage(const D2D1_SIZE_F& target) {
         FillRegionBackground(target, D2D1::ColorF(0.0f, 0.0f, 0.0f));
         const auto sourceSize = imageBitmap_->GetSize();
-        const auto placement = turingdesk::wallpaper::ComputePlacement(
+        const auto placement = miaodesk::wallpaper::ComputePlacement(
             sourceSize.width, sourceSize.height, target.width, target.height,
-            turingdesk::wallpaper::ParseScaleMode(config_.scale), config_.focalX, config_.focalY);
+            miaodesk::wallpaper::ParseScaleMode(config_.scale), config_.focalX, config_.focalY);
         const D2D1_RECT_F source = D2D1::RectF(placement.source.left, placement.source.top,
                                                placement.source.right, placement.source.bottom);
         if (placement.tiled) {
@@ -1515,28 +1515,28 @@ private:
             1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &source);
     }
 
-    void DrawAurora(const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintAurora({renderTarget_.Get(), brush_.Get(), time_}, size);
+    void DrawMiaoCloud(const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintMiaoCloud({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
-    void DrawNeon(const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintNeon({renderTarget_.Get(), brush_.Get(), time_}, size);
+    void DrawNeonCity(const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintNeonCity({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
-    void DrawGrid(const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintOcean({renderTarget_.Get(), brush_.Get(), time_}, size);
+    void DrawMysticMoon(const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintMysticMoon({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
     bool ApplyConfig(const Config& next, bool persist = true) {
         StopRuntime();
         ResetRecoveryState();
         config_ = next;
-        config_.layout = turingdesk::wallpaper::LayoutModeKey(turingdesk::wallpaper::ParseLayoutMode(config_.layout));
-        config_.scale = turingdesk::wallpaper::ScaleModeKey(turingdesk::wallpaper::ParseScaleMode(config_.scale));
-        config_.focalX = turingdesk::wallpaper::ClampFocal(config_.focalX);
-        config_.focalY = turingdesk::wallpaper::ClampFocal(config_.focalY);
-        config_.fpsCap = turingdesk::wallpaper::NormalizeFpsCap(config_.fpsCap);
-        config_.throttleFps = turingdesk::wallpaper::NormalizeFpsCap(config_.throttleFps);
+        config_.layout = miaodesk::wallpaper::LayoutModeKey(miaodesk::wallpaper::ParseLayoutMode(config_.layout));
+        config_.scale = miaodesk::wallpaper::ScaleModeKey(miaodesk::wallpaper::ParseScaleMode(config_.scale));
+        config_.focalX = miaodesk::wallpaper::ClampFocal(config_.focalX);
+        config_.focalY = miaodesk::wallpaper::ClampFocal(config_.focalY);
+        config_.fpsCap = miaodesk::wallpaper::NormalizeFpsCap(config_.fpsCap);
+        config_.throttleFps = miaodesk::wallpaper::NormalizeFpsCap(config_.throttleFps);
         config_.videoVolume = std::clamp(config_.videoVolume, 0.0f, 1.0f);
         config_.videoRate = std::clamp(config_.videoRate, 0.25f, 4.0f);
         if (persist) SaveConfig(config_);
@@ -1584,7 +1584,7 @@ private:
         if (selectedFps >= 0 && selectedFps < static_cast<int>(std::size(fpsValues))) next.fpsCap = fpsValues[selectedFps];
         next.fullscreenAction = ActionFromCombo(fullscreenActionCombo_);
         next.maximizedAction = ActionFromCombo(maximizedActionCombo_);
-        next.pauseFullscreen = next.fullscreenAction == turingdesk::wallpaper::PerformanceAction::Pause;
+        next.pauseFullscreen = next.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause;
         next.videoLoop = SendMessageW(videoLoopCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         next.videoMuted = SendMessageW(videoMuteCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         if (selectedVolume >= 0 && selectedVolume < static_cast<int>(std::size(volumeValues))) next.videoVolume = volumeValues[selectedVolume];
@@ -1630,17 +1630,17 @@ private:
         else if (config_.scene == L"grid") selectedScene = 2;
         SendMessageW(sceneCombo_, CB_SETCURSEL, selectedScene, 0);
 
-        const auto layoutMode = turingdesk::wallpaper::ParseLayoutMode(config_.layout);
-        const int layoutSelected = layoutMode == turingdesk::wallpaper::LayoutMode::Clone ? 1 :
-                                   layoutMode == turingdesk::wallpaper::LayoutMode::PrimaryOnly ? 2 :
-                                   layoutMode == turingdesk::wallpaper::LayoutMode::Independent ? 3 : 0;
+        const auto layoutMode = miaodesk::wallpaper::ParseLayoutMode(config_.layout);
+        const int layoutSelected = layoutMode == miaodesk::wallpaper::LayoutMode::Clone ? 1 :
+                                   layoutMode == miaodesk::wallpaper::LayoutMode::PrimaryOnly ? 2 :
+                                   layoutMode == miaodesk::wallpaper::LayoutMode::Independent ? 3 : 0;
         if (layoutCombo_) SendMessageW(layoutCombo_, CB_SETCURSEL, layoutSelected, 0);
 
-        const auto scaleMode = turingdesk::wallpaper::ParseScaleMode(config_.scale);
-        const int scaleSelected = scaleMode == turingdesk::wallpaper::ScaleMode::Contain ? 1 :
-                                  scaleMode == turingdesk::wallpaper::ScaleMode::Stretch ? 2 :
-                                  scaleMode == turingdesk::wallpaper::ScaleMode::Center ? 3 :
-                                  scaleMode == turingdesk::wallpaper::ScaleMode::Tile ? 4 : 0;
+        const auto scaleMode = miaodesk::wallpaper::ParseScaleMode(config_.scale);
+        const int scaleSelected = scaleMode == miaodesk::wallpaper::ScaleMode::Contain ? 1 :
+                                  scaleMode == miaodesk::wallpaper::ScaleMode::Stretch ? 2 :
+                                  scaleMode == miaodesk::wallpaper::ScaleMode::Center ? 3 :
+                                  scaleMode == miaodesk::wallpaper::ScaleMode::Tile ? 4 : 0;
         if (scaleCombo_) SendMessageW(scaleCombo_, CB_SETCURSEL, scaleSelected, 0);
         if (horizontalCombo_) SendMessageW(horizontalCombo_, CB_SETCURSEL, config_.focalX < 0.25f ? 0 : config_.focalX > 0.75f ? 2 : 1, 0);
         if (verticalCombo_) SendMessageW(verticalCombo_, CB_SETCURSEL, config_.focalY < 0.25f ? 0 : config_.focalY > 0.75f ? 2 : 1, 0);
@@ -1672,22 +1672,22 @@ private:
         } else if (!mountOk_) {
             status = L"应用失败：" + (lastMountError_.empty() ? L"没有挂载到 Windows 桌面层" : lastMountError_);
         } else {
-            const wchar_t* scene = selectedScene == 0 ? L"Aurora Flow" : selectedScene == 1 ? L"Neon Flow" :
-                                   selectedScene == 2 ? L"Ocean Flow" : selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
-            status = std::wstring(scene) + L" · " + turingdesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
-                     turingdesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
-            status += L"\r\n性能：" + std::wstring(turingdesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));
+            const wchar_t* scene = selectedScene == 0 ? L"妙喵云境" : selectedScene == 1 ? L"霓虹之城" :
+                                   selectedScene == 2 ? L"月影秘境" : selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
+            status = std::wstring(scene) + L" · " + miaodesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
+                     miaodesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
+            status += L"\r\n性能：" + std::wstring(miaodesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));
             if (currentPerformance_.targetFps > 0) status += L" · " + std::to_wstring(currentPerformance_.targetFps) + L" FPS";
             if (!currentPerformance_.reason.empty()) status += L" · 原因：" + currentPerformance_.reason;
 
-            if (layoutMode == turingdesk::wallpaper::LayoutMode::Independent) {
+            if (layoutMode == miaodesk::wallpaper::LayoutMode::Independent) {
                 status += L"\r\nIndependent：" + independentHost_.DiagnosticsText();
                 const auto missing = assignments_.MissingFrom(topology_);
                 status += L" · 已保存分配 " + std::to_wstring(assignments_.Items().size()) + L" 项";
                 if (!missing.empty()) status += L" · 离线显示器 " + std::to_wstring(missing.size()) + L" 项（保留配置）";
             } else if (selectedScene == 4) {
                 status += L"\r\n" + videoSet_.DiagnosticsText();
-                if (scaleMode == turingdesk::wallpaper::ScaleMode::Tile) status += L" · 视频 Tile 当前安全降级为 Center";
+                if (scaleMode == miaodesk::wallpaper::ScaleMode::Tile) status += L" · 视频 Tile 当前安全降级为 Center";
             }
             if (!lastMediaError_.empty()) status += L"\r\n媒体诊断：" + lastMediaError_;
             if (!recoveryNote_.empty()) status += L"\r\n恢复：" + recoveryNote_;
@@ -1704,7 +1704,7 @@ private:
 
             status += L"\r\n库：" + std::to_wstring(library_.Items().size()) + L" 项";
             if (!libraryError_.empty()) status += L" · 库诊断：" + libraryError_;
-            status += L"\r\n" + turingdesk::wallpaper::DescribeMonitorTopology(topology_);
+            status += L"\r\n" + miaodesk::wallpaper::DescribeMonitorTopology(topology_);
         }
         if (status_) SetWindowTextW(status_, status.c_str());
     }
@@ -1753,18 +1753,18 @@ private:
     std::wstring automationError_;
     std::wstring lastAutomationNote_;
     Config config_;
-    turingdesk::wallpaper::MonitorTopology topology_;
-    turingdesk::wallpaper::DesktopShellHost shellHost_;
-    turingdesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
-    turingdesk::wallpaper::PerformanceSnapshot currentPerformance_;
-    turingdesk::wallpaper::PerformanceAction lastLoggedAction_{turingdesk::wallpaper::PerformanceAction::Normal};
-    turingdesk::wallpaper::WallpaperLibrary library_;
-    turingdesk::wallpaper::WallpaperLibraryWindow libraryWindow_;
-    turingdesk::wallpaper::WallpaperMonitorAssignments assignments_;
-    turingdesk::wallpaper::WallpaperAutomationStore automation_;
-    turingdesk::wallpaper::WallpaperAutomationWindow automationWindow_;
-    turingdesk::VideoWallpaperSet videoSet_;
-    turingdesk::IndependentWallpaperHost independentHost_;
+    miaodesk::wallpaper::MonitorTopology topology_;
+    miaodesk::wallpaper::DesktopShellHost shellHost_;
+    miaodesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
+    miaodesk::wallpaper::PerformanceSnapshot currentPerformance_;
+    miaodesk::wallpaper::PerformanceAction lastLoggedAction_{miaodesk::wallpaper::PerformanceAction::Normal};
+    miaodesk::wallpaper::WallpaperLibrary library_;
+    miaodesk::wallpaper::WallpaperLibraryWindow libraryWindow_;
+    miaodesk::wallpaper::WallpaperMonitorAssignments assignments_;
+    miaodesk::wallpaper::WallpaperAutomationStore automation_;
+    miaodesk::wallpaper::WallpaperAutomationWindow automationWindow_;
+    miaodesk::VideoWallpaperSet videoSet_;
+    miaodesk::IndependentWallpaperHost independentHost_;
     float time_{};
     ComPtr<ID2D1Factory> d2dFactory_;
     ComPtr<ID2D1HwndRenderTarget> renderTarget_;
@@ -1815,17 +1815,17 @@ int RunSelfTest(HINSTANCE instance) {
     DestroyWindow(test);
 
     const bool pathOk = !ConfigPath().empty();
-    const bool layoutGeometryOk = turingdesk::wallpaper::SelfTestMonitorLayoutGeometry();
-    const bool scalingGeometryOk = turingdesk::wallpaper::SelfTestScalingGeometry();
-    const bool performancePolicyOk = turingdesk::wallpaper::WallpaperPerformancePolicy::SelfTest();
-    const bool libraryOk = turingdesk::wallpaper::WallpaperLibrary::SelfTest();
-    const bool assignmentsOk = turingdesk::wallpaper::WallpaperMonitorAssignments::SelfTest();
-    const bool independentResolutionOk = turingdesk::wallpaper::SelfTestIndependentWallpaperResolution();
-    const bool automationOk = turingdesk::wallpaper::WallpaperAutomationStore::SelfTest();
-    const bool shellContractOk = turingdesk::wallpaper::DesktopShellHost::SelfTest();
-    const auto topology = turingdesk::wallpaper::QueryMonitorTopology();
+    const bool layoutGeometryOk = miaodesk::wallpaper::SelfTestMonitorLayoutGeometry();
+    const bool scalingGeometryOk = miaodesk::wallpaper::SelfTestScalingGeometry();
+    const bool performancePolicyOk = miaodesk::wallpaper::WallpaperPerformancePolicy::SelfTest();
+    const bool libraryOk = miaodesk::wallpaper::WallpaperLibrary::SelfTest();
+    const bool assignmentsOk = miaodesk::wallpaper::WallpaperMonitorAssignments::SelfTest();
+    const bool independentResolutionOk = miaodesk::wallpaper::SelfTestIndependentWallpaperResolution();
+    const bool automationOk = miaodesk::wallpaper::WallpaperAutomationStore::SelfTest();
+    const bool shellContractOk = miaodesk::wallpaper::DesktopShellHost::SelfTest();
+    const auto topology = miaodesk::wallpaper::QueryMonitorTopology();
     const bool topologyOk = topology.Valid();
-    const bool mediaFoundationOk = turingdesk::VideoWallpaperPlayer::MediaFoundationAvailable();
+    const bool mediaFoundationOk = miaodesk::VideoWallpaperPlayer::MediaFoundationAvailable();
     wic.Reset();
     d2d.Reset();
     if (SUCCEEDED(com)) CoUninitialize();

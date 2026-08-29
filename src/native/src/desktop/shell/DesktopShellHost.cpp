@@ -1,4 +1,4 @@
-#include "turingdesk/DesktopShellHost.h"
+#include "miaodesk/DesktopShellHost.h"
 
 #include <algorithm>
 #include <array>
@@ -6,15 +6,15 @@
 #include <string>
 #include <vector>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kProgmanClass[] = L"Progman";
 constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
-constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
-constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
-constexpr wchar_t kNativeWidgetSurfaceClass[] = L"TuringDesk.Native.WidgetSurface";
+constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeWidgetSurfaceClass[] = L"MiaoDesk.Native.WidgetSurface";
 constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 constexpr UINT kSpawnWorkerMessage = 0x052C;
 
@@ -156,7 +156,7 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
     snapshot_ = next;
 
     RepairRaisedDesktopWorkerOrder();
-    RepairKnownTuringDeskSurfaces();
+    RepairKnownMiaoDeskSurfaces();
     if (error) error->clear();
     return snapshot_.Valid();
 }
@@ -256,7 +256,7 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     }
 }
 
-void DesktopShellHost::RepairKnownTuringDeskSurfaces() const {
+void DesktopShellHost::RepairKnownMiaoDeskSurfaces() const {
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) return;
     RepairRoleOrder(parent);
@@ -289,11 +289,11 @@ bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, cons
         if (error) *error = L"DesktopShellHost: SetWindowPos failed, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-    RepairKnownTuringDeskSurfaces();
+    RepairKnownMiaoDeskSurfaces();
     if (snapshot_.mode != DesktopShellMode::RaisedDesktop && snapshot_.mode != DesktopShellMode::ProgmanFallback) {
         SetWindowPos(surface, role == DesktopSurfaceRole::Widget ? HWND_TOP : HWND_BOTTOM, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        RepairKnownTuringDeskSurfaces();
+        RepairKnownMiaoDeskSurfaces();
     }
     const auto health = InspectSurface(surface, role);
     if (!health.window || !health.parent || !health.childStyle || !health.layered || !health.geometry) {
@@ -337,4 +337,4 @@ bool DesktopShellHost::SelfTest() noexcept {
            _wcsicmp(RoleKey(DesktopSurfaceRole::Widget), L"widget") == 0;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

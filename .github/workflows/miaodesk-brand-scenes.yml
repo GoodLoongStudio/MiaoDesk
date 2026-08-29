@@ -23,6 +23,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Harden text discovery for the migration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/miaodesk-brand-scenes-migrate.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'if not path.is_file() or ".git" in path.parts or not is_text_file(path):'
+          new = 'if not path.is_file() or ".git" in path.parts:'
+          if old not in text:
+              raise SystemExit('migration scan anchor missing')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
       - name: Apply complete MiaoDesk migration
         run: python3 scripts/miaodesk-brand-scenes-migrate.py
 

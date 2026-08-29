@@ -239,13 +239,17 @@ demo 与预览使用的内置内容名称以此表为准，任何文档、代码
 
 ### 壁纸
 
-| 名称 | 类型 |
-|---|---|
-| Aurora Flow | Scene |
-| Neon Flow | Scene |
-| Ocean Flow | Scene（scene-grid） |
+| 名称 | 展示名 | 预览 key | 场景 id |
+|---|---|---|---|
+| Aurora Flow | Aurora Flow | `aurora_flow` | `scene-aurora` |
+| Neon Flow | Neon Flow | `neon_flow` | `scene-neon` |
+| Ocean Flow | Ocean Flow | `ocean_flow` | `scene-grid` |
 
-历史遗留：`ocean_glass`、`Ocean Glass`、`Quiet Grid` 均指同一场景，统一为 **Ocean Flow**。
+**一个场景只有一个名字。** 展示名、AI 预览 key、代码字符串、守卫 marker 必须全部一致——
+用户在壁纸库看到的、AI 在对话里说的、预览里显示的，都必须是同一个词。
+
+历史遗留名 `ocean_glass` / `Ocean Glass` / `Quiet Grid` 已于 2026-08-29 全部统一为
+**Ocean Flow**；代码、脚本、守卫与文档中不再保留旧名。
 
 ### 小组件
 

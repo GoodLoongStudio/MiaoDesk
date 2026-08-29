@@ -155,7 +155,7 @@ server = http.createServer((req, res) => {
       const toolMessages = (body.messages || []).filter(message => message?.role === "tool");
       const sawPreviewCatalog = toolMessages.some(message => {
         const text = JSON.stringify(message);
-        return text.includes("ocean_glass") && text.includes("today_tasks");
+        return text.includes("ocean_flow") && text.includes("today_tasks");
       });
       sendChunk(res, { role: "assistant", content: sawPreviewCatalog ? "PI_E2E_OK" : "PI_E2E_PREVIEW_CATALOG_MISSING" });
       sendChunk(res, {}, "stop");

@@ -295,8 +295,8 @@ html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;background:#0711
 .aurora_flow{background:radial-gradient(circle at 78% 16%,rgba(236,244,255,.95),transparent 12%),radial-gradient(ellipse at 22% 18%,rgba(81,157,255,.75),transparent 34%),radial-gradient(ellipse at 58% 42%,rgba(158,104,255,.55),transparent 38%),linear-gradient(180deg,#081b38 0%,#0d2a3f 72%,#071423 100%);animation:drift 10s ease-in-out infinite alternate}
 .neon_flow{background:radial-gradient(circle at 50% 58%,rgba(255,170,48,.95),transparent 18%),radial-gradient(circle at 50% 58%,rgba(255,88,120,.55),transparent 28%),linear-gradient(180deg,#12051f 0%,#2a0a2a 58%,#12051f 100%);animation:drift 8s ease-in-out infinite alternate}
 .neon_flow:after{content:"";position:absolute;inset:42% -20% -30%;background:linear-gradient(90deg,transparent,rgba(8,236,255,.35),rgba(255,36,220,.28),transparent),repeating-linear-gradient(90deg,rgba(8,236,255,.22) 0 1px,transparent 1px 56px);transform:perspective(420px) rotateX(68deg);animation:road 5s linear infinite}
-.ocean_glass{background:radial-gradient(ellipse at 50% 0%,rgba(178,240,255,.95),transparent 34%),linear-gradient(180deg,#2db7df 0%,#1178b8 35%,#06598f 62%,#07385e 100%);animation:ocean 7s ease-in-out infinite alternate}
-.ocean_glass:after{content:"";position:absolute;inset:0;background:repeating-radial-gradient(ellipse at 50% 0,rgba(255,255,255,.18) 0 2px,transparent 3px 34px);mix-blend-mode:screen;transform:perspective(500px) rotateX(60deg) scale(1.5);animation:water 4s linear infinite}
+.ocean_flow{background:radial-gradient(ellipse at 50% 0%,rgba(178,240,255,.95),transparent 34%),linear-gradient(180deg,#2db7df 0%,#1178b8 35%,#06598f 62%,#07385e 100%);animation:ocean 7s ease-in-out infinite alternate}
+.ocean_flow:after{content:"";position:absolute;inset:0;background:repeating-radial-gradient(ellipse at 50% 0,rgba(255,255,255,.18) 0 2px,transparent 3px 34px);mix-blend-mode:screen;transform:perspective(500px) rotateX(60deg) scale(1.5);animation:water 4s linear infinite}
 @keyframes drift{to{transform:translate3d(4%,-2%,0) scale(1.08)}}@keyframes road{to{transform:perspective(420px) rotateX(68deg) translateY(56px)}}@keyframes ocean{to{filter:hue-rotate(8deg) saturate(1.2);transform:scale(1.04)}}@keyframes water{to{background-position:80px 40px}}
 </style></head><body><div id="root"></div><script>
 const raw=Uint8Array.from(atob(')HTML";
@@ -386,13 +386,13 @@ NativeToolResult CreateWallpaperPreview(std::string_view arguments) {
         mode = "preset";
         if (example == "aurora_flow") source = "aurora_flow";
         else if (example == "neon_flow") source = "neon_flow";
-        else if (example == "ocean_glass") source = "ocean_glass";
+        else if (example == "ocean_flow") source = "ocean_flow";
         else return {false, L"未知内置壁纸示例。"};
     }
 
     if (mode != "preset" && mode != "image" && mode != "video") return {false, L"壁纸预览 mode 只允许 preset/image/video。"};
-    if (mode == "preset" && source != "aurora_flow" && source != "neon_flow" && source != "ocean_glass")
-        return {false, L"动态壁纸只允许应用内置 aurora_flow / neon_flow / ocean_glass preset。"};
+    if (mode == "preset" && source != "aurora_flow" && source != "neon_flow" && source != "ocean_flow")
+        return {false, L"动态壁纸只允许应用内置 aurora_flow / neon_flow / ocean_flow preset。"};
     if (mode != "preset" && source.empty()) return {false, L"图片/视频壁纸缺少 source。"};
 
     const auto root = TempPreviewRoot();
@@ -431,7 +431,7 @@ NativeToolResult CreateWallpaperPreview(std::string_view arguments) {
 
 NativeToolResult ExamplesCatalog() {
     return {true,
-        L"内置展示：壁纸 aurora_flow / neon_flow / ocean_glass；小组件 today_tasks / focus_clock / weather_glass / system_pulse。所有示例也必须先预览再应用。"};
+        L"内置展示：壁纸 aurora_flow / neon_flow / ocean_flow；小组件 today_tasks / focus_clock / weather_glass / system_pulse。所有示例也必须先预览再应用。"};
 }
 
 struct PreviewState {

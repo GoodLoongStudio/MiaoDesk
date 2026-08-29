@@ -72,7 +72,7 @@ wallpaper::WallpaperLibraryItem SceneItem(std::wstring id, std::wstring title) {
 wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
     if (sceneId == L"scene-neon" || sceneId == L"neon" || sceneId == L"neon_flow")
         return SceneItem(L"scene-neon", L"Neon Flow");
-    if (sceneId == L"scene-grid" || sceneId == L"grid" || sceneId == L"ocean" || sceneId == L"ocean_glass")
+    if (sceneId == L"scene-grid" || sceneId == L"grid" || sceneId == L"ocean" || sceneId == L"ocean_flow")
         return SceneItem(L"scene-grid", L"Ocean Flow");
     // Default showcase: Aurora (ocean-like cool tones on Snapdragon demos).
     return SceneItem(L"scene-aurora", L"Aurora Flow");

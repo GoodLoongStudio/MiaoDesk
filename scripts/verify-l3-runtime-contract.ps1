@@ -181,7 +181,7 @@ foreach ($marker in @('HasOnly', 'A2UI', 'ValidateNode', 'count > 32', 'depth > 
 foreach ($marker in @('additionalProperties', 'Card', 'Text', 'Button', 'Weather', 'List')) {
     if (-not $schema.Contains($marker)) { throw "A2UI schema marker missing: $marker" }
 }
-foreach ($marker in @('Apply', 'Reject', 'AI_Generated', 'WebView2', 'declarative', 'Aurora Flow', 'Ocean Glass', 'Today Tasks', 'System Pulse')) {
+foreach ($marker in @('Apply', 'Reject', 'AI_Generated', 'WebView2', 'declarative', 'Aurora Flow', 'Ocean Flow', 'Today Tasks', 'System Pulse')) {
     if (-not $sandbox.Contains($marker)) { throw "AI desktop sandbox documentation marker missing: $marker" }
 }
 

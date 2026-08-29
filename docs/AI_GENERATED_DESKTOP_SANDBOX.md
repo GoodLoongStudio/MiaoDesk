@@ -278,7 +278,7 @@ Wallpapers:
 
 1. Aurora Flow — soft blue/violet procedural-style visual using an application-owned renderer preset.
 2. Neon Flow — darker neon gradient/motion preset.
-3. Ocean Glass — blue ocean/light-caustics preset suitable for demonstrating dynamic wallpaper preview.
+3. Ocean Flow — blue ocean/light-caustics preset suitable for demonstrating dynamic wallpaper preview.
 
 Widgets:
 

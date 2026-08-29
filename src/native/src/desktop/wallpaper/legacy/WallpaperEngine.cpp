@@ -38,7 +38,6 @@
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
-namespace log = turingdesk::log;
 
 namespace {
 
@@ -473,9 +472,9 @@ public:
     }
 
     void SetEnabled(bool enabled) {
-        log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+        turingdesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
         if (config_.enabled == enabled) {
-            log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
+            turingdesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
             libraryWindow_.SetWallpaperEnabledState(config_.enabled);
             return;
         }
@@ -512,13 +511,13 @@ public:
         }
 
         if (!applied) {
-            log::Error(L"WallpaperEngine", L"SetEnabled 挂载失败，回滚状态为 disabled");
+            turingdesk::log::Error(L"WallpaperEngine", L"SetEnabled 挂载失败，回滚状态为 disabled");
             config_.enabled = !targetEnabled;
             SaveConfig(config_);
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
         } else {
-            log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
+            turingdesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
         }
 
         RefreshSettings();
@@ -640,16 +639,16 @@ private:
     void ApplyLibraryItem(const turingdesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
         using Kind = turingdesk::wallpaper::LibraryWallpaperKind;
         if (item.kind == Kind::Unknown) {
-            log::Warn(L"WallpaperEngine", L"ApplyLibraryItem 失败: 未知壁纸类型");
+            turingdesk::log::Warn(L"WallpaperEngine", L"ApplyLibraryItem 失败: 未知壁纸类型");
             return;
         }
 
-        log::Info(L"WallpaperEngine", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
+        turingdesk::log::Info(L"WallpaperEngine", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
         std::wstring error;
         if (item.kind == Kind::Web) {
             if (!turingdesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
                 libraryError_ = error.empty() ? L"Web 壁纸应用失败" : error;
-                log::Error(L"WallpaperEngine", L"ActivateWebWallpaperItem 失败: " + libraryError_);
+                turingdesk::log::Error(L"WallpaperEngine", L"ActivateWebWallpaperItem 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
@@ -661,7 +660,7 @@ private:
             libraryWindow_.Refresh();
             automationWindow_.Refresh();
             RefreshSettings();
-            log::Info(L"WallpaperEngine", L"Web 壁纸已成功应用");
+            turingdesk::log::Info(L"WallpaperEngine", L"Web 壁纸已成功应用");
             return;
         }
         if (!targetMonitorId.empty()) {
@@ -670,7 +669,7 @@ private:
                 (!monitor->friendlyName.empty() ? monitor->friendlyName : monitor->deviceName) : L"";
             if (!assignments_.AssignById(targetMonitorId, item.id, friendly, &error)) {
                 libraryError_ = error;
-                log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
+                turingdesk::log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
                 RefreshSettings();
                 return;
             }
@@ -678,7 +677,7 @@ private:
             config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
-            log::Info(L"WallpaperEngine", L"已将壁纸 \"" + item.title + L"\" 分配至显示器 " + targetMonitorId);
+            turingdesk::log::Info(L"WallpaperEngine", L"已将壁纸 \"" + item.title + L"\" 分配至显示器 " + targetMonitorId);
         } else {
             Config next = config_;
             next.enabled = true;
@@ -688,12 +687,12 @@ private:
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
                     : L"该壁纸类型当前不可运行。";
-                log::Error(L"WallpaperEngine", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
+                turingdesk::log::Error(L"WallpaperEngine", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
             ApplyConfig(next);
-            log::Info(L"WallpaperEngine", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
+            turingdesk::log::Info(L"WallpaperEngine", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
         }
 
         error.clear();
@@ -1171,15 +1170,15 @@ private:
 
         switch (message) {
         case kShowSettings:
-            log::Info(L"WallpaperEngine", L"收到 IPC 消息 kShowSettings，显示设置中心");
+            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kShowSettings，显示设置中心");
             ShowSettings();
             return 0;
         case kSetEnabled:
-            log::Info(L"WallpaperEngine", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
+            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
             SetEnabled(wParam != 0);
             return 0;
         case kReloadConfig:
-            log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            turingdesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
             config_ = LoadConfig();
             config_.enabled = true;
             ApplyConfig(config_, false);

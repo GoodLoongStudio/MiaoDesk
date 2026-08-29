@@ -328,9 +328,9 @@ struct WallpaperLibraryWindow::Impl {
         desktop::DesktopState state{};
         const bool currentlyEnabled = desktopControl.GetState(&state).success ? state.enabled : true;
         const bool enable = !currentlyEnabled;
-        log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用" : L"已停用") + L", 目标状态=" + std::wstring(enable ? L"启用" : L"停用"));
+        turingdesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用" : L"已停用") + L", 目标状态=" + std::wstring(enable ? L"启用" : L"停用"));
         const auto result = desktopControl.SetWallpaperEnabled(enable);
-        log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
+        turingdesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
         RefreshWallpaperToggle();
         SetStatus(result.message.empty()
                       ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
@@ -338,8 +338,8 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void OpenLogs() {
-        log::Info(L"UI.Library", L"用户点击打开实时日志文件");
-        log::OpenDebugLogFile();
+        turingdesk::log::Info(L"UI.Library", L"用户点击打开实时日志文件");
+        turingdesk::log::OpenDebugLogFile();
     }
 
     void RefreshWallpapers() {
@@ -687,7 +687,7 @@ struct WallpaperLibraryWindow::Impl {
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
         const bool ai = page == Page::AI;
-        log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI"));
+        turingdesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI"));
         activeNavId = installed ? kNavInstalledId : widgets ? kNavWidgetsId : kNavAiId;
         SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI");
         ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
@@ -709,15 +709,15 @@ struct WallpaperLibraryWindow::Impl {
     void ApplySelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || SourceMissing(*selected)) {
-            log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸或资源不存在");
+            turingdesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸或资源不存在");
             return;
         }
         const std::wstring targetId = SelectedTargetId();
-        log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (id=" + selected->id + L", kind=" + KindLabel(selected->kind) + L", target=" + (targetId.empty() ? L"全局" : targetId) + L")");
+        turingdesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (id=" + selected->id + L", kind=" + KindLabel(selected->kind) + L", target=" + (targetId.empty() ? L"全局" : targetId) + L")");
         if (applyCallback) applyCallback(*selected, targetId);
         else {
             const auto result = desktopControl.ApplyLibraryItem(*selected);
-            log::Info(L"UI.Library", L"DesktopControl::ApplyLibraryItem 结果: " + result.message);
+            turingdesk::log::Info(L"UI.Library", L"DesktopControl::ApplyLibraryItem 结果: " + result.message);
         }
         std::wstring ignored;
         if (library) library->MarkUsed(selected->id, &ignored);
@@ -728,10 +728,10 @@ struct WallpaperLibraryWindow::Impl {
     void ToggleFavorite() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library) return;
-        log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
+        turingdesk::log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
         std::wstring error;
         if (!library->SetFavorite(selected->id, !selected->favorite, &error)) {
-            log::Error(L"UI.Library", L"收藏操作失败: " + error);
+            turingdesk::log::Error(L"UI.Library", L"收藏操作失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
@@ -742,31 +742,31 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
+        turingdesk::log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
         if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
-            log::Error(L"UI.Library", L"移除壁纸失败: " + error);
+            turingdesk::log::Error(L"UI.Library", L"移除壁纸失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
+        turingdesk::log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
         selectedWallpaperId.clear();
         RefreshWallpapers();
     }
 
     void ImportPath(const fs::path& path) {
         if (!library) return;
-        log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
+        turingdesk::log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
         std::wstring error;
         auto imported = library->ImportFile(path, {}, &error);
         if (!imported) {
-            log::Error(L"UI.Library", L"导入失败: " + error);
+            turingdesk::log::Error(L"UI.Library", L"导入失败: " + error);
             MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
+        turingdesk::log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
         selectedWallpaperId = imported->id;
         RefreshWallpapers();
         SetStatus(L"已导入：" + imported->title);
@@ -836,15 +836,15 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void CreateWidgetPreset(desktop::WidgetFixedPreset preset) {
-        log::Info(L"UI.Widgets", L"用户创建小组件预设...");
+        turingdesk::log::Info(L"UI.Widgets", L"用户创建小组件预设...");
         DesktopWidget created;
         const auto result = widgetController.CreatePreset(preset, PrimaryMonitorId(), &created);
         if (!result.success) {
-            log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
+            turingdesk::log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
             MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
+        turingdesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
         selectedWidgetId = created.id;
         RefreshWidgets();
         desktop::WidgetRuntimeHealth health;
@@ -883,9 +883,9 @@ struct WallpaperLibraryWindow::Impl {
         const auto current = SelectedWidget();
         if (!current) return;
         const bool target = !current->enabled;
-        log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
+        turingdesk::log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
         const auto result = widgetController.SetEnabled(current->id, target);
-        log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
+        turingdesk::log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
@@ -897,11 +897,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveWidget() {
         const auto current = SelectedWidget();
         if (!current) return;
-        log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
+        turingdesk::log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
         if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         const auto result = widgetController.Remove(current->id);
-        log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
+        turingdesk::log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;

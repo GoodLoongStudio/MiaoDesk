@@ -1,53 +1,61 @@
 #include "turingdesk/NativeWidgetPreset.h"
 
+#include <array>
 #include <cwchar>
 
 namespace turingdesk::wallpaper {
+namespace {
+
+constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
+    {NativeWidgetPreset::GlassClock, L"native:glass-clock", L"玻璃时钟", 0.30f, 0.20f, 1000},
+    {NativeWidgetPreset::TodayTasks, L"native:today-tasks", L"今日待办", 0.26f, 0.24f, 0},
+    {NativeWidgetPreset::WeatherGlass, L"native:weather-glass", L"玻璃天气", 0.24f, 0.20f, 0},
+}};
+
+} // namespace
+
+const NativeWidgetDefinition* NativePresetDefinition(NativeWidgetPreset preset) noexcept {
+    for (const auto& definition : kDefinitions) {
+        if (definition.preset == preset) return &definition;
+    }
+    return nullptr;
+}
+
+const NativeWidgetDefinition* FindNativePresetDefinition(std::wstring_view source) noexcept {
+    for (const auto& definition : kDefinitions) {
+        if (source.size() == definition.source.size() &&
+            _wcsnicmp(source.data(), definition.source.data(), definition.source.size()) == 0) {
+            return &definition;
+        }
+    }
+    return nullptr;
+}
 
 bool IsNativePresetSource(std::wstring_view source) noexcept {
-    return source.size() > 7 && _wcsnicmp(source.data(), L"native:", 7) == 0;
+    return FindNativePresetDefinition(source) != nullptr;
 }
 
 bool ParseNativePreset(std::wstring_view source, NativeWidgetPreset* preset) noexcept {
-    if (!preset || !IsNativePresetSource(source)) return false;
-    const std::wstring_view key = source.substr(7);
-    if (key == L"glass-clock") {
-        *preset = NativeWidgetPreset::GlassClock;
-        return true;
-    }
-    if (key == L"today-tasks") {
-        *preset = NativeWidgetPreset::TodayTasks;
-        return true;
-    }
-    if (key == L"weather-glass") {
-        *preset = NativeWidgetPreset::WeatherGlass;
-        return true;
-    }
-    return false;
+    if (!preset) return false;
+    const auto* definition = FindNativePresetDefinition(source);
+    if (!definition) return false;
+    *preset = definition->preset;
+    return true;
 }
 
 std::wstring NativePresetSource(NativeWidgetPreset preset) {
-    switch (preset) {
-    case NativeWidgetPreset::TodayTasks:
-        return L"native:today-tasks";
-    case NativeWidgetPreset::WeatherGlass:
-        return L"native:weather-glass";
-    case NativeWidgetPreset::GlassClock:
-    default:
-        return L"native:glass-clock";
-    }
+    const auto* definition = NativePresetDefinition(preset);
+    return definition ? std::wstring(definition->source) : std::wstring{};
 }
 
 const wchar_t* NativePresetTitle(NativeWidgetPreset preset) noexcept {
-    switch (preset) {
-    case NativeWidgetPreset::TodayTasks:
-        return L"今日待办";
-    case NativeWidgetPreset::WeatherGlass:
-        return L"玻璃天气";
-    case NativeWidgetPreset::GlassClock:
-    default:
-        return L"玻璃时钟";
-    }
+    const auto* definition = NativePresetDefinition(preset);
+    return definition ? definition->title.data() : L"原生小组件";
+}
+
+std::uint32_t NativePresetRefreshIntervalMs(NativeWidgetPreset preset) noexcept {
+    const auto* definition = NativePresetDefinition(preset);
+    return definition ? definition->periodicRefreshMs : 0;
 }
 
 } // namespace turingdesk::wallpaper

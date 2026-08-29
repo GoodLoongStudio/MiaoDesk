@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <chrono>
@@ -32,6 +33,9 @@ constexpr wchar_t kWallpaperControlClass[] = L"TuringDesk.Native.WallpaperContro
 constexpr wchar_t kDesktopLibraryClass[] = L"TuringDesk.Native.DesktopLibrary";
 constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
 constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
+constexpr wchar_t kWorkbenchSubclassProperty[] = L"MiaoDesk.Settings.Workbench.OriginalProc";
+constexpr int kApiNavId = 6116;
+constexpr int kWorkbenchEntryId = 6180;
 
 constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
 constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
@@ -182,11 +186,129 @@ void ClampDesktopLibraryToWorkArea(HWND window) {
                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
+int ScaleForWindow(HWND window, int logicalPx) {
+    const UINT dpi = window ? std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window))
+                            : USER_DEFAULT_SCREEN_DPI;
+    return MulDiv(logicalPx, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+fs::path HarnessExecutablePath() {
+    const std::wstring executable = ExecutablePath();
+    if (executable.empty()) return {};
+    const fs::path directory = fs::path(executable).parent_path();
+    std::error_code ec;
+    for (const wchar_t* name : {L"MiaoDeskHarness.exe", L"TuringDeskHarness.exe"}) {
+        const fs::path candidate = directory / name;
+        if (fs::is_regular_file(candidate, ec)) return candidate;
+        ec.clear();
+    }
+    return {};
+}
+
+void LaunchDeepSeekHarness(HWND owner) {
+    for (const wchar_t* className : {L"MiaoDesk.Native.HarnessWindow", L"TuringDesk.Native.HarnessWindow"}) {
+        const HWND existing = FindWindowW(className, nullptr);
+        if (!existing) continue;
+        SetWindowTextW(existing, L"妙喵工作台 · DeepSeek Harness");
+        ShowWindow(existing, SW_SHOWNORMAL);
+        SetForegroundWindow(existing);
+        return;
+    }
+
+    const fs::path harness = HarnessExecutablePath();
+    if (harness.empty()) {
+        MessageBoxW(owner,
+                    L"未找到 DeepSeek Harness 工作台程序。请确认安装包包含 Harness 运行时。",
+                    L"妙喵工作台", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    const fs::path directory = harness.parent_path();
+    const auto result = reinterpret_cast<INT_PTR>(
+        ShellExecuteW(owner, L"open", harness.c_str(), L"--ui", directory.c_str(), SW_SHOWNORMAL));
+    if (result <= 32) {
+        MessageBoxW(owner, L"DeepSeek Harness 工作台启动失败。", L"妙喵工作台", MB_OK | MB_ICONERROR);
+    }
+}
+
+void LayoutWorkbenchEntry(HWND window) {
+    if (!IsDesktopLibraryWindow(window)) return;
+    const HWND entry = GetDlgItem(window, kWorkbenchEntryId);
+    if (!entry) return;
+
+    const HWND apiNav = GetDlgItem(window, kApiNavId);
+    if (apiNav) {
+        RECT anchor{};
+        if (GetWindowRect(apiNav, &anchor)) {
+            MapWindowPoints(HWND_DESKTOP, window, reinterpret_cast<POINT*>(&anchor), 2);
+            const int gap = ScaleForWindow(window, 4);
+            SetWindowPos(entry, nullptr, anchor.left, anchor.bottom + gap,
+                         std::max(1L, anchor.right - anchor.left),
+                         std::max(1L, anchor.bottom - anchor.top),
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            return;
+        }
+    }
+
+    RECT client{};
+    if (!GetClientRect(window, &client)) return;
+    const int x = ScaleForWindow(window, 12);
+    const int y = ScaleForWindow(window, 202);
+    const int width = std::max(1, ScaleForWindow(window, 184));
+    const int height = std::max(1, ScaleForWindow(window, 38));
+    SetWindowPos(entry, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+LRESULT CALLBACK SettingsWorkbenchSubclassProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* original = reinterpret_cast<WNDPROC>(GetPropW(window, kWorkbenchSubclassProperty));
+    if (!original) return DefWindowProcW(window, message, wParam, lParam);
+
+    if (message == WM_COMMAND && LOWORD(wParam) == kWorkbenchEntryId && HIWORD(wParam) == BN_CLICKED) {
+        LaunchDeepSeekHarness(window);
+        return 0;
+    }
+
+    const LRESULT result = CallWindowProcW(original, window, message, wParam, lParam);
+    if (message == WM_SIZE || message == WM_DPICHANGED || message == WM_WINDOWPOSCHANGED)
+        LayoutWorkbenchEntry(window);
+    if (message == WM_NCDESTROY)
+        RemovePropW(window, kWorkbenchSubclassProperty);
+    return result;
+}
+
+void EnsureSettingsWorkbenchEntry(HWND window) {
+    if (!IsDesktopLibraryWindow(window)) return;
+
+    HWND entry = GetDlgItem(window, kWorkbenchEntryId);
+    if (!entry) {
+        const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(window, GWLP_HINSTANCE));
+        entry = CreateWindowExW(
+            0, L"BUTTON", L"妙喵工作台  ↗",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+            0, 0, 10, 10, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWorkbenchEntryId)), instance, nullptr);
+        if (!entry) return;
+
+        const HWND apiNav = GetDlgItem(window, kApiNavId);
+        const HFONT font = apiNav ? reinterpret_cast<HFONT>(SendMessageW(apiNav, WM_GETFONT, 0, 0)) : nullptr;
+        if (font) SendMessageW(entry, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    }
+
+    if (!GetPropW(window, kWorkbenchSubclassProperty)) {
+        const auto original = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&SettingsWorkbenchSubclassProc)));
+        if (original) SetPropW(window, kWorkbenchSubclassProperty, reinterpret_cast<HANDLE>(original));
+    }
+
+    LayoutWorkbenchEntry(window);
+}
+
 void CALLBACK WorkAreaEventProc(HWINEVENTHOOK, DWORD event, HWND window,
                                 LONG objectId, LONG childId, DWORD, DWORD) {
     if (event != EVENT_OBJECT_SHOW && event != EVENT_OBJECT_LOCATIONCHANGE) return;
     if (childId != CHILDID_SELF || (objectId != OBJID_WINDOW && objectId != OBJID_CLIENT)) return;
     ClampDesktopLibraryToWorkArea(window);
+    EnsureSettingsWorkbenchEntry(window);
 }
 
 HWINEVENTHOOK InstallWorkAreaGuard() {

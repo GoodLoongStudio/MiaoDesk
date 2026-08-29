@@ -146,7 +146,7 @@ public:
 
         RECT initialBounds = InitialHarnessWindowRect();
         turingdesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
-        hwnd_ = CreateWindowExW(0, kWindowClass, L"秒喵工作台",
+        hwnd_ = CreateWindowExW(0, kWindowClass, L"妙喵工作台 · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
                                 initialBounds.right - initialBounds.left,
@@ -154,7 +154,7 @@ public:
                                 nullptr, nullptr, instance_, this);
         if (!hwnd_) return false;
 
-        status_ = CreateWindowExW(0, L"EDIT", L"正在启动秒喵工作台…",
+        status_ = CreateWindowExW(0, L"EDIT", L"正在启动妙喵工作台…",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                                       ES_MULTILINE | ES_CENTER | ES_READONLY | ES_NOHIDESEL,
                                   24, 24, 1100, 120, hwnd_, nullptr, instance_, nullptr);
@@ -170,13 +170,13 @@ public:
         UpdateWindow(hwnd_);
 
         if (harness_.ServiceReady()) {
-            SetStatus(L"正在连接秒喵工作台…");
+            SetStatus(L"正在连接妙喵工作台…");
             InitializeWebView();
             return true;
         }
 
         if (!harness_.Start()) {
-            SetStatus(L"秒喵工作台启动失败：" + harness_.LastError());
+            SetStatus(L"妙喵工作台启动失败：" + harness_.LastError());
             return true;
         }
 
@@ -254,7 +254,7 @@ private:
     void PollHarness() {
         if (harness_.ServiceReady()) {
             KillTimer(hwnd_, kReadyTimerId);
-            SetStatus(L"秒喵工作台已就绪，正在打开界面…");
+            SetStatus(L"妙喵工作台已就绪，正在打开界面…");
             InitializeWebView();
             return;
         }
@@ -262,7 +262,7 @@ private:
         if (!harness_.Running()) {
             KillTimer(hwnd_, kReadyTimerId);
             const DWORD exitCode = harness_.ExitCode();
-            std::wstring text = L"秒喵工作台在 Web UI 就绪前退出";
+            std::wstring text = L"妙喵工作台在 Web UI 就绪前退出";
             if (exitCode != STILL_ACTIVE) text += L"，ExitCode=" + std::to_wstring(exitCode);
             text += L"。底层运行时为 DeepSeek Harness，请查看下方 RuntimeBundle/DSH 日志。" + HarnessLogHint();
             SetStatus(text);
@@ -278,7 +278,7 @@ private:
 
     void UpdateStartingStatus(ULONGLONG now) {
         const ULONGLONG elapsedSeconds = startedAt_ == 0 ? 0 : (now - startedAt_) / 1000;
-        std::wstring text = L"正在启动秒喵工作台… 已等待 " + std::to_wstring(elapsedSeconds) + L" 秒。";
+        std::wstring text = L"正在启动妙喵工作台… 已等待 " + std::to_wstring(elapsedSeconds) + L" 秒。";
         text += L"\r\n底层使用随应用固定部署的 DeepSeek Harness；不会执行 npm/npx 下载。关闭此窗口即可取消。";
         if (elapsedSeconds >= 45) text += L"\r\n启动时间异常偏长，请检查 RuntimeBundle 完整性和下方日志。";
         text += HarnessLogHint();
@@ -326,7 +326,7 @@ private:
                                 const std::wstring url = turingdesk::HarnessProcessManager::DefaultUrl();
                                 // TuringDesk owns UI presentation; the background Harness owner never opens a window.
                                 hr = webview_->Navigate(url.c_str());
-                                if (FAILED(hr)) SetStatus(L"打开秒喵工作台 Web UI 失败：" + HrText(hr));
+                                if (FAILED(hr)) SetStatus(L"打开妙喵工作台 Web UI 失败：" + HrText(hr));
                                 return S_OK;
                             }).Get());
                 }).Get());
@@ -374,6 +374,7 @@ private:
 void ActivateExistingHarnessWindow() {
     const HWND existing = FindWindowW(kWindowClass, nullptr);
     if (!existing) return;
+    SetWindowTextW(existing, L"妙喵工作台 · DeepSeek Harness");
     ShowWindow(existing, SW_SHOWNORMAL);
     SetForegroundWindow(existing);
 }

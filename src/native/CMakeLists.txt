@@ -35,7 +35,6 @@ set(TURINGDESK_APP_SOURCES
     src/app/main.cpp
     src/ui/search/SearchWindow.cpp
     src/ui/settings/SettingsCenterWindow.cpp
-    src/ui/settings/ModelSettingsWindow.cpp
     src/ui/ai/ConversationPanel.cpp
 
     src/ai/pi/PiRuntime.cpp
@@ -110,7 +109,6 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp
     src/desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
-    src/desktop/widgets/NativeWidgetPreset.cpp
     src/desktop/widgets/NativeWidgetHost.cpp
 
     src/desktop/wallpaper/render/WallpaperScaling.cpp

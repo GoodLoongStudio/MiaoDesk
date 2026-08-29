@@ -581,18 +581,28 @@ struct WallpaperLibraryWindow::Impl {
         FillSolid(dc, bounds, RGB(248, 250, 253));
         if (FAILED(widgetPreviewTarget->BindDC(dc, &render))) return false;
         widgetPreviewTarget->SetDpi(96.0f, 96.0f);
+
+        const UINT desktopDpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window));
+        const float designW = std::max(1.0f, widget.width * screenW * USER_DEFAULT_SCREEN_DPI / static_cast<float>(desktopDpi));
+        const float designH = std::max(1.0f, widget.height * screenH * USER_DEFAULT_SCREEN_DPI / static_cast<float>(desktopDpi));
+        const float scaleX = static_cast<float>(std::max(1, RectWidth(render))) / designW;
+        const float scaleY = static_cast<float>(std::max(1, RectHeight(render))) / designH;
+        const float scale = std::max(0.01f, std::min(scaleX, scaleY));
+
         NativeWidgetPaintContext context{};
         context.target = widgetPreviewTarget.Get();
         context.dwrite = widgetPreviewDWrite.Get();
-        context.width = static_cast<float>(std::max(1, RectWidth(render)));
-        context.height = static_cast<float>(std::max(1, RectHeight(render)));
+        context.width = designW;
+        context.height = designH;
         context.clearBackground = false;
         if (preset == NativeWidgetPreset::GlassClock) {
             GetLocalTime(&context.localTime);
             context.hasTime = true;
         }
         widgetPreviewTarget->BeginDraw();
+        widgetPreviewTarget->SetTransform(D2D1::Matrix3x2F::Scale(scale, scale));
         PaintNativeWidgetPreset(context, preset);
+        widgetPreviewTarget->SetTransform(D2D1::Matrix3x2F::Identity());
         return SUCCEEDED(widgetPreviewTarget->EndDraw());
     }
 

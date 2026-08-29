@@ -392,6 +392,18 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
         }
     }
 
+    if (widget.kind == DesktopWidgetKind::Native) {
+        const std::wstring singletonKey = NativeSingletonKey(widget);
+        const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
+            return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
+                   NativeSingletonKey(existing) == singletonKey;
+        });
+        if (duplicate != items_.end()) {
+            if (error) *error = L"This native widget preset already exists on the target monitor.";
+            return std::nullopt;
+        }
+    }
+
     const auto index = FindIndex(widget.id);
     if (index) items_[*index] = widget;
     else items_.push_back(widget);
@@ -533,6 +545,9 @@ bool DesktopWidgetStore::SelfTest() {
     const auto native = store.CreateManagedNative(
         NativeWidgetPreset::GlassClock, L"原生时钟", L"monitor-test", 0.2f, 0.3f, 0.25f, 0.18f, &error);
     ok = ok && native.has_value() && native->kind == DesktopWidgetKind::Native;
+    const auto duplicateNative = store.CreateManagedNative(
+        NativeWidgetPreset::GlassClock, L"重复原生时钟", L"monitor-test", 0.4f, 0.2f, 0.25f, 0.18f, &error);
+    ok = ok && !duplicateNative.has_value();
     if (native) ok = ok && store.Remove(native->id, false, &error);
     if (created) {
         DesktopWidget changed = *created;

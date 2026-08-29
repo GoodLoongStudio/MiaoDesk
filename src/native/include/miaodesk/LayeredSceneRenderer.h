@@ -147,6 +147,9 @@ public:
         sparkleCount_ = std::clamp(ReadInt(entry_, L"Particles", L"sparkle_count", 22), 0, 96);
         petalCount_ = std::clamp(ReadInt(entry_, L"Particles", L"petal_count", 12), 0, 64);
         particleOpacity_ = std::clamp(ReadFloat(entry_, L"Particles", L"opacity", 0.46f), 0.0f, 1.0f);
+        flowCount_ = std::clamp(ReadInt(entry_, L"Particles", L"flow_count", 0), 0, 12);
+        flowOpacity_ = std::clamp(ReadFloat(entry_, L"Particles", L"flow_opacity", 0.0f), 0.0f, 1.0f);
+        flowSpeed_ = std::clamp(ReadFloat(entry_, L"Particles", L"flow_speed", 0.065f), 0.005f, 0.5f);
 
         ComPtr<IWICImagingFactory> wic;
         if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
@@ -236,6 +239,10 @@ private:
             y += std::cos(time * layer.speed * 0.81f + layer.phase) * layer.amplitudeY;
             angle = wave * layer.rotationAmplitude;
         } else if (layer.animation == L"blink") {
+            // A blink overlay often comes from a separately generated face crop.
+            // Reuse rotationAmplitude with speed=0 + phase=pi/2 for a fixed
+            // alignment angle without introducing a MiaoCloud-only property.
+            angle = wave * layer.rotationAmplitude;
             const float cycle = std::fmod(std::max(0.0f, time + layer.phase), layer.blinkInterval);
             if (cycle > layer.blinkDuration) opacity = 0.0f;
         }
@@ -268,6 +275,38 @@ private:
             context.brush->SetColor(D2D1::ColorF(1.0f, 0.92f, 0.78f, particleOpacity_ * pulse));
             context.target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius), context.brush);
         }
+
+        // Visible moving light heads follow the bright arc in the upper-right
+        // cloudscape. Unlike the static twinkles, these have a directional tail
+        // so motion remains obvious at normal desktop viewing distance.
+        if (flowCount_ > 0 && flowOpacity_ > 0.0f) {
+            constexpr int kTrailSteps = 11;
+            constexpr float kPi = 3.14159265359f;
+            for (int comet = 0; comet < flowCount_; ++comet) {
+                const float phase = static_cast<float>(comet) / static_cast<float>(flowCount_);
+                const float head = LocalWrap01(context.time * flowSpeed_ + phase);
+                for (int trail = 0; trail < kTrailSteps; ++trail) {
+                    const float p = head - static_cast<float>(trail) * 0.014f;
+                    if (p < 0.0f || p > 1.0f) continue;
+                    const float fade = 1.0f - static_cast<float>(trail) / static_cast<float>(kTrailSteps);
+                    const float arch = std::sin(p * kPi);
+                    const float x = size.width * (0.48f + p * 0.46f);
+                    const float wobble = std::sin(context.time * 0.72f + comet * 1.91f + p * 8.0f) * size.height * 0.005f;
+                    const float y = size.height * (0.315f - arch * 0.145f) + wobble;
+                    const float alpha = flowOpacity_ * fade * fade;
+                    const float radius = 1.1f + fade * 2.8f;
+                    context.brush->SetColor(D2D1::ColorF(1.0f, 0.84f, 0.98f, alpha));
+                    context.target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius), context.brush);
+                    if (trail == 0) {
+                        context.target->DrawLine(D2D1::Point2F(x - radius * 3.0f, y),
+                                                 D2D1::Point2F(x + radius * 3.0f, y), context.brush, 1.0f);
+                        context.target->DrawLine(D2D1::Point2F(x, y - radius * 3.0f),
+                                                 D2D1::Point2F(x, y + radius * 3.0f), context.brush, 1.0f);
+                    }
+                }
+            }
+        }
+
         for (int i = 0; i < petalCount_; ++i) {
             const float speed = 0.010f + static_cast<float>(i % 5) * 0.0025f;
             const float p = LocalWrap01(LocalHash01(static_cast<std::uint32_t>(i * 43 + 7)) + context.time * speed);
@@ -290,6 +329,9 @@ private:
     int sparkleCount_{22};
     int petalCount_{12};
     float particleOpacity_{0.46f};
+    int flowCount_{};
+    float flowOpacity_{};
+    float flowSpeed_{0.065f};
     std::vector<Layer> layers_;
 };
 

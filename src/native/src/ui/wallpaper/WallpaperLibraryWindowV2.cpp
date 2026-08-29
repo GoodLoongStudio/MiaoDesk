@@ -758,9 +758,9 @@ struct WallpaperLibraryWindow::Impl {
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
         const bool ai = page == Page::AI;
-        turingdesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI"));
+        turingdesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置"));
         activeNavId = installed ? kNavInstalledId : widgets ? kNavWidgetsId : kNavAiId;
-        SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI");
+        SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置");
         ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetGrid, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(search, installed ? SW_SHOW : SW_HIDE);
@@ -1107,10 +1107,10 @@ struct WallpaperLibraryWindow::Impl {
     LRESULT DrawNavButton(const DRAWITEMSTRUCT* draw) {
         if (!draw) return FALSE;
         const bool active = static_cast<int>(draw->CtlID) == activeNavId;
-        const COLORREF background = active ? RGB(230, 239, 255) : RGB(247, 248, 250);
+        const COLORREF background = active ? RGB(229, 241, 255) : RGB(241, 247, 255);
         FillSolid(draw->hDC, draw->rcItem, background);
         SetBkMode(draw->hDC, TRANSPARENT);
-        SetTextColor(draw->hDC, active ? RGB(26, 86, 190) : RGB(54, 57, 64));
+        SetTextColor(draw->hDC, active ? RGB(35, 105, 225) : RGB(45, 65, 98));
         HGDIOBJ old = SelectObject(draw->hDC, active ? cardTitleFont : bodyFont);
         wchar_t text[64]{};
         GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
@@ -1331,14 +1331,14 @@ struct WallpaperLibraryWindow::Impl {
             const bool showFooter = self->page != Page::AI;
             const int footerH = showFooter ? self->S(58) : 0;
             RECT whole = client;
-            FillSolid(dc, whole, RGB(255, 255, 255));
+            FillSolid(dc, whole, RGB(248, 251, 255));
             RECT sidebar{0, 0, sidebarW, client.bottom};
-            FillSolid(dc, sidebar, RGB(247, 248, 250));
+            FillSolid(dc, sidebar, RGB(241, 247, 255));
             if (showFooter) {
                 RECT footer{sidebarW, std::max<LONG>(0, client.bottom - footerH), client.right, client.bottom};
-                FillSolid(dc, footer, RGB(249, 249, 251));
+                FillSolid(dc, footer, RGB(248, 251, 255));
             }
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(226, 228, 233));
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(220, 231, 245));
             HGDIOBJ oldPen = SelectObject(dc, pen);
             MoveToEx(dc, sidebarW - 1, 0, nullptr); LineTo(dc, sidebarW - 1, client.bottom);
             MoveToEx(dc, sidebarW, topH - 1, nullptr); LineTo(dc, client.right, topH - 1);
@@ -1411,7 +1411,7 @@ struct WallpaperLibraryWindow::Impl {
         SendMessageW(search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索壁纸"));
         addButton = button(L"＋ 添加", kAddId);
 
-        const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"小组件", L"妙喵 AI"};
+        const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"组件", L"API 配置"};
         const std::array<int, 3> navIds{kNavInstalledId, kNavWidgetsId, kNavAiId};
         for (std::size_t i = 0; i < nav.size(); ++i)
             nav[i] = button(navLabels[i], navIds[i], BS_OWNERDRAW);

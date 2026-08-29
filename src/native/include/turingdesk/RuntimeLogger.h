@@ -5,7 +5,6 @@
 #include <windows.h>
 #include <shellapi.h>
 
-#include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
@@ -31,6 +30,19 @@ inline const wchar_t* LevelText(Level level) noexcept {
     return L"INFO ";
 }
 
+inline std::string WideToUtf8(std::wstring_view wide) {
+    if (wide.empty()) return {};
+    const int required = WideCharToMultiByte(
+        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (required <= 0) return {};
+    std::string utf8(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+        utf8.data(), required, nullptr, nullptr);
+    return utf8;
+}
+
 class Logger {
 public:
     static Logger& Instance() {
@@ -54,21 +66,30 @@ public:
            << std::setw(3) << st.wMilliseconds
            << L"] [" << LevelText(level) << L"] "
            << L'[' << tag << L"] "
-           << message << L"\n";
+           << message << L"\r\n";
 
         const std::wstring line = ss.str();
 
         // 1. Windows debugger output (DebugView / VS Debugger)
         OutputDebugStringW(line.c_str());
 
-        // 2. Real-time file output flushed on every write
+        // 2. Real-time multi-process safe UTF-8 file append
         std::lock_guard<std::mutex> lock(mutex_);
         const auto path = turingdesk::RuntimeLogPath(L"desktop-debug.log");
         if (!path.empty()) {
-            std::wofstream file(path, std::ios::app);
-            if (file.is_open()) {
-                file << line;
-                file.flush();
+            const std::string utf8Line = WideToUtf8(line);
+            HANDLE file = CreateFileW(
+                path.c_str(),
+                FILE_APPEND_DATA,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                nullptr,
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr);
+            if (file != INVALID_HANDLE_VALUE) {
+                DWORD written = 0;
+                WriteFile(file, utf8Line.data(), static_cast<DWORD>(utf8Line.size()), &written, nullptr);
+                CloseHandle(file);
             }
         }
     }

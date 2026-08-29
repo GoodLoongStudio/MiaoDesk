@@ -35,7 +35,8 @@ constexpr UINT kPauseMessage = WM_APP + 911;
 constexpr UINT kResumeMessage = WM_APP + 912;
 constexpr UINT kShutdownMessage = WM_APP + 913;
 constexpr UINT_PTR kSyncTimerId = 71;
-constexpr UINT_PTR kClockTimerId = 72;
+constexpr UINT_PTR kRefreshTimerId = 72;
+constexpr UINT kRefreshSchedulerTickMs = 1000;
 constexpr wchar_t kNativeHostMessageClass[] = L"TuringDesk.Native.WidgetHostMessage";
 
 std::wstring ExecutablePath() {
@@ -154,6 +155,7 @@ struct NativeSlot {
     float dragMonitorWidthPx_{};
     float dragMonitorHeightPx_{};
     ULONGLONG geometryGraceUntil{};
+    ULONGLONG nextRefreshAt{};
 };
 
 struct NativeWidgetHostApp {
@@ -183,6 +185,26 @@ struct NativeWidgetHostApp {
         return true;
     }
 
+    void ScheduleNextRefresh(NativeSlot& slot) {
+        const std::uint32_t interval = NativePresetRefreshIntervalMs(slot.preset);
+        if (interval == 0) {
+            slot.nextRefreshAt = 0;
+            return;
+        }
+
+        const ULONGLONG now = GetTickCount64();
+        if (slot.preset == NativeWidgetPreset::GlassClock && interval >= 60000) {
+            SYSTEMTIME local{};
+            GetLocalTime(&local);
+            const std::uint32_t elapsedInMinute =
+                static_cast<std::uint32_t>(local.wSecond) * 1000u + local.wMilliseconds;
+            const std::uint32_t delay = std::max<std::uint32_t>(250u, 60000u - elapsedInMinute);
+            slot.nextRefreshAt = now + delay;
+            return;
+        }
+        slot.nextRefreshAt = now + interval;
+    }
+
     void PaintSlot(NativeSlot& slot) {
         if (!EnsureRenderTarget(slot)) return;
         NativeWidgetPaintContext context{};
@@ -196,7 +218,13 @@ struct NativeWidgetHostApp {
         }
         slot.target->BeginDraw();
         PaintNativeWidgetPreset(context, slot.preset);
-        slot.target->EndDraw();
+        const HRESULT drawResult = slot.target->EndDraw();
+        if (SUCCEEDED(drawResult)) {
+            ScheduleNextRefresh(slot);
+        } else if (drawResult == D2DERR_RECREATE_TARGET) {
+            slot.target.Reset();
+            slot.nextRefreshAt = 0;
+        }
     }
 
     void ResizeDragHandle(NativeSlot& slot) {
@@ -546,16 +574,19 @@ struct NativeWidgetHostApp {
         // "paused" only stops periodic repaints (clocks) to save CPU.
     }
 
-    void RepaintClocks() {
+    void RepaintDueWidgets() {
         if (paused) return;
+        const ULONGLONG now = GetTickCount64();
         for (const auto& slot : slots) {
-            if (slot && slot->hwnd && slot->preset == NativeWidgetPreset::GlassClock) PaintSlot(*slot);
+            if (!slot || !slot->hwnd || !IsWindow(slot->hwnd)) continue;
+            if (NativePresetRefreshIntervalMs(slot->preset) == 0) continue;
+            if (slot->nextRefreshAt == 0 || now >= slot->nextRefreshAt) PaintSlot(*slot);
         }
     }
 
     void HandleTimer(UINT_PTR timerId) {
         if (timerId == kSyncTimerId) SyncFromStore();
-        if (timerId == kClockTimerId) RepaintClocks();
+        if (timerId == kRefreshTimerId) RepaintDueWidgets();
     }
 
     bool EnsureMessageWindow() {
@@ -574,7 +605,7 @@ struct NativeWidgetHostApp {
     int Run() {
         if (!EnsureFactories() || !EnsureClasses() || !EnsureMessageWindow() || !parent || !IsWindow(parent)) return 64;
         SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);
-        SetTimer(messageWindow, kClockTimerId, 1000, nullptr);
+        SetTimer(messageWindow, kRefreshTimerId, kRefreshSchedulerTickMs, nullptr);
         SyncFromStore();
 
         MSG message{};
@@ -587,7 +618,7 @@ struct NativeWidgetHostApp {
         }
 
         KillTimer(messageWindow, kSyncTimerId);
-        KillTimer(messageWindow, kClockTimerId);
+        KillTimer(messageWindow, kRefreshTimerId);
         if (messageWindow && IsWindow(messageWindow)) DestroyWindow(messageWindow);
         messageWindow = nullptr;
         for (auto& slot : slots) {
@@ -747,7 +778,9 @@ bool NativeWidgetProcessSet::SelfTest() noexcept {
     return IsNativePresetSource(L"native:glass-clock") &&
            ParseNativePreset(L"native:today-tasks", &preset) && preset == NativeWidgetPreset::TodayTasks &&
            !ParseNativePreset(L"native:invalid", &preset) &&
-           NativePresetSource(NativeWidgetPreset::WeatherGlass) == L"native:weather-glass";
+           NativePresetSource(NativeWidgetPreset::WeatherGlass) == L"native:weather-glass" &&
+           NativePresetRefreshIntervalMs(NativeWidgetPreset::GlassClock) == 60000 &&
+           NativePresetRefreshIntervalMs(NativeWidgetPreset::TodayTasks) == 0;
 }
 
 int TryRunNativeWidgetHost(HINSTANCE instance) {

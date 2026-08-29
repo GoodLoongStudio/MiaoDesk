@@ -12,6 +12,8 @@ constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
     // taller task card rather than the old uniformly wide demo rectangles.
     // Painter geometry is expressed in Direct2D DIPs; the host converts the
     // HWND render target to DIP size before invoking a renderer on high-DPI PCs.
+    // Built-in native presets are singleton per target monitor; the controller
+    // rejects overlapping duplicates and the store repairs legacy duplicates.
     // periodicRefreshMs == 0 means static/event-driven: the host does not poll
     // and repaint that widget just because the scheduler heartbeat fired.
     {NativeWidgetPreset::GlassClock, L"native:glass-clock", L"玻璃时钟", 0.30f, 0.30f, 60000},

@@ -235,12 +235,11 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
 
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
         // Top -> bottom: widgets (interactive) -> desktop icons -> wallpapers -> WorkerW.
-        HWND insertAfter = HWND_BOTTOM;
         for (HWND window : wallpapers) {
-            SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-            insertAfter = window;
+            SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         }
-        insertAfter = HWND_TOP;
+        RepairRaisedDesktopWorkerOrder();
+        HWND insertAfter = HWND_TOP;
         for (HWND window : widgets) {
             SetWindowPos(window, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             insertAfter = window;
@@ -260,8 +259,8 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
 void DesktopShellHost::RepairKnownTuringDeskSurfaces() const {
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) return;
-    RepairRaisedDesktopWorkerOrder();
     RepairRoleOrder(parent);
+    RepairRaisedDesktopWorkerOrder();
 }
 
 bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, const RECT& desktopBounds,

@@ -121,7 +121,7 @@ private:
             L"妙喵 · 实时运行调试日志控制台 (持续输出 / 支持选择与复制)",
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT, CW_USEDEFAULT, S(920), S(600),
-            parent_, nullptr, instance_, this);
+            nullptr, nullptr, instance_, this);
 
         if (!window_) return;
 

@@ -1002,6 +1002,16 @@ private:
     }
 
     void ApplyPerformanceSnapshot(const turingdesk::wallpaper::PerformanceSnapshot& snapshot) {
+        if (snapshot.action != lastLoggedAction_) {
+            const wchar_t* actionName = snapshot.action == turingdesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
+                                        (snapshot.action == turingdesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
+                                        (snapshot.action == turingdesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
+            turingdesk::log::Info(L"WallpaperEngine", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
+                L", 目标FPS=" + std::to_wstring(snapshot.targetFps) +
+                (snapshot.reason.empty() ? L"" : (L", 原因=" + snapshot.reason)));
+            lastLoggedAction_ = snapshot.action;
+        }
+
         currentPerformance_ = snapshot;
         SetRenderTimerFps(snapshot.targetFps);
         const bool stop = snapshot.action == turingdesk::wallpaper::PerformanceAction::Stop;
@@ -1747,6 +1757,7 @@ private:
     turingdesk::wallpaper::DesktopShellHost shellHost_;
     turingdesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
     turingdesk::wallpaper::PerformanceSnapshot currentPerformance_;
+    turingdesk::wallpaper::PerformanceAction lastLoggedAction_{turingdesk::wallpaper::PerformanceAction::Normal};
     turingdesk::wallpaper::WallpaperLibrary library_;
     turingdesk::wallpaper::WallpaperLibraryWindow libraryWindow_;
     turingdesk::wallpaper::WallpaperMonitorAssignments assignments_;

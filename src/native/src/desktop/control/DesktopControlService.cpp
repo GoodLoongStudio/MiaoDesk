@@ -129,12 +129,10 @@ DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapsho
 
     WidgetService widgetService;
     std::vector<wallpaper::DesktopWidget> widgets;
-    const auto widgetResult = widgetService.List(&widgets);
-    if (!widgetResult.success) return FromWidget(widgetResult);
+    widgetService.List(&widgets);
 
     WidgetRuntimeHealth widgetRuntime;
-    const auto widgetRuntimeResult = widgetService.GetRuntimeHealth(&widgetRuntime);
-    if (!widgetRuntimeResult.success) return FromWidget(widgetRuntimeResult);
+    widgetService.GetRuntimeHealth(&widgetRuntime);
 
     snapshot->desktop.enabled = wallpaperState.enabled;
     snapshot->desktop.scene = wallpaperState.scene;
@@ -151,10 +149,23 @@ DesktopControlResult DesktopControlService::GetSnapshot(DesktopSnapshot* snapsho
 
 DesktopControlResult DesktopControlService::GetState(DesktopState* state) const {
     if (!state) return {false, L"DesktopState 输出不能为空。"};
-    DesktopSnapshot snapshot;
-    const auto result = GetSnapshot(&snapshot);
-    if (!result.success) return result;
-    *state = std::move(snapshot.desktop);
+    WallpaperService wallpaperService;
+    WallpaperState wallpaperState;
+    const auto wallpaperResult = wallpaperService.GetState(&wallpaperState);
+    if (!wallpaperResult.success) return FromWallpaper(wallpaperResult);
+
+    WidgetService widgetService;
+    std::vector<wallpaper::DesktopWidget> widgets;
+    widgetService.List(&widgets);
+
+    state->enabled = wallpaperState.enabled;
+    state->scene = wallpaperState.scene;
+    state->layout = wallpaperState.layout;
+    state->scale = wallpaperState.scale;
+    state->fpsCap = wallpaperState.fpsCap;
+    state->imageOrWebSource = wallpaperState.imageOrWebSource;
+    state->videoSource = wallpaperState.videoSource;
+    state->widgetCount = widgets.size();
     return {true, L"桌面状态读取完成。"};
 }
 
@@ -164,6 +175,7 @@ DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& pack
     if (!result.success) return FromWallpaper(result);
     const auto runtime = EnsureRuntime();
     if (!runtime.success) return runtime;
+    turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
     return {true, result.message};
 }
 
@@ -173,6 +185,7 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
     if (!result.success) return FromWallpaper(result);
     const auto runtime = EnsureRuntime();
     if (!runtime.success) return runtime;
+    turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
     return {true, result.message};
 }
 

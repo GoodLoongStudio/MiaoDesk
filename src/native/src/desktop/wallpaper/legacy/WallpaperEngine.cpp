@@ -48,6 +48,7 @@ constexpr wchar_t kMutexName[] = L"Local\\TuringDesk.Native.Wallpaper.Singleton"
 constexpr UINT kShowSettings = WM_APP + 81;
 constexpr UINT kTrayMessage = WM_APP + 82;
 constexpr UINT kSetEnabled = turingdesk::wallpaper::kWallpaperSetEnabledMessage;
+constexpr UINT kReloadConfig = turingdesk::wallpaper::kWallpaperReloadMessage;
 constexpr UINT_PTR kRenderTimer = 1;
 constexpr UINT kTrayId = 1;
 constexpr int kSceneComboId = 4101;
@@ -660,11 +661,14 @@ private:
                 return;
             }
             config_.layout = L"independent";
+            config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
         } else {
             Config next = config_;
             next.enabled = true;
+            next.layout = L"span";
+            assignments_.Clear();
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
@@ -1154,6 +1158,11 @@ private:
             return 0;
         case kSetEnabled:
             SetEnabled(wParam != 0);
+            return 0;
+        case kReloadConfig:
+            config_ = LoadConfig();
+            config_.enabled = true;
+            ApplyConfig(config_, false);
             return 0;
         case kTrayMessage:
             HandleTray(static_cast<UINT>(lParam));

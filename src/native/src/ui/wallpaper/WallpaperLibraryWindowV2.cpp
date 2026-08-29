@@ -317,19 +317,19 @@ struct WallpaperLibraryWindow::Impl {
     void RefreshWallpaperToggle() {
         if (!wallpaperToggleButton) return;
         desktop::DesktopState state;
-        const bool enabled = desktopControl.GetState(&state).success && state.enabled;
+        const bool enabled = desktopControl.GetState(&state).success ? state.enabled : true;
         SetWallpaperEnabledState(enabled);
     }
 
     void ToggleWallpaper() {
         desktop::DesktopState state{};
-        const bool currentlyEnabled = desktopControl.GetState(&state).success && state.enabled;
+        const bool currentlyEnabled = desktopControl.GetState(&state).success ? state.enabled : true;
         const bool enable = !currentlyEnabled;
         const auto result = desktopControl.SetWallpaperEnabled(enable);
+        RefreshWallpaperToggle();
         SetStatus(result.message.empty()
                       ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
                       : result.message);
-        RefreshWallpaperToggle();
     }
 
     void RefreshWallpapers() {
@@ -699,10 +699,11 @@ struct WallpaperLibraryWindow::Impl {
         const auto selected = SelectedWallpaper();
         if (!selected || SourceMissing(*selected)) return;
         if (applyCallback) applyCallback(*selected, SelectedTargetId());
+        else desktopControl.ApplyLibraryItem(*selected);
         std::wstring ignored;
         if (library) library->MarkUsed(selected->id, &ignored);
-        SetStatus(L"已应用到桌面：" + selected->title);
         RefreshWallpapers();
+        SetStatus(L"已应用到桌面：" + selected->title);
     }
 
     void ToggleFavorite() {

@@ -1,0 +1,46 @@
+name: Verify desktop library diagonal resize fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-library-diagonal-resize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify resize contract
+        shell: pwsh
+        run: |
+          $path = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
+          $text = Get-Content $path -Raw -Encoding UTF8
+          foreach ($marker in @('DesktopResizeHitTest', 'HTTOPLEFT', 'HTTOPRIGHT', 'HTBOTTOMLEFT', 'HTBOTTOMRIGHT', 'GetSystemMetricsForDpi')) {
+            if (-not $text.Contains($marker)) { throw "Missing resize marker: $marker" }
+          }
+
+      - name: Configure ARM64 preview
+        shell: pwsh
+        run: cmake -S . -B build-resize-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
+
+      - name: Build ARM64 desktop surfaces
+        shell: pwsh
+        run: cmake --build build-resize-arm64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+
+      - name: Remove one-shot workflow
+        shell: pwsh
+        run: |
+          git config user.name "GoodLoongStudio"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/verify-library-diagonal-resize.yml
+          git commit -m "Remove diagonal resize verification workflow"
+          git push origin main

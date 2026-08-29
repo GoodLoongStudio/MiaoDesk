@@ -10,6 +10,8 @@ constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
     // Fractions are relative to the target monitor. On a 16:9 desktop these
     // produce the intended product proportions: wide clock/weather cards and a
     // taller task card rather than the old uniformly wide demo rectangles.
+    // periodicRefreshMs == 0 means static/event-driven: the host does not poll
+    // and repaint that widget just because the scheduler heartbeat fired.
     {NativeWidgetPreset::GlassClock, L"native:glass-clock", L"玻璃时钟", 0.30f, 0.30f, 60000},
     {NativeWidgetPreset::TodayTasks, L"native:today-tasks", L"今日待办", 0.22f, 0.48f, 0},
     {NativeWidgetPreset::WeatherGlass, L"native:weather-glass", L"玻璃天气", 0.28f, 0.28f, 0},

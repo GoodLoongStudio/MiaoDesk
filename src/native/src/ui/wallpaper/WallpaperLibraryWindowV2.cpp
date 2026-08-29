@@ -329,7 +329,7 @@ struct WallpaperLibraryWindow::Impl {
         desktop::DesktopState state{};
         const bool currentlyEnabled = desktopControl.GetState(&state).success ? state.enabled : true;
         const bool enable = !currentlyEnabled;
-        turingdesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用" : L"已停用") + L", 目标状态=" + std::wstring(enable ? L"启用" : L"停用"));
+        turingdesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用 (动态壁纸渲染中)" : L"已停用 (原生桌面壁纸)") + L" -> 目标切换为=" + std::wstring(enable ? L"启用壁纸" : L"停止壁纸"));
         const auto result = desktopControl.SetWallpaperEnabled(enable);
         turingdesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
         RefreshWallpaperToggle();
@@ -714,11 +714,13 @@ struct WallpaperLibraryWindow::Impl {
             return;
         }
         const std::wstring targetId = SelectedTargetId();
-        turingdesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (id=" + selected->id + L", kind=" + KindLabel(selected->kind) + L", target=" + (targetId.empty() ? L"全局" : targetId) + L")");
+        turingdesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
         if (applyCallback) applyCallback(*selected, targetId);
         else {
-            const auto result = desktopControl.ApplyLibraryItem(*selected);
-            turingdesk::log::Info(L"UI.Library", L"DesktopControl::ApplyLibraryItem 结果: " + result.message);
+            const auto result = targetId.empty()
+                ? desktopControl.ApplyLibraryItem(*selected)
+                : desktopControl.AssignLibraryItemToMonitor(*selected, targetId, FriendlyMonitor(targetId));
+            turingdesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
         }
         std::wstring ignored;
         if (library) library->MarkUsed(selected->id, &ignored);

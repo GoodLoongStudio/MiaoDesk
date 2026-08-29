@@ -485,6 +485,7 @@ public:
 
         bool applied = false;
         if (enabled) {
+            turingdesk::log::Info(L"WallpaperEngine", L"正在启动壁纸运行时，挂载桌面图层...");
             performanceStopped_ = false;
             videoSet_.SetPaused(false);
             independentHost_.SetPaused(false);
@@ -500,13 +501,35 @@ public:
                 UpdateWindow(host_);
                 applied = mountOk_;
             }
+            if (applied) {
+                turingdesk::log::Info(L"WallpaperEngine", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
+            }
         } else {
+            turingdesk::log::Info(L"WallpaperEngine", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
             if (host_ && IsWindow(host_)) {
                 ShowWindow(host_, SW_HIDE);
             }
+
+            // Force Explorer/Progman/WorkerW to repaint native desktop background wallpaper
+            if (attachedParent_ && IsWindow(attachedParent_)) {
+                InvalidateRect(attachedParent_, nullptr, TRUE);
+                RedrawWindow(attachedParent_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+            }
+            HWND progman = FindWindowW(L"Progman", nullptr);
+            if (progman && IsWindow(progman)) {
+                InvalidateRect(progman, nullptr, TRUE);
+                RedrawWindow(progman, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+            }
+            HWND desktopHwnd = GetDesktopWindow();
+            if (desktopHwnd && IsWindow(desktopHwnd)) {
+                RedrawWindow(desktopHwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+            }
+            SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
+
+            turingdesk::log::Info(L"WallpaperEngine", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
             applied = true;
         }
 
@@ -667,6 +690,7 @@ private:
             const auto* monitor = turingdesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
             const std::wstring friendly = monitor ?
                 (!monitor->friendlyName.empty() ? monitor->friendlyName : monitor->deviceName) : L"";
+            turingdesk::log::Info(L"WallpaperEngine", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
             if (!assignments_.AssignById(targetMonitorId, item.id, friendly, &error)) {
                 libraryError_ = error;
                 turingdesk::log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
@@ -677,12 +701,13 @@ private:
             config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
-            turingdesk::log::Info(L"WallpaperEngine", L"已将壁纸 \"" + item.title + L"\" 分配至显示器 " + targetMonitorId);
+            turingdesk::log::Info(L"WallpaperEngine", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
         } else {
             Config next = config_;
             next.enabled = true;
             next.layout = L"span";
             assignments_.ClearAll();
+            turingdesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + KindLabel(item.kind) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
@@ -1337,6 +1362,10 @@ private:
 
         mountOk_ = true;
         SaveMountDiagnostics(shellHost_.Snapshot().mode, L"", &topology_, layoutMode);
+        turingdesk::log::Info(L"WallpaperEngine", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(turingdesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
+            L", 桌面父窗口 HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(attachedParent_)) +
+            L", 壁纸 Host HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(host_)) +
+            L"\r\n[检测到的系统显示器拓扑]\r\n" + turingdesk::wallpaper::DescribeMonitorTopology(topology_));
         return true;
     }
 

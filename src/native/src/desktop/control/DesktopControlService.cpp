@@ -1,6 +1,7 @@
 #include "turingdesk/DesktopControlService.h"
 
 #include "turingdesk/WallpaperRuntimeControl.h"
+#include "turingdesk/RuntimeLogger.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -170,22 +171,38 @@ DesktopControlResult DesktopControlService::GetState(DesktopState* state) const 
 }
 
 DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& package) const {
+    log::Info(L"DesktopControl", L"ApplyWebPackage: " + package.wstring());
     WallpaperService service;
     const auto result = service.ApplyWebPackage(package);
-    if (!result.success) return FromWallpaper(result);
+    if (!result.success) {
+        log::Error(L"DesktopControl", L"ApplyWebPackage 失败: " + result.message);
+        return FromWallpaper(result);
+    }
     const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
+    if (!runtime.success) {
+        log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        return runtime;
+    }
     turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
+    log::Info(L"DesktopControl", L"ApplyWebPackage 成功完成并已通知重载");
     return {true, result.message};
 }
 
 DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const {
+    log::Info(L"DesktopControl", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
     WallpaperService service;
     const auto result = service.ApplyLibraryItem(item);
-    if (!result.success) return FromWallpaper(result);
+    if (!result.success) {
+        log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
+        return FromWallpaper(result);
+    }
     const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
+    if (!runtime.success) {
+        log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        return runtime;
+    }
     turingdesk::wallpaper::NotifyWallpaperRuntimeReload();
+    log::Info(L"DesktopControl", L"ApplyLibraryItem 成功完成并已通知重载");
     return {true, result.message};
 }
 
@@ -193,6 +210,7 @@ DesktopControlResult DesktopControlService::AssignLibraryItemToMonitor(
     const wallpaper::WallpaperLibraryItem& item,
     std::wstring_view monitorId,
     std::wstring_view friendlyName) const {
+    log::Info(L"DesktopControl", L"AssignLibraryItemToMonitor: id=" + item.id + L", monitor=" + std::wstring(monitorId));
     WallpaperService service;
     const auto result = service.AssignLibraryItemToMonitor(item, monitorId, friendlyName);
     if (!result.success) return FromWallpaper(result);
@@ -257,28 +275,45 @@ DesktopControlResult DesktopControlService::FindWidget(std::wstring_view id, wal
 }
 
 DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabled) const {
+    log::Info(L"DesktopControl", L"SetWallpaperEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
     WallpaperService service;
     const auto persisted = service.SetEnabled(enabled);
-    if (!persisted.success) return FromWallpaper(persisted);
+    if (!persisted.success) {
+        log::Error(L"DesktopControl", L"保存壁纸状态失败: " + persisted.message);
+        return FromWallpaper(persisted);
+    }
 
     const fs::path executable = ModuleDirectory() / L"TuringDeskWallpaper.exe";
     std::error_code ec;
-    if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
-        return {true, persisted.message};
-
-    if (enabled) {
-        const auto runtime = EnsureRuntime();
-        if (!runtime.success) return runtime;
-        if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(true))
-            return {true, persisted.message};
-        if (!LaunchRuntime(executable, L"--resume"))
-            return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
+    if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec)) {
+        log::Info(L"DesktopControl", L"找不到 TuringDeskWallpaper.exe，状态仅保存至 ini");
         return {true, persisted.message};
     }
 
-    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(false))
+    if (enabled) {
+        const auto runtime = EnsureRuntime();
+        if (!runtime.success) {
+            log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+            return runtime;
+        }
+        if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(true)) {
+            log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送启用消息");
+            return {true, persisted.message};
+        }
+        if (!LaunchRuntime(executable, L"--resume")) {
+            log::Error(L"DesktopControl", L"启动运行进程 --resume 失败");
+            return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
+        }
+        log::Info(L"DesktopControl", L"成功通过 --resume 启动壁纸运行时");
         return {true, persisted.message};
+    }
+
+    if (turingdesk::wallpaper::NotifyWallpaperRuntimeEnabled(false)) {
+        log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送停用消息");
+        return {true, persisted.message};
+    }
     // Disable is ini-authoritative. Do not EnsureRuntime or cold-launch just to stop.
+    log::Info(L"DesktopControl", L"壁纸停用状态已权威保存至 ini");
     return {true, persisted.message};
 }
 

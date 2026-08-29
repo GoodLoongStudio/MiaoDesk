@@ -1,4 +1,5 @@
 #include "turingdesk/SettingsCenterWindow.h"
+#include "turingdesk/RuntimeLogger.h"
 
 #include <shellapi.h>
 #include <filesystem>
@@ -21,6 +22,7 @@ fs::path ModuleDirectory() {
 bool ActivateExistingDesktopSettings() {
     const HWND existing = FindWindowW(kDesktopSettingsClass, nullptr);
     if (!existing) return false;
+    log::Info(L"App.Settings", L"激活已存在的设置中心窗口");
     ShowWindow(existing, SW_SHOWNORMAL);
     SetForegroundWindow(existing);
     return true;
@@ -29,18 +31,19 @@ bool ActivateExistingDesktopSettings() {
 } // namespace
 
 bool ShowSettingsCenterWindow(HINSTANCE, HWND owner, L3Agent&) {
-    // Product baseline: the Wallpaper Engine-style desktop library is the one
-    // primary Settings Center. Do not insert another launcher window in front
-    // of it. AI, Harness, displays, rules and performance belong to that same
-    // settings information architecture.
+    log::Info(L"App.Settings", L"请求打开设置中心");
     if (ActivateExistingDesktopSettings()) return true;
 
     const fs::path directory = ModuleDirectory();
     if (directory.empty()) return false;
     const fs::path executable = directory / L"TuringDeskWallpaper.exe";
     std::error_code ec;
-    if (!fs::is_regular_file(executable, ec)) return false;
+    if (!fs::is_regular_file(executable, ec)) {
+        log::Error(L"App.Settings", L"找不到设置可执行文件: " + executable.wstring());
+        return false;
+    }
 
+    log::Info(L"App.Settings", L"启动 TuringDeskWallpaper.exe --settings");
     const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
         owner, L"open", executable.c_str(), L"--settings", directory.c_str(), SW_SHOWNORMAL));
     return result > 32;

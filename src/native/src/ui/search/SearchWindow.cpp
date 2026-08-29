@@ -95,6 +95,22 @@ fs::path SearchIniPath() {
     return directory / L"search.ini";
 }
 
+HICON LoadMiaoMiaoTrayIcon() {
+    wchar_t exePath[32768]{};
+    const DWORD length = GetModuleFileNameW(
+        nullptr, exePath, static_cast<DWORD>(std::size(exePath)));
+    if (length == 0 || length >= std::size(exePath)) return nullptr;
+
+    const fs::path iconPath = fs::path(exePath).parent_path() / L"Assets" / L"MiaoMiao.ico";
+    std::error_code ec;
+    if (!fs::is_regular_file(iconPath, ec)) return nullptr;
+
+    return reinterpret_cast<HICON>(LoadImageW(
+        nullptr, iconPath.c_str(), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_LOADFROMFILE));
+}
+
 void DrawSearchGlyph(ID2D1RenderTarget* target, ID2D1Brush* brush) {
     if (!target || !brush) return;
     target->DrawEllipse(
@@ -437,9 +453,11 @@ void SearchWindow::AddTray() {
     tray_.uID = 1;
     tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray_.uCallbackMessage = kTrayMessage;
-    tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    HICON packagedIcon = LoadMiaoMiaoTrayIcon();
+    tray_.hIcon = packagedIcon ? packagedIcon : LoadIconW(nullptr, IDI_APPLICATION);
     wcscpy_s(tray_.szTip, L"妙喵");
     trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
+    if (packagedIcon) DestroyIcon(packagedIcon);
 }
 
 void SearchWindow::RemoveTray() {

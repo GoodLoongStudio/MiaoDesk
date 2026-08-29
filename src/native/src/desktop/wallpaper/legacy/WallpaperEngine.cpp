@@ -701,8 +701,11 @@ private:
             Config next = config_;
             next.enabled = true;
             next.layout = L"span";
-            assignments_.ClearAll();
-            turingdesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + KindLabel(item.kind) + L")");
+            const wchar_t* kindText = (item.kind == Kind::Scene ? L"Scene" :
+                                       (item.kind == Kind::Video ? L"Video" :
+                                       (item.kind == Kind::Web ? L"Web" :
+                                       (item.kind == Kind::Image ? L"Image" : L"Unknown"))));
+            turingdesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"

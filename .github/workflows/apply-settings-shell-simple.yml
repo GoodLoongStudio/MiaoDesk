@@ -1,0 +1,49 @@
+name: Apply settings shell style
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-settings-shell-simple.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply settings shell palette
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
+          $text = Get-Content $path -Raw -Encoding UTF8
+          $pairs = @(
+            @('std::wstring(installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI")', 'std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置")'),
+            @('SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"小组件" : L"妙喵 AI");', 'SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置");'),
+            @('const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"小组件", L"妙喵 AI"};', 'const std::array<const wchar_t*, 3> navLabels{L"壁纸", L"组件", L"API 配置"};'),
+            @('const COLORREF background = active ? RGB(230, 239, 255) : RGB(247, 248, 250);', 'const COLORREF background = active ? RGB(229, 241, 255) : RGB(241, 247, 255);'),
+            @('SetTextColor(draw->hDC, active ? RGB(26, 86, 190) : RGB(54, 57, 64));', 'SetTextColor(draw->hDC, active ? RGB(35, 105, 225) : RGB(45, 65, 98));'),
+            @('FillSolid(dc, whole, RGB(255, 255, 255));', 'FillSolid(dc, whole, RGB(248, 251, 255));'),
+            @('FillSolid(dc, sidebar, RGB(247, 248, 250));', 'FillSolid(dc, sidebar, RGB(241, 247, 255));'),
+            @('FillSolid(dc, footer, RGB(249, 249, 251));', 'FillSolid(dc, footer, RGB(248, 251, 255));'),
+            @('HPEN pen = CreatePen(PS_SOLID, 1, RGB(226, 228, 233));', 'HPEN pen = CreatePen(PS_SOLID, 1, RGB(220, 231, 245));')
+          )
+          foreach ($pair in $pairs) {
+            if (-not $text.Contains($pair[0])) { throw "Missing patch anchor: $($pair[0])" }
+            $text = $text.Replace($pair[0], $pair[1])
+          }
+          Set-Content -Path $path -Value $text -Encoding UTF8
+          git diff --check
+      - name: Commit shell style
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp
+          git commit -m "Apply glass palette to settings shell"
+          git push origin HEAD:main

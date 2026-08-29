@@ -1,7 +1,7 @@
-#include "turingdesk/DesktopWidgetController.h"
-#include "turingdesk/NativeWidgetPreset.h"
-#include "turingdesk/RuntimeLogPaths.h"
-#include "turingdesk/WallpaperMonitorLayout.h"
+#include "miaodesk/DesktopWidgetController.h"
+#include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/RuntimeLogPaths.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
 
 #include <windows.h>
 
@@ -14,7 +14,7 @@
 #include <string_view>
 #include <utility>
 
-namespace turingdesk::desktop {
+namespace miaodesk::desktop {
 namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
@@ -102,7 +102,7 @@ bool MatchesNativePreset(const wallpaper::DesktopWidget& widget,
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
-    const auto path = turingdesk::RuntimeLogPath(L"widget-runtime.log");
+    const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
     std::wofstream log(path, std::ios::app);
     if (!log) return;
@@ -117,7 +117,7 @@ void AppendControllerErrorLog(std::wstring_view message) {
 }
 
 void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
-    const auto path = turingdesk::RuntimeLogPath(L"widget-runtime.log");
+    const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
     std::wofstream log(path, std::ios::app);
     if (!log) return;
@@ -312,4 +312,4 @@ DesktopControlResult DesktopWidgetController::Remove(std::wstring_view id) const
     return service_.RemoveWidget(id);
 }
 
-} // namespace turingdesk::desktop
+} // namespace miaodesk::desktop

@@ -1,6 +1,6 @@
-# TuringDesk
+# MiaoDesk
 
-TuringDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部搜索入口 + Pi Agent AI + DeepSeek Harness 高级工作台。
+MiaoDesk 是 Windows 11 ARM64 原生 AI 桌面：桌面壁纸引擎 + 顶部搜索入口 + Pi Agent AI + DeepSeek Harness 高级工作台。
 
 ## Store Demo v0.1（妙喵）
 
@@ -30,16 +30,16 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-store-demo-scope.ps1
 
 正式原生目标：
 
-- `TuringDesk.exe` — Search / AI / 设置中心
-- `TuringDeskWallpaper.exe` — 桌面壁纸引擎
-- `TuringDeskHarness.exe` — DeepSeek Harness WebView2 宿主
+- `MiaoDesk.exe` — Search / AI / 设置中心
+- `MiaoDeskWallpaper.exe` — 桌面壁纸引擎
+- `MiaoDeskHarness.exe` — DeepSeek Harness WebView2 宿主
 
 ## AI 固定运行链
 
 普通 AI 和桌面 Agent 请求的默认主路由固定为：
 
 ```text
-TuringDesk
+MiaoDesk
   ↓
 Pi Runtime
   ↓
@@ -56,7 +56,7 @@ Pi / Node / Provider / Agent Loop 失败时，才回退：
 Direct Model Runtime → 当前配置 API
 ```
 
-API 不绑定模型品牌，路由按 Provider 的协议能力判断。Pi 支持 TuringDesk 需要的 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Google Generative AI 等协议。
+API 不绑定模型品牌，路由按 Provider 的协议能力判断。Pi 支持 MiaoDesk 需要的 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Google Generative AI 等协议。
 
 详细强制契约见：`docs/L3-PI-RUNTIME-CONTRACT.md`。
 
@@ -72,9 +72,9 @@ Extensions
 Pi Packages
 ```
 
-Windows 上，Pi 官方 `bash` 工具的 `shellPath` 被 TuringDesk 配置为系统 Windows PowerShell，因此普通用户不需要额外安装 Git Bash。模型会被明确告知该工具后端使用 PowerShell 语法。
+Windows 上，Pi 官方 `bash` 工具的 `shellPath` 被 MiaoDesk 配置为系统 Windows PowerShell，因此普通用户不需要额外安装 Git Bash。模型会被明确告知该工具后端使用 PowerShell 语法。
 
-TuringDesk 自己只保留真正属于桌面产品的专属工具，例如设置、壁纸、Scene、`.tdwall`、多屏和性能规则。
+MiaoDesk 自己只保留真正属于桌面产品的专属工具，例如设置、壁纸、Scene、`.mdwall`、多屏和性能规则。
 
 ## 自动化边界
 
@@ -113,7 +113,7 @@ DEPLOY-NATIVE-ARM64.cmd
 4. 获取当前 `main` 已通过 CI 的 ARM64 原生构建；
 5. 运行 Search / Wallpaper / Harness self-test；
 6. 验证 Pi、Node 和 Harness Runtime；
-7. 启动 TuringDesk。
+7. 启动 MiaoDesk。
 
 第三方运行时不会在用户机器现场通过 npm、Node 官网或 NuGet 下载。Node、Pi 完整生产依赖树、DeepSeek Harness 完整生产依赖树、goz 和编译所需 WebView2 SDK 都由 `runtime/arm64/` 的固定版本清单管理。
 
@@ -121,7 +121,7 @@ DEPLOY-NATIVE-ARM64.cmd
 
 ## DeepSeek Harness
 
-TuringDesk 不 fork、不魔改 DeepSeek Harness。仓库 vendoring 流程从官方 `@deepseek-ai/dsh` 固定版本生成完整离线生产依赖树。
+MiaoDesk 不 fork、不魔改 DeepSeek Harness。仓库 vendoring 流程从官方 `@deepseek-ai/dsh` 固定版本生成完整离线生产依赖树。
 
 后台服务启动必须禁止自动打开外部浏览器：
 
@@ -130,7 +130,7 @@ Runtime\Node\node.exe
 Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js web --host 127.0.0.1 --port 3080 --no-open
 ```
 
-Harness UI 只在用户明确点击“打开 Harness 工作台”时由 `TuringDeskHarness.exe` 的 WebView2 窗口显示。
+Harness UI 只在用户明确点击“打开 Harness 工作台”时由 `MiaoDeskHarness.exe` 的 WebView2 窗口显示。
 
 不会回退到系统 Node、全局 npm、`npx` 或在线安装。
 
@@ -151,10 +151,10 @@ RuntimeBundle 的生成、版本和目录约定见 `runtime/arm64/README.md`。
 所有 Native 运行日志统一写入用户实际 Windows Desktop known folder：
 
 ```text
-Desktop\TuringDesk-Logs\l3-runtime.log
-Desktop\TuringDesk-Logs\pi-runtime.log
-Desktop\TuringDesk-Logs\harness.log
-Desktop\TuringDesk-Logs\widget-runtime.log
+Desktop\MiaoDesk-Logs\l3-runtime.log
+Desktop\MiaoDesk-Logs\pi-runtime.log
+Desktop\MiaoDesk-Logs\harness.log
+Desktop\MiaoDesk-Logs\widget-runtime.log
 ```
 
 API Key、Token 和其他凭据不得写入日志。
@@ -162,7 +162,7 @@ API Key、Token 和其他凭据不得写入日志。
 ## 当前正式文档
 
 - `docs/DOC-INDEX.md` — 全部文档索引与状态（先读这篇）
-- `docs/TURINGDESK-PRODUCT-BASELINE.md` — 唯一产品基线，按八条产品原则组织
-- `docs/TURINGDESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
+- `docs/MIAODESK-PRODUCT-BASELINE.md` — 唯一产品基线，按八条产品原则组织
+- `docs/MIAODESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
 - `docs/L3-PI-RUNTIME-CONTRACT.md` — L3 强制架构契约
 - `docs/STORE_DEMO_V0.1_PLAN.md` — 当前 demo 交付范围

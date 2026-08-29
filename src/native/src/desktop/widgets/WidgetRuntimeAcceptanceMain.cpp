@@ -1,5 +1,5 @@
-#include "turingdesk/WidgetRuntimeAcceptance.h"
-#include "turingdesk/WidgetService.h"
+#include "miaodesk/WidgetRuntimeAcceptance.h"
+#include "miaodesk/WidgetService.h"
 
 #include <windows.h>
 
@@ -31,10 +31,10 @@ struct PhaseContextExpectation {
 
 PhaseContextExpectation ExpectedPhaseContext(std::wstring_view phase) {
     if (phase == L"settings") {
-        return {L"TuringDesk.Native.DesktopLibrary", L"TuringDeskWallpaper.exe", L"TuringDesk desktop library/settings window"};
+        return {L"MiaoDesk.Native.DesktopLibrary", L"MiaoDeskWallpaper.exe", L"MiaoDesk desktop library/settings window"};
     }
     if (phase == L"search") {
-        return {L"TuringDesk.Native.SearchWindow", L"TuringDesk.exe", L"TuringDesk search window"};
+        return {L"MiaoDesk.Native.SearchWindow", L"MiaoDesk.exe", L"MiaoDesk search window"};
     }
     return {};
 }
@@ -120,13 +120,13 @@ bool NearlyEqual(float lhs, float rhs) noexcept {
     return std::fabs(lhs - rhs) <= 0.001f;
 }
 
-bool SameMonitor(const turingdesk::wallpaper::DesktopWidget& lhs,
-                 const turingdesk::wallpaper::DesktopWidget& rhs) {
+bool SameMonitor(const miaodesk::wallpaper::DesktopWidget& lhs,
+                 const miaodesk::wallpaper::DesktopWidget& rhs) {
     return CompareStringOrdinal(lhs.monitorId.c_str(), -1, rhs.monitorId.c_str(), -1, TRUE) == CSTR_EQUAL;
 }
 
-bool Overlaps(const turingdesk::wallpaper::DesktopWidget& lhs,
-              const turingdesk::wallpaper::DesktopWidget& rhs) noexcept {
+bool Overlaps(const miaodesk::wallpaper::DesktopWidget& lhs,
+              const miaodesk::wallpaper::DesktopWidget& rhs) noexcept {
     const float lhsRight = lhs.x + lhs.width;
     const float lhsBottom = lhs.y + lhs.height;
     const float rhsRight = rhs.x + rhs.width;
@@ -135,19 +135,19 @@ bool Overlaps(const turingdesk::wallpaper::DesktopWidget& lhs,
 }
 
 bool FixedShowcaseReady(std::wstring* failure) {
-    std::vector<turingdesk::wallpaper::DesktopWidget> widgets;
-    const turingdesk::desktop::WidgetService service;
+    std::vector<miaodesk::wallpaper::DesktopWidget> widgets;
+    const miaodesk::desktop::WidgetService service;
     const auto result = service.List(&widgets);
     if (!result.success) {
         if (failure) *failure = result.message.empty() ? L"无法读取 M3 Widget showcase 配置。" : result.message;
         return false;
     }
 
-    std::vector<const turingdesk::wallpaper::DesktopWidget*> enabledShowcase;
+    std::vector<const miaodesk::wallpaper::DesktopWidget*> enabledShowcase;
     for (const auto& widget : widgets) {
         if (!widget.enabled) continue;
-        if (widget.kind != turingdesk::wallpaper::DesktopWidgetKind::Native &&
-            widget.kind != turingdesk::wallpaper::DesktopWidgetKind::Web) {
+        if (widget.kind != miaodesk::wallpaper::DesktopWidgetKind::Native &&
+            widget.kind != miaodesk::wallpaper::DesktopWidgetKind::Web) {
             continue;
         }
         enabledShowcase.push_back(&widget);
@@ -175,7 +175,7 @@ bool FixedShowcaseReady(std::wstring* failure) {
             }
             return false;
         }
-        if ((*it)->kind != turingdesk::wallpaper::DesktopWidgetKind::Native) {
+        if ((*it)->kind != miaodesk::wallpaper::DesktopWidgetKind::Native) {
             if (failure) {
                 *failure = L"M3 fixed showcase 必须使用原生 Direct2D preset：" + std::wstring(spec.title)
                     + L"。WebView2 showcase 不再满足 M3 性能与验收要求。";
@@ -200,8 +200,8 @@ bool FixedShowcaseReady(std::wstring* failure) {
 }
 
 bool StructuredLifecycleReady(std::wstring* failure) {
-    turingdesk::desktop::WidgetRuntimeHealth health;
-    const turingdesk::desktop::WidgetService service;
+    miaodesk::desktop::WidgetRuntimeHealth health;
+    const miaodesk::desktop::WidgetService service;
     const auto result = service.GetRuntimeHealth(&health);
     if (!result.success) {
         if (failure) *failure = result.message.empty() ? L"无法读取 M3 Widget lifecycle health。" : result.message;
@@ -241,16 +241,16 @@ int wmain(int argc, wchar_t** argv) {
     // is proven. A single arbitrary Web Widget must never satisfy the acceptance gate.
     if (!FixedShowcaseReady(&failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
-        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+        return static_cast<int>(miaodesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
     }
 
     // Later phases validate persisted placement configuration before the runtime
     // probe can advance the durable sequence cursor. PID/HWND identity is not
     // part of this checkpoint because Explorer recovery may recreate surfaces.
     if (!baseline) {
-        const auto configCode = turingdesk::desktop::CheckWidgetAcceptanceConfigContinuity(
+        const auto configCode = miaodesk::desktop::CheckWidgetAcceptanceConfigContinuity(
             phase, false, &failure);
-        if (configCode != turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed) {
+        if (configCode != miaodesk::desktop::WidgetRuntimeAcceptanceCode::Passed) {
             if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
             return static_cast<int>(configCode);
         }
@@ -262,7 +262,7 @@ int wmain(int argc, wchar_t** argv) {
     // before RunWidgetRuntimeAcceptanceProbe can advance the durable phase cursor.
     if (!PhaseContextReady(phase, &failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
-        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+        return static_cast<int>(miaodesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
     }
 
     // General runtime health keeps legacy children observable for compatibility,
@@ -272,29 +272,29 @@ int wmain(int argc, wchar_t** argv) {
     failure.clear();
     if (!StructuredLifecycleReady(&failure)) {
         if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
-        return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
+        return static_cast<int>(miaodesk::desktop::WidgetRuntimeAcceptanceCode::SurfaceUnhealthy);
     }
 
-    const auto code = turingdesk::desktop::RunWidgetRuntimeAcceptanceProbe(
+    const auto code = miaodesk::desktop::RunWidgetRuntimeAcceptanceProbe(
         phase, &report, &failure);
 
     if (!report.empty()) std::wcout << L"report=" << report << L"\n";
     if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
-    if (code != turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed)
+    if (code != miaodesk::desktop::WidgetRuntimeAcceptanceCode::Passed)
         return static_cast<int>(code);
 
     // Only a successful baseline runtime probe is allowed to establish the
     // placement config checkpoint. If writing it fails, a new baseline is required.
     if (baseline) {
         failure.clear();
-        const auto configCode = turingdesk::desktop::CheckWidgetAcceptanceConfigContinuity(
+        const auto configCode = miaodesk::desktop::CheckWidgetAcceptanceConfigContinuity(
             phase, true, &failure);
-        if (configCode != turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed) {
+        if (configCode != miaodesk::desktop::WidgetRuntimeAcceptanceCode::Passed) {
             if (!failure.empty()) std::wcerr << L"failure=" << failure << L"\n";
             return static_cast<int>(configCode);
         }
     }
 
     std::wcout << L"M3 Widget runtime acceptance probe passed.\n";
-    return static_cast<int>(turingdesk::desktop::WidgetRuntimeAcceptanceCode::Passed);
+    return static_cast<int>(miaodesk::desktop::WidgetRuntimeAcceptanceCode::Passed);
 }

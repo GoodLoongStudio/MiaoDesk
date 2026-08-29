@@ -1,6 +1,6 @@
-#include "turingdesk/WebDesktopSurfaceChild.h"
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/WidgetService.h"
+#include "miaodesk/WebDesktopSurfaceChild.h"
+#include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/WidgetService.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -27,12 +27,12 @@ using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"TuringDesk.Native.WebWallpaperHost";
-constexpr wchar_t kWidgetDragClass[] = L"TuringDesk.Native.WidgetDragHandle";
-constexpr wchar_t kLocalVirtualHost[] = L"turingdesk-surface.local";
+constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kWidgetDragClass[] = L"MiaoDesk.Native.WidgetDragHandle";
+constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-surface.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
 constexpr UINT kShutdownMessage = WM_APP + 903;
@@ -120,7 +120,7 @@ fs::path UserDataDirectory(std::wstring_view token) {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    fs::path directory = base / L"TuringDesk" / L"WebView2" / L"DesktopSurface" / SafeToken(std::wstring(token));
+    fs::path directory = base / L"MiaoDesk" / L"WebView2" / L"DesktopSurface" / SafeToken(std::wstring(token));
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory;
@@ -734,4 +734,4 @@ int TryRunWebDesktopSurfaceChild(HINSTANCE instance) {
     return result;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

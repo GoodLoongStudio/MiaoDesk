@@ -1,4 +1,4 @@
-#include "turingdesk/GozSearch.h"
+#include "miaodesk/GozSearch.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\goz-v1";
@@ -200,7 +200,7 @@ GozSearch::GozSearch() : state_(std::make_shared<SharedState>()) {}
 
 std::wstring GozSearch::FindClientBinary() {
     wchar_t explicitPath[32768]{};
-    const DWORD explicitCount = GetEnvironmentVariableW(L"TURINGDESK_GOZ_CLI", explicitPath,
+    const DWORD explicitCount = GetEnvironmentVariableW(L"MIAODESK_GOZ_CLI", explicitPath,
                                                          static_cast<DWORD>(std::size(explicitPath)));
     if (explicitCount > 0 && explicitCount < std::size(explicitPath)) {
         std::error_code ec;
@@ -309,7 +309,7 @@ bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<Searc
 }
 
 bool GozSearch::SelfTest() const {
-    const std::vector<std::wstring> expected{L"C:\\TuringDesk\\verify.txt", L"C:\\TuringDesk\\Folder"};
+    const std::vector<std::wstring> expected{L"C:\\MiaoDesk\\verify.txt", L"C:\\MiaoDesk\\Folder"};
     auto payload = EncodeReply(expected);
     auto* second = reinterpret_cast<GozReplyItem*>(payload.data() + sizeof(GozReplyHeader) +
         sizeof(GozReplyItem) + expected[0].size() * sizeof(wchar_t));
@@ -329,4 +329,4 @@ void GozSearch::Shutdown() const {
     if (state_) state_->generation.fetch_add(1, std::memory_order_relaxed);
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

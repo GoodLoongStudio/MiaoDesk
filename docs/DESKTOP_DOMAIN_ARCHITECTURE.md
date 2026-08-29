@@ -1,16 +1,16 @@
-# TuringDesk Desktop domain architecture
+# MiaoDesk Desktop domain architecture
 
 Status: normative architecture contract.
 Date: 2026-08-25
 
-This document defines module boundaries for the TuringDesk desktop product. It exists to prevent UI, AI, wallpaper renderers and Windows Shell integration from growing into one coupled subsystem.
+This document defines module boundaries for the MiaoDesk desktop product. It exists to prevent UI, AI, wallpaper renderers and Windows Shell integration from growing into one coupled subsystem.
 
 The physical implementation layout is defined by `docs/NATIVE_SOURCE_LAYOUT.md`. Domain boundaries and physical folders must agree; `src/native/src/` is a module root, not a flat implementation bucket.
 
 ## 1. Target process architecture
 
 ```text
-TuringDesk.exe
+MiaoDesk.exe
 ├─ AppShell
 ├─ Search
 ├─ AI / Pi Runtime
@@ -19,14 +19,14 @@ TuringDesk.exe
             │
             │ stable intent contract
             ▼
-TuringDeskWallpaper.exe
+MiaoDeskWallpaper.exe
 ├─ DesktopShell
 ├─ Wallpaper
 ├─ Widgets
 ├─ Automation
 └─ Performance
 
-TuringDeskHarness.exe
+MiaoDeskHarness.exe
 └─ 高级工作台
 ```
 
@@ -53,7 +53,7 @@ src/native/src/
 └─ ui/
 ```
 
-Public C++ headers remain under `src/native/include/turingdesk/` during the current migration so implementation movement does not silently change the API/include contract.
+Public C++ headers remain under `src/native/include/miaodesk/` during the current migration so implementation movement does not silently change the API/include contract.
 
 ## 2. Dependency rule
 
@@ -147,7 +147,7 @@ M3 now structures each enabled Web Widget as configured/process/PID/HWND/parent/
 - `WebDesktopSurfaceChild` publishes EnvironmentReady, ControllerReady and successful NavigationReady as process-safe HWND properties;
 - the child role property is published before asynchronous WebView2 initialization, so not-ready lifecycle stages are distinguished from telemetry absence;
 - legacy child surfaces remain explicitly unreported rather than being guessed ready;
-- `DesktopSurfaceTelemetry` supplies read-only shared z-order semantics: icon DefView remains above TuringDesk surfaces and Widget surfaces remain above TuringDesk wallpaper surfaces;
+- `DesktopSurfaceTelemetry` supplies read-only shared z-order semantics: icon DefView remains above MiaoDesk surfaces and Widget surfaces remain above MiaoDesk wallpaper surfaces;
 - `WidgetService` consumes these sources and computes `renderingHealthy`; it does not mutate shell state.
 
 The active contract is documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
@@ -342,7 +342,7 @@ V2 may replace it only after these capabilities are preserved:
 - displays
 - application rules
 - performance
-- 图灵 AI model/API configuration
+- 妙喵 AI model/API configuration
 - Pi capability and native desktop tools
 - 高级工作台 entry
 

@@ -92,13 +92,15 @@ jobs:
           ref: ${{ needs.migrate.outputs.commit_sha }}
           fetch-depth: 1
 
-      - name: Verify ARM64 scene source contract
+      - name: Verify ARM64 source contract
         shell: pwsh
         run: |
           $header = 'src/native/include/miaodesk/SceneWallpaperPainter.h'
           foreach ($marker in @('PaintMiaoCloud','PaintNeonCity','PaintMysticMoon')) {
             if (-not (Select-String -LiteralPath $header -SimpleMatch $marker -Quiet)) { throw "Missing $marker" }
           }
+          $legacy = git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- . ':(exclude).github/workflows/**'
+          if ($LASTEXITCODE -eq 0) { $legacy | Write-Host; throw 'Old brand token remains outside workflows' }
 
       - name: Configure ARM64
         shell: pwsh

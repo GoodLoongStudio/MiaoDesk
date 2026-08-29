@@ -1,4 +1,4 @@
-#include "turingdesk/WallpaperMonitorAssignments.h"
+#include "miaodesk/WallpaperMonitorAssignments.h"
 
 #include <windows.h>
 
@@ -9,7 +9,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 fs::path DefaultStoragePath() {
@@ -18,7 +18,7 @@ fs::path DefaultStoragePath() {
     fs::path root = (length > 0 && length < std::size(local))
         ? fs::path(local)
         : fs::temp_directory_path();
-    return root / L"TuringDesk" / L"WallpaperLibrary" / L"monitor-assignments.ini";
+    return root / L"MiaoDesk" / L"WallpaperLibrary" / L"monitor-assignments.ini";
 }
 
 unsigned long long NowUnixSeconds() {
@@ -215,7 +215,7 @@ std::optional<std::size_t> WallpaperMonitorAssignments::FindIndex(std::wstring_v
 bool WallpaperMonitorAssignments::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-MonitorAssignments-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-MonitorAssignments-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -248,4 +248,4 @@ bool WallpaperMonitorAssignments::SelfTest() {
     return ok;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

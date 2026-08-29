@@ -75,4 +75,4 @@ The number of successful values for each field must exactly match the number of 
 
 The M3 `monitor` phase is valid only when the display topology transition evidence exists and the post-transition Widget health is healthy. Placement consistency is part of `renderingHealthy`, and the independent verifier also checks target-monitor validity, geometry, visibility and z-order separately. The phase therefore cannot pass merely because a process or surface is alive.
 
-This strengthens automated evidence but does not replace the real-Windows visual gate. A human must still confirm the Widget is visually correct, remains below desktop icons/above TuringDesk wallpaper, and returns to the intended monitor after disconnect/reconnect.
+This strengthens automated evidence but does not replace the real-Windows visual gate. A human must still confirm the Widget is visually correct, remains below desktop icons/above MiaoDesk wallpaper, and returns to the intended monitor after disconnect/reconnect.

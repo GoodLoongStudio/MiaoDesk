@@ -1,6 +1,6 @@
-# TuringDesk Search Bar Visual Contract
+# MiaoDesk Search Bar Visual Contract
 
-This document is the authoritative visual contract for the TuringDesk Search Bar demo surface.
+This document is the authoritative visual contract for the MiaoDesk Search Bar demo surface.
 
 ## Authoritative reference
 

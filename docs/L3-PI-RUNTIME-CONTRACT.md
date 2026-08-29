@@ -1,25 +1,25 @@
-# TuringDesk Pi Runtime Contract
+# MiaoDesk Pi Runtime Contract
 
 > 状态：**强制架构契约**  
 > 日期：2026-08-26  
-> 适用范围：TuringDesk Native 主线、图灵 AI、Desktop Control、构建、CI、打包、部署与验收  
-> 上位产品基线：`docs/TURINGDESK-PRODUCT-BASELINE.md`  
+> 适用范围：MiaoDesk Native 主线、妙喵 AI、Desktop Control、构建、CI、打包、部署与验收  
+> 上位产品基线：`docs/MIAODESK-PRODUCT-BASELINE.md`  
 > Desktop Composition 架构：`docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
 
 ## 1. 目的
 
-本文固定图灵智能桌面 AI 的默认 Agent Runtime 为 **Pi**，并固定 AI 与桌面系统之间的控制边界。
+本文固定妙喵智能桌面 AI 的默认 Agent Runtime 为 **Pi**，并固定 AI 与桌面系统之间的控制边界。
 
-Pi 负责 Agent Loop、上下文、Skills、Extensions 与通用工具；TuringDesk 负责桌面状态、权限、壁纸、Widget、多屏、性能和其他真正依赖产品内部状态的能力。
+Pi 负责 Agent Loop、上下文、Skills、Extensions 与通用工具；MiaoDesk 负责桌面状态、权限、壁纸、Widget、多屏、性能和其他真正依赖产品内部状态的能力。
 
-如果旧文档、旧注释、旧 CI 规则、旧脚本与本文冲突，以 `TURINGDESK-PRODUCT-BASELINE.md`、`DESKTOP_COMPOSITION_ARCHITECTURE.md` 和本文为准。
+如果旧文档、旧注释、旧 CI 规则、旧脚本与本文冲突，以 `MIAODESK-PRODUCT-BASELINE.md`、`DESKTOP_COMPOSITION_ARCHITECTURE.md` 和本文为准。
 
 ## 2. 唯一默认 AI 流程
 
 ```text
-用户在 TuringDesk 发起 AI 请求
+用户在 MiaoDesk 发起 AI 请求
         ↓
-TuringDesk Pi Runtime Host
+MiaoDesk Pi Runtime Host
         ↓
 Bundled Node 24
         ↓
@@ -29,7 +29,7 @@ Pi Agent Loop
         ├─ read / write / edit / grep / find / ls
         ├─ shell / PowerShell
         ├─ Skills / Extensions / Packages
-        └─ TuringDesk Desktop Tools
+        └─ MiaoDesk Desktop Tools
         ↓
 当前配置 Provider / Model / Base URL / API Key
 ```
@@ -64,13 +64,13 @@ Bundled Node 24
 约束：
 
 - 最终用户不需要安装 Node、npm、Pi 或开发环境；
-- Pi 生产依赖离线随 TuringDesk 分发；
+- Pi 生产依赖离线随 MiaoDesk 分发；
 - 正式构建和更新不得临时联网安装 Pi；
 - Pi 更新必须经过版本锁、Windows CI、真实工具 E2E 后进入 `main`。
 
 ## 4. Provider-neutral
 
-TuringDesk 统一管理：
+MiaoDesk 统一管理：
 
 - Provider；
 - Model；
@@ -93,7 +93,7 @@ API Key 的唯一长期存储是 Windows Credential Manager。Pi 配置文件不
 
 ## 5. Pi Host 与产品边界
 
-TuringDesk Native 主程序不实现第二套 Agent Loop。
+MiaoDesk Native 主程序不实现第二套 Agent Loop。
 
 当前生产形态以 Pi RPC 为主，后续可迁移到更深的 Pi SDK Host，但必须保持同一产品边界：
 
@@ -114,7 +114,7 @@ Native UI 负责：
 - Provider 配置桥接；
 - 权限确认；
 - 日志；
-- TuringDesk Desktop Tool Host。
+- MiaoDesk Desktop Tool Host。
 
 Pi 负责：
 
@@ -126,14 +126,14 @@ Pi 负责：
 
 ### 5.1 Conversation Panel UI contract
 
-普通图灵 AI 的唯一生产展示面是 `TuringDesk.Native.ConversationPanel`。旧终端式 `TuringDesk.Native.L3CliWindow` 已退休，不得作为第二条 UI 路径恢复。
+普通妙喵 AI 的唯一生产展示面是 `MiaoDesk.Native.ConversationPanel`。旧终端式 `MiaoDesk.Native.L3CliWindow` 已退休，不得作为第二条 UI 路径恢复。
 
 当前迁移期间允许保留 `L3CliWindow` 的兼容文件名/函数名作为内部 ABI/构建 shim，但它们不得重新拥有旧终端视觉或独立 Runtime 策略。新的 UI 代码以 `ConversationPanel.h` 为 canonical include；legacy header 只允许继续缩减。
 
 禁止恢复：
 
 ```text
-TuringDesk.Native.L3CliWindow window class
+MiaoDesk.Native.L3CliWindow window class
 Consolas terminal presentation
 AI window-local ModelSettingsWindow entry
 separate terminal transcript/input product surface
@@ -161,13 +161,13 @@ Conversation Panel
 pi-coding-agent
   --mode rpc
   --no-extensions
-  --extension <TuringDesk native tools>
-  --tools <built-in + TuringDesk desktop/preview tools>
+  --extension <MiaoDesk native tools>
+  --tools <built-in + MiaoDesk desktop/preview tools>
 ```
 
 约束：
 
-1. Pi 的 `--tools` 是跨内置工具和扩展工具的硬白名单。只列出 `read,bash,...` 会把 TuringDesk 桌面扩展工具静默过滤掉。
+1. Pi 的 `--tools` 是跨内置工具和扩展工具的硬白名单。只列出 `read,bash,...` 会把 MiaoDesk 桌面扩展工具静默过滤掉。
 2. 生产启动参数必须与 `scripts/pi-agent-e2e.mjs` 保持同一工具边界；不得再依赖“扩展自动发现但未进入 allowlist”。
 3. System prompt 必须明确要求：可执行请求先调用工具，而不是只口述步骤。
 4. Direct Model 只在 Pi 真实失败时回退，且 UI 必须标明本轮无工具。
@@ -189,9 +189,9 @@ Pi Packages
 
 文件、脚本、Git、压缩、CSV/JSON、文档处理等通用任务，不得继续为每一种业务单独增加一套 C++ Agent Tool。
 
-### 6.2 TuringDesk Desktop Tools
+### 6.2 MiaoDesk Desktop Tools
 
-TuringDesk 只暴露依赖产品内部状态的能力。
+MiaoDesk 只暴露依赖产品内部状态的能力。
 
 当前第一阶段白名单（生产 `--tools` 必须包含；预览优先，禁止直接 mutation）：
 
@@ -226,10 +226,10 @@ desktop_widget_remove
 
 含义：
 
-- `settings_open`：打开图灵智能桌面设置；
+- `settings_open`：打开妙喵智能桌面设置；
 - `ppt_create` / `file_create` / `folder_list` / `file_open`：受控用户目录文件能力；
 - `image_generate`：独立图片生成（需对应 Provider 能力）；
-- `wallpaper_validate_package`：校验 `.tdwall`；
+- `wallpaper_validate_package`：校验 `.mdwall`；
 - `wallpaper_state_get`：读取真实当前桌面状态；
 - `desktop_widget_list`：读取 Widget ID、目标显示器和布局；
 - `desktop_preview_*`：沙盒预览；只有用户点击 Apply 才能真正提交桌面变更。
@@ -277,7 +277,7 @@ Widget 是一等公民，不属于某张壁纸的临时附属物：
 - Widget v1 使用隔离本地 WebView2 surface；
 - Widget v1 默认 click-through，不得挡住桌面图标；
 - 后续支持 Native Text、Clock、Calendar、Image、System、Media、Data-bound Widget；
-- `.tdwall` 与未来 `.tdwidget` 应共享安全 package core。
+- `.mdwall` 与未来 `.tdwidget` 应共享安全 package core。
 
 ## 9. 权限与安全
 
@@ -290,14 +290,14 @@ Widget 是一等公民，不属于某张壁纸的临时附属物：
 - 高风险 Shell 操作需要用户确认；
 - 权限拒绝必须作为真实 Tool Result 返回；
 - Widget 数据源、网络能力和未来交互能力必须权限化；
-- AI 生成 `.tdwall` / `.tdwidget` 必须标记 provenance 并验证后才能应用。
+- AI 生成 `.mdwall` / `.tdwidget` 必须标记 provenance 并验证后才能应用。
 
 ## 10. Session / Skills / Extensions
 
-TuringDesk Pi 目录：
+MiaoDesk Pi 目录：
 
 ```text
-%LOCALAPPDATA%\TuringDesk\PiAgent\
+%LOCALAPPDATA%\MiaoDesk\PiAgent\
 ```
 
 结构：
@@ -312,7 +312,7 @@ PiAgent\
 └─ packages\
 ```
 
-Provider 配置、TuringDesk 自带扩展和用户自定义 Skills/Extensions 必须分层，更新不得覆盖用户内容。
+Provider 配置、MiaoDesk 自带扩展和用户自定义 Skills/Extensions 必须分层，更新不得覆盖用户内容。
 
 ## 11. 与高级工作台的边界
 
@@ -331,7 +331,7 @@ Pi 失败不得自动打开高级工作台。两者可共享 Provider / Model / 
 统一日志目录：
 
 ```text
-Windows Desktop known folder\TuringDesk-Logs\
+Windows Desktop known folder\MiaoDesk-Logs\
 ```
 
 ```text
@@ -368,7 +368,7 @@ ARM64 CI 至少持续验证：
 2. RPC `get_state` readiness handshake；
 3. Provider loopback 真正收到请求；
 4. Pi built-in `write` 与 Windows Shell 真执行；
-5. TuringDesk Native Tool 真执行并产生 `.tdwall`；
+5. MiaoDesk Native Tool 真执行并产生 `.mdwall`；
 6. Desktop Control/Widget Tool 保持在白名单和扩展注册表中；
 7. Native wallpaper self-tests；
 8. goz MFT/USN integration；
@@ -399,7 +399,7 @@ Mock 通过       ≠ 完成
 ## 15. 最终边界
 
 ```text
-TuringDesk Search / AI
+MiaoDesk Search / AI
   = Native UI + goz + Pi Agent Runtime + Direct Model fallback
 
 Desktop Composition

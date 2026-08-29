@@ -38,7 +38,7 @@ foreach ($file in $powerShellScripts) {
     Assert-PowerShellParses $file.FullName
 }
 
-$updateCmd = Join-Path $root 'UPDATE-TURINGDESK.cmd'
+$updateCmd = Join-Path $root 'UPDATE-MIAODESK.cmd'
 $deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
 foreach ($cmd in @($updateCmd, $deployCmd)) {
     Assert-AsciiFile $cmd
@@ -48,7 +48,7 @@ $updateText = [IO.File]::ReadAllText($updateCmd, [Text.Encoding]::ASCII)
 $deployText = [IO.File]::ReadAllText($deployCmd, [Text.Encoding]::ASCII)
 
 foreach ($required in @(
-    'update-turingdesk-arm64.ps1',
+    'update-miaodesk-arm64.ps1',
     'TD_BOOTSTRAP_SELF_TEST',
     'TD_UPDATE_URL'
 )) {

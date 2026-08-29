@@ -1,4 +1,4 @@
-# TuringDesk Desktop Composition Architecture
+# MiaoDesk Desktop Composition Architecture
 
 Status: active design for the wallpaper/widget refactor.
 
@@ -6,7 +6,7 @@ Implementation reference: `docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md`
 
 ## 1. Product boundary
 
-TuringDesk Desktop is a composition engine, not a single wallpaper renderer.
+MiaoDesk Desktop is a composition engine, not a single wallpaper renderer.
 
 ```text
 Desktop Composition
@@ -15,9 +15,9 @@ Desktop Composition
 └─ Control Layer: Settings / Editor / AI
 ```
 
-Functional behavior may follow mature desktop-wallpaper conventions, including Wallpaper Engine-class library, monitor, playlist, application-rule, performance and editor workflows. TuringDesk keeps its own branding, assets, package formats and code.
+Functional behavior may follow mature desktop-wallpaper conventions, including Wallpaper Engine-class library, monitor, playlist, application-rule, performance and editor workflows. MiaoDesk keeps its own branding, assets, package formats and code.
 
-**Wallpaper Engine-class here means product behavior only.** Windows desktop implementation work must use `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` as the engineering reference. Lively itself is GPL-3.0, so TuringDesk only studies public behavior/API sequences and independently reimplements them in C++23.
+**Wallpaper Engine-class here means product behavior only.** Windows desktop implementation work must use `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` as the engineering reference. Lively itself is GPL-3.0, so MiaoDesk only studies public behavior/API sequences and independently reimplements them in C++23.
 
 ## 2. Runtime composition boundary
 
@@ -142,7 +142,7 @@ Do not create a separate hidden automation implementation for AI. If a property 
 - Never let the model claim an applied change without a successful runtime result.
 - Runtime success for Web/Widget must include actual surface health, not just a persisted configuration result.
 
-The initial native tools are deliberately narrow: current desktop state, validated Web `.tdwall` apply, and Widget create/update/remove/list. They are the bridge toward the versioned control API, not the final API shape.
+The initial native tools are deliberately narrow: current desktop state, validated Web `.mdwall` apply, and Widget create/update/remove/list. They are the bridge toward the versioned control API, not the final API shape.
 
 ## 6. Settings Center target
 
@@ -208,7 +208,7 @@ Add a modern GPU Scene renderer separately instead of turning the current three 
 
 ## 9. Package direction
 
-- `.tdwall`: wallpaper project/package.
+- `.mdwall`: wallpaper project/package.
 - `.tdwidget`: widget project/package.
 
 Both should eventually share a safe package core: manifest schema, metadata, version, entry point, permissions, hashes, safe extraction, preview and provenance.
@@ -233,7 +233,7 @@ This order preserves working native wallpaper paths while replacing unreliable s
 ## 11. Source-of-truth map
 
 ```text
-Product behavior                 docs/TURINGDESK-PRODUCT-BASELINE.md
+Product behavior                 docs/MIAODESK-PRODUCT-BASELINE.md
 Capability backlog               docs/WALLPAPER_ENGINE_PARITY.md
 Windows wallpaper implementation docs/LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md
 Desktop/Widget composition       docs/DESKTOP_COMPOSITION_ARCHITECTURE.md

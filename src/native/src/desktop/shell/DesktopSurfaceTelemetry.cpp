@@ -1,4 +1,4 @@
-#include "turingdesk/DesktopSurfaceTelemetry.h"
+#include "miaodesk/DesktopSurfaceTelemetry.h"
 
 #include <cwchar>
 #include <iterator>
@@ -6,15 +6,15 @@
 #include <string>
 #include <vector>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kProgmanClass[] = L"Progman";
 constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
-constexpr wchar_t kWallpaperHostClass[] = L"TuringDesk.Native.WallpaperHost";
-constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
-constexpr wchar_t kNativeWidgetSurfaceClass[] = L"TuringDesk.Native.WidgetSurface";
+constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kNativeWidgetSurfaceClass[] = L"MiaoDesk.Native.WidgetSurface";
 constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 
 bool IsClass(HWND window, const wchar_t* expected) noexcept {
@@ -37,7 +37,7 @@ bool IsWidgetSurface(HWND window) noexcept {
     return StartsWith(title, L"widget-") || StartsWith(title, L"widget_");
 }
 
-bool IsKnownTuringDeskSurface(HWND window) noexcept {
+bool IsKnownMiaoDeskSurface(HWND window) noexcept {
     return IsClass(window, kWallpaperHostClass) || IsClass(window, kWebHostClass) ||
            IsClass(window, kNativeWidgetSurfaceClass);
 }
@@ -132,7 +132,7 @@ DesktopSurfaceZOrderHealth InspectDesktopSurfaceZOrder(
         ChildEntry entry;
         entry.window = child;
         entry.defView = IsClass(child, kDefViewClass);
-        entry.turingDesk = IsKnownTuringDeskSurface(child);
+        entry.turingDesk = IsKnownMiaoDeskSurface(child);
         if (entry.turingDesk) entry.role = InferRole(child);
         const std::size_t index = children.size();
         if (child == surface) surfaceIndex = index;
@@ -176,9 +176,9 @@ DesktopSurfaceZOrderHealth InspectDesktopSurfaceZOrder(
 
     result.valid = true;
     result.detail = role == DesktopSurfaceTelemetryRole::Widget
-        ? L"Widget is above icon layer and TuringDesk wallpaper"
+        ? L"Widget is above icon layer and MiaoDesk wallpaper"
         : L"wallpaper is below icon/widget layers";
     return result;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

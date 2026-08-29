@@ -1,13 +1,13 @@
-#include "turingdesk/AppSearch.h"
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/DesktopWidgetTools.h"
-#include "turingdesk/GeneratedDesktopPreview.h"
-#include "turingdesk/GozSearch.h"
-#include "turingdesk/HarnessProcessManager.h"
-#include "turingdesk/L3Agent.h"
-#include "turingdesk/NativeTools.h"
-#include "turingdesk/PiNativeToolsExtension.h"
-#include "turingdesk/SearchWindow.h"
+#include "miaodesk/AppSearch.h"
+#include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/DesktopWidgetTools.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
+#include "miaodesk/GozSearch.h"
+#include "miaodesk/HarnessProcessManager.h"
+#include "miaodesk/L3Agent.h"
+#include "miaodesk/NativeTools.h"
+#include "miaodesk/PiNativeToolsExtension.h"
+#include "miaodesk/SearchWindow.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -21,13 +21,13 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 bool RunL3PersistenceSelfTest();
 }
 
 namespace {
 
-constexpr wchar_t kSearchWindowClass[] = L"TuringDesk.Native.SearchWindow";
+constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
 constexpr wchar_t kLoopbackNoProxy[] = L"localhost,127.0.0.1,::1";
 
 std::wstring ReadEnvironmentValue(const wchar_t* name) {
@@ -70,7 +70,7 @@ bool IsAllowedPiNativeTool(std::string_view tool) {
            tool == "wallpaper_validate_package" ||
            tool == "wallpaper_state_get" ||
            tool == "desktop_widget_list" ||
-           turingdesk::preview::IsGeneratedPreviewTool(tool);
+           miaodesk::preview::IsGeneratedPreviewTool(tool);
 }
 
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
@@ -186,13 +186,13 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    turingdesk::NativeToolResult result;
-    if (turingdesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
-        result = turingdesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
+    miaodesk::NativeToolResult result;
+    if (miaodesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
+        result = miaodesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
     } else if (toolUtf8 == "wallpaper_state_get" || toolUtf8 == "desktop_widget_list") {
-        result = turingdesk::ExecuteDesktopControlTool(toolUtf8, arguments);
+        result = miaodesk::ExecuteDesktopControlTool(toolUtf8, arguments);
     } else {
-        result = turingdesk::ExecuteNativeToolRaw(toolUtf8, arguments);
+        result = miaodesk::ExecuteNativeToolRaw(toolUtf8, arguments);
     }
 
     std::string payload = result.success ? "1\n" : "0\n";
@@ -208,20 +208,20 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
 bool RunNativeSelfTest() {
     if (!HasLoopbackProxyBypass()) return false;
     if (!HasBundledRuntimePathIfInstalled()) return false;
-    if (!turingdesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
+    if (!miaodesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
 
-    turingdesk::AppSearch apps;
+    miaodesk::AppSearch apps;
     apps.BuildIndex();
     const auto appResults = apps.Query(L"Notepad", 5);
     if (apps.Count() < 5 || appResults.empty()) return false;
 
-    turingdesk::GozSearch files;
+    miaodesk::GozSearch files;
     if (!files.SelfTest()) return false;
 
-    if (!turingdesk::HarnessProcessManager::SelfTest()) return false;
-    if (!turingdesk::RunL3PersistenceSelfTest()) return false;
+    if (!miaodesk::HarnessProcessManager::SelfTest()) return false;
+    if (!miaodesk::RunL3PersistenceSelfTest()) return false;
 
-    turingdesk::L3Agent l3;
+    miaodesk::L3Agent l3;
     std::wstring reply;
     bool consumedSecret = false;
     if (!l3.TryHandleLocal(L"/time", reply, consumedSecret) || reply.empty() || consumedSecret) return false;
@@ -241,7 +241,7 @@ bool RunNativeSelfTest() {
         reply.find(L"/new") == std::wstring::npos) return false;
     if (reply.find(L"4317") != std::wstring::npos || reply.find(L"4318") != std::wstring::npos || reply.find(L"MCP") != std::wstring::npos) return false;
 
-    for (const wchar_t* command : {L"/apps Notepad", L"/files TuringDesk"}) {
+    for (const wchar_t* command : {L"/apps Notepad", L"/files MiaoDesk"}) {
         reply.clear();
         consumedSecret = false;
         if (!l3.TryHandleLocal(command, reply, consumedSecret) || reply.empty() || consumedSecret) return false;
@@ -284,9 +284,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     std::wstring piExtensionError;
-    const bool piExtensionReady = turingdesk::EnsurePiNativeToolsExtension(&piExtensionError);
+    const bool piExtensionReady = miaodesk::EnsurePiNativeToolsExtension(&piExtensionError);
     if (!piExtensionReady && !piExtensionError.empty()) {
-        OutputDebugStringW((L"TuringDesk Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
+        OutputDebugStringW((L"MiaoDesk Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
     }
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
@@ -296,7 +296,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return result;
     }
 
-    HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\TuringDesk.Native.Search.Singleton");
+    HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\MiaoDesk.Native.Search.Singleton");
     if (!mutex) {
         if (SUCCEEDED(com)) CoUninitialize();
         return 2;
@@ -308,7 +308,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return 0;
     }
 
-    turingdesk::SearchWindow window(instance);
+    miaodesk::SearchWindow window(instance);
     if (!window.Create()) {
         if (SUCCEEDED(com)) CoUninitialize();
         CloseHandle(mutex);

@@ -1,4 +1,4 @@
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 struct ConversationLayerSurface {
@@ -314,7 +314,7 @@ void LayerTimeline(ID2D1RenderTarget* target, ConversationState& state, const RE
         target->FillRoundedRectangle(card, fill.Get());
         target->DrawRoundedRectangle(card, outline.Get(), 0.85f);
         LayerText(target, L"需要你确认", bold, text, left + Px(state, 18), y + Px(state, 13), cardW - Px(state, 36), Px(state, 26));
-        LayerText(target, L"这项操作可能删除、覆盖或改变本机内容。确认后图灵才会继续。", small, secondary,
+        LayerText(target, L"这项操作可能删除、覆盖或改变本机内容。确认后妙喵才会继续。", small, secondary,
                   left + Px(state, 18), y + Px(state, 42), cardW - Px(state, 36), Px(state, 38));
         const int buttonW = Px(state, 92), buttonH = Px(state, 34);
         state.confirmRect = {static_cast<LONG>(left + cardW - buttonW - Px(state, 16)), static_cast<LONG>(y + cardH - buttonH - Px(state, 14)), static_cast<LONG>(left + cardW - Px(state, 16)), static_cast<LONG>(y + cardH - Px(state, 14))};
@@ -515,4 +515,4 @@ bool ConversationPointInsideRoundedPanel(HWND hwnd, POINT screenPoint, int radiu
 }
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk

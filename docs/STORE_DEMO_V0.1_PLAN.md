@@ -3,7 +3,7 @@
 > 状态：规范执行队列（Store 首发 demo，非全产品）
 > 日期：2026-08-28
 > 分支策略：正式交付只从 `main` 构建
-> 上位文档：`docs/TURINGDESK-PRODUCT-BASELINE.md`、`docs/TURINGDESK-DESKTOP-COMPLETION-PLAN.md`
+> 上位文档：`docs/MIAODESK-PRODUCT-BASELINE.md`、`docs/MIAODESK-DESKTOP-COMPLETION-PLAN.md`
 
 ## 1. 产品定义
 
@@ -68,7 +68,7 @@
 
 ## 3. 与现有里程碑的关系
 
-本计划 **不替代** `TURINGDESK-DESKTOP-COMPLETION-PLAN.md`，而是 **裁剪并前置** 其中与 Store demo 相关的闸门：
+本计划 **不替代** `MIAODESK-DESKTOP-COMPLETION-PLAN.md`，而是 **裁剪并前置** 其中与 Store demo 相关的闸门：
 
 ```text
 必须先关闸（工程）
@@ -91,7 +91,7 @@ M12 完整消费者更新通道（Store v0.1 可用 MSIX + 手动更新说明）
 
 **任务：**
 
-1. 在 exact-head ARM64 包上跑完整 M3 序列（`TuringDeskWidgetAcceptance.exe`）：
+1. 在 exact-head ARM64 包上跑完整 M3 序列（`MiaoDeskWidgetAcceptance.exe`）：
    - [ ] Widget 在壁纸之上、图标之下
    - [ ] 打开设置 / 搜索不隐藏、不暂停 Widget
    - [ ] Explorer 重启后 Widget 恢复
@@ -123,10 +123,10 @@ installed SHA == checkout HEAD
 **任务：**
 
 1. **导航裁剪**  
-   - [ ] 设置中心仅保留：壁纸（库 + 当前应用）、小组件、图灵 AI、关于  
+   - [ ] 设置中心仅保留：壁纸（库 + 当前应用）、小组件、妙喵 AI、关于  
    - [ ] Harness 入口移出主路径（隐藏或开发者开关）
 2. **文案与品牌**  
-   - [ ] 全 UI 使用「妙喵 / 图灵智能桌面」，去除内部 Runtime 名词  
+   - [ ] 全 UI 使用「妙喵 / 妙喵智能桌面」，去除内部 Runtime 名词  
    - [ ] Store 用 `packaging/windows-store` 显示名「妙喵」对齐应用内文案
 3. **首启引导（First Run）**  
    - [ ] 3 步：快捷键说明 → 演示壁纸一键体验 → （可选）配置 AI Key  
@@ -146,13 +146,13 @@ installed SHA == checkout HEAD
 **任务：**
 
 1. **Pi Agent 固定模式（已部分落地，需验收）**  
-   - [x] `--tools` 含内置 + TuringDesk 扩展工具  
-   - [x] `--no-extensions --extension <turingdesk-native-tools.ts>`  
+   - [x] `--tools` 含内置 + MiaoDesk 扩展工具  
+   - [x] `--no-extensions --extension <miaodesk-native-tools.ts>`  
    - [x] Agent 向 system prompt  
    - [ ] 真机验证：10 条黄金话术 ≥8 次触发正确工具（见 6.2）  
    - [ ] Direct fallback 时 UI 明确「本轮无工具」
 2. **壁纸黄金路径**  
-   - [ ] `desktop_preview_examples` 在对话内一键列出 Aurora / Neon / Ocean  
+   - [ ] `desktop_preview_examples` 在对话内一键列出 妙喵云境 / 霓虹之城 / 月影秘境  
    - [ ] 预览卡 Apply/Reject 视觉与 `SEARCH_BAR_VISUAL_SPEC` 一致  
    - [ ] Apply 后 `DesktopSnapshot` 与肉眼一致（Pi `wallpaper_state_get` 可读）
 3. **Widget 黄金路径**  
@@ -177,7 +177,7 @@ installed SHA == checkout HEAD
 
 1. 实现 SD1 选定的演示模式（A 或 B）
 2. **API Key 引导**  
-   - [ ] 设置页图灵 AI：Provider 预设 + 粘贴 Key + 测试连接  
+   - [ ] 设置页妙喵 AI：Provider 预设 + 粘贴 Key + 测试连接  
    - [ ] Key 仅存 Credential Manager，不出日志
 3. **离线 bundle**  
    - [ ] 确认 Store 包内 RuntimeBundle 完整，安装后无 npm/Node 下载  
@@ -242,9 +242,9 @@ installed SHA == checkout HEAD
 ### 6.1 黄金路径自动化（ARM64，可脚本化部分）
 
 ```text
-1. DEPLOY-NATIVE-ARM64.cmd 或 UPDATE-TURINGDESK.cmd 安装 exact-head
-2. TuringDesk.exe --self-test == 0
-3. TuringDeskWidgetAcceptance.exe 五阶段 == 0
+1. DEPLOY-NATIVE-ARM64.cmd 或 UPDATE-MIAODESK.cmd 安装 exact-head
+2. MiaoDesk.exe --self-test == 0
+3. MiaoDeskWidgetAcceptance.exe 五阶段 == 0
 4. scripts/pi-agent-e2e.mjs（CI 同源）== 0
 5. 手动：Alt+Space → AI 预览壁纸 → Apply → wallpaper_state 变化
 6. 手动：AI 或设置创建三款小组件 → 目视分层正确
@@ -335,7 +335,7 @@ installed SHA == checkout HEAD
 
 ## 10. 下一步立即动作（本周）
 
-1. **真机：** 在 ARM64 设备跑 `TuringDeskWidgetAcceptance.exe` 全序列，收集证据包。  
+1. **真机：** 在 ARM64 设备跑 `MiaoDeskWidgetAcceptance.exe` 全序列，收集证据包。  
 2. **工程：** 合并 Agent 固定模式相关改动到 `main` 并联调黄金话术。  
 3. **产品：** 确认 SD3 选 A（内置演示）还是 B（强制引导）。  
 4. **商店：** 补 `Assets\` 图标与截图脚本模板。  

@@ -1,5 +1,5 @@
 param(
-    [string]$PreviewRoot = (Join-Path $env:LOCALAPPDATA 'TuringDesk\DevPreview'),
+    [string]$PreviewRoot = (Join-Path $env:LOCALAPPDATA 'MiaoDesk\DevPreview'),
     [int]$WaitSeconds = 8,
     [switch]$Relaunch,
     [switch]$RunSelfTests
@@ -85,7 +85,7 @@ if ($buildSha -and $checkoutSha -and $buildSha -ne $checkoutSha) {
     Warn 'Preview uses a validated ancestor binary. This is allowed only when the downloader found no binary-impacting changes.'
 }
 
-$required = @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')
+$required = @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')
 $binaryResults = @()
 foreach ($name in $required) {
     $path = Join-Path $PreviewRoot $name
@@ -117,11 +117,11 @@ foreach ($screen in $screens) {
 
 if ($RunSelfTests) {
     Section 'Native self-tests on the physical ARM64 host'
-    Invoke-SelfTest (Join-Path $PreviewRoot 'TuringDesk.exe') 'TuringDesk' @('--self-test') | Out-Null
-    Invoke-SelfTest (Join-Path $PreviewRoot 'TuringDeskWallpaper.exe') 'TuringDeskWallpaper' @('--self-test') | Out-Null
-    Invoke-SelfTest (Join-Path $PreviewRoot 'TuringDeskHarness.exe') 'TuringDeskHarness' @('--self-test') | Out-Null
+    Invoke-SelfTest (Join-Path $PreviewRoot 'MiaoDesk.exe') 'MiaoDesk' @('--self-test') | Out-Null
+    Invoke-SelfTest (Join-Path $PreviewRoot 'MiaoDeskWallpaper.exe') 'MiaoDeskWallpaper' @('--self-test') | Out-Null
+    Invoke-SelfTest (Join-Path $PreviewRoot 'MiaoDeskHarness.exe') 'MiaoDeskHarness' @('--self-test') | Out-Null
     if (Test-Path (Join-Path $PreviewRoot 'Runtime') -PathType Container) {
-        Invoke-SelfTest (Join-Path $PreviewRoot 'TuringDeskHarness.exe') 'TuringDeskHarness' @('--harness-smoke-test') | Out-Null
+        Invoke-SelfTest (Join-Path $PreviewRoot 'MiaoDeskHarness.exe') 'MiaoDeskHarness' @('--harness-smoke-test') | Out-Null
     }
     else {
         Warn 'Runtime bundle is not linked into this preview; Harness smoke test was skipped.'
@@ -130,31 +130,31 @@ if ($RunSelfTests) {
 
 Section 'Live process check'
 if ($Relaunch) {
-    foreach ($name in @('TuringDesk', 'TuringDeskWallpaper', 'TuringDeskHarness')) {
+    foreach ($name in @('MiaoDesk', 'MiaoDeskWallpaper', 'MiaoDeskHarness')) {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     Start-Sleep -Milliseconds 600
-    Start-Process -FilePath (Join-Path $PreviewRoot 'TuringDesk.exe') -WorkingDirectory $PreviewRoot
+    Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
 }
-elseif (-not (Get-Process TuringDesk -ErrorAction SilentlyContinue)) {
-    Warn 'TuringDesk is not running; starting the preview for live checks.'
-    Start-Process -FilePath (Join-Path $PreviewRoot 'TuringDesk.exe') -WorkingDirectory $PreviewRoot
+elseif (-not (Get-Process MiaoDesk -ErrorAction SilentlyContinue)) {
+    Warn 'MiaoDesk is not running; starting the preview for live checks.'
+    Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
 }
 
 Start-Sleep -Seconds ([Math]::Max(2, $WaitSeconds))
 $processResults = @()
-foreach ($name in @('TuringDesk', 'TuringDeskWallpaper', 'TuringDeskHarness')) {
+foreach ($name in @('MiaoDesk', 'MiaoDeskWallpaper', 'MiaoDeskHarness')) {
     $items = @(Get-Process $name -ErrorAction SilentlyContinue)
     $running = $items.Count -gt 0
     $processResults += [pscustomobject]@{ Name = $name; Running = $running; Count = $items.Count }
     if ($running) { Pass "$name process is alive (count=$($items.Count))" }
-    elseif ($name -eq 'TuringDeskHarness') { Warn 'TuringDeskHarness is not running. This can be expected while the advanced workbench is not opened.' }
+    elseif ($name -eq 'MiaoDeskHarness') { Warn 'MiaoDeskHarness is not running. This can be expected while the advanced workbench is not opened.' }
     else { Fail "$name process is not running after the preview startup wait." }
 }
 
 Section 'Runtime logs'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$logRoot = Join-Path $desktop 'TuringDesk-Logs'
+$logRoot = Join-Path $desktop 'MiaoDesk-Logs'
 $recentLogs = @()
 if (Test-Path $logRoot -PathType Container) {
     $recentLogs = @(Get-ChildItem $logRoot -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 12)

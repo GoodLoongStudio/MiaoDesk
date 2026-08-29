@@ -1,13 +1,13 @@
-#include "turingdesk/VideoWallpaperSet.h"
-#include "turingdesk/VideoWallpaperPlayer.h"
+#include "miaodesk/VideoWallpaperSet.h"
+#include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <algorithm>
 #include <sstream>
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"TuringDesk.Native.VideoWallpaperSurface";
+constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.VideoWallpaperSurface";
 
 bool SameRect(const RECT& a, const RECT& b) noexcept {
     return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
@@ -250,4 +250,4 @@ std::wstring VideoWallpaperSet::DiagnosticsText() const {
     return text.str();
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

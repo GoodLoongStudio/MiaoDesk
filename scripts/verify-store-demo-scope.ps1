@@ -6,7 +6,7 @@ function From-B64([string]$Value) {
 }
 
 $paths = @{
-    Header = Join-Path $root 'src/native/include/turingdesk/StoreDemoExperience.h'
+    Header = Join-Path $root 'src/native/include/miaodesk/StoreDemoExperience.h'
     Demo = Join-Path $root 'src/native/src/desktop/demo/StoreDemoExperience.cpp'
     AiPage = Join-Path $root 'src/native/src/ui/settings/DesktopAiSettingsPage.cpp'
     Conversation = Join-Path $root 'src/native/src/ui/ai/ConversationPanelImpl.inc'

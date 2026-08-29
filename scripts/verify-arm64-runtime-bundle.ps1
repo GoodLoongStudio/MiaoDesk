@@ -55,6 +55,6 @@ if ([string]$manifest.pi.package -ne '@earendil-works/pi-coding-agent') {
     throw 'RuntimeBundle Pi package is not the approved package.'
 }
 
-Write-Host 'TuringDesk ARM64 RuntimeBundle verified.' -ForegroundColor Green
+Write-Host 'MiaoDesk ARM64 RuntimeBundle verified.' -ForegroundColor Green
 Write-Host "goz:  $($manifest.goz.version) ($($manifest.goz.tag))" -ForegroundColor DarkGray
 Write-Host "Pi:   $($manifest.pi.version) / $($manifest.pi.mode)" -ForegroundColor DarkGray

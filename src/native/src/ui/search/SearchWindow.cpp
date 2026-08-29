@@ -1,8 +1,8 @@
-#include "turingdesk/SearchWindow.h"
-#include "turingdesk/DesktopControlService.h"
-#include "turingdesk/L3CliWindow.h"
-#include "turingdesk/SettingsCenterWindow.h"
-#include "turingdesk/StoreDemoExperience.h"
+#include "miaodesk/SearchWindow.h"
+#include "miaodesk/DesktopControlService.h"
+#include "miaodesk/L3CliWindow.h"
+#include "miaodesk/SettingsCenterWindow.h"
+#include "miaodesk/StoreDemoExperience.h"
 #include <shellapi.h>
 #include <windowsx.h>
 #include <algorithm>
@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 constexpr int kHotkeyId = 1;
@@ -68,7 +68,7 @@ HICON ResolveShellIcon(const SearchResult& result) {
 
 bool ShellIconSelfTest() {
     SearchResult synthetic{
-        ResultKind::File, L"Shell icon self-test", L"", L"turingdesk-self-test.txt", 0};
+        ResultKind::File, L"Shell icon self-test", L"", L"miaodesk-self-test.txt", 0};
     HICON icon = ResolveShellIcon(synthetic);
     if (!icon) return false;
     DestroyIcon(icon);
@@ -89,7 +89,7 @@ fs::path SearchIniPath() {
         L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
     if (length == 0 || length >= std::size(localAppData)) return {};
 
-    const fs::path directory = fs::path(localAppData) / L"TuringDesk";
+    const fs::path directory = fs::path(localAppData) / L"MiaoDesk";
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory / L"search.ini";
@@ -199,7 +199,7 @@ bool SearchWindow::Create() {
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance_;
     wc.lpfnWndProc = &SearchWindow::WndProc;
-    wc.lpszClassName = L"TuringDesk.Native.SearchWindow";
+    wc.lpszClassName = L"MiaoDesk.Native.SearchWindow";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
@@ -531,7 +531,7 @@ bool SearchWindow::HitAiButton(POINT point) const {
 void SearchWindow::ExitApplication() {
     if (exiting_) return;
     exiting_ = true;
-    if (const HWND wallpaper = FindWindowW(L"TuringDesk.Native.WallpaperControl", nullptr))
+    if (const HWND wallpaper = FindWindowW(L"MiaoDesk.Native.WallpaperControl", nullptr))
         PostMessageW(wallpaper, WM_CLOSE, 0, 0);
     if (hwnd_ && IsWindow(hwnd_)) DestroyWindow(hwnd_);
 }
@@ -1299,4 +1299,4 @@ void SearchWindow::Draw() {
     PresentLayerSurface(widthPx, heightPx);
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

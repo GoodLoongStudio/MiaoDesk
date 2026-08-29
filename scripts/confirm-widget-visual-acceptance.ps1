@@ -29,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 
 function Get-DiagnosticsDirectory {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
-    Join-Path (Join-Path $base 'TuringDesk') 'Diagnostics'
+    Join-Path (Join-Path $base 'MiaoDesk') 'Diagnostics'
 }
 
 function Read-KeyValueFile([string]$Path) {
@@ -112,7 +112,7 @@ foreach ($phase in @('baseline','settings','search','explorer','monitor')) {
 }
 
 $attestation = [ordered]@{
-    schema = 'turingdesk.widget-visual-acceptance.v1'
+    schema = 'miaodesk.widget-visual-acceptance.v1'
     reviewedAtUtc = [DateTime]::UtcNow.ToString('o')
     reviewer = $Reviewer.Trim()
     sessionId = $baselineSessionId
@@ -138,7 +138,7 @@ $attestation | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encodin
 $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath "$path.sha256" -Value @(
     "sha256=$hash",
-    'schema=turingdesk.widget-visual-acceptance.v1',
+    'schema=miaodesk.widget-visual-acceptance.v1',
     "reviewedAtUtc=$($attestation.reviewedAtUtc)",
     "sessionId=$baselineSessionId"
 ) -Encoding utf8

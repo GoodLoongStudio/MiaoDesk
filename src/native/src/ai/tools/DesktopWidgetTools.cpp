@@ -1,6 +1,6 @@
-#include "turingdesk/DesktopWidgetTools.h"
+#include "miaodesk/DesktopWidgetTools.h"
 
-#include "turingdesk/DesktopControlService.h"
+#include "miaodesk/DesktopControlService.h"
 
 #include <windows.h>
 
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 std::wstring Utf8ToWide(std::string_view value) {
@@ -205,7 +205,7 @@ NativeToolResult WallpaperStateGet() {
 
 NativeToolResult WallpaperApplyWebPackage(std::string_view arguments) {
     const auto rawPath = JsonString(arguments, "path");
-    if (!rawPath || rawPath->empty()) return {false, L"缺少 .tdwall package path。"};
+    if (!rawPath || rawPath->empty()) return {false, L"缺少 .mdwall package path。"};
     desktop::DesktopControlService service;
     return ToNative(service.ApplyWebPackage(fs::path(Utf8ToWide(*rawPath))));
 }
@@ -309,4 +309,4 @@ NativeToolResult ExecuteDesktopControlTool(std::string_view toolName, std::strin
     return {false, L"未知桌面控制工具。"};
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

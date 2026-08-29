@@ -1,5 +1,5 @@
-#include "turingdesk/NativeTools.h"
-#include "turingdesk/WallpaperPackage.h"
+#include "miaodesk/NativeTools.h"
+#include "miaodesk/WallpaperPackage.h"
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
 std::wstring Utf8ToWide(std::string_view value) {
@@ -158,7 +158,7 @@ std::wstring SanitizeFileName(std::wstring name, std::wstring fallback) {
         if (invalid.find(ch) != std::wstring_view::npos || ch < 32) ch = L'_';
     }
     while (!name.empty() && (name.back() == L'.' || name.back() == L' ')) name.pop_back();
-    if (name.empty()) name = L"TuringDesk";
+    if (name.empty()) name = L"MiaoDesk";
     if (name.size() > 120) name.resize(120);
     return name;
 }
@@ -341,7 +341,7 @@ NativeToolResult CreatePowerPoint(std::string_view arguments) {
 
     auto desktop = KnownFolder(FOLDERID_Desktop);
     if (desktop.empty()) return {false, L"无法定位桌面目录。"};
-    std::wstring fileName = SanitizeFileName(fileNameRaw, title.empty() ? L"TuringDesk演示.pptx" : title + L".pptx");
+    std::wstring fileName = SanitizeFileName(fileNameRaw, title.empty() ? L"MiaoDesk演示.pptx" : title + L".pptx");
     if (fileName.size() < 5 || _wcsicmp(fileName.c_str() + fileName.size() - 5, L".pptx") != 0) fileName += L".pptx";
     const auto output = desktop / fileName;
 
@@ -411,7 +411,7 @@ NativeToolResult CreatePowerPoint(std::string_view arguments) {
         return local;
     };
 
-    if (SUCCEEDED(hr)) hr = addSlide(1, title.empty() ? L"TuringDesk 演示" : title, subtitle, true);
+    if (SUCCEEDED(hr)) hr = addSlide(1, title.empty() ? L"MiaoDesk 演示" : title, subtitle, true);
     if (SUCCEEDED(hr)) {
         for (const auto& slide : ParseSlides(outline)) {
             hr = addSlide(2, slide.title, slide.body, false);
@@ -464,7 +464,7 @@ NativeToolResult CreateFile(std::string_view arguments) {
     fs::create_directories(folder, ec);
     if (ec) return {false, L"无法访问目标目录。"};
 
-    auto name = SanitizeFileName(Utf8ToWide(ExtractJsonString(arguments, "file_name")), L"TuringDesk.txt");
+    auto name = SanitizeFileName(Utf8ToWide(ExtractJsonString(arguments, "file_name")), L"MiaoDesk.txt");
     const auto content = ExtractJsonString(arguments, "content");
     const auto path = folder / name;
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
@@ -508,7 +508,7 @@ NativeToolResult OpenFile(std::string_view arguments) {
 }
 
 NativeToolResult OpenSettingsCenter(std::string_view) {
-    constexpr wchar_t kSearchWindowClass[] = L"TuringDesk.Native.SearchWindow";
+    constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
     constexpr int kSettingsButtonId = 102;
     const HWND search = FindWindowW(kSearchWindowClass, nullptr);
     if (!search) return {false, L"没有找到正在运行的妙喵主窗口。"};
@@ -529,18 +529,18 @@ NativeToolResult CreateWebWallpaperPackage(std::string_view arguments) {
     if (html.empty()) return {false, L"缺少 Web 壁纸 HTML 内容。"};
     if (title.empty()) title = name;
 
-    auto root = desktop / L"TuringDesk Wallpapers";
+    auto root = desktop / L"MiaoDesk Wallpapers";
     std::error_code ec;
     fs::create_directories(root, ec);
-    if (ec) return {false, L"无法创建 TuringDesk Wallpapers 目录。"};
+    if (ec) return {false, L"无法创建 MiaoDesk Wallpapers 目录。"};
 
-    if (name.size() < 7 || _wcsicmp(name.c_str() + name.size() - 7, L".tdwall") != 0) name += L".tdwall";
+    if (name.size() < 7 || _wcsicmp(name.c_str() + name.size() - 7, L".mdwall") != 0) name += L".mdwall";
     fs::path package = root / name;
     if (fs::exists(package, ec)) {
         const auto stem = package.stem().wstring();
         bool found = false;
         for (int i = 2; i <= 99; ++i) {
-            auto candidate = root / (stem + L" " + std::to_wstring(i) + L".tdwall");
+            auto candidate = root / (stem + L" " + std::to_wstring(i) + L".mdwall");
             if (!fs::exists(candidate, ec)) {
                 package = std::move(candidate);
                 found = true;
@@ -566,9 +566,9 @@ NativeToolResult ValidateWallpaperPackage(std::string_view arguments) {
     wallpaper::WallpaperPackageManifest manifest;
     std::wstring error;
     if (!wallpaper::WallpaperPackage::Validate(package, &manifest, &error)) {
-        return {false, error.empty() ? L".tdwall 校验失败。" : std::move(error)};
+        return {false, error.empty() ? L".mdwall 校验失败。" : std::move(error)};
     }
-    return {true, L".tdwall 校验通过：" + manifest.title + L" · type=" + wallpaper::WallpaperPackage::TypeKey(manifest.type) +
+    return {true, L".mdwall 校验通过：" + manifest.title + L" · type=" + wallpaper::WallpaperPackage::TypeKey(manifest.type) +
                   L" · entry=" + manifest.entry.wstring()};
 }
 
@@ -576,13 +576,13 @@ NativeToolResult ValidateWallpaperPackage(std::string_view arguments) {
 
 std::string NativeToolDefinitionsJson() {
     return R"JSON([
-{"type":"function","name":"settings_open","description":"Open the native TuringDesk Settings Center. Use this for requests to open settings, desktop settings, wallpaper settings, configuration, preferences, or the TuringDesk setting panel. Do not use shell commands for this action.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+{"type":"function","name":"settings_open","description":"Open the native MiaoDesk Settings Center. Use this for requests to open settings, desktop settings, wallpaper settings, configuration, preferences, or the MiaoDesk setting panel. Do not use shell commands for this action.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
 {"type":"function","name":"ppt_create","description":"Create a real .pptx PowerPoint presentation on the Windows desktop. Use this instead of merely writing a presentation outline when the user asks for a PPT or presentation.","inputSchema":{"type":"object","properties":{"file_name":{"type":"string","description":"Output filename, preferably ending in .pptx"},"title":{"type":"string"},"subtitle":{"type":"string"},"slides_markdown":{"type":"string","description":"Content slides. Start each slide with '# Slide title'; following lines are bullet points."},"open_after_create":{"type":"boolean","description":"Open the generated presentation after saving"}},"required":["file_name","title","slides_markdown"],"additionalProperties":false}},
 {"type":"function","name":"file_create","description":"Create a UTF-8 text file in one of the user's safe folders.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"},"content":{"type":"string"}},"required":["location","file_name","content"],"additionalProperties":false}},
 {"type":"function","name":"folder_list","description":"List files and folders from Desktop, Documents, or Downloads.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["location"],"additionalProperties":false}},
 {"type":"function","name":"file_open","description":"Open an existing file from Desktop, Documents, or Downloads with its registered Windows application. No command-line arguments are allowed.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"}},"required":["location","file_name"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_create_web_package","description":"Create a validated TuringDesk .tdwall Web wallpaper package on the user's desktop. Use this when the user asks the Turing Intelligent Desktop to generate an interactive/procedural HTML wallpaper.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Package folder name; .tdwall is added automatically"},"title":{"type":"string","description":"User-facing wallpaper title"},"html":{"type":"string","description":"Complete self-contained HTML/CSS/JS for the wallpaper; local assets are not supported by this first generator tool"},"open_after_create":{"type":"boolean"}},"required":["name","title","html"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing TuringDesk .tdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
+{"type":"function","name":"wallpaper_create_web_package","description":"Create a validated MiaoDesk .mdwall Web wallpaper package on the user's desktop. Use this when the user asks the Turing Intelligent Desktop to generate an interactive/procedural HTML wallpaper.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Package folder name; .mdwall is added automatically"},"title":{"type":"string","description":"User-facing wallpaper title"},"html":{"type":"string","description":"Complete self-contained HTML/CSS/JS for the wallpaper; local assets are not supported by this first generator tool"},"open_after_create":{"type":"boolean"}},"required":["name","title","html"],"additionalProperties":false}},
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
 ])JSON";
 }
 
@@ -597,4 +597,4 @@ NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view a
     return {false, L"未知 Native Tool：" + Utf8ToWide(toolName)};
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

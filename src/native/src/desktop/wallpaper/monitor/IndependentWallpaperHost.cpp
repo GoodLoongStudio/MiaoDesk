@@ -1,6 +1,6 @@
-#include "turingdesk/IndependentWallpaperHost.h"
-#include "turingdesk/SceneWallpaperPainter.h"
-#include "turingdesk/VideoWallpaperPlayer.h"
+#include "miaodesk/IndependentWallpaperHost.h"
+#include "miaodesk/SceneWallpaperPainter.h"
+#include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
 #include <wincodec.h>
@@ -14,10 +14,10 @@
 
 using Microsoft::WRL::ComPtr;
 
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"TuringDesk.Native.IndependentWallpaperSurface";
+constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.IndependentWallpaperSurface";
 
 } // namespace
 
@@ -139,7 +139,7 @@ struct IndependentWallpaperHost::Impl {
         return SUCCEEDED(slot.renderTarget->CreateBitmapFromWicBitmap(converter.Get(), nullptr, slot.bitmap.GetAddressOf()));
     }
 
-    void FallbackSlotToAurora(Slot& slot, const std::wstring& reason) {
+    void FallbackSlotToMiaoCloud(Slot& slot, const std::wstring& reason) {
         if (slot.video) {
             slot.video->Stop();
             slot.video.reset();
@@ -167,14 +167,14 @@ struct IndependentWallpaperHost::Impl {
             ApplyVideoSettings(*slot.video);
             if (!slot.video->Start(slot.window, slot.wallpaper.source.wstring())) {
                 const auto mediaError = slot.video->LastErrorText();
-                FallbackSlotToAurora(slot, mediaError.empty() ? L"独立视频无法启动，已回退 Aurora" : mediaError);
+                FallbackSlotToMiaoCloud(slot, mediaError.empty() ? L"独立视频无法启动，已回退妙喵云境" : mediaError);
             } else {
                 slot.video->SetPaused(paused);
             }
             return true;
         }
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) {
-            if (!LoadImage(slot)) FallbackSlotToAurora(slot, L"独立图片无法解码，已回退 Aurora");
+            if (!LoadImage(slot)) FallbackSlotToMiaoCloud(slot, L"独立图片无法解码，已回退妙喵云境");
             return true;
         }
         return EnsureRenderTarget(slot);
@@ -213,18 +213,18 @@ struct IndependentWallpaperHost::Impl {
             1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &source);
     }
 
-    void DrawAurora(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintAurora(
+    void DrawMiaoCloud(Slot& slot, const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintMiaoCloud(
             {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
-    void DrawNeon(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintNeon(
+    void DrawNeonCity(Slot& slot, const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintNeonCity(
             {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
-    void DrawGrid(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintOcean(
+    void DrawMysticMoon(Slot& slot, const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintMysticMoon(
             {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
     }
 
@@ -238,16 +238,16 @@ struct IndependentWallpaperHost::Impl {
         slot.renderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
         slot.renderTarget->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f));
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image && slot.bitmap) DrawImage(slot, size);
-        else if (slot.wallpaper.sceneKey == L"neon") DrawNeon(slot, size);
-        else if (slot.wallpaper.sceneKey == L"grid") DrawGrid(slot, size);
-        else DrawAurora(slot, size);
+        else if (slot.wallpaper.sceneKey == L"neon") DrawNeonCity(slot, size);
+        else if (slot.wallpaper.sceneKey == L"grid") DrawMysticMoon(slot, size);
+        else DrawMiaoCloud(slot, size);
         const HRESULT hr = slot.renderTarget->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
             slot.bitmap.Reset();
             slot.brush.Reset();
             slot.renderTarget.Reset();
             if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image && !LoadImage(slot))
-                FallbackSlotToAurora(slot, L"Direct2D 设备恢复后图片重载失败，已回退 Aurora");
+                FallbackSlotToMiaoCloud(slot, L"Direct2D 设备恢复后图片重载失败，已回退妙喵云境");
         }
     }
 
@@ -434,4 +434,4 @@ std::wstring IndependentWallpaperHost::DiagnosticsText() const {
     return text.str();
 }
 
-} // namespace turingdesk
+} // namespace miaodesk

@@ -1,4 +1,4 @@
-#include "turingdesk/WebWallpaperHost.h"
+#include "miaodesk/WebWallpaperHost.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -25,11 +25,11 @@ using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWebHostClass[] = L"TuringDesk.Native.WebWallpaperHost";
-constexpr wchar_t kLocalVirtualHost[] = L"turingdesk-wallpaper.local";
+constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-wallpaper.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
 constexpr UINT kShutdownMessage = WM_APP + 903;
@@ -76,7 +76,7 @@ fs::path WebUserDataDirectory(std::wstring_view token) {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    fs::path directory = base / L"TuringDesk" / L"WebView2" / L"Wallpaper" / SafeToken(std::wstring(token));
+    fs::path directory = base / L"MiaoDesk" / L"WebView2" / L"Wallpaper" / SafeToken(std::wstring(token));
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory;
@@ -577,7 +577,7 @@ bool WebWallpaperProcessSet::Start(HWND parentWindow, const std::vector<WebWallp
 bool WebWallpaperProcessSet::StartSlot(Slot& slot, bool recovery) {
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) {
-        lastError_ = L"无法定位 TuringDeskWallpaper.exe";
+        lastError_ = L"无法定位 MiaoDeskWallpaper.exe";
         return false;
     }
 
@@ -749,4 +749,4 @@ int TryRunWebWallpaperChild(HINSTANCE instance) {
     return host.Run();
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

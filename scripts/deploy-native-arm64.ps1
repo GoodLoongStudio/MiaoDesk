@@ -8,7 +8,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $BuildDir = Join-Path $RepoRoot "build-dev-arm64"
-$InstalledDir = Join-Path $env:LOCALAPPDATA "TuringDesk\NativeTest"
+$InstalledDir = Join-Path $env:LOCALAPPDATA "MiaoDesk\NativeTest"
 $InstalledMarker = Join-Path $InstalledDir ".installed-build-sha"
 $PreviewMarker = Join-Path $BuildDir ".last-preview-sha"
 
@@ -55,12 +55,12 @@ function Ensure-FastDeveloperConfigure {
     $needsConfigure = -not (Test-Path $cache -PathType Leaf)
     if (-not $needsConfigure) {
         $cacheText = [string](Get-Content $cache -Raw -ErrorAction SilentlyContinue)
-        $needsConfigure = $cacheText -notmatch '(?m)^TURINGDESK_DEV_FAST:BOOL=ON$'
+        $needsConfigure = $cacheText -notmatch '(?m)^MIAODESK_DEV_FAST:BOOL=ON$'
     }
 
     if ($needsConfigure) {
         Step "Configuring fast local ARM64 developer build"
-        & cmake -S $RepoRoot -B $BuildDir -A ARM64 -DTURINGDESK_DEV_FAST=ON
+        & cmake -S $RepoRoot -B $BuildDir -A ARM64 -DMIAODESK_DEV_FAST=ON
         if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
     }
 }
@@ -78,17 +78,17 @@ function Invoke-LocalPreview([string[]]$Targets, [string]$HeadSha) {
         if ($LASTEXITCODE -ne 0) { throw ("Local ARM64 build failed for {0}: {1}" -f $target, $LASTEXITCODE) }
     }
 
-    if ($Targets -contains "TuringDesk") {
+    if ($Targets -contains "MiaoDesk") {
         $outputDir = Join-Path $BuildDir "src\native\Release"
-        $exe = Join-Path $outputDir "TuringDesk.exe"
-        if (-not (Test-Path $exe -PathType Leaf)) { throw "Developer TuringDesk.exe was not produced: $exe" }
+        $exe = Join-Path $outputDir "MiaoDesk.exe"
+        if (-not (Test-Path $exe -PathType Leaf)) { throw "Developer MiaoDesk.exe was not produced: $exe" }
 
         foreach ($name in @("Runtime", "Pi", "Goz")) {
             Ensure-Junction (Join-Path $outputDir $name) (Join-Path $InstalledDir $name)
         }
 
         Step "Restarting developer preview"
-        Get-Process TuringDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process MiaoDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Process -FilePath $exe -WorkingDirectory $outputDir
         Write-Host ("Preview: {0}" -f $exe) -ForegroundColor Green
         if (-not (Test-Path (Join-Path $outputDir "Pi") -PathType Container)) {
@@ -101,7 +101,7 @@ function Invoke-LocalPreview([string[]]$Targets, [string]$HeadSha) {
 }
 
 function Ensure-ValidatedCurrentMain {
-    $Updater = Join-Path $RepoRoot "scripts\update-turingdesk-arm64.ps1"
+    $Updater = Join-Path $RepoRoot "scripts\update-miaodesk-arm64.ps1"
     if (-not (Test-Path $Updater -PathType Leaf)) {
         throw "Validated ARM64 updater is missing: $Updater"
     }
@@ -154,14 +154,14 @@ $harness = $globalNative -or (Any $files @("src/native/src/harness/*"))
 $widgetProbe = $globalNative -or (Any $files @("src/native/src/desktop/widgets/*Acceptance*"))
 
 if ($Mode -eq "preview") {
-    $targets = @("TuringDesk")
+    $targets = @("MiaoDesk")
 }
 else {
     $targets = @()
-    if ($app) { $targets += "TuringDesk" }
-    if ($wallpaper) { $targets += "TuringDeskWallpaper" }
-    if ($harness) { $targets += "TuringDeskHarness" }
-    if ($widgetProbe) { $targets += "TuringDeskWidgetAcceptance" }
+    if ($app) { $targets += "MiaoDesk" }
+    if ($wallpaper) { $targets += "MiaoDeskWallpaper" }
+    if ($harness) { $targets += "MiaoDeskHarness" }
+    if ($widgetProbe) { $targets += "MiaoDeskWidgetAcceptance" }
     $targets = @($targets | Select-Object -Unique)
 }
 

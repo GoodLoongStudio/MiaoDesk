@@ -41,7 +41,7 @@ try {
     }
     New-Item -ItemType Junction -Path $runtimeLink -Target (Join-Path $store 'Runtime') | Out-Null
 
-    Set-Content -LiteralPath (Join-Path $staging 'TuringDesk.exe') -Value 'stub' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $staging 'MiaoDesk.exe') -Value 'stub' -Encoding ASCII
     Remove-DeploymentTree $staging
     if (Test-Path -LiteralPath $staging) { throw 'Deployment tree was not removed.' }
 

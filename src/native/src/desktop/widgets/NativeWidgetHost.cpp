@@ -1,13 +1,13 @@
-#include "turingdesk/NativeWidgetHost.h"
+#include "miaodesk/NativeWidgetHost.h"
 
-#include "turingdesk/DesktopShellHost.h"
-#include "turingdesk/DesktopWidgetStore.h"
-#include "turingdesk/NativeWidgetPainter.h"
-#include "turingdesk/NativeWidgetPreset.h"
-#include "turingdesk/NativeWeatherService.h"
-#include "turingdesk/WallpaperMonitorLayout.h"
-#include "turingdesk/WebDesktopSurfaceChild.h"
-#include "turingdesk/WidgetService.h"
+#include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/NativeWidgetPainter.h"
+#include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/NativeWeatherService.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
+#include "miaodesk/WebDesktopSurfaceChild.h"
+#include "miaodesk/WidgetService.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -27,11 +27,11 @@
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kNativeHostMode[] = L"--native-widget-host";
-constexpr wchar_t kWidgetDragClass[] = L"TuringDesk.Native.WidgetDragHandle";
+constexpr wchar_t kWidgetDragClass[] = L"MiaoDesk.Native.WidgetDragHandle";
 constexpr UINT kPauseMessage = WM_APP + 911;
 constexpr UINT kResumeMessage = WM_APP + 912;
 constexpr UINT kShutdownMessage = WM_APP + 913;
@@ -39,7 +39,7 @@ constexpr UINT kWeatherUpdatedMessage = WM_APP + 914;
 constexpr UINT_PTR kSyncTimerId = 71;
 constexpr UINT_PTR kRefreshTimerId = 72;
 constexpr UINT kRefreshSchedulerTickMs = 1000;
-constexpr wchar_t kNativeHostMessageClass[] = L"TuringDesk.Native.WidgetHostMessage";
+constexpr wchar_t kNativeHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
 
 std::wstring ExecutablePath() {
     std::wstring path(32768, L'\0');
@@ -126,7 +126,7 @@ void MarkNativeSurfaceReady(HWND hwnd) {
 fs::path WallpaperConfigPath() {
     wchar_t local[32768]{};
     const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local)) ? fs::path(local) / L"TuringDesk" : fs::temp_directory_path() / L"TuringDesk";
+    fs::path dir = (length > 0 && length < std::size(local)) ? fs::path(local) / L"MiaoDesk" : fs::temp_directory_path() / L"MiaoDesk";
     return dir / L"wallpaper.ini";
 }
 
@@ -748,7 +748,7 @@ bool NativeWidgetProcessSet::Start(HWND parentWindow) {
 
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) {
-        lastError_ = L"无法定位 TuringDeskWallpaper.exe";
+        lastError_ = L"无法定位 MiaoDeskWallpaper.exe";
         return false;
     }
     std::wstring command = QuoteArg(executable);
@@ -862,4 +862,4 @@ int TryRunNativeWidgetHost(HINSTANCE instance) {
     return result;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

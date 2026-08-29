@@ -46,12 +46,12 @@ void PrependBundledHarnessRuntimeToPath() {
     if (!oldPath.empty()) prefix += L";" + oldPath;
     SetEnvironmentVariableW(L"PATH", prefix.c_str());
 
-    // Keep npm/DeepSeek transient caches inside TuringDesk-owned state when the
+    // Keep npm/DeepSeek transient caches inside MiaoDesk-owned state when the
     // upstream package needs them. This does not install or mutate system Node.
     wchar_t local[32768]{};
     const DWORD localLength = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     if (localLength > 0 && localLength < std::size(local)) {
-        const fs::path stateRoot = fs::path(std::wstring(local, localLength)) / L"TuringDesk" / L"HarnessState";
+        const fs::path stateRoot = fs::path(std::wstring(local, localLength)) / L"MiaoDesk" / L"HarnessState";
         std::error_code ec;
         fs::create_directories(stateRoot, ec);
         if (!ec) {
@@ -67,7 +67,7 @@ struct BundledRuntimeBootstrap final {
     BundledRuntimeBootstrap() { PrependBundledHarnessRuntimeToPath(); }
 };
 
-// This translation unit is linked only into TuringDeskHarness. Static
+// This translation unit is linked only into MiaoDeskHarness. Static
 // initialization intentionally runs before wWinMain/HarnessProcessManager.
 BundledRuntimeBootstrap g_bundledRuntimeBootstrap;
 

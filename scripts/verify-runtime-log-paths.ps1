@@ -2,14 +2,14 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Join-Path $root 'src/native/src'
-$headerPath = Join-Path $root 'src/native/include/turingdesk/RuntimeLogPaths.h'
+$headerPath = Join-Path $root 'src/native/include/miaodesk/RuntimeLogPaths.h'
 
 if (-not (Test-Path $headerPath -PathType Leaf)) {
     throw "Runtime log path helper missing: $headerPath"
 }
 
 $header = Get-Content $headerPath -Raw
-foreach ($marker in @('FOLDERID_Desktop', 'TuringDesk-Logs', 'RuntimeLogPath')) {
+foreach ($marker in @('FOLDERID_Desktop', 'MiaoDesk-Logs', 'RuntimeLogPath')) {
     if (-not $header.Contains($marker)) {
         throw "Desktop runtime log helper marker missing: $marker"
     }
@@ -29,4 +29,4 @@ foreach ($file in $files) {
     }
 }
 
-Write-Host 'Runtime log contract OK: all native .log files use Desktop/TuringDesk-Logs.'
+Write-Host 'Runtime log contract OK: all native .log files use Desktop/MiaoDesk-Logs.'

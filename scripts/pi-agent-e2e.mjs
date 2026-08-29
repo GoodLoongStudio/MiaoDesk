@@ -26,7 +26,7 @@ const rpcTrace = [];
 
 function sendChunk(res, delta, finish = null) {
   const payload = {
-    id: "chatcmpl-turingdesk-pi",
+    id: "chatcmpl-miaodesk-pi",
     object: "chat.completion.chunk",
     created: 1,
     model: "ci-model",
@@ -80,7 +80,7 @@ function verifyArtifacts() {
     if (shellText !== "PI_SHELL_OK") throw new Error(`PowerShell tool mismatch: ${shellText}`);
 
     finished = true;
-    console.log("Pi RPC -> provider -> built-in write -> PowerShell -> preview-only TuringDesk native extension: OK");
+    console.log("Pi RPC -> provider -> built-in write -> PowerShell -> preview-only MiaoDesk native extension: OK");
     try { child?.kill(); } catch {}
     server.close(() => process.exit(0));
   } catch (error) {
@@ -171,26 +171,26 @@ server.listen(0, "127.0.0.1", () => {
   const port = server.address().port;
   const agentDir = path.join(work, "agent");
   const extensionsDir = path.join(agentDir, "extensions");
-  const extensionTarget = path.join(extensionsDir, "turingdesk-native-tools.ts");
+  const extensionTarget = path.join(extensionsDir, "miaodesk-native-tools.ts");
   fs.mkdirSync(extensionsDir, { recursive: true });
   fs.copyFileSync(extensionSource, extensionTarget);
 
   fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
-    providers: { turingdesk: {
-      name: "TuringDesk CI", baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions",
-      apiKey: "$TURINGDESK_MODEL_API_KEY",
+    providers: { miaodesk: {
+      name: "MiaoDesk CI", baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions",
+      apiKey: "$MIAODESK_MODEL_API_KEY",
       models: [{ id: "ci-model", name: "ci-model", input: ["text"], contextWindow: 128000, maxTokens: 4096 }],
     }},
   }, null, 2));
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
-    defaultProjectTrust: "always", defaultProvider: "turingdesk", defaultModel: "ci-model",
+    defaultProjectTrust: "always", defaultProvider: "miaodesk", defaultModel: "ci-model",
     shellPath: powershell, quietStartup: true,
   }, null, 2));
 
   child = spawn(process.execPath, [
     piCli,
     "--mode", "rpc", "--no-session", "--approve", "--offline",
-    "--provider", "turingdesk", "--model", "ci-model",
+    "--provider", "miaodesk", "--model", "ci-model",
     "--no-extensions", "--extension", extensionTarget,
     "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
     "--tools", "read,bash,edit,write,grep,find,ls,settings_open,ppt_create,file_create,folder_list,file_open,image_generate,wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,desktop_preview_widget,desktop_preview_wallpaper,desktop_preview_examples",
@@ -199,7 +199,7 @@ server.listen(0, "127.0.0.1", () => {
     windowsHide: true,
     env: {
       ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
-      TURINGDESK_MODEL_API_KEY: "ci-key", TURINGDESK_NATIVE_TOOL_HOST: nativeHost,
+      MIAODESK_MODEL_API_KEY: "ci-key", MIAODESK_NATIVE_TOOL_HOST: nativeHost,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -229,7 +229,7 @@ server.listen(0, "127.0.0.1", () => {
         ready = true;
         if (!promptSent) {
           promptSent = true;
-          sendRpc({ id: "turn-1", type: "prompt", message: "Exercise the requested tools and the TuringDesk preview example catalog, then finish." });
+          sendRpc({ id: "turn-1", type: "prompt", message: "Exercise the requested tools and the MiaoDesk preview example catalog, then finish." });
         }
         continue;
       }

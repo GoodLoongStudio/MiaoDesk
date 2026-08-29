@@ -1,32 +1,32 @@
-# TuringDesk C++ Wallpaper Implementation Reference
+# MiaoDesk C++ Wallpaper Implementation Reference
 
 Status: authoritative implementation reference for the Windows wallpaper runtime.
 Date: 2026-08-24
-Product baseline: `docs/TURINGDESK-PRODUCT-BASELINE.md`
+Product baseline: `docs/MIAODESK-PRODUCT-BASELINE.md`
 Capability roadmap: `docs/WALLPAPER_ENGINE_PARITY.md`
 Desktop composition architecture: `docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
 
 ## 1. Purpose
 
-TuringDesk targets Wallpaper Engine-class product depth, but **Wallpaper Engine is not the implementation reference**.
+MiaoDesk targets Wallpaper Engine-class product depth, but **Wallpaper Engine is not the implementation reference**.
 
 For Windows desktop integration, wallpaper runtime behavior, multi-monitor handling, playback lifecycle, Web wallpaper hosting, Explorer recovery and screensaver behavior, the primary mature open-source reference is:
 
 - `rocksdanister/lively`
 
-Lively is used as a behavioral and architectural reference only. TuringDesk reimplements the required behavior in native C++23.
+Lively is used as a behavioral and architectural reference only. MiaoDesk reimplements the required behavior in native C++23.
 
 ## 2. License boundary
 
-Lively is GPL-3.0. TuringDesk is MIT.
+Lively is GPL-3.0. MiaoDesk is MIT.
 
 Therefore:
 
-- do not copy Lively source code into TuringDesk;
+- do not copy Lively source code into MiaoDesk;
 - do not mechanically translate Lively C# source line-by-line into C++;
-- do not reuse GPL implementation files, comments or project-specific code structure as TuringDesk source;
-- it is acceptable to study public behavior, Windows API sequences, edge cases and compatibility strategies, then independently implement the same class of behavior in TuringDesk;
-- when a Lively implementation detail is studied, record the behavior/API contract in TuringDesk documentation first, then implement it independently.
+- do not reuse GPL implementation files, comments or project-specific code structure as MiaoDesk source;
+- it is acceptable to study public behavior, Windows API sequences, edge cases and compatibility strategies, then independently implement the same class of behavior in MiaoDesk;
+- when a Lively implementation detail is studied, record the behavior/API contract in MiaoDesk documentation first, then implement it independently.
 
 The goal is clean-room-style reimplementation of the Windows behavior, not source-code porting.
 
@@ -38,14 +38,14 @@ The distinction is mandatory:
 Product capability benchmark
     Wallpaper Engine-class feature depth
               ↓
-TuringDesk product requirements
+MiaoDesk product requirements
               ↓
 Windows implementation reference
     Lively + Microsoft Windows APIs/docs
               ↓
 Independent C++23 implementation
               ↓
-TuringDesk runtime
+MiaoDesk runtime
 ```
 
 Rules:
@@ -53,14 +53,14 @@ Rules:
 1. Product designers may use Wallpaper Engine-class workflows to define expected functionality.
 2. Runtime engineers must not search Wallpaper Engine internals as the engineering source of truth.
 3. Windows wallpaper implementation work starts from this document, Lively behavior, and Microsoft API behavior.
-4. TuringDesk-specific AI, Widget and Desktop Control architecture remains authoritative where Lively has no equivalent.
+4. MiaoDesk-specific AI, Widget and Desktop Control architecture remains authoritative where Lively has no equivalent.
 
 ## 4. C++ subsystem target
 
 The wallpaper runtime should converge toward explicit native modules instead of accumulating desktop-shell behavior inside one large window class.
 
 ```text
-TuringDeskWallpaper
+MiaoDeskWallpaper
 ├─ DesktopShellHost
 │  ├─ Progman / WorkerW discovery
 │  ├─ raised-desktop detection
@@ -176,11 +176,11 @@ Important requirements:
 - WebView2 user-data directories remain isolated by wallpaper/widget identity where needed;
 - navigation, permissions, popup behavior and external protocols remain restricted;
 - recovery must distinguish WebView process crash, controller creation failure, desktop attachment failure and hidden/z-order failure;
-- Widget and Web wallpaper surfaces must not accidentally pause simply because a TuringDesk-owned Settings/Search window is open.
+- Widget and Web wallpaper surfaces must not accidentally pause simply because a MiaoDesk-owned Settings/Search window is open.
 
 ## 7. Wallpaper and Widget z-order
 
-TuringDesk has an additional requirement beyond a conventional wallpaper engine: persistent Widgets.
+MiaoDesk has an additional requirement beyond a conventional wallpaper engine: persistent Widgets.
 
 Logical composition:
 
@@ -198,13 +198,13 @@ The exact HWND ordering depends on the active Windows desktop model, but these i
 
 - Wallpaper is below desktop icons.
 - Default Widget mode is also below desktop icons so icons remain usable.
-- Widget must be above the TuringDesk wallpaper surface.
+- Widget must be above the MiaoDesk wallpaper surface.
 - Interactive Widget mode, if added later, must be explicit and must not globally break normal desktop input.
 - Z-order repair is centralized; individual Widget/Web processes do not independently guess shell ordering.
 
 ## 8. Multi-monitor behavior
 
-Use Lively as a mature behavior reference for the normal arrangements, while retaining TuringDesk's stable monitor identity model.
+Use Lively as a mature behavior reference for the normal arrangements, while retaining MiaoDesk's stable monitor identity model.
 
 Required arrangements:
 
@@ -286,7 +286,7 @@ verify visible health
 ## 11. Screensaver direction
 
 > **Scope note (2026-08-29)**：屏保已列入产品基线「明确不在范围内」，不属于当前八条产品原则的范围。
-> 本节保留仅作为 Lively 行为研究记录，不构成 TuringDesk 的实施承诺。
+> 本节保留仅作为 Lively 行为研究记录，不构成 MiaoDesk 的实施承诺。
 
 Screensaver support is part of basic wallpaper-product parity, not an editor-only feature.
 
@@ -343,7 +343,7 @@ Minimum interactive checks:
 - local Web wallpaper is visible behind icons;
 - Web Widget is visible in its configured monitor region;
 - desktop icons remain usable;
-- opening TuringDesk Settings does not hide/pause the Widget incorrectly;
+- opening MiaoDesk Settings does not hide/pause the Widget incorrectly;
 - taskbar remains usable;
 - monitor disconnect/reconnect restores surfaces;
 - Explorer restart restores surfaces;
@@ -357,7 +357,7 @@ For future wallpaper implementation work:
 
 ```text
 Document index / status       -> DOC-INDEX.md
-Product behavior target       -> TURINGDESK-PRODUCT-BASELINE.md
+Product behavior target       -> MIAODESK-PRODUCT-BASELINE.md
 Capability backlog            -> WALLPAPER_ENGINE_PARITY.md
 Windows runtime implementation -> LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md
 Desktop/Widget layering       -> DESKTOP_COMPOSITION_ARCHITECTURE.md

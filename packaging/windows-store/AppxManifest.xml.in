@@ -9,7 +9,7 @@
   </Properties>
   <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
   <Applications>
-    <Application Id="MiaoMiao" Executable="TuringDesk.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="MiaoMiao" Executable="MiaoDesk.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="妙喵" Description="妙喵 AI 桌面" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>

@@ -1,4 +1,4 @@
-#include "turingdesk/WallpaperApplicationRules.h"
+#include "miaodesk/WallpaperApplicationRules.h"
 
 #include <algorithm>
 #include <chrono>
@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr ULONGLONG kCacheRefreshMs = 1000;
@@ -25,7 +25,7 @@ fs::path DefaultStoragePath() {
     fs::path root = (length > 0 && length < std::size(local))
         ? fs::path(local)
         : fs::temp_directory_path();
-    return root / L"TuringDesk" / L"WallpaperLibrary" / L"application-rules.ini";
+    return root / L"MiaoDesk" / L"WallpaperLibrary" / L"application-rules.ini";
 }
 
 void SetError(std::wstring* error, std::wstring value) {
@@ -337,7 +337,7 @@ std::optional<std::size_t> WallpaperApplicationRules::FindIndex(std::wstring_vie
 bool WallpaperApplicationRules::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-AppRules-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-AppRules-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -392,4 +392,4 @@ void InvalidateApplicationRuleCache() noexcept {
     g_cacheTick = 0;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

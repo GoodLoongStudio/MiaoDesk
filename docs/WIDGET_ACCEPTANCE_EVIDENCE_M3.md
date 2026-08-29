@@ -8,24 +8,24 @@ The interactive Widget acceptance flow remains:
 baseline -> settings -> search -> explorer -> monitor
 ```
 
-Passing probes and CI are not visual product acceptance. A real ARM64 Windows operator must still visually confirm that the Widget stays above the TuringDesk wallpaper, below desktop icons, remains visible while Settings/Search are open, recovers after Explorer restart, and returns to the correct monitor/geometry after display topology changes.
+Passing probes and CI are not visual product acceptance. A real ARM64 Windows operator must still visually confirm that the Widget stays above the MiaoDesk wallpaper, below desktop icons, remains visible while Settings/Search are open, recovers after Explorer restart, and returns to the correct monitor/geometry after display topology changes.
 
 ## Durable evidence set
 
-The successful `baseline` phase fingerprints the exact `TuringDeskWidgetAcceptance.exe` used to start the sequence. The runner writes `widget-acceptance-binary.sha256` with the executable SHA-256 and byte length. Every later phase refuses to run if that executable differs.
+The successful `baseline` phase fingerprints the exact `MiaoDeskWidgetAcceptance.exe` used to start the sequence. The runner writes `widget-acceptance-binary.sha256` with the executable SHA-256 and byte length. Every later phase refuses to run if that executable differs.
 
-The successful baseline also records the enabled Web Widget placement configuration in `widget-acceptance-baseline.config` using schema `turingdesk.widget-acceptance-config.v2`. This snapshot is produced through `WidgetService::List`, not direct Store/INI access, and includes stable Widget id, target `monitorId`, kind, exact normalized x/y/width/height values, zIndex and enabled state. Runtime PID/HWND identity is deliberately excluded because Explorer/runtime recovery may legally recreate those surfaces. Settings/Search/Explorer/monitor phases compare the current service-routed configuration with this baseline before the runtime probe can advance the sequence cursor; any change invalidates the round and requires a new baseline.
+The successful baseline also records the enabled Web Widget placement configuration in `widget-acceptance-baseline.config` using schema `miaodesk.widget-acceptance-config.v2`. This snapshot is produced through `WidgetService::List`, not direct Store/INI access, and includes stable Widget id, target `monitorId`, kind, exact normalized x/y/width/height values, zIndex and enabled state. Runtime PID/HWND identity is deliberately excluded because Explorer/runtime recovery may legally recreate those surfaces. Settings/Search/Explorer/monitor phases compare the current service-routed configuration with this baseline before the runtime probe can advance the sequence cursor; any change invalidates the round and requires a new baseline.
 
 The native acceptance probe also writes `widget-acceptance-baseline.session`. All five phase reports must come from that same Windows session. The sealer includes this checkpoint as first-class evidence, records `baselineSessionId` in the manifest, and refuses to seal from a different interactive Windows session.
 
-The `settings` and `search` phases also require observed product-window evidence before their Widget health probe runs. The runner must see `TuringDesk.Native.DesktopLibrary` from `TuringDeskWallpaper` during `settings`, and `TuringDesk.Native.SearchWindow` from `TuringDesk` during `search`, in the same interactive Windows session. Those observations are persisted as:
+The `settings` and `search` phases also require observed product-window evidence before their Widget health probe runs. The runner must see `MiaoDesk.Native.DesktopLibrary` from `MiaoDeskWallpaper` during `settings`, and `MiaoDesk.Native.SearchWindow` from `MiaoDesk` during `search`, in the same interactive Windows session. Those observations are persisted as:
 
 ```text
 widget-acceptance-settings.window.json
 widget-acceptance-search.window.json
 ```
 
-Both use schema `turingdesk.widget-window-evidence.v1` and record phase, UTC observation time, process name/PID, session id, class name and title. This proves the Settings/Search phases correspond to actual observed TuringDesk windows rather than labels alone.
+Both use schema `miaodesk.widget-window-evidence.v1` and record phase, UTC observation time, process name/PID, session id, class name and title. This proves the Settings/Search phases correspond to actual observed MiaoDesk windows rather than labels alone.
 
 After the `monitor` phase succeeds, the operator must explicitly record the human visual gate:
 
@@ -41,7 +41,7 @@ After the `monitor` phase succeeds, the operator must explicitly record the huma
   -MonitorRecoveryVisible
 ```
 
-This command is intentionally explicit. It records `widget-acceptance-human-visual.json` plus a SHA-256 sidecar using schema `turingdesk.widget-visual-acceptance.v1`. The attestation is bound to the exact acceptance binary and to the SHA-256 of all five phase screenshots, so a review from another run cannot be silently reused.
+This command is intentionally explicit. It records `widget-acceptance-human-visual.json` plus a SHA-256 sidecar using schema `miaodesk.widget-visual-acceptance.v1`. The attestation is bound to the exact acceptance binary and to the SHA-256 of all five phase screenshots, so a review from another run cannot be silently reused.
 
 **Human review** is a distinct gate from runtime health and screenshot hashing. The reviewer must inspect the live interactive desktop and/or the exact five hashed screenshots before recording the attestation; a script-generated or CI-only attestation is not acceptable evidence.
 
@@ -68,11 +68,11 @@ The sealer refuses to run unless the sequence cursor is exactly `monitor`, the b
 It writes:
 
 ```text
-%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-evidence.manifest.json
-%LOCALAPPDATA%\TuringDesk\Diagnostics\widget-acceptance-evidence.manifest.sha256
+%LOCALAPPDATA%\MiaoDesk\Diagnostics\widget-acceptance-evidence.manifest.json
+%LOCALAPPDATA%\MiaoDesk\Diagnostics\widget-acceptance-evidence.manifest.sha256
 ```
 
-The manifest schema is `turingdesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records a `placementConfig` identity containing the baseline config file name, SHA-256 and byte length, acceptance binary identity, `baselineSessionId`, observed Settings/Search evidence mapping, baseline Widget identity set, Windows session/machine metadata and the human reviewer/timestamp.
+The manifest schema is `miaodesk.widget-acceptance-evidence.v1`. Every required evidence file is recorded with file name, byte length, SHA-256 and last-write UTC timestamp. The manifest also records a `placementConfig` identity containing the baseline config file name, SHA-256 and byte length, acceptance binary identity, `baselineSessionId`, observed Settings/Search evidence mapping, baseline Widget identity set, Windows session/machine metadata and the human reviewer/timestamp.
 
 The sealer immediately runs the independent verifier after writing the manifest.
 

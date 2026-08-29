@@ -1,4 +1,4 @@
-#include "turingdesk/A2UIParser.h"
+#include "miaodesk/A2UIParser.h"
 
 #include <windows.h>
 
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace turingdesk::a2ui {
+namespace miaodesk::a2ui {
 namespace {
 
 enum class JsonKind { Null, Boolean, Number, String, Array, Object };
@@ -529,4 +529,4 @@ std::string BuiltInWidgetExampleCatalogJson() {
     return R"JSON({"examples":[{"key":"today_tasks","title":"Today Tasks"},{"key":"focus_clock","title":"Focus Clock"},{"key":"weather_glass","title":"Weather Glass"},{"key":"system_pulse","title":"System Pulse"}]})JSON";
 }
 
-} // namespace turingdesk::a2ui
+} // namespace miaodesk::a2ui

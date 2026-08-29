@@ -1,7 +1,7 @@
-namespace turingdesk {
+namespace miaodesk {
 namespace {
 
-constexpr wchar_t kConversationCornerResizeCoreProcProperty[] = L"TuringDesk.Conversation.CornerResizeCoreProc";
+constexpr wchar_t kConversationCornerResizeCoreProcProperty[] = L"MiaoDesk.Conversation.CornerResizeCoreProc";
 
 int ConversationCornerResizeEdgeAtPoint(const ConversationState& state, POINT point) {
     RECT client{};
@@ -73,4 +73,4 @@ void EnsureConversationCornerResizeBridge(HWND panel) {
 }
 
 } // namespace
-} // namespace turingdesk
+} // namespace miaodesk

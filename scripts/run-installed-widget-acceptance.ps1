@@ -8,8 +8,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $runner = Join-Path $PSScriptRoot 'run-widget-runtime-acceptance.ps1'
 $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { throw 'LOCALAPPDATA is unavailable.' }
-$installedDir = Join-Path $localAppData 'TuringDesk\NativeTest'
-$probe = Join-Path $installedDir 'TuringDeskWidgetAcceptance.exe'
+$installedDir = Join-Path $localAppData 'MiaoDesk\NativeTest'
+$probe = Join-Path $installedDir 'MiaoDeskWidgetAcceptance.exe'
 $installedMarker = Join-Path $installedDir '.installed-build-sha'
 
 function Get-PeMachine([string]$Path) {
@@ -32,7 +32,7 @@ if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw "M3 acceptance phase runner is missing: $runner"
 }
 if (-not (Test-Path -LiteralPath $probe -PathType Leaf)) {
-    throw "Installed M3 acceptance probe is missing: $probe. Run the ARM64 one-click updater for a build that packages TuringDeskWidgetAcceptance.exe."
+    throw "Installed M3 acceptance probe is missing: $probe. Run the ARM64 one-click updater for a build that packages MiaoDeskWidgetAcceptance.exe."
 }
 if (-not (Test-Path -LiteralPath $installedMarker -PathType Leaf)) {
     throw "Installed validated build marker is missing: $installedMarker. Re-run the ARM64 one-click updater before M3 acceptance."
@@ -54,7 +54,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
     if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($checkoutSha)) {
         $checkoutSha = ([string]$checkoutSha).Trim().ToLowerInvariant()
         if ($checkoutSha -ne $buildSha) {
-            throw "Installed M3 acceptance build does not match this checkout. installed=$buildSha checkout=$checkoutSha. Update TuringDesk or switch the checkout before collecting evidence."
+            throw "Installed M3 acceptance build does not match this checkout. installed=$buildSha checkout=$checkoutSha. Update MiaoDesk or switch the checkout before collecting evidence."
         }
     }
 }

@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $input = (Resolve-Path $InputDirectory).Path
-foreach ($required in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+foreach ($required in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
     if (-not (Test-Path (Join-Path $input $required) -PathType Leaf)) {
         throw "InputDirectory is missing $required."
     }

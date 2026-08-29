@@ -1,4 +1,4 @@
-#include "turingdesk/WallpaperMonitorLayout.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 using GetDpiForMonitorFn = HRESULT (WINAPI*)(HMONITOR, int, UINT*, UINT*);
@@ -311,4 +311,4 @@ bool SelfTestMonitorLayoutGeometry() noexcept {
            ParseLayoutMode(L"primary") == LayoutMode::PrimaryOnly && ParseLayoutMode(L"unknown") == LayoutMode::Span;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

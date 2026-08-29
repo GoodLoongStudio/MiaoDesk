@@ -1,6 +1,6 @@
-#include "turingdesk/PerformanceUiAdapter.h"
+#include "miaodesk/PerformanceUiAdapter.h"
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 
 bool PerformanceUiAdapter::AssignError(const desktop::PerformanceServiceResult& result, std::wstring* error) {
     if (result.success) return true;
@@ -16,4 +16,4 @@ bool PerformanceUiAdapter::Save(const PerformanceConfig& config, std::wstring* e
     return AssignError(service_.SaveConfig(config), error);
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

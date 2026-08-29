@@ -1,9 +1,9 @@
-#include "turingdesk/DesktopShellDiagnostics.h"
+#include "miaodesk/DesktopShellDiagnostics.h"
 
 #include <iterator>
 #include <sstream>
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 bool AppearsBelow(HWND surface, HWND anchor) noexcept {
@@ -19,8 +19,8 @@ bool IsKnownWallpaperSurface(HWND window) noexcept {
     if (!window || !IsWindow(window)) return false;
     wchar_t className[160]{};
     if (GetClassNameW(window, className, static_cast<int>(std::size(className))) <= 0) return false;
-    return _wcsicmp(className, L"TuringDesk.Native.WallpaperHost") == 0 ||
-           _wcsicmp(className, L"TuringDesk.Native.WebWallpaperHost") == 0;
+    return _wcsicmp(className, L"MiaoDesk.Native.WallpaperHost") == 0 ||
+           _wcsicmp(className, L"MiaoDesk.Native.WebWallpaperHost") == 0;
 }
 
 bool LegacyRoleOrderValid(HWND surface, DesktopSurfaceRole role) noexcept {
@@ -114,4 +114,4 @@ std::wstring DescribeDesktopAttachment(const DesktopAttachmentDiagnostics& diagn
     return text.str();
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

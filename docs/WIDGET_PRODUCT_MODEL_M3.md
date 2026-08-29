@@ -1,11 +1,11 @@
-# TuringDesk Widget Product Model (M3)
+# MiaoDesk Widget Product Model (M3)
 
 Status: normative product contract
 Date: 2026-08-28
 
 ## User meaning
 
-A TuringDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, renderer processes, normalized coordinates, z-index values, or runtime attachment details.
+A MiaoDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, renderer processes, normalized coordinates, z-index values, or runtime attachment details.
 
 The three showcase Widgets are **Native** Widgets rendered by `NativeWidgetHost` with Direct2D, not WebView2 surfaces. This follows the product baseline performance principle: Widgets are part of the always-on desktop render layer.
 
@@ -71,7 +71,7 @@ Expected visual order remains:
 ```text
 desktop icons
 Widget
-TuringDesk wallpaper
+MiaoDesk wallpaper
 ```
 
 ## Landed implementation
@@ -86,7 +86,7 @@ The M3 product path now includes:
 - `DesktopWidgetController::MoveTo` for service-routed placement updates;
 - no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
 - runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
-- `TuringDeskWidgetAcceptance.exe` requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap at the initial baseline checkpoint;
+- `MiaoDeskWidgetAcceptance.exe` requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap at the initial baseline checkpoint;
 - a single arbitrary Widget can no longer satisfy M3 real-Windows acceptance;
 - `scripts/verify-widget-product-model.ps1` guards the fixed-format controller contract, drag persistence path, and strict three-widget acceptance set while preventing the controller from regaining shell attachment ownership;
 - x64/ARM64 exact-head workflows run the Widget product guard in addition to source-layout/domain/shell contracts.
@@ -105,7 +105,7 @@ click create three times
 -> all three visibly render
 -> all three occupy non-overlapping automatic placements on each display at baseline
 -> user drag may reposition widgets after baseline without invalidating preset-owned sizes
--> all remain above TuringDesk wallpaper and below desktop icons
+-> all remain above MiaoDesk wallpaper and below desktop icons
 -> settings window does not hide or pause them
 -> search window does not hide or pause them
 -> Explorer restart restores them

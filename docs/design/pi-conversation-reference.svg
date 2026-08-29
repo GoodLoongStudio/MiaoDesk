@@ -22,7 +22,7 @@
     <rect x="330" y="70" width="540" height="610" rx="28" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.78"/>
   </g>
 
-  <text x="370" y="118" font-family="Segoe UI, sans-serif" font-size="24" font-weight="600" fill="#34445a">图灵 AI</text>
+  <text x="370" y="118" font-family="Segoe UI, sans-serif" font-size="24" font-weight="600" fill="#34445a">妙喵 AI</text>
   <circle cx="820" cy="108" r="4" fill="#7f8ea3"/>
   <circle cx="836" cy="108" r="4" fill="#7f8ea3"/>
   <circle cx="852" cy="108" r="4" fill="#7f8ea3"/>
@@ -55,6 +55,6 @@
   </g>
   <circle cx="433" cy="722" r="8" fill="none" stroke="#748399" stroke-width="2"/>
   <line x1="439" y1="728" x2="445" y2="734" stroke="#748399" stroke-width="2" stroke-linecap="round"/>
-  <text x="462" y="728" font-family="Segoe UI, sans-serif" font-size="16" fill="#6d7989">搜索应用、文件或图灵 AI</text>
+  <text x="462" y="728" font-family="Segoe UI, sans-serif" font-size="16" fill="#6d7989">搜索应用、文件或妙喵 AI</text>
   <text x="768" y="729" font-family="Segoe UI Symbol, sans-serif" font-size="18" fill="#748399">✦</text>
 </svg>

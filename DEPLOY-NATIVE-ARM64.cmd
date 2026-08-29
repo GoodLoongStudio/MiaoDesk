@@ -2,11 +2,11 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-title TuringDesk ARM64 Smart Developer Runner
+title MiaoDesk ARM64 Smart Developer Runner
 
 echo.
 echo ========================================
-echo   TuringDesk ARM64 Smart Developer Runner
+echo   MiaoDesk ARM64 Smart Developer Runner
 echo ========================================
 echo.
 
@@ -22,7 +22,7 @@ if errorlevel 1 (
   goto :fail
 )
 
-echo [1/2] Updating TuringDesk main...
+echo [1/2] Updating MiaoDesk main...
 git pull --ff-only
 if errorlevel 1 goto :fail
 

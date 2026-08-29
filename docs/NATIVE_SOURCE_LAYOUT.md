@@ -1,4 +1,4 @@
-# TuringDesk native source layout
+# MiaoDesk native source layout
 
 Status: normative engineering structure contract.
 Date: 2026-08-25
@@ -39,7 +39,7 @@ src/native/
 │     ├─ widgets/
 │     ├─ automation/
 │     └─ performance/
-└─ include/turingdesk/
+└─ include/miaodesk/
 ```
 
 Canonical implementation roots are explicit, reviewable paths:
@@ -86,7 +86,7 @@ src/native/src/ui/performance
 
 ## Public headers
 
-Public headers intentionally remain under `include/turingdesk/` during this migration so existing include statements and API contracts stay stable while implementation files move. Header namespace/folder subdivision may happen later together with explicit library targets; it must not be mixed into a pure source-layout migration.
+Public headers intentionally remain under `include/miaodesk/` during this migration so existing include statements and API contracts stay stable while implementation files move. Header namespace/folder subdivision may happen later together with explicit library targets; it must not be mixed into a pure source-layout migration.
 
 ## Build graph rule
 

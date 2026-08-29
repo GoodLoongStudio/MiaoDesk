@@ -1,9 +1,9 @@
-#include "turingdesk/GeneratedDesktopPreview.h"
+#include "miaodesk/GeneratedDesktopPreview.h"
 
-#include "turingdesk/A2UIParser.h"
-#include "turingdesk/DesktopControlService.h"
-#include "turingdesk/WallpaperPackage.h"
-#include "turingdesk/WidgetIntentComposer.h"
+#include "miaodesk/A2UIParser.h"
+#include "miaodesk/DesktopControlService.h"
+#include "miaodesk/WallpaperPackage.h"
+#include "miaodesk/WidgetIntentComposer.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -31,11 +31,11 @@ namespace fs = std::filesystem;
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 
-namespace turingdesk::preview {
+namespace miaodesk::preview {
 namespace {
 
-constexpr wchar_t kSearchWindowClass[] = L"TuringDesk.Native.SearchWindow";
-constexpr wchar_t kPreviewWindowClass[] = L"TuringDesk.GeneratedDesktopPreview";
+constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
+constexpr wchar_t kPreviewWindowClass[] = L"MiaoDesk.GeneratedDesktopPreview";
 constexpr int kApplyButtonId = 7101;
 constexpr int kRejectButtonId = 7102;
 constexpr std::uintmax_t kMaxImageBytes = 25ull * 1024ull * 1024ull;
@@ -108,7 +108,7 @@ fs::path TempPreviewRoot() {
     std::error_code ec;
     auto root = fs::temp_directory_path(ec);
     if (ec) return {};
-    root /= L"TuringDesk";
+    root /= L"MiaoDesk";
     root /= L"AI_Generated";
     fs::create_directories(root, ec);
     return ec ? fs::path{} : root;
@@ -119,7 +119,7 @@ fs::path LocalGeneratedWallpaperRoot() {
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw)) || !raw) return {};
     fs::path root(raw);
     CoTaskMemFree(raw);
-    root /= L"TuringDesk";
+    root /= L"MiaoDesk";
     root /= L"GeneratedWallpapers";
     std::error_code ec;
     fs::create_directories(root, ec);
@@ -346,7 +346,7 @@ NativeToolResult CreateWidgetPreview(std::string_view arguments) {
 
     if (!NotifyMainProcess(dir)) {
         fs::remove_all(dir, ec);
-        return {false, L"沙盒已生成，但没有找到正在运行的 TuringDesk 主进程来展示预览。"};
+        return {false, L"沙盒已生成，但没有找到正在运行的 MiaoDesk 主进程来展示预览。"};
     }
     return {true, L"小组件已进入沙盒预览。只有你点击“应用”后才会添加到桌面。preview=" + id};
 }
@@ -424,7 +424,7 @@ NativeToolResult CreateWallpaperPreview(std::string_view arguments) {
 
     if (!NotifyMainProcess(dir)) {
         fs::remove_all(dir, ec);
-        return {false, L"沙盒已生成，但没有找到正在运行的 TuringDesk 主进程来展示预览。"};
+        return {false, L"沙盒已生成，但没有找到正在运行的 MiaoDesk 主进程来展示预览。"};
     }
     return {true, L"壁纸已进入沙盒预览。当前桌面没有被修改；只有你点击“应用”后才会生效。preview=" + id};
 }
@@ -581,8 +581,8 @@ bool ApplyWallpaper(const std::shared_ptr<PreviewState>& state, std::wstring& me
     }
 
     const auto root = LocalGeneratedWallpaperRoot();
-    if (root.empty()) { message = L"无法创建 TuringDesk 托管壁纸目录。"; return false; }
-    const std::wstring packageName = L"AI-" + NewPreviewId() + L".tdwall";
+    if (root.empty()) { message = L"无法创建 MiaoDesk 托管壁纸目录。"; return false; }
+    const std::wstring packageName = L"AI-" + NewPreviewId() + L".mdwall";
     const fs::path package = root / packageName;
 
     std::string trustedSource = state->source;
@@ -602,7 +602,7 @@ bool ApplyWallpaper(const std::shared_ptr<PreviewState>& state, std::wstring& me
             Utf8ToWide(state->title.empty() ? "AI Wallpaper" : state->title),
             html,
             L"ai-preview-approved",
-            L"TuringDesk",
+            L"MiaoDesk",
             &packageError)) {
         message = packageError.empty() ? L"无法创建托管壁纸包。" : packageError;
         return false;
@@ -626,7 +626,7 @@ bool ApplyWallpaper(const std::shared_ptr<PreviewState>& state, std::wstring& me
         message = result.message;
         return false;
     }
-    message = L"壁纸已应用到 TuringDesk 桌面。";
+    message = L"壁纸已应用到 MiaoDesk 桌面。";
     return true;
 }
 
@@ -661,7 +661,7 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
         if (state && LOWORD(wParam) == kApplyButtonId) {
             std::wstring messageText;
             const bool success = state->kind == "widget" ? ApplyWidget(state, messageText) : ApplyWallpaper(state, messageText);
-            MessageBoxW(hwnd, messageText.c_str(), success ? L"TuringDesk" : L"TuringDesk · 应用失败", success ? MB_OK | MB_ICONINFORMATION : MB_OK | MB_ICONERROR);
+            MessageBoxW(hwnd, messageText.c_str(), success ? L"MiaoDesk" : L"MiaoDesk · 应用失败", success ? MB_OK | MB_ICONINFORMATION : MB_OK | MB_ICONERROR);
             if (success) {
                 state->committed = true;
                 DestroyWindow(hwnd);
@@ -714,7 +714,7 @@ bool ShowPreviewWindow(HWND owner, const fs::path& dir) {
     std::shared_ptr<PreviewState> state;
     std::wstring error;
     if (!LoadPreviewState(dir, state, error)) {
-        MessageBoxW(owner, error.c_str(), L"TuringDesk · 沙盒预览失败", MB_OK | MB_ICONERROR);
+        MessageBoxW(owner, error.c_str(), L"MiaoDesk · 沙盒预览失败", MB_OK | MB_ICONERROR);
         std::error_code ec;
         fs::remove_all(dir, ec);
         return false;
@@ -722,7 +722,7 @@ bool ShowPreviewWindow(HWND owner, const fs::path& dir) {
     if (!EnsurePreviewWindowClass()) return false;
 
     auto* holder = new std::shared_ptr<PreviewState>(state);
-    const std::wstring title = L"TuringDesk 沙盒预览 · " + Utf8ToWide(state->title);
+    const std::wstring title = L"MiaoDesk 沙盒预览 · " + Utf8ToWide(state->title);
     HWND hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW,
         kPreviewWindowClass,
@@ -807,4 +807,4 @@ bool OpenPreviewById(HWND owner, std::wstring_view previewId) {
     return ShowPreviewWindow(owner, dir);
 }
 
-} // namespace turingdesk::preview
+} // namespace miaodesk::preview

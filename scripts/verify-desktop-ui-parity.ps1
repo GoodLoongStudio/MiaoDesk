@@ -13,7 +13,7 @@ function Require-Text([string]$relativePath) {
 
 $ui = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp'
 $production = Require-Text 'src/native/src/ui/wallpaper/WallpaperLibraryWindowProduction.cpp'
-$header = Require-Text 'src/native/include/turingdesk/WallpaperLibraryWindow.h'
+$header = Require-Text 'src/native/include/miaodesk/WallpaperLibraryWindow.h'
 $cmake = Require-Text 'src/native/CMakeLists.txt'
 $legacyPath = Join-Path $root 'src/native/src/ui/wallpaper/WallpaperLibraryWindow.cpp'
 $candidatePath = Join-Path $root 'src/native/src/ui/wallpaper/WallpaperLibraryWindowV2Candidate.cpp'
@@ -38,7 +38,7 @@ foreach ($forbidden in @(
     'MoveWindow(',
     'ShowWindow(',
     '#define DesktopWidgetStore',
-    '#include "turingdesk/DesktopWidgetStore.h"',
+    '#include "miaodesk/DesktopWidgetStore.h"',
     'WritePrivateProfileStringW',
     'GetPrivateProfileStringW',
     'FindWindowW(L"Progman"',
@@ -83,7 +83,7 @@ foreach ($forbidden in @(
     'kNavDisplaysId',
     'kNavRulesId',
     'kNavPerformanceId',
-    '#include "turingdesk/DesktopWidgetStore.h"',
+    '#include "miaodesk/DesktopWidgetStore.h"',
     'DesktopWidgetStore store',
     'WritePrivateProfileStringW',
     'GetPrivateProfileStringW',
@@ -104,7 +104,7 @@ if ($cmake.Contains('src/ui/wallpaper/WallpaperLibraryWindowV2.cpp')) {
     throw 'Compile V2 through the production translation unit so there is one production entry.'
 }
 if ($cmake.Contains('WallpaperLibraryWindowV2Candidate.cpp') -or
-    $cmake.Contains('TuringDeskDesktopUiV2Candidate')) {
+    $cmake.Contains('MiaoDeskDesktopUiV2Candidate')) {
     throw 'Retired duplicate V2 candidate target must not remain in build graph.'
 }
 

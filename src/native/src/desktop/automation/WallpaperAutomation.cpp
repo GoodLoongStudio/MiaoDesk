@@ -1,4 +1,4 @@
-#include "turingdesk/WallpaperAutomation.h"
+#include "miaodesk/WallpaperAutomation.h"
 
 #include <windows.h>
 
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace turingdesk::wallpaper {
+namespace miaodesk::wallpaper {
 namespace {
 
 constexpr unsigned kAllDaysMask = 0x7f;
@@ -24,7 +24,7 @@ fs::path DefaultStoragePath() {
     const fs::path root = (length > 0 && length < std::size(local))
         ? fs::path(local)
         : fs::temp_directory_path();
-    return root / L"TuringDesk" / L"WallpaperLibrary" / L"automation.ini";
+    return root / L"MiaoDesk" / L"WallpaperLibrary" / L"automation.ini";
 }
 
 void SetError(std::wstring* error, std::wstring value) {
@@ -574,7 +574,7 @@ std::wstring WallpaperAutomationStore::MakeId(std::wstring_view prefix) {
 bool WallpaperAutomationStore::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"TuringDesk-Automation-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-Automation-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -653,4 +653,4 @@ bool WallpaperAutomationStore::SelfTest() {
     return ok;
 }
 
-} // namespace turingdesk::wallpaper
+} // namespace miaodesk::wallpaper

@@ -4,11 +4,16 @@
 #include "turingdesk/DesktopWidgetController.h"
 #include "turingdesk/RuntimeLogger.h"
 #include "turingdesk/LiveLogWindow.h"
+#include "turingdesk/NativeWidgetPainter.h"
+#include "turingdesk/NativeWidgetPreset.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
 #include <windowsx.h>
+#include <d2d1.h>
+#include <dwrite.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
@@ -200,6 +205,10 @@ struct WallpaperLibraryWindow::Impl {
     HFONT smallFont{};
     HFONT cardTitleFont{};
     HFONT cardSmallFont{};
+
+    Microsoft::WRL::ComPtr<ID2D1Factory> widgetPreviewFactory;
+    Microsoft::WRL::ComPtr<IDWriteFactory> widgetPreviewDWrite;
+    Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> widgetPreviewTarget;
 
     ~Impl() {
         if (window && IsWindow(window)) DestroyWindow(window);
@@ -531,6 +540,62 @@ struct WallpaperLibraryWindow::Impl {
         FrameSolid(dc, card, selected ? GetSysColor(COLOR_HIGHLIGHT) : (hover ? RGB(155, 160, 170) : RGB(222, 224, 230)), selected ? 2 : 1);
     }
 
+    bool EnsureNativeWidgetPreviewRenderer() {
+        if (!widgetPreviewFactory) {
+            if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, widgetPreviewFactory.GetAddressOf()))) return false;
+        }
+        if (!widgetPreviewDWrite) {
+            if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                           reinterpret_cast<IUnknown**>(widgetPreviewDWrite.GetAddressOf())))) return false;
+        }
+        if (!widgetPreviewTarget) {
+            const auto properties = D2D1::RenderTargetProperties(
+                D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+                96.0f, 96.0f);
+            if (FAILED(widgetPreviewFactory->CreateDCRenderTarget(&properties, widgetPreviewTarget.GetAddressOf()))) return false;
+        }
+        return true;
+    }
+
+    bool DrawNativeWidgetPreview(HDC dc, const RECT& bounds, const DesktopWidget& widget,
+                                 NativeWidgetPreset preset) {
+        if (!EnsureNativeWidgetPreviewRenderer()) return false;
+        RECT render = bounds;
+        InflateRect(&render, -S(6), -S(6));
+        const int availableW = std::max(1, RectWidth(render));
+        const int availableH = std::max(1, RectHeight(render));
+        const float screenW = static_cast<float>(std::max(1, GetSystemMetrics(SM_CXSCREEN)));
+        const float screenH = static_cast<float>(std::max(1, GetSystemMetrics(SM_CYSCREEN)));
+        const float aspect = std::clamp((widget.width * screenW) / std::max(1.0f, widget.height * screenH), 0.35f, 4.0f);
+        if (static_cast<float>(availableW) / availableH > aspect) {
+            const int fittedW = std::max(1, static_cast<int>(std::lround(availableH * aspect)));
+            render.left += (availableW - fittedW) / 2;
+            render.right = render.left + fittedW;
+        } else {
+            const int fittedH = std::max(1, static_cast<int>(std::lround(availableW / aspect)));
+            render.top += (availableH - fittedH) / 2;
+            render.bottom = render.top + fittedH;
+        }
+
+        FillSolid(dc, bounds, RGB(248, 250, 253));
+        if (FAILED(widgetPreviewTarget->BindDC(dc, &render))) return false;
+        widgetPreviewTarget->SetDpi(96.0f, 96.0f);
+        NativeWidgetPaintContext context{};
+        context.target = widgetPreviewTarget.Get();
+        context.dwrite = widgetPreviewDWrite.Get();
+        context.width = static_cast<float>(std::max(1, RectWidth(render)));
+        context.height = static_cast<float>(std::max(1, RectHeight(render)));
+        context.clearBackground = false;
+        if (preset == NativeWidgetPreset::GlassClock) {
+            GetLocalTime(&context.localTime);
+            context.hasTime = true;
+        }
+        widgetPreviewTarget->BeginDraw();
+        PaintNativeWidgetPreset(context, preset);
+        return SUCCEEDED(widgetPreviewTarget->EndDraw());
+    }
+
     void DrawWidgetCard(HDC dc, int index, const RECT& card) {
         if (index < 0 || static_cast<std::size_t>(index) >= visibleWidgets.size()) return;
         const auto& widget = visibleWidgets[static_cast<std::size_t>(index)];
@@ -538,42 +603,23 @@ struct WallpaperLibraryWindow::Impl {
         const bool hover = widgetHover == index;
         const auto* health = HealthFor(widget.id);
 
-        const bool clock = widget.title.find(L"时钟") != std::wstring::npos;
-        const bool tasks = widget.title.find(L"待办") != std::wstring::npos;
-        const bool weather = widget.title.find(L"天气") != std::wstring::npos;
-        COLORREF previewBase = RGB(72, 87, 132);
-        COLORREF previewAccent = RGB(153, 190, 255);
-        if (clock) {
-            previewBase = RGB(38, 73, 112);
-            previewAccent = RGB(104, 230, 218);
-        } else if (weather) {
-            previewBase = RGB(73, 151, 204);
-            previewAccent = RGB(178, 229, 255);
-        } else if (tasks) {
-            previewBase = RGB(35, 91, 79);
-            previewAccent = RGB(111, 229, 190);
-        }
-
         RECT preview = card;
         preview.bottom -= S(50);
-        FillSolid(dc, preview, previewBase);
-        HBRUSH accentBrush = CreateSolidBrush(previewAccent);
-        HGDIOBJ oldBrush = SelectObject(dc, accentBrush);
-        HPEN accentPen = CreatePen(PS_NULL, 0, previewAccent);
-        HGDIOBJ oldPen = SelectObject(dc, accentPen);
-        const int glow = std::max(S(68), RectHeight(preview));
-        Ellipse(dc, preview.right - glow, preview.top - glow / 3,
-                preview.right + glow / 3, preview.top + glow);
-        SelectObject(dc, oldPen);
-        SelectObject(dc, oldBrush);
-        DeleteObject(accentPen);
-        DeleteObject(accentBrush);
+        NativeWidgetPreset nativePreset{};
+        const bool exactNativePreview = widget.kind == DesktopWidgetKind::Native &&
+            ParseNativePreset(widget.source.wstring(), &nativePreset) &&
+            DrawNativeWidgetPreview(dc, preview, widget, nativePreset);
+        if (!exactNativePreview) {
+            FillSolid(dc, preview, RGB(72, 87, 132));
+            SetBkMode(dc, TRANSPARENT);
+            HGDIOBJ previewOld = SelectObject(dc, titleFont);
+            SetTextColor(dc, RGB(250, 252, 255));
+            DrawTextW(dc, L"组件", -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            SelectObject(dc, previewOld);
+        }
 
         SetBkMode(dc, TRANSPARENT);
         HGDIOBJ old = SelectObject(dc, titleFont);
-        SetTextColor(dc, RGB(250, 252, 255));
-        const wchar_t* previewLabel = clock ? L"12:34" : tasks ? L"待办" : weather ? L"22°" : L"组件";
-        DrawTextW(dc, previewLabel, -1, &preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         RECT textRect{card.left, card.bottom - S(50), card.right, card.bottom};
         FillSolid(dc, textRect, RGB(250, 250, 252));

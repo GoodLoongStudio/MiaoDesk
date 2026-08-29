@@ -130,6 +130,41 @@ bool LooksLikeClockWidget(const fs::path& source) {
            html.find("id=\"time\"") != std::string::npos;
 }
 
+constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\TuringDesk.DesktopWidgetStore.v1";
+
+class WidgetStoreMutexGuard {
+public:
+    WidgetStoreMutexGuard() {
+        handle_ = CreateMutexW(nullptr, FALSE, kWidgetStoreMutexName);
+        if (!handle_) return;
+        const DWORD wait = WaitForSingleObject(handle_, 5000);
+        acquired_ = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
+    }
+    ~WidgetStoreMutexGuard() {
+        if (acquired_) ReleaseMutex(handle_);
+        if (handle_) CloseHandle(handle_);
+    }
+    bool Acquired() const noexcept { return acquired_; }
+private:
+    HANDLE handle_{};
+    bool acquired_{};
+};
+
+bool EnsureStoreLock(const WidgetStoreMutexGuard& guard, std::wstring* error) {
+    if (guard.Acquired()) return true;
+    if (error) *error = L"Desktop widget storage is busy; please retry.";
+    return false;
+}
+
+std::wstring NativeSingletonKey(const DesktopWidget& widget) {
+    if (widget.kind != DesktopWidgetKind::Native || !IsNativePresetSource(widget.source.wstring())) return {};
+    std::wstring key = widget.source.wstring();
+    key += L"|";
+    key += widget.monitorId.empty() ? L"<primary>" : widget.monitorId;
+    std::transform(key.begin(), key.end(), key.begin(), [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+    return key;
+}
+
 } // namespace
 
 DesktopWidgetStore::DesktopWidgetStore() : root_(DefaultRoot()) {}
@@ -193,6 +228,8 @@ std::optional<DesktopWidget> DesktopWidgetStore::Find(std::wstring_view id) cons
 
 bool DesktopWidgetStore::Load(std::wstring* error) {
     if (error) error->clear();
+    WidgetStoreMutexGuard storeLock;
+    if (!EnsureStoreLock(storeLock, error)) return false;
     items_.clear();
     std::error_code ec;
     fs::create_directories(PackageDirectory(), ec);
@@ -235,6 +272,18 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         }
         widget = Normalize(std::move(widget));
         if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty()) continue;
+
+        const std::wstring singletonKey = NativeSingletonKey(widget);
+        if (!singletonKey.empty()) {
+            auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
+                return NativeSingletonKey(existing) == singletonKey;
+            });
+            if (duplicate != items_.end()) {
+                if (!duplicate->enabled && widget.enabled) *duplicate = std::move(widget);
+                repairedText = true;
+                continue;
+            }
+        }
         items_.push_back(std::move(widget));
     }
 
@@ -250,6 +299,8 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
 
 bool DesktopWidgetStore::Save(std::wstring* error) const {
     if (error) error->clear();
+    WidgetStoreMutexGuard storeLock;
+    if (!EnsureStoreLock(storeLock, error)) return false;
     std::error_code ec;
     fs::create_directories(PackageDirectory(), ec);
     if (ec) {
@@ -258,9 +309,11 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
     }
 
     const fs::path manifest = ManifestPath();
-    DeleteFileW(manifest.c_str());
-    if (!CreateUnicodeIni(manifest)) {
-        if (error) *error = L"Unable to create Unicode desktop widget manifest.";
+    fs::path temporary = manifest;
+    temporary += L".tmp";
+    DeleteFileW(temporary.c_str());
+    if (!CreateUnicodeIni(temporary)) {
+        if (error) *error = L"Unable to create temporary Unicode desktop widget manifest.";
         return false;
     }
 
@@ -270,7 +323,8 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
         if (!ids.empty()) ids.push_back(L';');
         ids += widget.id;
     }
-    if (!WriteText(manifest, L"Widgets", L"Ids", ids)) {
+    if (!WriteText(temporary, L"Widgets", L"Ids", ids)) {
+        DeleteFileW(temporary.c_str());
         if (error) *error = L"Unable to save desktop widget index.";
         return false;
     }
@@ -280,28 +334,42 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
         const DesktopWidget widget = Normalize(raw);
         const std::wstring section = L"Widget." + widget.id;
         bool ok = true;
-        ok = WriteText(manifest, section, L"Kind", KindKey(widget.kind)) && ok;
-        ok = WriteText(manifest, section, L"Title", widget.title) && ok;
-        ok = WriteText(manifest, section, L"Source", widget.source.wstring()) && ok;
-        ok = WriteText(manifest, section, L"MonitorId", widget.monitorId) && ok;
-        ok = WriteText(manifest, section, L"X", FloatText(widget.x)) && ok;
-        ok = WriteText(manifest, section, L"Y", FloatText(widget.y)) && ok;
-        ok = WriteText(manifest, section, L"Width", FloatText(widget.width)) && ok;
-        ok = WriteText(manifest, section, L"Height", FloatText(widget.height)) && ok;
-        ok = WriteText(manifest, section, L"ZIndex", std::to_wstring(widget.zIndex)) && ok;
-        ok = WriteText(manifest, section, L"Enabled", widget.enabled ? L"1" : L"0") && ok;
-        ok = WriteText(manifest, section, L"ManagedSource", widget.managedSource ? L"1" : L"0") && ok;
+        ok = WriteText(temporary, section, L"Kind", KindKey(widget.kind)) && ok;
+        ok = WriteText(temporary, section, L"Title", widget.title) && ok;
+        ok = WriteText(temporary, section, L"Source", widget.source.wstring()) && ok;
+        ok = WriteText(temporary, section, L"MonitorId", widget.monitorId) && ok;
+        ok = WriteText(temporary, section, L"X", FloatText(widget.x)) && ok;
+        ok = WriteText(temporary, section, L"Y", FloatText(widget.y)) && ok;
+        ok = WriteText(temporary, section, L"Width", FloatText(widget.width)) && ok;
+        ok = WriteText(temporary, section, L"Height", FloatText(widget.height)) && ok;
+        ok = WriteText(temporary, section, L"ZIndex", std::to_wstring(widget.zIndex)) && ok;
+        ok = WriteText(temporary, section, L"Enabled", widget.enabled ? L"1" : L"0") && ok;
+        ok = WriteText(temporary, section, L"ManagedSource", widget.managedSource ? L"1" : L"0") && ok;
         if (!ok) {
+            DeleteFileW(temporary.c_str());
             if (error) *error = L"Unable to save desktop widget: " + widget.id;
             return false;
         }
     }
-    WritePrivateProfileStringW(nullptr, nullptr, nullptr, manifest.c_str());
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, temporary.c_str());
+    if (!MoveFileExW(temporary.c_str(), manifest.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD code = GetLastError();
+        DeleteFileW(temporary.c_str());
+        if (error) *error = L"Unable to atomically replace desktop widget manifest. Win32=" + std::to_wstring(code);
+        return false;
+    }
     return true;
 }
 
 std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, std::wstring* error) {
     if (error) error->clear();
+    WidgetStoreMutexGuard storeLock;
+    if (!EnsureStoreLock(storeLock, error)) return std::nullopt;
+    std::wstring refreshError;
+    if (!Load(&refreshError)) {
+        if (error) *error = refreshError;
+        return std::nullopt;
+    }
     if (widget.id.empty()) widget.id = MakeId();
     if (!SafeId(widget.id)) {
         if (error) *error = L"Desktop widget id is invalid.";
@@ -393,6 +461,10 @@ std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedNative(
 
 bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_view htmlUtf8, std::wstring* error) {
     if (error) error->clear();
+    WidgetStoreMutexGuard storeLock;
+    if (!EnsureStoreLock(storeLock, error)) return false;
+    std::wstring refreshError;
+    if (!Load(&refreshError)) { if (error) *error = refreshError; return false; }
     const auto index = FindIndex(id);
     if (!index) {
         if (error) *error = L"Desktop widget was not found.";
@@ -425,6 +497,10 @@ bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_vie
 
 bool DesktopWidgetStore::Remove(std::wstring_view id, bool deleteManagedSource, std::wstring* error) {
     if (error) error->clear();
+    WidgetStoreMutexGuard storeLock;
+    if (!EnsureStoreLock(storeLock, error)) return false;
+    std::wstring refreshError;
+    if (!Load(&refreshError)) { if (error) *error = refreshError; return false; }
     const auto index = FindIndex(id);
     if (!index) {
         if (error) *error = L"Desktop widget was not found.";

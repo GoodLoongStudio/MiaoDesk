@@ -158,6 +158,31 @@ struct NativeSlot {
     ULONGLONG nextRefreshAt{};
 };
 
+float NativeCornerRadiusDip(NativeWidgetPreset preset, float widthDip) {
+    switch (preset) {
+    case NativeWidgetPreset::GlassClock: return std::clamp(widthDip * 0.075f, 22.0f, 34.0f);
+    case NativeWidgetPreset::WeatherGlass: return std::clamp(widthDip * 0.078f, 22.0f, 32.0f);
+    case NativeWidgetPreset::TodayTasks: return std::clamp(widthDip * 0.070f, 22.0f, 32.0f);
+    }
+    return 24.0f;
+}
+
+void ApplyRoundedWindowRegion(NativeSlot& slot) {
+    if (!slot.hwnd || !IsWindow(slot.hwnd)) return;
+    RECT client{};
+    if (!GetClientRect(slot.hwnd, &client)) return;
+    const int widthPx = std::max<LONG>(1, client.right - client.left);
+    const int heightPx = std::max<LONG>(1, client.bottom - client.top);
+    const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
+    const float widthDip = static_cast<float>(widthPx) * USER_DEFAULT_SCREEN_DPI / static_cast<float>(dpi);
+    const int radiusPx = std::max(1, MulDiv(static_cast<int>(std::lround(NativeCornerRadiusDip(slot.preset, widthDip))),
+                                            static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI));
+    HRGN region = CreateRoundRectRgn(0, 0, widthPx + 1, heightPx + 1, radiusPx * 2, radiusPx * 2);
+    if (!region) return;
+    if (SetWindowRgn(slot.hwnd, region, TRUE) == 0) DeleteObject(region);
+    // On success ownership of the region transfers to Windows.
+}
+
 struct NativeWidgetHostApp {
     HINSTANCE instance{};
     HWND parent{};
@@ -385,6 +410,7 @@ struct NativeWidgetHostApp {
             return 0;
         case WM_SIZE:
             if (slot->target) slot->target->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
+            ApplyRoundedWindowRegion(*slot);
             slot->owner->ResizeDragHandle(*slot);
             return 0;
         case WM_PAINT: {
@@ -465,6 +491,7 @@ struct NativeWidgetHostApp {
         slot.hwnd = hwnd;
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
+        ApplyRoundedWindowRegion(slot);
         slot.dragHandle = CreateWindowExW(
             WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
             0, 0, width, height, hwnd, nullptr, instance, &slot);

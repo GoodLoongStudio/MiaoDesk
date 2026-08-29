@@ -6,7 +6,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <optional>
 #include <fstream>
 #include <iomanip>
 #include <string_view>
@@ -54,15 +56,11 @@ bool PlacementFree(
     return true;
 }
 
-std::pair<float, float> AutomaticPlacement(
+std::optional<std::pair<float, float>> AutomaticPlacement(
     const std::vector<wallpaper::DesktopWidget>& widgets,
     std::wstring_view monitorId,
     float width,
     float height) {
-    // Fixed M3 presets can have different sizes. Scan right-to-left and
-    // top-to-bottom in logical desktop space and reject any candidate that
-    // intersects an enabled Widget on the same monitor. This keeps the showcase
-    // deterministic before the user freely drags the Widget to a preferred position.
     const float maxX = std::max(kPlacementMargin, 1.0f - kPlacementMargin - width);
     const float maxY = std::max(kPlacementMargin, 1.0f - kPlacementMargin - height);
     const int xSteps = std::max(0, static_cast<int>(std::ceil((maxX - kPlacementMargin) / kPlacementGap)));
@@ -73,13 +71,34 @@ std::pair<float, float> AutomaticPlacement(
         for (int yStep = 0; yStep <= ySteps; ++yStep) {
             const float y = std::min(maxY, kPlacementMargin + static_cast<float>(yStep) * kPlacementGap);
             const NormalizedRect candidate{x, y, x + width, y + height};
-            if (PlacementFree(widgets, monitorId, candidate)) return {x, y};
+            if (PlacementFree(widgets, monitorId, candidate)) return std::pair{x, y};
         }
     }
+    return std::nullopt;
+}
 
-    // A crowded desktop should still allow creation; use the canonical top-right
-    // slot as a deterministic fallback rather than exposing coordinates to the user.
-    return {maxX, kPlacementMargin};
+std::wstring CanonicalMonitorId(std::wstring monitorId) {
+    if (monitorId.empty()) return monitorId;
+    const auto topology = wallpaper::QueryMonitorTopology();
+    if (!topology.Valid()) return monitorId;
+    const wallpaper::MonitorInfo* primary = nullptr;
+    for (const auto& monitor : topology.monitors) {
+        if (monitor.primary) { primary = &monitor; break; }
+    }
+    if (!primary && !topology.monitors.empty()) primary = &topology.monitors.front();
+    if (!primary) return monitorId;
+    const auto key = wallpaper::StableMonitorKey(*primary);
+    if (_wcsicmp(key.c_str(), monitorId.c_str()) == 0 ||
+        _wcsicmp(primary->deviceName.c_str(), monitorId.c_str()) == 0) return {};
+    return monitorId;
+}
+
+bool MatchesNativePreset(const wallpaper::DesktopWidget& widget,
+                         wallpaper::NativeWidgetPreset preset,
+                         std::wstring_view monitorId) {
+    if (widget.kind != wallpaper::DesktopWidgetKind::Native || !SameMonitor(widget, monitorId)) return false;
+    wallpaper::NativeWidgetPreset existing{};
+    return wallpaper::ParseNativePreset(widget.source.wstring(), &existing) && existing == preset;
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
@@ -197,32 +216,39 @@ DesktopControlResult DesktopWidgetController::RuntimeHealth(WidgetRuntimeHealth*
 DesktopControlResult DesktopWidgetController::CreateClock(
     std::wstring monitorId,
     wallpaper::DesktopWidget* created) const {
+    monitorId = CanonicalMonitorId(std::move(monitorId));
     std::vector<wallpaper::DesktopWidget> existing;
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
 
-    std::size_t glassCount = 0;
-    std::size_t tasksCount = 0;
-    std::size_t weatherCount = 0;
-    for (const auto& widget : existing) {
-        if (_wcsicmp(widget.title.c_str(), L"玻璃时钟") == 0) ++glassCount;
-        else if (_wcsicmp(widget.title.c_str(), L"今日待办") == 0) ++tasksCount;
-        else if (_wcsicmp(widget.title.c_str(), L"玻璃天气") == 0) ++weatherCount;
+    constexpr std::array<WidgetFixedPreset, 3> order{
+        WidgetFixedPreset::GlassClock,
+        WidgetFixedPreset::TodayTasks,
+        WidgetFixedPreset::WeatherGlass,
+    };
+
+    // The generic "new widget" action fills the built-in showcase exactly once
+    // per display. Identity comes from native: source, never from localized title.
+    for (const auto preset : order) {
+        const bool exists = std::any_of(existing.begin(), existing.end(), [&](const auto& widget) {
+            return MatchesNativePreset(widget, preset, monitorId);
+        });
+        if (!exists) return CreatePreset(preset, monitorId, created);
     }
-
-    // The flagship glass clock wins ties so the first built-in Widget showcases
-    // the richer desktop visual instead of tasks or weather.
-    WidgetFixedPreset preset = WidgetFixedPreset::GlassClock;
-    if (tasksCount < glassCount && tasksCount <= weatherCount) preset = WidgetFixedPreset::TodayTasks;
-    else if (weatherCount < glassCount && weatherCount < tasksCount) preset = WidgetFixedPreset::WeatherGlass;
-
-    return CreatePreset(preset, std::move(monitorId), created);
+    for (const auto preset : order) {
+        auto disabled = std::find_if(existing.begin(), existing.end(), [&](const auto& widget) {
+            return MatchesNativePreset(widget, preset, monitorId) && !widget.enabled;
+        });
+        if (disabled != existing.end()) return CreatePreset(preset, monitorId, created);
+    }
+    return {false, L"该显示器的玻璃时钟、今日待办和玻璃天气均已存在；请拖动、停用或删除现有组件。"};
 }
 
 DesktopControlResult DesktopWidgetController::CreatePreset(
     WidgetFixedPreset preset,
     std::wstring monitorId,
     wallpaper::DesktopWidget* created) const {
+    monitorId = CanonicalMonitorId(std::move(monitorId));
     std::vector<wallpaper::DesktopWidget> existing;
     const auto listed = service_.ListWidgets(&existing);
     if (!listed.success) return listed;
@@ -230,33 +256,32 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     const auto* definition = wallpaper::NativePresetDefinition(preset);
     if (!definition) return {false, L"未知的原生小组件模板。"};
 
-    const auto [x, y] = AutomaticPlacement(existing, monitorId, definition->defaultWidth, definition->defaultHeight);
-    if (!monitorId.empty()) {
-        const auto topology = wallpaper::QueryMonitorTopology();
-        if (topology.Valid()) {
-            const wallpaper::MonitorInfo* primary = nullptr;
-            for (const auto& monitor : topology.monitors) {
-                if (monitor.primary) {
-                    primary = &monitor;
-                    break;
-                }
-            }
-            if (!primary && !topology.monitors.empty()) primary = &topology.monitors.front();
-            if (primary) {
-                const auto key = wallpaper::StableMonitorKey(*primary);
-                if (_wcsicmp(key.c_str(), monitorId.c_str()) == 0 ||
-                    _wcsicmp(primary->deviceName.c_str(), monitorId.c_str()) == 0) {
-                    monitorId.clear();
-                }
-            }
+    auto duplicate = std::find_if(existing.begin(), existing.end(), [&](const auto& widget) {
+        return MatchesNativePreset(widget, preset, monitorId);
+    });
+    if (duplicate != existing.end()) {
+        if (created) *created = *duplicate;
+        if (!duplicate->enabled) {
+            const auto enabled = SetEnabled(duplicate->id, true);
+            if (enabled.success && created) created->enabled = true;
+            return enabled.success
+                ? DesktopControlResult{true, L"已重新启用现有「" + std::wstring(definition->title) + L"」。"}
+                : enabled;
         }
+        return {false, L"该显示器已经存在「" + std::wstring(definition->title) + L"」，不会重复创建重叠副本。"};
     }
+
+    const auto placement = AutomaticPlacement(existing, monitorId, definition->defaultWidth, definition->defaultHeight);
+    if (!placement) {
+        return {false, L"当前显示器没有足够的空闲区域放置「" + std::wstring(definition->title) + L"」；请先移动或删除现有小组件。"};
+    }
+
     NativeWidgetCreateRequest request;
     request.preset = preset;
     request.title = std::wstring(definition->title);
     request.monitorId = std::move(monitorId);
-    request.x = x;
-    request.y = y;
+    request.x = placement->first;
+    request.y = placement->second;
     request.width = definition->defaultWidth;
     request.height = definition->defaultHeight;
     return service_.CreateNativeWidget(request, created);

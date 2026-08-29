@@ -22,6 +22,9 @@ struct NativeWidgetPaintContext {
     float height{};
     SYSTEMTIME localTime{};
     bool hasTime{};
+    // Desktop surfaces clear to transparent. Management thumbnails render over
+    // an existing GDI card and therefore keep the destination background.
+    bool clearBackground{true};
 };
 
 namespace native_widget_paint {
@@ -117,7 +120,7 @@ void DrawCatMark(ID2D1RenderTarget* target, float x, float y, float scale, ID2D1
 }
 
 void DrawGlassCardBase(const NativeWidgetPaintContext& ctx, D2D1_COLOR_F a, D2D1_COLOR_F b, D2D1_COLOR_F c, float radius) {
-    ctx.target->Clear(D2D1::ColorF(0, 0, 0, 0));
+    if (ctx.clearBackground) ctx.target->Clear(D2D1::ColorF(0, 0, 0, 0));
     const D2D1_RECT_F card{1.0f, 1.0f, ctx.width - 1.0f, ctx.height - 1.0f};
     const std::array<D2D1_GRADIENT_STOP, 3> stops{{{0.0f, a}, {0.55f, b}, {1.0f, c}}};
     auto gradient = LinearBrush(ctx.target, D2D1::Point2F(card.left, card.top), D2D1::Point2F(card.right, card.bottom), stops);

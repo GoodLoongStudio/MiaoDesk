@@ -31,10 +31,19 @@ jobs:
           path = Path('scripts/miaodesk-brand-scenes-migrate.py')
           text = path.read_text(encoding='utf-8')
           old = 'if not path.is_file() or ".git" in path.parts or not is_text_file(path):'
-          new = 'if not path.is_file() or ".git" in path.parts:'
-          if old not in text:
-              raise SystemExit('migration scan anchor missing')
-          path.write_text(text.replace(old, new), encoding='utf-8')
+          new = 'if not path.is_file() or ".git" in path.parts or ".github/workflows" in path.as_posix():'
+          if old in text:
+              text = text.replace(old, new)
+          else:
+              old2 = 'if not path.is_file() or ".git" in path.parts:'
+              if old2 not in text:
+                  raise SystemExit('migration scan anchor missing')
+              text = text.replace(old2, new)
+          old_remove = 'for path in (SELF, WORKFLOW):'
+          if old_remove not in text:
+              raise SystemExit('one-shot cleanup anchor missing')
+          text = text.replace(old_remove, 'for path in (SELF,):')
+          path.write_text(text, encoding='utf-8')
           PY
 
       - name: Apply complete MiaoDesk migration
@@ -44,12 +53,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- . ':!LICENSE'; then
-            echo 'Old brand token remains in tracked text files.' >&2
+          if git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- . ':!.github/workflows/**' ':!LICENSE'; then
+            echo 'Old brand token remains in tracked product text files.' >&2
             exit 1
           fi
-          if find . -path './.git' -prune -o -print | grep -E 'TuringDesk|turingdesk|TURINGDESK|图灵'; then
-            echo 'Old brand token remains in a tracked path.' >&2
+          if find . -path './.git' -prune -o -path './.github/workflows' -prune -o -print | grep -E 'TuringDesk|turingdesk|TURINGDESK|图灵'; then
+            echo 'Old brand token remains in a product path.' >&2
             exit 1
           fi
           test -f src/native/include/miaodesk/SceneWallpaperPainter.h
@@ -90,8 +99,8 @@ jobs:
           foreach ($marker in @('PaintMiaoCloud','PaintNeonCity','PaintMysticMoon')) {
             if (-not (Select-String -LiteralPath $header -SimpleMatch $marker -Quiet)) { throw "Missing $marker" }
           }
-          $legacy = git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- .
-          if ($LASTEXITCODE -eq 0) { $legacy | Write-Host; throw 'Old brand token remains' }
+          $legacy = git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- . ':(exclude).github/workflows/**'
+          if ($LASTEXITCODE -eq 0) { $legacy | Write-Host; throw 'Old brand token remains outside workflows' }
 
       - name: Configure ARM64
         shell: pwsh

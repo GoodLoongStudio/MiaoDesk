@@ -29,3 +29,4 @@ jobs:
           git add src/native/src/desktop/widgets/NativeWeatherService.cpp
           git commit -m "Harden native weather cache encoding"
           git push origin HEAD:main
+      # One-shot retry after removing a stale patch anchor.

@@ -167,16 +167,35 @@ if ($LASTEXITCODE -ne 0) { throw "git pull failed: $LASTEXITCODE" }
 $headSha = (& git rev-parse HEAD).Trim()
 if ($headSha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve current HEAD.' }
 
-Step "Finding ARM64 preview for $headSha"
-$runs = @(Get-PreviewRuns $headSha 1)
+Step "Finding completed ARM64 preview for $headSha"
+$runs = @(Get-PreviewRuns $headSha 3)
 $run = $null
 $previewSha = $headSha
 $reusedAncestor = $false
 
-if ($runs.Count -gt 0) {
-    $run = $runs[0]
+foreach ($candidate in $runs) {
+    if ([string]$candidate.headSha -ne $headSha) { continue }
+    if ($candidate.status -eq 'completed' -and $candidate.conclusion -eq 'success') {
+        $run = $candidate
+        break
+    }
 }
-else {
+
+if ($null -eq $run) {
+    $active = $runs | Where-Object {
+        [string]$_.headSha -eq $headSha -and $_.status -ne 'completed'
+    } | Select-Object -First 1
+    if ($null -ne $active) {
+        throw "ARM64 preview for current main is already building automatically (run $($active.databaseId)). This shortcut never triggers or waits for GitHub Actions. Please run it again after the build completes."
+    }
+
+    $failed = $runs | Where-Object {
+        [string]$_.headSha -eq $headSha -and $_.status -eq 'completed' -and $_.conclusion -ne 'success'
+    } | Select-Object -First 1
+    if ($null -ne $failed) {
+        throw "ARM64 preview for current main finished with '$($failed.conclusion)' (run $($failed.databaseId)). This shortcut never re-runs GitHub Actions."
+    }
+
     $run = Find-ReusablePreview $headSha
     if ($null -ne $run) {
         $previewSha = [string]$run.headSha
@@ -184,26 +203,15 @@ else {
         Write-Host "No ARM64 binary-impacting changes since $previewSha; reusing that successful preview." -ForegroundColor Yellow
     }
     else {
-        Write-Host 'No safe reusable preview exists for this main SHA; dispatching an ARM64 preview now.' -ForegroundColor Yellow
-        & gh workflow run $Workflow --repo $Repository --ref main
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to dispatch ARM64 preview workflow.' }
-
-        for ($i = 0; $i -lt 30 -and $null -eq $run; $i++) {
-            Start-Sleep -Seconds 2
-            $candidateRuns = @(Get-PreviewRuns $headSha 3)
-            foreach ($candidate in $candidateRuns) {
-                if ([string]$candidate.headSha -eq $headSha) {
-                    $run = $candidate
-                    break
-                }
-            }
-        }
-        if ($null -eq $run) { throw 'Preview workflow was dispatched but its exact-head run did not appear in time.' }
+        throw 'No completed ARM64 preview exists for this binary-changing main SHA. This shortcut never triggers GitHub Actions. Wait for the automatic main build to finish, then run the shortcut again.'
     }
 }
 
 if ($null -eq $run -or -not $run.databaseId) {
-    throw 'Unable to resolve an ARM64 preview workflow run.'
+    throw 'Unable to resolve a completed ARM64 preview workflow run.'
+}
+if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+    throw "Resolved preview run $($run.databaseId) is not a completed successful build."
 }
 if ([string]$run.headSha -notmatch '^[0-9a-f]{40}$') {
     throw "Preview run did not report a valid head SHA. runId=$($run.databaseId)"
@@ -212,16 +220,7 @@ if ([string]$run.headSha -ne $previewSha) {
     throw "Preview run SHA mismatch: run=$($run.headSha) expected=$previewSha checkout=$headSha"
 }
 
-if ($run.status -ne 'completed') {
-    Step "Waiting for GitHub ARM64 preview run $($run.databaseId)"
-    & gh run watch $run.databaseId --repo $Repository --exit-status
-    if ($LASTEXITCODE -ne 0) { throw "ARM64 preview build failed. Run: gh run view $($run.databaseId) --repo $Repository --log-failed" }
-}
-elseif ($run.conclusion -ne 'success') {
-    throw "ARM64 preview run $($run.databaseId) concluded '$($run.conclusion)'."
-}
-
-Step 'Downloading ARM64 preview artifact'
+Step 'Downloading completed ARM64 preview artifact'
 $temp = Join-Path $env:TEMP ("TuringDeskPreview-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {

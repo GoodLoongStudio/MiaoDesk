@@ -1,0 +1,33 @@
+name: Apply native widget hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-native-widget-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply hardening patch
+        run: python .github/patch-native-widget-hardening.py
+      - name: Verify diff
+        run: |
+          git diff --check
+          git diff -- src/native/src/desktop/widgets/DesktopWidgetStore.cpp \
+                     src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp
+      - name: Commit hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/desktop/widgets/DesktopWidgetStore.cpp \
+                  src/native/src/ui/wallpaper/WallpaperLibraryWindowV2.cpp
+          git commit -m "Harden native widget identity and preview parity"
+          git push origin HEAD:main

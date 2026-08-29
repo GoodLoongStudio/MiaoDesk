@@ -1,0 +1,154 @@
+name: Apply API center polish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-api-center-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Polish API center controls
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/native/src/ui/settings/DesktopAiSettingsPage.cpp')
+          text = p.read_text(encoding='utf-8')
+
+          old = '''    auto button = [&](const wchar_t* text, int id) {
+        return CreateWindowExW(0, L"BUTTON", text,
+                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                               0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
+    };'''
+          new = '''    auto button = [&](const wchar_t* text, int id) {
+        return CreateWindowExW(0, L"BUTTON", text,
+                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                               0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
+    };'''
+          if old not in text:
+              raise SystemExit('button factory anchor missing')
+          text = text.replace(old, new, 1)
+
+          paint_anchor = '    void Paint(HDC dc) {\n'
+          method = r'''    void DrawActionButton(const DRAWITEMSTRUCT& draw) {
+        const int id = static_cast<int>(draw.CtlID);
+        const bool primary = id == kSaveId || id == kNewId;
+        const bool danger = id == kDeleteId;
+        const bool compact = id == kRevealId || id == kCopyId;
+        const bool pressed = (draw.itemState & ODS_SELECTED) != 0;
+        const bool disabled = (draw.itemState & ODS_DISABLED) != 0;
+        RECT rect = draw.rcItem;
+        InflateRect(&rect, -S(1), -S(1));
+
+        COLORREF background = RGB(252, 254, 255);
+        COLORREF border = RGB(198, 215, 238);
+        COLORREF foreground = RGB(39, 93, 181);
+        if (primary) {
+            background = pressed ? RGB(31, 98, 220) : RGB(43, 116, 255);
+            border = background;
+            foreground = RGB(255, 255, 255);
+        } else if (danger) {
+            background = pressed ? RGB(255, 235, 238) : RGB(255, 249, 250);
+            border = RGB(246, 211, 216);
+            foreground = RGB(220, 62, 72);
+        } else if (compact) {
+            background = pressed ? RGB(232, 242, 255) : RGB(247, 251, 255);
+            border = RGB(218, 229, 244);
+            foreground = RGB(65, 94, 141);
+        } else if (pressed) {
+            background = RGB(237, 245, 255);
+        }
+        if (disabled) {
+            background = RGB(244, 247, 251);
+            border = RGB(226, 232, 240);
+            foreground = RGB(157, 168, 186);
+        }
+        RoundFill(draw.hDC, rect, S(10), background, border);
+        wchar_t label[128]{};
+        GetWindowTextW(draw.hwndItem, label, static_cast<int>(std::size(label)));
+        DrawTextSimple(draw.hDC, bodyFont, foreground, label, rect,
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        if (draw.itemState & ODS_FOCUS) {
+            RECT focus = rect;
+            InflateRect(&focus, -S(4), -S(4));
+            DrawFocusRect(draw.hDC, &focus);
+        }
+    }
+
+'''
+          if 'void DrawActionButton(const DRAWITEMSTRUCT& draw)' not in text:
+              if paint_anchor not in text:
+                  raise SystemExit('Paint anchor missing')
+              text = text.replace(paint_anchor, method + paint_anchor, 1)
+
+          old_draw = '''        if (draw && draw->CtlID == kProfileListId) {
+            state->DrawProfileItem(*draw);
+            return TRUE;
+        }
+        break;'''
+          new_draw = '''        if (draw && draw->CtlID == kProfileListId) {
+            state->DrawProfileItem(*draw);
+            return TRUE;
+        }
+        if (draw && draw->CtlType == ODT_BUTTON) {
+            state->DrawActionButton(*draw);
+            return TRUE;
+        }
+        break;'''
+          if old_draw not in text:
+              raise SystemExit('WM_DRAWITEM anchor missing')
+          text = text.replace(old_draw, new_draw, 1)
+
+          old_delete = '''        if (removing.isDefault) {
+            auto configured = std::find_if(profiles.begin(), profiles.end(), [&](const ApiProfile& p) { return ProfileConfigured(p); });
+            if (configured != profiles.end()) configured->isDefault = true;
+            store.SaveAll(profiles);
+        }
+        RebuildList();'''
+          new_delete = '''        if (removing.isDefault) {
+            auto configured = std::find_if(profiles.begin(), profiles.end(), [&](const ApiProfile& p) { return ProfileConfigured(p); });
+            if (configured != profiles.end()) {
+                configured->isDefault = true;
+                const std::wstring key = store.Key(*configured);
+                const ModelProbeResult probe = agent.ProbeModels(configured->baseUrl, key, false);
+                if (probe.ok) {
+                    std::wstring reply;
+                    if (!agent.ApplyModelConfig(probe, configured->model, key, false, reply)) {
+                        configured->lastOk = false;
+                        configured->lastMessage = reply.empty() ? L"默认配置切换失败。" : reply;
+                    }
+                } else {
+                    configured->lastOk = false;
+                    configured->lastMessage = probe.message.empty() ? L"默认配置切换测试失败。" : probe.message;
+                }
+            }
+            store.SaveAll(profiles);
+        }
+        RebuildList();'''
+          if old_delete not in text:
+              raise SystemExit('delete default anchor missing')
+          text = text.replace(old_delete, new_delete, 1)
+
+          p.write_text(text.rstrip() + '\n', encoding='utf-8')
+      - name: Verify patch
+        shell: pwsh
+        run: |
+          Select-String -Path 'src\native\src\ui\settings\DesktopAiSettingsPage.cpp' -Pattern 'DrawActionButton' -SimpleMatch
+          Select-String -Path 'src\native\src\ui\settings\DesktopAiSettingsPage.cpp' -Pattern '默认配置切换失败' -SimpleMatch
+          git diff --check
+      - name: Commit API center polish
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/native/src/ui/settings/DesktopAiSettingsPage.cpp
+          git commit -m "Polish API configuration center controls"
+          git push origin HEAD:main

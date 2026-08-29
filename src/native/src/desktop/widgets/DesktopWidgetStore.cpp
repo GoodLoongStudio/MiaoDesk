@@ -204,7 +204,7 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
     const fs::path manifest = ManifestPath();
     if (!fs::exists(manifest, ec)) return true;
     const bool legacyAnsi = !HasUtf16LeBom(manifest);
-    bool repairedLegacyText = false;
+    bool repairedText = false;
 
     const std::wstring ids = ReadText(manifest, L"Widgets", L"Ids", L"");
     for (const auto& id : SplitIds(ids)) {
@@ -222,22 +222,28 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         widget.zIndex = ReadInt(manifest, section, L"ZIndex", 100);
         widget.enabled = ReadInt(manifest, section, L"Enabled", 1) != 0;
         widget.managedSource = ReadInt(manifest, section, L"ManagedSource", 0) != 0;
-        if (legacyAnsi && widget.managedSource && IsLostLegacyTitle(widget.title)) {
+
+        NativeWidgetPreset nativePreset{};
+        if (widget.kind == DesktopWidgetKind::Native &&
+            ParseNativePreset(widget.source.wstring(), &nativePreset) &&
+            IsLostLegacyTitle(widget.title)) {
+            widget.title = NativePresetTitle(nativePreset);
+            repairedText = true;
+        } else if (legacyAnsi && widget.managedSource && IsLostLegacyTitle(widget.title)) {
             widget.title = LooksLikeClockWidget(widget.source) ? L"桌面时钟" : L"桌面小组件";
-            repairedLegacyText = true;
+            repairedText = true;
         }
         widget = Normalize(std::move(widget));
         if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty()) continue;
         items_.push_back(std::move(widget));
     }
 
-    if (legacyAnsi) {
+    if (legacyAnsi || repairedText) {
         std::wstring migrationError;
         if (!Save(&migrationError)) {
-            if (error) *error = migrationError.empty() ? L"Unable to migrate desktop widget storage to Unicode." : migrationError;
+            if (error) *error = migrationError.empty() ? L"Unable to repair desktop widget storage." : migrationError;
             return false;
         }
-        (void)repairedLegacyText;
     }
     return true;
 }

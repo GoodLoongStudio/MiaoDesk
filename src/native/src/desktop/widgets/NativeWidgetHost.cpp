@@ -210,8 +210,9 @@ struct NativeWidgetHostApp {
         NativeWidgetPaintContext context{};
         context.target = slot.target.Get();
         context.dwrite = slot.dwrite.Get();
-        context.width = static_cast<float>(slot.target->GetPixelSize().width);
-        context.height = static_cast<float>(slot.target->GetPixelSize().height);
+        const D2D1_SIZE_F dipSize = slot.target->GetSize();
+        context.width = std::max(1.0f, dipSize.width);
+        context.height = std::max(1.0f, dipSize.height);
         if (slot.preset == NativeWidgetPreset::GlassClock) {
             GetLocalTime(&context.localTime);
             context.hasTime = true;

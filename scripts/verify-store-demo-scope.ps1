@@ -69,9 +69,6 @@ foreach ($marker in @('MaybeShowFirstRun', 'kFirstRunTimerId', 'StoreDemoExperie
     if (-not $search.Contains($marker)) { throw "SearchWindow missing first-run marker: $marker" }
 }
 
-foreach ($marker in @((From-B64 '5LiA6ZSu5L2T6aqM5aWX6KOF'), 'kWidgetDemoId', 'OfferGoldenPath')) {
-    if (-not $library.Contains($marker)) { throw "WallpaperLibraryWindowV2 missing showcase marker: $marker" }
-}
 
 if (-not $cmake.Contains('src/desktop/demo/StoreDemoExperience.cpp')) {
     throw 'CMakeLists.txt must compile StoreDemoExperience.cpp'

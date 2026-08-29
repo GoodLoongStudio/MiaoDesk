@@ -2,7 +2,6 @@
 #include "turingdesk/DesktopAiSettingsPage.h"
 #include "turingdesk/DesktopControlService.h"
 #include "turingdesk/DesktopWidgetController.h"
-#include "turingdesk/StoreDemoExperience.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -44,7 +43,6 @@ constexpr int kWidgetCreateId = 6140;
 constexpr int kWidgetToggleId = 6141;
 constexpr int kWidgetRemoveId = 6142;
 constexpr int kWidgetRefreshId = 6143;
-constexpr int kWidgetDemoId = 6144;
 constexpr int kWebUrlId = 6150;
 constexpr int kWebConfirmId = 6151;
 constexpr int kWebCancelId = 6152;
@@ -167,7 +165,6 @@ struct WallpaperLibraryWindow::Impl {
     HWND widgetToggleButton{};
     HWND widgetRemoveButton{};
     HWND widgetRefreshButton{};
-    HWND widgetDemoButton{};
     HWND webUrl{};
     HWND webConfirm{};
     HWND webCancel{};
@@ -244,7 +241,6 @@ struct WallpaperLibraryWindow::Impl {
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
                              wallpaperToggleButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
-                             widgetDemoButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
     }
 
@@ -636,7 +632,6 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(removeButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(wallpaperToggleButton, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetCreateButton, widgets ? SW_SHOW : SW_HIDE);
-        ShowWindow(widgetDemoButton, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetToggleButton, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetRemoveButton, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetRefreshButton, widgets ? SW_SHOW : SW_HIDE);
@@ -903,9 +898,9 @@ struct WallpaperLibraryWindow::Impl {
         GetClientRect(window, &rc);
         const int width = RectWidth(rc);
         const int height = RectHeight(rc);
-        const int sidebarW = std::clamp(MulDiv(width, 180, 1000), S(168), S(240));
-        const int topH = std::max(S(48), MulDiv(height, 58, 790));
-        const int footerH = std::max(S(48), MulDiv(height, 58, 790));
+        const int sidebarW = S(208);
+        const int topH = S(58);
+        const int footerH = S(58);
         const int margin = std::max(S(12), MulDiv(width - sidebarW, 16, 1000));
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
@@ -983,17 +978,15 @@ struct WallpaperLibraryWindow::Impl {
             const int gap = S(6);
             const int buttonW = std::max(S(70), MulDiv(contentWidth, 11, 100));
             const int createW = std::max(S(124), MulDiv(contentWidth, 20, 100));
-            const int demoW = std::max(S(96), MulDiv(contentWidth, 15, 100));
             const int right = width - margin;
-            const int actionTotal = createW + demoW + buttonW * 3 + gap * 4;
+            const int actionTotal = createW + buttonW * 3 + gap * 3;
             const int actionsLeft = right - actionTotal;
             const int statusLeft = contentLeft + margin;
             const int available = actionsLeft - S(10) - statusLeft;
-            const int statusW = std::max(0, std::min(S(90), available));
+            const int statusW = std::max(0, std::min(S(240), available));
             place(status, statusLeft, footerTop + S(18), statusW, S(26));
             int x = actionsLeft;
             place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
-            place(widgetDemoButton, x, footerTop + S(11), demoW, S(36)); x += demoW + gap;
             place(widgetRefreshButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
             place(widgetToggleButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
             place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
@@ -1197,7 +1190,6 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kFavoriteId && notification == BN_CLICKED) self->ToggleFavorite();
             else if (id == kRemoveId && notification == BN_CLICKED) self->RemoveSelected();
             else if (id == kWidgetCreateId && notification == BN_CLICKED) self->CreateClockWidget();
-            else if (id == kWidgetDemoId && notification == BN_CLICKED) turingdesk::demo::OfferGoldenPath(self->window, false);
             else if (id == kWidgetToggleId && notification == BN_CLICKED) self->ToggleWidget();
             else if (id == kWidgetRemoveId && notification == BN_CLICKED) self->RemoveWidget();
             else if (id == kWidgetRefreshId && notification == BN_CLICKED) self->RefreshWidgets();
@@ -1346,7 +1338,6 @@ struct WallpaperLibraryWindow::Impl {
         removeButton = button(L"移出库", kRemoveId);
 
         widgetCreateButton = button(L"＋ 新建桌面小组件", kWidgetCreateId, 0, false);
-        widgetDemoButton = button(L"一键体验套装", kWidgetDemoId, 0, false);
         widgetToggleButton = button(L"启用 / 停用", kWidgetToggleId, 0, false);
         widgetRemoveButton = button(L"删除", kWidgetRemoveId, 0, false);
         widgetRefreshButton = button(L"刷新", kWidgetRefreshId, 0, false);

@@ -1,0 +1,125 @@
+name: Complete MiaoDesk brand and flagship scenes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/miaodesk-brand-scenes.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: miaodesk-brand-scenes
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply complete MiaoDesk migration
+        run: python3 scripts/miaodesk-brand-scenes-migrate.py
+
+      - name: Verify brand and scene contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- . ':!LICENSE'; then
+            echo 'Old brand token remains in tracked text files.' >&2
+            exit 1
+          fi
+          if find . -path './.git' -prune -o -print | grep -E 'TuringDesk|turingdesk|TURINGDESK|图灵'; then
+            echo 'Old brand token remains in a tracked path.' >&2
+            exit 1
+          fi
+          test -f src/native/include/miaodesk/SceneWallpaperPainter.h
+          grep -q 'PaintMiaoCloud' src/native/include/miaodesk/SceneWallpaperPainter.h
+          grep -q 'PaintNeonCity' src/native/include/miaodesk/SceneWallpaperPainter.h
+          grep -q 'PaintMysticMoon' src/native/include/miaodesk/SceneWallpaperPainter.h
+          git grep -q '妙喵云境'
+          git grep -q '霓虹之城'
+          git grep -q '月影秘境'
+
+      - name: Commit migration on verification branch
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'GoodLoongStudio'
+          git config user.email 'actions@users.noreply.github.com'
+          git checkout -b automation/miaodesk-brand-scenes
+          git add -A
+          git commit -m 'Complete MiaoDesk brand migration and flagship scenes'
+          sha="$(git rev-parse HEAD)"
+          echo "commit_sha=$sha" >> "$GITHUB_OUTPUT"
+          git push --force origin HEAD:refs/heads/automation/miaodesk-brand-scenes
+
+  verify-arm64:
+    needs: migrate
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.migrate.outputs.commit_sha }}
+          fetch-depth: 1
+
+      - name: Verify ARM64 source contract
+        shell: pwsh
+        run: |
+          $header = 'src/native/include/miaodesk/SceneWallpaperPainter.h'
+          foreach ($marker in @('PaintMiaoCloud','PaintNeonCity','PaintMysticMoon')) {
+            if (-not (Select-String -LiteralPath $header -SimpleMatch $marker -Quiet)) { throw "Missing $marker" }
+          }
+          $legacy = git grep -n -I -E 'TuringDesk|turingdesk|TURINGDESK|图灵' -- .
+          if ($LASTEXITCODE -eq 0) { $legacy | Write-Host; throw 'Old brand token remains' }
+
+      - name: Configure ARM64
+        shell: pwsh
+        run: cmake -S . -B build-miaodesk-arm64 -A ARM64 -DMIAODESK_DEV_FAST=ON
+
+      - name: Build ARM64 desktop surfaces
+        shell: pwsh
+        run: cmake --build build-miaodesk-arm64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+
+  verify-x64:
+    needs: migrate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.migrate.outputs.commit_sha }}
+          fetch-depth: 1
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S . -B build-miaodesk-x64 -A x64 -DMIAODESK_DEV_FAST=ON
+
+      - name: Build x64 desktop surfaces
+        shell: pwsh
+        run: cmake --build build-miaodesk-x64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+
+  finalize:
+    needs: [migrate, verify-arm64, verify-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fast-forward main to verified migration
+        shell: bash
+        env:
+          VERIFIED_SHA: ${{ needs.migrate.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin automation/miaodesk-brand-scenes
+          git merge-base --is-ancestor origin/main "$VERIFIED_SHA"
+          git push origin "$VERIFIED_SHA":refs/heads/main
+          git push origin --delete automation/miaodesk-brand-scenes

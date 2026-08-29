@@ -1,0 +1,79 @@
+name: Apply native widget scheduler patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/native-widget-scheduler-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Patch native widget refresh scheduling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/native/src/desktop/widgets/NativeWidgetHost.cpp')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'constexpr UINT_PTR kSyncTimerId = 71;\nconstexpr UINT_PTR kClockTimerId = 72;\n',
+                  'constexpr UINT_PTR kSyncTimerId = 71;\nconstexpr UINT_PTR kRefreshTimerId = 72;\nconstexpr UINT kRefreshSchedulerTickMs = 1000;\n'
+              ),
+              (
+                  '    ULONGLONG geometryGraceUntil{};\n};\n\nstruct NativeWidgetHostApp {',
+                  '    ULONGLONG geometryGraceUntil{};\n    ULONGLONG nextRefreshAt{};\n};\n\nstruct NativeWidgetHostApp {'
+              ),
+              (
+                  '''    void PaintSlot(NativeSlot& slot) {\n        if (!EnsureRenderTarget(slot)) return;\n''',
+                  '''    void ScheduleNextRefresh(NativeSlot& slot) {\n        const std::uint32_t interval = NativePresetRefreshIntervalMs(slot.preset);\n        if (interval == 0) {\n            slot.nextRefreshAt = 0;\n            return;\n        }\n\n        const ULONGLONG now = GetTickCount64();\n        if (slot.preset == NativeWidgetPreset::GlassClock && interval >= 60000) {\n            SYSTEMTIME local{};\n            GetLocalTime(&local);\n            const std::uint32_t elapsedInMinute =\n                static_cast<std::uint32_t>(local.wSecond) * 1000u + local.wMilliseconds;\n            const std::uint32_t delay = std::max<std::uint32_t>(250u, 60000u - elapsedInMinute);\n            slot.nextRefreshAt = now + delay;\n            return;\n        }\n        slot.nextRefreshAt = now + interval;\n    }\n\n    void PaintSlot(NativeSlot& slot) {\n        if (!EnsureRenderTarget(slot)) return;\n'''
+              ),
+              (
+                  '''        slot.target->BeginDraw();\n        PaintNativeWidgetPreset(context, slot.preset);\n        slot.target->EndDraw();\n    }\n''',
+                  '''        slot.target->BeginDraw();\n        PaintNativeWidgetPreset(context, slot.preset);\n        const HRESULT drawResult = slot.target->EndDraw();\n        if (SUCCEEDED(drawResult)) {\n            ScheduleNextRefresh(slot);\n        } else if (drawResult == D2DERR_RECREATE_TARGET) {\n            slot.target.Reset();\n            slot.nextRefreshAt = 0;\n        }\n    }\n'''
+              ),
+              (
+                  '''    void RepaintClocks() {\n        if (paused) return;\n        for (const auto& slot : slots) {\n            if (slot && slot->hwnd && slot->preset == NativeWidgetPreset::GlassClock) PaintSlot(*slot);\n        }\n    }\n\n    void HandleTimer(UINT_PTR timerId) {\n        if (timerId == kSyncTimerId) SyncFromStore();\n        if (timerId == kClockTimerId) RepaintClocks();\n    }\n''',
+                  '''    void RepaintDueWidgets() {\n        if (paused) return;\n        const ULONGLONG now = GetTickCount64();\n        for (const auto& slot : slots) {\n            if (!slot || !slot->hwnd || !IsWindow(slot->hwnd)) continue;\n            if (NativePresetRefreshIntervalMs(slot->preset) == 0) continue;\n            if (slot->nextRefreshAt == 0 || now >= slot->nextRefreshAt) PaintSlot(*slot);\n        }\n    }\n\n    void HandleTimer(UINT_PTR timerId) {\n        if (timerId == kSyncTimerId) SyncFromStore();\n        if (timerId == kRefreshTimerId) RepaintDueWidgets();\n    }\n'''
+              ),
+              (
+                  '''        SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);\n        SetTimer(messageWindow, kClockTimerId, 1000, nullptr);\n''',
+                  '''        SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);\n        SetTimer(messageWindow, kRefreshTimerId, kRefreshSchedulerTickMs, nullptr);\n'''
+              ),
+              (
+                  '''        KillTimer(messageWindow, kSyncTimerId);\n        KillTimer(messageWindow, kClockTimerId);\n''',
+                  '''        KillTimer(messageWindow, kSyncTimerId);\n        KillTimer(messageWindow, kRefreshTimerId);\n'''
+              ),
+              (
+                  '''           !ParseNativePreset(L"native:invalid", &preset) &&\n           NativePresetSource(NativeWidgetPreset::WeatherGlass) == L"native:weather-glass";\n''',
+                  '''           !ParseNativePreset(L"native:invalid", &preset) &&\n           NativePresetSource(NativeWidgetPreset::WeatherGlass) == L"native:weather-glass" &&\n           NativePresetRefreshIntervalMs(NativeWidgetPreset::GlassClock) == 60000 &&\n           NativePresetRefreshIntervalMs(NativeWidgetPreset::TodayTasks) == 0;\n'''
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one scheduler patch anchor, got {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit scheduler refactor
+        shell: bash
+        run: |
+          git config user.name "GoodLoongStudio"
+          git config user.email "chnmlong@hotmail.com"
+          git add src/native/src/desktop/widgets/NativeWidgetHost.cpp
+          git diff --cached --check
+          git commit -m "Schedule native widget refreshes by metadata"
+          git push origin HEAD:main

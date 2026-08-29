@@ -45,17 +45,17 @@ jobs:
           if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
       - name: Configure ARM64
         shell: pwsh
-        run: cmake -S . -B build-store-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
+        run: cmake -S . -B build-store-arm64 -A ARM64 -DMIAODESK_DEV_FAST=ON
       - name: Build ARM64 Store binaries
         shell: pwsh
-        run: cmake --build build-store-arm64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+        run: cmake --build build-store-arm64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
       - name: Prepare ARM64 package input
         shell: pwsh
         run: |
           $source = Join-Path $PWD 'build-store-arm64\src\native\Release'
           $dest = Join-Path $PWD 'store-arm64-input'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+          foreach ($exe in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
             $path = Join-Path $source $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "ARM64 build is missing $exe" }
             Copy-Item $path $dest -Force
@@ -92,17 +92,17 @@ jobs:
           if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
       - name: Configure x64
         shell: pwsh
-        run: cmake -S . -B build-store-x64 -A x64 -DTURINGDESK_DEV_FAST=ON
+        run: cmake -S . -B build-store-x64 -A x64 -DMIAODESK_DEV_FAST=ON
       - name: Build x64 Store binaries
         shell: pwsh
-        run: cmake --build build-store-x64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+        run: cmake --build build-store-x64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
       - name: Prepare x64 package input
         shell: pwsh
         run: |
           $source = Join-Path $PWD 'build-store-x64\src\native\Release'
           $dest = Join-Path $PWD 'store-x64-input'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+          foreach ($exe in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
             $path = Join-Path $source $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "x64 build is missing $exe" }
             Copy-Item $path $dest -Force

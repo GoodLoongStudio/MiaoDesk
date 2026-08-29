@@ -38,7 +38,7 @@ jobs:
 
           $root = (Resolve-Path '.').Path
           $runtime = Join-Path $root 'runtime\arm64'
-          $stage = Join-Path $env:RUNNER_TEMP ('TuringDesk-Runtime-' + [guid]::NewGuid().ToString('N'))
+          $stage = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Runtime-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           $old = if (Test-Path $manifestPath -PathType Leaf) { Get-Content $manifestPath -Raw | ConvertFrom-Json } else { $null }
 
@@ -111,7 +111,7 @@ jobs:
               New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
               $harnessStage = Join-Path $stage 'harness'
               New-Item -ItemType Directory -Force -Path $harnessStage | Out-Null
-              @{ name = 'turingdesk-deepseek-harness-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $harnessStage 'package.json') -Encoding UTF8
+              @{ name = 'miaodesk-deepseek-harness-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $harnessStage 'package.json') -Encoding UTF8
               $env:npm_config_cache = Join-Path $stage 'npm-cache'
               & $npmCmd install --prefix $harnessStage ("@deepseek-ai/dsh@" + $harnessVersion) --omit=dev --no-audit --no-fund --save-exact
               if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness production install failed' }
@@ -149,7 +149,7 @@ jobs:
               New-Item -ItemType Directory -Force -Path $piDir | Out-Null
               $piStage = Join-Path $stage 'pi'
               New-Item -ItemType Directory -Force -Path $piStage | Out-Null
-              @{ name = 'turingdesk-pi-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $piStage 'package.json') -Encoding UTF8
+              @{ name = 'miaodesk-pi-runtime'; private = $true; version = '1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $piStage 'package.json') -Encoding UTF8
               $env:npm_config_cache = Join-Path $stage 'npm-cache'
               & $npmCmd install --prefix $piStage ("@earendil-works/pi-coding-agent@" + $piVersion) --omit=dev --no-audit --no-fund --save-exact
               if ($LASTEXITCODE -ne 0) { throw 'Pi production install failed' }

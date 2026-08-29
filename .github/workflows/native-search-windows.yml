@@ -8,8 +8,8 @@ on:
       - src/native/**
       - runtime/arm64/**
       - docs/L3-PI-RUNTIME-CONTRACT.md
-      - docs/TURINGDESK-NATIVE-TECH-BASELINE.md
-      - docs/TURINGDESK-PRODUCT-BASELINE.md
+      - docs/MIAODESK-NATIVE-TECH-BASELINE.md
+      - docs/MIAODESK-PRODUCT-BASELINE.md
       - docs/NATIVE_SOURCE_LAYOUT.md
       - docs/WALLPAPER_ENGINE_PARITY.md
       - docs/DESKTOP_COMPOSITION_ARCHITECTURE.md
@@ -22,7 +22,7 @@ on:
       - docs/WIDGET_PRODUCT_MODEL_M3.md
       - docs/WIDGET_INSTALLED_ACCEPTANCE_M3.md
       - scripts/deploy-native-arm64.ps1
-      - scripts/update-turingdesk-arm64.ps1
+      - scripts/update-miaodesk-arm64.ps1
       - scripts/prepare-third-party-runtime-arm64.ps1
       - scripts/verify-arm64-runtime-bundle.ps1
       - scripts/verify-arm64-updater-runtime-reuse.ps1
@@ -48,7 +48,7 @@ on:
       - scripts/verify-windows-powershell-compat.ps1
       - scripts/pi-agent-e2e.mjs
       - DEPLOY-NATIVE-ARM64.cmd
-      - UPDATE-TURINGDESK.cmd
+      - UPDATE-MIAODESK.cmd
       - .github/workflows/native-search-windows.yml
   workflow_dispatch:
     inputs:
@@ -126,23 +126,23 @@ jobs:
           $scripts = Any @('scripts/*.ps1', 'scripts/*.mjs', '*.cmd')
           $search = Any @(
             'src/native/src/ui/search/*',
-            'src/native/include/turingdesk/SearchWindow.h',
-            'src/native/include/turingdesk/SearchTypes.h',
+            'src/native/include/miaodesk/SearchWindow.h',
+            'src/native/include/miaodesk/SearchTypes.h',
             'src/native/src/search/*',
-            'src/native/include/turingdesk/AppSearch.h',
-            'src/native/include/turingdesk/GozSearch.h',
+            'src/native/include/miaodesk/AppSearch.h',
+            'src/native/include/miaodesk/GozSearch.h',
             'scripts/verify-search-input-contract.ps1')
           $pi = Any @(
             'src/native/src/ui/ai/*',
-            'src/native/include/turingdesk/L3CliWindow.h',
-            'src/native/include/turingdesk/Conversation*',
+            'src/native/include/miaodesk/L3CliWindow.h',
+            'src/native/include/miaodesk/Conversation*',
             'src/native/src/agent/*',
-            'src/native/include/turingdesk/L3Agent.h',
-            'src/native/include/turingdesk/PiRuntime.h',
+            'src/native/include/miaodesk/L3Agent.h',
+            'src/native/include/miaodesk/PiRuntime.h',
             'src/native/src/*Pi*',
             'src/native/src/*L3*',
             'src/native/src/*NativeTools*',
-            'src/native/include/turingdesk/NativeTools.h',
+            'src/native/include/miaodesk/NativeTools.h',
             'scripts/pi-agent-e2e.mjs',
             'scripts/verify-l3-runtime-contract.ps1',
             'scripts/verify-store-demo-scope.ps1',
@@ -174,9 +174,9 @@ jobs:
             'scripts/verify-desktop-domain-contract.ps1',
             'docs/DESKTOP_DOMAIN_ARCHITECTURE.md')
           $updater = Any @(
-            'UPDATE-TURINGDESK.cmd',
+            'UPDATE-MIAODESK.cmd',
             'DEPLOY-NATIVE-ARM64.cmd',
-            'scripts/update-turingdesk-arm64.ps1',
+            'scripts/update-miaodesk-arm64.ps1',
             'scripts/deploy-native-arm64.ps1',
             'scripts/verify-arm64-updater-runtime-reuse.ps1',
             'scripts/test-arm64-updater-junction-cleanup.ps1')
@@ -185,11 +185,11 @@ jobs:
             'scripts/prepare-third-party-runtime-arm64.ps1',
             'scripts/verify-arm64-runtime-bundle.ps1')
           $goz = Any @(
-            'src/native/include/turingdesk/GozSearch.h',
+            'src/native/include/miaodesk/GozSearch.h',
             'src/native/**/*Goz*',
             'runtime/arm64/Goz/*')
           $harness = Any @(
-            'src/native/include/turingdesk/Harness*',
+            'src/native/include/miaodesk/Harness*',
             'src/native/**/*Harness*',
             'runtime/arm64/*Harness*')
 
@@ -249,8 +249,8 @@ jobs:
           if ('${{ steps.scope.outputs.updater }}' -eq 'true') {
             Invoke-Group 'Updater contracts' {
               $env:TD_BOOTSTRAP_SELF_TEST = '1'
-              $env:TD_UPDATE_URL = "https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/$env:GITHUB_SHA/scripts/update-turingdesk-arm64.ps1"
-              & cmd.exe /d /c UPDATE-TURINGDESK.cmd
+              $env:TD_UPDATE_URL = "https://raw.githubusercontent.com/GoodLoongStudio/MiaoDesk/$env:GITHUB_SHA/scripts/update-miaodesk-arm64.ps1"
+              & cmd.exe /d /c UPDATE-MIAODESK.cmd
               if ($LASTEXITCODE -ne 0) { throw "Updater bootstrap failed: $LASTEXITCODE" }
               Invoke-PS51 '.\scripts\verify-arm64-updater-runtime-reuse.ps1'
               Invoke-PS51 '.\scripts\test-arm64-updater-junction-cleanup.ps1'
@@ -340,13 +340,13 @@ jobs:
 
           Write-Host '::group::Relevant native self-tests'
           $tests = @(
-            @{ Exe = '.\build\src\native\Release\TuringDesk.exe'; Name = 'TuringDesk' }
+            @{ Exe = '.\build\src\native\Release\MiaoDesk.exe'; Name = 'MiaoDesk' }
           )
           if ('${{ steps.scope.outputs.wallpaper }}' -eq 'true') {
-            $tests += @{ Exe = '.\build\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' }
+            $tests += @{ Exe = '.\build\src\native\Release\MiaoDeskWallpaper.exe'; Name = 'Wallpaper' }
           }
           if ('${{ steps.scope.outputs.harness }}' -eq 'true') {
-            $tests += @{ Exe = '.\build\src\native\Release\TuringDeskHarness.exe'; Name = 'Harness shell' }
+            $tests += @{ Exe = '.\build\src\native\Release\MiaoDeskHarness.exe'; Name = 'Harness shell' }
           }
           foreach ($test in $tests) {
             $p = Start-Process -FilePath $test.Exe -ArgumentList '--self-test' -Wait -PassThru
@@ -356,7 +356,7 @@ jobs:
 
           Write-Host '::group::Prepare ARM64 package'
           New-Item -ItemType Directory -Force -Path build/package | Out-Null
-          foreach ($name in @('TuringDesk.exe','TuringDeskWallpaper.exe','TuringDeskHarness.exe','TuringDeskWidgetAcceptance.exe')) {
+          foreach ($name in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe','MiaoDeskWidgetAcceptance.exe')) {
             $source = Join-Path 'build/src/native/Release' $name
             if (Test-Path $source) { Copy-Item $source (Join-Path 'build/package' $name) -Force }
           }
@@ -379,19 +379,19 @@ jobs:
           Write-Host '::endgroup::'
 
           Write-Host '::group::Pi RPC + native tools E2E'
-          $nativeHost = (Resolve-Path '.\build\package\TuringDesk.exe').Path
-          $extensionSource = Join-Path $env:LOCALAPPDATA 'TuringDesk\PiAgent\extensions\turingdesk-native-tools.ts'
+          $nativeHost = (Resolve-Path '.\build\package\MiaoDesk.exe').Path
+          $extensionSource = Join-Path $env:LOCALAPPDATA 'MiaoDesk\PiAgent\extensions\miaodesk-native-tools.ts'
           if (-not (Test-Path $extensionSource -PathType Leaf)) {
-            throw 'TuringDesk self-test did not materialize the Pi native tools extension.'
+            throw 'MiaoDesk self-test did not materialize the Pi native tools extension.'
           }
           $desktop = [Environment]::GetFolderPath('Desktop')
           if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'Unable to resolve Desktop known folder for Pi E2E.' }
-          $work = Join-Path $env:RUNNER_TEMP ('turingdesk-pi-e2e-' + [guid]::NewGuid().ToString('N'))
+          $work = Join-Path $env:RUNNER_TEMP ('miaodesk-pi-e2e-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
           $testScript = (Resolve-Path '.\scripts\pi-agent-e2e.mjs').Path
           & $node $testScript $work $pi $powershell $nativeHost $extensionSource $desktop | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'Pi Agent + TuringDesk native tool E2E failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'Pi Agent + MiaoDesk native tool E2E failed' }
           Write-Host '::endgroup::'
 
       - name: Windows service integrations
@@ -404,9 +404,9 @@ jobs:
             Write-Host '::group::goz MFT/USN integration'
             $goz = (Resolve-Path '.\build\package\Goz\goz.exe').Path
             $gozd = (Resolve-Path '.\build\package\Goz\gozd.exe').Path
-            $probe = "turingdesk-goz-ci-$env:GITHUB_RUN_ID.txt"
+            $probe = "miaodesk-goz-ci-$env:GITHUB_RUN_ID.txt"
             $probePath = Join-Path $env:USERPROFILE $probe
-            Set-Content $probePath -Value 'TuringDesk goz integration probe' -Encoding UTF8
+            Set-Content $probePath -Value 'MiaoDesk goz integration probe' -Encoding UTF8
             try {
               & $gozd install | Out-Host
               if ($LASTEXITCODE -ne 0) { throw 'gozd service install failed on ARM64 runner' }
@@ -427,10 +427,10 @@ jobs:
 
           if ('${{ steps.scope.outputs.harness }}' -eq 'true') {
             Write-Host '::group::Bundled DeepSeek Harness smoke test'
-            $p = Start-Process -FilePath '.\build\package\TuringDeskHarness.exe' -ArgumentList '--harness-smoke-test' -Wait -PassThru
+            $p = Start-Process -FilePath '.\build\package\MiaoDeskHarness.exe' -ArgumentList '--harness-smoke-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) {
               $desktop = [Environment]::GetFolderPath('Desktop')
-              $log = Join-Path $desktop 'TuringDesk-Logs\harness.log'
+              $log = Join-Path $desktop 'MiaoDesk-Logs\harness.log'
               if (Test-Path $log) { Get-Content $log -Tail 200 | Out-Host }
               throw "Bundled DeepSeek Harness smoke test failed: $($p.ExitCode)"
             }
@@ -448,6 +448,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.scope.outputs.build == 'true'
         with:
-          name: TuringDesk-Native-Search-ARM64
+          name: MiaoDesk-Native-Search-ARM64
           path: build/package/**
           retention-days: 3

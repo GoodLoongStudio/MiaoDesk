@@ -37,11 +37,11 @@ jobs:
 
       - name: Configure lightweight preview
         shell: pwsh
-        run: cmake -S . -B build-preview-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
+        run: cmake -S . -B build-preview-arm64 -A ARM64 -DMIAODESK_DEV_FAST=ON
 
       - name: Build preview UI binaries
         shell: pwsh
-        run: cmake --build build-preview-arm64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+        run: cmake --build build-preview-arm64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
 
       - name: Prepare preview artifact
         shell: pwsh
@@ -50,7 +50,7 @@ jobs:
           $dest = Join-Path $PWD 'preview-arm64'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+          foreach ($exe in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
             $path = Join-Path $source $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "Preview build is missing $exe" }
             Copy-Item $path $dest -Force
@@ -59,13 +59,13 @@ jobs:
           Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
           Set-Content -Path (Join-Path $dest 'preview-build-sha.txt') -Value $env:GITHUB_SHA -Encoding ASCII
           Set-Content -Path (Join-Path $dest 'preview-components.txt') -Value @(
-            'TuringDesk.exe'
-            'TuringDeskWallpaper.exe'
-            'TuringDeskHarness.exe'
+            'MiaoDesk.exe'
+            'MiaoDeskWallpaper.exe'
+            'MiaoDeskHarness.exe'
             'Desktop settings UI'
             'Widget settings UI'
             'AI API settings UI'
-            '秒喵工作台 UI'
+            '妙喵工作台 UI'
           ) -Encoding UTF8
 
       - name: Build ARM64 MSIX test package
@@ -87,7 +87,7 @@ jobs:
       - name: Upload lightweight preview
         uses: actions/upload-artifact@v4
         with:
-          name: turingdesk-arm64-preview-${{ github.sha }}
+          name: miaodesk-arm64-preview-${{ github.sha }}
           path: preview-arm64/
           if-no-files-found: error
           retention-days: 7

@@ -34,8 +34,8 @@ jobs:
         shell: cmd
         env:
           TD_BOOTSTRAP_SELF_TEST: 1
-          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/TuringDesk/${{ github.sha }}/scripts/update-turingdesk-arm64.ps1
-        run: UPDATE-TURINGDESK.cmd
+          TD_UPDATE_URL: https://raw.githubusercontent.com/GoodLoongStudio/MiaoDesk/${{ github.sha }}/scripts/update-miaodesk-arm64.ps1
+        run: UPDATE-MIAODESK.cmd
 
       - name: Verify native physical source layout
         shell: powershell
@@ -49,7 +49,7 @@ jobs:
         shell: powershell
         run: .\scripts\verify-desktop-shell-ownership.ps1
 
-      - name: Verify Pi-first TuringDesk runtime contract
+      - name: Verify Pi-first MiaoDesk runtime contract
         shell: pwsh
         run: .\scripts\verify-l3-runtime-contract.ps1
 
@@ -71,9 +71,9 @@ jobs:
         shell: pwsh
         run: |
           foreach ($test in @(
-            @{ Exe = '.\build-x64\src\native\Release\TuringDesk.exe'; Name = 'Search/AI' },
-            @{ Exe = '.\build-x64\src\native\Release\TuringDeskWallpaper.exe'; Name = 'Wallpaper' },
-            @{ Exe = '.\build-x64\src\native\Release\TuringDeskHarness.exe'; Name = 'Advanced Workbench shell' }
+            @{ Exe = '.\build-x64\src\native\Release\MiaoDesk.exe'; Name = 'Search/AI' },
+            @{ Exe = '.\build-x64\src\native\Release\MiaoDeskWallpaper.exe'; Name = 'Wallpaper' },
+            @{ Exe = '.\build-x64\src\native\Release\MiaoDeskHarness.exe'; Name = 'Advanced Workbench shell' }
           )) {
             $p = Start-Process -FilePath $test.Exe -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$($test.Name) self-test failed: $($p.ExitCode)" }

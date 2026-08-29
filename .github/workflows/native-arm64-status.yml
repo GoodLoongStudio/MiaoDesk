@@ -30,6 +30,6 @@ jobs:
           esac
           gh api --method POST "repos/${REPO}/statuses/${HEAD_SHA}" \
             -f state="$STATE" \
-            -f context="TuringDesk/Native-ARM64" \
+            -f context="MiaoDesk/Native-ARM64" \
             -f description="Native Windows ARM64: ${CONCLUSION}" \
             -f target_url="$RUN_URL"

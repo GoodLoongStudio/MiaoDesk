@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/**/*.ps1'
-      - 'UPDATE-TURINGDESK.cmd'
+      - 'UPDATE-MIAODESK.cmd'
       - 'DEPLOY-NATIVE-ARM64.cmd'
       - '.github/workflows/powershell-syntax.yml'
   workflow_dispatch:

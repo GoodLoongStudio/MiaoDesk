@@ -1,0 +1,164 @@
+name: Windows Store Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Four-part package version
+        required: false
+        default: '0.1.0.0'
+      publisher:
+        description: Package publisher identity
+        required: false
+        default: 'CN=GoodLoongStudio'
+      package_name:
+        description: Package identity name
+        required: false
+        default: 'GoodLoongStudio.MiaoMiao'
+  push:
+    branches: [main]
+    paths:
+      - packaging/windows-store/**
+      - scripts/build-msix.ps1
+      - scripts/build-arm64-msix.ps1
+      - .github/workflows/windows-store-package.yml
+
+permissions:
+  contents: read
+
+env:
+  STORE_VERSION: ${{ inputs.version || '0.1.0.0' }}
+  STORE_PUBLISHER: ${{ inputs.publisher || 'CN=GoodLoongStudio' }}
+  STORE_PACKAGE_NAME: ${{ inputs.package_name || 'GoodLoongStudio.MiaoMiao' }}
+
+jobs:
+  arm64:
+    name: Store ARM64
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify exact head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+      - name: Configure ARM64
+        shell: pwsh
+        run: cmake -S . -B build-store-arm64 -A ARM64 -DTURINGDESK_DEV_FAST=ON
+      - name: Build ARM64 Store binaries
+        shell: pwsh
+        run: cmake --build build-store-arm64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+      - name: Prepare ARM64 package input
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'build-store-arm64\src\native\Release'
+          $dest = Join-Path $PWD 'store-arm64-input'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+            $path = Join-Path $source $exe
+            if (-not (Test-Path $path -PathType Leaf)) { throw "ARM64 build is missing $exe" }
+            Copy-Item $path $dest -Force
+          }
+          Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+      - name: Build ARM64 MSIX
+        shell: powershell
+        run: |
+          .\scripts\build-msix.ps1 `
+            -InputDirectory "$PWD\store-arm64-input" `
+            -Architecture arm64 `
+            -OutputPath "$PWD\miaomiao-store-arm64.msix" `
+            -Version $env:STORE_VERSION `
+            -Publisher $env:STORE_PUBLISHER `
+            -PackageName $env:STORE_PACKAGE_NAME
+      - name: Upload ARM64 MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-store-arm64-${{ github.sha }}
+          path: miaomiao-store-arm64.msix
+          if-no-files-found: error
+          retention-days: 14
+
+  x64:
+    name: Store x64
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify exact head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S . -B build-store-x64 -A x64 -DTURINGDESK_DEV_FAST=ON
+      - name: Build x64 Store binaries
+        shell: pwsh
+        run: cmake --build build-store-x64 --config Release --target TuringDesk TuringDeskWallpaper TuringDeskHarness --parallel
+      - name: Prepare x64 package input
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'build-store-x64\src\native\Release'
+          $dest = Join-Path $PWD 'store-x64-input'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          foreach ($exe in @('TuringDesk.exe', 'TuringDeskWallpaper.exe', 'TuringDeskHarness.exe')) {
+            $path = Join-Path $source $exe
+            if (-not (Test-Path $path -PathType Leaf)) { throw "x64 build is missing $exe" }
+            Copy-Item $path $dest -Force
+          }
+          Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+      - name: Build x64 MSIX
+        shell: powershell
+        run: |
+          .\scripts\build-msix.ps1 `
+            -InputDirectory "$PWD\store-x64-input" `
+            -Architecture x64 `
+            -OutputPath "$PWD\miaomiao-store-x64.msix" `
+            -Version $env:STORE_VERSION `
+            -Publisher $env:STORE_PUBLISHER `
+            -PackageName $env:STORE_PACKAGE_NAME
+      - name: Upload x64 MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-store-x64-${{ github.sha }}
+          path: miaomiao-store-x64.msix
+          if-no-files-found: error
+          retention-days: 14
+
+  bundle:
+    name: Store MSIX Bundle
+    runs-on: windows-2025
+    needs: [arm64, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download architecture packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: miaomiao-store-*-${{ github.sha }}
+          path: store-packages
+          merge-multiple: true
+      - name: Verify bundle inputs
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem "$PWD\store-packages" -Filter '*.msix' -File)
+          if ($packages.Count -ne 2) { throw "Expected 2 MSIX packages, found $($packages.Count)." }
+          $packages | ForEach-Object { Write-Host $_.FullName }
+      - name: Build MSIX bundle
+        shell: pwsh
+        run: |
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File |
+            Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeAppx) { throw 'MakeAppx.exe was not found in the Windows SDK.' }
+          & $makeAppx.FullName bundle /d "$PWD\store-packages" /p "$PWD\miaomiao-store.msixbundle" /o
+          if ($LASTEXITCODE -ne 0) { throw "MakeAppx bundle failed with exit code $LASTEXITCODE." }
+      - name: Upload Store bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-store-bundle-${{ github.sha }}
+          path: miaomiao-store.msixbundle
+          if-no-files-found: error
+          retention-days: 14

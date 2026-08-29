@@ -87,6 +87,7 @@ set(TURINGDESK_WALLPAPER_SOURCES
     src/desktop/widgets/DesktopWidgetStore.cpp
     src/desktop/widgets/DesktopWidgetController.cpp
     src/desktop/widgets/NativeWidgetPreset.cpp
+    src/desktop/widgets/NativeWeatherService.cpp
     src/ui/widgets/DesktopWidgetUiAdapter.cpp
 
     src/desktop/automation/AutomationService.cpp

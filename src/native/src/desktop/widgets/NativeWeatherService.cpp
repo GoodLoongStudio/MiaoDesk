@@ -9,6 +9,7 @@
 #include <cwchar>
 #include <filesystem>
 #include <iomanip>
+#include <iterator>
 #include <locale>
 #include <mutex>
 #include <optional>

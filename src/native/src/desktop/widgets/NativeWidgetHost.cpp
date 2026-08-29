@@ -4,6 +4,7 @@
 #include "turingdesk/DesktopWidgetStore.h"
 #include "turingdesk/NativeWidgetPainter.h"
 #include "turingdesk/NativeWidgetPreset.h"
+#include "turingdesk/NativeWeatherService.h"
 #include "turingdesk/WallpaperMonitorLayout.h"
 #include "turingdesk/WebDesktopSurfaceChild.h"
 #include "turingdesk/WidgetService.h"
@@ -34,6 +35,7 @@ constexpr wchar_t kWidgetDragClass[] = L"TuringDesk.Native.WidgetDragHandle";
 constexpr UINT kPauseMessage = WM_APP + 911;
 constexpr UINT kResumeMessage = WM_APP + 912;
 constexpr UINT kShutdownMessage = WM_APP + 913;
+constexpr UINT kWeatherUpdatedMessage = WM_APP + 914;
 constexpr UINT_PTR kSyncTimerId = 71;
 constexpr UINT_PTR kRefreshTimerId = 72;
 constexpr UINT kRefreshSchedulerTickMs = 1000;
@@ -188,6 +190,8 @@ struct NativeWidgetHostApp {
     HWND parent{};
     HWND messageWindow{};
     bool paused{};
+    bool weatherStarted{};
+    NativeWeatherService weatherService;
     ComPtr<ID2D1Factory> d2dFactory;
     std::vector<std::unique_ptr<NativeSlot>> slots;
 
@@ -238,9 +242,13 @@ struct NativeWidgetHostApp {
         const D2D1_SIZE_F dipSize = slot.target->GetSize();
         context.width = std::max(1.0f, dipSize.width);
         context.height = std::max(1.0f, dipSize.height);
+        NativeWeatherSnapshot weather;
         if (slot.preset == NativeWidgetPreset::GlassClock) {
             GetLocalTime(&context.localTime);
             context.hasTime = true;
+        } else if (slot.preset == NativeWidgetPreset::WeatherGlass) {
+            weather = weatherService.Snapshot();
+            context.weather = &weather;
         }
         slot.target->BeginDraw();
         PaintNativeWidgetPreset(context, slot.preset);
@@ -526,6 +534,10 @@ struct NativeWidgetHostApp {
             const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
             NativeWidgetPreset preset{};
             if (!widget.enabled || widget.kind != DesktopWidgetKind::Native || !ParseNativePreset(widget.source.wstring(), &preset)) continue;
+            if (preset == NativeWidgetPreset::WeatherGlass && !weatherStarted) {
+                weatherService.Start(messageWindow, kWeatherUpdatedMessage);
+                weatherStarted = true;
+            }
             const MonitorInfo* monitor = widget.monitorId.empty() ? PrimaryMonitor(topology) : FindMonitorByStableId(topology, widget.monitorId);
             if (!monitor) continue;
             const RECT desktopRegion = WidgetRegionInDesktop(*monitor, widget);
@@ -602,6 +614,14 @@ struct NativeWidgetHostApp {
         // "paused" only stops periodic repaints (clocks) to save CPU.
     }
 
+    void RepaintWeatherWidgets() {
+        if (paused) return;
+        for (const auto& slot : slots) {
+            if (slot && slot->preset == NativeWidgetPreset::WeatherGlass && slot->hwnd && IsWindow(slot->hwnd))
+                PaintSlot(*slot);
+        }
+    }
+
     void RepaintDueWidgets() {
         if (paused) return;
         const ULONGLONG now = GetTickCount64();
@@ -647,6 +667,10 @@ struct NativeWidgetHostApp {
 
         KillTimer(messageWindow, kSyncTimerId);
         KillTimer(messageWindow, kRefreshTimerId);
+        if (weatherStarted) {
+            weatherService.Stop();
+            weatherStarted = false;
+        }
         if (messageWindow && IsWindow(messageWindow)) DestroyWindow(messageWindow);
         messageWindow = nullptr;
         for (auto& slot : slots) {
@@ -670,6 +694,10 @@ LRESULT CALLBACK NativeHostWindowProc(HWND hwnd, UINT message, WPARAM wParam, LP
     }
     if (message == kResumeMessage && gNativeHost) {
         gNativeHost->SetPaused(false);
+        return 0;
+    }
+    if (message == kWeatherUpdatedMessage && gNativeHost) {
+        gNativeHost->RepaintWeatherWidgets();
         return 0;
     }
     if (message == WM_TIMER && gNativeHost) {
@@ -807,6 +835,7 @@ bool NativeWidgetProcessSet::SelfTest() noexcept {
            ParseNativePreset(L"native:today-tasks", &preset) && preset == NativeWidgetPreset::TodayTasks &&
            !ParseNativePreset(L"native:invalid", &preset) &&
            NativePresetSource(NativeWidgetPreset::WeatherGlass) == L"native:weather-glass" &&
+           NativeWeatherService::SelfTest() &&
            NativePresetRefreshIntervalMs(NativeWidgetPreset::GlassClock) == 60000 &&
            NativePresetRefreshIntervalMs(NativeWidgetPreset::TodayTasks) == 0;
 }

@@ -12,6 +12,7 @@
 #include <string>
 
 #include "turingdesk/NativeWidgetPreset.h"
+#include "turingdesk/NativeWeatherData.h"
 
 namespace turingdesk::wallpaper {
 
@@ -22,6 +23,7 @@ struct NativeWidgetPaintContext {
     float height{};
     SYSTEMTIME localTime{};
     bool hasTime{};
+    const NativeWeatherSnapshot* weather{};
     // Desktop surfaces clear to transparent. Management thumbnails render over
     // an existing GDI card and therefore keep the destination background.
     bool clearBackground{true};
@@ -188,8 +190,14 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
         D2D1::ColorF(0.16f, 0.53f, 0.90f, 0.95f),
         D2D1::ColorF(0.08f, 0.28f, 0.68f, 0.97f), radius);
 
+    const NativeWeatherSnapshot* weather = ctx.weather && ctx.weather->valid ? ctx.weather : nullptr;
+    const int code = weather ? weather->weatherCode : -1;
+    const bool clearSky = code == 0 || code == 1;
+    const bool rainy = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+    const bool snowy = (code >= 71 && code <= 77) || code == 85 || code == 86;
+
     auto sunGlow = RadialBrush(ctx.target, D2D1::Point2F(ctx.width * 0.76f, ctx.height * 0.37f), ctx.width * 0.22f, ctx.height * 0.34f,
-                               D2D1::ColorF(1.0f, 0.88f, 0.34f, 0.42f), D2D1::ColorF(1.0f, 0.8f, 0.2f, 0.0f));
+                               D2D1::ColorF(1.0f, 0.88f, 0.34f, clearSky ? 0.50f : 0.32f), D2D1::ColorF(1.0f, 0.8f, 0.2f, 0.0f));
     if (sunGlow) ctx.target->FillRectangle(D2D1::RectF(1, 1, ctx.width - 1, ctx.height - 1), sunGlow.Get());
 
     auto white = Brush(ctx.target, 0.98f, 0.995f, 1.0f, 0.98f);
@@ -197,21 +205,46 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
     auto sun = Brush(ctx.target, 1.0f, 0.86f, 0.30f, 0.92f);
     auto cloud = Brush(ctx.target, 0.94f, 0.985f, 1.0f, 0.90f);
     DrawCatMark(ctx.target, 24.0f, 24.0f, 0.7f, muted.Get());
-    Text(ctx.target, ctx.dwrite, L"妙喵 · 本地天气", 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(), 39.0f, 16.0f, 160.0f, 18.0f);
+    std::wstring header = L"妙喵 · ";
+    header += weather && !weather->location.empty() ? weather->location : L"本地";
+    header += L"天气";
+    Text(ctx.target, ctx.dwrite, header, 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(), 39.0f, 16.0f, ctx.width * 0.56f, 18.0f);
 
-    Circle(ctx.target, sun.Get(), ctx.width * 0.79f, ctx.height * 0.36f, std::clamp(ctx.width * 0.075f, 14.0f, 25.0f));
+    if (!rainy && !snowy) {
+        Circle(ctx.target, sun.Get(), ctx.width * 0.79f, ctx.height * 0.36f, std::clamp(ctx.width * 0.075f, 14.0f, 25.0f));
+    }
     const float cloudY = ctx.height * 0.43f;
-    Circle(ctx.target, cloud.Get(), ctx.width * 0.72f, cloudY, 18.0f);
-    Circle(ctx.target, cloud.Get(), ctx.width * 0.79f, cloudY - 8.0f, 24.0f);
-    Circle(ctx.target, cloud.Get(), ctx.width * 0.86f, cloudY, 19.0f);
-    RoundRect(ctx.target, cloud.Get(), nullptr, D2D1::RectF(ctx.width * 0.68f, cloudY - 2.0f, ctx.width * 0.90f, cloudY + 18.0f), 10.0f);
+    if (!clearSky || !weather) {
+        Circle(ctx.target, cloud.Get(), ctx.width * 0.72f, cloudY, 18.0f);
+        Circle(ctx.target, cloud.Get(), ctx.width * 0.79f, cloudY - 8.0f, 24.0f);
+        Circle(ctx.target, cloud.Get(), ctx.width * 0.86f, cloudY, 19.0f);
+        RoundRect(ctx.target, cloud.Get(), nullptr, D2D1::RectF(ctx.width * 0.68f, cloudY - 2.0f, ctx.width * 0.90f, cloudY + 18.0f), 10.0f);
+        if (rainy) {
+            auto rain = Brush(ctx.target, 0.62f, 0.91f, 1.0f, 0.88f);
+            for (int i = 0; i < 4; ++i) {
+                const float x = ctx.width * (0.72f + i * 0.045f);
+                ctx.target->DrawLine(D2D1::Point2F(x, cloudY + 23.0f), D2D1::Point2F(x - 4.0f, cloudY + 34.0f), rain.Get(), 2.0f);
+            }
+        } else if (snowy) {
+            for (int i = 0; i < 4; ++i)
+                Circle(ctx.target, white.Get(), ctx.width * (0.72f + i * 0.045f), cloudY + 29.0f + (i % 2) * 5.0f, 2.0f);
+        }
+    }
+
+    const std::wstring tempText = weather ? std::to_wstring(weather->temperatureC) + L"°" : L"--°";
+    std::wstring conditionText;
+    if (weather) conditionText = weather->condition;
+    else if (ctx.weather && !ctx.weather->status.empty()) conditionText = ctx.weather->status;
+    else conditionText = L"正在获取天气";
+    const std::wstring rangeText = weather
+        ? L"↑ " + std::to_wstring(weather->highC) + L"°   ↓ " + std::to_wstring(weather->lowC) + L"°"
+        : L"↑ --°   ↓ --°";
 
     const float tempSize = std::clamp(ctx.width * 0.20f, 38.0f, 66.0f);
-    Text(ctx.target, ctx.dwrite, L"22°", tempSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 20.0f, 48.0f, ctx.width * 0.48f, tempSize + 10.0f);
-    Text(ctx.target, ctx.dwrite, L"多云", 16.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 23.0f, 48.0f + tempSize, 90.0f, 24.0f);
-    Text(ctx.target, ctx.dwrite, L"↑ 25°   ↓ 15°", 11.5f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), 23.0f, 73.0f + tempSize, 150.0f, 20.0f);
+    Text(ctx.target, ctx.dwrite, tempText, tempSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 20.0f, 48.0f, ctx.width * 0.48f, tempSize + 10.0f);
+    Text(ctx.target, ctx.dwrite, conditionText, 16.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 23.0f, 48.0f + tempSize, ctx.width * 0.46f, 24.0f);
+    Text(ctx.target, ctx.dwrite, rangeText, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), 23.0f, 73.0f + tempSize, ctx.width * 0.54f, 20.0f);
 
-    const std::array days = {std::pair{L"13:00", L"22°"}, std::pair{L"14:00", L"23°"}, std::pair{L"15:00", L"24°"}, std::pair{L"16:00", L"24°"}};
     const float gap = 6.0f;
     const float totalW = ctx.width - 28.0f;
     const float chipW = (totalW - gap * 3.0f) / 4.0f;
@@ -219,7 +252,9 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
     const float chipTop = ctx.height - 58.0f;
     auto chipFill = Brush(ctx.target, 0.05f, 0.18f, 0.40f, 0.30f);
     auto chipBorder = Brush(ctx.target, 0.9f, 0.98f, 1.0f, 0.14f);
-    for (const auto& [label, value] : days) {
+    for (std::size_t i = 0; i < 4; ++i) {
+        const std::wstring label = weather && !weather->hours[i].label.empty() ? weather->hours[i].label : L"--:--";
+        const std::wstring value = weather ? std::to_wstring(weather->hours[i].temperatureC) + L"°" : L"--°";
         const D2D1_RECT_F chip{x, chipTop, x + chipW, ctx.height - 13.0f};
         RoundRect(ctx.target, chipFill.Get(), chipBorder.Get(), chip, 13.0f, 0.8f);
         Text(ctx.target, ctx.dwrite, label, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), chip.left + 4, chip.top + 5, chipW - 8, 14, DWRITE_TEXT_ALIGNMENT_CENTER);

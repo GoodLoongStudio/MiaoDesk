@@ -6,6 +6,7 @@
 #include "turingdesk/LiveLogWindow.h"
 #include "turingdesk/NativeWidgetPainter.h"
 #include "turingdesk/NativeWidgetPreset.h"
+#include "turingdesk/NativeWeatherService.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -189,6 +190,7 @@ struct WallpaperLibraryWindow::Impl {
     desktop::WidgetRuntimeHealth widgetHealth;
     desktop::DesktopWidgetController widgetController;
     desktop::DesktopControlService desktopControl;
+    NativeWeatherSnapshot widgetWeather;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
     Page page{Page::Installed};
@@ -390,12 +392,13 @@ struct WallpaperLibraryWindow::Impl {
         widgetScroll = 0;
         UpdateGridScroll(widgetGrid, true);
         UpdateFooter();
-        InvalidateRect(widgetGrid, nullptr, TRUE);
     }
 
     void RefreshWidgetHealth() {
         widgetHealth = {};
         widgetController.RuntimeHealth(&widgetHealth);
+        NativeWeatherSnapshot cachedWeather;
+        if (NativeWeatherService::ReadCachedSnapshot(&cachedWeather)) widgetWeather = std::move(cachedWeather);
         UpdateFooter();
         InvalidateRect(widgetGrid, nullptr, FALSE);
     }
@@ -595,6 +598,7 @@ struct WallpaperLibraryWindow::Impl {
         context.width = designW;
         context.height = designH;
         context.clearBackground = false;
+        if (preset == NativeWidgetPreset::WeatherGlass && widgetWeather.valid) context.weather = &widgetWeather;
         if (preset == NativeWidgetPreset::GlassClock) {
             GetLocalTime(&context.localTime);
             context.hasTime = true;
@@ -655,9 +659,16 @@ struct WallpaperLibraryWindow::Impl {
 
     void PaintGrid(HWND grid, bool widgets) {
         PAINTSTRUCT ps{};
-        HDC dc = BeginPaint(grid, &ps);
+        HDC paintDc = BeginPaint(grid, &ps);
         RECT client{};
         GetClientRect(grid, &client);
+        const int width = std::max(1, RectWidth(client));
+        const int height = std::max(1, RectHeight(client));
+        HDC bufferDc = CreateCompatibleDC(paintDc);
+        HBITMAP bufferBitmap = bufferDc ? CreateCompatibleBitmap(paintDc, width, height) : nullptr;
+        HGDIOBJ oldBitmap = bufferBitmap ? SelectObject(bufferDc, bufferBitmap) : nullptr;
+        HDC dc = bufferBitmap ? bufferDc : paintDc;
+
         FillSolid(dc, client, RGB(255, 255, 255));
         const int count = static_cast<int>(widgets ? visibleWidgets.size() : visibleWallpapers.size());
         for (int i = 0; i < count; ++i) {
@@ -675,6 +686,10 @@ struct WallpaperLibraryWindow::Impl {
             DrawTextW(dc, empty, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(dc, old);
         }
+        if (bufferBitmap) BitBlt(paintDc, 0, 0, width, height, bufferDc, 0, 0, SRCCOPY);
+        if (oldBitmap) SelectObject(bufferDc, oldBitmap);
+        if (bufferBitmap) DeleteObject(bufferBitmap);
+        if (bufferDc) DeleteDC(bufferDc);
         EndPaint(grid, &ps);
     }
 
@@ -736,7 +751,6 @@ struct WallpaperLibraryWindow::Impl {
                 SetWindowTextW(widgetToggleButton, widget->enabled ? L"停用" : L"启用");
             }
         }
-        Layout();
     }
 
     void SetPage(Page next) {
@@ -759,6 +773,7 @@ struct WallpaperLibraryWindow::Impl {
             RefreshWidgetHealth();
         }
         UpdateFooter();
+        Layout();
         InvalidateRect(window, nullptr, FALSE);
         for (HWND button : nav) InvalidateRect(button, nullptr, FALSE);
     }
@@ -906,8 +921,6 @@ struct WallpaperLibraryWindow::Impl {
         turingdesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
         selectedWidgetId = created.id;
         RefreshWidgets();
-        desktop::WidgetRuntimeHealth health;
-        widgetController.RuntimeHealth(&health);
         SetStatus(L"已创建桌面小组件：" + created.title);
     }
 
@@ -1088,7 +1101,7 @@ struct WallpaperLibraryWindow::Impl {
             place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
         }
 
-        RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+        RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
     }
 
     LRESULT DrawNavButton(const DRAWITEMSTRUCT* draw) {
@@ -1123,8 +1136,9 @@ struct WallpaperLibraryWindow::Impl {
         if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
         const bool widgets = GetDlgCtrlID(hwnd) == kWidgetGridId;
         switch (message) {
+        case WM_ERASEBKGND: return 1;
         case WM_PAINT: self->PaintGrid(hwnd, widgets); return 0;
-        case WM_SIZE: self->UpdateGridScroll(hwnd, widgets); InvalidateRect(hwnd, nullptr, TRUE); return 0;
+        case WM_SIZE: self->UpdateGridScroll(hwnd, widgets); InvalidateRect(hwnd, nullptr, FALSE); return 0;
         case WM_MOUSEWHEEL: self->ScrollGrid(hwnd, widgets, -GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA * self->S(72)); return 0;
         case WM_VSCROLL: {
             SCROLLINFO info{};

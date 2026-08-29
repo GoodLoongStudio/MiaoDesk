@@ -513,15 +513,10 @@ public:
                 ShowWindow(host_, SW_HIDE);
             }
 
-            // Force Explorer/Progman/WorkerW to repaint native desktop background wallpaper
+            // Force Explorer/WorkerW to repaint native desktop background wallpaper
             if (attachedParent_ && IsWindow(attachedParent_)) {
                 InvalidateRect(attachedParent_, nullptr, TRUE);
                 RedrawWindow(attachedParent_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-            }
-            HWND progman = FindWindowW(L"Progman", nullptr);
-            if (progman && IsWindow(progman)) {
-                InvalidateRect(progman, nullptr, TRUE);
-                RedrawWindow(progman, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
             }
             HWND desktopHwnd = GetDesktopWindow();
             if (desktopHwnd && IsWindow(desktopHwnd)) {

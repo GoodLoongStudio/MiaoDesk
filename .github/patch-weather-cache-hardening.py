@@ -35,11 +35,5 @@ void SaveCachedSnapshot(const NativeWeatherSnapshot& snapshot) {
 if old not in s:
     raise SystemExit('missing cache save anchor')
 s = s.replace(old, new, 1)
-
-old = r'''    const std::string sample = R"({\"current\":{\"time\":\"2026-08-29T16:15\",\"temperature_2m\":21.6,\"weather_code\":2},\"hourly\":{\"time\":[\"2026-08-29T16:00\",\"2026-08-29T17:00\"],\"temperature_2m\":[21.6,20.8],\"weather_code\":[2,3]},\"daily\":{\"temperature_2m_max\":[24.1],\"temperature_2m_min\":[15.2]}})";'''
-new = r'''    const std::string sample = R"({"current":{"time":"2026-08-29T16:15","temperature_2m":21.6,"weather_code":2},"hourly":{"time":["2026-08-29T16:00","2026-08-29T17:00"],"temperature_2m":[21.6,20.8],"weather_code":[2,3]},"daily":{"temperature_2m_max":[24.1],"temperature_2m_min":[15.2]}})";'''
-if old not in s:
-    raise SystemExit('missing weather selftest anchor')
-s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 print('weather cache hardening applied')

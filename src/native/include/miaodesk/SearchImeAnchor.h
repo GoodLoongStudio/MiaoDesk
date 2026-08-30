@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <imm.h>
 #include <algorithm>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -48,7 +49,7 @@ inline int MeasureCaretOffset(HWND edit) {
     GetTextExtentPoint32W(dc, text.c_str(), count, &extent);
     if (oldFont) SelectObject(dc, oldFont);
     ReleaseDC(edit, dc);
-    return std::max(0L, extent.cx);
+    return static_cast<int>(std::max(0L, extent.cx));
 }
 
 inline void AnchorImeToVisibleCaret(HWND edit) {

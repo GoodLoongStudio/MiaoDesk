@@ -9,6 +9,8 @@ $RepoRoot = Split-Path $PSScriptRoot -Parent
 $BundleRoot = Join-Path $RepoRoot 'runtime\arm64'
 $ManifestPath = Join-Path $BundleRoot 'runtime-manifest.json'
 $CompleteMarker = Join-Path $BundleRoot '.complete'
+$WallpaperPack = Join-Path $RepoRoot 'assets\wallpapers\BuiltinWallpapers.mdpack'
+$WallpaperMaterializer = Join-Path $RepoRoot 'scripts\materialize-builtin-wallpapers.ps1'
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
@@ -74,6 +76,11 @@ function Ensure-IndexService([string]$IndexExe,[string]$IndexDaemon) {
     }
     throw 'MiaoDesk file search service did not become reachable after 60 seconds.'
 }
+
+if (-not (Test-Path $WallpaperPack -PathType Leaf)) { throw "Builtin wallpaper pack is missing: $WallpaperPack" }
+if (-not (Test-Path $WallpaperMaterializer -PathType Leaf)) { throw "Builtin wallpaper materializer is missing: $WallpaperMaterializer" }
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $WallpaperMaterializer -PackPath $WallpaperPack -MetadataRoot (Join-Path $RepoRoot 'assets\wallpapers') -Destination (Join-Path $DeployDir 'Wallpapers')
+if ($LASTEXITCODE -ne 0) { throw "Builtin wallpaper materialization failed: $LASTEXITCODE" }
 
 if (-not (Test-Path $CompleteMarker -PathType Leaf) -or -not (Test-Path $ManifestPath -PathType Leaf)) {
     throw 'MiaoDesk ARM64 RuntimeBundle is not available.'

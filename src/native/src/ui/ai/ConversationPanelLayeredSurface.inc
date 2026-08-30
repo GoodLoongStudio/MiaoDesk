@@ -498,7 +498,7 @@ bool RenderConversationLayerSurface(ConversationState& state) {
 }
 
 void PositionConversationInputProxy(ConversationState& state) {
-    if (state.input) MoveWindow(state.input, Px(state, 38), Px(state, 1), 1, 1, FALSE);
+    if (state.input) input_ime_detail::SyncConversationImeAnchor(state.input);
 }
 
 bool ConversationPointInsideRoundedPanel(HWND hwnd, POINT screenPoint, int radius) {

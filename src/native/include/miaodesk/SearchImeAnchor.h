@@ -102,6 +102,7 @@ inline void AnchorImeToVisibleCaret(HWND edit) {
     // when IMM32 positioning calls are present. Publish the same caret geometry that MiaoDesk
     // draws so the TSF composition UI does not fall back to the monitor origin.
     SetCaretPos(caretX, 6);
+    HideCaret(edit);
 
     HIMC context = ImmGetContext(edit);
     if (!context) return;
@@ -119,6 +120,7 @@ inline void AnchorImeToVisibleCaret(HWND edit) {
     ImmSetCandidateWindow(context, &candidate);
 
     ImmReleaseContext(edit, context);
+    HideCaret(edit);
 }
 
 inline void RequestImeAnchor(HWND edit) {
@@ -172,6 +174,26 @@ inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lPa
 inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPRETSTRUCT*>(lParam);
+        if (message && IsMiaoDeskSearchEdit(message->hwnd)) {
+            switch (message->message) {
+            case WM_SETFOCUS:
+            case WM_KEYUP:
+            case WM_CHAR:
+            case WM_IME_STARTCOMPOSITION:
+            case WM_IME_COMPOSITION:
+            case WM_IME_ENDCOMPOSITION:
+            case WM_INPUTLANGCHANGE:
+                // DefWindowProc/EDIT creates and may reposition its own Win32 caret after our
+                // pre-dispatch hook. Hide it again after the native control has finished so the
+                // only visible caret is SearchWindow's DirectWrite-aligned blue caret.
+                HideCaret(message->hwnd);
+                if (GetFocus() == message->hwnd) RequestImeAnchor(message->hwnd);
+                break;
+            default:
+                break;
+            }
+        }
+
         if (message && message->message == WM_SIZE && IsMiaoDeskSearchWindow(message->hwnd)) {
             // SearchWindow's WM_SIZE handler still collapses the infrastructure EDIT to 1x1.
             // Restore the real rectangle immediately after that handler returns, before TSF can
@@ -179,6 +201,7 @@ inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM 
             const HWND edit = GetDlgItem(message->hwnd, kSearchEditControlId);
             if (edit) {
                 EnsureImeProxyGeometry(edit);
+                HideCaret(edit);
                 if (GetFocus() == edit) RequestImeAnchor(edit);
             }
         }

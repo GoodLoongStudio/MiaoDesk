@@ -19,6 +19,9 @@ inline bool ShowL3CliWindow(
     HWND owner,
     L3Agent& agent,
     const std::wstring& initialPrompt) {
+    // API settings are edited by the separate MiaoDeskWallpaper settings process.
+    // Always refresh the shared active provider/model snapshot before entering chat.
+    agent.ReloadConfig();
     return ShowConversationPanel(instance, owner, agent, initialPrompt);
 }
 

@@ -27,15 +27,23 @@ function Assert-PowerShellParses([string]$Path) {
     }
 }
 
-# This guard intentionally checks PowerShell/CMD compatibility only.
-# Product contracts, updater behavior, Widget acceptance and workflow layout
-# are verified by their own scoped guards. Do not couple this script to CI step names.
-$powerShellScripts = @(Get-ChildItem $scriptRoot -Filter '*.ps1' -File | Sort-Object Name)
-if ($powerShellScripts.Count -eq 0) { throw 'No PowerShell scripts were found.' }
+# Only scripts that are actual Windows PowerShell 5.1 entrypoints need the
+# ASCII/parser restriction. The L3 runtime contract is deliberately executed
+# by pwsh in CMake and both cloud workflows because it validates UTF-8 product
+# documentation. Keeping it in this PS5 gate would reject valid UTF-8 by design.
+$pwshOnly = @('verify-l3-runtime-contract.ps1')
+$powerShellScripts = @(Get-ChildItem $scriptRoot -Filter '*.ps1' -File | Sort-Object Name |
+    Where-Object { $pwshOnly -notcontains $_.Name })
+if ($powerShellScripts.Count -eq 0) { throw 'No Windows PowerShell scripts were found.' }
 
 foreach ($file in $powerShellScripts) {
     Assert-AsciiFile $file.FullName
     Assert-PowerShellParses $file.FullName
+}
+
+foreach ($name in $pwshOnly) {
+    $path = Join-Path $scriptRoot $name
+    if (-not (Test-Path $path -PathType Leaf)) { throw "Missing pwsh-only script: $path" }
 }
 
 $updateCmd = Join-Path $root 'UPDATE-MIAODESK.cmd'
@@ -66,4 +74,4 @@ foreach ($required in @(
     }
 }
 
-Write-Host 'Windows PowerShell 5.1 compatibility OK: scripts parse, entrypoints remain ASCII-safe, and bootstrap commands are present.' -ForegroundColor Green
+Write-Host 'Windows PowerShell 5.1 compatibility OK: PS5 entrypoints parse and remain ASCII-safe; pwsh-only contracts are excluded explicitly.' -ForegroundColor Green

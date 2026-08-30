@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "miaodesk/ApiSettingsSaveBridge.h"
+#include "miaodesk/ApiSettingsAutoSaveBridge.h"
 
 namespace miaodesk::wallpaper {
 

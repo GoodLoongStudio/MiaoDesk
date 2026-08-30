@@ -7,13 +7,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# MiaoCloud is already shipped as the first production mdwall. This compact
-# pack carries the two remaining built-in themes so they do not depend on
-# dozens of individual Git LFS objects.
+# MiaoCloud already ships its layered production assets. The compact pack
+# carries high-detail bases for the two remaining built-in themes; their rain,
+# haze, glow, fireflies and water shimmer are rendered at runtime.
 $themes = @('NeonCity.mdwall','MysticMoon.mdwall')
 $requiredAssets = @{
-    'NeonCity.mdwall' = @('background.jpg','city_glow.png','haze.png','rain_1.png','rain_2.png')
-    'MysticMoon.mdwall' = @('background.jpg','moon_glow.png','water_glow.png','fog.png','fireflies.png')
+    'NeonCity.mdwall' = @('background.jpg')
+    'MysticMoon.mdwall' = @('background.jpg')
 }
 
 $stage = Join-Path $env:TEMP ('MiaoDesk-Wallpapers-' + [guid]::NewGuid().ToString('N'))
@@ -38,7 +38,7 @@ try {
         } finally { $out.Dispose() }
     }
 
-    if ((Get-Item $zipPath).Length -lt 500000) { throw "Builtin wallpaper pack is unexpectedly small: $zipPath" }
+    if ((Get-Item $zipPath).Length -lt 200000) { throw "Builtin wallpaper pack is unexpectedly small: $zipPath" }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
@@ -80,7 +80,7 @@ try {
         foreach ($assetName in $requiredAssets[$theme]) {
             $asset = Join-Path $destAssets $assetName
             if (-not (Test-Path $asset -PathType Leaf)) { throw "Builtin wallpaper asset missing: $theme/assets/$assetName" }
-            if ((Get-Item $asset).Length -lt 4096) { throw "Builtin wallpaper asset is invalid: $theme/assets/$assetName" }
+            if ((Get-Item $asset).Length -lt 65536) { throw "Builtin wallpaper asset is invalid: $theme/assets/$assetName" }
         }
     }
 

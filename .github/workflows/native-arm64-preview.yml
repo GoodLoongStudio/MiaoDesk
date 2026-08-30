@@ -9,6 +9,10 @@ on:
       - cmake/**
       - src/native/**
       - assets/wallpapers/**
+      - runtime/arm64/runtime-manifest.json
+      - runtime/arm64/node/**
+      - runtime/arm64/harness/**
+      - runtime/arm64/pi/**
       - packaging/windows-store/**
       - scripts/build-arm64-msix.ps1
       - vcpkg.json
@@ -65,6 +69,7 @@ jobs:
       - name: Prepare preview artifact
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $source = Join-Path $PWD 'build-preview-arm64\src\native\Release'
           $dest = Join-Path $PWD 'preview-arm64'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
@@ -76,6 +81,56 @@ jobs:
           }
 
           Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+
+          # The workbench and Pi chat are part of the preview acceptance surface, so the
+          # preview must carry the same pinned offline runtime instead of depending on a
+          # previous NativeTest installation or a system Node/npm environment.
+          $manifestPath = Join-Path $PWD 'runtime\arm64\runtime-manifest.json'
+          if (-not (Test-Path $manifestPath -PathType Leaf)) { throw 'ARM64 runtime manifest is missing.' }
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+
+          function BundlePath([string]$relative) {
+            if ([string]::IsNullOrWhiteSpace($relative)) { throw 'Runtime manifest contains an empty archive path.' }
+            $path = Join-Path $PWD ('runtime\arm64\' + ($relative -replace '/', '\'))
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Runtime archive is missing: $path" }
+            return $path
+          }
+          function ExpandArchive([string]$archive, [string]$destination) {
+            New-Item -ItemType Directory -Force -Path $destination | Out-Null
+            & tar.exe -xf $archive -C $destination
+            if ($LASTEXITCODE -ne 0) { throw "Failed to extract runtime archive: $archive" }
+          }
+
+          $nodeArchive = BundlePath ([string]$manifest.node.archive)
+          $harnessArchive = BundlePath ([string]$manifest.deepseekHarness.archive)
+          $piArchive = BundlePath ([string]$manifest.pi.archive)
+          $runtimeNode = Join-Path $dest 'Runtime\Node'
+          $nodeTemp = Join-Path $env:RUNNER_TEMP ('MiaoDeskPreviewNode-' + [guid]::NewGuid().ToString('N'))
+          try {
+            ExpandArchive $nodeArchive $nodeTemp
+            $nodeRoot = Get-ChildItem $nodeTemp -Directory | Where-Object {
+              Test-Path (Join-Path $_.FullName 'node.exe') -PathType Leaf
+            } | Select-Object -First 1
+            if (-not $nodeRoot) { throw 'Pinned Node ARM64 archive does not contain node.exe.' }
+            New-Item -ItemType Directory -Force -Path $runtimeNode | Out-Null
+            Copy-Item (Join-Path $nodeRoot.FullName '*') $runtimeNode -Recurse -Force
+          }
+          finally {
+            Remove-Item $nodeTemp -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          ExpandArchive $harnessArchive $runtimeNode
+          $piDest = Join-Path $dest 'Pi'
+          ExpandArchive $piArchive $piDest
+
+          $nodeExe = Join-Path $runtimeNode 'node.exe'
+          $dshBin = Join-Path $runtimeNode 'node_modules\@deepseek-ai\dsh\lib\bin.js'
+          $piCli = Join-Path $piDest 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+          foreach ($requiredRuntime in @($nodeExe, $dshBin, $piCli)) {
+            if (-not (Test-Path $requiredRuntime -PathType Leaf)) {
+              throw "Preview runtime is incomplete: $requiredRuntime"
+            }
+          }
 
           $wallpapersSource = Join-Path $PWD 'assets\wallpapers'
           $wallpapersDest = Join-Path $dest 'Wallpapers'
@@ -92,11 +147,14 @@ jobs:
             'MiaoDesk.exe'
             'MiaoDeskWallpaper.exe'
             'MiaoDeskHarness.exe'
+            'Runtime/Node/node.exe'
+            'Runtime/Node/node_modules/@deepseek-ai/dsh'
+            'Pi/node_modules/@earendil-works/pi-coding-agent'
             'Wallpapers/MiaoCloud.mdwall'
             'Desktop settings UI'
             'Widget settings UI'
             'AI API settings UI'
-            '妙喵工作台 UI'
+            '妙喵工作台 UI + pinned DeepSeek Harness runtime'
           ) -Encoding UTF8
 
       - name: Build ARM64 MSIX test package

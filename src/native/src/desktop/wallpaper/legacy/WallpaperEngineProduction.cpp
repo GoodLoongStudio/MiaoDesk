@@ -45,6 +45,16 @@ inline void PaintMiaoCloudProduction(const ScenePaintContext& context, const D2D
     PaintMiaoCloud(context, size);
 }
 
+inline void PaintNeonCityProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
+    if (PaintPackagedScene(L"NeonCity.mdwall", context, size)) return;
+    PaintNeonCity(context, size);
+}
+
+inline void PaintMysticMoonProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
+    if (PaintPackagedScene(L"MysticMoon.mdwall", context, size)) return;
+    PaintMysticMoon(context, size);
+}
+
 } // namespace miaodesk::wallpaper::scenes
 
 namespace {
@@ -216,7 +226,11 @@ namespace wallpaper = miaodesk::wallpaper;
 #define Shell_NotifyIconW MiaoDeskWallpaperShellNotifyIconW
 #define RenderTargetProperties MiaoDeskWallpaperPixelRenderTargetProperties
 #define PaintMiaoCloud PaintMiaoCloudProduction
+#define PaintNeonCity PaintNeonCityProduction
+#define PaintMysticMoon PaintMysticMoonProduction
 #include "WallpaperEngine.cpp"
+#undef PaintMysticMoon
+#undef PaintNeonCity
 #undef PaintMiaoCloud
 #undef RenderTargetProperties
 #undef Shell_NotifyIconW

@@ -73,19 +73,18 @@ public:
 inline void EnsureImeProxyGeometry(HWND edit) {
     if (!IsMiaoDeskSearchEdit(edit)) return;
 
-    // Windows 11 Microsoft Pinyin/TSF still derives parts of its composition UI from the
-    // focused HWND geometry even when IMM32 candidate coordinates are provided. Keeping the
-    // keyboard proxy at 1x1 makes the pinyin pre-edit box fall back to the monitor origin.
-    // Give the native EDIT the same real geometry as the visible DirectWrite text field while
-    // SearchWindow continues suppressing its paint. This keeps IME geometry native without
-    // introducing a second visible rectangle or duplicate text renderer.
+    // Microsoft Pinyin/TSF samples the focused HWND geometry during focus and candidate
+    // creation. SearchWindow's legacy 1x1 keyboard proxy is therefore unsafe even for a
+    // visually custom-rendered field. Keep the native EDIT permanently aligned with the
+    // DirectWrite text rectangle; SearchWindow still suppresses EDIT painting.
     SetWindowPos(
         edit, nullptr,
         kVisibleEditLeft, kImeProxyTop,
         kVisibleEditRight - kVisibleEditLeft, kImeProxyHeight,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
-    // SearchWindow draws the authoritative caret itself.
+    // SearchWindow draws the authoritative caret itself. The native caret remains hidden, but
+    // its actual position is updated below so TSF/GetGUIThreadInfo still sees useful geometry.
     HideCaret(edit);
 }
 
@@ -99,19 +98,19 @@ inline void AnchorImeToVisibleCaret(HWND edit) {
     const int proxyWidth = kVisibleEditRight - kVisibleEditLeft;
     const int caretX = std::clamp(MeasureCaretOffset(edit), 0, proxyWidth - 4);
 
+    // Modern Microsoft Pinyin is TSF-backed and can use the Win32 thread caret rectangle even
+    // when IMM32 positioning calls are present. Publish the same caret geometry that MiaoDesk
+    // draws so the TSF composition UI does not fall back to the monitor origin.
+    SetCaretPos(caretX, 6);
+
     HIMC context = ImmGetContext(edit);
     if (!context) return;
 
-    // Force the phonetic composition UI to the real caret inside the search field instead of
-    // allowing Microsoft Pinyin to choose the screen origin from the historical 1x1 proxy.
     COMPOSITIONFORM composition{};
     composition.dwStyle = CFS_FORCE_POSITION;
     composition.ptCurrentPos = POINT{caretX, 6};
     ImmSetCompositionWindow(context, &composition);
 
-    // Keep the candidate strip immediately below the search text area. CFS_EXCLUDE lets the
-    // system choose left/right placement near screen edges while guaranteeing it does not cover
-    // the field itself.
     CANDIDATEFORM candidate{};
     candidate.dwIndex = 0;
     candidate.dwStyle = CFS_EXCLUDE;
@@ -140,6 +139,11 @@ inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lPa
                 } else {
                     switch (message->message) {
                     case WM_SETFOCUS:
+                        // Geometry must already be correct while the EDIT/TSF focus transaction
+                        // is running. SetWindowPos is safe here; IMM32 calls remain deferred.
+                        EnsureImeProxyGeometry(message->hwnd);
+                        RequestImeAnchor(message->hwnd);
+                        break;
                     case WM_KEYUP:
                     case WM_CHAR:
                     case WM_IME_STARTCOMPOSITION:
@@ -147,15 +151,35 @@ inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lPa
                     case WM_INPUTLANGCHANGE:
                         RequestImeAnchor(message->hwnd);
                         break;
+                    case WM_IME_NOTIFY:
+                        // Reposition only after the IME has opened its candidate UI. Never call
+                        // ImmSet* synchronously from this notification: RequestImeAnchor posts to
+                        // the next message turn and gImeAnchorBusy blocks setter feedback loops.
+                        if (message->wParam == IMN_OPENCANDIDATE ||
+                            message->wParam == IMN_CHANGECANDIDATE)
+                            RequestImeAnchor(message->hwnd);
+                        break;
                     default:
                         break;
                     }
                 }
-            } else if (message->message == WM_SIZE && IsMiaoDeskSearchWindow(message->hwnd)) {
-                // SearchWindow historically shrinks the native proxy during resize. Restore the
-                // real IME geometry asynchronously after its WM_SIZE handler has completed.
-                const HWND edit = GetDlgItem(message->hwnd, kSearchEditControlId);
-                if (edit && GetFocus() == edit) RequestImeAnchor(edit);
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM lParam) {
+    if (code >= 0 && lParam) {
+        const auto* message = reinterpret_cast<const CWPRETSTRUCT*>(lParam);
+        if (message && message->message == WM_SIZE && IsMiaoDeskSearchWindow(message->hwnd)) {
+            // SearchWindow's WM_SIZE handler still collapses the infrastructure EDIT to 1x1.
+            // Restore the real rectangle immediately after that handler returns, before TSF can
+            // consume another queued input/candidate message.
+            const HWND edit = GetDlgItem(message->hwnd, kSearchEditControlId);
+            if (edit) {
+                EnsureImeProxyGeometry(edit);
+                if (GetFocus() == edit) RequestImeAnchor(edit);
             }
         }
     }
@@ -165,22 +189,26 @@ inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lPa
 class SearchImeAnchorBridge final {
 public:
     SearchImeAnchorBridge()
-        : hook_(SetWindowsHookExW(
-              WH_CALLWNDPROC, SearchImeCallWndProc, nullptr, GetCurrentThreadId())) {}
+        : callHook_(SetWindowsHookExW(
+              WH_CALLWNDPROC, SearchImeCallWndProc, nullptr, GetCurrentThreadId())),
+          returnHook_(SetWindowsHookExW(
+              WH_CALLWNDPROCRET, SearchImeCallWndRetProc, nullptr, GetCurrentThreadId())) {}
 
     ~SearchImeAnchorBridge() {
-        if (hook_) UnhookWindowsHookEx(hook_);
+        if (returnHook_) UnhookWindowsHookEx(returnHook_);
+        if (callHook_) UnhookWindowsHookEx(callHook_);
     }
 
     SearchImeAnchorBridge(const SearchImeAnchorBridge&) = delete;
     SearchImeAnchorBridge& operator=(const SearchImeAnchorBridge&) = delete;
 
 private:
-    HHOOK hook_{};
+    HHOOK callHook_{};
+    HHOOK returnHook_{};
 };
 
 // SearchWindow is created and pumped on the executable's startup/UI thread. Keeping this
-// bridge inline makes it process-local and guarantees a single thread hook across TUs.
+// bridge inline makes it process-local and guarantees one pair of thread hooks across TUs.
 inline SearchImeAnchorBridge gSearchImeAnchorBridge;
 
 } // namespace miaodesk::search_ime_detail

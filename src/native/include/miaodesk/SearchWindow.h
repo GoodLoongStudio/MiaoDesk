@@ -2,7 +2,7 @@
 #include "miaodesk/AppSearch.h"
 #include "miaodesk/GozSearch.h"
 #include "miaodesk/L3Agent.h"
-#include "miaodesk/SearchImeAnchor.h"
+#include "miaodesk/InputImeAnchor.h"
 #include "miaodesk/SearchTypes.h"
 #include <windows.h>
 #include <CommCtrl.h>

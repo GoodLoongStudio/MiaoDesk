@@ -107,23 +107,12 @@ POINT ConversationVisualCaretPoint(ConversationState& state, WNDPROC inputCore =
 }
 
 void PositionConversationInputProxyAnchored(ConversationState& state, WNDPROC inputCore = nullptr) {
+    // Compatibility wrapper for existing ConversationPanel callers. The 1x1 proxy and direct
+    // CFS_POINT/CFS_CANDIDATEPOS path are retired; InputImeAnchor is the single owner of native
+    // EDIT geometry, Win32 caret publication and IME/TSF candidate positioning.
+    (void)inputCore;
     if (!state.input || !state.window) return;
-    const POINT caret = ConversationVisualCaretPoint(state, inputCore);
-    MoveWindow(state.input, caret.x, caret.y, 1, 1, FALSE);
-
-    HIMC context = ImmGetContext(state.input);
-    if (!context) return;
-    COMPOSITIONFORM composition{};
-    composition.dwStyle = CFS_POINT;
-    composition.ptCurrentPos = POINT{0, 0};
-    ImmSetCompositionWindow(context, &composition);
-
-    CANDIDATEFORM candidate{};
-    candidate.dwIndex = 0;
-    candidate.dwStyle = CFS_CANDIDATEPOS;
-    candidate.ptCurrentPos = POINT{0, Px(state, 24)};
-    ImmSetCandidateWindow(context, &candidate);
-    ImmReleaseContext(state.input, context);
+    input_ime_detail::SyncConversationImeAnchor(state.input);
 }
 
 LRESULT CALLBACK ConversationInputOverlayProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {

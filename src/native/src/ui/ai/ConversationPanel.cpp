@@ -1,4 +1,5 @@
 #include "miaodesk/ConversationPanel.h"
+#include "miaodesk/InputImeAnchor.h"
 #include "miaodesk/WindowPlacementStore.h"
 #include "miaodesk/StoreDemoExperience.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
@@ -214,8 +215,13 @@ void DrawConversationInputFocusAndCaret() {
             SendMessageW(
                 state->input, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart),
                 reinterpret_cast<LPARAM>(&selectionEnd));
-            const UINT32 caretIndex = (std::min)(
-                static_cast<UINT32>(selectionEnd), static_cast<UINT32>(inputText.size()));
+            // During IME composition, WM_GETTEXT is intentionally exposed as committed +
+            // composition text by ConversationPanelInputOverlay. EM_GETSEL still points at the
+            // committed-text insertion point, so using it would draw a second caret in front of
+            // the visible pinyin. The visual caret follows the composition end, matching Search.
+            const UINT32 caretIndex = input_ime_detail::HasImeComposition(state->input)
+                ? static_cast<UINT32>(inputText.size())
+                : (std::min)(static_cast<UINT32>(selectionEnd), static_cast<UINT32>(inputText.size()));
             const bool atEnd = caretIndex >= inputText.size();
             const UINT32 hitPosition = atEnd
                 ? static_cast<UINT32>(inputText.size() - 1)
@@ -338,7 +344,7 @@ bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const
         EnsureConversationCornerResizeBridge(gConversationState->window);
         EnsureConversationImageIntentBridge(*gConversationState);
         EnsureConversationPreviewBridge(gConversationState->window);
-        PositionConversationInputProxy(*gConversationState);
+        input_ime_detail::SyncConversationImeAnchor(gConversationState->input);
         RenderConversationLayerSurface(*gConversationState);
         if (!Trim(initialPrompt).empty() && !gConversationState->busy && !gConversationState->pendingConfirmation) {
             SetWindowTextW(gConversationState->input, initialPrompt.c_str());
@@ -346,6 +352,7 @@ bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const
         }
         SetFocus(gConversationState->input);
         gConversationCaretVisible = true;
+        input_ime_detail::SyncConversationImeAnchor(gConversationState->input);
         RenderConversationLayerSurface(*gConversationState);
     }
     return true;

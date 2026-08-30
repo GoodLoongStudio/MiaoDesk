@@ -5,27 +5,28 @@
 #include <algorithm>
 #include <iterator>
 #include <string>
-#include <vector>
 
 #pragma comment(lib, "imm32.lib")
 
-namespace miaodesk::search_ime_detail {
+namespace miaodesk::input_ime_detail {
 
+// InputImeAnchor is the shared Windows IME/TSF infrastructure for custom-rendered
+// MiaoDesk text fields. Surface-specific geometry remains explicitly named Search
+// or Conversation; only the message hook/anchor framework is shared.
 constexpr int kSearchEditControlId = 100;
-constexpr int kVisibleEditLeft = 52;
-constexpr int kVisibleEditRight = 594;
-constexpr int kVisibleBarHeight = 56;
-constexpr int kImeProxyTop = 13;
-constexpr int kImeProxyHeight = 30;
-constexpr UINT kDeferredImeAnchorMessage = WM_APP + 0x2A1;
+constexpr int kSearchEditLeft = 52;
+constexpr int kSearchEditRight = 594;
+constexpr int kSearchEditTop = 13;
+constexpr int kSearchEditHeight = 30;
+constexpr UINT kDeferredSearchImeAnchorMessage = WM_APP + 0x2A1;
 
 constexpr int kConversationEditControlId = 3102;
 constexpr UINT kDeferredConversationImeAnchorMessage = WM_APP + 0x2A2;
 constexpr wchar_t kConversationImePaintCoreProcProperty[] =
     L"MiaoDesk.Conversation.ImePaintCoreProc";
 
-inline thread_local bool gImeAnchorBusy = false;
-inline thread_local bool gImeAnchorPending = false;
+inline thread_local bool gSearchImeAnchorBusy = false;
+inline thread_local bool gSearchImeAnchorPending = false;
 inline thread_local bool gConversationImeAnchorBusy = false;
 inline thread_local bool gConversationImeAnchorPending = false;
 inline thread_local bool gConversationImeGeometryBusy = false;
@@ -55,7 +56,7 @@ inline bool IsMiaoDeskConversationEdit(HWND edit) {
     return IsMiaoDeskConversationWindow(GetParent(edit));
 }
 
-inline int MeasureCaretOffset(HWND edit) {
+inline int MeasureEditCaretOffset(HWND edit) {
     DWORD selectionStart = 0;
     DWORD selectionEnd = 0;
     SendMessageW(edit, EM_GETSEL,
@@ -82,13 +83,22 @@ inline int MeasureCaretOffset(HWND edit) {
     return static_cast<int>(std::max(0L, extent.cx));
 }
 
-class ImeAnchorBusyScope final {
-public:
-    ImeAnchorBusyScope() { gImeAnchorBusy = true; }
-    ~ImeAnchorBusyScope() { gImeAnchorBusy = false; }
+inline bool HasImeComposition(HWND edit) {
+    if (!edit) return false;
+    HIMC context = ImmGetContext(edit);
+    if (!context) return false;
+    const LONG bytes = ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+    ImmReleaseContext(edit, context);
+    return bytes > 0;
+}
 
-    ImeAnchorBusyScope(const ImeAnchorBusyScope&) = delete;
-    ImeAnchorBusyScope& operator=(const ImeAnchorBusyScope&) = delete;
+class SearchImeAnchorBusyScope final {
+public:
+    SearchImeAnchorBusyScope() { gSearchImeAnchorBusy = true; }
+    ~SearchImeAnchorBusyScope() { gSearchImeAnchorBusy = false; }
+
+    SearchImeAnchorBusyScope(const SearchImeAnchorBusyScope&) = delete;
+    SearchImeAnchorBusyScope& operator=(const SearchImeAnchorBusyScope&) = delete;
 };
 
 class ConversationImeAnchorBusyScope final {
@@ -100,37 +110,32 @@ public:
     ConversationImeAnchorBusyScope& operator=(const ConversationImeAnchorBusyScope&) = delete;
 };
 
-inline void EnsureImeProxyGeometry(HWND edit) {
+// ---- Search-specific surface profile ---------------------------------------------------------
+
+inline void EnsureSearchImeGeometry(HWND edit) {
     if (!IsMiaoDeskSearchEdit(edit)) return;
 
-    // Microsoft Pinyin/TSF samples the focused HWND geometry during focus and candidate
-    // creation. SearchWindow's legacy 1x1 keyboard proxy is therefore unsafe even for a
-    // visually custom-rendered field. Keep the native EDIT permanently aligned with the
-    // DirectWrite text rectangle; SearchWindow still suppresses EDIT painting.
+    // SearchWindow is DirectWrite-rendered. The native EDIT is input infrastructure, but
+    // Microsoft Pinyin/TSF still samples the focused HWND rectangle. Keep it aligned with the
+    // real search text field rather than the historical 1x1 keyboard proxy.
     SetWindowPos(
         edit, nullptr,
-        kVisibleEditLeft, kImeProxyTop,
-        kVisibleEditRight - kVisibleEditLeft, kImeProxyHeight,
+        kSearchEditLeft, kSearchEditTop,
+        kSearchEditRight - kSearchEditLeft, kSearchEditHeight,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-
-    // SearchWindow draws the authoritative caret itself. The native caret remains hidden, but
-    // its actual position is updated below so TSF/GetGUIThreadInfo still sees useful geometry.
     HideCaret(edit);
 }
 
-inline void AnchorImeToVisibleCaret(HWND edit) {
-    if (!IsMiaoDeskSearchEdit(edit) || gImeAnchorBusy) return;
+inline void AnchorSearchImeToVisibleCaret(HWND edit) {
+    if (!IsMiaoDeskSearchEdit(edit) || gSearchImeAnchorBusy) return;
     if (GetFocus() != edit) return;
 
-    ImeAnchorBusyScope busyScope;
-    EnsureImeProxyGeometry(edit);
+    SearchImeAnchorBusyScope busyScope;
+    EnsureSearchImeGeometry(edit);
 
-    const int proxyWidth = kVisibleEditRight - kVisibleEditLeft;
-    const int caretX = std::clamp(MeasureCaretOffset(edit), 0, proxyWidth - 4);
+    const int width = kSearchEditRight - kSearchEditLeft;
+    const int caretX = std::clamp(MeasureEditCaretOffset(edit), 0, width - 4);
 
-    // Modern Microsoft Pinyin is TSF-backed and can use the Win32 thread caret rectangle even
-    // when IMM32 positioning calls are present. Publish the same caret geometry that MiaoDesk
-    // draws so the TSF composition UI does not fall back to the monitor origin.
     SetCaretPos(caretX, 6);
     HideCaret(edit);
 
@@ -145,20 +150,22 @@ inline void AnchorImeToVisibleCaret(HWND edit) {
     CANDIDATEFORM candidate{};
     candidate.dwIndex = 0;
     candidate.dwStyle = CFS_EXCLUDE;
-    candidate.ptCurrentPos = POINT{caretX, kImeProxyHeight};
-    candidate.rcArea = RECT{0, 0, proxyWidth, kImeProxyHeight};
+    candidate.ptCurrentPos = POINT{caretX, kSearchEditHeight};
+    candidate.rcArea = RECT{0, 0, width, kSearchEditHeight};
     ImmSetCandidateWindow(context, &candidate);
 
     ImmReleaseContext(edit, context);
     HideCaret(edit);
 }
 
-inline void RequestImeAnchor(HWND edit) {
-    if (!IsMiaoDeskSearchEdit(edit) || gImeAnchorBusy || gImeAnchorPending) return;
-    gImeAnchorPending = true;
-    if (!PostMessageW(edit, kDeferredImeAnchorMessage, 0, 0))
-        gImeAnchorPending = false;
+inline void RequestSearchImeAnchor(HWND edit) {
+    if (!IsMiaoDeskSearchEdit(edit) || gSearchImeAnchorBusy || gSearchImeAnchorPending) return;
+    gSearchImeAnchorPending = true;
+    if (!PostMessageW(edit, kDeferredSearchImeAnchorMessage, 0, 0))
+        gSearchImeAnchorPending = false;
 }
+
+// ---- Conversation-specific surface profile ---------------------------------------------------
 
 inline int ConversationPx(HWND parent, int value) {
     UINT dpi = parent ? GetDpiForWindow(parent) : 96;
@@ -173,10 +180,12 @@ inline RECT ConversationEditRect(HWND edit) {
 
     RECT client{};
     GetClientRect(parent, &client);
-    const int inputTop = static_cast<int>(client.bottom) - ConversationPx(parent, 64) - ConversationPx(parent, 16);
+    const int inputTop =
+        static_cast<int>(client.bottom) - ConversationPx(parent, 64) - ConversationPx(parent, 16);
     const int left = ConversationPx(parent, 38);
     const int top = inputTop + ConversationPx(parent, 13);
-    const int availableWidth = static_cast<int>(client.right) - ConversationPx(parent, 76) - ConversationPx(parent, 62);
+    const int availableWidth =
+        static_cast<int>(client.right) - ConversationPx(parent, 76) - ConversationPx(parent, 62);
     const int width = std::max(ConversationPx(parent, 120), availableWidth);
     const int height = ConversationPx(parent, 38);
     result = RECT{left, top, left + width, top + height};
@@ -189,9 +198,8 @@ inline LRESULT CALLBACK ConversationImePaintProc(
         GetPropW(hwnd, kConversationImePaintCoreProcProperty));
     if (!core) return DefWindowProcW(hwnd, message, wParam, lParam);
 
-    // ConversationPanel is a per-pixel-alpha custom surface. The native EDIT exists only to
-    // give Windows keyboard/TSF infrastructure a truthful focus and caret geometry. Never let
-    // the EDIT paint text/background over the DirectWrite input field.
+    // Direct2D owns all visible text/caret rendering. The native EDIT only owns keyboard/IME
+    // semantics and must never paint a second text field or a native caret.
     if (message == WM_PAINT) {
         ValidateRect(hwnd, nullptr);
         return 0;
@@ -227,9 +235,8 @@ inline bool ConversationEditAlreadyHasRealGeometry(HWND edit, const RECT& desire
     if (!GetWindowRect(edit, &current)) return false;
     POINT points[2]{{current.left, current.top}, {current.right, current.bottom}};
     const HWND parent = GetParent(edit);
-    if (!parent || MapWindowPoints(nullptr, parent, points, 2) == 0) {
-        if (!parent) return false;
-    }
+    if (!parent) return false;
+    MapWindowPoints(nullptr, parent, points, 2);
     current = RECT{points[0].x, points[0].y, points[1].x, points[1].y};
     return current.left == desired.left && current.top == desired.top &&
            current.right == desired.right && current.bottom == desired.bottom;
@@ -266,13 +273,13 @@ inline POINT ConversationNativeCaretPoint(HWND edit) {
                  reinterpret_cast<WPARAM>(&selectionStart),
                  reinterpret_cast<LPARAM>(&selectionEnd));
 
-    const LRESULT position = SendMessageW(
-        edit, EM_POSFROMCHAR, static_cast<WPARAM>(selectionEnd), 0);
+    const LRESULT position =
+        SendMessageW(edit, EM_POSFROMCHAR, static_cast<WPARAM>(selectionEnd), 0);
     if (position != -1) {
         caret.x = static_cast<short>(LOWORD(position));
         caret.y = static_cast<short>(HIWORD(position));
     } else {
-        caret.x = MeasureCaretOffset(edit);
+        caret.x = MeasureEditCaretOffset(edit);
         caret.y = 0;
     }
 
@@ -294,9 +301,6 @@ inline void AnchorConversationImeToNativeCaret(HWND edit) {
 
     const POINT caret = ConversationNativeCaretPoint(edit);
 
-    // The old ConversationPanel code still attempts to move this EDIT to a 1x1 proxy at the
-    // visual caret. Restore a full-sized input HWND and publish the real Win32 caret instead.
-    // This is what modern Microsoft Pinyin/TSF reads through GetGUIThreadInfo.
     SetCaretPos(caret.x, caret.y);
     HideCaret(edit);
 
@@ -327,6 +331,75 @@ inline void RequestConversationImeAnchor(HWND edit) {
         gConversationImeAnchorPending = false;
 }
 
+// Explicit surface entry point used by ConversationPanel. This is deliberately not named
+// "Search": the framework is InputImeAnchor; the caller-specific behavior remains Conversation.
+inline void SyncConversationImeAnchor(HWND edit) {
+    if (!IsMiaoDeskConversationEdit(edit)) return;
+    EnsureConversationImeGeometry(edit);
+    HideCaret(edit);
+    if (GetFocus() == edit) RequestConversationImeAnchor(edit);
+}
+
+// ---- Shared hook dispatch --------------------------------------------------------------------
+
+inline void HandleSearchEditMessageBefore(const CWPSTRUCT& message) {
+    if (!IsMiaoDeskSearchEdit(message.hwnd)) return;
+
+    if (message.message == kDeferredSearchImeAnchorMessage) {
+        gSearchImeAnchorPending = false;
+        AnchorSearchImeToVisibleCaret(message.hwnd);
+        return;
+    }
+
+    switch (message.message) {
+    case WM_SETFOCUS:
+        EnsureSearchImeGeometry(message.hwnd);
+        RequestSearchImeAnchor(message.hwnd);
+        break;
+    case WM_KEYUP:
+    case WM_CHAR:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_INPUTLANGCHANGE:
+        RequestSearchImeAnchor(message.hwnd);
+        break;
+    case WM_IME_NOTIFY:
+        if (message.wParam == IMN_OPENCANDIDATE ||
+            message.wParam == IMN_CHANGECANDIDATE)
+            RequestSearchImeAnchor(message.hwnd);
+        break;
+    default:
+        break;
+    }
+}
+
+inline void HandleSearchEditMessageAfter(const CWPRETSTRUCT& message) {
+    if (!IsMiaoDeskSearchEdit(message.hwnd)) return;
+
+    if (message.message == WM_WINDOWPOSCHANGED) {
+        EnsureSearchImeGeometry(message.hwnd);
+        HideCaret(message.hwnd);
+        if (GetFocus() == message.hwnd) RequestSearchImeAnchor(message.hwnd);
+        return;
+    }
+
+    switch (message.message) {
+    case WM_SETFOCUS:
+    case WM_KEYUP:
+    case WM_CHAR:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_INPUTLANGCHANGE:
+        HideCaret(message.hwnd);
+        if (GetFocus() == message.hwnd) RequestSearchImeAnchor(message.hwnd);
+        break;
+    default:
+        break;
+    }
+}
+
 inline void HandleConversationEditMessageBefore(const CWPSTRUCT& message) {
     if (!IsMiaoDeskConversationEdit(message.hwnd)) return;
 
@@ -338,8 +411,6 @@ inline void HandleConversationEditMessageBefore(const CWPSTRUCT& message) {
 
     switch (message.message) {
     case WM_SETFOCUS:
-        // TSF samples the focused HWND during the focus transaction, so correct the geometry
-        // synchronously before the native EDIT continues processing WM_SETFOCUS.
         EnsureConversationImeGeometry(message.hwnd);
         RequestConversationImeAnchor(message.hwnd);
         break;
@@ -365,10 +436,8 @@ inline void HandleConversationEditMessageAfter(const CWPRETSTRUCT& message) {
     if (!IsMiaoDeskConversationEdit(message.hwnd)) return;
 
     if (message.message == WM_WINDOWPOSCHANGED && !gConversationImeGeometryBusy) {
-        // Legacy ConversationPanel code repeatedly collapses the native EDIT to 1x1. Repair it
-        // immediately after that SetWindowPos/MoveWindow completes, then defer IMM32 anchoring
-        // until the surrounding input message has finished changing IME state.
         EnsureConversationImeGeometry(message.hwnd);
+        HideCaret(message.hwnd);
         if (GetFocus() == message.hwnd) RequestConversationImeAnchor(message.hwnd);
         return;
     }
@@ -390,125 +459,65 @@ inline void HandleConversationEditMessageAfter(const CWPRETSTRUCT& message) {
     }
 }
 
-inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lParam) {
+inline LRESULT CALLBACK InputImeCallWndProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPSTRUCT*>(lParam);
         if (message) {
+            HandleSearchEditMessageBefore(*message);
             HandleConversationEditMessageBefore(*message);
-
-            if (IsMiaoDeskSearchEdit(message->hwnd)) {
-                if (message->message == kDeferredImeAnchorMessage) {
-                    gImeAnchorPending = false;
-                    AnchorImeToVisibleCaret(message->hwnd);
-                } else {
-                    switch (message->message) {
-                    case WM_SETFOCUS:
-                        // Geometry must already be correct while the EDIT/TSF focus transaction
-                        // is running. SetWindowPos is safe here; IMM32 calls remain deferred.
-                        EnsureImeProxyGeometry(message->hwnd);
-                        RequestImeAnchor(message->hwnd);
-                        break;
-                    case WM_KEYUP:
-                    case WM_CHAR:
-                    case WM_IME_STARTCOMPOSITION:
-                    case WM_IME_COMPOSITION:
-                    case WM_INPUTLANGCHANGE:
-                        RequestImeAnchor(message->hwnd);
-                        break;
-                    case WM_IME_NOTIFY:
-                        // Reposition only after the IME has opened its candidate UI. Never call
-                        // ImmSet* synchronously from this notification: RequestImeAnchor posts to
-                        // the next message turn and gImeAnchorBusy blocks setter feedback loops.
-                        if (message->wParam == IMN_OPENCANDIDATE ||
-                            message->wParam == IMN_CHANGECANDIDATE)
-                            RequestImeAnchor(message->hwnd);
-                        break;
-                    default:
-                        break;
-                    }
-                }
-            }
         }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
-inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM lParam) {
+inline LRESULT CALLBACK InputImeCallWndRetProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPRETSTRUCT*>(lParam);
         if (message) {
+            HandleSearchEditMessageAfter(*message);
             HandleConversationEditMessageAfter(*message);
-        }
 
-        if (message && IsMiaoDeskSearchEdit(message->hwnd)) {
-            switch (message->message) {
-            case WM_SETFOCUS:
-            case WM_KEYUP:
-            case WM_CHAR:
-            case WM_IME_STARTCOMPOSITION:
-            case WM_IME_COMPOSITION:
-            case WM_IME_ENDCOMPOSITION:
-            case WM_INPUTLANGCHANGE:
-                // DefWindowProc/EDIT creates and may reposition its own Win32 caret after our
-                // pre-dispatch hook. Hide it again after the native control has finished so the
-                // only visible caret is SearchWindow's DirectWrite-aligned blue caret.
-                HideCaret(message->hwnd);
-                if (GetFocus() == message->hwnd) RequestImeAnchor(message->hwnd);
-                break;
-            default:
-                break;
+            if (message->message == WM_SIZE && IsMiaoDeskSearchWindow(message->hwnd)) {
+                const HWND edit = GetDlgItem(message->hwnd, kSearchEditControlId);
+                if (edit) {
+                    EnsureSearchImeGeometry(edit);
+                    HideCaret(edit);
+                    if (GetFocus() == edit) RequestSearchImeAnchor(edit);
+                }
             }
-        }
 
-        if (message && message->message == WM_SIZE && IsMiaoDeskSearchWindow(message->hwnd)) {
-            // SearchWindow's WM_SIZE handler still collapses the infrastructure EDIT to 1x1.
-            // Restore the real rectangle immediately after that handler returns, before TSF can
-            // consume another queued input/candidate message.
-            const HWND edit = GetDlgItem(message->hwnd, kSearchEditControlId);
-            if (edit) {
-                EnsureImeProxyGeometry(edit);
-                HideCaret(edit);
-                if (GetFocus() == edit) RequestImeAnchor(edit);
-            }
-        }
-
-        if (message && message->message == WM_SIZE &&
-            IsMiaoDeskConversationWindow(message->hwnd)) {
-            const HWND edit = GetDlgItem(message->hwnd, kConversationEditControlId);
-            if (edit) {
-                EnsureConversationImeGeometry(edit);
-                HideCaret(edit);
-                if (GetFocus() == edit) RequestConversationImeAnchor(edit);
+            if (message->message == WM_SIZE && IsMiaoDeskConversationWindow(message->hwnd)) {
+                const HWND edit = GetDlgItem(message->hwnd, kConversationEditControlId);
+                if (edit) SyncConversationImeAnchor(edit);
             }
         }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
-class SearchImeAnchorBridge final {
+class InputImeAnchorBridge final {
 public:
-    SearchImeAnchorBridge()
+    InputImeAnchorBridge()
         : callHook_(SetWindowsHookExW(
-              WH_CALLWNDPROC, SearchImeCallWndProc, nullptr, GetCurrentThreadId())),
+              WH_CALLWNDPROC, InputImeCallWndProc, nullptr, GetCurrentThreadId())),
           returnHook_(SetWindowsHookExW(
-              WH_CALLWNDPROCRET, SearchImeCallWndRetProc, nullptr, GetCurrentThreadId())) {}
+              WH_CALLWNDPROCRET, InputImeCallWndRetProc, nullptr, GetCurrentThreadId())) {}
 
-    ~SearchImeAnchorBridge() {
+    ~InputImeAnchorBridge() {
         if (returnHook_) UnhookWindowsHookEx(returnHook_);
         if (callHook_) UnhookWindowsHookEx(callHook_);
     }
 
-    SearchImeAnchorBridge(const SearchImeAnchorBridge&) = delete;
-    SearchImeAnchorBridge& operator=(const SearchImeAnchorBridge&) = delete;
+    InputImeAnchorBridge(const InputImeAnchorBridge&) = delete;
+    InputImeAnchorBridge& operator=(const InputImeAnchorBridge&) = delete;
 
 private:
     HHOOK callHook_{};
     HHOOK returnHook_{};
 };
 
-// SearchWindow and ConversationPanel are created and pumped on the executable's startup/UI
-// thread. Keeping this bridge inline makes it process-local and guarantees one pair of thread
-// hooks across TUs for both custom input surfaces.
-inline SearchImeAnchorBridge gSearchImeAnchorBridge;
+// SearchWindow and ConversationPanel live on the same UI thread. One shared input bridge handles
+// Win32 caret publication and IME/TSF re-anchoring, while each surface keeps its own geometry.
+inline InputImeAnchorBridge gInputImeAnchorBridge;
 
-} // namespace miaodesk::search_ime_detail
+} // namespace miaodesk::input_ime_detail

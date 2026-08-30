@@ -43,6 +43,26 @@ public:
     void AskAsync(std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone);
     void Stop();
     bool Busy() const noexcept { return busy_.load(); }
+
+    // Settings live in MiaoDeskWallpaper.exe while chat lives in MiaoDesk.exe. The main
+    // process may therefore outlive a provider/model change. Refresh the shared JSON before
+    // opening a conversation so the chat does not keep using the startup snapshot.
+    void ReloadConfig() {
+        const ModelConfig refreshed = LoadConfig();
+        if (refreshed.providerId == config_.providerId &&
+            refreshed.baseUrl == config_.baseUrl &&
+            refreshed.model == config_.model &&
+            refreshed.endpoint == config_.endpoint) {
+            return;
+        }
+
+        Stop();
+        if (worker_.joinable()) worker_.join();
+        config_ = refreshed;
+        std::scoped_lock lock(conversationMutex_);
+        conversation_.clear();
+    }
+
     const ModelConfig& Config() const noexcept { return config_; }
     bool HasApiKey() const;
     bool HasStoredApiKey() const;

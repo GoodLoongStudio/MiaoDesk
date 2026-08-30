@@ -28,11 +28,11 @@ foreach ($marker in $required) {
     }
 }
 
-# The hidden native EDIT must suppress its own painting so it can provide IME/keyboard/clipboard
-# input without ever becoming a visible rectangle. Match semantics rather than one formatting style.
+# The native EDIT remains visually suppressed so it can provide keyboard/IME/clipboard input
+# without creating a second visible rectangle. Its runtime geometry is restored by the IME bridge.
 $paintSuppressed = $text -match '(?s)if\s*\(message\s*==\s*WM_PAINT\)\s*\{\s*ValidateRect\(hwnd,\s*nullptr\);\s*return\s+0;\s*\}'
 if (-not $paintSuppressed) {
-    throw 'Search input contract missing hidden EDIT WM_PAINT suppression.'
+    throw 'Search input contract missing native EDIT WM_PAINT suppression.'
 }
 
 $forbidden = @(
@@ -63,13 +63,20 @@ $imeRequired = @(
     'GetFocus() != edit',
     'PostMessageW(edit, kDeferredImeAnchorMessage',
     'message->message == kDeferredImeAnchorMessage',
+    'EnsureImeProxyGeometry',
+    'kImeProxyHeight',
+    'kVisibleEditRight - kVisibleEditLeft',
+    'CFS_FORCE_POSITION',
+    'CFS_EXCLUDE',
+    'HideCaret(edit)',
+    'message->message == WM_SIZE',
     'ImmSetCompositionWindow',
     'ImmSetCandidateWindow'
 )
 
 foreach ($marker in $imeRequired) {
     if (-not $imeText.Contains($marker)) {
-        throw "Search IME non-reentrant contract marker missing: $marker"
+        throw "Search IME visible-geometry/non-reentrant contract marker missing: $marker"
     }
 }
 
@@ -85,4 +92,11 @@ if ($imeText -match '(?s)case\s+WM_SETFOCUS\s*:.*?AnchorImeToVisibleCaret') {
     throw 'Search IME bridge must defer WM_SETFOCUS anchoring instead of anchoring synchronously.'
 }
 
-Write-Host 'Search input proxy, IME reentrancy, and per-pixel-alpha rendering contracts verified.'
+# A permanently 1x1 focused EDIT makes Windows 11 Microsoft Pinyin/TSF place the phonetic
+# composition UI near the monitor origin. The bridge must restore a real rectangle that matches
+# the DirectWrite search field before positioning composition/candidate UI.
+if ($imeText -notmatch '(?s)SetWindowPos\s*\(\s*edit.*?kVisibleEditLeft.*?kImeProxyTop.*?kVisibleEditRight\s*-\s*kVisibleEditLeft.*?kImeProxyHeight') {
+    throw 'Search IME bridge must restore the native input proxy to visible search-field geometry.'
+}
+
+Write-Host 'Search input proxy, visible-geometry Chinese IME, reentrancy, and per-pixel-alpha rendering contracts verified.'

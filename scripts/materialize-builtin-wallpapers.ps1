@@ -7,22 +7,38 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$themes = @('MiaoCloud.mdwall','NeonCity.mdwall','MysticMoon.mdwall')
+# MiaoCloud is already shipped as the first production mdwall. This compact
+# pack carries the two remaining built-in themes so they do not depend on
+# dozens of individual Git LFS objects.
+$themes = @('NeonCity.mdwall','MysticMoon.mdwall')
 $requiredAssets = @{
-    'MiaoCloud.mdwall' = @('background.jpg','cloud.png','cat.png','tail.png','blink.png')
     'NeonCity.mdwall' = @('background.jpg','city_glow.png','haze.png','rain_1.png','rain_2.png')
     'MysticMoon.mdwall' = @('background.jpg','moon_glow.png','water_glow.png','fog.png','fireflies.png')
 }
-
-if (-not (Test-Path $PackPath -PathType Leaf)) { throw "Builtin wallpaper pack is missing: $PackPath" }
-if ((Get-Item $PackPath).Length -lt 1048576) { throw "Builtin wallpaper pack is unexpectedly small: $PackPath" }
 
 $stage = Join-Path $env:TEMP ('MiaoDesk-Wallpapers-' + [guid]::NewGuid().ToString('N'))
 $zipPath = Join-Path $stage 'BuiltinWallpapers.zip'
 $extract = Join-Path $stage 'extract'
 try {
     New-Item -ItemType Directory -Force -Path $stage,$extract,$Destination | Out-Null
-    Copy-Item $PackPath $zipPath -Force
+
+    if (Test-Path $PackPath -PathType Leaf) {
+        Copy-Item $PackPath $zipPath -Force
+    }
+    else {
+        $partRoot = Join-Path $MetadataRoot '.pack'
+        $parts = @(Get-ChildItem $partRoot -Filter 'BuiltinWallpapers.mdpack.part*' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+        if ($parts.Count -eq 0) { throw "Builtin wallpaper pack is missing: $PackPath" }
+        $out = [IO.File]::Open($zipPath, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try {
+            foreach ($part in $parts) {
+                $bytes = [IO.File]::ReadAllBytes($part.FullName)
+                $out.Write($bytes, 0, $bytes.Length)
+            }
+        } finally { $out.Dispose() }
+    }
+
+    if ((Get-Item $zipPath).Length -lt 500000) { throw "Builtin wallpaper pack is unexpectedly small: $zipPath" }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
@@ -33,7 +49,7 @@ try {
             if ($name.StartsWith('/') -or $name.Contains('../') -or $name.Contains('..\')) {
                 throw "Unsafe builtin wallpaper pack entry: $name"
             }
-            if ($name -notmatch '^(MiaoCloud|NeonCity|MysticMoon)\.mdwall/assets/[A-Za-z0-9_.-]+$') {
+            if ($name -notmatch '^(NeonCity|MysticMoon)\.mdwall/assets/[A-Za-z0-9_.-]+$') {
                 throw "Unexpected builtin wallpaper pack entry: $name"
             }
         }

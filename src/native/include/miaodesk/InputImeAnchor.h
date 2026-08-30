@@ -27,6 +27,7 @@ constexpr wchar_t kConversationImePaintCoreProcProperty[] =
 
 inline thread_local bool gSearchImeAnchorBusy = false;
 inline thread_local bool gSearchImeAnchorPending = false;
+inline thread_local bool gSearchImeGeometryBusy = false;
 inline thread_local bool gConversationImeAnchorBusy = false;
 inline thread_local bool gConversationImeAnchorPending = false;
 inline thread_local bool gConversationImeGeometryBusy = false;
@@ -113,16 +114,18 @@ public:
 // ---- Search-specific surface profile ---------------------------------------------------------
 
 inline void EnsureSearchImeGeometry(HWND edit) {
-    if (!IsMiaoDeskSearchEdit(edit)) return;
+    if (!IsMiaoDeskSearchEdit(edit) || gSearchImeGeometryBusy) return;
 
     // SearchWindow is DirectWrite-rendered. The native EDIT is input infrastructure, but
     // Microsoft Pinyin/TSF still samples the focused HWND rectangle. Keep it aligned with the
     // real search text field rather than the historical 1x1 keyboard proxy.
+    gSearchImeGeometryBusy = true;
     SetWindowPos(
         edit, nullptr,
         kSearchEditLeft, kSearchEditTop,
         kSearchEditRight - kSearchEditLeft, kSearchEditHeight,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    gSearchImeGeometryBusy = false;
     HideCaret(edit);
 }
 
@@ -377,7 +380,7 @@ inline void HandleSearchEditMessageBefore(const CWPSTRUCT& message) {
 inline void HandleSearchEditMessageAfter(const CWPRETSTRUCT& message) {
     if (!IsMiaoDeskSearchEdit(message.hwnd)) return;
 
-    if (message.message == WM_WINDOWPOSCHANGED) {
+    if (message.message == WM_WINDOWPOSCHANGED && !gSearchImeGeometryBusy) {
         EnsureSearchImeGeometry(message.hwnd);
         HideCaret(message.hwnd);
         if (GetFocus() == message.hwnd) RequestSearchImeAnchor(message.hwnd);

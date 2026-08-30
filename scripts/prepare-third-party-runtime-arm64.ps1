@@ -77,7 +77,6 @@ function Ensure-IndexService([string]$IndexExe,[string]$IndexDaemon) {
     throw 'MiaoDesk file search service did not become reachable after 60 seconds.'
 }
 
-if (-not (Test-Path $WallpaperPack -PathType Leaf)) { throw "Builtin wallpaper pack is missing: $WallpaperPack" }
 if (-not (Test-Path $WallpaperMaterializer -PathType Leaf)) { throw "Builtin wallpaper materializer is missing: $WallpaperMaterializer" }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $WallpaperMaterializer -PackPath $WallpaperPack -MetadataRoot (Join-Path $RepoRoot 'assets\wallpapers') -Destination (Join-Path $DeployDir 'Wallpapers')
 if ($LASTEXITCODE -ne 0) { throw "Builtin wallpaper materialization failed: $LASTEXITCODE" }

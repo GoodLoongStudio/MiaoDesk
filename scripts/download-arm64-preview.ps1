@@ -26,6 +26,44 @@ function Backup-UserDataItem([string]$Source, [string]$BackupRoot) {
         Copy-Item $Source $destination -Force
     }
 }
+function Copy-TreeRobust([string]$Source, [string]$Destination) {
+    if (-not (Test-Path $Source -PathType Container)) {
+        throw "Copy source does not exist: $Source"
+    }
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+
+    # PowerShell 5.1 Copy-Item still trips over MAX_PATH in deeply nested Node packages.
+    # Robocopy handles these runtime trees correctly on supported Windows builds.
+    & robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XJ | Out-Null
+    $code = $LASTEXITCODE
+    if ($code -ge 8) {
+        throw "Preview tree copy failed with robocopy exit code $code."
+    }
+}
+function Remove-TreeRobust([string]$Path) {
+    if (-not (Test-Path $Path)) { return }
+
+    # Empty the tree with robocopy first so deeply nested Node package paths do not make
+    # Windows PowerShell 5.1 Remove-Item fail. /XJ avoids following preview junctions.
+    $empty = Join-Path $env:TEMP ("mdp-empty-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $empty | Out-Null
+    try {
+        & robocopy.exe $empty $Path /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP /XJ | Out-Null
+        $code = $LASTEXITCODE
+        if ($code -ge 8) {
+            Warn "Could not fully empty long-path tree before cleanup (robocopy=$code): $Path"
+        }
+    }
+    finally {
+        Remove-Item $empty -Force -ErrorAction SilentlyContinue
+    }
+
+    # After mirroring an empty tree, the root itself is shallow and safe to remove.
+    Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $Path) {
+        & cmd.exe /d /c "rd /s /q `"$Path`"" | Out-Null
+    }
+}
 function Get-IniEncoding([string]$Path) {
     if (-not (Test-Path $Path -PathType Leaf)) { return 'UTF8' }
     $bytes = Get-Content $Path -Encoding Byte -TotalCount 2
@@ -157,6 +195,7 @@ function Find-ReusablePreview([string]$HeadSha) {
 
 Require git
 Require gh
+Require robocopy.exe
 Set-Location $RepoRoot
 
 Repair-PreviewDesktopConfig
@@ -221,7 +260,9 @@ if ([string]$run.headSha -ne $previewSha) {
 }
 
 Step 'Downloading completed ARM64 preview artifact'
-$temp = Join-Path $env:TEMP ("MiaoDeskPreview-" + [Guid]::NewGuid().ToString('N'))
+# Keep the staging root short. The bundled Pi/Node dependency graph contains paths that can
+# exceed legacy MAX_PATH when combined with a long %TEMP% GUID directory.
+$temp = Join-Path $env:TEMP ("mdp-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
     $artifactName = "miaodesk-arm64-preview-$previewSha"
@@ -253,9 +294,9 @@ try {
     }
 
     Stop-MiaoDeskProcesses
-    if (Test-Path $PreviewRoot) { Remove-Item $PreviewRoot -Recurse -Force }
+    if (Test-Path $PreviewRoot) { Remove-TreeRobust $PreviewRoot }
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
-    Copy-Item (Join-Path $temp '*') $PreviewRoot -Recurse -Force
+    Copy-TreeRobust $temp $PreviewRoot
     Set-Content -Path (Join-Path $PreviewRoot 'preview-build-sha.txt') -Value $previewSha -Encoding ASCII
     Set-Content -Path (Join-Path $PreviewRoot 'preview-checkout-sha.txt') -Value $headSha -Encoding ASCII
 
@@ -273,11 +314,11 @@ try {
         Write-Host "Preview SHA: $previewSha" -ForegroundColor Green
     }
     Write-Host "Preview path: $PreviewRoot" -ForegroundColor Green
-    Write-Host 'Desktop, Widget, AI API settings, and DeepSeek Harness UI: included' -ForegroundColor Green
+    Write-Host 'Desktop, Widget, AI API settings, Pi runtime, and DeepSeek Harness UI: included' -ForegroundColor Green
     if (-not (Test-Path (Join-Path $PreviewRoot 'Pi') -PathType Container)) {
-        Write-Host 'Installed Pi Runtime was not found; UI preview works, Pi calls may be unavailable.' -ForegroundColor Yellow
+        Write-Host 'Preview Pi Runtime is missing; AI UI works but Pi calls may be unavailable.' -ForegroundColor Yellow
     }
 }
 finally {
-    if (Test-Path $temp) { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $temp) { Remove-TreeRobust $temp }
 }

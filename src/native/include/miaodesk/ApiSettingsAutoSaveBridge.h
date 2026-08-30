@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <array>
+#include <iterator>
 #include <new>
 
 namespace miaodesk::api_settings_autosave_bridge {
@@ -120,7 +121,6 @@ inline LRESULT CALLBACK PageSubclass(HWND panel, UINT message, WPARAM wParam, LP
     }
 
     if (message == WM_NCDESTROY) {
-        Flush(*state);
         RemovePropW(panel, kInstalledProperty);
         RemoveWindowSubclass(panel, PageSubclass, kSubclassId);
         delete state;
@@ -139,6 +139,13 @@ inline void Install(HWND panel) {
     }
     SetPropW(panel, kInstalledProperty, reinterpret_cast<HANDLE>(1));
     HideManualSave(panel);
+
+    // Settings and chat are separate native processes. Re-saving the already-selected profile
+    // once after the page finishes creating synchronizes an existing configured/default profile
+    // into the shared model-settings.json + active Credential Manager target even when the user
+    // does not touch a field in this session.
+    state->dirty = true;
+    PostMessageW(panel, kAutoSaveMessage, 0, 0);
 }
 
 inline LRESULT CALLBACK HookProc(int code, WPARAM wParam, LPARAM lParam) {

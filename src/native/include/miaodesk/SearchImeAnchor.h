@@ -19,19 +19,40 @@ constexpr int kImeProxyTop = 13;
 constexpr int kImeProxyHeight = 30;
 constexpr UINT kDeferredImeAnchorMessage = WM_APP + 0x2A1;
 
+constexpr int kConversationEditControlId = 3102;
+constexpr UINT kDeferredConversationImeAnchorMessage = WM_APP + 0x2A2;
+constexpr wchar_t kConversationImePaintCoreProcProperty[] =
+    L"MiaoDesk.Conversation.ImePaintCoreProc";
+
 inline thread_local bool gImeAnchorBusy = false;
 inline thread_local bool gImeAnchorPending = false;
+inline thread_local bool gConversationImeAnchorBusy = false;
+inline thread_local bool gConversationImeAnchorPending = false;
+inline thread_local bool gConversationImeGeometryBusy = false;
 
-inline bool IsMiaoDeskSearchWindow(HWND hwnd) {
-    if (!hwnd) return false;
+inline bool HasWindowClass(HWND hwnd, const wchar_t* expected) {
+    if (!hwnd || !expected) return false;
     wchar_t className[128]{};
     if (!GetClassNameW(hwnd, className, static_cast<int>(std::size(className)))) return false;
-    return wcscmp(className, L"MiaoDesk.Native.SearchWindow") == 0;
+    return wcscmp(className, expected) == 0;
+}
+
+inline bool IsMiaoDeskSearchWindow(HWND hwnd) {
+    return HasWindowClass(hwnd, L"MiaoDesk.Native.SearchWindow");
 }
 
 inline bool IsMiaoDeskSearchEdit(HWND edit) {
     if (!edit || GetDlgCtrlID(edit) != kSearchEditControlId) return false;
     return IsMiaoDeskSearchWindow(GetParent(edit));
+}
+
+inline bool IsMiaoDeskConversationWindow(HWND hwnd) {
+    return HasWindowClass(hwnd, L"MiaoDesk.Native.ConversationPanel");
+}
+
+inline bool IsMiaoDeskConversationEdit(HWND edit) {
+    if (!edit || GetDlgCtrlID(edit) != kConversationEditControlId) return false;
+    return IsMiaoDeskConversationWindow(GetParent(edit));
 }
 
 inline int MeasureCaretOffset(HWND edit) {
@@ -68,6 +89,15 @@ public:
 
     ImeAnchorBusyScope(const ImeAnchorBusyScope&) = delete;
     ImeAnchorBusyScope& operator=(const ImeAnchorBusyScope&) = delete;
+};
+
+class ConversationImeAnchorBusyScope final {
+public:
+    ConversationImeAnchorBusyScope() { gConversationImeAnchorBusy = true; }
+    ~ConversationImeAnchorBusyScope() { gConversationImeAnchorBusy = false; }
+
+    ConversationImeAnchorBusyScope(const ConversationImeAnchorBusyScope&) = delete;
+    ConversationImeAnchorBusyScope& operator=(const ConversationImeAnchorBusyScope&) = delete;
 };
 
 inline void EnsureImeProxyGeometry(HWND edit) {
@@ -130,10 +160,243 @@ inline void RequestImeAnchor(HWND edit) {
         gImeAnchorPending = false;
 }
 
+inline int ConversationPx(HWND parent, int value) {
+    UINT dpi = parent ? GetDpiForWindow(parent) : 96;
+    if (dpi == 0) dpi = 96;
+    return MulDiv(value, static_cast<int>(dpi), 96);
+}
+
+inline RECT ConversationEditRect(HWND edit) {
+    RECT result{};
+    const HWND parent = edit ? GetParent(edit) : nullptr;
+    if (!parent) return result;
+
+    RECT client{};
+    GetClientRect(parent, &client);
+    const int inputTop = client.bottom - ConversationPx(parent, 64) - ConversationPx(parent, 16);
+    const int left = ConversationPx(parent, 38);
+    const int top = inputTop + ConversationPx(parent, 13);
+    const int width = std::max(
+        ConversationPx(parent, 120),
+        client.right - ConversationPx(parent, 76) - ConversationPx(parent, 62));
+    const int height = ConversationPx(parent, 38);
+    result = RECT{left, top, left + width, top + height};
+    return result;
+}
+
+inline LRESULT CALLBACK ConversationImePaintProc(
+    HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    const auto core = reinterpret_cast<WNDPROC>(
+        GetPropW(hwnd, kConversationImePaintCoreProcProperty));
+    if (!core) return DefWindowProcW(hwnd, message, wParam, lParam);
+
+    // ConversationPanel is a per-pixel-alpha custom surface. The native EDIT exists only to
+    // give Windows keyboard/TSF infrastructure a truthful focus and caret geometry. Never let
+    // the EDIT paint text/background over the DirectWrite input field.
+    if (message == WM_PAINT) {
+        ValidateRect(hwnd, nullptr);
+        return 0;
+    }
+    if (message == WM_ERASEBKGND || message == WM_PRINTCLIENT) return 1;
+
+    if (message == WM_NCDESTROY) {
+        const LRESULT result = CallWindowProcW(core, hwnd, message, wParam, lParam);
+        RemovePropW(hwnd, kConversationImePaintCoreProcProperty);
+        return result;
+    }
+    return CallWindowProcW(core, hwnd, message, wParam, lParam);
+}
+
+inline void EnsureConversationImePaintSubclass(HWND edit) {
+    if (!IsMiaoDeskConversationEdit(edit) ||
+        GetPropW(edit, kConversationImePaintCoreProcProperty)) return;
+
+    const auto core = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(edit, GWLP_WNDPROC));
+    if (!core || core == ConversationImePaintProc) return;
+    if (!SetPropW(edit, kConversationImePaintCoreProcProperty, reinterpret_cast<HANDLE>(core)))
+        return;
+
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR previous = SetWindowLongPtrW(
+        edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&ConversationImePaintProc));
+    if (!previous && GetLastError() != ERROR_SUCCESS)
+        RemovePropW(edit, kConversationImePaintCoreProcProperty);
+}
+
+inline bool ConversationEditAlreadyHasRealGeometry(HWND edit, const RECT& desired) {
+    RECT current{};
+    if (!GetWindowRect(edit, &current)) return false;
+    POINT points[2]{{current.left, current.top}, {current.right, current.bottom}};
+    const HWND parent = GetParent(edit);
+    if (!parent || MapWindowPoints(nullptr, parent, points, 2) == 0) {
+        if (!parent) return false;
+    }
+    current = RECT{points[0].x, points[0].y, points[1].x, points[1].y};
+    return current.left == desired.left && current.top == desired.top &&
+           current.right == desired.right && current.bottom == desired.bottom;
+}
+
+inline void EnsureConversationImeGeometry(HWND edit) {
+    if (!IsMiaoDeskConversationEdit(edit) || gConversationImeGeometryBusy) return;
+
+    EnsureConversationImePaintSubclass(edit);
+    const RECT desired = ConversationEditRect(edit);
+    if (desired.right <= desired.left || desired.bottom <= desired.top) return;
+
+    if (!ConversationEditAlreadyHasRealGeometry(edit, desired)) {
+        gConversationImeGeometryBusy = true;
+        SetWindowPos(
+            edit, nullptr,
+            desired.left, desired.top,
+            desired.right - desired.left, desired.bottom - desired.top,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        gConversationImeGeometryBusy = false;
+    }
+    HideCaret(edit);
+}
+
+inline POINT ConversationNativeCaretPoint(HWND edit) {
+    POINT caret{};
+    if (!edit) return caret;
+
+    RECT client{};
+    GetClientRect(edit, &client);
+    DWORD selectionStart = 0;
+    DWORD selectionEnd = 0;
+    SendMessageW(edit, EM_GETSEL,
+                 reinterpret_cast<WPARAM>(&selectionStart),
+                 reinterpret_cast<LPARAM>(&selectionEnd));
+
+    const LRESULT position = SendMessageW(
+        edit, EM_POSFROMCHAR, static_cast<WPARAM>(selectionEnd), 0);
+    if (position != -1) {
+        caret.x = static_cast<short>(LOWORD(position));
+        caret.y = static_cast<short>(HIWORD(position));
+    } else {
+        caret.x = MeasureCaretOffset(edit);
+        caret.y = 0;
+    }
+
+    caret.x = std::clamp<LONG>(caret.x, 0, std::max<LONG>(0, client.right - 2));
+    caret.y = std::clamp<LONG>(caret.y, 0, std::max<LONG>(0, client.bottom - 2));
+    return caret;
+}
+
+inline void AnchorConversationImeToNativeCaret(HWND edit) {
+    if (!IsMiaoDeskConversationEdit(edit) || gConversationImeAnchorBusy) return;
+    if (GetFocus() != edit) return;
+
+    ConversationImeAnchorBusyScope busyScope;
+    EnsureConversationImeGeometry(edit);
+
+    RECT client{};
+    GetClientRect(edit, &client);
+    if (client.right <= 0 || client.bottom <= 0) return;
+
+    const POINT caret = ConversationNativeCaretPoint(edit);
+
+    // The old ConversationPanel code still attempts to move this EDIT to a 1x1 proxy at the
+    // visual caret. Restore a full-sized input HWND and publish the real Win32 caret instead.
+    // This is what modern Microsoft Pinyin/TSF reads through GetGUIThreadInfo.
+    SetCaretPos(caret.x, caret.y);
+    HideCaret(edit);
+
+    HIMC context = ImmGetContext(edit);
+    if (!context) return;
+
+    COMPOSITIONFORM composition{};
+    composition.dwStyle = CFS_FORCE_POSITION;
+    composition.ptCurrentPos = caret;
+    ImmSetCompositionWindow(context, &composition);
+
+    CANDIDATEFORM candidate{};
+    candidate.dwIndex = 0;
+    candidate.dwStyle = CFS_EXCLUDE;
+    candidate.ptCurrentPos = POINT{caret.x, client.bottom};
+    candidate.rcArea = client;
+    ImmSetCandidateWindow(context, &candidate);
+
+    ImmReleaseContext(edit, context);
+    HideCaret(edit);
+}
+
+inline void RequestConversationImeAnchor(HWND edit) {
+    if (!IsMiaoDeskConversationEdit(edit) || gConversationImeAnchorBusy ||
+        gConversationImeAnchorPending) return;
+    gConversationImeAnchorPending = true;
+    if (!PostMessageW(edit, kDeferredConversationImeAnchorMessage, 0, 0))
+        gConversationImeAnchorPending = false;
+}
+
+inline void HandleConversationEditMessageBefore(const CWPSTRUCT& message) {
+    if (!IsMiaoDeskConversationEdit(message.hwnd)) return;
+
+    if (message.message == kDeferredConversationImeAnchorMessage) {
+        gConversationImeAnchorPending = false;
+        AnchorConversationImeToNativeCaret(message.hwnd);
+        return;
+    }
+
+    switch (message.message) {
+    case WM_SETFOCUS:
+        // TSF samples the focused HWND during the focus transaction, so correct the geometry
+        // synchronously before the native EDIT continues processing WM_SETFOCUS.
+        EnsureConversationImeGeometry(message.hwnd);
+        RequestConversationImeAnchor(message.hwnd);
+        break;
+    case WM_KEYUP:
+    case WM_CHAR:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_INPUTLANGCHANGE:
+        RequestConversationImeAnchor(message.hwnd);
+        break;
+    case WM_IME_NOTIFY:
+        if (message.wParam == IMN_OPENCANDIDATE ||
+            message.wParam == IMN_CHANGECANDIDATE)
+            RequestConversationImeAnchor(message.hwnd);
+        break;
+    default:
+        break;
+    }
+}
+
+inline void HandleConversationEditMessageAfter(const CWPRETSTRUCT& message) {
+    if (!IsMiaoDeskConversationEdit(message.hwnd)) return;
+
+    if (message.message == WM_WINDOWPOSCHANGED && !gConversationImeGeometryBusy) {
+        // Legacy ConversationPanel code repeatedly collapses the native EDIT to 1x1. Repair it
+        // immediately after that SetWindowPos/MoveWindow completes, then defer IMM32 anchoring
+        // until the surrounding input message has finished changing IME state.
+        EnsureConversationImeGeometry(message.hwnd);
+        if (GetFocus() == message.hwnd) RequestConversationImeAnchor(message.hwnd);
+        return;
+    }
+
+    switch (message.message) {
+    case WM_SETFOCUS:
+    case WM_KEYUP:
+    case WM_CHAR:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_INPUTLANGCHANGE:
+        HideCaret(message.hwnd);
+        EnsureConversationImeGeometry(message.hwnd);
+        if (GetFocus() == message.hwnd) RequestConversationImeAnchor(message.hwnd);
+        break;
+    default:
+        break;
+    }
+}
+
 inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPSTRUCT*>(lParam);
         if (message) {
+            HandleConversationEditMessageBefore(*message);
+
             if (IsMiaoDeskSearchEdit(message->hwnd)) {
                 if (message->message == kDeferredImeAnchorMessage) {
                     gImeAnchorPending = false;
@@ -174,6 +437,10 @@ inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lPa
 inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPRETSTRUCT*>(lParam);
+        if (message) {
+            HandleConversationEditMessageAfter(*message);
+        }
+
         if (message && IsMiaoDeskSearchEdit(message->hwnd)) {
             switch (message->message) {
             case WM_SETFOCUS:
@@ -205,6 +472,16 @@ inline LRESULT CALLBACK SearchImeCallWndRetProc(int code, WPARAM wParam, LPARAM 
                 if (GetFocus() == edit) RequestImeAnchor(edit);
             }
         }
+
+        if (message && message->message == WM_SIZE &&
+            IsMiaoDeskConversationWindow(message->hwnd)) {
+            const HWND edit = GetDlgItem(message->hwnd, kConversationEditControlId);
+            if (edit) {
+                EnsureConversationImeGeometry(edit);
+                HideCaret(edit);
+                if (GetFocus() == edit) RequestConversationImeAnchor(edit);
+            }
+        }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
@@ -230,8 +507,9 @@ private:
     HHOOK returnHook_{};
 };
 
-// SearchWindow is created and pumped on the executable's startup/UI thread. Keeping this
-// bridge inline makes it process-local and guarantees one pair of thread hooks across TUs.
+// SearchWindow and ConversationPanel are created and pumped on the executable's startup/UI
+// thread. Keeping this bridge inline makes it process-local and guarantees one pair of thread
+// hooks across TUs for both custom input surfaces.
 inline SearchImeAnchorBridge gSearchImeAnchorBridge;
 
 } // namespace miaodesk::search_ime_detail

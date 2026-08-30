@@ -7,7 +7,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
+#include <cstdio>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>

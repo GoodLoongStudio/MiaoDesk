@@ -179,7 +179,7 @@ if (NOT EXISTS "${MIAODESK_L3_CONTRACT_SCRIPT}")
     message(FATAL_ERROR "Missing L3 runtime contract guard: ${MIAODESK_L3_CONTRACT_SCRIPT}")
 endif()
 add_custom_target(MiaoDeskL3ContractCheck ALL
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${MIAODESK_L3_CONTRACT_SCRIPT}"
+    COMMAND pwsh -NoProfile -File "${MIAODESK_L3_CONTRACT_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Verifying Pi-first L3 runtime contract"
     VERBATIM

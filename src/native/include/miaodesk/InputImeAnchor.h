@@ -10,9 +10,9 @@
 
 namespace miaodesk::input_ime_detail {
 
-// InputImeAnchor is the shared Windows IME/TSF infrastructure for custom-rendered
-// MiaoDesk text fields. Surface-specific geometry remains explicitly named Search
-// or Conversation; only the message hook/anchor framework is shared.
+// InputImeAnchor owns the shared Win32/TSF/IMM32 infrastructure for MiaoDesk's
+// custom-rendered text inputs. Surface-specific geometry stays explicitly named
+// Search or Conversation; only the input framework is generic.
 constexpr int kSearchEditControlId = 100;
 constexpr int kSearchEditLeft = 52;
 constexpr int kSearchEditRight = 594;
@@ -44,8 +44,8 @@ inline bool IsMiaoDeskSearchWindow(HWND hwnd) {
 }
 
 inline bool IsMiaoDeskSearchEdit(HWND edit) {
-    if (!edit || GetDlgCtrlID(edit) != kSearchEditControlId) return false;
-    return IsMiaoDeskSearchWindow(GetParent(edit));
+    return edit && GetDlgCtrlID(edit) == kSearchEditControlId &&
+           IsMiaoDeskSearchWindow(GetParent(edit));
 }
 
 inline bool IsMiaoDeskConversationWindow(HWND hwnd) {
@@ -53,8 +53,40 @@ inline bool IsMiaoDeskConversationWindow(HWND hwnd) {
 }
 
 inline bool IsMiaoDeskConversationEdit(HWND edit) {
-    if (!edit || GetDlgCtrlID(edit) != kConversationEditControlId) return false;
-    return IsMiaoDeskConversationWindow(GetParent(edit));
+    return edit && GetDlgCtrlID(edit) == kConversationEditControlId &&
+           IsMiaoDeskConversationWindow(GetParent(edit));
+}
+
+inline std::wstring ReadImeCompositionText(HWND edit) {
+    std::wstring result;
+    if (!edit) return result;
+    HIMC context = ImmGetContext(edit);
+    if (!context) return result;
+    const LONG bytes = ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+    if (bytes > 0) {
+        result.resize(static_cast<std::size_t>(bytes) / sizeof(wchar_t));
+        ImmGetCompositionStringW(
+            context, GCS_COMPSTR, result.data(), static_cast<DWORD>(bytes));
+    }
+    ImmReleaseContext(edit, context);
+    return result;
+}
+
+inline bool HasImeComposition(HWND edit) {
+    return !ReadImeCompositionText(edit).empty();
+}
+
+inline int MeasureEditTextWidth(HWND edit, const wchar_t* text, int count) {
+    if (!edit || !text || count <= 0) return 0;
+    HDC dc = GetDC(edit);
+    if (!dc) return 0;
+    HFONT font = reinterpret_cast<HFONT>(SendMessageW(edit, WM_GETFONT, 0, 0));
+    HGDIOBJ oldFont = font ? SelectObject(dc, font) : nullptr;
+    SIZE extent{};
+    GetTextExtentPoint32W(dc, text, count, &extent);
+    if (oldFont) SelectObject(dc, oldFont);
+    ReleaseDC(edit, dc);
+    return static_cast<int>(std::max(0L, extent.cx));
 }
 
 inline int MeasureEditCaretOffset(HWND edit) {
@@ -71,33 +103,39 @@ inline int MeasureEditCaretOffset(HWND edit) {
     GetWindowTextW(edit, text.data(), length + 1);
     text.resize(static_cast<std::size_t>(length));
     const int count = std::clamp<int>(static_cast<int>(selectionEnd), 0, length);
-    if (count <= 0) return 0;
-
-    HDC dc = GetDC(edit);
-    if (!dc) return 0;
-    HFONT font = reinterpret_cast<HFONT>(SendMessageW(edit, WM_GETFONT, 0, 0));
-    HGDIOBJ oldFont = font ? SelectObject(dc, font) : nullptr;
-    SIZE extent{};
-    GetTextExtentPoint32W(dc, text.c_str(), count, &extent);
-    if (oldFont) SelectObject(dc, oldFont);
-    ReleaseDC(edit, dc);
-    return static_cast<int>(std::max(0L, extent.cx));
+    return MeasureEditTextWidth(edit, text.c_str(), count);
 }
 
-inline bool HasImeComposition(HWND edit) {
-    if (!edit) return false;
+// Common publication path. Search and Conversation compute their own real HWND/caret
+// geometry, then publish it through the same Win32 caret + IMM32 compatibility path.
+inline void PublishInputImeAnchor(HWND edit, POINT caret, RECT exclusionArea) {
+    if (!edit) return;
+    SetCaretPos(caret.x, caret.y);
+    HideCaret(edit);
+
     HIMC context = ImmGetContext(edit);
-    if (!context) return false;
-    const LONG bytes = ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+    if (!context) return;
+
+    COMPOSITIONFORM composition{};
+    composition.dwStyle = CFS_FORCE_POSITION;
+    composition.ptCurrentPos = caret;
+    ImmSetCompositionWindow(context, &composition);
+
+    CANDIDATEFORM candidate{};
+    candidate.dwIndex = 0;
+    candidate.dwStyle = CFS_EXCLUDE;
+    candidate.ptCurrentPos = POINT{caret.x, exclusionArea.bottom};
+    candidate.rcArea = exclusionArea;
+    ImmSetCandidateWindow(context, &candidate);
+
     ImmReleaseContext(edit, context);
-    return bytes > 0;
+    HideCaret(edit);
 }
 
 class SearchImeAnchorBusyScope final {
 public:
     SearchImeAnchorBusyScope() { gSearchImeAnchorBusy = true; }
     ~SearchImeAnchorBusyScope() { gSearchImeAnchorBusy = false; }
-
     SearchImeAnchorBusyScope(const SearchImeAnchorBusyScope&) = delete;
     SearchImeAnchorBusyScope& operator=(const SearchImeAnchorBusyScope&) = delete;
 };
@@ -106,19 +144,14 @@ class ConversationImeAnchorBusyScope final {
 public:
     ConversationImeAnchorBusyScope() { gConversationImeAnchorBusy = true; }
     ~ConversationImeAnchorBusyScope() { gConversationImeAnchorBusy = false; }
-
     ConversationImeAnchorBusyScope(const ConversationImeAnchorBusyScope&) = delete;
     ConversationImeAnchorBusyScope& operator=(const ConversationImeAnchorBusyScope&) = delete;
 };
 
-// ---- Search-specific surface profile ---------------------------------------------------------
+// ---- Search surface profile ------------------------------------------------------------------
 
 inline void EnsureSearchImeGeometry(HWND edit) {
     if (!IsMiaoDeskSearchEdit(edit) || gSearchImeGeometryBusy) return;
-
-    // SearchWindow is DirectWrite-rendered. The native EDIT is input infrastructure, but
-    // Microsoft Pinyin/TSF still samples the focused HWND rectangle. Keep it aligned with the
-    // real search text field rather than the historical 1x1 keyboard proxy.
     gSearchImeGeometryBusy = true;
     SetWindowPos(
         edit, nullptr,
@@ -130,35 +163,15 @@ inline void EnsureSearchImeGeometry(HWND edit) {
 }
 
 inline void AnchorSearchImeToVisibleCaret(HWND edit) {
-    if (!IsMiaoDeskSearchEdit(edit) || gSearchImeAnchorBusy) return;
-    if (GetFocus() != edit) return;
+    if (!IsMiaoDeskSearchEdit(edit) || gSearchImeAnchorBusy || GetFocus() != edit) return;
 
     SearchImeAnchorBusyScope busyScope;
     EnsureSearchImeGeometry(edit);
 
     const int width = kSearchEditRight - kSearchEditLeft;
     const int caretX = std::clamp(MeasureEditCaretOffset(edit), 0, width - 4);
-
-    SetCaretPos(caretX, 6);
-    HideCaret(edit);
-
-    HIMC context = ImmGetContext(edit);
-    if (!context) return;
-
-    COMPOSITIONFORM composition{};
-    composition.dwStyle = CFS_FORCE_POSITION;
-    composition.ptCurrentPos = POINT{caretX, 6};
-    ImmSetCompositionWindow(context, &composition);
-
-    CANDIDATEFORM candidate{};
-    candidate.dwIndex = 0;
-    candidate.dwStyle = CFS_EXCLUDE;
-    candidate.ptCurrentPos = POINT{caretX, kSearchEditHeight};
-    candidate.rcArea = RECT{0, 0, width, kSearchEditHeight};
-    ImmSetCandidateWindow(context, &candidate);
-
-    ImmReleaseContext(edit, context);
-    HideCaret(edit);
+    PublishInputImeAnchor(
+        edit, POINT{caretX, 6}, RECT{0, 0, width, kSearchEditHeight});
 }
 
 inline void RequestSearchImeAnchor(HWND edit) {
@@ -168,7 +181,7 @@ inline void RequestSearchImeAnchor(HWND edit) {
         gSearchImeAnchorPending = false;
 }
 
-// ---- Conversation-specific surface profile ---------------------------------------------------
+// ---- Conversation surface profile ------------------------------------------------------------
 
 inline int ConversationPx(HWND parent, int value) {
     UINT dpi = parent ? GetDpiForWindow(parent) : 96;
@@ -187,11 +200,13 @@ inline RECT ConversationEditRect(HWND edit) {
         static_cast<int>(client.bottom) - ConversationPx(parent, 64) - ConversationPx(parent, 16);
     const int left = ConversationPx(parent, 38);
     const int top = inputTop + ConversationPx(parent, 13);
-    const int availableWidth =
-        static_cast<int>(client.right) - ConversationPx(parent, 76) - ConversationPx(parent, 62);
-    const int width = std::max(ConversationPx(parent, 120), availableWidth);
+
+    // Keep this in lockstep with ConversationPanel's visible text rectangle:
+    // sendLeft = right-74; mic = -8-34; attach = -4-34; textRight = attach-8.
+    const int visibleRight = static_cast<int>(client.right) - ConversationPx(parent, 162);
+    const int right = std::max(left + ConversationPx(parent, 80), visibleRight);
     const int height = ConversationPx(parent, 38);
-    result = RECT{left, top, left + width, top + height};
+    result = RECT{left, top, right, top + height};
     return result;
 }
 
@@ -201,8 +216,8 @@ inline LRESULT CALLBACK ConversationImePaintProc(
         GetPropW(hwnd, kConversationImePaintCoreProcProperty));
     if (!core) return DefWindowProcW(hwnd, message, wParam, lParam);
 
-    // Direct2D owns all visible text/caret rendering. The native EDIT only owns keyboard/IME
-    // semantics and must never paint a second text field or a native caret.
+    // Direct2D remains the sole visual owner. The native EDIT exists only for
+    // keyboard, clipboard and TSF/IME semantics.
     if (message == WM_PAINT) {
         ValidateRect(hwnd, nullptr);
         return 0;
@@ -286,14 +301,24 @@ inline POINT ConversationNativeCaretPoint(HWND edit) {
         caret.y = 0;
     }
 
+    // ConversationPanel renders GCS_COMPSTR itself. The EDIT selection therefore stays at the
+    // committed insertion point while visible pinyin grows to its right. Move the system/TSF
+    // caret by that composition width so the native caret, candidate anchor and DirectWrite
+    // caret all describe the same visible position.
+    const std::wstring composition = ReadImeCompositionText(edit);
+    if (!composition.empty()) {
+        caret.x += MeasureEditTextWidth(
+            edit, composition.c_str(), static_cast<int>(composition.size()));
+    }
+
     caret.x = std::clamp<LONG>(caret.x, 0, std::max<LONG>(0, client.right - 2));
     caret.y = std::clamp<LONG>(caret.y, 0, std::max<LONG>(0, client.bottom - 2));
     return caret;
 }
 
 inline void AnchorConversationImeToNativeCaret(HWND edit) {
-    if (!IsMiaoDeskConversationEdit(edit) || gConversationImeAnchorBusy) return;
-    if (GetFocus() != edit) return;
+    if (!IsMiaoDeskConversationEdit(edit) || gConversationImeAnchorBusy ||
+        GetFocus() != edit) return;
 
     ConversationImeAnchorBusyScope busyScope;
     EnsureConversationImeGeometry(edit);
@@ -302,28 +327,7 @@ inline void AnchorConversationImeToNativeCaret(HWND edit) {
     GetClientRect(edit, &client);
     if (client.right <= 0 || client.bottom <= 0) return;
 
-    const POINT caret = ConversationNativeCaretPoint(edit);
-
-    SetCaretPos(caret.x, caret.y);
-    HideCaret(edit);
-
-    HIMC context = ImmGetContext(edit);
-    if (!context) return;
-
-    COMPOSITIONFORM composition{};
-    composition.dwStyle = CFS_FORCE_POSITION;
-    composition.ptCurrentPos = caret;
-    ImmSetCompositionWindow(context, &composition);
-
-    CANDIDATEFORM candidate{};
-    candidate.dwIndex = 0;
-    candidate.dwStyle = CFS_EXCLUDE;
-    candidate.ptCurrentPos = POINT{caret.x, client.bottom};
-    candidate.rcArea = client;
-    ImmSetCandidateWindow(context, &candidate);
-
-    ImmReleaseContext(edit, context);
-    HideCaret(edit);
+    PublishInputImeAnchor(edit, ConversationNativeCaretPoint(edit), client);
 }
 
 inline void RequestConversationImeAnchor(HWND edit) {
@@ -334,8 +338,6 @@ inline void RequestConversationImeAnchor(HWND edit) {
         gConversationImeAnchorPending = false;
 }
 
-// Explicit surface entry point used by ConversationPanel. This is deliberately not named
-// "Search": the framework is InputImeAnchor; the caller-specific behavior remains Conversation.
 inline void SyncConversationImeAnchor(HWND edit) {
     if (!IsMiaoDeskConversationEdit(edit)) return;
     EnsureConversationImeGeometry(edit);
@@ -519,8 +521,8 @@ private:
     HHOOK returnHook_{};
 };
 
-// SearchWindow and ConversationPanel live on the same UI thread. One shared input bridge handles
-// Win32 caret publication and IME/TSF re-anchoring, while each surface keeps its own geometry.
+// SearchWindow and ConversationPanel are on the same UI thread. One shared input bridge
+// handles message dispatch; each surface keeps its own profile and business semantics.
 inline InputImeAnchorBridge gInputImeAnchorBridge;
 
 } // namespace miaodesk::input_ime_detail

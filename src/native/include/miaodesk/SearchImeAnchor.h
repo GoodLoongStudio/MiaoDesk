@@ -15,6 +15,10 @@ constexpr int kSearchEditControlId = 100;
 constexpr int kVisibleEditLeft = 52;
 constexpr int kVisibleEditRight = 594;
 constexpr int kVisibleBarHeight = 56;
+constexpr UINT kDeferredImeAnchorMessage = WM_APP + 0x2A1;
+
+inline thread_local bool gImeAnchorBusy = false;
+inline thread_local bool gImeAnchorPending = false;
 
 inline bool IsMiaoDeskSearchEdit(HWND edit) {
     if (!edit || GetDlgCtrlID(edit) != kSearchEditControlId) return false;
@@ -52,8 +56,21 @@ inline int MeasureCaretOffset(HWND edit) {
     return static_cast<int>(std::max(0L, extent.cx));
 }
 
+class ImeAnchorBusyScope final {
+public:
+    ImeAnchorBusyScope() { gImeAnchorBusy = true; }
+    ~ImeAnchorBusyScope() { gImeAnchorBusy = false; }
+
+    ImeAnchorBusyScope(const ImeAnchorBusyScope&) = delete;
+    ImeAnchorBusyScope& operator=(const ImeAnchorBusyScope&) = delete;
+};
+
 inline void AnchorImeToVisibleCaret(HWND edit) {
-    if (!IsMiaoDeskSearchEdit(edit)) return;
+    if (!IsMiaoDeskSearchEdit(edit) || gImeAnchorBusy) return;
+    if (GetFocus() != edit) return;
+
+    ImeAnchorBusyScope busyScope;
+
     const HWND parent = GetParent(edit);
     if (!parent) return;
 
@@ -89,22 +106,33 @@ inline void AnchorImeToVisibleCaret(HWND edit) {
     ImmReleaseContext(edit, context);
 }
 
+inline void RequestImeAnchor(HWND edit) {
+    if (!IsMiaoDeskSearchEdit(edit) || gImeAnchorBusy || gImeAnchorPending) return;
+    gImeAnchorPending = true;
+    if (!PostMessageW(edit, kDeferredImeAnchorMessage, 0, 0))
+        gImeAnchorPending = false;
+}
+
 inline LRESULT CALLBACK SearchImeCallWndProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code >= 0 && lParam) {
         const auto* message = reinterpret_cast<const CWPSTRUCT*>(lParam);
         if (message && IsMiaoDeskSearchEdit(message->hwnd)) {
-            switch (message->message) {
-            case WM_SETFOCUS:
-            case WM_KEYUP:
-            case WM_CHAR:
-            case WM_IME_STARTCOMPOSITION:
-            case WM_IME_COMPOSITION:
-            case WM_IME_NOTIFY:
-            case WM_INPUTLANGCHANGE:
+            if (message->message == kDeferredImeAnchorMessage) {
+                gImeAnchorPending = false;
                 AnchorImeToVisibleCaret(message->hwnd);
-                break;
-            default:
-                break;
+            } else {
+                switch (message->message) {
+                case WM_SETFOCUS:
+                case WM_KEYUP:
+                case WM_CHAR:
+                case WM_IME_STARTCOMPOSITION:
+                case WM_IME_COMPOSITION:
+                case WM_INPUTLANGCHANGE:
+                    RequestImeAnchor(message->hwnd);
+                    break;
+                default:
+                    break;
+                }
             }
         }
     }

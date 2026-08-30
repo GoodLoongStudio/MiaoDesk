@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include "miaodesk/ApiSettingsSaveBridge.h"
+
 namespace miaodesk::wallpaper {
 
 // Shows the native multi-profile API configuration center inside the existing

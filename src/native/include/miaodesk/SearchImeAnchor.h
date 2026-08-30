@@ -173,12 +173,11 @@ inline RECT ConversationEditRect(HWND edit) {
 
     RECT client{};
     GetClientRect(parent, &client);
-    const int inputTop = client.bottom - ConversationPx(parent, 64) - ConversationPx(parent, 16);
+    const int inputTop = static_cast<int>(client.bottom) - ConversationPx(parent, 64) - ConversationPx(parent, 16);
     const int left = ConversationPx(parent, 38);
     const int top = inputTop + ConversationPx(parent, 13);
-    const int width = std::max(
-        ConversationPx(parent, 120),
-        client.right - ConversationPx(parent, 76) - ConversationPx(parent, 62));
+    const int availableWidth = static_cast<int>(client.right) - ConversationPx(parent, 76) - ConversationPx(parent, 62);
+    const int width = std::max(ConversationPx(parent, 120), availableWidth);
     const int height = ConversationPx(parent, 38);
     result = RECT{left, top, left + width, top + height};
     return result;

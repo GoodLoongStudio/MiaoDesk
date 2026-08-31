@@ -56,6 +56,7 @@ public:
             refreshed.baseUrl = profile.baseUrl;
             refreshed.model = profile.model;
             refreshed.endpoint = profile.endpoint;
+            if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
         }
 
         if (refreshed.providerId == config_.providerId &&

@@ -49,6 +49,38 @@ function Convert-GhRuns([object]$RawJson) {
     if ($null -eq $parsed) { return @() }
     return @($parsed | Where-Object { $null -ne $_ -and $_.databaseId })
 }
+function Get-RecentRuns([int]$Limit = 30) {
+    $raw = & gh run list --repo $Repository --workflow $Workflow --limit $Limit --json databaseId,status,conclusion,headSha
+    if ($LASTEXITCODE -ne 0) { throw "Unable to query GitHub preview workflow. Run 'gh auth login' once." }
+    return @(Convert-GhRuns $raw)
+}
+function Test-BinaryImpact([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    $normalized = $Path.Replace('\', '/')
+    return ($normalized -eq 'CMakeLists.txt') -or
+           ($normalized -eq 'CMakePresets.json') -or
+           ($normalized -eq 'vcpkg.json') -or
+           ($normalized -eq 'vcpkg-configuration.json') -or
+           ($normalized -like 'cmake/*') -or
+           ($normalized -like 'src/native/*') -or
+           ($normalized -eq '.github/workflows/native-arm64-preview.yml')
+}
+function Find-ReusableRun([string]$HeadSha) {
+    foreach ($candidate in @(Get-RecentRuns 30)) {
+        $candidateSha = [string]$candidate.headSha
+        if ($candidateSha -notmatch '^[0-9a-f]{40}$') { continue }
+        if ($candidate.status -eq 'completed' -and $candidate.conclusion -ne 'success') { continue }
+
+        & git merge-base --is-ancestor $candidateSha $HeadSha 2>$null
+        if ($LASTEXITCODE -ne 0) { continue }
+        $changed = @(& git diff --name-only "$candidateSha..$HeadSha")
+        if ($LASTEXITCODE -ne 0) { continue }
+        if (@($changed | Where-Object { Test-BinaryImpact $_ }).Count -eq 0) {
+            return $candidate
+        }
+    }
+    return $null
+}
 
 Require git
 Require gh
@@ -68,15 +100,25 @@ $run = $runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq '
 if ($null -eq $run) {
     $run = $runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1
 }
+
+$previewSha = $headSha
+$reusedAncestor = $false
 if ($null -eq $run) {
     $failed = $runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -ne 'success' } | Select-Object -First 1
     if ($null -ne $failed) {
         throw "ARM64 preview failed with '$($failed.conclusion)' (run $($failed.databaseId))."
     }
-    throw 'No ARM64 preview run exists for current main yet.'
+
+    $run = Find-ReusableRun $headSha
+    if ($null -eq $run) {
+        throw 'No exact or safely reusable ARM64 preview run exists for current main.'
+    }
+    $previewSha = [string]$run.headSha
+    $reusedAncestor = $true
+    Write-Host "No binary-impacting change since $previewSha; reusing its FAST UI artifact." -ForegroundColor Yellow
 }
 
-$artifactName = "miaodesk-arm64-ui-preview-$headSha"
+$artifactName = "miaodesk-arm64-ui-preview-$previewSha"
 $temp = Join-Path $env:TEMP ("mdp-fast-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
@@ -98,7 +140,7 @@ try {
     $marker = Join-Path $temp 'preview-build-sha.txt'
     if (-not (Test-Path $marker -PathType Leaf)) { throw 'Fast preview SHA marker is missing.' }
     $artifactSha = ([string](Get-Content $marker -Raw)).Trim()
-    if ($artifactSha -ne $headSha) { throw "Fast preview SHA mismatch: artifact=$artifactSha checkout=$headSha" }
+    if ($artifactSha -ne $previewSha) { throw "Fast preview SHA mismatch: artifact=$artifactSha expected=$previewSha checkout=$headSha" }
 
     Stop-MiaoDeskProcesses
     if (Test-Path $PreviewRoot) { Remove-TreeRobust $PreviewRoot }
@@ -126,8 +168,14 @@ try {
 
     Step 'Starting FAST ARM64 developer preview'
     Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
-    Write-Host "FAST UI preview SHA: $headSha" -ForegroundColor Green
-    Write-Host "Workflow run:        $($run.databaseId)" -ForegroundColor Green
+    if ($reusedAncestor) {
+        Write-Host "FAST binary SHA:      $previewSha (safe ancestor reuse)" -ForegroundColor Green
+        Write-Host "Checkout SHA:         $headSha" -ForegroundColor Green
+    }
+    else {
+        Write-Host "FAST UI preview SHA:  $previewSha" -ForegroundColor Green
+    }
+    Write-Host "Workflow run:         $($run.databaseId)" -ForegroundColor Green
     Write-Host 'Downloaded: executables + DLLs only; no bundled Node/Harness/Pi/wallpaper payload.' -ForegroundColor Green
 }
 finally {

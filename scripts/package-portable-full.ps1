@@ -20,7 +20,7 @@ $archiveName = "MiaoDesk-$Architecture-full.tar.gz"
 $archivePath = Join-Path $out $archiveName
 
 # IMPORTANT: do not expose the expanded node_modules tree directly in a GitHub Artifact ZIP.
-# Windows Explorer still fails on deeply nested dependency paths on many machines.  We keep the
+# Windows Explorer still fails on deeply nested dependency paths on many machines. We keep the
 # entire portable payload inside one tar.gz and let the bundled extractor use Windows tar.exe,
 # which avoids Explorer walking each long member name.
 & tar.exe -czf $archivePath -C $source .
@@ -29,10 +29,11 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archivePath -PathType Leaf)) {
 }
 
 $extractCmd = Join-Path $out 'EXTRACT-MIAODESK.cmd'
+$archiveCommand = 'set "ARCHIVE=%~dp0{0}"' -f $archiveName
 Set-Content -Path $extractCmd -Encoding ASCII -Value @(
     '@echo off',
     'setlocal EnableExtensions',
-    "set \"ARCHIVE=%~dp0$archiveName\"",
+    $archiveCommand,
     'if not exist "%ARCHIVE%" (',
     '  echo [MiaoDesk] Package payload is missing: %ARCHIVE%',
     '  pause',
@@ -86,7 +87,7 @@ Set-Content -Path (Join-Path $out 'README-FIRST.txt') -Encoding UTF8 -Value @(
     'The archive contains the complete Node / DeepSeek Harness / Pi / goz runtime tree.'
 )
 
-# CI proves the exact user-facing archive can be extracted without Explorer.  Use a deliberately
+# CI proves the exact user-facing archive can be extracted without Explorer. Use a deliberately
 # short destination to keep third-party Node dependency paths well away from legacy MAX_PATH.
 $verifyRoot = "C:\mdpkg-$Architecture"
 Remove-Item $verifyRoot -Recurse -Force -ErrorAction SilentlyContinue

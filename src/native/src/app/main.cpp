@@ -18,6 +18,8 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -29,6 +31,8 @@ namespace {
 
 constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
 constexpr wchar_t kLoopbackNoProxy[] = L"localhost,127.0.0.1,::1";
+constexpr wchar_t kHarnessBackgroundMutex[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
+constexpr wchar_t kHarnessBackgroundStopEvent[] = L"Local\\MiaoDesk.Native.Harness.Background.Stop";
 
 std::wstring ReadEnvironmentValue(const wchar_t* name) {
     const DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
@@ -115,6 +119,42 @@ fs::path ModuleDirectory() {
     if (count == 0 || count >= path.size()) return {};
     path.resize(count);
     return fs::path(path).parent_path();
+}
+
+bool NamedMutexExists(const wchar_t* name) {
+    HANDLE mutex = OpenMutexW(SYNCHRONIZE, FALSE, name);
+    if (!mutex) return false;
+    CloseHandle(mutex);
+    return true;
+}
+
+bool LaunchHarnessBackgroundOwner() {
+    if (NamedMutexExists(kHarnessBackgroundMutex)) return true;
+    const fs::path harness = ModuleDirectory() / L"MiaoDeskHarness.exe";
+    std::error_code ec;
+    if (!fs::is_regular_file(harness, ec)) return false;
+
+    std::wstring command = L"\"" + harness.wstring() + L"\"";
+    std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back(L'\0');
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    const BOOL created = CreateProcessW(harness.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE,
+                                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                        nullptr, harness.parent_path().c_str(), &startup, &process);
+    if (!created) return false;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
+}
+
+void SignalHarnessBackgroundStop() {
+    HANDLE event = OpenEventW(EVENT_MODIFY_STATE, FALSE, kHarnessBackgroundStopEvent);
+    if (!event) return;
+    SetEvent(event);
+    CloseHandle(event);
 }
 
 bool PathContainsDirectory(const std::wstring& rawPath, const fs::path& directory) {
@@ -315,7 +355,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return 4;
     }
 
+    // Keep MiaoDesk startup responsive, then prewarm the full DeepSeek workbench in the
+    // background. If the user opens it earlier, the UI launches the same singleton owner.
+    std::jthread harnessWarmup([](std::stop_token stopToken) {
+        for (int i = 0; i < 30 && !stopToken.stop_requested(); ++i) Sleep(100);
+        if (!stopToken.stop_requested()) LaunchHarnessBackgroundOwner();
+    });
+
     const int result = window.RunMessageLoop();
+    harnessWarmup.request_stop();
+    SignalHarnessBackgroundStop();
     if (SUCCEEDED(com)) CoUninitialize();
     CloseHandle(mutex);
     return result;

@@ -18,6 +18,11 @@ struct TraceContext {
     std::wstring objectName;
 };
 
+struct LastErrorGuard {
+    DWORD value{GetLastError()};
+    ~LastErrorGuard() { SetLastError(value); }
+};
+
 inline thread_local TraceContext gContext;
 
 inline std::string Utf8(const std::wstring& value) {
@@ -77,6 +82,9 @@ inline std::wstring ContextText() {
 }
 
 inline void Append(const wchar_t* stage, DWORD error, const std::wstring& detail = {}) {
+    // Diagnostics must never change the transport error observed by L3Agent.cpp.
+    LastErrorGuard preserveLastError;
+
     const auto path = RuntimeLogPath(L"l3-winhttp.log");
     if (path.empty()) return;
 
@@ -156,9 +164,8 @@ inline HINTERNET OpenRequest(HINTERNET connect, LPCWSTR verb, LPCWSTR objectName
 inline BOOL SendRequest(HINTERNET request, LPCWSTR headers, DWORD headersLength,
                         LPVOID optional, DWORD optionalLength, DWORD totalLength,
                         DWORD_PTR context) {
-    // Some OpenAI-compatible endpoints exposed ERROR_INVALID_PARAMETER (87) while the
-    // caller supplied DWORD(-1) for a null-terminated Unicode header block. Passing the
-    // explicit character count is equivalent but removes that ambiguity in WinHTTP.
+    // Normalize a null-terminated header block to an explicit character count. This is valid
+    // WinHTTP input either way, and removes one compatibility variable while diagnosing 87.
     DWORD normalizedHeaderLength = headersLength;
     if (headers && headersLength == static_cast<DWORD>(-1L)) {
         const auto length = std::wcslen(headers);

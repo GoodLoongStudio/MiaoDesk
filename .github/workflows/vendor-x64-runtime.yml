@@ -174,6 +174,30 @@ jobs:
             }
             $gozRel = 'goz/' + (Split-Path $gozArchive -Leaf)
 
+            # WebView2 SDK. Mirror ARM64: vendor the pinned SDK into the repository so
+            # x64 and ARM64 compile against an identical, deterministic SDK layout.
+            $wvVersion = [string]$lock.webview2Sdk.version
+            $wvDir = Join-Path $runtime 'webview2-sdk'
+            $wvLoader = Join-Path $wvDir 'build\native\x64\WebView2LoaderStatic.lib'
+            $reuseWv = $old -and $old.webview2Sdk -and ([string]$old.webview2Sdk.version -eq $wvVersion) -and
+                       (Test-Path $wvLoader -PathType Leaf) -and ((Sha256 $wvLoader) -eq ([string]$old.webview2Sdk.sha256).ToLowerInvariant())
+            if (-not $reuseWv) {
+              Remove-Item $wvDir -Recurse -Force -ErrorAction SilentlyContinue
+              $wvPackage = Join-Path $stage 'webview2.zip'
+              Download ("https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$wvVersion") $wvPackage
+              $wvExpanded = Join-Path $stage 'webview2'
+              Expand-Archive $wvPackage -DestinationPath $wvExpanded -Force
+              New-Item -ItemType Directory -Force -Path $wvDir | Out-Null
+              Copy-Item (Join-Path $wvExpanded 'build') $wvDir -Recurse -Force
+              foreach ($name in @('LICENSE.txt','NOTICE.txt')) {
+                $candidate = Get-ChildItem $wvExpanded -Filter $name -File -Recurse | Select-Object -First 1
+                if ($candidate) { Copy-Item $candidate.FullName (Join-Path $wvDir $name) -Force }
+              }
+              $wvLoader = Join-Path $wvDir 'build\native\x64\WebView2LoaderStatic.lib'
+            }
+            if (-not (Test-Path $wvLoader -PathType Leaf)) { throw 'WebView2 x64 loader is missing' }
+            $wvHash = Sha256 $wvLoader
+
             $manifest = [ordered]@{
               schema = 2
               architecture = 'x64'
@@ -194,6 +218,11 @@ jobs:
                 sha256=$piHash
                 dependencyLockSha256=$piLockHash
                 mode='node-rpc'
+              }
+              webview2Sdk = [ordered]@{
+                version=$wvVersion
+                loader='webview2-sdk/build/native/x64/WebView2LoaderStatic.lib'
+                sha256=$wvHash
               }
             }
             $manifest | ConvertTo-Json -Depth 8 | Set-Content $manifestPath -Encoding UTF8

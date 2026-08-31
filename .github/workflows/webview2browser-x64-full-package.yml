@@ -28,7 +28,7 @@ jobs:
         run: |
           $msbuild = vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
           if (-not $msbuild) { throw 'MSBuild not found' }
-          & $msbuild WebViewBrowserApp.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64
+          & $msbuild WebViewBrowserApp.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Assemble full offline package
@@ -70,6 +70,7 @@ jobs:
           Source: https://github.com/MicrosoftEdge/WebView2Browser
           Architecture: x64
           Configuration: Release
+          Toolset: v142
 
           Includes:
           - WebView2Browser.exe and all build output files

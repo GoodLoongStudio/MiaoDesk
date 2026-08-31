@@ -170,6 +170,9 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES 
 set_source_files_properties(src/ai/tools/NativeTools.cpp PROPERTIES
     COMPILE_DEFINITIONS "MIAODESK_NATIVE_TOOLS_IMPL"
 )
+set_source_files_properties(src/ai/agent/L3Agent.cpp PROPERTIES
+    COMPILE_DEFINITIONS "MIAODESK_L3_WINHTTP_TRACE"
+)
 set_source_files_properties(src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp PROPERTIES
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
@@ -198,7 +201,7 @@ add_custom_target(MiaoDeskRuntimeLogContractCheck ALL
 
 set(MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-domain-contract.ps1")
 if (NOT EXISTS "${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
-    message(FATAL_ERROR "Missing Desktop domain contract guard: ${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing Desktop domain ownership guard: ${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
 endif()
 add_custom_target(MiaoDeskDesktopDomainContractCheck ALL
     COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}"
@@ -245,7 +248,7 @@ if (NOT EXISTS "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}")
     message(FATAL_ERROR "Missing M4 Desktop UI parity guard: ${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}")
 endif()
 add_custom_target(MiaoDeskDesktopUiParityCheck ALL
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}"
+    COMMAND powershell.exe -NoProfile -File "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Verifying M4 desktop UI capability parity gate"
     VERBATIM

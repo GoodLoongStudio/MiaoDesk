@@ -97,3 +97,7 @@ private:
 };
 
 } // namespace miaodesk
+
+#ifdef MIAODESK_PI_CREDENTIAL_GUARD
+#include "miaodesk/ModelCredentialGuard.h"
+#endif

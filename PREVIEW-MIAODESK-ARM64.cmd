@@ -9,8 +9,8 @@ echo ========================================
 echo   MiaoDesk ARM64 FAST UI Preview
 echo ========================================
 echo.
-echo GitHub builds the preview; this PC downloads only UI executables and DLLs.
-echo Node / Harness / Pi / wallpaper payloads are NOT downloaded for quick acceptance.
+echo GitHub builds the preview; this PC downloads UI executables, DLLs, and the small built-in wallpaper assets.
+echo Large Node / Harness / Pi runtime payloads are NOT downloaded for quick acceptance.
 echo Persistent RuntimeCache is reused first; an existing NativeTest runtime is the fallback.
 echo If Agent runtime is missing, run INIT-MIAODESK-ARM64-RUNTIME.cmd once.
 echo.

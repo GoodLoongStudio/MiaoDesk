@@ -2,6 +2,11 @@
 
 #include <windows.h>
 
+// The settings page owns both per-profile credentials and the active MiaoDesk model
+// credential. Install the shared guard before the save bridge so profile secrets pass
+// through unchanged while MiaoDesk/ModelApiKey is validated/recovered consistently with
+// Pi and Direct Model runtime paths.
+#include "miaodesk/ModelCredentialGuard.h"
 #include "miaodesk/ApiSettingsSaveBridge.h"
 #include "miaodesk/ApiSettingsAutoSaveBridge.h"
 

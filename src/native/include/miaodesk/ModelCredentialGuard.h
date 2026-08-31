@@ -21,6 +21,10 @@ inline BOOL RawCredRead(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW* c
     return ::CredReadW(target, type, flags, credential);
 }
 
+inline BOOL RawCredWrite(PCREDENTIALW credential, DWORD flags) {
+    return ::CredWriteW(credential, flags);
+}
+
 inline bool SameTarget(LPCWSTR target, const wchar_t* expected) {
     return target && expected && _wcsicmp(target, expected) == 0;
 }
@@ -122,7 +126,7 @@ inline bool RepairActiveCredentialFrom(PCREDENTIALW source) {
     repaired.CredentialBlob = source->CredentialBlob;
     repaired.Persist = CRED_PERSIST_LOCAL_MACHINE;
     repaired.UserName = const_cast<wchar_t*>(L"MiaoDesk");
-    return CredWriteW(&repaired, 0) != FALSE;
+    return RawCredWrite(&repaired, 0) != FALSE;
 }
 
 inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW* credential) {
@@ -183,6 +187,27 @@ inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW*
     return FALSE;
 }
 
+inline BOOL CredWriteGuard(PCREDENTIALW credential, DWORD flags) {
+    if (!credential || credential->Type != CRED_TYPE_GENERIC ||
+        !SameTarget(credential->TargetName, kActiveCredentialTarget)) {
+        return RawCredWrite(credential, flags);
+    }
+
+    std::size_t invalidIndex = 0;
+    unsigned invalidCodepoint = 0;
+    if (!HeaderSafeCredential(credential, &invalidIndex, &invalidCodepoint)) {
+        AppendCredentialLog(
+            L"unsafe active model credential write rejected; bytes=" +
+            std::to_wstring(credential ? credential->CredentialBlobSize : 0) +
+            L"; invalidIndex=" + std::to_wstring(invalidIndex) +
+            L"; codepoint=" + std::to_wstring(invalidCodepoint));
+        SetLastError(ERROR_INVALID_DATA);
+        return FALSE;
+    }
+    return RawCredWrite(credential, flags);
+}
+
 } // namespace miaodesk::model_credential_guard
 
 #define CredReadW(...) ::miaodesk::model_credential_guard::CredReadGuard(__VA_ARGS__)
+#define CredWriteW(...) ::miaodesk::model_credential_guard::CredWriteGuard(__VA_ARGS__)

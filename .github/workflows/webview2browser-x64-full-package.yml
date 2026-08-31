@@ -1,0 +1,120 @@
+name: WebView2Browser x64 Full Package
+
+on:
+  push:
+    branches:
+      - build/webview2browser-x64-full
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout MiaoDesk trigger branch
+        uses: actions/checkout@v4
+
+      - name: Clone Microsoft WebView2Browser
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/MicrosoftEdge/WebView2Browser.git $env:GITHUB_WORKSPACE\WebView2Browser
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        working-directory: WebView2Browser
+        run: |
+          nuget restore WebViewBrowserApp.sln -PackagesDirectory packages -NonInteractive
+
+      - name: Build Release x64
+        shell: pwsh
+        working-directory: WebView2Browser
+        run: |
+          $msbuild = vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild not found' }
+          & $msbuild WebViewBrowserApp.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assemble full offline package
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser\Release_x64'
+          if (-not (Test-Path (Join-Path $src 'WebView2Browser.exe'))) {
+            Write-Host 'Build output:'
+            Get-ChildItem -Recurse (Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser') -Filter WebView2Browser.exe | Select-Object FullName
+            throw 'WebView2Browser.exe not found in Release_x64'
+          }
+
+          $pkg = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser-x64-Full'
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item "$src\*" $pkg -Recurse -Force
+
+          Write-Host 'Downloading WebView2 Evergreen Standalone x64 runtime...'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile (Join-Path $pkg 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe') -UseBasicParsing
+
+          Write-Host 'Downloading Visual C++ 2015-2022 x64 redistributable...'
+          Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile (Join-Path $pkg 'VC_redist.x64.exe') -UseBasicParsing
+
+          @'
+          @echo off
+          setlocal
+          cd /d "%~dp0"
+          echo [1/3] Installing Microsoft Visual C++ Runtime x64...
+          start /wait "" "VC_redist.x64.exe" /install /quiet /norestart
+          echo [2/3] Installing Microsoft Edge WebView2 Runtime x64...
+          start /wait "" "MicrosoftEdgeWebView2RuntimeInstallerX64.exe" /silent /install
+          echo [3/3] Starting WebView2Browser...
+          start "" "WebView2Browser.exe"
+          endlocal
+          '@ | Set-Content -Encoding ASCII (Join-Path $pkg 'InstallAndRun.cmd')
+
+          @'
+          WebView2Browser x64 Full Offline Package
+          ========================================
+          Source: https://github.com/MicrosoftEdge/WebView2Browser
+          Architecture: x64
+          Configuration: Release
+
+          This package includes:
+          - WebView2Browser.exe and all build output files
+          - Microsoft Edge WebView2 Evergreen Standalone Runtime Installer (x64)
+          - Microsoft Visual C++ 2015-2022 Redistributable (x64)
+          - InstallAndRun.cmd
+
+          Recommended first run:
+          1. Right-click InstallAndRun.cmd and choose Run as administrator.
+          2. It installs the required VC++ runtime and WebView2 runtime, then launches WebView2Browser.
+          3. After that, WebView2Browser.exe can be launched directly.
+
+          Note: WebView2 Evergreen Runtime is installed on Windows and can auto-update later.
+          '@ | Set-Content -Encoding UTF8 (Join-Path $pkg 'README.txt')
+
+          Get-ChildItem $pkg | Select-Object Name,Length
+
+      - name: Smoke-check package contents
+        shell: pwsh
+        run: |
+          $pkg = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser-x64-Full'
+          $required = @(
+            'WebView2Browser.exe',
+            'WebView2Loader.dll',
+            'MicrosoftEdgeWebView2RuntimeInstallerX64.exe',
+            'VC_redist.x64.exe',
+            'InstallAndRun.cmd',
+            'README.txt',
+            'wvbrowser_ui'
+          )
+          foreach ($item in $required) {
+            if (-not (Test-Path (Join-Path $pkg $item))) { throw "Missing package item: $item" }
+          }
+          $wvSize = (Get-Item (Join-Path $pkg 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe')).Length
+          if ($wvSize -lt 50000000) { throw "WebView2 runtime installer looks too small: $wvSize bytes" }
+          Write-Host "Package smoke check passed. WebView2 installer bytes: $wvSize"
+
+      - name: Upload x64 full package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebView2Browser-x64-Full
+          path: WebView2Browser-x64-Full
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7

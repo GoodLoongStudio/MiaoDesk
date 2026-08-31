@@ -11,7 +11,8 @@ echo ========================================
 echo.
 echo GitHub builds the preview; this PC downloads only UI executables and DLLs.
 echo Node / Harness / Pi / wallpaper payloads are NOT downloaded for quick acceptance.
-echo Existing NativeTest runtime is reused when available.
+echo Persistent RuntimeCache is reused first; an existing NativeTest runtime is the fallback.
+echo If Agent runtime is missing, run INIT-MIAODESK-ARM64-RUNTIME.cmd once.
 echo.
 
 where git >nul 2>nul

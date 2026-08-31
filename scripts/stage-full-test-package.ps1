@@ -23,7 +23,14 @@ foreach ($exe in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')
 Get-ChildItem $BuildOutput -Filter '*.dll' -File -ErrorAction SilentlyContinue |
     Copy-Item -Destination $Destination -Force
 
-& (Join-Path $PSScriptRoot 'prepare-store-runtime.ps1') -DeployDir $Destination -Architecture $Architecture
+if ($Architecture -eq 'x64' -and
+    (Test-Path (Join-Path $RepoRoot 'runtime\x64\runtime-manifest.json') -PathType Leaf) -and
+    (Test-Path (Join-Path $RepoRoot 'runtime\x64\.complete') -PathType Leaf)) {
+    Write-Host 'Using vendored x64 RuntimeBundle (offline).' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'prepare-third-party-runtime-x64.ps1') -DeployDir $Destination -SkipGozServiceInstall
+} else {
+    & (Join-Path $PSScriptRoot 'prepare-store-runtime.ps1') -DeployDir $Destination -Architecture $Architecture
+}
 if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code $LASTEXITCODE" }
 
 $wallpapersSource = Join-Path $RepoRoot 'assets\wallpapers'

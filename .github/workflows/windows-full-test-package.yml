@@ -43,7 +43,7 @@ jobs:
             cmake_arch: ARM64
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v5
@@ -134,11 +134,94 @@ jobs:
             -PackagePath "$PWD\miaomiao-full-test-${{ matrix.arch }}.msix" `
             -Destination "$PWD\unpacked-${{ matrix.arch }}"
 
-      - name: Upload full ${{ matrix.arch }} package
+      - name: Create signed installable ${{ matrix.arch }} test package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'signed-${{ matrix.arch }}-package'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $passwordText = [guid]::NewGuid().ToString('N')
+          $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+          $cert = New-SelfSignedCertificate `
+            -Type Custom `
+            -Subject $env:TEST_PUBLISHER `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -KeyUsage DigitalSignature `
+            -FriendlyName 'MiaoDesk temporary ${{ matrix.arch }} test package signing' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -NotAfter (Get-Date).AddDays(14) `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3')
+
+          $pfx = Join-Path $env:RUNNER_TEMP 'MiaoDesk-${{ matrix.arch }}-TestSigning.pfx'
+          $cer = Join-Path $out 'MiaoDesk-${{ matrix.arch }}-TestSigning.cer'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $preferredToolArch = if ('${{ matrix.arch }}' -eq 'arm64') { 'arm64' } else { 'x64' }
+          $signTool = Get-ChildItem $sdkBin -Recurse -Filter SignTool.exe -File |
+            Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq $preferredToolArch } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) {
+            $signTool = Get-ChildItem $sdkBin -Recurse -Filter SignTool.exe -File |
+              Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq 'x64' } |
+              Sort-Object FullName -Descending | Select-Object -First 1
+          }
+          if (-not $signTool) { throw 'SignTool.exe was not found.' }
+
+          $signedMsix = Join-Path $out 'miaomiao-full-test-${{ matrix.arch }}.msix'
+          Copy-Item "$PWD\miaomiao-full-test-${{ matrix.arch }}.msix" $signedMsix -Force
+          & $signTool.FullName sign /fd SHA256 /f $pfx /p $passwordText $signedMsix
+          if ($LASTEXITCODE -ne 0) { throw "SignTool sign failed: $LASTEXITCODE" }
+          & $signTool.FullName verify /pa /v $signedMsix
+          if ($LASTEXITCODE -ne 0) { throw "SignTool verify failed: $LASTEXITCODE" }
+
+          Copy-Item "$PWD\scripts\install-test-msixbundle.ps1" (Join-Path $out 'INSTALL-TEST-PACKAGE.ps1') -Force
+          Set-Content -Path (Join-Path $out 'README-TEST-PACKAGE.txt') -Encoding UTF8 -Value @(
+            'MiaoDesk complete ${{ matrix.arch }} test package'
+            "Version: $env:TEST_VERSION"
+            'Includes MiaoDesk, wallpaper engine, DeepSeek Harness, shared Node, Pi Agent, goz/gozd, built-in wallpapers and Store icons.'
+            'This uses a temporary TEST certificate, not the Microsoft Store production identity.'
+            ''
+            'Install from PowerShell:'
+            '.\INSTALL-TEST-PACKAGE.ps1 -BundlePath .\miaomiao-full-test-${{ matrix.arch }}.msix -CertificatePath .\MiaoDesk-${{ matrix.arch }}-TestSigning.cer'
+          )
+
+      - name: Prove signed ${{ matrix.arch }} package installs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'signed-${{ matrix.arch }}-package'
+          $cer = Join-Path $out 'MiaoDesk-${{ matrix.arch }}-TestSigning.cer'
+          $msix = Join-Path $out 'miaomiao-full-test-${{ matrix.arch }}.msix'
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+          Add-AppxPackage -Path $msix -ForceApplicationShutdown
+          $package = Get-AppxPackage -Name $env:TEST_PACKAGE_NAME | Sort-Object Version -Descending | Select-Object -First 1
+          if (-not $package) { throw 'Signed architecture test package did not install.' }
+          if ([string]$package.Architecture -ine '${{ matrix.arch }}') {
+            throw "Installed unexpected architecture: $($package.Architecture); expected ${{ matrix.arch }}"
+          }
+          Write-Host "Installed signed ${{ matrix.arch }} package: $($package.PackageFullName)" -ForegroundColor Green
+          Remove-AppxPackage -Package $package.PackageFullName
+
+      - name: Upload raw ${{ matrix.arch }} package for bundle assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-full-test-raw-${{ matrix.arch }}-${{ github.sha }}
+          path: miaomiao-full-test-${{ matrix.arch }}.msix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload installable signed ${{ matrix.arch }} package
         uses: actions/upload-artifact@v4
         with:
           name: miaomiao-full-test-${{ matrix.arch }}-${{ github.sha }}
-          path: miaomiao-full-test-${{ matrix.arch }}.msix
+          path: signed-${{ matrix.arch }}-package/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -152,10 +235,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download both verified architecture packages
+      - name: Download both verified raw architecture packages
         uses: actions/download-artifact@v4
         with:
-          pattern: miaomiao-full-test-*-${{ github.sha }}
+          pattern: miaomiao-full-test-raw-*-${{ github.sha }}
           path: architecture-packages
           merge-multiple: true
 

@@ -1,0 +1,105 @@
+name: x64 Portable Full Runtime Test Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/native/**
+      - assets/wallpapers/**
+      - runtime/x64/**
+      - scripts/stage-full-test-package.ps1
+      - .github/workflows/x64-portable-test-package.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: x64-portable-full-runtime-test
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Configure x64 Release
+        shell: pwsh
+        run: cmake -S . -B build-x64-portable -A x64
+
+      - name: Build x64 product
+        shell: pwsh
+        run: cmake --build build-x64-portable --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+
+      - name: Stage complete portable product and offline runtime
+        shell: pwsh
+        run: |
+          .\scripts\stage-full-test-package.ps1 `
+            -BuildOutput "$PWD\build-x64-portable\src\native\Release" `
+            -Destination "$PWD\MiaoDesk-x64-full-test" `
+            -Architecture 'x64'
+
+      - name: Verify executables and bundled runtimes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $PWD 'MiaoDesk-x64-full-test'
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Runtime\Node\node.exe',
+            'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+          )) {
+            if (-not (Test-Path (Join-Path $dest $relative) -PathType Leaf)) {
+              throw "Missing required x64 package file: $relative"
+            }
+          }
+
+          Push-Location $dest
+          try {
+            & .\Runtime\Node\node.exe --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Node runtime probe failed.' }
+            & .\Runtime\Node\node.exe .\Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js --help | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime probe failed.' }
+            & .\Runtime\Node\node.exe .\Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Pi runtime probe failed.' }
+            foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+              $p = Start-Process -FilePath (Join-Path $dest $exe) -ArgumentList '--self-test' -Wait -PassThru
+              if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Add one-click launcher and package info
+        shell: pwsh
+        run: |
+          $dest = Join-Path $PWD 'MiaoDesk-x64-full-test'
+          Set-Content -Path (Join-Path $dest 'START-MIAODESK.cmd') -Encoding ASCII -Value @(
+            '@echo off'
+            'cd /d "%~dp0"'
+            'start "" MiaoDesk.exe'
+          )
+          Set-Content -Path (Join-Path $dest 'README-TEST.txt') -Encoding UTF8 -Value @(
+            'MiaoDesk x64 portable test build'
+            "Commit: $env:GITHUB_SHA"
+            'Unsigned portable package. No installation required.'
+            'Includes MiaoDesk, wallpaper engine, Harness, Node runtime, DeepSeek Harness, Pi Agent and bundled assets.'
+            'Run START-MIAODESK.cmd or MiaoDesk.exe.'
+          )
+
+      - name: Upload x64 full-runtime portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-x64-full-test-${{ github.sha }}
+          path: MiaoDesk-x64-full-test/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6

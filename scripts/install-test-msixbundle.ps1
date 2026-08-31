@@ -19,4 +19,4 @@ $package = Get-AppxPackage -Name 'GoodLoongStudio.MiaoMiao' | Sort-Object Versio
 if (-not $package) { throw 'MiaoDesk test package was not found after Add-AppxPackage.' }
 
 Write-Host ("Installed: {0} {1} ({2})" -f $package.Name, $package.Version, $package.Architecture) -ForegroundColor Green
-Write-Host 'Launch 妙喵 from the Start menu.' -ForegroundColor Green
+Write-Host 'Launch MiaoDesk from the Start menu.' -ForegroundColor Green

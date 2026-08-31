@@ -8,6 +8,7 @@ $RuntimeCacheRoot = Join-Path $UserDataRoot 'RuntimeCache'
 $InstalledRoot = Join-Path $UserDataRoot 'NativeTest'
 $Workflow = 'native-arm64-preview.yml'
 $Repository = 'GoodLoongStudio/MiaoDesk'
+$RuntimeInitializer = Join-Path $RepoRoot 'scripts\initialize-arm64-runtime-cache.ps1'
 
 function Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Warn([string]$Text) { Write-Host $Text -ForegroundColor Yellow }
@@ -41,31 +42,36 @@ function Remove-TreeRobust([string]$Path) {
     Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path $Path) { & cmd.exe /d /c "rd /s /q `"$Path`"" | Out-Null }
 }
-function Test-WallpaperAssetsReady([string]$Root) {
-    if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
-    $wallpapers = Join-Path $Root 'Wallpapers'
-    foreach ($relative in @(
-        'MiaoCloud.mdwall\assets\background.jpg',
-        'MiaoCloud.mdwall\assets\cloud.png',
-        'MiaoCloud.mdwall\assets\cat.png',
-        'MiaoCloud.mdwall\assets\tail.png',
-        'MiaoCloud.mdwall\assets\blink.png'
-    )) {
-        $path = Join-Path $wallpapers $relative
-        if (-not (Test-Path $path -PathType Leaf)) { return $false }
-        if ((Get-Item $path).Length -lt 1024) { return $false }
-    }
-    return $true
-}
 function Test-ComponentReady([string]$Root, [string]$Name) {
     if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
     switch ($Name) {
-        'Runtime' { return Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf }
+        'Runtime' {
+            return (Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf) -and
+                   (Test-Path (Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js') -PathType Leaf)
+        }
         'Pi' { return Test-Path (Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js') -PathType Leaf }
         'Goz' { return Test-Path (Join-Path $Root 'Goz\goz.exe') -PathType Leaf }
-        'Wallpapers' { return Test-WallpaperAssetsReady $Root }
         default { return Test-Path (Join-Path $Root $Name) -PathType Container }
     }
+}
+function Test-SharedAiRuntimeReady([string]$Root) {
+    return (Test-ComponentReady $Root 'Runtime') -and (Test-ComponentReady $Root 'Pi')
+}
+function Repair-LocalRuntimeCacheIfNeeded {
+    if (Test-SharedAiRuntimeReady $RuntimeCacheRoot) { return }
+    if (-not (Test-Path $RuntimeInitializer -PathType Leaf)) {
+        Warn "RuntimeCache is incomplete and the offline initializer is missing: $RuntimeInitializer"
+        return
+    }
+    Step 'Repairing incomplete local RuntimeCache from repository RuntimeBundle'
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $RuntimeInitializer
+    if ($LASTEXITCODE -ne 0) {
+        throw "Offline RuntimeCache repair failed with exit code $LASTEXITCODE."
+    }
+    if (-not (Test-SharedAiRuntimeReady $RuntimeCacheRoot)) {
+        throw 'RuntimeCache repair completed but Node/DeepSeek Harness/Pi is still incomplete.'
+    }
+    Write-Host 'Shared AI runtime repaired locally: Node + DeepSeek Harness + Pi.' -ForegroundColor Green
 }
 function Resolve-ReusableComponent([string]$Name) {
     foreach ($root in @($RuntimeCacheRoot, $InstalledRoot)) {
@@ -92,10 +98,6 @@ function Ensure-Junction([string]$Name) {
         throw "Fast preview mounted $Name from '$target', but the expected runtime files are still not visible through '$link'."
     }
     return $true
-}
-function Test-AgentRuntimeReady([string]$Root) {
-    return (Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf) -and
-           (Test-Path (Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js') -PathType Leaf)
 }
 function Convert-GhRuns([object]$RawJson) {
     $text = (@($RawJson) -join "`n").Trim()
@@ -137,6 +139,23 @@ function Find-ReusableRun([string]$HeadSha) {
     }
     return $null
 }
+function Test-RealWallpaper([string]$Root, [string]$Relative) {
+    $path = Join-Path $Root $Relative
+    return (Test-Path $path -PathType Leaf) -and ((Get-Item $path).Length -ge 1024)
+}
+function Assert-FastWallpaperPayload([string]$Root) {
+    foreach ($relative in @(
+        'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
+        'Wallpapers\MiaoCloud.mdwall\assets\cloud.png',
+        'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
+        'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
+        'Wallpapers\MiaoCloud.mdwall\assets\blink.png'
+    )) {
+        if (-not (Test-RealWallpaper $Root $relative)) {
+            throw "Fast preview wallpaper payload is missing or still an LFS pointer: $relative"
+        }
+    }
+}
 
 Require git
 Require gh
@@ -147,6 +166,8 @@ $headSha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $headSha -notmatch '^[0-9a-f]{40}$') {
     throw 'Unable to resolve current HEAD.'
 }
+
+Repair-LocalRuntimeCacheIfNeeded
 
 Step "Finding fast ARM64 UI preview for $headSha"
 $raw = & gh run list --repo $Repository --workflow $Workflow --commit $headSha --limit 5 --json databaseId,status,conclusion,headSha
@@ -171,7 +192,7 @@ if ($null -eq $run) {
     }
     $previewSha = [string]$run.headSha
     $reusedAncestor = $true
-    Write-Host "No fast-artifact-impacting change since $previewSha; reusing its FAST UI artifact." -ForegroundColor Yellow
+    Write-Host "No binary-impacting change since $previewSha; reusing its FAST UI artifact." -ForegroundColor Yellow
 }
 
 $artifactName = "miaodesk-arm64-ui-preview-$previewSha"
@@ -192,9 +213,7 @@ try {
             throw "Fast preview is missing $requiredExe."
         }
     }
-    if (-not (Test-WallpaperAssetsReady $temp)) {
-        throw 'Fast preview is missing real MiaoCloud wallpaper assets or still contains Git LFS pointers. Refusing to launch the vector fallback scene.'
-    }
+    Assert-FastWallpaperPayload $temp
 
     $marker = Join-Path $temp 'preview-build-sha.txt'
     if (-not (Test-Path $marker -PathType Leaf)) { throw 'Fast preview SHA marker is missing.' }
@@ -206,12 +225,9 @@ try {
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
     & robocopy.exe $temp $PreviewRoot /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XJ | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Fast preview copy failed with robocopy exit code $LASTEXITCODE." }
-    if (-not (Test-WallpaperAssetsReady $PreviewRoot)) {
-        throw 'Real wallpaper assets disappeared while staging Fast Preview. Refusing to launch a broken wallpaper preview.'
-    }
 
     Set-Content -Path (Join-Path $PreviewRoot 'preview-checkout-sha.txt') -Value $headSha -Encoding ASCII
-    Set-Content -Path (Join-Path $PreviewRoot 'preview-mode.txt') -Value 'FAST-UI' -Encoding ASCII
+    Set-Content -Path (Join-Path $PreviewRoot 'preview-mode.txt') -Value 'FAST-UI+WALLPAPERS' -Encoding ASCII
 
     $reused = New-Object System.Collections.Generic.List[string]
     $missing = New-Object System.Collections.Generic.List[string]
@@ -225,31 +241,32 @@ try {
     }
     if ($missing.Count -gt 0) {
         Warn ("Fast UI mode intentionally did not download: " + ($missing -join ', '))
-        Warn 'Run INIT-MIAODESK-ARM64-RUNTIME.cmd once to seed the persistent RuntimeCache, then future fast previews reuse it.'
-        Warn 'UI/input/search/chat-window/wallpaper acceptance still works without the large runtime; Agent/runtime acceptance does not.'
+        Warn 'UI/input/search/chat-window acceptance still works without optional local components.'
     }
 
-    if (Test-AgentRuntimeReady $RuntimeCacheRoot) {
-        if (-not (Test-AgentRuntimeReady $PreviewRoot)) {
-            throw "RuntimeCache is ready, but DevPreview cannot see Runtime/Node or Pi after mounting. Refusing to launch a broken Agent preview."
-        }
-        $nodePath = Join-Path $PreviewRoot 'Runtime\Node\node.exe'
-        $piPath = Join-Path $PreviewRoot 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
-        Write-Host "Agent runtime mounted: $nodePath" -ForegroundColor DarkGray
-        Write-Host "Pi runtime mounted:    $piPath" -ForegroundColor DarkGray
+    if (-not (Test-SharedAiRuntimeReady $PreviewRoot)) {
+        throw 'Shared AI Runtime is incomplete after mounting: Node, DeepSeek Harness and Pi must all be available.'
     }
+    $nodePath = Join-Path $PreviewRoot 'Runtime\Node\node.exe'
+    $dshPath = Join-Path $PreviewRoot 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+    $piPath = Join-Path $PreviewRoot 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+    Write-Host "Shared Node runtime:   $nodePath" -ForegroundColor DarkGray
+    Write-Host "DeepSeek Harness CLI:  $dshPath" -ForegroundColor DarkGray
+    Write-Host "Pi runtime:            $piPath" -ForegroundColor DarkGray
+
+    Assert-FastWallpaperPayload $PreviewRoot
 
     Step 'Starting FAST ARM64 developer preview'
     Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
     if ($reusedAncestor) {
-        Write-Host "FAST artifact SHA:    $previewSha (safe ancestor reuse)" -ForegroundColor Green
+        Write-Host "FAST binary SHA:      $previewSha (safe ancestor reuse)" -ForegroundColor Green
         Write-Host "Checkout SHA:         $headSha" -ForegroundColor Green
     }
     else {
         Write-Host "FAST UI preview SHA:  $previewSha" -ForegroundColor Green
     }
     Write-Host "Workflow run:         $($run.databaseId)" -ForegroundColor Green
-    Write-Host 'Downloaded: executables + DLLs + real built-in wallpapers; large Runtime/Pi payload is reused locally.' -ForegroundColor Green
+    Write-Host 'Downloaded: UI executables/DLLs + small built-in wallpapers; Node/Harness/Pi runtime is reused from the local RuntimeCache.' -ForegroundColor Green
 }
 finally {
     Remove-TreeRobust $temp

@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cwchar>
 #include <cwctype>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>

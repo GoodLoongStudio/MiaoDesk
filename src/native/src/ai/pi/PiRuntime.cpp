@@ -1,8 +1,8 @@
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/RuntimeLogPaths.h"
+#include "miaodesk/ApiRuntimeProfile.h"
 
-#include <wincred.h>
 #include <shlobj.h>
 #include <algorithm>
 #include <cstdio>
@@ -21,7 +21,6 @@ namespace fs = std::filesystem;
 namespace miaodesk {
 namespace {
 
-constexpr wchar_t kCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 constexpr wchar_t kApiKeyEnvironment[] = L"MIAODESK_MODEL_API_KEY";
 constexpr DWORD kTurnTimeoutMs = 600000;
 
@@ -216,15 +215,9 @@ void AppendRuntimeLog(const std::wstring& text) {
 }
 
 std::wstring LoadApiKey() {
-    PCREDENTIALW credential = nullptr;
-    if (!CredReadW(kCredentialTarget, CRED_TYPE_GENERIC, 0, &credential)) return {};
-    std::wstring key;
-    if (credential && credential->CredentialBlob && credential->CredentialBlobSize > 0) {
-        const auto* chars = reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
-        key.assign(chars, credential->CredentialBlobSize / sizeof(wchar_t));
-    }
-    if (credential) CredFree(credential);
-    return key;
+    const auto profile = api_runtime_profile::LoadDefault();
+    if (!profile.found || !profile.keyHeaderSafe) return {};
+    return profile.apiKey;
 }
 
 std::wstring SearchExecutable(const wchar_t* name) {
@@ -235,17 +228,27 @@ std::wstring SearchExecutable(const wchar_t* name) {
     return buffer;
 }
 
+bool IsRegularFile(const fs::path& path) {
+    std::error_code ec;
+    return fs::exists(path, ec) && fs::is_regular_file(path, ec);
+}
+
 std::wstring FindNodePath() {
     const auto bundled = ModuleDirectory() / L"Runtime" / L"Node" / L"node.exe";
-    std::error_code ec;
-    if (fs::exists(bundled, ec) && fs::is_regular_file(bundled, ec)) return bundled.wstring();
+    if (IsRegularFile(bundled)) return bundled.wstring();
+
+    const auto cached = LocalAppDataRoot() / L"RuntimeCache" / L"Runtime" / L"Node" / L"node.exe";
+    if (IsRegularFile(cached)) return cached.wstring();
     return {};
 }
 
 std::wstring FindPiPath() {
-    const auto bundled = ModuleDirectory() / L"Pi" / L"node_modules" / L"@earendil-works" / L"pi-coding-agent" / L"dist" / L"cli.js";
-    std::error_code ec;
-    if (fs::exists(bundled, ec) && fs::is_regular_file(bundled, ec)) return bundled.wstring();
+    const auto relative = fs::path(L"node_modules") / L"@earendil-works" / L"pi-coding-agent" / L"dist" / L"cli.js";
+    const auto bundled = ModuleDirectory() / L"Pi" / relative;
+    if (IsRegularFile(bundled)) return bundled.wstring();
+
+    const auto cached = LocalAppDataRoot() / L"RuntimeCache" / L"Pi" / relative;
+    if (IsRegularFile(cached)) return cached.wstring();
     return {};
 }
 

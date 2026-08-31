@@ -39,8 +39,8 @@ jobs:
           foreach ($exe in @('MiaoDesk.exe', 'MiaoDeskWallpaper.exe', 'MiaoDeskHarness.exe')) {
             $path = Join-Path $release $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "Missing x64 executable: $exe" }
-            & $path --self-test
-            if ($LASTEXITCODE -ne 0) { throw "$exe self-test failed: $LASTEXITCODE" }
+            $p = Start-Process -FilePath $path -ArgumentList '--self-test' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
           }
 
       - name: Stage portable x64 preview

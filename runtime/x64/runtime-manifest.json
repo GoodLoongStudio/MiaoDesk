@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "architecture": "x64",
-  "generatedUtc": "2026-08-31T10:16:53.0932376Z",
+  "generatedUtc": "2026-08-31T15:41:42.5657148Z",
   "lockSha256": "c07065bce115168ffcfab3a3ddddc5da5174ef5bdf27dd3084070ec268db34ff",
   "node": {
     "version": "24.19.0",
@@ -27,5 +27,10 @@
     "sha256": "4c1db303ed37250b1de68938ea7fcadd6dafb6c61de80e77d5680e7284e6aa57",
     "dependencyLockSha256": "a126d20d410d374f736f74af82bf1387a30bf77d5ab1d3464782d01a40d9f01a",
     "mode": "node-rpc"
+  },
+  "webview2Sdk": {
+    "version": "1.0.4129.50",
+    "loader": "webview2-sdk/build/native/x64/WebView2LoaderStatic.lib",
+    "sha256": "482f24196b20e784c4d29b752ea760946cb54e22c2532a29699ef538d2d5c28c"
   }
 }

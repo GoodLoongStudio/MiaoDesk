@@ -86,10 +86,10 @@ inline bool HeaderSafeCredential(PCREDENTIALW credential,
 
     for (std::size_t i = 0; i < count; ++i) {
         const unsigned value = static_cast<unsigned>(chars[i]);
-        // Model API keys are inserted into HTTP header values. Keep this deliberately strict:
-        // visible ASCII only, no whitespace/control characters and no Unicode. This prevents
-        // WHATWG Fetch ByteString failures in Pi and ERROR_INVALID_PARAMETER in WinHTTP.
-        if (value < 0x21u || value > 0x7eu) {
+        // HTTP header values legitimately allow ordinary ASCII spaces. Reject only control
+        // characters and non-ASCII data. This still blocks the U+8BBE ByteString failure that
+        // originally surfaced in Pi without falsely rejecting previously working credentials.
+        if (value < 0x20u || value > 0x7eu) {
             if (invalidIndex) *invalidIndex = i;
             if (invalidCodepoint) *invalidCodepoint = value;
             return false;

@@ -56,8 +56,8 @@ foreach ($marker in @(
 # selected default Profile and must not require a dedicated launcher/control in the settings UI.
 foreach ($marker in @(
     'ApiProfileStore',
-    'kDiscoverModelsId',
-    'DiscoverModels',
+    'kProbeModelsId',
+    'ProbeModels',
     'kSetDefaultId',
     'SetDefault')) {
     if (-not $ai.Contains($marker)) { throw "DesktopAiSettingsPage missing API Profile marker: $marker" }

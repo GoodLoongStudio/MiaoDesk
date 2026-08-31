@@ -67,6 +67,7 @@ private:
     std::vector<SearchResult> results_;
     int selected_{-1};
     bool fileSearchAvailable_{false};
+    bool fileSearchPending_{false};
     bool fileSearchQueryFailed_{false};
     bool expanded_{false};
     bool exiting_{false};

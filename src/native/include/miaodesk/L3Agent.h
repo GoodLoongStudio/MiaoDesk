@@ -158,3 +158,7 @@ private:
 };
 
 } // namespace miaodesk
+
+#ifdef MIAODESK_L3_WINHTTP_TRACE
+#include "miaodesk/L3WinHttpTrace.h"
+#endif

@@ -1,0 +1,311 @@
+name: Windows Full Test Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-full-test-package.yml
+      - scripts/prepare-store-runtime.ps1
+      - scripts/install-test-msixbundle.ps1
+      - runtime/x64/runtime-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-full-test-package
+  cancel-in-progress: true
+
+env:
+  TEST_VERSION: 0.1.0.${{ github.run_number }}
+  TEST_PUBLISHER: CN=GoodLoongStudio
+  TEST_PACKAGE_NAME: GoodLoongStudio.MiaoMiao
+
+jobs:
+  architecture-package:
+    name: Full Test ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            runner: windows-2025
+          - arch: arm64
+            cmake_arch: ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Verify exact head and LFS wallpaper assets
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+          foreach ($relative in @(
+            'assets\wallpapers\MiaoCloud.mdwall\assets\background.jpg',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\tail.png',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\blink.png'
+          )) {
+            $path = Join-Path $PWD $relative
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Missing wallpaper asset: $relative" }
+            if ((Get-Item $path).Length -lt 1024) { throw "Wallpaper asset is still an LFS pointer: $relative" }
+          }
+
+      - name: Configure ${{ matrix.arch }} Release
+        shell: pwsh
+        run: cmake -S . -B build-full-test-${{ matrix.arch }} -A ${{ matrix.cmake_arch }}
+
+      - name: Build complete native product
+        shell: pwsh
+        run: cmake --build build-full-test-${{ matrix.arch }} --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+
+      - name: Stage complete product and runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $PWD 'build-full-test-${{ matrix.arch }}\src\native\Release'
+          $dest = Join-Path $PWD 'full-test-${{ matrix.arch }}'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+
+          foreach ($exe in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
+            $path = Join-Path $source $exe
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Native build is missing $exe" }
+            Copy-Item $path $dest -Force
+          }
+          Get-ChildItem $source -Filter '*.dll' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dest -Force
+
+          & "$PWD\scripts\prepare-store-runtime.ps1" -DeployDir $dest -Architecture '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code $LASTEXITCODE" }
+
+          $wallpapersDest = Join-Path $dest 'Wallpapers'
+          New-Item -ItemType Directory -Force -Path $wallpapersDest | Out-Null
+          Copy-Item (Join-Path $PWD 'assets\wallpapers\*') $wallpapersDest -Recurse -Force
+
+          $required = @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Runtime\Node\node.exe',
+            'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Goz\goz.exe',
+            'Goz\gozd.exe',
+            'Wallpapers\MiaoCloud.mdwall\scene.json',
+            'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'Wallpapers\NeonCity.mdwall\scene.json',
+            'Wallpapers\MysticMoon.mdwall\scene.json'
+          )
+          foreach ($relative in $required) {
+            $path = Join-Path $dest $relative
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Full package staging is missing: $relative" }
+          }
+
+          Set-Content -Path (Join-Path $dest 'FULL-TEST-COMPONENTS.txt') -Value @(
+            'MiaoDesk native shell/search/settings'
+            'MiaoDeskWallpaper desktop engine'
+            'MiaoDeskHarness workbench host'
+            'Shared portable Node runtime'
+            'DeepSeek Harness dsh production dependencies'
+            'Pi Agent production dependencies'
+            'goz + gozd native file search runtime'
+            'MiaoCloud / NeonCity / MysticMoon wallpaper packages'
+            'Windows Store icon assets generated during MSIX packaging'
+          ) -Encoding UTF8
+
+      - name: Run staged native and runtime self-tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $PWD 'full-test-${{ matrix.arch }}'
+          Push-Location $dest
+          try {
+            $node = Join-Path $dest 'Runtime\Node\node.exe'
+            $dsh = Join-Path $dest 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+            $pi = Join-Path $dest 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+
+            & $node --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Node runtime probe failed.' }
+            & $node $dsh --help | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime probe failed.' }
+            & $node $pi --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Pi runtime probe failed.' }
+
+            & (Join-Path $dest 'MiaoDeskHarness.exe') --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDeskHarness self-test failed: $LASTEXITCODE" }
+            & (Join-Path $dest 'MiaoDeskWallpaper.exe') --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDeskWallpaper self-test failed: $LASTEXITCODE" }
+            & (Join-Path $dest 'MiaoDesk.exe') --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDesk self-test failed: $LASTEXITCODE" }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Build full ${{ matrix.arch }} MSIX
+        shell: powershell
+        run: |
+          .\scripts\build-msix.ps1 `
+            -InputDirectory "$PWD\full-test-${{ matrix.arch }}" `
+            -Architecture '${{ matrix.arch }}' `
+            -OutputPath "$PWD\miaomiao-full-test-${{ matrix.arch }}.msix" `
+            -Version $env:TEST_VERSION `
+            -Publisher $env:TEST_PUBLISHER `
+            -PackageName $env:TEST_PACKAGE_NAME
+
+      - name: Unpack and verify MSIX payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File |
+            Where-Object { (Split-Path $_.DirectoryName -Leaf) -in @('x64','arm64') } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeAppx) { throw 'MakeAppx.exe was not found.' }
+          $unpack = Join-Path $PWD 'unpacked-${{ matrix.arch }}'
+          & $makeAppx.FullName unpack /p "$PWD\miaomiao-full-test-${{ matrix.arch }}.msix" /d $unpack /o
+          if ($LASTEXITCODE -ne 0) { throw "MakeAppx unpack failed: $LASTEXITCODE" }
+
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Runtime\Node\node.exe',
+            'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Goz\goz.exe',
+            'Goz\gozd.exe',
+            'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'Assets\StoreLogo.png',
+            'Assets\Square44x44Logo.png',
+            'Assets\Square150x150Logo.png',
+            'Assets\Wide310x150Logo.png',
+            'Assets\MiaoMiao.ico',
+            'AppxManifest.xml'
+          )) {
+            if (-not (Test-Path (Join-Path $unpack $relative) -PathType Leaf)) {
+              throw "MSIX payload is missing: $relative"
+            }
+          }
+
+      - name: Upload full ${{ matrix.arch }} package
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-full-test-${{ matrix.arch }}-${{ github.sha }}
+          path: miaomiao-full-test-${{ matrix.arch }}.msix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  signed-bundle:
+    name: Signed x64 + ARM64 Test Bundle
+    needs: [architecture-package]
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download both architecture packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: miaomiao-full-test-*-${{ github.sha }}
+          path: architecture-packages
+          merge-multiple: true
+
+      - name: Build dual-architecture bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packages = @(Get-ChildItem "$PWD\architecture-packages" -Filter '*.msix' -File)
+          if ($packages.Count -ne 2) { throw "Expected x64 + ARM64 MSIX packages, found $($packages.Count)." }
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $makeAppx = Get-ChildItem $sdkBin -Recurse -Filter MakeAppx.exe -File |
+            Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeAppx) { throw 'MakeAppx.exe was not found.' }
+          & $makeAppx.FullName bundle /d "$PWD\architecture-packages" /p "$PWD\miaomiao-full-test.msixbundle" /o
+          if ($LASTEXITCODE -ne 0) { throw "MakeAppx bundle failed: $LASTEXITCODE" }
+
+      - name: Create ephemeral test certificate and sign bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'signed-test-package'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $passwordText = [guid]::NewGuid().ToString('N')
+          $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+          $cert = New-SelfSignedCertificate `
+            -Type Custom `
+            -Subject $env:TEST_PUBLISHER `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -KeyUsage DigitalSignature `
+            -FriendlyName 'MiaoDesk temporary test package signing' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -NotAfter (Get-Date).AddDays(14) `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3')
+
+          $pfx = Join-Path $env:RUNNER_TEMP 'MiaoDesk-TestSigning.pfx'
+          $cer = Join-Path $out 'MiaoDesk-TestSigning.cer'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $signTool = Get-ChildItem $sdkBin -Recurse -Filter SignTool.exe -File |
+            Where-Object { (Split-Path $_.DirectoryName -Leaf) -ieq 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) { throw 'SignTool.exe was not found.' }
+
+          $bundle = Join-Path $out 'miaomiao-full-test.msixbundle'
+          Copy-Item "$PWD\miaomiao-full-test.msixbundle" $bundle -Force
+          & $signTool.FullName sign /fd SHA256 /f $pfx /p $passwordText $bundle
+          if ($LASTEXITCODE -ne 0) { throw "SignTool sign failed: $LASTEXITCODE" }
+          & $signTool.FullName verify /pa /v $bundle
+          if ($LASTEXITCODE -ne 0) { throw "SignTool verify failed: $LASTEXITCODE" }
+
+          Copy-Item "$PWD\scripts\install-test-msixbundle.ps1" (Join-Path $out 'INSTALL-TEST-PACKAGE.ps1') -Force
+          Set-Content -Path (Join-Path $out 'README-TEST-PACKAGE.txt') -Encoding UTF8 -Value @(
+            'MiaoDesk dual-architecture full test package'
+            "Version: $env:TEST_VERSION"
+            'Architectures: x64 + ARM64'
+            'Includes: MiaoDesk, Wallpaper engine, DeepSeek Harness, shared Node, Pi Agent, goz/gozd, built-in wallpapers, Store icons.'
+            'This is NOT the Microsoft Store production certificate.'
+            ''
+            'Install from PowerShell:'
+            '.\INSTALL-TEST-PACKAGE.ps1 -BundlePath .\miaomiao-full-test.msixbundle -CertificatePath .\MiaoDesk-TestSigning.cer'
+          )
+
+      - name: Prove signed bundle installs on Windows x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'signed-test-package'
+          $bundle = Join-Path $out 'miaomiao-full-test.msixbundle'
+          $cer = Join-Path $out 'MiaoDesk-TestSigning.cer'
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+          Add-AppxPackage -Path $bundle -ForceApplicationShutdown
+          $package = Get-AppxPackage -Name $env:TEST_PACKAGE_NAME | Sort-Object Version -Descending | Select-Object -First 1
+          if (-not $package) { throw 'Signed dual-architecture test bundle did not install.' }
+          if ([string]$package.Architecture -notmatch '(?i)x64') { throw "x64 runner selected unexpected architecture: $($package.Architecture)" }
+          Write-Host "Installed test bundle: $($package.PackageFullName)" -ForegroundColor Green
+          Remove-AppxPackage -Package $package.PackageFullName
+
+      - name: Upload installable full test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: miaomiao-full-test-bundle-${{ github.sha }}
+          path: signed-test-package/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

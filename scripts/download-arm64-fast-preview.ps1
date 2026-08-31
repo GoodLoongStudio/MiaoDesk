@@ -4,6 +4,7 @@ $ProgressPreference = 'SilentlyContinue'
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $UserDataRoot = Join-Path $env:LOCALAPPDATA 'MiaoDesk'
 $PreviewRoot = Join-Path $UserDataRoot 'DevPreview'
+$RuntimeCacheRoot = Join-Path $UserDataRoot 'RuntimeCache'
 $InstalledRoot = Join-Path $UserDataRoot 'NativeTest'
 $Workflow = 'native-arm64-preview.yml'
 $Repository = 'GoodLoongStudio/MiaoDesk'
@@ -34,10 +35,17 @@ function Remove-TreeRobust([string]$Path) {
     Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path $Path) { & cmd.exe /d /c "rd /s /q `"$Path`"" | Out-Null }
 }
+function Resolve-ReusableComponent([string]$Name) {
+    foreach ($root in @($RuntimeCacheRoot, $InstalledRoot)) {
+        $candidate = Join-Path $root $Name
+        if (Test-Path $candidate -PathType Container) { return $candidate }
+    }
+    return $null
+}
 function Ensure-Junction([string]$Name) {
-    $target = Join-Path $InstalledRoot $Name
+    $target = Resolve-ReusableComponent $Name
     $link = Join-Path $PreviewRoot $Name
-    if (-not (Test-Path $target -PathType Container)) { return $false }
+    if ([string]::IsNullOrWhiteSpace($target)) { return $false }
     if (Test-Path $link) { return $true }
     New-Item -ItemType Junction -Path $link -Target $target | Out-Null
     return $true
@@ -159,11 +167,12 @@ try {
     }
 
     if ($reused.Count -gt 0) {
-        Write-Host ("Reusing installed components: " + ($reused -join ', ')) -ForegroundColor DarkGray
+        Write-Host ("Reusing local runtime components: " + ($reused -join ', ')) -ForegroundColor DarkGray
     }
     if ($missing.Count -gt 0) {
         Warn ("Fast UI mode intentionally did not download: " + ($missing -join ', '))
-        Warn 'UI/input/search/chat-window acceptance still works; full Agent/runtime acceptance requires the full preview or NativeTest install.'
+        Warn 'Run INIT-MIAODESK-ARM64-RUNTIME.cmd once to seed the persistent RuntimeCache, then future fast previews reuse it.'
+        Warn 'UI/input/search/chat-window acceptance still works without it; Agent/runtime acceptance does not.'
     }
 
     Step 'Starting FAST ARM64 developer preview'
@@ -176,7 +185,7 @@ try {
         Write-Host "FAST UI preview SHA:  $previewSha" -ForegroundColor Green
     }
     Write-Host "Workflow run:         $($run.databaseId)" -ForegroundColor Green
-    Write-Host 'Downloaded: executables + DLLs only; no bundled Node/Harness/Pi/wallpaper payload.' -ForegroundColor Green
+    Write-Host 'Downloaded: executables + DLLs only; bundled runtime is reused from RuntimeCache/NativeTest.' -ForegroundColor Green
 }
 finally {
     Remove-TreeRobust $temp

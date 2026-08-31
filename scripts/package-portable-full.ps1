@@ -19,10 +19,10 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 $archiveName = "MiaoDesk-$Architecture-full.tar.gz"
 $archivePath = Join-Path $out $archiveName
 
-# IMPORTANT: do not expose the expanded node_modules tree directly in a GitHub Artifact ZIP.
-# Windows Explorer still fails on deeply nested dependency paths on many machines. We keep the
-# entire portable payload inside one tar.gz and let the bundled extractor use Windows tar.exe,
-# which avoids Explorer walking each long member name.
+# Keep the expanded node_modules tree inside tar.gz in the GitHub Artifact so
+# Explorer never has to unpack thousands of deep dependency paths.  The payload
+# itself is location-independent: the extractor may place it beside this script
+# or in any directory supplied by the user.
 & tar.exe -czf $archivePath -C $source .
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archivePath -PathType Leaf)) {
     throw "Failed to create portable $Architecture payload."
@@ -42,9 +42,7 @@ Set-Content -Path $extractCmd -Encoding ASCII -Value @(
     'if not "%~1"=="" (',
     '  set "DEST=%~1"',
     ') else (',
-    '  set "DEST=C:\MD"',
-    '  if not exist "C:\MD" mkdir "C:\MD" >nul 2>&1',
-    '  if not exist "C:\MD" set "DEST=%LOCALAPPDATA%\MD"',
+    '  set "DEST=%~dp0MiaoDesk"',
     ')',
     'if not exist "%DEST%" mkdir "%DEST%" >nul 2>&1',
     'if not exist "%DEST%" (',
@@ -55,7 +53,8 @@ Set-Content -Path $extractCmd -Encoding ASCII -Value @(
     'echo [MiaoDesk] Extracting to %DEST% ...',
     'tar.exe -xzf "%ARCHIVE%" -C "%DEST%"',
     'if errorlevel 1 (',
-    '  echo [MiaoDesk] Extraction failed. Please keep this package on a local drive and retry.',
+    '  echo [MiaoDesk] Extraction failed at: %DEST%',
+    '  echo [MiaoDesk] The package does not require C:\MD or any other fixed install directory.',
     '  pause',
     '  exit /b 4',
     ')',
@@ -72,29 +71,34 @@ Set-Content -Path $extractCmd -Encoding ASCII -Value @(
 Set-Content -Path (Join-Path $out 'README-FIRST.txt') -Encoding UTF8 -Value @(
     "MiaoDesk $Architecture FULL portable package",
     '',
-    'IMPORTANT: do not open the .tar.gz and drag its node_modules tree out with Windows Explorer.',
-    'That can trigger Error 0x80010135 / Path too long on otherwise valid files.',
+    'MiaoDesk does not require a fixed install path.',
     '',
     'Recommended:',
     '  1. Extract this small GitHub Artifact ZIP anywhere.',
     '  2. Double-click EXTRACT-MIAODESK.cmd.',
-    '  3. It extracts the full runtime with Windows tar.exe to C:\MD (or %LOCALAPPDATA%\MD if C:\MD is unavailable).',
+    '  3. The full app is extracted to a MiaoDesk folder beside this script.',
     '  4. MiaoDesk.exe starts automatically.',
     '',
     'Custom destination:',
-    '  EXTRACT-MIAODESK.cmd D:\MD',
+    '  EXTRACT-MIAODESK.cmd "D:\Apps\MiaoDesk"',
+    '  EXTRACT-MIAODESK.cmd "%LOCALAPPDATA%\Programs\MiaoDesk"',
     '',
-    'The archive contains the complete Node / DeepSeek Harness / Pi / goz runtime tree.'
+    'The archive contains the complete Node / DeepSeek Harness / Pi / goz runtime tree.',
+    'Runtime discovery is relative to MiaoDesk.exe; moving the complete MiaoDesk folder keeps those relationships intact.',
+    '',
+    'IMPORTANT: do not open the .tar.gz and drag its node_modules tree out with Windows Explorer.',
+    'Use EXTRACT-MIAODESK.cmd (Windows tar.exe) so Explorer never walks the deep dependency tree.'
 )
 
-# CI proves the exact user-facing archive can be extracted without Explorer. Use a deliberately
-# short destination to keep third-party Node dependency paths well away from legacy MAX_PATH.
-$verifyRoot = "C:\mdpkg-$Architecture"
+# Prove the release is not coupled to C:\MD or another short/fixed root.  Verify
+# the exact user-facing archive under a nested path containing spaces, which
+# catches accidental current-directory and hard-coded-root dependencies.
+$verifyRoot = Join-Path $env:TEMP ("MiaoDesk package verification\$Architecture\custom install root")
 Remove-Item $verifyRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $verifyRoot | Out-Null
 try {
     & tar.exe -xzf $archivePath -C $verifyRoot
-    if ($LASTEXITCODE -ne 0) { throw "Portable $Architecture archive re-extraction failed." }
+    if ($LASTEXITCODE -ne 0) { throw "Portable $Architecture archive re-extraction failed outside a fixed install root." }
     foreach ($relative in @(
         'MiaoDesk.exe',
         'MiaoDeskWallpaper.exe',

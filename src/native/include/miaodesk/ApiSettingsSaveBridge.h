@@ -7,10 +7,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 #include <cwctype>
 #include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <new>
 #include <string>
@@ -51,7 +49,6 @@ constexpr int kRevealId = 7316;
 constexpr int kCopyId = 7317;
 
 constexpr wchar_t kStoredKeyMask[] = L"************************";
-constexpr wchar_t kActiveCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 
 struct BridgeState {
     HWND panel{};
@@ -102,7 +99,6 @@ inline fs::path LocalStateRoot() {
 }
 
 inline fs::path ProfilesPath() { return LocalStateRoot() / L"api-profiles.ini"; }
-inline fs::path ModelSettingsPath() { return LocalStateRoot() / L"model-settings.json"; }
 
 inline void EnsureUnicodeIni(const fs::path& path) {
     std::error_code ec;
@@ -212,112 +208,6 @@ inline bool NeedsKey(const std::wstring& baseUrl) {
            lower.find(L"localhost") == std::wstring::npos;
 }
 
-inline std::string Utf8(const std::wstring& value) {
-    if (value.empty()) return {};
-    const int length = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
-                                           nullptr, 0, nullptr, nullptr);
-    if (length <= 0) return {};
-    std::string result(static_cast<std::size_t>(length), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
-                        result.data(), length, nullptr, nullptr);
-    return result;
-}
-
-inline std::string EscapeJson(const std::wstring& value) {
-    const auto utf8 = Utf8(value);
-    std::string result;
-    result.reserve(utf8.size() + 16);
-    for (unsigned char ch : utf8) {
-        switch (ch) {
-        case '"': result += "\\\""; break;
-        case '\\': result += "\\\\"; break;
-        case '\n': result += "\\n"; break;
-        case '\r': result += "\\r"; break;
-        case '\t': result += "\\t"; break;
-        default:
-            if (ch < 0x20) {
-                char buffer[7]{};
-                sprintf_s(buffer, "\\u%04x", static_cast<unsigned>(ch));
-                result += buffer;
-            } else {
-                result.push_back(static_cast<char>(ch));
-            }
-        }
-    }
-    return result;
-}
-
-struct ActiveConfig {
-    std::wstring provider{L"openai-compatible"};
-    std::wstring baseUrl;
-    std::wstring endpoint{L"/chat/completions"};
-    std::wstring model;
-};
-
-inline ActiveConfig BuildActiveConfig(HWND panel) {
-    ActiveConfig config;
-    config.baseUrl = Text(GetDlgItem(panel, kApiUrlId));
-    config.model = Text(GetDlgItem(panel, kModelId));
-    const std::wstring serviceType = ComboText(GetDlgItem(panel, kTypeId));
-
-    while (config.baseUrl.size() > 1 && config.baseUrl.back() == L'/') config.baseUrl.pop_back();
-    const auto lowerBase = Lower(config.baseUrl);
-    const auto lowerType = Lower(serviceType);
-    for (const wchar_t* suffix : {L"/chat/completions", L"/responses", L"/messages"}) {
-        const std::wstring value(suffix);
-        if (lowerBase.size() >= value.size() && lowerBase.ends_with(value)) {
-            config.endpoint = value;
-            config.baseUrl.resize(config.baseUrl.size() - value.size());
-            while (config.baseUrl.size() > 1 && config.baseUrl.back() == L'/') config.baseUrl.pop_back();
-            break;
-        }
-    }
-
-    const auto base = Lower(config.baseUrl);
-    if (base.find(L"deepseek") != std::wstring::npos) {
-        config.provider = L"deepseek";
-    } else if (lowerType.find(L"anthropic") != std::wstring::npos ||
-               base.find(L"anthropic") != std::wstring::npos) {
-        config.provider = L"anthropic";
-        config.endpoint = L"/messages";
-    } else if (lowerType.find(L"google") != std::wstring::npos ||
-               base.find(L"generativelanguage") != std::wstring::npos) {
-        config.provider = L"google";
-    }
-    return config;
-}
-
-inline bool WriteActiveConfig(const ActiveConfig& config) {
-    if (config.baseUrl.empty() || config.model.empty()) return false;
-    const auto path = ModelSettingsPath();
-    auto temp = path;
-    temp += L".tmp";
-    std::ofstream stream(temp, std::ios::binary | std::ios::trunc);
-    if (!stream) return false;
-    stream << "{\n"
-           << "  \"ProviderId\": \"" << EscapeJson(config.provider) << "\",\n"
-           << "  \"Mode\": \"direct\",\n"
-           << "  \"BaseUrl\": \"" << EscapeJson(config.baseUrl) << "\",\n"
-           << "  \"Model\": \"" << EscapeJson(config.model) << "\",\n"
-           << "  \"Endpoint\": \"" << EscapeJson(config.endpoint) << "\"\n"
-           << "}\n";
-    stream.flush();
-    const bool ok = static_cast<bool>(stream);
-    stream.close();
-    if (!ok) {
-        std::error_code ec;
-        fs::remove(temp, ec);
-        return false;
-    }
-    if (!MoveFileExW(temp.c_str(), path.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        std::error_code ec;
-        fs::remove(temp, ec);
-        return false;
-    }
-    return true;
-}
-
 inline void CaptureSelectedSection(BridgeState& state) {
     if (!state.panel || !IsWindow(state.panel)) return;
     const std::wstring resolved = ResolveProfileSection(state.panel);
@@ -379,19 +269,14 @@ inline bool SaveProfileFromControls(BridgeState& state) {
     }
 
     bool madeDefault = false;
-    bool defaultApplyFailed = false;
     if (wantsDefault && configured) {
-        const bool keyOk = WriteCredential(kActiveCredentialTarget, key);
-        const bool configOk = keyOk && WriteActiveConfig(BuildActiveConfig(panel));
-        if (configOk) {
-            for (const auto& item : ProfileSections()) {
-                WriteIni(path, item.c_str(), L"default", item == section ? L"1" : L"0");
-            }
-            madeDefault = true;
-        } else {
-            defaultApplyFailed = true;
-            WriteIni(path, section.c_str(), L"default", existingDefault);
+        // API Configuration Center profile state is authoritative. Pi, Direct Model and
+        // DeepSeek Harness resolve the default profile themselves; setting a default profile
+        // must not depend on the legacy model-settings.json / ModelApiKey mirror.
+        for (const auto& item : ProfileSections()) {
+            WriteIni(path, item.c_str(), L"default", item == section ? L"1" : L"0");
         }
+        madeDefault = true;
     } else if (!wantsDefault) {
         WriteIni(path, section.c_str(), L"default", L"0");
     } else {
@@ -402,8 +287,6 @@ inline bool SaveProfileFromControls(BridgeState& state) {
     std::wstring message;
     if (madeDefault) {
         message = L"配置已保存并设为默认服务 · 可点击“测试连接”验证网络";
-    } else if (defaultApplyFailed) {
-        message = L"配置已保存，但应用默认服务失败";
     } else if (!configured) {
         message = L"配置草稿已保存 · 填写 Base URL、API Key 和模型后可测试连接";
     } else {
@@ -415,12 +298,6 @@ inline bool SaveProfileFromControls(BridgeState& state) {
     if (HWND parent = state.parent; parent && IsWindow(parent)) {
         PostMessageW(parent, WM_COMMAND, MAKEWPARAM(kAiNavId, BN_CLICKED), 0);
         PostMessageW(parent, kRefreshScrollMessage, 0, 0);
-    }
-
-    if (defaultApplyFailed) {
-        MessageBoxW(panel,
-                    L"配置本身已经保存成功，但没有设成当前默认模型。请检查 Base URL、模型名称和 API Key。",
-                    L"妙喵 API 配置", MB_OK | MB_ICONWARNING);
     }
     return true;
 }

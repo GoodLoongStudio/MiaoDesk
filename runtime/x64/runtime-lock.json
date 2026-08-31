@@ -1,0 +1,38 @@
+{
+  "schema": 2,
+  "vendorRevision": 1,
+  "architecture": "x64",
+  "node": {
+    "version": "24.19.0",
+    "archive": "node-v24.19.0-win-x64.zip",
+    "source": "https://nodejs.org/dist/v24.19.0/",
+    "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
+  },
+  "deepseekHarness": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.0-rc.7",
+    "source": "https://registry.npmjs.org/"
+  },
+  "goz": {
+    "version": "0.1.1",
+    "tag": "v0.1.1",
+    "archive": "goz-v0.1.1-windows-x86_64.zip",
+    "source": "https://github.com/mustafaahci/goz/releases/download/v0.1.1/goz-v0.1.1-windows-x86_64.zip",
+    "sha256": "8bd21284166d6d1b1ea97ab2b55cc66ecd41dac171046a21170057788e66cd81"
+  },
+  "pi": {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "0.83.0",
+    "source": "https://registry.npmjs.org/"
+  },
+  "webview2Sdk": {
+    "version": "1.0.4129.50",
+    "package": "Microsoft.Web.WebView2",
+    "source": "https://www.nuget.org/"
+  },
+  "notes": [
+    "This lock pins the x64 runtime used by the full dual-architecture test package.",
+    "The x64 runtime is materialized during CI and packaged offline; end users do not need Node, npm, Pi, DeepSeek Harness or goz preinstalled.",
+    "Versions intentionally match the current ARM64 RuntimeBundle."
+  ]
+}

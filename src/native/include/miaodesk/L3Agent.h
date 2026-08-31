@@ -45,68 +45,17 @@ public:
     void Stop();
     bool Busy() const noexcept { return busy_.load(); }
 
-    // The API Configuration Center owns provider/model/profile state. Runtime consumers refresh
-    // directly from its default Profile. model-settings.json remains migration-only state for
-    // machines that have not yet created api-profiles.ini; it is no longer the preferred source.
+    // The API Configuration Center is the runtime source of truth. Pi, Direct Model and Harness
+    // all resolve the same default Profile. If no Profile exists, runtime is explicitly
+    // unconfigured rather than falling back to the old model-settings.json shadow database.
     void ReloadConfig() {
-        const ModelConfig legacy = LoadConfig();
-        ModelConfig refreshed = legacy;
+        ModelConfig refreshed;
         const auto profile = api_runtime_profile::LoadDefault();
-
         if (profile.found) {
             refreshed.providerId = profile.providerId;
             refreshed.baseUrl = profile.baseUrl;
             refreshed.model = profile.model;
             refreshed.endpoint = profile.endpoint;
-        } else {
-            // Migration compatibility for older installs. Legacy builds could persist Endpoint
-            // as a complete URL; normalize that representation only while legacy state is in use.
-            std::wstring absoluteEndpoint = refreshed.endpoint;
-            if (absoluteEndpoint.starts_with(L"/https://") ||
-                absoluteEndpoint.starts_with(L"/http://")) {
-                absoluteEndpoint.erase(absoluteEndpoint.begin());
-            }
-
-            if (absoluteEndpoint.starts_with(L"https://") ||
-                absoluteEndpoint.starts_with(L"http://")) {
-                URL_COMPONENTS parts{};
-                parts.dwStructSize = sizeof(parts);
-                parts.dwSchemeLength = static_cast<DWORD>(-1);
-                parts.dwHostNameLength = static_cast<DWORD>(-1);
-                parts.dwUrlPathLength = static_cast<DWORD>(-1);
-                parts.dwExtraInfoLength = static_cast<DWORD>(-1);
-
-                if (WinHttpCrackUrl(absoluteEndpoint.c_str(), 0, 0, &parts) &&
-                    parts.lpszHostName && parts.dwHostNameLength > 0) {
-                    const bool secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
-                    std::wstring host(parts.lpszHostName, parts.dwHostNameLength);
-                    if (host.find(L':') != std::wstring::npos && !host.starts_with(L"[")) {
-                        host = L"[" + host + L"]";
-                    }
-
-                    refreshed.baseUrl = secure ? L"https://" : L"http://";
-                    refreshed.baseUrl += host;
-                    const bool defaultPort =
-                        (secure && parts.nPort == INTERNET_DEFAULT_HTTPS_PORT) ||
-                        (!secure && parts.nPort == INTERNET_DEFAULT_HTTP_PORT);
-                    if (!defaultPort && parts.nPort != 0) {
-                        refreshed.baseUrl += L":" + std::to_wstring(parts.nPort);
-                    }
-
-                    refreshed.endpoint.clear();
-                    if (parts.lpszUrlPath && parts.dwUrlPathLength > 0) {
-                        refreshed.endpoint.assign(parts.lpszUrlPath, parts.dwUrlPathLength);
-                    }
-                    if (parts.lpszExtraInfo && parts.dwExtraInfoLength > 0) {
-                        refreshed.endpoint.append(parts.lpszExtraInfo, parts.dwExtraInfoLength);
-                    }
-                    if (refreshed.endpoint.empty()) refreshed.endpoint = L"/";
-                }
-            }
-
-            const bool migrated =
-                refreshed.baseUrl != legacy.baseUrl || refreshed.endpoint != legacy.endpoint;
-            if (migrated) SaveConfig(refreshed);
         }
 
         if (refreshed.providerId == config_.providerId &&
@@ -148,6 +97,8 @@ private:
         std::wstring assistant;
     };
 
+    // Legacy persistence helpers remain private only for compatibility with old local commands;
+    // ReloadConfig and the normal runtime path do not consume their state.
     ModelConfig LoadConfig() const;
     bool SaveConfig(const ModelConfig& config) const;
     std::wstring LoadApiKey() const;

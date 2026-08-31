@@ -41,12 +41,29 @@ function Remove-TreeRobust([string]$Path) {
     Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path $Path) { & cmd.exe /d /c "rd /s /q `"$Path`"" | Out-Null }
 }
+function Test-WallpaperAssetsReady([string]$Root) {
+    if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
+    $wallpapers = Join-Path $Root 'Wallpapers'
+    foreach ($relative in @(
+        'MiaoCloud.mdwall\assets\background.jpg',
+        'MiaoCloud.mdwall\assets\cloud.png',
+        'MiaoCloud.mdwall\assets\cat.png',
+        'MiaoCloud.mdwall\assets\tail.png',
+        'MiaoCloud.mdwall\assets\blink.png'
+    )) {
+        $path = Join-Path $wallpapers $relative
+        if (-not (Test-Path $path -PathType Leaf)) { return $false }
+        if ((Get-Item $path).Length -lt 1024) { return $false }
+    }
+    return $true
+}
 function Test-ComponentReady([string]$Root, [string]$Name) {
     if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
     switch ($Name) {
         'Runtime' { return Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf }
         'Pi' { return Test-Path (Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js') -PathType Leaf }
         'Goz' { return Test-Path (Join-Path $Root 'Goz\goz.exe') -PathType Leaf }
+        'Wallpapers' { return Test-WallpaperAssetsReady $Root }
         default { return Test-Path (Join-Path $Root $Name) -PathType Container }
     }
 }
@@ -101,6 +118,7 @@ function Test-BinaryImpact([string]$Path) {
            ($normalized -eq 'vcpkg-configuration.json') -or
            ($normalized -like 'cmake/*') -or
            ($normalized -like 'src/native/*') -or
+           ($normalized -like 'assets/wallpapers/*') -or
            ($normalized -eq '.github/workflows/native-arm64-preview.yml')
 }
 function Find-ReusableRun([string]$HeadSha) {
@@ -153,7 +171,7 @@ if ($null -eq $run) {
     }
     $previewSha = [string]$run.headSha
     $reusedAncestor = $true
-    Write-Host "No binary-impacting change since $previewSha; reusing its FAST UI artifact." -ForegroundColor Yellow
+    Write-Host "No fast-artifact-impacting change since $previewSha; reusing its FAST UI artifact." -ForegroundColor Yellow
 }
 
 $artifactName = "miaodesk-arm64-ui-preview-$previewSha"
@@ -174,6 +192,9 @@ try {
             throw "Fast preview is missing $requiredExe."
         }
     }
+    if (-not (Test-WallpaperAssetsReady $temp)) {
+        throw 'Fast preview is missing real MiaoCloud wallpaper assets or still contains Git LFS pointers. Refusing to launch the vector fallback scene.'
+    }
 
     $marker = Join-Path $temp 'preview-build-sha.txt'
     if (-not (Test-Path $marker -PathType Leaf)) { throw 'Fast preview SHA marker is missing.' }
@@ -185,13 +206,16 @@ try {
     New-Item -ItemType Directory -Force -Path $PreviewRoot | Out-Null
     & robocopy.exe $temp $PreviewRoot /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XJ | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Fast preview copy failed with robocopy exit code $LASTEXITCODE." }
+    if (-not (Test-WallpaperAssetsReady $PreviewRoot)) {
+        throw 'Real wallpaper assets disappeared while staging Fast Preview. Refusing to launch a broken wallpaper preview.'
+    }
 
     Set-Content -Path (Join-Path $PreviewRoot 'preview-checkout-sha.txt') -Value $headSha -Encoding ASCII
     Set-Content -Path (Join-Path $PreviewRoot 'preview-mode.txt') -Value 'FAST-UI' -Encoding ASCII
 
     $reused = New-Object System.Collections.Generic.List[string]
     $missing = New-Object System.Collections.Generic.List[string]
-    foreach ($name in @('Runtime', 'Pi', 'Goz', 'Wallpapers', 'Assets')) {
+    foreach ($name in @('Runtime', 'Pi', 'Goz', 'Assets')) {
         if (Ensure-Junction $name) { [void]$reused.Add($name) }
         else { [void]$missing.Add($name) }
     }
@@ -202,7 +226,7 @@ try {
     if ($missing.Count -gt 0) {
         Warn ("Fast UI mode intentionally did not download: " + ($missing -join ', '))
         Warn 'Run INIT-MIAODESK-ARM64-RUNTIME.cmd once to seed the persistent RuntimeCache, then future fast previews reuse it.'
-        Warn 'UI/input/search/chat-window acceptance still works without it; Agent/runtime acceptance does not.'
+        Warn 'UI/input/search/chat-window/wallpaper acceptance still works without the large runtime; Agent/runtime acceptance does not.'
     }
 
     if (Test-AgentRuntimeReady $RuntimeCacheRoot) {
@@ -218,14 +242,14 @@ try {
     Step 'Starting FAST ARM64 developer preview'
     Start-Process -FilePath (Join-Path $PreviewRoot 'MiaoDesk.exe') -WorkingDirectory $PreviewRoot
     if ($reusedAncestor) {
-        Write-Host "FAST binary SHA:      $previewSha (safe ancestor reuse)" -ForegroundColor Green
+        Write-Host "FAST artifact SHA:    $previewSha (safe ancestor reuse)" -ForegroundColor Green
         Write-Host "Checkout SHA:         $headSha" -ForegroundColor Green
     }
     else {
         Write-Host "FAST UI preview SHA:  $previewSha" -ForegroundColor Green
     }
     Write-Host "Workflow run:         $($run.databaseId)" -ForegroundColor Green
-    Write-Host 'Downloaded: executables + DLLs only; bundled runtime is reused from RuntimeCache/NativeTest.' -ForegroundColor Green
+    Write-Host 'Downloaded: executables + DLLs + real built-in wallpapers; large Runtime/Pi payload is reused locally.' -ForegroundColor Green
 }
 finally {
     Remove-TreeRobust $temp

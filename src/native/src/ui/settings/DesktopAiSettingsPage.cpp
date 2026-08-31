@@ -8,8 +8,10 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <cwchar>
 #include <filesystem>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -39,6 +41,7 @@ constexpr int kDeleteId = 7315;
 constexpr int kRevealId = 7316;
 constexpr int kCopyId = 7317;
 constexpr int kSetDefaultId = 7318;
+constexpr int kProbeModelsId = 7319;
 constexpr wchar_t kStoredKeyMask[] = L"************************";
 
 HMENU ControlId(int id) {
@@ -288,6 +291,7 @@ struct PageState {
     HWND deleteButton{};
     HWND revealButton{};
     HWND copyButton{};
+    HWND probeModelsButton{};
 
     HFONT titleFont{};
     HFONT headingFont{};
@@ -332,7 +336,7 @@ struct PageState {
         smallFont = MakeFont(11, FW_NORMAL);
         for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, addButton,
                              testButton, saveButton, setDefaultButton, deleteButton,
-                             revealButton, copyButton}) {
+                             revealButton, copyButton, probeModelsButton}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         if (profileList) SendMessageW(profileList, LB_SETITEMHEIGHT, 0, S(72));
@@ -358,7 +362,8 @@ struct PageState {
 
     void EnableForm(bool enabled) {
         for (HWND control : {name, serviceType, apiUrl, apiKey, model, testButton, saveButton,
-                             setDefaultButton, deleteButton, revealButton, copyButton}) {
+                             setDefaultButton, deleteButton, revealButton, copyButton,
+                             probeModelsButton}) {
             if (control) EnableWindow(control, enabled ? TRUE : FALSE);
         }
     }
@@ -461,7 +466,7 @@ struct PageState {
             return false;
         }
         if (profile.model.empty()) {
-            SetStatus(L"请输入 Model。", false);
+            SetStatus(L"请输入 Model，或点击“探测模型”。", false);
             SetFocus(model);
             return false;
         }
@@ -514,12 +519,55 @@ struct PageState {
         ApiProfile profile;
         profile.id = L"custom-" + std::to_wstring(GetTickCount64());
         profile.name = L"新 API 配置";
-        profile.lastMessage = L"填写 Base URL、API Key 和 Model 后保存。";
+        profile.lastMessage = L"填写 Base URL、API Key，然后探测或填写 Model。";
         profiles.push_back(std::move(profile));
         selected = profiles.size() - 1;
         RebuildList();
         LoadForm();
         SetFocus(name);
+    }
+
+    void ProbeModels() {
+        if (!HasSelection()) return;
+        ApiProfile profile = FormProfile();
+        const std::wstring key = FormKey();
+        if (profile.baseUrl.empty()) {
+            SetStatus(L"请先填写 Base URL。", false);
+            SetFocus(apiUrl);
+            return;
+        }
+        if (profile.NeedsKey() && key.empty()) {
+            SetStatus(L"请先填写 API Key。", false);
+            SetFocus(apiKey);
+            return;
+        }
+        if (!key.empty() && !HeaderSafeSecret(key)) {
+            SetStatus(L"API Key 格式异常，请重新粘贴正确的 Key。", false);
+            SetFocus(apiKey);
+            return;
+        }
+
+        EnableWindow(probeModelsButton, FALSE);
+        SetStatus(L"正在探测可用模型…", true);
+        UpdateWindow(panel);
+        const ModelProbeResult probe = agent.ProbeModels(profile.baseUrl, key, false);
+        EnableWindow(probeModelsButton, TRUE);
+
+        if (!probe.ok) {
+            SetStatus(probe.message.empty() ? L"模型探测失败，请检查地址、密钥和网络。" : probe.message, false);
+            return;
+        }
+
+        std::wstring detected = probe.recommendedModel;
+        if (detected.empty() && !probe.models.empty()) detected = probe.models.front();
+        if (detected.empty()) {
+            SetStatus(L"连接成功，但服务没有返回模型列表；Model 可以手动填写。", true);
+            return;
+        }
+
+        SetWindowTextW(model, detected.c_str());
+        const std::size_t count = probe.models.empty() ? 1 : probe.models.size();
+        SetStatus(L"探测到 " + std::to_wstring(count) + L" 个模型，已填入 " + detected + L"。", true);
     }
 
     void TestConnection() {
@@ -669,7 +717,10 @@ struct PageState {
         place(apiKey, fieldX, y, std::max(S(120), fieldW - S(90)), rowH);
         place(revealButton, fieldX + fieldW - S(84), y, S(36), rowH);
         place(copyButton, fieldX + fieldW - S(44), y, S(44), rowH); y += rowH + rowGap;
-        place(model, fieldX, y, fieldW, rowH);
+        const int probeW = S(104);
+        const int modelGap = S(8);
+        place(model, fieldX, y, std::max(S(120), fieldW - probeW - modelGap), rowH);
+        place(probeModelsButton, fieldX + fieldW - probeW, y, probeW, rowH);
 
         const int actionY = bodyTop + bodyH - S(66);
         int actionX = rightX + S(18);
@@ -699,7 +750,7 @@ struct PageState {
             background = pressed ? RGB(255, 241, 242) : RGB(253, 254, 255);
             border = RGB(247, 205, 209);
             textColor = RGB(224, 52, 61);
-        } else if (id == kRevealId || id == kCopyId) {
+        } else if (id == kRevealId || id == kCopyId || id == kProbeModelsId) {
             background = pressed ? RGB(235, 243, 255) : RGB(248, 251, 255);
             border = RGB(220, 231, 246);
             textColor = RGB(57, 88, 139);
@@ -819,6 +870,7 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         if (id == kProfileListId && code == LBN_SELCHANGE) { state->SelectListItem(); return 0; }
         if (code == BN_CLICKED) {
             if (id == kNewId) { state->NewProfile(); return 0; }
+            if (id == kProbeModelsId) { state->ProbeModels(); return 0; }
             if (id == kTestId) { state->TestConnection(); return 0; }
             if (id == kSaveId) { state->SaveCurrent(); return 0; }
             if (id == kSetDefaultId) { state->SetDefault(); return 0; }
@@ -935,10 +987,12 @@ bool CreatePage(PageState& state) {
     state.deleteButton = button(L"删除", kDeleteId);
     state.revealButton = button(L"◉", kRevealId);
     state.copyButton = button(L"复制", kCopyId);
+    state.probeModelsButton = button(L"探测模型", kProbeModelsId);
 
     if (!state.profileList || !state.name || !state.serviceType || !state.apiUrl || !state.apiKey ||
         !state.model || !state.addButton || !state.testButton || !state.saveButton ||
-        !state.setDefaultButton || !state.deleteButton || !state.revealButton || !state.copyButton)
+        !state.setDefaultButton || !state.deleteButton || !state.revealButton || !state.copyButton ||
+        !state.probeModelsButton)
         return false;
 
     SendMessageW(state.name, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 公司 DeepSeek"));

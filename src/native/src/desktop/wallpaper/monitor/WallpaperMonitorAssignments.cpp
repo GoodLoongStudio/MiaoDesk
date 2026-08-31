@@ -138,19 +138,19 @@ bool WallpaperMonitorAssignments::AssignById(std::wstring monitorId, std::wstrin
         SetError(error, L"显示器 ID 和壁纸 ID 不能为空");
         return false;
     }
-    if (const auto index = FindIndex(monitorId)) {
-        auto& item = items_[*index];
-        item.wallpaperId = std::move(wallpaperId);
-        if (!friendlyName.empty()) item.lastFriendlyName = std::move(friendlyName);
-        item.lastSeenUnixSeconds = NowUnixSeconds();
-    } else {
-        MonitorWallpaperAssignment item;
-        item.monitorId = std::move(monitorId);
-        item.wallpaperId = std::move(wallpaperId);
-        item.lastFriendlyName = std::move(friendlyName);
-        item.lastSeenUnixSeconds = NowUnixSeconds();
-        items_.push_back(std::move(item));
-    }
+
+    // MiaoDesk's current desktop contract is deliberately single-monitor:
+    // choosing a monitor applies the wallpaper only to that monitor.  Keeping
+    // stale assignments for other monitors made Independent mode silently draw
+    // on multiple displays after a user selected exactly one target.  Replace
+    // the assignment set atomically instead of accumulating per-monitor state.
+    MonitorWallpaperAssignment item;
+    item.monitorId = std::move(monitorId);
+    item.wallpaperId = std::move(wallpaperId);
+    item.lastFriendlyName = std::move(friendlyName);
+    item.lastSeenUnixSeconds = NowUnixSeconds();
+    items_.clear();
+    items_.push_back(std::move(item));
     return Save(error);
 }
 
@@ -224,8 +224,15 @@ bool WallpaperMonitorAssignments::SelfTest() {
     std::wstring error;
     bool ok = assignments.Load(&error);
     ok = ok && assignments.AssignById(L"monitor-A", L"wallpaper-one", L"Panel A", &error);
-    ok = ok && assignments.AssignById(L"monitor-B", L"wallpaper-two", L"Panel B", &error);
+    ok = ok && assignments.Items().size() == 1;
     ok = ok && assignments.WallpaperIdFor(L"MONITOR-a") == std::optional<std::wstring>(L"wallpaper-one");
+
+    // A second target replaces the first one. This is the key regression check
+    // for "pick one screen => affect only that screen".
+    ok = ok && assignments.AssignById(L"monitor-B", L"wallpaper-two", L"Panel B", &error);
+    ok = ok && assignments.Items().size() == 1;
+    ok = ok && !assignments.WallpaperIdFor(L"monitor-A").has_value();
+    ok = ok && assignments.WallpaperIdFor(L"monitor-B") == std::optional<std::wstring>(L"wallpaper-two");
 
     MonitorTopology topology;
     topology.virtualBounds = {0, 0, 3840, 1080};
@@ -239,10 +246,11 @@ bool WallpaperMonitorAssignments::SelfTest() {
 
     WallpaperMonitorAssignments reloaded(storage);
     ok = ok && reloaded.Load(&error);
-    ok = ok && reloaded.WallpaperIdFor(L"monitor-A") == std::optional<std::wstring>(L"wallpaper-one");
-    ok = ok && reloaded.WallpaperIdFor(L"monitor-B") == std::optional<std::wstring>(L"wallpaper-two");
-    ok = ok && reloaded.Clear(L"monitor-A", &error);
+    ok = ok && reloaded.Items().size() == 1;
     ok = ok && !reloaded.WallpaperIdFor(L"monitor-A").has_value();
+    ok = ok && reloaded.WallpaperIdFor(L"monitor-B") == std::optional<std::wstring>(L"wallpaper-two");
+    ok = ok && reloaded.Clear(L"monitor-B", &error);
+    ok = ok && reloaded.Items().empty();
 
     fs::remove_all(root, ec);
     return ok;

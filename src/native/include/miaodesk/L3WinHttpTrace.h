@@ -144,7 +144,7 @@ inline HINTERNET Connect(HINTERNET session, LPCWSTR serverName, INTERNET_PORT po
 }
 
 inline HINTERNET OpenRequest(HINTERNET connect, LPCWSTR verb, LPCWSTR objectName,
-                             LPCWSTR version, LPCWSTR referrer, LPCWSTR const* acceptTypes,
+                             LPCWSTR version, LPCWSTR referrer, LPCWSTR* acceptTypes,
                              DWORD flags) {
     gContext.verb = verb ? verb : L"";
     gContext.objectName = SafeObjectName(objectName);

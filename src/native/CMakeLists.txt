@@ -4,10 +4,15 @@ option(MIAODESK_DEV_FAST "Skip contract-only build dependencies for local develo
 
 set(MIAODESK_WEBVIEW2_VERSION "1.0.4129.50")
 
+# Native 64-bit builds use the repository-local, pinned WebView2 SDK on both
+# architectures. This keeps x64 and ARM64 deterministic and prevents ordinary
+# builds from silently changing SDK contents because of a fresh NuGet fetch.
 if (CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
     set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/runtime/arm64/webview2-sdk")
     set(WEBVIEW2_NATIVE_ARCH "arm64")
-else()
+elseif (CMAKE_VS_PLATFORM_NAME STREQUAL "Win32")
+    # Win32 is not a shipped MiaoDesk architecture; keep the legacy developer
+    # fallback rather than growing a third vendored RuntimeBundle.
     FetchContent_Declare(
         webview2sdk
         URL "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${MIAODESK_WEBVIEW2_VERSION}"
@@ -15,11 +20,10 @@ else()
     )
     FetchContent_MakeAvailable(webview2sdk)
     set(WEBVIEW2_SDK_ROOT "${webview2sdk_SOURCE_DIR}")
-    if (CMAKE_VS_PLATFORM_NAME STREQUAL "Win32")
-        set(WEBVIEW2_NATIVE_ARCH "x86")
-    else()
-        set(WEBVIEW2_NATIVE_ARCH "x64")
-    endif()
+    set(WEBVIEW2_NATIVE_ARCH "x86")
+else()
+    set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/runtime/x64/webview2-sdk")
+    set(WEBVIEW2_NATIVE_ARCH "x64")
 endif()
 
 set(WEBVIEW2_INCLUDE_DIR "${WEBVIEW2_SDK_ROOT}/build/native/include")

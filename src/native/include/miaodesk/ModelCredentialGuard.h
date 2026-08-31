@@ -1,5 +1,6 @@
 #pragma once
 
+#include "miaodesk/ApiRuntimeProfile.h"
 #include "miaodesk/RuntimeLogPaths.h"
 
 #include <windows.h>
@@ -27,16 +28,6 @@ inline BOOL RawCredWrite(PCREDENTIALW credential, DWORD flags) {
 
 inline bool SameTarget(LPCWSTR target, const wchar_t* expected) {
     return target && expected && _wcsicmp(target, expected) == 0;
-}
-
-inline fs::path ProfilesPath() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(
-        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) {
-        return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk" / L"api-profiles.ini";
-    }
-    return {};
 }
 
 inline void AppendCredentialLog(const std::wstring& message) {
@@ -86,9 +77,9 @@ inline bool HeaderSafeCredential(PCREDENTIALW credential,
 
     for (std::size_t i = 0; i < count; ++i) {
         const unsigned value = static_cast<unsigned>(chars[i]);
-        // HTTP header values legitimately allow ordinary ASCII spaces. Reject only control
-        // characters and non-ASCII data. This still blocks the U+8BBE ByteString failure that
-        // originally surfaced in Pi without falsely rejecting previously working credentials.
+        // U+0020 is a legal HTTP header-value character. Reject controls and non-ASCII only.
+        // This catches the original U+8BBE Fetch ByteString failure without rejecting old keys
+        // merely because they contain an ordinary space.
         if (value < 0x20u || value > 0x7eu) {
             if (invalidIndex) *invalidIndex = i;
             if (invalidCodepoint) *invalidCodepoint = value;
@@ -99,34 +90,32 @@ inline bool HeaderSafeCredential(PCREDENTIALW credential,
 }
 
 inline std::wstring DefaultProfileCredentialTarget() {
-    const auto path = ProfilesPath();
-    if (path.empty()) return {};
-
-    std::array<wchar_t, 32768> sections{};
-    GetPrivateProfileSectionNamesW(sections.data(), static_cast<DWORD>(sections.size()), path.c_str());
-    for (const wchar_t* cursor = sections.data(); *cursor; cursor += std::wcslen(cursor) + 1) {
-        if (wcsncmp(cursor, L"profile:", 8) != 0) continue;
-        std::array<wchar_t, 32> value{};
-        GetPrivateProfileStringW(cursor, L"default", L"0", value.data(),
-                                 static_cast<DWORD>(value.size()), path.c_str());
-        if (_wcsicmp(value.data(), L"1") != 0 && _wcsicmp(value.data(), L"true") != 0) continue;
-        return std::wstring(kProfileTargetPrefix) + (cursor + 8);
-    }
-    return {};
+    const auto profile = api_runtime_profile::LoadDefault();
+    if (!profile.found || profile.id.empty()) return {};
+    return std::wstring(kProfileTargetPrefix) + profile.id;
 }
 
-inline bool RepairActiveCredentialFrom(PCREDENTIALW source) {
-    if (!HeaderSafeCredential(source)) return false;
+inline BOOL ReadProfileCredential(PCREDENTIALW* credential) {
+    const std::wstring target = DefaultProfileCredentialTarget();
+    if (target.empty()) return FALSE;
+    PCREDENTIALW profile = nullptr;
+    if (!RawCredRead(target.c_str(), CRED_TYPE_GENERIC, 0, &profile) || !profile) return FALSE;
 
-    std::wstring target(kActiveCredentialTarget);
-    CREDENTIALW repaired{};
-    repaired.Type = CRED_TYPE_GENERIC;
-    repaired.TargetName = target.data();
-    repaired.CredentialBlobSize = source->CredentialBlobSize;
-    repaired.CredentialBlob = source->CredentialBlob;
-    repaired.Persist = CRED_PERSIST_LOCAL_MACHINE;
-    repaired.UserName = const_cast<wchar_t*>(L"MiaoDesk");
-    return RawCredWrite(&repaired, 0) != FALSE;
+    std::size_t invalidIndex = 0;
+    unsigned invalidCodepoint = 0;
+    if (!HeaderSafeCredential(profile, &invalidIndex, &invalidCodepoint)) {
+        AppendCredentialLog(
+            L"default API profile credential rejected; bytes=" +
+            std::to_wstring(profile->CredentialBlobSize) +
+            L"; invalidIndex=" + std::to_wstring(invalidIndex) +
+            L"; codepoint=" + std::to_wstring(invalidCodepoint));
+        CredFree(profile);
+        SetLastError(ERROR_INVALID_DATA);
+        return FALSE;
+    }
+
+    *credential = profile;
+    return TRUE;
 }
 
 inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW* credential) {
@@ -140,49 +129,34 @@ inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW*
         return RawCredRead(target, type, flags, credential);
     }
 
-    PCREDENTIALW active = nullptr;
-    const BOOL activeRead = RawCredRead(target, type, flags, &active);
-    if (activeRead && active) {
+    // The API Configuration Center's default Profile is now the runtime source of truth.
+    // MiaoDesk/ModelApiKey is only a legacy compatibility mirror; do not require the UI to
+    // continually synchronize a second secret database for Pi/Direct/Harness consumers.
+    if (ReadProfileCredential(credential)) {
+        AppendCredentialLog(L"runtime credential resolved from default API profile");
+        return TRUE;
+    }
+
+    // Migration fallback for users who have not created api-profiles.ini yet.
+    PCREDENTIALW legacy = nullptr;
+    const BOOL legacyRead = RawCredRead(target, type, flags, &legacy);
+    if (legacyRead && legacy) {
         std::size_t invalidIndex = 0;
         unsigned invalidCodepoint = 0;
-        if (HeaderSafeCredential(active, &invalidIndex, &invalidCodepoint)) {
-            *credential = active;
+        if (HeaderSafeCredential(legacy, &invalidIndex, &invalidCodepoint)) {
+            AppendCredentialLog(L"runtime credential resolved from legacy active credential");
+            *credential = legacy;
             return TRUE;
         }
         AppendCredentialLog(
-            L"active model credential rejected; bytes=" +
-            std::to_wstring(active->CredentialBlobSize) +
+            L"legacy active model credential rejected; bytes=" +
+            std::to_wstring(legacy->CredentialBlobSize) +
             L"; invalidIndex=" + std::to_wstring(invalidIndex) +
             L"; codepoint=" + std::to_wstring(invalidCodepoint));
-        CredFree(active);
-        active = nullptr;
+        CredFree(legacy);
     }
 
-    const std::wstring profileTarget = DefaultProfileCredentialTarget();
-    if (!profileTarget.empty()) {
-        PCREDENTIALW profile = nullptr;
-        if (RawCredRead(profileTarget.c_str(), CRED_TYPE_GENERIC, 0, &profile) && profile) {
-            if (HeaderSafeCredential(profile)) {
-                const bool repaired = RepairActiveCredentialFrom(profile);
-                AppendCredentialLog(repaired
-                    ? L"active model credential recovered from default API profile"
-                    : L"default API profile credential is valid, but active credential repair failed");
-                *credential = profile;
-                return TRUE;
-            }
-            std::size_t invalidIndex = 0;
-            unsigned invalidCodepoint = 0;
-            HeaderSafeCredential(profile, &invalidIndex, &invalidCodepoint);
-            AppendCredentialLog(
-                L"default API profile credential also rejected; bytes=" +
-                std::to_wstring(profile->CredentialBlobSize) +
-                L"; invalidIndex=" + std::to_wstring(invalidIndex) +
-                L"; codepoint=" + std::to_wstring(invalidCodepoint));
-            CredFree(profile);
-        }
-    }
-
-    AppendCredentialLog(L"no HTTP-header-safe model credential is available");
+    AppendCredentialLog(L"no HTTP-header-safe credential is available from API profiles or legacy state");
     SetLastError(ERROR_INVALID_DATA);
     return FALSE;
 }
@@ -197,13 +171,16 @@ inline BOOL CredWriteGuard(PCREDENTIALW credential, DWORD flags) {
     unsigned invalidCodepoint = 0;
     if (!HeaderSafeCredential(credential, &invalidIndex, &invalidCodepoint)) {
         AppendCredentialLog(
-            L"unsafe active model credential write rejected; bytes=" +
+            L"unsafe legacy active model credential write rejected; bytes=" +
             std::to_wstring(credential ? credential->CredentialBlobSize : 0) +
             L"; invalidIndex=" + std::to_wstring(invalidIndex) +
             L"; codepoint=" + std::to_wstring(invalidCodepoint));
         SetLastError(ERROR_INVALID_DATA);
         return FALSE;
     }
+
+    // Keep accepting the old mirror while older settings builds still write it, but runtime
+    // reads no longer depend on this target when a configured/default API profile exists.
     return RawCredWrite(credential, flags);
 }
 

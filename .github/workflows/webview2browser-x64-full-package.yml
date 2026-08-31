@@ -1,4 +1,4 @@
-name: WebView2Browser x64 Full Package
+name: MiaoDesk x64 Full Runtime Package
 
 on:
   push:
@@ -6,109 +6,150 @@ on:
       - build/webview2browser-x64-full
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: miaodesk-x64-full-runtime-package
+  cancel-in-progress: true
+
+env:
+  TEST_VERSION: 0.1.0.${{ github.run_number }}
+  TEST_PUBLISHER: CN=GoodLoongStudio
+  TEST_PACKAGE_NAME: GoodLoongStudio.MiaoMiao
+
 jobs:
-  build:
-    runs-on: windows-2022
-    timeout-minutes: 30
+  x64-full:
+    runs-on: windows-2025
+    timeout-minutes: 45
     steps:
-      - name: Clone Microsoft WebView2Browser
-        shell: pwsh
-        run: |
-          git clone --depth 1 https://github.com/MicrosoftEdge/WebView2Browser.git $env:GITHUB_WORKSPACE\WebView2Browser
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
 
-      - name: Restore NuGet packages
-        shell: pwsh
-        working-directory: WebView2Browser
-        run: |
-          nuget restore WebViewBrowserApp.sln -PackagesDirectory packages -NonInteractive
-
-      - name: Build Release x64
-        shell: pwsh
-        working-directory: WebView2Browser
-        run: |
-          $msbuild = vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          if (-not $msbuild) { throw 'MSBuild not found' }
-          & $msbuild WebViewBrowserApp.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Assemble full offline package
+      - name: Verify exact head and real wallpaper assets
         shell: pwsh
         run: |
-          $src = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser\Release_x64'
-          if (-not (Test-Path (Join-Path $src 'WebView2Browser.exe'))) {
-            Write-Host 'Build output:'
-            Get-ChildItem -Recurse (Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser') -Filter WebView2Browser.exe | Select-Object FullName
-            throw 'WebView2Browser.exe not found in Release_x64'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+          foreach ($relative in @(
+            'assets\wallpapers\MiaoCloud.mdwall\manifest.json',
+            'assets\wallpapers\MiaoCloud.mdwall\scene.ini',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\background.jpg',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'assets\wallpapers\NeonCity.mdwall\manifest.json',
+            'assets\wallpapers\NeonCity.mdwall\scene.ini',
+            'assets\wallpapers\MysticMoon.mdwall\manifest.json',
+            'assets\wallpapers\MysticMoon.mdwall\scene.ini'
+          )) {
+            if (-not (Test-Path (Join-Path $PWD $relative) -PathType Leaf)) { throw "Missing wallpaper asset: $relative" }
+          }
+          foreach ($relative in @(
+            'assets\wallpapers\MiaoCloud.mdwall\assets\background.jpg',
+            'assets\wallpapers\MiaoCloud.mdwall\assets\cat.png'
+          )) {
+            if ((Get-Item (Join-Path $PWD $relative)).Length -lt 1024) { throw "Wallpaper asset is still an LFS pointer: $relative" }
           }
 
-          $pkg = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser-x64-Full'
-          New-Item -ItemType Directory -Force $pkg | Out-Null
-          Copy-Item "$src\*" $pkg -Recurse -Force
+      - name: Configure x64 Release with production contracts
+        shell: pwsh
+        run: cmake -S . -B build-full-test-x64 -A x64
 
-          Write-Host 'Downloading WebView2 Evergreen Standalone x64 runtime...'
-          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile (Join-Path $pkg 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe') -UseBasicParsing
+      - name: Build complete native product
+        shell: pwsh
+        run: cmake --build build-full-test-x64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
 
-          Write-Host 'Downloading Visual C++ 2015-2022 x64 redistributable...'
-          Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile (Join-Path $pkg 'VC_redist.x64.exe') -UseBasicParsing
-
-          @'
-          @echo off
-          setlocal
-          cd /d "%~dp0"
-          echo [1/3] Installing Microsoft Visual C++ Runtime x64...
-          start /wait "" "VC_redist.x64.exe" /install /quiet /norestart
-          echo [2/3] Installing Microsoft Edge WebView2 Runtime x64...
-          start /wait "" "MicrosoftEdgeWebView2RuntimeInstallerX64.exe" /silent /install
-          echo [3/3] Starting WebView2Browser...
-          start "" "WebView2Browser.exe"
-          endlocal
-          '@ | Set-Content -Encoding ASCII (Join-Path $pkg 'InstallAndRun.cmd')
-
-          @'
-          WebView2Browser x64 Full Offline Package
-          ========================================
-          Source: https://github.com/MicrosoftEdge/WebView2Browser
-          Architecture: x64
-          Configuration: Release
-          Toolset: v142
-
-          Includes:
-          - WebView2Browser.exe and all build output files
-          - Microsoft Edge WebView2 Evergreen Standalone Runtime Installer (x64)
-          - Microsoft Visual C++ 2015-2022 Redistributable (x64)
-          - InstallAndRun.cmd
-
-          First run: right-click InstallAndRun.cmd and choose Run as administrator.
-          After setup, WebView2Browser.exe can be launched directly.
-          '@ | Set-Content -Encoding UTF8 (Join-Path $pkg 'README.txt')
-
-          Get-ChildItem $pkg | Select-Object Name,Length
-
-      - name: Smoke-check package contents
+      - name: Stage complete product and offline runtime
         shell: pwsh
         run: |
-          $pkg = Join-Path $env:GITHUB_WORKSPACE 'WebView2Browser-x64-Full'
-          $required = @(
-            'WebView2Browser.exe',
-            'WebView2Loader.dll',
-            'MicrosoftEdgeWebView2RuntimeInstallerX64.exe',
-            'VC_redist.x64.exe',
-            'InstallAndRun.cmd',
-            'README.txt',
-            'wvbrowser_ui'
+          .\scripts\stage-full-test-package.ps1 `
+            -BuildOutput "$PWD\build-full-test-x64\src\native\Release" `
+            -Destination "$PWD\full-test-x64" `
+            -Architecture 'x64'
+
+      - name: Add one-click portable launcher
+        shell: pwsh
+        run: |
+          Set-Content -Path "$PWD\full-test-x64\START-MIAODESK.cmd" -Encoding ASCII -Value @(
+            '@echo off'
+            'cd /d "%~dp0"'
+            'start "" MiaoDesk.exe'
           )
-          foreach ($item in $required) {
-            if (-not (Test-Path (Join-Path $pkg $item))) { throw "Missing package item: $item" }
-          }
-          $wvSize = (Get-Item (Join-Path $pkg 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe')).Length
-          if ($wvSize -lt 50000000) { throw "WebView2 runtime installer looks too small: $wvSize bytes" }
-          Write-Host "Package smoke check passed. WebView2 installer bytes: $wvSize"
+          Set-Content -Path "$PWD\full-test-x64\README-X64-FULL.txt" -Encoding UTF8 -Value @(
+            'MiaoDesk x64 FULL portable package'
+            "Commit: $env:GITHUB_SHA"
+            ''
+            'Includes:'
+            '- MiaoDesk.exe / MiaoDeskWallpaper.exe / MiaoDeskHarness.exe'
+            '- Shared portable Node x64 runtime'
+            '- DeepSeek Harness production runtime'
+            '- Pi Agent production runtime'
+            '- goz + gozd x64 file-search runtime'
+            '- MiaoCloud / NeonCity / MysticMoon wallpapers'
+            ''
+            'Run START-MIAODESK.cmd or MiaoDesk.exe.'
+          )
 
-      - name: Upload x64 full package
+      - name: Run staged runtime and native self-tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $PWD 'full-test-x64'
+          Push-Location $dest
+          try {
+            $node = Join-Path $dest 'Runtime\Node\node.exe'
+            $dsh = Join-Path $dest 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+            $pi = Join-Path $dest 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+            & $node --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Node runtime probe failed.' }
+            & $node $dsh --help | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime probe failed.' }
+            & $node $pi --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Pi runtime probe failed.' }
+            & .\Goz\goz.exe --help | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'goz runtime probe failed.' }
+            & .\MiaoDeskHarness.exe --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDeskHarness self-test failed: $LASTEXITCODE" }
+            & .\MiaoDeskWallpaper.exe --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDeskWallpaper self-test failed: $LASTEXITCODE" }
+            & .\MiaoDesk.exe --self-test
+            if ($LASTEXITCODE -ne 0) { throw "MiaoDesk self-test failed: $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Upload complete portable x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: WebView2Browser-x64-Full
-          path: WebView2Browser-x64-Full
+          name: MiaoDesk-x64-FULL-${{ github.sha }}
+          path: full-test-x64/
           if-no-files-found: error
+          retention-days: 14
           compression-level: 6
-          retention-days: 7
+
+      - name: Build full x64 MSIX
+        shell: powershell
+        run: |
+          .\scripts\build-msix.ps1 `
+            -InputDirectory "$PWD\full-test-x64" `
+            -Architecture 'x64' `
+            -OutputPath "$PWD\miaomiao-full-test-x64.msix" `
+            -Version $env:TEST_VERSION `
+            -Publisher $env:TEST_PUBLISHER `
+            -PackageName $env:TEST_PACKAGE_NAME
+
+      - name: Unpack and verify complete MSIX payload
+        shell: pwsh
+        run: |
+          .\scripts\verify-full-test-msix.ps1 `
+            -PackagePath "$PWD\miaomiao-full-test-x64.msix" `
+            -Destination "$PWD\unpacked-x64"
+
+      - name: Upload verified x64 MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-x64-FULL-MSIX-${{ github.sha }}
+          path: miaomiao-full-test-x64.msix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

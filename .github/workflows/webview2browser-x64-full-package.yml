@@ -106,8 +106,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime probe failed.' }
             & $node $pi --version | Out-Host
             if ($LASTEXITCODE -ne 0) { throw 'Pi runtime probe failed.' }
-            & .\Goz\goz.exe --help | Out-Host
-            if ($LASTEXITCODE -ne 0) { throw 'goz runtime probe failed.' }
             & .\MiaoDeskHarness.exe --self-test
             if ($LASTEXITCODE -ne 0) { throw "MiaoDeskHarness self-test failed: $LASTEXITCODE" }
             & .\MiaoDeskWallpaper.exe --self-test

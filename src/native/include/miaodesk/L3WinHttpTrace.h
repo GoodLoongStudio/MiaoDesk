@@ -58,14 +58,21 @@ inline std::wstring SafeObjectName(LPCWSTR raw) {
     return value;
 }
 
+inline void AppendField(std::wstring& text, const std::wstring& field) {
+    if (field.empty()) return;
+    if (!text.empty()) text += L"; ";
+    text += field;
+}
+
 inline std::wstring ContextText() {
     std::wstring text;
     if (!gContext.host.empty()) {
-        text += L"host=" + gContext.host;
-        if (gContext.port) text += L":" + std::to_wstring(gContext.port);
+        std::wstring host = L"host=" + gContext.host;
+        if (gContext.port) host += L":" + std::to_wstring(gContext.port);
+        AppendField(text, host);
     }
-    if (!gContext.verb.empty()) text += (text.empty() ? L"" : L"; ") + L"verb=" + gContext.verb;
-    if (!gContext.objectName.empty()) text += (text.empty() ? L"" : L"; ") + L"path=" + gContext.objectName;
+    if (!gContext.verb.empty()) AppendField(text, L"verb=" + gContext.verb);
+    if (!gContext.objectName.empty()) AppendField(text, L"path=" + gContext.objectName);
     return text;
 }
 

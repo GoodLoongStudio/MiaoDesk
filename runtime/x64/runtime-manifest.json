@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "architecture": "x64",
-  "generatedUtc": "2026-08-31T15:41:42.5657148Z",
-  "lockSha256": "c07065bce115168ffcfab3a3ddddc5da5174ef5bdf27dd3084070ec268db34ff",
+  "generatedUtc": "2026-08-31T15:43:53.3166304Z",
+  "lockSha256": "2cfcb13ebed1434e4c2ba70487a7e1feec6dbaae7081971fa6e8dfd6193cf23e",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-x64.zip",

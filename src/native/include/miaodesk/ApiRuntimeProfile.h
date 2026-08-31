@@ -69,6 +69,15 @@ inline fs::path LocalStateRoot() {
 
 inline fs::path ProfilesPath() { return LocalStateRoot() / L"api-profiles.ini"; }
 
+inline void RetireLegacyShadowState() {
+    // Once a valid API Profile is authoritative, the old shadow database must not linger as a
+    // second source of truth. Cleanup is best-effort and intentionally does not touch Profile
+    // credentials under MiaoDesk/ApiProfile/<id>.
+    std::error_code ec;
+    fs::remove(LocalStateRoot() / L"model-settings.json", ec);
+    CredDeleteW(L"MiaoDesk/ModelApiKey", CRED_TYPE_GENERIC, 0);
+}
+
 inline std::wstring ReadIni(const fs::path& path, const wchar_t* section, const wchar_t* key,
                             const wchar_t* fallback = L"") {
     std::array<wchar_t, 4096> buffer{};
@@ -196,9 +205,9 @@ inline RuntimeProfile LoadDefault() {
         if (profile.explicitDefault) return profile;
     }
 
-    // Resilience for older settings files that lost the default bit: consume the first fully
-    // configured profile instead of inventing another active-config database. UI remains the
-    // owner of which profile is default; this is only a read-only fallback.
+    // Resilience for settings files that lost the default bit: consume the first fully configured
+    // Profile instead of inventing another active-config database. UI remains the owner of which
+    // Profile is default; this is only a read-only fallback.
     if (firstConfigured.found) return firstConfigured;
     return firstFound;
 }

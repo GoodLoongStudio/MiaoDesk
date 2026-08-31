@@ -2,15 +2,16 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-title MiaoDesk ARM64 Development Preview
+title MiaoDesk ARM64 Fast UI Preview
 
 echo.
 echo ========================================
-echo   MiaoDesk ARM64 Development Preview
+echo   MiaoDesk ARM64 FAST UI Preview
 echo ========================================
 echo.
-echo GitHub builds the preview; this PC only downloads and runs it.
-echo No local CMake or Visual Studio build tools are required.
+echo GitHub builds the preview; this PC downloads only UI executables and DLLs.
+echo Node / Harness / Pi / wallpaper payloads are NOT downloaded for quick acceptance.
+echo Existing NativeTest runtime is reused when available.
 echo.
 
 where git >nul 2>nul
@@ -24,20 +25,20 @@ git pull --ff-only origin main
 if errorlevel 1 goto :fail
 
 echo.
-echo [2/2] Resolving and launching exact-head ARM64 preview...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\download-arm64-preview.ps1"
+echo [2/2] Resolving and launching FAST exact-head ARM64 UI preview...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\download-arm64-fast-preview.ps1"
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" goto :failcode
 exit /b 0
 
 :failcode
 echo.
-echo Preview failed with exit code %RC%.
+echo Fast preview failed with exit code %RC%.
 pause
 exit /b %RC%
 
 :fail
 echo.
-echo Preview bootstrap failed.
+echo Fast preview bootstrap failed.
 pause
 exit /b 1

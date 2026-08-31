@@ -9,8 +9,10 @@ echo ========================================
 echo   MiaoDesk ARM64 Runtime - One Time Init
 echo ========================================
 echo.
-echo This downloads ONE full ARM64 preview, then persists Runtime/Pi/Goz/assets locally.
-echo Future PREVIEW-MIAODESK-ARM64.cmd runs stay fast and reuse that local RuntimeCache.
+echo This initializes Runtime/Pi/Goz from LOCAL files only.
+echo It first reuses an existing NativeTest/DevPreview runtime; otherwise it extracts runtime\arm64 from this Git checkout.
+echo No full GitHub Actions preview artifact is downloaded.
+echo Future PREVIEW-MIAODESK-ARM64.cmd runs stay fast and reuse the local RuntimeCache.
 echo.
 
 where git >nul 2>nul
@@ -24,7 +26,7 @@ git pull --ff-only origin main
 if errorlevel 1 goto :fail
 
 echo.
-echo [2/2] Downloading and caching the full ARM64 runtime...
+echo [2/2] Initializing persistent runtime cache from local files...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\initialize-arm64-runtime-cache.ps1"
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" goto :failcode

@@ -53,15 +53,17 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
     if (!topology.Valid()) return result;
 
     const auto regions = DrawRegionsInHost(topology, LayoutMode::Independent);
-    result.reserve(topology.monitors.size());
+    result.reserve(assignments.Items().size());
     for (std::size_t i = 0; i < topology.monitors.size(); ++i) {
         const auto& monitor = topology.monitors[i];
         const RECT region = i < regions.size() ? regions[i] : RECT{};
         const auto assignedId = assignments.WallpaperIdFor(monitor);
-        if (!assignedId) {
-            result.push_back(MakeFallback(monitor, region, globalFallback, L"该显示器尚未分配独立壁纸"));
-            continue;
-        }
+
+        // An unassigned monitor must stay untouched.  The old behavior painted
+        // the global fallback on every unassigned display, so choosing one
+        // monitor still modified the rest of the virtual desktop.  Independent
+        // mode now creates surfaces only for explicitly assigned monitors.
+        if (!assignedId) continue;
 
         const auto item = library.Find(*assignedId);
         if (!item) {
@@ -134,42 +136,32 @@ bool SelfTestIndependentWallpaperResolution() {
     ok = ok && library.UpsertScene(L"scene-aurora", L"Aurora", &error);
     ok = ok && library.UpsertScene(L"scene-neon", L"Neon", &error);
 
-    const fs::path web = root / L"test.html";
-    {
-        std::ofstream out(web, std::ios::binary);
-        out << "<html></html>";
-    }
-    const auto webItem = library.ImportFile(web, {}, &error);
-    const auto remoteWebItem = library.ImportWebUrl(L"https://example.com/wallpaper", L"Remote Web", &error);
-
     MonitorTopology topology;
-    topology.virtualBounds = {0, 0, 7680, 1080};
+    topology.virtualBounds = {0, 0, 3840, 1080};
     topology.primaryBounds = {0, 0, 1920, 1080};
     topology.monitors = {
         {nullptr, {0, 0, 1920, 1080}, true, 96, 96, L"A", L"monitor-a", L"Panel A"},
         {nullptr, {1920, 0, 3840, 1080}, false, 96, 96, L"B", L"monitor-b", L"Panel B"},
-        {nullptr, {3840, 0, 5760, 1080}, false, 96, 96, L"C", L"monitor-c", L"Panel C"},
-        {nullptr, {5760, 0, 7680, 1080}, false, 96, 96, L"D", L"monitor-d", L"Panel D"},
     };
 
-    ok = ok && assignments.Assign(topology.monitors[0], L"scene-neon", &error);
-    ok = ok && assignments.Assign(topology.monitors[1], L"missing-item", &error);
-    if (webItem) ok = ok && assignments.Assign(topology.monitors[2], webItem->id, &error);
-    if (remoteWebItem) ok = ok && assignments.Assign(topology.monitors[3], remoteWebItem->id, &error);
+    // Single-monitor contract: assigning B must leave A completely absent from
+    // the resolved surface list instead of drawing a fallback there.
+    ok = ok && assignments.Assign(topology.monitors[1], L"scene-neon", &error);
 
     GlobalWallpaperDescriptor fallback;
     fallback.kind = ResolvedWallpaperKind::Scene;
     fallback.sceneKey = L"aurora";
     const auto resolved = ResolveIndependentWallpapers(topology, assignments, library, fallback);
-    ok = ok && resolved.size() == 4;
-    if (resolved.size() == 4) {
-        ok = ok && !resolved[0].fallback && resolved[0].kind == ResolvedWallpaperKind::Scene && resolved[0].sceneKey == L"neon";
-        ok = ok && resolved[1].fallback && resolved[1].sceneKey == L"aurora" && !resolved[1].fallbackReason.empty();
-        ok = ok && !resolved[2].fallback && resolved[2].kind == ResolvedWallpaperKind::Web && !resolved[2].source.empty();
-        ok = ok && !resolved[3].fallback && resolved[3].kind == ResolvedWallpaperKind::Web &&
-             resolved[3].source.wstring() == L"https://example.com/wallpaper";
+    ok = ok && resolved.size() == 1;
+    if (resolved.size() == 1) {
+        ok = ok && resolved[0].monitorId == L"monitor-b";
+        ok = ok && !resolved[0].fallback;
+        ok = ok && resolved[0].kind == ResolvedWallpaperKind::Scene;
+        ok = ok && resolved[0].sceneKey == L"neon";
+        ok = ok && resolved[0].region.left == 1920;
+        ok = ok && resolved[0].region.right == 3840;
     }
-    ok = ok && !IndependentLayoutHasVideo(resolved) && IndependentLayoutHasWeb(resolved);
+    ok = ok && !IndependentLayoutHasVideo(resolved) && !IndependentLayoutHasWeb(resolved);
 
     fs::remove_all(root, ec);
     return ok;

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
@@ -90,7 +91,7 @@ inline InputImeSessionState* FindSessionState(HWND edit) {
 
 inline bool HasActiveComposition(HWND edit) {
     const auto* state = FindSessionState(edit);
-    if (state && state->active && !state->composition.empty()) return true;
+    if (state && state->active) return true;
     return input_ime_detail::HasImeComposition(edit);
 }
 
@@ -119,13 +120,21 @@ inline void NotifyConversationInputVisual(HWND edit) {
     if (!input_ime_detail::IsMiaoDeskConversationEdit(edit)) return;
     const HWND parent = GetParent(edit);
     if (!parent) return;
+
+    // ConversationPanel already redraws its custom Direct2D input on EN_CHANGE. Reuse that
+    // surface-specific path while InputImeSession remains the sole owner of transient IME state.
     PostMessageW(
         parent, WM_COMMAND,
-        MAKEWPARAM(input_ime_detail::kConversationEditControlId, EN_SETFOCUS),
+        MAKEWPARAM(input_ime_detail::kConversationEditControlId, EN_CHANGE),
         reinterpret_cast<LPARAM>(edit));
 }
 
-inline std::wstring SearchVisibleText(HWND edit, WNDPROC core) {
+inline void NotifySurfaceVisibleInput(HWND edit) {
+    NotifySearchVisibleQuery(edit);
+    NotifyConversationInputVisual(edit);
+}
+
+inline std::wstring VisibleText(HWND edit, WNDPROC core) {
     std::wstring committed = ReadCoreText(edit, core);
     const auto* state = FindSessionState(edit);
     if (!state || !state->active || state->composition.empty()) return committed;
@@ -141,13 +150,13 @@ inline std::wstring SearchVisibleText(HWND edit, WNDPROC core) {
     return visible;
 }
 
-inline LRESULT VirtualizeSearchGetText(
+inline LRESULT VirtualizeVisibleGetText(
     HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, WNDPROC core) {
     const auto* state = FindSessionState(hwnd);
     if (!state || !state->active || state->composition.empty())
         return CallWindowProcW(core, hwnd, message, wParam, lParam);
 
-    const std::wstring visible = SearchVisibleText(hwnd, core);
+    const std::wstring visible = VisibleText(hwnd, core);
     if (message == WM_GETTEXTLENGTH)
         return static_cast<LRESULT>(visible.size());
 
@@ -167,12 +176,6 @@ inline LRESULT VirtualizeSearchSelection(
     if (!state || !state->active || state->composition.empty())
         return CallWindowProcW(core, hwnd, EM_GETSEL, wParam, lParam);
 
-    DWORD committedStart = 0;
-    DWORD committedEnd = 0;
-    ReadCoreSelection(hwnd, core, committedStart, committedEnd);
-    (void)committedStart;
-    (void)committedEnd;
-
     const DWORD visibleCaret = state->replaceStart +
         static_cast<DWORD>(state->composition.size());
     if (wParam) *reinterpret_cast<DWORD*>(wParam) = visibleCaret;
@@ -187,7 +190,7 @@ inline void BeginComposition(HWND hwnd, WNDPROC core) {
     state.active = true;
     state.composition.clear();
     ReadCoreSelection(hwnd, core, state.replaceStart, state.replaceEnd);
-    NotifySearchVisibleQuery(hwnd);
+    NotifySurfaceVisibleInput(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -196,7 +199,7 @@ inline void CommitImeResult(HWND hwnd, WNDPROC core, const std::wstring& result)
     const DWORD start = state.replaceStart;
     const DWORD end = state.replaceEnd;
 
-    // Hide the old provisional string before the real EDIT emits EN_CHANGE for the result.
+    // Hide the provisional text before the real EDIT emits EN_CHANGE for the committed result.
     state.composition.clear();
     SendMessageW(hwnd, EM_SETSEL, static_cast<WPARAM>(start), static_cast<LPARAM>(end));
     if (!result.empty()) {
@@ -226,7 +229,7 @@ inline void UpdateComposition(HWND hwnd, LPARAM lParam, WNDPROC core) {
     else if ((lParam & GCS_RESULTSTR) != 0)
         state.composition.clear();
 
-    NotifySearchVisibleQuery(hwnd);
+    NotifySurfaceVisibleInput(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -235,7 +238,7 @@ inline void EndComposition(HWND hwnd) {
         state->active = false;
         state->composition.clear();
     }
-    NotifySearchVisibleQuery(hwnd);
+    NotifySurfaceVisibleInput(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -267,13 +270,19 @@ inline LRESULT CALLBACK InputImeSessionProc(
     const bool search = input_ime_detail::IsMiaoDeskSearchEdit(hwnd);
     const bool conversation = input_ime_detail::IsMiaoDeskConversationEdit(hwnd);
 
-    if (search && (message == WM_GETTEXT || message == WM_GETTEXTLENGTH))
-        return VirtualizeSearchGetText(hwnd, message, wParam, lParam, core);
+    // Both custom-rendered surfaces consume the same virtual visible string. Search additionally
+    // virtualizes EM_GETSEL because its shared anchor measures from visible text; Conversation's
+    // anchor intentionally keeps the native committed selection and adds IMM composition width.
+    if ((search || conversation) &&
+        (message == WM_GETTEXT || message == WM_GETTEXTLENGTH)) {
+        return VirtualizeVisibleGetText(hwnd, message, wParam, lParam, core);
+    }
     if (search && message == EM_GETSEL)
         return VirtualizeSearchSelection(hwnd, wParam, lParam, core);
 
     // MiaoDesk custom-renders composition text. Do not forward these messages to the stock EDIT
-    // control: doing so makes Windows paint a second inline composition rectangle over Direct2D.
+    // control: doing so lets the stock control create a second inline composition visual and a
+    // second caret over the Direct2D surface.
     if (message == WM_IME_STARTCOMPOSITION) {
         BeginComposition(hwnd, core);
         return 0;
@@ -299,22 +308,22 @@ inline LRESULT CALLBACK InputImeSessionProc(
         gInputImeSessions.erase(hwnd);
     }
 
-    if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) {
+    // Child EDIT receives mouse input directly once it has real geometry. Make focus ownership
+    // explicit so Conversation and Search behave identically after framework refactors.
+    if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK)
         SetFocus(hwnd);
-    }
 
     const LRESULT result = CallWindowProcW(core, hwnd, message, wParam, lParam);
 
     if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
         message == WM_LBUTTONDBLCLK) {
         RequestSurfaceAnchor(hwnd);
-        if (search) NotifySearchVisibleQuery(hwnd);
-        if (conversation) NotifyConversationInputVisual(hwnd);
+        NotifySurfaceVisibleInput(hwnd);
     }
 
     if (message == WM_KILLFOCUS) {
         gInputImeSessions.erase(hwnd);
-        if (search) NotifySearchVisibleQuery(hwnd);
+        NotifySurfaceVisibleInput(hwnd);
     }
 
     if (message == WM_NCDESTROY) {

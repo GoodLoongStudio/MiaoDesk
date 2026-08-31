@@ -2,18 +2,14 @@
 #include "miaodesk/L3Agent.h"
 
 #include <commctrl.h>
-#include <shellapi.h>
 #include <shlobj.h>
 #include <wincred.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdlib>
-#include <cstring>
 #include <cwchar>
 #include <filesystem>
-#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -36,20 +32,14 @@ constexpr int kTypeId = 7302;
 constexpr int kApiUrlId = 7303;
 constexpr int kApiKeyId = 7304;
 constexpr int kModelId = 7305;
-constexpr int kTimeoutId = 7306;
-constexpr int kTemperatureId = 7307;
-constexpr int kDefaultId = 7308;
-constexpr int kStreamingId = 7309;
-constexpr int kToolsId = 7310;
-constexpr int kRetriesId = 7311;
 constexpr int kNewId = 7312;
 constexpr int kTestId = 7313;
 constexpr int kSaveId = 7314;
 constexpr int kDeleteId = 7315;
 constexpr int kRevealId = 7316;
 constexpr int kCopyId = 7317;
+constexpr int kSetDefaultId = 7318;
 constexpr wchar_t kStoredKeyMask[] = L"************************";
-constexpr wchar_t kActiveCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -98,25 +88,21 @@ void EnsureUnicodeIni(const fs::path& path) {
 std::wstring ReadIni(const fs::path& path, const wchar_t* section, const wchar_t* key,
                      const wchar_t* fallback = L"") {
     std::array<wchar_t, 4096> buffer{};
-    GetPrivateProfileStringW(section, key, fallback, buffer.data(), static_cast<DWORD>(buffer.size()), path.c_str());
+    GetPrivateProfileStringW(section, key, fallback, buffer.data(),
+                             static_cast<DWORD>(buffer.size()), path.c_str());
     return buffer.data();
 }
 
-void WriteIni(const fs::path& path, const wchar_t* section, const wchar_t* key, const std::wstring& value) {
+void WriteIni(const fs::path& path, const wchar_t* section, const wchar_t* key,
+              const std::wstring& value) {
     EnsureUnicodeIni(path);
     WritePrivateProfileStringW(section, key, value.c_str(), path.c_str());
 }
 
-bool ParseBool(std::wstring value, bool fallback = false) {
+bool ParseBool(const std::wstring& value, bool fallback = false) {
     if (value.empty()) return fallback;
-    return value == L"1" || _wcsicmp(value.c_str(), L"true") == 0 || _wcsicmp(value.c_str(), L"yes") == 0;
-}
-
-int ParseInt(const std::wstring& value, int fallback) {
-    if (value.empty()) return fallback;
-    wchar_t* end = nullptr;
-    const long parsed = wcstol(value.c_str(), &end, 10);
-    return end && end != value.c_str() ? static_cast<int>(parsed) : fallback;
+    return value == L"1" || _wcsicmp(value.c_str(), L"true") == 0 ||
+           _wcsicmp(value.c_str(), L"yes") == 0;
 }
 
 std::wstring CredentialTarget(std::wstring_view id) {
@@ -136,9 +122,13 @@ std::wstring ReadCredential(std::wstring_view target) {
 }
 
 bool WriteCredential(std::wstring_view target, const std::wstring& value) {
-    if (value.empty()) return true;
-    CREDENTIALW credential{};
+    if (target.empty()) return false;
+    if (value.empty()) {
+        CredDeleteW(std::wstring(target).c_str(), CRED_TYPE_GENERIC, 0);
+        return true;
+    }
     std::wstring mutableTarget(target);
+    CREDENTIALW credential{};
     credential.Type = CRED_TYPE_GENERIC;
     credential.TargetName = mutableTarget.data();
     credential.CredentialBlobSize = static_cast<DWORD>(value.size() * sizeof(wchar_t));
@@ -152,17 +142,18 @@ void DeleteCredential(std::wstring_view target) {
     CredDeleteW(std::wstring(target).c_str(), CRED_TYPE_GENERIC, 0);
 }
 
+bool HeaderSafeSecret(const std::wstring& value) {
+    return std::all_of(value.begin(), value.end(), [](wchar_t ch) {
+        return ch >= 0x20 && ch <= 0x7e;
+    });
+}
+
 struct ApiProfile {
     std::wstring id;
     std::wstring name;
     std::wstring serviceType{L"OpenAI Compatible"};
     std::wstring baseUrl;
     std::wstring model;
-    int timeoutSeconds{60};
-    int temperatureTenths{7};
-    int retries{2};
-    bool streaming{true};
-    bool tools{true};
     bool isDefault{};
     bool lastOk{};
     std::wstring lastMessage;
@@ -178,34 +169,39 @@ class ApiProfileStore {
 public:
     ApiProfileStore() : path_(ProfilesPath()) { EnsureUnicodeIni(path_); }
 
-    std::vector<ApiProfile> Load(const L3Agent& agent) {
+    std::vector<ApiProfile> Load() {
         std::vector<ApiProfile> profiles;
         std::array<wchar_t, 16384> sections{};
-        const DWORD size = GetPrivateProfileSectionNamesW(sections.data(), static_cast<DWORD>(sections.size()), path_.c_str());
-        if (size > 0) {
-            for (const wchar_t* cursor = sections.data(); *cursor; cursor += wcslen(cursor) + 1) {
-                if (wcsncmp(cursor, L"profile:", 8) != 0) continue;
-                ApiProfile profile;
-                profile.id = cursor + 8;
-                profile.name = ReadIni(path_, cursor, L"name", L"API 配置");
-                profile.serviceType = ReadIni(path_, cursor, L"type", L"OpenAI Compatible");
-                profile.baseUrl = ReadIni(path_, cursor, L"baseUrl");
-                profile.model = ReadIni(path_, cursor, L"model");
-                profile.timeoutSeconds = ParseInt(ReadIni(path_, cursor, L"timeout"), 60);
-                profile.temperatureTenths = ParseInt(ReadIni(path_, cursor, L"temperatureTenths"), 7);
-                profile.retries = ParseInt(ReadIni(path_, cursor, L"retries"), 2);
-                profile.streaming = ParseBool(ReadIni(path_, cursor, L"streaming", L"1"), true);
-                profile.tools = ParseBool(ReadIni(path_, cursor, L"tools", L"1"), true);
-                profile.isDefault = ParseBool(ReadIni(path_, cursor, L"default"));
-                profile.lastOk = ParseBool(ReadIni(path_, cursor, L"lastOk"));
-                profile.lastMessage = ReadIni(path_, cursor, L"lastMessage");
-                profile.builtIn = ParseBool(ReadIni(path_, cursor, L"builtIn"));
-                profiles.push_back(std::move(profile));
+        GetPrivateProfileSectionNamesW(sections.data(), static_cast<DWORD>(sections.size()), path_.c_str());
+        for (const wchar_t* cursor = sections.data(); *cursor; cursor += wcslen(cursor) + 1) {
+            if (wcsncmp(cursor, L"profile:", 8) != 0) continue;
+            ApiProfile profile;
+            profile.id = cursor + 8;
+            profile.name = ReadIni(path_, cursor, L"name", L"API 配置");
+            profile.serviceType = ReadIni(path_, cursor, L"type", L"OpenAI Compatible");
+            profile.baseUrl = ReadIni(path_, cursor, L"baseUrl");
+            profile.model = ReadIni(path_, cursor, L"model");
+            profile.isDefault = ParseBool(ReadIni(path_, cursor, L"default"));
+            profile.lastOk = ParseBool(ReadIni(path_, cursor, L"lastOk"));
+            profile.lastMessage = ReadIni(path_, cursor, L"lastMessage");
+            profile.builtIn = ParseBool(ReadIni(path_, cursor, L"builtIn"));
+
+            const bool hasKey = !ReadCredential(CredentialTarget(profile.id)).empty();
+            const bool configured = !profile.baseUrl.empty() && !profile.model.empty() &&
+                                    (!profile.NeedsKey() || hasKey);
+
+            // Old builds seeded five placeholder profiles. Drop only empty placeholders;
+            // if a user actually filled one, keep it and promote it to a normal profile.
+            if (profile.builtIn && !configured) {
+                WritePrivateProfileStringW(cursor, nullptr, nullptr, path_.c_str());
+                DeleteCredential(CredentialTarget(profile.id));
+                continue;
             }
-        }
-        if (profiles.empty()) {
-            profiles = DefaultTemplates(agent);
-            SaveAll(profiles);
+            if (profile.builtIn) {
+                profile.builtIn = false;
+                WriteIni(path_, cursor, L"builtIn", L"0");
+            }
+            profiles.push_back(std::move(profile));
         }
         return profiles;
     }
@@ -216,15 +212,10 @@ public:
         WriteIni(path_, section.c_str(), L"type", profile.serviceType);
         WriteIni(path_, section.c_str(), L"baseUrl", profile.baseUrl);
         WriteIni(path_, section.c_str(), L"model", profile.model);
-        WriteIni(path_, section.c_str(), L"timeout", std::to_wstring(profile.timeoutSeconds));
-        WriteIni(path_, section.c_str(), L"temperatureTenths", std::to_wstring(profile.temperatureTenths));
-        WriteIni(path_, section.c_str(), L"retries", std::to_wstring(profile.retries));
-        WriteIni(path_, section.c_str(), L"streaming", profile.streaming ? L"1" : L"0");
-        WriteIni(path_, section.c_str(), L"tools", profile.tools ? L"1" : L"0");
         WriteIni(path_, section.c_str(), L"default", profile.isDefault ? L"1" : L"0");
         WriteIni(path_, section.c_str(), L"lastOk", profile.lastOk ? L"1" : L"0");
         WriteIni(path_, section.c_str(), L"lastMessage", profile.lastMessage);
-        WriteIni(path_, section.c_str(), L"builtIn", profile.builtIn ? L"1" : L"0");
+        WriteIni(path_, section.c_str(), L"builtIn", L"0");
     }
 
     void SaveAll(const std::vector<ApiProfile>& profiles) {
@@ -250,34 +241,6 @@ public:
     }
 
 private:
-    std::vector<ApiProfile> DefaultTemplates(const L3Agent& agent) {
-        std::vector<ApiProfile> profiles{
-            {L"deepseek", L"DeepSeek 官方", L"OpenAI Compatible", L"https://api.deepseek.com/v1", L"deepseek-chat", 60, 7, 2, true, true, false, false, L"等待配置", true},
-            {L"openai-compatible", L"OpenAI Compatible", L"OpenAI Compatible", L"", L"", 60, 7, 2, true, true, false, false, L"Base URL/API Key 未填写", true},
-            {L"anthropic", L"Anthropic", L"Anthropic", L"https://api.anthropic.com/v1", L"", 60, 7, 2, true, true, false, false, L"等待配置", true},
-            {L"local-model", L"本地模型", L"OpenAI Compatible", L"http://127.0.0.1:11434/v1", L"", 60, 7, 1, true, true, false, false, L"等待配置", true},
-            {L"custom", L"自定义服务", L"OpenAI Compatible", L"", L"", 60, 7, 2, true, true, false, false, L"等待配置", true},
-        };
-
-        const auto& config = agent.Config();
-        std::wstring currentApi = agent.CurrentApiUrl();
-        if (currentApi.empty()) currentApi = config.baseUrl;
-        if (!currentApi.empty() || !config.model.empty() || agent.HasStoredApiKey()) {
-            std::size_t selected = 0;
-            if (currentApi.find(L"deepseek") == std::wstring::npos) selected = 4;
-            auto& current = profiles[selected];
-            current.baseUrl = currentApi;
-            current.model = config.model;
-            current.name = selected == 0 ? L"DeepSeek 官方" : L"当前 API";
-            current.isDefault = true;
-            current.lastOk = true;
-            current.lastMessage = L"已从现有妙喵 AI 配置导入";
-            const auto activeKey = ReadCredential(kActiveCredentialTarget);
-            if (!activeKey.empty()) WriteCredential(CredentialTarget(current.id), activeKey);
-        }
-        return profiles;
-    }
-
     fs::path path_;
 };
 
@@ -318,15 +281,10 @@ struct PageState {
     HWND apiUrl{};
     HWND apiKey{};
     HWND model{};
-    HWND timeout{};
-    HWND temperature{};
-    HWND defaultCheck{};
-    HWND streamingCheck{};
-    HWND toolsCheck{};
-    HWND retries{};
     HWND addButton{};
     HWND testButton{};
     HWND saveButton{};
+    HWND setDefaultButton{};
     HWND deleteButton{};
     HWND revealButton{};
     HWND copyButton{};
@@ -335,7 +293,6 @@ struct PageState {
     HFONT headingFont{};
     HFONT bodyFont{};
     HFONT smallFont{};
-    HFONT metricFont{};
     HBRUSH editBrush{};
 
     ApiProfileStore store;
@@ -343,12 +300,12 @@ struct PageState {
     std::size_t selected{};
     bool revealingKey{};
     bool statusOk{true};
-    std::wstring statusMessage{L"选择或新增一个 API 配置。"};
+    std::wstring statusMessage{L"新增一个 API 配置，或从左侧选择已有配置。"};
     L3Agent agent;
 
     ~PageState() {
         if (panel && IsWindow(panel)) DestroyWindow(panel);
-        for (HFONT font : {titleFont, headingFont, bodyFont, smallFont, metricFont}) {
+        for (HFONT font : {titleFont, headingFont, bodyFont, smallFont}) {
             if (font) DeleteObject(font);
         }
         if (editBrush) DeleteObject(editBrush);
@@ -366,51 +323,31 @@ struct PageState {
     }
 
     void RebuildFonts() {
-        for (HFONT* font : {&titleFont, &headingFont, &bodyFont, &smallFont, &metricFont}) {
+        for (HFONT* font : {&titleFont, &headingFont, &bodyFont, &smallFont}) {
             if (*font) { DeleteObject(*font); *font = nullptr; }
         }
         titleFont = MakeFont(26, FW_SEMIBOLD);
         headingFont = MakeFont(15, FW_SEMIBOLD);
         bodyFont = MakeFont(13, FW_NORMAL);
         smallFont = MakeFont(11, FW_NORMAL);
-        metricFont = MakeFont(24, FW_SEMIBOLD);
-        for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, timeout, temperature,
-                             defaultCheck, streamingCheck, toolsCheck, retries, addButton, testButton,
-                             saveButton, deleteButton, revealButton, copyButton}) {
+        for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, addButton,
+                             testButton, saveButton, setDefaultButton, deleteButton,
+                             revealButton, copyButton}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         if (profileList) SendMessageW(profileList, LB_SETITEMHEIGHT, 0, S(72));
     }
 
-    ApiProfile& Current() { return profiles[std::min(selected, profiles.size() - 1)]; }
-    const ApiProfile& Current() const { return profiles[std::min(selected, profiles.size() - 1)]; }
+    bool HasSelection() const {
+        return !profiles.empty() && selected < profiles.size();
+    }
+
+    ApiProfile& Current() { return profiles[selected]; }
+    const ApiProfile& Current() const { return profiles[selected]; }
 
     bool ProfileConfigured(const ApiProfile& profile) const {
         if (profile.baseUrl.empty() || profile.model.empty()) return false;
         return !profile.NeedsKey() || store.HasKey(profile);
-    }
-
-    int ProfilePriority(const ApiProfile& profile) const {
-        const bool configured = ProfileConfigured(profile);
-        if (profile.isDefault && configured) return 0;
-        if (configured && profile.lastOk) return 1;
-        if (configured) return 2;
-        if (profile.isDefault || profile.lastOk) return 3;
-        return 4;
-    }
-
-    void SortProfilesForDisplay(std::wstring preferredId = {}) {
-        if (profiles.empty()) return;
-        if (preferredId.empty() && selected < profiles.size()) preferredId = profiles[selected].id;
-        std::stable_sort(profiles.begin(), profiles.end(), [&](const ApiProfile& a, const ApiProfile& b) {
-            return ProfilePriority(a) < ProfilePriority(b);
-        });
-        if (!preferredId.empty()) {
-            const auto it = std::find_if(profiles.begin(), profiles.end(), [&](const ApiProfile& profile) {
-                return _wcsicmp(profile.id.c_str(), preferredId.c_str()) == 0;
-            });
-            if (it != profiles.end()) selected = static_cast<std::size_t>(std::distance(profiles.begin(), it));
-        }
     }
 
     void SetStatus(std::wstring text, bool ok) {
@@ -419,45 +356,58 @@ struct PageState {
         InvalidateRect(panel, nullptr, FALSE);
     }
 
+    void EnableForm(bool enabled) {
+        for (HWND control : {name, serviceType, apiUrl, apiKey, model, testButton, saveButton,
+                             setDefaultButton, deleteButton, revealButton, copyButton}) {
+            if (control) EnableWindow(control, enabled ? TRUE : FALSE);
+        }
+    }
+
     void RebuildList() {
         SendMessageW(profileList, LB_RESETCONTENT, 0, 0);
         for (std::size_t i = 0; i < profiles.size(); ++i) {
             const LRESULT index = SendMessageW(profileList, LB_ADDSTRING, 0, static_cast<LPARAM>(i));
-            if (index != LB_ERR) SendMessageW(profileList, LB_SETITEMDATA, static_cast<WPARAM>(index), static_cast<LPARAM>(i));
+            if (index != LB_ERR)
+                SendMessageW(profileList, LB_SETITEMDATA, static_cast<WPARAM>(index), static_cast<LPARAM>(i));
         }
-        if (!profiles.empty()) {
-            selected = std::min(selected, profiles.size() - 1);
-            SendMessageW(profileList, LB_SETCURSEL, selected, 0);
-        }
+        if (HasSelection()) SendMessageW(profileList, LB_SETCURSEL, selected, 0);
         InvalidateRect(profileList, nullptr, FALSE);
         InvalidateRect(panel, nullptr, FALSE);
     }
 
     void LoadProfiles() {
-        profiles = store.Load(agent);
-        if (profiles.empty()) return;
-        const auto it = std::find_if(profiles.begin(), profiles.end(), [](const ApiProfile& p) { return p.isDefault; });
-        const std::wstring preferredId = it == profiles.end() ? profiles.front().id : it->id;
-        selected = 0;
-        SortProfilesForDisplay(preferredId);
+        const std::wstring preferred = HasSelection() ? Current().id : L"";
+        profiles = store.Load();
+        if (profiles.empty()) {
+            selected = 0;
+            RebuildList();
+            EnableForm(false);
+            SetWindowTextW(name, L"");
+            SetWindowTextW(apiUrl, L"");
+            SetWindowTextW(apiKey, L"");
+            SetWindowTextW(model, L"");
+            SetStatus(L"还没有 API 配置，点击“新增配置”开始。", true);
+            return;
+        }
+
+        auto it = std::find_if(profiles.begin(), profiles.end(), [&](const ApiProfile& p) {
+            return !preferred.empty() && _wcsicmp(p.id.c_str(), preferred.c_str()) == 0;
+        });
+        if (it == profiles.end()) {
+            it = std::find_if(profiles.begin(), profiles.end(), [](const ApiProfile& p) { return p.isDefault; });
+        }
+        selected = it == profiles.end() ? 0 : static_cast<std::size_t>(std::distance(profiles.begin(), it));
         RebuildList();
         LoadForm();
     }
 
     void LoadForm() {
-        if (profiles.empty()) return;
+        if (!HasSelection()) { EnableForm(false); return; }
+        EnableForm(true);
         const auto& profile = Current();
         SetWindowTextW(name, profile.name.c_str());
         SetWindowTextW(apiUrl, profile.baseUrl.c_str());
         SetWindowTextW(model, profile.model.c_str());
-        SetWindowTextW(timeout, std::to_wstring(profile.timeoutSeconds).c_str());
-        wchar_t temp[16]{};
-        swprintf_s(temp, L"%.1f", profile.temperatureTenths / 10.0);
-        SetWindowTextW(temperature, temp);
-        SetWindowTextW(retries, std::to_wstring(profile.retries).c_str());
-        SendMessageW(defaultCheck, BM_SETCHECK, profile.isDefault ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendMessageW(streamingCheck, BM_SETCHECK, profile.streaming ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendMessageW(toolsCheck, BM_SETCHECK, profile.tools ? BST_CHECKED : BST_UNCHECKED, 0);
 
         SendMessageW(serviceType, CB_SETCURSEL, 0, 0);
         const int count = static_cast<int>(SendMessageW(serviceType, CB_GETCOUNT, 0, 0));
@@ -469,11 +419,18 @@ struct PageState {
                 break;
             }
         }
+
         revealingKey = false;
         SendMessageW(apiKey, EM_SETPASSWORDCHAR, L'●', 0);
-        SetWindowTextW(apiKey, store.HasKey(profile) ? kStoredKeyMask : L"");
-        SetStatus(profile.lastMessage.empty() ? L"尚未测试连接。" : profile.lastMessage,
-                  profile.lastMessage.empty() || profile.lastOk);
+        const std::wstring stored = store.Key(profile);
+        SetWindowTextW(apiKey, stored.empty() ? L"" : kStoredKeyMask);
+        if (!stored.empty() && !HeaderSafeSecret(stored)) {
+            SetStatus(L"这个配置的 API Key 来自旧版本且格式异常，请重新粘贴 API Key 后保存。", false);
+        } else {
+            SetStatus(profile.isDefault ? L"当前默认配置" :
+                      (profile.lastMessage.empty() ? L"配置已加载。" : profile.lastMessage),
+                      profile.lastMessage.empty() || profile.lastOk);
+        }
     }
 
     ApiProfile FormProfile() const {
@@ -481,13 +438,6 @@ struct PageState {
         profile.name = WindowText(name);
         profile.baseUrl = WindowText(apiUrl);
         profile.model = WindowText(model);
-        profile.timeoutSeconds = std::clamp(ParseInt(WindowText(timeout), 60), 5, 600);
-        const double temp = _wtof(WindowText(temperature).c_str());
-        profile.temperatureTenths = std::clamp(static_cast<int>(temp * 10.0 + 0.5), 0, 20);
-        profile.retries = std::clamp(ParseInt(WindowText(retries), 2), 0, 5);
-        profile.isDefault = SendMessageW(defaultCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        profile.streaming = SendMessageW(streamingCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        profile.tools = SendMessageW(toolsCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
         const int typeIndex = static_cast<int>(SendMessageW(serviceType, CB_GETCURSEL, 0, 0));
         if (typeIndex != CB_ERR) {
             wchar_t buffer[256]{};
@@ -498,9 +448,56 @@ struct PageState {
     }
 
     std::wstring FormKey() const {
-        std::wstring value = WindowText(apiKey);
+        const std::wstring value = WindowText(apiKey);
         if (value.empty() || value == kStoredKeyMask) return store.Key(Current());
         return value;
+    }
+
+    bool ValidateDraft(ApiProfile& profile, std::wstring& key) {
+        if (profile.name.empty()) profile.name = L"API 配置";
+        if (profile.baseUrl.empty()) {
+            SetStatus(L"请输入 Base URL。", false);
+            SetFocus(apiUrl);
+            return false;
+        }
+        if (profile.model.empty()) {
+            SetStatus(L"请输入 Model。", false);
+            SetFocus(model);
+            return false;
+        }
+        key = FormKey();
+        if (profile.NeedsKey() && key.empty()) {
+            SetStatus(L"请输入 API Key。", false);
+            SetFocus(apiKey);
+            return false;
+        }
+        if (!key.empty() && !HeaderSafeSecret(key)) {
+            SetStatus(L"API Key 包含非 HTTP Header 安全字符，请重新粘贴正确的 Key。", false);
+            SetFocus(apiKey);
+            return false;
+        }
+        return true;
+    }
+
+    bool SaveCurrent(bool quiet = false) {
+        if (!HasSelection()) return false;
+        ApiProfile profile = FormProfile();
+        std::wstring key;
+        if (!ValidateDraft(profile, key)) return false;
+
+        const std::wstring field = WindowText(apiKey);
+        if (!field.empty() && field != kStoredKeyMask) {
+            if (!store.SaveKey(profile, field)) {
+                SetStatus(L"API Key 保存到 Windows Credential Manager 失败。", false);
+                return false;
+            }
+        }
+
+        profiles[selected] = profile;
+        store.Save(profile);
+        LoadForm();
+        if (!quiet) SetStatus(L"配置已保存。", true);
+        return true;
     }
 
     void SelectListItem() {
@@ -517,7 +514,7 @@ struct PageState {
         ApiProfile profile;
         profile.id = L"custom-" + std::to_wstring(GetTickCount64());
         profile.name = L"新 API 配置";
-        profile.lastMessage = L"填写服务地址、API Key 和模型后保存。";
+        profile.lastMessage = L"填写 Base URL、API Key 和 Model 后保存。";
         profiles.push_back(std::move(profile));
         selected = profiles.size() - 1;
         RebuildList();
@@ -525,149 +522,87 @@ struct PageState {
         SetFocus(name);
     }
 
-    bool PersistForm(bool requireConnection) {
-        if (profiles.empty()) return false;
-        ApiProfile profile = FormProfile();
-        if (profile.name.empty()) {
-            SetStatus(L"请输入配置名称。", false);
-            SetFocus(name);
-            return false;
-        }
-        if (profile.baseUrl.empty()) {
-            SetStatus(L"请输入 Base URL。", false);
-            SetFocus(apiUrl);
-            return false;
-        }
-
-        std::wstring keyField = WindowText(apiKey);
-        if (!keyField.empty() && keyField != kStoredKeyMask) {
-            if (!store.SaveKey(profile, keyField)) {
-                SetStatus(L"API Key 保存到 Windows Credential Manager 失败。", false);
-                return false;
-            }
-        }
-        std::wstring key = store.Key(profile);
-        if (profile.NeedsKey() && key.empty()) {
-            SetStatus(L"这个服务需要 API Key。", false);
-            SetFocus(apiKey);
-            return false;
-        }
-
-        ModelProbeResult probe;
-        if (requireConnection || profile.isDefault || profile.model.empty()) {
-            SetStatus(L"正在测试连接并获取模型…", true);
-            UpdateWindow(panel);
-            probe = agent.ProbeModels(profile.baseUrl, key, false);
-            if (!probe.ok) {
-                profile.lastOk = false;
-                profile.lastMessage = probe.message.empty() ? L"连接测试失败，请检查地址、密钥和网络。" : probe.message;
-                profiles[selected] = profile;
-                store.Save(profile);
-                RebuildList();
-                SetStatus(profile.lastMessage, false);
-                return false;
-            }
-            if (profile.model.empty()) profile.model = probe.recommendedModel;
-            if (profile.model.empty() && !probe.models.empty()) profile.model = probe.models.front();
-            profile.lastOk = true;
-            profile.lastMessage = L"最近测试成功 · 连接正常";
-        }
-
-        if (profile.model.empty()) {
-            SetStatus(L"连接可用，但没有检测到模型，请填写默认模型。", false);
-            SetFocus(model);
-            return false;
-        }
-
-        if (profile.isDefault) {
-            if (!probe.ok) probe = agent.ProbeModels(profile.baseUrl, key, false);
-            if (!probe.ok) {
-                SetStatus(probe.message.empty() ? L"默认服务必须先通过连接测试。" : probe.message, false);
-                return false;
-            }
-            std::wstring reply;
-            if (!agent.ApplyModelConfig(probe, profile.model, key, false, reply)) {
-                SetStatus(reply.empty() ? L"无法应用默认模型配置。" : reply, false);
-                return false;
-            }
-            for (auto& item : profiles) item.isDefault = false;
-            profile.isDefault = true;
-        }
-
-        const std::wstring selectedId = profile.id;
-        profiles[selected] = profile;
-        store.SaveAll(profiles);
-        SortProfilesForDisplay(selectedId);
-        RebuildList();
-        LoadForm();
-        SetStatus(profile.lastOk ? profile.lastMessage : L"配置已保存。", true);
-        return true;
-    }
-
     void TestConnection() {
-        if (profiles.empty()) return;
+        if (!HasSelection()) return;
         ApiProfile profile = FormProfile();
+        std::wstring key = FormKey();
         if (profile.baseUrl.empty()) {
             SetStatus(L"请先填写 Base URL。", false);
             return;
         }
-        std::wstring key = FormKey();
         if (profile.NeedsKey() && key.empty()) {
             SetStatus(L"请先填写 API Key。", false);
             return;
         }
+        if (!key.empty() && !HeaderSafeSecret(key)) {
+            SetStatus(L"API Key 格式异常，请重新粘贴正确的 Key。", false);
+            return;
+        }
+
         EnableWindow(testButton, FALSE);
         SetStatus(L"正在测试连接…", true);
         UpdateWindow(panel);
         const ModelProbeResult probe = agent.ProbeModels(profile.baseUrl, key, false);
         EnableWindow(testButton, TRUE);
+
         profile.lastOk = probe.ok;
-        profile.lastMessage = probe.ok ? L"最近测试成功 · 连接正常" :
+        profile.lastMessage = probe.ok ? L"连接正常" :
             (probe.message.empty() ? L"连接测试失败。" : probe.message);
         if (probe.ok && profile.model.empty()) {
             profile.model = probe.recommendedModel;
             if (profile.model.empty() && !probe.models.empty()) profile.model = probe.models.front();
             SetWindowTextW(model, profile.model.c_str());
         }
-        const std::wstring selectedId = profile.id;
-        profiles[selected] = profile;
-        store.Save(profile);
-        SortProfilesForDisplay(selectedId);
-        RebuildList();
+        profiles[selected].lastOk = profile.lastOk;
+        profiles[selected].lastMessage = profile.lastMessage;
+        store.Save(profiles[selected]);
         SetStatus(profile.lastMessage, probe.ok);
+        InvalidateRect(profileList, nullptr, FALSE);
+    }
+
+    void SetDefault() {
+        if (!SaveCurrent(true)) return;
+        for (auto& profile : profiles) profile.isDefault = false;
+        profiles[selected].isDefault = true;
+        profiles[selected].lastMessage = L"当前默认配置";
+        store.SaveAll(profiles);
+        agent.ReloadConfig();
+        SetStatus(L"已设为默认配置。Pi Agent、DeepSeek Harness 和 Direct Model 会读取这份配置。", true);
+        InvalidateRect(profileList, nullptr, FALSE);
     }
 
     void DeleteProfile() {
-        if (profiles.empty()) return;
+        if (!HasSelection()) return;
         const ApiProfile removing = Current();
         store.Remove(removing);
         profiles.erase(profiles.begin() + static_cast<std::ptrdiff_t>(selected));
         if (profiles.empty()) {
-            NewProfile();
+            selected = 0;
+            RebuildList();
+            EnableForm(false);
+            SetStatus(L"配置已删除。", true);
             return;
         }
         if (selected >= profiles.size()) selected = profiles.size() - 1;
-        if (removing.isDefault) {
-            auto configured = std::find_if(profiles.begin(), profiles.end(), [&](const ApiProfile& p) { return ProfileConfigured(p); });
-            if (configured != profiles.end()) configured->isDefault = true;
-            store.SaveAll(profiles);
-        }
-        SortProfilesForDisplay();
         RebuildList();
         LoadForm();
-        SetStatus(L"配置已删除。", true);
+        SetStatus(removing.isDefault ? L"默认配置已删除，请选择另一项设为默认。" : L"配置已删除。", true);
     }
 
     void ToggleReveal() {
+        if (!HasSelection()) return;
+        const std::wstring stored = store.Key(Current());
+        if (WindowText(apiKey) == kStoredKeyMask && !stored.empty()) SetWindowTextW(apiKey, stored.c_str());
         revealingKey = !revealingKey;
         SendMessageW(apiKey, EM_SETPASSWORDCHAR, revealingKey ? 0 : L'●', 0);
         InvalidateRect(apiKey, nullptr, TRUE);
     }
 
     void CopyKey() {
+        if (!HasSelection()) return;
         const std::wstring key = FormKey();
         if (key.empty()) {
-            SetStatus(L"当前配置没有可复制的 API Key。", false);
+            SetStatus(L"当前配置没有 API Key。", false);
             return;
         }
         if (!OpenClipboard(panel)) return;
@@ -685,7 +620,7 @@ struct PageState {
         }
         if (memory) GlobalFree(memory);
         CloseClipboard();
-        SetStatus(L"API Key 已复制到剪贴板。", true);
+        SetStatus(L"API Key 已复制。", true);
     }
 
     void Layout() {
@@ -703,16 +638,15 @@ struct PageState {
         GetClientRect(panel, &area);
         const int width = std::max(1, static_cast<int>(area.right));
         const int height = std::max(1, static_cast<int>(area.bottom));
-        const int margin = std::max(S(16), width / 40);
-        const int contentW = std::max(S(500), width - margin * 2);
-        const int headerH = S(72);
-        const int statsH = S(82);
-        const int bodyTop = margin + headerH + statsH + S(22);
+        const int margin = std::max(S(18), width / 40);
+        const int contentW = std::max(S(560), width - margin * 2);
+        const int headerH = S(82);
+        const int bodyTop = margin + headerH;
         const int bodyH = std::max(S(360), height - bodyTop - margin);
-        const int columnGap = S(14);
-        const int leftW = std::clamp(contentW * 39 / 100, S(280), S(430));
-        const int rightX = margin + leftW + columnGap;
-        const int rightW = std::max(S(320), contentW - leftW - columnGap);
+        const int gap = S(16);
+        const int leftW = std::clamp(contentW * 38 / 100, S(300), S(430));
+        const int rightX = margin + leftW + gap;
+        const int rightW = std::max(S(360), contentW - leftW - gap);
 
         auto place = [&](HWND hwnd, int x, int y, int w, int h) {
             if (!hwnd) return;
@@ -720,32 +654,29 @@ struct PageState {
                          SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
         };
 
-        place(addButton, margin + contentW - S(150), margin + S(2), S(150), S(42));
-        place(profileList, margin + S(14), bodyTop + S(46), leftW - S(28), bodyH - S(118));
+        place(addButton, margin + contentW - S(150), margin + S(4), S(150), S(42));
+        place(profileList, margin + S(14), bodyTop + S(52), leftW - S(28), bodyH - S(70));
 
-        const int fieldX = rightX + S(154);
-        const int fieldW = rightW - S(174);
-        const int rowH = S(34);
-        const int gap = S(10);
-        int y = bodyTop + S(54);
-        place(name, fieldX, y, fieldW, rowH); y += rowH + gap;
-        place(serviceType, fieldX, y, fieldW, S(180)); y += rowH + gap;
-        place(apiUrl, fieldX, y, fieldW, rowH); y += rowH + gap;
-        place(apiKey, fieldX, y, std::max(S(120), fieldW - S(78)), rowH);
-        place(revealButton, fieldX + fieldW - S(72), y, S(32), rowH);
-        place(copyButton, fieldX + fieldW - S(36), y, S(32), rowH); y += rowH + S(20);
-        place(model, fieldX, y, fieldW, rowH); y += rowH + gap;
-        place(timeout, fieldX, y, std::max(S(100), fieldW / 2), rowH); y += rowH + gap;
-        place(temperature, fieldX, y, std::max(S(100), fieldW / 2), rowH); y += rowH + gap;
-        place(defaultCheck, fieldX, y, fieldW, rowH); y += rowH + gap;
-        place(streamingCheck, fieldX, y, S(116), rowH);
-        place(toolsCheck, fieldX + S(122), y, S(116), rowH);
-        place(retries, fieldX + S(244), y, std::max(S(70), fieldW - S(244)), rowH);
+        const int labelW = S(112);
+        const int fieldX = rightX + S(18) + labelW;
+        const int fieldW = rightW - S(36) - labelW;
+        const int rowH = S(36);
+        const int rowGap = S(18);
+        int y = bodyTop + S(58);
+        place(name, fieldX, y, fieldW, rowH); y += rowH + rowGap;
+        place(serviceType, fieldX, y, fieldW, S(180)); y += rowH + rowGap;
+        place(apiUrl, fieldX, y, fieldW, rowH); y += rowH + rowGap;
+        place(apiKey, fieldX, y, std::max(S(120), fieldW - S(90)), rowH);
+        place(revealButton, fieldX + fieldW - S(84), y, S(36), rowH);
+        place(copyButton, fieldX + fieldW - S(44), y, S(44), rowH); y += rowH + rowGap;
+        place(model, fieldX, y, fieldW, rowH);
 
-        const int actionY = bodyTop + bodyH - S(86);
-        place(testButton, rightX + S(18), actionY, S(126), S(40));
-        place(saveButton, rightX + S(154), actionY, S(150), S(40));
-        place(deleteButton, rightX + rightW - S(132), actionY, S(114), S(40));
+        const int actionY = bodyTop + bodyH - S(66);
+        int actionX = rightX + S(18);
+        place(testButton, actionX, actionY, S(112), S(40)); actionX += S(120);
+        place(saveButton, actionX, actionY, S(112), S(40)); actionX += S(120);
+        place(setDefaultButton, actionX, actionY, S(126), S(40));
+        place(deleteButton, rightX + rightW - S(112), actionY, S(94), S(40));
 
         RedrawWindow(panel, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
     }
@@ -760,7 +691,7 @@ struct PageState {
         COLORREF border = RGB(199, 216, 240);
         COLORREF textColor = RGB(45, 92, 166);
 
-        if (id == kNewId || id == kSaveId) {
+        if (id == kNewId || id == kSaveId || id == kSetDefaultId) {
             background = pressed ? RGB(31, 102, 226) : RGB(43, 118, 246);
             border = background;
             textColor = RGB(255, 255, 255);
@@ -772,8 +703,6 @@ struct PageState {
             background = pressed ? RGB(235, 243, 255) : RGB(248, 251, 255);
             border = RGB(220, 231, 246);
             textColor = RGB(57, 88, 139);
-        } else if (pressed) {
-            background = RGB(237, 245, 255);
         }
         if (disabled) {
             background = RGB(242, 245, 249);
@@ -784,59 +713,36 @@ struct PageState {
         RoundFill(draw.hDC, rect, S(10), background, border);
         DrawTextSimple(draw.hDC, bodyFont, textColor, WindowText(draw.hwndItem), rect,
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        if (draw.itemState & ODS_FOCUS) {
-            RECT focus = rect;
-            InflateRect(&focus, -S(4), -S(4));
-            DrawFocusRect(draw.hDC, &focus);
-        }
     }
 
     void DrawProfileItem(const DRAWITEMSTRUCT& draw) {
         if (draw.itemID == static_cast<UINT>(-1) || draw.itemData >= profiles.size()) return;
-        HDC dc = draw.hDC;
         RECT rect = draw.rcItem;
         InflateRect(&rect, -S(2), -S(4));
         const auto& profile = profiles[draw.itemData];
         const bool selectedItem = (draw.itemState & ODS_SELECTED) != 0;
         const bool configured = ProfileConfigured(profile);
-        const COLORREF background = selectedItem ? RGB(239, 246, 255) : RGB(252, 253, 255);
-        RoundFill(dc, rect, S(14), background, selectedItem ? RGB(44, 116, 255) : RGB(225, 232, 242));
+        RoundFill(draw.hDC, rect, S(14), selectedItem ? RGB(239, 246, 255) : RGB(252, 253, 255),
+                  selectedItem ? RGB(44, 116, 255) : RGB(225, 232, 242));
 
-        const bool explicitFailure = profile.lastMessage.find(L"失败") != std::wstring::npos ||
-                                     profile.lastMessage.find(L"异常") != std::wstring::npos;
-        const COLORREF dotColor = configured
-            ? (profile.lastOk ? RGB(25, 190, 105) : RGB(63, 126, 246))
-            : (profile.lastOk ? RGB(25, 190, 105) : (explicitFailure ? RGB(235, 66, 66) : RGB(160, 174, 198)));
-        HBRUSH dot = CreateSolidBrush(dotColor);
-        HGDIOBJ oldBrush = SelectObject(dc, dot);
-        HPEN noPen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));
-        HGDIOBJ oldPen = SelectObject(dc, noPen);
-        Ellipse(dc, rect.left + S(13), rect.top + S(23), rect.left + S(23), rect.top + S(33));
-        SelectObject(dc, oldPen);
-        SelectObject(dc, oldBrush);
-        DeleteObject(noPen);
-        DeleteObject(dot);
+        RECT titleRect{rect.left + S(16), rect.top + S(8), rect.right - S(90), rect.top + S(34)};
+        DrawTextSimple(draw.hDC, headingFont, RGB(24, 47, 86), profile.name, titleRect);
+        std::wstring subtitle = profile.model.empty() ? profile.baseUrl : profile.model;
+        if (subtitle.empty()) subtitle = L"未完成配置";
+        RECT subRect{rect.left + S(16), rect.top + S(34), rect.right - S(16), rect.bottom - S(7)};
+        DrawTextSimple(draw.hDC, smallFont, RGB(92, 112, 145), subtitle, subRect);
 
-        RECT titleRect{rect.left + S(32), rect.top + S(9), rect.right - S(118), rect.top + S(34)};
-        DrawTextSimple(dc, headingFont, RGB(24, 47, 86), profile.name, titleRect);
-        std::wstring subtitle;
-        if (profile.isDefault) subtitle = L"默认对话服务";
-        else if (configured && profile.lastOk) subtitle = L"连接正常 · " + profile.model;
-        else if (configured) subtitle = profile.baseUrl;
-        else subtitle = profile.lastMessage.empty() ? L"等待配置" : profile.lastMessage;
-        RECT subRect{rect.left + S(32), rect.top + S(34), rect.right - S(24), rect.bottom - S(7)};
-        DrawTextSimple(dc, smallFont, RGB(92, 112, 145), subtitle, subRect);
-
-        const std::wstring badge = configured ? (profile.lastOk ? L"已连接" : L"已配置") : L"未配置";
-        if (profile.isDefault && configured) {
-            RECT starRect{rect.right - S(109), rect.top + S(17), rect.right - S(88), rect.top + S(42)};
-            DrawTextSimple(dc, headingFont, RGB(50, 111, 236), L"★", starRect,
+        if (profile.isDefault) {
+            RECT badge{rect.right - S(78), rect.top + S(16), rect.right - S(14), rect.top + S(42)};
+            RoundFill(draw.hDC, badge, S(8), RGB(231, 240, 255));
+            DrawTextSimple(draw.hDC, smallFont, RGB(49, 105, 220), L"默认", badge,
+                           DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        } else if (configured) {
+            RECT badge{rect.right - S(78), rect.top + S(16), rect.right - S(14), rect.top + S(42)};
+            RoundFill(draw.hDC, badge, S(8), RGB(229, 249, 238));
+            DrawTextSimple(draw.hDC, smallFont, RGB(28, 160, 92), L"已配置", badge,
                            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
-        RECT badgeRect{rect.right - S(82), rect.top + S(17), rect.right - S(17), rect.top + S(42)};
-        RoundFill(dc, badgeRect, S(8), configured ? RGB(229, 249, 238) : RGB(255, 246, 228));
-        DrawTextSimple(dc, smallFont, configured ? RGB(28, 160, 92) : RGB(218, 137, 33), badge, badgeRect,
-                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     void Paint(HDC dc) {
@@ -845,79 +751,51 @@ struct PageState {
         FillSolid(dc, client, RGB(246, 250, 255));
         const int width = client.right;
         const int height = client.bottom;
-        const int margin = std::max(S(16), width / 40);
-        const int contentW = std::max(S(500), width - margin * 2);
-        const int headerH = S(72);
-        const int statsH = S(82);
-        const int statsGap = S(12);
-        const int bodyTop = margin + headerH + statsH + S(22);
+        const int margin = std::max(S(18), width / 40);
+        const int contentW = std::max(S(560), width - margin * 2);
+        const int headerH = S(82);
+        const int bodyTop = margin + headerH;
         const int bodyH = std::max(S(360), height - bodyTop - margin);
-        const int columnGap = S(14);
-        const int leftW = std::clamp(contentW * 39 / 100, S(280), S(430));
-        const int rightX = margin + leftW + columnGap;
-        const int rightW = std::max(S(320), contentW - leftW - columnGap);
+        const int gap = S(16);
+        const int leftW = std::clamp(contentW * 38 / 100, S(300), S(430));
+        const int rightX = margin + leftW + gap;
+        const int rightW = std::max(S(360), contentW - leftW - gap);
 
-        RECT title{margin, margin - S(2), margin + contentW - S(150), margin + S(34)};
+        RECT title{margin, margin - S(2), margin + contentW - S(160), margin + S(34)};
         DrawTextSimple(dc, titleFont, RGB(18, 39, 75), L"API 配置中心", title);
-        RECT subtitle{margin, margin + S(34), margin + contentW - S(150), margin + S(58)};
-        DrawTextSimple(dc, smallFont, RGB(91, 110, 142), L"统一管理模型服务、密钥与连接状态", subtitle);
-
-        int configured = 0;
-        int unconfigured = 0;
-        int defaults = 0;
-        for (const auto& profile : profiles) {
-            if (ProfileConfigured(profile)) ++configured; else ++unconfigured;
-            if (profile.isDefault) ++defaults;
-        }
-        const int statW = (contentW - statsGap * 2) / 3;
-        const std::array<std::pair<std::wstring, int>, 3> stats{{
-            {L"已配置", configured}, {L"未配置", unconfigured}, {L"默认服务", defaults}}};
-        for (int i = 0; i < 3; ++i) {
-            RECT card{margin + i * (statW + statsGap), margin + headerH,
-                      margin + i * (statW + statsGap) + statW, margin + headerH + statsH};
-            RoundFill(dc, card, S(16), RGB(252, 254, 255), RGB(229, 236, 246));
-            const COLORREF iconColor = i == 0 ? RGB(38, 201, 147) : (i == 1 ? RGB(255, 177, 45) : RGB(78, 125, 255));
-            RECT icon{card.left + S(16), card.top + S(18), card.left + S(58), card.top + S(60)};
-            RoundFill(dc, icon, S(12), iconColor);
-            RECT label{card.left + S(72), card.top + S(15), card.right - S(12), card.top + S(37)};
-            DrawTextSimple(dc, smallFont, RGB(88, 107, 140), stats[i].first, label);
-            RECT number{card.left + S(72), card.top + S(34), card.right - S(12), card.bottom - S(8)};
-            DrawTextSimple(dc, metricFont, RGB(19, 44, 83), std::to_wstring(stats[i].second), number);
-        }
+        RECT subtitle{margin, margin + S(34), margin + contentW - S(160), margin + S(60)};
+        DrawTextSimple(dc, smallFont, RGB(91, 110, 142),
+                       L"只管理服务地址、密钥和模型；Pi Agent / Harness / Direct Model 共用默认配置", subtitle);
 
         RECT leftPanel{margin, bodyTop, margin + leftW, bodyTop + bodyH};
         RECT rightPanel{rightX, bodyTop, rightX + rightW, bodyTop + bodyH};
         RoundFill(dc, leftPanel, S(18), RGB(253, 254, 255), RGB(231, 237, 247));
         RoundFill(dc, rightPanel, S(18), RGB(253, 254, 255), RGB(231, 237, 247));
+
         RECT leftHeading{leftPanel.left + S(16), leftPanel.top + S(12), leftPanel.right - S(16), leftPanel.top + S(40)};
-        DrawTextSimple(dc, headingFont, RGB(28, 49, 83), L"配置列表", leftHeading);
+        DrawTextSimple(dc, headingFont, RGB(28, 49, 83), L"已保存配置", leftHeading);
         RECT rightHeading{rightPanel.left + S(18), rightPanel.top + S(12), rightPanel.right - S(18), rightPanel.top + S(40)};
-        DrawTextSimple(dc, headingFont, RGB(28, 49, 83), L"配置详情", rightHeading);
+        DrawTextSimple(dc, headingFont, RGB(28, 49, 83), L"基本配置", rightHeading);
 
-        const int fieldX = rightX + S(154);
-        int y = bodyTop + S(54);
-        const std::array<std::wstring, 8> labels{{L"配置名称", L"服务类型", L"Base URL", L"API Key", L"默认模型", L"超时时间", L"请求温度", L"设为默认服务"}};
-        for (int i = 0; i < 8; ++i) {
-            RECT label{rightX + S(18), y, fieldX - S(12), y + S(34)};
-            DrawTextSimple(dc, bodyFont, RGB(68, 88, 124), labels[i], label);
-            y += S(44);
-            if (i == 3) y += S(10);
+        const int labelW = S(112);
+        int y = bodyTop + S(58);
+        for (const auto& label : {L"配置名称", L"接口类型", L"Base URL", L"API Key", L"Model"}) {
+            RECT labelRect{rightX + S(18), y, rightX + S(18) + labelW - S(10), y + S(36)};
+            DrawTextSimple(dc, bodyFont, RGB(68, 88, 124), label, labelRect);
+            y += S(54);
         }
-        RECT keyHelp{fieldX, bodyTop + S(54) + S(44) * 4 - S(7), rightX + rightW - S(18),
-                     bodyTop + S(54) + S(44) * 4 + S(14)};
-        DrawTextSimple(dc, smallFont, RGB(102, 119, 148), L"API Key 已安全保存到 Windows Credential Manager", keyHelp);
-        RECT advanced{rightX + S(18), y + S(3), rightX + rightW - S(18), y + S(30)};
-        DrawTextSimple(dc, bodyFont, RGB(68, 88, 124), L"高级选项", advanced);
 
-        const int actionY = bodyTop + bodyH - S(86);
-        RECT status{rightX + S(18), actionY + S(48), rightX + rightW - S(18), actionY + S(78)};
+        const int actionY = bodyTop + bodyH - S(66);
+        RECT status{rightX + S(18), actionY - S(48), rightX + rightW - S(18), actionY - S(12)};
         RoundFill(dc, status, S(10), statusOk ? RGB(239, 251, 244) : RGB(255, 241, 242));
         DrawTextSimple(dc, smallFont, statusOk ? RGB(34, 161, 96) : RGB(210, 62, 68),
                        std::wstring(L"●  ") + statusMessage, status);
 
-        RECT hint{leftPanel.left + S(16), leftPanel.bottom - S(56), leftPanel.right - S(16), leftPanel.bottom - S(16)};
-        RoundFill(dc, hint, S(10), RGB(243, 248, 255));
-        DrawTextSimple(dc, smallFont, RGB(91, 112, 147), L"已配置服务自动置顶；未配置服务不会进入模型列表", hint);
+        if (profiles.empty()) {
+            RECT empty{leftPanel.left + S(24), leftPanel.top + S(72), leftPanel.right - S(24), leftPanel.bottom - S(24)};
+            DrawTextSimple(dc, bodyFont, RGB(117, 133, 158), L"还没有配置\n点击右上角“新增配置”开始",
+                           empty, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
+        }
     }
 };
 
@@ -942,7 +820,8 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         if (code == BN_CLICKED) {
             if (id == kNewId) { state->NewProfile(); return 0; }
             if (id == kTestId) { state->TestConnection(); return 0; }
-            if (id == kSaveId) { state->PersistForm(false); return 0; }
+            if (id == kSaveId) { state->SaveCurrent(); return 0; }
+            if (id == kSetDefaultId) { state->SetDefault(); return 0; }
             if (id == kDeleteId) { state->DeleteProfile(); return 0; }
             if (id == kRevealId) { state->ToggleReveal(); return 0; }
             if (id == kCopyId) { state->CopyKey(); return 0; }
@@ -1000,9 +879,8 @@ LRESULT CALLBACK ParentSubclass(HWND parent, UINT message, WPARAM wParam, LPARAM
     if (state && message == WM_DPICHANGED) state->RebuildFonts();
     if (state && (message == WM_SIZE || message == WM_DPICHANGED || message == WM_SHOWWINDOW)) {
         state->Layout();
-        if (state->panel && IsWindowVisible(state->panel)) {
+        if (state->panel && IsWindowVisible(state->panel))
             SetWindowPos(state->panel, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        }
     }
     if (message == WM_NCDESTROY) {
         RemoveWindowSubclass(parent, ParentSubclass, kParentSubclassId);
@@ -1036,11 +914,6 @@ bool CreatePage(PageState& state) {
                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
     };
-    auto check = [&](const wchar_t* text, int id) {
-        return CreateWindowExW(0, L"BUTTON", text,
-                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                               0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
-    };
 
     state.profileList = CreateWindowExW(0, L"LISTBOX", L"",
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
@@ -1055,25 +928,20 @@ bool CreatePage(PageState& state) {
     state.apiUrl = edit(kApiUrlId);
     state.apiKey = edit(kApiKeyId, ES_PASSWORD);
     state.model = edit(kModelId);
-    state.timeout = edit(kTimeoutId, ES_NUMBER);
-    state.temperature = edit(kTemperatureId);
-    state.defaultCheck = check(L"启用", kDefaultId);
-    state.streamingCheck = check(L"流式输出", kStreamingId);
-    state.toolsCheck = check(L"工具调用", kToolsId);
-    state.retries = edit(kRetriesId, ES_NUMBER);
     state.addButton = button(L"＋ 新增配置", kNewId);
     state.testButton = button(L"测试连接", kTestId);
-    state.saveButton = button(L"保存配置", kSaveId);
-    state.deleteButton = button(L"删除配置", kDeleteId);
+    state.saveButton = button(L"保存", kSaveId);
+    state.setDefaultButton = button(L"设为默认", kSetDefaultId);
+    state.deleteButton = button(L"删除", kDeleteId);
     state.revealButton = button(L"◉", kRevealId);
     state.copyButton = button(L"复制", kCopyId);
 
     if (!state.profileList || !state.name || !state.serviceType || !state.apiUrl || !state.apiKey ||
-        !state.model || !state.timeout || !state.temperature || !state.defaultCheck ||
-        !state.streamingCheck || !state.toolsCheck || !state.retries || !state.addButton ||
-        !state.testButton || !state.saveButton || !state.deleteButton || !state.revealButton || !state.copyButton)
+        !state.model || !state.addButton || !state.testButton || !state.saveButton ||
+        !state.setDefaultButton || !state.deleteButton || !state.revealButton || !state.copyButton)
         return false;
 
+    SendMessageW(state.name, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 公司 DeepSeek"));
     SendMessageW(state.apiUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://api.example.com/v1"));
     SendMessageW(state.apiKey, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"粘贴 API Key"));
     SendMessageW(state.model, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 deepseek-chat"));
@@ -1104,7 +972,8 @@ bool ShowDesktopAiSettingsPage(HWND desktopSettingsWindow) {
 }
 
 void HideDesktopAiSettingsPage(HWND desktopSettingsWindow) {
-    if (auto* state = StateFor(desktopSettingsWindow); state && state->panel) ShowWindow(state->panel, SW_HIDE);
+    if (auto* state = StateFor(desktopSettingsWindow); state && state->panel)
+        ShowWindow(state->panel, SW_HIDE);
 }
 
 bool DesktopAiSettingsPageVisible(HWND desktopSettingsWindow) {

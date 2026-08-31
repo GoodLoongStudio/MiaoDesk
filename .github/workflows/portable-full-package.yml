@@ -1,0 +1,110 @@
+name: Path-safe Full Portable Packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - src/native/**
+      - assets/wallpapers/**
+      - runtime/arm64/**
+      - runtime/x64/**
+      - scripts/stage-full-test-package.ps1
+      - scripts/prepare-store-runtime.ps1
+      - scripts/prepare-third-party-runtime-arm64.ps1
+      - scripts/prepare-third-party-runtime-x64.ps1
+      - scripts/package-portable-full.ps1
+      - .github/workflows/portable-full-package.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: path-safe-full-portable-packages
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: FULL portable ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            runner: windows-2025
+          - arch: arm64
+            cmake_arch: ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Verify exact head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch: actual=$actual event=$env:GITHUB_SHA" }
+
+      - name: Configure ${{ matrix.arch }} production build
+        shell: pwsh
+        run: cmake -S . -B build-portable-${{ matrix.arch }} -A ${{ matrix.cmake_arch }}
+
+      - name: Build complete native product
+        shell: pwsh
+        run: cmake --build build-portable-${{ matrix.arch }} --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+
+      - name: Stage complete offline runtime
+        shell: pwsh
+        run: |
+          .\scripts\stage-full-test-package.ps1 `
+            -BuildOutput "$PWD\build-portable-${{ matrix.arch }}\src\native\Release" `
+            -Destination "$PWD\stage-${{ matrix.arch }}" `
+            -Architecture '${{ matrix.arch }}'
+
+      - name: Prove Harness, Pi and native binaries before packing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $PWD 'stage-${{ matrix.arch }}'
+          $node = Join-Path $dest 'Runtime\Node\node.exe'
+          $dsh = Join-Path $dest 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+          $pi = Join-Path $dest 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+          & $node --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Node runtime probe failed.' }
+          & $node $dsh --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime probe failed.' }
+          & $node $pi --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Pi runtime probe failed.' }
+          Push-Location $dest
+          try {
+            foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+              & (Join-Path $dest $exe) --self-test
+              if ($LASTEXITCODE -ne 0) { throw "$exe self-test failed: $LASTEXITCODE" }
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Build Explorer-safe portable payload
+        shell: pwsh
+        run: |
+          .\scripts\package-portable-full.ps1 `
+            -SourceDirectory "$PWD\stage-${{ matrix.arch }}" `
+            -Architecture '${{ matrix.arch }}' `
+            -OutputDirectory "$PWD\portable-${{ matrix.arch }}"
+
+      - name: Upload path-safe FULL ${{ matrix.arch }} package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-${{ matrix.arch }}-FULL-path-safe-${{ github.sha }}
+          path: portable-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

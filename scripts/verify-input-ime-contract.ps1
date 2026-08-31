@@ -56,7 +56,9 @@ foreach ($forbidden in @(
     }
 }
 
-# InputImeSession is the single transient composition/result/selection state framework.
+# InputImeSession owns the common IME lifecycle/result/key contract. Search additionally projects
+# provisional composition into its existing query model; Conversation keeps its existing Direct2D
+# composition visual above the session subclass and must not receive a second GETTEXT projection.
 foreach ($marker in @(
     'namespace miaodesk::input_ime_session_detail',
     'struct InputImeSessionState',
@@ -71,6 +73,7 @@ foreach ($marker in @(
     'VirtualizeSearchGetText',
     'VirtualizeSearchSelection',
     'NotifySearchVisibleQuery',
+    'NotifyConversationInputVisual',
     'IsImeOwnedNavigationKey',
     'HasActiveComposition'
 )) {
@@ -90,22 +93,31 @@ foreach ($pattern in @(
     '(?s)message == WM_IME_ENDCOMPOSITION.*?EndComposition\(hwnd\).*?return 0;'
 )) {
     if ($session -notmatch $pattern) {
-        throw "InputImeSession must fully own custom-rendered composition messages: $pattern"
+        throw "InputImeSession must own the stock EDIT composition path: $pattern"
     }
 }
 
 # Search must treat live composition as visible query text/selection so the placeholder vanishes,
 # the result panel updates before candidate commit, and the visual/system caret sits at comp end.
 foreach ($marker in @(
-    'PostMessageW(',
     'MAKEWPARAM(input_ime_detail::kSearchEditControlId, EN_CHANGE)',
     'visible += state->composition',
     'state->replaceStart +',
-    'static_cast<DWORD>(state->composition.size())'
+    'static_cast<DWORD>(state->composition.size())',
+    'if (search && (message == WM_GETTEXT || message == WM_GETTEXTLENGTH))'
 )) {
     if (-not $session.Contains($marker)) {
         throw "Search live-composition contract marker missing: $marker"
     }
+}
+
+# Conversation already appends its Direct2D GCS_COMPSTR in ConversationPanelInputOverlay. The
+# shared session must not virtualize WM_GETTEXT for Conversation too, which would duplicate pinyin.
+if ($session -match '(?s)\(search\s*\|\|\s*conversation\).*?WM_GETTEXT') {
+    throw 'Conversation composition is being virtualized twice; only Search may project WM_GETTEXT.'
+}
+if (-not $overlay.Contains('gConversationImeComposition')) {
+    throw 'Conversation Direct2D composition visual owner unexpectedly disappeared without a replacement migration.'
 }
 
 # Search/Conversation product shortcuts must not steal Enter/Esc/arrows from an active IME.
@@ -113,7 +125,8 @@ if ($session -notmatch '(?s)message == WM_KEYDOWN.*?HasActiveComposition\(hwnd\)
     throw 'Active IME navigation/commit keys are not protected from product-level shortcuts.'
 }
 
-# Conversation child clicks must explicitly focus the real EDIT and schedule a visual refresh.
+# A full-size native EDIT can receive the mouse directly instead of the parent overlay. The shared
+# session must explicitly focus it and then refresh the appropriate product surface.
 foreach ($marker in @(
     'message == WM_LBUTTONDOWN',
     'SetFocus(hwnd)',
@@ -179,4 +192,4 @@ foreach ($forbidden in @(
     }
 }
 
-Write-Host 'Input IME contract OK: shared anchor + composition session; explicit Search/Conversation business profiles; live Search composition; protected IME keys; real Conversation input focus.'
+Write-Host 'Input IME contract OK: shared anchor/lifecycle; Search provisional query projection; protected IME keys; explicit Conversation visual/focus ownership; no duplicate composition.'

@@ -1,0 +1,219 @@
+name: Vendor x64 Runtime Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - runtime/x64/runtime-lock.json
+      - .github/workflows/vendor-x64-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vendor-x64-runtime
+  cancel-in-progress: true
+
+jobs:
+  vendor:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Materialize pinned x64 RuntimeBundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          git config core.longpaths true
+
+          $lockPath = 'runtime/x64/runtime-lock.json'
+          $manifestPath = 'runtime/x64/runtime-manifest.json'
+          $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
+          if ($lock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
+
+          $root = (Resolve-Path '.').Path
+          $runtime = Join-Path $root 'runtime\x64'
+          $stage = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Runtime-x64-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $old = if (Test-Path $manifestPath -PathType Leaf) { Get-Content $manifestPath -Raw | ConvertFrom-Json } else { $null }
+
+          function Sha256([string]$Path) {
+            (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+          }
+          function Download([string]$Url, [string]$Path) {
+            Write-Host "Downloading $Url"
+            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
+            if (-not (Test-Path $Path -PathType Leaf)) { throw "Download missing: $Path" }
+          }
+          function Resolve-Bundle([string]$Relative) {
+            if ([string]::IsNullOrWhiteSpace($Relative)) { return $null }
+            Join-Path $runtime ($Relative -replace '/', '\')
+          }
+          function Reusable([string]$Relative, [string]$ExpectedHash) {
+            $path = Resolve-Bundle $Relative
+            if (-not $path -or -not (Test-Path $path -PathType Leaf) -or [string]::IsNullOrWhiteSpace($ExpectedHash)) { return $false }
+            (Sha256 $path) -eq $ExpectedHash.ToLowerInvariant()
+          }
+
+          try {
+            $lockHash = Sha256 $lockPath
+
+            # Portable Node x64. Node is shared by Pi and DSH; one binary install, separate processes.
+            $nodeDir = Join-Path $runtime 'node'
+            New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+            $nodeVersion = [string]$lock.node.version
+            $nodeArchiveName = [string]$lock.node.archive
+            $reuseNode = $old -and $old.node -and ([string]$old.node.version -eq $nodeVersion) -and (Reusable ([string]$old.node.archive) ([string]$old.node.sha256))
+            if ($reuseNode) {
+              $nodeArchive = Resolve-Bundle ([string]$old.node.archive)
+              $nodeHash = [string]$old.node.sha256
+              Write-Host "Reusing Node $nodeVersion"
+            } else {
+              Remove-Item $nodeDir -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+              $nodeArchive = Join-Path $nodeDir $nodeArchiveName
+              $nodeUrl = ([string]$lock.node.source).TrimEnd('/') + '/' + $nodeArchiveName
+              Download $nodeUrl $nodeArchive
+              $nodeHash = Sha256 $nodeArchive
+              if ($nodeHash -ne ([string]$lock.node.sha256).ToLowerInvariant()) { throw 'Node x64 checksum mismatch' }
+            }
+            $nodeRel = 'node/' + (Split-Path $nodeArchive -Leaf)
+
+            $nodeExpanded = Join-Path $stage 'node'
+            Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
+            $nodeHome = Get-ChildItem $nodeExpanded -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'node.exe') -PathType Leaf } | Select-Object -First 1
+            if (-not $nodeHome) { throw 'Node archive did not contain node.exe' }
+            $nodeExe = Join-Path $nodeHome.FullName 'node.exe'
+            $npmCmd = Join-Path $nodeHome.FullName 'npm.cmd'
+            if (-not (Test-Path $npmCmd -PathType Leaf)) { throw 'Portable npm is missing' }
+            $env:npm_config_cache = Join-Path $stage 'npm-cache'
+
+            # DeepSeek Harness. Freeze the fully resolved production dependency tree in the archive.
+            $harnessDir = Join-Path $runtime 'harness'
+            New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
+            $harnessVersion = [string]$lock.deepseekHarness.version
+            $reuseHarness = $old -and $old.deepseekHarness -and ([string]$old.deepseekHarness.version -eq $harnessVersion) -and (Reusable ([string]$old.deepseekHarness.archive) ([string]$old.deepseekHarness.sha256))
+            if ($reuseHarness) {
+              $harnessZip = Resolve-Bundle ([string]$old.deepseekHarness.archive)
+              $harnessHash = [string]$old.deepseekHarness.sha256
+              $harnessLockHash = [string]$old.deepseekHarness.dependencyLockSha256
+              Write-Host "Reusing DeepSeek Harness $harnessVersion"
+            } else {
+              Remove-Item $harnessDir -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $harnessDir | Out-Null
+              $harnessStage = Join-Path $stage 'harness'
+              New-Item -ItemType Directory -Force -Path $harnessStage | Out-Null
+              @{ name='miaodesk-deepseek-harness-runtime'; private=$true; version='1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $harnessStage 'package.json') -Encoding UTF8
+              & $npmCmd install --prefix $harnessStage (([string]$lock.deepseekHarness.package) + '@' + $harnessVersion) --omit=dev --no-audit --no-fund --save-exact --package-lock=true
+              if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness production install failed' }
+              $dshBin = Join-Path $harnessStage 'node_modules\@deepseek-ai\dsh\lib\bin.js'
+              $harnessLock = Join-Path $harnessStage 'package-lock.json'
+              if (-not (Test-Path $dshBin -PathType Leaf) -or -not (Test-Path $harnessLock -PathType Leaf)) { throw 'Harness runtime/lock is incomplete' }
+              & $nodeExe $dshBin --help | Out-Host
+              if ($LASTEXITCODE -ne 0) { throw 'Vendored DeepSeek Harness CLI failed --help' }
+              $harnessLockHash = Sha256 $harnessLock
+              $harnessZip = Join-Path $harnessDir ("deepseek-harness-$harnessVersion-win-x64.zip")
+              & tar.exe -a -c -f $harnessZip -C $harnessStage .
+              if ($LASTEXITCODE -ne 0 -or -not (Test-Path $harnessZip)) { throw 'Unable to package Harness runtime tree' }
+              $harnessHash = Sha256 $harnessZip
+            }
+            $harnessRel = 'harness/' + (Split-Path $harnessZip -Leaf)
+
+            # Pi Agent. Freeze its own resolved dependency tree separately from DSH.
+            $piDir = Join-Path $runtime 'pi'
+            New-Item -ItemType Directory -Force -Path $piDir | Out-Null
+            $piVersion = [string]$lock.pi.version
+            $reusePi = $old -and $old.pi -and ([string]$old.pi.version -eq $piVersion) -and (Reusable ([string]$old.pi.archive) ([string]$old.pi.sha256))
+            if ($reusePi) {
+              $piZip = Resolve-Bundle ([string]$old.pi.archive)
+              $piHash = [string]$old.pi.sha256
+              $piLockHash = [string]$old.pi.dependencyLockSha256
+              Write-Host "Reusing Pi $piVersion"
+            } else {
+              Remove-Item $piDir -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $piDir | Out-Null
+              $piStage = Join-Path $stage 'pi'
+              New-Item -ItemType Directory -Force -Path $piStage | Out-Null
+              @{ name='miaodesk-pi-runtime'; private=$true; version='1.0.0' } | ConvertTo-Json | Set-Content (Join-Path $piStage 'package.json') -Encoding UTF8
+              & $npmCmd install --prefix $piStage (([string]$lock.pi.package) + '@' + $piVersion) --omit=dev --no-audit --no-fund --save-exact --package-lock=true
+              if ($LASTEXITCODE -ne 0) { throw 'Pi production install failed' }
+              $piCli = Join-Path $piStage 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+              $piLock = Join-Path $piStage 'package-lock.json'
+              if (-not (Test-Path $piCli -PathType Leaf) -or -not (Test-Path $piLock -PathType Leaf)) { throw 'Pi runtime/lock is incomplete' }
+              & $nodeExe $piCli --version | Out-Host
+              if ($LASTEXITCODE -ne 0) { throw 'Vendored Pi CLI failed --version' }
+              $piLockHash = Sha256 $piLock
+              $piZip = Join-Path $piDir ("pi-coding-agent-$piVersion-win-x64.zip")
+              & tar.exe -a -c -f $piZip -C $piStage .
+              if ($LASTEXITCODE -ne 0 -or -not (Test-Path $piZip)) { throw 'Unable to package Pi runtime tree' }
+              $piHash = Sha256 $piZip
+            }
+            $piRel = 'pi/' + (Split-Path $piZip -Leaf)
+
+            # goz native x64 runtime.
+            $gozDir = Join-Path $runtime 'goz'
+            New-Item -ItemType Directory -Force -Path $gozDir | Out-Null
+            $gozVersion = [string]$lock.goz.version
+            $reuseGoz = $old -and $old.goz -and ([string]$old.goz.version -eq $gozVersion) -and (Reusable ([string]$old.goz.archive) ([string]$old.goz.sha256))
+            if ($reuseGoz) {
+              $gozArchive = Resolve-Bundle ([string]$old.goz.archive)
+              $gozHash = [string]$old.goz.sha256
+              Write-Host "Reusing goz $gozVersion"
+            } else {
+              Remove-Item $gozDir -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $gozDir | Out-Null
+              $gozArchive = Join-Path $gozDir ([string]$lock.goz.archive)
+              Download ([string]$lock.goz.source) $gozArchive
+              $gozHash = Sha256 $gozArchive
+              if ($gozHash -ne ([string]$lock.goz.sha256).ToLowerInvariant()) { throw 'goz x64 checksum mismatch' }
+            }
+            $gozRel = 'goz/' + (Split-Path $gozArchive -Leaf)
+
+            $manifest = [ordered]@{
+              schema = 2
+              architecture = 'x64'
+              generatedUtc = [DateTime]::UtcNow.ToString('o')
+              lockSha256 = $lockHash
+              node = [ordered]@{ version=$nodeVersion; archive=$nodeRel; sha256=$nodeHash }
+              deepseekHarness = [ordered]@{
+                version=$harnessVersion
+                archive=$harnessRel
+                sha256=$harnessHash
+                dependencyLockSha256=$harnessLockHash
+              }
+              goz = [ordered]@{ version=$gozVersion; tag=[string]$lock.goz.tag; archive=$gozRel; sha256=$gozHash }
+              pi = [ordered]@{
+                package=[string]$lock.pi.package
+                version=$piVersion
+                archive=$piRel
+                sha256=$piHash
+                dependencyLockSha256=$piLockHash
+                mode='node-rpc'
+              }
+            }
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content $manifestPath -Encoding UTF8
+            Set-Content (Join-Path $runtime '.complete') -Value ("lock-sha256=" + $lockHash) -Encoding ASCII
+          }
+          finally {
+            Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Commit RuntimeBundle changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/x64
+          if (git diff --cached --quiet) {
+            Write-Host 'x64 RuntimeBundle already matches lock.'
+            exit 0
+          }
+          git commit -m 'runtime: vendor pinned x64 RuntimeBundle'
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -253,8 +253,6 @@ bool SearchWindow::Create() {
     if (titleFormat_) titleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     if (subtitleFormat_) subtitleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
 
-    // The SearchWindow itself is per-pixel alpha. Direct2D is the only owner of the visible
-    // rounded edge; no GDI region or DWM rounded-corner mask is allowed to touch the pill.
     hwnd_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_LAYERED, wc.lpszClassName, L"妙喵", WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT, kWindowWidth, kCollapsedHeight,
@@ -276,7 +274,6 @@ bool SearchWindow::Create() {
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
 
-    // Native EDIT is input infrastructure only. It never participates in visible layout.
     edit_ = CreateWindowExW(
         0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
         kEditLeft, kInputProxyY, 1, 1, hwnd_,
@@ -707,6 +704,7 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         if (files_.HandleCopyData(
                 reinterpret_cast<COPYDATASTRUCT*>(lParam), received)) {
             fileSearchAvailable_ = true;
+            fileSearchPending_ = false;
             fileSearchQueryFailed_ = false;
             fileResults_ = std::move(received);
             MergeResults();
@@ -776,9 +774,11 @@ void SearchWindow::OnQueryChanged() {
     fileResults_.clear();
     results_.clear();
     selected_ = -1;
+    fileSearchPending_ = false;
     fileSearchQueryFailed_ = false;
 
     if (query.empty()) {
+        files_.Shutdown();
         fileSearchAvailable_ = files_.Available();
         SetExpanded(false);
         Draw();
@@ -797,12 +797,14 @@ void SearchWindow::OnQueryChanged() {
 
     appResults_ = apps_.Query(query, 5);
     fileSearchAvailable_ = files_.Available();
-    MergeResults();
-
-    if (fileSearchAvailable_ && !files_.Query(hwnd_, query, 8)) {
-        fileSearchQueryFailed_ = true;
-        MergeResults();
+    if (fileSearchAvailable_) {
+        if (files_.Query(hwnd_, query, 8)) {
+            fileSearchPending_ = true;
+        } else {
+            fileSearchQueryFailed_ = true;
+        }
     }
+    MergeResults();
 }
 
 void SearchWindow::MergeResults() {
@@ -813,14 +815,25 @@ void SearchWindow::MergeResults() {
         results_.push_back(result);
     }
 
-    if (!fileSearchAvailable_) {
+    const bool hasLocalResults = !results_.empty();
+    if (!hasLocalResults && !currentQuery_.empty()) {
         results_.push_back({
-            ResultKind::Status, L"文件搜索正在启动",
-            L"文件索引服务暂不可用。", L"", -1000});
-    } else if (fileSearchQueryFailed_) {
-        results_.push_back({
-            ResultKind::Status, L"文件查询失败",
-            L"文件索引服务已连接，但本次查询没有成功。", L"", -1000});
+            ResultKind::Answer, L"询问妙喵 AI",
+            L"按 Enter 让妙喵处理「" + currentQuery_ + L"」", L"", 0});
+
+        if (fileSearchPending_) {
+            results_.push_back({
+                ResultKind::Status, L"正在搜索文件…",
+                L"文件索引查询仍在进行；你也可以直接按 Enter 交给妙喵 AI。", L"", -1000});
+        } else if (!fileSearchAvailable_) {
+            results_.push_back({
+                ResultKind::Status, L"文件搜索未连接",
+                L"当前仍可搜索应用；按 Enter 可交给妙喵 AI。", L"", -1000});
+        } else if (fileSearchQueryFailed_) {
+            results_.push_back({
+                ResultKind::Status, L"文件查询失败",
+                L"文件索引已连接，但本次查询失败；按 Enter 可交给妙喵 AI。", L"", -1000});
+        }
     }
 
     selected_ = -1;
@@ -828,6 +841,14 @@ void SearchWindow::MergeResults() {
         if (IsLaunchable(results_[i].kind)) {
             selected_ = static_cast<int>(i);
             break;
+        }
+    }
+    if (selected_ < 0) {
+        for (std::size_t i = 0; i < results_.size(); ++i) {
+            if (results_[i].kind == ResultKind::Answer) {
+                selected_ = static_cast<int>(i);
+                break;
+            }
         }
     }
 
@@ -1086,8 +1107,7 @@ void SearchWindow::Draw() {
             D2D1::RectF(0.5f, 0.5f, width - 0.5f, height - 0.5f),
             27.5f, 27.5f);
         renderTarget_->FillRoundedRectangle(panel, panelBrush.Get());
-        renderTarget_->DrawRoundedRectangle(
-            panel, defaultOutline.Get(), 1.0f);
+        renderTarget_->DrawRoundedRectangle(panel, defaultOutline.Get(), 1.0f);
     }
 
     ID2D1Brush* fill = editFocused_
@@ -1096,11 +1116,8 @@ void SearchWindow::Draw() {
             ? static_cast<ID2D1Brush*>(hoverFill.Get())
             : static_cast<ID2D1Brush*>(defaultFill.Get());
 
-    // This is the single authoritative visible edge. It is alpha-antialiased by Direct2D and
-    // uploaded with UpdateLayeredWindow; no integer GDI region exists anymore.
     const auto bar = D2D1::RoundedRect(
-        D2D1::RectF(0.5f, 0.5f, width - 0.5f, 55.5f),
-        27.5f, 27.5f);
+        D2D1::RectF(0.5f, 0.5f, width - 0.5f, 55.5f), 27.5f, 27.5f);
     renderTarget_->FillRoundedRectangle(bar, fill);
 
     if (editFocused_) {
@@ -1108,9 +1125,8 @@ void SearchWindow::Draw() {
         const float glowWidth = active ? 2.4f : 1.8f;
         renderTarget_->DrawRoundedRectangle(
             D2D1::RoundedRect(
-                D2D1::RectF(
-                    glowInset, glowInset, width - glowInset,
-                    static_cast<float>(kBarHeight) - glowInset),
+                D2D1::RectF(glowInset, glowInset, width - glowInset,
+                            static_cast<float>(kBarHeight) - glowInset),
                 28.0f - glowInset, 28.0f - glowInset),
             softGlow.Get(), glowWidth);
     }
@@ -1129,13 +1145,11 @@ void SearchWindow::Draw() {
     renderTarget_->DrawRoundedRectangle(bar, outline, outlineWidth);
 
     if (edgeHighlight) {
-        const float inset =
-            active ? 1.75f : editFocused_ ? 1.65f : hovered_ ? 1.55f : 1.50f;
+        const float inset = active ? 1.75f : editFocused_ ? 1.65f : hovered_ ? 1.55f : 1.50f;
         renderTarget_->DrawRoundedRectangle(
             D2D1::RoundedRect(
-                D2D1::RectF(
-                    inset, inset, width - inset,
-                    static_cast<float>(kBarHeight) - inset),
+                D2D1::RectF(inset, inset, width - inset,
+                            static_cast<float>(kBarHeight) - inset),
                 28.0f - inset, 28.0f - inset),
             edgeHighlight.Get(), 0.55f);
     }
@@ -1144,8 +1158,7 @@ void SearchWindow::Draw() {
     DrawMicrophoneGlyph(renderTarget_.Get(), secondaryBrush.Get());
     renderTarget_->DrawLine(
         D2D1::Point2F(static_cast<float>(kDividerX), 15.0f),
-        D2D1::Point2F(static_cast<float>(kDividerX), 41.0f),
-        dividerBrush.Get(), 1.0f);
+        D2D1::Point2F(static_cast<float>(kDividerX), 41.0f), dividerBrush.Get(), 1.0f);
     DrawSparkleGlyph(d2dFactory_.Get(), renderTarget_.Get(), secondaryBrush.Get());
 
     Microsoft::WRL::ComPtr<IDWriteTextLayout> queryLayout;
@@ -1153,22 +1166,18 @@ void SearchWindow::Draw() {
         if (SUCCEEDED(writeFactory_->CreateTextLayout(
                 currentQuery_.c_str(), static_cast<UINT32>(currentQuery_.size()),
                 inputFormat_.Get(), static_cast<float>(kEditRight - kEditLeft),
-                static_cast<float>(kBarHeight), queryLayout.GetAddressOf())) &&
-            queryLayout) {
+                static_cast<float>(kBarHeight), queryLayout.GetAddressOf())) && queryLayout) {
             renderTarget_->DrawTextLayout(
                 D2D1::Point2F(static_cast<float>(kEditLeft), 0.0f),
                 queryLayout.Get(), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     } else {
         static constexpr wchar_t placeholder[] = L"搜索应用、文件或妙喵 AI";
-        const float placeholderX =
-            static_cast<float>(kEditLeft) + (editFocused_ ? 6.0f : 0.0f);
+        const float placeholderX = static_cast<float>(kEditLeft) + (editFocused_ ? 6.0f : 0.0f);
         renderTarget_->DrawText(
-            placeholder, static_cast<UINT32>(std::size(placeholder) - 1),
-            inputFormat_.Get(),
-            D2D1::RectF(
-                placeholderX, 0.0f, static_cast<float>(kEditRight),
-                static_cast<float>(kBarHeight)),
+            placeholder, static_cast<UINT32>(std::size(placeholder) - 1), inputFormat_.Get(),
+            D2D1::RectF(placeholderX, 0.0f, static_cast<float>(kEditRight),
+                        static_cast<float>(kBarHeight)),
             secondaryBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
@@ -1180,12 +1189,10 @@ void SearchWindow::Draw() {
         if (queryLayout) {
             DWORD selectionStart = 0;
             DWORD selectionEnd = 0;
-            SendMessageW(
-                edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart),
-                reinterpret_cast<LPARAM>(&selectionEnd));
+            SendMessageW(edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&selectionStart),
+                         reinterpret_cast<LPARAM>(&selectionEnd));
             const UINT32 caretIndex = std::min<UINT32>(
-                static_cast<UINT32>(selectionEnd),
-                static_cast<UINT32>(currentQuery_.size()));
+                static_cast<UINT32>(selectionEnd), static_cast<UINT32>(currentQuery_.size()));
 
             FLOAT hitX = 0.0f;
             FLOAT hitY = 0.0f;
@@ -1199,67 +1206,52 @@ void SearchWindow::Draw() {
         }
 
         renderTarget_->DrawLine(
-            D2D1::Point2F(caretX, caretTop),
-            D2D1::Point2F(caretX, caretBottom),
+            D2D1::Point2F(caretX, caretTop), D2D1::Point2F(caretX, caretBottom),
             accentBrush.Get(), 1.15f);
     }
 
     float y = 70.0f;
     if (expanded_ && results_.empty()) {
-        const std::wstring title =
-            currentQuery_.empty() ? L"开始搜索" : L"没有本地结果";
+        const std::wstring title = currentQuery_.empty() ? L"开始搜索" : L"没有本地结果";
         const std::wstring hint = currentQuery_.empty()
             ? L"搜索应用、文件，或点击右侧星光进入妙喵 AI"
             : L"按 Enter 交给妙喵 AI · Ctrl + Enter 强制进入妙喵 AI";
 
         renderTarget_->DrawText(
-            title.c_str(), static_cast<UINT32>(title.size()),
-            titleFormat_.Get(),
-            D2D1::RectF(22, y + 8, width - 22, y + 34),
-            textBrush.Get());
+            title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
+            D2D1::RectF(22, y + 8, width - 22, y + 34), textBrush.Get());
         renderTarget_->DrawText(
-            hint.c_str(), static_cast<UINT32>(hint.size()),
-            subtitleFormat_.Get(),
-            D2D1::RectF(22, y + 36, width - 22, y + 60),
-            secondaryBrush.Get());
+            hint.c_str(), static_cast<UINT32>(hint.size()), subtitleFormat_.Get(),
+            D2D1::RectF(22, y + 36, width - 22, y + 60), secondaryBrush.Get());
     }
 
     if (expanded_) {
         for (std::size_t i = 0; i < results_.size(); ++i) {
             const auto& result = results_[i];
-            const float rowHeight =
-                result.kind == ResultKind::Status ? 64.0f : 56.0f;
+            const float rowHeight = result.kind == ResultKind::Status ? 64.0f : 56.0f;
 
             if (static_cast<int>(i) == selected_) {
                 renderTarget_->FillRoundedRectangle(
                     D2D1::RoundedRect(
-                        D2D1::RectF(
-                            12, y - 2, width - 12, y + rowHeight - 4),
-                        14, 14),
+                        D2D1::RectF(12, y - 2, width - 12, y + rowHeight - 4), 14, 14),
                     selectionBrush.Get());
             }
 
-            const float rowTextLeft =
-                IsLaunchable(result.kind) ? 62.0f : 22.0f;
+            const float rowTextLeft = IsLaunchable(result.kind) ? 62.0f : 22.0f;
 
             std::wstring title = result.title;
             if (title.size() > 100) title.resize(100);
             renderTarget_->DrawText(
-                title.c_str(), static_cast<UINT32>(title.size()),
-                titleFormat_.Get(),
-                D2D1::RectF(
-                    rowTextLeft, y + 4, width - 26, y + 28),
+                title.c_str(), static_cast<UINT32>(title.size()), titleFormat_.Get(),
+                D2D1::RectF(rowTextLeft, y + 4, width - 26, y + 28),
                 textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
             std::wstring subtitle = KindLabel(result.kind);
-            if (!result.subtitle.empty())
-                subtitle += L"  ·  " + result.subtitle;
+            if (!result.subtitle.empty()) subtitle += L"  ·  " + result.subtitle;
             if (subtitle.size() > 150) subtitle.resize(150);
             renderTarget_->DrawText(
-                subtitle.c_str(), static_cast<UINT32>(subtitle.size()),
-                subtitleFormat_.Get(),
-                D2D1::RectF(
-                    rowTextLeft, y + 31, width - 26, y + rowHeight),
+                subtitle.c_str(), static_cast<UINT32>(subtitle.size()), subtitleFormat_.Get(),
+                D2D1::RectF(rowTextLeft, y + 31, width - 26, y + rowHeight),
                 secondaryBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
             y += rowHeight;
@@ -1274,18 +1266,15 @@ void SearchWindow::Draw() {
     }
     if (FAILED(drawResult)) return;
 
-    // Keep the existing shell result icons without bringing a second HWND/GDI edge path back.
     if (expanded_) {
         float iconY = 70.0f;
         for (const auto& result : results_) {
-            const float rowHeight =
-                result.kind == ResultKind::Status ? 64.0f : 56.0f;
+            const float rowHeight = result.kind == ResultKind::Status ? 64.0f : 56.0f;
 
             if (IsLaunchable(result.kind)) {
                 if (HICON icon = ResolveShellIcon(result)) {
-                    DrawIconEx(
-                        layerDc_, 22, static_cast<int>(iconY + 9.0f),
-                        icon, 28, 28, 0, nullptr, DI_NORMAL);
+                    DrawIconEx(layerDc_, 22, static_cast<int>(iconY + 9.0f),
+                               icon, 28, 28, 0, nullptr, DI_NORMAL);
                     DestroyIcon(icon);
                 }
             }

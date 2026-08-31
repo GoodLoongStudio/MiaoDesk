@@ -1,4 +1,5 @@
 #include "miaodesk/HarnessSettingsBridge.h"
+#include "miaodesk/ApiRuntimeProfile.h"
 #include <wincred.h>
 #include <windows.h>
 #include <algorithm>
@@ -75,7 +76,7 @@ fs::path MiaoDeskRoot() {
     return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk";
 }
 
-std::wstring ReadStoredApiKey() {
+std::wstring ReadLegacyStoredApiKey() {
     PCREDENTIALW credential = nullptr;
     if (!CredReadW(kCredentialTarget, CRED_TYPE_GENERIC, 0, &credential)) return {};
     std::wstring key;
@@ -108,7 +109,8 @@ bool EndsWithInsensitive(const std::wstring& value, const std::wstring& suffix) 
 
 std::wstring HarnessBaseUrl(const std::wstring& baseUrl, const std::wstring& endpoint, bool anthropic) {
     std::wstring full = JoinApiUrl(baseUrl, endpoint);
-    const std::wstring suffix = anthropic ? L"/messages" : L"/chat/completions";
+    const std::wstring suffix = anthropic ? L"/messages" :
+        (EndsWithInsensitive(endpoint, L"/responses") ? L"/responses" : L"/chat/completions");
     if (EndsWithInsensitive(full, suffix)) full.erase(full.size() - suffix.size());
     while (full.size() > 1 && full.back() == L'/') full.pop_back();
     return full;
@@ -131,11 +133,13 @@ std::string BuildSettingsYaml(const std::wstring& providerId,
                               const std::wstring& model,
                               bool hasApiKey) {
     const bool anthropic = providerId == L"anthropic";
-    const std::wstring protocol = anthropic ? L"anthropic-messages" : L"openai-completions";
+    const bool responses = EndsWithInsensitive(endpoint, L"/responses");
+    const std::wstring protocol = anthropic ? L"anthropic-messages" :
+                                  (responses ? L"openai-responses" : L"openai-completions");
     const std::wstring resolvedBase = HarnessBaseUrl(baseUrl, endpoint, anthropic);
 
     std::string yaml;
-    yaml += "# Managed by MiaoDesk. Provider/Base URL/Model are synchronized from model-settings.json.\n";
+    yaml += "# Managed by MiaoDesk. Provider/Base URL/Model are read from the API Configuration Center default profile.\n";
     yaml += "# API key stays in Windows Credential Manager and is injected only into the DSH child process.\n";
     yaml += "llm-pi-ai:\n";
     yaml += "  providers:\n";
@@ -197,29 +201,46 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
         return state;
     }
 
-    const fs::path settingsPath = root / L"model-settings.json";
-    std::ifstream stream(settingsPath, std::ios::binary);
-    if (!stream) return state;
+    std::wstring baseUrl;
+    std::wstring endpoint;
+    const auto profile = api_runtime_profile::LoadDefault();
+    if (profile.found) {
+        state.providerId = profile.providerId;
+        baseUrl = profile.baseUrl;
+        endpoint = profile.endpoint;
+        state.model = profile.model;
+        state.apiKey = profile.apiKey;
+        if (!profile.configured) {
+            state.error = profile.error.empty() ? L"默认 API Profile 尚未配置完整" : profile.error;
+            return state;
+        }
+    } else {
+        // Migration-only fallback for installations created before the API Configuration Center.
+        const fs::path settingsPath = root / L"model-settings.json";
+        std::ifstream stream(settingsPath, std::ios::binary);
+        if (!stream) return state;
 
-    const std::string json((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-    state.providerId = Utf8ToWide(ExtractJsonString(json, "\"ProviderId\""));
-    const std::wstring baseUrl = Utf8ToWide(ExtractJsonString(json, "\"BaseUrl\""));
-    state.model = Utf8ToWide(ExtractJsonString(json, "\"Model\""));
-    const std::wstring endpoint = Utf8ToWide(ExtractJsonString(json, "\"Endpoint\""));
-    if (baseUrl.empty() || state.model.empty() || state.model == L"未配置") return state;
+        const std::string json((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        state.providerId = Utf8ToWide(ExtractJsonString(json, "\"ProviderId\""));
+        baseUrl = Utf8ToWide(ExtractJsonString(json, "\"BaseUrl\""));
+        state.model = Utf8ToWide(ExtractJsonString(json, "\"Model\""));
+        endpoint = Utf8ToWide(ExtractJsonString(json, "\"Endpoint\""));
+        if (baseUrl.empty() || state.model.empty() || state.model == L"未配置") return state;
+        state.apiKey = ReadLegacyStoredApiKey();
+    }
 
     if (state.providerId.empty() || state.providerId == L"unconfigured") state.providerId = L"openai-compatible";
     const bool anthropic = state.providerId == L"anthropic";
-    state.protocol = anthropic ? L"anthropic-messages" : L"openai-completions";
+    const bool responses = EndsWithInsensitive(endpoint, L"/responses");
+    state.protocol = anthropic ? L"anthropic-messages" :
+                     (responses ? L"openai-responses" : L"openai-completions");
     state.baseUrl = HarnessBaseUrl(baseUrl, endpoint, anthropic);
     if (state.baseUrl.empty()) {
         state.error = L"MiaoDesk 模型 Base URL 无法转换为 Harness Provider URL";
         return state;
     }
 
-    state.apiKey = ReadStoredApiKey();
     state.hasApiKey = !state.apiKey.empty();
-
     const std::string yaml = BuildSettingsYaml(state.providerId, baseUrl, endpoint, state.model, state.hasApiKey);
     if (!WriteAtomically(dshHome / L"settings.yaml", yaml)) {
         state.error = L"无法写入 MiaoDesk Harness settings.yaml";
@@ -233,14 +254,19 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
 
 bool HarnessSettingsBridgeSelfTest() {
     const std::string openAi = BuildSettingsYaml(L"openai-compatible",
-                                                  L"https://gateway.example",
-                                                  L"/v1/chat/completions",
+                                                  L"https://gateway.example/v1",
+                                                  L"/chat/completions",
                                                   L"demo/model",
                                                   true);
     const std::string anthropic = BuildSettingsYaml(L"anthropic",
-                                                     L"https://api.anthropic.com",
-                                                     L"/v1/messages",
+                                                     L"https://api.anthropic.com/v1",
+                                                     L"/messages",
                                                      L"claude-test",
+                                                     true);
+    const std::string responses = BuildSettingsYaml(L"openai-compatible",
+                                                     L"https://gateway.example/v1",
+                                                     L"/responses",
+                                                     L"demo/responses",
                                                      true);
     return openAi.find("provider: miaodesk") != std::string::npos &&
            openAi.find("model: 'demo/model'") != std::string::npos &&
@@ -249,6 +275,8 @@ bool HarnessSettingsBridgeSelfTest() {
            openAi.find("sk-") == std::string::npos &&
            anthropic.find("api: 'anthropic-messages'") != std::string::npos &&
            anthropic.find("baseURL: 'https://api.anthropic.com/v1'") != std::string::npos &&
+           responses.find("api: 'openai-responses'") != std::string::npos &&
+           responses.find("baseURL: 'https://gateway.example/v1'") != std::string::npos &&
            std::wstring(kHarnessCredentialEnv) == L"MIAODESK_API_KEY";
 }
 

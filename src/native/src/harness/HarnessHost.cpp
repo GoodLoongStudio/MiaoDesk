@@ -9,6 +9,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
@@ -18,12 +19,9 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.HarnessWindow";
 constexpr wchar_t kHarnessPlacementValue[] = L"DeepSeekHarnessWindow";
-const wchar_t* kMutexName = []() -> const wchar_t* {
-    const wchar_t* commandLine = GetCommandLineW();
-    return commandLine && std::wstring_view(commandLine).find(L"--ui") != std::wstring_view::npos
-        ? L"Local\\MiaoDesk.Native.Harness.Ui.Singleton"
-        : L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
-}();
+constexpr wchar_t kUiMutexName[] = L"Local\\MiaoDesk.Native.Harness.Ui.Singleton";
+constexpr wchar_t kBackgroundMutexName[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
+constexpr wchar_t kBackgroundStopEventName[] = L"Local\\MiaoDesk.Native.Harness.Background.Stop";
 constexpr UINT_PTR kReadyTimerId = 1;
 constexpr UINT kReadyPollMs = 250;
 constexpr DWORD kSmokeTimeoutMs = 120000;
@@ -37,6 +35,52 @@ fs::path UserDataDirectory() {
     std::error_code ec;
     fs::create_directories(directory, ec);
     return directory;
+}
+
+std::wstring ExecutablePath() {
+    std::vector<wchar_t> buffer(32768);
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length >= buffer.size()) return {};
+    return std::wstring(buffer.data(), length);
+}
+
+std::wstring QuoteArg(std::wstring_view value) {
+    return L"\"" + std::wstring(value) + L"\"";
+}
+
+bool NamedMutexExists(const wchar_t* name) {
+    HANDLE mutex = OpenMutexW(SYNCHRONIZE, FALSE, name);
+    if (!mutex) return false;
+    CloseHandle(mutex);
+    return true;
+}
+
+bool LaunchBackgroundHarnessOwner() {
+    if (NamedMutexExists(kBackgroundMutexName)) return true;
+
+    const std::wstring executable = ExecutablePath();
+    if (executable.empty()) return false;
+    std::wstring command = QuoteArg(executable);
+    std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back(L'\0');
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE,
+                                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                        nullptr, fs::path(executable).parent_path().c_str(),
+                                        &startup, &process);
+    if (!created) return false;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+
+    const ULONGLONG deadline = GetTickCount64() + 2000;
+    do {
+        if (NamedMutexExists(kBackgroundMutexName)) return true;
+        Sleep(25);
+    } while (GetTickCount64() < deadline);
+    return NamedMutexExists(kBackgroundMutexName);
 }
 
 std::wstring HrText(HRESULT hr) {
@@ -154,7 +198,7 @@ public:
                                 nullptr, nullptr, instance_, this);
         if (!hwnd_) return false;
 
-        status_ = CreateWindowExW(0, L"EDIT", L"正在启动妙喵工作台…",
+        status_ = CreateWindowExW(0, L"EDIT", L"正在连接妙喵工作台…",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                                       ES_MULTILINE | ES_CENTER | ES_READONLY | ES_NOHIDESEL,
                                   24, 24, 1100, 120, hwnd_, nullptr, instance_, nullptr);
@@ -169,14 +213,18 @@ public:
         ShowWindow(hwnd_, SW_SHOWNORMAL);
         UpdateWindow(hwnd_);
 
+        // WebView2 initialization is intentionally overlapped with DSH startup. Navigation only
+        // happens after both sides are ready, so the two cold-start costs no longer add serially.
+        InitializeWebView();
+
         if (harness_.ServiceReady()) {
-            SetStatus(L"正在连接妙喵工作台…");
-            InitializeWebView();
+            harnessReady_ = true;
+            NavigateIfReady();
             return true;
         }
 
-        if (!harness_.Start()) {
-            SetStatus(L"妙喵工作台启动失败：" + harness_.LastError());
+        if (!LaunchBackgroundHarnessOwner()) {
+            SetStatus(L"妙喵工作台后台服务启动失败。" + HarnessLogHint());
             return true;
         }
 
@@ -240,7 +288,8 @@ private:
             webview_.Reset();
             if (webviewController_) webviewController_->Close();
             webviewController_.Reset();
-            harness_.Stop();
+            // The UI never owns the DSH service process. Closing the workbench only closes UI;
+            // the background owner stays warm until the MiaoDesk host asks it to stop.
             if (statusFont_) {
                 DeleteObject(statusFont_);
                 statusFont_ = nullptr;
@@ -254,18 +303,15 @@ private:
     void PollHarness() {
         if (harness_.ServiceReady()) {
             KillTimer(hwnd_, kReadyTimerId);
+            harnessReady_ = true;
             SetStatus(L"妙喵工作台已就绪，正在打开界面…");
-            InitializeWebView();
+            NavigateIfReady();
             return;
         }
 
-        if (!harness_.Running()) {
+        if (!NamedMutexExists(kBackgroundMutexName)) {
             KillTimer(hwnd_, kReadyTimerId);
-            const DWORD exitCode = harness_.ExitCode();
-            std::wstring text = L"妙喵工作台在 Web UI 就绪前退出";
-            if (exitCode != STILL_ACTIVE) text += L"，ExitCode=" + std::to_wstring(exitCode);
-            text += L"。底层运行时为 DeepSeek Harness，请查看下方 RuntimeBundle/DSH 日志。" + HarnessLogHint();
-            SetStatus(text);
+            SetStatus(L"妙喵工作台后台服务在 Web UI 就绪前退出。" + HarnessLogHint());
             return;
         }
 
@@ -278,15 +324,15 @@ private:
 
     void UpdateStartingStatus(ULONGLONG now) {
         const ULONGLONG elapsedSeconds = startedAt_ == 0 ? 0 : (now - startedAt_) / 1000;
-        std::wstring text = L"正在启动妙喵工作台… 已等待 " + std::to_wstring(elapsedSeconds) + L" 秒。";
-        text += L"\r\n底层使用随应用固定部署的 DeepSeek Harness；不会执行 npm/npx 下载。关闭此窗口即可取消。";
-        if (elapsedSeconds >= 45) text += L"\r\n启动时间异常偏长，请检查 RuntimeBundle 完整性和下方日志。";
+        std::wstring text = L"正在连接妙喵工作台… 已等待 " + std::to_wstring(elapsedSeconds) + L" 秒。";
+        text += L"\r\nDeepSeek Harness 正在后台预热；关闭此窗口不会停止后台服务。";
+        if (elapsedSeconds >= 45) text += L"\r\n启动时间异常偏长，请检查共享 RuntimeCache 和下方日志。";
         text += HarnessLogHint();
         SetStatus(text);
     }
 
     void InitializeWebView() {
-        if (webviewInitializing_ || webview_) return;
+        if (webviewInitializing_ || webview_ || webViewReady_) return;
         webviewInitializing_ = true;
 
         const fs::path userData = UserDataDirectory();
@@ -320,13 +366,10 @@ private:
                                     return S_OK;
                                 }
 
-                                webviewController_->put_IsVisible(TRUE);
+                                webviewController_->put_IsVisible(FALSE);
                                 ResizeWebView();
-                                ShowWindow(status_, SW_HIDE);
-                                const std::wstring url = miaodesk::HarnessProcessManager::DefaultUrl();
-                                // MiaoDesk owns UI presentation; the background Harness owner never opens a window.
-                                hr = webview_->Navigate(url.c_str());
-                                if (FAILED(hr)) SetStatus(L"打开妙喵工作台 Web UI 失败：" + HrText(hr));
+                                webViewReady_ = true;
+                                NavigateIfReady();
                                 return S_OK;
                             }).Get());
                 }).Get());
@@ -335,6 +378,19 @@ private:
             webviewInitializing_ = false;
             SetStatus(L"WebView2 Loader 启动失败：" + HrText(start));
         }
+    }
+
+    void NavigateIfReady() {
+        if (!harnessReady_ || !webViewReady_ || !webview_ || navigated_) return;
+        const std::wstring url = miaodesk::HarnessProcessManager::DefaultUrl();
+        const HRESULT hr = webview_->Navigate(url.c_str());
+        if (FAILED(hr)) {
+            SetStatus(L"打开妙喵工作台 Web UI 失败：" + HrText(hr));
+            return;
+        }
+        navigated_ = true;
+        webviewController_->put_IsVisible(TRUE);
+        ShowWindow(status_, SW_HIDE);
     }
 
     void ResizeWebView() {
@@ -366,6 +422,9 @@ private:
     ULONGLONG startedAt_{};
     ULONGLONG nextStatusUpdate_{};
     bool webviewInitializing_{};
+    bool webViewReady_{};
+    bool harnessReady_{};
+    bool navigated_{};
     miaodesk::HarnessProcessManager harness_;
     ComPtr<ICoreWebView2Controller> webviewController_;
     ComPtr<ICoreWebView2> webview_;
@@ -398,12 +457,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return result;
     }
 
-    HANDLE mutex = CreateMutexW(nullptr, FALSE, kMutexName);
+    const bool showUi = args.find(L"--ui") != std::wstring_view::npos;
+    HANDLE mutex = CreateMutexW(nullptr, FALSE, showUi ? kUiMutexName : kBackgroundMutexName);
     if (!mutex) {
         if (SUCCEEDED(com)) CoUninitialize();
         return 2;
     }
-    const bool showUi = args.find(L"--ui") != std::wstring_view::npos;
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (showUi) ActivateExistingHarnessWindow();
         CloseHandle(mutex);
@@ -412,19 +471,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     if (!showUi) {
+        HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, kBackgroundStopEventName);
+        if (!stopEvent) {
+            CloseHandle(mutex);
+            if (SUCCEEDED(com)) CoUninitialize();
+            return 8;
+        }
+
         miaodesk::HarnessProcessManager harness;
         if (!harness.Start()) {
+            CloseHandle(stopEvent);
             CloseHandle(mutex);
             if (SUCCEEDED(com)) CoUninitialize();
             return 6;
         }
-        // Keep the owner process alive invisibly so the managed Harness child
-        // is not torn down by HarnessProcessManager destruction.
-        while (harness.Running()) Sleep(500);
+
+        while (harness.Running() && WaitForSingleObject(stopEvent, 500) == WAIT_TIMEOUT) {}
+        const bool requestedStop = WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0;
         const DWORD exitCode = harness.ExitCode();
+        harness.Stop();
+        CloseHandle(stopEvent);
         CloseHandle(mutex);
         if (SUCCEEDED(com)) CoUninitialize();
-        return exitCode == STILL_ACTIVE ? 0 : static_cast<int>(exitCode);
+        return requestedStop || exitCode == STILL_ACTIVE ? 0 : static_cast<int>(exitCode);
     }
 
     HarnessHost host(instance);

@@ -8,6 +8,7 @@
 #include <array>
 #include <cwchar>
 #include <filesystem>
+#include <iterator>
 #include <string>
 
 namespace miaodesk::model_credential_guard {

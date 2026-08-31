@@ -173,6 +173,9 @@ set_source_files_properties(src/ai/tools/NativeTools.cpp PROPERTIES
 set_source_files_properties(src/ai/agent/L3Agent.cpp PROPERTIES
     COMPILE_DEFINITIONS "MIAODESK_L3_WINHTTP_TRACE"
 )
+set_source_files_properties(src/ai/pi/PiRuntime.cpp PROPERTIES
+    COMPILE_DEFINITIONS "MIAODESK_PI_CREDENTIAL_GUARD"
+)
 set_source_files_properties(src/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp PROPERTIES
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )

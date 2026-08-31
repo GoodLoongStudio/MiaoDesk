@@ -201,7 +201,7 @@ add_custom_target(MiaoDeskRuntimeLogContractCheck ALL
 
 set(MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/verify-desktop-domain-contract.ps1")
 if (NOT EXISTS "${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
-    message(FATAL_ERROR "Missing Desktop domain ownership guard: ${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
+    message(FATAL_ERROR "Missing Desktop domain contract guard: ${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}")
 endif()
 add_custom_target(MiaoDeskDesktopDomainContractCheck ALL
     COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${MIAODESK_DESKTOP_DOMAIN_CONTRACT_SCRIPT}"
@@ -248,7 +248,7 @@ if (NOT EXISTS "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}")
     message(FATAL_ERROR "Missing M4 Desktop UI parity guard: ${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}")
 endif()
 add_custom_target(MiaoDeskDesktopUiParityCheck ALL
-    COMMAND powershell.exe -NoProfile -File "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}"
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${MIAODESK_DESKTOP_UI_PARITY_SCRIPT}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Verifying M4 desktop UI capability parity gate"
     VERBATIM

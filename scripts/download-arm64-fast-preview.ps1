@@ -17,13 +17,19 @@ function Require([string]$Name) {
     }
 }
 function Stop-MiaoDeskProcesses {
-    foreach ($name in @('MiaoDesk', 'MiaoDeskWallpaper', 'MiaoDeskHarness')) {
+    foreach ($name in @('MiaoDesk', 'MiaoDeskWallpaper', 'MiaoDeskHarness', 'node')) {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     Start-Sleep -Milliseconds 250
 }
 function Remove-TreeRobust([string]$Path) {
     if (-not (Test-Path $Path)) { return }
+    $item = Get-Item $Path -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        & cmd.exe /d /c "rmdir `"$Path`"" | Out-Null
+        if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction SilentlyContinue }
+        return
+    }
     $empty = Join-Path $env:TEMP ("mdp-empty-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $empty | Out-Null
     try {
@@ -35,8 +41,18 @@ function Remove-TreeRobust([string]$Path) {
     Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path $Path) { & cmd.exe /d /c "rd /s /q `"$Path`"" | Out-Null }
 }
+function Test-ComponentReady([string]$Root, [string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
+    switch ($Name) {
+        'Runtime' { return Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf }
+        'Pi' { return Test-Path (Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js') -PathType Leaf }
+        'Goz' { return Test-Path (Join-Path $Root 'Goz\goz.exe') -PathType Leaf }
+        default { return Test-Path (Join-Path $Root $Name) -PathType Container }
+    }
+}
 function Resolve-ReusableComponent([string]$Name) {
     foreach ($root in @($RuntimeCacheRoot, $InstalledRoot)) {
+        if (-not (Test-ComponentReady $root $Name)) { continue }
         $candidate = Join-Path $root $Name
         if (Test-Path $candidate -PathType Container) { return $candidate }
     }
@@ -46,9 +62,23 @@ function Ensure-Junction([string]$Name) {
     $target = Resolve-ReusableComponent $Name
     $link = Join-Path $PreviewRoot $Name
     if ([string]::IsNullOrWhiteSpace($target)) { return $false }
-    if (Test-Path $link) { return $true }
+
+    if (Test-Path $link) {
+        $previewReady = Test-ComponentReady $PreviewRoot $Name
+        if ($previewReady) { return $true }
+        Remove-TreeRobust $link
+    }
+
     New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+    if (-not (Test-ComponentReady $PreviewRoot $Name)) {
+        Remove-TreeRobust $link
+        throw "Fast preview mounted $Name from '$target', but the expected runtime files are still not visible through '$link'."
+    }
     return $true
+}
+function Test-AgentRuntimeReady([string]$Root) {
+    return (Test-Path (Join-Path $Root 'Runtime\Node\node.exe') -PathType Leaf) -and
+           (Test-Path (Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js') -PathType Leaf)
 }
 function Convert-GhRuns([object]$RawJson) {
     $text = (@($RawJson) -join "`n").Trim()
@@ -173,6 +203,16 @@ try {
         Warn ("Fast UI mode intentionally did not download: " + ($missing -join ', '))
         Warn 'Run INIT-MIAODESK-ARM64-RUNTIME.cmd once to seed the persistent RuntimeCache, then future fast previews reuse it.'
         Warn 'UI/input/search/chat-window acceptance still works without it; Agent/runtime acceptance does not.'
+    }
+
+    if (Test-AgentRuntimeReady $RuntimeCacheRoot) {
+        if (-not (Test-AgentRuntimeReady $PreviewRoot)) {
+            throw "RuntimeCache is ready, but DevPreview cannot see Runtime/Node or Pi after mounting. Refusing to launch a broken Agent preview."
+        }
+        $nodePath = Join-Path $PreviewRoot 'Runtime\Node\node.exe'
+        $piPath = Join-Path $PreviewRoot 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+        Write-Host "Agent runtime mounted: $nodePath" -ForegroundColor DarkGray
+        Write-Host "Pi runtime mounted:    $piPath" -ForegroundColor DarkGray
     }
 
     Step 'Starting FAST ARM64 developer preview'

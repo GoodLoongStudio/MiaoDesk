@@ -11,9 +11,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout MiaoDesk trigger branch
-        uses: actions/checkout@v4
-
       - name: Clone Microsoft WebView2Browser
         shell: pwsh
         run: |
@@ -74,18 +71,14 @@ jobs:
           Architecture: x64
           Configuration: Release
 
-          This package includes:
+          Includes:
           - WebView2Browser.exe and all build output files
           - Microsoft Edge WebView2 Evergreen Standalone Runtime Installer (x64)
           - Microsoft Visual C++ 2015-2022 Redistributable (x64)
           - InstallAndRun.cmd
 
-          Recommended first run:
-          1. Right-click InstallAndRun.cmd and choose Run as administrator.
-          2. It installs the required VC++ runtime and WebView2 runtime, then launches WebView2Browser.
-          3. After that, WebView2Browser.exe can be launched directly.
-
-          Note: WebView2 Evergreen Runtime is installed on Windows and can auto-update later.
+          First run: right-click InstallAndRun.cmd and choose Run as administrator.
+          After setup, WebView2Browser.exe can be launched directly.
           '@ | Set-Content -Encoding UTF8 (Join-Path $pkg 'README.txt')
 
           Get-ChildItem $pkg | Select-Object Name,Length

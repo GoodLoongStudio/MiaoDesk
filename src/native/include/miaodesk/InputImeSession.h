@@ -7,7 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
+#include <cwchar>
 #include <string>
 #include <unordered_map>
 
@@ -16,10 +16,9 @@
 namespace miaodesk::input_ime_session_detail {
 
 // InputImeSession is the shared composition/input-state half of MiaoDesk's custom text-input
-// framework. InputImeAnchor owns geometry; this file owns transient IME text, insertion range,
-// result commits and the rule that product shortcuts never steal keys from an active IME.
-// Search and Conversation remain separate product surfaces and keep their own business logic.
-
+// framework. InputImeAnchor owns geometry; this file owns transient IME lifecycle, result commit,
+// Search's provisional-query projection, and protection of IME-owned keys. Search and Conversation
+// keep their product/rendering logic explicitly separate.
 constexpr wchar_t kInputImeSessionCoreProcProperty[] =
     L"MiaoDesk.InputImeSession.CoreProc";
 
@@ -78,9 +77,8 @@ inline std::wstring ReadCoreText(HWND edit, WNDPROC core) {
 
 inline InputImeSessionState& EnsureSessionState(HWND edit, WNDPROC core) {
     auto [it, inserted] = gInputImeSessions.try_emplace(edit);
-    if (inserted && core) {
+    if (inserted && core)
         ReadCoreSelection(edit, core, it->second.replaceStart, it->second.replaceEnd);
-    }
     return it->second;
 }
 
@@ -106,10 +104,6 @@ inline void NotifySearchVisibleQuery(HWND edit) {
     if (!input_ime_detail::IsMiaoDeskSearchEdit(edit)) return;
     const HWND parent = GetParent(edit);
     if (!parent) return;
-
-    // SearchWindow already owns query execution through EN_CHANGE. Reuse that business path,
-    // but let its ReadText() see the virtual committed+composition text below. Posting avoids
-    // doing app/file queries recursively inside WM_IME_COMPOSITION.
     PostMessageW(
         parent, WM_COMMAND,
         MAKEWPARAM(input_ime_detail::kSearchEditControlId, EN_CHANGE),
@@ -120,21 +114,13 @@ inline void NotifyConversationInputVisual(HWND edit) {
     if (!input_ime_detail::IsMiaoDeskConversationEdit(edit)) return;
     const HWND parent = GetParent(edit);
     if (!parent) return;
-
-    // ConversationPanel already redraws its custom Direct2D input on EN_CHANGE. Reuse that
-    // surface-specific path while InputImeSession remains the sole owner of transient IME state.
     PostMessageW(
         parent, WM_COMMAND,
-        MAKEWPARAM(input_ime_detail::kConversationEditControlId, EN_CHANGE),
+        MAKEWPARAM(input_ime_detail::kConversationEditControlId, EN_SETFOCUS),
         reinterpret_cast<LPARAM>(edit));
 }
 
-inline void NotifySurfaceVisibleInput(HWND edit) {
-    NotifySearchVisibleQuery(edit);
-    NotifyConversationInputVisual(edit);
-}
-
-inline std::wstring VisibleText(HWND edit, WNDPROC core) {
+inline std::wstring SearchVisibleText(HWND edit, WNDPROC core) {
     std::wstring committed = ReadCoreText(edit, core);
     const auto* state = FindSessionState(edit);
     if (!state || !state->active || state->composition.empty()) return committed;
@@ -150,13 +136,13 @@ inline std::wstring VisibleText(HWND edit, WNDPROC core) {
     return visible;
 }
 
-inline LRESULT VirtualizeVisibleGetText(
+inline LRESULT VirtualizeSearchGetText(
     HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, WNDPROC core) {
     const auto* state = FindSessionState(hwnd);
     if (!state || !state->active || state->composition.empty())
         return CallWindowProcW(core, hwnd, message, wParam, lParam);
 
-    const std::wstring visible = VisibleText(hwnd, core);
+    const std::wstring visible = SearchVisibleText(hwnd, core);
     if (message == WM_GETTEXTLENGTH)
         return static_cast<LRESULT>(visible.size());
 
@@ -190,7 +176,7 @@ inline void BeginComposition(HWND hwnd, WNDPROC core) {
     state.active = true;
     state.composition.clear();
     ReadCoreSelection(hwnd, core, state.replaceStart, state.replaceEnd);
-    NotifySurfaceVisibleInput(hwnd);
+    NotifySearchVisibleQuery(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -198,8 +184,6 @@ inline void CommitImeResult(HWND hwnd, WNDPROC core, const std::wstring& result)
     auto& state = EnsureSessionState(hwnd, core);
     const DWORD start = state.replaceStart;
     const DWORD end = state.replaceEnd;
-
-    // Hide the provisional text before the real EDIT emits EN_CHANGE for the committed result.
     state.composition.clear();
     SendMessageW(hwnd, EM_SETSEL, static_cast<WPARAM>(start), static_cast<LPARAM>(end));
     if (!result.empty()) {
@@ -207,7 +191,6 @@ inline void CommitImeResult(HWND hwnd, WNDPROC core, const std::wstring& result)
             hwnd, EM_REPLACESEL, TRUE,
             reinterpret_cast<LPARAM>(result.c_str()));
     }
-
     state.replaceStart = start + static_cast<DWORD>(result.size());
     state.replaceEnd = state.replaceStart;
 }
@@ -229,7 +212,7 @@ inline void UpdateComposition(HWND hwnd, LPARAM lParam, WNDPROC core) {
     else if ((lParam & GCS_RESULTSTR) != 0)
         state.composition.clear();
 
-    NotifySurfaceVisibleInput(hwnd);
+    NotifySearchVisibleQuery(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -238,7 +221,7 @@ inline void EndComposition(HWND hwnd) {
         state->active = false;
         state->composition.clear();
     }
-    NotifySurfaceVisibleInput(hwnd);
+    NotifySearchVisibleQuery(hwnd);
     RequestSurfaceAnchor(hwnd);
 }
 
@@ -270,19 +253,19 @@ inline LRESULT CALLBACK InputImeSessionProc(
     const bool search = input_ime_detail::IsMiaoDeskSearchEdit(hwnd);
     const bool conversation = input_ime_detail::IsMiaoDeskConversationEdit(hwnd);
 
-    // Both custom-rendered surfaces consume the same virtual visible string. Search additionally
-    // virtualizes EM_GETSEL because its shared anchor measures from visible text; Conversation's
-    // anchor intentionally keeps the native committed selection and adds IMM composition width.
-    if ((search || conversation) &&
-        (message == WM_GETTEXT || message == WM_GETTEXTLENGTH)) {
-        return VirtualizeVisibleGetText(hwnd, message, wParam, lParam, core);
-    }
+    // Search did not previously have a custom composition text owner, so the shared session
+    // projects committed+composition into Search's existing ReadText/EM_GETSEL business path.
+    // Conversation already has a Direct2D composition overlay above this subclass; do not
+    // virtualize its WM_GETTEXT a second time or the pinyin string would be appended twice.
+    if (search && (message == WM_GETTEXT || message == WM_GETTEXTLENGTH))
+        return VirtualizeSearchGetText(hwnd, message, wParam, lParam, core);
     if (search && message == EM_GETSEL)
         return VirtualizeSearchSelection(hwnd, wParam, lParam, core);
 
-    // MiaoDesk custom-renders composition text. Do not forward these messages to the stock EDIT
-    // control: doing so lets the stock control create a second inline composition visual and a
-    // second caret over the Direct2D surface.
+    // This session consumes the stock EDIT's IME path. Conversation's existing overlay sits
+    // above this subclass and still reads GCS_COMPSTR for its Direct2D visual; Search gets its
+    // provisional visual from the state projection above. In both cases stock EDIT painting is
+    // excluded, preventing the duplicate native composition caret/rectangle.
     if (message == WM_IME_STARTCOMPOSITION) {
         BeginComposition(hwnd, core);
         return 0;
@@ -296,20 +279,18 @@ inline LRESULT CALLBACK InputImeSessionProc(
         return 0;
     }
 
-    // Product-level Enter/Esc/arrow behavior must never steal a key while Microsoft Pinyin (or
-    // another IME) owns an active composition/candidate session.
     if (message == WM_KEYDOWN && HasActiveComposition(hwnd) &&
         IsImeOwnedNavigationKey(wParam)) {
         RequestSurfaceAnchor(hwnd);
         return 0;
     }
 
-    if (message == WM_SETTEXT) {
+    if (message == WM_SETTEXT)
         gInputImeSessions.erase(hwnd);
-    }
 
-    // Child EDIT receives mouse input directly once it has real geometry. Make focus ownership
-    // explicit so Conversation and Search behave identically after framework refactors.
+    // The native EDIT now occupies the real visible text rectangle, so mouse events can land on
+    // the child directly instead of the parent overlay. Explicit focus keeps chat/search caret
+    // ownership correct in either routing path.
     if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK)
         SetFocus(hwnd);
 
@@ -318,12 +299,14 @@ inline LRESULT CALLBACK InputImeSessionProc(
     if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
         message == WM_LBUTTONDBLCLK) {
         RequestSurfaceAnchor(hwnd);
-        NotifySurfaceVisibleInput(hwnd);
+        if (search) NotifySearchVisibleQuery(hwnd);
+        if (conversation) NotifyConversationInputVisual(hwnd);
     }
 
     if (message == WM_KILLFOCUS) {
         gInputImeSessions.erase(hwnd);
-        NotifySurfaceVisibleInput(hwnd);
+        if (search) NotifySearchVisibleQuery(hwnd);
+        if (conversation) NotifyConversationInputVisual(hwnd);
     }
 
     if (message == WM_NCDESTROY) {

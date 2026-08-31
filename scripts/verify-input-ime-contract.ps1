@@ -1,11 +1,13 @@
 $ErrorActionPreference = 'Stop'
 
 $imeSource = 'src/native/include/miaodesk/InputImeAnchor.h'
+$sessionSource = 'src/native/include/miaodesk/InputImeSession.h'
+$searchHeader = 'src/native/include/miaodesk/SearchWindow.h'
 $conversationOverlay = 'src/native/src/ui/ai/ConversationPanelInputOverlay.inc'
 $conversationSource = 'src/native/src/ui/ai/ConversationPanel.cpp'
 $legacyImeSource = 'src/native/include/miaodesk/SearchImeAnchor.h'
 
-foreach ($path in @($imeSource, $conversationOverlay, $conversationSource)) {
+foreach ($path in @($imeSource, $sessionSource, $searchHeader, $conversationOverlay, $conversationSource)) {
     if (-not (Test-Path $path -PathType Leaf)) {
         throw "Input IME contract source missing: $path"
     }
@@ -15,6 +17,8 @@ if (Test-Path $legacyImeSource -PathType Leaf) {
 }
 
 $ime = Get-Content $imeSource -Raw
+$session = Get-Content $sessionSource -Raw
+$search = Get-Content $searchHeader -Raw
 $overlay = Get-Content $conversationOverlay -Raw
 $conversation = Get-Content $conversationSource -Raw
 
@@ -49,6 +53,74 @@ foreach ($forbidden in @(
 )) {
     if ($ime.Contains($forbidden)) {
         throw "Shared Input IME framework still has Search-only framework naming: $forbidden"
+    }
+}
+
+# InputImeSession is the single transient composition/result/selection state framework.
+foreach ($marker in @(
+    'namespace miaodesk::input_ime_session_detail',
+    'struct InputImeSessionState',
+    'class InputImeSessionBridge',
+    'InputImeSessionProc',
+    'WM_IME_STARTCOMPOSITION',
+    'WM_IME_COMPOSITION',
+    'WM_IME_ENDCOMPOSITION',
+    'GCS_COMPSTR',
+    'GCS_RESULTSTR',
+    'EM_REPLACESEL',
+    'VirtualizeSearchGetText',
+    'VirtualizeSearchSelection',
+    'NotifySearchVisibleQuery',
+    'IsImeOwnedNavigationKey',
+    'HasActiveComposition'
+)) {
+    if (-not $session.Contains($marker)) {
+        throw "Input IME session marker missing: $marker"
+    }
+}
+if (-not $search.Contains('#include "miaodesk/InputImeSession.h"')) {
+    throw 'SearchWindow must consume the shared InputImeSession framework.'
+}
+
+# Custom-rendered inputs own composition visuals. Stock EDIT must not receive the three
+# composition messages, otherwise Microsoft Pinyin paints a second inline composition rectangle.
+foreach ($pattern in @(
+    '(?s)message == WM_IME_STARTCOMPOSITION.*?BeginComposition\(hwnd, core\).*?return 0;',
+    '(?s)message == WM_IME_COMPOSITION.*?UpdateComposition\(hwnd, lParam, core\).*?return 0;',
+    '(?s)message == WM_IME_ENDCOMPOSITION.*?EndComposition\(hwnd\).*?return 0;'
+)) {
+    if ($session -notmatch $pattern) {
+        throw "InputImeSession must fully own custom-rendered composition messages: $pattern"
+    }
+}
+
+# Search must treat live composition as visible query text/selection so the placeholder vanishes,
+# the result panel updates before candidate commit, and the visual/system caret sits at comp end.
+foreach ($marker in @(
+    'PostMessageW(',
+    'MAKEWPARAM(input_ime_detail::kSearchEditControlId, EN_CHANGE)',
+    'visible += state->composition',
+    'state->replaceStart +',
+    'static_cast<DWORD>(state->composition.size())'
+)) {
+    if (-not $session.Contains($marker)) {
+        throw "Search live-composition contract marker missing: $marker"
+    }
+}
+
+# Search/Conversation product shortcuts must not steal Enter/Esc/arrows from an active IME.
+if ($session -notmatch '(?s)message == WM_KEYDOWN.*?HasActiveComposition\(hwnd\).*?IsImeOwnedNavigationKey\(wParam\).*?return 0;') {
+    throw 'Active IME navigation/commit keys are not protected from product-level shortcuts.'
+}
+
+# Conversation child clicks must explicitly focus the real EDIT and schedule a visual refresh.
+foreach ($marker in @(
+    'message == WM_LBUTTONDOWN',
+    'SetFocus(hwnd)',
+    'NotifyConversationInputVisual(hwnd)'
+)) {
+    if (-not $session.Contains($marker)) {
+        throw "Conversation input focus contract marker missing: $marker"
     }
 }
 
@@ -107,4 +179,4 @@ foreach ($forbidden in @(
     }
 }
 
-Write-Host 'InputImeAnchor contract OK: shared Input framework; explicit Search/Conversation profiles; full HWND geometry; one caret/IME publication path.'
+Write-Host 'Input IME contract OK: shared anchor + composition session; explicit Search/Conversation business profiles; live Search composition; protected IME keys; real Conversation input focus.'

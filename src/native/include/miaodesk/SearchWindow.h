@@ -3,6 +3,7 @@
 #include "miaodesk/GozSearch.h"
 #include "miaodesk/L3Agent.h"
 #include "miaodesk/InputImeAnchor.h"
+#include "miaodesk/InputImeSession.h"
 #include "miaodesk/SearchTypes.h"
 #include <windows.h>
 #include <CommCtrl.h>

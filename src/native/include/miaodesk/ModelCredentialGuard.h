@@ -6,14 +6,10 @@
 #include <windows.h>
 #include <wincred.h>
 
-#include <array>
 #include <cwchar>
-#include <filesystem>
-#include <iterator>
 #include <string>
 
 namespace miaodesk::model_credential_guard {
-namespace fs = std::filesystem;
 
 constexpr wchar_t kActiveCredentialTarget[] = L"MiaoDesk/ModelApiKey";
 constexpr wchar_t kProfileTargetPrefix[] = L"MiaoDesk/ApiProfile/";
@@ -39,6 +35,7 @@ inline void AppendCredentialLog(const std::wstring& message) {
                               nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (!file || file == INVALID_HANDLE_VALUE) return;
 
+    const DWORD originalError = GetLastError();
     SYSTEMTIME now{};
     GetLocalTime(&now);
     wchar_t prefix[64]{};
@@ -57,64 +54,30 @@ inline void AppendCredentialLog(const std::wstring& message) {
         WriteFile(file, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
     }
     CloseHandle(file);
+    SetLastError(originalError);
 }
 
-inline bool HeaderSafeCredential(PCREDENTIALW credential,
-                                 std::size_t* invalidIndex = nullptr,
-                                 unsigned* invalidCodepoint = nullptr) {
-    if (!credential || !credential->CredentialBlob || credential->CredentialBlobSize == 0) {
-        return false;
-    }
-    if ((credential->CredentialBlobSize % sizeof(wchar_t)) != 0) {
-        if (invalidIndex) *invalidIndex = 0;
-        if (invalidCodepoint) *invalidCodepoint = 0xffffffffu;
-        return false;
-    }
-
-    const auto* chars = reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
-    const std::size_t count = credential->CredentialBlobSize / sizeof(wchar_t);
-    if (count == 0) return false;
-
-    for (std::size_t i = 0; i < count; ++i) {
-        const unsigned value = static_cast<unsigned>(chars[i]);
-        // U+0020 is a legal HTTP header-value character. Reject controls and non-ASCII only.
-        // This catches the original U+8BBE Fetch ByteString failure without rejecting old keys
-        // merely because they contain an ordinary space.
-        if (value < 0x20u || value > 0x7eu) {
-            if (invalidIndex) *invalidIndex = i;
-            if (invalidCodepoint) *invalidCodepoint = value;
-            return false;
-        }
-    }
-    return true;
-}
-
-inline std::wstring DefaultProfileCredentialTarget() {
+inline BOOL ReadDefaultProfileCredential(PCREDENTIALW* credential) {
     const auto profile = api_runtime_profile::LoadDefault();
-    if (!profile.found || profile.id.empty()) return {};
-    return std::wstring(kProfileTargetPrefix) + profile.id;
-}
-
-inline BOOL ReadProfileCredential(PCREDENTIALW* credential) {
-    const std::wstring target = DefaultProfileCredentialTarget();
-    if (target.empty()) return FALSE;
-    PCREDENTIALW profile = nullptr;
-    if (!RawCredRead(target.c_str(), CRED_TYPE_GENERIC, 0, &profile) || !profile) return FALSE;
-
-    std::size_t invalidIndex = 0;
-    unsigned invalidCodepoint = 0;
-    if (!HeaderSafeCredential(profile, &invalidIndex, &invalidCodepoint)) {
-        AppendCredentialLog(
-            L"default API profile credential rejected; bytes=" +
-            std::to_wstring(profile->CredentialBlobSize) +
-            L"; invalidIndex=" + std::to_wstring(invalidIndex) +
-            L"; codepoint=" + std::to_wstring(invalidCodepoint));
-        CredFree(profile);
-        SetLastError(ERROR_INVALID_DATA);
+    if (!profile.found || profile.id.empty() || !profile.configured) {
+        AppendCredentialLog(profile.error.empty()
+            ? L"runtime credential unavailable: API Configuration Center default profile is not configured"
+            : L"runtime credential unavailable: " + profile.error);
+        SetLastError(ERROR_NOT_FOUND);
         return FALSE;
     }
 
-    *credential = profile;
+    const std::wstring target = std::wstring(kProfileTargetPrefix) + profile.id;
+    PCREDENTIALW stored = nullptr;
+    if (!RawCredRead(target.c_str(), CRED_TYPE_GENERIC, 0, &stored) || !stored) {
+        AppendCredentialLog(L"runtime credential unavailable: default profile Credential Manager entry is missing");
+        SetLastError(ERROR_NOT_FOUND);
+        return FALSE;
+    }
+
+    // ApiRuntimeProfile already validated that the same credential is HTTP-header-safe.
+    *credential = stored;
+    AppendCredentialLog(L"runtime credential resolved from API Configuration Center default profile");
     return TRUE;
 }
 
@@ -129,36 +92,9 @@ inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW*
         return RawCredRead(target, type, flags, credential);
     }
 
-    // The API Configuration Center's default Profile is now the runtime source of truth.
-    // MiaoDesk/ModelApiKey is only a legacy compatibility mirror; do not require the UI to
-    // continually synchronize a second secret database for Pi/Direct/Harness consumers.
-    if (ReadProfileCredential(credential)) {
-        AppendCredentialLog(L"runtime credential resolved from default API profile");
-        return TRUE;
-    }
-
-    // Migration fallback for users who have not created api-profiles.ini yet.
-    PCREDENTIALW legacy = nullptr;
-    const BOOL legacyRead = RawCredRead(target, type, flags, &legacy);
-    if (legacyRead && legacy) {
-        std::size_t invalidIndex = 0;
-        unsigned invalidCodepoint = 0;
-        if (HeaderSafeCredential(legacy, &invalidIndex, &invalidCodepoint)) {
-            AppendCredentialLog(L"runtime credential resolved from legacy active credential");
-            *credential = legacy;
-            return TRUE;
-        }
-        AppendCredentialLog(
-            L"legacy active model credential rejected; bytes=" +
-            std::to_wstring(legacy->CredentialBlobSize) +
-            L"; invalidIndex=" + std::to_wstring(invalidIndex) +
-            L"; codepoint=" + std::to_wstring(invalidCodepoint));
-        CredFree(legacy);
-    }
-
-    AppendCredentialLog(L"no HTTP-header-safe credential is available from API profiles or legacy state");
-    SetLastError(ERROR_INVALID_DATA);
-    return FALSE;
+    // Transitional adapter for old L3/Pi call sites. Runtime state comes ONLY from the API
+    // Configuration Center default Profile; the old MiaoDesk/ModelApiKey secret is never read.
+    return ReadDefaultProfileCredential(credential);
 }
 
 inline BOOL CredWriteGuard(PCREDENTIALW credential, DWORD flags) {
@@ -167,21 +103,11 @@ inline BOOL CredWriteGuard(PCREDENTIALW credential, DWORD flags) {
         return RawCredWrite(credential, flags);
     }
 
-    std::size_t invalidIndex = 0;
-    unsigned invalidCodepoint = 0;
-    if (!HeaderSafeCredential(credential, &invalidIndex, &invalidCodepoint)) {
-        AppendCredentialLog(
-            L"unsafe legacy active model credential write rejected; bytes=" +
-            std::to_wstring(credential ? credential->CredentialBlobSize : 0) +
-            L"; invalidIndex=" + std::to_wstring(invalidIndex) +
-            L"; codepoint=" + std::to_wstring(invalidCodepoint));
-        SetLastError(ERROR_INVALID_DATA);
-        return FALSE;
-    }
-
-    // Keep accepting the old mirror while older settings builds still write it, but runtime
-    // reads no longer depend on this target when a configured/default API profile exists.
-    return RawCredWrite(credential, flags);
+    // The shadow Active Credential is retired. New secrets are written only to
+    // MiaoDesk/ApiProfile/<id> by the API Configuration Center.
+    AppendCredentialLog(L"legacy MiaoDesk/ModelApiKey write rejected: API profiles are authoritative");
+    SetLastError(ERROR_ACCESS_DENIED);
+    return FALSE;
 }
 
 } // namespace miaodesk::model_credential_guard

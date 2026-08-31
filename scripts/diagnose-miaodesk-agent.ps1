@@ -32,6 +32,14 @@ function Test-File([string]$Root, [string]$Relative) {
     }
 }
 
+function Resolve-FirstRuntimeFile([string]$Relative) {
+    foreach ($root in @($PreviewRoot, $RuntimeCache, $NativeTest)) {
+        $path = Join-Path $root $Relative
+        if (Test-Path $path -PathType Leaf) { return $path }
+    }
+    return $null
+}
+
 Section 'Checkout'
 Set-Location $RepoRoot
 $head = (& git rev-parse HEAD 2>$null).Trim()
@@ -72,15 +80,26 @@ foreach ($root in $roots) {
     }
 }
 
-$node = Join-Path $PreviewRoot 'Runtime\Node\node.exe'
-$pi = Join-Path $PreviewRoot 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
-if (Test-Path $node -PathType Leaf) {
+$node = Resolve-FirstRuntimeFile 'Runtime\Node\node.exe'
+$pi = Resolve-FirstRuntimeFile 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+if ($node) {
+    Write-Host "Resolved Node: $node" -ForegroundColor Green
     Section 'Bundled Node'
     & $node --version
 }
-if ((Test-Path $node -PathType Leaf) -and (Test-Path $pi -PathType Leaf)) {
+if ($node -and $pi) {
+    Write-Host "Resolved Pi:   $pi" -ForegroundColor Green
     Section 'Bundled Pi CLI'
     & $node $pi --version
+}
+
+Section 'Recent model credential guard log (secret contents never logged)'
+$credentialLog = Join-Path $LogRoot 'model-credential.log'
+if (Test-Path $credentialLog -PathType Leaf) {
+    Get-Content $credentialLog -Tail $Tail
+} else {
+    Write-Host "No credential-guard log yet: $credentialLog" -ForegroundColor DarkYellow
+    Write-Host 'The latest build writes only credential byte length, invalid character position/codepoint, and recovery status.' -ForegroundColor DarkYellow
 }
 
 Section 'Recent Pi runtime log'
@@ -112,7 +131,7 @@ if (Test-Path $httpLog -PathType Leaf) {
         if ($lastFailure -match 'WinHttpOpenRequest') {
             Write-Host 'Hint: request path/verb/URL normalization is the first suspect.' -ForegroundColor Yellow
         } elseif ($lastFailure -match 'WinHttpSendRequest') {
-            Write-Host 'Hint: headers/body/WinHTTP send parameters are the first suspect. This build already converts -1 header length to an explicit character count.' -ForegroundColor Yellow
+            Write-Host 'Hint: headers/body/WinHTTP send parameters are the first suspect. Check model-credential.log first if error=87.' -ForegroundColor Yellow
         } elseif ($lastFailure -match 'WinHttpReceiveResponse') {
             Write-Host 'Hint: connection/TLS/proxy/server response is the first suspect.' -ForegroundColor Yellow
         } elseif ($lastFailure -match 'WinHttpConnect') {
@@ -125,5 +144,5 @@ if (Test-Path $httpLog -PathType Leaf) {
 }
 
 Section 'Where to send the result'
-Write-Host 'Paste the Pi runtime section and the final staged WinHTTP failure line back into the chat.'
-Write-Host 'API keys are not read or printed by this diagnostic.' -ForegroundColor Green
+Write-Host 'Paste the credential-guard section, Pi runtime tail, and final staged WinHTTP failure line back into the chat.'
+Write-Host 'API key contents are never read or printed by this diagnostic.' -ForegroundColor Green

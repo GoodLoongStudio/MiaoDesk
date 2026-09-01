@@ -185,33 +185,40 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $testRoot = 'C:\mdi'
-          Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
           try {
-            $install = Start-Process -FilePath $env:MIAODESK_INSTALLER_PATH `
-              -ArgumentList @('/S',"/D=$testRoot") -Wait -PassThru
-            if ($install.ExitCode -ne 0) { throw "Silent installer failed: $($install.ExitCode)" }
-            foreach ($relative in @(
-              'MiaoDesk.exe',
-              'Config\product.ini',
-              'Runtime\Node\node.exe',
-              'AI\node_modules\pi\dist\cli.js',
-              'Uninstall.exe'
-            )) {
-              if (-not (Test-Path (Join-Path $testRoot $relative) -PathType Leaf)) {
-                throw "Installed file is missing: $relative"
-              }
-            }
-
-            $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `
-              -ArgumentList '/S' -Wait -PassThru
-            if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed: $($uninstall.ExitCode)" }
-            Start-Sleep -Seconds 2
-            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Config','Uninstall.exe')) {
-              if (Test-Path (Join-Path $testRoot $relative)) { throw "Uninstall left product content behind: $relative" }
-            }
-          } finally {
+            $testRoot = 'C:\mdi'
             Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+            try {
+              $install = Start-Process -FilePath $env:MIAODESK_INSTALLER_PATH `
+                -ArgumentList @('/S',"/D=$testRoot") -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "Silent installer failed: $($install.ExitCode)" }
+              foreach ($relative in @(
+                'MiaoDesk.exe',
+                'Config\product.ini',
+                'Runtime\Node\node.exe',
+                'AI\node_modules\pi\dist\cli.js',
+                'Uninstall.exe'
+              )) {
+                if (-not (Test-Path (Join-Path $testRoot $relative) -PathType Leaf)) {
+                  throw "Installed file is missing: $relative"
+                }
+              }
+
+              $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `
+                -ArgumentList '/S' -Wait -PassThru
+              if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed: $($uninstall.ExitCode)" }
+              Start-Sleep -Seconds 2
+              foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Config','Uninstall.exe')) {
+                if (Test-Path (Join-Path $testRoot $relative)) { throw "Uninstall left product content behind: $relative" }
+              }
+            } finally {
+              Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Installer smoke test failed::$details"
+            throw
           }
 
       - name: Upload installer

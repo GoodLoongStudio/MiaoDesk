@@ -1,4 +1,5 @@
 #include "miaodesk/HarnessProcessManager.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/WindowPlacementStore.h"
 #include <windows.h>
 #include <objbase.h>
@@ -27,14 +28,9 @@ constexpr UINT kReadyPollMs = 250;
 constexpr DWORD kSmokeTimeoutMs = 120000;
 
 fs::path UserDataDirectory() {
-    wchar_t localAppData[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData,
-                                                  static_cast<DWORD>(std::size(localAppData)));
-    if (length == 0 || length >= std::size(localAppData)) return {};
-    const fs::path directory = fs::path(localAppData) / L"MiaoDesk" / L"WebView2" / L"Harness";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory;
+    const fs::path root = miaodesk::paths::WebView2Root();
+    return miaodesk::paths::EnsureDirectory(
+        root.empty() ? fs::path{} : root / L"Harness");
 }
 
 std::wstring ExecutablePath() {

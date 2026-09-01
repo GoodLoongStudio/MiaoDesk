@@ -1,4 +1,5 @@
 #include "miaodesk/NativeWeatherService.h"
+#include "miaodesk/AppPaths.h"
 
 #include <winhttp.h>
 
@@ -29,14 +30,8 @@ constexpr std::chrono::seconds kWeatherRetryInterval{90};
 constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 
 fs::path WeatherCachePath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"MiaoDesk"
-        : fs::temp_directory_path() / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-    return dir / L"weather-cache.ini";
+    const fs::path directory = paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"weather-cache.ini";
 }
 
 std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t* fallback = L"") {

@@ -37,6 +37,12 @@ install(FILES
     DESTINATION "Assets"
 )
 
+install(DIRECTORY
+    "${CMAKE_SOURCE_DIR}/config/"
+    DESTINATION "Config"
+    FILES_MATCHING PATTERN "*.ini"
+)
+
 # Packaged wallpaper scenes contain only runtime manifests and assets. Their
 # maximum product-owned nesting remains shallow and portable.
 install(DIRECTORY

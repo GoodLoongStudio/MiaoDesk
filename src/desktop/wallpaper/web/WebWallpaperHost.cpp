@@ -1,4 +1,5 @@
 #include "miaodesk/WebWallpaperHost.h"
+#include "miaodesk/AppPaths.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -73,13 +74,9 @@ std::wstring SafeToken(std::wstring value) {
 }
 
 fs::path WebUserDataDirectory(std::wstring_view token) {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    fs::path directory = base / L"MiaoDesk" / L"WebView2" / L"Wallpaper" / SafeToken(std::wstring(token));
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory;
+    const fs::path root = paths::WebView2Root();
+    return paths::EnsureDirectory(
+        root.empty() ? fs::path{} : root / L"Wallpaper" / SafeToken(std::wstring(token)));
 }
 
 std::wstring QuoteArg(std::wstring_view value) {

@@ -1,4 +1,5 @@
 #include "miaodesk/SearchWindow.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"
 #include "miaodesk/SettingsCenterWindow.h"
@@ -84,15 +85,8 @@ std::wstring ReadText(HWND control) {
 }
 
 fs::path SearchIniPath() {
-    wchar_t localAppData[32768]{};
-    const DWORD length = GetEnvironmentVariableW(
-        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (length == 0 || length >= std::size(localAppData)) return {};
-
-    const fs::path directory = fs::path(localAppData) / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory / L"search.ini";
+    const fs::path directory = paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"search.ini";
 }
 
 HICON LoadMiaoMiaoTrayIcon() {

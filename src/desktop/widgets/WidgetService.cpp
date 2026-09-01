@@ -1,4 +1,5 @@
 #include "miaodesk/WidgetService.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopSurfaceTelemetry.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
@@ -26,12 +27,7 @@ WidgetServiceResult LoadFailure(const std::wstring& error) {
 }
 
 fs::path WallpaperConfigPath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"MiaoDesk"
-        : fs::temp_directory_path() / L"MiaoDesk";
-    return dir / L"wallpaper.ini";
+    return paths::StateFile(L"wallpaper.ini");
 }
 
 std::wstring ReadWidgetRuntimeDetail() {

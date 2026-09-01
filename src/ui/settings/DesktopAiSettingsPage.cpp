@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/L3Agent.h"
 
 #include <commctrl.h>
@@ -59,16 +60,7 @@ std::wstring WindowText(HWND window) {
 }
 
 fs::path LocalStateRoot() {
-    PWSTR raw = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw)) && raw) {
-        fs::path root(raw);
-        CoTaskMemFree(raw);
-        std::error_code ec;
-        root /= L"MiaoDesk";
-        fs::create_directories(root, ec);
-        return root;
-    }
-    return fs::temp_directory_path() / L"MiaoDesk";
+    return paths::EnsureStateRoot();
 }
 
 fs::path ProfilesPath() {

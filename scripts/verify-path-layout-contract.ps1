@@ -8,6 +8,9 @@ function Fail([string]$Message) { throw "Path layout contract violation: $Messag
 $cmakePresets = Join-Path $RepoRoot 'CMakePresets.json'
 $pathContract = Join-Path $RepoRoot 'docs\PATH_LAYOUT_CONTRACT.md'
 $sourceRoot = Join-Path $RepoRoot 'src'
+$sourceCMake = Join-Path $sourceRoot 'CMakeLists.txt'
+$appPathsHeader = Join-Path $sourceRoot 'include\miaodesk\AppPaths.h'
+$productConfig = Join-Path $RepoRoot 'config\product.ini'
 $webViewRoot = Join-Path $RepoRoot 'third_party\webview2'
 $packagingRoots = @(
     (Join-Path $RepoRoot 'scripts'),
@@ -18,6 +21,9 @@ $packagingRoots = @(
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
 if (-not (Test-Path $sourceRoot -PathType Container)) { Fail 'src/ is missing.' }
+if (-not (Test-Path $sourceCMake -PathType Leaf)) { Fail 'src/CMakeLists.txt is missing.' }
+if (-not (Test-Path $appPathsHeader -PathType Leaf)) { Fail 'shared AppPaths.h is missing.' }
+if (-not (Test-Path $productConfig -PathType Leaf)) { Fail 'config/product.ini is missing.' }
 if (Test-Path (Join-Path $sourceRoot 'native')) { Fail 'obsolete src/native container returned.' }
 foreach ($relative in @('app','ai','desktop','harness','search','ui','include\miaodesk')) {
     if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Container)) {
@@ -26,6 +32,21 @@ foreach ($relative in @('app','ai','desktop','harness','search','ui','include\mi
 }
 if (@(Get-ChildItem $sourceRoot -File -Include *.cpp,*.cc,*.cxx -ErrorAction SilentlyContinue).Count -gt 0) {
     Fail 'implementation files must live in a source domain, not directly under src/.'
+}
+
+# Each implementation file has one CMake source-list owner. Shared code belongs
+# in a library target instead of being compiled separately into multiple EXEs.
+$sourceOwners = @{}
+foreach ($line in Get-Content $sourceCMake) {
+    if ($line -notmatch '^\s+([A-Za-z0-9_./-]+\.cpp)\s*$') { continue }
+    $relative = $Matches[1]
+    if ($sourceOwners.ContainsKey($relative)) {
+        Fail "implementation has multiple CMake owners: src/$relative"
+    }
+    $sourceOwners[$relative] = $true
+    if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Leaf)) {
+        Fail "CMake source is missing: src/$relative"
+    }
 }
 
 foreach ($relative in @(
@@ -71,6 +92,21 @@ foreach ($file in $sourceFiles) {
         if ($text -match $pattern) {
             Fail "production native source depends on current working directory: $($file.FullName.Substring($RepoRoot.Length + 1))"
         }
+    }
+}
+
+$localStateAllowlist = @(
+    'src\include\miaodesk\AppPaths.h',
+    'src\ai\agent\L3PersistenceSelfTest.cpp',
+    'src\desktop\wallpaper\runtime\WallpaperEntry.cpp'
+)
+foreach ($file in $sourceFiles) {
+    $relative = $file.FullName.Substring($RepoRoot.Length + 1)
+    if ($localStateAllowlist -contains $relative) { continue }
+    $text = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+    if ($text -match 'GetEnvironmentVariableW\s*\(\s*L"LOCALAPPDATA"' -or
+        $text -match 'FOLDERID_LocalAppData') {
+        Fail "native source bypasses shared AppPaths: $relative"
     }
 }
 

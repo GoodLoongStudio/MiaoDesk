@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperLibraryWindow.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/DesktopWidgetController.h"
@@ -143,9 +144,8 @@ const wchar_t* KindLabel(LibraryWallpaperKind kind) {
 
 std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) return L"云端妙喵 · 星光花瓣";
-        if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) return L"未来都市 · 雨夜光轨";
-        if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) return L"月湖秘境 · 萤火薄雾";
+        if (const auto* definition = FindBuiltinWallpaper(item.id))
+            return std::wstring(definition->description);
         return L"原生 Scene";
     }
     if (item.kind == LibraryWallpaperKind::Video) return L"视频壁纸";
@@ -960,9 +960,12 @@ struct WallpaperLibraryWindow::Impl {
         RECT rect{};
         GetWindowRect(widgetCreateButton, &rect);
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, kMenuWidgetGlassClock, L"玻璃时钟");
-        AppendMenuW(menu, MF_STRING, kMenuWidgetTodayTasks, L"今日待办");
-        AppendMenuW(menu, MF_STRING, kMenuWidgetWeatherGlass, L"玻璃天气");
+        AppendMenuW(menu, MF_STRING, kMenuWidgetGlassClock,
+                    NativePresetTitle(NativeWidgetPreset::GlassClock));
+        AppendMenuW(menu, MF_STRING, kMenuWidgetTodayTasks,
+                    NativePresetTitle(NativeWidgetPreset::TodayTasks));
+        AppendMenuW(menu, MF_STRING, kMenuWidgetWeatherGlass,
+                    NativePresetTitle(NativeWidgetPreset::WeatherGlass));
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuWidgetAuto, L"自动轮换下一个");
         TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);

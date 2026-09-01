@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperMonitorAssignments.h"
+#include "miaodesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -13,12 +14,8 @@ namespace miaodesk::wallpaper {
 namespace {
 
 fs::path DefaultStoragePath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path root = (length > 0 && length < std::size(local))
-        ? fs::path(local)
-        : fs::temp_directory_path();
-    return root / L"MiaoDesk" / L"WallpaperLibrary" / L"monitor-assignments.ini";
+    const fs::path root = paths::WallpaperLibraryRoot();
+    return root.empty() ? fs::path{} : root / L"monitor-assignments.ini";
 }
 
 unsigned long long NowUnixSeconds() {

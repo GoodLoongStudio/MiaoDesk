@@ -1,4 +1,5 @@
 #include "miaodesk/AppSearch.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/DesktopWidgetTools.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
@@ -248,6 +249,7 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
 bool RunNativeSelfTest() {
     if (!HasLoopbackProxyBypass()) return false;
     if (!HasBundledRuntimePathIfInstalled()) return false;
+    if (!miaodesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return false;
     if (!miaodesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
 
     miaodesk::AppSearch apps;

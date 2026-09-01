@@ -6,6 +6,8 @@
 #include <wtsapi32.h>
 
 #include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/AppPaths.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/IndependentWallpaperHost.h"
 #include "miaodesk/SceneWallpaperPainter.h"
 #include "miaodesk/VideoWallpaperPlayer.h"
@@ -118,14 +120,8 @@ struct Config {
 };
 
 fs::path ConfigPath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"MiaoDesk"
-        : fs::temp_directory_path() / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-    return dir / L"wallpaper.ini";
+    const fs::path directory = miaodesk::paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"wallpaper.ini";
 }
 
 bool ValidScene(const std::wstring& scene) {
@@ -375,9 +371,12 @@ public:
         label(L"场景", 20, 62, 72, 24);
         sceneCombo_ = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
                                       116, 58, 350, 180, settings_, ControlId(kSceneComboId), instance_, nullptr);
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"妙喵云境 · 云海星光"));
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"霓虹之城 · 雨夜光轨"));
-        SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"月影秘境 · 月湖萤火"));
+        for (const auto& scene : miaodesk::wallpaper::BuiltinWallpapers()) {
+            const std::wstring label = std::wstring(scene.title) + L" · " +
+                                       std::wstring(scene.description);
+            SendMessageW(sceneCombo_, CB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(label.c_str()));
+        }
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"图片壁纸"));
         SendMessageW(sceneCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"视频壁纸 · Media Foundation"));
         libraryButton_ = CreateWindowExW(0, L"BUTTON", L"壁纸库…", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -557,12 +556,9 @@ private:
         error.clear();
         if (!automation_.Load(&error)) automationError_ = error;
 
-        for (const auto& scene : std::array<std::pair<const wchar_t*, const wchar_t*>, 3>{
-                 std::pair{L"scene-aurora", L"妙喵云境"},
-                 std::pair{L"scene-neon", L"霓虹之城"},
-                 std::pair{L"scene-grid", L"月影秘境"}}) {
+        for (const auto& scene : miaodesk::wallpaper::BuiltinWallpapers()) {
             error.clear();
-            library_.UpsertScene(scene.first, scene.second, &error);
+            library_.UpsertScene(std::wstring(scene.id), std::wstring(scene.title), &error);
             if (libraryError_.empty() && !error.empty()) libraryError_ = error;
         }
         if (!config_.image.empty() && fs::exists(config_.image)) {
@@ -630,10 +626,9 @@ private:
         next.image.clear();
         next.video.clear();
         if (item.kind == Kind::Scene) {
-            if (_wcsicmp(item.id.c_str(), L"scene-aurora") == 0) next.scene = L"aurora";
-            else if (_wcsicmp(item.id.c_str(), L"scene-neon") == 0) next.scene = L"neon";
-            else if (_wcsicmp(item.id.c_str(), L"scene-grid") == 0) next.scene = L"grid";
-            else return false;
+            const auto* definition = miaodesk::wallpaper::FindBuiltinWallpaper(item.id);
+            if (!definition) return false;
+            next.scene = definition->runtimeKey;
             return true;
         }
         if (item.kind == Kind::Image) {
@@ -726,9 +721,9 @@ private:
     }
 
     std::optional<std::wstring> CurrentWallpaperId() const {
-        if (config_.scene == L"aurora") return std::wstring(L"scene-aurora");
-        if (config_.scene == L"neon") return std::wstring(L"scene-neon");
-        if (config_.scene == L"grid") return std::wstring(L"scene-grid");
+        if (const auto* definition =
+                miaodesk::wallpaper::FindBuiltinWallpaper(config_.scene))
+            return std::wstring(definition->id);
         const std::wstring source = (config_.scene == L"image" || config_.scene == L"web") ? config_.image :
                                     config_.scene == L"video" ? config_.video : L"";
         if (source.empty()) return std::nullopt;
@@ -1672,9 +1667,13 @@ private:
         } else if (!mountOk_) {
             status = L"应用失败：" + (lastMountError_.empty() ? L"没有挂载到 Windows 桌面层" : lastMountError_);
         } else {
-            const wchar_t* scene = selectedScene == 0 ? L"妙喵云境" : selectedScene == 1 ? L"霓虹之城" :
-                                   selectedScene == 2 ? L"月影秘境" : selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
-            status = std::wstring(scene) + L" · " + miaodesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
+            std::wstring scene;
+            const auto builtins = miaodesk::wallpaper::BuiltinWallpapers();
+            if (selectedScene >= 0 && static_cast<std::size_t>(selectedScene) < builtins.size())
+                scene = builtins[static_cast<std::size_t>(selectedScene)].title;
+            else
+                scene = selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
+            status = scene + L" · " + miaodesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
                      miaodesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
             status += L"\r\n性能：" + std::wstring(miaodesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));
             if (currentPerformance_.targetFps > 0) status += L" · " + std::to_wstring(currentPerformance_.targetFps) + L" FPS";

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperPackage.h"
@@ -490,6 +491,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
         if (!WorkAreaSelfTest()) return 40;
         if (!miaodesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
         if (!miaodesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
+        if (!miaodesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return 43;
         if (!miaodesk::wallpaper::DesktopShellHost::SelfTest()) return 44;
         return MiaoDeskWallpaperMain(instance, previous, commandLine, showCommand);
     }

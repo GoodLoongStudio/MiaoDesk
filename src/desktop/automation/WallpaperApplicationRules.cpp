@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperApplicationRules.h"
+#include "miaodesk/AppPaths.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,12 +21,8 @@ bool g_cacheLoaded{};
 std::mutex g_cacheMutex;
 
 fs::path DefaultStoragePath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path root = (length > 0 && length < std::size(local))
-        ? fs::path(local)
-        : fs::temp_directory_path();
-    return root / L"MiaoDesk" / L"WallpaperLibrary" / L"application-rules.ini";
+    const fs::path root = paths::WallpaperLibraryRoot();
+    return root.empty() ? fs::path{} : root / L"application-rules.ini";
 }
 
 void SetError(std::wstring* error, std::wstring value) {

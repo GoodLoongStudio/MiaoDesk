@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperWebRuntimeCoordinator.h"
+#include "miaodesk/AppPaths.h"
 
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/DesktopWidgetStore.h"
@@ -38,14 +39,8 @@ constexpr ULONGLONG kRecoveryStableResetMs = 30000;
 constexpr unsigned kMaxRecoveryAttempts = 3;
 
 fs::path WallpaperConfigPath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"MiaoDesk"
-        : fs::temp_directory_path() / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-    return dir / L"wallpaper.ini";
+    const fs::path directory = paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"wallpaper.ini";
 }
 
 std::wstring ReadText(const fs::path& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {

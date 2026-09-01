@@ -1,6 +1,7 @@
 #include "miaodesk/GeneratedDesktopPreview.h"
 
 #include "miaodesk/A2UIParser.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/WallpaperPackage.h"
 #include "miaodesk/WidgetIntentComposer.h"
@@ -115,15 +116,7 @@ fs::path TempPreviewRoot() {
 }
 
 fs::path LocalGeneratedWallpaperRoot() {
-    PWSTR raw = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw)) || !raw) return {};
-    fs::path root(raw);
-    CoTaskMemFree(raw);
-    root /= L"MiaoDesk";
-    root /= L"GeneratedWallpapers";
-    std::error_code ec;
-    fs::create_directories(root, ec);
-    return ec ? fs::path{} : root;
+    return paths::EnsureDirectory(paths::GeneratedWallpapersRoot());
 }
 
 std::wstring NewPreviewId() {

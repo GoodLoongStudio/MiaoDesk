@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/NativeWidgetPreset.h"
 
 #include <windows.h>
@@ -18,10 +19,7 @@ namespace miaodesk::wallpaper {
 namespace {
 
 fs::path DefaultRoot() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    return base / L"MiaoDesk" / L"DesktopWidgets";
+    return paths::DesktopWidgetsRoot();
 }
 
 bool HasUtf16LeBom(const fs::path& path) {

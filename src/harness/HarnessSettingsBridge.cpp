@@ -1,4 +1,5 @@
 #include "miaodesk/HarnessSettingsBridge.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/ApiRuntimeProfile.h"
 
 #include <windows.h>
@@ -25,10 +26,7 @@ std::string WideToUtf8(const std::wstring& value) {
 }
 
 fs::path MiaoDeskRoot() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count == 0 || count >= std::size(localAppData)) return {};
-    return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk";
+    return paths::StateRoot();
 }
 
 std::wstring JoinApiUrl(const std::wstring& baseUrl, const std::wstring& endpoint) {

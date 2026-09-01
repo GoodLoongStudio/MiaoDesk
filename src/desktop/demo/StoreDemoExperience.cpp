@@ -1,8 +1,11 @@
 #include "miaodesk/StoreDemoExperience.h"
 
+#include "miaodesk/AppPaths.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetController.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
 #include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/ProductConfig.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WidgetIntentComposer.h"
 #include "miaodesk/WidgetService.h"
@@ -23,7 +26,6 @@ namespace fs = std::filesystem;
 namespace miaodesk::demo {
 namespace {
 
-constexpr wchar_t kIniRelative[] = L"MiaoDesk\\store-demo.ini";
 constexpr wchar_t kSection[] = L"StoreDemo";
 constexpr wchar_t kFirstRunKey[] = L"FirstRunCompleted";
 
@@ -35,13 +37,7 @@ std::wstring Lower(std::wstring value) {
 }
 
 fs::path ConfigPath() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(
-        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count == 0 || count >= std::size(localAppData)) {
-        return fs::temp_directory_path() / L"MiaoDesk" / L"store-demo.ini";
-    }
-    return fs::path(std::wstring(localAppData, count)) / kIniRelative;
+    return paths::StateFile(L"store-demo.ini");
 }
 
 bool ReadFlag(const wchar_t* key) {
@@ -73,12 +69,9 @@ wallpaper::WallpaperLibraryItem SceneItem(std::wstring id, std::wstring title) {
 }
 
 wallpaper::WallpaperLibraryItem ResolveScene(std::wstring_view sceneId) {
-    if (sceneId == L"scene-neon" || sceneId == L"neon" || sceneId == L"neon_flow")
-        return SceneItem(L"scene-neon", L"霓虹之城");
-    if (sceneId == L"scene-grid" || sceneId == L"grid" || sceneId == L"ocean" || sceneId == L"ocean_flow")
-        return SceneItem(L"scene-grid", L"月影秘境");
-    // Default showcase: Aurora (ocean-like cool tones on Snapdragon demos).
-    return SceneItem(L"scene-aurora", L"妙喵云境");
+    const auto* definition = wallpaper::FindBuiltinWallpaper(sceneId);
+    if (!definition) definition = &wallpaper::DefaultBuiltinWallpaper();
+    return SceneItem(std::wstring(definition->id), std::wstring(definition->title));
 }
 
 bool NearlyEqual(float a, float b) noexcept {
@@ -138,7 +131,7 @@ bool MigrateLegacyShowcaseGeometry(
 } // namespace
 
 bool IsStoreDemoScopeEnabled() noexcept {
-    return true;
+    return product_config::StoreDemoScopeEnabled();
 }
 
 bool HideAdvancedWorkbench() noexcept {
@@ -174,17 +167,17 @@ desktop::DesktopControlResult EnsureShowcaseWidgets() {
     struct Needed {
         desktop::WidgetFixedPreset preset;
         wallpaper::NativeWidgetPreset nativePreset;
-        const wchar_t* title;
     };
     constexpr std::array<Needed, 3> needed{{
-        {desktop::WidgetFixedPreset::GlassClock, wallpaper::NativeWidgetPreset::GlassClock, L"玻璃时钟"},
-        {desktop::WidgetFixedPreset::TodayTasks, wallpaper::NativeWidgetPreset::TodayTasks, L"今日待办"},
-        {desktop::WidgetFixedPreset::WeatherGlass, wallpaper::NativeWidgetPreset::WeatherGlass, L"玻璃天气"},
+        {desktop::WidgetFixedPreset::GlassClock, wallpaper::NativeWidgetPreset::GlassClock},
+        {desktop::WidgetFixedPreset::TodayTasks, wallpaper::NativeWidgetPreset::TodayTasks},
+        {desktop::WidgetFixedPreset::WeatherGlass, wallpaper::NativeWidgetPreset::WeatherGlass},
     }};
 
     std::wstring createdTitles;
     for (const auto& item : needed) {
-        auto found = FindWidgetTitle(existing, item.title);
+        const wchar_t* title = wallpaper::NativePresetTitle(item.nativePreset);
+        auto found = FindWidgetTitle(existing, title);
         if (found != existing.end()) {
             std::wstring migrationError;
             if (!MigrateLegacyShowcaseGeometry(&*found, item.nativePreset, &migrationError)) {
@@ -197,7 +190,7 @@ desktop::DesktopControlResult EnsureShowcaseWidgets() {
         if (!result.success) return result;
         existing.push_back(created);
         if (!createdTitles.empty()) createdTitles += L"、";
-        createdTitles += item.title;
+        createdTitles += title;
     }
 
     desktop::DesktopControlService service;

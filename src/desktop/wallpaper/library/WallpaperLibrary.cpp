@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperLibrary.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
@@ -29,12 +30,7 @@ void SetError(std::wstring* error, std::wstring value) {
 }
 
 fs::path DefaultLibraryRoot() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path base = (length > 0 && length < std::size(local))
-        ? fs::path(local)
-        : fs::temp_directory_path();
-    return base / L"MiaoDesk" / L"WallpaperLibrary";
+    return paths::WallpaperLibraryRoot();
 }
 
 unsigned long long NowUnixSeconds() {

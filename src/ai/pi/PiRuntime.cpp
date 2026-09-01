@@ -1,4 +1,5 @@
 #include "miaodesk/PiRuntime.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/RuntimeLogPaths.h"
 #include "miaodesk/ApiRuntimeProfile.h"
@@ -181,14 +182,11 @@ fs::path ModuleDirectory() {
 }
 
 fs::path LocalAppDataRoot() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk";
-    return fs::temp_directory_path() / L"MiaoDesk";
+    return paths::StateRoot();
 }
 
 fs::path PiAgentDirectory() {
-    return LocalAppDataRoot() / L"PiAgent";
+    return paths::PiAgentRoot();
 }
 
 fs::path PiLogPath() {

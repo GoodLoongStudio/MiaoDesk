@@ -1,4 +1,5 @@
 #include "miaodesk/NativeWidgetHost.h"
+#include "miaodesk/AppPaths.h"
 
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/DesktopWidgetStore.h"
@@ -124,10 +125,7 @@ void MarkNativeSurfaceReady(HWND hwnd) {
 }
 
 fs::path WallpaperConfigPath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path dir = (length > 0 && length < std::size(local)) ? fs::path(local) / L"MiaoDesk" : fs::temp_directory_path() / L"MiaoDesk";
-    return dir / L"wallpaper.ini";
+    return paths::StateFile(L"wallpaper.ini");
 }
 
 void WriteDiagnostics(const std::wstring& value) {

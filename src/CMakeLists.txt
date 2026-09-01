@@ -14,21 +14,9 @@ if (NOT EXISTS "${WEBVIEW2_INCLUDE_DIR}/WebView2.h" OR NOT EXISTS "${WEBVIEW2_LO
     message(FATAL_ERROR "WebView2 SDK is incomplete at ${WEBVIEW2_ROOT} for ${WEBVIEW2_ARCH}.")
 endif()
 
-set(MIAODESK_APP_SOURCES
-    app/main.cpp
-    ui/search/SearchWindow.cpp
-    ui/settings/SettingsCenterWindow.cpp
-    ui/ai/ConversationPanel.cpp
-
-    ai/pi/PiRuntime.cpp
-    ai/pi/PiNativeToolsExtension.cpp
-    ai/tools/NativeTools.cpp
-    ai/tools/NativeToolIsolation.cpp
-    ai/tools/DesktopWidgetTools.cpp
+set(MIAODESK_CORE_SOURCES
     ai/a2ui/A2UIParser.cpp
     ai/agent/L3Agent.cpp
-    ai/agent/L3PersistenceSelfTest.cpp
-
     desktop/control/DesktopControlService.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
@@ -42,11 +30,28 @@ set(MIAODESK_APP_SOURCES
     desktop/wallpaper/library/WallpaperPackage.cpp
     desktop/wallpaper/library/WallpaperLibrary.cpp
     desktop/wallpaper/library/WallpaperLibraryWeb.cpp
+    desktop/wallpaper/library/BuiltinWallpaperCatalog.cpp
     desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
     desktop/wallpaper/monitor/WallpaperMonitorAssignments.cpp
-
     search/AppSearch.cpp
     search/GozSearch.cpp
+)
+
+set(MIAODESK_APP_SOURCES
+    app/main.cpp
+    ui/search/SearchWindow.cpp
+    ui/settings/SettingsCenterWindow.cpp
+    ui/ai/ConversationPanel.cpp
+
+    ai/pi/PiRuntime.cpp
+    ai/pi/PiNativeToolsExtension.cpp
+    ai/tools/NativeTools.cpp
+    ai/tools/NativeToolIsolation.cpp
+    ai/tools/DesktopWidgetTools.cpp
+    ai/agent/L3PersistenceSelfTest.cpp
+)
+
+set(MIAODESK_HARNESS_CORE_SOURCES
     harness/HarnessProcessManager.cpp
     harness/HarnessSettingsBridge.cpp
 )
@@ -58,18 +63,6 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/shell/DesktopShellHost.cpp
     desktop/shell/DesktopShellDiagnostics.cpp
     desktop/shell/DesktopShellSurfaceStack.cpp
-    desktop/shell/DesktopSurfaceTelemetry.cpp
-
-    desktop/control/DesktopControlService.cpp
-    desktop/demo/StoreDemoExperience.cpp
-    desktop/preview/GeneratedDesktopPreview.cpp
-    desktop/preview/WidgetIntentComposer.cpp
-    ai/a2ui/A2UIParser.cpp
-    desktop/wallpaper/WallpaperService.cpp
-    desktop/widgets/WidgetService.cpp
-    desktop/widgets/DesktopWidgetStore.cpp
-    desktop/widgets/DesktopWidgetController.cpp
-    desktop/widgets/NativeWidgetPreset.cpp
     desktop/widgets/NativeWeatherService.cpp
     ui/widgets/DesktopWidgetUiAdapter.cpp
 
@@ -84,8 +77,6 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/performance/WallpaperPerformancePolicy.cpp
     ui/performance/PerformanceUiAdapter.cpp
 
-    desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
-    desktop/wallpaper/monitor/WallpaperMonitorAssignments.cpp
     desktop/wallpaper/monitor/WallpaperIndependentLayout.cpp
     desktop/wallpaper/monitor/IndependentWallpaperHost.cpp
 
@@ -99,24 +90,17 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/render/VideoWallpaperPlayer.cpp
     desktop/wallpaper/render/VideoWallpaperSet.cpp
 
-    desktop/wallpaper/library/WallpaperLibrary.cpp
-    desktop/wallpaper/library/WallpaperLibraryWeb.cpp
-    desktop/wallpaper/library/WallpaperPackage.cpp
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
     ui/settings/DesktopAiSettingsPage.cpp
-
-    search/AppSearch.cpp
-    search/GozSearch.cpp
-    ai/agent/L3Agent.cpp
 )
 
 set(MIAODESK_HARNESS_SOURCES
     harness/HarnessHost.cpp
-    harness/HarnessProcessManager.cpp
-    harness/HarnessSettingsBridge.cpp
     harness/HarnessBundledRuntimeBootstrap.cpp
 )
 
+add_library(MiaoDeskCore STATIC ${MIAODESK_CORE_SOURCES})
+add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
 add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES})
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES})
@@ -129,6 +113,8 @@ add_custom_command(TARGET MiaoDesk POST_BUILD
     VERBATIM
 )
 
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_CORE_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_HARNESS_CORE_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_APP_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_WALLPAPER_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_HARNESS_SOURCES})
@@ -146,7 +132,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -158,14 +144,19 @@ endforeach()
 target_include_directories(MiaoDesk SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 target_include_directories(MiaoDeskWallpaper SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 target_include_directories(MiaoDeskHarness SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
+target_include_directories(MiaoDeskCore SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}")
 
 if (MSVC)
+    target_compile_options(MiaoDeskCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskHarnessCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
+    MiaoDeskCore
+    MiaoDeskHarnessCore
     user32
     gdi32
     shell32
@@ -181,6 +172,7 @@ target_link_libraries(MiaoDesk PRIVATE
 )
 
 target_link_libraries(MiaoDeskWallpaper PRIVATE
+    MiaoDeskCore
     user32
     gdi32
     shell32
@@ -203,6 +195,7 @@ target_link_libraries(MiaoDeskWallpaper PRIVATE
 )
 
 target_link_libraries(MiaoDeskHarness PRIVATE
+    MiaoDeskHarnessCore
     user32
     gdi32
     shell32

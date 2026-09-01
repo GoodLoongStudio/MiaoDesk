@@ -2,7 +2,8 @@
 
 #include <windows.h>
 #include <wincred.h>
-#include <shlobj.h>
+
+#include "miaodesk/AppPaths.h"
 
 #include <algorithm>
 #include <array>
@@ -52,19 +53,7 @@ inline bool ParseBool(const std::wstring& value) {
 }
 
 inline fs::path LocalStateRoot() {
-    PWSTR raw = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw)) && raw) {
-        fs::path root(raw);
-        CoTaskMemFree(raw);
-        return root / L"MiaoDesk";
-    }
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData,
-                                                 static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) {
-        return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk";
-    }
-    return fs::temp_directory_path() / L"MiaoDesk";
+    return miaodesk::paths::StateRoot();
 }
 
 inline fs::path ProfilesPath() { return LocalStateRoot() / L"api-profiles.ini"; }

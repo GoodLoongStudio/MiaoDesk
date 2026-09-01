@@ -1,4 +1,5 @@
 #include "miaodesk/PerformanceService.h"
+#include "miaodesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -14,14 +15,8 @@ namespace miaodesk::desktop {
 namespace {
 
 fs::path ConfigPath() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path directory = (length > 0 && length < std::size(local))
-        ? fs::path(local) / L"MiaoDesk"
-        : fs::temp_directory_path() / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory / L"wallpaper.ini";
+    const fs::path directory = paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"wallpaper.ini";
 }
 
 std::wstring ReadText(const fs::path& path, const wchar_t* key, const wchar_t* fallback) {

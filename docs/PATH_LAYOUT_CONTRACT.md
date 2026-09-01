@@ -55,6 +55,8 @@ MiaoDesk\
   MiaoDeskWallpaper.exe
   MiaoDeskHarness.exe
   Assets\
+  Config\
+    product.ini
   Wallpapers\
   Runtime\
     Node\
@@ -78,6 +80,9 @@ The complete install tree must remain movable after packaging.
 ## Mutable state
 
 Program files are relocatable/read-mostly. Mutable state belongs under `%LOCALAPPDATA%\MiaoDesk\...`; secrets belong in Windows Credential Manager. Do not write caches, DSH home, logs or user data into the installed third-party dependency tree.
+
+Native code resolves this root through the shared `miaodesk::paths` helpers.
+Individual domains must not implement their own `LOCALAPPDATA` fallback logic.
 
 ## Installer
 

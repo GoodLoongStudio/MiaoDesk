@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include "miaodesk/AppPaths.h"
+
 #include <filesystem>
 #include <iterator>
 #include <string>
@@ -52,18 +54,13 @@ void PrependBundledHarnessRuntimeToPath() {
     if (!oldPath.empty()) prefix += L";" + oldPath;
     SetEnvironmentVariableW(L"PATH", prefix.c_str());
 
-    wchar_t local[32768]{};
-    const DWORD localLength = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    if (localLength > 0 && localLength < std::size(local)) {
-        const fs::path stateRoot = fs::path(std::wstring(local, localLength)) / L"MiaoDesk" / L"HarnessState";
-        std::error_code ec;
-        fs::create_directories(stateRoot, ec);
-        if (!ec) {
-            const std::wstring dshHome = (stateRoot / L"dsh-home").wstring();
-            const std::wstring npmCache = (stateRoot / L"npm-cache").wstring();
-            SetEnvironmentVariableW(L"DSH_HOME", dshHome.c_str());
-            SetEnvironmentVariableW(L"npm_config_cache", npmCache.c_str());
-        }
+    const fs::path stateRoot = miaodesk::paths::EnsureDirectory(
+        miaodesk::paths::HarnessStateRoot());
+    if (!stateRoot.empty()) {
+        const std::wstring dshHome = (stateRoot / L"dsh-home").wstring();
+        const std::wstring npmCache = (stateRoot / L"npm-cache").wstring();
+        SetEnvironmentVariableW(L"DSH_HOME", dshHome.c_str());
+        SetEnvironmentVariableW(L"npm_config_cache", npmCache.c_str());
     }
 }
 

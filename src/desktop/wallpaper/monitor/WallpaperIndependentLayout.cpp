@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperIndependentLayout.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/WebWallpaperHost.h"
 
 #include <windows.h>
@@ -28,10 +29,9 @@ ResolvedMonitorWallpaper MakeFallback(const MonitorInfo& monitor, const RECT& re
 }
 
 std::wstring SceneKeyForLibraryId(std::wstring_view id) {
-    const std::wstring value(id);
-    if (_wcsicmp(value.c_str(), L"scene-neon") == 0) return L"neon";
-    if (_wcsicmp(value.c_str(), L"scene-grid") == 0) return L"grid";
-    return L"aurora";
+    const auto* definition = FindBuiltinWallpaper(id);
+    return std::wstring(
+        definition ? definition->runtimeKey : DefaultBuiltinWallpaper().runtimeKey);
 }
 
 bool SourceAvailable(const WallpaperLibraryItem& item) {

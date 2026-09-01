@@ -1,4 +1,5 @@
 #include "miaodesk/PiNativeToolsExtension.h"
+#include "miaodesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -24,13 +25,7 @@ fs::path ModulePath() {
 }
 
 fs::path PiAgentDirectory() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(
-        L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    if (count > 0 && count < std::size(localAppData)) {
-        return fs::path(std::wstring(localAppData, count)) / L"MiaoDesk" / L"PiAgent";
-    }
-    return fs::temp_directory_path() / L"MiaoDesk" / L"PiAgent";
+    return paths::PiAgentRoot();
 }
 
 std::string ReadFile(const fs::path& path) {

@@ -17,6 +17,7 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 ```text
 src/                       Native C++ 产品代码，按领域直接分组
 assets/                    产品资源与壁纸包
+config/                    随包只读产品默认值（缺失时使用编译期回退）
 third_party/webview2/      最小编译期 WebView2 SDK
 runtime/agent/             DSH + Pi 唯一依赖定义/锁
 runtime/x64/               x64 Node/Goz 基础 Runtime

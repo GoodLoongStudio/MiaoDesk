@@ -41,6 +41,9 @@ src/
 └─ include/miaodesk/
 ```
 
+Repository-level read-only product defaults live under `config/` and are
+installed as `Config/`. They are not mutable user state.
+
 ## Ownership rules
 
 - `app/` owns executable composition and application startup only.
@@ -61,6 +64,10 @@ Existing shared headers remain under `include/miaodesk/` so `#include <miaodesk/
 ## Build graph rule
 
 `src/CMakeLists.txt` mirrors the physical tree. It is forbidden to reintroduce `src/native/`, a second nested source root, or implementation `.cpp` files directly under `src/`.
+
+Sources shared by the product executables are compiled through the typed static
+library targets `MiaoDeskCore` and `MiaoDeskHarnessCore`. A `.cpp` file must have
+one build owner rather than being repeated in multiple executable source lists.
 
 The path-layout contract enforces the canonical source domains and rejects the obsolete `src/native` container.
 

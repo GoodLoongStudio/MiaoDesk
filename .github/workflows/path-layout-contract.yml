@@ -7,20 +7,24 @@ on:
       - CMakeLists.txt
       - CMakePresets.json
       - src/**
+      - config/**
       - scripts/**
       - packaging/**
       - third_party/webview2/**
       - docs/PATH_LAYOUT_CONTRACT.md
+      - docs/NATIVE_SOURCE_LAYOUT.md
       - .github/workflows/path-layout-contract.yml
   pull_request:
     paths:
       - CMakeLists.txt
       - CMakePresets.json
       - src/**
+      - config/**
       - scripts/**
       - packaging/**
       - third_party/webview2/**
       - docs/PATH_LAYOUT_CONTRACT.md
+      - docs/NATIVE_SOURCE_LAYOUT.md
       - .github/workflows/path-layout-contract.yml
   workflow_dispatch:
 

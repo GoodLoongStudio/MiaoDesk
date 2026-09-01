@@ -1,4 +1,6 @@
 #include "miaodesk/WallpaperService.h"
+#include "miaodesk/AppPaths.h"
+#include "miaodesk/BuiltinWallpaperCatalog.h"
 
 #include "miaodesk/WallpaperMonitorAssignments.h"
 #include "miaodesk/WallpaperPackage.h"
@@ -17,13 +19,7 @@ namespace miaodesk::desktop {
 namespace {
 
 fs::path LocalMiaoDeskDirectory() {
-    wchar_t local[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
-    fs::path base = (length > 0 && length < std::size(local)) ? fs::path(local) : fs::temp_directory_path();
-    fs::path directory = base / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory;
+    return paths::EnsureStateRoot();
 }
 
 std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t* fallback = L"") {
@@ -53,10 +49,8 @@ WallpaperServiceResult PersistWallpaperSelection(
 
 std::wstring RuntimeSceneKey(const wallpaper::WallpaperLibraryItem& item) {
     if (item.kind != wallpaper::LibraryWallpaperKind::Scene) return {};
-    if (item.id == L"scene-aurora" || item.id == L"aurora") return L"aurora";
-    if (item.id == L"scene-neon" || item.id == L"neon") return L"neon";
-    if (item.id == L"scene-grid" || item.id == L"grid") return L"grid";
-    return {};
+    const auto* definition = wallpaper::FindBuiltinWallpaper(item.id);
+    return definition ? std::wstring(definition->runtimeKey) : std::wstring{};
 }
 
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {

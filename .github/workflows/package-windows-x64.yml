@@ -9,6 +9,7 @@ on:
       - src/**
       - assets/app/**
       - assets/wallpapers/**
+      - config/**
       - runtime/x64/**
       - runtime/agent/**
       - third_party/webview2/**
@@ -94,6 +95,7 @@ jobs:
             'MiaoDesk.exe',
             'MiaoDeskWallpaper.exe',
             'MiaoDeskHarness.exe',
+            'Config\product.ini',
             'Runtime\Node\node.exe',
             'Runtime\Agent\package-lock.json',
             'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',

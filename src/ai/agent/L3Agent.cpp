@@ -1,4 +1,5 @@
 #include "miaodesk/L3Agent.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/AppSearch.h"
 #include "miaodesk/GozSearch.h"
 #include <shellapi.h>
@@ -186,12 +187,8 @@ std::vector<std::wstring> ExtractModelIds(const std::string& json) {
 }
 
 fs::path SettingsPath() {
-    wchar_t localAppData[32768]{};
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, static_cast<DWORD>(std::size(localAppData)));
-    fs::path directory = count ? fs::path(localAppData) / L"MiaoDesk" : fs::temp_directory_path() / L"MiaoDesk";
-    std::error_code ec;
-    fs::create_directories(directory, ec);
-    return directory / L"model-settings.json";
+    const fs::path directory = paths::EnsureStateRoot();
+    return directory.empty() ? fs::path{} : directory / L"model-settings.json";
 }
 
 std::uint64_t SessionHash(const ModelConfig& config) {

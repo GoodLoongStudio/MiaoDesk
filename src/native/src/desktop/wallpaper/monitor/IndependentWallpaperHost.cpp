@@ -1,5 +1,5 @@
 #include "miaodesk/IndependentWallpaperHost.h"
-#include "miaodesk/SceneWallpaperPainter.h"
+#include "miaodesk/LayeredSceneRenderer.h"
 #include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
@@ -225,18 +225,21 @@ struct IndependentWallpaperHost::Impl {
     }
 
     void DrawMiaoCloud(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintMiaoCloud(
-            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
+        const wallpaper::scenes::ScenePaintContext context{slot.renderTarget.Get(), slot.brush.Get(), time};
+        if (wallpaper::scenes::PaintPackagedScene(L"MiaoCloud.mdwall", context, size)) return;
+        wallpaper::scenes::PaintMiaoCloud(context, size);
     }
 
     void DrawNeonCity(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintNeonCity(
-            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
+        const wallpaper::scenes::ScenePaintContext context{slot.renderTarget.Get(), slot.brush.Get(), time};
+        if (wallpaper::scenes::PaintPackagedScene(L"NeonCity.mdwall", context, size)) return;
+        wallpaper::scenes::PaintNeonCity(context, size);
     }
 
     void DrawMysticMoon(Slot& slot, const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintMysticMoon(
-            {slot.renderTarget.Get(), slot.brush.Get(), time}, size);
+        const wallpaper::scenes::ScenePaintContext context{slot.renderTarget.Get(), slot.brush.Get(), time};
+        if (wallpaper::scenes::PaintPackagedScene(L"MysticMoon.mdwall", context, size)) return;
+        wallpaper::scenes::PaintMysticMoon(context, size);
     }
 
     void DrawSlot(Slot& slot) {

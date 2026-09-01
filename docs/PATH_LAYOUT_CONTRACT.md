@@ -14,6 +14,37 @@ C:\pkg\MiaoDesk\<arch>
 
 `CMAKE_WIN32_LONG_PATHS` may be a developer convenience only. It is not a packaging acceptance criterion.
 
+## Canonical repository Runtime
+
+Architecture-independent Agent dependencies live once under `runtime/agent`. Architecture directories contain only native/base Runtime artifacts.
+
+```text
+runtime/
+  agent/
+    package.json
+    package-lock.json
+  x64/
+    node/
+    goz/
+    runtime-lock.json
+  arm64/
+    node/
+    goz/
+    runtime-lock.json
+```
+
+The following legacy paths are forbidden under `runtime/<arch>`:
+
+```text
+harness/
+pi/
+.complete
+runtime-manifest.json
+webview2-sdk/
+```
+
+DSH/Pi versions belong only to `runtime/agent/package.json`; their complete transitive graph belongs only to `runtime/agent/package-lock.json`. `runtime/<arch>/runtime-lock.json` owns only Node/Goz archive names, sources and SHA-256 values.
+
 ## Canonical product tree
 
 First-party files enter packages through `cmake --install`; runtime materialization extends that same staging tree.
@@ -34,7 +65,7 @@ MiaoDesk\
   Goz\
 ```
 
-`Runtime/Agent` is the single x64 production dependency graph for Pi + DeepSeek Harness. Do not restore separate DSH and Pi dependency trees.
+`Runtime/Agent` is the single production dependency graph for Pi + DeepSeek Harness on both x64 and ARM64. Do not restore separate DSH and Pi dependency trees.
 
 Repository source trees, compiler output, SDKs, npm caches and downloaded archives must never enter the user package. Build-only WebView2 lives under `third_party/webview2`, not `runtime/<arch>`.
 
@@ -72,7 +103,7 @@ A Windows package is complete only after:
 
 1. external short-path CMake configure/build;
 2. `cmake --install` staging;
-3. production Runtime materialization;
+3. production Runtime materialization from pinned locks;
 4. projected path budget `<= 248`;
 5. native self-tests;
 6. Pi and DSH CLI probes;

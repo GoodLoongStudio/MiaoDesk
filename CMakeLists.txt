@@ -19,3 +19,27 @@ endif()
 
 include(GNUInstallDirs)
 add_subdirectory(src/native)
+
+# End-user staging is deliberately shallow. Runtime discovery in MiaoDesk is
+# relative to the executable directory, so the three production executables
+# stay at the install root. Do not install repository runtime SDK trees,
+# FetchContent sources, vcpkg buildtrees, or compiler intermediates.
+install(TARGETS
+    MiaoDesk
+    MiaoDeskWallpaper
+    MiaoDeskHarness
+    RUNTIME DESTINATION "."
+)
+
+install(FILES
+    "${CMAKE_SOURCE_DIR}/packaging/windows-store/assets/MiaoMiao.ico"
+    DESTINATION "Assets"
+)
+
+# Packaged wallpaper scenes contain only runtime manifests and assets. Their
+# maximum product-owned nesting remains shallow and portable.
+install(DIRECTORY
+    "${CMAKE_SOURCE_DIR}/assets/wallpapers/"
+    DESTINATION "Wallpapers"
+    PATTERN "README.md" EXCLUDE
+)

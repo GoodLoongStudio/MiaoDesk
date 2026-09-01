@@ -18,7 +18,6 @@ $packagingRoots = @(
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
 foreach ($relative in @(
-    'manifest.json',
     'LICENSE.txt',
     'NOTICE.txt',
     'include\WebView2.h',
@@ -30,7 +29,7 @@ foreach ($relative in @(
         Fail "minimal WebView2 SDK file is missing: third_party/webview2/$($relative -replace '\\','/')"
     }
 }
-foreach ($obsolete in @('build','include-winrt','1.0.4129.50','lib\x86')) {
+foreach ($obsolete in @('build','include-winrt','1.0.4129.50','lib\x86','manifest.json')) {
     if (Test-Path (Join-Path $webViewRoot $obsolete)) {
         Fail "obsolete WebView2 SDK layout returned: third_party/webview2/$($obsolete -replace '\\','/')"
     }

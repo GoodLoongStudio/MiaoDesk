@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+for %%I in ("%~dp0..\..\..") do set "REPO_ROOT=%%~fI"
+cd /d "%REPO_ROOT%"
 
 title MiaoDesk ARM64 Smart Developer Runner
 
@@ -29,11 +30,11 @@ if errorlevel 1 goto :fail
 echo.
 echo [2/2] Selecting the lightest development path...
 if /I "%~1"=="full" (
-  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode full
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\deploy-native-arm64.ps1" -Mode full
 ) else if /I "%~1"=="preview" (
-  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode preview
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\deploy-native-arm64.ps1" -Mode preview
 ) else (
-  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\deploy-native-arm64.ps1" -Mode auto
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\deploy-native-arm64.ps1" -Mode auto
 )
 if errorlevel 1 goto :fail
 

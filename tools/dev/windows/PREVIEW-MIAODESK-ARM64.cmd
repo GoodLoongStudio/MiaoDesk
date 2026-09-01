@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+for %%I in ("%~dp0..\..\..") do set "REPO_ROOT=%%~fI"
+cd /d "%REPO_ROOT%"
 
 title MiaoDesk ARM64 Fast UI Preview
 
@@ -12,7 +13,7 @@ echo.
 echo GitHub builds the preview; this PC downloads UI executables, DLLs, and the small built-in wallpaper assets.
 echo Large Node / Harness / Pi runtime payloads are NOT downloaded for quick acceptance.
 echo Persistent RuntimeCache is reused first; an existing NativeTest runtime is the fallback.
-echo If Agent runtime is missing, run INIT-MIAODESK-ARM64-RUNTIME.cmd once.
+echo If Agent runtime is missing, run INIT-MIAODESK-ARM64-RUNTIME.cmd in this folder once.
 echo.
 
 where git >nul 2>nul
@@ -27,7 +28,7 @@ if errorlevel 1 goto :fail
 
 echo.
 echo [2/2] Resolving and launching FAST exact-head ARM64 UI preview...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\download-arm64-fast-preview.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\download-arm64-fast-preview.ps1"
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" goto :failcode
 exit /b 0

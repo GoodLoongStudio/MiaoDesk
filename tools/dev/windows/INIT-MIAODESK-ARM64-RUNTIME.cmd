@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+for %%I in ("%~dp0..\..\..") do set "REPO_ROOT=%%~fI"
+cd /d "%REPO_ROOT%"
 
 title MiaoDesk ARM64 Runtime Initializer
 
@@ -27,13 +28,13 @@ if errorlevel 1 goto :fail
 
 echo.
 echo [2/2] Initializing persistent runtime cache from local files...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\initialize-arm64-runtime-cache.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\initialize-arm64-runtime-cache.ps1"
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" goto :failcode
 
 echo.
 echo Runtime initialization complete.
-echo You can use PREVIEW-MIAODESK-ARM64.cmd for fast acceptance from now on.
+echo You can use PREVIEW-MIAODESK-ARM64.cmd in this folder for fast acceptance from now on.
 pause
 exit /b 0
 

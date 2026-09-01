@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+for %%I in ("%~dp0..\..\..") do set "REPO_ROOT=%%~fI"
+cd /d "%REPO_ROOT%"
 
 title MiaoDesk Agent Diagnostics
 
@@ -16,7 +17,7 @@ echo.
 git pull --ff-only origin main
 if errorlevel 1 goto :fail
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\diagnose-miaodesk-agent.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\diagnose-miaodesk-agent.ps1"
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (

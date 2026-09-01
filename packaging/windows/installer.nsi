@@ -2,7 +2,7 @@
 ; Build:
 ;   makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe" packaging\windows\installer.nsi
 ;
-; STAGE_DIR must be the canonical tree produced by packaging\windows\stage-x64.ps1.
+; STAGE_DIR must be the canonical tree produced by packaging\windows\stage.ps1 -Architecture x64.
 
 Unicode true
 

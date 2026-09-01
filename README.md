@@ -99,10 +99,9 @@ third_party/webview2/
     arm64/WebView2LoaderStatic.lib
   LICENSE.txt
   NOTICE.txt
-  manifest.json
 ```
 
-版本只记录在 `manifest.json`；不复制 NuGet 的版本目录、`build/native`、x86、DLL、WinRT headers 或 `.targets`。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
+不复制 NuGet 的版本目录、`build/native`、x86、DLL、WinRT headers、`.targets` 或额外元数据。当前来源版本记录在 `THIRD-PARTY-NOTICES.md`；Git 本身固定实际参与构建的 SDK 文件内容。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
 
 ## AI 运行链
 

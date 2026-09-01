@@ -62,6 +62,13 @@ if ($Architecture -eq 'x64' -and
 }
 if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code $LASTEXITCODE" }
 
+# npm may preserve a dependency under a package-local node_modules even when the
+# same Node resolution semantics allow it to live at the Pi root. Normalize known
+# path-heavy production dependencies before NSIS/artifact creation. This changes
+# only physical placement, not package APIs, and is verified by an import probe.
+& (Join-Path $PSScriptRoot 'normalize-runtime-layout.ps1') -Root $Destination
+if ($LASTEXITCODE -ne 0) { throw "Runtime layout normalization failed with exit code $LASTEXITCODE" }
+
 $required = @(
     'MiaoDesk.exe',
     'MiaoDeskWallpaper.exe',
@@ -104,7 +111,7 @@ Set-Content -Path (Join-Path $Destination 'FULL-TEST-COMPONENTS.txt') -Encoding 
     'MiaoDeskHarness workbench host'
     'Shared portable Node runtime'
     'DeepSeek Harness dsh production dependencies'
-    'Pi Agent production dependencies'
+    'Pi Agent production dependencies (path-normalized for stock Windows)'
     'goz + gozd native file search runtime'
     'MiaoCloud / NeonCity / MysticMoon wallpaper packages'
     'Repository SDK/source/build intermediate trees are excluded'

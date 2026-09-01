@@ -37,16 +37,14 @@ if ($tooLong.Count -gt 0) {
     foreach ($item in @($tooLong | Sort-Object ProjectedLength -Descending | Select-Object -First 30)) {
         Write-Host ("OVER {0}: {1}" -f $item.ProjectedLength, $item.Relative) -ForegroundColor Red
     }
-    throw "Package contains $($tooLong.Count) path(s) that exceed the stock-Windows path budget. Shorten/cull runtime payload paths; do not require LongPathsEnabled."
+    throw "Package contains $($tooLong.Count) path(s) that exceed the stock-Windows path budget. Change the runtime/package layout; do not require LongPathsEnabled."
 }
 
-# CMake-owned product content must stay shallow. Third-party package-manager
-# trees preserve the minimum structure required by Node and are governed by the
-# stricter projected MAX_PATH budget above. The DSH node_modules tree is kept at
-# install root specifically to save path budget on stock Windows.
+# Product-owned files stay shallow. Runtime V3 owns its third-party dependency
+# graph below Runtime\Agent, so that tree is governed by the stricter projected
+# MAX_PATH gate above rather than the product-content nesting gate.
 $productOwned = @($items | Where-Object {
     $_.Relative -notlike 'Runtime\*' -and
-    $_.Relative -notlike 'node_modules\*' -and
     $_.Relative -notlike 'Pi\*' -and
     $_.Relative -notlike 'Goz\*'
 })

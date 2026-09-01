@@ -1,16 +1,20 @@
 # MiaoDesk Windows Layered Direct2D UI Rendering Guide
 
-> Status: **Approved implementation baseline**
->
-> Scope: Windows native floating UI surfaces such as Search Bar, compact toolbars, glass panels, floating controls, quick-launch surfaces and similar rounded translucent UI.
->
-> Reference implementation: `src/native/src/ui/search/SearchWindow.cpp`
+Status: approved implementation baseline.
 
-## 1. Why this document exists
+适用于 Search Bar、悬浮工具条、玻璃面板、assistant bubble 等需要透明圆角和原生 Win32 交互的中小型 floating surface。
 
-The Search Bar went through several rendering approaches before reaching an ARM64 real-Windows result with clean rounded edges. The important lesson is that the visual defect was not mainly a corner-radius parameter problem. It was caused by mixing incompatible window-shaping and rendering systems.
+当前参考实现：
 
-The approved implementation baseline is:
+```text
+src/ui/search/SearchWindow.cpp
+```
+
+## 1. 唯一可见边界原则
+
+MiaoDesk 浮动透明 UI 的可见轮廓只允许一个 owner：Direct2D 绘制的 per-pixel alpha surface。
+
+标准路径：
 
 ```text
 WS_EX_LAYERED HWND
@@ -21,195 +25,62 @@ ID2D1DCRenderTarget
     ↓
 PREMULTIPLIED alpha
     ↓
-Direct2D anti-aliased geometry/text
+Direct2D geometry / DirectWrite text
     ↓
 UpdateLayeredWindow(..., ULW_ALPHA)
     ↓
 Windows compositor
 ```
 
-This path should be reused for future MiaoDesk floating native UI when pixel-clean transparent rounded edges are required.
+不要同时用 `CreateRoundRectRgn` / `SetWindowRgn`、DWM window shaping 和 Direct2D 去定义同一个圆角轮廓。多个 geometry owner 会造成锯齿、脏边、裁剪和 DPI 漂移。
 
-## 2. Approved visual result
+## 2. Window 与 backing surface
 
-The Search Bar implementation was visually accepted on ARM64 Windows using this rendering path.
-
-The design target remains:
-
-- `docs/design/search-bar-reference.jpg`
-- `docs/SEARCH_BAR_VISUAL_SPEC.md`
-
-The rendering method in this document is independent from the exact Search Bar colors and dimensions. It is a reusable **window composition and edge-quality technique**.
-
-## 3. The failure mode we must not reintroduce
-
-The earlier implementation combined:
-
-```text
-Direct2D antialiased rounded rectangle
-+
-CreateRoundRectRgn / SetWindowRgn
-+
-HWND render target / DWM window shaping
-```
-
-This is a bad combination for a translucent pill-shaped surface.
-
-Direct2D generates partially covered pixels around a curved edge. Those pixels need intermediate alpha values so the compositor can produce a smooth silhouette.
-
-A GDI window region is effectively a coarse binary clipping boundary for this use case. It does not preserve the same sub-pixel coverage model as the Direct2D geometry. When both systems shape the same visible edge, the result can contain:
-
-- stair-step / fuzzy rounded ends;
-- clipped anti-alias pixels;
-- gray or white side lobes;
-- inconsistent border thickness;
-- geometry that changes appearance with DPI or scale.
-
-### Forbidden for this rendering class
-
-Do not use the following to define the visible rounded silhouette of a layered Direct2D floating surface:
+Top-level window 使用：
 
 ```cpp
-CreateRoundRectRgn(...)
-SetWindowRgn(...)
+WS_EX_TOOLWINDOW | WS_EX_LAYERED
 ```
 
-Do not reintroduce `ID2D1HwndRenderTarget` as the primary Search Bar surface when the window itself requires per-pixel transparency.
-
-These markers are intentionally guarded by `scripts/verify-search-input-contract.ps1` for the Search Bar implementation.
-
-## 4. Window creation
-
-The outer Win32 window is a borderless popup/tool window with per-pixel alpha composition:
+Backing surface 使用 32-bit top-down DIB：
 
 ```cpp
-CreateWindowExW(
-    WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-    windowClass,
-    title,
-    WS_POPUP,
-    ...);
-```
-
-The important flag is:
-
-```cpp
-WS_EX_LAYERED
-```
-
-The window silhouette is **not** produced by a region. Transparent pixels in the backing surface define the actual visible shape.
-
-## 5. Backing surface
-
-Create a memory DC and a 32-bit top-down DIB section:
-
-```cpp
-layerDc_ = CreateCompatibleDC(nullptr);
-
-BITMAPINFO bitmapInfo{};
-bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-bitmapInfo.bmiHeader.biWidth = width;
-bitmapInfo.bmiHeader.biHeight = -static_cast<LONG>(height); // top-down
-bitmapInfo.bmiHeader.biPlanes = 1;
+bitmapInfo.bmiHeader.biHeight = -static_cast<LONG>(height);
 bitmapInfo.bmiHeader.biBitCount = 32;
 bitmapInfo.bmiHeader.biCompression = BI_RGB;
-
-layerBitmap_ = CreateDIBSection(
-    layerDc_,
-    &bitmapInfo,
-    DIB_RGB_COLORS,
-    &layerBits_,
-    nullptr,
-    0);
 ```
 
-The negative height is intentional: it makes the DIB top-down and keeps coordinates aligned with normal UI coordinates.
+每次 redraw 前清成全透明，不能保留上一帧 alpha 数据。
 
-Before every redraw, clear all pixels to fully transparent:
+Direct2D target 使用 `ID2D1DCRenderTarget`，pixel format 使用：
 
 ```cpp
-std::memset(layerBits_, 0, width * height * 4u);
+D2D1::PixelFormat(
+    DXGI_FORMAT_B8G8R8A8_UNORM,
+    D2D1_ALPHA_MODE_PREMULTIPLIED)
 ```
 
-This is important. Old alpha data must never survive from a previous frame.
+`UpdateLayeredWindow` + `AC_SRC_ALPHA` 要求 premultiplied alpha；不要混用 straight alpha。
 
-## 6. Direct2D target
+## 3. Anti-aliasing 与 geometry
 
-Use `ID2D1DCRenderTarget`, not an HWND render target:
+Geometry：
 
 ```cpp
-const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-    D2D1_RENDER_TARGET_TYPE_DEFAULT,
-    D2D1::PixelFormat(
-        DXGI_FORMAT_B8G8R8A8_UNORM,
-        D2D1_ALPHA_MODE_PREMULTIPLIED),
-    0.0f,
-    0.0f,
-    D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_FEATURE_LEVEL_DEFAULT);
-
-d2dFactory_->CreateDCRenderTarget(&props, renderTarget_.GetAddressOf());
-renderTarget_->BindDC(layerDc_, &rect);
+D2D1_ANTIALIAS_MODE_PER_PRIMITIVE
 ```
 
-### Alpha mode is non-negotiable
-
-Use:
+透明 surface 上的文字默认使用：
 
 ```cpp
-D2D1_ALPHA_MODE_PREMULTIPLIED
+D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE
 ```
 
-`UpdateLayeredWindow` with `AC_SRC_ALPHA` expects premultiplied-alpha pixels. Mixing straight alpha and premultiplied alpha is a common source of dark/dirty fringes around translucent edges.
+ClearType 假设更接近不透明 RGB surface，在透明 layered window 上容易产生彩边。
 
-## 7. Direct2D anti-aliasing
+Fill、outline、highlight、focus glow 都应从同一 base rect/radius 推导。状态变化只改变视觉层，不改变 silhouette geometry。
 
-For geometry:
-
-```cpp
-renderTarget_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-```
-
-For text on transparent/translucent UI:
-
-```cpp
-renderTarget_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-```
-
-`GRAYSCALE` is preferred over ClearType for these layered transparent surfaces because ClearType is optimized around opaque RGB sub-pixel assumptions and can create colored fringes when composed over changing backgrounds.
-
-## 8. Rounded geometry rules
-
-A floating glass UI surface should have **one authoritative geometry model**.
-
-For the Search Bar:
-
-```text
-Visible size: 720 × 56 logical px
-Radius:       28 px
-```
-
-The fill, outline, highlight and focus treatment must derive from matching rounded geometry. Do not let unrelated window-shaping code define a second rounded boundary.
-
-Recommended pattern:
-
-```cpp
-const auto bar = D2D1::RoundedRect(
-    D2D1::RectF(0.5f, 0.5f, width - 0.5f, 55.5f),
-    27.5f,
-    27.5f);
-
-renderTarget_->FillRoundedRectangle(bar, fillBrush);
-renderTarget_->DrawRoundedRectangle(bar, outlineBrush, 1.0f);
-```
-
-The half-pixel inset is useful for a 1 px outline because it keeps the stroke visually aligned and avoids clipping at the surface boundary.
-
-For more complex UI, prefer constants/helpers that derive every nested geometry from a single base rectangle and radius rather than duplicating magic numbers.
-
-## 9. Presenting the surface
-
-After Direct2D finishes drawing, present the complete surface with `UpdateLayeredWindow`:
+## 4. Present
 
 ```cpp
 BLENDFUNCTION blend{};
@@ -217,221 +88,73 @@ blend.BlendOp = AC_SRC_OVER;
 blend.SourceConstantAlpha = 255;
 blend.AlphaFormat = AC_SRC_ALPHA;
 
-UpdateLayeredWindow(
-    hwnd,
-    nullptr,
-    &destination,
-    &size,
-    layerDc,
-    &source,
-    0,
-    &blend,
-    ULW_ALPHA);
+UpdateLayeredWindow(..., &blend, ULW_ALPHA);
 ```
 
-Key requirements:
+要求：
 
-- `SourceConstantAlpha = 255` for full per-pixel-alpha control;
-- `AlphaFormat = AC_SRC_ALPHA`;
-- `ULW_ALPHA`;
-- source pixels already premultiplied.
+- `SourceConstantAlpha = 255`
+- `AlphaFormat = AC_SRC_ALPHA`
+- `ULW_ALPHA`
+- source pixels 已 premultiplied
 
-At this point, transparent pixels around the rounded corners remain truly transparent and the Windows compositor blends anti-aliased edge pixels correctly.
+## 5. 输入与视觉必须分离
 
-## 10. Input must be separated from visual rendering
+Visible text/caret 由 DirectWrite/Direct2D 绘制；Native `EDIT` 只负责 Windows 输入语义、focus、clipboard、IME 和 voice typing。
 
-A major Search Bar lesson is that input infrastructure and visual UI should not be the same thing.
+**不要使用 1×1 EDIT proxy。** 现代微软拼音/TSF 会读取 focused HWND、真实矩形和 Win32 caret。Native `EDIT` 必须覆盖真实输入区域，只是禁止它绘制第二份文字或 caret。
 
-The approved pattern is:
+统一输入规则见：
 
 ```text
-Visible UI
-    Direct2D custom rendering
-
-Input infrastructure
-    1 × 1 native EDIT child
-    keyboard / IME / clipboard / voice typing only
+docs/WINDOWS_CUSTOM_INPUT_IME.md
+src/include/miaodesk/InputImeAnchor.h
 ```
 
-The native `EDIT` exists because Windows text input, IME, clipboard behavior and Windows Voice Typing are mature and valuable. However, it must never paint its own rectangle over the custom surface.
-
-The current Search Bar suppresses the input proxy's painting and draws visible text/caret itself with DirectWrite/Direct2D.
-
-This keeps:
-
-- Chinese IME support;
-- keyboard editing;
-- clipboard behavior;
-- `Win + H` voice typing;
-- native focus semantics;
-
-without sacrificing pixel-level visual control.
-
-### Important
-
-Do **not** hide the input control by making the child `EDIT` itself a zero-alpha layered window. That previously caused input/focus behavior to become unreliable. Keep it as a normal tiny input proxy and suppress visual painting instead.
-
-## 11. Caret and text layout
-
-Text and caret must share the same DirectWrite layout origin.
-
-Correct model:
+因此正确模型是：
 
 ```text
-one text origin
-    ↓
-IDWriteTextLayout
-    ↓
-DrawTextLayout
-    ↓
-HitTestTextPosition
-    ↓
-caret position
+Direct2D / DirectWrite
+    visible background / text / caret
+
+Native EDIT
+    real input geometry / focus / IME / clipboard
+    no visible painting
 ```
 
-Do not calculate the caret using independent hard-coded offsets. That creates visible drift between the caret and rendered glyphs.
+## 6. Text / caret / DPI
 
-For transparent UI, DirectWrite + grayscale antialiasing gives stable text over arbitrary backgrounds.
+Text 和 caret 必须共享同一个 DirectWrite layout origin。不要用独立 hard-coded offset 估算 caret。
 
-## 12. State rendering
+Window size、DIB size、geometry、icon、text size、hit-test、IME anchor 必须使用一致的 DPI scale。不能只缩放 HWND 而保留旧像素 geometry。
 
-State should be visual layers, not geometry mutations.
+## 7. 性能与生命周期
 
-Recommended model:
+- 尺寸不变时复用 DIB/DC/render target。
+- 只在 resize 或 D2D target invalid 时重建 surface。
+- 只在 query/focus/hover/caret/result/resize/display 等真实 state change 时 redraw。
+- 静态 UI 不运行持续 60 FPS loop。
+- 删除 DIB 前先从 HDC 恢复原 bitmap，再 `DeleteObject` / `DeleteDC`。
 
-```text
-Base rounded geometry
-    ├─ fill
-    ├─ primary outline
-    ├─ directional glass highlight
-    └─ optional state glow
-```
+## 8. 验收
 
-For Search Bar:
+仓库不再维护只检查源码 marker 的 Search rendering contract 脚本。修改 layered rendering 后应通过正式 C++ build，并在真实 Windows 上验证：
 
-- **Default**: subtle light edge, no blue outline;
-- **Hover**: slightly brighter fill/white edge;
-- **Focused**: thin blue outline, restrained glow;
-- **Active**: slightly stronger blue outline/glow.
+- transparent rounded edge 无脏边/白边
+- hover/focus 不改变 silhouette
+- 文字无明显彩边
+- Native EDIT 不绘制第二份内容
+- 中文 IME/candidate/caret 正常
+- 100% / 125% / 150% / 200% DPI
+- 多显示器移动后 geometry 正确
+- surface redraw 没有旧 alpha 残影
 
-Do not change the pill size/radius between states. State transitions should not move the silhouette.
+## 9. 适用范围
 
-## 13. Performance rules
+适合需要高控制、非矩形 per-pixel transparency 的小中型 Native floating surface。
 
-This approach is efficient enough for compact desktop UI, but keep several rules:
+大型复杂窗口如果需要大量标准控件、复杂 accessibility tree、滚动布局和文本编辑，应单独评估 retained UI framework；不要把这套 layered renderer 当成所有 UI 的默认答案。
 
-1. **Reuse the DIB/DC/render target while size is unchanged.**
-2. Recreate the surface only when dimensions change or the D2D target becomes invalid.
-3. Redraw on actual state changes: query, focus, hover, caret timer, result change, resize/display change.
-4. Do not run a continuous 60 FPS loop for static UI.
-5. Keep expensive effects bounded. A small floating surface can afford gradients and light glows, but avoid unnecessary full-screen blur/effect chains.
+核心规则：
 
-The current Search Bar reuses the backing surface through `EnsureLayerSurface()` and destroys/rebuilds it only when necessary.
-
-## 14. DPI considerations
-
-The current Search Bar contract is defined in logical geometry, while layered surfaces eventually render to actual pixels.
-
-Future reusable components should explicitly decide whether they are:
-
-- fixed logical-pixel UI scaled by monitor DPI; or
-- fixed physical-pixel demo surfaces.
-
-For production multi-monitor DPI support, all of the following must use the same scale factor:
-
-- window size;
-- DIB dimensions;
-- rounded rectangle geometry;
-- icon geometry;
-- text format size;
-- hit-test zones;
-- shadow/glow spread.
-
-Never scale only the HWND while leaving Direct2D geometry at the previous pixel dimensions.
-
-## 15. When to use this approach
-
-Use this layered Direct2D baseline for:
-
-- floating Search Bars;
-- compact desktop toolbars;
-- glass command palettes;
-- floating Widget chrome;
-- notification/assistant bubbles;
-- translucent control strips;
-- custom frameless overlays requiring perfect rounded alpha edges.
-
-It is especially appropriate when:
-
-- the UI is visually small/medium;
-- the visible silhouette is non-rectangular;
-- per-pixel transparency matters;
-- native Win32 interaction must remain available;
-- a full WinUI/XAML migration would be unnecessary overhead.
-
-## 16. When not to use it
-
-Do not automatically use this for every large application window.
-
-For large complex windows with many standard controls, accessibility trees, scrolling layout, complex text editing or large responsive views, WinUI 3/XAML or another retained UI framework may be more appropriate.
-
-This technique is a **high-control native floating-surface renderer**, not a replacement for every UI framework.
-
-## 17. Relationship to Acrylic / backdrop blur
-
-Per-pixel alpha solves the silhouette/edge problem. It does **not by itself capture and blur desktop pixels behind the window**.
-
-Real backdrop blur/Acrylic is a separate material concern.
-
-Do not reintroduce a rectangular system backdrop if doing so destroys the clean per-pixel silhouette. Any future Acrylic/backdrop implementation must preserve this rule:
-
-> **The visible rounded silhouette remains owned by the per-pixel-alpha Direct2D surface.**
-
-If system Acrylic is later added, validate it on real ARM64 Windows before making it the default. The clean edge has higher priority than adding blur.
-
-## 18. Cleanup / resource lifetime
-
-Layered rendering owns native resources that must be released in the correct order:
-
-```text
-ID2D1DCRenderTarget reset
-    ↓
-restore previous HBITMAP into HDC
-    ↓
-DeleteObject(DIB)
-    ↓
-DeleteDC(memory DC)
-```
-
-Do not delete a bitmap while it is still selected into the DC.
-
-The current implementation centralizes this in `ReleaseLayerSurface()`.
-
-## 19. Reusable implementation checklist
-
-Before accepting any future floating native UI using this technique, verify:
-
-- [ ] top-level HWND uses `WS_EX_LAYERED`;
-- [ ] 32-bit DIB is used;
-- [ ] DIB is cleared to transparent before redraw;
-- [ ] D2D pixel format is `B8G8R8A8_UNORM`;
-- [ ] alpha mode is `PREMULTIPLIED`;
-- [ ] geometry antialias mode is `PER_PRIMITIVE`;
-- [ ] transparent-surface text uses `GRAYSCALE` unless a tested reason says otherwise;
-- [ ] `UpdateLayeredWindow` uses `AC_SRC_ALPHA` and `ULW_ALPHA`;
-- [ ] no GDI window region clips the visible curved edge;
-- [ ] fill/border/highlight share one geometry system;
-- [ ] text and caret share one DirectWrite origin/layout;
-- [ ] native input proxy does not become visible;
-- [ ] surface resources are reused and safely released;
-- [ ] real ARM64 Windows screenshot is visually inspected at 1:1 scale.
-
-## 20. Design principle to keep
-
-The main rule learned from the Search Bar work is simple:
-
-> **One visible edge must have one owner.**
-
-For MiaoDesk custom floating UI, that owner is Direct2D rendered into a premultiplied-alpha layered surface. Window regions, DWM shaping and other systems must not independently reshape the same visible edge.
-
-This rule is more important than any individual radius, border color or glow value.
+> **一个可见边缘只能有一个 owner。**

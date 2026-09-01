@@ -7,48 +7,39 @@ $ProgressPreference = 'SilentlyContinue'
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $BundleRoot = Join-Path $RepoRoot 'runtime\x64'
 $LockPath = Join-Path $BundleRoot 'runtime-lock.json'
-$ManifestPath = Join-Path $BundleRoot 'runtime-manifest.json'
 
 function Sha256([string]$Path) {
     (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
 }
 
-function Resolve-BundleFile([string]$RelativePath) {
-    if ([string]::IsNullOrWhiteSpace($RelativePath)) { throw 'Runtime manifest contains an empty archive path.' }
-    $path = Join-Path $BundleRoot ($RelativePath -replace '/', '\')
+function Resolve-Archive([string]$Folder,[string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Name)) { throw 'Runtime lock contains an empty archive name.' }
+    $path = Join-Path $BundleRoot (Join-Path $Folder $Name)
     if (-not (Test-Path $path -PathType Leaf)) { throw "Runtime archive is missing: $path" }
     $path
 }
 
-function Assert-Hash([string]$Path, [string]$Expected) {
+function Assert-Hash([string]$Path,[string]$Expected) {
     $actual = Sha256 $Path
     if ([string]::IsNullOrWhiteSpace($Expected) -or $actual -ne $Expected.ToLowerInvariant()) {
         throw "Runtime integrity check failed: $Path`nExpected: $Expected`nActual:   $actual"
     }
 }
 
-function Expand-Tar([string]$Archive, [string]$Destination) {
+function Expand-Tar([string]$Archive,[string]$Destination) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & tar.exe -xf $Archive -C $Destination
     if ($LASTEXITCODE -ne 0) { throw "Unable to extract Runtime archive: $Archive" }
 }
 
-foreach ($required in @($LockPath,$ManifestPath)) {
-    if (-not (Test-Path $required -PathType Leaf)) { throw "Pinned x64 Runtime metadata is incomplete: $required" }
-}
-$manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-if ([string]$manifest.architecture -ne 'x64' -or [int]$manifest.schema -lt 2) {
-    throw 'Pinned x64 Runtime manifest is incompatible.'
-}
-$lockHash = Sha256 $LockPath
-if ([string]::IsNullOrWhiteSpace([string]$manifest.lockSha256) -or [string]$manifest.lockSha256 -ne $lockHash) {
-    throw 'Pinned x64 Runtime manifest is stale relative to runtime-lock.json.'
-}
+if (-not (Test-Path $LockPath -PathType Leaf)) { throw "Pinned x64 Runtime lock is missing: $LockPath" }
+$lock = Get-Content $LockPath -Raw | ConvertFrom-Json
+if ([string]$lock.architecture -ne 'x64') { throw 'Pinned Runtime lock is not x64.' }
 
-$nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)
-$gozArchive = Resolve-BundleFile ([string]$manifest.goz.archive)
-Assert-Hash $nodeArchive ([string]$manifest.node.sha256)
-Assert-Hash $gozArchive ([string]$manifest.goz.sha256)
+$nodeArchive = Resolve-Archive 'node' ([string]$lock.node.archive)
+$gozArchive = Resolve-Archive 'goz' ([string]$lock.goz.archive)
+Assert-Hash $nodeArchive ([string]$lock.node.sha256)
+Assert-Hash $gozArchive ([string]$lock.goz.sha256)
 
 $runtimeDir = Join-Path $DeployDir 'Runtime'
 $nodeDir = Join-Path $runtimeDir 'Node'

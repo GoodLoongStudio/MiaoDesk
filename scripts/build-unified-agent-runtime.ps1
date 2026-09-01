@@ -49,7 +49,8 @@ $package = [ordered]@{
 }
 $package | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $agentRoot 'package.json') -Encoding UTF8
 
-$cacheRoot = Join-Path $env:RUNNER_TEMP ("MiaoDesk-AgentNpm-{0}-{1}" -f $Architecture, [guid]::NewGuid().ToString('N'))
+$cacheBase = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { $env:TEMP } else { $env:RUNNER_TEMP }
+$cacheRoot = Join-Path $cacheBase ("MiaoDesk-AgentNpm-{0}-{1}" -f $Architecture, [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 $oldCache = $env:npm_config_cache
 try {
@@ -93,7 +94,9 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $agentRoot 'runtime-manifest.json') -Encoding UTF8
 
-# A correct V3 staging tree must not also contain the V2 product dependency trees.
+# Remove the old V2 dependency payloads completely. Only two tiny compatibility
+# entry shims are recreated below so the current native binaries can transition
+# to Runtime\Agent without carrying duplicate npm package trees.
 foreach ($legacy in @(
     (Join-Path $Root 'Pi'),
     (Join-Path $Root 'node_modules'),
@@ -103,5 +106,33 @@ foreach ($legacy in @(
         Remove-Item $legacy -Recurse -Force
     }
 }
+
+$legacyDsh = Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+New-Item -ItemType Directory -Force -Path (Split-Path $legacyDsh -Parent) | Out-Null
+Set-Content -Path $legacyDsh -Encoding UTF8 -Value @'
+(async () => {
+  await import('../../../../../Agent/node_modules/@deepseek-ai/dsh/lib/bin.js');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+'@
+
+$legacyPi = Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+New-Item -ItemType Directory -Force -Path (Split-Path $legacyPi -Parent) | Out-Null
+Set-Content -Path $legacyPi -Encoding UTF8 -Value @'
+(async () => {
+  await import('../../../../../Runtime/Agent/node_modules/@earendil-works/pi-coding-agent/dist/cli.js');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+'@
+
+# The compatibility shims are executable code paths, so probe them too.
+& $nodeExe $legacyDsh --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'DSH V2 compatibility shim failed against Runtime V3.' }
+& $nodeExe $legacyPi --version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Pi V2 compatibility shim failed against Runtime V3.' }
 
 Write-Host "Unified MiaoDesk Agent runtime ready: files=$fileCount directories=$directoryCount lock=$lockHash" -ForegroundColor Green

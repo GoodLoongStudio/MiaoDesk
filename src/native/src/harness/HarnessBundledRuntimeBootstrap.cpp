@@ -39,7 +39,12 @@ void PrependBundledHarnessRuntimeToPath() {
     if (!DirectoryExists(nodeDir)) return;
 
     std::wstring prefix = nodeDir.wstring();
-    const fs::path binDir = nodeDir / L"node_modules" / L".bin";
+
+    // New stock-Windows layout keeps the large DSH node_modules tree at the
+    // install root to save 13 path characters. Fall back to the legacy tree so
+    // already-downloaded packages remain runnable.
+    fs::path binDir = appDir / L"node_modules" / L".bin";
+    if (!DirectoryExists(binDir)) binDir = nodeDir / L"node_modules" / L".bin";
     if (DirectoryExists(binDir)) prefix += L";" + binDir.wstring();
 
     const std::wstring oldPath = CurrentPath();

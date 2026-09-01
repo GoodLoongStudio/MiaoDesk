@@ -18,9 +18,15 @@ $packagingRoots = @(
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
 if (-not (Test-Path $webViewSdk -PathType Leaf)) { Fail 'canonical third_party WebView2 SDK is missing.' }
+
 foreach ($arch in @('x64','arm64')) {
     if (Test-Path (Join-Path $RepoRoot "runtime\$arch\webview2-sdk")) {
         Fail "build-only WebView2 SDK returned under runtime/$arch."
+    }
+}
+foreach ($legacy in @('runtime\x64\harness','runtime\x64\pi')) {
+    if (Test-Path (Join-Path $RepoRoot $legacy)) {
+        Fail "obsolete x64 split Agent Runtime returned: $legacy"
     }
 }
 
@@ -50,6 +56,7 @@ foreach ($file in $nativeFiles) {
 $forbiddenPackagingPatterns = @(
     'set\s+"?DEST=C:\\MD(?:\\|"|$)',
     'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\MiaoDesk',
+    '(?i)\bmklink\b[^\r\n]*\s/J\b',
     '(?i)reg(?:\.exe)?\s+add[^\r\n]*LongPathsEnabled',
     '(?i)Set-ItemProperty[^\r\n]*LongPathsEnabled',
     '(?i)New-ItemProperty[^\r\n]*LongPathsEnabled',
@@ -68,9 +75,10 @@ foreach ($root in $packagingRoots) {
     }
 }
 
-$appMain = Join-Path $nativeRoot 'src\app\main.cpp'
-$harnessBootstrap = Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp'
-foreach ($file in @($appMain,$harnessBootstrap)) {
+foreach ($file in @(
+    (Join-Path $nativeRoot 'src\app\main.cpp'),
+    (Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp')
+)) {
     if (-not (Test-Path $file -PathType Leaf)) { Fail "runtime bootstrap source is missing: $file" }
     if ((Get-Content $file -Raw) -notmatch 'GetModuleFileNameW\s*\(') {
         Fail "runtime discovery is no longer executable-relative: $file"

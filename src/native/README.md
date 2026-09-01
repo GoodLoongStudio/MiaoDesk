@@ -5,46 +5,25 @@ Implementation code is grouped under `src/` by process/domain. Do not add new `.
 - `src/app` — executable composition/startup
 - `src/ai` — Pi, native tool adapters, Direct fallback agent
 - `src/search` — native search integrations
-- `src/harness` — Advanced Workbench process/runtime bridge
+- `src/harness` — DeepSeek Harness host/runtime bridge
 - `src/desktop/control` — Desktop Control facade
 - `src/desktop/shell` — Windows desktop attachment/recovery
 - `src/desktop/wallpaper` — wallpaper runtime/library/renderers
-- `src/desktop/widgets` — widget domain plus M3 real-Windows acceptance probe
+- `src/desktop/widgets` — widget runtime/domain
 - `src/desktop/automation` — playlists/schedules/rules
 - `src/desktop/performance` — performance policy
 - `src/ui` — presentation/adapters only
 
-Public headers remain in `include/miaodesk/` for API stability during this migration.
+Public headers remain in `include/miaodesk/`.
 
-## Build organization
+## Executables
 
-`CMakeLists.txt` mirrors the physical tree with separate source ownership sets for:
+- `MiaoDesk.exe` — user-facing application entry
+- `MiaoDeskWallpaper.exe` — isolated desktop/wallpaper process
+- `MiaoDeskHarness.exe` — isolated DeepSeek Harness host
 
-- `MiaoDesk.exe`
-- `MiaoDeskWallpaper.exe`
-- `MiaoDeskHarness.exe`
-- `MiaoDeskWidgetAcceptance.exe` — diagnostic-only M3 real-Windows probe that consumes WidgetService health rather than owning HWND/shell logic
+Diagnostic acceptance executables are not part of the production build graph. Non-trivial runtime behavior is checked through the production binaries' `--self-test` paths and package smoke checks.
 
-Visual Studio also mirrors the directory hierarchy through `source_group(TREE ...)`, so the IDE view and repository layout no longer diverge.
+## Build rule
 
-The next build-graph cleanup is intentionally separate from this physical move: stable domains may become explicit CMake library/object targets (`desktop_shell`, `desktop_control`, `widgets`, `automation`, `performance`, etc.) when doing so improves enforceable dependency direction rather than only cosmetics.
-
-## Active Widget runtime boundary
-
-M3 Widget health remains owned by `src/desktop/widgets`. Runtime process/HWND/WebView2/z-order inspection is translated into `WidgetSurfaceHealth` and exposed through `DesktopControlService::GetSnapshot()`. UI and Pi consume the same `issueCode`, `detail` and `recommendedAction`; they must not enumerate HWNDs or read private runtime diagnostics themselves.
-
-The production legacy Widget list is still compatibility UI, but its Widget data and temporary health decoration are supplied by `src/ui/widgets/DesktopWidgetUiAdapter.cpp`. The display copy is deliberately separate from persisted Widget data so runtime warning text cannot leak into stored titles.
-
-The M3 acceptance probe is intentionally phase-labelled (`baseline/settings/search/explorer/monitor`). It writes reports below `%LOCALAPPDATA%\MiaoDesk\Diagnostics` and fails when no interactive input desktop is available, so hosted CI cannot be mistaken for visible desktop acceptance.
-
-The current completion-plan gate is real ARM64 Windows visibility/layering/recovery acceptance. M4 UI replacement does not start merely because the M3 implementation compiles.
-
-## Guardrails
-
-`scripts/verify-native-source-layout.ps1` fails the build if root-level implementation `.cpp` files return under `src/native/src/`, required module directories disappear, CMake stops mirroring the module tree, or the normative layout documentation drifts from the repository.
-
-`scripts/verify-desktop-domain-contract.ps1` additionally guards Desktop Control routing, Widget actionable-health ownership, Pi/UI snapshot consumption and the read-only DesktopSurfaceTelemetry boundary.
-
-`scripts/verify-widget-acceptance-contract.ps1` keeps the M3 acceptance probe behind `WidgetService::GetRuntimeHealth` and rejects direct HWND enumeration, shell mutation or private runtime-diagnostic reads from the probe itself.
-
-See `docs/NATIVE_SOURCE_LAYOUT.md`, `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` and `docs/WIDGET_RUNTIME_HEALTH_M3.md` for the normative dependency/runtime contracts.
+CMake builds product code only. Repository policy checks and packaging verification must not become dependencies of native targets. The production package workflow owns path-budget and Runtime smoke verification.

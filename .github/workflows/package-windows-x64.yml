@@ -1,0 +1,145 @@
+name: Windows x64 Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/native/**
+      - assets/wallpapers/**
+      - runtime/x64/**
+      - packaging/windows/**
+      - packaging/nsis/**
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/package-windows-x64.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-package
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\x64
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\x64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Verify path layout
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }
+
+      - name: Install product files
+        shell: pwsh
+        run: |
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+
+      - name: Stage Runtime
+        shell: pwsh
+        run: .\packaging\windows\stage-x64.ps1 -Destination $env:MIAODESK_STAGE_ROOT
+
+      - name: Report package size
+        shell: pwsh
+        run: |
+          $all = @(Get-ChildItem $env:MIAODESK_STAGE_ROOT -File -Recurse -Force)
+          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'Runtime\Agent') -File -Recurse -Force)
+          Write-Host "Package files: $($all.Count)" -ForegroundColor Cyan
+          Write-Host "Agent Runtime files: $($agent.Count)" -ForegroundColor Cyan
+
+      - name: Verify path budget
+        shell: pwsh
+        run: |
+          .\packaging\windows\verify-path-budget.ps1 `
+            -Root $env:MIAODESK_STAGE_ROOT `
+            -MaxInstallRootChars 85 `
+            -MaxProjectedPathChars 248 `
+            -MaxProductDepth 6
+
+      - name: Verify packaged runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:MIAODESK_STAGE_ROOT
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Runtime\Node\node.exe',
+            'Runtime\Agent\package-lock.json',
+            'Runtime\Agent\runtime-manifest.json',
+            'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Goz\goz.exe',
+            'Goz\gozd.exe'
+          )) {
+            if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing package file: $relative" }
+          }
+
+          & "$root\Runtime\Node\node.exe" "$root\Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
+          & "$root\Runtime\Node\node.exe" "$root\Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js" --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
+
+          foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+            $p = Start-Process -FilePath (Join-Path $root $exe) -ArgumentList '--self-test' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
+          }
+
+      - name: Verify movable install and DSH Web
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = $env:MIAODESK_STAGE_ROOT
+          $testParent = 'C:\md path test'
+          $testRoot = Join-Path $testParent 'custom install root with spaces'
+          Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $testParent | Out-Null
+          try {
+            Move-Item $original $testRoot
+            $p = Start-Process -FilePath (Join-Path $testRoot 'MiaoDeskHarness.exe') `
+                -ArgumentList '--harness-smoke-test' -WorkingDirectory $testRoot -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "DSH Web smoke failed from moved install, exit=$($p.ExitCode)" }
+          } finally {
+            if (Test-Path $testRoot -PathType Container) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $original -Parent) | Out-Null
+              Move-Item $testRoot $original -Force
+            }
+            Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/x64/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6

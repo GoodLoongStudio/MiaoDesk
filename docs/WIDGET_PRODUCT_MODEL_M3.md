@@ -1,72 +1,45 @@
-# MiaoDesk Widget Product Model (M3)
+# MiaoDesk Widget Product Model
 
-Status: normative product contract
-Date: 2026-08-28
+Status: normative product contract. The `_M3` filename is retained only for stable existing links.
 
 ## User meaning
 
-A MiaoDesk Widget is a small information card attached to the Windows desktop. Normal users do not manage HWNDs, renderer processes, normalized coordinates, z-index values, or runtime attachment details.
+Widget 是附着在 Windows 桌面的独立信息卡。普通用户不需要理解 HWND、renderer process、normalized coordinates 或 z-order 实现细节。
 
-The three showcase Widgets are **Native** Widgets rendered by `NativeWidgetHost` with Direct2D, not WebView2 surfaces. This follows the product baseline performance principle: Widgets are part of the always-on desktop render layer.
+当前内置 showcase Widgets 使用 Native Direct2D surface：
 
-## Current M3 simplification
+- `玻璃时钟`
+- `今日待办`
+- `玻璃天气`
 
-M3 keeps fixed visual templates and a beginner-friendly surface. Users can **drag widgets on the desktop** to reposition them; positions persist across sessions. Resize handles, numeric x/y editors, monitor reassignment editors, and Small/Medium/Large selectors remain deferred.
+复杂 Web 内容可以使用隔离 WebView2 Widget，但不是默认常驻 showcase 路径。
 
-The goal is to prove visual rendering, desktop layering, and drag persistence on real Windows before richer editing returns.
+## Product behavior
 
-## Fixed showcase formats
-
-The current production showcase contains three distinct widget types:
-
-- `玻璃时钟` — translucent glass time card with live clock;
-- `今日待办` — task list card for daily productivity;
-- `玻璃天气` — weather card with temperature and short forecast.
-
-Each format owns its own fixed logical size and Native Direct2D appearance, drawn by `NativeWidgetHost`. **Initial placement** is automatic and collision-aware across enabled Widgets on the same display: the controller scans logical desktop space from the top-right toward the left and rejects candidate rectangles that intersect another enabled Widget plus the product gap. After creation, users may drag a widget anywhere within the same monitor's normalized bounds. Raw coordinates remain an implementation detail in settings UI.
-
-The existing `＋ 新建桌面小组件` entry lets users pick a fixed format or auto-rotate the next preset.
-
-## Desktop drag behavior
-
-Enabled Widget surfaces expose a native drag layer. Native Widgets use `NativeWidgetHost`; WebView2 Widgets (used only for on-demand complex web content) use `WebDesktopSurfaceChild`:
-
-- drag starts from the widget's top grip / drag handle;
-- movement updates the live HWND position immediately;
-- release persists normalized `x/y` through `WidgetService::Update`;
-- cancel restores the pre-drag placement;
-- drag does not change preset-owned `width/height`.
-
-`DesktopWidgetController::MoveTo` is the controller-facing API for programmatic moves using the same update path.
-
-## Allowed management actions
-
-The Widget page currently exposes:
+当前 Widget 管理面向普通用户只暴露必要操作：
 
 ```text
 add fixed format
-drag on desktop to reposition
+drag to reposition
 hide / show
 delete
 refresh runtime state
 ```
 
-Resize and monitor reassignment editors remain deferred.
+固定 preset 拥有默认逻辑尺寸。新建时使用 collision-aware 自动放置；用户拖动后通过 `WidgetService::Update` 持久化 normalized `x/y`。
 
-## Runtime independence
+Resize、数字坐标编辑和 monitor reassignment 只有在有明确产品需求时再开放，不为“编辑器完整”预先增加复杂度。
 
-An enabled Widget is an independent desktop surface. Its existence must not semantically depend on whether a dynamic wallpaper is enabled. Wallpaper and Widget share `DesktopShellHost` attachment/layering infrastructure, but they are separate product states.
+## Wallpaper independence
 
-The production Web/Widget coordinator therefore keeps two separate runtime decisions:
+Widget 与 Wallpaper 是两个独立状态域：
 
-- Web wallpaper requests still honor Wallpaper `Enabled` and wallpaper-host visibility;
-- Widget requests are generated from enabled Widget state regardless of Wallpaper `Enabled`;
-- wallpaper-host invisibility may pause Web wallpaper rendering, but it must not pause enabled Widgets by itself;
-- shared Performance `Pause` / `Stop` policy may still pause both domains when the policy itself requires that behavior.
+- 换壁纸不能删除 Widget；
+- Wallpaper disabled 不能等价于 Widget disabled；
+- Wallpaper host 暂停 Web wallpaper 不能自动暂停 Native Widget；
+- 共享 Performance policy 可以在策略明确要求时同时 Pause/Stop 两个域。
 
-`scripts/verify-desktop-domain-contract.ps1` guards this independence so the Widget runtime cannot silently regain Wallpaper Enabled/visibility coupling.
-
-Expected visual order remains:
+目标视觉顺序：
 
 ```text
 desktop icons
@@ -74,48 +47,45 @@ Widget
 MiaoDesk wallpaper
 ```
 
-## Landed implementation
+Desktop attachment/z-order mutation 由 `DesktopShellHost` 统一拥有，Widget domain 不重新实现 WorkerW/Progman ownership。
 
-The M3 product path now includes:
+## Controller / persistence boundary
 
-- `WidgetFixedPreset::{GlassClock, TodayTasks, WeatherGlass}` in `DesktopWidgetController`;
-- fixed preset-owned visual geometry instead of public resize APIs;
-- collision-safe automatic placement for newly created widgets;
-- balanced production `CreateClock` selection across the three fixed showcase formats;
-- desktop drag repositioning with persisted normalized coordinates;
-- `DesktopWidgetController::MoveTo` for service-routed placement updates;
-- no public `SetSize` / `MoveToMonitor` controller editing surface during this phase;
-- runtime generation and pause decisions decoupled from Wallpaper Enabled/host visibility;
-- `MiaoDeskWidgetAcceptance.exe` requires exactly one enabled `玻璃时钟`, `今日待办`, and `玻璃天气`, verifies their preset-owned sizes, and rejects same-monitor overlap at the initial baseline checkpoint;
-- a single arbitrary Widget can no longer satisfy M3 real-Windows acceptance;
-- `scripts/verify-widget-product-model.ps1` guards the fixed-format controller contract, drag persistence path, and strict three-widget acceptance set while preventing the controller from regaining shell attachment ownership;
-- x64/ARM64 exact-head workflows run the Widget product guard in addition to source-layout/domain/shell contracts.
-
-These are implementation milestones only. They do not satisfy the real-Windows visual gate by themselves.
-
-## Fixed-format acceptance
-
-The first acceptance pass is deliberately small:
+`DesktopWidgetController` 与 `WidgetService` 是产品调用边界。`DesktopWidgetStore` 是内部 persistence，不是 UI/AI 公共 API。
 
 ```text
-click create three times
--> exactly one 玻璃时钟 is enabled at preset size
--> exactly one 今日待办 is enabled at preset size
--> exactly one 玻璃天气 is enabled at preset size
--> all three visibly render
--> all three occupy non-overlapping automatic placements on each display at baseline
--> user drag may reposition widgets after baseline without invalidating preset-owned sizes
--> all remain above MiaoDesk wallpaper and below desktop icons
--> settings window does not hide or pause them
--> search window does not hide or pause them
--> Explorer restart restores them
--> monitor reconnect restores the same persisted placement configuration
+UI / Pi
+  ↓
+DesktopControlService / DesktopWidgetController
+  ↓
+WidgetService
+  ↓
+persistence + runtime
 ```
 
-The acceptance executable rejects extra enabled Web Widgets during this M3 round so evidence cannot accidentally describe a different product configuration. Runtime PID/HWND recreation remains allowed; persisted Widget identity, placement configuration, Windows session, phase order, structured lifecycle readiness, geometry/monitor visibility and z-order health remain continuous evidence requirements.
+## Runtime expectations
 
-For Native Widgets the WebView2 Environment/Controller/Navigation stages do not apply; `WidgetService` reports those stages as ready from the native surface's own window and visibility state.
+Enabled 只表示配置状态，不等于真实渲染成功。产品状态需要能够区分：
 
-Resize/edit-mode work may resume only after this fixed-format + drag path is stable on real Windows.
+- process/window 是否存在
+- parent/style/visibility 是否有效
+- target monitor / geometry 是否有效
+- Web Widget lifecycle 是否 ready
+- z-order 是否正确
 
-M3 remains open until the real ARM64 Windows visible-runtime acceptance passes. This product contract does not replace that gate.
+具体见 `WIDGET_RUNTIME_HEALTH_M3.md` 和 `WIDGET_PLACEMENT_HEALTH_M3.md`。
+
+## Real Windows validation
+
+仓库不再维护独立 Widget acceptance executable 或源码 marker contract 脚本。涉及 Widget runtime/layering/drag 的改动需要在真实 Windows 上验证：
+
+1. 三个内置 preset 均可创建并明显区分；
+2. 初始位置不重叠；
+3. drag 后位置持久化；
+4. Settings/Search 打开时 Widget 不被错误隐藏；
+5. Widget 位于 wallpaper 上、desktop icons 下；
+6. Explorer restart 后恢复；
+7. display reconnect/change 后恢复到有效 monitor/geometry；
+8. enabled Widget 的 runtime health 反映真实 surface，而不是只返回 enabled=true。
+
+代码编译成功不替代真实桌面可见行为验证。

@@ -3,14 +3,32 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
   "configurePresets": [
     {
+      "name": "x64",
+      "displayName": "Windows x64 - short external build",
+      "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "binaryDir": "$env{SystemDrive}/b/MiaoDesk/x64",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/MiaoDesk/x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "arm64",
-      "displayName": "Windows ARM64 (Visual Studio)",
-      "description": "与 CI（native-search-windows.yml）一致的官方配置目标",
+      "displayName": "Windows ARM64 - short external build",
+      "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree.",
       "generator": "Visual Studio 17 2022",
       "architecture": { "value": "ARM64", "strategy": "set" },
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "$env{SystemDrive}/b/MiaoDesk/arm64",
       "cacheVariables": {
-        "CMAKE_CONFIGURATION_TYPES": "Release"
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/MiaoDesk/arm64"
       },
       "condition": {
         "type": "equals",
@@ -20,6 +38,12 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "x64-release",
+      "displayName": "Build x64 Release",
+      "configurePreset": "x64",
+      "configuration": "Release"
+    },
     {
       "name": "arm64-release",
       "displayName": "Build ARM64 Release",

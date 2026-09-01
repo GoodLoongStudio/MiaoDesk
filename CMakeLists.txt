@@ -33,7 +33,7 @@ install(TARGETS
 )
 
 install(FILES
-    "${CMAKE_SOURCE_DIR}/packaging/windows-store/assets/MiaoMiao.ico"
+    "${CMAKE_SOURCE_DIR}/assets/app/MiaoMiao.ico"
     DESTINATION "Assets"
 )
 

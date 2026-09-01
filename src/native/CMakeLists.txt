@@ -124,7 +124,7 @@ add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES})
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/packaging/windows-store/assets/MiaoMiao.ico"
+            "${CMAKE_SOURCE_DIR}/assets/app/MiaoMiao.ico"
             "$<TARGET_FILE_DIR:MiaoDesk>/Assets/MiaoMiao.ico"
     VERBATIM
 )

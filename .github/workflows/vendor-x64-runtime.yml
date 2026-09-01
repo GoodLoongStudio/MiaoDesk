@@ -12,8 +12,6 @@ on:
 permissions:
   contents: write
 
-# runtime/agent/package-lock.json is architecture-neutral and is the single
-# dependency lock shared by x64 and ARM64 packaging.
 concurrency:
   group: vendor-x64-runtime
   cancel-in-progress: true
@@ -21,33 +19,33 @@ concurrency:
 jobs:
   vendor:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Materialize pinned base runtime and Agent lock
+      - name: Materialize pinned x64 base and shared Agent lock
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
           $root = (Resolve-Path '.').Path
-          $lockPath = Join-Path $root 'runtime\x64\runtime-lock.json'
-          $manifestPath = Join-Path $root 'runtime\x64\runtime-manifest.json'
+          $runtime = Join-Path $root 'runtime\x64'
+          $runtimeLockPath = Join-Path $runtime 'runtime-lock.json'
           $agentRoot = Join-Path $root 'runtime\agent'
           $agentPackage = Join-Path $agentRoot 'package.json'
-          $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
-          if ($lock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
+          $runtimeLock = Get-Content $runtimeLockPath -Raw | ConvertFrom-Json
+          if ([string]$runtimeLock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
           if (-not (Test-Path $agentPackage -PathType Leaf)) { throw 'runtime/agent/package.json is missing' }
-          $runtime = Join-Path $root 'runtime\x64'
+
           $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Vendor-x64-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Force -Path $temp | Out-Null
 
           function Sha256([string]$Path) {
             (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
           }
-          function Ensure-Archive([string]$Path, [string]$Url, [string]$ExpectedHash) {
+          function Ensure-Archive([string]$Path,[string]$Url,[string]$ExpectedHash) {
             if ((Test-Path $Path -PathType Leaf) -and (Sha256 $Path) -eq $ExpectedHash.ToLowerInvariant()) { return }
             New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
             Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
@@ -55,11 +53,11 @@ jobs:
           }
 
           try {
-            $nodeArchive = Join-Path $runtime ('node\' + [string]$lock.node.archive)
-            Ensure-Archive $nodeArchive (([string]$lock.node.source).TrimEnd('/') + '/' + [string]$lock.node.archive) ([string]$lock.node.sha256)
+            $nodeArchive = Join-Path $runtime ('node\' + [string]$runtimeLock.node.archive)
+            Ensure-Archive $nodeArchive (([string]$runtimeLock.node.source).TrimEnd('/') + '/' + [string]$runtimeLock.node.archive) ([string]$runtimeLock.node.sha256)
 
-            $gozArchive = Join-Path $runtime ('goz\' + [string]$lock.goz.archive)
-            Ensure-Archive $gozArchive ([string]$lock.goz.source) ([string]$lock.goz.sha256)
+            $gozArchive = Join-Path $runtime ('goz\' + [string]$runtimeLock.goz.archive)
+            Ensure-Archive $gozArchive ([string]$runtimeLock.goz.source) ([string]$runtimeLock.goz.sha256)
 
             $nodeExpanded = Join-Path $temp 'node'
             Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
@@ -75,16 +73,6 @@ jobs:
               $env:npm_config_cache = $oldCache
             }
             if (-not (Test-Path (Join-Path $agentRoot 'package-lock.json') -PathType Leaf)) { throw 'Agent package-lock.json was not generated.' }
-
-            $manifest = [ordered]@{
-              schema = 3
-              architecture = 'x64'
-              generatedUtc = [DateTime]::UtcNow.ToString('o')
-              lockSha256 = Sha256 $lockPath
-              node = [ordered]@{ version=[string]$lock.node.version; archive=('node/' + (Split-Path $nodeArchive -Leaf)); sha256=Sha256 $nodeArchive }
-              goz = [ordered]@{ version=[string]$lock.goz.version; tag=[string]$lock.goz.tag; archive=('goz/' + (Split-Path $gozArchive -Leaf)); sha256=Sha256 $gozArchive }
-            }
-            $manifest | ConvertTo-Json -Depth 5 | Set-Content $manifestPath -Encoding UTF8
           } finally {
             Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
           }
@@ -94,8 +82,8 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add runtime/x64 runtime/agent/package-lock.json
+          git add runtime/x64/node runtime/x64/goz runtime/agent/package-lock.json
           if (git diff --cached --quiet) { exit 0 }
-          git commit -m 'runtime: update pinned x64 base and Agent lock'
+          git commit -m 'runtime: update x64 base and shared Agent lock'
           git pull --rebase origin main
           git push origin HEAD:main

@@ -102,7 +102,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/library/WallpaperLibrary.cpp
     desktop/wallpaper/library/WallpaperLibraryWeb.cpp
     desktop/wallpaper/library/WallpaperPackage.cpp
-    ui/wallpaper/WallpaperLibraryWindowProduction.cpp
+    ui/wallpaper/WallpaperLibraryWindowV2.cpp
     ui/settings/DesktopAiSettingsPage.cpp
 
     search/AppSearch.cpp

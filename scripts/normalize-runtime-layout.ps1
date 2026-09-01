@@ -129,6 +129,22 @@ if ($conflicts.Count -gt 0) {
     Write-Host "Runtime normalization preserved $($conflicts.Count) version-conflicting nested package(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
 }
 
+# Production JS never consumes TypeScript declaration source maps. They are editor
+# metadata only, but SDK generators can give them extremely long filenames. Strip
+# them from both runtime dependency trees before the stock-Windows path budget is
+# evaluated. Keep executable JS and ordinary source maps intact.
+$declarationMaps = @()
+foreach ($runtimeModules in @($shallowNodeModules, $piNodeModules)) {
+    if (-not (Test-Path $runtimeModules -PathType Container)) { continue }
+    $declarationMaps += @(Get-ChildItem $runtimeModules -Recurse -Force -File -Filter '*.d.ts.map' -ErrorAction SilentlyContinue)
+}
+foreach ($map in $declarationMaps) {
+    Remove-Item $map.FullName -Force
+}
+if ($declarationMaps.Count -gt 0) {
+    Write-Host "Pruned $($declarationMaps.Count) TypeScript declaration source map(s) from the production runtime." -ForegroundColor Cyan
+}
+
 # Re-probe both the real shallow DSH entrypoint and the compatibility launcher.
 & $node $piCli --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Pi runtime failed after path normalization.' }

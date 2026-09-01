@@ -89,6 +89,14 @@ foreach ($requiredPattern in @(
 if ($agentRuntimeText -match 'Join-Path \$Root ''Runtime\\Agent''|Join-Path \$Root ''Agent''') {
     Fail 'Agent dependency graph returned to an over-budget physical path.'
 }
+foreach ($shimTarget in @(
+    "await import('../../../../../../AI/node_modules/@deepseek-ai/dsh/lib/bin.js');",
+    "await import('../../../../../AI/node_modules/pi/dist/cli.js');"
+)) {
+    if (-not $agentRuntimeText.Contains($shimTarget)) {
+        Fail "Agent Runtime compatibility shim has the wrong relative target: $shimTarget"
+    }
+}
 
 $presets = Get-Content $cmakePresets -Raw
 if ($presets -match [regex]::Escape('${sourceDir}/build') -or $presets -match [regex]::Escape('${sourceDir}\\build')) {

@@ -190,7 +190,7 @@ $legacyDsh = Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin
 New-Item -ItemType Directory -Force -Path (Split-Path $legacyDsh -Parent) | Out-Null
 Set-Content -Path $legacyDsh -Encoding UTF8 -Value @'
 (async () => {
-  await import('../../../../../AI/node_modules/@deepseek-ai/dsh/lib/bin.js');
+  await import('../../../../../../AI/node_modules/@deepseek-ai/dsh/lib/bin.js');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

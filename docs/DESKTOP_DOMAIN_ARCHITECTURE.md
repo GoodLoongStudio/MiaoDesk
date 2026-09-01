@@ -1,283 +1,202 @@
-# MiaoDesk Desktop domain architecture
+# MiaoDesk Desktop Domain Architecture
 
 Status: normative architecture contract.
-Date: 2026-08-25
 
-This document defines module boundaries for the MiaoDesk desktop product. It exists to prevent UI, AI, wallpaper renderers and Windows Shell integration from growing into one coupled subsystem.
+本文件只描述当前有效的模块边界，不记录历史迁移过程。物理源码布局见 `NATIVE_SOURCE_LAYOUT.md`。
 
-The physical implementation layout is defined by `docs/NATIVE_SOURCE_LAYOUT.md`. Domain boundaries and physical folders must agree; `src/native/src/` is a module root, not a flat implementation bucket.
-
-## 1. Target process architecture
+## 1. 进程边界
 
 ```text
 MiaoDesk.exe
-├─ AppShell
-├─ Search
+├─ App / Search / Settings UI
 ├─ AI / Pi Runtime
-├─ Settings UI
-└─ DesktopControlClient / DesktopControlService
-            │
-            │ stable intent contract
-            ▼
+└─ DesktopControlService client
+
 MiaoDeskWallpaper.exe
-├─ DesktopShell
+├─ Desktop Shell
 ├─ Wallpaper
 ├─ Widgets
 ├─ Automation
 └─ Performance
 
 MiaoDeskHarness.exe
-└─ 高级工作台
+└─ DeepSeek Harness host
 ```
 
-This is intentionally a small-process architecture, not microservices. Internal modules have strong boundaries; process count stays small.
+这是小进程架构，不是微服务。进程数量保持少，模块 ownership 保持明确。
 
-Current implementation roots:
+当前实现根：
 
 ```text
-src/native/src/
+src/
 ├─ app/
 ├─ ai/
+│  ├─ a2ui/
+│  ├─ agent/
 │  ├─ pi/
-│  ├─ tools/
-│  └─ agent/
-├─ search/
-├─ harness/
+│  └─ tools/
 ├─ desktop/
+│  ├─ automation/
 │  ├─ control/
+│  ├─ demo/
+│  ├─ performance/
+│  ├─ preview/
 │  ├─ shell/
 │  ├─ wallpaper/
-│  ├─ widgets/
-│  ├─ automation/
-│  └─ performance/
-└─ ui/
+│  └─ widgets/
+├─ harness/
+├─ search/
+├─ ui/
+└─ include/miaodesk/
 ```
 
-Public C++ headers remain under `src/native/include/miaodesk/` during the current migration so implementation movement does not silently change the API/include contract.
+共享 C++ 接口放在 `src/include/miaodesk/`；只属于单一实现单元的头文件应优先与实现放在同一领域目录，新代码不要为了方便继续扩大公共 include 面。
 
-## 2. Dependency rule
+## 2. 依赖方向
 
-All product clients use one control path:
+产品调用应沿一个方向流动：
 
 ```text
-UI / Pi / future Editor
+UI / Pi / future editor
         ↓
-UI adapter/controller or Pi adapter
+adapter / controller
         ↓
-Desktop Control contract
+DesktopControlService
         ↓
-Domain service
+domain service
         ↓
-Store / Runtime / Renderer
+persistence / runtime / renderer
         ↓
-DesktopShellHost when a Windows desktop surface is required
+DesktopShellHost（仅需要 Windows desktop surface 时）
 ```
 
-Forbidden long-term paths:
+禁止新增以下直接依赖：
 
 ```text
-UI -> wallpaper.ini
-UI -> DesktopWidgetStore
-UI -> WallpaperAutomationStore
-UI -> WorkerW / Progman
-UI -> WebView2 runtime process
-UI -> runtime HWND enumeration
-Pi adapter -> wallpaper.ini
-Pi adapter -> DesktopWidgetStore
-Pi adapter -> ShellExecute wallpaper runtime
-Pi adapter -> runtime HWND enumeration
+UI -> wallpaper.ini / private persistence
+UI -> WorkerW / Progman / runtime HWND enumeration
+UI -> WebView2 child process internals
+Pi -> wallpaper.ini / private Widget store
+Pi -> runtime HWND enumeration
 Renderer -> AI runtime
 Wallpaper -> Pi runtime
 ```
 
-During migration, legacy paths may remain only behind an explicit production bridge when the replacement path is not yet complete. New code must not add another direct path.
+旧实现如果仍需要兼容 bridge，只允许 bridge 收口已有路径，不能继续扩张新的旁路。
 
-## 3. Domains
+## 3. Domain ownership
 
-### 3.1 DesktopShell
+### Desktop Shell — `src/desktop/shell/`
 
-Physical implementation: `src/native/src/desktop/shell/`.
+负责：
 
-Owns only Windows desktop infrastructure:
-
-- Progman / WorkerW / SHELLDLL_DefView discovery
-- Windows 11 Raised Desktop
+- Progman / WorkerW / Windows 11 Raised Desktop discovery
 - Explorer restart recovery
-- surface attachment and z-order
-- display topology needed for desktop attachment
-- shared read-only surface z-order interpretation through `DesktopSurfaceTelemetry`
+- surface attachment / z-order
+- desktop surface 所需的显示器拓扑
+- 只读 surface telemetry
 
-It knows surface roles such as Wallpaper and Widget. It does not know Aurora, playlists, AI, widget HTML or library metadata.
+`DesktopShellHost` 拥有 mutation；`DesktopSurfaceTelemetry` 只读，不得获得 `SetParent` / `SetWindowPos` / repair ownership。
 
-Primary mutation implementation: `DesktopShellHost`. `DesktopSurfaceTelemetry` is read-only and must never gain `SetParent`, `SetWindowPos`, WorkerW discovery or repair ownership.
+### Wallpaper — `src/desktop/wallpaper/`
 
-### 3.2 Wallpaper
+负责：
 
-Physical implementation: `src/native/src/desktop/wallpaper/`.
-
-Owns:
-
-- wallpaper state and package validation through `WallpaperService`
-- wallpaper library and packages
-- Image / Video / Web / Scene selection
-- wallpaper renderer lifecycle
+- wallpaper state / package validation
+- library / package / import / apply
+- Image / Video / Web / Scene lifecycle
 - per-monitor assignment
-- scaling and content properties
+- scaling / render / Web runtime
 
-Subfolders separate `library`, `monitor`, `render`, `web`, `runtime` and migration-only `legacy` code. Wallpaper code does not call Pi.
+`library/`、`monitor/`、`render/`、`web/`、`runtime/` 是实际职责边界。`legacy/` 仍包含历史 engine implementation；新功能不得继续堆进 legacy。
 
-### 3.3 Widgets
+### Widgets — `src/desktop/widgets/`
 
-Physical implementation: `src/native/src/desktop/widgets/` with UI adapters under `src/native/src/ui/widgets/`.
+负责：
 
-Owns:
-
-- Widget persistence through `WidgetService`
-- package/source management
+- Widget persistence
 - normalized geometry
-- Widget runtime lifecycle
-- Widget surface management
-- caller-facing aggregate health through `WidgetRuntimeHealth`
-- caller-facing per-Web-Widget runtime/surface health through `WidgetSurfaceHealth`
+- preset/source management
+- runtime lifecycle
+- surface/runtime health
 
-`DesktopWidgetStore` is persistence, not a public product API. UI and AI must use `DesktopControlService` or an approved controller rather than mutate the Store directly. Runtime diagnostics may be produced by the wallpaper process, but UI/Pi must not read private INI diagnostics, inspect WebView2 child properties or enumerate runtime HWNDs directly.
+`DesktopWidgetStore` 是内部 persistence，不是产品 API。UI/AI 应通过 `WidgetService`、`DesktopWidgetController` 或 `DesktopControlService`。
 
-M3 now structures each enabled Web Widget as configured/process/PID/HWND/parent/child-style/visibility/WebView2 lifecycle/z-order state behind `WidgetService::GetRuntimeHealth`:
+### Automation — `src/desktop/automation/`
 
-- `WebDesktopSurfaceChild` publishes EnvironmentReady, ControllerReady and successful NavigationReady as process-safe HWND properties;
-- the child role property is published before asynchronous WebView2 initialization, so not-ready lifecycle stages are distinguished from telemetry absence;
-- legacy child surfaces remain explicitly unreported rather than being guessed ready;
-- `DesktopSurfaceTelemetry` supplies read-only shared z-order semantics: icon DefView remains above MiaoDesk surfaces and Widget surfaces remain above MiaoDesk wallpaper surfaces;
-- `WidgetService` consumes these sources and computes `renderingHealthy`; it does not mutate shell state.
-
-The active contract is documented in `docs/WIDGET_RUNTIME_HEALTH_M3.md`.
-
-### 3.4 Automation
-
-Physical implementation: `src/native/src/desktop/automation/` with UI compatibility code under `src/native/src/ui/automation/`.
-
-Owns:
+负责：
 
 - playlists
 - schedules
 - profiles
 - application rules
-- persisted active playlist / last matched schedule state
-- manual next-playlist state transition
-- runtime evaluation through `AutomationService`
+- runtime evaluation
 
-`WallpaperAutomationStore` is persistence/execution infrastructure, not a UI API. `AutomationService` owns persistence/evaluation access. `AutomationUiAdapter` is the temporary compatibility surface for the current Win32 automation UI.
+`AutomationService` 拥有 persistence/evaluation。当前 Win32 automation UI 仍通过 `ui/automation/AutomationUiAdapter` compatibility boundary，不得直接获得 persistence ownership。
 
-Automation produces desktop intents; it does not directly manipulate WorkerW or renderer HWNDs.
+### Performance — `src/desktop/performance/`
 
-### 3.5 Performance
+负责 fullscreen/maximized/battery/remote/lock/idle 等 policy 输入和 Normal/Throttle/Pause/Stop 决策。
 
-Physical implementation: `src/native/src/desktop/performance/` with UI compatibility code under `src/native/src/ui/performance/`.
+`PerformanceService` 拥有 persisted policy；UI 通过 `PerformanceUiAdapter` 调用。
 
-Owns policy inputs and decisions:
+### AI — `src/ai/`
 
-- fullscreen / maximized
-- app rules
-- battery / saver
-- Remote Desktop
-- lock / idle
-- Normal / Throttle / Pause / Stop
-
-`PerformanceService` owns persisted performance-policy configuration. `PerformanceUiAdapter` is the UI-facing compatibility boundary; performance controls use it instead of owning persistence directly.
-
-Renderers consume the resulting policy; renderers do not independently rediscover system policy.
-
-### 3.6 AI
-
-Physical implementation: `src/native/src/ai/`.
-
-Owns:
+负责：
 
 - Pi Runtime
 - Provider / Model state
-- native tool registration
-- conversational orchestration
+- native tools
+- Agent orchestration
+- A2UI parsing
 
-`ai/tools/DesktopWidgetTools.cpp` is the Pi-to-Desktop-Control adapter; it is deliberately outside the Widget persistence domain. AI is a client of Desktop Control. It does not own wallpaper or Widget persistence. `wallpaper_state_get` reads `DesktopSnapshot`, including `WidgetRuntimeHealth`, instead of composing a separate AI-only runtime view. Pi must not enumerate Widget processes/HWNDs itself; per-surface state is supplied by the Widget domain through the snapshot contract.
+AI 是 Desktop domain 的 client，不拥有 wallpaper / Widget persistence，也不直接枚举 runtime HWND。
 
-### 3.7 UI
+### UI — `src/ui/`
 
-Physical implementation: `src/native/src/ui/`.
+负责：
 
-UI responsibilities are deliberately narrow:
+- render
+- user input
+- navigation
+- preview / inspector
+- 调用 controller/service
+- 显示 state / error
 
-- render navigation, cards, preview and inspector
-- collect user intent
-- call a controller/service
-- display returned state/errors
+UI 不拥有 domain rules。
 
-UI does not implement domain rules. Production compatibility bridges for the old library/automation windows live under their UI domains and are migration-only.
+### Search — `src/search/` + `src/ui/search/`
 
-## 4. Desktop Control facade and domain services
+`src/search/` 负责应用/文件搜索能力；`src/ui/search/` 只负责 Search surface 与输入交互。
 
-The current concrete boundary is:
+### Harness — `src/harness/`
 
-- `DesktopControlService` — shared facade for product clients
-- `WallpaperService` — wallpaper state/package/library apply/per-monitor assignment ownership
-- `WidgetService` — Widget CRUD/persistence/runtime-health ownership
-- `AutomationService` — playlist/profile/schedule persistence, evaluation and manual playlist transition ownership
-- `PerformanceService` — performance-policy persistence ownership
-- `DesktopWidgetController` — direct UI controller for new Widget UI code
-- `DesktopWidgetUiAdapter` — transitional compatibility adapter for the current production legacy library window
-- `AutomationUiAdapter` — transitional compatibility adapter for the current automation window
-- `PerformanceUiAdapter` — UI-facing adapter for performance settings while the legacy settings surface is migrated
+负责独立 DeepSeek Harness host 生命周期、配置 bridge 与 bundled runtime bootstrap；不负责桌面 domain persistence。
 
-Current DesktopControl facade responsibilities include:
+## 4. Desktop Control
 
-```text
-GetState / GetSnapshot
-  -> DesktopState
-  -> Widget list
-  -> WidgetRuntimeHealth
-     -> WidgetSurfaceHealth[]
-ApplyWebPackage
-ApplyLibraryItem
-AssignLibraryItemToMonitor
-ClearMonitorAssignment
-CreateWebWidget
-UpdateWidget
-RemoveWidget
-ListWidgets
-EnsureRuntime
-```
+当前共享 facade：`DesktopControlService`。
 
-Current or staged clients:
+其职责是把 UI/Pi 请求翻译成 domain service 调用，并提供一致的 desktop snapshot/state。客户端不能因为 facade 缺一个方法就绕过它直接修改 persistence。
 
-- Pi native desktop tool adapter (`src/native/src/ai/tools/DesktopWidgetTools.cpp`)
-- production legacy Widget UI through `ui/wallpaper/WallpaperLibraryWindowProduction.cpp -> DesktopWidgetUiAdapter -> DesktopControlService`
-- new Widget UI through `DesktopWidgetController`
-- automation UI/runtime through `AutomationUiAdapter -> AutomationService`
-- performance UI through `PerformanceUiAdapter -> PerformanceService`
-- Desktop Library V2 / Widget UI
-- future Scene / Widget Editor
-
-The existing Pi tool names are an adapter protocol and are not the domain API itself.
-
-## 5. Adapter rule
-
-`DesktopWidgetTools.cpp` is an adapter only:
+典型调用：
 
 ```text
 Pi JSON arguments
-    ↓ parse
-DesktopControlService request / DesktopSnapshot
-    ↓ execute/read
-DesktopControlResult + domain-owned runtime health
-    ↓ format
-Pi text result
+    ↓
+AI adapter
+    ↓
+DesktopControlService
+    ↓
+WallpaperService / WidgetService / ...
+    ↓
+DesktopControlResult / DesktopSnapshot
 ```
 
-It must not regain persistence/runtime ownership.
-
-`DesktopWidgetController` follows the same rule for new Win32 UI:
+新 Widget UI 同样遵循：
 
 ```text
-Win32 Widget action
+Win32 action
     ↓
 DesktopWidgetController
     ↓
@@ -286,110 +205,37 @@ DesktopControlService
 WidgetService
 ```
 
-It must never instantiate `DesktopWidgetStore` or inspect runtime HWNDs.
+## 5. 当前 compatibility boundaries
 
-The current production `WallpaperLibraryWindow.cpp` is a large legacy source file under `ui/wallpaper/`. Production does not compile it directly. `WallpaperLibraryWindowProduction.cpp` compiles the implementation through `DesktopWidgetUiAdapter`, which preserves the old call shape but routes Widget list/create/update/remove operations through `DesktopControlService`. This bridge is temporary and must be removed when V2 reaches parity.
+兼容层只在确实承担行为替换时保留。
 
-Automation follows the same migration rule:
+当前仍有价值的例子：
 
-```text
-Legacy Automation Window action
-    ↓
-AutomationUiAdapter
-    ↓
-AutomationService
-    ↓
-WallpaperAutomationStore
-```
+- `WallpaperEngineProduction.cpp`：对 legacy wallpaper implementation 做 production adapter/macro substitution；不能当空壳删除。
+- `WallpaperAutomationWindowProduction.cpp`：把旧 `WallpaperAutomationStore` 调用替换成 `AutomationUiAdapter`；在旧 UI 仍存在时有真实作用。
 
-`AutomationUiAdapter` may preserve the old store-shaped method names for migration, but it must not instantiate `WallpaperAutomationStore`, read INI files, or own scheduling rules. Runtime evaluation is also routed through `AutomationService`.
+没有逻辑、只 `#include` 另一个 `.cpp` 的 production wrapper 不应保留。Wallpaper Library 已直接编译 `WallpaperLibraryWindowV2.cpp`。
 
-Performance follows the same migration rule:
+## 6. Source / Header rule
 
-```text
-Legacy Performance controls
-    ↓
-PerformanceUiAdapter
-    ↓
-PerformanceService
-    ↓
-performance persistence
-```
+- 领域实现放在对应 `src/<domain>/...`。
+- 跨多个 target/domain 的稳定接口才放 `src/include/miaodesk/`。
+- 新 target-local header 与 `.cpp` 就近放置。
+- 不允许重新引入 `src/native/src` 或第二层 source root。
+- 不允许为了“架构感”创建无调用价值的 facade/helper/library。
 
-`PerformanceUiAdapter` only translates UI intent and errors. It must not call Win32 profile APIs itself.
+## 7. 完成标准
 
-Similarly, `WallpaperLibraryWindowV2.cpp` must become:
+架构重构是否完成看行为边界，不看文件名：
 
 ```text
-Win32 input
-    ↓
-Library/Widget controller
-    ↓
-DesktopControlService
+Pi creates Widget -> UI sees the same Widget
+UI moves Widget -> Pi reads the same updated geometry
+UI/Pi read the same DesktopSnapshot/runtime health
+UI applies wallpaper -> Pi reads the same current state
+Pi applies wallpaper -> UI reflects the same current state
+Automation UI edits policy -> runtime consumes the same persisted state
+Explorer restarts -> desktop runtime recovers without UI/AI special handling
 ```
 
-rather than another giant business-logic window.
-
-## 6. UI migration rule
-
-The current production `WallpaperLibraryWindow.cpp` behavior stays active until V2 reaches functional parity, but its production Widget CRUD path is service-routed through `WallpaperLibraryWindowProduction.cpp` and `DesktopWidgetUiAdapter`.
-
-V2 may replace it only after these capabilities are preserved:
-
-- wallpaper library/search/import/apply
-- Widget CRUD and runtime state
-- playlists
-- displays
-- application rules
-- performance
-- 妙喵 AI model/API configuration
-- Pi capability and native desktop tools
-- 高级工作台 entry
-
-A visual redesign is never allowed to remove a product capability.
-
-## 7. Current remaining refactor slices
-
-Completed or substantially landed:
-
-- source implementation is physically grouped by process/domain instead of flat `src/native/src/*.cpp`;
-- Wallpaper library item apply and monitor assignment are behind `WallpaperService/DesktopControlService`;
-- Automation UI/runtime evaluation routes through `AutomationUiAdapter/AutomationService`;
-- Performance UI compatibility routes through `PerformanceUiAdapter/PerformanceService`;
-- Widget UI and Pi adapters route through Desktop Control rather than Widget persistence;
-- M2 production shell ownership is physically centralized in `DesktopShellHost`; exact-head `1ed59a6a9c270408024e7143302a45592d2156a1` passed x64 and ARM64 Windows validation;
-- M3 exposes `WidgetRuntimeHealth` inside `DesktopSnapshot` and Pi reads the same snapshot contract;
-- M3 carries per-enabled-Web-Widget process/PID, HWND, parent, child-style and visibility state as `WidgetSurfaceHealth`;
-- M3 consumes the preferred Web child Environment/Controller/Navigation lifecycle properties without allowing UI/Pi to inspect them directly;
-- M3 shares read-only z-order interpretation from `desktop/shell/DesktopSurfaceTelemetry.cpp`, while all mutation stays in `DesktopShellHost`;
-- `renderingHealthy` now requires OS surface readiness, preferred-child lifecycle readiness when reported, valid reported z-order and the compatibility runtime diagnostic.
-
-Remaining order:
-
-1. Preserve M2 real-Windows wallpaper/Widget/icon layering and Explorer-recovery acceptance as an outstanding gate.
-2. Expose actionable per-surface lifecycle/z-order/runtime failures in production Widget UI and richer Pi state output through the existing snapshot contract.
-3. Complete real Widget visibility, icon-layer, Settings/Search, Explorer restart and monitor reconnect acceptance on ARM64 Windows.
-4. Make Desktop Library V2 depend on controllers/services only and reach functional parity before production switch.
-5. Replace transitional legacy UI bridges after V2 parity.
-6. Introduce a versioned transactional Desktop Control contract with events and undo/redo.
-7. Split public/private headers and CMake library targets only when that change improves enforceable dependency boundaries; do not churn include paths merely for cosmetics.
-
-## 8. Completion tests
-
-Architecture work is not complete because files were renamed. It is complete when behavior crosses the same boundary from multiple clients.
-
-Required tests over time:
-
-```text
-Pi creates Widget -> UI lists same Widget
-UI moves Widget -> Pi reads updated geometry
-UI/Pi read the same WidgetRuntimeHealth + WidgetSurfaceHealth from DesktopSnapshot
-Widget surface reports process/HWND/Environment/Controller/Navigation/z-order/visible health through WidgetService
-UI applies wallpaper -> Pi reads same current state
-Pi applies wallpaper -> UI shows same current state
-Automation UI edits playlist -> runtime evaluates the same persisted playlist
-Performance UI changes fullscreen action -> runtime consumes the same persisted policy
-Explorer restarts -> runtime recovers without UI/AI special handling
-```
-
-The domain service owns the state transition; clients only express intent.
+Domain service 拥有状态转换；客户端只表达 intent。

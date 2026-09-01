@@ -11,6 +11,7 @@ $sourceRoot = Join-Path $RepoRoot 'src'
 $sourceCMake = Join-Path $sourceRoot 'CMakeLists.txt'
 $appPathsHeader = Join-Path $sourceRoot 'include\miaodesk\AppPaths.h'
 $productConfig = Join-Path $RepoRoot 'config\product.ini'
+$agentRuntimeScript = Join-Path $RepoRoot 'packaging\windows\build-agent-runtime.ps1'
 $webViewRoot = Join-Path $RepoRoot 'third_party\webview2'
 $packagingRoots = @(
     (Join-Path $RepoRoot 'scripts'),
@@ -24,6 +25,7 @@ if (-not (Test-Path $sourceRoot -PathType Container)) { Fail 'src/ is missing.' 
 if (-not (Test-Path $sourceCMake -PathType Leaf)) { Fail 'src/CMakeLists.txt is missing.' }
 if (-not (Test-Path $appPathsHeader -PathType Leaf)) { Fail 'shared AppPaths.h is missing.' }
 if (-not (Test-Path $productConfig -PathType Leaf)) { Fail 'config/product.ini is missing.' }
+if (-not (Test-Path $agentRuntimeScript -PathType Leaf)) { Fail 'Agent Runtime staging script is missing.' }
 if (Test-Path (Join-Path $sourceRoot 'native')) { Fail 'obsolete src/native container returned.' }
 foreach ($relative in @('app','ai','desktop','harness','search','ui','include\miaodesk')) {
     if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Container)) {
@@ -70,6 +72,22 @@ foreach ($arch in @('x64','arm64')) {
     if (Test-Path (Join-Path $RepoRoot "runtime\$arch\webview2-sdk")) {
         Fail "build-only WebView2 SDK returned under runtime/$arch."
     }
+}
+
+$agentRuntimeText = Get-Content $agentRuntimeScript -Raw
+foreach ($requiredPattern in @(
+    'Join-Path \$Root ''Agent''',
+    'Join-Path \$agentModules ''pi''',
+    '@\(''pi'',''pi\.cmd'',''pi\.ps1''\)',
+    '\.Name -like ''\*\.d\.ts''',
+    '\.Name -like ''\*\.js\.map'''
+)) {
+    if ($agentRuntimeText -notmatch $requiredPattern) {
+        Fail "Agent Runtime short-path normalization is missing: pattern=$requiredPattern"
+    }
+}
+if ($agentRuntimeText -match 'Join-Path \$Root ''Runtime\\Agent''') {
+    Fail 'Agent dependency graph returned to the over-budget Runtime/Agent path.'
 }
 
 $presets = Get-Content $cmakePresets -Raw

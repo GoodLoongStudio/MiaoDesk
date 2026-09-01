@@ -60,14 +60,14 @@ MiaoDesk\
   Wallpapers\
   Runtime\
     Node\
-    Agent\
-      package.json
-      package-lock.json
-      node_modules\
+  Agent\
+    package.json
+    package-lock.json
+    node_modules\
   Goz\
 ```
 
-`Runtime/Agent` is the single production dependency graph for Pi + DeepSeek Harness on both x64 and ARM64. Do not restore separate DSH and Pi dependency trees.
+`Agent` is the single production dependency graph for Pi + DeepSeek Harness on both x64 and ARM64. Pi keeps its published package name but uses the shorter physical directory `Agent/node_modules/pi` in the shipped tree. Do not restore separate DSH and Pi dependency trees.
 
 Repository source trees, compiler output, SDKs, npm caches and downloaded archives must never enter the user package. Build-only WebView2 lives under `third_party/webview2`, not `runtime/<arch>`.
 
@@ -101,6 +101,10 @@ CI projects every shipped relative path onto an 85-character install root and re
 ```
 
 First-party content also stays at six directory levels or fewer. Third-party module depth is governed by the stricter projected-path budget plus real runtime probes.
+
+Runtime staging may remove TypeScript declarations and JavaScript source maps,
+which Node never loads in the shipped product. It must not delete executable
+JavaScript merely to satisfy the budget.
 
 ## Release gates
 

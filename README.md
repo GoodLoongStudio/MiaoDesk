@@ -39,7 +39,7 @@ GitHub Actions：`.github/workflows/package-windows-x64.yml`
 external short CMake build
   -> cmake --install
   -> packaging/windows/stage.ps1 -Architecture x64
-  -> Runtime/Agent single dependency graph
+  -> Agent/ single dependency graph
   -> path budget
   -> production self-tests
   -> moved-install DSH Web smoke
@@ -89,12 +89,12 @@ runtime/
 Runtime/
   Node/
     node.exe
-  Agent/
-    package.json
-    package-lock.json
-    node_modules/
-      @deepseek-ai/dsh
-      @earendil-works/pi-coding-agent
+Agent/
+  package.json
+  package-lock.json
+  node_modules/
+    @deepseek-ai/dsh
+    pi/                  # @earendil-works/pi-coding-agent 的短物理目录
 Goz/
   goz.exe
   gozd.exe

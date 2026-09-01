@@ -45,7 +45,7 @@ void PrependBundledHarnessRuntimeToPath() {
     // Runtime V3 owns exactly one Agent dependency graph. Prefer its .bin
     // directory; keep V2 fallbacks only while older installed packages remain
     // supported during the migration.
-    fs::path binDir = appDir / L"Runtime" / L"Agent" / L"node_modules" / L".bin";
+    fs::path binDir = appDir / L"Agent" / L"node_modules" / L".bin";
     if (!DirectoryExists(binDir)) binDir = appDir / L"node_modules" / L".bin";
     if (!DirectoryExists(binDir)) binDir = nodeDir / L"node_modules" / L".bin";
     if (DirectoryExists(binDir)) prefix += L";" + binDir.wstring();

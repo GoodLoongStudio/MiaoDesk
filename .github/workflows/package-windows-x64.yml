@@ -73,7 +73,7 @@ jobs:
         shell: pwsh
         run: |
           $all = @(Get-ChildItem $env:MIAODESK_STAGE_ROOT -File -Recurse -Force)
-          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'Runtime\Agent') -File -Recurse -Force)
+          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'Agent') -File -Recurse -Force)
           Write-Host "Package files: $($all.Count)" -ForegroundColor Cyan
           Write-Host "Agent Runtime files: $($agent.Count)" -ForegroundColor Cyan
 
@@ -97,18 +97,18 @@ jobs:
             'MiaoDeskHarness.exe',
             'Config\product.ini',
             'Runtime\Node\node.exe',
-            'Runtime\Agent\package-lock.json',
-            'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
-            'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Agent\package-lock.json',
+            'Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'Agent\node_modules\pi\dist\cli.js',
             'Goz\goz.exe',
             'Goz\gozd.exe'
           )) {
             if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing package file: $relative" }
           }
 
-          & "$root\Runtime\Node\node.exe" "$root\Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
+          & "$root\Runtime\Node\node.exe" "$root\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
-          & "$root\Runtime\Node\node.exe" "$root\Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js" --version | Out-Host
+          & "$root\Runtime\Node\node.exe" "$root\Agent\node_modules\pi\dist\cli.js" --version | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
 
           foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {

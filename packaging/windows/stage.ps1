@@ -27,10 +27,10 @@ if ($LASTEXITCODE -ne 0) { throw "Agent Runtime staging failed with exit code $L
 
 foreach ($relative in @(
     'Runtime\Node\node.exe',
-    'Runtime\Agent\package.json',
-    'Runtime\Agent\package-lock.json',
-    'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
-    'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+    'Agent\package.json',
+    'Agent\package-lock.json',
+    'Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
+    'Agent\node_modules\pi\dist\cli.js',
     'Goz\goz.exe',
     'Goz\gozd.exe',
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',

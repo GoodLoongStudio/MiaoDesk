@@ -68,7 +68,7 @@ foreach ($required in @($nodeExe,$npmCmd)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Agent runtime prerequisite is missing: $required" }
 }
 
-$agentRoot = Join-Path $Root 'Runtime\Agent'
+$agentRoot = Join-Path $Root 'Agent'
 Remove-Item $agentRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $agentRoot | Out-Null
 Copy-Item $AgentPackage (Join-Path $agentRoot 'package.json') -Force
@@ -90,10 +90,10 @@ try {
 }
 
 $agentModules = Join-Path $agentRoot 'node_modules'
-$piRoot = Join-Path $agentModules '@earendil-works\pi-coding-agent'
+$piInstalledRoot = Join-Path $agentModules '@earendil-works\pi-coding-agent'
 $dshBin = Join-Path $agentModules '@deepseek-ai\dsh\lib\bin.js'
-$piCli = Join-Path $piRoot 'dist\cli.js'
-foreach ($required in @($dshBin,$piCli)) {
+$piInstalledCli = Join-Path $piInstalledRoot 'dist\cli.js'
+foreach ($required in @($dshBin,$piInstalledCli)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Agent runtime is incomplete: $required" }
 }
 
@@ -104,7 +104,7 @@ foreach ($required in @($dshBin,$piCli)) {
 $conflicts = New-Object System.Collections.Generic.List[string]
 for ($pass = 1; $pass -le 8; $pass++) {
     $changed = $false
-    $nestedRoots = @(Get-ChildItem $piRoot -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+    $nestedRoots = @(Get-ChildItem $piInstalledRoot -Directory -Recurse -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'node_modules' } |
         Sort-Object { $_.FullName.Length } -Descending)
     foreach ($nestedRoot in $nestedRoots) {
@@ -126,18 +126,50 @@ for ($pass = 1; $pass -le 8; $pass++) {
             $changed = $true
         }
     }
-    Remove-EmptyDirectories $piRoot
+    Remove-EmptyDirectories $piInstalledRoot
     if (-not $changed) { break }
 }
 if ($conflicts.Count -gt 0) {
     Write-Host "Preserved $($conflicts.Count) nested version conflict(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
 }
 
-# Declaration source maps are editor metadata and are never loaded by Node.
-$declarationMaps = @(Get-ChildItem $agentModules -Recurse -Force -File -Filter '*.d.ts.map' -ErrorAction SilentlyContinue)
-foreach ($map in $declarationMaps) { Remove-Item $map.FullName -Force }
-if ($declarationMaps.Count -gt 0) {
-    Write-Host "Pruned $($declarationMaps.Count) declaration source map(s)." -ForegroundColor DarkGray
+# TypeScript declarations and JavaScript source maps are development metadata;
+# the shipped Node runtime never loads them. Removing them also keeps generated
+# SDK filenames inside the stock-Windows path budget.
+$runtimeMetadata = @(Get-ChildItem $agentModules -Recurse -Force -File -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.Name -like '*.d.ts' -or
+        $_.Name -like '*.d.ts.map' -or
+        $_.Name -like '*.js.map' -or
+        $_.Name -like '*.mjs.map' -or
+        $_.Name -like '*.cjs.map'
+    })
+foreach ($metadata in $runtimeMetadata) { Remove-Item $metadata.FullName -Force }
+if ($runtimeMetadata.Count -gt 0) {
+    Write-Host "Pruned $($runtimeMetadata.Count) runtime declaration/source-map file(s)." -ForegroundColor DarkGray
+}
+
+# The published Pi shrinkwrap preserves a nested dependency graph. Its scoped
+# physical directory name alone consumes 31 characters, even though Node package
+# self-references use the name in package.json rather than the folder name. Keep
+# that package name intact, but shorten only its shipped physical directory.
+$piRoot = Join-Path $agentModules 'pi'
+Remove-Item $piRoot -Recurse -Force -ErrorAction SilentlyContinue
+Move-Item $piInstalledRoot $piRoot
+$piCli = Join-Path $piRoot 'dist\cli.js'
+if (-not (Test-Path $piCli -PathType Leaf)) { throw "Short Pi runtime is incomplete: $piCli" }
+
+$piBinRoot = Join-Path $agentModules '.bin'
+foreach ($name in @('pi','pi.cmd','pi.ps1')) {
+    $shim = Join-Path $piBinRoot $name
+    if (-not (Test-Path $shim -PathType Leaf)) { throw "Pi npm shim is missing: $shim" }
+    $shimText = Get-Content $shim -Raw
+    $shimText = $shimText.Replace('@earendil-works/pi-coding-agent', 'pi')
+    $shimText = $shimText.Replace('@earendil-works\pi-coding-agent', 'pi')
+    Set-Content -Path $shim -Encoding UTF8 -NoNewline -Value $shimText
+    if ((Get-Content $shim -Raw) -match '@earendil-works[\\/]pi-coding-agent') {
+        throw "Pi npm shim still targets the long physical directory: $shim"
+    }
 }
 
 & $nodeExe $dshBin --help | Out-Host
@@ -147,7 +179,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Pi CLI probe failed after dependency normaliza
 
 # Temporary compatibility entrypoints for native code that still understands V2
 # locations. They contain no dependency tree and will be removed after native
-# path resolution is switched fully to Runtime/Agent.
+# path resolution is switched fully to Agent.
 foreach ($legacy in @(
     (Join-Path $Root 'Pi'),
     (Join-Path $Root 'node_modules'),
@@ -171,7 +203,7 @@ $legacyPi = Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dis
 New-Item -ItemType Directory -Force -Path (Split-Path $legacyPi -Parent) | Out-Null
 Set-Content -Path $legacyPi -Encoding UTF8 -Value @'
 (async () => {
-  await import('../../../../../Runtime/Agent/node_modules/@earendil-works/pi-coding-agent/dist/cli.js');
+  await import('../../../../../Agent/node_modules/pi/dist/cli.js');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

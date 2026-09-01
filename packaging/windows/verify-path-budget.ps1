@@ -41,10 +41,11 @@ if ($tooLong.Count -gt 0) {
 }
 
 # Product-owned files stay shallow. Runtime V3 owns its third-party dependency
-# graph below Runtime\Agent, so that tree is governed by the stricter projected
+# graph below Agent, so that tree is governed by the stricter projected
 # MAX_PATH gate above rather than the product-content nesting gate.
 $productOwned = @($items | Where-Object {
     $_.Relative -notlike 'Runtime\*' -and
+    $_.Relative -notlike 'Agent\*' -and
     $_.Relative -notlike 'Pi\*' -and
     $_.Relative -notlike 'Goz\*'
 })

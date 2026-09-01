@@ -37,12 +37,12 @@ GitHub Actions：`.github/workflows/package-windows-x64.yml`
 ```text
 external short CMake build
   -> cmake --install
-  -> packaging/windows/stage-x64.ps1
+  -> packaging/windows/stage.ps1 -Architecture x64
   -> Runtime/Agent single dependency graph
   -> path budget
   -> production self-tests
   -> moved-install DSH Web smoke
-  -> artifact / installer
+  -> staging artifact
 ```
 
 本地等价 staging：
@@ -51,7 +51,7 @@ external short CMake build
 cmake -S . -B C:\b\MiaoDesk\x64 -A x64 -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\x64
 cmake --build C:\b\MiaoDesk\x64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
 cmake --install C:\b\MiaoDesk\x64 --config Release --prefix C:\pkg\MiaoDesk\x64
-.\packaging\windows\stage-x64.ps1 -Destination C:\pkg\MiaoDesk\x64
+.\packaging\windows\stage.ps1 -Destination C:\pkg\MiaoDesk\x64 -Architecture x64
 .\packaging\windows\verify-path-budget.ps1 -Root C:\pkg\MiaoDesk\x64
 ```
 
@@ -147,11 +147,11 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 
 - `docs/MIAODESK-PRODUCT-BASELINE.md` — 产品基线
 - `docs/MIAODESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
+- `docs/NATIVE_SOURCE_LAYOUT.md` — 当前源码布局
 - `docs/DESKTOP_COMPOSITION_ARCHITECTURE.md` — 桌面组合架构
 - `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain 边界
 - `docs/L3-PI-RUNTIME-CONTRACT.md` — Pi / AI runtime 契约
 - `docs/PATH_LAYOUT_CONTRACT.md` — 路径与安装布局约束
-- `docs/REPOSITORY_RUNTIME_V3_REFACTOR_PLAN.md` — Runtime V3 重构规划
 
 ## 第三方许可
 

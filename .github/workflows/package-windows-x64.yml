@@ -150,21 +150,36 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-          if (-not (Test-Path $makensis -PathType Leaf)) {
-            choco install nsis --yes --no-progress --limit-output
-            if ($LASTEXITCODE -ne 0) { throw 'Unable to install NSIS on the packaging runner.' }
-          }
-          if (-not (Test-Path $makensis -PathType Leaf)) { throw "makensis.exe is missing: $makensis" }
+          try {
+            $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+            if (-not $makensis) {
+              choco install nsis --yes --no-progress --limit-output
+              if ($LASTEXITCODE -ne 0) { throw "Unable to install NSIS, choco exit=$LASTEXITCODE" }
+              $makensis = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
+                (Join-Path $env:ProgramFiles 'NSIS\makensis.exe')
+              ) | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+            }
+            if (-not $makensis) { throw 'makensis.exe is missing after NSIS installation.' }
 
-          Remove-Item $env:MIAODESK_INSTALLER_PATH -Force -ErrorAction SilentlyContinue
-          & $makensis `
-            "/DSTAGE_DIR=$env:MIAODESK_STAGE_ROOT" `
-            "/DOUTPUT_FILE=$env:MIAODESK_INSTALLER_PATH" `
-            .\packaging\windows\installer.nsi | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'NSIS installer build failed.' }
-          if (-not (Test-Path $env:MIAODESK_INSTALLER_PATH -PathType Leaf)) { throw 'NSIS installer was not created.' }
-          Write-Host "Installer bytes: $((Get-Item $env:MIAODESK_INSTALLER_PATH).Length)" -ForegroundColor Cyan
+            Remove-Item $env:MIAODESK_INSTALLER_PATH -Force -ErrorAction SilentlyContinue
+            $compilerOutput = @(& $makensis `
+              "/DSTAGE_DIR=$env:MIAODESK_STAGE_ROOT" `
+              "/DOUTPUT_FILE=$env:MIAODESK_INSTALLER_PATH" `
+              .\packaging\windows\installer.nsi 2>&1)
+            $compilerOutput | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+              $tail = ($compilerOutput | Select-Object -Last 30 | Out-String).Trim()
+              throw "NSIS installer build failed, exit=$LASTEXITCODE`n$tail"
+            }
+            if (-not (Test-Path $env:MIAODESK_INSTALLER_PATH -PathType Leaf)) { throw 'NSIS installer was not created.' }
+            Write-Host "Installer bytes: $((Get-Item $env:MIAODESK_INSTALLER_PATH).Length)" -ForegroundColor Cyan
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Installer build failed::$details"
+            throw
+          }
 
       - name: Verify installer and uninstall
         shell: pwsh

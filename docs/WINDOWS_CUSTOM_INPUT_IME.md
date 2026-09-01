@@ -1,106 +1,51 @@
 # Windows 自绘输入框 IME / TSF 实现规范
 
-Status: reusable implementation note for MiaoDesk native Windows UI.
+Status: current implementation note for MiaoDesk native Windows UI.
 
-## 1. 命名与职责边界
+## 1. 职责边界
 
-共享框架统一叫 **Input**，具体界面仍保留自己的业务名称。
-
-```text
-InputImeAnchor
-├─ Search profile
-└─ Conversation profile
-```
+共享输入基础设施使用 `InputImeAnchor`，Search 与 Conversation 只负责各自的可见矩形、caret 和业务行为。
 
 当前共享实现：
 
 ```text
-src/native/include/miaodesk/InputImeAnchor.h
+src/include/miaodesk/InputImeAnchor.h
 ```
 
-不要再创建 `SearchImeAnchor.h`。但也不要把 `SearchWindow`、`SearchEdit`、`Search` 业务逻辑机械改名成 Input；同理，Conversation 仍然是 Conversation。
+不要为每个 surface 复制一套 IME anchor。`Input` 是基础设施，`Search` / `Conversation` 是使用它的业务 surface。
 
-原则：
+## 2. 不使用 1×1 EDIT proxy
 
-> **Input 是输入基础设施；Search / Conversation 是使用该基础设施的具体 surface/profile。**
+现代微软拼音主要由 TSF 驱动。Windows 可能同时读取 focused HWND、真实窗口矩形、thread caret、`GetGUIThreadInfo()` caret 以及 composition/candidate 几何。
 
----
-
-## 2. 为什么不能使用 1×1 EDIT proxy
-
-历史错误模式：
-
-```cpp
-MoveWindow(edit, caret.x, caret.y, 1, 1, FALSE);
-
-COMPOSITIONFORM composition{};
-composition.dwStyle = CFS_POINT;
-composition.ptCurrentPos = {0, 0};
-```
-
-这种做法对现代微软拼音不可靠，因为微软拼音主要由 TSF 驱动。TSF 可能同时读取：
-
-- focused HWND；
-- focused HWND 的真实矩形；
-- Win32 thread caret；
-- `GetGUIThreadInfo()` 暴露的 caret；
-- focus / candidate / composition 创建时的几何状态。
-
-因此，即使自绘 UI 看起来正确，只要真实 `EDIT` 是 1×1 或系统 caret 在错误位置，就可能出现：
-
-- 拼音与视觉 caret 分离；
-- 候选框跑到窗口左下角；
-- 双光标；
-- DPI / resize 后漂移。
-
----
-
-## 3. 标准架构
+因此自绘输入框必须保持一个真实、完整的 Native `EDIT` 作为 Windows 输入语义载体：
 
 ```text
 Custom visual input
 ├─ DirectWrite / Direct2D
-│  ├─ background
 │  ├─ committed text
-│  ├─ IME composition text
+│  ├─ composition text
 │  ├─ selection
 │  └─ visible caret
-│
 └─ Native EDIT
-   ├─ 完整真实输入区域
-   ├─ 拥有 keyboard focus
+   ├─ 覆盖真实输入区域
+   ├─ 持有 keyboard focus
    ├─ 接收 WM_CHAR / WM_KEY* / WM_IME_*
    ├─ 发布真实 Win32 caret
    └─ 不负责可见绘制
 ```
 
-核心原则：
+禁止重新使用 `MoveWindow(edit, caret.x, caret.y, 1, 1, FALSE)` 一类 1×1 proxy 方案。
 
-> **视觉可以完全自绘，但 Windows 必须始终看到一个位置、尺寸、caret 都真实可信的原生输入控件。**
+## 3. InputImeAnchor 契约
 
----
-
-## 4. `InputImeAnchor.h` 的职责
-
-共享框架负责：
-
-- native `EDIT` 与可见输入区域同步；
-- Win32 caret publication；
-- `HideCaret()`；
-- `CFS_FORCE_POSITION`；
-- `CFS_EXCLUDE`；
-- TSF / IMM32 兼容；
-- deferred re-anchor；
-- focus / key / IME / candidate 消息后的同步；
-- busy / pending / geometry reentrancy guard。
-
-共享发布入口：
+共享入口：
 
 ```cpp
 PublishInputImeAnchor(edit, caret, exclusionArea);
 ```
 
-它统一执行：
+它统一负责：
 
 ```text
 SetCaretPos
@@ -110,165 +55,47 @@ SetCaretPos
 → HideCaret
 ```
 
-具体 surface 只负责计算自己的真实几何和 caret。
+并处理 focus、IME 通知、deferred re-anchor 与 reentrancy guard。
 
----
+## 4. Search profile
 
-## 5. Search profile
-
-Search 是当前已验证稳定的参考实现。
-
-相关文件：
+当前参考实现：
 
 ```text
-src/native/include/miaodesk/InputImeAnchor.h
-src/native/include/miaodesk/SearchWindow.h
-src/native/src/ui/search/SearchWindow.cpp
+src/include/miaodesk/InputImeAnchor.h
+src/include/miaodesk/SearchWindow.h
+src/ui/search/SearchWindow.cpp
 ```
 
-Search profile 保留明确的 Search 名称：
+Search 保留自己的业务命名与布局。Native `EDIT` 只承担输入语义，不绘制第二份文本或 caret。
 
-```cpp
-EnsureSearchImeGeometry(...)
-AnchorSearchImeToVisibleCaret(...)
-RequestSearchImeAnchor(...)
-HandleSearchEditMessageBefore(...)
-HandleSearchEditMessageAfter(...)
-```
+## 5. Conversation profile
 
-Search 当前可见输入矩形保持已验证参数：
+当前实现：
 
 ```text
-left   = 52
-right  = 594
-top    = 13
-height = 30
+src/include/miaodesk/InputImeAnchor.h
+src/ui/ai/ConversationPanel.cpp
+src/ui/ai/ConversationPanelInputOverlay.inc
 ```
 
-Search 的 native EDIT 不绘制：
+Conversation 使用同一套 anchor 基础设施，同时保留自己的附件、语音、发送、聊天与布局逻辑。
 
-```cpp
-if (message == WM_PAINT) {
-    ValidateRect(hwnd, nullptr);
-    return 0;
-}
-if (message == WM_ERASEBKGND) return 1;
-```
+Composition 存在时，视觉 caret 与系统 caret 都必须位于可见 composition 末端，而不是只使用 committed text 的 `EM_GETSEL` 位置，否则会出现双光标。
 
-Search 的业务名称、窗口类、搜索行为都不属于 Input 框架，不应改名。
+## 6. 几何与 DPI
 
----
+以下数据必须处于同一 DPI / client 坐标体系：
 
-## 6. Conversation profile
+- visible text rectangle
+- DirectWrite layout
+- Native `EDIT` rectangle
+- caret
+- candidate exclusion rectangle
 
-Conversation 使用同一套 InputImeAnchor 基础设施，但保留自己的布局、提交、附件、语音和聊天业务逻辑。
+Native `EDIT` 不得覆盖附件、麦克风或发送按钮。禁止使用固定 `+8px`、`-20px` 等魔法偏移修复 IME；应修正 HWND / caret / TSF geometry 的一致性。
 
-相关文件：
-
-```text
-src/native/include/miaodesk/InputImeAnchor.h
-src/native/src/ui/ai/ConversationPanel.cpp
-src/native/src/ui/ai/ConversationPanelInputOverlay.inc
-```
-
-Conversation profile：
-
-```cpp
-EnsureConversationImeGeometry(...)
-ConversationNativeCaretPoint(...)
-AnchorConversationImeToNativeCaret(...)
-RequestConversationImeAnchor(...)
-SyncConversationImeAnchor(...)
-```
-
-旧的聊天框逻辑不得重新出现：
-
-```cpp
-MoveWindow(state.input, caret.x, caret.y, 1, 1, FALSE);
-composition.dwStyle = CFS_POINT;
-candidate.dwStyle = CFS_CANDIDATEPOS;
-```
-
-现有兼容入口 `PositionConversationInputProxyAnchored()` 只允许委托：
-
-```cpp
-input_ime_detail::SyncConversationImeAnchor(state.input);
-```
-
-它不再拥有自己的 IME 几何算法。
-
----
-
-## 7. Composition 与双光标
-
-Conversation 会自己绘制 `GCS_COMPSTR`，因此可见文本可能是：
-
-```text
-committed + composition
-```
-
-但此时原生 EDIT 的 `EM_GETSEL` 通常仍停留在 committed insertion point。
-
-如果 DirectWrite caret 仍只使用 `EM_GETSEL`，就会出现：
-
-```text
-|ni'hao
-```
-
-也就是用户看到的“拼音前面多一根光标”。
-
-正确规则：
-
-- 没有 composition：visual caret = `EM_GETSEL`；
-- 有 composition：visual caret = 可见 composition 末端；
-- native / TSF caret 同样需要加上 composition 的实际文本宽度；
-- candidate anchor 使用同一个最终 caret。
-
-当前共享实现通过：
-
-```cpp
-ReadImeCompositionText(edit)
-MeasureEditTextWidth(...)
-ConversationNativeCaretPoint(...)
-```
-
-把系统 caret 推到自绘拼音末尾，从而让：
-
-```text
-DirectWrite caret
-Win32 caret
-TSF caret
-candidate anchor
-```
-
-描述同一个位置。
-
----
-
-## 8. Conversation 输入矩形必须和视觉层一致
-
-不能让 native EDIT 覆盖附件、麦克风或发送按钮区域。
-
-Conversation 的 visible text right 由当前布局推导：
-
-```text
-sendLeft = client.right - 74
-mic      = sendLeft - 8 - 34
-attach   = mic - 4 - 34
-textRight = attach - 8
-```
-
-因此标准偏移为：
-
-```text
-textRight = client.right - 162
-```
-
-`ConversationEditRect()` 必须与这个可见文本区域保持一致，而不是使用另一套近似宽度。
-
----
-
-## 9. Focus / resize / IME 消息同步顺序
+## 7. 必须同步的消息
 
 至少覆盖：
 
@@ -285,107 +112,37 @@ IMN_OPENCANDIDATE
 IMN_CHANGECANDIDATE
 ```
 
-Focus 时：
+Focus 顺序应保持：恢复真实 Native `EDIT` geometry → 完成 focus transaction → deferred anchor → 发布 Win32 caret → 更新 composition/candidate geometry。
+
+## 8. 验证
+
+仓库不再维护独立 IME contract PowerShell/workflow；不要重新创建只检查源码 marker 的测试脚本。
+
+修改 `InputImeAnchor`、Search 输入 surface 或 Conversation 输入 surface 时，至少完成：
+
+1. 正式 C++ x64 构建；
+2. 微软拼音 `nihao` / `ni'hao`；
+3. composition 末端只有一根可见 caret；
+4. 候选框贴合真实输入位置；
+5. 上屏、光标中间插入、Backspace/Delete；
+6. 中英文切换；
+7. 窗口 move/resize；
+8. 100% / 125% / 150% / 200% DPI；
+9. 多显示器跨屏；
+10. Search 与 Conversation 同时打开互不污染；
+11. 至少一个第三方 IME 基本输入。
+
+这类行为依赖真实 Windows IME/TSF，不能用源码文本 contract 代替真实交互验证。
+
+## 9. 新输入 surface
+
+新的 Widget Editor、Scene Editor 或其他自绘文本框应：
 
 ```text
-1. 先恢复完整 native EDIT geometry
-2. 让 focus transaction 继续
-3. PostMessage deferred anchor
-4. 发布真实 Win32 caret
-5. 更新 composition / candidate geometry
+定义 VisibleTextRect / caret calculation
+→ 使用 InputImeAnchor
+→ DirectWrite 负责视觉
+→ Native EDIT 负责 Windows 输入语义
 ```
 
-不要在所有 IME 回调里同步递归调用 `ImmSet*`。部分输入法会因为 setter 再触发通知，因此必须使用 pending / busy guard。
-
----
-
-## 10. DPI 规则
-
-以下必须来自同一 DPI 坐标体系：
-
-- visible text rectangle；
-- DirectWrite layout；
-- native EDIT rectangle；
-- caret；
-- candidate exclusion rectangle。
-
-Conversation 使用项目统一的 DPI scaling，再在 `EDIT` client 坐标中发布 caret。
-
-禁止通过 `+8px`、`-20px` 等魔法偏移修复 IME。
-
----
-
-## 11. 验证脚本与 CI
-
-共享框架 contract：
-
-```text
-scripts/verify-input-ime-contract.ps1
-```
-
-Search surface contract：
-
-```text
-scripts/verify-search-input-contract.ps1
-```
-
-Search contract 会继续验证 Search UI 自身，并调用共享 Input contract。
-
-独立 CI：
-
-```text
-.github/workflows/input-ime-contract.yml
-```
-
-只要修改共享 `InputImeAnchor.h`、Search 输入 surface 或 Conversation 输入 surface，就必须重新验证两套 profile，避免共享框架修改只测试其中一个调用方。
-
----
-
-## 12. 新输入框接入规则
-
-以后 Widget Editor、Scene Editor、设置中的自绘文本框等，不要重新实现 IME。
-
-正确方式：
-
-```text
-新 Surface
-  ↓
-定义自己的 VisibleTextRect / caret calculation
-  ↓
-接入 InputImeAnchor shared framework
-  ↓
-DirectWrite 负责视觉
-Native EDIT 负责 Windows 输入语义
-```
-
-如果新 surface 需要专属行为，应增加明确的 profile，例如：
-
-```text
-WidgetEditor profile
-SceneEditor profile
-```
-
-而不是把业务逻辑塞进 generic Input framework。
-
----
-
-## 13. 最低验收清单
-
-每个接入 InputImeAnchor 的自绘输入框至少验证：
-
-1. 微软拼音输入 `nihao` / `ni'hao`；
-2. 拼音末端只有一根视觉 caret；
-3. 候选框紧贴正确输入位置；
-4. 上屏后 caret 位于 committed text 末端；
-5. 光标移动到字符串中间继续输入；
-6. Backspace / Delete；
-7. 中英文切换；
-8. 窗口移动和 resize；
-9. 100% / 125% / 150% / 200% DPI；
-10. 多显示器跨屏；
-11. 微软拼音候选翻页；
-12. 搜狗等第三方 IME 基本行为；
-13. Search 与 Conversation 同时打开时互不污染；
-14. native EDIT 永远不绘制第二份文字或 caret。
-
-任何一项失败，都不应通过增加固定坐标偏移解决；应回到 InputImeAnchor 的 HWND / caret / TSF geometry 一致性检查。
+只有真实共享的基础逻辑进入 Input 层，业务行为继续留在具体 surface。

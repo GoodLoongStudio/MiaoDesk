@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
     paths:
+      - CMakeLists.txt
+      - CMakePresets.json
       - src/native/**
       - assets/wallpapers/**
       - runtime/x64/**
+      - packaging/nsis/**
       - scripts/stage-full-test-package.ps1
+      - scripts/verify-package-path-budget.ps1
       - .github/workflows/x64-portable-test-package.yml
   workflow_dispatch:
 
@@ -22,40 +26,85 @@ jobs:
   package:
     runs-on: windows-2025
     timeout-minutes: 45
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\x64
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\x64
 
     steps:
       - uses: actions/checkout@v5
         with:
           lfs: true
 
-      - name: Configure x64 Release
+      - name: Configure x64 Release from short external build path
         shell: pwsh
-        run: cmake -S . -B build-x64-portable -A x64
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake x64 configure failed.' }
 
       - name: Build x64 product
         shell: pwsh
-        run: cmake --build build-x64-portable --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+        run: |
+          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk x64 build failed.' }
 
-      - name: Stage complete portable product and offline runtime
+      - name: CMake install shallow product staging
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Assets\MiaoMiao.ico',
+            'Wallpapers\MiaoCloud.mdwall\assets\cat.png'
+          )) {
+            if (-not (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT $relative) -PathType Leaf)) {
+              throw "CMake install staging is missing: $relative"
+            }
+          }
+          if (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT 'runtime\x64\webview2-sdk')) {
+            throw 'Repository WebView2 SDK/build tree leaked into end-user staging.'
+          }
+
+      - name: Add production offline RuntimeBundle to install staging
         shell: pwsh
         run: |
           .\scripts\stage-full-test-package.ps1 `
-            -BuildOutput "$PWD\build-x64-portable\src\native\Release" `
-            -Destination "$PWD\MiaoDesk-x64-full-test" `
-            -Architecture 'x64'
+            -Destination $env:MIAODESK_STAGE_ROOT `
+            -Architecture 'x64' `
+            -UseCMakeInstallOutput
+
+      - name: Verify stock-Windows path budget
+        shell: pwsh
+        run: |
+          .\scripts\verify-package-path-budget.ps1 `
+            -Root $env:MIAODESK_STAGE_ROOT `
+            -MaxInstallRootChars 85 `
+            -MaxProjectedPathChars 248 `
+            -MaxProductDepth 6
 
       - name: Verify executables and bundled runtimes
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $dest = Join-Path $PWD 'MiaoDesk-x64-full-test'
+          $dest = $env:MIAODESK_STAGE_ROOT
           foreach ($relative in @(
             'MiaoDesk.exe',
             'MiaoDeskWallpaper.exe',
             'MiaoDeskHarness.exe',
+            'Assets\MiaoMiao.ico',
             'Runtime\Node\node.exe',
             'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
             'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Goz\goz.exe',
+            'Goz\gozd.exe',
             'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
             'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
             'Wallpapers\MiaoCloud.mdwall\assets\blink.png'
@@ -81,13 +130,13 @@ jobs:
             Pop-Location
           }
 
-      - name: Verify custom install path and real DSH web startup
+      - name: Verify movable install path and real DSH web startup
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $original = Join-Path $PWD 'MiaoDesk-x64-full-test'
-          $testParent = Join-Path $PWD 'MiaoDesk path verification'
-          $testRoot = Join-Path $testParent 'custom install root'
+          $original = $env:MIAODESK_STAGE_ROOT
+          $testParent = 'C:\md path test'
+          $testRoot = Join-Path $testParent 'custom install root with spaces'
           Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $testParent | Out-Null
 
@@ -99,10 +148,11 @@ jobs:
               $desktop = [Environment]::GetFolderPath('Desktop')
               $log = Join-Path $desktop 'MiaoDesk-Logs\harness.log'
               $details = if (Test-Path $log -PathType Leaf) { Get-Content $log -Raw } else { '<harness log missing>' }
-              throw "MiaoDeskHarness real DSH smoke failed from custom path, exit=$($p.ExitCode)`n$details"
+              throw "MiaoDeskHarness real DSH smoke failed from movable custom path, exit=$($p.ExitCode)`n$details"
             }
           } finally {
             if (Test-Path $testRoot -PathType Container) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $original -Parent) | Out-Null
               Move-Item -Path $testRoot -Destination $original -Force
             }
             Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
@@ -111,18 +161,19 @@ jobs:
       - name: Add one-click launcher and package info
         shell: pwsh
         run: |
-          $dest = Join-Path $PWD 'MiaoDesk-x64-full-test'
+          $dest = $env:MIAODESK_STAGE_ROOT
           Set-Content -Path (Join-Path $dest 'START-MIAODESK.cmd') -Encoding ASCII -Value @(
             '@echo off'
             'cd /d "%~dp0"'
             'start "" MiaoDesk.exe'
           )
           Set-Content -Path (Join-Path $dest 'README-TEST.txt') -Encoding UTF8 -Value @(
-            'MiaoDesk x64 portable test build'
+            'MiaoDesk x64 portable full-runtime test build'
             "Commit: $env:GITHUB_SHA"
             'Unsigned portable package. No installation required.'
-            'Includes MiaoDesk, wallpaper engine, Harness, Node runtime, DeepSeek Harness, Pi Agent and bundled assets.'
-            'Verified from a nested custom install path with spaces, including a real DSH web startup smoke test.'
+            'Native product files came from cmake --install staging at a short external path.'
+            'Includes MiaoDesk, wallpaper engine, Harness, Node runtime, DeepSeek Harness, Pi Agent, Goz and bundled wallpaper assets.'
+            'Verified without relying on Windows LongPathsEnabled and with a real DSH web startup after moving the product tree.'
             'Run START-MIAODESK.cmd or MiaoDesk.exe.'
           )
 
@@ -130,7 +181,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MiaoDesk-x64-full-test-${{ github.sha }}
-          path: MiaoDesk-x64-full-test/
+          path: C:/pkg/MiaoDesk/x64/
           if-no-files-found: error
           retention-days: 14
           compression-level: 6

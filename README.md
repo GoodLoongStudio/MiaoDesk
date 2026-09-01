@@ -39,7 +39,7 @@ GitHub Actions：`.github/workflows/package-windows-x64.yml`
 external short CMake build
   -> cmake --install
   -> packaging/windows/stage.ps1 -Architecture x64
-  -> Agent/ single dependency graph
+  -> AI/ single dependency graph
   -> path budget
   -> production self-tests
   -> moved-install DSH Web smoke
@@ -89,7 +89,7 @@ runtime/
 Runtime/
   Node/
     node.exe
-Agent/
+AI/
   package.json
   package-lock.json
   node_modules/

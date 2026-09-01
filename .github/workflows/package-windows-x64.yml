@@ -67,13 +67,21 @@ jobs:
 
       - name: Stage Runtime
         shell: pwsh
-        run: .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
+        run: |
+          try {
+            .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Runtime staging failed::$details"
+            throw
+          }
 
       - name: Report package size
         shell: pwsh
         run: |
           $all = @(Get-ChildItem $env:MIAODESK_STAGE_ROOT -File -Recurse -Force)
-          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'Agent') -File -Recurse -Force)
+          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'AI') -File -Recurse -Force)
           Write-Host "Package files: $($all.Count)" -ForegroundColor Cyan
           Write-Host "Agent Runtime files: $($agent.Count)" -ForegroundColor Cyan
 
@@ -97,18 +105,18 @@ jobs:
             'MiaoDeskHarness.exe',
             'Config\product.ini',
             'Runtime\Node\node.exe',
-            'Agent\package-lock.json',
-            'Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
-            'Agent\node_modules\pi\dist\cli.js',
+            'AI\package-lock.json',
+            'AI\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'AI\node_modules\pi\dist\cli.js',
             'Goz\goz.exe',
             'Goz\gozd.exe'
           )) {
             if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing package file: $relative" }
           }
 
-          & "$root\Runtime\Node\node.exe" "$root\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
-          & "$root\Runtime\Node\node.exe" "$root\Agent\node_modules\pi\dist\cli.js" --version | Out-Host
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\pi\dist\cli.js" --version | Out-Host
           if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
 
           foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {

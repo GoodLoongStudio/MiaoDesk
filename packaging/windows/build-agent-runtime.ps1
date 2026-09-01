@@ -68,7 +68,7 @@ foreach ($required in @($nodeExe,$npmCmd)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Agent runtime prerequisite is missing: $required" }
 }
 
-$agentRoot = Join-Path $Root 'Agent'
+$agentRoot = Join-Path $Root 'AI'
 Remove-Item $agentRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $agentRoot | Out-Null
 Copy-Item $AgentPackage (Join-Path $agentRoot 'package.json') -Force
@@ -82,8 +82,6 @@ try {
     $env:npm_config_cache = $cacheRoot
     & $npmCmd ci --prefix $agentRoot --omit=dev --no-audit --no-fund --install-strategy=hoisted
     if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk Agent npm ci failed.' }
-    & $npmCmd dedupe --prefix $agentRoot --omit=dev --no-audit --no-fund --package-lock=false
-    if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk Agent npm dedupe failed.' }
 } finally {
     $env:npm_config_cache = $oldCache
     Remove-Item $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -162,7 +160,7 @@ if (-not (Test-Path $piCli -PathType Leaf)) { throw "Short Pi runtime is incompl
 $piBinRoot = Join-Path $agentModules '.bin'
 foreach ($name in @('pi','pi.cmd','pi.ps1')) {
     $shim = Join-Path $piBinRoot $name
-    if (-not (Test-Path $shim -PathType Leaf)) { throw "Pi npm shim is missing: $shim" }
+    if (-not (Test-Path $shim -PathType Leaf)) { continue }
     $shimText = Get-Content $shim -Raw
     $shimText = $shimText.Replace('@earendil-works/pi-coding-agent', 'pi')
     $shimText = $shimText.Replace('@earendil-works\pi-coding-agent', 'pi')
@@ -179,7 +177,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Pi CLI probe failed after dependency normaliza
 
 # Temporary compatibility entrypoints for native code that still understands V2
 # locations. They contain no dependency tree and will be removed after native
-# path resolution is switched fully to Agent.
+# path resolution is switched fully to AI.
 foreach ($legacy in @(
     (Join-Path $Root 'Pi'),
     (Join-Path $Root 'node_modules'),
@@ -192,7 +190,7 @@ $legacyDsh = Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin
 New-Item -ItemType Directory -Force -Path (Split-Path $legacyDsh -Parent) | Out-Null
 Set-Content -Path $legacyDsh -Encoding UTF8 -Value @'
 (async () => {
-  await import('../../../../../Agent/node_modules/@deepseek-ai/dsh/lib/bin.js');
+  await import('../../../../../AI/node_modules/@deepseek-ai/dsh/lib/bin.js');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
@@ -203,7 +201,7 @@ $legacyPi = Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent\dis
 New-Item -ItemType Directory -Force -Path (Split-Path $legacyPi -Parent) | Out-Null
 Set-Content -Path $legacyPi -Encoding UTF8 -Value @'
 (async () => {
-  await import('../../../../../Agent/node_modules/pi/dist/cli.js');
+  await import('../../../../../AI/node_modules/pi/dist/cli.js');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

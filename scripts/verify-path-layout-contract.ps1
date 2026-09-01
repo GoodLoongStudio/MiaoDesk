@@ -76,7 +76,7 @@ foreach ($arch in @('x64','arm64')) {
 
 $agentRuntimeText = Get-Content $agentRuntimeScript -Raw
 foreach ($requiredPattern in @(
-    'Join-Path \$Root ''Agent''',
+    'Join-Path \$Root ''AI''',
     'Join-Path \$agentModules ''pi''',
     '@\(''pi'',''pi\.cmd'',''pi\.ps1''\)',
     '\.Name -like ''\*\.d\.ts''',
@@ -86,8 +86,8 @@ foreach ($requiredPattern in @(
         Fail "Agent Runtime short-path normalization is missing: pattern=$requiredPattern"
     }
 }
-if ($agentRuntimeText -match 'Join-Path \$Root ''Runtime\\Agent''') {
-    Fail 'Agent dependency graph returned to the over-budget Runtime/Agent path.'
+if ($agentRuntimeText -match 'Join-Path \$Root ''Runtime\\Agent''|Join-Path \$Root ''Agent''') {
+    Fail 'Agent dependency graph returned to an over-budget physical path.'
 }
 
 $presets = Get-Content $cmakePresets -Raw

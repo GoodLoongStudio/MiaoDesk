@@ -44,7 +44,7 @@ runtime/arm64/runtime-lock.json
 
 它们只管理该架构的 Node/Goz archive 和 SHA-256，不重复定义 DSH/Pi。
 
-正式 staging 使用 `npm ci` 从已提交 lock 物化唯一的 `Agent` 依赖树。Pi 的 package name 保持 `@earendil-works/pi-coding-agent`，随包物理目录缩短为 `Agent/node_modules/pi`。最终用户机器不得运行 `npm install` / `npx`，也不依赖系统 Node/npm。
+正式 staging 使用 `npm ci` 从已提交 lock 物化唯一的 `AI` 依赖树。Pi 的 package name 保持 `@earendil-works/pi-coding-agent`，随包物理目录缩短为 `AI/node_modules/pi`。最终用户机器不得运行 `npm install` / `npx`，也不依赖系统 Node/npm。
 
 ## 3. Provider-neutral
 
@@ -67,7 +67,7 @@ MiaoDeskHarness.exe
     ↓
 Runtime/Node/node.exe
     ↓
-Agent/node_modules/@deepseek-ai/dsh
+AI/node_modules/@deepseek-ai/dsh
 ```
 
 Pi 失败不能自动打开 Harness；两者可以共享 Provider/Model/Base URL/API Key 配置，但生命周期独立。

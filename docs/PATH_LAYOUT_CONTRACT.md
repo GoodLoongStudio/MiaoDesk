@@ -60,14 +60,14 @@ MiaoDesk\
   Wallpapers\
   Runtime\
     Node\
-  Agent\
+  AI\
     package.json
     package-lock.json
     node_modules\
   Goz\
 ```
 
-`Agent` is the single production dependency graph for Pi + DeepSeek Harness on both x64 and ARM64. Pi keeps its published package name but uses the shorter physical directory `Agent/node_modules/pi` in the shipped tree. Do not restore separate DSH and Pi dependency trees.
+`AI` is the single production dependency graph for Pi + DeepSeek Harness on both x64 and ARM64. Pi keeps its published package name but uses the shorter physical directory `AI/node_modules/pi` in the shipped tree. Do not restore separate DSH and Pi dependency trees.
 
 Repository source trees, compiler output, SDKs, npm caches and downloaded archives must never enter the user package. Build-only WebView2 lives under `third_party/webview2`, not `runtime/<arch>`.
 

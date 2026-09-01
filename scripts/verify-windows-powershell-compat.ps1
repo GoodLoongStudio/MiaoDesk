@@ -47,7 +47,7 @@ foreach ($name in $pwshOnly) {
 }
 
 $updateCmd = Join-Path $root 'UPDATE-MIAODESK.cmd'
-$deployCmd = Join-Path $root 'DEPLOY-NATIVE-ARM64.cmd'
+$deployCmd = Join-Path $root 'tools\dev\windows\DEPLOY-NATIVE-ARM64.cmd'
 foreach ($cmd in @($updateCmd, $deployCmd)) {
     Assert-AsciiFile $cmd
 }
@@ -67,7 +67,8 @@ foreach ($required in @(
 
 foreach ($required in @(
     'scripts\deploy-native-arm64.ps1',
-    'git pull --ff-only'
+    'git pull --ff-only',
+    'REPO_ROOT'
 )) {
     if (-not $deployText.Contains($required)) {
         throw "Deploy bootstrap marker missing: $required"

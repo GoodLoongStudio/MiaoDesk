@@ -9,6 +9,6 @@
 - `runtime-lock.json` — version/source pins
 - `runtime-manifest.json` — resolved artifact hashes
 
-Build-only dependencies do not belong here. The shared WebView2 SDK lives at `third_party/webview2/1.0.4129.50/` and is consumed by CMake for both x64 and ARM64.
+Build-only dependencies do not belong here. The shared minimal WebView2 SDK lives at `third_party/webview2/` and is consumed by CMake for both x64 and ARM64.
 
 ARM64 keeps the existing pinned DSH/Pi archives until its package flow is switched to the same unified Runtime V3 Agent graph used by x64.

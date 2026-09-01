@@ -43,9 +43,9 @@ Node is private to MiaoDesk and is not installed system-wide.
 - Package: `Microsoft.Web.WebView2`
 - Pinned SDK version: `1.0.4129.50`
 - Source: https://www.nuget.org/packages/Microsoft.Web.WebView2
-- License/notices: retained from the official NuGet package in `third_party/webview2/1.0.4129.50/`.
+- License/notices: retained under `third_party/webview2/`.
 
-MiaoDesk keeps one repository-local SDK for all Windows architectures. The Microsoft Edge WebView2 Runtime itself is treated as an operating-system component and is not duplicated in the repository.
+MiaoDesk keeps only the headers and x64/ARM64 static loaders required by the native build, plus the upstream license/notice and `manifest.json`. The Microsoft Edge WebView2 Runtime itself is treated as an operating-system component and is not duplicated in the repository.
 
 ## Microsoft PowerToys
 

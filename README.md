@@ -17,7 +17,7 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 ```text
 src/native/                Native 产品代码
 assets/                    产品资源与壁纸包
-third_party/webview2/      单一编译期 WebView2 SDK
+third_party/webview2/      最小编译期 WebView2 SDK
 runtime/<arch>/            固定的架构运行时基础包/版本锁
 packaging/windows/         Windows 正式 staging 与包验证
 packaging/nsis/            NSIS installer
@@ -81,13 +81,22 @@ ARM64 当前仍消费固定 RuntimeBundle，后续迁移到同一 Runtime V3 sta
 
 ## WebView2
 
-编译 SDK 只有一份：
+仓库只保留 MiaoDesk 实际参与编译的最小 SDK：
 
 ```text
-third_party/webview2/1.0.4129.50/
+third_party/webview2/
+  include/
+    WebView2.h
+    WebView2EnvironmentOptions.h
+  lib/
+    x64/WebView2LoaderStatic.lib
+    arm64/WebView2LoaderStatic.lib
+  LICENSE.txt
+  NOTICE.txt
+  manifest.json
 ```
 
-x64 和 ARM64 CMake 共用这份 SDK。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
+版本只记录在 `manifest.json`，不再复制 NuGet 的版本目录、`build/native`、x86、DLL、WinRT headers 或 `.targets`。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
 
 ## AI 运行链
 

@@ -1,19 +1,18 @@
-# M3 Widget placement health contract
+# MiaoDesk Widget Placement Health Contract
 
-Status: active M3 runtime/acceptance contract
-Date: 2026-08-26
+Status: active runtime contract. The `_M3` filename is retained only for stable existing links.
 
-M3 must prove more than process/HWND/WebView2 readiness. A Widget that survives a display topology change but returns on the wrong monitor or at the wrong geometry is not healthy.
+Widget 进程/窗口活着并不代表 placement healthy。目标 monitor 错误、geometry 漂移或 display reconnect 后落到错误位置都属于真实故障。
 
 ## Ownership
 
-Placement health is produced by `WidgetService` and consumed through `WidgetRuntimeHealth` / `WidgetSurfaceHealth` in `DesktopSnapshot`.
+Placement health 由 `WidgetService` 产生，并通过 `WidgetSurfaceHealth` / `WidgetRuntimeHealth` 进入 `DesktopSnapshot`。
 
-UI, Pi and acceptance tooling remain consumers. They must not enumerate or mutate desktop attachment HWNDs themselves. `DesktopShellHost` remains the only Windows desktop attachment and z-order mutation owner.
+UI、Pi 和其他 client 只消费这个状态；它们不得自行枚举/移动 desktop attachment HWND。`DesktopShellHost` 仍是 Windows desktop attachment/z-order mutation 的唯一 owner。
 
-## Per-surface placement telemetry
+## Per-surface placement state
 
-For every enabled Web Widget, `WidgetSurfaceHealth` reports:
+每个 enabled Widget 应能报告：
 
 ```text
 monitorId
@@ -25,28 +24,22 @@ expectedLeft / expectedTop / expectedRight / expectedBottom
 actualLeft / actualTop / actualRight / actualBottom
 ```
 
-The expected desktop-space rectangle is derived from the persisted normalized Widget rectangle and the currently resolved target monitor. An empty persisted monitor id resolves to the current primary monitor. A non-empty id must resolve through the shared monitor-layout stable-id contract.
+Expected rectangle 来自 persisted normalized Widget rect + 当前解析出的 target monitor。空 monitor id 可以解析到当前 primary monitor；非空 id 必须通过稳定 monitor-id contract 解析。
 
-The actual rectangle is read from the live Widget surface. `geometryValid` allows only a small pixel tolerance so normal Win32 rounding does not create false failures.
+Actual rectangle 来自 live surface。`geometryValid` 应允许小范围 Win32 rounding tolerance，但不能把明显的位置/尺寸错误当作 healthy。
 
-## Health semantics
+## Health rule
 
-`WidgetSurfaceHealth::SurfaceReady()` now requires all of the following before rendering can be considered healthy:
+Placement 进入 rendering health 前至少要求：
 
-- configured Web Widget;
-- isolated process running;
-- HWND ready;
-- expected parent valid;
-- `WS_CHILD` valid;
-- visible;
-- monitor topology reported;
-- target monitor resolved;
-- live geometry reported;
-- live geometry matches the expected desktop-space rectangle.
+```text
+monitor topology reported
+target monitor resolved
+live geometry reported
+live geometry matches expected rectangle within tolerance
+```
 
-Existing WebView2 lifecycle and z-order checks are still required by `renderingHealthy`.
-
-Stable placement issue codes include:
+常用稳定 issue category：
 
 ```text
 monitor_topology_unavailable
@@ -55,24 +48,28 @@ geometry_unreported
 geometry_mismatch
 ```
 
-These issue codes and recommended actions are generated inside the Widget domain so UI/Pi do not infer monitor or HWND remediation rules.
+Issue/action 由 Widget domain 生成，UI/Pi 不重复实现 monitor/HWND remediation 逻辑。
 
-## Independent acceptance verification
+## Display changes
 
-The sealed-evidence session verifier must not trust only the aggregate `runtimeHealthy` or per-surface `renderingHealthy` flag. For every enabled Widget section in every acceptance phase it independently requires the report to contain all of these successful facts:
+Display disconnect/reconnect、primary monitor change、DPI/topology change 后：
 
-```text
-monitorValid=true
-geometryValid=true
-visible=true
-zOrderValid=true
-renderingHealthy=true
-```
+- persisted Widget identity 保持；
+- target monitor 重新解析；
+- live geometry 重新计算/恢复；
+- health 必须反映恢复后的真实 surface；
+- 如果目标 monitor 不再存在，应明确报告 invalid state，而不是静默宣称 healthy。
 
-The number of successful values for each field must exactly match the number of enabled Widget sections. This keeps monitor placement and desktop layering as explicit evidence even if the implementation of the aggregate health flag evolves later.
+## Validation
 
-## monitor reconnect acceptance
+仓库不再维护独立 phase acceptance runner。涉及 placement 的改动需要在真实 Windows 上验证：
 
-The M3 `monitor` phase is valid only when the display topology transition evidence exists and the post-transition Widget health is healthy. Placement consistency is part of `renderingHealthy`, and the independent verifier also checks target-monitor validity, geometry, visibility and z-order separately. The phase therefore cannot pass merely because a process or surface is alive.
+1. 新建 Widget 初始位置有效且不重叠；
+2. drag 后 normalized position 持久化；
+3. 重启后回到相同逻辑位置；
+4. 多显示器下 target monitor 正确；
+5. monitor disconnect/reconnect 后恢复或明确报告 missing monitor；
+6. DPI/topology change 后 expected/live geometry 一致；
+7. Widget 仍位于 wallpaper 上、desktop icons 下。
 
-This strengthens automated evidence but does not replace the real-Windows visual gate. A human must still confirm the Widget is visually correct, remains below desktop icons/above MiaoDesk wallpaper, and returns to the intended monitor after disconnect/reconnect.
+自动 health 检查可以确认数值状态，但不能完全替代真实桌面目视验收。

@@ -18,119 +18,74 @@ concurrency:
 jobs:
   vendor:
     runs-on: windows-11-arm
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Materialize pinned ARM64 runtime
+      - name: Materialize pinned ARM64 base runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $lockPath = 'runtime/arm64/runtime-lock.json'
-          $manifestPath = 'runtime/arm64/runtime-manifest.json'
+          $root = (Resolve-Path '.').Path
+          $runtime = Join-Path $root 'runtime\arm64'
+          $lockPath = Join-Path $runtime 'runtime-lock.json'
           $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
-          $old = Get-Content $manifestPath -Raw | ConvertFrom-Json
-          if ($lock.architecture -ne 'arm64') { throw 'runtime lock is not ARM64' }
+          if ([string]$lock.architecture -ne 'arm64') { throw 'runtime lock is not ARM64' }
 
-          $runtime = Join-Path (Resolve-Path '.').Path 'runtime\arm64'
-          $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Vendor-arm64-' + [guid]::NewGuid().ToString('N'))
-          New-Item -ItemType Directory -Force -Path $temp | Out-Null
-          function Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() }
-          function Resolve-File([string]$Relative) { Join-Path $runtime ($Relative -replace '/', '\') }
-          function Valid([string]$Relative,[string]$Expected) {
-            $path = Resolve-File $Relative
-            (Test-Path $path -PathType Leaf) -and (Sha256 $path) -eq $Expected.ToLowerInvariant()
+          function Sha256([string]$Path) {
+            (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+          }
+          function Assert-Hash([string]$Path,[string]$Expected) {
+            if (-not (Test-Path $Path -PathType Leaf)) { throw "Runtime archive is missing: $Path" }
+            $actual = Sha256 $Path
+            if ($actual -ne $Expected.ToLowerInvariant()) {
+              throw "Checksum mismatch: $Path`nExpected: $Expected`nActual:   $actual"
+            }
           }
 
+          $nodeArchive = Join-Path $runtime ('node\' + [string]$lock.node.archive)
+          if (-not (Test-Path $nodeArchive -PathType Leaf) -or (Sha256 $nodeArchive) -ne ([string]$lock.node.sha256).ToLowerInvariant()) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $nodeArchive -Parent) | Out-Null
+            Invoke-WebRequest -Uri (([string]$lock.node.source).TrimEnd('/') + '/' + [string]$lock.node.archive) -OutFile $nodeArchive -UseBasicParsing
+          }
+          Assert-Hash $nodeArchive ([string]$lock.node.sha256)
+
+          $gozArchive = Join-Path $runtime ('goz\' + [string]$lock.goz.archive)
+          Assert-Hash $gozArchive ([string]$lock.goz.sha256)
+
+          $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-ARM64-base-' + [guid]::NewGuid().ToString('N'))
           try {
-            $nodeVersion = [string]$lock.node.version
-            $nodeRel = if ($old.node.version -eq $nodeVersion) { [string]$old.node.archive } else { 'node/' + [string]$lock.node.archive }
-            $nodeArchive = Resolve-File $nodeRel
-            if (-not ($old.node.version -eq $nodeVersion -and (Valid $nodeRel ([string]$old.node.sha256)))) {
-              New-Item -ItemType Directory -Force -Path (Split-Path $nodeArchive -Parent) | Out-Null
-              $base = ([string]$lock.node.source).TrimEnd('/') + '/'
-              $sums = Join-Path $temp 'SHASUMS256.txt'
-              Invoke-WebRequest ($base + 'SHASUMS256.txt') -OutFile $sums -UseBasicParsing
-              Invoke-WebRequest ($base + [string]$lock.node.archive) -OutFile $nodeArchive -UseBasicParsing
-              $line = Get-Content $sums | Where-Object { $_ -match ('\s+' + [regex]::Escape([string]$lock.node.archive) + '$') } | Select-Object -First 1
-              if (-not $line) { throw 'Node checksum is missing.' }
-              $nodeHash = (($line -split '\s+')[0]).ToLowerInvariant()
-              if ((Sha256 $nodeArchive) -ne $nodeHash) { throw 'Node ARM64 checksum mismatch.' }
-            } else { $nodeHash = [string]$old.node.sha256 }
+            New-Item -ItemType Directory -Force -Path $temp | Out-Null
+            $nodeExpanded = Join-Path $temp 'node'
+            Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
+            $nodeExe = Get-ChildItem $nodeExpanded -Filter node.exe -File -Recurse | Select-Object -First 1
+            if (-not $nodeExe) { throw 'Pinned ARM64 Node archive does not contain node.exe.' }
+            & $nodeExe.FullName --version | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned ARM64 Node probe failed.' }
 
-            $expanded = Join-Path $temp 'node'
-            Expand-Archive $nodeArchive -DestinationPath $expanded -Force
-            $nodeHome = Get-ChildItem $expanded -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'node.exe') } | Select-Object -First 1
-            if (-not $nodeHome) { throw 'Node archive is incomplete.' }
-            $nodeExe = Join-Path $nodeHome.FullName 'node.exe'
-            $npmCmd = Join-Path $nodeHome.FullName 'npm.cmd'
-            $env:npm_config_cache = Join-Path $temp 'npm-cache'
-
-            $dshVersion = [string]$lock.deepseekHarness.version
-            if ($old.deepseekHarness.version -eq $dshVersion -and (Valid ([string]$old.deepseekHarness.archive) ([string]$old.deepseekHarness.sha256))) {
-              $dshRel = [string]$old.deepseekHarness.archive
-              $dshHash = [string]$old.deepseekHarness.sha256
-            } else {
-              $stage = Join-Path $temp 'dsh'
-              New-Item -ItemType Directory -Force -Path $stage | Out-Null
-              @{name='miaodesk-dsh-runtime';private=$true;version='1.0.0'} | ConvertTo-Json | Set-Content (Join-Path $stage 'package.json') -Encoding UTF8
-              & $npmCmd install --prefix $stage ("@deepseek-ai/dsh@$dshVersion") --omit=dev --no-audit --no-fund --save-exact
-              if ($LASTEXITCODE -ne 0) { throw 'DSH install failed.' }
-              & $nodeExe (Join-Path $stage 'node_modules\@deepseek-ai\dsh\lib\bin.js') --help | Out-Host
-              if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
-              $dshRel = "harness/deepseek-harness-$dshVersion-win-arm64.zip"
-              $dshZip = Resolve-File $dshRel
-              New-Item -ItemType Directory -Force -Path (Split-Path $dshZip -Parent) | Out-Null
-              & tar.exe -a -c -f $dshZip -C $stage .
-              if ($LASTEXITCODE -ne 0) { throw 'DSH archive failed.' }
-              $dshHash = Sha256 $dshZip
+            $gozExpanded = Join-Path $temp 'goz'
+            Expand-Archive $gozArchive -DestinationPath $gozExpanded -Force
+            foreach ($name in @('goz.exe','gozd.exe')) {
+              if (-not (Get-ChildItem $gozExpanded -Filter $name -File -Recurse | Select-Object -First 1)) {
+                throw "Pinned ARM64 goz archive is missing $name."
+              }
             }
+          } finally {
+            Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-            $piVersion = [string]$lock.pi.version
-            if ($old.pi.version -eq $piVersion -and (Valid ([string]$old.pi.archive) ([string]$old.pi.sha256))) {
-              $piRel = [string]$old.pi.archive
-              $piHash = [string]$old.pi.sha256
-            } else {
-              $stage = Join-Path $temp 'pi'
-              New-Item -ItemType Directory -Force -Path $stage | Out-Null
-              @{name='miaodesk-pi-runtime';private=$true;version='1.0.0'} | ConvertTo-Json | Set-Content (Join-Path $stage 'package.json') -Encoding UTF8
-              & $npmCmd install --prefix $stage ("@earendil-works/pi-coding-agent@$piVersion") --omit=dev --no-audit --no-fund --save-exact
-              if ($LASTEXITCODE -ne 0) { throw 'Pi install failed.' }
-              & $nodeExe (Join-Path $stage 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js') --version | Out-Host
-              if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
-              $piRel = 'pi/' + [string]$lock.pi.archive
-              $piZip = Resolve-File $piRel
-              New-Item -ItemType Directory -Force -Path (Split-Path $piZip -Parent) | Out-Null
-              & tar.exe -a -c -f $piZip -C $stage .
-              if ($LASTEXITCODE -ne 0) { throw 'Pi archive failed.' }
-              $piHash = Sha256 $piZip
-            }
+          Write-Host 'ARM64 base Runtime ready: Node + goz.' -ForegroundColor Green
 
-            if ($old.goz.version -ne [string]$lock.goz.version -or -not (Valid ([string]$old.goz.archive) ([string]$old.goz.sha256))) {
-              throw 'Pinned ARM64 goz archive must be updated deliberately before changing the goz lock.'
-            }
-
-            $manifest = [ordered]@{
-              schema=3; architecture='arm64'; generatedUtc=[DateTime]::UtcNow.ToString('o'); lockSha256=Sha256 $lockPath
-              node=[ordered]@{version=$nodeVersion;archive=$nodeRel;sha256=$nodeHash}
-              deepseekHarness=[ordered]@{version=$dshVersion;archive=$dshRel;sha256=$dshHash}
-              goz=[ordered]@{version=[string]$old.goz.version;tag=[string]$old.goz.tag;archive=[string]$old.goz.archive;sha256=[string]$old.goz.sha256}
-              pi=[ordered]@{package='@earendil-works/pi-coding-agent';version=$piVersion;archive=$piRel;sha256=$piHash;mode='node-rpc'}
-            }
-            $manifest | ConvertTo-Json -Depth 6 | Set-Content $manifestPath -Encoding UTF8
-            Set-Content (Join-Path $runtime '.complete') -Value ('lock-sha256=' + (Sha256 $lockPath)) -Encoding ASCII
-          } finally { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
-
-      - name: Commit runtime changes
+      - name: Commit base runtime changes
         shell: pwsh
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add runtime/arm64
+          git add runtime/arm64/node runtime/arm64/goz
           if (git diff --cached --quiet) { exit 0 }
-          git commit -m 'runtime: update pinned ARM64 runtime'
+          git commit -m 'runtime: update pinned ARM64 base'
           git pull --rebase origin main
           git push origin HEAD:main

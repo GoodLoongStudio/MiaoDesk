@@ -25,7 +25,6 @@ Name "${PRODUCT_NAME}"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$PROGRAMFILES64\MiaoDesk"
 RequestExecutionLevel highest
-SetRegView 64
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
@@ -43,6 +42,7 @@ Var InstallMode
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
 Function .onInit
+    SetRegView 64
     UserInfo::GetAccountType
     Pop $0
     StrCmp $0 "Admin" 0 LimitedUser
@@ -98,6 +98,7 @@ Done:
 SectionEnd
 
 Section "Uninstall"
+    SetRegView 64
     ReadRegStr $0 HKLM "${PRODUCT_REG_KEY}" "InstallDir"
     StrCmp $0 "$INSTDIR" 0 PerUserUninstall
     SetShellVarContext all

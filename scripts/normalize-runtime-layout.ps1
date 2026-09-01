@@ -20,16 +20,10 @@ function Get-NodeModulePackages([string]$NodeModulesRoot) {
         if ($entry.Name.StartsWith('.')) { continue }
         if ($entry.Name.StartsWith('@')) {
             foreach ($scoped in @(Get-ChildItem $entry.FullName -Directory -Force -ErrorAction SilentlyContinue)) {
-                $packages += [pscustomobject]@{
-                    Relative = "$($entry.Name)\$($scoped.Name)"
-                    Path = $scoped.FullName
-                }
+                $packages += [pscustomobject]@{ Relative = "$($entry.Name)\$($scoped.Name)"; Path = $scoped.FullName }
             }
         } else {
-            $packages += [pscustomobject]@{
-                Relative = $entry.Name
-                Path = $entry.FullName
-            }
+            $packages += [pscustomobject]@{ Relative = $entry.Name; Path = $entry.FullName }
         }
     }
     return @($packages)
@@ -42,15 +36,12 @@ function Remove-EmptyNodeModuleContainers([string]$Start) {
     foreach ($dir in $dirs) {
         if ($dir.Name -eq '.bin') { continue }
         $children = @(Get-ChildItem $dir.FullName -Force -ErrorAction SilentlyContinue)
-        if ($children.Count -eq 0) {
-            Remove-Item $dir.FullName -Force -ErrorAction SilentlyContinue
-        }
+        if ($children.Count -eq 0) { Remove-Item $dir.FullName -Force -ErrorAction SilentlyContinue }
     }
 }
 
 function Try-HoistPackage([string]$Source, [string]$Destination, [string]$Label) {
     if (-not (Test-Path $Source -PathType Container)) { return 'missing' }
-
     if (Test-Path $Destination -PathType Container) {
         $sourceVersion = Read-PackageVersion $Source
         $destinationVersion = Read-PackageVersion $Destination
@@ -61,11 +52,9 @@ function Try-HoistPackage([string]$Source, [string]$Destination, [string]$Label)
             Write-Host "Deduplicated nested $Label $sourceVersion; identical shallow copy already exists." -ForegroundColor DarkGray
             return 'deduped'
         }
-
         Write-Host "Kept nested $Label because shallow destination has a different/unknown version ($sourceVersion vs $destinationVersion)." -ForegroundColor DarkYellow
         return 'conflict'
     }
-
     New-Item -ItemType Directory -Force -Path (Split-Path $Destination -Parent) | Out-Null
     Move-Item -Path $Source -Destination $Destination
     Write-Host "Hoisted $Label to shorten stock-Windows runtime paths." -ForegroundColor Cyan
@@ -75,6 +64,8 @@ function Try-HoistPackage([string]$Source, [string]$Destination, [string]$Label)
 $node = Join-Path $Root 'Runtime\Node\node.exe'
 $legacyNodeModules = Join-Path $Root 'Runtime\Node\node_modules'
 $shallowNodeModules = Join-Path $Root 'node_modules'
+$legacyDshBin = Join-Path $legacyNodeModules '@deepseek-ai\dsh\lib\bin.js'
+$shallowDshBin = Join-Path $shallowNodeModules '@deepseek-ai\dsh\lib\bin.js'
 $piRoot = Join-Path $Root 'Pi'
 $piNodeModules = Join-Path $piRoot 'node_modules'
 $piAgentRoot = Join-Path $piNodeModules '@earendil-works\pi-coding-agent'
@@ -84,40 +75,45 @@ foreach ($required in @($node, $piCli)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Runtime layout normalization prerequisite is missing: $required" }
 }
 
-# DeepSeek Harness dependencies used to live under Runtime\Node\node_modules.
-# That extra 13-character prefix is unnecessary for Node resolution and consumes
-# valuable MAX_PATH budget for generated SDK files. Keep node.exe at its stable
-# Runtime\Node location, but place the production node_modules tree directly at
-# the install root. A script inside root\node_modules resolves sibling packages
-# normally, while every dependency path becomes 13 characters shorter.
+# Keep node.exe at Runtime\Node, but move the large DSH dependency tree to the
+# install-root node_modules directory. This is ordinary Node ancestor/sibling
+# resolution and shortens every DSH dependency path by exactly 13 characters.
 if (Test-Path $legacyNodeModules -PathType Container) {
     if (Test-Path $shallowNodeModules -PathType Container) {
         throw "Cannot normalize DSH runtime: both legacy and shallow node_modules trees exist: $legacyNodeModules ; $shallowNodeModules"
     }
     Move-Item -Path $legacyNodeModules -Destination $shallowNodeModules
-    Write-Host 'Moved DSH node_modules to the install root; every DSH dependency path is 13 characters shorter.' -ForegroundColor Cyan
+    Write-Host 'Moved DSH node_modules to install root; every DSH dependency path is 13 characters shorter.' -ForegroundColor Cyan
 }
 
-$dshBin = Join-Path $shallowNodeModules '@deepseek-ai\dsh\lib\bin.js'
-if (-not (Test-Path $dshBin -PathType Leaf)) {
-    $legacyDshBin = Join-Path $legacyNodeModules '@deepseek-ai\dsh\lib\bin.js'
-    if (Test-Path $legacyDshBin -PathType Leaf) { $dshBin = $legacyDshBin }
-}
-if (-not (Test-Path $dshBin -PathType Leaf)) {
-    throw "DeepSeek Harness entrypoint is missing after runtime layout normalization: $dshBin"
+if (-not (Test-Path $shallowDshBin -PathType Leaf)) {
+    throw "Shallow DeepSeek Harness entrypoint is missing after runtime relocation: $shallowDshBin"
 }
 
-# npm/pnpm can leave dependencies under the scoped Pi package itself, producing
-# paths such as Pi/node_modules/@earendil-works/pi-coding-agent/node_modules/...
-# that exceed legacy MAX_PATH once the user chooses a normal install directory.
-# Hoist every dependency that can be moved without changing Node resolution.
+# Backward-compatible launcher: existing native code and older scripts may still
+# invoke Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js. Recreate only
+# that tiny entrypoint, never the deep dependency tree. CommonJS dynamic import
+# works even without a package.json in this compatibility directory.
+New-Item -ItemType Directory -Force -Path (Split-Path $legacyDshBin -Parent) | Out-Null
+$shim = @'
+(async () => {
+  await import('../../../../../../node_modules/@deepseek-ai/dsh/lib/bin.js');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+'@
+Set-Content -Path $legacyDshBin -Encoding UTF8 -Value $shim
+Write-Host 'Created tiny legacy DSH launcher shim; the real dependency tree remains shallow.' -ForegroundColor DarkGray
+
+# Pi may also contain package-local node_modules. Hoist only when Node resolution
+# semantics are preserved; conflicting versions remain nested and are reported.
 $conflicts = New-Object System.Collections.Generic.List[string]
 for ($pass = 1; $pass -le 8; $pass++) {
     $changed = $false
     $nestedNodeModules = @(Get-ChildItem $piAgentRoot -Directory -Recurse -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'node_modules' } |
         Sort-Object { $_.FullName.Length } -Descending)
-
     foreach ($nodeModulesDir in $nestedNodeModules) {
         foreach ($package in @(Get-NodeModulePackages $nodeModulesDir.FullName)) {
             $destination = Join-Path $piNodeModules $package.Relative
@@ -126,23 +122,20 @@ for ($pass = 1; $pass -le 8; $pass++) {
             elseif ($result -eq 'conflict' -and -not $conflicts.Contains($package.Relative)) { $conflicts.Add($package.Relative) }
         }
     }
-
     Remove-EmptyNodeModuleContainers $piAgentRoot
     if (-not $changed) { break }
 }
-
 if ($conflicts.Count -gt 0) {
     Write-Host "Runtime normalization preserved $($conflicts.Count) version-conflicting nested package(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
 }
 
-# Re-probe real entrypoints after rearranging node_modules. This verifies that
-# the optimized tree still works without machine-global Node, PATH, CWD,
-# junctions, or Windows LongPathsEnabled.
+# Re-probe both the real shallow DSH entrypoint and the compatibility launcher.
 & $node $piCli --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Pi runtime failed after path normalization.' }
-
-& $node $dshBin --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime failed after path normalization.' }
+& $node $shallowDshBin --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Shallow DeepSeek Harness runtime failed after path normalization.' }
+& $node $legacyDshBin --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Legacy DeepSeek Harness launcher shim failed after path normalization.' }
 
 $hoistedMistral = Join-Path $piNodeModules '@mistralai\mistralai'
 if (Test-Path $hoistedMistral -PathType Container) {

@@ -6,8 +6,8 @@ $ProgressPreference = 'SilentlyContinue'
 
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $BundleRoot = Join-Path $RepoRoot 'runtime\x64'
+$LockPath = Join-Path $BundleRoot 'runtime-lock.json'
 $ManifestPath = Join-Path $BundleRoot 'runtime-manifest.json'
-$CompleteMarker = Join-Path $BundleRoot '.complete'
 
 function Sha256([string]$Path) {
     (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
@@ -33,12 +33,16 @@ function Expand-Tar([string]$Archive, [string]$Destination) {
     if ($LASTEXITCODE -ne 0) { throw "Unable to extract Runtime archive: $Archive" }
 }
 
-if (-not (Test-Path $ManifestPath -PathType Leaf) -or -not (Test-Path $CompleteMarker -PathType Leaf)) {
-    throw 'Pinned x64 Runtime metadata is incomplete.'
+foreach ($required in @($LockPath,$ManifestPath)) {
+    if (-not (Test-Path $required -PathType Leaf)) { throw "Pinned x64 Runtime metadata is incomplete: $required" }
 }
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 if ([string]$manifest.architecture -ne 'x64' -or [int]$manifest.schema -lt 2) {
     throw 'Pinned x64 Runtime manifest is incompatible.'
+}
+$lockHash = Sha256 $LockPath
+if ([string]::IsNullOrWhiteSpace([string]$manifest.lockSha256) -or [string]$manifest.lockSha256 -ne $lockHash) {
+    throw 'Pinned x64 Runtime manifest is stale relative to runtime-lock.json.'
 }
 
 $nodeArchive = Resolve-BundleFile ([string]$manifest.node.archive)

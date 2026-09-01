@@ -11,6 +11,8 @@ on:
       - runtime/x64/**
       - packaging/nsis/**
       - scripts/stage-full-test-package.ps1
+      - scripts/prepare-third-party-runtime-x64.ps1
+      - scripts/normalize-runtime-layout.ps1
       - scripts/verify-package-path-budget.ps1
       - .github/workflows/x64-portable-test-package.yml
   workflow_dispatch:

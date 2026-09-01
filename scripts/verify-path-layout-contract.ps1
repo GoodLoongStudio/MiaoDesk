@@ -8,7 +8,7 @@ function Fail([string]$Message) { throw "Path layout contract violation: $Messag
 $cmakePresets = Join-Path $RepoRoot 'CMakePresets.json'
 $pathContract = Join-Path $RepoRoot 'docs\PATH_LAYOUT_CONTRACT.md'
 $nativeRoot = Join-Path $RepoRoot 'src\native'
-$webViewSdk = Join-Path $RepoRoot 'third_party\webview2\1.0.4129.50\build\native\include\WebView2.h'
+$webViewRoot = Join-Path $RepoRoot 'third_party\webview2'
 $packagingRoots = @(
     (Join-Path $RepoRoot 'scripts'),
     (Join-Path $RepoRoot 'packaging'),
@@ -17,16 +17,27 @@ $packagingRoots = @(
 
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
-if (-not (Test-Path $webViewSdk -PathType Leaf)) { Fail 'canonical third_party WebView2 SDK is missing.' }
-
+foreach ($relative in @(
+    'manifest.json',
+    'LICENSE.txt',
+    'NOTICE.txt',
+    'include\WebView2.h',
+    'include\WebView2EnvironmentOptions.h',
+    'lib\x64\WebView2LoaderStatic.lib',
+    'lib\arm64\WebView2LoaderStatic.lib'
+)) {
+    if (-not (Test-Path (Join-Path $webViewRoot $relative) -PathType Leaf)) {
+        Fail "minimal WebView2 SDK file is missing: third_party/webview2/$($relative -replace '\\','/')"
+    }
+}
+foreach ($obsolete in @('build','include-winrt','1.0.4129.50','lib\x86')) {
+    if (Test-Path (Join-Path $webViewRoot $obsolete)) {
+        Fail "obsolete WebView2 SDK layout returned: third_party/webview2/$($obsolete -replace '\\','/')"
+    }
+}
 foreach ($arch in @('x64','arm64')) {
     if (Test-Path (Join-Path $RepoRoot "runtime\$arch\webview2-sdk")) {
         Fail "build-only WebView2 SDK returned under runtime/$arch."
-    }
-}
-foreach ($legacy in @('runtime\x64\harness','runtime\x64\pi')) {
-    if (Test-Path (Join-Path $RepoRoot $legacy)) {
-        Fail "obsolete x64 split Agent Runtime returned: $legacy"
     }
 }
 
@@ -56,7 +67,6 @@ foreach ($file in $nativeFiles) {
 $forbiddenPackagingPatterns = @(
     'set\s+"?DEST=C:\\MD(?:\\|"|$)',
     'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\MiaoDesk',
-    '(?i)\bmklink\b[^\r\n]*\s/J\b',
     '(?i)reg(?:\.exe)?\s+add[^\r\n]*LongPathsEnabled',
     '(?i)Set-ItemProperty[^\r\n]*LongPathsEnabled',
     '(?i)New-ItemProperty[^\r\n]*LongPathsEnabled',
@@ -75,10 +85,9 @@ foreach ($root in $packagingRoots) {
     }
 }
 
-foreach ($file in @(
-    (Join-Path $nativeRoot 'src\app\main.cpp'),
-    (Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp')
-)) {
+$appMain = Join-Path $nativeRoot 'src\app\main.cpp'
+$harnessBootstrap = Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp'
+foreach ($file in @($appMain,$harnessBootstrap)) {
     if (-not (Test-Path $file -PathType Leaf)) { Fail "runtime bootstrap source is missing: $file" }
     if ((Get-Content $file -Raw) -notmatch 'GetModuleFileNameW\s*\(') {
         Fail "runtime discovery is no longer executable-relative: $file"

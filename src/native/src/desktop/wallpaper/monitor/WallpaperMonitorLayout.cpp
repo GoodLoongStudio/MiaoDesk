@@ -262,3 +262,5 @@ std::vector<RECT> DrawRegionsInHost(const MonitorTopology& topology, LayoutMode 
     regions.push_back(full);
     return regions;
 }
+
+} // namespace miaodesk::wallpaper

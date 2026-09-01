@@ -47,22 +47,18 @@ if ($UseCMakeInstallOutput) {
     Copy-Item (Join-Path $RepoRoot 'packaging\windows-store\assets\MiaoMiao.ico') $assetsDestination -Force
 }
 
-# Materialize the pinned offline base runtime first. x64 then replaces the V2
-# per-agent dependency trees with one freshly resolved production workspace.
 if ($Architecture -eq 'x64' -and
     (Test-Path (Join-Path $RepoRoot 'runtime\x64\runtime-manifest.json') -PathType Leaf) -and
     (Test-Path (Join-Path $RepoRoot 'runtime\x64\.complete') -PathType Leaf)) {
-    Write-Host 'Using vendored x64 RuntimeBundle as the pinned base runtime.' -ForegroundColor Cyan
-    & (Join-Path $PSScriptRoot 'prepare-third-party-runtime-x64.ps1') -DeployDir $Destination -SkipGozServiceInstall
+    # Runtime V3 consumes only the pinned base/native artifacts from the old
+    # repository bundle. Legacy DSH/Pi package trees are never expanded.
+    & (Join-Path $PSScriptRoot 'prepare-runtime-v3-base-x64.ps1') -DeployDir $Destination
 } else {
     & (Join-Path $PSScriptRoot 'prepare-store-runtime.ps1') -DeployDir $Destination -Architecture $Architecture
 }
 if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code $LASTEXITCODE" }
 
 if ($Architecture -eq 'x64') {
-    # Runtime V3: DSH and Pi are installed together, producing exactly one npm
-    # dependency graph and one package-lock. The only V2 paths left afterward
-    # are two tiny executable compatibility entry shims, never package trees.
     & (Join-Path $PSScriptRoot 'build-unified-agent-runtime.ps1') -Root $Destination -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) { throw "Unified Agent runtime build failed with exit code $LASTEXITCODE" }
 } else {

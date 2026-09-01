@@ -99,6 +99,10 @@ std::string BuildSettingsYaml(const std::wstring& providerId,
     return yaml;
 }
 
+std::string BuildUnconfiguredSettingsYaml() {
+    return "# Managed by MiaoDesk. No complete API profile is configured yet.\n{}\n";
+}
+
 bool WriteAtomically(const fs::path& path, const std::string& content) {
     std::error_code ec;
     fs::create_directories(path.parent_path(), ec);
@@ -125,6 +129,23 @@ bool WriteAtomically(const fs::path& path, const std::string& content) {
     return true;
 }
 
+bool PrepareUnconfiguredSettings(const fs::path& dshHome, HarnessSettingsBridgeState* state) {
+    if (!state) return false;
+    if (!WriteAtomically(dshHome / L"settings.yaml", BuildUnconfiguredSettingsYaml())) {
+        state->error = L"无法写入 MiaoDesk Harness 空 settings.yaml";
+        return false;
+    }
+    state->configured = false;
+    state->providerId.clear();
+    state->model.clear();
+    state->baseUrl.clear();
+    state->protocol.clear();
+    state->apiKey.clear();
+    state->hasApiKey = false;
+    state->error.clear();
+    return true;
+}
+
 } // namespace
 
 HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
@@ -144,13 +165,13 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
         return state;
     }
 
+    // DSH is a workbench/runtime and must be able to boot even before the user
+    // has completed model configuration. Model configuration gates model calls,
+    // not the local DSH web service itself. Keep a deterministic empty settings
+    // file so stale/generated provider data cannot prevent the workbench from booting.
     const auto profile = api_runtime_profile::LoadDefault();
-    if (!profile.found) {
-        state.error = L"API 配置中心尚未创建配置";
-        return state;
-    }
-    if (!profile.configured) {
-        state.error = profile.error.empty() ? L"默认 API Profile 尚未配置完整" : profile.error;
+    if (!profile.found || !profile.configured) {
+        PrepareUnconfiguredSettings(dshHome, &state);
         return state;
     }
 
@@ -165,7 +186,7 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
                      (responses ? L"openai-responses" : L"openai-completions");
     state.baseUrl = HarnessBaseUrl(profile.baseUrl, profile.endpoint, anthropic);
     if (state.baseUrl.empty()) {
-        state.error = L"默认 API Profile 的 Base URL 无法转换为 Harness Provider URL";
+        PrepareUnconfiguredSettings(dshHome, &state);
         return state;
     }
 
@@ -179,6 +200,7 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
     }
 
     state.configured = true;
+    state.error.clear();
     return state;
 }
 
@@ -198,6 +220,7 @@ bool HarnessSettingsBridgeSelfTest() {
                                                      L"/responses",
                                                      L"demo/responses",
                                                      true);
+    const std::string unconfigured = BuildUnconfiguredSettingsYaml();
     return openAi.find("provider: miaodesk") != std::string::npos &&
            openAi.find("model: 'demo/model'") != std::string::npos &&
            openAi.find("baseURL: 'https://gateway.example/v1'") != std::string::npos &&
@@ -207,6 +230,7 @@ bool HarnessSettingsBridgeSelfTest() {
            anthropic.find("baseURL: 'https://api.anthropic.com/v1'") != std::string::npos &&
            responses.find("api: 'openai-responses'") != std::string::npos &&
            responses.find("baseURL: 'https://gateway.example/v1'") != std::string::npos &&
+           unconfigured.find("{}") != std::string::npos &&
            std::wstring(kHarnessCredentialEnv) == L"MIAODESK_API_KEY";
 }
 

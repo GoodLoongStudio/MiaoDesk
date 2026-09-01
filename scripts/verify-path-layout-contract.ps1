@@ -43,14 +43,15 @@ foreach ($file in $nativeFiles) {
     }
 }
 
-# Packaging may mention short paths as examples/tests, but must not force the old
-# C:\MD-style destination or mutate the Windows long-path registry policy.
+# Packaging may mention long-path policy in comments/readmes, but must never
+# enable/mutate that OS policy as part of installation or package preparation.
 $forbiddenPackagingPatterns = @(
     'set\s+"?DEST=C:\\MD(?:\\|"|$)',
     'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\MiaoDesk',
-    'LongPathsEnabled',
-    'LongPathsEnabled\s*/t\s+REG_DWORD',
-    'HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem.*LongPaths'
+    '(?i)reg(?:\.exe)?\s+add[^\r\n]*LongPathsEnabled',
+    '(?i)Set-ItemProperty[^\r\n]*LongPathsEnabled',
+    '(?i)New-ItemProperty[^\r\n]*LongPathsEnabled',
+    '(?i)HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem[^\r\n]*(LongPathsEnabled|LongPaths)'
 )
 foreach ($root in $packagingRoots) {
     if (-not (Test-Path $root -PathType Container)) { continue }

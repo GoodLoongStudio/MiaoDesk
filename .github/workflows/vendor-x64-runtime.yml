@@ -12,6 +12,8 @@ on:
 permissions:
   contents: write
 
+# runtime/agent/package-lock.json is architecture-neutral and is the single
+# dependency lock shared by x64 and ARM64 packaging.
 concurrency:
   group: vendor-x64-runtime
   cancel-in-progress: true

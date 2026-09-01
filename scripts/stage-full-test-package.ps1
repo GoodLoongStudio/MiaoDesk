@@ -19,9 +19,6 @@ function Assert-File([string]$Root, [string]$Relative) {
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
 if ($UseCMakeInstallOutput) {
-    # Native executables, icon and wallpaper assets must already have been
-    # produced by `cmake --install --prefix $Destination`. This keeps the
-    # installer/portable package rooted directly at the canonical install tree.
     foreach ($relative in @(
         'MiaoDesk.exe',
         'MiaoDeskWallpaper.exe',
@@ -50,24 +47,30 @@ if ($UseCMakeInstallOutput) {
     Copy-Item (Join-Path $RepoRoot 'packaging\windows-store\assets\MiaoMiao.ico') $assetsDestination -Force
 }
 
-# Only materialize production runtime payloads. Repository SDK/build trees (for
-# example WebView2 SDK build metadata) never enter the end-user install tree.
+# Materialize the pinned offline base runtime first. x64 then replaces the V2
+# per-agent dependency trees with one freshly resolved production workspace.
 if ($Architecture -eq 'x64' -and
     (Test-Path (Join-Path $RepoRoot 'runtime\x64\runtime-manifest.json') -PathType Leaf) -and
     (Test-Path (Join-Path $RepoRoot 'runtime\x64\.complete') -PathType Leaf)) {
-    Write-Host 'Using vendored x64 RuntimeBundle (offline).' -ForegroundColor Cyan
+    Write-Host 'Using vendored x64 RuntimeBundle as the pinned base runtime.' -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot 'prepare-third-party-runtime-x64.ps1') -DeployDir $Destination -SkipGozServiceInstall
 } else {
     & (Join-Path $PSScriptRoot 'prepare-store-runtime.ps1') -DeployDir $Destination -Architecture $Architecture
 }
 if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code $LASTEXITCODE" }
 
-# npm may preserve a dependency under a package-local node_modules even when the
-# same Node resolution semantics allow it to live at the Pi root. Normalize known
-# path-heavy production dependencies before NSIS/artifact creation. This changes
-# only physical placement, not package APIs, and is verified by an import probe.
-& (Join-Path $PSScriptRoot 'normalize-runtime-layout.ps1') -Root $Destination
-if ($LASTEXITCODE -ne 0) { throw "Runtime layout normalization failed with exit code $LASTEXITCODE" }
+if ($Architecture -eq 'x64') {
+    # Runtime V3: DSH and Pi are installed together, producing exactly one npm
+    # dependency graph and one package-lock. After successful probes the builder
+    # removes every V2 product dependency tree from staging.
+    & (Join-Path $PSScriptRoot 'build-unified-agent-runtime.ps1') -Root $Destination -Architecture $Architecture
+    if ($LASTEXITCODE -ne 0) { throw "Unified Agent runtime build failed with exit code $LASTEXITCODE" }
+} else {
+    # ARM64 remains V2 during the x64 proof phase. It will switch to the same V3
+    # workspace once the x64 layout and runtime probes are green.
+    & (Join-Path $PSScriptRoot 'normalize-runtime-layout.ps1') -Root $Destination
+    if ($LASTEXITCODE -ne 0) { throw "Runtime layout normalization failed with exit code $LASTEXITCODE" }
+}
 
 $required = @(
     'MiaoDesk.exe',
@@ -75,8 +78,6 @@ $required = @(
     'MiaoDeskHarness.exe',
     'Assets\MiaoMiao.ico',
     'Runtime\Node\node.exe',
-    'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
-    'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
     'Goz\goz.exe',
     'Goz\gozd.exe',
     'Wallpapers\MiaoCloud.mdwall\manifest.json',
@@ -90,9 +91,30 @@ $required = @(
     'Wallpapers\MysticMoon.mdwall\manifest.json',
     'Wallpapers\MysticMoon.mdwall\scene.ini'
 )
+if ($Architecture -eq 'x64') {
+    $required += @(
+        'Runtime\Agent\package.json',
+        'Runtime\Agent\package-lock.json',
+        'Runtime\Agent\runtime-manifest.json',
+        'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
+        'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+    )
+} else {
+    $required += @(
+        'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
+        'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+    )
+}
 foreach ($relative in $required) { Assert-File $Destination $relative }
 
-# Guard against accidentally packaging Git LFS pointer files as wallpaper images.
+if ($Architecture -eq 'x64') {
+    foreach ($legacy in @('Pi', 'node_modules', 'Runtime\Node\node_modules')) {
+        if (Test-Path (Join-Path $Destination $legacy)) {
+            throw "Runtime V2 dependency tree leaked into x64 V3 package: $legacy"
+        }
+    }
+}
+
 foreach ($relative in @(
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
     'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
@@ -103,6 +125,11 @@ foreach ($relative in @(
     if ((Get-Item $path).Length -lt 1024) { throw "Wallpaper image still looks like an LFS pointer: $relative" }
 }
 
+$agentDescription = if ($Architecture -eq 'x64') {
+    'Unified Runtime V3 Agent workspace: one DSH + Pi package-lock and one node_modules tree'
+} else {
+    'Legacy ARM64 Agent runtime pending Runtime V3 parity migration'
+}
 Set-Content -Path (Join-Path $Destination 'FULL-TEST-COMPONENTS.txt') -Encoding UTF8 -Value @(
     "Architecture: $Architecture"
     'Native files and wallpaper assets: CMake install staging'
@@ -110,8 +137,7 @@ Set-Content -Path (Join-Path $Destination 'FULL-TEST-COMPONENTS.txt') -Encoding 
     'MiaoDeskWallpaper desktop engine'
     'MiaoDeskHarness workbench host'
     'Shared portable Node runtime'
-    'DeepSeek Harness dsh production dependencies'
-    'Pi Agent production dependencies (path-normalized for stock Windows)'
+    $agentDescription
     'goz + gozd native file search runtime'
     'MiaoCloud / NeonCity / MysticMoon wallpaper packages'
     'Repository SDK/source/build intermediate trees are excluded'

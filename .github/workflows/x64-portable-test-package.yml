@@ -55,7 +55,10 @@ jobs:
             'MiaoDeskHarness.exe',
             'Runtime\Node\node.exe',
             'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
-            'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+            'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+            'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
+            'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
+            'Wallpapers\MiaoCloud.mdwall\assets\blink.png'
           )) {
             if (-not (Test-Path (Join-Path $dest $relative) -PathType Leaf)) {
               throw "Missing required x64 package file: $relative"
@@ -78,6 +81,33 @@ jobs:
             Pop-Location
           }
 
+      - name: Verify custom install path and real DSH web startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = Join-Path $PWD 'MiaoDesk-x64-full-test'
+          $testParent = Join-Path $PWD 'MiaoDesk path verification'
+          $testRoot = Join-Path $testParent 'custom install root'
+          Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $testParent | Out-Null
+
+          try {
+            Move-Item -Path $original -Destination $testRoot
+            $harness = Join-Path $testRoot 'MiaoDeskHarness.exe'
+            $p = Start-Process -FilePath $harness -ArgumentList '--harness-smoke-test' -WorkingDirectory $testRoot -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              $desktop = [Environment]::GetFolderPath('Desktop')
+              $log = Join-Path $desktop 'MiaoDesk-Logs\harness.log'
+              $details = if (Test-Path $log -PathType Leaf) { Get-Content $log -Raw } else { '<harness log missing>' }
+              throw "MiaoDeskHarness real DSH smoke failed from custom path, exit=$($p.ExitCode)`n$details"
+            }
+          } finally {
+            if (Test-Path $testRoot -PathType Container) {
+              Move-Item -Path $testRoot -Destination $original -Force
+            }
+            Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Add one-click launcher and package info
         shell: pwsh
         run: |
@@ -92,6 +122,7 @@ jobs:
             "Commit: $env:GITHUB_SHA"
             'Unsigned portable package. No installation required.'
             'Includes MiaoDesk, wallpaper engine, Harness, Node runtime, DeepSeek Harness, Pi Agent and bundled assets.'
+            'Verified from a nested custom install path with spaces, including a real DSH web startup smoke test.'
             'Run START-MIAODESK.cmd or MiaoDesk.exe.'
           )
 

@@ -49,13 +49,6 @@ fs::path HarnessLogPathFs() {
     return RuntimeLogPath(L"harness.log");
 }
 
-std::wstring UserHomeDirectory() {
-    wchar_t value[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"USERPROFILE", value, static_cast<DWORD>(std::size(value)));
-    if (length > 0 && length < std::size(value)) return value;
-    return {};
-}
-
 bool IsRegularFile(const fs::path& path) {
     std::error_code ec;
     return !path.empty() && fs::is_regular_file(path, ec);
@@ -241,7 +234,7 @@ HarnessProcessManager::~HarnessProcessManager() { Stop(); }
 bool HarnessProcessManager::Start() {
     const HarnessSettingsBridgeState bridge = PrepareHarnessSettingsBridge();
     if (!bridge.error.empty()) {
-        impl_->lastError = L"无法同步 MiaoDesk AI 设置到 DeepSeek Harness：" + bridge.error;
+        impl_->lastError = L"无法准备 MiaoDesk DeepSeek Harness 运行目录：" + bridge.error;
         return false;
     }
     if (Running() || ServiceReady()) return true;
@@ -250,7 +243,7 @@ bool HarnessProcessManager::Start() {
 
     const LaunchSpec launch = ResolveLaunchSpec();
     if (!launch.Valid()) {
-        impl_->lastError = L"MiaoDesk ARM64 RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新运行 DEPLOY-NATIVE-ARM64.cmd。不会回退到系统 Node/npm。";
+        impl_->lastError = L"MiaoDesk RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新安装或解压完整 MiaoDesk 包；不会回退到系统 Node/npm。";
         return false;
     }
 
@@ -288,10 +281,18 @@ bool HarnessProcessManager::Start() {
         return false;
     }
 
+    const fs::path appDir = ExecutableDirectory();
+    fs::path workingDirectory = bridge.dshHome.empty() ? appDir : fs::path(bridge.dshHome);
+    std::error_code workEc;
+    if (!workingDirectory.empty()) fs::create_directories(workingDirectory, workEc);
+    if (workEc || workingDirectory.empty()) workingDirectory = appDir;
+
     WriteLogLine(logHandle, L"[MiaoDesk] DeepSeek Harness launch requested");
     WriteLogLine(logHandle, L"[MiaoDesk] mode: " + launch.mode);
     WriteLogLine(logHandle, L"[MiaoDesk] application: " + launch.application);
     WriteLogLine(logHandle, L"[MiaoDesk] command: " + launch.commandLine);
+    WriteLogLine(logHandle, L"[MiaoDesk] working directory: " + workingDirectory.wstring());
+    WriteLogLine(logHandle, L"[MiaoDesk] DSH_HOME: " + bridge.dshHome);
     if (bridge.configured) {
         WriteLogLine(logHandle, L"[MiaoDesk] shared model: provider=" + bridge.providerId + L" model=" + bridge.model);
         WriteLogLine(logHandle, L"[MiaoDesk] shared base URL: " + bridge.baseUrl);
@@ -299,7 +300,7 @@ bool HarnessProcessManager::Start() {
             ? L"[MiaoDesk] shared API key: injected from Windows Credential Manager"
             : L"[MiaoDesk] shared API key: none (local/keyless provider expected)");
     } else {
-        WriteLogLine(logHandle, L"[MiaoDesk] shared model: MiaoDesk AI settings are not configured yet");
+        WriteLogLine(logHandle, L"[MiaoDesk] shared model: not configured yet; DSH web service will still start");
     }
     WriteLogLine(logHandle, L"[MiaoDesk] browser launch: disabled via dsh --no-open; UI is hosted by MiaoDesk WebView2");
     WriteLogLine(logHandle, L"[MiaoDesk] network bootstrap: disabled; using repository RuntimeBundle");
@@ -329,7 +330,6 @@ bool HarnessProcessManager::Start() {
     startup.hStdError = logHandle;
 
     PROCESS_INFORMATION processInfo{};
-    const std::wstring home = UserHomeDirectory();
     const DWORD flags = CREATE_NO_WINDOW | CREATE_SUSPENDED;
     BOOL created = FALSE;
     DWORD createError = ERROR_SUCCESS;
@@ -337,7 +337,7 @@ bool HarnessProcessManager::Start() {
         ScopedEnvironmentOverride dshHome(L"DSH_HOME", bridge.dshHome);
         ScopedEnvironmentOverride apiKey(L"MIAODESK_API_KEY", bridge.apiKey);
         created = CreateProcessW(launch.application.c_str(), commandBuffer.data(), nullptr, nullptr, TRUE, flags,
-                                 nullptr, home.empty() ? nullptr : home.c_str(), &startup, &processInfo);
+                                 nullptr, workingDirectory.empty() ? nullptr : workingDirectory.c_str(), &startup, &processInfo);
         createError = created ? ERROR_SUCCESS : GetLastError();
     }
     CloseHandle(inputHandle);

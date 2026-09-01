@@ -1,6 +1,6 @@
 {
-  "schema": 2,
-  "vendorRevision": 2,
+  "schema": 3,
+  "vendorRevision": 3,
   "architecture": "x64",
   "node": {
     "version": "24.19.0",
@@ -10,8 +10,7 @@
   },
   "deepseekHarness": {
     "package": "@deepseek-ai/dsh",
-    "version": "0.1.0-rc.7",
-    "source": "https://registry.npmjs.org/"
+    "version": "0.1.0-rc.7"
   },
   "goz": {
     "version": "0.1.1",
@@ -22,18 +21,14 @@
   },
   "pi": {
     "package": "@earendil-works/pi-coding-agent",
-    "version": "0.83.0",
-    "source": "https://registry.npmjs.org/"
+    "version": "0.83.0"
   },
   "webview2Sdk": {
     "version": "1.0.4129.50",
-    "package": "Microsoft.Web.WebView2",
-    "source": "https://www.nuget.org/"
+    "package": "Microsoft.Web.WebView2"
   },
   "notes": [
-    "This lock pins the x64 runtime used by the full dual-architecture test package.",
-    "The x64 runtime is materialized during CI and packaged offline; end users do not need Node, npm, Pi, DeepSeek Harness or goz preinstalled.",
-    "The pinned WebView2 SDK is vendored into runtime/x64/webview2-sdk so x64 and ARM64 use the same deterministic repository-local SDK model.",
-    "Versions intentionally match the current ARM64 RuntimeBundle."
+    "Repository RuntimeBundle stores base/native artifacts only.",
+    "DSH and Pi versions are resolved together into one Runtime/Agent production dependency graph during packaging."
   ]
 }

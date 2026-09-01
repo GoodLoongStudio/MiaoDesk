@@ -21,7 +21,7 @@ function Hoist-Package([string]$Nested, [string]$Hoisted, [string]$Label) {
         if ([string]::IsNullOrWhiteSpace($nestedVersion) -or
             [string]::IsNullOrWhiteSpace($hoistedVersion) -or
             $nestedVersion -ne $hoistedVersion) {
-            throw "Cannot safely hoist $Label: nested version '$nestedVersion' differs from existing root version '$hoistedVersion'."
+            throw "Cannot safely hoist ${Label}: nested version '$nestedVersion' differs from existing root version '$hoistedVersion'."
         }
         Remove-Item $Nested -Recurse -Force
         Write-Host "Removed duplicate nested $Label $nestedVersion; root copy already exists." -ForegroundColor DarkGray

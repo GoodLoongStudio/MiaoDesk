@@ -1,413 +1,158 @@
 # MiaoDesk Pi Runtime Contract
 
-> 状态：**强制架构契约**  
-> 日期：2026-08-26  
-> 适用范围：MiaoDesk Native 主线、妙喵 AI、Desktop Control、构建、CI、打包、部署与验收  
-> 上位产品基线：`docs/MIAODESK-PRODUCT-BASELINE.md`  
-> Desktop Composition 架构：`docs/DESKTOP_COMPOSITION_ARCHITECTURE.md`
+Status: normative runtime contract.
 
-## 1. 目的
+本文件只固定长期有效的 AI Runtime 与 Desktop Control 边界，不记录历史迁移脚本或一次性 CI 方案。
 
-本文固定妙喵智能桌面 AI 的默认 Agent Runtime 为 **Pi**，并固定 AI 与桌面系统之间的控制边界。
+## 1. 默认 AI 路由
 
-Pi 负责 Agent Loop、上下文、Skills、Extensions 与通用工具；MiaoDesk 负责桌面状态、权限、壁纸、Widget、多屏、性能和其他真正依赖产品内部状态的能力。
-
-如果旧文档、旧注释、旧 CI 规则、旧脚本与本文冲突，以 `MIAODESK-PRODUCT-BASELINE.md`、`DESKTOP_COMPOSITION_ARCHITECTURE.md` 和本文为准。
-
-## 2. 唯一默认 AI 流程
-
-```text
-用户在 MiaoDesk 发起 AI 请求
-        ↓
-MiaoDesk Pi Runtime Host
-        ↓
-Bundled Node 24
-        ↓
-@earendil-works/pi-coding-agent
-        ↓
-Pi Agent Loop
-        ├─ read / write / edit / grep / find / ls
-        ├─ shell / PowerShell
-        ├─ Skills / Extensions / Packages
-        └─ MiaoDesk Desktop Tools
-        ↓
-当前配置 Provider / Model / Base URL / API Key
-```
-
-Pi 是普通问答和桌面 Agent 请求的默认 Runtime。
-
-只有 Pi Runtime、Node、Provider、Agent Session 或工具循环失败时，才允许回退：
-
-```text
-Pi 失败
-  ↓
-记录真实失败原因
-  ↓
-Direct Model Runtime
-  ↓
-当前配置 API
-```
-
-Direct Model 只负责轻量 fallback，不得重新成为桌面自动化路线。
-
-## 3. Pi 版本与分发
-
-正式 RuntimeBundle 使用并锁定：
-
-```text
-@earendil-works/pi-coding-agent
-@earendil-works/pi-agent-core
-@earendil-works/pi-ai
-Bundled Node 24
-```
-
-约束：
-
-- 最终用户不需要安装 Node、npm、Pi 或开发环境；
-- Pi 生产依赖离线随 MiaoDesk 分发；
-- 正式构建和更新不得临时联网安装 Pi；
-- Pi 更新必须经过版本锁、Windows CI、真实工具 E2E 后进入 `main`。
-
-## 4. Provider-neutral
-
-MiaoDesk 统一管理：
-
-- Provider；
-- Model；
-- Base URL；
-- API Key；
-- API 协议。
-
-支持的 Pi Provider 协议至少包括：
-
-```text
-openai-completions
-openai-responses
-anthropic-messages
-google-generative-ai
-```
-
-不得用 Provider 品牌决定是否绕过 Pi。
-
-API Key 的唯一长期存储是 Windows Credential Manager。Pi 配置文件不得写明文 Key；当前凭据仅通过受控子进程环境注入。
-
-## 5. Pi Host 与产品边界
-
-MiaoDesk Native 主程序不实现第二套 Agent Loop。
-
-当前生产形态以 Pi RPC 为主，后续可迁移到更深的 Pi SDK Host，但必须保持同一产品边界：
-
-```text
-Native UI
-  ↓
-Pi Runtime
-  ↓
-Agent Loop
-  ↓
-Desktop Tools / Generic Tools
-```
-
-Native UI 负责：
-
-- 输入和流式输出；
-- Runtime 生命周期；
-- Provider 配置桥接；
-- 权限确认；
-- 日志；
-- MiaoDesk Desktop Tool Host。
-
-Pi 负责：
-
-- Agent 规划；
-- 工具循环；
-- Session / Context；
-- Skills / Extensions / Packages；
-- 通用文件和 Shell 能力。
-
-### 5.1 Conversation Panel UI contract
-
-普通妙喵 AI 的唯一生产展示面是 `MiaoDesk.Native.ConversationPanel`。旧终端式 `MiaoDesk.Native.L3CliWindow` 已退休，不得作为第二条 UI 路径恢复。
-
-当前迁移期间允许保留 `L3CliWindow` 的兼容文件名/函数名作为内部 ABI/构建 shim，但它们不得重新拥有旧终端视觉或独立 Runtime 策略。新的 UI 代码以 `ConversationPanel.h` 为 canonical include；legacy header 只允许继续缩减。
-
-禁止恢复：
-
-```text
-MiaoDesk.Native.L3CliWindow window class
-Consolas terminal presentation
-AI window-local ModelSettingsWindow entry
-separate terminal transcript/input product surface
-UI-specific provider routing that bypasses Pi-first
-```
-
-Conversation Panel 可以演进视觉、布局、富文本和工具结果展示，但运行时路由仍必须保持：
+普通妙喵 AI / Desktop Agent 请求默认走：
 
 ```text
 Conversation Panel
-  -> Pi Runtime
-  -> current Provider / Model / Base URL / API Key
-  -> Direct Model only on real Pi failure
+    ↓
+Pi Runtime
+    ↓
+Bundled Node
+    ↓
+@earendil-works/pi-coding-agent
+    ↓
+current Provider / Model / Base URL / API Key
 ```
 
-这项 UI 清理不代表 M4 完成；M4 仍必须在 M3 真实 Windows gate 关闭后按完整产品 shell parity 规则推进。
+Pi 负责 Agent loop、context、generic tools、skills/extensions；MiaoDesk 负责真正依赖产品内部状态的 Desktop tools。
 
-## 6. 工具边界
+Direct Model 只能在 Pi Runtime 真实失败时作为轻量 fallback，不能重新成为桌面自动化主路线。
 
-### 6.0 固定 Agent 模式（生产强制）
+## 2. Runtime 分发
 
-普通 Conversation Panel 必须始终以 **Agent 模式**启动 Pi：
+唯一 Agent 依赖定义：
 
 ```text
-pi-coding-agent
-  --mode rpc
-  --no-extensions
-  --extension <MiaoDesk native tools>
-  --tools <built-in + MiaoDesk desktop/preview tools>
+runtime/agent/package.json
+runtime/agent/package-lock.json
 ```
 
-约束：
+完整 transitive graph 只由 `package-lock.json` 固定。
 
-1. Pi 的 `--tools` 是跨内置工具和扩展工具的硬白名单。只列出 `read,bash,...` 会把 MiaoDesk 桌面扩展工具静默过滤掉。
-2. 生产启动参数必须与 `scripts/pi-agent-e2e.mjs` 保持同一工具边界；不得再依赖“扩展自动发现但未进入 allowlist”。
-3. System prompt 必须明确要求：可执行请求先调用工具，而不是只口述步骤。
-4. Direct Model 只在 Pi 真实失败时回退，且 UI 必须标明本轮无工具。
-
-### 6.1 通用能力归 Pi
+架构相关基础 Runtime：
 
 ```text
-read
-write
-edit
-grep
-find
-ls
+runtime/x64/runtime-lock.json
+runtime/arm64/runtime-lock.json
+```
+
+它们只管理该架构的 Node/Goz archive 和 SHA-256，不重复定义 DSH/Pi。
+
+正式 staging 使用 `npm ci` 从已提交 lock 物化 `Runtime/Agent`。最终用户机器不得运行 `npm install` / `npx`，也不依赖系统 Node/npm。
+
+## 3. Provider-neutral
+
+MiaoDesk 统一管理 Provider、Model、Base URL、API protocol 和 API Key。Provider branding 不得决定是否绕过 Pi，endpoint/protocol semantics 优先。
+
+API Key 长期存储使用 Windows Credential Manager。不得写入 prompt、session、普通配置文件或日志；子进程只通过受控环境获得当前凭据。
+
+## 4. UI 与 Harness 边界
+
+普通 AI 的 canonical UI 是 Conversation Panel。旧终端式 L3 UI 不得恢复成第二套产品入口或第二套 runtime strategy。
+
+```text
+Conversation Panel -> Pi Runtime -> Provider
+```
+
+DeepSeek Harness 是独立高级工作台：
+
+```text
+MiaoDeskHarness.exe
+    ↓
+Runtime/Node/node.exe
+    ↓
+Runtime/Agent/.../@deepseek-ai/dsh
+```
+
+Pi 失败不能自动打开 Harness；两者可以共享 Provider/Model/Base URL/API Key 配置，但生命周期独立。
+
+## 5. Tool ownership
+
+通用能力归 Pi：
+
+```text
+read / write / edit / grep / find / ls
 shell / PowerShell
-Skills
-Extensions
-Pi Packages
+skills / extensions / packages
 ```
 
-文件、脚本、Git、压缩、CSV/JSON、文档处理等通用任务，不得继续为每一种业务单独增加一套 C++ Agent Tool。
+不要为普通文件、脚本、Git、JSON/CSV 等任务继续增加一套 C++ Agent tool。
 
-### 6.2 MiaoDesk Desktop Tools
+MiaoDesk Native tools 只暴露依赖内部产品状态的能力，例如 settings、wallpaper state/package、Widget state 和 desktop preview。实际 tool allowlist 以当前 Pi launch/runtime code 为准，不在文档复制第二份易漂移的完整列表。
 
-MiaoDesk 只暴露依赖产品内部状态的能力。
+## 6. Desktop mutation 安全边界
 
-当前第一阶段白名单（生产 `--tools` 必须包含；预览优先，禁止直接 mutation）：
+AI 读取状态与生成 preview 可以自动执行；真实桌面 mutation 必须经过产品宿主的校验和用户确认边界。
 
-```text
-settings_open
-ppt_create
-file_create
-folder_list
-file_open
-image_generate
-wallpaper_validate_package
-wallpaper_state_get
-desktop_widget_list
-desktop_preview_widget
-desktop_preview_wallpaper
-desktop_preview_examples
-```
+长期规则：
 
-以及 Pi 内置：`read / bash / edit / write / grep / find / ls`。
+1. 重要修改前读取真实 Desktop state；
+2. 使用稳定 wallpaper / monitor / widget ID；
+3. Widget geometry 使用 monitor-relative normalized coordinates；
+4. Tool Result 必须返回真实执行结果，模型不能自行宣称成功；
+5. AI 不直接修改 private INI/store 作为公共控制接口；
+6. Settings、Editor、AI 最终调用同一 Desktop Control path；
+7. 更广泛的编辑能力在开放前应有 transaction/undo strategy。
 
-禁止通过 Pi 直接暴露：
-
-```text
-wallpaper_create_web_package
-wallpaper_apply_web_package
-desktop_widget_create_web
-desktop_widget_update
-desktop_widget_remove
-```
-
-这些 mutation 只允许宿主 Apply 按钮经 Desktop Control API 提交。
-
-含义：
-
-- `settings_open`：打开妙喵智能桌面设置；
-- `ppt_create` / `file_create` / `folder_list` / `file_open`：受控用户目录文件能力；
-- `image_generate`：独立图片生成（需对应 Provider 能力）；
-- `wallpaper_validate_package`：校验 `.mdwall`；
-- `wallpaper_state_get`：读取真实当前桌面状态；
-- `desktop_widget_list`：读取 Widget ID、目标显示器和布局；
-- `desktop_preview_*`：沙盒预览；只有用户点击 Apply 才能真正提交桌面变更。
-
-这些是 **Desktop Control API 的第一阶段桥接工具**，不是最终 API 形状。
-
-后续壁纸 Scene 参数、播放列表、多屏、性能策略、Widget 属性、编辑器属性都必须逐步收口到同一个版本化 Desktop Control API。
-
-## 7. AI Desktop Control 强制规则
-
-Settings、Editor 和 AI 最终必须操作同一套状态模型：
-
-```text
-Settings Center -----------┐
-Scene / Widget Editor -----+--> Desktop Control API --> Desktop Runtime
-Pi Agent ------------------┘
-```
-
-AI 桌面操作必须满足：
-
-1. 重要修改前先读状态；
-2. 所有 mutation 必须校验；
-3. 使用稳定 wallpaper / monitor / widget ID；
-4. Widget 布局使用显示器相对的 normalized geometry；
-5. Tool Result 必须返回真实执行结果，模型不能自行宣称成功；
-6. 更广泛的 Scene/Widget 编辑在开放给 AI 前必须补 transaction 与 undo/redo；
-7. AI 不得把直接修改私有 INI/内部文件作为长期公共控制接口；
-8. 手工 UI、Editor、AI 不允许长期维护三套互不一致的修改逻辑。
-
-## 8. Wallpaper 与 Widget 的关系
-
-Desktop Composition 正式分层：
+## 7. Desktop Composition
 
 ```text
 Desktop Composition
-├─ Wallpaper Layer: Image / Video / Web / Scene
-├─ Widget Layer: persistent monitor-relative surfaces
-└─ Control Layer: Settings / Editor / AI
+├─ Wallpaper Layer
+├─ Widget Layer
+└─ Control Layer (Settings / Editor / AI)
 ```
 
-Widget 是一等公民，不属于某张壁纸的临时附属物：
+Widget 是独立产品对象：换壁纸不能删除 Widget。AI 是 Desktop Control 的 client，不拥有 Wallpaper/Widget persistence。
 
-- 换壁纸不得删除 Widget；
-- Widget 可以独立创建、移动、缩放、启停；
-- Widget v1 使用隔离本地 WebView2 surface；
-- Widget v1 默认 click-through，不得挡住桌面图标；
-- 后续支持 Native Text、Clock、Calendar、Image、System、Media、Data-bound Widget；
-- `.mdwall` 与未来 `.tdwidget` 应共享安全 package core。
+## 8. 安全
 
-## 9. 权限与安全
+最低要求：Credential 不进入日志/prompt/session/tool args；Native tool 只执行注册能力；tool worker 支持 timeout/cancellation；高风险 shell/write/delete/system operation 经过相应确认；权限拒绝作为真实 tool result 返回；AI 生成 package 在 Apply 前必须验证。
 
-最低要求：
+## 9. Runtime state
 
-- API Key、Token 不得出现在提示词、工具参数、日志和 Session 文件；
-- Native Tool worker 只接受白名单工具；
-- Native Tool 必须隔离执行、支持 timeout/cancellation；
-- 写文件、删除、覆盖、执行程序、系统设置修改按风险分类；
-- 高风险 Shell 操作需要用户确认；
-- 权限拒绝必须作为真实 Tool Result 返回；
-- Widget 数据源、网络能力和未来交互能力必须权限化；
-- AI 生成 `.mdwall` / `.tdwidget` 必须标记 provenance 并验证后才能应用。
-
-## 10. Session / Skills / Extensions
-
-MiaoDesk Pi 目录：
+Pi 用户状态位于：
 
 ```text
 %LOCALAPPDATA%\MiaoDesk\PiAgent\
 ```
 
-结构：
+用户 session/skills/extensions 与产品 bundled runtime 分离，产品升级不得覆盖用户内容。
+
+Runtime 日志由当前 `RuntimeLogPaths` 统一管理。日志可以记录版本、provider/model、安全 endpoint、tool 状态、timeout、exit code、fallback 原因；禁止记录 API Key/Bearer token。
+
+## 10. 正式验证
+
+不再维护只检查源码 marker 的 L3/PowerShell contract 脚本。正式 package 流程至少验证：
+
+- C++ x64 build/install
+- bundled Node 可运行
+- DSH CLI `--help`
+- Pi CLI `--version`
+- `MiaoDesk.exe --self-test`
+- `MiaoDeskWallpaper.exe --self-test`
+- `MiaoDeskHarness.exe --self-test`
+- moved-install Harness Web smoke
+- stock-Windows path budget
+
+代码存在或 mock 通过不等于真实用户流程完成。涉及 Agent/tool 行为的改动还需要在真实 Windows 环境验证 provider request、tool execution、Desktop state/preview/apply 边界。
+
+## 11. 禁止回归
+
+不得重新引入：
 
 ```text
-PiAgent\
-├─ models.json
-├─ settings.json
-├─ sessions\
-├─ skills\
-├─ extensions\
-└─ packages\
+system Node/npm requirement
+package-time unpinned npm install
+a second per-architecture Pi/DSH dependency tree
+Direct Model as primary desktop Agent
+AI direct persistence mutation
+old terminal AI product surface
+Credential in plain-text config/logs
 ```
-
-Provider 配置、MiaoDesk 自带扩展和用户自定义 Skills/Extensions 必须分层，更新不得覆盖用户内容。
-
-## 11. 与高级工作台的边界
-
-```text
-普通 AI
-  = Pi Runtime → 当前 API → Direct Model fallback
-
-高级工作台
-  = DeepSeek Harness WebUI
-```
-
-Pi 失败不得自动打开高级工作台。两者可共享 Provider / Model / Base URL / API Key 设置，但 Runtime 生命周期互相独立。
-
-## 12. 日志契约
-
-统一日志目录：
-
-```text
-Windows Desktop known folder\MiaoDesk-Logs\
-```
-
-```text
-l3-runtime.log   # AI 路由
-pi-runtime.log   # Pi / Tool / Native worker
-```
-
-至少记录：Node/Pi 版本、Provider/model、安全 endpoint、session、prompt、tool 名称与状态、timeout/cancellation、process exit code、fallback 原因。
-
-禁止记录 Credential 内容、API Key、Bearer Token。
-
-## 13. 构建与 CI 契约
-
-所有 Windows 构建继续执行：
-
-```text
-scripts/verify-l3-runtime-contract.ps1
-scripts/verify-windows-powershell-compat.ps1
-```
-
-Guard 必须防止：
-
-- Pi-first 被旧 Runtime 替换；
-- Direct Model 重新成为主路由；
-- Native Desktop Tool 白名单回退到旧的三工具状态；
-- Widget/Desktop Control 工具从 Pi Extension 或 Native worker 中意外消失；
-- 通用 C++ Agent Tools 重新暴露；
-- 旧 Codex/Relay 架构重新进入主线；
-- 旧终端 AI UI class、Consolas 展示和 window-local AI 设置入口重新进入生产路径。
-
-ARM64 CI 至少持续验证：
-
-1. Bundled Node / Pi 可加载；
-2. RPC `get_state` readiness handshake；
-3. Provider loopback 真正收到请求；
-4. Pi built-in `write` 与 Windows Shell 真执行；
-5. MiaoDesk Native Tool 真执行并产生 `.mdwall`；
-6. Desktop Control/Widget Tool 保持在白名单和扩展注册表中；
-7. Native wallpaper self-tests；
-8. goz MFT/USN integration；
-9. 高级工作台 smoke；
-10. ARM64 artifact 完整上传。
-
-## 14. 完成标准
-
-```text
-代码存在        ≠ 完成
-编译成功        ≠ 完成
-CI 通过         ≠ 完成
-Mock 通过       ≠ 完成
-真实 Windows 用户流程通过 = 完成
-```
-
-桌面控制最低真实验收逐步扩展为：
-
-```text
-读取当前桌面状态
-创建一个动态 Web 壁纸并真正应用
-在桌面右上角创建一个时钟 Widget
-把 Widget 移到另一位置并缩放
-删除 Widget
-切换壁纸后确认 Widget 布局仍然存在
-```
-
-## 15. 最终边界
-
-```text
-MiaoDesk Search / AI
-  = Native UI + goz + Pi Agent Runtime + Direct Model fallback
-
-Desktop Composition
-  = Wallpaper Layer + Widget Layer + Desktop Control API
-  = Native Win32 / D3D11 / Direct2D / Media Foundation / WASAPI / isolated WebView2
-
-Advanced Workbench
-  = Official DeepSeek Harness + WebView2
-```
-
-正式方向固定为：**Pi-first、Provider-neutral、Desktop-Control-unified、Host-controlled permissions**。

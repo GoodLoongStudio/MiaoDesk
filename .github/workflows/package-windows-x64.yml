@@ -7,11 +7,12 @@ on:
       - CMakeLists.txt
       - CMakePresets.json
       - src/native/**
+      - assets/app/**
       - assets/wallpapers/**
       - runtime/x64/**
+      - runtime/agent/**
       - third_party/webview2/**
       - packaging/windows/**
-      - packaging/nsis/**
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/package-windows-x64.yml
   workflow_dispatch:

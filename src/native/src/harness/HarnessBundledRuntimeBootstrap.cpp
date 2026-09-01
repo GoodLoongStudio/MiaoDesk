@@ -40,10 +40,11 @@ void PrependBundledHarnessRuntimeToPath() {
 
     std::wstring prefix = nodeDir.wstring();
 
-    // New stock-Windows layout keeps the large DSH node_modules tree at the
-    // install root to save 13 path characters. Fall back to the legacy tree so
-    // already-downloaded packages remain runnable.
-    fs::path binDir = appDir / L"node_modules" / L".bin";
+    // Runtime V3 owns exactly one Agent dependency graph. Prefer its .bin
+    // directory; keep V2 fallbacks only while older installed packages remain
+    // supported during the migration.
+    fs::path binDir = appDir / L"Runtime" / L"Agent" / L"node_modules" / L".bin";
+    if (!DirectoryExists(binDir)) binDir = appDir / L"node_modules" / L".bin";
     if (!DirectoryExists(binDir)) binDir = nodeDir / L"node_modules" / L".bin";
     if (DirectoryExists(binDir)) prefix += L";" + binDir.wstring();
 
@@ -51,8 +52,6 @@ void PrependBundledHarnessRuntimeToPath() {
     if (!oldPath.empty()) prefix += L";" + oldPath;
     SetEnvironmentVariableW(L"PATH", prefix.c_str());
 
-    // Keep npm/DeepSeek transient caches inside MiaoDesk-owned state when the
-    // upstream package needs them. This does not install or mutate system Node.
     wchar_t local[32768]{};
     const DWORD localLength = GetEnvironmentVariableW(L"LOCALAPPDATA", local, static_cast<DWORD>(std::size(local)));
     if (localLength > 0 && localLength < std::size(local)) {
@@ -72,8 +71,6 @@ struct BundledRuntimeBootstrap final {
     BundledRuntimeBootstrap() { PrependBundledHarnessRuntimeToPath(); }
 };
 
-// This translation unit is linked only into MiaoDeskHarness. Static
-// initialization intentionally runs before wWinMain/HarnessProcessManager.
 BundledRuntimeBootstrap g_bundledRuntimeBootstrap;
 
 } // namespace

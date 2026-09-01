@@ -1,0 +1,8 @@
+{
+  "package": "Microsoft.Web.WebView2",
+  "version": "1.0.4129.50",
+  "loaders": {
+    "x64": "482f24196b20e784c4d29b752ea760946cb54e22c2532a29699ef538d2d5c28c",
+    "arm64": "a24d651e16a86695afc8d0514bf2280a48057f3e575d280f67d6e318f70345eb"
+  }
+}

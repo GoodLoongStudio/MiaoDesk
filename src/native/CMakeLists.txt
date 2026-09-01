@@ -1,21 +1,11 @@
-include(FetchContent)
-
 set(MIAODESK_WEBVIEW2_VERSION "1.0.4129.50")
+set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/third_party/webview2/${MIAODESK_WEBVIEW2_VERSION}")
 
 if (CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
-    set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/runtime/arm64/webview2-sdk")
     set(WEBVIEW2_NATIVE_ARCH "arm64")
 elseif (CMAKE_VS_PLATFORM_NAME STREQUAL "Win32")
-    FetchContent_Declare(
-        webview2sdk
-        URL "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${MIAODESK_WEBVIEW2_VERSION}"
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    FetchContent_MakeAvailable(webview2sdk)
-    set(WEBVIEW2_SDK_ROOT "${webview2sdk_SOURCE_DIR}")
     set(WEBVIEW2_NATIVE_ARCH "x86")
 else()
-    set(WEBVIEW2_SDK_ROOT "${CMAKE_SOURCE_DIR}/runtime/x64/webview2-sdk")
     set(WEBVIEW2_NATIVE_ARCH "x64")
 endif()
 

@@ -9,6 +9,7 @@ on:
       - src/native/**
       - assets/wallpapers/**
       - runtime/x64/**
+      - third_party/webview2/**
       - packaging/windows/**
       - packaging/nsis/**
       - scripts/verify-path-layout-contract.ps1

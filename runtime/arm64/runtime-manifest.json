@@ -1,8 +1,7 @@
 {
-  "schema": 2,
+  "schema": 3,
   "architecture": "arm64",
-  "generatedUtc": "2026-08-29T16:33:39.3565496Z",
-  "lockSha256": "95a84bc3eb1712cc155199201f30371c1021646428d86ee945b07c64203b9c7e",
+  "lockSha256": "d9ea879dade8224751879e1159cfb16a6f59646a88856df28f3a5f26385c6e77",
   "node": {
     "version": "24.19.0",
     "archive": "node/node-v24.19.0-win-arm64.zip",
@@ -25,10 +24,5 @@
     "archive": "pi/pi-coding-agent-0.83.0-win-arm64.zip",
     "sha256": "37f640c2592d46c0e62ce3bff4e0105030fcb185e620b634601c27d9e2c60225",
     "mode": "node-rpc"
-  },
-  "webview2Sdk": {
-    "version": "1.0.4129.50",
-    "loader": "webview2-sdk/build/native/arm64/WebView2LoaderStatic.lib",
-    "sha256": "a24d651e16a86695afc8d0514bf2280a48057f3e575d280f67d6e318f70345eb"
   }
 }

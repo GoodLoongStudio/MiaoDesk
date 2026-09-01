@@ -1,6 +1,6 @@
 {
   "schema": 3,
-  "vendorRevision": 3,
+  "vendorRevision": 4,
   "architecture": "x64",
   "node": {
     "version": "24.19.0",
@@ -23,12 +23,8 @@
     "package": "@earendil-works/pi-coding-agent",
     "version": "0.83.0"
   },
-  "webview2Sdk": {
-    "version": "1.0.4129.50",
-    "package": "Microsoft.Web.WebView2"
-  },
   "notes": [
-    "Repository RuntimeBundle stores base/native artifacts only.",
-    "DSH and Pi versions are resolved together into one Runtime/Agent production dependency graph during packaging."
+    "RuntimeBundle stores runtime artifacts only; WebView2 SDK is owned by third_party/webview2.",
+    "DSH and Pi resolve together into one Runtime/Agent graph during packaging."
   ]
 }

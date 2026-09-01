@@ -18,7 +18,7 @@ concurrency:
 jobs:
   vendor:
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
@@ -33,66 +33,34 @@ jobs:
           $manifestPath = 'runtime/x64/runtime-manifest.json'
           $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
           if ($lock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
-
           $runtime = Join-Path (Resolve-Path '.').Path 'runtime\x64'
-          $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Vendor-x64-' + [guid]::NewGuid().ToString('N'))
-          New-Item -ItemType Directory -Force -Path $temp | Out-Null
 
           function Sha256([string]$Path) {
             (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
           }
-          function Download([string]$Url, [string]$Path) {
-            New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
-            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
-          }
           function Ensure-Archive([string]$Path, [string]$Url, [string]$ExpectedHash) {
             if ((Test-Path $Path -PathType Leaf) -and (Sha256 $Path) -eq $ExpectedHash.ToLowerInvariant()) { return }
-            Remove-Item $Path -Force -ErrorAction SilentlyContinue
-            Download $Url $Path
+            New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
+            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
             if ((Sha256 $Path) -ne $ExpectedHash.ToLowerInvariant()) { throw "Checksum mismatch: $Path" }
           }
 
-          try {
-            $nodeDir = Join-Path $runtime 'node'
-            $nodeArchive = Join-Path $nodeDir ([string]$lock.node.archive)
-            Ensure-Archive $nodeArchive (([string]$lock.node.source).TrimEnd('/') + '/' + [string]$lock.node.archive) ([string]$lock.node.sha256)
+          $nodeArchive = Join-Path $runtime ('node\' + [string]$lock.node.archive)
+          Ensure-Archive $nodeArchive (([string]$lock.node.source).TrimEnd('/') + '/' + [string]$lock.node.archive) ([string]$lock.node.sha256)
 
-            $gozDir = Join-Path $runtime 'goz'
-            $gozArchive = Join-Path $gozDir ([string]$lock.goz.archive)
-            Ensure-Archive $gozArchive ([string]$lock.goz.source) ([string]$lock.goz.sha256)
+          $gozArchive = Join-Path $runtime ('goz\' + [string]$lock.goz.archive)
+          Ensure-Archive $gozArchive ([string]$lock.goz.source) ([string]$lock.goz.sha256)
 
-            $wvVersion = [string]$lock.webview2Sdk.version
-            $wvDir = Join-Path $runtime 'webview2-sdk'
-            $wvLoader = Join-Path $wvDir 'build\native\x64\WebView2LoaderStatic.lib'
-            if (-not (Test-Path $wvLoader -PathType Leaf)) {
-              Remove-Item $wvDir -Recurse -Force -ErrorAction SilentlyContinue
-              $package = Join-Path $temp 'webview2.zip'
-              Download "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$wvVersion" $package
-              $expanded = Join-Path $temp 'webview2'
-              Expand-Archive $package -DestinationPath $expanded -Force
-              New-Item -ItemType Directory -Force -Path $wvDir | Out-Null
-              Copy-Item (Join-Path $expanded 'build') $wvDir -Recurse -Force
-              foreach ($name in @('LICENSE.txt','NOTICE.txt')) {
-                $candidate = Get-ChildItem $expanded -Filter $name -File -Recurse | Select-Object -First 1
-                if ($candidate) { Copy-Item $candidate.FullName (Join-Path $wvDir $name) -Force }
-              }
-            }
-            if (-not (Test-Path $wvLoader -PathType Leaf)) { throw 'WebView2 x64 loader is missing.' }
-
-            $manifest = [ordered]@{
-              schema = 3
-              architecture = 'x64'
-              generatedUtc = [DateTime]::UtcNow.ToString('o')
-              lockSha256 = Sha256 $lockPath
-              node = [ordered]@{ version=[string]$lock.node.version; archive=('node/' + (Split-Path $nodeArchive -Leaf)); sha256=Sha256 $nodeArchive }
-              goz = [ordered]@{ version=[string]$lock.goz.version; tag=[string]$lock.goz.tag; archive=('goz/' + (Split-Path $gozArchive -Leaf)); sha256=Sha256 $gozArchive }
-              webview2Sdk = [ordered]@{ version=$wvVersion; loader='webview2-sdk/build/native/x64/WebView2LoaderStatic.lib'; sha256=Sha256 $wvLoader }
-            }
-            $manifest | ConvertTo-Json -Depth 6 | Set-Content $manifestPath -Encoding UTF8
-            Set-Content (Join-Path $runtime '.complete') -Value ('lock-sha256=' + (Sha256 $lockPath)) -Encoding ASCII
-          } finally {
-            Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+          $manifest = [ordered]@{
+            schema = 3
+            architecture = 'x64'
+            generatedUtc = [DateTime]::UtcNow.ToString('o')
+            lockSha256 = Sha256 $lockPath
+            node = [ordered]@{ version=[string]$lock.node.version; archive=('node/' + (Split-Path $nodeArchive -Leaf)); sha256=Sha256 $nodeArchive }
+            goz = [ordered]@{ version=[string]$lock.goz.version; tag=[string]$lock.goz.tag; archive=('goz/' + (Split-Path $gozArchive -Leaf)); sha256=Sha256 $gozArchive }
           }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content $manifestPath -Encoding UTF8
+          Set-Content (Join-Path $runtime '.complete') -Value ('lock-sha256=' + (Sha256 $lockPath)) -Encoding ASCII
 
       - name: Commit runtime changes
         shell: pwsh

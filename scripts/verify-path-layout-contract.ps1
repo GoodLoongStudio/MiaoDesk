@@ -1,6 +1,4 @@
-param(
-    [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent)
-)
+param([string]$RepoRoot = (Split-Path $PSScriptRoot -Parent))
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -10,6 +8,7 @@ function Fail([string]$Message) { throw "Path layout contract violation: $Messag
 $cmakePresets = Join-Path $RepoRoot 'CMakePresets.json'
 $pathContract = Join-Path $RepoRoot 'docs\PATH_LAYOUT_CONTRACT.md'
 $nativeRoot = Join-Path $RepoRoot 'src\native'
+$webViewSdk = Join-Path $RepoRoot 'third_party\webview2\1.0.4129.50\build\native\include\WebView2.h'
 $packagingRoots = @(
     (Join-Path $RepoRoot 'scripts'),
     (Join-Path $RepoRoot 'packaging'),
@@ -18,13 +17,18 @@ $packagingRoots = @(
 
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
+if (-not (Test-Path $webViewSdk -PathType Leaf)) { Fail 'canonical third_party WebView2 SDK is missing.' }
+foreach ($arch in @('x64','arm64')) {
+    if (Test-Path (Join-Path $RepoRoot "runtime\$arch\webview2-sdk")) {
+        Fail "build-only WebView2 SDK returned under runtime/$arch."
+    }
+}
 
 $presets = Get-Content $cmakePresets -Raw
 if ($presets -match [regex]::Escape('${sourceDir}/build') -or $presets -match [regex]::Escape('${sourceDir}\\build')) {
     Fail 'CMakePresets.json puts build output back under the source tree.'
 }
 
-# Production native code must not locate shipped files from the process CWD.
 $nativeFiles = @(Get-ChildItem $nativeRoot -Recurse -File -Include *.cpp,*.cc,*.cxx,*.h,*.hpp,*.inc -ErrorAction SilentlyContinue)
 $cwdPatterns = @(
     'GetCurrentDirectoryW\s*\(',
@@ -43,8 +47,6 @@ foreach ($file in $nativeFiles) {
     }
 }
 
-# Packaging may mention long-path policy in comments/readmes, but must never
-# enable/mutate that OS policy as part of installation or package preparation.
 $forbiddenPackagingPatterns = @(
     'set\s+"?DEST=C:\\MD(?:\\|"|$)',
     'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\MiaoDesk',
@@ -66,24 +68,13 @@ foreach ($root in $packagingRoots) {
     }
 }
 
-# Runtime discovery must keep at least one executable-directory anchor in both
-# the application and Harness bootstrap. This is deliberately a structural
-# contract rather than a hard-coded helper name.
 $appMain = Join-Path $nativeRoot 'src\app\main.cpp'
-$harnessBootstrapCandidates = @(
-    (Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp'),
-    (Join-Path $nativeRoot 'src\harness\runtime\HarnessBundledRuntimeBootstrap.cpp')
-)
-if (-not (Test-Path $appMain -PathType Leaf)) { Fail 'native app main.cpp is missing.' }
-$appText = Get-Content $appMain -Raw
-if ($appText -notmatch 'GetModuleFileNameW\s*\(') {
-    Fail 'MiaoDesk app no longer anchors shipped runtime paths to the executable/module directory.'
-}
-$bootstrap = $harnessBootstrapCandidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-if (-not $bootstrap) { Fail 'HarnessBundledRuntimeBootstrap.cpp is missing.' }
-$bootstrapText = Get-Content $bootstrap -Raw
-if ($bootstrapText -notmatch 'GetModuleFileNameW\s*\(') {
-    Fail 'Harness bootstrap no longer anchors bundled runtime paths to its executable/module directory.'
+$harnessBootstrap = Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp'
+foreach ($file in @($appMain,$harnessBootstrap)) {
+    if (-not (Test-Path $file -PathType Leaf)) { Fail "runtime bootstrap source is missing: $file" }
+    if ((Get-Content $file -Raw) -notmatch 'GetModuleFileNameW\s*\(') {
+        Fail "runtime discovery is no longer executable-relative: $file"
+    }
 }
 
-Write-Host 'Path layout contract OK: external build roots, executable-relative runtime discovery, and stock-Windows packaging policy remain enforced.' -ForegroundColor Green
+Write-Host 'Path layout contract OK.' -ForegroundColor Green

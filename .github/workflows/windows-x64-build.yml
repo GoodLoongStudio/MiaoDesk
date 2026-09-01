@@ -1,0 +1,61 @@
+name: Windows x64 Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - assets/app/**
+      - config/**
+      - third_party/webview2/**
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/windows-x64-build.yml
+  pull_request:
+    paths:
+      - src/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - assets/app/**
+      - config/**
+      - third_party/webview2/**
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/windows-x64-build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\quick-x64
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify path layout
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }

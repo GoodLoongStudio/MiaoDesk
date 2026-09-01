@@ -33,6 +33,10 @@ docs/                      当前产品/技术文档
 
 GitHub Actions：`.github/workflows/package-windows-x64.yml`
 
+普通 Native 源码提交由 `.github/workflows/windows-x64-build.yml` 做快速
+configure/build；只有影响发行布局、Runtime、CMake、配置或随包资源的改动
+才自动运行完整 package workflow。正式包也可通过 `workflow_dispatch` 手动触发。
+
 正式链只有一条：
 
 ```text

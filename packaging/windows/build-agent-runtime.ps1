@@ -27,6 +27,40 @@ if ([string]::IsNullOrWhiteSpace($dshVersion) -or [string]::IsNullOrWhiteSpace($
     throw 'runtime/agent/package.json must pin DSH and Pi.'
 }
 
+function Read-PackageVersion([string]$PackageRoot) {
+    $packageJson = Join-Path $PackageRoot 'package.json'
+    if (-not (Test-Path $packageJson -PathType Leaf)) { return '' }
+    try { return [string]((Get-Content $packageJson -Raw | ConvertFrom-Json).version) }
+    catch { return '' }
+}
+
+function Get-NodeModulePackages([string]$NodeModulesRoot) {
+    if (-not (Test-Path $NodeModulesRoot -PathType Container)) { return @() }
+    $packages = @()
+    foreach ($entry in @(Get-ChildItem $NodeModulesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($entry.Name.StartsWith('.')) { continue }
+        if ($entry.Name.StartsWith('@')) {
+            foreach ($scoped in @(Get-ChildItem $entry.FullName -Directory -Force -ErrorAction SilentlyContinue)) {
+                $packages += [pscustomobject]@{ Relative = "$($entry.Name)\$($scoped.Name)"; Path = $scoped.FullName }
+            }
+        } else {
+            $packages += [pscustomobject]@{ Relative = $entry.Name; Path = $entry.FullName }
+        }
+    }
+    @($packages)
+}
+
+function Remove-EmptyDirectories([string]$Start) {
+    if (-not (Test-Path $Start -PathType Container)) { return }
+    foreach ($dir in @(Get-ChildItem $Start -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Sort-Object { $_.FullName.Length } -Descending)) {
+        if ($dir.Name -eq '.bin') { continue }
+        if (@(Get-ChildItem $dir.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+            Remove-Item $dir.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $nodeDir = Join-Path $Root 'Runtime\Node'
 $nodeExe = Join-Path $nodeDir 'node.exe'
 $npmCmd = Join-Path $nodeDir 'npm.cmd'
@@ -55,16 +89,61 @@ try {
     Remove-Item $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-$dshBin = Join-Path $agentRoot 'node_modules\@deepseek-ai\dsh\lib\bin.js'
-$piCli = Join-Path $agentRoot 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+$agentModules = Join-Path $agentRoot 'node_modules'
+$piRoot = Join-Path $agentModules '@earendil-works\pi-coding-agent'
+$dshBin = Join-Path $agentModules '@deepseek-ai\dsh\lib\bin.js'
+$piCli = Join-Path $piRoot 'dist\cli.js'
 foreach ($required in @($dshBin,$piCli)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Agent runtime is incomplete: $required" }
 }
 
+# pi-coding-agent publishes an npm shrinkwrap, so npm can legally leave exact
+# package copies nested below the Pi package even in a hoisted workspace. Move a
+# nested package only when the shallow slot is empty; remove it only when an
+# identical version already exists. Version conflicts stay nested.
+$conflicts = New-Object System.Collections.Generic.List[string]
+for ($pass = 1; $pass -le 8; $pass++) {
+    $changed = $false
+    $nestedRoots = @(Get-ChildItem $piRoot -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'node_modules' } |
+        Sort-Object { $_.FullName.Length } -Descending)
+    foreach ($nestedRoot in $nestedRoots) {
+        foreach ($nested in @(Get-NodeModulePackages $nestedRoot.FullName)) {
+            $shallow = Join-Path $agentModules $nested.Relative
+            if (Test-Path $shallow -PathType Container) {
+                $nestedVersion = Read-PackageVersion $nested.Path
+                $shallowVersion = Read-PackageVersion $shallow
+                if ($nestedVersion -and $shallowVersion -and $nestedVersion -eq $shallowVersion) {
+                    Remove-Item $nested.Path -Recurse -Force
+                    $changed = $true
+                } elseif (-not $conflicts.Contains($nested.Relative)) {
+                    $conflicts.Add($nested.Relative)
+                }
+                continue
+            }
+            New-Item -ItemType Directory -Force -Path (Split-Path $shallow -Parent) | Out-Null
+            Move-Item $nested.Path $shallow
+            $changed = $true
+        }
+    }
+    Remove-EmptyDirectories $piRoot
+    if (-not $changed) { break }
+}
+if ($conflicts.Count -gt 0) {
+    Write-Host "Preserved $($conflicts.Count) nested version conflict(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
+}
+
+# Declaration source maps are editor metadata and are never loaded by Node.
+$declarationMaps = @(Get-ChildItem $agentModules -Recurse -Force -File -Filter '*.d.ts.map' -ErrorAction SilentlyContinue)
+foreach ($map in $declarationMaps) { Remove-Item $map.FullName -Force }
+if ($declarationMaps.Count -gt 0) {
+    Write-Host "Pruned $($declarationMaps.Count) declaration source map(s)." -ForegroundColor DarkGray
+}
+
 & $nodeExe $dshBin --help | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness CLI probe failed.' }
+if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness CLI probe failed after dependency normalization.' }
 & $nodeExe $piCli --version | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Pi CLI probe failed.' }
+if ($LASTEXITCODE -ne 0) { throw 'Pi CLI probe failed after dependency normalization.' }
 
 # Temporary compatibility entrypoints for native code that still understands V2
 # locations. They contain no dependency tree and will be removed after native

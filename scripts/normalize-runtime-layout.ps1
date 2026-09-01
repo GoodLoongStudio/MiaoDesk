@@ -73,27 +73,44 @@ function Try-HoistPackage([string]$Source, [string]$Destination, [string]$Label)
 }
 
 $node = Join-Path $Root 'Runtime\Node\node.exe'
+$legacyNodeModules = Join-Path $Root 'Runtime\Node\node_modules'
+$shallowNodeModules = Join-Path $Root 'node_modules'
 $piRoot = Join-Path $Root 'Pi'
 $piNodeModules = Join-Path $piRoot 'node_modules'
 $piAgentRoot = Join-Path $piNodeModules '@earendil-works\pi-coding-agent'
 $piCli = Join-Path $piAgentRoot 'dist\cli.js'
-$dshBin = Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
 
-foreach ($required in @($node, $piCli, $dshBin)) {
+foreach ($required in @($node, $piCli)) {
     if (-not (Test-Path $required -PathType Leaf)) { throw "Runtime layout normalization prerequisite is missing: $required" }
+}
+
+# DeepSeek Harness dependencies used to live under Runtime\Node\node_modules.
+# That extra 13-character prefix is unnecessary for Node resolution and consumes
+# valuable MAX_PATH budget for generated SDK files. Keep node.exe at its stable
+# Runtime\Node location, but place the production node_modules tree directly at
+# the install root. A script inside root\node_modules resolves sibling packages
+# normally, while every dependency path becomes 13 characters shorter.
+if (Test-Path $legacyNodeModules -PathType Container) {
+    if (Test-Path $shallowNodeModules -PathType Container) {
+        throw "Cannot normalize DSH runtime: both legacy and shallow node_modules trees exist: $legacyNodeModules ; $shallowNodeModules"
+    }
+    Move-Item -Path $legacyNodeModules -Destination $shallowNodeModules
+    Write-Host 'Moved DSH node_modules to the install root; every DSH dependency path is 13 characters shorter.' -ForegroundColor Cyan
+}
+
+$dshBin = Join-Path $shallowNodeModules '@deepseek-ai\dsh\lib\bin.js'
+if (-not (Test-Path $dshBin -PathType Leaf)) {
+    $legacyDshBin = Join-Path $legacyNodeModules '@deepseek-ai\dsh\lib\bin.js'
+    if (Test-Path $legacyDshBin -PathType Leaf) { $dshBin = $legacyDshBin }
+}
+if (-not (Test-Path $dshBin -PathType Leaf)) {
+    throw "DeepSeek Harness entrypoint is missing after runtime layout normalization: $dshBin"
 }
 
 # npm/pnpm can leave dependencies under the scoped Pi package itself, producing
 # paths such as Pi/node_modules/@earendil-works/pi-coding-agent/node_modules/...
 # that exceed legacy MAX_PATH once the user chooses a normal install directory.
-#
-# Hoist every dependency that can be moved without changing Node resolution:
-# - absent at Pi/node_modules: move it to the shallow root;
-# - same version already at the shallow root: remove the duplicate;
-# - different/unknown version: leave nested and let the path-budget gate report
-#   whether further package-specific work is necessary.
-#
-# Multiple passes handle dependencies that themselves contain nested node_modules.
+# Hoist every dependency that can be moved without changing Node resolution.
 $conflicts = New-Object System.Collections.Generic.List[string]
 for ($pass = 1; $pass -le 8; $pass++) {
     $changed = $false
@@ -118,9 +135,9 @@ if ($conflicts.Count -gt 0) {
     Write-Host "Runtime normalization preserved $($conflicts.Count) version-conflicting nested package(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
 }
 
-# Re-probe the real entrypoints after rearranging node_modules. This verifies
-# that the optimized tree still works without relying on machine-global Node,
-# PATH, CWD, junctions, or Windows LongPathsEnabled.
+# Re-probe real entrypoints after rearranging node_modules. This verifies that
+# the optimized tree still works without machine-global Node, PATH, CWD,
+# junctions, or Windows LongPathsEnabled.
 & $node $piCli --version | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Pi runtime failed after path normalization.' }
 
@@ -139,4 +156,4 @@ if (Test-Path $hoistedMistral -PathType Container) {
     }
 }
 
-Write-Host 'Runtime layout normalization passed without changing package APIs or requiring Windows long-path policy.' -ForegroundColor Green
+Write-Host 'Runtime layout normalization passed with shallow DSH dependencies and no Windows long-path policy dependency.' -ForegroundColor Green

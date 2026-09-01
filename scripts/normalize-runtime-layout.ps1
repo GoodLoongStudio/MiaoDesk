@@ -12,59 +12,131 @@ function Read-PackageVersion([string]$PackageRoot) {
     catch { return '' }
 }
 
-function Hoist-Package([string]$Nested, [string]$Hoisted, [string]$Label) {
-    if (-not (Test-Path $Nested -PathType Container)) { return $false }
+function Get-NodeModulePackages([string]$NodeModulesRoot) {
+    if (-not (Test-Path $NodeModulesRoot -PathType Container)) { return @() }
 
-    if (Test-Path $Hoisted -PathType Container) {
-        $nestedVersion = Read-PackageVersion $Nested
-        $hoistedVersion = Read-PackageVersion $Hoisted
-        if ([string]::IsNullOrWhiteSpace($nestedVersion) -or
-            [string]::IsNullOrWhiteSpace($hoistedVersion) -or
-            $nestedVersion -ne $hoistedVersion) {
-            throw "Cannot safely hoist ${Label}: nested version '$nestedVersion' differs from existing root version '$hoistedVersion'."
+    $packages = @()
+    foreach ($entry in @(Get-ChildItem $NodeModulesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($entry.Name.StartsWith('.')) { continue }
+        if ($entry.Name.StartsWith('@')) {
+            foreach ($scoped in @(Get-ChildItem $entry.FullName -Directory -Force -ErrorAction SilentlyContinue)) {
+                $packages += [pscustomobject]@{
+                    Relative = "$($entry.Name)\$($scoped.Name)"
+                    Path = $scoped.FullName
+                }
+            }
+        } else {
+            $packages += [pscustomobject]@{
+                Relative = $entry.Name
+                Path = $entry.FullName
+            }
         }
-        Remove-Item $Nested -Recurse -Force
-        Write-Host "Removed duplicate nested $Label $nestedVersion; root copy already exists." -ForegroundColor DarkGray
-        return $true
     }
-
-    New-Item -ItemType Directory -Force -Path (Split-Path $Hoisted -Parent) | Out-Null
-    Move-Item -Path $Nested -Destination $Hoisted
-    Write-Host "Hoisted $Label to shorten stock-Windows runtime paths: $Hoisted" -ForegroundColor Cyan
-    return $true
+    return @($packages)
 }
 
-$piAgentRoot = Join-Path $Root 'Pi\node_modules\@earendil-works\pi-coding-agent'
-$nestedMistral = Join-Path $piAgentRoot 'node_modules\@mistralai\mistralai'
-$hoistedMistral = Join-Path $Root 'Pi\node_modules\@mistralai\mistralai'
-$changed = Hoist-Package $nestedMistral $hoistedMistral '@mistralai/mistralai'
-
-if ($changed) {
-    # Remove now-empty scoped/package-manager directories only when empty.
-    foreach ($dir in @(
-        (Join-Path $piAgentRoot 'node_modules\@mistralai'),
-        (Join-Path $piAgentRoot 'node_modules')
-    )) {
-        if (Test-Path $dir -PathType Container) {
-            $children = @(Get-ChildItem $dir -Force -ErrorAction SilentlyContinue)
-            if ($children.Count -eq 0) { Remove-Item $dir -Force }
+function Remove-EmptyNodeModuleContainers([string]$Start) {
+    if (-not (Test-Path $Start -PathType Container)) { return }
+    $dirs = @(Get-ChildItem $Start -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Sort-Object { $_.FullName.Length } -Descending)
+    foreach ($dir in $dirs) {
+        if ($dir.Name -eq '.bin') { continue }
+        $children = @(Get-ChildItem $dir.FullName -Force -ErrorAction SilentlyContinue)
+        if ($children.Count -eq 0) {
+            Remove-Item $dir.FullName -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-# Runtime sanity probe: importing from a file at Pi root exercises the same
-# ancestor node_modules lookup that lets nested Pi code resolve the hoisted SDK.
+function Try-HoistPackage([string]$Source, [string]$Destination, [string]$Label) {
+    if (-not (Test-Path $Source -PathType Container)) { return 'missing' }
+
+    if (Test-Path $Destination -PathType Container) {
+        $sourceVersion = Read-PackageVersion $Source
+        $destinationVersion = Read-PackageVersion $Destination
+        if (-not [string]::IsNullOrWhiteSpace($sourceVersion) -and
+            -not [string]::IsNullOrWhiteSpace($destinationVersion) -and
+            $sourceVersion -eq $destinationVersion) {
+            Remove-Item $Source -Recurse -Force
+            Write-Host "Deduplicated nested $Label $sourceVersion; identical shallow copy already exists." -ForegroundColor DarkGray
+            return 'deduped'
+        }
+
+        Write-Host "Kept nested $Label because shallow destination has a different/unknown version ($sourceVersion vs $destinationVersion)." -ForegroundColor DarkYellow
+        return 'conflict'
+    }
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $Destination -Parent) | Out-Null
+    Move-Item -Path $Source -Destination $Destination
+    Write-Host "Hoisted $Label to shorten stock-Windows runtime paths." -ForegroundColor Cyan
+    return 'moved'
+}
+
 $node = Join-Path $Root 'Runtime\Node\node.exe'
-if (-not (Test-Path $node -PathType Leaf)) { throw "Bundled Node runtime is missing: $node" }
+$piRoot = Join-Path $Root 'Pi'
+$piNodeModules = Join-Path $piRoot 'node_modules'
+$piAgentRoot = Join-Path $piNodeModules '@earendil-works\pi-coding-agent'
+$piCli = Join-Path $piAgentRoot 'dist\cli.js'
+$dshBin = Join-Path $Root 'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js'
+
+foreach ($required in @($node, $piCli, $dshBin)) {
+    if (-not (Test-Path $required -PathType Leaf)) { throw "Runtime layout normalization prerequisite is missing: $required" }
+}
+
+# npm/pnpm can leave dependencies under the scoped Pi package itself, producing
+# paths such as Pi/node_modules/@earendil-works/pi-coding-agent/node_modules/...
+# that exceed legacy MAX_PATH once the user chooses a normal install directory.
+#
+# Hoist every dependency that can be moved without changing Node resolution:
+# - absent at Pi/node_modules: move it to the shallow root;
+# - same version already at the shallow root: remove the duplicate;
+# - different/unknown version: leave nested and let the path-budget gate report
+#   whether further package-specific work is necessary.
+#
+# Multiple passes handle dependencies that themselves contain nested node_modules.
+$conflicts = New-Object System.Collections.Generic.List[string]
+for ($pass = 1; $pass -le 8; $pass++) {
+    $changed = $false
+    $nestedNodeModules = @(Get-ChildItem $piAgentRoot -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'node_modules' } |
+        Sort-Object { $_.FullName.Length } -Descending)
+
+    foreach ($nodeModulesDir in $nestedNodeModules) {
+        foreach ($package in @(Get-NodeModulePackages $nodeModulesDir.FullName)) {
+            $destination = Join-Path $piNodeModules $package.Relative
+            $result = Try-HoistPackage $package.Path $destination $package.Relative
+            if ($result -eq 'moved' -or $result -eq 'deduped') { $changed = $true }
+            elseif ($result -eq 'conflict' -and -not $conflicts.Contains($package.Relative)) { $conflicts.Add($package.Relative) }
+        }
+    }
+
+    Remove-EmptyNodeModuleContainers $piAgentRoot
+    if (-not $changed) { break }
+}
+
+if ($conflicts.Count -gt 0) {
+    Write-Host "Runtime normalization preserved $($conflicts.Count) version-conflicting nested package(s): $($conflicts -join ', ')" -ForegroundColor DarkYellow
+}
+
+# Re-probe the real entrypoints after rearranging node_modules. This verifies
+# that the optimized tree still works without relying on machine-global Node,
+# PATH, CWD, junctions, or Windows LongPathsEnabled.
+& $node $piCli --version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Pi runtime failed after path normalization.' }
+
+& $node $dshBin --help | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'DeepSeek Harness runtime failed after path normalization.' }
+
+$hoistedMistral = Join-Path $piNodeModules '@mistralai\mistralai'
 if (Test-Path $hoistedMistral -PathType Container) {
-    $probe = Join-Path $Root 'Pi\.__miaodesk_mistral_probe.mjs'
+    $probe = Join-Path $piRoot '.__miaodesk_mistral_probe.mjs'
     try {
         Set-Content -Path $probe -Encoding UTF8 -Value "import '@mistralai/mistralai';"
         & $node $probe
-        if ($LASTEXITCODE -ne 0) { throw 'Hoisted @mistralai/mistralai import probe failed.' }
+        if ($LASTEXITCODE -ne 0) { throw 'Hoisted @mistralai/mistralai dependency probe failed.' }
     } finally {
         Remove-Item $probe -Force -ErrorAction SilentlyContinue
     }
 }
 
-Write-Host 'Runtime layout normalization completed without changing package APIs or requiring Windows long-path policy.' -ForegroundColor Green
+Write-Host 'Runtime layout normalization passed without changing package APIs or requiring Windows long-path policy.' -ForegroundColor Green

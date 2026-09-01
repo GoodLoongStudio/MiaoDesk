@@ -18,10 +18,10 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 src/native/                Native 产品代码
 assets/                    产品资源与壁纸包
 third_party/webview2/      最小编译期 WebView2 SDK
-runtime/<arch>/            固定的架构运行时基础包/版本锁
-packaging/windows/         Windows 正式 staging 与包验证
-packaging/nsis/            NSIS installer
-.github/workflows/         正式构建、Runtime vendor、路径 contract
+runtime/<arch>/            架构相关基础 Runtime
+runtime/agent/             DSH + Pi 统一依赖定义/锁
+packaging/windows/         Windows staging、验证与 installer
+.github/workflows/         正式 package、Runtime vendor、路径 contract
 docs/                      当前产品/技术文档
 ```
 
@@ -41,7 +41,7 @@ external short CMake build
   -> path budget
   -> production self-tests
   -> moved-install DSH Web smoke
-  -> artifact
+  -> artifact / installer
 ```
 
 本地等价 staging：
@@ -54,11 +54,17 @@ cmake --install C:\b\MiaoDesk\x64 --config Release --prefix C:\pkg\MiaoDesk\x64
 .\packaging\windows\verify-path-budget.ps1 -Root C:\pkg\MiaoDesk\x64
 ```
 
-构建目录必须位于源码树外。正式包不得依赖 Windows `LongPathsEnabled`。
+NSIS 直接消费同一 staging：
+
+```powershell
+makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe" packaging\windows\installer.nsi
+```
+
+构建目录必须位于源码树外。正式包不得依赖 Windows `LongPathsEnabled`、`subst`、symlink 或 Junction。
 
 ## Runtime V3
 
-x64 的 Pi 与 DeepSeek Harness 共用一棵生产依赖树：
+Pi 与 DeepSeek Harness 共用一棵生产依赖树：
 
 ```text
 Runtime/
@@ -75,9 +81,9 @@ Goz/
   gozd.exe
 ```
 
-DSH 和 Pi 版本由 `runtime/x64/runtime-lock.json` 固定；最终用户机器不运行 `npm install` / `npx`，也不依赖系统 Node。
+DSH/Pi 的直接版本只定义在 `runtime/agent/package.json`，完整间接依赖由 `runtime/agent/package-lock.json` 固定。架构相关的 Node/Goz 由 `runtime/<arch>` 管理。最终用户机器不运行 `npm install` / `npx`，也不依赖系统 Node。
 
-ARM64 当前仍消费固定 RuntimeBundle，后续迁移到同一 Runtime V3 staging 模型。
+ARM64 当前仍消费旧固定 RuntimeBundle，迁移完成前不删除其现有离线依赖。
 
 ## WebView2
 
@@ -96,7 +102,7 @@ third_party/webview2/
   manifest.json
 ```
 
-版本只记录在 `manifest.json`，不再复制 NuGet 的版本目录、`build/native`、x86、DLL、WinRT headers 或 `.targets`。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
+版本只记录在 `manifest.json`；不复制 NuGet 的版本目录、`build/native`、x86、DLL、WinRT headers 或 `.targets`。Microsoft Edge WebView2 Runtime 视为 Windows 系统组件，不重复打进仓库。
 
 ## AI 运行链
 
@@ -110,7 +116,7 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 
 ## 最小验证
 
-正式包保留真正保护产品的检查：
+正式包只保留真正保护产品的检查：
 
 - `MiaoDesk.exe --self-test`
 - `MiaoDeskWallpaper.exe --self-test`

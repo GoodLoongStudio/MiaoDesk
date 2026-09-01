@@ -18,14 +18,15 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 src/                       Native C++ 产品代码，按领域直接分组
 assets/                    产品资源与壁纸包
 third_party/webview2/      最小编译期 WebView2 SDK
-runtime/<arch>/            架构相关基础 Runtime
-runtime/agent/             DSH + Pi 统一依赖定义/锁
+runtime/agent/             DSH + Pi 唯一依赖定义/锁
+runtime/x64/               x64 Node/Goz 基础 Runtime
+runtime/arm64/             ARM64 Node/Goz 基础 Runtime
 packaging/windows/         Windows staging、验证与 installer
 .github/workflows/         正式 package、Runtime vendor、路径 contract
 docs/                      当前产品/技术文档
 ```
 
-`src/` 不再额外套 `native/src`；`runtime/` 只存运行时，编译 SDK 不允许放回 `runtime/<arch>`。
+`src/` 不再额外套 `native/src`。`runtime/<arch>` 只存真正与 CPU 架构相关的基础 Runtime；DSH/Pi 不允许再按架构复制一份。
 
 ## Windows x64 正式打包
 
@@ -64,7 +65,24 @@ makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe
 
 ## Runtime V3
 
-Pi 与 DeepSeek Harness 共用一棵生产依赖树：
+Pi 与 DeepSeek Harness 在 x64/ARM64 上共用同一份依赖定义和完整 lock：
+
+```text
+runtime/
+  agent/
+    package.json
+    package-lock.json
+  x64/
+    node/
+    goz/
+    runtime-lock.json
+  arm64/
+    node/
+    goz/
+    runtime-lock.json
+```
+
+最终用户 staging 为：
 
 ```text
 Runtime/
@@ -81,9 +99,7 @@ Goz/
   gozd.exe
 ```
 
-DSH/Pi 的直接版本只定义在 `runtime/agent/package.json`，完整间接依赖由 `runtime/agent/package-lock.json` 固定。架构相关的 Node/Goz 由 `runtime/<arch>` 管理。最终用户机器不运行 `npm install` / `npx`，也不依赖系统 Node。
-
-ARM64 当前仍消费旧固定 RuntimeBundle，迁移完成前不删除其现有离线依赖。
+DSH/Pi 的直接版本只定义在 `runtime/agent/package.json`，完整间接依赖只由 `runtime/agent/package-lock.json` 固定。`runtime/<arch>/runtime-lock.json` 只描述该架构的 Node/Goz archive 与 SHA-256。最终用户机器不运行 `npm install` / `npx`，也不依赖系统 Node。
 
 ## WebView2
 
@@ -125,7 +141,7 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 - DSH Web moved-install smoke
 - 85 字符安装根假设下 projected path `<= 248`
 
-历史 preview / acceptance / evidence 脚本不属于正式工程结构。
+历史 preview / acceptance / evidence / updater 脚本不属于正式工程结构。
 
 ## 文档
 

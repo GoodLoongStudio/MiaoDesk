@@ -204,12 +204,23 @@ jobs:
                 }
               }
 
+              $desktopLinks = @(
+                (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk.lnk'),
+                (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'MiaoDesk.lnk')
+              ) | Select-Object -Unique
+              if (-not ($desktopLinks | Where-Object { Test-Path $_ -PathType Leaf })) {
+                throw "Installer did not create a desktop shortcut. Checked: $($desktopLinks -join ', ')"
+              }
+
               $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `
                 -ArgumentList '/S' -Wait -PassThru
               if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed: $($uninstall.ExitCode)" }
               Start-Sleep -Seconds 2
               foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Config','Uninstall.exe')) {
                 if (Test-Path (Join-Path $testRoot $relative)) { throw "Uninstall left product content behind: $relative" }
+              }
+              foreach ($shortcut in $desktopLinks) {
+                if (Test-Path $shortcut) { throw "Uninstall left desktop shortcut behind: $shortcut" }
               }
             } finally {
               Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue

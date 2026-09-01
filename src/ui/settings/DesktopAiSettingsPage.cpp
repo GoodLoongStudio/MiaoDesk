@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopAiSettingsPage.h"
+#include "miaodesk/ApiProfileNotifications.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/L3Agent.h"
 
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstring>
 #include <cwchar>
+#include <cwctype>
 #include <filesystem>
 #include <iterator>
 #include <memory>
@@ -141,6 +143,13 @@ bool HeaderSafeSecret(const std::wstring& value) {
     return std::all_of(value.begin(), value.end(), [](wchar_t ch) {
         return ch >= 0x20 && ch <= 0x7e;
     });
+}
+
+std::wstring Trim(std::wstring value) {
+    const auto visible = [](wchar_t ch) { return !iswspace(ch); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), visible));
+    value.erase(std::find_if(value.rbegin(), value.rend(), visible).base(), value.end());
+    return value;
 }
 
 struct ApiProfile {
@@ -432,9 +441,9 @@ struct PageState {
 
     ApiProfile FormProfile() const {
         ApiProfile profile = Current();
-        profile.name = WindowText(name);
-        profile.baseUrl = WindowText(apiUrl);
-        profile.model = WindowText(model);
+        profile.name = Trim(WindowText(name));
+        profile.baseUrl = Trim(WindowText(apiUrl));
+        profile.model = Trim(WindowText(model));
         const int typeIndex = static_cast<int>(SendMessageW(serviceType, CB_GETCURSEL, 0, 0));
         if (typeIndex != CB_ERR) {
             wchar_t buffer[256]{};
@@ -447,7 +456,7 @@ struct PageState {
     std::wstring FormKey() const {
         const std::wstring value = WindowText(apiKey);
         if (value.empty() || value == kStoredKeyMask) return store.Key(Current());
-        return value;
+        return Trim(value);
     }
 
     bool ValidateDraft(ApiProfile& profile, std::wstring& key) {
@@ -482,18 +491,25 @@ struct PageState {
         std::wstring key;
         if (!ValidateDraft(profile, key)) return false;
 
-        const std::wstring field = WindowText(apiKey);
+        const std::wstring field = Trim(WindowText(apiKey));
         if (!field.empty() && field != kStoredKeyMask) {
             if (!store.SaveKey(profile, field)) {
-                SetStatus(L"API Key 保存到 Windows Credential Manager 失败。", false);
+                SetStatus(L"API Key 保存到 Windows Credential Manager 失败，Win32=" +
+                          std::to_wstring(GetLastError()) + L"。", false);
                 return false;
             }
         }
 
+        const bool hasDefault = std::any_of(profiles.begin(), profiles.end(), [](const ApiProfile& item) {
+            return item.isDefault;
+        });
+        if (!hasDefault) profile.isDefault = true;
         profiles[selected] = profile;
         store.Save(profile);
+        agent.ReloadConfig();
+        api_profile_notifications::NotifyRuntimeConsumers();
         LoadForm();
-        if (!quiet) SetStatus(L"配置已保存。", true);
+        if (!quiet) SetStatus(profile.isDefault ? L"配置已保存并设为默认。" : L"配置已保存。", true);
         return true;
     }
 
@@ -607,6 +623,7 @@ struct PageState {
         profiles[selected].lastMessage = L"当前默认配置";
         store.SaveAll(profiles);
         agent.ReloadConfig();
+        api_profile_notifications::NotifyRuntimeConsumers();
         SetStatus(L"已设为默认配置。Pi Agent、DeepSeek Harness 和 Direct Model 会读取这份配置。", true);
         InvalidateRect(profileList, nullptr, FALSE);
     }
@@ -616,6 +633,13 @@ struct PageState {
         const ApiProfile removing = Current();
         store.Remove(removing);
         profiles.erase(profiles.begin() + static_cast<std::ptrdiff_t>(selected));
+        if (removing.isDefault && !profiles.empty()) {
+            profiles.front().isDefault = true;
+            profiles.front().lastMessage = L"当前默认配置";
+            store.Save(profiles.front());
+        }
+        agent.ReloadConfig();
+        api_profile_notifications::NotifyRuntimeConsumers();
         if (profiles.empty()) {
             selected = 0;
             RebuildList();

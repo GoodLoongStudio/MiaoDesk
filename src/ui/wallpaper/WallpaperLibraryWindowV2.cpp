@@ -57,6 +57,7 @@ constexpr int kWebConfirmId = 6151;
 constexpr int kWebCancelId = 6152;
 constexpr int kWallpaperToggleId = 6160;
 constexpr int kOpenLogsId = 6170;
+constexpr UINT kDeferredWidgetRefresh = WM_APP + 0x235;
 
 constexpr UINT kMenuImportFile = 6201;
 constexpr UINT kMenuImportWeb = 6202;
@@ -800,14 +801,15 @@ struct WallpaperLibraryWindow::Impl {
         if (!installed && webBarVisible) HideWebBar();
         if (ai) ShowDesktopAiSettingsPage(window);
         else HideDesktopAiSettingsPage(window);
-        if (widgets) {
-            LoadWidgetList();
-            RefreshWidgetHealth();
-        }
         UpdateFooter();
         Layout();
         InvalidateRect(window, nullptr, FALSE);
         for (HWND button : nav) InvalidateRect(button, nullptr, FALSE);
+        if (widgets) {
+            SetStatus(L"正在读取小组件…");
+            UpdateWindow(window);
+            PostMessageW(window, kDeferredWidgetRefresh, 0, 0);
+        }
     }
 
     void ApplySelected() {
@@ -1263,6 +1265,9 @@ struct WallpaperLibraryWindow::Impl {
         if (!self) return DefWindowProcW(hwnd, message, wParam, lParam);
 
         switch (message) {
+        case kDeferredWidgetRefresh:
+            if (self->page == Page::Widgets) self->RefreshWidgets();
+            return 0;
         case WM_NCHITTEST: {
             const int resizeHit = DesktopResizeHitTest(hwnd, lParam);
             if (resizeHit != HTNOWHERE) return resizeHit;

@@ -3,6 +3,7 @@
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"
 #include "miaodesk/SettingsCenterWindow.h"
+#include "miaodesk/ApiProfileNotifications.h"
 #include "miaodesk/StoreDemoExperience.h"
 #include <shellapi.h>
 #include <windowsx.h>
@@ -591,6 +592,11 @@ LRESULT CALLBACK SearchWindow::EditProc(
 }
 
 LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == api_profile_notifications::ChangedMessage()) {
+        l3_.ReloadConfig();
+        SetStatus(L"API 配置已更新", L"新的默认服务将在下一次对话中使用。");
+        return 0;
+    }
     if (taskbarCreated_ != 0 && message == taskbarCreated_) {
         trayAdded_ = false;
         AddTray();

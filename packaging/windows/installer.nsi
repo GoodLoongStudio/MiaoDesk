@@ -70,6 +70,7 @@ Section "MiaoDesk"
     File /r "${STAGE_DIR}\*.*"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
     CreateShortCut "$SMPROGRAMS\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe"
+    CreateShortCut "$DESKTOP\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe"
 
     StrCmp $InstallMode "all" 0 PerUser
     WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"
@@ -112,6 +113,7 @@ PerUserUninstall:
 
 RemoveFiles:
     Delete "$SMPROGRAMS\MiaoDesk.lnk"
+    Delete "$DESKTOP\MiaoDesk.lnk"
     Delete "$INSTDIR\MiaoDesk.exe"
     Delete "$INSTDIR\MiaoDeskWallpaper.exe"
     Delete "$INSTDIR\MiaoDeskHarness.exe"

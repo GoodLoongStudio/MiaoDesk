@@ -48,7 +48,6 @@ Function .onInit
     StrCmp $0 "Admin" 0 LimitedUser
     StrCpy $InstallMode "all"
     SetShellVarContext all
-    StrCpy $INSTDIR "$PROGRAMFILES64\MiaoDesk"
     Return
 
 LimitedUser:

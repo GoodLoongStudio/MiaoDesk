@@ -66,6 +66,9 @@ NSIS 直接消费同一 staging：
 makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe" packaging\windows\installer.nsi
 ```
 
+正式 package workflow 会同时上传原始 staging 和单文件
+`MiaoDesk-x64-Setup.exe`，并对安装器执行静默安装/卸载 smoke test。
+
 构建目录必须位于源码树外。正式包不得依赖 Windows `LongPathsEnabled`、`subst`、symlink 或 Junction。
 
 ## Runtime V3

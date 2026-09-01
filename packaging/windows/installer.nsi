@@ -120,8 +120,11 @@ RemoveFiles:
     ; Delete only product-owned subtrees. Never recursively delete an arbitrary
     ; user-selected install root.
     RMDir /r "$INSTDIR\Runtime"
+    RMDir /r "$INSTDIR\AI"
+    RMDir /r "$INSTDIR\Pi"
     RMDir /r "$INSTDIR\Goz"
     RMDir /r "$INSTDIR\Assets"
+    RMDir /r "$INSTDIR\Config"
     RMDir /r "$INSTDIR\Wallpapers"
     RMDir "$INSTDIR"
 SectionEnd

@@ -17,8 +17,11 @@ on:
       - .github/workflows/x64-portable-test-package.yml
   workflow_dispatch:
 
+# The final step deletes only three historical branches already verified to be
+# fully contained by main. It runs only after all package gates and artifact
+# upload succeed; product source changes still happen directly on main.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: x64-portable-full-runtime-test
@@ -187,3 +190,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 6
+
+      - name: Delete merged stale branches after package success
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $branches = @(
+            'automation/miaodesk-brand-scenes',
+            'build/webview2browser-x64-full',
+            'fix/location-independent-single-monitor'
+          )
+          foreach ($branch in $branches) {
+            git ls-remote --exit-code --heads origin "refs/heads/$branch" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Branch already absent: $branch" -ForegroundColor DarkGray
+              continue
+            }
+            Write-Host "Deleting fully-merged stale branch: $branch" -ForegroundColor Cyan
+            git push origin --delete $branch
+            if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale branch: $branch" }
+          }

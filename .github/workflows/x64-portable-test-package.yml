@@ -10,10 +10,12 @@ on:
       - assets/wallpapers/**
       - runtime/x64/**
       - packaging/nsis/**
+      - docs/PATH_LAYOUT_CONTRACT.md
       - scripts/stage-full-test-package.ps1
       - scripts/prepare-third-party-runtime-x64.ps1
       - scripts/normalize-runtime-layout.ps1
       - scripts/verify-package-path-budget.ps1
+      - scripts/verify-path-layout-contract.ps1
       - .github/workflows/x64-portable-test-package.yml
   workflow_dispatch:
 
@@ -39,6 +41,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           lfs: true
+
+      - name: Verify permanent path layout contract
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
 
       - name: Configure x64 Release from short external build path
         shell: pwsh

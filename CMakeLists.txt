@@ -6,15 +6,16 @@ project(MiaoDesk LANGUAGES CXX)
 # this is a build-time safeguard, not a runtime dependency on long-path support.
 set(CMAKE_OBJECT_PATH_MAX 180)
 
-# Never allow a true in-source build. Developer/CI presets use short external
-# build roots (for example C:/b/MiaoDesk/x64) so compiler-generated paths do not
-# inherit the repository's full nesting depth.
+# Reject every build directory located inside the repository, not only a literal
+# in-source build. Developer/CI presets use short external roots such as
+# C:/b/MiaoDesk/x64 so compiler-generated paths never inherit source nesting.
 file(REAL_PATH "${CMAKE_SOURCE_DIR}" MIAODESK_SOURCE_REAL)
 file(REAL_PATH "${CMAKE_BINARY_DIR}" MIAODESK_BINARY_REAL)
-if(MIAODESK_SOURCE_REAL STREQUAL MIAODESK_BINARY_REAL)
+cmake_path(IS_PREFIX MIAODESK_SOURCE_REAL "${MIAODESK_BINARY_REAL}" NORMALIZE MIAODESK_BINARY_IN_SOURCE)
+if(MIAODESK_BINARY_IN_SOURCE)
     message(FATAL_ERROR
-        "In-source builds are not supported. Use an external short build path, e.g. "
-        "cmake -S . -B C:/b/MiaoDesk/x64 -A x64")
+        "Build directories inside the MiaoDesk source tree are not supported. "
+        "Use an external short build path, e.g. cmake -S . -B C:/b/MiaoDesk/x64 -A x64")
 endif()
 
 include(GNUInstallDirs)

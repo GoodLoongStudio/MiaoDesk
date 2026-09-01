@@ -61,13 +61,11 @@ if ($LASTEXITCODE -ne 0) { throw "Runtime materialization failed with exit code 
 
 if ($Architecture -eq 'x64') {
     # Runtime V3: DSH and Pi are installed together, producing exactly one npm
-    # dependency graph and one package-lock. After successful probes the builder
-    # removes every V2 product dependency tree from staging.
+    # dependency graph and one package-lock. The only V2 paths left afterward
+    # are two tiny executable compatibility entry shims, never package trees.
     & (Join-Path $PSScriptRoot 'build-unified-agent-runtime.ps1') -Root $Destination -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) { throw "Unified Agent runtime build failed with exit code $LASTEXITCODE" }
 } else {
-    # ARM64 remains V2 during the x64 proof phase. It will switch to the same V3
-    # workspace once the x64 layout and runtime probes are green.
     & (Join-Path $PSScriptRoot 'normalize-runtime-layout.ps1') -Root $Destination
     if ($LASTEXITCODE -ne 0) { throw "Runtime layout normalization failed with exit code $LASTEXITCODE" }
 }
@@ -97,7 +95,9 @@ if ($Architecture -eq 'x64') {
         'Runtime\Agent\package-lock.json',
         'Runtime\Agent\runtime-manifest.json',
         'Runtime\Agent\node_modules\@deepseek-ai\dsh\lib\bin.js',
-        'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+        'Runtime\Agent\node_modules\@earendil-works\pi-coding-agent\dist\cli.js',
+        'Runtime\Node\node_modules\@deepseek-ai\dsh\lib\bin.js',
+        'Pi\node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
     )
 } else {
     $required += @(
@@ -108,11 +108,13 @@ if ($Architecture -eq 'x64') {
 foreach ($relative in $required) { Assert-File $Destination $relative }
 
 if ($Architecture -eq 'x64') {
-    foreach ($legacy in @('Pi', 'node_modules', 'Runtime\Node\node_modules')) {
-        if (Test-Path (Join-Path $Destination $legacy)) {
-            throw "Runtime V2 dependency tree leaked into x64 V3 package: $legacy"
-        }
+    if (Test-Path (Join-Path $Destination 'node_modules')) {
+        throw 'Runtime V2 root node_modules tree leaked into x64 V3 package.'
     }
+    $legacyPiFiles = @(Get-ChildItem (Join-Path $Destination 'Pi') -File -Recurse -Force -ErrorAction SilentlyContinue)
+    $legacyDshFiles = @(Get-ChildItem (Join-Path $Destination 'Runtime\Node\node_modules') -File -Recurse -Force -ErrorAction SilentlyContinue)
+    if ($legacyPiFiles.Count -ne 1) { throw "Pi compatibility area must contain exactly one shim file, found $($legacyPiFiles.Count)." }
+    if ($legacyDshFiles.Count -ne 1) { throw "DSH compatibility area must contain exactly one shim file, found $($legacyDshFiles.Count)." }
 }
 
 foreach ($relative in @(

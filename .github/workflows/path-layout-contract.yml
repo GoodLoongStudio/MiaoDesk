@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - CMakeLists.txt
       - CMakePresets.json
       - src/native/**
       - scripts/**
@@ -12,6 +13,7 @@ on:
       - .github/workflows/path-layout-contract.yml
   pull_request:
     paths:
+      - CMakeLists.txt
       - CMakePresets.json
       - src/native/**
       - scripts/**

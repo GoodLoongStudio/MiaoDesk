@@ -7,7 +7,7 @@ function Fail([string]$Message) { throw "Path layout contract violation: $Messag
 
 $cmakePresets = Join-Path $RepoRoot 'CMakePresets.json'
 $pathContract = Join-Path $RepoRoot 'docs\PATH_LAYOUT_CONTRACT.md'
-$nativeRoot = Join-Path $RepoRoot 'src\native'
+$sourceRoot = Join-Path $RepoRoot 'src'
 $webViewRoot = Join-Path $RepoRoot 'third_party\webview2'
 $packagingRoots = @(
     (Join-Path $RepoRoot 'scripts'),
@@ -17,6 +17,17 @@ $packagingRoots = @(
 
 if (-not (Test-Path $pathContract -PathType Leaf)) { Fail 'docs/PATH_LAYOUT_CONTRACT.md is missing.' }
 if (-not (Test-Path $cmakePresets -PathType Leaf)) { Fail 'CMakePresets.json is missing.' }
+if (-not (Test-Path $sourceRoot -PathType Container)) { Fail 'src/ is missing.' }
+if (Test-Path (Join-Path $sourceRoot 'native')) { Fail 'obsolete src/native container returned.' }
+foreach ($relative in @('app','ai','desktop','harness','search','ui','include\miaodesk')) {
+    if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Container)) {
+        Fail "source domain is missing: src/$($relative -replace '\\','/')"
+    }
+}
+if (@(Get-ChildItem $sourceRoot -File -Include *.cpp,*.cc,*.cxx -ErrorAction SilentlyContinue).Count -gt 0) {
+    Fail 'implementation files must live in a source domain, not directly under src/.'
+}
+
 foreach ($relative in @(
     'LICENSE.txt',
     'NOTICE.txt',
@@ -45,7 +56,7 @@ if ($presets -match [regex]::Escape('${sourceDir}/build') -or $presets -match [r
     Fail 'CMakePresets.json puts build output back under the source tree.'
 }
 
-$nativeFiles = @(Get-ChildItem $nativeRoot -Recurse -File -Include *.cpp,*.cc,*.cxx,*.h,*.hpp,*.inc -ErrorAction SilentlyContinue)
+$sourceFiles = @(Get-ChildItem $sourceRoot -Recurse -File -Include *.cpp,*.cc,*.cxx,*.h,*.hpp,*.inc -ErrorAction SilentlyContinue)
 $cwdPatterns = @(
     'GetCurrentDirectoryW\s*\(',
     'GetCurrentDirectoryA\s*\(',
@@ -54,7 +65,7 @@ $cwdPatterns = @(
     'std::filesystem::current_path\s*\(',
     '\bfs::current_path\s*\('
 )
-foreach ($file in $nativeFiles) {
+foreach ($file in $sourceFiles) {
     $text = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
     foreach ($pattern in $cwdPatterns) {
         if ($text -match $pattern) {
@@ -84,8 +95,8 @@ foreach ($root in $packagingRoots) {
     }
 }
 
-$appMain = Join-Path $nativeRoot 'src\app\main.cpp'
-$harnessBootstrap = Join-Path $nativeRoot 'src\harness\HarnessBundledRuntimeBootstrap.cpp'
+$appMain = Join-Path $sourceRoot 'app\main.cpp'
+$harnessBootstrap = Join-Path $sourceRoot 'harness\HarnessBundledRuntimeBootstrap.cpp'
 foreach ($file in @($appMain,$harnessBootstrap)) {
     if (-not (Test-Path $file -PathType Leaf)) { Fail "runtime bootstrap source is missing: $file" }
     if ((Get-Content $file -Raw) -notmatch 'GetModuleFileNameW\s*\(') {

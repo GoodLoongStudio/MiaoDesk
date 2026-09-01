@@ -19,7 +19,7 @@ Checks: >
   -readability-uppercase-literal-suffix
 
 WarningsAsErrors: ''
-HeaderFilterRegex: 'src/native/(include|src)/.*'
+HeaderFilterRegex: 'src/.*'
 FormatStyle: file
 
 # 说明：

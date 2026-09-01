@@ -19,7 +19,7 @@ if(MIAODESK_BINARY_IN_SOURCE)
 endif()
 
 include(GNUInstallDirs)
-add_subdirectory(src/native)
+add_subdirectory(src)
 
 # End-user staging is deliberately shallow. Runtime discovery in MiaoDesk is
 # relative to the executable directory, so the three production executables

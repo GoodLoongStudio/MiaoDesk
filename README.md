@@ -15,7 +15,7 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 ## 仓库结构
 
 ```text
-src/native/                Native 产品代码
+src/                       Native C++ 产品代码，按领域直接分组
 assets/                    产品资源与壁纸包
 third_party/webview2/      最小编译期 WebView2 SDK
 runtime/<arch>/            架构相关基础 Runtime
@@ -25,7 +25,7 @@ packaging/windows/         Windows staging、验证与 installer
 docs/                      当前产品/技术文档
 ```
 
-`runtime/` 只存运行时；编译 SDK 不允许放回 `runtime/<arch>`。
+`src/` 不再额外套 `native/src`；`runtime/` 只存运行时，编译 SDK 不允许放回 `runtime/<arch>`。
 
 ## Windows x64 正式打包
 

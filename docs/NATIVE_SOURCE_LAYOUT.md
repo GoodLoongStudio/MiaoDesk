@@ -1,69 +1,44 @@
 # MiaoDesk native source layout
 
 Status: normative engineering structure contract.
-Date: 2026-08-25
+Date: 2026-09-01
 
-The native implementation is organized by process/domain. `src/native/src` is a module root, not a bucket for unrelated `.cpp` files.
+Native implementation is organized directly under `src/` by process/domain. `src/` is the source module root; `native` and a second nested `src` layer are intentionally not used.
 
 ## Physical layout
 
 ```text
-src/native/
-├─ src/
-│  ├─ app/
-│  │  └─ main.cpp
-│  ├─ ai/
-│  │  ├─ pi/
-│  │  ├─ tools/
-│  │  └─ agent/
+src/
+├─ app/
+│  └─ main.cpp
+├─ ai/
+│  ├─ pi/
+│  ├─ tools/
+│  └─ agent/
+├─ search/
+├─ harness/
+├─ desktop/
+│  ├─ control/
+│  ├─ shell/
+│  ├─ wallpaper/
+│  │  ├─ runtime/
+│  │  ├─ legacy/
+│  │  ├─ library/
+│  │  ├─ monitor/
+│  │  ├─ render/
+│  │  └─ web/
+│  ├─ widgets/
+│  ├─ automation/
+│  └─ performance/
+├─ ui/
 │  ├─ search/
-│  ├─ harness/
-│  ├─ desktop/
-│  │  ├─ control/
-│  │  ├─ shell/
-│  │  ├─ wallpaper/
-│  │  │  ├─ runtime/
-│  │  │  ├─ legacy/
-│  │  │  ├─ library/
-│  │  │  ├─ monitor/
-│  │  │  ├─ render/
-│  │  │  └─ web/
-│  │  ├─ widgets/
-│  │  ├─ automation/
-│  │  └─ performance/
-│  └─ ui/
-│     ├─ search/
-│     ├─ settings/
-│     ├─ ai/
-│     ├─ wallpaper/
-│     ├─ widgets/
-│     ├─ automation/
-│     └─ performance/
+│  ├─ settings/
+│  ├─ ai/
+│  ├─ wallpaper/
+│  ├─ widgets/
+│  ├─ automation/
+│  └─ performance/
 └─ include/miaodesk/
-```
-
-Canonical implementation roots are explicit, reviewable paths:
-
-```text
-src/native/src/app
-src/native/src/ai/pi
-src/native/src/ai/tools
-src/native/src/ai/agent
-src/native/src/search
-src/native/src/harness
-src/native/src/desktop/control
-src/native/src/desktop/shell
-src/native/src/desktop/wallpaper
-src/native/src/desktop/widgets
-src/native/src/desktop/automation
-src/native/src/desktop/performance
-src/native/src/ui/search
-src/native/src/ui/settings
-src/native/src/ui/ai
-src/native/src/ui/wallpaper
-src/native/src/ui/widgets
-src/native/src/ui/automation
-src/native/src/ui/performance
 ```
 
 ## Ownership rules
@@ -73,27 +48,22 @@ src/native/src/ui/performance
 - `desktop/control/` owns the shared Desktop Control facade.
 - `desktop/shell/` is the only Windows desktop attachment owner: Progman, WorkerW, raised desktop, Explorer recovery, surface parent/z-order.
 - `desktop/wallpaper/` owns wallpaper state and runtime. Renderer-specific code lives below `render/`, `web/`, `monitor/`, `library/` or `runtime/`.
-- `desktop/wallpaper/legacy/` is **migration-only by intent, but currently load-bearing**.
-  `WallpaperEngine.cpp` (≈89KB) is the de-facto orchestration layer of the wallpaper
-  process and is compiled via `#include` from `WallpaperEngineProduction.cpp` — it is
-  **not** a dead file, and static tools that report it as unreferenced are wrong.
-  No new product behavior may be added there; the real exit is decomposition
-  (see `docs/DOC-INDEX.md` tech-debt list), not expansion.
+- `desktop/wallpaper/legacy/` is migration-only by intent but currently load-bearing. No new product behavior may be added there; the exit is decomposition, not expansion.
 - `desktop/widgets/`, `desktop/automation/` and `desktop/performance/` own their domain services/runtime state.
-- `ui/wallpaper/`, `ui/widgets/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only. UI code must call adapters/controllers/services rather than persistence or WorkerW directly.
+- `ui/wallpaper/`, `ui/widgets/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only.
 - `harness/` owns the Advanced Workbench process/runtime bridge.
 - `search/` owns native search/index integration shared by executables.
 
-## Public headers
+## Headers
 
-Public headers intentionally remain under `include/miaodesk/` during this migration so existing include statements and API contracts stay stable while implementation files move. Header namespace/folder subdivision may happen later together with explicit library targets; it must not be mixed into a pure source-layout migration.
+Existing shared headers remain under `include/miaodesk/` so `#include <miaodesk/...>` stays stable. This avoids a mass include rewrite that would add risk without improving runtime behavior. New target-local headers should live beside their implementation; move a header into `include/miaodesk/` only when it is genuinely shared across domains or process targets.
 
 ## Build graph rule
 
-`src/native/CMakeLists.txt` must mirror the physical tree. Visual Studio source groups also use the physical tree. It is forbidden to reintroduce product implementation files directly under `src/native/src/`.
+`src/CMakeLists.txt` mirrors the physical tree. It is forbidden to reintroduce `src/native/`, a second nested source root, or implementation `.cpp` files directly under `src/`.
 
-A build/contract guard (`scripts/verify-native-source-layout.ps1`) enforces the required module directories and rejects flat root-level `.cpp` files.
+The path-layout contract enforces the canonical source domains and rejects the obsolete `src/native` container.
 
 ## Migration rule
 
-Moving a file is not permission to change behavior. Source-layout commits should be mechanically reviewable: same blob where possible, CMake/script/documentation path updates, then exact-head Windows CI. Business refactors continue only after the layout wave is green.
+Moving a file is not permission to change behavior. Source-layout commits should be mechanically reviewable: same blobs where possible, CMake/script/documentation path updates, then exact-head Windows CI. Business refactors continue only after the layout wave is green.

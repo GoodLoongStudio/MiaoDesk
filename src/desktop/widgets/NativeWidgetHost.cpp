@@ -320,7 +320,14 @@ struct NativeWidgetHostApp {
 
     bool PresentLayerSurface(NativeSlot& slot) {
         if (!slot.hwnd || !IsWindow(slot.hwnd) || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
-        if ((GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0) return true;
+        if ((GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0) {
+            // Direct HWND render targets present during EndDraw. Keep the same
+            // readiness contract as the layered path so lifecycle probes and
+            // the settings UI can distinguish a painted surface from a merely
+            // created/visible HWND.
+            MarkNativeSurfacePaintReady(slot.hwnd, true);
+            return true;
+        }
         if (!slot.layerDc) return false;
         POINT source{0, 0};
         SIZE size{static_cast<LONG>(slot.layerWidth), static_cast<LONG>(slot.layerHeight)};

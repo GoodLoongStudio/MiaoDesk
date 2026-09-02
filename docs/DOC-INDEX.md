@@ -1,6 +1,6 @@
 # MiaoDesk 文档索引
 
-当前只保留一套设计真相与一套开发路线。旧 Wallpaper/Scene/Widget Editor、M3 阶段文档和 Wallpaper Engine parity 路线均已退出当前基线。
+当前只保留一套设计真相与一套开发路线。旧 Wallpaper/Scene/Widget Editor、M3 阶段文档、Wallpaper Engine parity 路线和早期 Lively 对照研究均已退出当前基线。
 
 ## 唯一基线
 
@@ -13,8 +13,6 @@
 
 - `NATIVE_SOURCE_LAYOUT.md` — 当前源码目录与 ownership
 - `DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain/service 边界
-- `LIVELY_CPP_WALLPAPER_IMPLEMENTATION.md` — Windows Shell / wallpaper 行为研究参考，不是产品路线
-- `LIVELY_WALLPAPER_BEHAVIOR_SPEC.md` — Windows wallpaper 行为研究参考，不是功能清单
 - `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md` — Native UI 视觉语言
 - `SEARCH_BAR_VISUAL_SPEC.md` — Search Bar 视觉规范
 - `WINDOWS_CUSTOM_INPUT_IME.md` — Windows 自定义输入/IME

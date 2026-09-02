@@ -23,6 +23,8 @@ public static class MiaoDeskWidgetProbe {
     private static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClassName(IntPtr window, StringBuilder className, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetProp(IntPtr window, string name);
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")]
@@ -31,21 +33,22 @@ public static class MiaoDeskWidgetProbe {
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { public int Left, Top, Right, Bottom; }
 
-    private static bool IsVisibleWidget(IntPtr window) {
+    private static bool IsPaintReadyWidget(IntPtr window) {
         var name = new StringBuilder(160);
         if (GetClassName(window, name, name.Capacity) <= 0 ||
             !String.Equals(name.ToString(), "MiaoDesk.Native.WidgetSurface", StringComparison.OrdinalIgnoreCase) ||
             !IsWindowVisible(window)) return false;
         Rect rect;
-        return GetClientRect(window, out rect) && rect.Right > rect.Left && rect.Bottom > rect.Top;
+        if (!GetClientRect(window, out rect) || rect.Right <= rect.Left || rect.Bottom <= rect.Top) return false;
+        return GetProp(window, "MiaoDesk.Native.WidgetPaintReady") != IntPtr.Zero;
     }
 
-    public static bool HasVisibleWidget() {
+    public static bool HasPaintReadyWidget() {
         bool found = false;
         EnumWindows((top, ignored) => {
-            if (IsVisibleWidget(top)) { found = true; return false; }
+            if (IsPaintReadyWidget(top)) { found = true; return false; }
             EnumChildWindows(top, (child, childIgnored) => {
-                if (!IsVisibleWidget(child)) return true;
+                if (!IsPaintReadyWidget(child)) return true;
                 found = true;
                 return false;
             }, IntPtr.Zero);
@@ -88,11 +91,11 @@ try {
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         Start-Sleep -Milliseconds 500
-        if ([MiaoDeskWidgetProbe]::HasVisibleWidget()) {
-            Write-Host 'Visible native Widget surface verified.' -ForegroundColor Green
+        if ([MiaoDeskWidgetProbe]::HasPaintReadyWidget()) {
+            Write-Host 'Paint-ready native Widget surface verified.' -ForegroundColor Green
             return
         }
-        if ($main.HasExited) { throw "MiaoDeskWallpaper exited before Widget became visible: $($main.ExitCode)" }
+        if ($main.HasExited) { throw "MiaoDeskWallpaper exited before Widget became paint-ready: $($main.ExitCode)" }
     } while ([DateTime]::UtcNow -lt $deadline)
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
@@ -100,7 +103,7 @@ try {
         Write-Host 'Widget diagnostics:' -ForegroundColor Yellow
         Get-Content $diagnostics | Out-Host
     }
-    throw 'No visible MiaoDesk.Native.WidgetSurface appeared within 15 seconds.'
+    throw 'No paint-ready MiaoDesk.Native.WidgetSurface appeared within 15 seconds.'
 } catch {
     $details = ($_ | Out-String).Trim()
     $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
@@ -108,7 +111,7 @@ try {
         $details += "`n" + ((Get-Content $wallpaperIni | Out-String).Trim())
     }
     $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-    Write-Host "::error title=Native Widget visibility failed::$details"
+    Write-Host "::error title=Native Widget paint readiness failed::$details"
     throw
 } finally {
     Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

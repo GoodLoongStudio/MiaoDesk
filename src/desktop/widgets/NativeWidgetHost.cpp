@@ -118,11 +118,20 @@ void SetReadyProperty(HWND hwnd, const wchar_t* name, bool ready) {
     else RemovePropW(hwnd, name);
 }
 
-void MarkNativeSurfaceReady(HWND hwnd) {
-    SetReadyProperty(hwnd, kWebSurfaceEnvironmentReadyProperty, true);
-    SetReadyProperty(hwnd, kWebSurfaceControllerReadyProperty, true);
-    SetReadyProperty(hwnd, kWebSurfaceNavigationReadyProperty, true);
+void MarkNativeSurfaceRole(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return;
     SetPropW(hwnd, kWebSurfaceRoleProperty, reinterpret_cast<HANDLE>(static_cast<INT_PTR>(2)));
+    SetReadyProperty(hwnd, kWebSurfaceEnvironmentReadyProperty, false);
+    SetReadyProperty(hwnd, kWebSurfaceControllerReadyProperty, false);
+    SetReadyProperty(hwnd, kWebSurfaceNavigationReadyProperty, false);
+    SetReadyProperty(hwnd, kNativeWidgetPaintReadyProperty, false);
+}
+
+void MarkNativeSurfacePaintReady(HWND hwnd, bool ready) {
+    SetReadyProperty(hwnd, kWebSurfaceEnvironmentReadyProperty, ready);
+    SetReadyProperty(hwnd, kWebSurfaceControllerReadyProperty, ready);
+    SetReadyProperty(hwnd, kWebSurfaceNavigationReadyProperty, ready);
+    SetReadyProperty(hwnd, kNativeWidgetPaintReadyProperty, ready);
 }
 
 fs::path WallpaperConfigPath() {
@@ -131,6 +140,13 @@ fs::path WallpaperConfigPath() {
 
 void WriteDiagnostics(const std::wstring& value) {
     WritePrivateProfileStringW(L"Diagnostics", L"NativeWidgetHost", value.c_str(), WallpaperConfigPath().c_str());
+}
+
+std::wstring ReadNativeDiagnostics() {
+    std::vector<wchar_t> buffer(32768);
+    GetPrivateProfileStringW(L"Diagnostics", L"NativeWidgetHost", L"", buffer.data(),
+                             static_cast<DWORD>(buffer.size()), WallpaperConfigPath().c_str());
+    return buffer.data();
 }
 
 struct NativeWidgetHostApp;
@@ -145,8 +161,14 @@ struct NativeSlot {
     RECT desktopRegion{};
     HWND hwnd{};
     HWND dragHandle{};
-    ComPtr<ID2D1HwndRenderTarget> target;
+    ComPtr<ID2D1DCRenderTarget> target;
     ComPtr<IDWriteFactory> dwrite;
+    HDC layerDc{};
+    HBITMAP layerBitmap{};
+    HGDIOBJ layerOldBitmap{};
+    void* layerBits{};
+    UINT layerWidth{};
+    UINT layerHeight{};
     bool dragging{};
     POINT dragStartCursor_{};
     RECT dragStartRegion_{};
@@ -159,29 +181,24 @@ struct NativeSlot {
     ULONGLONG nextRefreshAt{};
 };
 
-float NativeCornerRadiusDip(NativeWidgetPreset preset, float widthDip) {
-    switch (preset) {
-    case NativeWidgetPreset::GlassClock: return std::clamp(widthDip * 0.075f, 22.0f, 34.0f);
-    case NativeWidgetPreset::WeatherGlass: return std::clamp(widthDip * 0.078f, 22.0f, 32.0f);
-    case NativeWidgetPreset::TodayTasks: return std::clamp(widthDip * 0.070f, 22.0f, 32.0f);
+void ReleaseLayerSurface(NativeSlot& slot) {
+    MarkNativeSurfacePaintReady(slot.hwnd, false);
+    slot.target.Reset();
+    if (slot.layerDc && slot.layerOldBitmap) {
+        SelectObject(slot.layerDc, slot.layerOldBitmap);
+        slot.layerOldBitmap = nullptr;
     }
-    return 24.0f;
-}
-
-void ApplyRoundedWindowRegion(NativeSlot& slot) {
-    if (!slot.hwnd || !IsWindow(slot.hwnd)) return;
-    RECT client{};
-    if (!GetClientRect(slot.hwnd, &client)) return;
-    const int widthPx = std::max<LONG>(1, client.right - client.left);
-    const int heightPx = std::max<LONG>(1, client.bottom - client.top);
-    const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
-    const float widthDip = static_cast<float>(widthPx) * USER_DEFAULT_SCREEN_DPI / static_cast<float>(dpi);
-    const int radiusPx = std::max(1, MulDiv(static_cast<int>(std::lround(NativeCornerRadiusDip(slot.preset, widthDip))),
-                                            static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI));
-    HRGN region = CreateRoundRectRgn(0, 0, widthPx + 1, heightPx + 1, radiusPx * 2, radiusPx * 2);
-    if (!region) return;
-    if (SetWindowRgn(slot.hwnd, region, TRUE) == 0) DeleteObject(region);
-    // On success ownership of the region transfers to Windows.
+    if (slot.layerBitmap) {
+        DeleteObject(slot.layerBitmap);
+        slot.layerBitmap = nullptr;
+    }
+    if (slot.layerDc) {
+        DeleteDC(slot.layerDc);
+        slot.layerDc = nullptr;
+    }
+    slot.layerBits = nullptr;
+    slot.layerWidth = 0;
+    slot.layerHeight = 0;
 }
 
 struct NativeWidgetHostApp {
@@ -201,20 +218,89 @@ struct NativeWidgetHostApp {
     }
 
     bool EnsureRenderTarget(NativeSlot& slot) {
-        if (slot.target || !slot.hwnd || !d2dFactory) return slot.target != nullptr;
+        if (!slot.hwnd || !IsWindow(slot.hwnd) || !d2dFactory) return false;
         RECT rc{};
         if (!GetClientRect(slot.hwnd, &rc)) return false;
         const UINT width = static_cast<UINT>(std::max<LONG>(1, rc.right - rc.left));
         const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
         const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
-        const auto props = D2D1::HwndRenderTargetProperties(
-            slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
-        const auto targetProps = D2D1::RenderTargetProperties(
-            D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(),
-            static_cast<float>(dpi), static_cast<float>(dpi));
-        if (FAILED(d2dFactory->CreateHwndRenderTarget(targetProps, props, slot.target.GetAddressOf()))) return false;
-        if (!slot.dwrite) DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf()));
+
+        if (slot.target && slot.layerDc && slot.layerBitmap && slot.layerBits &&
+            slot.layerWidth == width && slot.layerHeight == height) {
+            RECT bind{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+            if (SUCCEEDED(slot.target->BindDC(slot.layerDc, &bind))) {
+                slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+                return slot.dwrite != nullptr;
+            }
+        }
+
+        ReleaseLayerSurface(slot);
+        slot.layerDc = CreateCompatibleDC(nullptr);
+        if (!slot.layerDc) return false;
+
+        BITMAPINFO bitmapInfo{};
+        bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bitmapInfo.bmiHeader.biWidth = static_cast<LONG>(width);
+        bitmapInfo.bmiHeader.biHeight = -static_cast<LONG>(height);
+        bitmapInfo.bmiHeader.biPlanes = 1;
+        bitmapInfo.bmiHeader.biBitCount = 32;
+        bitmapInfo.bmiHeader.biCompression = BI_RGB;
+        slot.layerBitmap = CreateDIBSection(
+            slot.layerDc, &bitmapInfo, DIB_RGB_COLORS, &slot.layerBits, nullptr, 0);
+        if (!slot.layerBitmap || !slot.layerBits) {
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        slot.layerOldBitmap = SelectObject(slot.layerDc, slot.layerBitmap);
+        if (!slot.layerOldBitmap || slot.layerOldBitmap == HGDI_ERROR) {
+            slot.layerOldBitmap = nullptr;
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+
+        const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            static_cast<float>(dpi), static_cast<float>(dpi),
+            D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
+        if (FAILED(d2dFactory->CreateDCRenderTarget(&props, slot.target.GetAddressOf()))) {
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        RECT bind{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+        if (FAILED(slot.target->BindDC(slot.layerDc, &bind))) {
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+        if (!slot.dwrite && FAILED(DWriteCreateFactory(
+                DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf())))) {
+            ReleaseLayerSurface(slot);
+            return false;
+        }
         slot.target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        slot.layerWidth = width;
+        slot.layerHeight = height;
+        return true;
+    }
+
+    bool PresentLayerSurface(NativeSlot& slot) {
+        if (!slot.hwnd || !IsWindow(slot.hwnd) || !slot.layerDc || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
+        POINT source{0, 0};
+        SIZE size{static_cast<LONG>(slot.layerWidth), static_cast<LONG>(slot.layerHeight)};
+        BLENDFUNCTION blend{};
+        blend.BlendOp = AC_SRC_OVER;
+        blend.SourceConstantAlpha = 255;
+        blend.AlphaFormat = AC_SRC_ALPHA;
+        SetLastError(ERROR_SUCCESS);
+        if (!UpdateLayeredWindow(slot.hwnd, nullptr, nullptr, &size, slot.layerDc, &source, 0, &blend, ULW_ALPHA)) {
+            lastSurfaceError = L"Native widget UpdateLayeredWindow failed: Win32=" + std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            MarkNativeSurfacePaintReady(slot.hwnd, false);
+            return false;
+        }
+        MarkNativeSurfacePaintReady(slot.hwnd, true);
         return true;
     }
 
@@ -239,7 +325,12 @@ struct NativeWidgetHostApp {
     }
 
     void PaintSlot(NativeSlot& slot) {
-        if (!EnsureRenderTarget(slot)) return;
+        if (!EnsureRenderTarget(slot)) {
+            lastSurfaceError = L"Native widget layered render target unavailable";
+            WriteDiagnostics(lastSurfaceError);
+            MarkNativeSurfacePaintReady(slot.hwnd, false);
+            return;
+        }
         NativeWidgetPaintContext context{};
         context.target = slot.target.Get();
         context.dwrite = slot.dwrite.Get();
@@ -257,11 +348,16 @@ struct NativeWidgetHostApp {
         slot.target->BeginDraw();
         PaintNativeWidgetPreset(context, slot.preset);
         const HRESULT drawResult = slot.target->EndDraw();
-        if (SUCCEEDED(drawResult)) {
+        if (SUCCEEDED(drawResult) && PresentLayerSurface(slot)) {
+            lastSurfaceError.clear();
             ScheduleNextRefresh(slot);
         } else if (drawResult == D2DERR_RECREATE_TARGET) {
-            slot.target.Reset();
+            ReleaseLayerSurface(slot);
             slot.nextRefreshAt = 0;
+        } else if (FAILED(drawResult)) {
+            lastSurfaceError = L"Native widget Direct2D EndDraw failed: HRESULT=" + std::to_wstring(static_cast<long long>(drawResult));
+            WriteDiagnostics(lastSurfaceError);
+            MarkNativeSurfacePaintReady(slot.hwnd, false);
         }
     }
 
@@ -421,13 +517,12 @@ struct NativeWidgetHostApp {
             if (slot->dragging && reinterpret_cast<HWND>(lParam) != hwnd) slot->owner->EndDrag(*slot, true);
             return 0;
         case WM_SIZE:
-            if (slot->target) slot->target->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
-            ApplyRoundedWindowRegion(*slot);
+            ReleaseLayerSurface(*slot);
             slot->owner->ResizeDragHandle(*slot);
+            InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         case WM_DPICHANGED:
-            slot->target.Reset();
-            ApplyRoundedWindowRegion(*slot);
+            ReleaseLayerSurface(*slot);
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         case WM_PAINT: {
@@ -439,9 +534,9 @@ struct NativeWidgetHostApp {
         }
         case WM_DESTROY:
             if (slot->dragHandle && IsWindow(slot->dragHandle)) DestroyWindow(slot->dragHandle);
+            ReleaseLayerSurface(*slot);
             slot->hwnd = nullptr;
             slot->dragHandle = nullptr;
-            slot->target.Reset();
             return 0;
         default: break;
         }
@@ -455,6 +550,7 @@ struct NativeWidgetHostApp {
         surface.lpfnWndProc = &NativeWidgetHostApp::SurfaceProc;
         surface.lpszClassName = kNativeWidgetSurfaceClass;
         surface.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        surface.hbrBackground = nullptr;
         if (!RegisterClassExW(&surface) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         WNDCLASSEXW drag{};
@@ -467,10 +563,10 @@ struct NativeWidgetHostApp {
     }
 
     void DestroySlot(NativeSlot& slot) {
+        ReleaseLayerSurface(slot);
         if (slot.hwnd && IsWindow(slot.hwnd)) DestroyWindow(slot.hwnd);
         slot.hwnd = nullptr;
         slot.dragHandle = nullptr;
-        slot.target.Reset();
     }
 
     NativeSlot* FindSlot(std::wstring_view id) {
@@ -482,19 +578,17 @@ struct NativeWidgetHostApp {
 
     bool AttachSlotSurface(NativeSlot& slot, const RECT& desktopRegion) {
         if (!slot.hwnd || !IsWindow(slot.hwnd)) {
-            lastSurfaceError = L"Native widget attach rejected: HWND 无效";
+            lastSurfaceError = L"Native widget attach rejected: HWND invalid";
             WriteDiagnostics(lastSurfaceError);
             return false;
         }
         slot.desktopRegion = desktopRegion;
         DesktopShellHost shell;
         std::wstring error;
-        // Creation + shell attachment + first visibility is one transaction.
-        // Do not derive the desired state from the initially hidden popup.
         const bool visible = !paused;
         if (!shell.EnsureSurface(slot.hwnd, DesktopSurfaceRole::Widget, desktopRegion, visible, &error)) {
             lastSurfaceError = L"Native widget attach failed: " +
-                               (error.empty() ? std::wstring(L"无详细错误") : error);
+                               (error.empty() ? std::wstring(L"no detail") : error);
             WriteDiagnostics(lastSurfaceError);
             return false;
         }
@@ -504,13 +598,12 @@ struct NativeWidgetHostApp {
     bool CreateSlotWindow(NativeSlot& slot, const std::wstring& title, const RECT& mappedRegion, const RECT& desktopRegion) {
         const int width = std::max<LONG>(1, desktopRegion.right - desktopRegion.left);
         const int height = std::max<LONG>(1, desktopRegion.bottom - desktopRegion.top);
-        // Match the proven wallpaper-host lifecycle: create a normal top-level
-        // surface first, then let DesktopShellHost perform the only WS_CHILD /
-        // SetParent / parent-coordinate transaction. Creating a cross-process
-        // Explorer child directly can return a nominal HWND that never becomes
-        // compositor-visible on some Windows 11 shell generations.
+        // Create top-level first, then let DesktopShellHost perform the only
+        // cross-process SetParent/WS_CHILD transaction. The final surface stays
+        // WS_EX_LAYERED and is presented with UpdateLayeredWindow rather than an
+        // HWND render target.
         HWND hwnd = CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             kNativeWidgetSurfaceClass, title.c_str(),
             WS_POPUP | WS_CLIPSIBLINGS,
             desktopRegion.left, desktopRegion.top, width, height,
@@ -520,30 +613,23 @@ struct NativeWidgetHostApp {
             WriteDiagnostics(lastSurfaceError);
             return false;
         }
-        MarkNativeSurfaceReady(hwnd);
         slot.hwnd = hwnd;
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
-        // SurfaceProc already owns the complete drag gesture. A full-size child
-        // drag window sits above the HWND render target and can cover its D2D
-        // output on real Explorer desktop parents, so native widgets must not
-        // add a second visual/input surface here.
         slot.dragHandle = nullptr;
+        MarkNativeSurfaceRole(hwnd);
         if (!AttachSlotSurface(slot, desktopRegion)) {
             DestroyWindow(hwnd);
             slot.hwnd = nullptr;
-            slot.target.Reset();
+            ReleaseLayerSurface(slot);
             return false;
         }
-        // Re-parenting establishes the final Explorer-child geometry and DPI.
-        // Build all pixel clips and D2D DIP metrics only after that transaction.
-        ApplyRoundedWindowRegion(slot);
-        slot.target.Reset();
+        ReleaseLayerSurface(slot);
         PaintSlot(slot);
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, nullptr, FALSE);
         UpdateWindow(hwnd);
-        return true;
+        return GetPropW(hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
     }
 
     bool CreateSlot(const DesktopWidget& widget, const RECT& desktopRegion, const RECT& mappedRegion, NativeWidgetPreset preset) {
@@ -559,18 +645,18 @@ struct NativeWidgetHostApp {
     void SyncFromStore() {
         lastSurfaceError.clear();
         if (!parent || !IsWindow(parent)) {
-            WriteDiagnostics(L"Native widget sync skipped: parent HWND 无效");
+            WriteDiagnostics(L"NativeWidgetHost sync skipped: invalid parent");
             return;
         }
         DesktopWidgetStore store;
         std::wstring storeError;
         if (!store.Load(&storeError)) {
-            WriteDiagnostics(L"Native widget store load failed: " + storeError);
+            WriteDiagnostics(L"NativeWidgetHost store load failed");
             return;
         }
         const MonitorTopology topology = QueryMonitorTopology();
         if (!topology.Valid()) {
-            WriteDiagnostics(L"Native widget sync skipped: monitor topology 无效");
+            WriteDiagnostics(L"NativeWidgetHost sync skipped: invalid monitor topology");
             return;
         }
 
@@ -593,8 +679,7 @@ struct NativeWidgetHostApp {
             NativeSlot* existing = FindSlot(widget.id);
             if (!existing) {
                 if (!CreateSlot(widget, desktopRegion, mappedRegion, preset)) {
-                    if (lastSurfaceError.empty())
-                        lastSurfaceError = L"Native widget surface 创建/挂载失败：" + widget.id;
+                    if (lastSurfaceError.empty()) lastSurfaceError = L"Native widget surface create/attach failed: " + widget.id;
                 }
                 continue;
             }
@@ -606,8 +691,7 @@ struct NativeWidgetHostApp {
             const LONG mappedWidth = mappedRegion.right - mappedRegion.left;
             const LONG mappedHeight = mappedRegion.bottom - mappedRegion.top;
             const bool regionChanged = existing->region.left != mappedRegion.left || existing->region.top != mappedRegion.top ||
-                                       existing->region.right != mappedRegion.right ||
-                                       existing->region.bottom != mappedRegion.bottom;
+                                       existing->region.right != mappedRegion.right || existing->region.bottom != mappedRegion.bottom;
             const bool desktopRegionChanged =
                 existing->desktopRegion.left != desktopRegion.left || existing->desktopRegion.top != desktopRegion.top ||
                 existing->desktopRegion.right != desktopRegion.right || existing->desktopRegion.bottom != desktopRegion.bottom;
@@ -638,21 +722,19 @@ struct NativeWidgetHostApp {
                                    }),
                     slots.end());
 
-        for (const auto& slot : slots) {
-            if (slot && slot->dragHandle && IsWindow(slot->dragHandle)) {
-                SetWindowPos(slot->dragHandle, HWND_TOP, 0, 0, 0, 0,
-                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-            }
-        }
         const auto visibleCount = std::count_if(slots.begin(), slots.end(), [](const auto& slot) {
             return slot && slot->hwnd && IsWindow(slot->hwnd) && IsWindowVisible(slot->hwnd);
         });
-        std::wstring summary = L"Native Direct2D Widget host · configured=" +
+        const auto paintReadyCount = std::count_if(slots.begin(), slots.end(), [](const auto& slot) {
+            return slot && slot->hwnd && IsWindow(slot->hwnd) && GetPropW(slot->hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
+        });
+        std::wstring summary = L"Native Direct2D Widget host configured=" +
                                std::to_wstring(store.Items().size()) +
-                               L" · desired=" + std::to_wstring(desiredIds.size()) +
-                               L" · surfaces=" + std::to_wstring(slots.size()) +
-                               L" · visible=" + std::to_wstring(visibleCount);
-        if (!lastSurfaceError.empty()) summary += L" · error=" + lastSurfaceError;
+                               L" desired=" + std::to_wstring(desiredIds.size()) +
+                               L" surfaces=" + std::to_wstring(slots.size()) +
+                               L" visible=" + std::to_wstring(visibleCount) +
+                               L" paintReady=" + std::to_wstring(paintReadyCount);
+        if (!lastSurfaceError.empty()) summary += L" error=" + lastSurfaceError;
         WriteDiagnostics(summary);
     }
 
@@ -664,11 +746,11 @@ struct NativeWidgetHostApp {
                 if (!slot || !slot->hwnd || !IsWindow(slot->hwnd)) continue;
                 if (slot->desktopRegion.right <= slot->desktopRegion.left ||
                     slot->desktopRegion.bottom <= slot->desktopRegion.top) continue;
-                AttachSlotSurface(*slot, slot->desktopRegion);
+                if (AttachSlotSurface(*slot, slot->desktopRegion)) PaintSlot(*slot);
             }
         }
-        // Keep HWND visible on the desktop. Performance policy must not hide widgets;
-        // "paused" only stops periodic repaints (clocks) to save CPU.
+        // Keep HWND visible on the desktop. Performance policy pauses periodic
+        // work only; the last presented layered bitmap remains visible.
     }
 
     void RepaintWeatherWidgets() {
@@ -709,10 +791,10 @@ struct NativeWidgetHostApp {
 
     int Run() {
         if (!EnsureFactories() || !EnsureClasses() || !EnsureMessageWindow() || !parent || !IsWindow(parent)) {
-            WriteDiagnostics(L"Native widget host 初始化失败 · Win32=" + std::to_wstring(GetLastError()));
+            WriteDiagnostics(L"NativeWidgetHost init failed Win32=" + std::to_wstring(GetLastError()));
             return 64;
         }
-        WriteDiagnostics(L"Native widget host 已启动 · parent=" +
+        WriteDiagnostics(L"Native Direct2D Widget host started parent=" +
                          std::to_wstring(reinterpret_cast<std::uintptr_t>(parent)));
         SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);
         SetTimer(messageWindow, kRefreshTimerId, kRefreshSchedulerTickMs, nullptr);
@@ -778,14 +860,14 @@ bool NativeWidgetProcessSet::Start(HWND parentWindow) {
     Stop();
     lastError_.clear();
     if (!parentWindow || !IsWindow(parentWindow)) {
-        lastError_ = L"Native widget host parent 无效";
+        lastError_ = L"Native widget host parent invalid";
         return false;
     }
 
     DesktopWidgetStore store;
     std::wstring ignored;
     if (!store.Load(&ignored)) {
-        lastError_ = L"无法读取 native widget 配置";
+        lastError_ = L"Cannot read native widget configuration";
         return false;
     }
     bool hasNative = false;
@@ -810,7 +892,7 @@ bool NativeWidgetProcessSet::Start(HWND parentWindow) {
 
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) {
-        lastError_ = L"无法定位 MiaoDeskWallpaper.exe";
+        lastError_ = L"Cannot locate MiaoDeskWallpaper.exe";
         return false;
     }
     std::wstring command = QuoteArg(executable);
@@ -823,7 +905,7 @@ bool NativeWidgetProcessSet::Start(HWND parentWindow) {
     std::vector<wchar_t> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back(L'\0');
     if (!CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
-        lastError_ = L"启动 native widget host 失败，Win32=" + std::to_wstring(GetLastError());
+        lastError_ = L"Start native widget host failed Win32=" + std::to_wstring(GetLastError());
         return false;
     }
     process_ = process.hProcess;
@@ -888,7 +970,9 @@ bool NativeWidgetProcessSet::Active() const noexcept {
 std::wstring NativeWidgetProcessSet::LastErrorText() const { return lastError_; }
 
 std::wstring NativeWidgetProcessSet::DiagnosticsText() const {
-    return Active() ? L"Native Direct2D Widget host 运行中" : (lastError_.empty() ? L"Native widget host 未运行" : lastError_);
+    if (!Active()) return lastError_.empty() ? L"Native Direct2D Widget host stopped" : lastError_;
+    const std::wstring detail = ReadNativeDiagnostics();
+    return detail.empty() ? L"Native Direct2D Widget host running" : detail;
 }
 
 bool NativeWidgetProcessSet::SelfTest() noexcept {

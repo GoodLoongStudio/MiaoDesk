@@ -1,6 +1,7 @@
 #include "miaodesk/WidgetService.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopSurfaceTelemetry.h"
+#include "miaodesk/NativeWidgetHost.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
 
@@ -70,7 +71,7 @@ bool WindowClassEquals(HWND window, const wchar_t* expected) {
 bool ProcessRunning(DWORD processId) {
     if (processId == 0) return false;
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, processId);
-    if (!process) return true; // Same-user runtime can briefly deny a query during startup; HWND/PID are still useful.
+    if (!process) return true;
     DWORD exitCode = 0;
     const bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
     CloseHandle(process);
@@ -137,7 +138,8 @@ bool NativeLifecycleReady(HWND window) {
     if (!HasStructuredLifecycleTelemetry(window)) return false;
     return PropertyReady(window, wallpaper::kWebSurfaceEnvironmentReadyProperty) &&
            PropertyReady(window, wallpaper::kWebSurfaceControllerReadyProperty) &&
-           PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty);
+           PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty) &&
+           PropertyReady(window, wallpaper::kNativeWidgetPaintReadyProperty);
 }
 
 bool WebLifecycleReady(const WidgetSurfaceHealth& surface, HWND /*window*/) {
@@ -189,9 +191,6 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     }
     const bool nativeSurface = widget.kind == wallpaper::DesktopWidgetKind::Native;
 
-    // Health is read-only: discover Explorer's current desktop parent without
-    // spawning WorkerW, reparenting HWNDs, or repairing z-order. Shell mutation
-    // ownership remains exclusively with DesktopShellHost/Shell supervisor.
     const auto parentTelemetry = wallpaper::InspectDesktopSurfaceParent();
     const HWND expectedParent = parentTelemetry.reported && parentTelemetry.parent && IsWindow(parentTelemetry.parent)
         ? parentTelemetry.parent
@@ -240,9 +239,6 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
             }
         }
 
-        // Native Direct2D surfaces publish the same property contract locally, but
-        // cross-process reads can lag briefly after attach. Treat a visible native
-        // surface as lifecycle-ready once role telemetry is present.
         const bool lifecycleTelemetry = HasStructuredLifecycleTelemetry(window);
         surface.environmentReported = lifecycleTelemetry || nativeSurface;
         surface.controllerReported = lifecycleTelemetry || nativeSurface;
@@ -252,22 +248,18 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
             surface.controllerReady = PropertyReady(window, wallpaper::kWebSurfaceControllerReadyProperty);
             surface.navigationReady = PropertyReady(window, wallpaper::kWebSurfaceNavigationReadyProperty);
         } else if (nativeSurface) {
-            surface.environmentReady = surface.visible;
-            surface.controllerReady = surface.visible;
-            surface.navigationReady = surface.visible;
+            surface.environmentReady = false;
+            surface.controllerReady = false;
+            surface.navigationReady = false;
         }
 
-        // Read-only ordering semantics live in the desktop/shell domain. Widget
-        // health consumes the result but never calls SetWindowPos/SetParent.
         zOrder = wallpaper::InspectDesktopSurfaceZOrder(
             window, wallpaper::DesktopSurfaceTelemetryRole::Widget);
         surface.zOrderReported = zOrder.reported;
         surface.zOrderValid = zOrder.valid;
     }
 
-    const bool lifecycleReady = nativeSurface
-        ? NativeLifecycleReady(window) || (surface.hwndReady && surface.visible && surface.processRunning)
-        : WebLifecycleReady(surface, window);
+    const bool lifecycleReady = nativeSurface ? NativeLifecycleReady(window) : WebLifecycleReady(surface, window);
     const bool zOrderReady = surface.zOrderReported && surface.zOrderValid;
     surface.renderingHealthy = surface.SurfaceReady() && lifecycleReady && zOrderReady && compatibilityHealthy;
 
@@ -298,6 +290,9 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         SetAttention(surface, L"geometry_mismatch",
                      L"Widget Surface 未恢复到配置位置；expected=" + RectText(expected) + L" actual=" + RectText(actual),
                      L"等待显示器拓扑稳定后刷新；若仍不一致，重启 Explorer 或 Widget runtime helper 以重新应用显示器布局。");
+    } else if (nativeSurface && !PropertyReady(window, wallpaper::kNativeWidgetPaintReadyProperty)) {
+        SetAttention(surface, L"native_paint_pending", L"Native Widget HWND 已创建，但 layered Direct2D 尚未成功呈现。",
+                     L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
     } else if (!surface.environmentReported && !nativeSurface) {
         SetAttention(surface, L"webview_lifecycle_unreported", L"Widget Surface 未报告正式 WebView2 lifecycle", L"重启 Widget runtime helper；不再接受 legacy WebView2 child。");
     } else if (!nativeSurface && !surface.environmentReady) {
@@ -307,7 +302,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     } else if (!nativeSurface && !surface.navigationReady) {
         SetAttention(surface, L"webview_navigation_pending", L"等待 WebView2 NavigationReady", L"检查 Widget 内容/资源是否可访问，然后重新启用该 Widget。");
     } else if (!surface.zOrderReported) {
-        SetAttention(surface, L"zorder_unreported", L"WebView2 Surface 就绪；等待 DesktopShell z-order telemetry", L"点击“刷新”；若持续未报告，重启 DesktopShell supervisor。");
+        SetAttention(surface, L"zorder_unreported", L"Widget Surface 已绘制；等待 DesktopShell z-order telemetry", L"点击“刷新”；若持续未报告，重启 DesktopShell supervisor。");
     } else if (!surface.zOrderValid) {
         SetAttention(surface, L"zorder_invalid", zOrder.detail.empty() ? L"Widget z-order 无效" : zOrder.detail,
                      L"重启 Explorer 或 DesktopShell supervisor，让 DesktopShellHost 修复 Widget/壁纸/图标层级。");
@@ -315,7 +310,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
         SetAttention(surface, L"runtime_diagnostic_unhealthy", L"Widget runtime 兼容诊断报告异常", L"查看 Widget runtime 日志并只重启 Widget helper。");
     } else {
         surface.detail = widget.kind == wallpaper::DesktopWidgetKind::Native
-            ? L"Widget Native Direct2D/desktop surface/monitor geometry health ready"
+            ? L"Widget Native layered Direct2D/desktop surface/monitor geometry health ready"
             : L"Widget WebView2/desktop surface/monitor geometry health ready";
     }
     return surface;

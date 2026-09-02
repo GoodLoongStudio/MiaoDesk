@@ -39,5 +39,6 @@ private:
 int TryRunNativeWidgetHost(HINSTANCE instance);
 
 inline constexpr wchar_t kNativeWidgetSurfaceClass[] = L"MiaoDesk.Native.WidgetSurface";
+inline constexpr wchar_t kNativeWidgetPaintReadyProperty[] = L"MiaoDesk.Native.WidgetPaintReady";
 
 } // namespace miaodesk::wallpaper

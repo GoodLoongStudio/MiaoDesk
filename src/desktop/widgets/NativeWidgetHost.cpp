@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cwchar>
 #include <filesystem>
 #include <memory>
@@ -129,7 +130,7 @@ fs::path WallpaperConfigPath() {
 }
 
 void WriteDiagnostics(const std::wstring& value) {
-    WritePrivateProfileStringW(L"Diagnostics", L"WidgetRuntime", value.c_str(), WallpaperConfigPath().c_str());
+    WritePrivateProfileStringW(L"Diagnostics", L"NativeWidgetHost", value.c_str(), WallpaperConfigPath().c_str());
 }
 
 struct NativeWidgetHostApp;
@@ -192,6 +193,7 @@ struct NativeWidgetHostApp {
     NativeWeatherService weatherService;
     ComPtr<ID2D1Factory> d2dFactory;
     std::vector<std::unique_ptr<NativeSlot>> slots;
+    std::wstring lastSurfaceError;
 
     bool EnsureFactories() {
         if (d2dFactory) return true;
@@ -470,13 +472,21 @@ struct NativeWidgetHostApp {
     }
 
     bool AttachSlotSurface(NativeSlot& slot, const RECT& desktopRegion) {
-        if (!slot.hwnd || !IsWindow(slot.hwnd)) return false;
+        if (!slot.hwnd || !IsWindow(slot.hwnd)) {
+            lastSurfaceError = L"Native widget attach rejected: HWND 无效";
+            WriteDiagnostics(lastSurfaceError);
+            return false;
+        }
         slot.desktopRegion = desktopRegion;
         DesktopShellHost shell;
         std::wstring error;
-        const bool visible = !paused && (IsWindowVisible(slot.hwnd) != FALSE);
+        // Creation + shell attachment + first visibility is one transaction.
+        // Do not derive the desired state from the initially hidden popup.
+        const bool visible = !paused;
         if (!shell.EnsureSurface(slot.hwnd, DesktopSurfaceRole::Widget, desktopRegion, visible, &error)) {
-            if (!error.empty()) WriteDiagnostics(L"Native widget attach failed: " + error);
+            lastSurfaceError = L"Native widget attach failed: " +
+                               (error.empty() ? std::wstring(L"无详细错误") : error);
+            WriteDiagnostics(lastSurfaceError);
             return false;
         }
         return true;
@@ -496,8 +506,18 @@ struct NativeWidgetHostApp {
             WS_POPUP | WS_CLIPSIBLINGS,
             desktopRegion.left, desktopRegion.top, width, height,
             nullptr, nullptr, instance, &slot);
-        if (!hwnd) return false;
-        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        if (!hwnd) {
+            lastSurfaceError = L"Native widget CreateWindowEx failed: Win32=" + std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            return false;
+        }
+        if (!SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)) {
+            lastSurfaceError = L"Native widget SetLayeredWindowAttributes failed: Win32=" +
+                               std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            DestroyWindow(hwnd);
+            return false;
+        }
         MarkNativeSurfaceReady(hwnd);
         slot.hwnd = hwnd;
         slot.region = mappedRegion;
@@ -532,12 +552,22 @@ struct NativeWidgetHostApp {
     }
 
     void SyncFromStore() {
-        if (!parent || !IsWindow(parent)) return;
+        lastSurfaceError.clear();
+        if (!parent || !IsWindow(parent)) {
+            WriteDiagnostics(L"Native widget sync skipped: parent HWND 无效");
+            return;
+        }
         DesktopWidgetStore store;
-        std::wstring ignored;
-        if (!store.Load(&ignored)) return;
+        std::wstring storeError;
+        if (!store.Load(&storeError)) {
+            WriteDiagnostics(L"Native widget store load failed: " + storeError);
+            return;
+        }
         const MonitorTopology topology = QueryMonitorTopology();
-        if (!topology.Valid()) return;
+        if (!topology.Valid()) {
+            WriteDiagnostics(L"Native widget sync skipped: monitor topology 无效");
+            return;
+        }
 
         std::vector<std::wstring> desiredIds;
         for (const auto& raw : store.Items()) {
@@ -558,8 +588,8 @@ struct NativeWidgetHostApp {
             NativeSlot* existing = FindSlot(widget.id);
             if (!existing) {
                 if (!CreateSlot(widget, desktopRegion, mappedRegion, preset)) {
-                    WriteDiagnostics(L"Native widget surface 创建/挂载失败：" + widget.id +
-                                     L" · Win32=" + std::to_wstring(GetLastError()));
+                    if (lastSurfaceError.empty())
+                        lastSurfaceError = L"Native widget surface 创建/挂载失败：" + widget.id;
                 }
                 continue;
             }
@@ -609,8 +639,16 @@ struct NativeWidgetHostApp {
                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
         }
-        WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()) +
-                         L" · desired=" + std::to_wstring(desiredIds.size()));
+        const auto visibleCount = std::count_if(slots.begin(), slots.end(), [](const auto& slot) {
+            return slot && slot->hwnd && IsWindow(slot->hwnd) && IsWindowVisible(slot->hwnd);
+        });
+        std::wstring summary = L"Native Direct2D Widget host · configured=" +
+                               std::to_wstring(store.Items().size()) +
+                               L" · desired=" + std::to_wstring(desiredIds.size()) +
+                               L" · surfaces=" + std::to_wstring(slots.size()) +
+                               L" · visible=" + std::to_wstring(visibleCount);
+        if (!lastSurfaceError.empty()) summary += L" · error=" + lastSurfaceError;
+        WriteDiagnostics(summary);
     }
 
     void SetPaused(bool value) {
@@ -665,7 +703,12 @@ struct NativeWidgetHostApp {
     }
 
     int Run() {
-        if (!EnsureFactories() || !EnsureClasses() || !EnsureMessageWindow() || !parent || !IsWindow(parent)) return 64;
+        if (!EnsureFactories() || !EnsureClasses() || !EnsureMessageWindow() || !parent || !IsWindow(parent)) {
+            WriteDiagnostics(L"Native widget host 初始化失败 · Win32=" + std::to_wstring(GetLastError()));
+            return 64;
+        }
+        WriteDiagnostics(L"Native widget host 已启动 · parent=" +
+                         std::to_wstring(reinterpret_cast<std::uintptr_t>(parent)));
         SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);
         SetTimer(messageWindow, kRefreshTimerId, kRefreshSchedulerTickMs, nullptr);
         SyncFromStore();

@@ -185,6 +185,8 @@ target_link_libraries(MiaoDeskWallpaper PRIVATE
     advapi32
     comctl32
     d2d1
+    d3d11
+    dxgi
     dwrite
     windowscodecs
     comdlg32

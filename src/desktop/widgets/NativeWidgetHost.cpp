@@ -13,7 +13,10 @@
 #include "miaodesk/WidgetService.h"
 
 #include <d2d1.h>
+#include <d2d1_1.h>
+#include <d3d11.h>
 #include <dwrite.h>
+#include <dxgi1_2.h>
 #include <shellapi.h>
 #include <wrl/client.h>
 
@@ -195,6 +198,13 @@ struct NativeSlot {
     RECT desktopRegion{};
     HWND hwnd{};
     ComPtr<ID2D1DCRenderTarget> target;
+    ComPtr<ID2D1RenderTarget> activeTarget;
+    bool directPresentation{};
+    ComPtr<ID3D11Device> d3dDevice;
+    ComPtr<IDXGISwapChain1> swapChain;
+    ComPtr<ID2D1Device> d2dDevice;
+    ComPtr<ID2D1DeviceContext> deviceContext;
+    ComPtr<ID2D1Bitmap1> targetBitmap;
     ComPtr<IDWriteFactory> dwrite;
     HDC layerDc{};
     HBITMAP layerBitmap{};
@@ -217,6 +227,13 @@ struct NativeSlot {
 
 void ReleaseLayerSurface(NativeSlot& slot) {
     MarkNativeSurfacePaintReady(slot.hwnd, false);
+    slot.activeTarget.Reset();
+    slot.targetBitmap.Reset();
+    slot.deviceContext.Reset();
+    slot.d2dDevice.Reset();
+    slot.swapChain.Reset();
+    slot.d3dDevice.Reset();
+    slot.directPresentation = false;
     slot.target.Reset();
     if (slot.layerDc && slot.layerOldBitmap) {
         SelectObject(slot.layerDc, slot.layerOldBitmap);
@@ -242,7 +259,7 @@ struct NativeWidgetHostApp {
     bool paused{};
     bool weatherStarted{};
     NativeWeatherService weatherService;
-    ComPtr<ID2D1Factory> d2dFactory;
+    ComPtr<ID2D1Factory1> d2dFactory;
     std::vector<std::unique_ptr<NativeSlot>> slots;
     std::wstring lastSurfaceError;
     std::wstring lastLoggedSummary;
@@ -306,7 +323,9 @@ struct NativeWidgetHostApp {
 
     bool EnsureFactories() {
         if (d2dFactory) return true;
-        const HRESULT result = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dFactory.GetAddressOf());
+        D2D1_FACTORY_OPTIONS factoryOptions{};
+        const HRESULT result = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1),
+                                                 &factoryOptions, reinterpret_cast<void**>(d2dFactory.GetAddressOf()));
         if (FAILED(result)) {
             ReportFailure(nullptr, L"D2D1CreateFactory failed HRESULT=" +
                                    HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(result))));
@@ -331,16 +350,35 @@ struct NativeWidgetHostApp {
 
         const bool layered = (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0;
 
-        if (slot.target && slot.layerDc && slot.layerBitmap && slot.layerBits &&
+        if (!slot.dwrite) {
+            const HRESULT writeResult = DWriteCreateFactory(
+                DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf()));
+            if (FAILED(writeResult)) {
+                ReportFailure(&slot, L"DWriteCreateFactory failed HRESULT=" +
+                                     HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(writeResult))));
+                return false;
+            }
+        }
+
+        if (slot.activeTarget && slot.directPresentation == !layered &&
             slot.layerWidth == width && slot.layerHeight == height) {
-            RECT bind{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
-            if (SUCCEEDED(slot.target->BindDC(slot.layerDc, &bind))) {
-                slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-                return slot.dwrite != nullptr;
+            if (!layered) return true;
+            if (slot.target && slot.layerDc && slot.layerBitmap && slot.layerBits) {
+                RECT bind{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+                if (SUCCEEDED(slot.target->BindDC(slot.layerDc, &bind))) {
+                    slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+                    return true;
+                }
             }
         }
 
         ReleaseLayerSurface(slot);
+
+        if (!layered) return EnsureDirectSwapChainTarget(slot, width, height, dpi);
+
+        // Layered surfaces keep the DC-render-target + premultiplied DIB +
+        // UpdateLayeredWindow contract for legacy WorkerW desktop generations.
         slot.layerDc = CreateCompatibleDC(nullptr);
         if (!slot.layerDc) {
             ReportFailure(&slot, L"CreateCompatibleDC failed Win32=" + std::to_wstring(GetLastError()));
@@ -377,8 +415,7 @@ struct NativeWidgetHostApp {
 
         const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              layered ? D2D1_ALPHA_MODE_PREMULTIPLIED : D2D1_ALPHA_MODE_IGNORE),
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
             static_cast<float>(dpi), static_cast<float>(dpi),
             D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
         const HRESULT dcTargetResult = d2dFactory->CreateDCRenderTarget(&props, slot.target.GetAddressOf());
@@ -397,23 +434,113 @@ struct NativeWidgetHostApp {
             return false;
         }
         slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-        if (!slot.dwrite) {
-            const HRESULT writeResult = DWriteCreateFactory(
-                DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf()));
-            if (FAILED(writeResult)) {
-                ReportFailure(&slot, L"DWriteCreateFactory failed HRESULT=" +
-                                     HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(writeResult))));
-                ReleaseLayerSurface(slot);
-                return false;
-            }
-        }
         slot.target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        slot.activeTarget = slot.target;
+        slot.directPresentation = false;
         slot.layerWidth = width;
         slot.layerHeight = height;
         LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
-                L"target=" + std::wstring(layered ? L"layered-dc" : L"direct-gdi-dib") +
-                L" size=" + std::to_wstring(width) + L"x" +
+                L"target=layered-dc size=" + std::to_wstring(width) + L"x" +
+                std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
+        return true;
+    }
+
+    // Direct surfaces present through a DXGI swapchain. Explorer's raised
+    // Progman is a WS_EX_NOREDIRECTIONBITMAP window owned by another process;
+    // on several Windows 11 generations GDI writes into such a child report
+    // success while the compositor keeps showing the previous band content.
+    // A swapchain presentation is the same route Wallpaper-class engines use
+    // and does not depend on the parent's redirection state at all.
+    bool EnsureDirectSwapChainTarget(NativeSlot& slot, UINT width, UINT height, UINT dpi) {
+        ComPtr<ID3D11Device> d3dDevice;
+        ComPtr<ID3D11DeviceContext> d3dContext;
+        D3D_FEATURE_LEVEL featureLevel{};
+        constexpr UINT kDeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+        HRESULT deviceResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, kDeviceFlags,
+                                                 nullptr, 0, D3D11_SDK_VERSION, d3dDevice.GetAddressOf(),
+                                                 &featureLevel, d3dContext.GetAddressOf());
+        if (FAILED(deviceResult)) {
+            deviceResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, kDeviceFlags,
+                                             nullptr, 0, D3D11_SDK_VERSION, d3dDevice.GetAddressOf(),
+                                             &featureLevel, d3dContext.GetAddressOf());
+        }
+        if (FAILED(deviceResult)) {
+            ReportFailure(&slot, L"D3D11CreateDevice failed HRESULT=" +
+                                 HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(deviceResult))));
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+
+        ComPtr<IDXGIDevice> dxgiDevice;
+        ComPtr<IDXGIAdapter> adapter;
+        ComPtr<IDXGIFactory2> dxgiFactory;
+        if (FAILED(d3dDevice.As(&dxgiDevice)) ||
+            FAILED(dxgiDevice->GetAdapter(adapter.GetAddressOf())) ||
+            FAILED(adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(dxgiFactory.GetAddressOf())))) {
+            ReportFailure(&slot, L"DXGI device chain unavailable");
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 descriptor{};
+        descriptor.Width = width;
+        descriptor.Height = height;
+        descriptor.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        descriptor.SampleDesc.Count = 1;
+        descriptor.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        descriptor.BufferCount = 2;
+        descriptor.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        descriptor.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        HRESULT swapResult = dxgiFactory->CreateSwapChainForHwnd(
+            d3dDevice.Get(), slot.hwnd, &descriptor, nullptr, nullptr, slot.swapChain.GetAddressOf());
+        if (FAILED(swapResult)) {
+            // Some child-HWND compositions reject the flip model; the bitblt
+            // model presents through the same DWM surface contract.
+            descriptor.BufferCount = 1;
+            descriptor.SwapEffect = DXGI_SWAP_EFFECT_BITBLT;
+            swapResult = dxgiFactory->CreateSwapChainForHwnd(
+                d3dDevice.Get(), slot.hwnd, &descriptor, nullptr, nullptr, slot.swapChain.GetAddressOf());
+        }
+        if (FAILED(swapResult)) {
+            ReportFailure(&slot, L"CreateSwapChainForHwnd failed HRESULT=" +
+                                 HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(swapResult))));
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        dxgiFactory->MakeWindowAssociation(slot.hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
+
+        if (FAILED(d2dFactory->CreateDevice(dxgiDevice.Get(), slot.d2dDevice.GetAddressOf())) ||
+            FAILED(slot.d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                                       slot.deviceContext.GetAddressOf()))) {
+            ReportFailure(&slot, L"D2D device context creation failed");
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+
+        ComPtr<IDXGISurface> backBuffer;
+        if (FAILED(slot.swapChain->GetBuffer(0, __uuidof(IDXGISurface), backBuffer.ReleaseAndGetAddressOf()))) {
+            ReportFailure(&slot, L"Swapchain back buffer unavailable");
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        const D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            static_cast<float>(dpi), static_cast<float>(dpi));
+        if (FAILED(slot.deviceContext->CreateBitmapFromDxgiSurface(backBuffer.Get(), &bitmapProperties,
+                                                                   slot.targetBitmap.GetAddressOf()))) {
+            ReportFailure(&slot, L"D2D swapchain target bitmap creation failed");
+            ReleaseLayerSurface(slot);
+            return false;
+        }
+        slot.deviceContext->SetTarget(slot.targetBitmap.Get());
+        slot.deviceContext->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+        slot.activeTarget = slot.deviceContext;
+        slot.directPresentation = true;
+        slot.layerWidth = width;
+        slot.layerHeight = height;
+        LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
+                L"target=direct-swapchain size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
         return true;
     }
@@ -421,30 +548,15 @@ struct NativeWidgetHostApp {
     bool PresentLayerSurface(NativeSlot& slot) {
         if (!slot.hwnd || !IsWindow(slot.hwnd) || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
         if ((GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0) {
-            // Explorer's raised Progman uses WS_EX_NOREDIRECTIONBITMAP. A
-            // Direct2D HWND target can report EndDraw success there without
-            // ever reaching the visible desktop. Render to a DIB and make a
-            // real GDI presentation into the child HWND instead.
-            if (!slot.layerDc) {
-                ReportFailure(&slot, L"Direct GDI presentation has no backing DIB");
+            // Direct surfaces present the swapchain straight to the compositor.
+            if (!slot.swapChain) {
+                ReportFailure(&slot, L"Direct presentation has no swapchain");
                 return false;
             }
-            SetLastError(ERROR_SUCCESS);
-            HDC windowDc = GetDC(slot.hwnd);
-            if (!windowDc) {
-                ReportFailure(&slot, L"GetDC for direct GDI presentation failed Win32=" +
-                                     std::to_wstring(GetLastError()));
-                return false;
-            }
-            const BOOL copied = BitBlt(
-                windowDc, 0, 0, static_cast<int>(slot.layerWidth), static_cast<int>(slot.layerHeight),
-                slot.layerDc, 0, 0, SRCCOPY);
-            const DWORD copyError = copied ? ERROR_SUCCESS : GetLastError();
-            GdiFlush();
-            ReleaseDC(slot.hwnd, windowDc);
-            if (!copied) {
-                ReportFailure(&slot, L"BitBlt direct GDI presentation failed Win32=" +
-                                     std::to_wstring(copyError));
+            const HRESULT present = slot.swapChain->Present(1, 0);
+            if (FAILED(present) && present != DXGI_STATUS_OCCLUDED) {
+                ReportFailure(&slot, L"Swapchain Present failed HRESULT=" +
+                                     HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(present))));
                 return false;
             }
             MarkNativeSurfacePaintReady(slot.hwnd, true);
@@ -519,7 +631,7 @@ struct NativeWidgetHostApp {
             return;
         }
         NativeWidgetPaintContext context{};
-        context.target = static_cast<ID2D1RenderTarget*>(slot.target.Get());
+        context.target = slot.activeTarget.Get();
         context.dwrite = slot.dwrite.Get();
         context.opaqueSurface =
             (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;

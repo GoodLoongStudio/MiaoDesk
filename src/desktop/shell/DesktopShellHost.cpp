@@ -236,20 +236,61 @@ void DesktopShellHost::RepairRaisedDesktopWorkerOrder() const noexcept {
 
 void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     if (!parent || !IsWindow(parent)) return;
-    std::vector<HWND> wallpapers;
-    std::vector<HWND> widgets;
+    struct KnownSurface {
+        HWND window;
+        DesktopSurfaceRole role;
+    };
+    std::vector<KnownSurface> known;
     for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (!IsWindow(child)) continue;
         const DesktopSurfaceRole role = InferRole(child);
-        const bool known = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass) ||
-                           role == DesktopSurfaceRole::Widget;
-        if (!known) continue;
+        const bool knownSurface = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass) ||
+                                  role == DesktopSurfaceRole::Widget;
+        if (!knownSurface) continue;
         if (role != DesktopSurfaceRole::Widget && IsWindowVisible(child) == FALSE) continue;
-        PrepareSurface(child, role != DesktopSurfaceRole::Widget, nullptr);
-        (role == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(child);
+        known.push_back({child, role});
+    }
+    if (known.empty()) return;
+
+    // The host runs this repair on every sync tick. When the desktop band
+    // already satisfies the contract, re-issuing style/z-order churn makes DWM
+    // recomposite the whole band every second and reads as wallpaper flicker.
+    // Verify first; touch windows only when something violates the contract.
+    const bool raised = snapshot_.mode == DesktopShellMode::RaisedDesktop ||
+                        snapshot_.mode == DesktopShellMode::ProgmanFallback;
+    bool ordered = true;
+    bool seenIconLayer = false;
+    bool seenWallpaper = false;
+    for (const auto& surface : known) {
+        const LONG_PTR style = GetWindowLongPtrW(surface.window, GWL_STYLE);
+        const LONG_PTR exStyle = GetWindowLongPtrW(surface.window, GWL_EXSTYLE);
+        if ((style & WS_CHILD) == 0) { ordered = false; break; }
+        if (surface.role == DesktopSurfaceRole::Widget) {
+            // Raised-desktop widgets are direct unlayered surfaces; legacy
+            // WorkerW generations keep the layered UpdateLayeredWindow contract.
+            const bool isLayered = (exStyle & WS_EX_LAYERED) != 0;
+            if (isLayered == raised) { ordered = false; break; }
+            if (raised ? (seenIconLayer || seenWallpaper) : seenWallpaper) { ordered = false; break; }
+            continue;
+        }
+        if (raised && IsWindowClass(surface.window, kDefViewClass)) {
+            if (seenWallpaper) { ordered = false; break; }
+            seenIconLayer = true;
+            continue;
+        }
+        if ((exStyle & WS_EX_LAYERED) == 0 || (exStyle & WS_EX_TRANSPARENT) == 0) { ordered = false; break; }
+        seenWallpaper = true;
+    }
+    if (ordered) return;
+
+    std::vector<HWND> wallpapers;
+    std::vector<HWND> widgets;
+    for (const auto& surface : known) {
+        PrepareSurface(surface.window, surface.role != DesktopSurfaceRole::Widget, nullptr);
+        (surface.role == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(surface.window);
     }
 
-    if (snapshot_.mode == DesktopShellMode::RaisedDesktop || snapshot_.mode == DesktopShellMode::ProgmanFallback) {
+    if (raised) {
         // Top -> bottom: widgets (interactive) -> desktop icons -> wallpapers -> WorkerW.
         for (HWND window : wallpapers) {
             SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);

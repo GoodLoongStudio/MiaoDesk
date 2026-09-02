@@ -155,9 +155,11 @@ ManagedSource=0
     foreach ($marker in @(
         '[WidgetHost] 原生组件宿主启动',
         '组件首次绘制成功',
-        'mode=direct-hwnd',
+        'mode=direct-gdi',
+        'target=direct-gdi-dib',
         'parentNoRedirection=true',
         'paintReady=true',
+        'zOrderValid=true',
         'wallpaper.enabled=false'
     )) {
         if (-not $logText.Contains($marker)) {
@@ -165,7 +167,7 @@ ManagedSource=0
         }
     }
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
-    Write-Host 'Native Widget direct-HWND diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
+    Write-Host 'Native Widget direct-GDI diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {

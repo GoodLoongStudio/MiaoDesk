@@ -471,9 +471,9 @@ public:
     }
 
     void SetEnabled(bool enabled) {
-        miaodesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+        miaodesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
         if (config_.enabled == enabled) {
-            miaodesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
+            miaodesk::log::Info(L"Wallpaper", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
             libraryWindow_.SetWallpaperEnabledState(config_.enabled);
             return;
         }
@@ -484,7 +484,7 @@ public:
 
         bool applied = false;
         if (enabled) {
-            miaodesk::log::Info(L"WallpaperEngine", L"正在启动壁纸运行时，挂载桌面图层...");
+            miaodesk::log::Info(L"Wallpaper", L"正在启动壁纸运行时，挂载桌面图层...");
             performanceStopped_ = false;
             videoSet_.SetPaused(false);
             independentHost_.SetPaused(false);
@@ -501,10 +501,10 @@ public:
                 applied = mountOk_;
             }
             if (applied) {
-                miaodesk::log::Info(L"WallpaperEngine", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
+                miaodesk::log::Info(L"Wallpaper", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
             }
         } else {
-            miaodesk::log::Info(L"WallpaperEngine", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
+            miaodesk::log::Info(L"Wallpaper", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
@@ -523,18 +523,18 @@ public:
             }
             SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
 
-            miaodesk::log::Info(L"WallpaperEngine", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
+            miaodesk::log::Info(L"Wallpaper", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
             applied = true;
         }
 
         if (!applied) {
-            miaodesk::log::Error(L"WallpaperEngine", L"SetEnabled 挂载失败，回滚状态为 disabled");
+            miaodesk::log::Error(L"Wallpaper", L"SetEnabled 挂载失败，回滚状态为 disabled");
             config_.enabled = !targetEnabled;
             SaveConfig(config_);
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
         } else {
-            miaodesk::log::Info(L"WallpaperEngine", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
+            miaodesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
         }
 
         RefreshSettings();
@@ -652,16 +652,16 @@ private:
     void ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
         using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
         if (item.kind == Kind::Unknown) {
-            miaodesk::log::Warn(L"WallpaperEngine", L"ApplyLibraryItem 失败: 未知壁纸类型");
+            miaodesk::log::Warn(L"Wallpaper", L"ApplyLibraryItem 失败: 未知壁纸类型");
             return;
         }
 
-        miaodesk::log::Info(L"WallpaperEngine", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
+        miaodesk::log::Info(L"Wallpaper", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
         std::wstring error;
         if (item.kind == Kind::Web) {
             if (!miaodesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
                 libraryError_ = error.empty() ? L"Web 壁纸应用失败" : error;
-                miaodesk::log::Error(L"WallpaperEngine", L"ActivateWebWallpaperItem 失败: " + libraryError_);
+                miaodesk::log::Error(L"Wallpaper", L"ActivateWebWallpaperItem 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
@@ -673,17 +673,17 @@ private:
             libraryWindow_.Refresh();
             automationWindow_.Refresh();
             RefreshSettings();
-            miaodesk::log::Info(L"WallpaperEngine", L"Web 壁纸已成功应用");
+            miaodesk::log::Info(L"Wallpaper", L"Web 壁纸已成功应用");
             return;
         }
         if (!targetMonitorId.empty()) {
             const auto* monitor = miaodesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
             const std::wstring friendly = monitor ?
                 (!monitor->friendlyName.empty() ? monitor->friendlyName : monitor->deviceName) : L"";
-            miaodesk::log::Info(L"WallpaperEngine", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
+            miaodesk::log::Info(L"Wallpaper", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
             if (!assignments_.AssignById(targetMonitorId, item.id, friendly, &error)) {
                 libraryError_ = error;
-                miaodesk::log::Error(L"WallpaperEngine", L"显示器分配失败: " + error);
+                miaodesk::log::Error(L"Wallpaper", L"显示器分配失败: " + error);
                 RefreshSettings();
                 return;
             }
@@ -691,7 +691,7 @@ private:
             config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
-            miaodesk::log::Info(L"WallpaperEngine", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
+            miaodesk::log::Info(L"Wallpaper", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
         } else {
             Config next = config_;
             next.enabled = true;
@@ -700,17 +700,17 @@ private:
                                        (item.kind == Kind::Video ? L"Video" :
                                        (item.kind == Kind::Web ? L"Web" :
                                        (item.kind == Kind::Image ? L"Image" : L"Unknown"))));
-            miaodesk::log::Info(L"WallpaperEngine", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
+            miaodesk::log::Info(L"Wallpaper", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 libraryError_ = item.kind == Kind::Scene
                     ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
                     : L"该壁纸类型当前不可运行。";
-                miaodesk::log::Error(L"WallpaperEngine", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
+                miaodesk::log::Error(L"Wallpaper", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
                 RefreshSettings();
                 return;
             }
             ApplyConfig(next);
-            miaodesk::log::Info(L"WallpaperEngine", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
+            miaodesk::log::Info(L"Wallpaper", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
         }
 
         error.clear();
@@ -1001,7 +1001,7 @@ private:
             const wchar_t* actionName = snapshot.action == miaodesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
                                         (snapshot.action == miaodesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
                                         (snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
-            miaodesk::log::Info(L"WallpaperEngine", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
+            miaodesk::log::Info(L"Wallpaper", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
                 L", 目标FPS=" + std::to_wstring(snapshot.targetFps) +
                 (snapshot.reason.empty() ? L"" : (L", 原因=" + snapshot.reason)));
             lastLoggedAction_ = snapshot.action;
@@ -1198,15 +1198,15 @@ private:
 
         switch (message) {
         case kShowSettings:
-            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kShowSettings，显示设置中心");
+            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kShowSettings，显示设置中心");
             ShowSettings();
             return 0;
         case kSetEnabled:
-            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
+            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
             SetEnabled(wParam != 0);
             return 0;
         case kReloadConfig:
-            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
             config_ = LoadConfig();
             config_.enabled = true;
             ApplyConfig(config_, false);
@@ -1365,9 +1365,9 @@ private:
 
         mountOk_ = true;
         SaveMountDiagnostics(shellHost_.Snapshot().mode, L"", &topology_, layoutMode);
-        miaodesk::log::Info(L"WallpaperEngine", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(miaodesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
-            L", 桌面父窗口 HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(attachedParent_)) +
-            L", 壁纸 Host HWND=0x" + std::to_wstring(reinterpret_cast<std::uintptr_t>(host_)) +
+        miaodesk::log::Info(L"Wallpaper", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(miaodesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
+            L", 桌面父窗口 HWND(decimal)=" + std::to_wstring(reinterpret_cast<std::uintptr_t>(attachedParent_)) +
+            L", 壁纸 Host HWND(decimal)=" + std::to_wstring(reinterpret_cast<std::uintptr_t>(host_)) +
             L"\r\n[检测到的系统显示器拓扑]\r\n" + miaodesk::wallpaper::DescribeMonitorTopology(topology_));
         return true;
     }

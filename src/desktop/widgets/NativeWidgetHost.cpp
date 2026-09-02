@@ -2,6 +2,7 @@
 #include "miaodesk/AppPaths.h"
 
 #include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/DesktopSurfaceTelemetry.h"
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/NativeWidgetPainter.h"
 #include "miaodesk/NativeWidgetPreset.h"
@@ -189,7 +190,6 @@ struct NativeSlot {
     HWND hwnd{};
     HWND dragHandle{};
     ComPtr<ID2D1DCRenderTarget> target;
-    ComPtr<ID2D1HwndRenderTarget> hwndTarget;
     ComPtr<IDWriteFactory> dwrite;
     HDC layerDc{};
     HBITMAP layerBitmap{};
@@ -213,7 +213,6 @@ struct NativeSlot {
 void ReleaseLayerSurface(NativeSlot& slot) {
     MarkNativeSurfacePaintReady(slot.hwnd, false);
     slot.target.Reset();
-    slot.hwndTarget.Reset();
     if (slot.layerDc && slot.layerOldBitmap) {
         SelectObject(slot.layerDc, slot.layerOldBitmap);
         slot.layerOldBitmap = nullptr;
@@ -253,15 +252,20 @@ struct NativeWidgetHostApp {
         const LONG_PTR exStyle = slot.hwnd ? GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) : 0;
         const LONG_PTR parentExStyle = actualParent ? GetWindowLongPtrW(actualParent, GWL_EXSTYLE) : 0;
         const bool paintReady = slot.hwnd && GetPropW(slot.hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
+        const auto zOrder = InspectDesktopSurfaceZOrder(
+            slot.hwnd, DesktopSurfaceTelemetryRole::Widget);
         return L"id=" + slot.widgetId +
                L" preset=\"" + NativePresetTitle(slot.preset) + L"\"" +
                L" hwnd=" + HandleText(slot.hwnd) +
                L" parent=" + HandleText(actualParent) +
                L" parentClass=" + WindowClassText(actualParent) +
                L" parentNoRedirection=" + std::wstring((parentExStyle & WS_EX_NOREDIRECTIONBITMAP) != 0 ? L"true" : L"false") +
-               L" mode=" + ((exStyle & WS_EX_LAYERED) != 0 ? std::wstring(L"layered-dc") : std::wstring(L"direct-hwnd")) +
+               L" mode=" + ((exStyle & WS_EX_LAYERED) != 0 ? std::wstring(L"layered-dc") : std::wstring(L"direct-gdi")) +
                L" visible=" + std::wstring(slot.hwnd && IsWindowVisible(slot.hwnd) ? L"true" : L"false") +
                L" paintReady=" + std::wstring(paintReady ? L"true" : L"false") +
+               L" zOrderReported=" + std::wstring(zOrder.reported ? L"true" : L"false") +
+               L" zOrderValid=" + std::wstring(zOrder.valid ? L"true" : L"false") +
+               L" zOrderDetail=\"" + zOrder.detail + L"\"" +
                L" paints=" + std::to_wstring(slot.successfulPaints) +
                L" dpi=" + std::to_wstring(slot.hwnd ? GetDpiForWindow(slot.hwnd) : 0) +
                L" style=" + HexValue(static_cast<unsigned long long>(style)) +
@@ -321,46 +325,6 @@ struct NativeWidgetHostApp {
         const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
 
         const bool layered = (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0;
-        if (!layered) {
-            if (slot.hwndTarget && slot.layerWidth == width && slot.layerHeight == height) {
-                slot.hwndTarget->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-                return slot.dwrite != nullptr;
-            }
-
-            ReleaseLayerSurface(slot);
-            const auto props = D2D1::RenderTargetProperties(
-                D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
-                static_cast<float>(dpi), static_cast<float>(dpi),
-                D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
-            const auto hwndProps = D2D1::HwndRenderTargetProperties(
-                slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
-            const HRESULT targetResult = d2dFactory->CreateHwndRenderTarget(
-                &props, &hwndProps, slot.hwndTarget.GetAddressOf());
-            if (FAILED(targetResult)) {
-                ReportFailure(&slot, L"CreateHwndRenderTarget failed HRESULT=" +
-                                     HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(targetResult))));
-                return false;
-            }
-            if (!slot.dwrite) {
-                const HRESULT writeResult = DWriteCreateFactory(
-                    DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                    reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf()));
-                if (FAILED(writeResult)) {
-                    ReportFailure(&slot, L"DWriteCreateFactory failed HRESULT=" +
-                                         HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(writeResult))));
-                    ReleaseLayerSurface(slot);
-                    return false;
-                }
-            }
-            slot.hwndTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-            slot.layerWidth = width;
-            slot.layerHeight = height;
-            LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
-                    L"target=direct-hwnd size=" + std::to_wstring(width) + L"x" +
-                    std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
-            return true;
-        }
 
         if (slot.target && slot.layerDc && slot.layerBitmap && slot.layerBits &&
             slot.layerWidth == width && slot.layerHeight == height) {
@@ -402,7 +366,8 @@ struct NativeWidgetHostApp {
 
         const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              layered ? D2D1_ALPHA_MODE_PREMULTIPLIED : D2D1_ALPHA_MODE_IGNORE),
             static_cast<float>(dpi), static_cast<float>(dpi),
             D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
         const HRESULT dcTargetResult = d2dFactory->CreateDCRenderTarget(&props, slot.target.GetAddressOf());
@@ -436,7 +401,8 @@ struct NativeWidgetHostApp {
         slot.layerWidth = width;
         slot.layerHeight = height;
         LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
-                L"target=layered-dc size=" + std::to_wstring(width) + L"x" +
+                L"target=" + std::wstring(layered ? L"layered-dc" : L"direct-gdi-dib") +
+                L" size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
         return true;
     }
@@ -444,10 +410,32 @@ struct NativeWidgetHostApp {
     bool PresentLayerSurface(NativeSlot& slot) {
         if (!slot.hwnd || !IsWindow(slot.hwnd) || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
         if ((GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0) {
-            // Direct HWND render targets present during EndDraw. Keep the same
-            // readiness contract as the layered path so lifecycle probes and
-            // the settings UI can distinguish a painted surface from a merely
-            // created/visible HWND.
+            // Explorer's raised Progman uses WS_EX_NOREDIRECTIONBITMAP. A
+            // Direct2D HWND target can report EndDraw success there without
+            // ever reaching the visible desktop. Render to a DIB and make a
+            // real GDI presentation into the child HWND instead.
+            if (!slot.layerDc) {
+                ReportFailure(&slot, L"Direct GDI presentation has no backing DIB");
+                return false;
+            }
+            SetLastError(ERROR_SUCCESS);
+            HDC windowDc = GetDC(slot.hwnd);
+            if (!windowDc) {
+                ReportFailure(&slot, L"GetDC for direct GDI presentation failed Win32=" +
+                                     std::to_wstring(GetLastError()));
+                return false;
+            }
+            const BOOL copied = BitBlt(
+                windowDc, 0, 0, static_cast<int>(slot.layerWidth), static_cast<int>(slot.layerHeight),
+                slot.layerDc, 0, 0, SRCCOPY);
+            const DWORD copyError = copied ? ERROR_SUCCESS : GetLastError();
+            GdiFlush();
+            ReleaseDC(slot.hwnd, windowDc);
+            if (!copied) {
+                ReportFailure(&slot, L"BitBlt direct GDI presentation failed Win32=" +
+                                     std::to_wstring(copyError));
+                return false;
+            }
             MarkNativeSurfacePaintReady(slot.hwnd, true);
             return true;
         }
@@ -513,10 +501,10 @@ struct NativeWidgetHostApp {
             return;
         }
         NativeWidgetPaintContext context{};
-        context.target = slot.hwndTarget ? static_cast<ID2D1RenderTarget*>(slot.hwndTarget.Get())
-                                         : static_cast<ID2D1RenderTarget*>(slot.target.Get());
+        context.target = static_cast<ID2D1RenderTarget*>(slot.target.Get());
         context.dwrite = slot.dwrite.Get();
-        context.opaqueSurface = slot.hwndTarget != nullptr;
+        context.opaqueSurface =
+            (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
         if (!context.target) {
             ReportFailure(&slot, L"Native Widget render target unavailable after initialization");
             return;

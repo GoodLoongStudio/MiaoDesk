@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply minimal regression fixes
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
 

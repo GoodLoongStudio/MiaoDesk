@@ -101,6 +101,15 @@ try {
         Get-Content $diagnostics | Out-Host
     }
     throw 'No visible MiaoDesk.Native.WidgetSurface appeared within 15 seconds.'
+} catch {
+    $details = ($_ | Out-String).Trim()
+    $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+    if (Test-Path $wallpaperIni -PathType Leaf) {
+        $details += "`n" + ((Get-Content $wallpaperIni | Out-String).Trim())
+    }
+    $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+    Write-Host "::error title=Native Widget visibility failed::$details"
+    throw
 } finally {
     Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA = $previousLocalAppData

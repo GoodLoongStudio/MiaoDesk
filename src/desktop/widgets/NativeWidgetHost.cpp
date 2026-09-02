@@ -483,14 +483,19 @@ struct NativeWidgetHostApp {
     }
 
     bool CreateSlotWindow(NativeSlot& slot, const std::wstring& title, const RECT& mappedRegion, const RECT& desktopRegion) {
-        const int width = std::max<LONG>(1, mappedRegion.right - mappedRegion.left);
-        const int height = std::max<LONG>(1, mappedRegion.bottom - mappedRegion.top);
+        const int width = std::max<LONG>(1, desktopRegion.right - desktopRegion.left);
+        const int height = std::max<LONG>(1, desktopRegion.bottom - desktopRegion.top);
+        // Match the proven wallpaper-host lifecycle: create a normal top-level
+        // surface first, then let DesktopShellHost perform the only WS_CHILD /
+        // SetParent / parent-coordinate transaction. Creating a cross-process
+        // Explorer child directly can return a nominal HWND that never becomes
+        // compositor-visible on some Windows 11 shell generations.
         HWND hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             kNativeWidgetSurfaceClass, title.c_str(),
-            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-            mappedRegion.left, mappedRegion.top, width, height,
-            parent, nullptr, instance, &slot);
+            WS_POPUP | WS_CLIPSIBLINGS,
+            desktopRegion.left, desktopRegion.top, width, height,
+            nullptr, nullptr, instance, &slot);
         if (!hwnd) return false;
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
         MarkNativeSurfaceReady(hwnd);
@@ -503,13 +508,13 @@ struct NativeWidgetHostApp {
         // output on real Explorer desktop parents, so native widgets must not
         // add a second visual/input surface here.
         slot.dragHandle = nullptr;
-        PaintSlot(slot);
         if (!AttachSlotSurface(slot, desktopRegion)) {
             DestroyWindow(hwnd);
             slot.hwnd = nullptr;
             slot.target.Reset();
             return false;
         }
+        PaintSlot(slot);
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, nullptr, FALSE);
         UpdateWindow(hwnd);

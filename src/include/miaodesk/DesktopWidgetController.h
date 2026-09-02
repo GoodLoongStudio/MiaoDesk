@@ -14,7 +14,7 @@ namespace miaodesk::desktop {
 // C++ widget does not require a second mirrored enum in the controller layer.
 using WidgetFixedPreset = wallpaper::NativeWidgetPreset;
 
-// UI-facing adapter for widget workflows. Win32 windows depend on this
+// UI-facing adapter for Widget workflows. Win32 windows depend on this
 // controller instead of DesktopWidgetStore so persistence/runtime ownership
 // remains in the desktop domain services.
 class DesktopWidgetController {
@@ -25,9 +25,9 @@ public:
     DesktopControlResult Find(std::wstring_view id, wallpaper::DesktopWidget* widget) const;
     DesktopControlResult RuntimeHealth(WidgetRuntimeHealth* health) const;
 
-    // Temporary M3 showcase entry used by the production Widget page. Repeated
-    // creation rotates through the three fixed presets (clock / tasks / weather)
-    // so a user can compare real desktop rendering before any editor is reintroduced.
+    // Compatibility entry used by the current production Widget page. Repeated
+    // creation rotates through the three built-in native presets until the UI
+    // calls CreatePreset directly for each explicit card/action.
     DesktopControlResult CreateClock(
         std::wstring monitorId,
         wallpaper::DesktopWidget* created = nullptr) const;

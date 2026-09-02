@@ -206,9 +206,13 @@ struct NativeWidgetHostApp {
         if (!GetClientRect(slot.hwnd, &rc)) return false;
         const UINT width = static_cast<UINT>(std::max<LONG>(1, rc.right - rc.left));
         const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
+        const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
         const auto props = D2D1::HwndRenderTargetProperties(
             slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
-        if (FAILED(d2dFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), props, slot.target.GetAddressOf()))) return false;
+        const auto targetProps = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(),
+            static_cast<float>(dpi), static_cast<float>(dpi));
+        if (FAILED(d2dFactory->CreateHwndRenderTarget(targetProps, props, slot.target.GetAddressOf()))) return false;
         if (!slot.dwrite) DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf()));
         slot.target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         return true;
@@ -421,6 +425,11 @@ struct NativeWidgetHostApp {
             ApplyRoundedWindowRegion(*slot);
             slot->owner->ResizeDragHandle(*slot);
             return 0;
+        case WM_DPICHANGED:
+            slot->target.Reset();
+            ApplyRoundedWindowRegion(*slot);
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
         case WM_PAINT: {
             PAINTSTRUCT paint{};
             BeginPaint(hwnd, &paint);
@@ -501,7 +510,7 @@ struct NativeWidgetHostApp {
         // Explorer child directly can return a nominal HWND that never becomes
         // compositor-visible on some Windows 11 shell generations.
         HWND hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             kNativeWidgetSurfaceClass, title.c_str(),
             WS_POPUP | WS_CLIPSIBLINGS,
             desktopRegion.left, desktopRegion.top, width, height,
@@ -511,18 +520,10 @@ struct NativeWidgetHostApp {
             WriteDiagnostics(lastSurfaceError);
             return false;
         }
-        if (!SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)) {
-            lastSurfaceError = L"Native widget SetLayeredWindowAttributes failed: Win32=" +
-                               std::to_wstring(GetLastError());
-            WriteDiagnostics(lastSurfaceError);
-            DestroyWindow(hwnd);
-            return false;
-        }
         MarkNativeSurfaceReady(hwnd);
         slot.hwnd = hwnd;
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
-        ApplyRoundedWindowRegion(slot);
         // SurfaceProc already owns the complete drag gesture. A full-size child
         // drag window sits above the HWND render target and can cover its D2D
         // output on real Explorer desktop parents, so native widgets must not
@@ -534,6 +535,10 @@ struct NativeWidgetHostApp {
             slot.target.Reset();
             return false;
         }
+        // Re-parenting establishes the final Explorer-child geometry and DPI.
+        // Build all pixel clips and D2D DIP metrics only after that transaction.
+        ApplyRoundedWindowRegion(slot);
+        slot.target.Reset();
         PaintSlot(slot);
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, nullptr, FALSE);

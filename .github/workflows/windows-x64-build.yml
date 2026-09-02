@@ -57,8 +57,19 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
-          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $log | ForEach-Object { "$_" } | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            # Surface compile errors as check annotations so they are readable
+            # without an authenticated log download.
+            $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
+              Select-Object -First 40 | ForEach-Object {
+                $line = $_.Trim()
+                if ($line.Length -gt 500) { $line = $line.Substring(0, 500) }
+                Write-Host "::error::$line"
+              }
+            throw 'x64 build failed.'
+          }
 
       - name: Verify native Widget visibility
         shell: pwsh

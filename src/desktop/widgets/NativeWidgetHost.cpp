@@ -294,12 +294,31 @@ struct NativeWidgetHostApp {
         blend.BlendOp = AC_SRC_OVER;
         blend.SourceConstantAlpha = 255;
         blend.AlphaFormat = AC_SRC_ALPHA;
-        SetLastError(ERROR_SUCCESS);
-        if (!UpdateLayeredWindow(slot.hwnd, nullptr, nullptr, &size, slot.layerDc, &source, 0, &blend, ULW_ALPHA)) {
-            lastSurfaceError = L"Native widget UpdateLayeredWindow failed: Win32=" + std::to_wstring(GetLastError());
-            WriteDiagnostics(lastSurfaceError);
-            MarkNativeSurfacePaintReady(slot.hwnd, false);
-            return false;
+        const auto present = [&] {
+            SetLastError(ERROR_SUCCESS);
+            return UpdateLayeredWindow(
+                slot.hwnd, nullptr, nullptr, &size, slot.layerDc, &source, 0, &blend, ULW_ALPHA) != FALSE;
+        };
+
+        if (!present()) {
+            const DWORD firstError = GetLastError();
+            // Re-parenting a layered popup into Explorer changes it into a child
+            // surface. Some real Windows 11 raised-desktop generations keep the
+            // old layered state cached and reject the first presentation. Reset
+            // the style once and retry without destroying the HWND/slot.
+            const LONG_PTR exStyle = GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE);
+            SetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE, exStyle & ~static_cast<LONG_PTR>(WS_EX_LAYERED));
+            SetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+            SetWindowPos(slot.hwnd, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            if (!present()) {
+                lastSurfaceError = L"Native widget UpdateLayeredWindow failed: first=" +
+                                   std::to_wstring(firstError) + L" retry=" +
+                                   std::to_wstring(GetLastError());
+                WriteDiagnostics(lastSurfaceError);
+                MarkNativeSurfacePaintReady(slot.hwnd, false);
+                return false;
+            }
         }
         MarkNativeSurfacePaintReady(slot.hwnd, true);
         return true;
@@ -630,7 +649,11 @@ struct NativeWidgetHostApp {
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, nullptr, FALSE);
         UpdateWindow(hwnd);
-        return GetPropW(hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
+        // Surface creation and first paint are separate recovery domains. Keep
+        // the attached HWND alive when the first layered presentation is not
+        // ready yet; SyncFromStore will retry instead of freeing the NativeSlot
+        // while the HWND still retains its pointer in GWLP_USERDATA.
+        return IsWindow(hwnd) != FALSE;
     }
 
     bool CreateSlot(const DesktopWidget& widget, const RECT& desktopRegion, const RECT& mappedRegion, NativeWidgetPreset preset) {
@@ -711,6 +734,10 @@ struct NativeWidgetHostApp {
                 if (!CreateSlotWindow(*existing, SlotToken(widget, mappedRegion), mappedRegion, desktopRegion)) continue;
             } else if (desktopRegionChanged && existing->hwnd && IsWindow(existing->hwnd)) {
                 existing->desktopRegion = desktopRegion;
+            }
+            if (existing->hwnd && IsWindow(existing->hwnd) &&
+                GetPropW(existing->hwnd, kNativeWidgetPaintReadyProperty) == nullptr) {
+                PaintSlot(*existing);
             }
         }
 

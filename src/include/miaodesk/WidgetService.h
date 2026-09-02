@@ -49,10 +49,10 @@ struct WidgetUpdateRequest {
     std::optional<bool> enabled;
 };
 
-// One configured Web Widget matched to its isolated child surface. Runtime
-// inspection remains owned by the Widget domain. UI/Pi receive both machine-
-// readable issueCode and human-readable recommendedAction so callers never
-// need to infer remediation from HWND/WebView2 implementation details.
+// One configured Widget matched to its live desktop surface. Runtime inspection
+// remains owned by the Widget domain. UI/Pi receive both machine-readable
+// issueCode and human-readable recommendedAction so callers never need to infer
+// remediation from HWND/WebView2/Native rendering implementation details.
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
     std::wstring monitorId;
@@ -95,8 +95,8 @@ struct WidgetSurfaceHealth {
     }
 };
 
-// Caller-facing Widget runtime summary. UI/Pi/editor clients consume this
-// through DesktopSnapshot rather than reading wallpaper.ini or enumerating HWNDs.
+// Caller-facing Widget runtime summary. UI/Pi clients consume this through
+// DesktopSnapshot rather than reading wallpaper.ini or enumerating HWNDs.
 struct WidgetRuntimeHealth {
     std::size_t configuredCount{};
     std::size_t enabledWebCount{};

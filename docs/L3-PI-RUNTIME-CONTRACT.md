@@ -2,7 +2,7 @@
 
 Status: normative runtime contract.
 
-本文件只固定长期有效的 AI Runtime 与 Desktop Control 边界，不记录历史迁移脚本或一次性 CI 方案。
+本文件只固定长期有效的 AI Runtime 与 Desktop Control 边界，不记录历史迁移脚本或一次性 CI 方案。产品设计以 `DESIGN_BASELINE.md` 为准。
 
 ## 1. 默认 AI 路由
 
@@ -97,8 +97,8 @@ AI 读取状态与生成 preview 可以自动执行；真实桌面 mutation 必�
 3. Widget geometry 使用 monitor-relative normalized coordinates；
 4. Tool Result 必须返回真实执行结果，模型不能自行宣称成功；
 5. AI 不直接修改 private INI/store 作为公共控制接口；
-6. Settings、Editor、AI 最终调用同一 Desktop Control path；
-7. 更广泛的编辑能力在开放前应有 transaction/undo strategy。
+6. Settings 与 AI 必须通过同一 Desktop Control path；
+7. 当前不为 Wallpaper/Scene/Widget Editor 预留 mutation 模型；更广泛编辑能力只有未来重新立项后才设计。
 
 ## 7. Desktop Composition
 
@@ -106,7 +106,7 @@ AI 读取状态与生成 preview 可以自动执行；真实桌面 mutation 必�
 Desktop Composition
 ├─ Wallpaper Layer
 ├─ Widget Layer
-└─ Control Layer (Settings / Editor / AI)
+└─ Control Layer (Settings / AI)
 ```
 
 Widget 是独立产品对象：换壁纸不能删除 Widget。AI 是 Desktop Control 的 client，不拥有 Wallpaper/Widget persistence。

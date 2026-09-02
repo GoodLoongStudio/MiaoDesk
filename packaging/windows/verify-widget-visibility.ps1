@@ -125,7 +125,7 @@ try {
     [IO.File]::WriteAllText($manifest, $manifestText, [Text.UnicodeEncoding]::new($false, $true))
     Wait-WidgetCount 1 $true
 
-    $second = $manifestText.Replace('Ids=ci-visible-widget', 'Ids=ci-visible-widget,ci-created-widget') + @"
+    $second = $manifestText.Replace('Ids=ci-visible-widget', 'Ids=ci-visible-widget;ci-created-widget') + @"
 
 [Widget.ci-created-widget]
 Kind=native

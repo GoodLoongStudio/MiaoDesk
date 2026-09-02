@@ -145,72 +145,6 @@ bool HasEnabledNativeWidgets() {
     return false;
 }
 
-const MonitorInfo* PrimaryMonitor(const MonitorTopology& topology) {
-    for (const auto& monitor : topology.monitors) if (monitor.primary) return &monitor;
-    return topology.monitors.empty() ? nullptr : &topology.monitors.front();
-}
-
-RECT WidgetRegionInDesktop(const MonitorInfo& monitor, const DesktopWidget& widget) {
-    const LONG monitorWidth = std::max<LONG>(1, monitor.desktopRect.right - monitor.desktopRect.left);
-    const LONG monitorHeight = std::max<LONG>(1, monitor.desktopRect.bottom - monitor.desktopRect.top);
-    RECT region{};
-    region.left = monitor.desktopRect.left + static_cast<LONG>(std::lround(widget.x * monitorWidth));
-    region.top = monitor.desktopRect.top + static_cast<LONG>(std::lround(widget.y * monitorHeight));
-    region.right = region.left + static_cast<LONG>(std::lround(widget.width * monitorWidth));
-    region.bottom = region.top + static_cast<LONG>(std::lround(widget.height * monitorHeight));
-    return region;
-}
-
-std::vector<WebWallpaperRequest> DesiredWidgetRequests(std::wstring& fingerprint) {
-    fingerprint.clear();
-    std::vector<WebWallpaperRequest> requests;
-
-    DesktopWidgetStore store;
-    std::wstring ignored;
-    if (!store.Load(&ignored)) return requests;
-    const MonitorTopology topology = QueryMonitorTopology();
-    if (!topology.Valid()) return requests;
-
-    struct RankedRequest {
-        int z{};
-        WebWallpaperRequest request;
-        std::wstring revision;
-    };
-    std::vector<RankedRequest> ranked;
-    for (const auto& raw : store.Items()) {
-        const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
-        if (!widget.enabled || widget.kind != DesktopWidgetKind::Web ||
-            !WebWallpaperProcessSet::IsSupportedSource(widget.source.wstring())) continue;
-
-        const MonitorInfo* monitor = widget.monitorId.empty()
-            ? PrimaryMonitor(topology)
-            : FindMonitorByStableId(topology, widget.monitorId);
-        if (!monitor) continue;
-
-        WebWallpaperRequest request;
-        request.region = WidgetRegionInDesktop(*monitor, widget);
-        request.source = widget.source.wstring();
-        request.itemId = L"widget-" + widget.id;
-        request.muted = true;
-        if (request.region.right <= request.region.left || request.region.bottom <= request.region.top) continue;
-
-        std::error_code ec;
-        const auto writeTime = fs::last_write_time(widget.source, ec);
-        const auto revision = ec ? 0LL : static_cast<long long>(writeTime.time_since_epoch().count());
-        ranked.push_back({widget.zIndex, std::move(request), widget.id + L":" + std::to_wstring(revision)});
-    }
-
-    std::stable_sort(ranked.begin(), ranked.end(), [](const RankedRequest& a, const RankedRequest& b) {
-        return a.z < b.z;
-    });
-    requests.reserve(ranked.size());
-    for (auto& item : ranked) {
-        fingerprint += item.revision + L";";
-        requests.push_back(std::move(item.request));
-    }
-    return requests;
-}
-
 bool SameRequest(const WebWallpaperRequest& a, const WebWallpaperRequest& b) {
     return a.region.left == b.region.left && a.region.top == b.region.top &&
            a.region.right == b.region.right && a.region.bottom == b.region.bottom &&
@@ -286,7 +220,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
         HWND host = nullptr;
         HWND surfaceParent = nullptr;
         std::vector<WebWallpaperRequest> activeRequests;
-        std::wstring activeFingerprint;
         RuntimeState state;
         ULONGLONG nextRefresh = 0;
         ULONGLONG nextStackRepair = 0;
@@ -381,7 +314,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 surfaces.Stop();
                 if (scope == WallpaperWebRuntimeScope::Widgets && parentIdentityChanged) nativeSurfaces.Stop();
                 activeRequests.clear();
-                activeFingerprint.clear();
                 nextRefresh = 0;
                 resetRecovery();
             }
@@ -406,26 +338,21 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     }
                 }
 
-                std::wstring fingerprint;
+                // Web widgets no longer exist: the Widgets scope drives only the
+                // native widget host and never produces web surface requests.
                 std::vector<WebWallpaperRequest> desired;
-                if (scope == WallpaperWebRuntimeScope::Widgets) {
-                    const auto desiredDesktop = DesiredWidgetRequests(fingerprint);
-                    desired = MapRequestsToParent(HWND_DESKTOP, surfaceParent, desiredDesktop);
-                } else {
+                if (scope == WallpaperWebRuntimeScope::WebWallpaper) {
                     const auto desiredInHost = DesiredRequests(host, state);
                     desired = MapRequestsToParent(host, surfaceParent, desiredInHost);
                 }
 
-                const bool changed = !SameRequests(desired, activeRequests) ||
-                                     (scope == WallpaperWebRuntimeScope::Widgets && fingerprint != activeFingerprint);
+                const bool changed = !SameRequests(desired, activeRequests);
                 bool stackRepairNeeded = false;
                 if (changed) {
                     if (!SameRequests(desired, activeRequests) && surfaces.Active() && surfaces.Reposition(desired)) {
                         activeRequests = std::move(desired);
-                        activeFingerprint = std::move(fingerprint);
                     } else {
                         activeRequests = std::move(desired);
-                        activeFingerprint = std::move(fingerprint);
                         resetRecovery();
                         startRequests(now, false);
                         stackRepairNeeded = true;

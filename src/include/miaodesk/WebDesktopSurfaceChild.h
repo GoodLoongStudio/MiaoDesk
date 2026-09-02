@@ -4,10 +4,11 @@
 
 namespace miaodesk::wallpaper {
 
-// Canonical isolated WebView2 desktop-surface entry point. Wallpaper surfaces
-// remain click-through; Widget surfaces expose a full-surface native drag layer
-// and persist their normalized monitor-local desktop position.
-// Drag geometry stays in Win32 LONG coordinates for ARM64/MSVC parity.
+// Canonical isolated WebView2 desktop-surface entry point for Web wallpapers.
+// Wallpaper surfaces remain click-through children of the desktop shell band.
+// The surface properties below are the shared lifecycle telemetry contract:
+// Native widget surfaces (role 2) report the same Ready properties plus
+// MiaoDesk.Native.WidgetPaintReady. Wallpaper surfaces report role 1.
 // Returns -1 when the command line is not a Web desktop-surface invocation.
 int TryRunWebDesktopSurfaceChild(HINSTANCE instance);
 

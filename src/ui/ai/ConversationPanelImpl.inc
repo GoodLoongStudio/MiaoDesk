@@ -363,10 +363,6 @@ std::wstring FriendlyToolName(const std::wstring& raw) {
     if (raw == L"wallpaper_create_web_package") return L"制作动态壁纸";
     if (raw == L"wallpaper_validate_package") return L"检查壁纸包";
     if (raw == L"wallpaper_state_get") return L"读取桌面状态";
-    if (raw == L"wallpaper_apply_web_package") return L"应用动态壁纸";
-    if (raw == L"desktop_widget_create_web") return L"创建桌面组件";
-    if (raw == L"desktop_widget_update") return L"调整桌面组件";
-    if (raw == L"desktop_widget_remove") return L"移除桌面组件";
     if (raw == L"desktop_widget_list") return L"查看桌面组件";
     if (raw == L"read") return L"读取文件";
     if (raw == L"write" || raw == L"edit") return L"编辑文件";
@@ -739,25 +735,6 @@ void SendPrompt(ConversationState& state) {
             AppendCompleted(state, typedPrompt, UserFacingLocalReply(lower, state, localReply));
             return;
         }
-    }
-
-    if (!retry && widget_intent::LooksLikeOneSentenceWidgetRequest(actualPrompt)) {
-        const auto preview = preview::ShowWidgetPreviewForPrompt(state.window, actualPrompt);
-        ChatEntry userEntry{EntryKind::User, typedPrompt, CurrentTimeText()};
-        userEntry.attachments = std::move(attachments);
-        state.entries.push_back(std::move(userEntry));
-        ChatEntry reply{EntryKind::Assistant, preview.message.empty() ? L"已完成。" : preview.message, CurrentTimeText()};
-        if (!preview.previewId.empty()) {
-            ChatArtifact artifact;
-            artifact.kind = ChatArtifactKind::OpenPreview;
-            artifact.path = preview.previewId;
-            artifact.title = L"小组件预览";
-            artifact.subtitle = L"点击打开";
-            reply.artifacts.push_back(std::move(artifact));
-        }
-        state.entries.push_back(std::move(reply));
-        InvalidateConversation(state, true);
-        return;
     }
 
     if (!state.agent->HasApiKey()) {

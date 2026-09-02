@@ -108,7 +108,6 @@ public:
 
     static DesktopSurfaceRole InferRole(HWND window) noexcept;
     static bool IsWidgetNativeSurface(HWND window) noexcept;
-    static bool IsWidgetWebSurface(HWND window) noexcept;
     static const wchar_t* ModeKey(DesktopShellMode mode) noexcept;
     static const wchar_t* RoleKey(DesktopSurfaceRole role) noexcept;
     static bool SelfTest() noexcept;

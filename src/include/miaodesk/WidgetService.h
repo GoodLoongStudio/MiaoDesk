@@ -16,16 +16,6 @@ struct WidgetServiceResult {
     std::wstring message;
 };
 
-struct WebWidgetCreateRequest {
-    std::wstring title{L"Desktop Widget"};
-    std::string htmlUtf8;
-    std::wstring monitorId;
-    float x{0.68f};
-    float y{0.05f};
-    float width{0.28f};
-    float height{0.18f};
-};
-
 struct NativeWidgetCreateRequest {
     wallpaper::NativeWidgetPreset preset{wallpaper::NativeWidgetPreset::GlassClock};
     std::wstring title;
@@ -39,20 +29,18 @@ struct NativeWidgetCreateRequest {
 struct WidgetUpdateRequest {
     std::wstring id;
     std::optional<std::wstring> title;
-    std::optional<std::string> htmlUtf8;
     std::optional<std::wstring> monitorId;
     std::optional<float> x;
     std::optional<float> y;
     std::optional<float> width;
     std::optional<float> height;
-    std::optional<int> zIndex;
     std::optional<bool> enabled;
 };
 
 // One configured Widget matched to its live desktop surface. Runtime inspection
 // remains owned by the Widget domain. UI/Pi receive both machine-readable
 // issueCode and human-readable recommendedAction so callers never need to infer
-// remediation from HWND/WebView2/Native rendering implementation details.
+// remediation from HWND/Native rendering implementation details.
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
     std::wstring monitorId;
@@ -76,12 +64,6 @@ struct WidgetSurfaceHealth {
     int actualTop{};
     int actualRight{};
     int actualBottom{};
-    bool environmentReady{};
-    bool environmentReported{};
-    bool controllerReady{};
-    bool controllerReported{};
-    bool navigationReady{};
-    bool navigationReported{};
     bool zOrderValid{};
     bool zOrderReported{};
     bool renderingHealthy{};
@@ -99,14 +81,14 @@ struct WidgetSurfaceHealth {
 // DesktopSnapshot rather than reading wallpaper.ini or enumerating HWNDs.
 struct WidgetRuntimeHealth {
     std::size_t configuredCount{};
-    std::size_t enabledWebCount{};
+    std::size_t enabledCount{};
     bool runtimeReported{};
     bool runtimeHealthy{};
     std::vector<WidgetSurfaceHealth> surfaces;
     std::wstring detail;
 
     bool Healthy() const noexcept {
-        return enabledWebCount == 0 || (runtimeReported && runtimeHealthy);
+        return enabledCount == 0 || (runtimeReported && runtimeHealthy);
     }
 };
 
@@ -114,9 +96,6 @@ struct WidgetRuntimeHealth {
 // this boundary rather than a public UI/AI product API.
 class WidgetService {
 public:
-    WidgetServiceResult CreateWeb(
-        const WebWidgetCreateRequest& request,
-        wallpaper::DesktopWidget* created = nullptr) const;
     WidgetServiceResult CreateNative(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;

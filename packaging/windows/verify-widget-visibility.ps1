@@ -95,9 +95,7 @@ X=0.05
 Y=0.05
 Width=0.25
 Height=0.20
-ZIndex=100
 Enabled=1
-ManagedSource=0
 "@
 [IO.File]::WriteAllText($manifest, $manifestText, [Text.UnicodeEncoding]::new($false, $true))
 New-Item -ItemType Directory -Force -Path (Split-Path $wallpaperIni -Parent) | Out-Null
@@ -136,9 +134,7 @@ X=0.35
 Y=0.05
 Width=0.25
 Height=0.30
-ZIndex=101
 Enabled=1
-ManagedSource=0
 "@
     [IO.File]::WriteAllText($manifest, $second, [Text.UnicodeEncoding]::new($false, $true))
     Wait-WidgetCount 2 $true

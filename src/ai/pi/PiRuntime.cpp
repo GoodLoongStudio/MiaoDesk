@@ -484,7 +484,8 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"Pure conversational replies are allowed only for greetings, clarification, or explaining prior tool results. "
         L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
         L"Never claim an action succeeded unless the tool result confirms it. "
-        L"Desktop wallpaper/widget changes are preview-first: use desktop_preview_wallpaper or desktop_preview_widget, and never claim the desktop was applied until the user clicks Apply.";
+        L"Desktop wallpaper changes are preview-first: use desktop_preview_wallpaper, and never claim the desktop was applied until the user clicks Apply. "
+        L"Desktop widgets are native-only presets; list them with desktop_widget_list instead of trying to generate one.";
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
     // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.
@@ -492,7 +493,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"read,bash,edit,write,grep,find,ls,"
         L"settings_open,ppt_create,file_create,folder_list,file_open,image_generate,"
         L"wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,"
-        L"desktop_preview_widget,desktop_preview_wallpaper,desktop_preview_examples";
+        L"desktop_preview_wallpaper,desktop_preview_examples";
 
     std::wstring extensionPath;
     if (!EnsurePiNativeToolsExtension(&error, &extensionPath) || extensionPath.empty()) {

@@ -56,9 +56,8 @@ Examples include:
 
 - searching applications or files;
 - enumerating desktop state;
-- reading wallpaper/widget configuration;
-- applying wallpaper;
-- creating, showing, hiding, moving, or removing widgets;
+- reading wallpaper/widget state;
+- previewing and applying wallpaper;
 - changing automation/performance settings;
 - opening files, folders, or applications;
 - moving/copying/deleting files;
@@ -148,7 +147,7 @@ Tool cards should expose user-meaningful information, not protocol details.
 Bad:
 
 ```text
-desktop_widget_update
+desktop_widget_list
 args={...}
 RPC pending
 ```

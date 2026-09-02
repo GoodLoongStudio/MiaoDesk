@@ -75,7 +75,9 @@ artifact upload
 - Direct2D + DIB + premultiplied alpha；
 - `UpdateLayeredWindow`；
 - `PaintReady` 真实呈现标记；
-- CI PaintReady smoke。
+- CI PaintReady smoke；
+- Web Widget（WebView2 承载组件）与 AI 组件生成链（A2UI 预览/应用）已整体移除，旧编辑器状态字段 `zIndex`/`managedSource` 已删除；
+- Widget 位于 Desktop Icons 之上的 z-order 修复与 CI 可见性断言（`verify-widget-visibility.ps1`）。
 
 ### 2.3 Search / AI
 
@@ -104,40 +106,20 @@ packaging/windows/
 
 ## 3. 当前必须承认的实现偏差
 
-### P0-1：Widget z-order 与设计基线不一致
+Widget z-order（Widget 在 Desktop Icons 之上、可交互）与 click-through 归属（只属于 Wallpaper Surface）是产品确认的最终契约，代码、遥测与 CI 均按此判断，不再作为偏差项。
 
-设计：
-
-```text
-Desktop Icons
-  > Widgets
-  > Wallpaper
-```
-
-当前实现为了直接拖动，仍存在把 Widget 放到 Desktop Icons 上方的逻辑。
-
-这必须修正，不能继续让健康检查把错误层级当成正确状态。
-
-### P0-2：Widget 默认命中模型不正确
-
-设计要求正常状态 click-through，只有移动模式临时捕获输入。
-
-当前 Native Widget Surface 本身仍直接处理鼠标拖动。
-
-目标：新增轻量 `WidgetMoveOverlay` 或等价的临时交互 Surface，展示 Surface 与交互 Surface 分离。
-
-### P0-3：Widget 视觉验证仍需真实机器闭环
+### P0-1：Widget 视觉验证仍需真实机器闭环
 
 CI 已从“HWND 可见”升级到 `PaintReady`，但最终仍需要真实 Windows 多 DPI / 多显示器验证：
 
 - 组件内容完整；
 - alpha 正确；
 - 不漏出错误背景；
-- 不遮挡桌面图标；
+- Widget 位于 Desktop Icons 之上且可交互；
 - 跨 DPI 不裁切；
 - Explorer 重建后恢复。
 
-### P0-4：Wallpaper 停用必须形成回归门禁
+### P0-2：Wallpaper 停用必须形成回归门禁
 
 停用必须是幂等状态：
 
@@ -165,47 +147,26 @@ Enabled=0
 
 完成标准：仓库搜索 Editor 时不再出现旧 Wallpaper Editor 架构承诺。
 
-### Phase 1 — Desktop Shell 正确性
-
-优先级：最高。
-
-目标：把桌面层级一次性修正确。
-
-1. 正常 z-order 改为 Icons > Widgets > Wallpaper；
-2. `DesktopSurfaceTelemetry` 按新不变式判断；
-3. `DesktopShellHost::RepairRoleOrder` 不再把 Widget 固定置顶到 Icons 上方；
-4. Explorer restart / display topology change 后按同一规则恢复；
-5. 增加真实 z-order smoke。
-
-### Phase 2 — Widget Interaction 分离
-
-1. Native Widget 展示 Surface 默认 `WS_EX_TRANSPARENT` / click-through；
-2. 新增临时 Widget Move Mode；
-3. Move Overlay 捕获鼠标；
-4. 拖动结束只持久化 normalized `x/y`；
-5. Overlay 销毁后恢复完全 click-through；
-6. Native Preset 的 width/height 在领域层锁定，普通 Update 不得随意修改。
-
-### Phase 3 — Wallpaper 稳定性
+### Phase 1 — Wallpaper 稳定性
 
 1. 激活 / 停用形成明确状态机；
 2. stop/reload/Explorer repair 幂等；
 3. Image / Video / Web / Scene 分类型 smoke；
 4. 多显示器启停；
-5. 停用 Wallpaper 后 Widgets 独立存活；
-6. 删除仍属于旧编辑器流程的状态字段和入口。
+5. 停用 Wallpaper 后 Widgets 独立存活。
 
-### Phase 4 — Widget 稳定性与性能
+### Phase 2 — Widget 稳定性与性能
 
 1. 三个 Native Painter 分别做真实视觉验收；
 2. 多 DPI / 竖屏 / 横屏；
-3. 组件刷新只按需要进行，避免无意义轮询；
-4. Weather event-driven；
-5. Clock 按分钟边界刷新；
-6. Tasks 无变化不重绘；
-7. 对常驻内存、CPU、句柄数建立基线。
+3. Native Preset 的 width/height 在领域层锁定，普通 Update 不得随意修改；
+4. 组件刷新只按需要进行，避免无意义轮询；
+5. Weather event-driven；
+6. Clock 按分钟边界刷新；
+7. Tasks 无变化不重绘；
+8. 对常驻内存、CPU、句柄数建立基线。
 
-### Phase 5 — 工程继续精简
+### Phase 3 — 工程继续精简
 
 1. Runtime V3 C++ canonical path 完成；
 2. 删除 Pi / DSH compatibility shim；
@@ -214,7 +175,7 @@ Enabled=0
 5. 保持三个正式 EXE，不重新增加 acceptance/test 可执行程序；
 6. 不为“目录好看”移动高风险 runtime ownership。
 
-### Phase 6 — Search / AI 体验
+### Phase 4 — Search / AI 体验
 
 桌面核心稳定后再继续：
 
@@ -226,7 +187,7 @@ Enabled=0
 
 AI 不应成为 Wallpaper / Widget 稳定性的前置依赖。
 
-### Phase 7 — ARM64
+### Phase 5 — ARM64
 
 x64 产品链稳定后：
 
@@ -273,13 +234,12 @@ Widget 自定义编辑器
 
 ```text
 1. Widget 内容完整显示
-2. Icons > Widget > Wallpaper 层级正确
-3. Widget 正常状态完全 click-through
-4. Widget Move Mode 可拖动且只保存 x/y
-5. Wallpaper 可以可靠停用且不会被 reload 拉起
-6. Wallpaper 停用后 Widget 继续显示
-7. Explorer / DPI / 显示器变化后仍保持以上状态
-8. x64 installer 全绿并真实安装验证
+2. Widget 位于 Desktop Icons 之上、Wallpaper 之下
+3. Widget 可交互，拖动后只持久化 x/y
+4. Wallpaper 可以可靠停用且不会被 reload 拉起
+5. Wallpaper 停用后 Widget 继续显示
+6. Explorer / DPI / 显示器变化后仍保持以上状态
+7. x64 installer 全绿并真实安装验证
 ```
 
-在这 8 项稳定前，不重新扩展 Editor、复杂 Widget 类型或高级 Wallpaper 编辑能力。
+在这 7 项稳定前，不重新扩展 Editor、复杂 Widget 类型或高级 Wallpaper 编辑能力。

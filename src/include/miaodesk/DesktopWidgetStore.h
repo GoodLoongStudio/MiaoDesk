@@ -11,14 +11,13 @@
 namespace miaodesk::wallpaper {
 
 enum class DesktopWidgetKind {
-    Web,
     Native,
     Unknown,
 };
 
 struct DesktopWidget {
     std::wstring id;
-    DesktopWidgetKind kind{DesktopWidgetKind::Web};
+    DesktopWidgetKind kind{DesktopWidgetKind::Native};
     std::wstring title;
     std::filesystem::path source;
     std::wstring monitorId;
@@ -26,9 +25,7 @@ struct DesktopWidget {
     float y{0.05f};
     float width{0.28f};
     float height{0.18f};
-    int zIndex{100};
     bool enabled{true};
-    bool managedSource{false};
 };
 
 class DesktopWidgetStore {
@@ -43,15 +40,6 @@ public:
     std::optional<DesktopWidget> Find(std::wstring_view id) const;
 
     std::optional<DesktopWidget> Upsert(DesktopWidget widget, std::wstring* error = nullptr);
-    std::optional<DesktopWidget> CreateManagedWeb(
-        std::wstring title,
-        std::string_view htmlUtf8,
-        std::wstring monitorId = {},
-        float x = 0.68f,
-        float y = 0.05f,
-        float width = 0.28f,
-        float height = 0.18f,
-        std::wstring* error = nullptr);
     std::optional<DesktopWidget> CreateManagedNative(
         NativeWidgetPreset preset,
         std::wstring title = {},
@@ -61,8 +49,7 @@ public:
         float width = 0.28f,
         float height = 0.18f,
         std::wstring* error = nullptr);
-    bool UpdateManagedHtml(std::wstring_view id, std::string_view htmlUtf8, std::wstring* error = nullptr);
-    bool Remove(std::wstring_view id, bool deleteManagedSource = true, std::wstring* error = nullptr);
+    bool Remove(std::wstring_view id, std::wstring* error = nullptr);
 
     const std::filesystem::path& Root() const noexcept;
     std::filesystem::path ManifestPath() const;

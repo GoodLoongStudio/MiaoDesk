@@ -46,21 +46,25 @@ Windows Shell APIs
 
 Wallpaper 与 Widgets 是两个独立层，由同一个 `DesktopShellHost` 负责 Windows Shell 挂载、恢复和层级管理。
 
-正常桌面的逻辑层级：
+正常桌面的逻辑层级（自上而下）：
 
 ```text
-Desktop Icons
+Native Widgets       可交互，直接接收鼠标输入
 ─────────────
-Native Widgets       默认 click-through
+Desktop Icons
 ─────────────
 Wallpaper
 ─────────────
 Windows Background / WorkerW
 ```
 
+对齐 Windows 官方小组件模型（Win7 Desktop Gadgets / Windows 11 Widgets）：组件是可交互 Surface，始终位于图标层之上。
+
 必须满足：
 
-- 桌面图标始终可点击、可框选、可右键；
+- Widget 始终位于 Desktop Icons 之上、普通应用窗口之下；
+- Widget 默认可交互（不设置 `WS_EX_TRANSPARENT`），Wallpaper Surface 默认 click-through；
+- 桌面图标在 Widget 未覆盖的区域始终可点击、可框选、可右键；
 - Widget 不属于某张 Wallpaper；
 - 切换 Wallpaper 不销毁 Widget；
 - 停用 Wallpaper 后 Widget 仍正常显示；
@@ -112,7 +116,7 @@ Scene
 
 ## 5. Widget 设计基线
 
-当前默认 Widget 为 Native Widget：
+Widget 只提供 Native Widget（Web Widget / WebView2 承载组件已整体移除，AI 不能创建或修改组件，只能通过 `desktop_widget_list` 读取状态）：
 
 ```text
 玻璃时钟    GlassClock
@@ -143,7 +147,7 @@ HWND exists
 parent valid
 style valid
 geometry valid
-z-order valid
+z-order valid（Widget 位于 Desktop Icons 之上）
 visible
 PaintReady
 last error
@@ -177,24 +181,19 @@ enabled
 
 ### 5.2 Widget 交互模型
 
-正常状态：
+正常状态（自上而下）：
 
 ```text
-Desktop Icons
-  > Widget Surface（click-through）
-  > Wallpaper
-```
-
-移动组件时，不改变长期 Surface 契约；进入临时移动模式：
-
-```text
-Widget Move Overlay
+Widget Surface（可交互）
   > Desktop Icons
-  > Widget Surface
   > Wallpaper
 ```
 
-Overlay 捕获拖动，结束后只提交归一化 `x/y`，随后销毁 Overlay，Widget 回到默认 click-through 状态。
+Widget Surface 直接接收鼠标输入：
+
+- 按住 Widget 表面拖动即移动组件，结束后只持久化归一化 `x/y`；
+- 不引入临时移动模式、Move Overlay 或其他额外交互 Surface；
+- Widget 不进入 click-through 状态；click-through 只属于 Wallpaper Surface。
 
 ## 6. Settings Center
 
@@ -210,7 +209,7 @@ API 配置
 
 Wallpaper 页面：资源库 + 激活/停用/删除等明确动作。
 
-Widget 页面：三款内置 Widget 的创建、激活、停用、删除与运行状态；位置主要通过桌面移动模式修改。
+Widget 页面：三款内置 Widget 的创建、激活、停用、删除与运行状态；位置通过在桌面上直接拖动修改。
 
 API 配置：Provider / Model / Base URL / API Key。
 
@@ -238,8 +237,8 @@ AI 不得进入 Wallpaper / Widget 的每帧渲染路径。
 - Wallpaper / Scene / Widget Editor；
 - Timeline / Keyframe / Inspector；
 - 以 Wallpaper Engine 全功能 parity 为开发清单；
-- Widget v1 默认 WebView2；
-- 默认常驻 Web Widget；
+- Web Widget（WebView2 承载的常驻组件）；
+- AI 生成/应用组件的 A2UI 预览链；
 - 编辑器和 AI 共用 typed property schema 的旧方案；
 - 为未来编辑器保留的 UI、导航和架构层。
 

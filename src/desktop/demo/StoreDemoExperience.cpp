@@ -3,11 +3,9 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetController.h"
-#include "miaodesk/GeneratedDesktopPreview.h"
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/ProductConfig.h"
 #include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WidgetIntentComposer.h"
 #include "miaodesk/WidgetService.h"
 
 #include <shlobj.h>
@@ -259,12 +257,6 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
         if (ContainsAny(lower, {L"三", L"全部", L"套装"})) {
             const auto result = EnsureShowcaseWidgets();
             *reply = result.success ? result.message : (L"创建小组件失败：" + result.message);
-            return true;
-        }
-        if (widget_intent::LooksLikeOneSentenceWidgetRequest(prompt)) {
-            HWND owner = FindWindowW(L"MiaoDesk.Native.SearchWindow", nullptr);
-            const auto preview = preview::ShowWidgetPreviewForPrompt(owner, prompt);
-            *reply = preview.message;
             return true;
         }
         desktop::DesktopWidgetController controller;

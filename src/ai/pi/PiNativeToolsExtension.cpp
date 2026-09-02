@@ -54,7 +54,6 @@ const TOOL_NAMES = [
   "wallpaper_validate_package",
   "wallpaper_state_get",
   "desktop_widget_list",
-  "desktop_preview_widget",
   "desktop_preview_wallpaper",
   "desktop_preview_examples",
 ] as const;
@@ -248,17 +247,6 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     "List current persistent widgets. This is read-only.",
     Type.Object({}, { additionalProperties: false }));
 
-  native("desktop_preview_widget", "Preview Desktop Widget",
-    "Create a sandbox preview of a proposed desktop widget. The AI must provide declarative A2UI JSON only: Card/Text/Button/Weather/List with props and normalized layout. NEVER output HTML, CSS, JavaScript, C++, PowerShell, shell commands, or executable code for this tool. This tool cannot apply the widget; only the user's native Apply button can commit it.",
-    Type.Object({
-      title: Type.String({ description: "User-facing preview title" }),
-      a2ui_json: Type.Optional(Type.String({ description: "Strict A2UI JSON document" })),
-      example_key: Type.Optional(Type.Union([
-        Type.Literal("today_tasks"), Type.Literal("focus_clock"),
-        Type.Literal("weather_glass"), Type.Literal("system_pulse"),
-      ])),
-    }, { additionalProperties: false }));
-
   native("desktop_preview_wallpaper", "Preview Desktop Wallpaper",
     "Create a sandbox preview of a wallpaper without changing the current desktop. Dynamic wallpapers use application-owned safe presets; image/video can reference an existing local file. Only the user's native Apply button can commit it.",
     Type.Object({
@@ -271,14 +259,14 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     }, { additionalProperties: false }));
 
   native("desktop_preview_examples", "List Desktop Showcase Examples",
-    "List built-in wallpaper and widget examples. Examples use the exact same sandbox and Apply/Reject path as AI-generated content.",
+    "List built-in wallpaper examples. Examples use the exact same sandbox and Apply/Reject path as AI-generated content.",
     Type.Object({}, { additionalProperties: false }));
 
   pi.on("session_start", () => activateNativeTools(pi));
   pi.on("before_agent_start", async (event) => {
     activateNativeTools(pi);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change a desktop wallpaper or widget, use desktop_preview_wallpaper or desktop_preview_widget. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Widget generation must be declarative A2UI JSON only. Allowed component types: Card, Text, Button, Weather, List. Do not generate HTML/CSS/JavaScript/C++/PowerShell for widgets.\n- For one-sentence widget requests (for example \"add a todo widget at the top right\"), call desktop_preview_widget immediately with a concise A2UI Card instead of asking follow-up questions.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow; widgets today_tasks, focus_clock, weather_glass, system_pulse.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
+      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change the desktop wallpaper, use desktop_preview_wallpaper. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Desktop widgets are native-only presets. To inspect them use desktop_widget_list; never generate widget HTML/CSS/JavaScript or claim you can create widgets.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
     };
   });
 }

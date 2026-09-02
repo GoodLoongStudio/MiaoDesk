@@ -52,9 +52,6 @@ public:
         std::wstring_view friendlyName = {}) const;
     DesktopControlResult ClearMonitorAssignment(std::wstring_view monitorId) const;
 
-    DesktopControlResult CreateWebWidget(
-        const WebWidgetCreateRequest& request,
-        wallpaper::DesktopWidget* created = nullptr) const;
     DesktopControlResult CreateNativeWidget(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;

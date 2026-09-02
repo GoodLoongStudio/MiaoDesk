@@ -92,21 +92,6 @@ bool WriteText(const fs::path& path, const std::wstring& section,
     return WritePrivateProfileStringW(section.c_str(), key, value.c_str(), path.c_str()) != FALSE;
 }
 
-bool IsHtmlSource(const fs::path& path) {
-    std::wstring extension = path.extension().wstring();
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](wchar_t ch) {
-        return static_cast<wchar_t>(std::towlower(ch));
-    });
-    return extension == L".html" || extension == L".htm";
-}
-
-bool WriteUtf8(const fs::path& path, std::string_view value) {
-    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-    if (!stream) return false;
-    stream.write(value.data(), static_cast<std::streamsize>(value.size()));
-    return static_cast<bool>(stream);
-}
-
 bool IsLostLegacyTitle(std::wstring_view title) {
     bool sawQuestion = false;
     for (const wchar_t ch : title) {
@@ -117,15 +102,6 @@ bool IsLostLegacyTitle(std::wstring_view title) {
         if (!std::iswspace(ch)) return false;
     }
     return sawQuestion;
-}
-
-bool LooksLikeClockWidget(const fs::path& source) {
-    std::ifstream stream(source, std::ios::binary);
-    if (!stream) return false;
-    std::string html((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-    if (html.size() > 256 * 1024) html.resize(256 * 1024);
-    return html.find("toLocaleTimeString") != std::string::npos &&
-           html.find("id=\"time\"") != std::string::npos;
 }
 
 constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\MiaoDesk.DesktopWidgetStore.v1";
@@ -175,7 +151,6 @@ fs::path DesktopWidgetStore::PackageDirectory() const { return root_ / L"Package
 
 const wchar_t* DesktopWidgetStore::KindKey(DesktopWidgetKind kind) noexcept {
     switch (kind) {
-    case DesktopWidgetKind::Web: return L"web";
     case DesktopWidgetKind::Native: return L"native";
     case DesktopWidgetKind::Unknown:
     default: return L"unknown";
@@ -183,7 +158,6 @@ const wchar_t* DesktopWidgetStore::KindKey(DesktopWidgetKind kind) noexcept {
 }
 
 DesktopWidgetKind DesktopWidgetStore::ParseKind(std::wstring_view value) noexcept {
-    if (_wcsicmp(std::wstring(value).c_str(), L"web") == 0) return DesktopWidgetKind::Web;
     if (_wcsicmp(std::wstring(value).c_str(), L"native") == 0) return DesktopWidgetKind::Native;
     return DesktopWidgetKind::Unknown;
 }
@@ -195,7 +169,6 @@ DesktopWidget DesktopWidgetStore::Normalize(DesktopWidget widget) {
     widget.height = std::clamp(widget.height, 0.05f, 1.0f);
     if (widget.x + widget.width > 1.0f) widget.width = 1.0f - widget.x;
     if (widget.y + widget.height > 1.0f) widget.height = 1.0f - widget.y;
-    widget.zIndex = std::clamp(widget.zIndex, -1000, 1000);
     if (widget.title.empty()) widget.title = L"Desktop Widget";
     return widget;
 }
@@ -246,7 +219,7 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         const std::wstring section = L"Widget." + id;
         DesktopWidget widget;
         widget.id = id;
-        widget.kind = ParseKind(ReadText(manifest, section, L"Kind", L"web"));
+        widget.kind = ParseKind(ReadText(manifest, section, L"Kind", L"native"));
         widget.title = ReadText(manifest, section, L"Title", L"Desktop Widget");
         widget.source = ReadText(manifest, section, L"Source", L"");
         widget.monitorId = ReadText(manifest, section, L"MonitorId", L"");
@@ -254,18 +227,13 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         widget.y = ReadFloat(manifest, section, L"Y", 0.05f);
         widget.width = ReadFloat(manifest, section, L"Width", 0.28f);
         widget.height = ReadFloat(manifest, section, L"Height", 0.18f);
-        widget.zIndex = ReadInt(manifest, section, L"ZIndex", 100);
         widget.enabled = ReadInt(manifest, section, L"Enabled", 1) != 0;
-        widget.managedSource = ReadInt(manifest, section, L"ManagedSource", 0) != 0;
 
         NativeWidgetPreset nativePreset{};
         if (widget.kind == DesktopWidgetKind::Native &&
             ParseNativePreset(widget.source.wstring(), &nativePreset) &&
             IsLostLegacyTitle(widget.title)) {
             widget.title = NativePresetTitle(nativePreset);
-            repairedText = true;
-        } else if (legacyAnsi && widget.managedSource && IsLostLegacyTitle(widget.title)) {
-            widget.title = LooksLikeClockWidget(widget.source) ? L"桌面时钟" : L"桌面小组件";
             repairedText = true;
         }
         widget = Normalize(std::move(widget));
@@ -340,9 +308,7 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
         ok = WriteText(temporary, section, L"Y", FloatText(widget.y)) && ok;
         ok = WriteText(temporary, section, L"Width", FloatText(widget.width)) && ok;
         ok = WriteText(temporary, section, L"Height", FloatText(widget.height)) && ok;
-        ok = WriteText(temporary, section, L"ZIndex", std::to_wstring(widget.zIndex)) && ok;
         ok = WriteText(temporary, section, L"Enabled", widget.enabled ? L"1" : L"0") && ok;
-        ok = WriteText(temporary, section, L"ManagedSource", widget.managedSource ? L"1" : L"0") && ok;
         if (!ok) {
             DeleteFileW(temporary.c_str());
             if (error) *error = L"Unable to save desktop widget: " + widget.id;
@@ -374,32 +340,19 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
         return std::nullopt;
     }
     widget = Normalize(std::move(widget));
-    if (widget.kind == DesktopWidgetKind::Native) {
-        if (!IsNativePresetSource(widget.source.wstring())) {
-            if (error) *error = L"Desktop native widget source is invalid.";
-            return std::nullopt;
-        }
-    } else if (widget.kind != DesktopWidgetKind::Web || widget.source.empty() || !IsHtmlSource(widget.source)) {
-        if (error) *error = L"Desktop widget currently requires a local HTML source.";
+    if (widget.kind != DesktopWidgetKind::Native || !IsNativePresetSource(widget.source.wstring())) {
+        if (error) *error = L"Desktop native widget source is invalid.";
         return std::nullopt;
-    } else {
-        std::error_code ec;
-        if (!fs::exists(widget.source, ec) || !fs::is_regular_file(widget.source, ec)) {
-            if (error) *error = L"Desktop widget HTML source does not exist.";
-            return std::nullopt;
-        }
     }
 
-    if (widget.kind == DesktopWidgetKind::Native) {
-        const std::wstring singletonKey = NativeSingletonKey(widget);
-        const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
-            return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
-                   NativeSingletonKey(existing) == singletonKey;
-        });
-        if (duplicate != items_.end()) {
-            if (error) *error = L"This native widget preset already exists on the target monitor.";
-            return std::nullopt;
-        }
+    const std::wstring singletonKey = NativeSingletonKey(widget);
+    const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
+        return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
+               NativeSingletonKey(existing) == singletonKey;
+    });
+    if (duplicate != items_.end()) {
+        if (error) *error = L"This native widget preset already exists on the target monitor.";
+        return std::nullopt;
     }
 
     const auto index = FindIndex(widget.id);
@@ -407,46 +360,6 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
     else items_.push_back(widget);
     if (!Save(error)) return std::nullopt;
     return widget;
-}
-
-std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedWeb(
-    std::wstring title, std::string_view htmlUtf8, std::wstring monitorId,
-    float x, float y, float width, float height, std::wstring* error) {
-    if (error) error->clear();
-    if (htmlUtf8.empty()) {
-        if (error) *error = L"Desktop widget HTML is empty.";
-        return std::nullopt;
-    }
-
-    DesktopWidget widget;
-    widget.id = MakeId();
-    widget.kind = DesktopWidgetKind::Web;
-    widget.title = title.empty() ? L"AI Desktop Widget" : std::move(title);
-    widget.monitorId = std::move(monitorId);
-    widget.x = x;
-    widget.y = y;
-    widget.width = width;
-    widget.height = height;
-    widget.managedSource = true;
-    widget = Normalize(std::move(widget));
-
-    std::error_code ec;
-    const fs::path package = PackageDirectory() / (widget.id + L".tdwidget");
-    fs::create_directories(package, ec);
-    if (ec) {
-        if (error) *error = L"Unable to create managed desktop widget package.";
-        return std::nullopt;
-    }
-    widget.source = package / L"index.html";
-    if (!WriteUtf8(widget.source, htmlUtf8)) {
-        fs::remove_all(package, ec);
-        if (error) *error = L"Unable to write desktop widget HTML.";
-        return std::nullopt;
-    }
-
-    const auto saved = Upsert(widget, error);
-    if (!saved) fs::remove_all(package, ec);
-    return saved;
 }
 
 std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedNative(
@@ -464,12 +377,11 @@ std::optional<DesktopWidget> DesktopWidgetStore::CreateManagedNative(
     widget.y = y;
     widget.width = width;
     widget.height = height;
-    widget.managedSource = false;
     widget = Normalize(std::move(widget));
     return Upsert(widget, error);
 }
 
-bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_view htmlUtf8, std::wstring* error) {
+bool DesktopWidgetStore::Remove(std::wstring_view id, std::wstring* error) {
     if (error) error->clear();
     WidgetStoreMutexGuard storeLock;
     if (!EnsureStoreLock(storeLock, error)) return false;
@@ -480,50 +392,8 @@ bool DesktopWidgetStore::UpdateManagedHtml(std::wstring_view id, std::string_vie
         if (error) *error = L"Desktop widget was not found.";
         return false;
     }
-    const DesktopWidget& widget = items_[*index];
-    if (widget.kind == DesktopWidgetKind::Native) {
-        if (error) *error = L"Desktop native widget content is preset-owned and cannot be edited as HTML.";
-        return false;
-    }
-    if (!widget.managedSource || widget.source.empty() || htmlUtf8.empty()) {
-        if (error) *error = L"Desktop widget HTML is not managed by MiaoDesk or is empty.";
-        return false;
-    }
-
-    fs::path temporary = widget.source;
-    temporary += L".tmp";
-    if (!WriteUtf8(temporary, htmlUtf8)) {
-        if (error) *error = L"Unable to write updated desktop widget HTML.";
-        return false;
-    }
-    if (!MoveFileExW(temporary.c_str(), widget.source.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        std::error_code ec;
-        fs::remove(temporary, ec);
-        if (error) *error = L"Unable to replace desktop widget HTML.";
-        return false;
-    }
-    return true;
-}
-
-bool DesktopWidgetStore::Remove(std::wstring_view id, bool deleteManagedSource, std::wstring* error) {
-    if (error) error->clear();
-    WidgetStoreMutexGuard storeLock;
-    if (!EnsureStoreLock(storeLock, error)) return false;
-    std::wstring refreshError;
-    if (!Load(&refreshError)) { if (error) *error = refreshError; return false; }
-    const auto index = FindIndex(id);
-    if (!index) {
-        if (error) *error = L"Desktop widget was not found.";
-        return false;
-    }
-    const DesktopWidget removed = items_[*index];
     items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
-    if (!Save(error)) return false;
-    if (deleteManagedSource && removed.managedSource && SafeId(removed.id)) {
-        std::error_code ec;
-        fs::remove_all(PackageDirectory() / (removed.id + L".tdwidget"), ec);
-    }
-    return true;
+    return Save(error);
 }
 
 bool DesktopWidgetStore::SelfTest() {
@@ -536,17 +406,13 @@ bool DesktopWidgetStore::SelfTest() {
 
     DesktopWidgetStore store(root);
     std::wstring error;
-    const auto created = store.CreateManagedWeb(
-        L"桌面时钟", "<!doctype html><html><body><div id=\"time\"></div><script>new Date().toLocaleTimeString()</script></body></html>",
-        L"monitor-test", 0.1f, 0.2f, 0.3f, 0.4f, &error);
-    bool ok = created.has_value() && fs::exists(created->source, ec) && HasUtf16LeBom(store.ManifestPath());
-    const auto native = store.CreateManagedNative(
+    const auto created = store.CreateManagedNative(
         NativeWidgetPreset::GlassClock, L"原生时钟", L"monitor-test", 0.2f, 0.3f, 0.25f, 0.18f, &error);
-    ok = ok && native.has_value() && native->kind == DesktopWidgetKind::Native;
+    bool ok = created.has_value() && created->kind == DesktopWidgetKind::Native &&
+              HasUtf16LeBom(store.ManifestPath());
     const auto duplicateNative = store.CreateManagedNative(
         NativeWidgetPreset::GlassClock, L"重复原生时钟", L"monitor-test", 0.4f, 0.2f, 0.25f, 0.18f, &error);
     ok = ok && !duplicateNative.has_value();
-    if (native) ok = ok && store.Remove(native->id, false, &error);
     if (created) {
         DesktopWidget changed = *created;
         changed.x = 0.9f;
@@ -554,15 +420,16 @@ bool DesktopWidgetStore::SelfTest() {
         changed.enabled = false;
         const auto saved = store.Upsert(changed, &error);
         ok = ok && saved.has_value() && saved->width <= 0.1001f && !saved->enabled;
-        ok = ok && store.UpdateManagedHtml(created->id, "<!doctype html><html><body>UPDATED</body></html>", &error);
 
         DesktopWidgetStore reloaded(root);
         ok = ok && reloaded.Load(&error);
         const auto persisted = reloaded.Find(created->id);
-        ok = ok && persisted.has_value() && !persisted->enabled && persisted->managedSource &&
-             persisted->title == L"桌面时钟" && persisted->monitorId == L"monitor-test";
-        ok = ok && reloaded.Remove(created->id, true, &error);
-        ok = ok && !fs::exists(root / L"Packages" / (created->id + L".tdwidget"), ec);
+        ok = ok && persisted.has_value() && !persisted->enabled &&
+             persisted->title == L"原生时钟" && persisted->monitorId == L"monitor-test";
+        ok = ok && reloaded.Remove(created->id, &error);
+
+        DesktopWidgetStore reloadedAfterRemove(root);
+        ok = ok && reloadedAfterRemove.Load(&error) && !reloadedAfterRemove.Find(created->id).has_value();
     }
 
     fs::remove_all(root, ec);

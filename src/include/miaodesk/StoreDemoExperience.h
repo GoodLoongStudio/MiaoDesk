@@ -21,7 +21,7 @@ void MarkFirstRunCompleted();
 // Applies a built-in Scene showcase wallpaper through DesktopControlService.
 desktop::DesktopControlResult ApplyShowcaseWallpaper(std::wstring_view sceneId = L"scene-aurora");
 
-// Ensures the three fixed M3 widget presets exist (creates any missing ones).
+// Ensures the three fixed native widget presets exist (creates any missing ones).
 desktop::DesktopControlResult EnsureShowcaseWidgets();
 
 // Golden path: showcase wallpaper + three widgets + EnsureRuntime.

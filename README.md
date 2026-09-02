@@ -17,7 +17,7 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 Wallpaper、Widgets、Search Bar 属于常驻桌面路径，**Native C++ 与性能优先**。
 
 - Wallpaper：Image / Video / Web / Scene；Native 路径优先，Web 内容才按需启动 WebView2。
-- Widgets：默认三款内置组件走 Native C++ / Direct2D，不以 WebView2 作为常驻默认实现。
+- Widgets：三款内置组件全部 Native C++ / Direct2D；Web Widget（WebView2 承载组件）路径已整体移除。
 - Windows Shell：Progman / WorkerW / Raised Desktop / Explorer recovery 统一由 `DesktopShellHost` 管理。
 - 旧 Wallpaper / Scene / Widget Editor、Inspector、Timeline 和 Wallpaper Engine parity 路线已退出当前设计。
 

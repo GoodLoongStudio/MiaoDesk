@@ -149,7 +149,7 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
         << L" wallpaper.scene=" << snapshot.desktop.scene
         << L" wallpaper.layout=" << snapshot.desktop.layout
         << L" configuredWidgets=" << snapshot.widgets.size()
-        << L" enabledWeb=" << snapshot.widgetRuntime.enabledWebCount
+        << L" enabled=" << snapshot.widgetRuntime.enabledCount
         << L" runtimeReported=" << BoolText(snapshot.widgetRuntime.runtimeReported)
         << L" runtimeHealthy=" << BoolText(snapshot.widgetRuntime.runtimeHealthy)
         << L" detail=" << snapshot.widgetRuntime.detail << L"\n";
@@ -157,12 +157,10 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
     for (const auto& widget : snapshot.widgets) {
         log << L"config id=" << widget.id << L" title=\"" << widget.title << L"\""
             << L" enabled=" << BoolText(widget.enabled)
-            << L" kind=" << (widget.kind == wallpaper::DesktopWidgetKind::Web ? L"web"
-                : widget.kind == wallpaper::DesktopWidgetKind::Native ? L"native" : L"unknown")
+            << L" kind=" << (widget.kind == wallpaper::DesktopWidgetKind::Native ? L"native" : L"unknown")
             << L" monitor=\"" << (widget.monitorId.empty() ? L"<primary>" : widget.monitorId) << L"\""
             << L" x=" << widget.x << L" y=" << widget.y
             << L" width=" << widget.width << L" height=" << widget.height
-            << L" zIndex=" << widget.zIndex
             << L" source=\"" << widget.source.wstring() << L"\"\n";
     }
 
@@ -185,9 +183,6 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
             << surface.expectedRight << L',' << surface.expectedBottom << L']'
             << L" actual=[" << surface.actualLeft << L',' << surface.actualTop << L','
             << surface.actualRight << L',' << surface.actualBottom << L']'
-            << L" environment=" << BoolText(surface.environmentReported) << L'/' << BoolText(surface.environmentReady)
-            << L" controller=" << BoolText(surface.controllerReported) << L'/' << BoolText(surface.controllerReady)
-            << L" navigation=" << BoolText(surface.navigationReported) << L'/' << BoolText(surface.navigationReady)
             << L" zOrder=" << BoolText(surface.zOrderReported) << L'/' << BoolText(surface.zOrderValid)
             << L" renderingHealthy=" << BoolText(surface.renderingHealthy)
             << L" issue=\"" << surface.issueCode << L"\""

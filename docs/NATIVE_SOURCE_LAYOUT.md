@@ -19,6 +19,8 @@ src/
 ├─ harness/
 ├─ desktop/
 │  ├─ control/
+│  ├─ demo/
+│  ├─ preview/
 │  ├─ shell/
 │  ├─ wallpaper/
 │  │  ├─ runtime/
@@ -35,7 +37,6 @@ src/
 │  ├─ settings/
 │  ├─ ai/
 │  ├─ wallpaper/
-│  ├─ widgets/
 │  ├─ automation/
 │  └─ performance/
 └─ include/miaodesk/
@@ -53,7 +54,7 @@ installed as `Config/`. They are not mutable user state.
 - `desktop/wallpaper/` owns wallpaper state and runtime. Renderer-specific code lives below `render/`, `web/`, `monitor/`, `library/` or `runtime/`.
 - `desktop/wallpaper/legacy/` is migration-only by intent but currently load-bearing. No new product behavior may be added there; the exit is decomposition, not expansion.
 - `desktop/widgets/`, `desktop/automation/` and `desktop/performance/` own their domain services/runtime state.
-- `ui/wallpaper/`, `ui/widgets/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only.
+- `ui/wallpaper/`, `ui/automation/`, `ui/performance/`, `ui/ai/`, `ui/search/` and `ui/settings/` own presentation/intent translation only.
 - `harness/` owns the Advanced Workbench process/runtime bridge.
 - `search/` owns native search/index integration shared by executables.
 

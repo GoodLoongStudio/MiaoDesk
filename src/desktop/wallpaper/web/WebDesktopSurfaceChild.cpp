@@ -1,7 +1,5 @@
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/AppPaths.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/WidgetService.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -32,7 +30,6 @@ namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.WebWallpaperHost";
-constexpr wchar_t kWidgetDragClass[] = L"MiaoDesk.Native.WidgetDragHandle";
 constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-surface.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
@@ -43,9 +40,7 @@ struct LaunchOptions {
     RECT region{};
     std::wstring source;
     std::wstring token;
-    std::wstring itemId;
     bool muted{true};
-    bool widget{};
 };
 
 std::wstring Trim(std::wstring value) {
@@ -179,10 +174,8 @@ std::optional<LaunchOptions> ParseLaunchOptions() {
 
     options.source = *source;
     options.token = *token;
-    options.itemId = ArgValue(args, L"--item-id").value_or(L"web");
     const auto muted = ArgValue(args, L"--muted");
     options.muted = !muted || *muted != L"0";
-    options.widget = options.itemId.rfind(L"widget-", 0) == 0 || options.itemId.rfind(L"widget_", 0) == 0;
     return options;
 }
 
@@ -222,8 +215,7 @@ public:
 
         const LONG width = options_.region.right - options_.region.left;
         const LONG height = options_.region.bottom - options_.region.top;
-        const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOOLWINDOW |
-                              (options_.widget ? 0 : WS_EX_TRANSPARENT);
+        const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT;
         hwnd_ = CreateWindowExW(
             exStyle,
             kSurfaceClass,
@@ -242,13 +234,8 @@ public:
         }
 
         SetPropW(hwnd_, kWebSurfaceRoleProperty,
-                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(options_.widget ? 2 : 1)));
+                 reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
         ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
-        if (options_.widget && !CreateWidgetDragHandle()) {
-            exitCode_ = 74;
-            DestroyWindow(hwnd_);
-            return false;
-        }
         InitializeWebView();
         return true;
     }
@@ -280,12 +267,11 @@ private:
     LRESULT HandleMessage(UINT message, WPARAM, LPARAM lParam) {
         switch (message) {
         case WM_NCHITTEST:
-            return options_.widget ? HTCLIENT : HTTRANSPARENT;
+            return HTTRANSPARENT;
         case WM_ERASEBKGND:
             return 1;
         case WM_SIZE:
             ResizeController();
-            ResizeWidgetDragHandle();
             return 0;
         case kPauseMessage:
             Pause();
@@ -307,185 +293,6 @@ private:
             break;
         }
         return DefWindowProcW(hwnd_, message, 0, lParam);
-    }
-
-    static LRESULT CALLBACK WidgetDragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-        auto* self = reinterpret_cast<WebDesktopSurfaceChild*>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        if (message == WM_NCCREATE) {
-            const auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            self = static_cast<WebDesktopSurfaceChild*>(create->lpCreateParams);
-            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-        }
-        if (!self) return DefWindowProcW(window, message, wParam, lParam);
-        switch (message) {
-        case WM_NCHITTEST: return HTCLIENT;
-        case WM_SETCURSOR:
-            SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
-            return TRUE;
-        case WM_LBUTTONDOWN:
-            if (self->BeginWidgetDrag()) SetCapture(window);
-            return 0;
-        case WM_MOUSEMOVE:
-            if (self->dragging_ && GetCapture() == window) self->UpdateWidgetDrag();
-            return 0;
-        case WM_LBUTTONUP:
-            if (self->dragging_) self->EndWidgetDrag(true);
-            return 0;
-        case WM_CAPTURECHANGED:
-            if (self->dragging_) self->EndWidgetDrag(true);
-            return 0;
-        case WM_ERASEBKGND:
-            return 1;
-        case WM_PAINT: {
-            PAINTSTRUCT paint{};
-            HDC dc = BeginPaint(window, &paint);
-            RECT rect{};
-            GetClientRect(window, &rect);
-            const LONG gripW = std::clamp<LONG>(rect.right - rect.left - 12, 24L, 48L);
-            const LONG center = (rect.left + rect.right) / 2;
-            RECT grip{center - gripW / 2, 7, center + gripW / 2, 11};
-            HBRUSH brush = CreateSolidBrush(RGB(196, 202, 214));
-            HPEN pen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));
-            HGDIOBJ oldBrush = SelectObject(dc, brush);
-            HGDIOBJ oldPen = SelectObject(dc, pen);
-            RoundRect(dc, grip.left, grip.top, grip.right, grip.bottom, 4, 4);
-            SelectObject(dc, oldPen);
-            SelectObject(dc, oldBrush);
-            DeleteObject(pen);
-            DeleteObject(brush);
-            EndPaint(window, &paint);
-            return 0;
-        }
-        case WM_NCDESTROY:
-            if (self->dragHandle_ == window) self->dragHandle_ = nullptr;
-            break;
-        }
-        return DefWindowProcW(window, message, wParam, lParam);
-    }
-
-    bool CreateWidgetDragHandle() {
-        if (!options_.widget || !hwnd_) return true;
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.hInstance = instance_;
-        wc.lpfnWndProc = &WebDesktopSurfaceChild::WidgetDragProc;
-        wc.lpszClassName = kWidgetDragClass;
-        wc.hCursor = LoadCursorW(nullptr, IDC_SIZEALL);
-        if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
-        dragHandle_ = CreateWindowExW(
-            WS_EX_NOACTIVATE,
-            kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
-            0, 0, 10, 10, hwnd_, nullptr, instance_, this);
-        if (!dragHandle_) return false;
-        ResizeWidgetDragHandle();
-        return true;
-    }
-
-    void RaiseWidgetDragHandle() {
-        if (!dragHandle_ || !IsWindow(dragHandle_) || !hwnd_) return;
-        HWND topSibling = nullptr;
-        for (HWND child = GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-            if (child == dragHandle_) continue;
-            topSibling = child;
-        }
-        const HWND insertAfter = topSibling ? topSibling : HWND_TOP;
-        SetWindowPos(dragHandle_, insertAfter, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    }
-
-    void ResizeWidgetDragHandle() {
-        if (!dragHandle_ || !IsWindow(dragHandle_) || !hwnd_) return;
-        RECT client{};
-        if (!GetClientRect(hwnd_, &client)) return;
-        SetWindowPos(dragHandle_, HWND_TOP, 0, 0,
-                     std::max<LONG>(1, client.right - client.left),
-                     std::max<LONG>(1, client.bottom - client.top),
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        RaiseWidgetDragHandle();
-        InvalidateRect(dragHandle_, nullptr, FALSE);
-    }
-
-    std::wstring WidgetId() const {
-        if (!options_.widget) return {};
-        std::wstring id = options_.itemId;
-        if (id.rfind(L"widget-", 0) == 0 || id.rfind(L"widget_", 0) == 0) id.erase(0, 7);
-        return id;
-    }
-
-    bool BeginWidgetDrag() {
-        const std::wstring id = WidgetId();
-        if (id.empty() || !hwnd_ || !options_.parent) return false;
-        DesktopWidgetStore store;
-        std::wstring ignored;
-        if (!store.Load(&ignored)) return false;
-        const auto found = store.Find(id);
-        if (!found || found->width <= 0.001f || found->height <= 0.001f) return false;
-
-        RECT screenRect{};
-        if (!GetWindowRect(hwnd_, &screenRect)) return false;
-        POINT corners[2] = {{screenRect.left, screenRect.top}, {screenRect.right, screenRect.bottom}};
-        MapWindowPoints(nullptr, options_.parent, corners, 2);
-        dragStartRegion_ = RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
-        if (!GetCursorPos(&dragStartCursor_)) return false;
-
-        dragStartWidget_ = *found;
-        dragPreviewX_ = found->x;
-        dragPreviewY_ = found->y;
-        const float widthPx = static_cast<float>(std::max<LONG>(1, dragStartRegion_.right - dragStartRegion_.left));
-        const float heightPx = static_cast<float>(std::max<LONG>(1, dragStartRegion_.bottom - dragStartRegion_.top));
-        dragMonitorWidthPx_ = widthPx / found->width;
-        dragMonitorHeightPx_ = heightPx / found->height;
-        dragging_ = dragMonitorWidthPx_ > 1.0f && dragMonitorHeightPx_ > 1.0f;
-        return dragging_;
-    }
-
-    void UpdateWidgetDrag() {
-        if (!dragging_ || !hwnd_) return;
-        POINT cursor{};
-        if (!GetCursorPos(&cursor)) return;
-        const int dx = cursor.x - dragStartCursor_.x;
-        const int dy = cursor.y - dragStartCursor_.y;
-        const float maxX = std::max(0.0f, 1.0f - dragStartWidget_.width);
-        const float maxY = std::max(0.0f, 1.0f - dragStartWidget_.height);
-        dragPreviewX_ = std::clamp(dragStartWidget_.x + static_cast<float>(dx) / dragMonitorWidthPx_, 0.0f, maxX);
-        dragPreviewY_ = std::clamp(dragStartWidget_.y + static_cast<float>(dy) / dragMonitorHeightPx_, 0.0f, maxY);
-        const LONG appliedX = static_cast<LONG>(std::lround((dragPreviewX_ - dragStartWidget_.x) * dragMonitorWidthPx_));
-        const LONG appliedY = static_cast<LONG>(std::lround((dragPreviewY_ - dragStartWidget_.y) * dragMonitorHeightPx_));
-        const LONG width = dragStartRegion_.right - dragStartRegion_.left;
-        const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
-        SetWindowPos(hwnd_, nullptr, dragStartRegion_.left + appliedX, dragStartRegion_.top + appliedY,
-                     width, height, SWP_NOACTIVATE | SWP_NOZORDER);
-        options_.region = RECT{dragStartRegion_.left + appliedX, dragStartRegion_.top + appliedY,
-                               dragStartRegion_.left + appliedX + width, dragStartRegion_.top + appliedY + height};
-    }
-
-    void EndWidgetDrag(bool persist) {
-        if (!dragging_) return;
-        dragging_ = false;
-        if (GetCapture() == dragHandle_) ReleaseCapture();
-        if (!persist) {
-            const LONG width = dragStartRegion_.right - dragStartRegion_.left;
-            const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
-            SetWindowPos(hwnd_, nullptr, dragStartRegion_.left, dragStartRegion_.top, width, height,
-                         SWP_NOACTIVATE | SWP_NOZORDER);
-            options_.region = dragStartRegion_;
-            return;
-        }
-        const std::wstring id = WidgetId();
-        if (id.empty()) return;
-        desktop::WidgetUpdateRequest request;
-        request.id = id;
-        request.x = dragPreviewX_;
-        request.y = dragPreviewY_;
-        const desktop::WidgetService service;
-        const auto result = service.Update(request);
-        if (!result.success) {
-            const LONG width = dragStartRegion_.right - dragStartRegion_.left;
-            const LONG height = dragStartRegion_.bottom - dragStartRegion_.top;
-            SetWindowPos(hwnd_, nullptr, dragStartRegion_.left, dragStartRegion_.top, width, height,
-                         SWP_NOACTIVATE | SWP_NOZORDER);
-            options_.region = dragStartRegion_;
-        }
     }
 
     void SetReadyProperty(const wchar_t* name, bool ready) {
@@ -570,7 +377,6 @@ private:
                     navigationReady_ = true;
                     SetReadyProperty(kWebSurfaceNavigationReadyProperty, true);
                     if (controller_) controller_->put_IsVisible(TRUE);
-                    RaiseWidgetDragHandle();
                     return S_OK;
                 }).Get(), &navigationCompleted);
 
@@ -667,8 +473,6 @@ private:
         if (!controller_ || !hwnd_) return;
         RECT bounds{};
         if (GetClientRect(hwnd_, &bounds)) controller_->put_Bounds(bounds);
-        ResizeWidgetDragHandle();
-        RaiseWidgetDragHandle();
     }
 
     void Pause() {
@@ -696,15 +500,6 @@ private:
     HINSTANCE instance_{};
     LaunchOptions options_;
     HWND hwnd_{};
-    HWND dragHandle_{};
-    bool dragging_{};
-    POINT dragStartCursor_{};
-    RECT dragStartRegion_{};
-    DesktopWidget dragStartWidget_{};
-    float dragPreviewX_{};
-    float dragPreviewY_{};
-    float dragMonitorWidthPx_{};
-    float dragMonitorHeightPx_{};
     int exitCode_{};
     bool paused_{};
     bool navigationReady_{};

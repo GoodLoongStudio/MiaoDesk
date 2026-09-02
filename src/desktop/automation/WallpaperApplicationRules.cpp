@@ -351,8 +351,8 @@ bool WallpaperApplicationRules::SelfTest() {
     ok = ok && rules.Upsert(first, &error);
 
     WallpaperApplicationRule second;
-    second.id = L"editor";
-    second.executable = L"editor.exe";
+    second.id = L"paint";
+    second.executable = L"paint.exe";
     second.trigger = ApplicationRuleTrigger::Foreground;
     second.action = PerformanceAction::Normal;
     ok = ok && rules.Upsert(second, &error);
@@ -365,7 +365,7 @@ bool WallpaperApplicationRules::SelfTest() {
          game->trigger == ApplicationRuleTrigger::Fullscreen && game->priority == 250;
     ok = ok && NormalizeExecutable(L"D:\\Apps\\FOO.Exe") == L"foo.exe";
     ok = ok && ParseTrigger(L"MAXIMIZED") == ApplicationRuleTrigger::Maximized;
-    ok = ok && loaded.Remove(L"editor", &error) && loaded.Items().size() == 1;
+    ok = ok && loaded.Remove(L"paint", &error) && loaded.Items().size() == 1;
 
     fs::remove_all(root, ec);
     return ok;

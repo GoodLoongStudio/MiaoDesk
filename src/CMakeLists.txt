@@ -15,12 +15,10 @@ if (NOT EXISTS "${WEBVIEW2_INCLUDE_DIR}/WebView2.h" OR NOT EXISTS "${WEBVIEW2_LO
 endif()
 
 set(MIAODESK_CORE_SOURCES
-    ai/a2ui/A2UIParser.cpp
     ai/agent/L3Agent.cpp
     desktop/control/DesktopControlService.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
-    desktop/preview/WidgetIntentComposer.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp
     desktop/wallpaper/WallpaperService.cpp
     desktop/widgets/WidgetService.cpp
@@ -64,7 +62,6 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/shell/DesktopShellDiagnostics.cpp
     desktop/shell/DesktopShellSurfaceStack.cpp
     desktop/widgets/NativeWeatherService.cpp
-    ui/widgets/DesktopWidgetUiAdapter.cpp
 
     desktop/automation/AutomationService.cpp
     desktop/automation/WallpaperAutomation.cpp

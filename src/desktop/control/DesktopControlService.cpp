@@ -248,15 +248,6 @@ DesktopControlResult DesktopControlService::ClearMonitorAssignment(std::wstring_
     return {true, result.message};
 }
 
-DesktopControlResult DesktopControlService::CreateWebWidget(
-    const WebWidgetCreateRequest& request,
-    wallpaper::DesktopWidget* created) const {
-    WidgetService service;
-    const auto result = service.CreateWeb(request, created);
-    if (!result.success) return FromWidget(result);
-    return RefreshWidgetRuntime({true, result.message}, *this);
-}
-
 DesktopControlResult DesktopControlService::CreateNativeWidget(
     const NativeWidgetCreateRequest& request,
     wallpaper::DesktopWidget* created) const {

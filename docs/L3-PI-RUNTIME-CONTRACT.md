@@ -88,7 +88,7 @@ MiaoDesk Native tools 只暴露依赖内部产品状态的能力，例如 settin
 
 ## 6. Desktop mutation 安全边界
 
-AI 读取状态与生成 preview 可以自动执行；真实桌面 mutation 必须经过产品宿主的校验和用户确认边界。
+AI 读取状态与生成 wallpaper preview 可以自动执行；真实桌面 mutation 必须经过产品宿主的校验和用户确认边界。Widget 是 Native-only preset，AI 只能读取其状态，不能创建或修改组件。
 
 长期规则：
 
@@ -98,7 +98,7 @@ AI 读取状态与生成 preview 可以自动执行；真实桌面 mutation 必�
 4. Tool Result 必须返回真实执行结果，模型不能自行宣称成功；
 5. AI 不直接修改 private INI/store 作为公共控制接口；
 6. Settings 与 AI 必须通过同一 Desktop Control path；
-7. 当前不为 Wallpaper/Scene/Widget Editor 预留 mutation 模型；更广泛编辑能力只有未来重新立项后才设计。
+7. 当前不为 Wallpaper/Scene/Widget Editor 预留 mutation 模型；Web Widget（WebView2 组件）路径已移除，更广泛编辑能力只有未来重新立项后才设计。
 
 ## 7. Desktop Composition
 

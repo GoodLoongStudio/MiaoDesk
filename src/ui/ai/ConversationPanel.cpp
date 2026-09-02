@@ -3,7 +3,6 @@
 #include "miaodesk/WindowPlacementStore.h"
 #include "miaodesk/StoreDemoExperience.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
-#include "miaodesk/WidgetIntentComposer.h"
 #include "ConversationPanelCompileCompat.h"
 #include <commctrl.h>
 #include <d2d1.h>

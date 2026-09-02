@@ -18,16 +18,8 @@ NativeToolResult ExecuteGeneratedPreviewTool(std::string_view toolName, std::str
 // receives the path and owns the visible WebView2 sandbox + Apply/Reject actions.
 bool HandleGeneratedPreviewCopyData(HWND owner, const COPYDATASTRUCT* data);
 
-struct WidgetPreviewPromptResult {
-    bool success{};
-    std::wstring message;
-    std::wstring previewId;
-};
-
+// Re-opens a wallpaper preview sandbox created by desktop_preview_wallpaper
+// (used by the conversation artifact "preview=<id>" links).
 bool OpenPreviewById(HWND owner, std::wstring_view previewId);
-
-// One-sentence widget generation: compose A2UI from natural language, open the
-// sandbox preview window in the current UI process, and wait for user Apply.
-WidgetPreviewPromptResult ShowWidgetPreviewForPrompt(HWND owner, std::wstring_view prompt);
 
 } // namespace miaodesk::preview

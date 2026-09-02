@@ -17,7 +17,7 @@ The normal user mental model is:
 This combines two modes in one continuous conversation:
 
 1. **Conversation** — natural, ongoing chat.
-2. **Action** — Pi may invoke approved MiaoDesk tools to manipulate wallpaper, widgets, files, settings, automation, search, and other desktop capabilities.
+2. **Action** — Pi may invoke approved MiaoDesk tools to inspect and change the wallpaper, inspect widgets, and work with files, settings, automation, search, and other desktop capabilities.
 
 The user should never need to switch mentally between “chat mode” and “agent mode”. Actions should appear as part of the conversation.
 
@@ -172,7 +172,7 @@ Pi should feel conversational before it feels mechanical.
 ### Do not
 
 - dump terminal output;
-- show tool names such as `desktop_widget_update` to normal users;
+- show tool names such as `desktop_widget_list` to normal users;
 - expose JSON arguments;
 - force the user to create a new chat for each task;
 - make every harmless desktop action require a modal confirmation;
@@ -202,7 +202,6 @@ This keeps the same desktop state available to:
 
 - the normal UI;
 - Pi;
-- future editors;
 - automation;
 - other product surfaces.
 

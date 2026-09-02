@@ -24,7 +24,7 @@
 - `L3-PI-RUNTIME-CONTRACT.md` — Pi-first Agent Runtime 契约
 - `PI_AGENT_ACTIVITY_FEEDBACK.md` — Agent 活动反馈
 - `PI_AGENT_CONVERSATION_UX.md` — 对话体验
-- `AI_GENERATED_DESKTOP_SANDBOX.md` — AI 预览/沙箱边界
+- `AI_GENERATED_DESKTOP_SANDBOX.md` — AI 壁纸预览/沙箱边界
 
 ## 发布入口
 

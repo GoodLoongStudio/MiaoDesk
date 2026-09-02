@@ -73,16 +73,8 @@ bool DesktopShellHost::IsWidgetNativeSurface(HWND window) noexcept {
     return StartsWith(title, L"widget-") || StartsWith(title, L"widget_");
 }
 
-bool DesktopShellHost::IsWidgetWebSurface(HWND window) noexcept {
-    if (!IsWindowClass(window, kWebHostClass)) return false;
-    wchar_t title[320]{};
-    GetWindowTextW(window, title, static_cast<int>(std::size(title)));
-    return StartsWith(title, L"widget-") || StartsWith(title, L"widget_");
-}
-
 DesktopSurfaceRole DesktopShellHost::InferRole(HWND window) noexcept {
-    return IsWidgetWebSurface(window) || IsWidgetNativeSurface(window) ? DesktopSurfaceRole::Widget
-                                                                         : DesktopSurfaceRole::Wallpaper;
+    return IsWidgetNativeSurface(window) ? DesktopSurfaceRole::Widget : DesktopSurfaceRole::Wallpaper;
 }
 
 HWND DesktopShellHost::LastChild(HWND parent) noexcept {

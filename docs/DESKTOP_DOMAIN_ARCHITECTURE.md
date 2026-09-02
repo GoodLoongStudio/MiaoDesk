@@ -31,7 +31,6 @@ MiaoDeskHarness.exe
 src/
 ├─ app/
 ├─ ai/
-│  ├─ a2ui/
 │  ├─ agent/
 │  ├─ pi/
 │  └─ tools/
@@ -124,7 +123,7 @@ Wallpaper -> Pi runtime
 
 `DesktopWidgetStore` 是内部 persistence，不是产品 API。UI/AI 应通过 `WidgetService`、`DesktopWidgetController` 或 `DesktopControlService`。
 
-当前内置 Widget 为 Native C++ / Direct2D；不恢复旧 Widget Editor。
+当前内置 Widget 仅三款 Native C++ / Direct2D preset；Web Widget（WebView2 组件）路径已整体移除，不恢复旧 Widget Editor。
 
 ### Automation — `src/desktop/automation/`
 
@@ -144,7 +143,7 @@ Wallpaper -> Pi runtime
 - Provider / Model state
 - native tools
 - Agent orchestration
-- A2UI parsing / preview
+- Wallpaper sandbox preview
 
 AI 是 Desktop domain 的 client，不拥有 wallpaper / Widget persistence，也不直接枚举 runtime HWND。
 

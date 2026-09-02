@@ -130,9 +130,11 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
         << std::setw(2) << now.wHour << L':' << std::setw(2) << now.wMinute << L':'
         << std::setw(2) << now.wSecond << L" Widget snapshot ===\n";
 
-    log << L"desktop.enabled=" << BoolText(snapshot.desktop.enabled)
-        << L" scene=" << snapshot.desktop.scene
-        << L" layout=" << snapshot.desktop.layout
+    // This field is the wallpaper switch only. Widgets are a separate runtime
+    // domain and remain eligible when wallpaper.enabled=false.
+    log << L"wallpaper.enabled=" << BoolText(snapshot.desktop.enabled)
+        << L" wallpaper.scene=" << snapshot.desktop.scene
+        << L" wallpaper.layout=" << snapshot.desktop.layout
         << L" configuredWidgets=" << snapshot.widgets.size()
         << L" enabledWeb=" << snapshot.widgetRuntime.enabledWebCount
         << L" runtimeReported=" << BoolText(snapshot.widgetRuntime.runtimeReported)

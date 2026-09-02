@@ -19,10 +19,13 @@ bool WindowStillParented(HWND window, HWND expectedParent) noexcept {
 }
 
 bool SurfaceRequiresLayered(HWND surface) noexcept {
-    // Native Widgets render through ID2D1HwndRenderTarget. Turning that HWND into
-    // a layered Explorer child can leave a nominally visible window with no
-    // compositor output. Web/wallpaper surfaces keep the layered contract.
-    return !DesktopShellHost::IsWidgetNativeSurface(surface);
+    if (!DesktopShellHost::IsWidgetNativeSurface(surface)) return true;
+    const HWND parent = surface ? GetParent(surface) : nullptr;
+    if (!parent || !IsWindow(parent)) return true;
+    // Raised desktop (Progman with no-redirection composition) uses a direct
+    // HwndRenderTarget for native widgets. WorkerW/legacy parents keep the
+    // layered presentation path.
+    return (GetWindowLongPtrW(parent, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) == 0;
 }
 
 bool AttachmentHealthValid(const DesktopSurfaceHealth& health, bool layeredRequired) noexcept {

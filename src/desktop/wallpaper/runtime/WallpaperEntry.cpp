@@ -426,7 +426,10 @@ int RunDesktopShellSupervisor() {
             if (!GetWindowRect(surface, &screenRect) ||
                 screenRect.right <= screenRect.left || screenRect.bottom <= screenRect.top) continue;
 
-            if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
+            const bool layeredRequired = role != miaodesk::wallpaper::DesktopSurfaceRole::Widget ||
+                !miaodesk::wallpaper::DesktopShellHost::IsWidgetNativeSurface(surface) ||
+                (GetWindowLongPtrW(GetParent(surface), GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) == 0;
+            if (!health.parent || !health.childStyle || (layeredRequired && !health.layered) || !health.geometry) {
                 shell.AttachSurface(surface, role, screenRect,
                                     IsWindowVisible(surface) != FALSE, nullptr);
                 stackRepairNeeded = true;

@@ -163,6 +163,7 @@ struct NativeSlot {
     HWND hwnd{};
     HWND dragHandle{};
     ComPtr<ID2D1DCRenderTarget> target;
+    ComPtr<ID2D1HwndRenderTarget> hwndTarget;
     ComPtr<IDWriteFactory> dwrite;
     HDC layerDc{};
     HBITMAP layerBitmap{};
@@ -185,6 +186,7 @@ struct NativeSlot {
 void ReleaseLayerSurface(NativeSlot& slot) {
     MarkNativeSurfacePaintReady(slot.hwnd, false);
     slot.target.Reset();
+    slot.hwndTarget.Reset();
     if (slot.layerDc && slot.layerOldBitmap) {
         SelectObject(slot.layerDc, slot.layerOldBitmap);
         slot.layerOldBitmap = nullptr;
@@ -225,6 +227,36 @@ struct NativeWidgetHostApp {
         const UINT width = static_cast<UINT>(std::max<LONG>(1, rc.right - rc.left));
         const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
         const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
+
+        const bool layered = (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0;
+        if (!layered) {
+            if (slot.hwndTarget && slot.layerWidth == width && slot.layerHeight == height) {
+                slot.hwndTarget->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+                return slot.dwrite != nullptr;
+            }
+
+            ReleaseLayerSurface(slot);
+            const auto props = D2D1::RenderTargetProperties(
+                D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+                static_cast<float>(dpi), static_cast<float>(dpi),
+                D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
+            const auto hwndProps = D2D1::HwndRenderTargetProperties(
+                slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
+            if (FAILED(d2dFactory->CreateHwndRenderTarget(&props, &hwndProps, slot.hwndTarget.GetAddressOf()))) {
+                return false;
+            }
+            if (!slot.dwrite && FAILED(DWriteCreateFactory(
+                    DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                    reinterpret_cast<IUnknown**>(slot.dwrite.GetAddressOf())))) {
+                ReleaseLayerSurface(slot);
+                return false;
+            }
+            slot.hwndTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            slot.layerWidth = width;
+            slot.layerHeight = height;
+            return true;
+        }
 
         if (slot.target && slot.layerDc && slot.layerBitmap && slot.layerBits &&
             slot.layerWidth == width && slot.layerHeight == height) {
@@ -287,7 +319,9 @@ struct NativeWidgetHostApp {
     }
 
     bool PresentLayerSurface(NativeSlot& slot) {
-        if (!slot.hwnd || !IsWindow(slot.hwnd) || !slot.layerDc || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
+        if (!slot.hwnd || !IsWindow(slot.hwnd) || slot.layerWidth == 0 || slot.layerHeight == 0) return false;
+        if ((GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0) return true;
+        if (!slot.layerDc) return false;
         POINT source{0, 0};
         SIZE size{static_cast<LONG>(slot.layerWidth), static_cast<LONG>(slot.layerHeight)};
         BLENDFUNCTION blend{};
@@ -352,9 +386,17 @@ struct NativeWidgetHostApp {
             return;
         }
         NativeWidgetPaintContext context{};
-        context.target = slot.target.Get();
+        context.target = slot.hwndTarget ? static_cast<ID2D1RenderTarget*>(slot.hwndTarget.Get())
+                                         : static_cast<ID2D1RenderTarget*>(slot.target.Get());
         context.dwrite = slot.dwrite.Get();
-        const D2D1_SIZE_F dipSize = slot.target->GetSize();
+        context.opaqueSurface = slot.hwndTarget != nullptr;
+        if (!context.target) {
+            lastSurfaceError = L"Native widget render target unavailable";
+            WriteDiagnostics(lastSurfaceError);
+            MarkNativeSurfacePaintReady(slot.hwnd, false);
+            return;
+        }
+        const D2D1_SIZE_F dipSize = context.target->GetSize();
         context.width = std::max(1.0f, dipSize.width);
         context.height = std::max(1.0f, dipSize.height);
         NativeWeatherSnapshot weather;
@@ -365,9 +407,9 @@ struct NativeWidgetHostApp {
             weather = weatherService.Snapshot();
             context.weather = &weather;
         }
-        slot.target->BeginDraw();
+        context.target->BeginDraw();
         PaintNativeWidgetPreset(context, slot.preset);
-        const HRESULT drawResult = slot.target->EndDraw();
+        const HRESULT drawResult = context.target->EndDraw();
         if (SUCCEEDED(drawResult) && PresentLayerSurface(slot)) {
             lastSurfaceError.clear();
             ScheduleNextRefresh(slot);
@@ -756,12 +798,18 @@ struct NativeWidgetHostApp {
         const auto paintReadyCount = std::count_if(slots.begin(), slots.end(), [](const auto& slot) {
             return slot && slot->hwnd && IsWindow(slot->hwnd) && GetPropW(slot->hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
         });
+        const auto directCount = std::count_if(slots.begin(), slots.end(), [](const auto& slot) {
+            return slot && slot->hwnd && IsWindow(slot->hwnd) &&
+                   (GetWindowLongPtrW(slot->hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
+        });
         std::wstring summary = L"Native Direct2D Widget host configured=" +
                                std::to_wstring(store.Items().size()) +
                                L" desired=" + std::to_wstring(desiredIds.size()) +
                                L" surfaces=" + std::to_wstring(slots.size()) +
                                L" visible=" + std::to_wstring(visibleCount) +
-                               L" paintReady=" + std::to_wstring(paintReadyCount);
+                               L" paintReady=" + std::to_wstring(paintReadyCount) +
+                               L" directHwnd=" + std::to_wstring(directCount) +
+                               L" layered=" + std::to_wstring(slots.size() - directCount);
         if (!lastSurfaceError.empty()) summary += L" error=" + lastSurfaceError;
         WriteDiagnostics(summary);
 

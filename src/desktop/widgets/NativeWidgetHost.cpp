@@ -198,7 +198,10 @@ struct NativeSlot {
     RECT desktopRegion{};
     HWND hwnd{};
     ComPtr<ID2D1DCRenderTarget> target;
-    ComPtr<ID2D1RenderTarget> activeTarget;
+    // Non-owning view of the current paint surface. Ownership lives in the
+    // mode-specific members below (DC render target for layered surfaces,
+    // device context + swapchain for direct surfaces).
+    ID2D1RenderTarget* activeTarget{};
     bool directPresentation{};
     ComPtr<ID3D11Device> d3dDevice;
     ComPtr<IDXGISwapChain1> swapChain;
@@ -227,7 +230,7 @@ struct NativeSlot {
 
 void ReleaseLayerSurface(NativeSlot& slot) {
     MarkNativeSurfacePaintReady(slot.hwnd, false);
-    slot.activeTarget.Reset();
+    slot.activeTarget = nullptr;
     slot.targetBitmap.Reset();
     slot.deviceContext.Reset();
     slot.d2dDevice.Reset();
@@ -435,7 +438,7 @@ struct NativeWidgetHostApp {
         }
         slot.target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
         slot.target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        slot.activeTarget = slot.target;
+        slot.activeTarget = slot.target.Get();
         slot.directPresentation = false;
         slot.layerWidth = width;
         slot.layerHeight = height;
@@ -518,7 +521,7 @@ struct NativeWidgetHostApp {
         }
 
         ComPtr<IDXGISurface> backBuffer;
-        if (FAILED(slot.swapChain->GetBuffer(0, __uuidof(IDXGISurface), backBuffer.ReleaseAndGetAddressOf()))) {
+        if (FAILED(slot.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuffer.ReleaseAndGetAddressOf())))) {
             ReportFailure(&slot, L"Swapchain back buffer unavailable");
             ReleaseLayerSurface(slot);
             return false;
@@ -535,7 +538,7 @@ struct NativeWidgetHostApp {
         }
         slot.deviceContext->SetTarget(slot.targetBitmap.Get());
         slot.deviceContext->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-        slot.activeTarget = slot.deviceContext;
+        slot.activeTarget = slot.deviceContext.Get();
         slot.directPresentation = true;
         slot.layerWidth = width;
         slot.layerHeight = height;
@@ -631,7 +634,7 @@ struct NativeWidgetHostApp {
             return;
         }
         NativeWidgetPaintContext context{};
-        context.target = slot.activeTarget.Get();
+        context.target = slot.activeTarget;
         context.dwrite = slot.dwrite.Get();
         context.opaqueSurface =
             (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;

@@ -134,9 +134,9 @@ Focus 顺序应保持：恢复真实 Native `EDIT` geometry → 完成 focus tra
 
 这类行为依赖真实 Windows IME/TSF，不能用源码文本 contract 代替真实交互验证。
 
-## 9. 新输入 surface
+## 9. 新 Native 输入 surface
 
-新的 Widget Editor、Scene Editor 或其他自绘文本框应：
+如果未来增加新的自绘文本输入 surface，应：
 
 ```text
 定义 VisibleTextRect / caret calculation
@@ -145,4 +145,4 @@ Focus 顺序应保持：恢复真实 Native `EDIT` geometry → 完成 focus tra
 → Native EDIT 负责 Windows 输入语义
 ```
 
-只有真实共享的基础逻辑进入 Input 层，业务行为继续留在具体 surface。
+只有真实共享的基础逻辑进入 Input 层，业务行为继续留在具体 surface。当前不为已删除的 Wallpaper/Scene/Widget Editor 预留输入架构。

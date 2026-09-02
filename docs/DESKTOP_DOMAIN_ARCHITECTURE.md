@@ -2,7 +2,7 @@
 
 Status: normative architecture contract.
 
-本文件只描述当前有效的模块边界，不记录历史迁移过程。物理源码布局见 `NATIVE_SOURCE_LAYOUT.md`。
+本文件只描述当前有效的模块边界，不记录历史迁移过程。产品目标见 `DESIGN_BASELINE.md`，物理源码布局见 `NATIVE_SOURCE_LAYOUT.md`。
 
 ## 1. 进程边界
 
@@ -57,16 +57,16 @@ src/
 产品调用应沿一个方向流动：
 
 ```text
-UI / Pi / future editor
-        ↓
+UI / Pi
+   ↓
 adapter / controller
-        ↓
+   ↓
 DesktopControlService
-        ↓
+   ↓
 domain service
-        ↓
+   ↓
 persistence / runtime / renderer
-        ↓
+   ↓
 DesktopShellHost（仅需要 Windows desktop surface 时）
 ```
 
@@ -82,7 +82,7 @@ Renderer -> AI runtime
 Wallpaper -> Pi runtime
 ```
 
-旧实现如果仍需要兼容 bridge，只允许 bridge 收口已有路径，不能继续扩张新的旁路。
+旧实现如果仍需要 compatibility bridge，只允许 bridge 收口已有路径，不能继续扩张新的旁路。
 
 ## 3. Domain ownership
 
@@ -110,29 +110,25 @@ Wallpaper -> Pi runtime
 
 `library/`、`monitor/`、`render/`、`web/`、`runtime/` 是实际职责边界。`legacy/` 仍包含历史 engine implementation；新功能不得继续堆进 legacy。
 
+当前不包含 Wallpaper/Scene Editor。`.mdwall` 是运行时资源包，不代表需要恢复旧编辑器工程模型。
+
 ### Widgets — `src/desktop/widgets/`
 
 负责：
 
 - Widget persistence
 - normalized geometry
-- preset/source management
+- native preset/source management
 - runtime lifecycle
 - surface/runtime health
 
 `DesktopWidgetStore` 是内部 persistence，不是产品 API。UI/AI 应通过 `WidgetService`、`DesktopWidgetController` 或 `DesktopControlService`。
 
+当前内置 Widget 为 Native C++ / Direct2D；不恢复旧 Widget Editor。
+
 ### Automation — `src/desktop/automation/`
 
-负责：
-
-- playlists
-- schedules
-- profiles
-- application rules
-- runtime evaluation
-
-`AutomationService` 拥有 persistence/evaluation。当前 Win32 automation UI 仍通过 `ui/automation/AutomationUiAdapter` compatibility boundary，不得直接获得 persistence ownership。
+负责当前仍被产品调用的 automation state / runtime evaluation。新开发不得因为历史 Wallpaper parity 文档继续扩展不在 `DEVELOPMENT_ROADMAP.md` 中的能力。
 
 ### Performance — `src/desktop/performance/`
 
@@ -148,7 +144,7 @@ Wallpaper -> Pi runtime
 - Provider / Model state
 - native tools
 - Agent orchestration
-- A2UI parsing
+- A2UI parsing / preview
 
 AI 是 Desktop domain 的 client，不拥有 wallpaper / Widget persistence，也不直接枚举 runtime HWND。
 
@@ -159,11 +155,11 @@ AI 是 Desktop domain 的 client，不拥有 wallpaper / Widget persistence，�
 - render
 - user input
 - navigation
-- preview / inspector
+- 必要 preview
 - 调用 controller/service
 - 显示 state / error
 
-UI 不拥有 domain rules。
+UI 不拥有 domain rules，也不承担 Wallpaper/Scene/Widget Editor 职责。
 
 ### Search — `src/search/` + `src/ui/search/`
 
@@ -193,7 +189,7 @@ WallpaperService / WidgetService / ...
 DesktopControlResult / DesktopSnapshot
 ```
 
-新 Widget UI 同样遵循：
+Widget UI 同样遵循：
 
 ```text
 Win32 action
@@ -223,6 +219,7 @@ WidgetService
 - 新 target-local header 与 `.cpp` 就近放置。
 - 不允许重新引入 `src/native/src` 或第二层 source root。
 - 不允许为了“架构感”创建无调用价值的 facade/helper/library。
+- 不为已删除的 Editor 预留抽象层、typed-property layer 或 UI shell。
 
 ## 7. 完成标准
 
@@ -234,7 +231,6 @@ UI moves Widget -> Pi reads the same updated geometry
 UI/Pi read the same DesktopSnapshot/runtime health
 UI applies wallpaper -> Pi reads the same current state
 Pi applies wallpaper -> UI reflects the same current state
-Automation UI edits policy -> runtime consumes the same persisted state
 Explorer restarts -> desktop runtime recovers without UI/AI special handling
 ```
 

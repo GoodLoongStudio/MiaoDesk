@@ -7,10 +7,24 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 正式构建只有三个 Native 目标：
 
 - `MiaoDesk.exe` — 唯一用户入口，负责 Search / AI / 设置
-- `MiaoDeskWallpaper.exe` — 独立桌面/壁纸进程
+- `MiaoDeskWallpaper.exe` — 独立桌面/壁纸/Widget 进程
 - `MiaoDeskHarness.exe` — 独立 DeepSeek Harness 宿主
 
 诊断 acceptance executable 不属于正式 build graph，也不进入用户包。
+
+## 当前产品原则
+
+Wallpaper、Widgets、Search Bar 属于常驻桌面路径，**Native C++ 与性能优先**。
+
+- Wallpaper：Image / Video / Web / Scene；Native 路径优先，Web 内容才按需启动 WebView2。
+- Widgets：默认三款内置组件走 Native C++ / Direct2D，不以 WebView2 作为常驻默认实现。
+- Windows Shell：Progman / WorkerW / Raised Desktop / Explorer recovery 统一由 `DesktopShellHost` 管理。
+- 旧 Wallpaper / Scene / Widget Editor、Inspector、Timeline 和 Wallpaper Engine parity 路线已退出当前设计。
+
+当前唯一设计与开发基线：
+
+- `docs/DESIGN_BASELINE.md`
+- `docs/DEVELOPMENT_ROADMAP.md`
 
 ## 仓库结构
 
@@ -24,7 +38,7 @@ runtime/x64/               x64 Node/Goz 基础 Runtime
 runtime/arm64/             ARM64 Node/Goz 基础 Runtime
 packaging/windows/         Windows staging、验证与 installer
 .github/workflows/         正式 package、Runtime vendor、路径 contract
-docs/                      当前产品/技术文档
+docs/                      当前基线与必要技术契约
 ```
 
 `src/` 不再额外套 `native/src`。`runtime/<arch>` 只存真正与 CPU 架构相关的基础 Runtime；DSH/Pi 不允许再按架构复制一份。
@@ -46,8 +60,11 @@ external short CMake build
   -> AI/ single dependency graph
   -> path budget
   -> production self-tests
+  -> Native Widget PaintReady smoke
   -> moved-install DSH Web smoke
-  -> staging artifact
+  -> NSIS installer
+  -> install/uninstall smoke
+  -> artifacts
 ```
 
 本地等价 staging：
@@ -144,6 +161,7 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 - `MiaoDesk.exe --self-test`
 - `MiaoDeskWallpaper.exe --self-test`
 - `MiaoDeskHarness.exe --self-test`
+- Native Widget `PaintReady`
 - Pi CLI `--version`
 - DSH CLI `--help`
 - DSH Web moved-install smoke
@@ -153,10 +171,10 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 
 ## 文档
 
-- `docs/MIAODESK-PRODUCT-BASELINE.md` — 产品基线
-- `docs/MIAODESK-NATIVE-TECH-BASELINE.md` — Native 技术基线
+- `docs/DESIGN_BASELINE.md` — 当前唯一设计基线
+- `docs/DEVELOPMENT_ROADMAP.md` — 当前唯一开发基线与路线
+- `docs/DOC-INDEX.md` — 当前有效技术文档索引
 - `docs/NATIVE_SOURCE_LAYOUT.md` — 当前源码布局
-- `docs/DESKTOP_COMPOSITION_ARCHITECTURE.md` — 桌面组合架构
 - `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain 边界
 - `docs/L3-PI-RUNTIME-CONTRACT.md` — Pi / AI runtime 契约
 - `docs/PATH_LAYOUT_CONTRACT.md` — 路径与安装布局约束

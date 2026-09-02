@@ -497,10 +497,11 @@ struct NativeWidgetHostApp {
         HRESULT swapResult = dxgiFactory->CreateSwapChainForHwnd(
             d3dDevice.Get(), slot.hwnd, &descriptor, nullptr, nullptr, slot.swapChain.GetAddressOf());
         if (FAILED(swapResult)) {
-            // Some child-HWND compositions reject the flip model; the bitblt
-            // model presents through the same DWM surface contract.
+            // Some child-HWND compositions reject the flip model; the classic
+            // DXGI_SWAP_EFFECT_DISCARD bitblt model presents through the same
+            // DWM surface contract.
             descriptor.BufferCount = 1;
-            descriptor.SwapEffect = DXGI_SWAP_EFFECT_BITBLT;
+            descriptor.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
             swapResult = dxgiFactory->CreateSwapChainForHwnd(
                 d3dDevice.Get(), slot.hwnd, &descriptor, nullptr, nullptr, slot.swapChain.GetAddressOf());
         }

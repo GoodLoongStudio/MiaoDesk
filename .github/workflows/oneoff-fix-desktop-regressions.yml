@@ -1,0 +1,162 @@
+name: One-off Desktop Regression Patch
+
+on:
+  push:
+    paths:
+      - .github/workflows/oneoff-fix-desktop-regressions.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply minimal regression fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+          # 1) Wallpaper disable must remain authoritative across runtime reloads.
+          replace_once(
+              "src/desktop/wallpaper/legacy/WallpaperEngine.cpp",
+              '''        if (config_.enabled == enabled) {
+            miaodesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
+            libraryWindow_.SetWallpaperEnabledState(config_.enabled);
+            return;
+        }
+''',
+              '''        if (config_.enabled == enabled) {
+            // SetEnabled is an idempotent command, not only a state mutation.
+            // A stale shell/window can survive a previous transition, so a
+            // repeated disable request must still enforce the stopped state.
+            if (!enabled) {
+                videoSet_.SetPaused(true);
+                independentHost_.SetPaused(true);
+                StopRuntime();
+                if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
+            }
+            miaodesk::log::Info(L"WallpaperEngine", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，已重新确认运行时状态");
+            libraryWindow_.SetWallpaperEnabledState(config_.enabled);
+            return;
+        }
+''')
+
+          replace_once(
+              "src/desktop/wallpaper/legacy/WallpaperEngine.cpp",
+              '''        case kReloadConfig:
+            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            config_ = LoadConfig();
+            config_.enabled = true;
+            ApplyConfig(config_, false);
+            return 0;
+''',
+              '''        case kReloadConfig: {
+            miaodesk::log::Info(L"WallpaperEngine", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            // Enabled is persisted user intent. Never turn a disabled desktop
+            // back on merely because another runtime domain requested reload.
+            const Config reloaded = LoadConfig();
+            ApplyConfig(reloaded, false);
+            return 0;
+        }
+''')
+
+          # 2) Native Widget Direct2D coordinates must use the HWND's real DPI.
+          replace_once(
+              "src/desktop/widgets/NativeWidgetHost.cpp",
+              '''        const auto props = D2D1::HwndRenderTargetProperties(
+            slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
+        if (FAILED(d2dFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), props, slot.target.GetAddressOf()))) return false;
+''',
+              '''        const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
+        const auto props = D2D1::HwndRenderTargetProperties(
+            slot.hwnd, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
+        const auto targetProps = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(),
+            static_cast<float>(dpi), static_cast<float>(dpi));
+        if (FAILED(d2dFactory->CreateHwndRenderTarget(targetProps, props, slot.target.GetAddressOf()))) return false;
+''')
+
+          # The shell contract now makes native Widgets ordinary D2D children.
+          # Do not create them as layered top-level windows only to strip that
+          # style milliseconds later during re-parenting.
+          replace_once(
+              "src/desktop/widgets/NativeWidgetHost.cpp",
+              '''        HWND hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            kNativeWidgetSurfaceClass, title.c_str(),
+            WS_POPUP | WS_CLIPSIBLINGS,
+            desktopRegion.left, desktopRegion.top, width, height,
+            nullptr, nullptr, instance, &slot);
+        if (!hwnd) {
+            lastSurfaceError = L"Native widget CreateWindowEx failed: Win32=" + std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            return false;
+        }
+        if (!SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)) {
+            lastSurfaceError = L"Native widget SetLayeredWindowAttributes failed: Win32=" +
+                               std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            DestroyWindow(hwnd);
+            return false;
+        }
+''',
+              '''        HWND hwnd = CreateWindowExW(
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            kNativeWidgetSurfaceClass, title.c_str(),
+            WS_POPUP | WS_CLIPSIBLINGS,
+            desktopRegion.left, desktopRegion.top, width, height,
+            nullptr, nullptr, instance, &slot);
+        if (!hwnd) {
+            lastSurfaceError = L"Native widget CreateWindowEx failed: Win32=" + std::to_wstring(GetLastError());
+            WriteDiagnostics(lastSurfaceError);
+            return false;
+        }
+''')
+
+          replace_once(
+              "src/desktop/widgets/NativeWidgetHost.cpp",
+              '''        if (!AttachSlotSurface(slot, desktopRegion)) {
+            DestroyWindow(hwnd);
+            slot.hwnd = nullptr;
+            slot.target.Reset();
+            return false;
+        }
+        PaintSlot(slot);
+''',
+              '''        if (!AttachSlotSurface(slot, desktopRegion)) {
+            DestroyWindow(hwnd);
+            slot.hwnd = nullptr;
+            slot.target.Reset();
+            return false;
+        }
+        // Re-parenting changes the final child/window metrics and can move the
+        // HWND into another DPI context. Build the rounded clip and D2D target
+        // only from the final Explorer-child geometry.
+        ApplyRoundedWindowRegion(slot);
+        slot.target.Reset();
+        PaintSlot(slot);
+''')
+
+      - name: Commit fixes and remove one-off workflow
+        shell: bash
+        run: |
+          git config user.name "MiaoDesk CI"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/oneoff-fix-desktop-regressions.yml
+          git add src/desktop/wallpaper/legacy/WallpaperEngine.cpp src/desktop/widgets/NativeWidgetHost.cpp
+          git commit -m "fix: restore wallpaper disable and widget layout"
+          git push origin HEAD:main

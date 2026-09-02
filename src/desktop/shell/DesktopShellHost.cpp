@@ -193,8 +193,16 @@ bool DesktopShellHost::PrepareSurface(HWND surface, bool clickThrough, std::wstr
         if (error) *error = L"DesktopShellHost: failed to set child style, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
+
+    // Native Widget surfaces paint directly with ID2D1HwndRenderTarget. A
+    // layered Explorer child can own a valid/visible HWND while its HWND render
+    // target never reaches the compositor. Keep native Widgets as ordinary D2D
+    // child surfaces; Web/wallpaper surfaces retain the layered contract.
+    const bool nativeWidget = IsWidgetNativeSurface(surface);
     LONG_PTR exStyle = GetWindowLongPtrW(surface, GWL_EXSTYLE);
-    exStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+    exStyle |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+    if (nativeWidget) exStyle &= ~static_cast<LONG_PTR>(WS_EX_LAYERED);
+    else exStyle |= WS_EX_LAYERED;
     if (clickThrough) exStyle |= WS_EX_TRANSPARENT;
     else exStyle &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
     SetLastError(ERROR_SUCCESS);
@@ -202,7 +210,7 @@ bool DesktopShellHost::PrepareSurface(HWND surface, bool clickThrough, std::wstr
         if (error) *error = L"DesktopShellHost: failed to set extended style, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-    if (!SetLayeredWindowAttributes(surface, 0, 255, LWA_ALPHA)) {
+    if (!nativeWidget && !SetLayeredWindowAttributes(surface, 0, 255, LWA_ALPHA)) {
         if (error) *error = L"DesktopShellHost: SetLayeredWindowAttributes failed, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
@@ -296,7 +304,9 @@ bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, cons
         RepairKnownMiaoDeskSurfaces();
     }
     const auto health = InspectSurface(surface, role);
-    if (!health.window || !health.parent || !health.childStyle || !health.layered || !health.geometry) {
+    const bool layeredRequired = !IsWidgetNativeSurface(surface);
+    if (!health.window || !health.parent || !health.childStyle ||
+        (layeredRequired && !health.layered) || !health.geometry) {
         if (error) *error = health.detail.empty() ? L"DesktopShellHost: surface verification failed" : health.detail;
         return false;
     }
@@ -322,9 +332,10 @@ DesktopSurfaceHealth DesktopShellHost::InspectSurface(HWND surface, DesktopSurfa
     health.visible = IsWindowVisible(surface) != FALSE;
     RECT rect{};
     health.geometry = GetClientRect(surface, &rect) != FALSE && rect.right > rect.left && rect.bottom > rect.top;
+    const bool layeredRequired = !IsWidgetNativeSurface(surface);
     if (!health.parent) health.detail = L"surface parent is not current DesktopShellHost parent";
     else if (!health.childStyle) health.detail = L"surface is missing WS_CHILD";
-    else if (!health.layered) health.detail = L"surface is missing WS_EX_LAYERED";
+    else if (layeredRequired && !health.layered) health.detail = L"surface is missing WS_EX_LAYERED";
     else if (!health.geometry) health.detail = L"surface has no drawable client geometry";
     else if (!health.visible) health.detail = L"surface HWND exists but is not visible";
     return health;

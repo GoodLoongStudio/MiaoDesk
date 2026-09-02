@@ -142,7 +142,30 @@ ManagedSource=0
 "@
     [IO.File]::WriteAllText($manifest, $second, [Text.UnicodeEncoding]::new($false, $true))
     Wait-WidgetCount 2 $true
+
+    $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+    $logDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        Start-Sleep -Milliseconds 200
+        $logText = if (Test-Path $debugLog -PathType Leaf) {
+            [IO.File]::ReadAllText($debugLog, [Text.UTF8Encoding]::new($false))
+        } else { '' }
+    } while ([string]::IsNullOrWhiteSpace($logText) -and [DateTime]::UtcNow -lt $logDeadline)
+
+    foreach ($marker in @(
+        '[WidgetHost] 原生组件宿主启动',
+        '组件首次绘制成功',
+        'mode=direct-hwnd',
+        'parentNoRedirection=true',
+        'paintReady=true',
+        'wallpaper.enabled=false'
+    )) {
+        if (-not $logText.Contains($marker)) {
+            throw "Native Widget diagnostic log is missing marker: $marker"
+        }
+    }
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
+    Write-Host 'Native Widget direct-HWND diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {
@@ -154,6 +177,11 @@ ManagedSource=0
     $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $wallpaperIni -PathType Leaf) {
         $details += "`n" + ((Get-Content $wallpaperIni | Out-String).Trim())
+    }
+    $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+    if (Test-Path $debugLog -PathType Leaf) {
+        $details += "`n[desktop-debug.log tail]`n" +
+            ((Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 60 | Out-String).Trim())
     }
     $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
     Write-Host "::error title=Native Widget paint readiness failed::$details"

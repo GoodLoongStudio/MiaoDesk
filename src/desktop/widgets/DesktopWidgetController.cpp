@@ -1,6 +1,7 @@
 #include "miaodesk/DesktopWidgetController.h"
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogPaths.h"
+#include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 
 #include <windows.h>
@@ -9,8 +10,8 @@
 #include <array>
 #include <cmath>
 #include <optional>
-#include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <string_view>
 #include <utility>
 
@@ -101,11 +102,23 @@ bool MatchesNativePreset(const wallpaper::DesktopWidget& widget,
     return wallpaper::ParseNativePreset(widget.source.wstring(), &existing) && existing == preset;
 }
 
+void AppendUtf8Log(const std::filesystem::path& path, std::wstring_view text) {
+    if (path.empty() || text.empty()) return;
+    const std::string utf8 = miaodesk::log::WideToUtf8(text);
+    if (utf8.empty()) return;
+    HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(file, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
+    CloseHandle(file);
+}
+
 void AppendControllerErrorLog(std::wstring_view message) {
     const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
-    std::wofstream log(path, std::ios::app);
-    if (!log) return;
+    std::wostringstream log;
     SYSTEMTIME now{};
     GetLocalTime(&now);
     log << L"\n=== "
@@ -114,13 +127,13 @@ void AppendControllerErrorLog(std::wstring_view message) {
         << std::setw(2) << now.wHour << L':' << std::setw(2) << now.wMinute << L':'
         << std::setw(2) << now.wSecond << L" Widget controller error ===\n"
         << message << L"\n";
+    AppendUtf8Log(path, log.str());
 }
 
 void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
     const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
-    std::wofstream log(path, std::ios::app);
-    if (!log) return;
+    std::wostringstream log;
 
     SYSTEMTIME now{};
     GetLocalTime(&now);
@@ -181,7 +194,7 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
             << L" detail=\"" << surface.detail << L"\""
             << L" action=\"" << surface.recommendedAction << L"\"\n";
     }
-    log.flush();
+    AppendUtf8Log(path, log.str());
 }
 
 } // namespace

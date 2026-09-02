@@ -99,11 +99,19 @@ set(MIAODESK_HARNESS_SOURCES
     harness/HarnessBundledRuntimeBootstrap.cpp
 )
 
+set(MIAODESK_WINDOWS_RESOURCES)
+if(WIN32)
+    enable_language(RC)
+    list(APPEND MIAODESK_WINDOWS_RESOURCES
+        "${CMAKE_SOURCE_DIR}/assets/app/MiaoDesk.rc"
+    )
+endif()
+
 add_library(MiaoDeskCore STATIC ${MIAODESK_CORE_SOURCES})
 add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
-add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES})
-add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES})
-add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES})
+add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
+add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
+add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"

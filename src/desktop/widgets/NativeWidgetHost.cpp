@@ -498,14 +498,21 @@ struct NativeWidgetHostApp {
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
         ApplyRoundedWindowRegion(slot);
-        slot.dragHandle = CreateWindowExW(
-            WS_EX_NOACTIVATE, kWidgetDragClass, L"", WS_CHILD | WS_VISIBLE,
-            0, 0, width, height, hwnd, nullptr, instance, &slot);
-        SetWindowPos(slot.dragHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        ResizeDragHandle(slot);
+        // SurfaceProc already owns the complete drag gesture. A full-size child
+        // drag window sits above the HWND render target and can cover its D2D
+        // output on real Explorer desktop parents, so native widgets must not
+        // add a second visual/input surface here.
+        slot.dragHandle = nullptr;
         PaintSlot(slot);
-        AttachSlotSurface(slot, desktopRegion);
+        if (!AttachSlotSurface(slot, desktopRegion)) {
+            DestroyWindow(hwnd);
+            slot.hwnd = nullptr;
+            slot.target.Reset();
+            return false;
+        }
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        UpdateWindow(hwnd);
         return true;
     }
 
@@ -545,7 +552,10 @@ struct NativeWidgetHostApp {
             desiredIds.push_back(widget.id);
             NativeSlot* existing = FindSlot(widget.id);
             if (!existing) {
-                CreateSlot(widget, desktopRegion, mappedRegion, preset);
+                if (!CreateSlot(widget, desktopRegion, mappedRegion, preset)) {
+                    WriteDiagnostics(L"Native widget surface 创建/挂载失败：" + widget.id +
+                                     L" · Win32=" + std::to_wstring(GetLastError()));
+                }
                 continue;
             }
             if (existing->dragging) continue;
@@ -594,7 +604,8 @@ struct NativeWidgetHostApp {
                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
         }
-        WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()));
+        WriteDiagnostics(L"Native Direct2D Widget host · surfaces=" + std::to_wstring(slots.size()) +
+                         L" · desired=" + std::to_wstring(desiredIds.size()));
     }
 
     void SetPaused(bool value) {

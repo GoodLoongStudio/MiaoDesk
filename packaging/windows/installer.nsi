@@ -69,8 +69,8 @@ Section "MiaoDesk"
     SetOutPath "$INSTDIR"
     File /r "${STAGE_DIR}\*.*"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
-    CreateShortCut "$SMPROGRAMS\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe"
-    CreateShortCut "$DESKTOP\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe"
+    CreateShortCut "$SMPROGRAMS\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
+    CreateShortCut "$DESKTOP\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
 
     StrCmp $InstallMode "all" 0 PerUser
     WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"

@@ -124,6 +124,10 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
           }
 
+      - name: Verify native Widget visibility
+        shell: pwsh
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
       - name: Verify movable install and DSH Web
         shell: pwsh
         run: |
@@ -210,6 +214,14 @@ jobs:
               ) | Select-Object -Unique
               if (-not ($desktopLinks | Where-Object { Test-Path $_ -PathType Leaf })) {
                 throw "Installer did not create a desktop shortcut. Checked: $($desktopLinks -join ', ')"
+              }
+              $createdDesktopLink = $desktopLinks | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+              $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($createdDesktopLink)
+              $expectedIcon = Join-Path $testRoot 'Assets\MiaoMiao.ico'
+              $actualIcon = ($shortcut.IconLocation -split ',')[0].Trim('"')
+              if (-not (Test-Path $expectedIcon -PathType Leaf)) { throw "Installed icon is missing: $expectedIcon" }
+              if ($actualIcon -ne $expectedIcon) {
+                throw "Desktop shortcut icon is wrong. Expected=$expectedIcon Actual=$actualIcon"
               }
 
               $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `

@@ -18,6 +18,17 @@ bool WindowStillParented(HWND window, HWND expectedParent) noexcept {
            GetParent(window) == expectedParent;
 }
 
+bool SurfaceRequiresLayered(HWND surface) noexcept {
+    // Native Widgets render through ID2D1HwndRenderTarget. Turning that HWND into
+    // a layered Explorer child can leave a nominally visible window with no
+    // compositor output. Web/wallpaper surfaces keep the layered contract.
+    return !DesktopShellHost::IsWidgetNativeSurface(surface);
+}
+
+bool AttachmentHealthValid(const DesktopSurfaceHealth& health, bool layeredRequired) noexcept {
+    return health.parent && health.childStyle && (!layeredRequired || health.layered) && health.geometry;
+}
+
 } // namespace
 
 bool DesktopShellHost::CurrentGenerationValid() const noexcept {
@@ -68,11 +79,12 @@ bool DesktopShellHost::EnsureSurface(HWND surface,
 
     // AttachSurface is deliberately idempotent and is the sole operation that
     // chooses the shell parent, maps screen geometry to parent client space,
-    // applies child/layered styles and restores the desktop surface stack.
+    // applies renderer-appropriate child styles and restores the desktop stack.
     if (!AttachSurface(surface, role, desktopBounds, visible, error)) return false;
 
     const auto health = InspectSurface(surface, role);
-    if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
+    const bool layeredRequired = SurfaceRequiresLayered(surface);
+    if (!AttachmentHealthValid(health, layeredRequired)) {
         if (error) {
             *error = health.detail.empty()
                 ? L"DesktopShellHost: ensured surface failed attachment health validation"
@@ -137,7 +149,8 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
 
     if (!EnsureCurrent(error)) return false;
     const auto health = InspectSurface(surface, role);
-    if (sameGeneration && health.parent && health.childStyle && health.layered && health.geometry) {
+    const bool layeredRequired = SurfaceRequiresLayered(surface);
+    if (sameGeneration && AttachmentHealthValid(health, layeredRequired)) {
         return RepairSurfaceStack(surface, error);
     }
 

@@ -22,6 +22,8 @@ constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\MiaoDesk.WidgetRuntime.v1";
 constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
 constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
 constexpr wchar_t kWidgetRuntimeMode[] = L"--widget-runtime";
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
 constexpr DWORD kRuntimeReadyTimeoutMs = 5000;
 constexpr DWORD kRuntimeReadyPollMs = 100;
 
@@ -80,6 +82,24 @@ bool RepairMissingHelpers(const fs::path& executable) {
         launched = LaunchRuntime(executable, helper.mode) || launched;
     }
     return launched;
+}
+
+void NotifyNativeWidgetRuntimeReload() {
+    const HWND messageWindow = FindWindowExW(
+        HWND_MESSAGE, nullptr, kNativeWidgetHostMessageClass, nullptr);
+    if (!messageWindow || !IsWindow(messageWindow)) return;
+    const UINT message = RegisterWindowMessageW(kWidgetRuntimeReloadMessageName);
+    if (message != 0) PostMessageW(messageWindow, message, 0, 0);
+}
+
+DesktopControlResult RefreshWidgetRuntime(const DesktopControlResult& result,
+                                          const DesktopControlService& service) {
+    const auto runtime = service.EnsureRuntime();
+    if (!runtime.success) return runtime;
+    // The coordinator still polls as a recovery path. This message makes an
+    // already-running native host apply create/update/remove immediately.
+    NotifyNativeWidgetRuntimeReload();
+    return result;
 }
 
 DesktopControlResult FromWallpaper(WallpaperServiceResult result) {
@@ -234,9 +254,7 @@ DesktopControlResult DesktopControlService::CreateWebWidget(
     WidgetService service;
     const auto result = service.CreateWeb(request, created);
     if (!result.success) return FromWidget(result);
-    const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
-    return {true, result.message};
+    return RefreshWidgetRuntime({true, result.message}, *this);
 }
 
 DesktopControlResult DesktopControlService::CreateNativeWidget(
@@ -245,23 +263,21 @@ DesktopControlResult DesktopControlService::CreateNativeWidget(
     WidgetService service;
     const auto result = service.CreateNative(request, created);
     if (!result.success) return FromWidget(result);
-    const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
-    return {true, result.message};
+    return RefreshWidgetRuntime({true, result.message}, *this);
 }
 
 DesktopControlResult DesktopControlService::UpdateWidget(const WidgetUpdateRequest& request) const {
     WidgetService service;
     const auto result = service.Update(request);
     if (!result.success) return FromWidget(result);
-    const auto runtime = EnsureRuntime();
-    if (!runtime.success) return runtime;
-    return {true, result.message};
+    return RefreshWidgetRuntime({true, result.message}, *this);
 }
 
 DesktopControlResult DesktopControlService::RemoveWidget(std::wstring_view id) const {
     WidgetService service;
-    return FromWidget(service.Remove(id));
+    const auto result = FromWidget(service.Remove(id));
+    if (!result.success) return result;
+    return RefreshWidgetRuntime(result, *this);
 }
 
 DesktopControlResult DesktopControlService::ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const {

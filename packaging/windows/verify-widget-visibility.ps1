@@ -29,6 +29,10 @@ public static class MiaoDeskWidgetProbe {
     private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")]
     private static extern bool GetClientRect(IntPtr window, out Rect rect);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr window, uint command);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { public int Left, Top, Right, Bottom; }
@@ -43,16 +47,26 @@ public static class MiaoDeskWidgetProbe {
         return GetProp(window, "MiaoDesk.Native.WidgetPaintReady") != IntPtr.Zero;
     }
 
-    public static bool HasPaintReadyWidget() {
-        bool found = false;
+    private static bool AboveDesktopIcons(IntPtr widget) {
+        const uint GW_HWNDPREV = 3;
+        for (var sibling = GetWindow(widget, GW_HWNDPREV); sibling != IntPtr.Zero;
+             sibling = GetWindow(sibling, GW_HWNDPREV)) {
+            var name = new StringBuilder(160);
+            if (GetClassName(sibling, name, name.Capacity) > 0 &&
+                String.Equals(name.ToString(), "SHELLDLL_DefView", StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return GetParent(widget) != IntPtr.Zero;
+    }
+
+    public static int PaintReadyWidgetCount(bool requireAboveIcons) {
+        int found = 0;
         EnumWindows((top, ignored) => {
-            if (IsPaintReadyWidget(top)) { found = true; return false; }
+            if (IsPaintReadyWidget(top) && (!requireAboveIcons || AboveDesktopIcons(top))) found++;
             EnumChildWindows(top, (child, childIgnored) => {
-                if (!IsPaintReadyWidget(child)) return true;
-                found = true;
-                return false;
+                if (IsPaintReadyWidget(child) && (!requireAboveIcons || AboveDesktopIcons(child))) found++;
+                return true;
             }, IntPtr.Zero);
-            return !found;
+            return true;
         }, IntPtr.Zero);
         return found;
     }
@@ -64,6 +78,7 @@ $stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-widget-visibility-smoke'
 $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
 $widgetRoot = Join-Path $env:LOCALAPPDATA 'MiaoDesk\DesktopWidgets'
 $manifest = Join-Path $widgetRoot 'widgets.ini'
+$wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
 
 Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $widgetRoot 'Packages') | Out-Null
@@ -85,25 +100,55 @@ Enabled=1
 ManagedSource=0
 "@
 [IO.File]::WriteAllText($manifest, $manifestText, [Text.UnicodeEncoding]::new($false, $true))
+New-Item -ItemType Directory -Force -Path (Split-Path $wallpaperIni -Parent) | Out-Null
+[IO.File]::WriteAllText($wallpaperIni, "[Wallpaper]`r`nEnabled=0`r`n", [Text.UnicodeEncoding]::new($false, $true))
+
+function Wait-WidgetCount([int]$Expected, [bool]$RequireAboveIcons, [int]$Seconds = 15) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    do {
+        Start-Sleep -Milliseconds 250
+        $count = [MiaoDeskWidgetProbe]::PaintReadyWidgetCount($RequireAboveIcons)
+        if ($count -eq $Expected) { return }
+        if ($main.HasExited) { throw "MiaoDeskWallpaper exited during Widget lifecycle probe: $($main.ExitCode)" }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Expected $Expected paint-ready Widget surface(s), observed $count."
+}
 
 try {
     $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        Start-Sleep -Milliseconds 500
-        if ([MiaoDeskWidgetProbe]::HasPaintReadyWidget()) {
-            Write-Host 'Paint-ready native Widget surface verified.' -ForegroundColor Green
-            return
-        }
-        if ($main.HasExited) { throw "MiaoDeskWallpaper exited before Widget became paint-ready: $($main.ExitCode)" }
-    } while ([DateTime]::UtcNow -lt $deadline)
+    Wait-WidgetCount 1 $true
+
+    $disabled = $manifestText.Replace('Enabled=1', 'Enabled=0')
+    [IO.File]::WriteAllText($manifest, $disabled, [Text.UnicodeEncoding]::new($false, $true))
+    Wait-WidgetCount 0 $false
+
+    [IO.File]::WriteAllText($manifest, $manifestText, [Text.UnicodeEncoding]::new($false, $true))
+    Wait-WidgetCount 1 $true
+
+    $second = $manifestText.Replace('Ids=ci-visible-widget', 'Ids=ci-visible-widget,ci-created-widget') + @"
+
+[Widget.ci-created-widget]
+Kind=native
+Title=CI Created Widget
+Source=native:today-tasks
+MonitorId=
+X=0.35
+Y=0.05
+Width=0.25
+Height=0.30
+ZIndex=101
+Enabled=1
+ManagedSource=0
+"@
+    [IO.File]::WriteAllText($manifest, $second, [Text.UnicodeEncoding]::new($false, $true))
+    Wait-WidgetCount 2 $true
+    Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {
         Write-Host 'Widget diagnostics:' -ForegroundColor Yellow
         Get-Content $diagnostics | Out-Host
     }
-    throw 'No paint-ready MiaoDesk.Native.WidgetSurface appeared within 15 seconds.'
 } catch {
     $details = ($_ | Out-String).Trim()
     $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'

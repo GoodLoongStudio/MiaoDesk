@@ -66,6 +66,17 @@ Done:
 FunctionEnd
 
 Section "MiaoDesk"
+    ; An in-place upgrade must not leave the previous desktop runtime and its
+    ; Widget helpers alive. Otherwise the new UI talks to old in-memory code
+    ; even though the files on disk were replaced.
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDesk.exe'
+    Pop $0
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDeskWallpaper.exe'
+    Pop $0
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDeskHarness.exe'
+    Pop $0
+    Sleep 500
+
     SetOutPath "$INSTDIR"
     File /r "${STAGE_DIR}\*.*"
     WriteUninstaller "$INSTDIR\Uninstall.exe"

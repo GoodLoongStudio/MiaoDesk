@@ -42,6 +42,7 @@ constexpr UINT_PTR kSyncTimerId = 71;
 constexpr UINT_PTR kRefreshTimerId = 72;
 constexpr UINT kRefreshSchedulerTickMs = 1000;
 constexpr wchar_t kNativeHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
 
 std::wstring ExecutablePath() {
     std::wstring path(32768, L'\0');
@@ -736,6 +737,13 @@ struct NativeWidgetHostApp {
                                L" paintReady=" + std::to_wstring(paintReadyCount);
         if (!lastSurfaceError.empty()) summary += L" error=" + lastSurfaceError;
         WriteDiagnostics(summary);
+
+        // Explorer and ShowWindow can both disturb sibling order. Reassert the
+        // product contract after every state sync: wallpaper < icons < widgets.
+        DesktopShellHost shell;
+        std::wstring shellError;
+        if (shell.EnsureCurrent(&shellError)) shell.RepairKnownMiaoDeskSurfaces();
+        else if (!shellError.empty()) WriteDiagnostics(L"NativeWidgetHost z-order repair failed: " + shellError);
     }
 
     void SetPaused(bool value) {
@@ -828,6 +836,11 @@ struct NativeWidgetHostApp {
 NativeWidgetHostApp* gNativeHost{};
 
 LRESULT CALLBACK NativeHostWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    static const UINT reloadMessage = RegisterWindowMessageW(kWidgetRuntimeReloadMessageName);
+    if (reloadMessage != 0 && message == reloadMessage && gNativeHost) {
+        gNativeHost->SyncFromStore();
+        return 0;
+    }
     if (message == kShutdownMessage && gNativeHost) {
         PostQuitMessage(0);
         return 0;

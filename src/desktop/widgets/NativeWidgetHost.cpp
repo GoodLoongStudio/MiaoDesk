@@ -21,6 +21,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <memory>
@@ -35,7 +36,6 @@ namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kNativeHostMode[] = L"--native-widget-host";
-constexpr wchar_t kWidgetDragClass[] = L"MiaoDesk.Native.WidgetDragHandle";
 constexpr UINT kPauseMessage = WM_APP + 911;
 constexpr UINT kResumeMessage = WM_APP + 912;
 constexpr UINT kShutdownMessage = WM_APP + 913;
@@ -43,6 +43,12 @@ constexpr UINT kWeatherUpdatedMessage = WM_APP + 914;
 constexpr UINT_PTR kSyncTimerId = 71;
 constexpr UINT_PTR kRefreshTimerId = 72;
 constexpr UINT kRefreshSchedulerTickMs = 1000;
+// Direct GDI widget surfaces re-present on this heartbeat. Explorer's raised
+// desktop can discard a child's composited content (wallpaper re-attach,
+// remote-desktop session, fullscreen transitions) without any WM_PAINT, and
+// static presets never repaint on their own, so the last presented frame
+// would otherwise stay stale or turn into uninitialized bits forever.
+constexpr std::uint32_t kDirectSurfaceRepaintMs = 2000;
 constexpr wchar_t kNativeHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
 constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
 
@@ -188,7 +194,6 @@ struct NativeSlot {
     RECT region{};
     RECT desktopRegion{};
     HWND hwnd{};
-    HWND dragHandle{};
     ComPtr<ID2D1DCRenderTarget> target;
     ComPtr<IDWriteFactory> dwrite;
     HDC layerDc{};
@@ -363,6 +368,12 @@ struct NativeWidgetHostApp {
             ReleaseLayerSurface(slot);
             return false;
         }
+        // CreateDIBSection does not guarantee zeroed bits. A frame that never
+        // reaches its full-rect Clear must never present recycled GDI memory
+        // (which can look like fragments of an older desktop image).
+        if (slot.layerBits) {
+            memset(slot.layerBits, 0, static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+        }
 
         const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -475,6 +486,13 @@ struct NativeWidgetHostApp {
     }
 
     void ScheduleNextRefresh(NativeSlot& slot) {
+        const bool directSurface = slot.hwnd && IsWindow(slot.hwnd) &&
+            (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
+        if (directSurface) {
+            slot.nextRefreshAt = GetTickCount64() + kDirectSurfaceRepaintMs;
+            return;
+        }
+
         const std::uint32_t interval = NativePresetRefreshIntervalMs(slot.preset);
         if (interval == 0) {
             slot.nextRefreshAt = 0;
@@ -547,16 +565,6 @@ struct NativeWidgetHostApp {
         }
     }
 
-    void ResizeDragHandle(NativeSlot& slot) {
-        if (!slot.dragHandle || !slot.hwnd) return;
-        RECT client{};
-        if (!GetClientRect(slot.hwnd, &client)) return;
-        SetWindowPos(slot.dragHandle, HWND_TOP, 0, 0,
-                     std::max<LONG>(1, client.right - client.left),
-                     std::max<LONG>(1, client.bottom - client.top),
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    }
-
     bool BeginDrag(NativeSlot& slot) {
         if (!slot.hwnd || !parent) return false;
         DesktopWidgetStore store;
@@ -603,7 +611,6 @@ struct NativeWidgetHostApp {
     void EndDrag(NativeSlot& slot, bool persist) {
         if (!slot.dragging) return;
         slot.dragging = false;
-        if (GetCapture() == slot.dragHandle) ReleaseCapture();
         if (GetCapture() == slot.hwnd) ReleaseCapture();
         if (!persist) {
             const LONG width = slot.dragStartRegion_.right - slot.dragStartRegion_.left;
@@ -650,35 +657,6 @@ struct NativeWidgetHostApp {
         slot.geometryGraceUntil = GetTickCount64() + 2000;
     }
 
-    static LRESULT CALLBACK DragProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-        auto* slot = reinterpret_cast<NativeSlot*>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        if (message == WM_NCCREATE) {
-            const auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            slot = static_cast<NativeSlot*>(create->lpCreateParams);
-            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(slot));
-        }
-        if (!slot || !slot->owner) return DefWindowProcW(window, message, wParam, lParam);
-        switch (message) {
-        case WM_NCHITTEST: return HTCLIENT;
-        case WM_SETCURSOR: SetCursor(LoadCursorW(nullptr, IDC_SIZEALL)); return TRUE;
-        case WM_LBUTTONDOWN:
-            if (slot->owner->BeginDrag(*slot)) SetCapture(window);
-            return 0;
-        case WM_MOUSEMOVE:
-            if (slot->dragging && GetCapture() == window) slot->owner->UpdateDrag(*slot);
-            return 0;
-        case WM_LBUTTONUP:
-            if (slot->dragging) slot->owner->EndDrag(*slot, true);
-            return 0;
-        case WM_CAPTURECHANGED:
-            if (slot->dragging) slot->owner->EndDrag(*slot, true);
-            return 0;
-        case WM_ERASEBKGND: return 1;
-        default: break;
-        }
-        return DefWindowProcW(window, message, wParam, lParam);
-    }
-
     static LRESULT CALLBACK SurfaceProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
         auto* slot = reinterpret_cast<NativeSlot*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (message == WM_NCCREATE) {
@@ -704,7 +682,6 @@ struct NativeWidgetHostApp {
             return 0;
         case WM_SIZE:
             ReleaseLayerSurface(*slot);
-            slot->owner->ResizeDragHandle(*slot);
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         case WM_DPICHANGED:
@@ -719,10 +696,8 @@ struct NativeWidgetHostApp {
             return 0;
         }
         case WM_DESTROY:
-            if (slot->dragHandle && IsWindow(slot->dragHandle)) DestroyWindow(slot->dragHandle);
             ReleaseLayerSurface(*slot);
             slot->hwnd = nullptr;
-            slot->dragHandle = nullptr;
             return 0;
         default: break;
         }
@@ -737,15 +712,7 @@ struct NativeWidgetHostApp {
         surface.lpszClassName = kNativeWidgetSurfaceClass;
         surface.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         surface.hbrBackground = nullptr;
-        if (!RegisterClassExW(&surface) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
-
-        WNDCLASSEXW drag{};
-        drag.cbSize = sizeof(drag);
-        drag.hInstance = instance;
-        drag.lpfnWndProc = &NativeWidgetHostApp::DragProc;
-        drag.lpszClassName = kWidgetDragClass;
-        drag.hCursor = LoadCursorW(nullptr, IDC_SIZEALL);
-        return RegisterClassExW(&drag) || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+        return RegisterClassExW(&surface) || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
     }
 
     void DestroySlot(NativeSlot& slot) {
@@ -753,7 +720,6 @@ struct NativeWidgetHostApp {
         ReleaseLayerSurface(slot);
         if (slot.hwnd && IsWindow(slot.hwnd)) DestroyWindow(slot.hwnd);
         slot.hwnd = nullptr;
-        slot.dragHandle = nullptr;
     }
 
     NativeSlot* FindSlot(std::wstring_view id) {
@@ -807,7 +773,6 @@ struct NativeWidgetHostApp {
         slot.hwnd = hwnd;
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
-        slot.dragHandle = nullptr;
         MarkNativeSurfaceRole(hwnd);
         LogSlot(miaodesk::log::Level::Info, L"组件 Surface 已创建", slot,
                 L"requestedDesktop=" + RectText(desktopRegion));
@@ -994,8 +959,10 @@ struct NativeWidgetHostApp {
         const ULONGLONG now = GetTickCount64();
         for (const auto& slot : slots) {
             if (!slot || !slot->hwnd || !IsWindow(slot->hwnd)) continue;
-            if (NativePresetRefreshIntervalMs(slot->preset) == 0) continue;
-            if (slot->nextRefreshAt == 0 || now >= slot->nextRefreshAt) PaintSlot(*slot);
+            // nextRefreshAt == 0 means a static layered preset: its cached
+            // UpdateLayeredWindow bitmap survives DWM resets by itself.
+            if (slot->nextRefreshAt == 0) continue;
+            if (now >= slot->nextRefreshAt) PaintSlot(*slot);
         }
     }
 

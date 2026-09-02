@@ -7,6 +7,7 @@
 namespace miaodesk::wallpaper {
 
 inline constexpr wchar_t kWallpaperControlWindowClass[] = L"MiaoDesk.Native.WallpaperControl";
+inline constexpr wchar_t kWallpaperHostWindowClass[] = L"MiaoDesk.Native.WallpaperHost";
 inline constexpr UINT kWallpaperSetEnabledMessage = WM_APP + 83;
 inline constexpr UINT kWallpaperReloadMessage = WM_APP + 84;
 
@@ -16,10 +17,22 @@ inline bool PersistedWallpaperEnabled() {
     return GetPrivateProfileIntW(L"Wallpaper", L"Enabled", 1, path.c_str()) != 0;
 }
 
+inline void EnforceWallpaperHostHidden() {
+    const HWND host = FindWindowW(kWallpaperHostWindowClass, nullptr);
+    if (host && IsWindow(host)) ShowWindow(host, SW_HIDE);
+}
+
 inline bool NotifyWallpaperRuntimeEnabled(const bool enabled) {
     const HWND control = FindWindowW(kWallpaperControlWindowClass, nullptr);
-    if (!control) return false;
+    if (!control) {
+        if (!enabled) EnforceWallpaperHostHidden();
+        return false;
+    }
     SendMessageW(control, kWallpaperSetEnabledMessage, enabled ? TRUE : FALSE, 0);
+    // SetEnabled is logically idempotent, but older runtime code can early-return
+    // when its cached Enabled value already equals false. Enforce the observable
+    // native surface state here so a repeated Stop can never leave the host up.
+    if (!enabled) EnforceWallpaperHostHidden();
     return true;
 }
 
@@ -32,6 +45,7 @@ inline bool NotifyWallpaperRuntimeReload() {
     // reload, so route disabled state through the explicit idempotent stop verb.
     if (!PersistedWallpaperEnabled()) {
         SendMessageW(control, kWallpaperSetEnabledMessage, FALSE, 0);
+        EnforceWallpaperHostHidden();
         return true;
     }
 

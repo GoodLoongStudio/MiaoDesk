@@ -26,18 +26,18 @@ struct DesktopState {
     std::size_t widgetCount{};
 };
 
-// Atomic caller-facing desktop snapshot. UI, Pi and the future editor should
-// read wallpaper + widget state through this contract instead of composing
-// independent store reads that can disagree about the current desktop.
+// Atomic caller-facing desktop snapshot. UI and Pi read wallpaper + Widget
+// state through this contract instead of composing independent store reads that
+// can disagree about the current desktop.
 struct DesktopSnapshot {
     DesktopState desktop;
     std::vector<wallpaper::DesktopWidget> widgets;
     WidgetRuntimeHealth widgetRuntime;
 };
 
-// Facade shared by UI, Pi native tools and future editor clients. Domain
-// ownership remains in WallpaperService / WidgetService; this class coordinates
-// cross-domain intent and runtime activation only.
+// Facade shared by UI and Pi native tools. Domain ownership remains in
+// WallpaperService / WidgetService; this class coordinates cross-domain intent
+// and runtime activation only.
 class DesktopControlService {
 public:
     DesktopControlService() = default;

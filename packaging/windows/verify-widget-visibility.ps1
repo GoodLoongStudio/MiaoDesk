@@ -152,7 +152,7 @@ Enabled=1
         '[WidgetHost] 原生组件宿主启动',
         '组件首次绘制成功',
         'mode=direct-gdi',
-        'target=direct-gdi-dib',
+        'target=direct-swapchain',
         'parentNoRedirection=true',
         'paintReady=true',
         'zOrderValid=true',
@@ -163,7 +163,7 @@ Enabled=1
         }
     }
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
-    Write-Host 'Native Widget direct-GDI diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
+    Write-Host 'Native Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {

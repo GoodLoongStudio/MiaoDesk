@@ -80,8 +80,18 @@ Section "MiaoDesk"
     SetOutPath "$INSTDIR"
     File /r "${STAGE_DIR}\*.*"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+    ; Recreate shortcut files instead of updating them in place. Explorer may
+    ; otherwise keep the previous shortcut/icon metadata when an application is
+    ; reinstalled to the same path with the same icon filename.
+    Delete "$SMPROGRAMS\MiaoDesk.lnk"
+    Delete "$DESKTOP\MiaoDesk.lnk"
     CreateShortCut "$SMPROGRAMS\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
     CreateShortCut "$DESKTOP\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
+
+    ; Tell Explorer that shell/icon metadata changed so an in-place upgrade does
+    ; not keep rendering a cached icon from the previous MiaoDesk installation.
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 
     StrCmp $InstallMode "all" 0 PerUser
     WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"

@@ -198,11 +198,40 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio\2022" -Filter dumpbin.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $dumpbin) { throw 'dumpbin.exe not found.' }
-          $headers = & $dumpbin.FullName /headers (Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDesk.exe') 2>&1
-          $headers | Out-Host
-          if (-not ($headers -match 'AA64 machine \(ARM64\)')) { throw 'MiaoDesk.exe is not ARM64.' }
+          # Read the PE machine type directly. dumpbin.exe is not used here because it
+          # depends on the Visual Studio toolchain environment being initialised, which
+          # is not guaranteed on the installer runner.
+          $exe = Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDesk.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "MiaoDesk.exe is missing from the ARM64 package at '$exe'."
+          }
+
+          $stream = [System.IO.File]::OpenRead($exe)
+          try {
+            $reader = [System.IO.BinaryReader]::new($stream)
+            $stream.Position = 0x3C
+            $peOffset = $reader.ReadUInt32()
+            $stream.Position = $peOffset
+            $signature = $reader.ReadUInt32()
+            if ($signature -ne 0x00004550) {
+              throw "MiaoDesk.exe is not a PE image (signature=0x$($signature.ToString('X8')))."
+            }
+            $machine = $reader.ReadUInt16()
+          } finally {
+            $stream.Dispose()
+          }
+
+          $label = switch ($machine) {
+            0xAA64 { 'ARM64' }
+            0x8664 { 'x64' }
+            0x014C { 'x86' }
+            default { 'unknown' }
+          }
+          Write-Host "MiaoDesk.exe PE machine = 0x$($machine.ToString('X4')) ($label)"
+          if ($machine -ne 0xAA64) {
+            throw "MiaoDesk.exe is not ARM64 (PE machine=0x$($machine.ToString('X4')) / $label; expected 0xAA64)."
+          }
+          Write-Host 'MiaoDesk.exe verified as ARM64.' -ForegroundColor Cyan
 
       - name: Build ARM64 installer
         shell: pwsh

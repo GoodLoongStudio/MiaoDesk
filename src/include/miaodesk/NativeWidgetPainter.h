@@ -61,6 +61,10 @@ inline float NativeWidgetCardRadius(NativeWidgetPreset preset, float widthDip, f
     return 32.0f * NativeWidgetCardScale(preset, widthDip, heightDip);
 }
 
+inline float NativeWidgetTextSize(float designSize, float cardScale, float minimum, float maximum) {
+    return std::clamp(designSize * cardScale, minimum, maximum);
+}
+
 namespace native_widget_paint {
 namespace {
 
@@ -156,7 +160,10 @@ void DrawCatMark(ID2D1RenderTarget* target, float x, float y, float scale, ID2D1
 void DrawGlassCardBase(const NativeWidgetPaintContext& ctx, D2D1_COLOR_F a, D2D1_COLOR_F b, D2D1_COLOR_F c, float radius, float s) {
     if (ctx.clearBackground) {
         ctx.target->Clear(ctx.opaqueSurface
-            ? D2D1::ColorF(0.025f, 0.05f, 0.10f, 1.0f)
+            // Raised-desktop swapchains ignore per-pixel alpha. Clear with the
+            // card's edge color so antialiasing at the HWND region boundary can
+            // never reveal a black backing pixel.
+            ? D2D1::ColorF(a.r, a.g, a.b, 1.0f)
             : D2D1::ColorF(0, 0, 0, 0));
     }
     const D2D1_RECT_F card{1.0f * s, 1.0f * s, ctx.width - 1.0f * s, ctx.height - 1.0f * s};
@@ -197,8 +204,9 @@ void PaintGlassClock(const NativeWidgetPaintContext& ctx) {
     auto white = Brush(ctx.target, 0.98f, 0.995f, 1.0f, 0.98f);
     auto muted = Brush(ctx.target, 0.84f, 0.92f, 1.0f, 0.84f);
     DrawCatMark(ctx.target, 25.0f * s, 25.0f * s, 0.72f * s, muted.Get());
-    Text(ctx.target, ctx.dwrite, L"妙喵", 11.0f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
-         39.0f * s, 17.0f * s, 80.0f * s, 20.0f * s);
+    Text(ctx.target, ctx.dwrite, L"妙喵", NativeWidgetTextSize(13.0f, s, 12.0f, 30.0f),
+         DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
+         39.0f * s, 16.0f * s, 90.0f * s, 24.0f * s);
 
     wchar_t timeText[16]{L"12:34"};
     wchar_t dateText[96]{L"8月29日 · 星期六"};
@@ -214,8 +222,10 @@ void PaintGlassClock(const NativeWidgetPaintContext& ctx) {
     auto divider = Brush(ctx.target, 0.80f, 0.95f, 1.0f, 0.22f);
     ctx.target->DrawLine(D2D1::Point2F(24.0f * s, ctx.height - 48.0f * s),
                          D2D1::Point2F(ctx.width - 24.0f * s, ctx.height - 48.0f * s), divider.Get(), std::max(1.0f, s));
-    Text(ctx.target, ctx.dwrite, dateText, 16.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-         22.0f * s, ctx.height - 37.0f * s, ctx.width - 44.0f * s, 22.0f * s, DWRITE_TEXT_ALIGNMENT_CENTER);
+    Text(ctx.target, ctx.dwrite, dateText, NativeWidgetTextSize(18.0f, s, 16.0f, 42.0f),
+         DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         22.0f * s, ctx.height - 39.0f * s, ctx.width - 44.0f * s, 26.0f * s,
+         DWRITE_TEXT_ALIGNMENT_CENTER);
 
     auto mascot = Brush(ctx.target, 0.86f, 0.96f, 1.0f, 0.34f);
     Circle(ctx.target, mascot.Get(), ctx.width - 42.0f * s, ctx.height - 39.0f * s, 21.0f * s);
@@ -254,9 +264,9 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
         location += L"…";
     }
     const std::wstring header = L"妙喵 · " + location;
-    const float headerSize = (location.size() > 18 ? 9.5f : 10.5f) * s;
+    const float headerSize = NativeWidgetTextSize(location.size() > 18 ? 11.5f : 13.0f, s, 12.0f, 30.0f);
     Text(ctx.target, ctx.dwrite, header, headerSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
-         39.0f * s, 15.0f * s, ctx.width * 0.62f, 20.0f * s);
+         39.0f * s, 14.0f * s, ctx.width * 0.62f, 25.0f * s);
 
     // Right-side illustration has its own visual region and never shares the
     // left-side text boxes. Scale from both width and height for high DPI / compact cards.
@@ -311,8 +321,8 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
     const float rangeTop = conditionTop + conditionH;
     const float rangeH = std::max(15.0f * s, infoBottom - rangeTop);
     const float tempSize = std::min(62.0f * s, tempBoxH * 0.78f);
-    const float conditionSize = 15.0f * s;
-    const float rangeSize = 11.0f * s;
+    const float conditionSize = NativeWidgetTextSize(18.0f, s, 17.0f, 40.0f);
+    const float rangeSize = NativeWidgetTextSize(13.0f, s, 12.0f, 30.0f);
     const float left = std::max(18.0f * s, ctx.width * 0.055f);
     const float textW = ctx.width * 0.48f;
 
@@ -337,8 +347,8 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
         const std::wstring value = weather ? std::to_wstring(weather->hours[i].temperatureC) + L"°" : L"--°";
         const D2D1_RECT_F chip{x, chipTop, x + chipW, chipBottom};
         RoundRect(ctx.target, chipFill.Get(), chipBorder.Get(), chip, std::min(13.0f * s, chipH * 0.30f), 0.8f * s);
-        const float labelSize = 10.0f * s;
-        const float valueSize = 13.0f * s;
+        const float labelSize = NativeWidgetTextSize(12.0f, s, 11.0f, 27.0f);
+        const float valueSize = NativeWidgetTextSize(15.0f, s, 13.0f, 34.0f);
         Text(ctx.target, ctx.dwrite, label, labelSize, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
              chip.left + 4.0f * s, chip.top + chipH * 0.16f, chipW - 8.0f * s, chipH * 0.32f, DWRITE_TEXT_ALIGNMENT_CENTER);
         Text(ctx.target, ctx.dwrite, value, valueSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
@@ -364,16 +374,19 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
     auto teal = Brush(ctx.target, 0.34f, 0.98f, 0.82f, 0.96f);
     auto amber = Brush(ctx.target, 1.0f, 0.67f, 0.28f, 0.96f);
     DrawCatMark(ctx.target, 24.0f * s, 24.0f * s, 0.7f * s, muted.Get());
-    Text(ctx.target, ctx.dwrite, L"妙喵", 10.5f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
-         39.0f * s, 16.0f * s, 80.0f * s, 18.0f * s);
-    Text(ctx.target, ctx.dwrite, L"今日待办", 19.0f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
-         18.0f * s, 42.0f * s, ctx.width * 0.55f, 28.0f * s);
+    Text(ctx.target, ctx.dwrite, L"妙喵", NativeWidgetTextSize(13.0f, s, 12.0f, 30.0f),
+         DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
+         39.0f * s, 15.0f * s, 90.0f * s, 24.0f * s);
+    Text(ctx.target, ctx.dwrite, L"今日待办", NativeWidgetTextSize(24.0f, s, 21.0f, 52.0f),
+         DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
+         18.0f * s, 42.0f * s, ctx.width * 0.64f, 34.0f * s);
 
     const float countSize = 58.0f * s;
     Text(ctx.target, ctx.dwrite, L"3", countSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
          18.0f * s, 70.0f * s, 66.0f * s, countSize + 8.0f * s);
-    Text(ctx.target, ctx.dwrite, L"项待办", 13.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-         75.0f * s, 88.0f * s, 70.0f * s, 20.0f * s);
+    Text(ctx.target, ctx.dwrite, L"项待办", NativeWidgetTextSize(16.0f, s, 15.0f, 36.0f),
+         DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         75.0f * s, 86.0f * s, 82.0f * s, 24.0f * s);
 
     auto bubble = Brush(ctx.target, 0.88f, 0.99f, 1.0f, 0.24f);
     Circle(ctx.target, bubble.Get(), ctx.width - 50.0f * s, 70.0f * s, 32.0f * s);
@@ -385,8 +398,10 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
               D2D1::RectF(18.0f * s, progressTop, ctx.width - 18.0f * s, progressTop + 8.0f * s), 4.0f * s);
     RoundRect(ctx.target, teal.Get(), nullptr,
               D2D1::RectF(18.0f * s, progressTop, 18.0f * s + (ctx.width - 36.0f * s) / 3.0f, progressTop + 8.0f * s), 4.0f * s);
-    Text(ctx.target, ctx.dwrite, L"1 / 3 完成", 10.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-         18.0f * s, progressTop + 12.0f * s, ctx.width - 36.0f * s, 16.0f * s, DWRITE_TEXT_ALIGNMENT_TRAILING);
+    Text(ctx.target, ctx.dwrite, L"1 / 3 完成", NativeWidgetTextSize(12.0f, s, 11.0f, 27.0f),
+         DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         18.0f * s, progressTop + 12.0f * s, ctx.width - 36.0f * s, 19.0f * s,
+         DWRITE_TEXT_ALIGNMENT_TRAILING);
 
     struct TaskRow { const wchar_t* text; const wchar_t* time; bool done; };
     const std::array<TaskRow, 3> tasks{{
@@ -408,10 +423,12 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
             ctx.target->DrawLine(D2D1::Point2F(row.left + 11.5f * s, row.top + 17.0f * s), D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), status.Get(), 1.5f * s);
             ctx.target->DrawLine(D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), D2D1::Point2F(row.left + 19.0f * s, row.top + 13.5f * s), status.Get(), 1.5f * s);
         }
-        Text(ctx.target, ctx.dwrite, task.text, 11.5f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, task.done ? muted.Get() : white.Get(),
-             row.left + 30.0f * s, row.top + 7.0f * s, row.right - row.left - 40.0f * s, 18.0f * s);
-        Text(ctx.target, ctx.dwrite, task.time, 9.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-             row.left + 30.0f * s, row.top + 25.0f * s, row.right - row.left - 40.0f * s, 14.0f * s);
+        Text(ctx.target, ctx.dwrite, task.text, NativeWidgetTextSize(14.5f, s, 13.0f, 32.0f),
+             DWRITE_FONT_WEIGHT_SEMI_BOLD, task.done ? muted.Get() : white.Get(),
+             row.left + 30.0f * s, row.top + 5.0f * s, row.right - row.left - 40.0f * s, 21.0f * s);
+        Text(ctx.target, ctx.dwrite, task.time, NativeWidgetTextSize(11.5f, s, 10.5f, 26.0f),
+             DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+             row.left + 30.0f * s, row.top + 25.0f * s, row.right - row.left - 40.0f * s, 16.0f * s);
         y += 49.0f * s;
     }
 }

@@ -234,7 +234,7 @@ Widget 自定义编辑器
 
 ```text
 1. Widget 内容完整显示
-2. Widget 位于 Desktop Icons 之上、Wallpaper 之下
+2. 桌面层级保持 Widget > Desktop Icons > Wallpaper
 3. Widget 可交互，拖动后只持久化 x/y
 4. Wallpaper 可以可靠停用且不会被 reload 拉起
 5. Wallpaper 停用后 Widget 继续显示

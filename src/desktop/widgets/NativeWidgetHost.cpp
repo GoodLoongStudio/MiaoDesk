@@ -356,9 +356,18 @@ struct NativeWidgetHostApp {
         const float dipScale = static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
         const float widthDip = static_cast<float>(rc.right - rc.left) / dipScale;
         const float heightDip = static_cast<float>(rc.bottom - rc.top) / dipScale;
+        const float cardScale = NativeWidgetCardScale(slot.preset, widthDip, heightDip);
+        const int insetPx = std::max(1, static_cast<int>(std::lround(cardScale * dipScale)));
         const int radiusPx = std::max(1, static_cast<int>(std::lround(
             NativeWidgetCardRadius(slot.preset, widthDip, heightDip) * dipScale)));
-        HRGN region = CreateRoundRectRgn(0, 0, rc.right - rc.left + 1, rc.bottom - rc.top + 1, radiusPx, radiusPx);
+        // CreateRoundRectRgn takes the width/height of the corner ellipse, not
+        // its radius. Passing radiusPx here clips at half the painted radius
+        // and exposes the opaque swapchain clear color as dark corner wedges.
+        const int cornerDiameterPx = radiusPx * 2;
+        HRGN region = CreateRoundRectRgn(
+            insetPx, insetPx,
+            rc.right - insetPx + 1, rc.bottom - insetPx + 1,
+            cornerDiameterPx, cornerDiameterPx);
         if (!region) return;
         if (!SetWindowRgn(slot.hwnd, region, FALSE)) DeleteObject(region);
     }

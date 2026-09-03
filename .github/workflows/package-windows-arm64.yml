@@ -1,0 +1,287 @@
+name: Windows ARM64 Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - assets/app/**
+      - assets/wallpapers/**
+      - config/**
+      - runtime/arm64/**
+      - runtime/agent/**
+      - third_party/webview2/**
+      - packaging/windows/**
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/package-windows-arm64.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm64-package
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\arm64
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\arm64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Verify path layout
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A ARM64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake ARM64 configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $log | ForEach-Object { "$_" } | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
+              Select-Object -First 40 | ForEach-Object {
+                $line = $_.Trim()
+                if ($line.Length -gt 500) { $line = $line.Substring(0, 500) }
+                Write-Host "::error::$line"
+              }
+            throw 'ARM64 build failed.'
+          }
+
+      - name: Install product files
+        shell: pwsh
+        run: |
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+
+      - name: Stage Runtime
+        shell: pwsh
+        run: |
+          try {
+            .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture arm64
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=ARM64 runtime staging failed::$details"
+            throw
+          }
+
+      - name: Report package size
+        shell: pwsh
+        run: |
+          $all = @(Get-ChildItem $env:MIAODESK_STAGE_ROOT -File -Recurse -Force)
+          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'AI') -File -Recurse -Force)
+          Write-Host "Package files: $($all.Count)" -ForegroundColor Cyan
+          Write-Host "Agent Runtime files: $($agent.Count)" -ForegroundColor Cyan
+
+      - name: Verify path budget
+        shell: pwsh
+        run: |
+          .\packaging\windows\verify-path-budget.ps1 `
+            -Root $env:MIAODESK_STAGE_ROOT `
+            -MaxInstallRootChars 85 `
+            -MaxProjectedPathChars 248 `
+            -MaxProductDepth 6
+
+      - name: Verify packaged ARM64 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:MIAODESK_STAGE_ROOT
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Assets\MiaoMiao.ico',
+            'Config\product.ini',
+            'Runtime\Node\node.exe',
+            'AI\package-lock.json',
+            'AI\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'AI\node_modules\pi\dist\cli.js',
+            'AI\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+            'AI\node_modules\pi\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+            'Goz\goz.exe',
+            'Goz\gozd.exe'
+          )) {
+            if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing ARM64 package file: $relative" }
+          }
+
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 DSH probe failed.' }
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\pi\dist\cli.js" --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 Pi probe failed.' }
+
+          foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+            $p = Start-Process -FilePath (Join-Path $root $exe) -ArgumentList '--self-test' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe ARM64 self-test failed: $($p.ExitCode)" }
+          }
+
+      - name: Verify native Widget visibility
+        shell: pwsh
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
+      - name: Verify movable install and DSH Web
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = $env:MIAODESK_STAGE_ROOT
+          $testParent = 'C:\md arm path test'
+          $testRoot = Join-Path $testParent 'custom install root with spaces'
+          Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $testParent | Out-Null
+          try {
+            Move-Item $original $testRoot
+            $p = Start-Process -FilePath (Join-Path $testRoot 'MiaoDeskHarness.exe') `
+                -ArgumentList '--harness-smoke-test' -WorkingDirectory $testRoot -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "ARM64 DSH Web smoke failed from moved install, exit=$($p.ExitCode)" }
+          } finally {
+            if (Test-Path $testRoot -PathType Container) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $original -Parent) | Out-Null
+              Move-Item $testRoot $original -Force
+            }
+            Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload ARM64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-arm64-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/arm64/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+  installer:
+    needs: package
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\arm64
+      MIAODESK_INSTALLER_PATH: C:\pkg\MiaoDesk\MiaoDesk-arm64-Setup.exe
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download ARM64 package
+        uses: actions/download-artifact@v4
+        with:
+          name: MiaoDesk-windows-arm64-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/arm64
+
+      - name: Verify ARM64 package architecture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio\2022" -Filter dumpbin.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found.' }
+          $headers = & $dumpbin.FullName /headers (Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDesk.exe') 2>&1
+          $headers | Out-Host
+          if (-not ($headers -match 'AA64 machine \(ARM64\)')) { throw 'MiaoDesk.exe is not ARM64.' }
+
+      - name: Build ARM64 installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+          if (-not $makensis) {
+            choco install nsis --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw "Unable to install NSIS, choco exit=$LASTEXITCODE" }
+            $makensis = @(
+              (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
+              (Join-Path $env:ProgramFiles 'NSIS\makensis.exe')
+            ) | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          }
+          if (-not $makensis) { throw 'makensis.exe is missing after NSIS installation.' }
+
+          Remove-Item $env:MIAODESK_INSTALLER_PATH -Force -ErrorAction SilentlyContinue
+          $compilerOutput = @(& $makensis `
+            "/DSTAGE_DIR=$env:MIAODESK_STAGE_ROOT" `
+            "/DOUTPUT_FILE=$env:MIAODESK_INSTALLER_PATH" `
+            .\packaging\windows\installer.nsi 2>&1)
+          $compilerOutput | Out-Host
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ($compilerOutput | Select-Object -Last 30 | Out-String).Trim()
+            throw "NSIS ARM64 installer build failed, exit=$LASTEXITCODE`n$tail"
+          }
+          if (-not (Test-Path $env:MIAODESK_INSTALLER_PATH -PathType Leaf)) { throw 'ARM64 NSIS installer was not created.' }
+          Write-Host "ARM64 installer bytes: $((Get-Item $env:MIAODESK_INSTALLER_PATH).Length)" -ForegroundColor Cyan
+
+      - name: Verify ARM64 installer install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $testRoot = 'C:\mdarm'
+          Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+          try {
+            $install = Start-Process -FilePath $env:MIAODESK_INSTALLER_PATH `
+              -ArgumentList @('/S',"/D=$testRoot") -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "Silent ARM64 installer failed: $($install.ExitCode)" }
+            foreach ($relative in @(
+              'MiaoDesk.exe',
+              'MiaoDeskWallpaper.exe',
+              'MiaoDeskHarness.exe',
+              'Assets\MiaoMiao.ico',
+              'Config\product.ini',
+              'Runtime\Node\node.exe',
+              'AI\node_modules\pi\dist\cli.js',
+              'Uninstall.exe'
+            )) {
+              if (-not (Test-Path (Join-Path $testRoot $relative) -PathType Leaf)) {
+                throw "Installed ARM64 file is missing: $relative"
+              }
+            }
+
+            $desktopLinks = @(
+              (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk.lnk'),
+              (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'MiaoDesk.lnk')
+            ) | Select-Object -Unique
+            if (-not ($desktopLinks | Where-Object { Test-Path $_ -PathType Leaf })) {
+              throw "ARM64 installer did not create a desktop shortcut. Checked: $($desktopLinks -join ', ')"
+            }
+            $createdDesktopLink = $desktopLinks | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+            $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($createdDesktopLink)
+            $expectedIcon = Join-Path $testRoot 'Assets\MiaoMiao.ico'
+            $actualIcon = ($shortcut.IconLocation -split ',')[0].Trim('"')
+            if ($actualIcon -ne $expectedIcon) {
+              throw "ARM64 desktop shortcut icon is wrong. Expected=$expectedIcon Actual=$actualIcon"
+            }
+
+            $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) { throw "Silent ARM64 uninstall failed: $($uninstall.ExitCode)" }
+            Start-Sleep -Seconds 2
+            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Config','Uninstall.exe')) {
+              if (Test-Path (Join-Path $testRoot $relative)) { throw "ARM64 uninstall left product content behind: $relative" }
+            }
+          } finally {
+            Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload ARM64 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-arm64-installer-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/MiaoDesk-arm64-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

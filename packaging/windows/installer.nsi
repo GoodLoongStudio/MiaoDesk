@@ -21,8 +21,22 @@ Unicode true
 !define PRODUCT_REG_KEY "Software\GoodLoongStudio\MiaoDesk"
 !define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\MiaoDesk"
 
+; Microsoft Partner Center reads the package version from the installer's Windows
+; version resource. Without VIProductVersion the EXE reports version 0.0.0.0 and the
+; Store submission cannot be versioned. VIProductVersion requires four components.
+!define PRODUCT_VERSION_QUAD "${PRODUCT_VERSION}.0"
+
 Name "${PRODUCT_NAME}"
 OutFile "${OUTPUT_FILE}"
+
+VIProductVersion "${PRODUCT_VERSION_QUAD}"
+VIFileVersion "${PRODUCT_VERSION_QUAD}"
+VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
+VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
+VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
+VIAddVersionKey "FileDescription" "${PRODUCT_NAME} ${PRODUCT_VERSION} Installer"
+VIAddVersionKey "LegalCopyright" "Copyright (c) GoodLoongStudio"
 InstallDir "$PROGRAMFILES64\MiaoDesk"
 RequestExecutionLevel highest
 SetCompressor /SOLID lzma

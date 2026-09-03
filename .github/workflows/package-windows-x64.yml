@@ -14,6 +14,7 @@ on:
       - runtime/agent/**
       - third_party/webview2/**
       - packaging/windows/**
+      - packaging/store/**
       - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/package-windows-x64.yml
@@ -277,3 +278,30 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 6
+
+      - name: Build MSIX package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & (Join-Path $env:GITHUB_WORKSPACE 'packaging\store\msix\pack-msix.ps1') `
+              -StageRoot $env:MIAODESK_STAGE_ROOT `
+              -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix'
+            if ($LASTEXITCODE -ne 0) { throw "pack-msix.ps1 failed with exit code $LASTEXITCODE" }
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=MSIX packaging failed::$details"
+            throw
+          }
+
+      - name: Upload MSIX package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-msix-${{ github.sha }}
+          path: |
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msix
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msixupload
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

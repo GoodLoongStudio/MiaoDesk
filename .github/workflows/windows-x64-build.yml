@@ -10,6 +10,7 @@ on:
       - assets/app/**
       - config/**
       - third_party/webview2/**
+      - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/windows-x64-build.yml
   pull_request:
@@ -20,6 +21,7 @@ on:
       - assets/app/**
       - config/**
       - third_party/webview2/**
+      - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/windows-x64-build.yml
   workflow_dispatch:
@@ -40,6 +42,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Generate MiaoMiao app icon
+        shell: pwsh
+        run: .\scripts\generate-miaomiao-icon.ps1
 
       - name: Verify path layout
         shell: pwsh

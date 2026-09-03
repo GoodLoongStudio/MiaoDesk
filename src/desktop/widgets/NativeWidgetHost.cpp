@@ -337,6 +337,32 @@ struct NativeWidgetHostApp {
         return true;
     }
 
+    // Direct swapchain surfaces are opaque: the compositor ignores the frame's
+    // alpha, so the painter's rounded corners left the dark clear color visible
+    // as black wedges in all four corners. Clip the child HWND to the card's
+    // rounded rect instead; the parent's wallpaper then shows through outside
+    // the card. Layered surfaces keep per-pixel alpha and must not carry a
+    // region (it would hard-clip their anti-aliased edges).
+    void ApplyCardWindowRegion(NativeSlot& slot) {
+        if (!slot.hwnd || !IsWindow(slot.hwnd)) return;
+        RECT rc{};
+        const bool clientValid = GetClientRect(slot.hwnd, &rc) != FALSE &&
+                                 rc.right > rc.left && rc.bottom > rc.top;
+        if (!clientValid) {
+            SetWindowRgn(slot.hwnd, nullptr, FALSE);
+            return;
+        }
+        const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(slot.hwnd));
+        const float dipScale = static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        const float widthDip = static_cast<float>(rc.right - rc.left) / dipScale;
+        const float heightDip = static_cast<float>(rc.bottom - rc.top) / dipScale;
+        const int radiusPx = std::max(1, static_cast<int>(std::lround(
+            NativeWidgetCardRadius(slot.preset, widthDip, heightDip) * dipScale)));
+        HRGN region = CreateRoundRectRgn(0, 0, rc.right - rc.left + 1, rc.bottom - rc.top + 1, radiusPx, radiusPx);
+        if (!region) return;
+        if (!SetWindowRgn(slot.hwnd, region, FALSE)) DeleteObject(region);
+    }
+
     bool EnsureRenderTarget(NativeSlot& slot) {
         if (!slot.hwnd || !IsWindow(slot.hwnd) || !d2dFactory) {
             ReportFailure(&slot, L"Render target prerequisites are invalid");
@@ -442,6 +468,7 @@ struct NativeWidgetHostApp {
         slot.directPresentation = false;
         slot.layerWidth = width;
         slot.layerHeight = height;
+        SetWindowRgn(slot.hwnd, nullptr, FALSE);
         LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
                 L"target=layered-dc size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
@@ -543,6 +570,7 @@ struct NativeWidgetHostApp {
         slot.directPresentation = true;
         slot.layerWidth = width;
         slot.layerHeight = height;
+        ApplyCardWindowRegion(slot);
         LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
                 L"target=direct-swapchain size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));

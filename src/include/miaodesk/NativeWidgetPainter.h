@@ -33,6 +33,34 @@ struct NativeWidgetPaintContext {
     bool opaqueSurface{false};
 };
 
+// Painters author layout constants against the DIP canvas a default-fraction
+// widget occupies on a 1080p monitor. Every font size, margin and radius is
+// multiplied by the card's scale relative to that canvas, so a widget grows
+// its text proportionally instead of keeping 1080p pixel sizes on 2K/4K
+// monitors (where the fraction-based HWND already covers more pixels).
+struct NativeWidgetDesignCanvas {
+    float width{};
+    float height{};
+};
+
+inline NativeWidgetDesignCanvas NativeWidgetCanvasFor(NativeWidgetPreset preset) {
+    // Landscape presets share the clock/weather 16:9 card; the task card is
+    // portrait and scales from its own canvas.
+    if (preset == NativeWidgetPreset::TodayTasks) return {430.0f, 520.0f};
+    return {560.0f, 315.0f};
+}
+
+inline float NativeWidgetCardScale(NativeWidgetPreset preset, float widthDip, float heightDip) {
+    const NativeWidgetDesignCanvas canvas = NativeWidgetCanvasFor(preset);
+    return std::clamp(std::min(std::max(1.0f, widthDip) / canvas.width,
+                               std::max(1.0f, heightDip) / canvas.height),
+                      0.55f, 3.0f);
+}
+
+inline float NativeWidgetCardRadius(NativeWidgetPreset preset, float widthDip, float heightDip) {
+    return 32.0f * NativeWidgetCardScale(preset, widthDip, heightDip);
+}
+
 namespace native_widget_paint {
 namespace {
 
@@ -125,17 +153,17 @@ void DrawCatMark(ID2D1RenderTarget* target, float x, float y, float scale, ID2D1
     Circle(target, brush, x + 3.0f * scale, y - 1.0f * scale, 0.9f * scale);
 }
 
-void DrawGlassCardBase(const NativeWidgetPaintContext& ctx, D2D1_COLOR_F a, D2D1_COLOR_F b, D2D1_COLOR_F c, float radius) {
+void DrawGlassCardBase(const NativeWidgetPaintContext& ctx, D2D1_COLOR_F a, D2D1_COLOR_F b, D2D1_COLOR_F c, float radius, float s) {
     if (ctx.clearBackground) {
         ctx.target->Clear(ctx.opaqueSurface
             ? D2D1::ColorF(0.025f, 0.05f, 0.10f, 1.0f)
             : D2D1::ColorF(0, 0, 0, 0));
     }
-    const D2D1_RECT_F card{1.0f, 1.0f, ctx.width - 1.0f, ctx.height - 1.0f};
+    const D2D1_RECT_F card{1.0f * s, 1.0f * s, ctx.width - 1.0f * s, ctx.height - 1.0f * s};
     const std::array<D2D1_GRADIENT_STOP, 3> stops{{{0.0f, a}, {0.55f, b}, {1.0f, c}}};
     auto gradient = LinearBrush(ctx.target, D2D1::Point2F(card.left, card.top), D2D1::Point2F(card.right, card.bottom), stops);
     auto border = Brush(ctx.target, 0.92f, 0.98f, 1.0f, 0.24f);
-    RoundRect(ctx.target, gradient.Get(), border.Get(), card, radius, 1.0f);
+    RoundRect(ctx.target, gradient.Get(), border.Get(), card, radius, std::max(1.0f, s));
     auto topGlow = LinearBrush(ctx.target,
         D2D1::Point2F(card.left, card.top), D2D1::Point2F(card.left, card.top + ctx.height * 0.42f),
         {{{0.0f, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.14f)},
@@ -145,11 +173,12 @@ void DrawGlassCardBase(const NativeWidgetPaintContext& ctx, D2D1_COLOR_F a, D2D1
 }
 
 void PaintGlassClock(const NativeWidgetPaintContext& ctx) {
-    const float radius = std::clamp(ctx.width * 0.075f, 22.0f, 34.0f);
+    const float s = NativeWidgetCardScale(NativeWidgetPreset::GlassClock, ctx.width, ctx.height);
+    const float radius = NativeWidgetCardRadius(NativeWidgetPreset::GlassClock, ctx.width, ctx.height);
     DrawGlassCardBase(ctx,
         D2D1::ColorF(0.08f, 0.25f, 0.54f, 0.96f),
         D2D1::ColorF(0.10f, 0.39f, 0.74f, 0.94f),
-        D2D1::ColorF(0.03f, 0.14f, 0.40f, 0.97f), radius);
+        D2D1::ColorF(0.03f, 0.14f, 0.40f, 0.97f), radius, s);
 
     auto cyanGlow = RadialBrush(ctx.target, D2D1::Point2F(ctx.width * 0.30f, ctx.height * 0.48f), ctx.width * 0.34f, ctx.height * 0.54f,
                                 D2D1::ColorF(0.25f, 1.0f, 0.92f, 0.28f), D2D1::ColorF(0.1f, 0.4f, 0.7f, 0.0f));
@@ -160,15 +189,16 @@ void PaintGlassClock(const NativeWidgetPaintContext& ctx) {
 
     auto star = Brush(ctx.target, 0.82f, 0.96f, 1.0f, 0.72f);
     for (int i = 0; i < 14; ++i) {
-        const float x = 24.0f + std::fmod(static_cast<float>(i * 67), std::max(40.0f, ctx.width - 48.0f));
-        const float y = 44.0f + std::fmod(static_cast<float>(i * 31), std::max(30.0f, ctx.height * 0.52f));
-        Circle(ctx.target, star.Get(), x, y, (i % 3 == 0) ? 1.5f : 0.85f);
+        const float x = 24.0f * s + std::fmod(static_cast<float>(i * 67), std::max(40.0f * s, ctx.width - 48.0f * s));
+        const float y = 44.0f * s + std::fmod(static_cast<float>(i * 31), std::max(30.0f * s, ctx.height * 0.52f));
+        Circle(ctx.target, star.Get(), x, y, ((i % 3 == 0) ? 1.5f : 0.85f) * s);
     }
 
     auto white = Brush(ctx.target, 0.98f, 0.995f, 1.0f, 0.98f);
     auto muted = Brush(ctx.target, 0.84f, 0.92f, 1.0f, 0.84f);
-    DrawCatMark(ctx.target, 25.0f, 25.0f, 0.72f, muted.Get());
-    Text(ctx.target, ctx.dwrite, L"妙喵", 11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(), 39.0f, 17.0f, 80.0f, 20.0f);
+    DrawCatMark(ctx.target, 25.0f * s, 25.0f * s, 0.72f * s, muted.Get());
+    Text(ctx.target, ctx.dwrite, L"妙喵", 11.0f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
+         39.0f * s, 17.0f * s, 80.0f * s, 20.0f * s);
 
     wchar_t timeText[16]{L"12:34"};
     wchar_t dateText[96]{L"8月29日 · 星期六"};
@@ -177,26 +207,28 @@ void PaintGlassClock(const NativeWidgetPaintContext& ctx) {
         swprintf_s(timeText, L"%02u:%02u", ctx.localTime.wHour, ctx.localTime.wMinute);
         swprintf_s(dateText, L"%u月%u日 · %s", ctx.localTime.wMonth, ctx.localTime.wDay, weekdays[ctx.localTime.wDayOfWeek]);
     }
-    const float timeSize = std::clamp(ctx.width * 0.205f, 38.0f, 86.0f);
+    const float timeSize = 86.0f * s;
     Text(ctx.target, ctx.dwrite, timeText, timeSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
-         22.0f, ctx.height * 0.35f, ctx.width - 44.0f, timeSize + 16.0f, DWRITE_TEXT_ALIGNMENT_CENTER);
+         22.0f * s, ctx.height * 0.35f, ctx.width - 44.0f * s, timeSize + 16.0f * s, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     auto divider = Brush(ctx.target, 0.80f, 0.95f, 1.0f, 0.22f);
-    ctx.target->DrawLine(D2D1::Point2F(24.0f, ctx.height - 48.0f), D2D1::Point2F(ctx.width - 24.0f, ctx.height - 48.0f), divider.Get(), 1.0f);
-    Text(ctx.target, ctx.dwrite, dateText, std::clamp(ctx.width * 0.042f, 12.0f, 17.0f), DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-         22.0f, ctx.height - 37.0f, ctx.width - 44.0f, 22.0f, DWRITE_TEXT_ALIGNMENT_CENTER);
+    ctx.target->DrawLine(D2D1::Point2F(24.0f * s, ctx.height - 48.0f * s),
+                         D2D1::Point2F(ctx.width - 24.0f * s, ctx.height - 48.0f * s), divider.Get(), std::max(1.0f, s));
+    Text(ctx.target, ctx.dwrite, dateText, 16.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         22.0f * s, ctx.height - 37.0f * s, ctx.width - 44.0f * s, 22.0f * s, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     auto mascot = Brush(ctx.target, 0.86f, 0.96f, 1.0f, 0.34f);
-    Circle(ctx.target, mascot.Get(), ctx.width - 42.0f, ctx.height - 39.0f, 21.0f);
-    DrawCatMark(ctx.target, ctx.width - 42.0f, ctx.height - 38.0f, 0.85f, white.Get());
+    Circle(ctx.target, mascot.Get(), ctx.width - 42.0f * s, ctx.height - 39.0f * s, 21.0f * s);
+    DrawCatMark(ctx.target, ctx.width - 42.0f * s, ctx.height - 38.0f * s, 0.85f * s, white.Get());
 }
 
 void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
-    const float radius = std::clamp(ctx.width * 0.078f, 22.0f, 32.0f);
+    const float s = NativeWidgetCardScale(NativeWidgetPreset::WeatherGlass, ctx.width, ctx.height);
+    const float radius = NativeWidgetCardRadius(NativeWidgetPreset::WeatherGlass, ctx.width, ctx.height);
     DrawGlassCardBase(ctx,
         D2D1::ColorF(0.20f, 0.65f, 0.95f, 0.96f),
         D2D1::ColorF(0.16f, 0.53f, 0.90f, 0.95f),
-        D2D1::ColorF(0.08f, 0.28f, 0.68f, 0.97f), radius);
+        D2D1::ColorF(0.08f, 0.28f, 0.68f, 0.97f), radius, s);
 
     const NativeWeatherSnapshot* weather = ctx.weather && ctx.weather->valid ? ctx.weather : nullptr;
     const int code = weather ? weather->weatherCode : -1;
@@ -215,22 +247,22 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
 
     // Header owns a dedicated top strip. Keep long city names away from the
     // main weather content and never allow them to wrap into the temperature.
-    DrawCatMark(ctx.target, 24.0f, 24.0f, 0.7f, muted.Get());
+    DrawCatMark(ctx.target, 24.0f * s, 24.0f * s, 0.7f * s, muted.Get());
     std::wstring location = weather && !weather->location.empty() ? weather->location : L"本地天气";
     if (location.size() > 24) {
         location.resize(23);
         location += L"…";
     }
     const std::wstring header = L"妙喵 · " + location;
-    const float headerSize = location.size() > 18 ? 9.5f : 10.5f;
+    const float headerSize = (location.size() > 18 ? 9.5f : 10.5f) * s;
     Text(ctx.target, ctx.dwrite, header, headerSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
-         39.0f, 15.0f, ctx.width * 0.62f, 20.0f);
+         39.0f * s, 15.0f * s, ctx.width * 0.62f, 20.0f * s);
 
     // Right-side illustration has its own visual region and never shares the
     // left-side text boxes. Scale from both width and height for high DPI / compact cards.
     const float iconCenterX = ctx.width * 0.79f;
     const float iconCenterY = ctx.height * 0.38f;
-    const float iconScale = std::clamp(std::min(ctx.width / 360.0f, ctx.height / 224.0f), 0.78f, 1.18f);
+    const float iconScale = s * 1.2f;
     if (!rainy && !snowy) {
         Circle(ctx.target, sun.Get(), iconCenterX, iconCenterY - 10.0f * iconScale, 22.0f * iconScale);
     }
@@ -269,19 +301,19 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
 
     // Main information is laid out as four non-overlapping vertical regions:
     // header / temperature / condition+range / hourly forecast.
-    const float chipTop = std::max(ctx.height * 0.73f, ctx.height - 58.0f);
-    const float mainTop = std::max(42.0f, ctx.height * 0.205f);
-    const float infoBottom = chipTop - 8.0f;
-    const float mainHeight = std::max(88.0f, infoBottom - mainTop);
+    const float chipTop = std::max(ctx.height * 0.73f, ctx.height - 58.0f * s);
+    const float mainTop = std::max(42.0f * s, ctx.height * 0.205f);
+    const float infoBottom = chipTop - 8.0f * s;
+    const float mainHeight = std::max(88.0f * s, infoBottom - mainTop);
     const float tempBoxH = mainHeight * 0.61f;
     const float conditionTop = mainTop + tempBoxH;
-    const float conditionH = std::max(18.0f, mainHeight * 0.20f);
+    const float conditionH = std::max(18.0f * s, mainHeight * 0.20f);
     const float rangeTop = conditionTop + conditionH;
-    const float rangeH = std::max(15.0f, infoBottom - rangeTop);
-    const float tempSize = std::clamp(std::min(ctx.width * 0.18f, tempBoxH * 0.78f), 34.0f, 62.0f);
-    const float conditionSize = std::clamp(ctx.width * 0.042f, 12.0f, 16.0f);
-    const float rangeSize = std::clamp(ctx.width * 0.031f, 9.5f, 11.5f);
-    const float left = std::max(18.0f, ctx.width * 0.055f);
+    const float rangeH = std::max(15.0f * s, infoBottom - rangeTop);
+    const float tempSize = std::min(62.0f * s, tempBoxH * 0.78f);
+    const float conditionSize = 15.0f * s;
+    const float rangeSize = 11.0f * s;
+    const float left = std::max(18.0f * s, ctx.width * 0.055f);
     const float textW = ctx.width * 0.48f;
 
     Text(ctx.target, ctx.dwrite, tempText, tempSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
@@ -291,12 +323,12 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
     Text(ctx.target, ctx.dwrite, rangeText, rangeSize, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
          left + 1.0f, rangeTop, ctx.width * 0.54f, rangeH);
 
-    const float gap = std::clamp(ctx.width * 0.016f, 4.0f, 7.0f);
-    const float side = std::max(12.0f, ctx.width * 0.04f);
+    const float gap = 6.0f * s;
+    const float side = std::max(12.0f * s, ctx.width * 0.04f);
     const float totalW = ctx.width - side * 2.0f;
     const float chipW = (totalW - gap * 3.0f) / 4.0f;
-    const float chipBottom = ctx.height - std::max(10.0f, ctx.height * 0.055f);
-    const float chipH = std::max(38.0f, chipBottom - chipTop);
+    const float chipBottom = ctx.height - std::max(10.0f * s, ctx.height * 0.055f);
+    const float chipH = std::max(38.0f * s, chipBottom - chipTop);
     float x = side;
     auto chipFill = Brush(ctx.target, 0.05f, 0.18f, 0.40f, 0.30f);
     auto chipBorder = Brush(ctx.target, 0.9f, 0.98f, 1.0f, 0.14f);
@@ -304,23 +336,24 @@ void PaintWeatherGlass(const NativeWidgetPaintContext& ctx) {
         const std::wstring label = weather && !weather->hours[i].label.empty() ? weather->hours[i].label : L"--:--";
         const std::wstring value = weather ? std::to_wstring(weather->hours[i].temperatureC) + L"°" : L"--°";
         const D2D1_RECT_F chip{x, chipTop, x + chipW, chipBottom};
-        RoundRect(ctx.target, chipFill.Get(), chipBorder.Get(), chip, std::min(13.0f, chipH * 0.30f), 0.8f);
-        const float labelSize = std::clamp(chipW * 0.115f, 8.5f, 10.0f);
-        const float valueSize = std::clamp(chipW * 0.155f, 11.0f, 13.0f);
+        RoundRect(ctx.target, chipFill.Get(), chipBorder.Get(), chip, std::min(13.0f * s, chipH * 0.30f), 0.8f * s);
+        const float labelSize = 10.0f * s;
+        const float valueSize = 13.0f * s;
         Text(ctx.target, ctx.dwrite, label, labelSize, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
-             chip.left + 4.0f, chip.top + chipH * 0.16f, chipW - 8.0f, chipH * 0.32f, DWRITE_TEXT_ALIGNMENT_CENTER);
+             chip.left + 4.0f * s, chip.top + chipH * 0.16f, chipW - 8.0f * s, chipH * 0.32f, DWRITE_TEXT_ALIGNMENT_CENTER);
         Text(ctx.target, ctx.dwrite, value, valueSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
-             chip.left + 4.0f, chip.top + chipH * 0.49f, chipW - 8.0f, chipH * 0.36f, DWRITE_TEXT_ALIGNMENT_CENTER);
+             chip.left + 4.0f * s, chip.top + chipH * 0.49f, chipW - 8.0f * s, chipH * 0.36f, DWRITE_TEXT_ALIGNMENT_CENTER);
         x += chipW + gap;
     }
 }
 
 void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
-    const float radius = std::clamp(ctx.width * 0.07f, 22.0f, 32.0f);
+    const float s = NativeWidgetCardScale(NativeWidgetPreset::TodayTasks, ctx.width, ctx.height);
+    const float radius = NativeWidgetCardRadius(NativeWidgetPreset::TodayTasks, ctx.width, ctx.height);
     DrawGlassCardBase(ctx,
         D2D1::ColorF(0.10f, 0.35f, 0.48f, 0.96f),
         D2D1::ColorF(0.12f, 0.50f, 0.55f, 0.94f),
-        D2D1::ColorF(0.05f, 0.24f, 0.38f, 0.97f), radius);
+        D2D1::ColorF(0.05f, 0.24f, 0.38f, 0.97f), radius, s);
 
     auto aquaGlow = RadialBrush(ctx.target, D2D1::Point2F(ctx.width * 0.78f, ctx.height * 0.16f), ctx.width * 0.30f, ctx.height * 0.32f,
                                 D2D1::ColorF(0.35f, 1.0f, 0.88f, 0.30f), D2D1::ColorF(0.1f, 0.7f, 0.6f, 0.0f));
@@ -330,23 +363,30 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
     auto muted = Brush(ctx.target, 0.82f, 0.93f, 0.94f, 0.82f);
     auto teal = Brush(ctx.target, 0.34f, 0.98f, 0.82f, 0.96f);
     auto amber = Brush(ctx.target, 1.0f, 0.67f, 0.28f, 0.96f);
-    DrawCatMark(ctx.target, 24.0f, 24.0f, 0.7f, muted.Get());
-    Text(ctx.target, ctx.dwrite, L"妙喵", 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(), 39.0f, 16.0f, 80.0f, 18.0f);
-    Text(ctx.target, ctx.dwrite, L"今日待办", 19.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 18.0f, 42.0f, ctx.width * 0.55f, 28.0f);
+    DrawCatMark(ctx.target, 24.0f * s, 24.0f * s, 0.7f * s, muted.Get());
+    Text(ctx.target, ctx.dwrite, L"妙喵", 10.5f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, muted.Get(),
+         39.0f * s, 16.0f * s, 80.0f * s, 18.0f * s);
+    Text(ctx.target, ctx.dwrite, L"今日待办", 19.0f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
+         18.0f * s, 42.0f * s, ctx.width * 0.55f, 28.0f * s);
 
-    const float countSize = std::clamp(ctx.width * 0.16f, 34.0f, 58.0f);
-    Text(ctx.target, ctx.dwrite, L"3", countSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(), 18.0f, 70.0f, 66.0f, countSize + 8.0f);
-    Text(ctx.target, ctx.dwrite, L"项待办", 13.0f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), 75.0f, 88.0f, 70.0f, 20.0f);
+    const float countSize = 58.0f * s;
+    Text(ctx.target, ctx.dwrite, L"3", countSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
+         18.0f * s, 70.0f * s, 66.0f * s, countSize + 8.0f * s);
+    Text(ctx.target, ctx.dwrite, L"项待办", 13.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         75.0f * s, 88.0f * s, 70.0f * s, 20.0f * s);
 
     auto bubble = Brush(ctx.target, 0.88f, 0.99f, 1.0f, 0.24f);
-    Circle(ctx.target, bubble.Get(), ctx.width - 50.0f, 70.0f, 32.0f);
-    DrawCatMark(ctx.target, ctx.width - 50.0f, 72.0f, 1.2f, white.Get());
+    Circle(ctx.target, bubble.Get(), ctx.width - 50.0f * s, 70.0f * s, 32.0f * s);
+    DrawCatMark(ctx.target, ctx.width - 50.0f * s, 72.0f * s, 1.2f * s, white.Get());
 
-    const float progressTop = 126.0f;
+    const float progressTop = 126.0f * s;
     auto track = Brush(ctx.target, 0.86f, 0.98f, 1.0f, 0.18f);
-    RoundRect(ctx.target, track.Get(), nullptr, D2D1::RectF(18.0f, progressTop, ctx.width - 18.0f, progressTop + 8.0f), 4.0f);
-    RoundRect(ctx.target, teal.Get(), nullptr, D2D1::RectF(18.0f, progressTop, 18.0f + (ctx.width - 36.0f) / 3.0f, progressTop + 8.0f), 4.0f);
-    Text(ctx.target, ctx.dwrite, L"1 / 3 完成", 10.0f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), 18.0f, progressTop + 12.0f, ctx.width - 36.0f, 16.0f, DWRITE_TEXT_ALIGNMENT_TRAILING);
+    RoundRect(ctx.target, track.Get(), nullptr,
+              D2D1::RectF(18.0f * s, progressTop, ctx.width - 18.0f * s, progressTop + 8.0f * s), 4.0f * s);
+    RoundRect(ctx.target, teal.Get(), nullptr,
+              D2D1::RectF(18.0f * s, progressTop, 18.0f * s + (ctx.width - 36.0f * s) / 3.0f, progressTop + 8.0f * s), 4.0f * s);
+    Text(ctx.target, ctx.dwrite, L"1 / 3 完成", 10.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+         18.0f * s, progressTop + 12.0f * s, ctx.width - 36.0f * s, 16.0f * s, DWRITE_TEXT_ALIGNMENT_TRAILING);
 
     struct TaskRow { const wchar_t* text; const wchar_t* time; bool done; };
     const std::array<TaskRow, 3> tasks{{
@@ -354,23 +394,25 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
         {L"与团队同步项目进度", L"今天 14:00", false},
         {L"回复客户邮件", L"今天 09:30", true},
     }};
-    float y = progressTop + 34.0f;
+    float y = progressTop + 34.0f * s;
     auto rowFill = Brush(ctx.target, 0.95f, 1.0f, 1.0f, 0.075f);
     auto rowBorder = Brush(ctx.target, 0.95f, 1.0f, 1.0f, 0.11f);
     for (std::size_t i = 0; i < tasks.size(); ++i) {
-        if (y + 48.0f > ctx.height - 12.0f) break;
+        if (y + 48.0f * s > ctx.height - 12.0f * s) break;
         const auto& task = tasks[i];
-        const D2D1_RECT_F row{14.0f, y, ctx.width - 14.0f, y + 44.0f};
-        RoundRect(ctx.target, rowFill.Get(), rowBorder.Get(), row, 13.0f, 0.8f);
+        const D2D1_RECT_F row{14.0f * s, y, ctx.width - 14.0f * s, y + 44.0f * s};
+        RoundRect(ctx.target, rowFill.Get(), rowBorder.Get(), row, 13.0f * s, 0.8f * s);
         auto status = task.done ? teal : (i == 0 ? amber : muted);
-        ctx.target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(row.left + 15.0f, row.top + 17.0f), 6.0f, 6.0f), status.Get(), 1.8f);
+        ctx.target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(row.left + 15.0f * s, row.top + 17.0f * s), 6.0f * s, 6.0f * s), status.Get(), 1.8f * s);
         if (task.done) {
-            ctx.target->DrawLine(D2D1::Point2F(row.left + 11.5f, row.top + 17.0f), D2D1::Point2F(row.left + 14.0f, row.top + 19.5f), status.Get(), 1.5f);
-            ctx.target->DrawLine(D2D1::Point2F(row.left + 14.0f, row.top + 19.5f), D2D1::Point2F(row.left + 19.0f, row.top + 13.5f), status.Get(), 1.5f);
+            ctx.target->DrawLine(D2D1::Point2F(row.left + 11.5f * s, row.top + 17.0f * s), D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), status.Get(), 1.5f * s);
+            ctx.target->DrawLine(D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), D2D1::Point2F(row.left + 19.0f * s, row.top + 13.5f * s), status.Get(), 1.5f * s);
         }
-        Text(ctx.target, ctx.dwrite, task.text, 11.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, task.done ? muted.Get() : white.Get(), row.left + 30.0f, row.top + 7.0f, row.right - row.left - 40.0f, 18.0f);
-        Text(ctx.target, ctx.dwrite, task.time, 9.0f, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(), row.left + 30.0f, row.top + 25.0f, row.right - row.left - 40.0f, 14.0f);
-        y += 49.0f;
+        Text(ctx.target, ctx.dwrite, task.text, 11.5f * s, DWRITE_FONT_WEIGHT_SEMI_BOLD, task.done ? muted.Get() : white.Get(),
+             row.left + 30.0f * s, row.top + 7.0f * s, row.right - row.left - 40.0f * s, 18.0f * s);
+        Text(ctx.target, ctx.dwrite, task.time, 9.0f * s, DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
+             row.left + 30.0f * s, row.top + 25.0f * s, row.right - row.left - 40.0f * s, 14.0f * s);
+        y += 49.0f * s;
     }
 }
 

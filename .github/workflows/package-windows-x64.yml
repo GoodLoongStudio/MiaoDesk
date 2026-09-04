@@ -111,6 +111,8 @@ jobs:
             'MiaoDeskWallpaper.exe',
             'MiaoDeskHarness.exe',
             'Assets\MiaoMiao.ico',
+            'LICENSE',
+            'THIRD-PARTY-NOTICES.md',
             'Config\product.ini',
             'Runtime\Node\node.exe',
             'AI\package-lock.json',
@@ -132,6 +134,40 @@ jobs:
           foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
             $p = Start-Process -FilePath (Join-Path $root $exe) -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
+          }
+
+      - name: Verify login startup stays hidden
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class MiaoDeskStartupProbe {
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              public static extern IntPtr FindWindow(string className, string windowName);
+              [DllImport("user32.dll")]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool IsWindowVisible(IntPtr window);
+          }
+          '@
+          $process = Start-Process -FilePath (Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDesk.exe') `
+            -ArgumentList '--startup' -WorkingDirectory $env:MIAODESK_STAGE_ROOT -PassThru
+          try {
+            $window = [IntPtr]::Zero
+            for ($attempt = 0; $attempt -lt 40 -and $window -eq [IntPtr]::Zero; $attempt++) {
+              Start-Sleep -Milliseconds 250
+              if ($process.HasExited) { throw "MiaoDesk startup process exited early: $($process.ExitCode)" }
+              $window = [MiaoDeskStartupProbe]::FindWindow('MiaoDesk.Native.SearchWindow', $null)
+            }
+            if ($window -eq [IntPtr]::Zero) { throw 'MiaoDesk startup process did not create its tray owner window.' }
+            if ([MiaoDeskStartupProbe]::IsWindowVisible($window)) {
+              throw 'MiaoDesk displayed the search window during login startup.'
+            }
+            Write-Host 'Login startup created a live hidden tray owner without showing the search window.' -ForegroundColor Cyan
+          } finally {
+            Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
           }
 
       - name: Verify native Widget visibility
@@ -209,6 +245,8 @@ jobs:
               foreach ($relative in @(
                 'MiaoDesk.exe',
                 'Assets\MiaoMiao.ico',
+                'LICENSE',
+                'THIRD-PARTY-NOTICES.md',
                 'Config\product.ini',
                 'Runtime\Node\node.exe',
                 'AI\node_modules\pi\dist\cli.js',
@@ -255,6 +293,11 @@ jobs:
                 throw "Desktop shortcut icon is wrong. Expected=$expectedIcon Actual=$actualIcon"
               }
 
+              $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+              New-Item $runKey -Force | Out-Null
+              New-ItemProperty $runKey -Name 'MiaoDesk' -Value ('"' + (Join-Path $testRoot 'MiaoDesk.exe') + '" --startup') `
+                -PropertyType String -Force | Out-Null
+
               $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `
                 -ArgumentList '/S' -Wait -PassThru
               if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed: $($uninstall.ExitCode)" }
@@ -264,6 +307,9 @@ jobs:
               }
               if (Get-Service -Name 'goz' -ErrorAction SilentlyContinue) {
                 throw 'Uninstall left the goz index service registered.'
+              }
+              if (Get-ItemProperty $runKey -Name 'MiaoDesk' -ErrorAction SilentlyContinue) {
+                throw 'Uninstall left the current-user MiaoDesk startup entry behind.'
               }
               foreach ($shortcut in $desktopLinks) {
                 if (Test-Path $shortcut) { throw "Uninstall left desktop shortcut behind: $shortcut" }
@@ -312,6 +358,37 @@ jobs:
             Write-Host "::error title=MSIX packaging failed::$details"
             throw
           }
+
+      - name: Verify MSIX manifest and legal notices
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $unpack = Join-Path $env:RUNNER_TEMP 'MiaoDesk-msix-check'
+          Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $unpack | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory('C:\pkg\MiaoDesk\MiaoDesk-x64.msix', $unpack)
+          [xml]$manifest = Get-Content (Join-Path $unpack 'AppxManifest.xml') -Raw
+          $namespaces = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
+          $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+          $namespaces.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
+          $extension = $manifest.SelectSingleNode(
+            '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]',
+            $namespaces)
+          if (-not $extension) { throw 'MSIX manifest is missing windows.startupTask.' }
+          $task = $extension.SelectSingleNode('desktop:StartupTask', $namespaces)
+          if (-not $task -or $task.TaskId -ne 'MiaoDeskStartup' -or $task.Enabled -ne 'false') {
+            throw 'MSIX startup task identity or consent-safe default is invalid.'
+          }
+          if ($manifest.Package.Identity.Version -ne '0.1.2.0') {
+            throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)"
+          }
+          foreach ($relative in @('LICENSE','THIRD-PARTY-NOTICES.md')) {
+            if (-not (Test-Path (Join-Path $unpack $relative) -PathType Leaf)) {
+              throw "MSIX legal notice is missing: $relative"
+            }
+          }
+          Write-Host 'MSIX startup task, version, and legal notices verified.' -ForegroundColor Cyan
 
       - name: Upload MSIX package
         uses: actions/upload-artifact@v4

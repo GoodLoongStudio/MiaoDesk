@@ -10,6 +10,7 @@
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SearchWindow.h"
+#include "miaodesk/StartupManager.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -385,11 +386,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(L"--self-test") != std::wstring_view::npos) {
-        const int result = piExtensionReady && RunNativeSelfTest() ? 0 : 5;
+        const int result = piExtensionReady && RunNativeSelfTest() &&
+                           miaodesk::startup::SelfTest() ? 0 : 5;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
     }
 
+    const bool startupLaunch = miaodesk::startup::IsStartupLaunch(args);
     HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\MiaoDesk.Native.Search.Singleton");
     if (!mutex) {
         const DWORD mutexError = GetLastError();
@@ -398,28 +401,35 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             2, L"无法创建单实例锁，Win32=" + std::to_wstring(mutexError));
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        ActivateExistingSearchWindow();
+        if (!startupLaunch) ActivateExistingSearchWindow();
         CloseHandle(mutex);
         if (SUCCEEDED(com)) CoUninitialize();
         return 0;
     }
 
+    if (!startupLaunch) miaodesk::startup::PromptForConsentIfNeeded();
+
     miaodesk::SearchWindow window(instance);
-    if (!window.Create()) {
+    if (!window.Create(!startupLaunch)) {
         const std::wstring reason = window.LastCreateError().empty()
             ? L"搜索窗口初始化失败" : window.LastCreateError();
         if (SUCCEEDED(com)) CoUninitialize();
         CloseHandle(mutex);
         return ReportUnexpectedExit(4, reason);
     }
-    miaodesk::log::Info(L"App", L"MiaoDesk 主窗口启动成功");
+    miaodesk::log::Info(L"App", startupLaunch
+        ? L"MiaoDesk 登录启动成功，已静默驻留托盘"
+        : L"MiaoDesk 主窗口启动成功");
 
     // Keep MiaoDesk startup responsive, then prewarm the full DeepSeek workbench in the
     // background. If the user opens it earlier, the UI launches the same singleton owner.
-    std::jthread harnessWarmup([](std::stop_token stopToken) {
-        for (int i = 0; i < 30 && !stopToken.stop_requested(); ++i) Sleep(100);
-        if (!stopToken.stop_requested()) LaunchHarnessBackgroundOwner();
-    });
+    std::jthread harnessWarmup;
+    if (!startupLaunch) {
+        harnessWarmup = std::jthread([](std::stop_token stopToken) {
+            for (int i = 0; i < 30 && !stopToken.stop_requested(); ++i) Sleep(100);
+            if (!stopToken.stop_requested()) LaunchHarnessBackgroundOwner();
+        });
+    }
 
     const int result = window.RunMessageLoop();
     harnessWarmup.request_stop();

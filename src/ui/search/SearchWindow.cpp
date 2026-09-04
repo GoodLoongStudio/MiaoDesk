@@ -4,6 +4,7 @@
 #include "miaodesk/L3CliWindow.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SettingsCenterWindow.h"
+#include "miaodesk/StartupManager.h"
 #include "miaodesk/ApiProfileNotifications.h"
 #include "miaodesk/StoreDemoExperience.h"
 #include <shellapi.h>
@@ -37,6 +38,7 @@ constexpr UINT kTrayMessage = WM_APP + 91;
 constexpr UINT kTrayShow = 5101;
 constexpr UINT kTraySettings = 5102;
 constexpr UINT kTrayExit = 5103;
+constexpr UINT kTrayStartupSettings = 5104;
 
 bool IsLaunchable(ResultKind kind) {
     return kind == ResultKind::App || kind == ResultKind::File || kind == ResultKind::Folder;
@@ -190,7 +192,7 @@ SearchWindow::~SearchWindow() {
     if (smallFont_) DeleteObject(smallFont_);
 }
 
-bool SearchWindow::Create() {
+bool SearchWindow::Create(bool showOnLaunch) {
     lastCreateError_.clear();
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -320,7 +322,7 @@ bool SearchWindow::Create() {
         }
     }
     SetTimer(hwnd_, kCaretTimerId, 530, nullptr);
-    SetTimer(hwnd_, kFirstRunTimerId, 700, nullptr);
+    if (showOnLaunch) SetTimer(hwnd_, kFirstRunTimerId, 700, nullptr);
 
     taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
     AddTray();
@@ -329,7 +331,7 @@ bool SearchWindow::Create() {
     LoadPosition();
     PositionWindow();
 
-    ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+    if (showOnLaunch) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
     Draw();
 
     desktop::DesktopControlService desktop;
@@ -514,6 +516,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
     if (!menu) return;
     AppendMenuW(menu, MF_STRING, kTrayShow, L"显示搜索");
     AppendMenuW(menu, MF_STRING, kTraySettings, L"设置");
+    AppendMenuW(menu, MF_STRING, kTrayStartupSettings, L"开机启动设置");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kTrayExit, L"退出妙喵");
 
@@ -527,6 +530,7 @@ void SearchWindow::HandleTray(UINT mouseMessage) {
 
     if (command == kTrayShow) ShowAndFocus();
     else if (command == kTraySettings) OpenSettingsCenter();
+    else if (command == kTrayStartupSettings) startup::OpenWindowsStartupSettings();
     else if (command == kTrayExit) ExitApplication();
 }
 

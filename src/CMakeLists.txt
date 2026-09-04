@@ -37,6 +37,7 @@ set(MIAODESK_CORE_SOURCES
 
 set(MIAODESK_APP_SOURCES
     app/main.cpp
+    app/StartupManager.cpp
     ui/search/SearchWindow.cpp
     ui/settings/SettingsCenterWindow.cpp
     ui/ai/ConversationPanel.cpp
@@ -173,6 +174,7 @@ target_link_libraries(MiaoDesk PRIVATE
     dwrite
     dwmapi
     winhttp
+    windowsapp
     "${WEBVIEW2_LOADER_STATIC}"
 )
 

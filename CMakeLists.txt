@@ -44,6 +44,12 @@ install(FILES
     DESTINATION "Assets"
 )
 
+install(FILES
+    "${CMAKE_SOURCE_DIR}/LICENSE"
+    "${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md"
+    DESTINATION "."
+)
+
 install(DIRECTORY
     "${CMAKE_SOURCE_DIR}/config/"
     DESTINATION "Config"

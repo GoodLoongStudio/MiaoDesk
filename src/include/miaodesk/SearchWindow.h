@@ -21,7 +21,7 @@ public:
     explicit SearchWindow(HINSTANCE instance);
     ~SearchWindow();
 
-    bool Create();
+    bool Create(bool showOnLaunch = true);
     void ShowAndFocus();
     int RunMessageLoop();
     bool SelfTest();

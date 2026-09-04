@@ -16,7 +16,7 @@ Unicode true
 !endif
 
 !define PRODUCT_NAME "MiaoDesk"
-!define PRODUCT_VERSION "0.1.1"
+!define PRODUCT_VERSION "0.1.2"
 !define PRODUCT_PUBLISHER "GoodLoongStudio"
 !define PRODUCT_REG_KEY "Software\GoodLoongStudio\MiaoDesk"
 !define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\MiaoDesk"
@@ -154,6 +154,7 @@ SectionEnd
 
 Section "Uninstall"
     SetRegView 64
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MiaoDesk"
     ReadRegStr $0 HKLM "${PRODUCT_REG_KEY}" "InstallDir"
     StrCmp $0 "$INSTDIR" 0 PerUserUninstall
     StrCpy $InstallMode "all"

@@ -8,6 +8,7 @@
 #include <shellapi.h>
 #include <winrt/Windows.ApplicationModel.Activation.h>
 #include <winrt/Windows.ApplicationModel.h>
+#include <winrt/Windows.Foundation.h>
 #include <winrt/base.h>
 
 #include <array>

@@ -47,8 +47,8 @@
           EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask
             TaskId="MiaoDeskStartup"
-            Enabled="false"
-            DisplayName="MiaoDesk" />
+            Enabled="true"
+            DisplayName="妙喵" />
         </desktop:Extension>
         <desktop6:Extension
           Category="windows.service"

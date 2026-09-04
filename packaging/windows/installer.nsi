@@ -16,7 +16,7 @@ Unicode true
 !endif
 
 !define PRODUCT_NAME "MiaoDesk"
-!define PRODUCT_VERSION "0.1.0"
+!define PRODUCT_VERSION "0.1.1"
 !define PRODUCT_PUBLISHER "GoodLoongStudio"
 !define PRODUCT_REG_KEY "Software\GoodLoongStudio\MiaoDesk"
 !define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\MiaoDesk"

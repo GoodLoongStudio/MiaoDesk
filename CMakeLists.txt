@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.28)
 project(MiaoDesk LANGUAGES CXX)
 
+# Ship the MSVC runtime inside each native executable. Both the standalone
+# Store installer and the MSIX payload must start on a clean Windows machine
+# without depending on a separately installed Visual C++ Redistributable.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # MiaoDesk must remain buildable on stock Windows 10/11 without asking users to
 # enable the Win32 long-path policy. Keep generated object paths conservative;
 # this is a build-time safeguard, not a runtime dependency on long-path support.

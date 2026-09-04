@@ -2,7 +2,7 @@
   "identityName": "52383Nontrix.42913C45ABF3E",
   "publisher": "CN=D308CB82-F926-4ADD-96C1-0041801F6915",
   "publisherDisplayName": "GoodLoong",
-  "version": "0.1.0.0",
+  "version": "0.1.1.0",
   "packageName": "MiaoDesk",
   "description": "A desktop companion app with live wallpapers and an AI assistant that lives on your desktop.",
   "targetDeviceFamily": "Windows.Desktop",

@@ -84,3 +84,11 @@ jobs:
             Select-Object -First 1
           if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
           .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
+
+      - name: Verify login startup stays hidden
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $app) { throw 'Built MiaoDesk.exe was not found.' }
+          .\packaging\windows\verify-login-startup.ps1 -ProductRoot $app.DirectoryName

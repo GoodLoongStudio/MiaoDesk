@@ -138,37 +138,7 @@ jobs:
 
       - name: Verify login startup stays hidden
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class MiaoDeskStartupProbe {
-              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-              public static extern IntPtr FindWindow(string className, string windowName);
-              [DllImport("user32.dll")]
-              [return: MarshalAs(UnmanagedType.Bool)]
-              public static extern bool IsWindowVisible(IntPtr window);
-          }
-          '@
-          $process = Start-Process -FilePath (Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDesk.exe') `
-            -ArgumentList '--startup' -WorkingDirectory $env:MIAODESK_STAGE_ROOT -PassThru
-          try {
-            $window = [IntPtr]::Zero
-            for ($attempt = 0; $attempt -lt 40 -and $window -eq [IntPtr]::Zero; $attempt++) {
-              Start-Sleep -Milliseconds 250
-              if ($process.HasExited) { throw "MiaoDesk startup process exited early: $($process.ExitCode)" }
-              $window = [MiaoDeskStartupProbe]::FindWindow('MiaoDesk.Native.SearchWindow', $null)
-            }
-            if ($window -eq [IntPtr]::Zero) { throw 'MiaoDesk startup process did not create its tray owner window.' }
-            if ([MiaoDeskStartupProbe]::IsWindowVisible($window)) {
-              throw 'MiaoDesk displayed the search window during login startup.'
-            }
-            Write-Host 'Login startup created a live hidden tray owner without showing the search window.' -ForegroundColor Cyan
-          } finally {
-            Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue |
-              Stop-Process -Force -ErrorAction SilentlyContinue
-          }
+        run: .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
 
       - name: Verify native Widget visibility
         shell: pwsh

@@ -314,17 +314,17 @@ void OfferGoldenPath(HWND owner, bool quietStatus) {
 void MaybeShowFirstRun(HWND owner) {
     if (!NeedsFirstRun()) return;
 
-    // App Installer / Store may launch the app immediately after installation.
-    // Keep that first activation side-effect free: do not change wallpaper or
-    // create widgets until the user explicitly chooses the one-click demo later.
-    MarkFirstRunCompleted();
-    MessageBoxW(
+    const int choice = MessageBoxW(
         owner,
         L"欢迎使用妙喵 — 会说话的动态桌面。\r\n\r\n"
         L"快捷键 Alt+Space 打开搜索与 AI。\r\n"
-        L"动态壁纸和桌面小组件已准备好；需要时可在妙喵中选择「一键体验」。",
+        L"现在可以一键体验动态壁纸和桌面小组件（无需 API Key）。\r\n\r\n"
+        L"选择「确定」立即体验，「取消」稍后再说。",
         L"妙喵",
-        MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+        MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+
+    MarkFirstRunCompleted();
+    if (choice == IDOK) OfferGoldenPath(owner, false);
 }
 
 } // namespace miaodesk::demo

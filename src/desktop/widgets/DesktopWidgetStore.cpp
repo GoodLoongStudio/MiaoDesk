@@ -316,10 +316,33 @@ bool DesktopWidgetStore::Save(std::wstring* error) const {
         }
     }
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, temporary.c_str());
-    if (!MoveFileExW(temporary.c_str(), manifest.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        const DWORD code = GetLastError();
+
+    const DWORD moveFlags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH | MOVEFILE_COPY_ALLOWED;
+    if (!MoveFileExW(temporary.c_str(), manifest.c_str(), moveFlags)) {
+        const DWORD moveCode = GetLastError();
+
+        // Packaged/MSIX file-system redirection can make two paths that are
+        // logically in the same directory resolve to different backing volumes.
+        // MOVEFILE_COPY_ALLOWED should handle that, but keep an explicit
+        // copy/delete fallback for environments or filter drivers that still
+        // return ERROR_NOT_SAME_DEVICE.
+        if (moveCode == ERROR_NOT_SAME_DEVICE) {
+            if (CopyFileW(temporary.c_str(), manifest.c_str(), FALSE)) {
+                DeleteFileW(temporary.c_str());
+                return true;
+            }
+
+            const DWORD copyCode = GetLastError();
+            DeleteFileW(temporary.c_str());
+            if (error) {
+                *error = L"Unable to replace desktop widget manifest across storage boundary. MoveWin32=" +
+                         std::to_wstring(moveCode) + L", CopyWin32=" + std::to_wstring(copyCode);
+            }
+            return false;
+        }
+
         DeleteFileW(temporary.c_str());
-        if (error) *error = L"Unable to atomically replace desktop widget manifest. Win32=" + std::to_wstring(code);
+        if (error) *error = L"Unable to atomically replace desktop widget manifest. Win32=" + std::to_wstring(moveCode);
         return false;
     }
     return true;

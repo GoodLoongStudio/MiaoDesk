@@ -188,15 +188,28 @@ bool IsStartupLaunch(std::wstring_view commandLine) {
 void PromptForConsentIfNeeded() {
     if (ConsentRecorded()) return;
 
+    const bool packaged = IsPackaged();
+    const wchar_t* prompt = packaged
+        ? L"妙喵已配置为随 Windows 登录自动启动，是否保持开启？\r\n\r\n"
+          L"登录启动时只会驻留在系统托盘，不会自动弹出搜索框；"
+          L"你可以随时在 Windows“设置 > 应用 > 启动”中关闭。"
+        : L"是否允许妙喵在你登录 Windows 后自动启动？\r\n\r\n"
+          L"启用后，妙喵只会驻留在系统托盘，不会自动弹出搜索框；"
+          L"你可以随时在 Windows“设置 > 应用 > 启动”中关闭。";
+
     const int choice = MessageBoxW(
         nullptr,
-        L"是否允许 MiaoDesk 在你登录 Windows 后自动启动？\r\n\r\n"
-        L"启用后，MiaoDesk 只会驻留在系统托盘，不会自动弹出搜索框；"
-        L"你可以随时在 Windows“设置 > 应用 > 启动”中关闭。",
-        L"MiaoDesk · 登录后自动启动",
+        prompt,
+        L"妙喵 · 登录后自动启动",
         MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_DEFBUTTON1);
 
     if (choice != IDYES) {
+        if (packaged) {
+            std::wstring disableError;
+            if (!SetPackagedStartupEnabled(false, &disableError) && !disableError.empty()) {
+                log::Warn(L"Startup", L"用户选择关闭登录启动，但 Windows 禁用任务失败：" + disableError);
+            }
+        }
         if (!RecordConsent()) log::Warn(L"Startup", L"无法保存启动授权选择");
         log::Info(L"Startup", L"用户未启用登录后自动启动");
         return;
@@ -205,7 +218,7 @@ void PromptForConsentIfNeeded() {
     std::wstring error;
     if (EnableStartup(&error)) {
         if (!RecordConsent()) log::Warn(L"Startup", L"无法保存启动授权选择");
-        log::Info(L"Startup", IsPackaged()
+        log::Info(L"Startup", packaged
             ? L"已启用 MSIX 登录启动任务" : L"已启用当前用户登录启动项");
         return;
     }
@@ -216,7 +229,7 @@ void PromptForConsentIfNeeded() {
         nullptr,
         (L"无法启用登录后自动启动。\r\n\r\n" + error +
          L"\r\n\r\n你仍可在 Windows“设置 > 应用 > 启动”中检查该功能。").c_str(),
-        L"MiaoDesk · 启动设置失败",
+        L"妙喵 · 启动设置失败",
         MB_OK | MB_ICONWARNING | MB_SETFOREGROUND);
 }
 

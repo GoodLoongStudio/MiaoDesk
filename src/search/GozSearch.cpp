@@ -30,6 +30,7 @@ struct GozReplyItem {
 #pragma pack(pop)
 
 constexpr std::uint32_t kReplyMagic = 0x315A4754; // TGZ1
+constexpr std::uint32_t kFailedReplyMagic = 0x465A4754; // TGZF
 constexpr std::uint32_t kDirectoryFlag = 0x1;
 
 fs::path ModuleDirectory() {
@@ -166,14 +167,14 @@ bool RunGozQuery(const std::wstring& binary, const std::wstring& query, DWORD ma
     return true;
 }
 
-std::vector<std::byte> EncodeReply(const std::vector<std::wstring>& paths) {
+std::vector<std::byte> EncodeReply(const std::vector<std::wstring>& paths, bool succeeded = true) {
     std::size_t bytes = sizeof(GozReplyHeader);
     for (const auto& path : paths)
         bytes += sizeof(GozReplyItem) + path.size() * sizeof(wchar_t);
 
     std::vector<std::byte> payload(bytes);
     auto* header = reinterpret_cast<GozReplyHeader*>(payload.data());
-    header->magic = kReplyMagic;
+    header->magic = succeeded ? kReplyMagic : kFailedReplyMagic;
     header->count = static_cast<std::uint32_t>(paths.size());
 
     std::size_t offset = sizeof(GozReplyHeader);
@@ -233,10 +234,12 @@ bool GozSearch::Query(HWND replyWindow, const std::wstring& query, DWORD maxResu
     const std::uint64_t generation = state->generation.fetch_add(1, std::memory_order_relaxed) + 1;
     std::thread([state, generation, binary, replyWindow, query, maxResults]() {
         std::vector<std::wstring> paths;
-        if (!RunGozQuery(binary, query, maxResults, paths)) return;
+        const bool succeeded = RunGozQuery(binary, query, maxResults, paths);
         if (state->generation.load(std::memory_order_relaxed) != generation || !IsWindow(replyWindow)) return;
 
-        auto payload = EncodeReply(paths);
+        // Always notify the UI. Returning silently on a CLI timeout/error leaves
+        // the current query stuck in its pending state indefinitely.
+        auto payload = EncodeReply(paths, succeeded);
         COPYDATASTRUCT copyData{};
         copyData.dwData = GozSearch::kReplyId;
         copyData.cbData = static_cast<DWORD>(payload.size());
@@ -272,17 +275,22 @@ std::vector<SearchResult> GozSearch::QuerySync(const std::wstring& query, DWORD 
     return results;
 }
 
-bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<SearchResult>& results) const {
+bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<SearchResult>& results,
+                               bool* querySucceeded) const {
     if (!copyData || copyData->dwData != kReplyId || !copyData->lpData) return false;
     if (copyData->cbData < sizeof(GozReplyHeader)) return true;
 
     const auto* base = reinterpret_cast<const std::byte*>(copyData->lpData);
     GozReplyHeader header{};
     std::memcpy(&header, base, sizeof(header));
-    if (header.magic != kReplyMagic) return true;
+    if (header.magic != kReplyMagic && header.magic != kFailedReplyMagic) return true;
+
+    const bool succeeded = header.magic == kReplyMagic;
+    if (querySucceeded) *querySucceeded = succeeded;
+    results.clear();
+    if (!succeeded) return true;
 
     std::size_t offset = sizeof(GozReplyHeader);
-    results.clear();
     results.reserve(header.count);
     for (std::uint32_t i = 0; i < header.count; ++i) {
         if (offset > copyData->cbData || copyData->cbData - offset < sizeof(GozReplyItem)) break;
@@ -320,9 +328,19 @@ bool GozSearch::SelfTest() const {
     copyData.cbData = static_cast<DWORD>(payload.size());
     copyData.lpData = payload.data();
     std::vector<SearchResult> results;
-    return HandleCopyData(&copyData, results) && results.size() == 2 &&
-           results[0].kind == ResultKind::File && results[0].title == L"verify.txt" &&
-           results[1].kind == ResultKind::Folder && results[1].title == L"Folder";
+    bool succeeded = false;
+    if (!HandleCopyData(&copyData, results, &succeeded) || !succeeded || results.size() != 2 ||
+        results[0].kind != ResultKind::File || results[0].title != L"verify.txt" ||
+        results[1].kind != ResultKind::Folder || results[1].title != L"Folder") {
+        return false;
+    }
+
+    auto failedPayload = EncodeReply({}, false);
+    copyData.cbData = static_cast<DWORD>(failedPayload.size());
+    copyData.lpData = failedPayload.data();
+    succeeded = true;
+    results.push_back({ResultKind::File, L"stale", L"", L"", 0});
+    return HandleCopyData(&copyData, results, &succeeded) && !succeeded && results.empty();
 }
 
 void GozSearch::Shutdown() const {

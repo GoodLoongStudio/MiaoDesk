@@ -2,6 +2,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"
+#include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SettingsCenterWindow.h"
 #include "miaodesk/ApiProfileNotifications.h"
 #include "miaodesk/StoreDemoExperience.h"
@@ -182,7 +183,7 @@ SearchWindow::~SearchWindow() {
     RemoveTray();
     if (hwnd_) {
         KillTimer(hwnd_, kCaretTimerId);
-        UnregisterHotKey(hwnd_, kHotkeyId);
+        if (hotkeyRegistered_) UnregisterHotKey(hwnd_, kHotkeyId);
     }
     ReleaseLayerSurface();
     if (uiFont_) DeleteObject(uiFont_);
@@ -190,6 +191,7 @@ SearchWindow::~SearchWindow() {
 }
 
 bool SearchWindow::Create() {
+    lastCreateError_.clear();
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance_;
@@ -197,15 +199,26 @@ bool SearchWindow::Create() {
     wc.lpszClassName = L"MiaoDesk.Native.SearchWindow";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        lastCreateError_ = L"无法注册搜索窗口，Win32=" + std::to_wstring(GetLastError());
+        return false;
+    }
 
-    if (FAILED(D2D1CreateFactory(
-            D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dFactory_.GetAddressOf())))
+    const HRESULT d2dResult = D2D1CreateFactory(
+        D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dFactory_.GetAddressOf());
+    if (FAILED(d2dResult)) {
+        lastCreateError_ = L"无法初始化 Direct2D，HRESULT=" +
+                           std::to_wstring(static_cast<long>(d2dResult));
         return false;
-    if (FAILED(DWriteCreateFactory(
-            DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-            reinterpret_cast<IUnknown**>(writeFactory_.GetAddressOf()))))
+    }
+    const HRESULT dwriteResult = DWriteCreateFactory(
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(writeFactory_.GetAddressOf()));
+    if (FAILED(dwriteResult)) {
+        lastCreateError_ = L"无法初始化 DirectWrite，HRESULT=" +
+                           std::to_wstring(static_cast<long>(dwriteResult));
         return false;
+    }
 
     writeFactory_->CreateTextFormat(
         L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
@@ -252,7 +265,10 @@ bool SearchWindow::Create() {
         WS_EX_TOOLWINDOW | WS_EX_LAYERED, wc.lpszClassName, L"妙喵", WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT, kWindowWidth, kCollapsedHeight,
         nullptr, nullptr, instance_, this);
-    if (!hwnd_) return false;
+    if (!hwnd_) {
+        lastCreateError_ = L"无法创建搜索窗口，Win32=" + std::to_wstring(GetLastError());
+        return false;
+    }
 
     uiFont_ = CreateFontW(
         -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -273,7 +289,10 @@ bool SearchWindow::Create() {
         0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
         kEditLeft, kInputProxyY, 1, 1, hwnd_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)), instance_, nullptr);
-    if (!edit_) return false;
+    if (!edit_) {
+        lastCreateError_ = L"无法创建输入控件，Win32=" + std::to_wstring(GetLastError());
+        return false;
+    }
 
     SetWindowLongPtrW(edit_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     oldEditProc_ = reinterpret_cast<WNDPROC>(
@@ -282,7 +301,24 @@ bool SearchWindow::Create() {
     SendMessageW(edit_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
 
     ChangeWindowMessageFilterEx(hwnd_, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
-    if (!RegisterHotKey(hwnd_, kHotkeyId, MOD_ALT | MOD_NOREPEAT, VK_SPACE)) return false;
+    std::wstring hotkeyNotice;
+    hotkeyRegistered_ = RegisterHotKey(
+        hwnd_, kHotkeyId, MOD_ALT | MOD_NOREPEAT, VK_SPACE) != FALSE;
+    if (!hotkeyRegistered_) {
+        const DWORD primaryError = GetLastError();
+        hotkeyRegistered_ = RegisterHotKey(
+            hwnd_, kHotkeyId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE) != FALSE;
+        if (hotkeyRegistered_) {
+            hotkeyNotice = L"Alt + Space 已被其他程序占用，已改用 Ctrl + Alt + Space。";
+            log::Warn(L"SearchWindow", hotkeyNotice +
+                L" Win32=" + std::to_wstring(primaryError));
+        } else {
+            hotkeyNotice = L"全局快捷键均被其他程序占用，请使用托盘图标打开妙喵。";
+            log::Warn(L"SearchWindow", hotkeyNotice +
+                L" AltSpaceWin32=" + std::to_wstring(primaryError) +
+                L" FallbackWin32=" + std::to_wstring(GetLastError()));
+        }
+    }
     SetTimer(hwnd_, kCaretTimerId, 530, nullptr);
     SetTimer(hwnd_, kFirstRunTimerId, 700, nullptr);
 
@@ -298,6 +334,10 @@ bool SearchWindow::Create() {
 
     desktop::DesktopControlService desktop;
     desktop.EnsureRuntime();
+
+    if (!hotkeyNotice.empty()) {
+        SetStatus(L"快捷键已调整", std::move(hotkeyNotice));
+    }
 
     return true;
 }
@@ -338,9 +378,14 @@ void SearchWindow::ShowAndFocus() {
 
 int SearchWindow::RunMessageLoop() {
     MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    BOOL result = 0;
+    while ((result = GetMessageW(&msg, nullptr, 0, 0)) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+    }
+    if (result == -1) {
+        messageLoopError_ = GetLastError();
+        return -1;
     }
     return static_cast<int>(msg.wParam);
 }
@@ -701,11 +746,12 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
 
     case WM_COPYDATA: {
         std::vector<SearchResult> received;
+        bool querySucceeded = false;
         if (files_.HandleCopyData(
-                reinterpret_cast<COPYDATASTRUCT*>(lParam), received)) {
-            fileSearchAvailable_ = true;
+                reinterpret_cast<COPYDATASTRUCT*>(lParam), received, &querySucceeded)) {
+            fileSearchAvailable_ = querySucceeded || files_.Available();
             fileSearchPending_ = false;
-            fileSearchQueryFailed_ = false;
+            fileSearchQueryFailed_ = !querySucceeded && fileSearchAvailable_;
             fileResults_ = std::move(received);
             MergeResults();
             return TRUE;
@@ -755,7 +801,10 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         l3_.Stop();
         files_.Shutdown();
         RemoveTray();
-        UnregisterHotKey(hwnd_, kHotkeyId);
+        if (hotkeyRegistered_) {
+            UnregisterHotKey(hwnd_, kHotkeyId);
+            hotkeyRegistered_ = false;
+        }
         ReleaseLayerSurface();
         hwnd_ = nullptr;
         PostQuitMessage(0);
@@ -767,6 +816,10 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
 
 void SearchWindow::OnQueryChanged() {
     const auto query = ReadText(edit_);
+    // Invalidate an in-flight query even when the replacement is empty, a
+    // command, or cannot start a new file query. Otherwise its late reply can
+    // overwrite the results for the newer text.
+    files_.Shutdown();
     currentQuery_ = query;
     caretVisible_ = true;
 
@@ -778,7 +831,6 @@ void SearchWindow::OnQueryChanged() {
     fileSearchQueryFailed_ = false;
 
     if (query.empty()) {
-        files_.Shutdown();
         fileSearchAvailable_ = files_.Available();
         SetExpanded(false);
         Draw();

@@ -8,12 +8,15 @@
 #include "miaodesk/L3Agent.h"
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/PiNativeToolsExtension.h"
+#include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SearchWindow.h"
 
 #include <windows.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <cwchar>
 #include <cwctype>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -34,6 +37,49 @@ constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
 constexpr wchar_t kLoopbackNoProxy[] = L"localhost,127.0.0.1,::1";
 constexpr wchar_t kHarnessBackgroundMutex[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
 constexpr wchar_t kHarnessBackgroundStopEvent[] = L"Local\\MiaoDesk.Native.Harness.Background.Stop";
+
+int ReportUnexpectedExit(int exitCode, std::wstring reason) {
+    const std::wstring details = L"原因：" + reason +
+        L"；退出代码=" + std::to_wstring(exitCode);
+    miaodesk::log::Error(L"AppExit", details);
+
+    const auto logPath = miaodesk::RuntimeLogPath(L"desktop-debug.log");
+    std::wstring message = L"MiaoDesk 因非用户操作而退出。\r\n\r\n" + details;
+    if (!logPath.empty()) {
+        message += L"\r\n日志：" + logPath.wstring();
+        message += L"\r\n\r\n请截图此窗口，并将日志文件一并反馈。"
+                   L"按“确定”后将打开日志目录。";
+    } else {
+        message += L"\r\n\r\n日志目录创建失败，请截图此窗口并反馈。";
+    }
+    MessageBoxW(nullptr, message.c_str(), L"MiaoDesk · 意外退出",
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
+    if (!logPath.empty()) miaodesk::log::OpenLogDirectory();
+    return exitCode;
+}
+
+LONG WINAPI ReportUnhandledException(EXCEPTION_POINTERS* exception) {
+    const DWORD code = exception && exception->ExceptionRecord
+        ? exception->ExceptionRecord->ExceptionCode : 0;
+    const auto address = exception && exception->ExceptionRecord
+        ? exception->ExceptionRecord->ExceptionAddress : nullptr;
+    wchar_t details[256]{};
+    swprintf_s(details, L"未处理的系统异常；异常代码=0x%08X；地址=%p", code, address);
+    ReportUnexpectedExit(static_cast<int>(code ? code : 0xE0000001), details);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+[[noreturn]] void ReportUnexpectedTerminate() noexcept {
+    try {
+        ReportUnexpectedExit(70, L"发生未处理的 C++ 异常");
+    } catch (...) {
+        MessageBoxW(nullptr,
+                    L"MiaoDesk 发生未处理异常，即将退出。请截图此窗口。",
+                    L"MiaoDesk · 意外退出", MB_OK | MB_ICONERROR | MB_TOPMOST);
+    }
+    TerminateProcess(GetCurrentProcess(), 70);
+    __assume(false);
+}
 
 std::wstring ReadEnvironmentValue(const wchar_t* name) {
     const DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
@@ -312,11 +358,16 @@ void ActivateExistingSearchWindow() {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
+    SetUnhandledExceptionFilter(&ReportUnhandledException);
+    std::set_terminate(&ReportUnexpectedTerminate);
     EnsureLoopbackProxyBypass();
     EnsureBundledRuntimePath();
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(com) && com != RPC_E_CHANGED_MODE) return 3;
+    if (FAILED(com) && com != RPC_E_CHANGED_MODE) {
+        return ReportUnexpectedExit(
+            3, L"COM 初始化失败，HRESULT=" + std::to_wstring(static_cast<long>(com)));
+    }
 
     bool workerHandled = false;
     const int workerResult = RunNativeToolWorkerIfRequested(workerHandled);
@@ -329,6 +380,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     const bool piExtensionReady = miaodesk::EnsurePiNativeToolsExtension(&piExtensionError);
     if (!piExtensionReady && !piExtensionError.empty()) {
         OutputDebugStringW((L"MiaoDesk Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
+        miaodesk::log::Error(L"PiExtension", piExtensionError);
     }
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
@@ -340,8 +392,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
 
     HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\MiaoDesk.Native.Search.Singleton");
     if (!mutex) {
+        const DWORD mutexError = GetLastError();
         if (SUCCEEDED(com)) CoUninitialize();
-        return 2;
+        return ReportUnexpectedExit(
+            2, L"无法创建单实例锁，Win32=" + std::to_wstring(mutexError));
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         ActivateExistingSearchWindow();
@@ -352,10 +406,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
 
     miaodesk::SearchWindow window(instance);
     if (!window.Create()) {
+        const std::wstring reason = window.LastCreateError().empty()
+            ? L"搜索窗口初始化失败" : window.LastCreateError();
         if (SUCCEEDED(com)) CoUninitialize();
         CloseHandle(mutex);
-        return 4;
+        return ReportUnexpectedExit(4, reason);
     }
+    miaodesk::log::Info(L"App", L"MiaoDesk 主窗口启动成功");
 
     // Keep MiaoDesk startup responsive, then prewarm the full DeepSeek workbench in the
     // background. If the user opens it earlier, the UI launches the same singleton owner.
@@ -369,5 +426,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     SignalHarnessBackgroundStop();
     if (SUCCEEDED(com)) CoUninitialize();
     CloseHandle(mutex);
+    if (result == -1) {
+        return ReportUnexpectedExit(
+            6, L"Windows 消息循环失败，Win32=" +
+               std::to_wstring(window.MessageLoopError()));
+    }
+    if (!window.ExitExpected()) {
+        return ReportUnexpectedExit(7, L"主窗口被意外销毁");
+    }
+    miaodesk::log::Info(
+        L"AppExit", L"MiaoDesk 正常退出；退出代码=" + std::to_wstring(result));
     return result;
 }

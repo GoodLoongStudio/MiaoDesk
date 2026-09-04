@@ -89,11 +89,31 @@ Section "MiaoDesk"
     Pop $0
     nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDeskHarness.exe'
     Pop $0
+
+    ; A previous MiaoDesk release may already own the goz service. Stop it
+    ; before replacing the executable because Windows keeps service images
+    ; locked while they are running.
+    StrCmp $InstallMode "all" 0 GozUpgradeStopped
+    IfFileExists "$INSTDIR\Goz\gozd.exe" 0 GozUpgradeStopped
+    nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" uninstall'
+    Pop $0
+GozUpgradeStopped:
     Sleep 500
 
     SetOutPath "$INSTDIR"
     File /r "${STAGE_DIR}\*.*"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+    ; File search is client/server: goz.exe only queries the elevated gozd
+    ; indexer. Shipping both binaries without registering the daemon leaves the
+    ; search UI permanently disconnected after a normal installation.
+    StrCmp $InstallMode "all" 0 SkipGozServiceInstall
+    nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" install'
+    Pop $0
+    StrCmp $0 "0" SkipGozServiceInstall
+    SetErrorLevel 5
+    Abort "无法安装文件搜索索引服务（gozd 返回 $0）。"
+SkipGozServiceInstall:
 
     ; Recreate shortcut files instead of updating them in place. Explorer may
     ; otherwise keep the previous shortcut/icon metadata when an application is
@@ -136,17 +156,26 @@ Section "Uninstall"
     SetRegView 64
     ReadRegStr $0 HKLM "${PRODUCT_REG_KEY}" "InstallDir"
     StrCmp $0 "$INSTDIR" 0 PerUserUninstall
+    StrCpy $InstallMode "all"
     SetShellVarContext all
     DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
     DeleteRegKey HKLM "${PRODUCT_REG_KEY}"
     Goto RemoveFiles
 
 PerUserUninstall:
+    StrCpy $InstallMode "current"
     SetShellVarContext current
     DeleteRegKey HKCU "${UNINSTALL_REG_KEY}"
     DeleteRegKey HKCU "${PRODUCT_REG_KEY}"
 
 RemoveFiles:
+    ; Stop and unregister the indexer before deleting its executable. This is
+    ; also required for upgrades because Windows locks a running service image.
+    StrCmp $InstallMode "all" 0 GozServiceRemoved
+    IfFileExists "$INSTDIR\Goz\gozd.exe" 0 GozServiceRemoved
+    nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" uninstall'
+    Pop $0
+GozServiceRemoved:
     Delete "$SMPROGRAMS\MiaoDesk.lnk"
     Delete "$DESKTOP\MiaoDesk.lnk"
     Delete "$INSTDIR\MiaoDesk.exe"

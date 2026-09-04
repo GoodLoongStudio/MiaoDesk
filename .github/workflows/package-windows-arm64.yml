@@ -179,7 +179,9 @@ jobs:
 
   installer:
     needs: package
-    runs-on: windows-2025
+    # The installer starts the bundled gozd service as part of installation, so
+    # its smoke test must run on the same architecture as that service binary.
+    runs-on: windows-11-arm
     timeout-minutes: 15
     env:
       MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\arm64
@@ -286,6 +288,21 @@ jobs:
               }
             }
 
+            $gozReady = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              $gozProbe = @(& "$testRoot\Goz\goz.exe" --status 2>&1)
+              if ($LASTEXITCODE -eq 0) {
+                $gozProbe | Out-Host
+                $gozReady = $true
+                break
+              }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $gozReady) {
+              $gozProbe | Out-Host
+              throw 'Installed ARM64 goz index service did not become queryable.'
+            }
+
             $desktopLinks = @(
               (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk.lnk'),
               (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'MiaoDesk.lnk')
@@ -304,8 +321,11 @@ jobs:
             $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
             if ($uninstall.ExitCode -ne 0) { throw "Silent ARM64 uninstall failed: $($uninstall.ExitCode)" }
             Start-Sleep -Seconds 2
-            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Config','Uninstall.exe')) {
+            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Goz','Config','Uninstall.exe')) {
               if (Test-Path (Join-Path $testRoot $relative)) { throw "ARM64 uninstall left product content behind: $relative" }
+            }
+            if (Get-Service -Name 'goz' -ErrorAction SilentlyContinue) {
+              throw 'ARM64 uninstall left the goz index service registered.'
             }
           } finally {
             Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue

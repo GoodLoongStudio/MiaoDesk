@@ -25,6 +25,9 @@ public:
     void ShowAndFocus();
     int RunMessageLoop();
     bool SelfTest();
+    const std::wstring& LastCreateError() const noexcept { return lastCreateError_; }
+    DWORD MessageLoopError() const noexcept { return messageLoopError_; }
+    bool ExitExpected() const noexcept { return exiting_; }
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -75,9 +78,12 @@ private:
     bool editFocused_{false};
     bool hovered_{false};
     bool caretVisible_{true};
+    bool hotkeyRegistered_{false};
     int savedX_{0};
     int savedY_{0};
     std::wstring currentQuery_;
+    std::wstring lastCreateError_;
+    DWORD messageLoopError_{};
 
     NOTIFYICONDATAW tray_{};
     bool trayAdded_{false};

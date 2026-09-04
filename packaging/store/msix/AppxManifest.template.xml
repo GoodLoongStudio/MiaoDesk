@@ -2,8 +2,9 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  IgnorableNamespaces="uap desktop6 rescap">
 
   <Identity Name="{{IDENTITY_NAME}}" Publisher="{{PUBLISHER}}" Version="{{VERSION}}" ProcessorArchitecture="x64" />
 
@@ -26,6 +27,8 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="packagedServices" />
+    <rescap:Capability Name="localSystemServices" />
   </Capabilities>
 
   <Applications>
@@ -36,6 +39,18 @@
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <desktop6:Extension
+          Category="windows.service"
+          Executable="Goz\gozd.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop6:Service
+            Name="goz"
+            StartupType="auto"
+            StartAccount="localSystem"
+            Arguments="run --service" />
+        </desktop6:Extension>
+      </Extensions>
     </Application>
   </Applications>
 </Package>

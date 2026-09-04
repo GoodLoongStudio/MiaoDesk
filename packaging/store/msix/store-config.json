@@ -6,5 +6,5 @@
   "packageName": "MiaoDesk",
   "description": "A desktop companion app with live wallpapers and an AI assistant that lives on your desktop.",
   "targetDeviceFamily": "Windows.Desktop",
-  "minVersion": "10.0.17763.0"
+  "minVersion": "10.0.19041.0"
 }

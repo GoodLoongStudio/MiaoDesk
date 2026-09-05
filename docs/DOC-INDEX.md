@@ -12,6 +12,7 @@
 ## 当前技术契约
 
 - `MIAODESK_CONTENT_FRAMEWORK.md` — 下一阶段“配置化 / 参数化”内容框架：统一 Wallpaper / Widget 的 Package、Parameter、Scene Runtime、Capability 与 Authoring 边界
+- `MIAO_SCENE_ENGINE.md` — `Miao Scene Engine` 场景/GPU 子系统契约：Scene/Node/Component/Property/Asset、Custom HLSL、Material、Particle、Animation、Input Bus、Render Graph 与 Wallpaper/Widget Runtime Profile；其 Scene/GPU 细节优先于 Content Framework 中较早的简化描述
 - `NATIVE_SOURCE_LAYOUT.md` — 当前源码目录与 ownership
 - `DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain/service 边界
 - `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md` — Native UI 视觉语言

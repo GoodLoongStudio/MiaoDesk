@@ -1,7 +1,7 @@
 # MiaoDesk 开发基线与路线
 
 - 状态：当前唯一开发路线
-- 日期：2026-09-02
+- 日期：2026-09-05
 - 设计基线：`docs/DESIGN_BASELINE.md`
 - 正式开发分支：`main`
 
@@ -74,6 +74,7 @@ artifact upload
 - 桌面拖动位置持久化；
 - Direct2D + DIB + premultiplied alpha；
 - `UpdateLayeredWindow`；
+- Windows 11 Raised Desktop 下的 Direct2D + DXGI swapchain presentation fallback；
 - `PaintReady` 真实呈现标记；
 - CI PaintReady smoke；
 - Web Widget（WebView2 承载组件）与 AI 组件生成链（A2UI 预览/应用）已整体移除，旧编辑器状态字段 `zIndex`/`managedSource` 已删除；
@@ -132,6 +133,25 @@ Enabled=0
 
 当前已有修复，但还需要正式 smoke，避免以后 Shell repair / reload 再把 Wallpaper 拉回。
 
+### P0-3：Content Framework 开始前先收紧旧 Widget mutation 边界
+
+当前三款内置 Widget 已经有固定 Preset 尺寸，但通用 `WidgetUpdateRequest` / `WidgetService::Update` 仍允许直接修改 `width/height`。
+
+在进入新的 Content Framework 之前，需要先明确：
+
+```text
+Legacy built-in preset
+  → geometry 由 preset 拥有
+
+New ContentDefinition
+  → geometry policy 由 Definition 拥有
+
+ContentInstance
+  → 只能在 Definition 允许的范围内修改 size
+```
+
+不能继续让任意 caller 绕过 Definition / Preset 直接写尺寸。
+
 ## 4. 立即开发顺序
 
 ### Phase 0 — 清理基线
@@ -159,14 +179,62 @@ Enabled=0
 
 1. 三个 Native Painter 分别做真实视觉验收；
 2. 多 DPI / 竖屏 / 横屏；
-3. Native Preset 的 width/height 在领域层锁定，普通 Update 不得随意修改；
-4. 组件刷新只按需要进行，避免无意义轮询；
+3. 旧三款 Preset 的 width/height 在领域层锁定，普通 Update 不得随意修改；
+4. 组件刷新只按需要进行，避免无意义内容重绘；
 5. Weather event-driven；
 6. Clock 按分钟边界刷新；
 7. Tasks 无变化不重绘；
-8. 对常驻内存、CPU、句柄数建立基线。
+8. Direct Surface 的 compositor re-present 与 painter 内容重绘解耦；
+9. 对常驻内存、CPU、句柄数建立基线。
 
-### Phase 3 — 工程继续精简
+### Phase 3 — MiaoDesk Content Framework
+
+下一阶段主线正式命名为：
+
+```text
+MiaoDesk Content Framework
+妙喵内容框架
+```
+
+详细技术契约：
+
+```text
+docs/MIAODESK_CONTENT_FRAMEWORK.md
+```
+
+目标不是先做 Wallpaper Editor / Widget Editor，而是先把 Wallpaper 与 Widget 的“内容”从宿主实现中抽离成可配置、可参数化、可打包的统一 Runtime。
+
+第一阶段按以下顺序实现：
+
+1. `ContentDefinition + ContentInstance`；
+2. `ParameterSchema + ParameterValues`；
+3. `.mdwidget / .mdwall` shared package contract；
+4. Native `SceneRuntime` MVP；
+5. Data Binding MVP，优先 `time.*`；
+6. Capability Broker 最小接口；
+7. Package validator / loader；
+8. Preview / reload path；
+9. 把 GlassClock 迁移为第一份 `.mdwidget` dogfood；
+10. 把一个现有 Scene Wallpaper 迁移为新 Content Runtime 的 `.mdwall` dogfood。
+
+核心原则：
+
+```text
+官方内容
+用户内容
+AI 内容
+未来 Creator
+    ↓
+同一套 Package / Parameters / Scene / Capability / Runtime
+```
+
+Wallpaper 与 Widget 共用内容 Runtime，但保持不同 Host 语义：Wallpaper 默认 click-through，Widget 默认可交互。
+
+第一阶段明确不做大型 Visual Editor、Timeline、Shader Editor、Particle Editor、Node Graph，也不允许第三方内容直接获得 Windows API / filesystem / registry / native DLL 权限。
+
+完成标准：至少一个官方 Widget 与一个官方 Wallpaper 已经通过同一套用户内容框架运行，并在真实 Windows 多显示器 / DPI 环境完成验证。
+
+### Phase 4 — 工程继续精简
 
 1. Runtime V3 C++ canonical path 完成；
 2. 删除 Pi / DSH compatibility shim；
@@ -175,46 +243,57 @@ Enabled=0
 5. 保持三个正式 EXE，不重新增加 acceptance/test 可执行程序；
 6. 不为“目录好看”移动高风险 runtime ownership。
 
-### Phase 4 — Search / AI 体验
+### Phase 5 — Search / AI 体验
 
-桌面核心稳定后再继续：
+桌面核心与 Content Framework 基础稳定后再继续：
 
 - Pi 对话体验；
 - Agent 活动反馈；
 - Desktop read/preview tools；
+- Content Parameter 修改与 Preview；
 - Harness UX；
 - Provider 配置体验。
 
-AI 不应成为 Wallpaper / Widget 稳定性的前置依赖。
+AI 不应成为 Wallpaper / Widget 稳定性的前置依赖，也不得绕过 ContentDefinition / ContentInstance 直接写底层 persistence。
 
-### Phase 5 — ARM64
+### Phase 6 — ARM64
 
 x64 产品链稳定后：
 
 - 复用同一 staging scripts；
 - 使用 `runtime/arm64` Native base；
 - 复用 shared `runtime/agent/package-lock.json`；
-- 建立与 x64 等价的 ARM64 build/package smoke。
+- 建立与 x64 等价的 ARM64 build/package smoke；
+- Content Runtime package/schema 保持跨 x64 / ARM64 一致，Native runtime 实现按架构构建。
 
 ## 5. 当前不做
 
-以下内容不进入当前路线：
+旧式、重型、与底层数据模型耦合的 Editor 路线仍不恢复：
 
 ```text
-Wallpaper Editor
-Scene Editor
-Widget Editor
-Timeline
-Keyframe Editor
-Inspector
+旧 Wallpaper Editor
+旧 Scene Editor
+旧 Widget Editor
+大型 Timeline / Keyframe Editor
+Inspector-first typed-property editor
 Shader Editor
 Particle Editor
-可视化 typed-property editor
+Node Graph
 完整 Wallpaper Engine feature parity
-Widget 自定义编辑器
 ```
 
-如果以后有明确商业/用户需求，再独立立项。
+但是“用户创建 Wallpaper / Widget”已经重新进入路线，方式是先建设 `MiaoDesk Content Framework`，再在稳定 Runtime 之上增加 Parameter tooling 和 Visual Creator。
+
+因此：
+
+```text
+不做旧 Editor ≠ 不允许用户创作
+
+当前路线：
+Content Runtime
+→ Parameter / Package tooling
+→ Visual Creator
+```
 
 ## 6. 每个阶段的完成定义
 
@@ -230,6 +309,16 @@ Widget 自定义编辑器
 
 涉及桌面显示的功能，仅 CI 绿色不能判定完成。
 
+Content Framework 的功能还必须增加：
+
+```text
+schema validation
+package validation
+capability validation
+Definition / Instance migration
+官方内容 dogfood
+```
+
 ## 7. 当前 P0 验收顺序
 
 ```text
@@ -240,6 +329,8 @@ Widget 自定义编辑器
 5. Wallpaper 停用后 Widget 继续显示
 6. Explorer / DPI / 显示器变化后仍保持以上状态
 7. x64 installer 全绿并真实安装验证
+8. 旧三款 Widget geometry mutation 边界收紧
+9. 进入 MiaoDesk Content Framework Phase 3
 ```
 
-在这 7 项稳定前，不重新扩展 Editor、复杂 Widget 类型或高级 Wallpaper 编辑能力。
+在桌面 Host / Shell 稳定性没有守住前，不允许 Content Framework 破坏现有层级、拖动、停用、多显示器和低常驻资源基线。

@@ -17,6 +17,7 @@ endif()
 set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
     content/scene/MiaoSceneModel.cpp
+    content/runtime/MiaoSceneRuntimeModel.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
     desktop/demo/StoreDemoExperience.cpp

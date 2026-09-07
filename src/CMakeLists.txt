@@ -20,6 +20,7 @@ set(MIAODESK_CORE_SOURCES
     content/package/MiaoContentPackage.cpp
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
+    content/runtime/MiaoSceneRuntime.cpp
     content/runtime/MiaoSceneRuntimeModel.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp

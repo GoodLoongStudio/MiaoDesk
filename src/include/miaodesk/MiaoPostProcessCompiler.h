@@ -12,6 +12,9 @@ namespace miaodesk::content {
 struct PostProcessPassPlan {
     std::wstring renderPassId;
     std::wstring inputResourceId;
+    // Optional second sampled input. v1 uses this for branch/combine effects
+    // such as BloomCombine while keeping the package-facing effect list simple.
+    std::wstring auxiliaryInputResourceId;
     std::wstring outputResourceId;
     PostProcessDefinition effect;
 };

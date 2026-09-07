@@ -63,6 +63,7 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 )
 
 set(MIAODESK_WALLPAPER_SOURCES
+    content/render/d2d/MiaoSceneD2DRenderer.cpp
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp
 

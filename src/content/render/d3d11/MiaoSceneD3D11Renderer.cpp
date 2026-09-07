@@ -2,6 +2,7 @@
 
 #include "miaodesk/MiaoAssetDatabase.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoGpuParameterBlock.h"
 #include "miaodesk/MiaoRenderGraph.h"
 #include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneSerializer.h"
@@ -191,6 +192,7 @@ struct alignas(16) ObjectConstants {
     float reserved{};
 };
 static_assert(sizeof(ObjectConstants) == 96);
+static_assert(sizeof(MiaoGpuParameterBlock) == 16 * 16);
 
 void SetIdentity(float (&matrix)[16]) {
     std::fill(std::begin(matrix), std::end(matrix), 0.0f);
@@ -198,12 +200,6 @@ void SetIdentity(float (&matrix)[16]) {
     matrix[5] = 1.0f;
     matrix[10] = 1.0f;
     matrix[15] = 1.0f;
-}
-
-bool WriteTextFile(const fs::path& path, std::string_view text) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    output.write(text.data(), static_cast<std::streamsize>(text.size()));
-    return static_cast<bool>(output);
 }
 
 } // namespace
@@ -225,6 +221,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11PixelShader> pixelShader;
     ComPtr<ID3D11Buffer> frameBuffer;
     ComPtr<ID3D11Buffer> objectBuffer;
+    ComPtr<ID3D11Buffer> parameterBuffer;
     ComPtr<ID3D11SamplerState> linearSampler;
     ComPtr<ID3D11BlendState> alphaBlend;
 
@@ -312,6 +309,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     bool CreateStates(std::wstring* error) {
         if (!CreateConstantBuffer(sizeof(FrameConstants), frameBuffer.GetAddressOf(), error)) return false;
         if (!CreateConstantBuffer(sizeof(ObjectConstants), objectBuffer.GetAddressOf(), error)) return false;
+        if (!CreateConstantBuffer(sizeof(MiaoGpuParameterBlock), parameterBuffer.GetAddressOf(), error)) return false;
 
         D3D11_SAMPLER_DESC sampler{};
         sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -511,8 +509,14 @@ struct MiaoSceneD3D11Renderer::Impl {
         object.opacity = static_cast<float>(ReadFloat(
             runtime.GetProperty(PropertyAddress{renderable->id, L"opacity"}), 1.0));
 
+        MiaoGpuParameterBlock parameters{};
+        std::wstring parameterError;
+        if (!MiaoGpuParameterPacker::Pack(definition, runtime, &parameters, &parameterError))
+            return Error(error, parameterError);
+
         if (!Upload(frameBuffer.Get(), frame, error)) return false;
         if (!Upload(objectBuffer.Get(), object, error)) return false;
+        if (!Upload(parameterBuffer.Get(), parameters, error)) return false;
 
         ID3D11RenderTargetView* rtv = renderTargetView.Get();
         context->OMSetRenderTargets(1, &rtv, nullptr);
@@ -531,10 +535,13 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->PSSetShader(pixelShader.Get(), nullptr, 0);
         ID3D11Buffer* frameCb = frameBuffer.Get();
         ID3D11Buffer* objectCb = objectBuffer.Get();
+        ID3D11Buffer* parameterCb = parameterBuffer.Get();
         context->VSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
         context->VSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
+        context->VSSetConstantBuffers(MiaoShaderContract::kMaterialCBufferRegister, 1, &parameterCb);
         context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
         context->PSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
+        context->PSSetConstantBuffers(MiaoShaderContract::kMaterialCBufferRegister, 1, &parameterCb);
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
         const float blendFactor[4]{};
@@ -580,6 +587,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         }
         alphaBlend.Reset();
         linearSampler.Reset();
+        parameterBuffer.Reset();
         objectBuffer.Reset();
         frameBuffer.Reset();
         pixelShader.Reset();
@@ -637,7 +645,7 @@ std::wstring MiaoSceneD3D11Renderer::PackageId() const {
 std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastError; }
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
-    return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest();
+    return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() && MiaoGpuParameterPacker::SelfTest();
 }
 
 } // namespace miaodesk::content

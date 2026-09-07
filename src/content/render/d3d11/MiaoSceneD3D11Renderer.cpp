@@ -2,6 +2,7 @@
 
 #include "miaodesk/MiaoAssetDatabase.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoGpuParameterBlock.h"
 #include "miaodesk/MiaoRenderGraph.h"
 #include "miaodesk/MiaoSceneRuntime.h"
@@ -102,6 +103,22 @@ Color4 ReadColor(const PropertyValue* value, Color4 fallback) {
 double ReadFloat(const PropertyValue* value, double fallback) {
     const auto* number = value ? std::get_if<double>(value) : nullptr;
     return number && std::isfinite(*number) ? *number : fallback;
+}
+
+int TextureRegisterForSlot(std::wstring_view slot) {
+    if (slot == L"input" || slot == L"inputTexture" || slot == L"t0") return 0;
+    if (slot == L"mask" || slot == L"maskTexture" || slot == L"t1") return 1;
+    if (slot.size() == 5 && slot.substr(0, 4) == L"user" && slot[4] >= L'0' && slot[4] <= L'7')
+        return 8 + static_cast<int>(slot[4] - L'0');
+    if (slot.size() >= 2 && slot[0] == L't') {
+        unsigned value = 0;
+        for (wchar_t ch : slot.substr(1)) {
+            if (ch < L'0' || ch > L'9') return -1;
+            value = value * 10u + static_cast<unsigned>(ch - L'0');
+        }
+        if (value == 0 || value == 1 || (value >= 8 && value <= 15)) return static_cast<int>(value);
+    }
+    return -1;
 }
 
 std::string EngineVertexShader() {
@@ -224,6 +241,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11Buffer> parameterBuffer;
     ComPtr<ID3D11SamplerState> linearSampler;
     ComPtr<ID3D11BlendState> alphaBlend;
+    std::array<ComPtr<ID3D11ShaderResourceView>, 16> textureViews;
 
     RenderGraphDefinition renderGraph;
     CompiledRenderGraph compiledGraph;
@@ -346,6 +364,28 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
+    bool CreateTextures(std::wstring* error) {
+        for (auto& view : textureViews) view.Reset();
+        for (const auto& binding : material->textures) {
+            const int registerIndex = TextureRegisterForSlot(binding.slot);
+            if (registerIndex < 0 || registerIndex >= static_cast<int>(textureViews.size()))
+                return Error(error, L"Unknown Miao Shader texture slot: " + binding.slot);
+            if (textureViews[static_cast<std::size_t>(registerIndex)])
+                return Error(error, L"Duplicate Miao Shader texture register: " + binding.slot);
+            const auto* asset = assets.Find(binding.asset.id);
+            if (!asset) return Error(error, L"Material texture asset is missing: " + binding.asset.id);
+            if (asset->type != AssetType::Image)
+                return Error(error, L"D3D11 v1 texture binding currently accepts image assets only: " + binding.asset.id);
+            std::wstring loadError;
+            if (!MiaoD3D11TextureLoader::LoadImage(
+                    device.Get(), asset->resolvedPath,
+                    textureViews[static_cast<std::size_t>(registerIndex)].GetAddressOf(), &loadError)) {
+                return Error(error, loadError);
+            }
+        }
+        return true;
+    }
+
     bool LoadShaderSource(std::wstring_view shaderId, ShaderStage stage, std::string* source,
                           std::string* entry, std::wstring* error) {
         if (!source || !entry) return Error(error, L"Shader source output is null.");
@@ -428,6 +468,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!ResolveSceneMaterial(error)) return false;
         if (!CreateDeviceAndSwapChain(error)) return false;
         if (!CreateStates(error)) return false;
+        if (!CreateTextures(error)) return false;
         if (!CreateShaders(error)) return false;
         if (!BuildRenderGraph(error)) return false;
 
@@ -538,10 +579,17 @@ struct MiaoSceneD3D11Renderer::Impl {
         ID3D11Buffer* parameterCb = parameterBuffer.Get();
         context->VSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
         context->VSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
-        context->VSSetConstantBuffers(MiaoShaderContract::kMaterialCBufferRegister, 1, &parameterCb);
+        context->VSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
         context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
         context->PSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
-        context->PSSetConstantBuffers(MiaoShaderContract::kMaterialCBufferRegister, 1, &parameterCb);
+        context->PSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
+
+        ID3D11ShaderResourceView* standardTextures[2]{textureViews[0].Get(), textureViews[1].Get()};
+        context->PSSetShaderResources(0, 2, standardTextures);
+        ID3D11ShaderResourceView* userTextures[8]{};
+        for (std::size_t i = 0; i < 8; ++i) userTextures[i] = textureViews[8 + i].Get();
+        context->PSSetShaderResources(MiaoShaderContract::kFirstUserTextureRegister, 8, userTextures);
+
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
         const float blendFactor[4]{};
@@ -553,6 +601,13 @@ struct MiaoSceneD3D11Renderer::Impl {
             if (pass.kind == RenderPassKind::Scene2D || pass.kind == RenderPassKind::Programmable)
                 context->Draw(3, 0);
         }
+
+        // Drop bindings before resize/reload so package textures are never held by
+        // the immediate context after a frame.
+        ID3D11ShaderResourceView* nullStandard[2]{};
+        context->PSSetShaderResources(0, 2, nullStandard);
+        ID3D11ShaderResourceView* nullUser[8]{};
+        context->PSSetShaderResources(MiaoShaderContract::kFirstUserTextureRegister, 8, nullUser);
 
         const HRESULT present = swapChain->Present(0, 0);
         if (present == DXGI_ERROR_DEVICE_REMOVED || present == DXGI_ERROR_DEVICE_RESET) {
@@ -582,9 +637,12 @@ struct MiaoSceneD3D11Renderer::Impl {
 
     void Reset() noexcept {
         if (context) {
+            ID3D11ShaderResourceView* nullViews[16]{};
+            context->PSSetShaderResources(0, 16, nullViews);
             context->ClearState();
             context->Flush();
         }
+        for (auto& view : textureViews) view.Reset();
         alphaBlend.Reset();
         linearSampler.Reset();
         parameterBuffer.Reset();
@@ -645,7 +703,8 @@ std::wstring MiaoSceneD3D11Renderer::PackageId() const {
 std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastError; }
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
-    return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() && MiaoGpuParameterPacker::SelfTest();
+    return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() &&
+           MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy();
 }
 
 } // namespace miaodesk::content

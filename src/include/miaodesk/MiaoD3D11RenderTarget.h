@@ -2,6 +2,9 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
+
+#include "miaodesk/MiaoRenderGraph.h"
 
 struct ID3D11Device;
 struct ID3D11RenderTargetView;
@@ -29,6 +32,37 @@ public:
 
     static bool ValidateDimensions(unsigned width, unsigned height,
                                    std::wstring* error = nullptr);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// Owns engine-created render resources declared by MiaoRenderGraph. External
+// resources such as a swap-chain backbuffer remain owned by the Host and are
+// intentionally absent from this pool.
+class MiaoD3D11RenderTargetPool {
+public:
+    MiaoD3D11RenderTargetPool();
+    ~MiaoD3D11RenderTargetPool();
+
+    MiaoD3D11RenderTargetPool(const MiaoD3D11RenderTargetPool&) = delete;
+    MiaoD3D11RenderTargetPool& operator=(const MiaoD3D11RenderTargetPool&) = delete;
+
+    bool Build(ID3D11Device* device, const RenderGraphDefinition& graph,
+               unsigned surfaceWidth, unsigned surfaceHeight,
+               std::wstring* error = nullptr);
+    void Reset() noexcept;
+
+    MiaoD3D11RenderTarget* Find(std::wstring_view resourceId) noexcept;
+    const MiaoD3D11RenderTarget* Find(std::wstring_view resourceId) const noexcept;
+    std::size_t Size() const noexcept;
+
+    static bool ResolveDimensions(const RenderResourceDefinition& resource,
+                                  unsigned surfaceWidth, unsigned surfaceHeight,
+                                  unsigned* width, unsigned* height,
+                                  std::wstring* error = nullptr);
+    static bool SelfTest();
 
 private:
     struct Impl;

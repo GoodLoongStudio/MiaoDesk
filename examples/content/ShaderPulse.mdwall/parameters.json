@@ -8,6 +8,27 @@
       "min": 0.0,
       "max": 1.0,
       "step": 0.01
+    },
+    {
+      "id": "param://speed",
+      "type": "float",
+      "default": 1.7,
+      "min": 0.0,
+      "max": 6.0,
+      "step": 0.05
+    },
+    {
+      "id": "param://intensity",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 3.0,
+      "step": 0.05
+    },
+    {
+      "id": "param://accentColor",
+      "type": "color",
+      "default": [0.18, 0.52, 1.0, 1.0]
     }
   ]
 }

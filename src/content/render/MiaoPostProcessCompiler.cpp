@@ -76,6 +76,8 @@ bool MiaoPostProcessCompiler::Build(
 
         const auto outputId = PostResourceId(enabledIndex);
         const auto passId = PostPassId(enabledIndex);
+        const bool combinesWithScene = effect.effect == PostProcessEffectKind::BloomCombine;
+        const std::wstring auxiliaryInput = combinesWithScene ? next.sceneColorResourceId : std::wstring{};
 
         RenderResourceDefinition output;
         output.id = outputId;
@@ -83,10 +85,12 @@ bool MiaoPostProcessCompiler::Build(
         output.shaderResource = true;
         next.graph.resources.push_back(std::move(output));
 
+        std::vector<std::wstring> reads{previousResource};
+        if (!auxiliaryInput.empty() && auxiliaryInput != previousResource) reads.push_back(auxiliaryInput);
         next.graph.passes.push_back(RenderPassDefinition{
             passId,
             RenderPassKind::PostProcess,
-            {previousResource},
+            std::move(reads),
             {outputId},
             true,
         });
@@ -94,6 +98,7 @@ bool MiaoPostProcessCompiler::Build(
         next.postProcessPasses.push_back(PostProcessPassPlan{
             passId,
             previousResource,
+            auxiliaryInput,
             outputId,
             effect,
         });
@@ -181,7 +186,31 @@ bool MiaoPostProcessCompiler::SelfTest() {
     const auto* first = FindPass(plan, L"renderpass://post/0");
     if (!first || first->effect.id != L"postfx://vignette") return false;
     if (first->inputResourceId != L"renderres://scene-color") return false;
+    if (!first->auxiliaryInputResourceId.empty()) return false;
     if (first->outputResourceId != L"renderres://post/0") return false;
+
+    SceneRuntimeDefinition bloom = runtime;
+    bloom.postProcesses.clear();
+    bloom.postProcesses.push_back(PostProcessDefinition{
+        L"postfx://bloom-threshold", PostProcessEffectKind::BloomThreshold, true, 1.0, 0.65, 0.1,
+    });
+    bloom.postProcesses.push_back(PostProcessDefinition{
+        L"postfx://bloom-h", PostProcessEffectKind::BlurHorizontal, true, 1.0, 0.7, 0.2,
+    });
+    bloom.postProcesses.push_back(PostProcessDefinition{
+        L"postfx://bloom-v", PostProcessEffectKind::BlurVertical, true, 1.0, 0.7, 0.2,
+    });
+    bloom.postProcesses.push_back(PostProcessDefinition{
+        L"postfx://bloom-combine", PostProcessEffectKind::BloomCombine, true, 0.8, 0.75, 0.25,
+    });
+    if (!Build(bloom, true, &plan, &error)) return false;
+    if (plan.postProcessPasses.size() != 4) return false;
+    const auto* combine = FindPass(plan, L"renderpass://post/3");
+    if (!combine || combine->effect.effect != PostProcessEffectKind::BloomCombine) return false;
+    if (combine->inputResourceId != L"renderres://post/2") return false;
+    if (combine->auxiliaryInputResourceId != L"renderres://scene-color") return false;
+    const auto& combineGraphPass = plan.graph.passes[4];
+    if (combineGraphPass.reads.size() != 2 || combineGraphPass.reads[1] != L"renderres://scene-color") return false;
 
     SceneRuntimeDefinition noEffects = runtime;
     noEffects.postProcesses.clear();

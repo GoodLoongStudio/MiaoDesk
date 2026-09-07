@@ -78,5 +78,23 @@
       "scale": 1.0,
       "offset": 0.0
     }
+  ],
+  "postProcesses": [
+    {
+      "id": "postfx://shader-pulse/vignette",
+      "effect": "vignette",
+      "enabled": true,
+      "amount": 0.58,
+      "radius": 0.72,
+      "softness": 0.34
+    },
+    {
+      "id": "postfx://shader-pulse/noise",
+      "effect": "noise",
+      "enabled": true,
+      "amount": 0.12,
+      "radius": 0.75,
+      "softness": 0.25
+    }
   ]
 }

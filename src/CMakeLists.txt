@@ -19,6 +19,7 @@ set(MIAODESK_CORE_SOURCES
     content/asset/MiaoAssetDatabase.cpp
     content/package/MiaoContentPackage.cpp
     content/render/MiaoRenderGraph.cpp
+    content/render/MiaoPostProcessCompiler.cpp
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoSceneRuntime.cpp

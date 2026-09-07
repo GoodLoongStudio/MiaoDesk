@@ -17,10 +17,24 @@ enum class RenderPassKind {
     Present,
 };
 
+enum class RenderResourceFormat {
+    Bgra8Unorm,
+};
+
+enum class RenderResourceSizePolicy {
+    SurfaceRelative,
+};
+
 struct RenderResourceDefinition {
     std::wstring id;
     bool external{};
     bool persistent{};
+    RenderResourceFormat format{RenderResourceFormat::Bgra8Unorm};
+    RenderResourceSizePolicy sizePolicy{RenderResourceSizePolicy::SurfaceRelative};
+    float widthScale{1.0f};
+    float heightScale{1.0f};
+    bool renderTarget{true};
+    bool shaderResource{};
 };
 
 struct RenderPassDefinition {

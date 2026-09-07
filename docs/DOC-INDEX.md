@@ -13,6 +13,7 @@
 
 - `MIAODESK_CONTENT_FRAMEWORK.md` — 下一阶段“配置化 / 参数化”内容框架：统一 Wallpaper / Widget 的 Package、Parameter、Scene Runtime、Capability 与 Authoring 边界
 - `MIAO_SCENE_ENGINE.md` — `Miao Scene Engine` 场景/GPU 子系统契约：Scene/Node/Component/Property/Asset、Custom HLSL、Material、Particle、Animation、Input Bus、Render Graph 与 Wallpaper/Widget Runtime Profile；其 Scene/GPU 细节优先于 Content Framework 中较早的简化描述
+- `MIAO_SCENE_ENGINE_ROADMAP.md` — Phase 3 Scene/GPU Runtime 执行路线：M0 合同冻结 → M1 Offscreen/Multi-Pass → Post Process → Animation → Particle → Input/Audio → Hot Reload/Preview → Sandbox → Widget 复用 → Dogfood/性能 → AI/Creator
 - `MIAO_CONTENT_PACKAGE_V1.md` — 外部内容包与序列化入口契约：`.mdwall/.mdwidget`、manifest、Package Root 路径沙箱、Scene/Parameter/Asset ingress、Slice B 施工顺序与首个外部内容里程碑
 - `NATIVE_SOURCE_LAYOUT.md` — 当前源码目录与 ownership
 - `DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain/service 边界

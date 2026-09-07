@@ -22,6 +22,12 @@ cbuffer MiaoPostProcess : register(b3)
     float2 MiaoPostReserved;
 };
 
+// Post-process passes use the standard t0 input and may use t1 as an
+// engine-wired auxiliary branch. The scene/material contract still exposes t1
+// as MiaoMaskTexture; this alias keeps package HLSL ABI stable while the
+// built-in post-process runtime can express branch/combine effects.
+#define MiaoPostAuxTexture MiaoMaskTexture
+
 struct MiaoVertexOutput
 {
     float4 position : SV_Position;
@@ -112,7 +118,7 @@ float4 MiaoPostProcessMain(MiaoVertexOutput input) : SV_Target
     float threshold = saturate(MiaoPostRadius);
     float knee = max(MiaoPostSoftness, 0.0001);
     float contribution = smoothstep(threshold - knee, threshold + knee, luminance);
-    return float4(color.rgb * contribution * MiaoPostAmount, color.a);
+    return float4(color.rgb * contribution * MiaoPostAmount, color.a * contribution);
 }
 )HLSL";
 }
@@ -121,11 +127,10 @@ std::string BloomCombineBody() {
     return R"HLSL(
 float4 MiaoPostProcessMain(MiaoVertexOutput input) : SV_Target
 {
-    float4 color = MiaoInputTexture.Sample(MiaoLinearSampler, input.uv);
-    float peak = max(color.r, max(color.g, color.b));
-    float glow = saturate((peak - MiaoPostRadius) / max(MiaoPostSoftness, 0.0001));
-    color.rgb += color.rgb * glow * MiaoPostAmount;
-    return color;
+    float4 bloom = MiaoInputTexture.Sample(MiaoLinearSampler, input.uv);
+    float4 scene = MiaoPostAuxTexture.Sample(MiaoLinearSampler, input.uv);
+    scene.rgb += bloom.rgb * max(0.0, MiaoPostAmount);
+    return scene;
 }
 )HLSL";
 }
@@ -228,6 +233,9 @@ bool MiaoPostProcessShaderLibrary::SelfTest() {
         if (source.find("cbuffer MiaoPostProcess : register(b3)") == std::string::npos) return false;
         if (source.find(std::string(kEntryPoint)) == std::string::npos) return false;
     }
+
+    const auto combineSource = PixelShaderSource(PostProcessEffectKind::BloomCombine);
+    if (combineSource.find("MiaoPostAuxTexture") == std::string::npos) return false;
 
     PostProcessDefinition definition;
     definition.amount = 0.8;

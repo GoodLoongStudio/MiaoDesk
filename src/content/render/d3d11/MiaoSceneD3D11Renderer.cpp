@@ -641,7 +641,11 @@ struct MiaoSceneD3D11Renderer::Impl {
         std::wstring* error) {
         auto* input = renderTargets.Find(pass.inputResourceId);
         auto* output = renderTargets.Find(pass.outputResourceId);
-        if (!input || !input->Valid() || !output || !output->Valid())
+        MiaoD3D11RenderTarget* auxiliary = nullptr;
+        if (!pass.auxiliaryInputResourceId.empty())
+            auxiliary = renderTargets.Find(pass.auxiliaryInputResourceId);
+        if (!input || !input->Valid() || !output || !output->Valid() ||
+            (!pass.auxiliaryInputResourceId.empty() && (!auxiliary || !auxiliary->Valid())))
             return Error(error, L"Miao Scene post-process resources are unavailable for " + pass.effect.id + L".");
 
         const auto shaderIndex = PostProcessShaderIndex(pass.effect.effect);
@@ -670,15 +674,18 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
         context->PSSetConstantBuffers(MiaoPostProcessShaderLibrary::kPostProcessCBufferRegister, 1, &postCb);
 
-        ID3D11ShaderResourceView* inputSrv = input->ShaderResourceView();
-        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &inputSrv);
+        ID3D11ShaderResourceView* postInputs[2]{
+            input->ShaderResourceView(),
+            auxiliary ? auxiliary->ShaderResourceView() : nullptr,
+        };
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 2, postInputs);
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
         context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
         context->Draw(3, 0);
 
-        ID3D11ShaderResourceView* nullInput{};
-        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &nullInput);
+        ID3D11ShaderResourceView* nullInputs[2]{};
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 2, nullInputs);
         return true;
     }
 

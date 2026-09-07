@@ -3,7 +3,7 @@
 - 状态：Phase 3 GPU Runtime 执行计划
 - 日期：2026-09-07
 - 适用分支：`main`
-- 上位基线：`DESIGN_BASELINE.md`、`DEVELOPMENT_ROADMAP.md`、`MIAODESK_CONTENT_FRAMEWORK.md`
+- 上位基线：`DESIGN_BASELINE.md`、`DEVELOPMENT_ROADMAP.md`、`MIAODESK_CONTENT_FRAMEWORK.md`、`MIAO_SCENE_ENGINE.md`
 
 本文把 MiaoDesk Content Framework 中已经进入代码的 Scene / GPU Runtime 继续拆成可执行里程碑。目标不是复制旧 Wallpaper Editor，而是建立一套可被 Wallpaper 与 Widget 共用、可参数化、可打包、可预览、可恢复的 Miao Scene Engine。
 
@@ -95,7 +95,7 @@ Wallpaper stop 幂等
    - `t8..t15 = package/user textures`
    - `s0 = linear sampler`
 3. Compute Shader 只在模型中保留，不执行，直到资源/dispatch sandbox 完成。
-4. 第三方 programmable shader 当前只作为开发能力；在 M7 renderer sandbox 完成前，不把“任意第三方 HLSL 在主产品进程执行”定义为正式安全承诺。
+4. Custom HLSL 保持 `MIAO_SCENE_ENGINE.md` 已确认的正式第一阶段能力；当前先在 `MiaoDeskWallpaper.exe` 内建立 fault boundary、Preview 与 fallback，后续 M7 再升级为独立 renderer process 隔离，不倒退能力模型。
 5. `MiaoRenderGraph::SelfTest`、Shader Contract、自定义参数打包、texture path policy 继续作为最低回归门禁。
 
 ### 完成标准
@@ -320,7 +320,7 @@ package files changed
 
 ## 10. M7 — Renderer Process Sandbox
 
-在用户/AI 可广泛生成 programmable shader 前完成。
+这是对已经开放的 Custom HLSL/未来 Script 的隔离升级，不是开放 Custom HLSL 的前置条件。
 
 目标：
 
@@ -340,6 +340,8 @@ D3D11 / HLSL / package assets
 - future compute/custom effect execution。
 
 Capability Broker 仍在可信宿主侧，Renderer 只接收批准后的数据快照/资源句柄。
+
+注意：当前正式基线仍是三个 EXE。真正新增 `MiaoSceneRenderer.exe` 前，必须先更新项目级基线与 packaging contract，不能在实现中偷偷增加第四个正式进程。
 
 完成标准：Renderer 崩溃不能带走 MiaoDesk 主 UI，Wallpaper Host 可回退并重启 renderer。
 
@@ -400,19 +402,28 @@ reload latency
 
 ## 13. M10 — AI / Creator
 
-只有 Runtime 边界稳定后再把创作体验接上。
+Runtime 稳定后再把大规模产品化创作体验接上；但 AI/用户生成 Custom HLSL 的能力本身已经属于 Scene Engine 第一阶段合同。
 
-AI 优先生成/修改：
+AI 可以生成/修改：
 
 ```text
 manifest
 scene
 parameters
 bindings
-approved effect graph
+HLSL
+particle / animation definition
 ```
 
-高级 programmable shader 走 Preview → validation → sandbox runtime，不能绕过用户确认直接永久替换桌面。
+所有持久桌面变更仍走：
+
+```text
+Generate / Patch
+→ Validate
+→ Compile
+→ Preview
+→ User Apply
+```
 
 Creator 也是同一套底层协议，不再拥有私有 Scene 格式。
 

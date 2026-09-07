@@ -5,6 +5,8 @@
 #include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoGpuParameterBlock.h"
+#include "miaodesk/MiaoPostProcessCompiler.h"
+#include "miaodesk/MiaoPostProcessShaderLibrary.h"
 #include "miaodesk/MiaoRenderGraph.h"
 #include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneSerializer.h"
@@ -33,8 +35,8 @@ namespace miaodesk::content {
 namespace {
 
 constexpr std::wstring_view kSceneColorResource = L"renderres://scene-color";
-constexpr std::wstring_view kPostColorResource = L"renderres://post-color";
 constexpr std::wstring_view kBackbufferResource = L"renderres://backbuffer";
+constexpr std::size_t kPostProcessEffectCount = 8;
 
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
@@ -108,6 +110,10 @@ Color4 ReadColor(const PropertyValue* value, Color4 fallback) {
 double ReadFloat(const PropertyValue* value, double fallback) {
     const auto* number = value ? std::get_if<double>(value) : nullptr;
     return number && std::isfinite(*number) ? *number : fallback;
+}
+
+std::size_t PostProcessShaderIndex(PostProcessEffectKind effect) noexcept {
+    return static_cast<std::size_t>(effect);
 }
 
 int TextureRegisterForSlot(std::wstring_view slot) {
@@ -262,13 +268,16 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11VertexShader> sceneVertexShader;
     ComPtr<ID3D11PixelShader> scenePixelShader;
     ComPtr<ID3D11PixelShader> copyPixelShader;
+    std::array<ComPtr<ID3D11PixelShader>, kPostProcessEffectCount> postProcessShaders;
     ComPtr<ID3D11Buffer> frameBuffer;
     ComPtr<ID3D11Buffer> objectBuffer;
     ComPtr<ID3D11Buffer> parameterBuffer;
+    ComPtr<ID3D11Buffer> postProcessBuffer;
     ComPtr<ID3D11SamplerState> linearSampler;
     ComPtr<ID3D11BlendState> alphaBlend;
     std::array<ComPtr<ID3D11ShaderResourceView>, 16> textureViews;
 
+    PostProcessRenderPlan postProcessPlan;
     RenderGraphDefinition renderGraph;
     CompiledRenderGraph compiledGraph;
     std::wstring lastError;
@@ -302,54 +311,13 @@ struct MiaoSceneD3D11Renderer::Impl {
     }
 
     bool BuildRenderGraph(std::wstring* error) {
-        renderGraph = {};
-
-        RenderResourceDefinition sceneResource;
-        sceneResource.id = std::wstring(kSceneColorResource);
-        sceneResource.shaderResource = true;
-
-        RenderResourceDefinition postResource;
-        postResource.id = std::wstring(kPostColorResource);
-        postResource.shaderResource = true;
-
-        RenderResourceDefinition backbufferResource;
-        backbufferResource.id = std::wstring(kBackbufferResource);
-        backbufferResource.external = true;
-        backbufferResource.renderTarget = true;
-        backbufferResource.shaderResource = false;
-
-        renderGraph.resources = {sceneResource, postResource, backbufferResource};
-        renderGraph.passes = {
-            {
-                programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
-                programmable ? RenderPassKind::Programmable : RenderPassKind::Scene2D,
-                {},
-                {std::wstring(kSceneColorResource)},
-                true,
-            },
-            {
-                L"renderpass://post-copy",
-                RenderPassKind::PostProcess,
-                {std::wstring(kSceneColorResource)},
-                {std::wstring(kPostColorResource)},
-                true,
-            },
-            {
-                L"renderpass://composite",
-                RenderPassKind::Composite,
-                {std::wstring(kPostColorResource)},
-                {std::wstring(kBackbufferResource)},
-                true,
-            },
-            {
-                L"renderpass://present",
-                RenderPassKind::Present,
-                {std::wstring(kBackbufferResource)},
-                {},
-                true,
-            },
-        };
-        return MiaoRenderGraph::Compile(renderGraph, &compiledGraph, error);
+        postProcessPlan = {};
+        std::wstring compileError;
+        if (!MiaoPostProcessCompiler::Build(definition, programmable, &postProcessPlan, &compileError))
+            return Error(error, compileError.empty() ? L"Cannot compile Miao Scene post-process render graph." : compileError);
+        renderGraph = postProcessPlan.graph;
+        compiledGraph = postProcessPlan.compiledGraph;
+        return true;
     }
 
     bool CreateDeviceAndSwapChain(std::wstring* error) {
@@ -426,6 +394,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!CreateConstantBuffer(sizeof(FrameConstants), frameBuffer.GetAddressOf(), error)) return false;
         if (!CreateConstantBuffer(sizeof(ObjectConstants), objectBuffer.GetAddressOf(), error)) return false;
         if (!CreateConstantBuffer(sizeof(MiaoGpuParameterBlock), parameterBuffer.GetAddressOf(), error)) return false;
+        if (!CreateConstantBuffer(sizeof(MiaoPostProcessConstants), postProcessBuffer.GetAddressOf(), error)) return false;
 
         D3D11_SAMPLER_DESC sampler{};
         sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -551,6 +520,27 @@ struct MiaoSceneD3D11Renderer::Impl {
                 copyPsCode->GetBufferPointer(), copyPsCode->GetBufferSize(), nullptr,
                 copyPixelShader.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene copy pixel shader.");
+
+        for (auto& shader : postProcessShaders) shader.Reset();
+        for (const auto& pass : postProcessPlan.postProcessPasses) {
+            const auto shaderIndex = PostProcessShaderIndex(pass.effect.effect);
+            if (shaderIndex >= postProcessShaders.size())
+                return Error(error, L"Post-process effect index is outside the D3D11 shader cache.");
+            if (postProcessShaders[shaderIndex]) continue;
+
+            ComPtr<ID3DBlob> effectCode;
+            const auto effectSource = MiaoPostProcessShaderLibrary::PixelShaderSource(pass.effect.effect);
+            if (!CompileShader(
+                    effectSource,
+                    MiaoPostProcessShaderLibrary::kEntryPoint,
+                    "ps_5_0",
+                    &effectCode,
+                    error)) return false;
+            if (FAILED(device->CreatePixelShader(
+                    effectCode->GetBufferPointer(), effectCode->GetBufferSize(), nullptr,
+                    postProcessShaders[shaderIndex].GetAddressOf())))
+                return Error(error, L"Cannot create Miao Scene post-process pixel shader.");
+        }
         return true;
     }
 
@@ -580,6 +570,7 @@ struct MiaoSceneD3D11Renderer::Impl {
 
     template <typename T>
     bool Upload(ID3D11Buffer* buffer, const T& value, std::wstring* error) {
+        if (!buffer) return Error(error, L"Miao Scene constant buffer is unavailable.");
         D3D11_MAPPED_SUBRESOURCE mapped{};
         if (FAILED(context->Map(buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
             return Error(error, L"Cannot update Miao Scene constant buffer.");
@@ -644,14 +635,22 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
-    bool ExecuteCopyPass(
-        std::wstring_view inputId,
-        std::wstring_view outputId,
+    bool ExecutePostProcessPass(
+        const PostProcessPassPlan& pass,
+        float timeSeconds,
         std::wstring* error) {
-        auto* input = renderTargets.Find(inputId);
-        auto* output = renderTargets.Find(outputId);
+        auto* input = renderTargets.Find(pass.inputResourceId);
+        auto* output = renderTargets.Find(pass.outputResourceId);
         if (!input || !input->Valid() || !output || !output->Valid())
-            return Error(error, L"Miao Scene post-process resources are unavailable.");
+            return Error(error, L"Miao Scene post-process resources are unavailable for " + pass.effect.id + L".");
+
+        const auto shaderIndex = PostProcessShaderIndex(pass.effect.effect);
+        if (shaderIndex >= postProcessShaders.size() || !postProcessShaders[shaderIndex])
+            return Error(error, L"Miao Scene post-process shader is unavailable for " + pass.effect.id + L".");
+
+        const auto constants = MiaoPostProcessShaderLibrary::MakeConstants(
+            pass.effect, input->Width(), input->Height(), timeSeconds);
+        if (!Upload(postProcessBuffer.Get(), constants, error)) return false;
 
         UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
@@ -664,7 +663,13 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->IASetInputLayout(nullptr);
         context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
-        context->PSSetShader(copyPixelShader.Get(), nullptr, 0);
+        context->PSSetShader(postProcessShaders[shaderIndex].Get(), nullptr, 0);
+
+        ID3D11Buffer* frameCb = frameBuffer.Get();
+        ID3D11Buffer* postCb = postProcessBuffer.Get();
+        context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
+        context->PSSetConstantBuffers(MiaoPostProcessShaderLibrary::kPostProcessCBufferRegister, 1, &postCb);
+
         ID3D11ShaderResourceView* inputSrv = input->ShaderResourceView();
         context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &inputSrv);
         ID3D11SamplerState* sampler = linearSampler.Get();
@@ -677,9 +682,9 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
-    bool ExecuteCompositePass(std::wstring* error) {
-        auto* postColor = renderTargets.Find(kPostColorResource);
-        if (!postColor || !postColor->Valid() || !backbufferRenderTargetView)
+    bool ExecuteCompositePass(std::wstring_view inputId, std::wstring* error) {
+        auto* input = renderTargets.Find(inputId);
+        if (!input || !input->Valid() || !backbufferRenderTargetView)
             return Error(error, L"Miao Scene composite resources are unavailable.");
 
         UnbindShaderResources();
@@ -694,7 +699,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
         context->PSSetShader(copyPixelShader.Get(), nullptr, 0);
-        ID3D11ShaderResourceView* inputSrv = postColor->ShaderResourceView();
+        ID3D11ShaderResourceView* inputSrv = input->ShaderResourceView();
         context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &inputSrv);
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
@@ -719,9 +724,8 @@ struct MiaoSceneD3D11Renderer::Impl {
 
     bool Draw(float timeSeconds, std::wstring* error) {
         const auto* sceneColor = renderTargets.Find(kSceneColorResource);
-        const auto* postColor = renderTargets.Find(kPostColorResource);
         if (!loaded || !context || !swapChain || !backbufferRenderTargetView ||
-            !sceneColor || !sceneColor->Valid() || !postColor || !postColor->Valid())
+            !sceneColor || !sceneColor->Valid())
             return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
 
         RECT rect{};
@@ -795,11 +799,16 @@ struct MiaoSceneD3D11Renderer::Impl {
                 case RenderPassKind::Programmable:
                     if (!ExecuteScenePass(frame, object, parameters, error)) return false;
                     break;
-                case RenderPassKind::PostProcess:
-                    if (!ExecuteCopyPass(kSceneColorResource, kPostColorResource, error)) return false;
+                case RenderPassKind::PostProcess: {
+                    const auto* postPass = MiaoPostProcessCompiler::FindPass(postProcessPlan, pass.id);
+                    if (!postPass) return Error(error, L"RenderGraph post-process pass has no compiled effect plan: " + pass.id);
+                    if (!ExecutePostProcessPass(*postPass, timeSeconds, error)) return false;
                     break;
+                }
                 case RenderPassKind::Composite:
-                    if (!ExecuteCompositePass(error)) return false;
+                    if (pass.reads.size() != 1)
+                        return Error(error, L"Miao Scene composite pass requires exactly one color input.");
+                    if (!ExecuteCompositePass(pass.reads.front(), error)) return false;
                     break;
                 case RenderPassKind::Present:
                     if (!ExecutePresentPass(error)) return false;
@@ -847,9 +856,11 @@ struct MiaoSceneD3D11Renderer::Impl {
             context->Flush();
         }
         for (auto& view : textureViews) view.Reset();
+        for (auto& shader : postProcessShaders) shader.Reset();
         renderTargets.Reset();
         alphaBlend.Reset();
         linearSampler.Reset();
+        postProcessBuffer.Reset();
         parameterBuffer.Reset();
         objectBuffer.Reset();
         frameBuffer.Reset();
@@ -867,6 +878,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         package = {};
         renderable = nullptr;
         material = nullptr;
+        postProcessPlan = {};
         renderGraph = {};
         compiledGraph = {};
         lastError.clear();
@@ -910,7 +922,8 @@ std::wstring MiaoSceneD3D11Renderer::PackageId() const {
 std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastError; }
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
-    return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() &&
+    return MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&
+           MiaoPostProcessShaderLibrary::SelfTest() && MiaoShaderContract::SelfTest() &&
            MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
            MiaoD3D11RenderTargetPool::SelfTest();
 }

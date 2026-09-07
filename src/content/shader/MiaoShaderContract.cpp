@@ -31,7 +31,14 @@ cbuffer MiaoObject : register(b1)
     float MiaoObjectReserved0;
 };
 
-// b2 is reserved for the material/parameter block generated from ParameterSchema.
+// Parameter packing v1: parameters.json order is ABI-significant. Each parameter
+// occupies one float4 slot. bool/int/float use .x; vec2/vec3/vec4/color use xy/xyz/xyzw.
+// AI/authoring tools should append new parameters rather than reorder existing slots.
+cbuffer MiaoParameters : register(b2)
+{
+    float4 MiaoParameter[16];
+};
+
 Texture2D MiaoInputTexture : register(t0);
 Texture2D MiaoMaskTexture : register(t1);
 // t8..t15 are reserved for package/user textures.
@@ -85,7 +92,10 @@ bool MiaoShaderContract::SelfTest() {
     if (!IsStageSupportedByV1Contract(ShaderStage::Vertex)) return false;
     if (!IsStageSupportedByV1Contract(ShaderStage::Pixel)) return false;
     if (IsStageSupportedByV1Contract(ShaderStage::Compute)) return false;
-    return HlslPreamble().find("cbuffer MiaoFrame : register(b0)") != std::string_view::npos;
+    const auto source = HlslPreamble();
+    return source.find("cbuffer MiaoFrame : register(b0)") != std::string_view::npos &&
+           source.find("cbuffer MiaoParameters : register(b2)") != std::string_view::npos &&
+           source.find("float4 MiaoParameter[16]") != std::string_view::npos;
 }
 
 } // namespace miaodesk::content

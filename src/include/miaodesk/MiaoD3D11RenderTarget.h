@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -38,9 +39,6 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// Owns engine-created render resources declared by MiaoRenderGraph. External
-// resources such as a swap-chain backbuffer remain owned by the Host and are
-// intentionally absent from this pool.
 class MiaoD3D11RenderTargetPool {
 public:
     MiaoD3D11RenderTargetPool();

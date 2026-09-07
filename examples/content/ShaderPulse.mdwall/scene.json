@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "id": "scene://shader-pulse",
+  "kind": "wallpaper",
+  "profile": "wallpaper",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Root",
+      "parentId": "",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://root/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://background",
+      "name": "Shader Background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://background/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "tint", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://shader-pulse"}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset://shader/pulse",
+      "type": "shader",
+      "source": "shaders/pulse.hlsl"
+    }
+  ],
+  "shaders": [
+    {
+      "id": "shader://pulse/pixel",
+      "stage": "pixel",
+      "assetId": "asset://shader/pulse",
+      "entryPoint": "main",
+      "userAuthored": true
+    }
+  ],
+  "materials": [
+    {
+      "id": "material://shader-pulse",
+      "model": "programmable",
+      "pixelShaderId": "shader://pulse/pixel",
+      "properties": [],
+      "textures": []
+    }
+  ],
+  "inputs": [
+    {"id": "input://frame/time", "type": "float", "default": 0.0}
+  ],
+  "bindings": [
+    {
+      "id": "binding://opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://opacity",
+      "target": {
+        "componentId": "component://background/sprite",
+        "propertyName": "opacity"
+      },
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ]
+}

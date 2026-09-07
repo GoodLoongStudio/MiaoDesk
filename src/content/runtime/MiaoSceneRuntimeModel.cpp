@@ -36,6 +36,25 @@ bool IsNumeric(PropertyType type) noexcept {
     return type == PropertyType::Int || type == PropertyType::Float;
 }
 
+bool IsAnimatable(PropertyType type) noexcept {
+    return type == PropertyType::Int || type == PropertyType::Float ||
+           type == PropertyType::Vec2 || type == PropertyType::Vec3 ||
+           type == PropertyType::Vec4 || type == PropertyType::Color;
+}
+
+bool AnimationValueFinite(PropertyType type, const PropertyValue& value) noexcept {
+    if (!ValueMatchesType(type, value)) return false;
+    if (const auto* item = std::get_if<double>(&value)) return std::isfinite(*item);
+    if (const auto* item = std::get_if<Vec2>(&value)) return std::isfinite(item->x) && std::isfinite(item->y);
+    if (const auto* item = std::get_if<Vec3>(&value))
+        return std::isfinite(item->x) && std::isfinite(item->y) && std::isfinite(item->z);
+    if (const auto* item = std::get_if<Vec4>(&value))
+        return std::isfinite(item->x) && std::isfinite(item->y) && std::isfinite(item->z) && std::isfinite(item->w);
+    if (const auto* item = std::get_if<Color4>(&value))
+        return std::isfinite(item->r) && std::isfinite(item->g) && std::isfinite(item->b) && std::isfinite(item->a);
+    return true;
+}
+
 const ShaderDefinition* FindShader(const SceneDefinition& scene, std::wstring_view id) noexcept {
     for (const auto& shader : scene.shaders) if (shader.id == id) return &shader;
     return nullptr;
@@ -72,6 +91,32 @@ bool ValidatePostProcess(const PostProcessDefinition& effect, std::wstring* erro
     return true;
 }
 
+bool ValidateAnimation(const SceneRuntimeDefinition& runtime, const AnimationTrackDefinition& animation, std::wstring* error) {
+    if (!HasPrefix(animation.id, L"animation://"))
+        return Fail(error, L"Animation id must use the animation:// stable-id scheme: " + animation.id);
+    const auto* target = MiaoSceneRuntimeModel::FindProperty(runtime.scene, animation.target);
+    if (!target) return Fail(error, L"Animation target does not resolve to a component property: " + animation.id);
+    if (!IsAnimatable(target->type))
+        return Fail(error, L"Animation target type is not interpolatable in v1: " + animation.id);
+    if (!std::isfinite(animation.durationSeconds) || animation.durationSeconds <= 0.0 || animation.durationSeconds > 86400.0)
+        return Fail(error, L"Animation duration must be in (0, 86400] seconds: " + animation.id);
+    if (animation.keyframes.size() < 2 || animation.keyframes.size() > 4096)
+        return Fail(error, L"Animation requires between 2 and 4096 keyframes: " + animation.id);
+
+    double previousTime = -1.0;
+    for (const auto& keyframe : animation.keyframes) {
+        if (!std::isfinite(keyframe.timeSeconds) || keyframe.timeSeconds < 0.0 ||
+            keyframe.timeSeconds > animation.durationSeconds)
+            return Fail(error, L"Animation keyframe time is outside the track duration: " + animation.id);
+        if (keyframe.timeSeconds <= previousTime)
+            return Fail(error, L"Animation keyframes must be strictly increasing by time: " + animation.id);
+        if (!AnimationValueFinite(target->type, keyframe.value))
+            return Fail(error, L"Animation keyframe value does not match its target type or is non-finite: " + animation.id);
+        previousTime = keyframe.timeSeconds;
+    }
+    return true;
+}
+
 } // namespace
 
 const ParameterDefinition* MiaoSceneRuntimeModel::FindParameter(
@@ -89,6 +134,12 @@ const InputChannelDefinition* MiaoSceneRuntimeModel::FindInput(
 const MaterialDefinition* MiaoSceneRuntimeModel::FindMaterial(
     const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept {
     for (const auto& material : runtime.materials) if (material.id == id) return &material;
+    return nullptr;
+}
+
+const AnimationTrackDefinition* MiaoSceneRuntimeModel::FindAnimation(
+    const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept {
+    for (const auto& animation : runtime.animations) if (animation.id == id) return &animation;
     return nullptr;
 }
 
@@ -201,6 +252,13 @@ bool MiaoSceneRuntimeModel::Validate(const SceneRuntimeDefinition& runtime, std:
             return Fail(error, L"Binding scale/offset are only valid for numeric values in v1: " + binding.id);
     }
 
+    std::unordered_set<std::wstring> animationIds;
+    for (const auto& animation : runtime.animations) {
+        if (!ValidateAnimation(runtime, animation, error)) return false;
+        if (!animationIds.emplace(animation.id).second)
+            return Fail(error, L"Duplicate animation id: " + animation.id);
+    }
+
     std::unordered_set<std::wstring> postProcessIds;
     for (const auto& effect : runtime.postProcesses) {
         if (!ValidatePostProcess(effect, error)) return false;
@@ -299,6 +357,17 @@ bool MiaoSceneRuntimeModel::SelfTest() {
         L"binding://opacity", PropertyAddress{L"component://root/transform", L"opacity"},
         BindingSourceKind::Parameter, L"param://opacity", 1.0, 0.0,
     });
+    runtime.animations.push_back(AnimationTrackDefinition{
+        L"animation://opacity-pulse",
+        PropertyAddress{L"component://root/transform", L"opacity"},
+        true,
+        AnimationLoopMode::PingPong,
+        1.0,
+        {
+            AnimationKeyframeDefinition{0.0, 0.2, AnimationEasing::EaseInOut},
+            AnimationKeyframeDefinition{1.0, 0.9, AnimationEasing::Linear},
+        },
+    });
     runtime.postProcesses.push_back(PostProcessDefinition{
         L"postfx://vignette", PostProcessEffectKind::Vignette, true, 0.8, 0.72, 0.22,
     });
@@ -308,6 +377,7 @@ bool MiaoSceneRuntimeModel::SelfTest() {
     if (!FindParameter(runtime, L"param://opacity")) return false;
     if (!FindInput(runtime, L"input://audio/bass")) return false;
     if (!FindMaterial(runtime, L"material://builtin/sprite")) return false;
+    if (!FindAnimation(runtime, L"animation://opacity-pulse")) return false;
     if (!FindPostProcess(runtime, L"postfx://vignette")) return false;
 
     MiaoPropertyStore store;
@@ -327,6 +397,14 @@ bool MiaoSceneRuntimeModel::SelfTest() {
 
     SceneRuntimeDefinition invalid = runtime;
     invalid.bindings.front().sourceId = L"param://missing";
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.animations.front().keyframes[1].timeSeconds = 0.0;
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.animations.front().target.propertyName = L"visible";
     if (Validate(invalid, &error)) return false;
 
     invalid = runtime;

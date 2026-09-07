@@ -31,6 +31,19 @@ enum class PostProcessEffectKind {
     BloomCombine,
 };
 
+enum class AnimationLoopMode {
+    Once,
+    Loop,
+    PingPong,
+};
+
+enum class AnimationEasing {
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+};
+
 struct PropertyAddress {
     std::wstring componentId;
     std::wstring propertyName;
@@ -81,6 +94,24 @@ struct PostProcessDefinition {
     double softness{0.25};
 };
 
+// Timeline animation targets the same stable PropertyAddress used by bindings
+// and AI patches. The easing value belongs to the segment that starts at this
+// keyframe and ends at the next keyframe.
+struct AnimationKeyframeDefinition {
+    double timeSeconds{};
+    PropertyValue value{0.0};
+    AnimationEasing easing{AnimationEasing::Linear};
+};
+
+struct AnimationTrackDefinition {
+    std::wstring id;
+    PropertyAddress target;
+    bool enabled{true};
+    AnimationLoopMode loopMode{AnimationLoopMode::Loop};
+    double durationSeconds{1.0};
+    std::vector<AnimationKeyframeDefinition> keyframes;
+};
+
 struct SceneRuntimeDefinition {
     SceneDefinition scene;
     RuntimeProfile profile{RuntimeProfile::Wallpaper};
@@ -88,6 +119,7 @@ struct SceneRuntimeDefinition {
     std::vector<InputChannelDefinition> inputs;
     std::vector<MaterialDefinition> materials;
     std::vector<PropertyBindingDefinition> bindings;
+    std::vector<AnimationTrackDefinition> animations;
     std::vector<PostProcessDefinition> postProcesses;
 };
 
@@ -100,6 +132,8 @@ public:
     static const InputChannelDefinition* FindInput(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const MaterialDefinition* FindMaterial(
+        const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
+    static const AnimationTrackDefinition* FindAnimation(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const PostProcessDefinition* FindPostProcess(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;

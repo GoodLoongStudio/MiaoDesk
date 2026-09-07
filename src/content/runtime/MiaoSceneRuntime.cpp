@@ -28,6 +28,114 @@ bool ValueMatchesType(PropertyType type, const PropertyValue& value) noexcept {
     return false;
 }
 
+bool PropertyValuesEqual(const PropertyValue& left, const PropertyValue& right) noexcept {
+    if (left.index() != right.index()) return false;
+    if (const auto* a = std::get_if<bool>(&left)) return *a == std::get<bool>(right);
+    if (const auto* a = std::get_if<std::int64_t>(&left)) return *a == std::get<std::int64_t>(right);
+    if (const auto* a = std::get_if<double>(&left)) return *a == std::get<double>(right);
+    if (const auto* a = std::get_if<std::wstring>(&left)) return *a == std::get<std::wstring>(right);
+    if (const auto* a = std::get_if<Vec2>(&left)) {
+        const auto& b = std::get<Vec2>(right);
+        return a->x == b.x && a->y == b.y;
+    }
+    if (const auto* a = std::get_if<Vec3>(&left)) {
+        const auto& b = std::get<Vec3>(right);
+        return a->x == b.x && a->y == b.y && a->z == b.z;
+    }
+    if (const auto* a = std::get_if<Vec4>(&left)) {
+        const auto& b = std::get<Vec4>(right);
+        return a->x == b.x && a->y == b.y && a->z == b.z && a->w == b.w;
+    }
+    if (const auto* a = std::get_if<Color4>(&left)) {
+        const auto& b = std::get<Color4>(right);
+        return a->r == b.r && a->g == b.g && a->b == b.b && a->a == b.a;
+    }
+    if (const auto* a = std::get_if<AssetReference>(&left)) return a->id == std::get<AssetReference>(right).id;
+    return false;
+}
+
+double ApplyEasing(AnimationEasing easing, double value) noexcept {
+    const double t = std::clamp(value, 0.0, 1.0);
+    switch (easing) {
+    case AnimationEasing::Linear:
+        return t;
+    case AnimationEasing::EaseIn:
+        return t * t;
+    case AnimationEasing::EaseOut: {
+        const double inverse = 1.0 - t;
+        return 1.0 - inverse * inverse;
+    }
+    case AnimationEasing::EaseInOut:
+        if (t < 0.5) return 2.0 * t * t;
+        return 1.0 - ((-2.0 * t + 2.0) * (-2.0 * t + 2.0)) / 2.0;
+    }
+    return t;
+}
+
+double AnimationLocalTime(const AnimationTrackDefinition& animation, double timeSeconds) noexcept {
+    const double time = std::max(0.0, timeSeconds);
+    const double duration = animation.durationSeconds;
+    switch (animation.loopMode) {
+    case AnimationLoopMode::Once:
+        return std::clamp(time, 0.0, duration);
+    case AnimationLoopMode::Loop: {
+        const double wrapped = std::fmod(time, duration);
+        return wrapped < 0.0 ? wrapped + duration : wrapped;
+    }
+    case AnimationLoopMode::PingPong: {
+        const double period = duration * 2.0;
+        double wrapped = std::fmod(time, period);
+        if (wrapped < 0.0) wrapped += period;
+        return wrapped <= duration ? wrapped : period - wrapped;
+    }
+    }
+    return time;
+}
+
+bool InterpolateValue(
+    const PropertyValue& from,
+    const PropertyValue& to,
+    double t,
+    PropertyValue* output) noexcept {
+    if (!output || from.index() != to.index()) return false;
+    const double u = std::clamp(t, 0.0, 1.0);
+    if (const auto* a = std::get_if<double>(&from)) {
+        const auto b = std::get<double>(to);
+        *output = *a + (b - *a) * u;
+        return true;
+    }
+    if (const auto* a = std::get_if<std::int64_t>(&from)) {
+        const auto b = std::get<std::int64_t>(to);
+        const long double value = static_cast<long double>(*a) +
+            (static_cast<long double>(b) - static_cast<long double>(*a)) * static_cast<long double>(u);
+        *output = static_cast<std::int64_t>(std::llround(value));
+        return true;
+    }
+    if (const auto* a = std::get_if<Vec2>(&from)) {
+        const auto& b = std::get<Vec2>(to);
+        *output = Vec2{a->x + (b.x - a->x) * u, a->y + (b.y - a->y) * u};
+        return true;
+    }
+    if (const auto* a = std::get_if<Vec3>(&from)) {
+        const auto& b = std::get<Vec3>(to);
+        *output = Vec3{a->x + (b.x - a->x) * u, a->y + (b.y - a->y) * u, a->z + (b.z - a->z) * u};
+        return true;
+    }
+    if (const auto* a = std::get_if<Vec4>(&from)) {
+        const auto& b = std::get<Vec4>(to);
+        *output = Vec4{a->x + (b.x - a->x) * u, a->y + (b.y - a->y) * u,
+                       a->z + (b.z - a->z) * u, a->w + (b.w - a->w) * u};
+        return true;
+    }
+    if (const auto* a = std::get_if<Color4>(&from)) {
+        const auto& b = std::get<Color4>(to);
+        *output = Color4{a->r + (b.r - a->r) * u, a->g + (b.g - a->g) * u,
+                         a->b + (b.b - a->b) * u, a->a + (b.a - a->a) * u};
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 bool MiaoSceneRuntime::Initialize(SceneRuntimeDefinition definition, std::wstring* error) {
@@ -90,7 +198,26 @@ bool MiaoSceneRuntime::SetInput(std::wstring_view id, PropertyValue value, std::
     if (!definition) return Fail(error, L"Unknown scene input: " + std::wstring(id));
     if (!ValueMatchesType(definition->type, value)) return Fail(error, L"Scene input type mismatch: " + std::wstring(id));
     if (!ApplyBindingsForSource(BindingSourceKind::Input, id, value, error)) return false;
-    inputValues_[std::wstring(id)] = std::move(value);
+
+    const auto key = std::wstring(id);
+    inputValues_[key] = value;
+    if (id == L"input://frame/time") {
+        const auto* time = std::get_if<double>(&value);
+        if (!time) return Fail(error, L"input://frame/time must be a float input.");
+        if (!AdvanceTimeline(*time, error)) return false;
+    }
+    if (error) error->clear();
+    return true;
+}
+
+bool MiaoSceneRuntime::AdvanceTimeline(double timeSeconds, std::wstring* error) {
+    if (!hasDefinition_ || !state_.loaded) return Fail(error, L"Scene runtime is not initialized.");
+    if (!std::isfinite(timeSeconds)) return Fail(error, L"Animation timeline time must be finite.");
+    for (const auto& animation : definition_.animations) {
+        if (!animation.enabled) continue;
+        if (!ApplyAnimation(animation, timeSeconds, error)) return false;
+    }
+    if (error) error->clear();
     return true;
 }
 
@@ -155,6 +282,11 @@ bool MiaoSceneRuntime::ApplyBinding(
         output = static_cast<std::int64_t>(std::llround(transformed));
     }
 
+    const auto* current = properties_.Get(binding.target);
+    if (current && PropertyValuesEqual(*current, output)) {
+        if (error) error->clear();
+        return true;
+    }
     if (!properties_.Set(binding.target, std::move(output), error)) return false;
     MarkDirty(binding.target);
     return true;
@@ -170,6 +302,42 @@ bool MiaoSceneRuntime::ApplyBindingsForSource(
         if (!ApplyBinding(binding, value, error)) return false;
     }
     if (error) error->clear();
+    return true;
+}
+
+bool MiaoSceneRuntime::ApplyAnimation(
+    const AnimationTrackDefinition& animation,
+    double timeSeconds,
+    std::wstring* error) {
+    if (animation.keyframes.empty()) return Fail(error, L"Animation has no keyframes: " + animation.id);
+    const double localTime = AnimationLocalTime(animation, timeSeconds);
+
+    PropertyValue value = animation.keyframes.front().value;
+    if (localTime >= animation.keyframes.back().timeSeconds) {
+        value = animation.keyframes.back().value;
+    } else if (localTime > animation.keyframes.front().timeSeconds) {
+        for (std::size_t i = 0; i + 1 < animation.keyframes.size(); ++i) {
+            const auto& from = animation.keyframes[i];
+            const auto& to = animation.keyframes[i + 1];
+            if (localTime > to.timeSeconds) continue;
+            const double span = to.timeSeconds - from.timeSeconds;
+            if (span <= 0.0) return Fail(error, L"Animation keyframe span is invalid: " + animation.id);
+            const double normalized = (localTime - from.timeSeconds) / span;
+            const double eased = ApplyEasing(from.easing, normalized);
+            if (!InterpolateValue(from.value, to.value, eased, &value))
+                return Fail(error, L"Animation interpolation type is unsupported: " + animation.id);
+            break;
+        }
+    }
+
+    const auto* current = properties_.Get(animation.target);
+    if (!current) return Fail(error, L"Animation target property is unavailable: " + animation.id);
+    if (PropertyValuesEqual(*current, value)) {
+        if (error) error->clear();
+        return true;
+    }
+    if (!properties_.Set(animation.target, std::move(value), error)) return false;
+    MarkDirty(animation.target);
     return true;
 }
 
@@ -205,6 +373,17 @@ bool MiaoSceneRuntime::SelfTest() {
         1.0,
         0.0,
     });
+    definition.animations.push_back(AnimationTrackDefinition{
+        L"animation://opacity-pulse",
+        PropertyAddress{L"component://root/transform", L"opacity"},
+        true,
+        AnimationLoopMode::PingPong,
+        1.0,
+        {
+            AnimationKeyframeDefinition{0.0, 0.2, AnimationEasing::EaseInOut},
+            AnimationKeyframeDefinition{1.0, 0.9, AnimationEasing::Linear},
+        },
+    });
 
     MiaoSceneRuntime runtime;
     std::wstring error;
@@ -214,11 +393,25 @@ bool MiaoSceneRuntime::SelfTest() {
     if (!initial || !std::holds_alternative<double>(*initial) || std::get<double>(*initial) != 0.75) return false;
     if (runtime.ConsumeDirtyProperties().size() != 1) return false;
 
+    if (!runtime.SetInput(L"input://frame/time", 0.5, &error)) return false;
+    const auto* animated = runtime.GetProperty(opacity);
+    if (!animated || !std::holds_alternative<double>(*animated) || std::abs(std::get<double>(*animated) - 0.55) > 0.000001) return false;
+    if (runtime.ConsumeDirtyProperties().size() != 1) return false;
+
+    if (!runtime.SetInput(L"input://frame/time", 1.5, &error)) return false;
+    const auto* pingPong = runtime.GetProperty(opacity);
+    if (!pingPong || std::abs(std::get<double>(*pingPong) - 0.55) > 0.000001) return false;
+    if (!runtime.ConsumeDirtyProperties().empty()) return false;
+
     if (!runtime.SetParameter(L"param://opacity", 0.42, &error)) return false;
     const auto* changed = runtime.GetProperty(opacity);
     if (!changed || std::get<double>(*changed) != 0.42) return false;
     if (runtime.ConsumeDirtyProperties().size() != 1) return false;
     if (runtime.SetParameter(L"param://opacity", std::wstring(L"wrong"), &error)) return false;
+
+    if (!runtime.AdvanceTimeline(1.0, &error)) return false;
+    const auto* end = runtime.GetProperty(opacity);
+    if (!end || std::abs(std::get<double>(*end) - 0.9) > 0.000001) return false;
 
     runtime.MarkPaintReady();
     if (!runtime.State().paintReady) return false;

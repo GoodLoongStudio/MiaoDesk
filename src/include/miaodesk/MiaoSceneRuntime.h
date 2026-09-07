@@ -23,6 +23,7 @@ public:
 
     bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
     bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
+    bool AdvanceTimeline(double timeSeconds, std::wstring* error = nullptr);
 
     const PropertyValue* GetParameter(std::wstring_view id) const noexcept;
     const PropertyValue* GetInput(std::wstring_view id) const noexcept;
@@ -40,6 +41,7 @@ public:
 private:
     bool ApplyBinding(const PropertyBindingDefinition& binding, const PropertyValue& source, std::wstring* error);
     bool ApplyBindingsForSource(BindingSourceKind kind, std::wstring_view sourceId, const PropertyValue& value, std::wstring* error);
+    bool ApplyAnimation(const AnimationTrackDefinition& animation, double timeSeconds, std::wstring* error);
     void MarkDirty(const PropertyAddress& address);
 
     SceneRuntimeDefinition definition_;

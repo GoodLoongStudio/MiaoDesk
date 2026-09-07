@@ -81,6 +81,38 @@
   ],
   "postProcesses": [
     {
+      "id": "postfx://shader-pulse/bloom-threshold",
+      "effect": "bloomThreshold",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.62,
+      "softness": 0.16
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-horizontal",
+      "effect": "blurHorizontal",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.72,
+      "softness": 0.25
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-vertical",
+      "effect": "blurVertical",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.72,
+      "softness": 0.25
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-combine",
+      "effect": "bloomCombine",
+      "enabled": true,
+      "amount": 0.78,
+      "radius": 0.75,
+      "softness": 0.25
+    },
+    {
       "id": "postfx://shader-pulse/vignette",
       "effect": "vignette",
       "enabled": true,

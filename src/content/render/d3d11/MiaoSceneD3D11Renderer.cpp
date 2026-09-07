@@ -33,6 +33,7 @@ namespace miaodesk::content {
 namespace {
 
 constexpr std::wstring_view kSceneColorResource = L"renderres://scene-color";
+constexpr std::wstring_view kPostColorResource = L"renderres://post-color";
 constexpr std::wstring_view kBackbufferResource = L"renderres://backbuffer";
 
 bool Fail(std::wstring* error, std::wstring message) {
@@ -166,7 +167,7 @@ float4 MiaoBuiltinSolid(MiaoVertexOutput input) : SV_Target
     return source;
 }
 
-std::string EngineCompositePixelShader() {
+std::string EngineCopyPixelShader() {
     std::string source(MiaoShaderContract::HlslPreamble());
     source += R"HLSL(
 struct MiaoVertexOutput
@@ -175,7 +176,7 @@ struct MiaoVertexOutput
     float2 uv : TEXCOORD0;
 };
 
-float4 MiaoBuiltinComposite(MiaoVertexOutput input) : SV_Target
+float4 MiaoBuiltinCopy(MiaoVertexOutput input) : SV_Target
 {
     return MiaoInputTexture.Sample(MiaoLinearSampler, input.uv);
 }
@@ -260,7 +261,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11VertexShader> fullscreenVertexShader;
     ComPtr<ID3D11VertexShader> sceneVertexShader;
     ComPtr<ID3D11PixelShader> scenePixelShader;
-    ComPtr<ID3D11PixelShader> compositePixelShader;
+    ComPtr<ID3D11PixelShader> copyPixelShader;
     ComPtr<ID3D11Buffer> frameBuffer;
     ComPtr<ID3D11Buffer> objectBuffer;
     ComPtr<ID3D11Buffer> parameterBuffer;
@@ -305,23 +306,19 @@ struct MiaoSceneD3D11Renderer::Impl {
 
         RenderResourceDefinition sceneResource;
         sceneResource.id = std::wstring(kSceneColorResource);
-        sceneResource.external = false;
-        sceneResource.persistent = false;
-        sceneResource.format = RenderResourceFormat::Bgra8Unorm;
-        sceneResource.sizePolicy = RenderResourceSizePolicy::SurfaceRelative;
-        sceneResource.widthScale = 1.0f;
-        sceneResource.heightScale = 1.0f;
-        sceneResource.renderTarget = true;
         sceneResource.shaderResource = true;
+
+        RenderResourceDefinition postResource;
+        postResource.id = std::wstring(kPostColorResource);
+        postResource.shaderResource = true;
 
         RenderResourceDefinition backbufferResource;
         backbufferResource.id = std::wstring(kBackbufferResource);
         backbufferResource.external = true;
-        backbufferResource.persistent = false;
         backbufferResource.renderTarget = true;
         backbufferResource.shaderResource = false;
 
-        renderGraph.resources = {sceneResource, backbufferResource};
+        renderGraph.resources = {sceneResource, postResource, backbufferResource};
         renderGraph.passes = {
             {
                 programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
@@ -331,9 +328,16 @@ struct MiaoSceneD3D11Renderer::Impl {
                 true,
             },
             {
+                L"renderpass://post-copy",
+                RenderPassKind::PostProcess,
+                {std::wstring(kSceneColorResource)},
+                {std::wstring(kPostColorResource)},
+                true,
+            },
+            {
                 L"renderpass://composite",
                 RenderPassKind::Composite,
-                {std::wstring(kSceneColorResource)},
+                {std::wstring(kPostColorResource)},
                 {std::wstring(kBackbufferResource)},
                 true,
             },
@@ -505,7 +509,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         ComPtr<ID3DBlob> fullscreenVsCode;
         ComPtr<ID3DBlob> sceneVsCode;
         ComPtr<ID3DBlob> scenePsCode;
-        ComPtr<ID3DBlob> compositePsCode;
+        ComPtr<ID3DBlob> copyPsCode;
 
         const auto fullscreenSource = EngineVertexShader();
         if (!CompileShader(fullscreenSource, "MiaoBuiltinVertex", "vs_5_0", &fullscreenVsCode, error)) return false;
@@ -541,12 +545,12 @@ struct MiaoSceneD3D11Renderer::Impl {
                 scenePixelShader.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene pixel shader.");
 
-        const auto compositeSource = EngineCompositePixelShader();
-        if (!CompileShader(compositeSource, "MiaoBuiltinComposite", "ps_5_0", &compositePsCode, error)) return false;
+        const auto copySource = EngineCopyPixelShader();
+        if (!CompileShader(copySource, "MiaoBuiltinCopy", "ps_5_0", &copyPsCode, error)) return false;
         if (FAILED(device->CreatePixelShader(
-                compositePsCode->GetBufferPointer(), compositePsCode->GetBufferSize(), nullptr,
-                compositePixelShader.GetAddressOf())))
-            return Error(error, L"Cannot create Miao Scene composite pixel shader.");
+                copyPsCode->GetBufferPointer(), copyPsCode->GetBufferSize(), nullptr,
+                copyPixelShader.GetAddressOf())))
+            return Error(error, L"Cannot create Miao Scene copy pixel shader.");
         return true;
     }
 
@@ -640,14 +644,46 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
+    bool ExecuteCopyPass(
+        std::wstring_view inputId,
+        std::wstring_view outputId,
+        std::wstring* error) {
+        auto* input = renderTargets.Find(inputId);
+        auto* output = renderTargets.Find(outputId);
+        if (!input || !input->Valid() || !output || !output->Valid())
+            return Error(error, L"Miao Scene post-process resources are unavailable.");
+
+        UnbindShaderResources();
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        ID3D11RenderTargetView* target = output->RenderTargetView();
+        context->OMSetRenderTargets(1, &target, nullptr);
+        const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
+        context->ClearRenderTargetView(target, clear);
+        SetViewport(output->Width(), output->Height());
+
+        context->IASetInputLayout(nullptr);
+        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
+        context->PSSetShader(copyPixelShader.Get(), nullptr, 0);
+        ID3D11ShaderResourceView* inputSrv = input->ShaderResourceView();
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &inputSrv);
+        ID3D11SamplerState* sampler = linearSampler.Get();
+        context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
+        context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
+        context->Draw(3, 0);
+
+        ID3D11ShaderResourceView* nullInput{};
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &nullInput);
+        return true;
+    }
+
     bool ExecuteCompositePass(std::wstring* error) {
-        auto* sceneColor = renderTargets.Find(kSceneColorResource);
-        if (!sceneColor || !sceneColor->Valid() || !backbufferRenderTargetView)
+        auto* postColor = renderTargets.Find(kPostColorResource);
+        if (!postColor || !postColor->Valid() || !backbufferRenderTargetView)
             return Error(error, L"Miao Scene composite resources are unavailable.");
 
         UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
-
         ID3D11RenderTargetView* target = backbufferRenderTargetView.Get();
         context->OMSetRenderTargets(1, &target, nullptr);
         const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
@@ -657,9 +693,9 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->IASetInputLayout(nullptr);
         context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
-        context->PSSetShader(compositePixelShader.Get(), nullptr, 0);
-        ID3D11ShaderResourceView* sceneInput = sceneColor->ShaderResourceView();
-        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &sceneInput);
+        context->PSSetShader(copyPixelShader.Get(), nullptr, 0);
+        ID3D11ShaderResourceView* inputSrv = postColor->ShaderResourceView();
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &inputSrv);
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
         context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
@@ -683,8 +719,9 @@ struct MiaoSceneD3D11Renderer::Impl {
 
     bool Draw(float timeSeconds, std::wstring* error) {
         const auto* sceneColor = renderTargets.Find(kSceneColorResource);
+        const auto* postColor = renderTargets.Find(kPostColorResource);
         if (!loaded || !context || !swapChain || !backbufferRenderTargetView ||
-            !sceneColor || !sceneColor->Valid())
+            !sceneColor || !sceneColor->Valid() || !postColor || !postColor->Valid())
             return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
 
         RECT rect{};
@@ -758,6 +795,9 @@ struct MiaoSceneD3D11Renderer::Impl {
                 case RenderPassKind::Programmable:
                     if (!ExecuteScenePass(frame, object, parameters, error)) return false;
                     break;
+                case RenderPassKind::PostProcess:
+                    if (!ExecuteCopyPass(kSceneColorResource, kPostColorResource, error)) return false;
+                    break;
                 case RenderPassKind::Composite:
                     if (!ExecuteCompositePass(error)) return false;
                     break;
@@ -766,8 +806,7 @@ struct MiaoSceneD3D11Renderer::Impl {
                     break;
                 case RenderPassKind::Clear:
                 case RenderPassKind::Particle:
-                case RenderPassKind::PostProcess:
-                    return Error(error, L"Miao Scene render graph contains an unsupported pass kind for M1.");
+                    return Error(error, L"Miao Scene render graph contains an unsupported pass kind for the current runtime.");
             }
         }
 
@@ -814,7 +853,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         parameterBuffer.Reset();
         objectBuffer.Reset();
         frameBuffer.Reset();
-        compositePixelShader.Reset();
+        copyPixelShader.Reset();
         scenePixelShader.Reset();
         sceneVertexShader.Reset();
         fullscreenVertexShader.Reset();

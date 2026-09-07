@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "id": "scene://aurora-minimal",
+  "kind": "wallpaper",
+  "profile": "wallpaper",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Root",
+      "parentId": "",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://root/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://background",
+      "name": "Background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://background/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "tint", "type": "color", "default": [0.16, 0.42, 0.95, 1.0]}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [
+    {
+      "id": "material://background",
+      "model": "builtin",
+      "builtinName": "solidColor",
+      "properties": [
+        {"name": "color", "type": "color", "default": [0.16, 0.42, 0.95, 1.0]}
+      ],
+      "textures": []
+    }
+  ],
+  "inputs": [
+    {"id": "input://frame/time", "type": "float", "default": 0.0}
+  ],
+  "bindings": [
+    {
+      "id": "binding://background-opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://opacity",
+      "target": {
+        "componentId": "component://background/sprite",
+        "propertyName": "opacity"
+      },
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ]
+}

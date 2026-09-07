@@ -1,5 +1,6 @@
 #include "miaodesk/MiaoRenderGraph.h"
 
+#include <cmath>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,6 +16,10 @@ bool Fail(std::wstring* error, std::wstring message) {
 
 bool HasPrefix(std::wstring_view value, std::wstring_view prefix) noexcept {
     return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+bool ValidScale(float value) noexcept {
+    return std::isfinite(value) && value > 0.0f && value <= 4.0f;
 }
 
 } // namespace
@@ -34,6 +39,10 @@ bool MiaoRenderGraph::Validate(const RenderGraphDefinition& graph, std::wstring*
             return Fail(error, L"Render resource id must use renderres:// stable ids: " + resource.id);
         if (!resourceIds.emplace(resource.id).second)
             return Fail(error, L"Duplicate render resource id: " + resource.id);
+        if (!ValidScale(resource.widthScale) || !ValidScale(resource.heightScale))
+            return Fail(error, L"Render resource scale must be finite and in (0, 4]: " + resource.id);
+        if (!resource.external && !resource.renderTarget && !resource.shaderResource)
+            return Fail(error, L"Engine-owned render resource must declare at least one usage: " + resource.id);
     }
 
     std::unordered_set<std::wstring> passIds;
@@ -45,12 +54,18 @@ bool MiaoRenderGraph::Validate(const RenderGraphDefinition& graph, std::wstring*
             return Fail(error, L"Duplicate render pass id: " + pass.id);
         if (!pass.enabled) continue;
         for (const auto& id : pass.reads) {
-            if (!FindResource(graph, id))
+            const auto* resource = FindResource(graph, id);
+            if (!resource)
                 return Fail(error, L"Render pass reads unknown resource: " + pass.id + L" -> " + id);
+            if (!resource->external && !resource->shaderResource)
+                return Fail(error, L"Render pass reads resource without shader-resource usage: " + pass.id + L" -> " + id);
         }
         for (const auto& id : pass.writes) {
-            if (!FindResource(graph, id))
+            const auto* resource = FindResource(graph, id);
+            if (!resource)
                 return Fail(error, L"Render pass writes unknown resource: " + pass.id + L" -> " + id);
+            if (!resource->renderTarget)
+                return Fail(error, L"Render pass writes resource without render-target usage: " + pass.id + L" -> " + id);
             // external means the host owns the resource lifetime (for example a
             // swap-chain backbuffer). It may still be a graph output.
             if (!writers.emplace(id, 1).second)
@@ -125,11 +140,22 @@ bool MiaoRenderGraph::Compile(
 
 bool MiaoRenderGraph::SelfTest() {
     RenderGraphDefinition graph;
-    graph.resources = {
-        {L"renderres://scene", false, false},
-        {L"renderres://post", false, false},
-        {L"renderres://backbuffer", true, false},
-    };
+    RenderResourceDefinition sceneColor;
+    sceneColor.id = L"renderres://scene";
+    sceneColor.shaderResource = true;
+
+    RenderResourceDefinition postColor;
+    postColor.id = L"renderres://post";
+    postColor.shaderResource = true;
+    postColor.widthScale = 0.5f;
+    postColor.heightScale = 0.5f;
+
+    RenderResourceDefinition backbuffer;
+    backbuffer.id = L"renderres://backbuffer";
+    backbuffer.external = true;
+    backbuffer.shaderResource = false;
+
+    graph.resources = {sceneColor, postColor, backbuffer};
     graph.passes = {
         {L"renderpass://scene", RenderPassKind::Scene2D, {}, {L"renderres://scene"}, true},
         {L"renderpass://post", RenderPassKind::PostProcess, {L"renderres://scene"}, {L"renderres://post"}, true},
@@ -142,9 +168,18 @@ bool MiaoRenderGraph::SelfTest() {
     if (compiled.passOrder.size() != 3) return false;
     if (compiled.passOrder[0] != 0 || compiled.passOrder[1] != 1 || compiled.passOrder[2] != 2) return false;
 
-    auto invalid = graph;
-    invalid.passes[0].reads.push_back(L"renderres://post");
-    if (Compile(invalid, &compiled, &error)) return false;
+    auto invalidCycle = graph;
+    invalidCycle.passes[0].reads.push_back(L"renderres://post");
+    if (Compile(invalidCycle, &compiled, &error)) return false;
+
+    auto invalidScale = graph;
+    invalidScale.resources[0].widthScale = 0.0f;
+    if (Validate(invalidScale, &error)) return false;
+
+    auto invalidReadUsage = graph;
+    invalidReadUsage.resources[0].shaderResource = false;
+    if (Validate(invalidReadUsage, &error)) return false;
+
     return true;
 }
 

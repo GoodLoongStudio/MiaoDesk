@@ -1,5 +1,6 @@
 #include "miaodesk/IndependentWallpaperHost.h"
 #include "miaodesk/LayeredSceneRenderer.h"
+#include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
@@ -9,10 +10,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <sstream>
 #include <utility>
 
 using Microsoft::WRL::ComPtr;
+namespace fs = std::filesystem;
 
 namespace miaodesk {
 namespace {
@@ -30,6 +33,19 @@ D2D1_RENDER_TARGET_PROPERTIES PixelRenderTargetProperties() {
         96.0f);
 }
 
+fs::path CanonicalScenePackageRoot(const fs::path& source) {
+    if (source.empty()) return {};
+    std::error_code ec;
+    if (fs::is_directory(source, ec) && _wcsicmp(source.extension().c_str(), L".mdwall") == 0)
+        return source;
+    ec.clear();
+    if (fs::is_regular_file(source, ec)) {
+        const auto parent = source.parent_path();
+        if (_wcsicmp(parent.extension().c_str(), L".mdwall") == 0) return parent;
+    }
+    return {};
+}
+
 } // namespace
 
 struct IndependentWallpaperHost::Impl {
@@ -41,6 +57,7 @@ struct IndependentWallpaperHost::Impl {
         ComPtr<ID2D1SolidColorBrush> brush;
         ComPtr<ID2D1Bitmap> bitmap;
         std::unique_ptr<VideoWallpaperPlayer> video;
+        std::unique_ptr<content::MiaoSceneD2DRenderer> canonicalScene;
         std::wstring error;
     };
 
@@ -155,9 +172,11 @@ struct IndependentWallpaperHost::Impl {
             slot.video->Stop();
             slot.video.reset();
         }
+        slot.canonicalScene.reset();
         slot.bitmap.Reset();
         slot.wallpaper.kind = wallpaper::ResolvedWallpaperKind::Scene;
         slot.wallpaper.sceneKey = L"aurora";
+        slot.wallpaper.source.clear();
         slot.wallpaper.fallback = true;
         if (slot.wallpaper.fallbackReason.empty()) slot.wallpaper.fallbackReason = reason;
         slot.error = reason;
@@ -186,6 +205,18 @@ struct IndependentWallpaperHost::Impl {
         }
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) {
             if (!LoadImage(slot)) FallbackSlotToMiaoCloud(slot, L"独立图片无法解码，已回退妙喵云境");
+            return true;
+        }
+        if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Scene) {
+            if (!EnsureRenderTarget(slot)) return false;
+            const auto packageRoot = CanonicalScenePackageRoot(slot.wallpaper.source);
+            if (!packageRoot.empty()) {
+                slot.canonicalScene = std::make_unique<content::MiaoSceneD2DRenderer>();
+                std::wstring error;
+                if (!slot.canonicalScene->Load(packageRoot, slot.renderTarget.Get(), &error)) {
+                    FallbackSlotToMiaoCloud(slot, error.empty() ? L"外部 Scene 加载失败，已回退妙喵云境" : error);
+                }
+            }
             return true;
         }
         return EnsureRenderTarget(slot);
@@ -251,17 +282,32 @@ struct IndependentWallpaperHost::Impl {
         slot.renderTarget->BeginDraw();
         slot.renderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
         slot.renderTarget->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f));
-        if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image && slot.bitmap) DrawImage(slot, size);
-        else if (slot.wallpaper.sceneKey == L"neon") DrawNeonCity(slot, size);
-        else if (slot.wallpaper.sceneKey == L"grid") DrawMysticMoon(slot, size);
-        else DrawMiaoCloud(slot, size);
+        if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image && slot.bitmap) {
+            DrawImage(slot, size);
+        } else if (slot.canonicalScene) {
+            std::wstring error;
+            if (!slot.canonicalScene->Draw(time, size, &error)) {
+                FallbackSlotToMiaoCloud(slot, error.empty() ? L"外部 Scene 绘制失败，已回退妙喵云境" : error);
+                DrawMiaoCloud(slot, size);
+            }
+        } else if (slot.wallpaper.sceneKey == L"neon") {
+            DrawNeonCity(slot, size);
+        } else if (slot.wallpaper.sceneKey == L"grid") {
+            DrawMysticMoon(slot, size);
+        } else {
+            DrawMiaoCloud(slot, size);
+        }
         const HRESULT hr = slot.renderTarget->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
+            slot.canonicalScene.reset();
             slot.bitmap.Reset();
             slot.brush.Reset();
             slot.renderTarget.Reset();
-            if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image && !LoadImage(slot))
-                FallbackSlotToMiaoCloud(slot, L"Direct2D 设备恢复后图片重载失败，已回退妙喵云境");
+            if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) {
+                if (!LoadImage(slot)) FallbackSlotToMiaoCloud(slot, L"Direct2D 设备恢复后图片重载失败，已回退妙喵云境");
+            } else if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Scene) {
+                PrepareSlot(slot);
+            }
         }
     }
 
@@ -432,16 +478,19 @@ std::wstring IndependentWallpaperHost::DiagnosticsText() const {
     std::size_t videos = 0;
     std::size_t images = 0;
     std::size_t scenes = 0;
+    std::size_t canonicalScenes = 0;
     std::size_t fallbacks = 0;
     for (const auto& slot : impl_->slots) {
         if (!slot) continue;
         if (slot->video) ++videos;
         else if (slot->wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) ++images;
         else ++scenes;
+        if (slot->canonicalScene) ++canonicalScenes;
         if (slot->wallpaper.fallback) ++fallbacks;
     }
     std::wostringstream text;
-    text << impl_->slots.size() << L" 个独立 Surface · Scene " << scenes << L" · 图片 " << images << L" · 视频 " << videos;
+    text << impl_->slots.size() << L" 个独立 Surface · Scene " << scenes << L" · Canonical " << canonicalScenes
+         << L" · 图片 " << images << L" · 视频 " << videos;
     if (fallbacks > 0) text << L" · fallback " << fallbacks;
     const auto error = LastErrorText();
     if (!error.empty()) text << L" · " << error;

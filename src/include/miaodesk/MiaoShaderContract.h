@@ -15,6 +15,7 @@ public:
     static constexpr unsigned kFrameCBufferRegister = 0;
     static constexpr unsigned kObjectCBufferRegister = 1;
     static constexpr unsigned kParameterCBufferRegister = 2;
+    static constexpr unsigned kMaterialCBufferRegister = kParameterCBufferRegister;
     static constexpr unsigned kInputTextureRegister = 0;
     static constexpr unsigned kMaskTextureRegister = 1;
     static constexpr unsigned kFirstUserTextureRegister = 8;

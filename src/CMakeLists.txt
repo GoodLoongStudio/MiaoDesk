@@ -18,6 +18,7 @@ set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
     content/package/MiaoContentPackage.cpp
     content/scene/MiaoSceneModel.cpp
+    content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoSceneRuntimeModel.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp

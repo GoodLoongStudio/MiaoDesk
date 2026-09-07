@@ -18,6 +18,7 @@ set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
     content/asset/MiaoAssetDatabase.cpp
     content/package/MiaoContentPackage.cpp
+    content/render/MiaoRenderGraph.cpp
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoSceneRuntime.cpp
@@ -64,6 +65,7 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 
 set(MIAODESK_WALLPAPER_SOURCES
     content/render/d2d/MiaoSceneD2DRenderer.cpp
+    content/render/d3d11/MiaoSceneD3D11Renderer.cpp
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp
 
@@ -196,6 +198,7 @@ target_link_libraries(MiaoDeskWallpaper PRIVATE
     comctl32
     d2d1
     d3d11
+    d3dcompiler
     dxgi
     dwrite
     windowscodecs

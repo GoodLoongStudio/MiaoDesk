@@ -32,6 +32,9 @@ namespace fs = std::filesystem;
 namespace miaodesk::content {
 namespace {
 
+constexpr std::wstring_view kSceneColorResource = L"renderres://scene-color";
+constexpr std::wstring_view kBackbufferResource = L"renderres://backbuffer";
+
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
     return false;
@@ -252,7 +255,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<IDXGISwapChain> swapChain;
     ComPtr<ID3D11RenderTargetView> backbufferRenderTargetView;
-    MiaoD3D11RenderTarget sceneColor;
+    MiaoD3D11RenderTargetPool renderTargets;
 
     ComPtr<ID3D11VertexShader> fullscreenVertexShader;
     ComPtr<ID3D11VertexShader> sceneVertexShader;
@@ -297,6 +300,54 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->RSSetViewports(1, &viewport);
     }
 
+    bool BuildRenderGraph(std::wstring* error) {
+        renderGraph = {};
+
+        RenderResourceDefinition sceneResource;
+        sceneResource.id = std::wstring(kSceneColorResource);
+        sceneResource.external = false;
+        sceneResource.persistent = false;
+        sceneResource.format = RenderResourceFormat::Bgra8Unorm;
+        sceneResource.sizePolicy = RenderResourceSizePolicy::SurfaceRelative;
+        sceneResource.widthScale = 1.0f;
+        sceneResource.heightScale = 1.0f;
+        sceneResource.renderTarget = true;
+        sceneResource.shaderResource = true;
+
+        RenderResourceDefinition backbufferResource;
+        backbufferResource.id = std::wstring(kBackbufferResource);
+        backbufferResource.external = true;
+        backbufferResource.persistent = false;
+        backbufferResource.renderTarget = true;
+        backbufferResource.shaderResource = false;
+
+        renderGraph.resources = {sceneResource, backbufferResource};
+        renderGraph.passes = {
+            {
+                programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
+                programmable ? RenderPassKind::Programmable : RenderPassKind::Scene2D,
+                {},
+                {std::wstring(kSceneColorResource)},
+                true,
+            },
+            {
+                L"renderpass://composite",
+                RenderPassKind::Composite,
+                {std::wstring(kSceneColorResource)},
+                {std::wstring(kBackbufferResource)},
+                true,
+            },
+            {
+                L"renderpass://present",
+                RenderPassKind::Present,
+                {std::wstring(kBackbufferResource)},
+                {},
+                true,
+            },
+        };
+        return MiaoRenderGraph::Compile(renderGraph, &compiledGraph, error);
+    }
+
     bool CreateDeviceAndSwapChain(std::wstring* error) {
         RECT rect{};
         if (!GetClientRect(window, &rect)) return Error(error, L"Cannot query D3D11 scene surface size.");
@@ -338,7 +389,11 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_WARP);
         if (FAILED(hr)) return Error(error, L"Cannot create D3D11 device/swap-chain for Miao Scene.");
         if (!CreateBackbuffer(error)) return false;
-        return CreateSceneColor(error);
+
+        std::wstring poolError;
+        if (!renderTargets.Build(device.Get(), renderGraph, width, height, &poolError))
+            return Error(error, poolError.empty() ? L"Cannot build Miao Scene render targets." : poolError);
+        return true;
     }
 
     bool CreateBackbuffer(std::wstring* error) {
@@ -349,13 +404,6 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (FAILED(device->CreateRenderTargetView(
                 backbuffer.Get(), nullptr, backbufferRenderTargetView.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene D3D11 backbuffer render target.");
-        return true;
-    }
-
-    bool CreateSceneColor(std::wstring* error) {
-        std::wstring targetError;
-        if (!sceneColor.Create(device.Get(), width, height, &targetError))
-            return Error(error, targetError.empty() ? L"Cannot create SceneColor render target." : targetError);
         return true;
     }
 
@@ -502,54 +550,6 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
-    bool BuildRenderGraph(std::wstring* error) {
-        renderGraph = {};
-
-        RenderResourceDefinition sceneResource;
-        sceneResource.id = L"renderres://scene-color";
-        sceneResource.external = false;
-        sceneResource.persistent = false;
-        sceneResource.format = RenderResourceFormat::Bgra8Unorm;
-        sceneResource.sizePolicy = RenderResourceSizePolicy::SurfaceRelative;
-        sceneResource.widthScale = 1.0f;
-        sceneResource.heightScale = 1.0f;
-        sceneResource.renderTarget = true;
-        sceneResource.shaderResource = true;
-
-        RenderResourceDefinition backbufferResource;
-        backbufferResource.id = L"renderres://backbuffer";
-        backbufferResource.external = true;
-        backbufferResource.persistent = false;
-        backbufferResource.renderTarget = true;
-        backbufferResource.shaderResource = false;
-
-        renderGraph.resources = {sceneResource, backbufferResource};
-        renderGraph.passes = {
-            {
-                programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
-                programmable ? RenderPassKind::Programmable : RenderPassKind::Scene2D,
-                {},
-                {L"renderres://scene-color"},
-                true,
-            },
-            {
-                L"renderpass://composite",
-                RenderPassKind::Composite,
-                {L"renderres://scene-color"},
-                {L"renderres://backbuffer"},
-                true,
-            },
-            {
-                L"renderpass://present",
-                RenderPassKind::Present,
-                {L"renderres://backbuffer"},
-                {},
-                true,
-            },
-        };
-        return MiaoRenderGraph::Compile(renderGraph, &compiledGraph, error);
-    }
-
     bool Load(const fs::path& packageRoot, HWND nextWindow, std::wstring* error) {
         Reset();
         if (!nextWindow || !IsWindow(nextWindow)) return Error(error, L"Miao Scene D3D11 window is invalid.");
@@ -562,11 +562,11 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);
         if (!runtime.Initialize(definition, &lastError)) return Error(error, lastError);
         if (!ResolveSceneMaterial(error)) return false;
+        if (!BuildRenderGraph(error)) return false;
         if (!CreateDeviceAndSwapChain(error)) return false;
         if (!CreateStates(error)) return false;
         if (!CreateTextures(error)) return false;
         if (!CreateShaders(error)) return false;
-        if (!BuildRenderGraph(error)) return false;
 
         loaded = true;
         lastError.clear();
@@ -626,23 +626,25 @@ struct MiaoSceneD3D11Renderer::Impl {
         const ObjectConstants& object,
         const MiaoGpuParameterBlock& parameters,
         std::wstring* error) {
+        auto* sceneColor = renderTargets.Find(kSceneColorResource);
+        if (!sceneColor || !sceneColor->Valid()) return Error(error, L"SceneColor render target is unavailable.");
+
         UnbindShaderResources();
-        ID3D11RenderTargetView* target = sceneColor.RenderTargetView();
+        ID3D11RenderTargetView* target = sceneColor->RenderTargetView();
         context->OMSetRenderTargets(1, &target, nullptr);
         const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
         context->ClearRenderTargetView(target, clear);
-        SetViewport(sceneColor.Width(), sceneColor.Height());
+        SetViewport(sceneColor->Width(), sceneColor->Height());
         if (!BindSceneState(frame, object, parameters, error)) return false;
         context->Draw(3, 0);
         return true;
     }
 
     bool ExecuteCompositePass(std::wstring* error) {
-        if (!sceneColor.Valid() || !backbufferRenderTargetView)
+        auto* sceneColor = renderTargets.Find(kSceneColorResource);
+        if (!sceneColor || !sceneColor->Valid() || !backbufferRenderTargetView)
             return Error(error, L"Miao Scene composite resources are unavailable.");
 
-        // A D3D11 resource cannot be bound as RTV and SRV simultaneously. Explicitly
-        // end the SceneColor write phase before making it the composite input.
         UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
 
@@ -656,7 +658,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
         context->PSSetShader(compositePixelShader.Get(), nullptr, 0);
-        ID3D11ShaderResourceView* sceneInput = sceneColor.ShaderResourceView();
+        ID3D11ShaderResourceView* sceneInput = sceneColor->ShaderResourceView();
         context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &sceneInput);
         ID3D11SamplerState* sampler = linearSampler.Get();
         context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
@@ -680,7 +682,9 @@ struct MiaoSceneD3D11Renderer::Impl {
     }
 
     bool Draw(float timeSeconds, std::wstring* error) {
-        if (!loaded || !context || !swapChain || !backbufferRenderTargetView || !sceneColor.Valid())
+        const auto* sceneColor = renderTargets.Find(kSceneColorResource);
+        if (!loaded || !context || !swapChain || !backbufferRenderTargetView ||
+            !sceneColor || !sceneColor->Valid())
             return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
 
         RECT rect{};
@@ -781,7 +785,7 @@ struct MiaoSceneD3D11Renderer::Impl {
 
         UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
-        sceneColor.Reset();
+        renderTargets.Reset();
         backbufferRenderTargetView.Reset();
 
         const HRESULT hr = swapChain->ResizeBuffers(0, nextWidth, nextHeight, DXGI_FORMAT_UNKNOWN, 0);
@@ -789,7 +793,11 @@ struct MiaoSceneD3D11Renderer::Impl {
         width = nextWidth;
         height = nextHeight;
         if (!CreateBackbuffer(error)) return false;
-        return CreateSceneColor(error);
+
+        std::wstring poolError;
+        if (!renderTargets.Build(device.Get(), renderGraph, width, height, &poolError))
+            return Error(error, poolError.empty() ? L"Cannot rebuild Miao Scene render targets." : poolError);
+        return true;
     }
 
     void Reset() noexcept {
@@ -800,7 +808,7 @@ struct MiaoSceneD3D11Renderer::Impl {
             context->Flush();
         }
         for (auto& view : textureViews) view.Reset();
-        sceneColor.Reset();
+        renderTargets.Reset();
         alphaBlend.Reset();
         linearSampler.Reset();
         parameterBuffer.Reset();
@@ -865,8 +873,7 @@ std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastE
 bool MiaoSceneD3D11Renderer::SelfTest() {
     return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() &&
            MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
-           MiaoD3D11RenderTarget::ValidateDimensions(1920, 1080, nullptr) &&
-           !MiaoD3D11RenderTarget::ValidateDimensions(0, 1080, nullptr);
+           MiaoD3D11RenderTargetPool::SelfTest();
 }
 
 } // namespace miaodesk::content

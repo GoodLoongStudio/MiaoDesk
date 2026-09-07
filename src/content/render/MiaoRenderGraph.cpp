@@ -49,11 +49,10 @@ bool MiaoRenderGraph::Validate(const RenderGraphDefinition& graph, std::wstring*
                 return Fail(error, L"Render pass reads unknown resource: " + pass.id + L" -> " + id);
         }
         for (const auto& id : pass.writes) {
-            const auto* resource = FindResource(graph, id);
-            if (!resource)
+            if (!FindResource(graph, id))
                 return Fail(error, L"Render pass writes unknown resource: " + pass.id + L" -> " + id);
-            if (resource->external)
-                return Fail(error, L"External render resources are read/import-only in v1: " + id);
+            // external means the host owns the resource lifetime (for example a
+            // swap-chain backbuffer). It may still be a graph output.
             if (!writers.emplace(id, 1).second)
                 return Fail(error, L"Render resource has multiple writers in v1: " + id);
         }
@@ -134,7 +133,7 @@ bool MiaoRenderGraph::SelfTest() {
     graph.passes = {
         {L"renderpass://scene", RenderPassKind::Scene2D, {}, {L"renderres://scene"}, true},
         {L"renderpass://post", RenderPassKind::PostProcess, {L"renderres://scene"}, {L"renderres://post"}, true},
-        {L"renderpass://present", RenderPassKind::Present, {L"renderres://post", L"renderres://backbuffer"}, {}, true},
+        {L"renderpass://present", RenderPassKind::Present, {L"renderres://post"}, {L"renderres://backbuffer"}, true},
     };
 
     CompiledRenderGraph compiled;

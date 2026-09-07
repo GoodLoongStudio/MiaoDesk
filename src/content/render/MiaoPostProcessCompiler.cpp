@@ -71,8 +71,23 @@ bool MiaoPostProcessCompiler::Build(
 
     std::wstring previousResource = next.sceneColorResourceId;
     std::size_t enabledIndex = 0;
+    bool bloomBranchActive = false;
     for (const auto& effect : runtime.postProcesses) {
         if (!effect.enabled) continue;
+
+        if (effect.effect == PostProcessEffectKind::BloomThreshold) {
+            bloomBranchActive = true;
+        } else if (effect.effect == PostProcessEffectKind::BloomCombine) {
+            if (!bloomBranchActive)
+                return Fail(error, L"BloomCombine requires an active BloomThreshold branch before it: " + effect.id);
+        } else if (bloomBranchActive &&
+                   effect.effect != PostProcessEffectKind::BlurHorizontal &&
+                   effect.effect != PostProcessEffectKind::BlurVertical) {
+            // Keep the v1 bloom branch deterministic: Threshold → zero or more
+            // blur passes → Combine. More general branch graphs can be exposed
+            // later without making this package-facing list ambiguous.
+            bloomBranchActive = false;
+        }
 
         const auto outputId = PostResourceId(enabledIndex);
         const auto passId = PostPassId(enabledIndex);
@@ -104,6 +119,7 @@ bool MiaoPostProcessCompiler::Build(
         });
 
         previousResource = outputId;
+        if (combinesWithScene) bloomBranchActive = false;
         ++enabledIndex;
     }
 
@@ -211,6 +227,13 @@ bool MiaoPostProcessCompiler::SelfTest() {
     if (combine->auxiliaryInputResourceId != L"renderres://scene-color") return false;
     const auto& combineGraphPass = plan.graph.passes[4];
     if (combineGraphPass.reads.size() != 2 || combineGraphPass.reads[1] != L"renderres://scene-color") return false;
+
+    SceneRuntimeDefinition invalidBloom = runtime;
+    invalidBloom.postProcesses.clear();
+    invalidBloom.postProcesses.push_back(PostProcessDefinition{
+        L"postfx://orphan-combine", PostProcessEffectKind::BloomCombine, true, 1.0, 0.75, 0.25,
+    });
+    if (Build(invalidBloom, true, &plan, &error)) return false;
 
     SceneRuntimeDefinition noEffects = runtime;
     noEffects.postProcesses.clear();

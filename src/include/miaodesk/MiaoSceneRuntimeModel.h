@@ -20,6 +20,17 @@ enum class BindingSourceKind {
     Input,
 };
 
+enum class PostProcessEffectKind {
+    Copy,
+    Vignette,
+    Noise,
+    ColorMatrix,
+    BlurHorizontal,
+    BlurVertical,
+    BloomThreshold,
+    BloomCombine,
+};
+
 struct PropertyAddress {
     std::wstring componentId;
     std::wstring propertyName;
@@ -58,6 +69,18 @@ struct PropertyBindingDefinition {
     double offset{};
 };
 
+// Creative-runtime description of a built-in post process. It deliberately
+// does not expose D3D11 resource ids: the renderer compiles this declarative
+// list into RenderGraph resources/passes.
+struct PostProcessDefinition {
+    std::wstring id;
+    PostProcessEffectKind effect{PostProcessEffectKind::Copy};
+    bool enabled{true};
+    double amount{1.0};
+    double radius{0.75};
+    double softness{0.25};
+};
+
 struct SceneRuntimeDefinition {
     SceneDefinition scene;
     RuntimeProfile profile{RuntimeProfile::Wallpaper};
@@ -65,6 +88,7 @@ struct SceneRuntimeDefinition {
     std::vector<InputChannelDefinition> inputs;
     std::vector<MaterialDefinition> materials;
     std::vector<PropertyBindingDefinition> bindings;
+    std::vector<PostProcessDefinition> postProcesses;
 };
 
 class MiaoSceneRuntimeModel {
@@ -76,6 +100,8 @@ public:
     static const InputChannelDefinition* FindInput(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const MaterialDefinition* FindMaterial(
+        const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
+    static const PostProcessDefinition* FindPostProcess(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const PropertyDefinition* FindProperty(
         const SceneDefinition& scene, const PropertyAddress& address) noexcept;

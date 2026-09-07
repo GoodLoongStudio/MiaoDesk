@@ -66,8 +66,6 @@ bool MiaoRenderGraph::Validate(const RenderGraphDefinition& graph, std::wstring*
                 return Fail(error, L"Render pass writes unknown resource: " + pass.id + L" -> " + id);
             if (!resource->renderTarget)
                 return Fail(error, L"Render pass writes resource without render-target usage: " + pass.id + L" -> " + id);
-            // external means the host owns the resource lifetime (for example a
-            // swap-chain backbuffer). It may still be a graph output.
             if (!writers.emplace(id, 1).second)
                 return Fail(error, L"Render resource has multiple writers in v1: " + id);
         }
@@ -140,26 +138,25 @@ bool MiaoRenderGraph::Compile(
 
 bool MiaoRenderGraph::SelfTest() {
     RenderGraphDefinition graph;
-    RenderResourceDefinition sceneColor;
-    sceneColor.id = L"renderres://scene";
-    sceneColor.shaderResource = true;
 
-    RenderResourceDefinition postColor;
-    postColor.id = L"renderres://post";
-    postColor.shaderResource = true;
-    postColor.widthScale = 0.5f;
-    postColor.heightScale = 0.5f;
+    RenderResourceDefinition sceneColor;
+    sceneColor.id = L"renderres://scene-color";
+    sceneColor.renderTarget = true;
+    sceneColor.shaderResource = true;
 
     RenderResourceDefinition backbuffer;
     backbuffer.id = L"renderres://backbuffer";
     backbuffer.external = true;
+    backbuffer.renderTarget = true;
     backbuffer.shaderResource = false;
 
-    graph.resources = {sceneColor, postColor, backbuffer};
+    graph.resources = {sceneColor, backbuffer};
     graph.passes = {
-        {L"renderpass://scene", RenderPassKind::Scene2D, {}, {L"renderres://scene"}, true},
-        {L"renderpass://post", RenderPassKind::PostProcess, {L"renderres://scene"}, {L"renderres://post"}, true},
-        {L"renderpass://present", RenderPassKind::Present, {L"renderres://post"}, {L"renderres://backbuffer"}, true},
+        {L"renderpass://scene", RenderPassKind::Scene2D, {}, {L"renderres://scene-color"}, true},
+        {L"renderpass://composite", RenderPassKind::Composite,
+         {L"renderres://scene-color"}, {L"renderres://backbuffer"}, true},
+        {L"renderpass://present", RenderPassKind::Present,
+         {L"renderres://backbuffer"}, {}, true},
     };
 
     CompiledRenderGraph compiled;
@@ -169,7 +166,7 @@ bool MiaoRenderGraph::SelfTest() {
     if (compiled.passOrder[0] != 0 || compiled.passOrder[1] != 1 || compiled.passOrder[2] != 2) return false;
 
     auto invalidCycle = graph;
-    invalidCycle.passes[0].reads.push_back(L"renderres://post");
+    invalidCycle.passes[0].reads.push_back(L"renderres://backbuffer");
     if (Compile(invalidCycle, &compiled, &error)) return false;
 
     auto invalidScale = graph;

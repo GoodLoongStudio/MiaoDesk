@@ -32,7 +32,8 @@
           "kind": "spriteRenderer",
           "properties": [
             {"name": "opacity", "type": "float", "default": 1.0},
-            {"name": "tint", "type": "color", "default": [0.16, 0.42, 0.95, 1.0]}
+            {"name": "tint", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://background"}
           ]
         }
       ]

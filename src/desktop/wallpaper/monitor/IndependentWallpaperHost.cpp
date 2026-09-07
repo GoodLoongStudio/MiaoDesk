@@ -1,6 +1,9 @@
 #include "miaodesk/IndependentWallpaperHost.h"
 #include "miaodesk/LayeredSceneRenderer.h"
+#include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoSceneD2DRenderer.h"
+#include "miaodesk/MiaoSceneD3D11Renderer.h"
+#include "miaodesk/MiaoSceneSerializer.h"
 #include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
@@ -46,6 +49,30 @@ fs::path CanonicalScenePackageRoot(const fs::path& source) {
     return {};
 }
 
+bool CanonicalSceneUsesGpu(const fs::path& packageRoot, bool* usesGpu, std::wstring* error) {
+    if (!usesGpu) return false;
+    *usesGpu = false;
+    content::LoadedMiaoContentPackage package;
+    if (!content::MiaoContentPackage::Load(packageRoot, &package, error)) return false;
+    content::SceneRuntimeDefinition definition;
+    if (!content::MiaoSceneSerializer::DeserializePackage(package, &definition, error)) return false;
+    for (const auto& material : definition.materials) {
+        if (material.model == content::MaterialModel::Programmable) {
+            *usesGpu = true;
+            return true;
+        }
+    }
+    for (const auto& node : definition.scene.nodes) {
+        for (const auto& component : node.components) {
+            if (component.kind == content::ComponentKind::ParticleSystem) {
+                *usesGpu = true;
+                return true;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 struct IndependentWallpaperHost::Impl {
@@ -58,6 +85,7 @@ struct IndependentWallpaperHost::Impl {
         ComPtr<ID2D1Bitmap> bitmap;
         std::unique_ptr<VideoWallpaperPlayer> video;
         std::unique_ptr<content::MiaoSceneD2DRenderer> canonicalScene;
+        std::unique_ptr<content::MiaoSceneD3D11Renderer> gpuScene;
         std::wstring error;
     };
 
@@ -114,9 +142,16 @@ struct IndependentWallpaperHost::Impl {
             return HTTRANSPARENT;
         case WM_ERASEBKGND:
             return 1;
-        case WM_SIZE:
-            if (slot->renderTarget) slot->renderTarget->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
+        case WM_SIZE: {
+            const UINT width = LOWORD(lParam);
+            const UINT height = HIWORD(lParam);
+            if (slot->renderTarget) slot->renderTarget->Resize(D2D1::SizeU(width, height));
+            if (slot->gpuScene && width > 0 && height > 0) {
+                std::wstring ignored;
+                slot->gpuScene->Resize(width, height, &ignored);
+            }
             return 0;
+        }
         case WM_PAINT: {
             PAINTSTRUCT paint{};
             BeginPaint(hwnd, &paint);
@@ -172,6 +207,7 @@ struct IndependentWallpaperHost::Impl {
             slot.video->Stop();
             slot.video.reset();
         }
+        slot.gpuScene.reset();
         slot.canonicalScene.reset();
         slot.bitmap.Reset();
         slot.wallpaper.kind = wallpaper::ResolvedWallpaperKind::Scene;
@@ -208,8 +244,25 @@ struct IndependentWallpaperHost::Impl {
             return true;
         }
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Scene) {
-            if (!EnsureRenderTarget(slot)) return false;
             const auto packageRoot = CanonicalScenePackageRoot(slot.wallpaper.source);
+            if (!packageRoot.empty()) {
+                bool useGpu = false;
+                std::wstring backendError;
+                if (!CanonicalSceneUsesGpu(packageRoot, &useGpu, &backendError)) {
+                    FallbackSlotToMiaoCloud(slot, backendError.empty() ? L"外部 Scene 校验失败，已回退妙喵云境" : backendError);
+                    return true;
+                }
+                if (useGpu) {
+                    slot.gpuScene = std::make_unique<content::MiaoSceneD3D11Renderer>();
+                    std::wstring error;
+                    if (!slot.gpuScene->Load(packageRoot, slot.window, &error)) {
+                        FallbackSlotToMiaoCloud(slot, error.empty() ? L"GPU Scene 加载失败，已回退妙喵云境" : error);
+                    }
+                    return true;
+                }
+            }
+
+            if (!EnsureRenderTarget(slot)) return false;
             if (!packageRoot.empty()) {
                 slot.canonicalScene = std::make_unique<content::MiaoSceneD2DRenderer>();
                 std::wstring error;
@@ -274,6 +327,14 @@ struct IndependentWallpaperHost::Impl {
     }
 
     void DrawSlot(Slot& slot) {
+        if (slot.gpuScene) {
+            std::wstring error;
+            if (!slot.gpuScene->Draw(time, &error)) {
+                FallbackSlotToMiaoCloud(slot, error.empty() ? L"GPU Scene 绘制失败，已回退妙喵云境" : error);
+            }
+            return;
+        }
+
         if (!EnsureRenderTarget(slot) || !slot.brush || !slot.renderTarget) return;
         RECT rc{};
         GetClientRect(slot.window, &rc);
@@ -373,7 +434,10 @@ struct IndependentWallpaperHost::Impl {
     void Stop() {
         for (auto& slot : slots) if (slot && slot->video) slot->video->Stop();
         for (auto& slot : slots) {
-            if (slot && slot->window && IsWindow(slot->window)) DestroyWindow(slot->window);
+            if (!slot) continue;
+            slot->gpuScene.reset();
+            slot->canonicalScene.reset();
+            if (slot->window && IsWindow(slot->window)) DestroyWindow(slot->window);
         }
         slots.clear();
         parent = nullptr;
@@ -479,18 +543,20 @@ std::wstring IndependentWallpaperHost::DiagnosticsText() const {
     std::size_t images = 0;
     std::size_t scenes = 0;
     std::size_t canonicalScenes = 0;
+    std::size_t gpuScenes = 0;
     std::size_t fallbacks = 0;
     for (const auto& slot : impl_->slots) {
         if (!slot) continue;
         if (slot->video) ++videos;
         else if (slot->wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) ++images;
         else ++scenes;
-        if (slot->canonicalScene) ++canonicalScenes;
+        if (slot->canonicalScene || slot->gpuScene) ++canonicalScenes;
+        if (slot->gpuScene) ++gpuScenes;
         if (slot->wallpaper.fallback) ++fallbacks;
     }
     std::wostringstream text;
     text << impl_->slots.size() << L" 个独立 Surface · Scene " << scenes << L" · Canonical " << canonicalScenes
-         << L" · 图片 " << images << L" · 视频 " << videos;
+         << L" · GPU " << gpuScenes << L" · 图片 " << images << L" · 视频 " << videos;
     if (fallbacks > 0) text << L" · fallback " << fallbacks;
     const auto error = LastErrorText();
     if (!error.empty()) text << L" · " << error;

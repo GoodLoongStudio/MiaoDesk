@@ -488,6 +488,34 @@ bool ParseBindingSource(std::string_view value, BindingSourceKind* kind) {
     return false;
 }
 
+bool ParsePostProcessEffect(std::string_view value, PostProcessEffectKind* effect) {
+    if (!effect) return false;
+    if (value == "copy") *effect = PostProcessEffectKind::Copy;
+    else if (value == "vignette") *effect = PostProcessEffectKind::Vignette;
+    else if (value == "noise") *effect = PostProcessEffectKind::Noise;
+    else if (value == "colorMatrix") *effect = PostProcessEffectKind::ColorMatrix;
+    else if (value == "blurHorizontal") *effect = PostProcessEffectKind::BlurHorizontal;
+    else if (value == "blurVertical") *effect = PostProcessEffectKind::BlurVertical;
+    else if (value == "bloomThreshold") *effect = PostProcessEffectKind::BloomThreshold;
+    else if (value == "bloomCombine") *effect = PostProcessEffectKind::BloomCombine;
+    else return false;
+    return true;
+}
+
+const char* PostProcessEffectKey(PostProcessEffectKind effect) {
+    switch (effect) {
+    case PostProcessEffectKind::Copy: return "copy";
+    case PostProcessEffectKind::Vignette: return "vignette";
+    case PostProcessEffectKind::Noise: return "noise";
+    case PostProcessEffectKind::ColorMatrix: return "colorMatrix";
+    case PostProcessEffectKind::BlurHorizontal: return "blurHorizontal";
+    case PostProcessEffectKind::BlurVertical: return "blurVertical";
+    case PostProcessEffectKind::BloomThreshold: return "bloomThreshold";
+    case PostProcessEffectKind::BloomCombine: return "bloomCombine";
+    }
+    return "copy";
+}
+
 const char* ContentKindKey(ContentKind kind) { return kind == ContentKind::Widget ? "widget" : "wallpaper"; }
 const char* ProfileKey(RuntimeProfile profile) { return profile == RuntimeProfile::Widget ? "widget" : "wallpaper"; }
 
@@ -774,6 +802,25 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
             !ReadNumber(bindingValue, "offset", 0.0, &binding.offset, false, error)) return false;
         runtime->bindings.push_back(std::move(binding));
     }
+
+    runtime->postProcesses.clear();
+    if (const auto* postProcesses = root.Find("postProcesses")) {
+        if (!RequireArray(postProcesses, L"postProcesses", error)) return false;
+        for (const auto& effectValue : postProcesses->arrayValue) {
+            if (!RequireObject(effectValue, L"Post-process", error)) return false;
+            PostProcessDefinition effect;
+            if (!ReadString(effectValue, "id", &effect.id, true, error)) return false;
+            std::string effectText;
+            if (!ReadString8(effectValue, "effect", &effectText, true, error) ||
+                !ParsePostProcessEffect(effectText, &effect.effect))
+                return Fail(error, L"Post-process effect is invalid: " + effect.id);
+            if (!ReadBool(effectValue, "enabled", true, &effect.enabled, error) ||
+                !ReadNumber(effectValue, "amount", 1.0, &effect.amount, false, error) ||
+                !ReadNumber(effectValue, "radius", 0.75, &effect.radius, false, error) ||
+                !ReadNumber(effectValue, "softness", 0.25, &effect.softness, false, error)) return false;
+            runtime->postProcesses.push_back(std::move(effect));
+        }
+    }
     return true;
 }
 
@@ -869,7 +916,8 @@ bool EquivalentRuntime(const SceneRuntimeDefinition& a, const SceneRuntimeDefini
            a.scene.rootNodeId == b.scene.rootNodeId && a.scene.nodes.size() == b.scene.nodes.size() &&
            a.scene.assets.size() == b.scene.assets.size() && a.scene.shaders.size() == b.scene.shaders.size() &&
            a.materials.size() == b.materials.size() && a.parameters.size() == b.parameters.size() &&
-           a.inputs.size() == b.inputs.size() && a.bindings.size() == b.bindings.size();
+           a.inputs.size() == b.inputs.size() && a.bindings.size() == b.bindings.size() &&
+           a.postProcesses.size() == b.postProcesses.size();
 }
 
 } // namespace
@@ -997,6 +1045,18 @@ bool MiaoSceneSerializer::SerializeScene(
                ",\"propertyName\":" + Quote(binding.target.propertyName) + "},\"scale\":" + Number(binding.scale) + ",\"offset\":" + Number(binding.offset) + "}";
         out += i + 1 == runtime.bindings.size() ? "\n" : ",\n";
     }
+    out += "  ],\n";
+
+    out += "  \"postProcesses\":[";
+    if (!runtime.postProcesses.empty()) out += "\n";
+    for (std::size_t i = 0; i < runtime.postProcesses.size(); ++i) {
+        const auto& effect = runtime.postProcesses[i];
+        out += "    {\"id\":" + Quote(effect.id) + ",\"effect\":" + Quote8(PostProcessEffectKey(effect.effect)) +
+               ",\"enabled\":" + std::string(effect.enabled ? "true" : "false") +
+               ",\"amount\":" + Number(effect.amount) + ",\"radius\":" + Number(effect.radius) +
+               ",\"softness\":" + Number(effect.softness) + "}";
+        out += i + 1 == runtime.postProcesses.size() ? "\n" : ",\n";
+    }
     out += "  ]\n}\n";
 
     *sceneJsonUtf8 = std::move(out);
@@ -1049,7 +1109,11 @@ bool MiaoSceneSerializer::SelfTest() {
       ],
       "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
       "bindings":[{"id":"binding://opacity","sourceKind":"parameter","sourceId":"param://opacity",
-        "target":{"componentId":"component://root/transform","propertyName":"opacity"},"scale":1.0,"offset":0.0}]
+        "target":{"componentId":"component://root/transform","propertyName":"opacity"},"scale":1.0,"offset":0.0}],
+      "postProcesses":[
+        {"id":"postfx://vignette","effect":"vignette","enabled":true,"amount":0.8,"radius":0.72,"softness":0.22},
+        {"id":"postfx://noise-disabled","effect":"noise","enabled":false,"amount":0.15}
+      ]
     })json";
     constexpr std::string_view parametersJson = R"json({
       "schema":1,
@@ -1059,7 +1123,11 @@ bool MiaoSceneSerializer::SelfTest() {
     SceneRuntimeDefinition first;
     std::wstring error;
     if (!Deserialize(sceneJson, parametersJson, &first, &error)) return false;
-    if (first.scene.id != L"scene://serializer-self-test" || first.scene.nodes.size() != 1 || first.materials.size() != 1 || first.parameters.size() != 1)
+    if (first.scene.id != L"scene://serializer-self-test" || first.scene.nodes.size() != 1 || first.materials.size() != 1 ||
+        first.parameters.size() != 1 || first.postProcesses.size() != 2)
+        return false;
+    if (first.postProcesses[0].effect != PostProcessEffectKind::Vignette ||
+        first.postProcesses[1].effect != PostProcessEffectKind::Noise || first.postProcesses[1].enabled)
         return false;
 
     std::string serializedScene;
@@ -1068,6 +1136,8 @@ bool MiaoSceneSerializer::SelfTest() {
     SceneRuntimeDefinition second;
     if (!Deserialize(serializedScene, serializedParameters, &second, &error)) return false;
     if (!EquivalentRuntime(first, second)) return false;
+    if (second.postProcesses[0].id != L"postfx://vignette" || second.postProcesses[0].amount != first.postProcesses[0].amount)
+        return false;
 
     SceneRuntimeDefinition invalid;
     if (Deserialize("{\"schema\":1}", "", &invalid, &error)) return false;

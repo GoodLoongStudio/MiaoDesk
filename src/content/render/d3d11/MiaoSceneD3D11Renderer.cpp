@@ -2,6 +2,7 @@
 
 #include "miaodesk/MiaoAssetDatabase.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoGpuParameterBlock.h"
 #include "miaodesk/MiaoRenderGraph.h"
@@ -162,6 +163,23 @@ float4 MiaoBuiltinSolid(MiaoVertexOutput input) : SV_Target
     return source;
 }
 
+std::string EngineCompositePixelShader() {
+    std::string source(MiaoShaderContract::HlslPreamble());
+    source += R"HLSL(
+struct MiaoVertexOutput
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+float4 MiaoBuiltinComposite(MiaoVertexOutput input) : SV_Target
+{
+    return MiaoInputTexture.Sample(MiaoLinearSampler, input.uv);
+}
+)HLSL";
+    return source;
+}
+
 bool CompileShader(
     std::string_view source,
     std::string_view entry,
@@ -171,7 +189,7 @@ bool CompileShader(
     if (!bytecode) return Fail(error, L"Shader output is null.");
     bytecode->Reset();
     ComPtr<ID3DBlob> diagnostics;
-    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
     const HRESULT hr = D3DCompile(
         source.data(), source.size(), "MiaoScene", nullptr, nullptr,
         std::string(entry).c_str(), target, flags, 0,
@@ -233,9 +251,13 @@ struct MiaoSceneD3D11Renderer::Impl {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<IDXGISwapChain> swapChain;
-    ComPtr<ID3D11RenderTargetView> renderTargetView;
-    ComPtr<ID3D11VertexShader> vertexShader;
-    ComPtr<ID3D11PixelShader> pixelShader;
+    ComPtr<ID3D11RenderTargetView> backbufferRenderTargetView;
+    MiaoD3D11RenderTarget sceneColor;
+
+    ComPtr<ID3D11VertexShader> fullscreenVertexShader;
+    ComPtr<ID3D11VertexShader> sceneVertexShader;
+    ComPtr<ID3D11PixelShader> scenePixelShader;
+    ComPtr<ID3D11PixelShader> compositePixelShader;
     ComPtr<ID3D11Buffer> frameBuffer;
     ComPtr<ID3D11Buffer> objectBuffer;
     ComPtr<ID3D11Buffer> parameterBuffer;
@@ -258,6 +280,21 @@ struct MiaoSceneD3D11Renderer::Impl {
         lastError = std::move(message);
         if (error) *error = lastError;
         return false;
+    }
+
+    void UnbindShaderResources() noexcept {
+        if (!context) return;
+        ID3D11ShaderResourceView* nullViews[16]{};
+        context->PSSetShaderResources(0, 16, nullViews);
+    }
+
+    void SetViewport(unsigned targetWidth, unsigned targetHeight) noexcept {
+        D3D11_VIEWPORT viewport{};
+        viewport.Width = static_cast<float>(targetWidth);
+        viewport.Height = static_cast<float>(targetHeight);
+        viewport.MinDepth = 0.0f;
+        viewport.MaxDepth = 1.0f;
+        context->RSSetViewports(1, &viewport);
     }
 
     bool CreateDeviceAndSwapChain(std::wstring* error) {
@@ -300,16 +337,25 @@ struct MiaoSceneD3D11Renderer::Impl {
         HRESULT hr = create(D3D_DRIVER_TYPE_HARDWARE);
         if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_WARP);
         if (FAILED(hr)) return Error(error, L"Cannot create D3D11 device/swap-chain for Miao Scene.");
-        return CreateBackbuffer(error);
+        if (!CreateBackbuffer(error)) return false;
+        return CreateSceneColor(error);
     }
 
     bool CreateBackbuffer(std::wstring* error) {
-        renderTargetView.Reset();
+        backbufferRenderTargetView.Reset();
         ComPtr<ID3D11Texture2D> backbuffer;
         if (FAILED(swapChain->GetBuffer(0, IID_PPV_ARGS(backbuffer.GetAddressOf()))))
             return Error(error, L"Cannot obtain Miao Scene D3D11 backbuffer.");
-        if (FAILED(device->CreateRenderTargetView(backbuffer.Get(), nullptr, renderTargetView.GetAddressOf())))
-            return Error(error, L"Cannot create Miao Scene D3D11 render target.");
+        if (FAILED(device->CreateRenderTargetView(
+                backbuffer.Get(), nullptr, backbufferRenderTargetView.GetAddressOf())))
+            return Error(error, L"Cannot create Miao Scene D3D11 backbuffer render target.");
+        return true;
+    }
+
+    bool CreateSceneColor(std::wstring* error) {
+        std::wstring targetError;
+        if (!sceneColor.Create(device.Get(), width, height, &targetError))
+            return Error(error, targetError.empty() ? L"Cannot create SceneColor render target." : targetError);
         return true;
     }
 
@@ -379,9 +425,8 @@ struct MiaoSceneD3D11Renderer::Impl {
             std::wstring loadError;
             if (!MiaoD3D11TextureLoader::LoadImage(
                     device.Get(), asset->resolvedPath,
-                    textureViews[static_cast<std::size_t>(registerIndex)].GetAddressOf(), &loadError)) {
+                    textureViews[static_cast<std::size_t>(registerIndex)].GetAddressOf(), &loadError))
                 return Error(error, loadError);
-            }
         }
         return true;
     }
@@ -409,48 +454,99 @@ struct MiaoSceneD3D11Renderer::Impl {
     }
 
     bool CreateShaders(std::wstring* error) {
-        ComPtr<ID3DBlob> vsCode;
-        ComPtr<ID3DBlob> psCode;
+        ComPtr<ID3DBlob> fullscreenVsCode;
+        ComPtr<ID3DBlob> sceneVsCode;
+        ComPtr<ID3DBlob> scenePsCode;
+        ComPtr<ID3DBlob> compositePsCode;
+
+        const auto fullscreenSource = EngineVertexShader();
+        if (!CompileShader(fullscreenSource, "MiaoBuiltinVertex", "vs_5_0", &fullscreenVsCode, error)) return false;
+        if (FAILED(device->CreateVertexShader(
+                fullscreenVsCode->GetBufferPointer(), fullscreenVsCode->GetBufferSize(), nullptr,
+                fullscreenVertexShader.GetAddressOf())))
+            return Error(error, L"Cannot create Miao Scene fullscreen vertex shader.");
 
         if (programmable && !material->vertexShaderId.empty()) {
             std::string source;
             std::string entry;
             if (!LoadShaderSource(material->vertexShaderId, ShaderStage::Vertex, &source, &entry, error)) return false;
-            if (!CompileShader(source, entry, "vs_5_0", &vsCode, error)) return false;
+            if (!CompileShader(source, entry, "vs_5_0", &sceneVsCode, error)) return false;
+            if (FAILED(device->CreateVertexShader(
+                    sceneVsCode->GetBufferPointer(), sceneVsCode->GetBufferSize(), nullptr,
+                    sceneVertexShader.GetAddressOf())))
+                return Error(error, L"Cannot create programmable Miao Scene vertex shader.");
         } else {
-            const auto source = EngineVertexShader();
-            if (!CompileShader(source, "MiaoBuiltinVertex", "vs_5_0", &vsCode, error)) return false;
+            sceneVertexShader = fullscreenVertexShader;
         }
 
         if (programmable) {
             std::string source;
             std::string entry;
             if (!LoadShaderSource(material->pixelShaderId, ShaderStage::Pixel, &source, &entry, error)) return false;
-            if (!CompileShader(source, entry, "ps_5_0", &psCode, error)) return false;
+            if (!CompileShader(source, entry, "ps_5_0", &scenePsCode, error)) return false;
         } else {
             const auto source = EngineSolidPixelShader();
-            if (!CompileShader(source, "MiaoBuiltinSolid", "ps_5_0", &psCode, error)) return false;
+            if (!CompileShader(source, "MiaoBuiltinSolid", "ps_5_0", &scenePsCode, error)) return false;
         }
-
-        if (FAILED(device->CreateVertexShader(vsCode->GetBufferPointer(), vsCode->GetBufferSize(), nullptr,
-                                               vertexShader.GetAddressOf())))
-            return Error(error, L"Cannot create Miao Scene vertex shader.");
-        if (FAILED(device->CreatePixelShader(psCode->GetBufferPointer(), psCode->GetBufferSize(), nullptr,
-                                              pixelShader.GetAddressOf())))
+        if (FAILED(device->CreatePixelShader(
+                scenePsCode->GetBufferPointer(), scenePsCode->GetBufferSize(), nullptr,
+                scenePixelShader.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene pixel shader.");
+
+        const auto compositeSource = EngineCompositePixelShader();
+        if (!CompileShader(compositeSource, "MiaoBuiltinComposite", "ps_5_0", &compositePsCode, error)) return false;
+        if (FAILED(device->CreatePixelShader(
+                compositePsCode->GetBufferPointer(), compositePsCode->GetBufferSize(), nullptr,
+                compositePixelShader.GetAddressOf())))
+            return Error(error, L"Cannot create Miao Scene composite pixel shader.");
         return true;
     }
 
     bool BuildRenderGraph(std::wstring* error) {
         renderGraph = {};
-        renderGraph.resources.push_back({L"renderres://backbuffer", true, false});
-        renderGraph.passes.push_back({
-            programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
-            programmable ? RenderPassKind::Programmable : RenderPassKind::Scene2D,
-            {},
-            {L"renderres://backbuffer"},
-            true,
-        });
+
+        RenderResourceDefinition sceneResource;
+        sceneResource.id = L"renderres://scene-color";
+        sceneResource.external = false;
+        sceneResource.persistent = false;
+        sceneResource.format = RenderResourceFormat::Bgra8Unorm;
+        sceneResource.sizePolicy = RenderResourceSizePolicy::SurfaceRelative;
+        sceneResource.widthScale = 1.0f;
+        sceneResource.heightScale = 1.0f;
+        sceneResource.renderTarget = true;
+        sceneResource.shaderResource = true;
+
+        RenderResourceDefinition backbufferResource;
+        backbufferResource.id = L"renderres://backbuffer";
+        backbufferResource.external = true;
+        backbufferResource.persistent = false;
+        backbufferResource.renderTarget = true;
+        backbufferResource.shaderResource = false;
+
+        renderGraph.resources = {sceneResource, backbufferResource};
+        renderGraph.passes = {
+            {
+                programmable ? L"renderpass://programmable-scene" : L"renderpass://scene",
+                programmable ? RenderPassKind::Programmable : RenderPassKind::Scene2D,
+                {},
+                {L"renderres://scene-color"},
+                true,
+            },
+            {
+                L"renderpass://composite",
+                RenderPassKind::Composite,
+                {L"renderres://scene-color"},
+                {L"renderres://backbuffer"},
+                true,
+            },
+            {
+                L"renderpass://present",
+                RenderPassKind::Present,
+                {L"renderres://backbuffer"},
+                {},
+                true,
+            },
+        };
         return MiaoRenderGraph::Compile(renderGraph, &compiledGraph, error);
     }
 
@@ -488,8 +584,103 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
+    bool BindSceneState(
+        const FrameConstants& frame,
+        const ObjectConstants& object,
+        const MiaoGpuParameterBlock& parameters,
+        std::wstring* error) {
+        if (!Upload(frameBuffer.Get(), frame, error)) return false;
+        if (!Upload(objectBuffer.Get(), object, error)) return false;
+        if (!Upload(parameterBuffer.Get(), parameters, error)) return false;
+
+        context->IASetInputLayout(nullptr);
+        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context->VSSetShader(sceneVertexShader.Get(), nullptr, 0);
+        context->PSSetShader(scenePixelShader.Get(), nullptr, 0);
+
+        ID3D11Buffer* frameCb = frameBuffer.Get();
+        ID3D11Buffer* objectCb = objectBuffer.Get();
+        ID3D11Buffer* parameterCb = parameterBuffer.Get();
+        context->VSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
+        context->VSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
+        context->VSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
+        context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
+        context->PSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
+        context->PSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
+
+        ID3D11ShaderResourceView* standardTextures[2]{textureViews[0].Get(), textureViews[1].Get()};
+        context->PSSetShaderResources(0, 2, standardTextures);
+        ID3D11ShaderResourceView* userTextures[8]{};
+        for (std::size_t i = 0; i < 8; ++i) userTextures[i] = textureViews[8 + i].Get();
+        context->PSSetShaderResources(MiaoShaderContract::kFirstUserTextureRegister, 8, userTextures);
+
+        ID3D11SamplerState* sampler = linearSampler.Get();
+        context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
+        const float blendFactor[4]{};
+        context->OMSetBlendState(alphaBlend.Get(), blendFactor, 0xFFFFFFFFu);
+        return true;
+    }
+
+    bool ExecuteScenePass(
+        const FrameConstants& frame,
+        const ObjectConstants& object,
+        const MiaoGpuParameterBlock& parameters,
+        std::wstring* error) {
+        UnbindShaderResources();
+        ID3D11RenderTargetView* target = sceneColor.RenderTargetView();
+        context->OMSetRenderTargets(1, &target, nullptr);
+        const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
+        context->ClearRenderTargetView(target, clear);
+        SetViewport(sceneColor.Width(), sceneColor.Height());
+        if (!BindSceneState(frame, object, parameters, error)) return false;
+        context->Draw(3, 0);
+        return true;
+    }
+
+    bool ExecuteCompositePass(std::wstring* error) {
+        if (!sceneColor.Valid() || !backbufferRenderTargetView)
+            return Error(error, L"Miao Scene composite resources are unavailable.");
+
+        // A D3D11 resource cannot be bound as RTV and SRV simultaneously. Explicitly
+        // end the SceneColor write phase before making it the composite input.
+        UnbindShaderResources();
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+
+        ID3D11RenderTargetView* target = backbufferRenderTargetView.Get();
+        context->OMSetRenderTargets(1, &target, nullptr);
+        const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
+        context->ClearRenderTargetView(target, clear);
+        SetViewport(width, height);
+
+        context->IASetInputLayout(nullptr);
+        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context->VSSetShader(fullscreenVertexShader.Get(), nullptr, 0);
+        context->PSSetShader(compositePixelShader.Get(), nullptr, 0);
+        ID3D11ShaderResourceView* sceneInput = sceneColor.ShaderResourceView();
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &sceneInput);
+        ID3D11SamplerState* sampler = linearSampler.Get();
+        context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
+        context->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
+        context->Draw(3, 0);
+
+        ID3D11ShaderResourceView* nullInput{};
+        context->PSSetShaderResources(MiaoShaderContract::kInputTextureRegister, 1, &nullInput);
+        return true;
+    }
+
+    bool ExecutePresentPass(std::wstring* error) {
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        const HRESULT present = swapChain->Present(0, 0);
+        if (present == DXGI_ERROR_DEVICE_REMOVED || present == DXGI_ERROR_DEVICE_RESET) {
+            const HRESULT reason = device ? device->GetDeviceRemovedReason() : present;
+            return Error(error, L"Miao Scene GPU device was removed/reset, HRESULT=" + std::to_wstring(reason));
+        }
+        if (FAILED(present)) return Error(error, L"Miao Scene D3D11 Present failed.");
+        return true;
+    }
+
     bool Draw(float timeSeconds, std::wstring* error) {
-        if (!loaded || !context || !swapChain || !renderTargetView)
+        if (!loaded || !context || !swapChain || !backbufferRenderTargetView || !sceneColor.Valid())
             return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
 
         RECT rect{};
@@ -555,67 +746,28 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!MiaoGpuParameterPacker::Pack(definition, runtime, &parameters, &parameterError))
             return Error(error, parameterError);
 
-        if (!Upload(frameBuffer.Get(), frame, error)) return false;
-        if (!Upload(objectBuffer.Get(), object, error)) return false;
-        if (!Upload(parameterBuffer.Get(), parameters, error)) return false;
-
-        ID3D11RenderTargetView* rtv = renderTargetView.Get();
-        context->OMSetRenderTargets(1, &rtv, nullptr);
-        const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
-        context->ClearRenderTargetView(renderTargetView.Get(), clear);
-
-        D3D11_VIEWPORT viewport{};
-        viewport.Width = static_cast<float>(width);
-        viewport.Height = static_cast<float>(height);
-        viewport.MinDepth = 0.0f;
-        viewport.MaxDepth = 1.0f;
-        context->RSSetViewports(1, &viewport);
-        context->IASetInputLayout(nullptr);
-        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        context->VSSetShader(vertexShader.Get(), nullptr, 0);
-        context->PSSetShader(pixelShader.Get(), nullptr, 0);
-        ID3D11Buffer* frameCb = frameBuffer.Get();
-        ID3D11Buffer* objectCb = objectBuffer.Get();
-        ID3D11Buffer* parameterCb = parameterBuffer.Get();
-        context->VSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
-        context->VSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
-        context->VSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
-        context->PSSetConstantBuffers(MiaoShaderContract::kFrameCBufferRegister, 1, &frameCb);
-        context->PSSetConstantBuffers(MiaoShaderContract::kObjectCBufferRegister, 1, &objectCb);
-        context->PSSetConstantBuffers(MiaoShaderContract::kParameterCBufferRegister, 1, &parameterCb);
-
-        ID3D11ShaderResourceView* standardTextures[2]{textureViews[0].Get(), textureViews[1].Get()};
-        context->PSSetShaderResources(0, 2, standardTextures);
-        ID3D11ShaderResourceView* userTextures[8]{};
-        for (std::size_t i = 0; i < 8; ++i) userTextures[i] = textureViews[8 + i].Get();
-        context->PSSetShaderResources(MiaoShaderContract::kFirstUserTextureRegister, 8, userTextures);
-
-        ID3D11SamplerState* sampler = linearSampler.Get();
-        context->PSSetSamplers(MiaoShaderContract::kLinearSamplerRegister, 1, &sampler);
-        const float blendFactor[4]{};
-        context->OMSetBlendState(alphaBlend.Get(), blendFactor, 0xFFFFFFFFu);
-
         for (const auto passIndex : compiledGraph.passOrder) {
             const auto& pass = renderGraph.passes[passIndex];
             if (!pass.enabled) continue;
-            if (pass.kind == RenderPassKind::Scene2D || pass.kind == RenderPassKind::Programmable)
-                context->Draw(3, 0);
+            switch (pass.kind) {
+                case RenderPassKind::Scene2D:
+                case RenderPassKind::Programmable:
+                    if (!ExecuteScenePass(frame, object, parameters, error)) return false;
+                    break;
+                case RenderPassKind::Composite:
+                    if (!ExecuteCompositePass(error)) return false;
+                    break;
+                case RenderPassKind::Present:
+                    if (!ExecutePresentPass(error)) return false;
+                    break;
+                case RenderPassKind::Clear:
+                case RenderPassKind::Particle:
+                case RenderPassKind::PostProcess:
+                    return Error(error, L"Miao Scene render graph contains an unsupported pass kind for M1.");
+            }
         }
 
-        // Drop bindings before resize/reload so package textures are never held by
-        // the immediate context after a frame.
-        ID3D11ShaderResourceView* nullStandard[2]{};
-        context->PSSetShaderResources(0, 2, nullStandard);
-        ID3D11ShaderResourceView* nullUser[8]{};
-        context->PSSetShaderResources(MiaoShaderContract::kFirstUserTextureRegister, 8, nullUser);
-
-        const HRESULT present = swapChain->Present(0, 0);
-        if (present == DXGI_ERROR_DEVICE_REMOVED || present == DXGI_ERROR_DEVICE_RESET) {
-            const HRESULT reason = device ? device->GetDeviceRemovedReason() : present;
-            return Error(error, L"Miao Scene GPU device was removed/reset, HRESULT=" + std::to_wstring(reason));
-        }
-        if (FAILED(present)) return Error(error, L"Miao Scene D3D11 Present failed.");
-
+        UnbindShaderResources();
         runtime.MarkPaintReady();
         lastError.clear();
         if (error) error->clear();
@@ -623,34 +775,42 @@ struct MiaoSceneD3D11Renderer::Impl {
     }
 
     bool Resize(unsigned nextWidth, unsigned nextHeight, std::wstring* error) {
-        if (!loaded && !swapChain) return Error(error, L"Miao Scene D3D11 swap-chain is not available.");
+        if (!swapChain || !context) return Error(error, L"Miao Scene D3D11 swap-chain is not available.");
         nextWidth = std::max(1u, nextWidth);
         nextHeight = std::max(1u, nextHeight);
+
+        UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
-        renderTargetView.Reset();
+        sceneColor.Reset();
+        backbufferRenderTargetView.Reset();
+
         const HRESULT hr = swapChain->ResizeBuffers(0, nextWidth, nextHeight, DXGI_FORMAT_UNKNOWN, 0);
         if (FAILED(hr)) return Error(error, L"Cannot resize Miao Scene D3D11 swap-chain.");
         width = nextWidth;
         height = nextHeight;
-        return CreateBackbuffer(error);
+        if (!CreateBackbuffer(error)) return false;
+        return CreateSceneColor(error);
     }
 
     void Reset() noexcept {
         if (context) {
-            ID3D11ShaderResourceView* nullViews[16]{};
-            context->PSSetShaderResources(0, 16, nullViews);
+            UnbindShaderResources();
+            context->OMSetRenderTargets(0, nullptr, nullptr);
             context->ClearState();
             context->Flush();
         }
         for (auto& view : textureViews) view.Reset();
+        sceneColor.Reset();
         alphaBlend.Reset();
         linearSampler.Reset();
         parameterBuffer.Reset();
         objectBuffer.Reset();
         frameBuffer.Reset();
-        pixelShader.Reset();
-        vertexShader.Reset();
-        renderTargetView.Reset();
+        compositePixelShader.Reset();
+        scenePixelShader.Reset();
+        sceneVertexShader.Reset();
+        fullscreenVertexShader.Reset();
+        backbufferRenderTargetView.Reset();
         swapChain.Reset();
         context.Reset();
         device.Reset();
@@ -704,7 +864,9 @@ std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastE
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
     return MiaoRenderGraph::SelfTest() && MiaoShaderContract::SelfTest() &&
-           MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy();
+           MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
+           MiaoD3D11RenderTarget::ValidateDimensions(1920, 1080, nullptr) &&
+           !MiaoD3D11RenderTarget::ValidateDimensions(0, 1080, nullptr);
 }
 
 } // namespace miaodesk::content

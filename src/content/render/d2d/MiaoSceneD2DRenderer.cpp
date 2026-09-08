@@ -22,6 +22,8 @@ namespace fs = std::filesystem;
 namespace miaodesk::content {
 namespace {
 
+constexpr std::wstring_view kFrameTimeInput = L"input://frame/time";
+
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
     return false;
@@ -84,6 +86,7 @@ struct MiaoSceneD2DRenderer::Impl {
     MiaoSceneRuntime runtime;
     ComPtr<ID2D1SolidColorBrush> brush;
     std::wstring lastError;
+    std::uint64_t lastRenderedGeneration{};
     bool loaded{};
 
     bool Load(const fs::path& packageRoot, ID2D1RenderTarget* nextTarget, std::wstring* error) {
@@ -92,29 +95,36 @@ struct MiaoSceneD2DRenderer::Impl {
         target = nextTarget;
 
         if (!MiaoContentPackage::Load(packageRoot, &package, &lastError)) return Error(error, lastError);
-        if (package.manifest.kind != ContentKind::Wallpaper || package.manifest.runtime != ContentRuntimeKind::Scene)
-            return Error(error, L"Miao Scene D2D renderer requires a wallpaper scene package.");
+        if (package.manifest.runtime != ContentRuntimeKind::Scene)
+            return Error(error, L"Miao Scene D2D renderer requires a scene-runtime content package.");
         if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &lastError)) return Error(error, lastError);
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);
         if (!runtime.Initialize(definition, &lastError)) return Error(error, lastError);
         if (FAILED(target->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), brush.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene D2D brush.");
 
+        lastRenderedGeneration = runtime.State().generation;
         loaded = true;
         lastError.clear();
         if (error) error->clear();
         return true;
     }
 
+    bool AdvanceClock(double timeSeconds, std::wstring* error) {
+        std::wstring runtimeError;
+        if (MiaoSceneRuntimeModel::FindInput(definition, kFrameTimeInput)) {
+            if (!runtime.SetInput(kFrameTimeInput, timeSeconds, &runtimeError))
+                return Error(error, runtimeError);
+        } else if (!runtime.AdvanceTimeline(timeSeconds, &runtimeError)) {
+            return Error(error, runtimeError);
+        }
+        return true;
+    }
+
     bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error) {
         if (!loaded || !target || !brush) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
-
-        if (MiaoSceneRuntimeModel::FindInput(definition, L"input://frame/time")) {
-            std::wstring inputError;
-            if (!runtime.SetInput(L"input://frame/time", static_cast<double>(timeSeconds), &inputError))
-                return Error(error, inputError);
-        }
+        if (!AdvanceClock(static_cast<double>(timeSeconds), error)) return false;
 
         bool drew = false;
         for (const auto& node : definition.scene.nodes) {
@@ -145,6 +155,31 @@ struct MiaoSceneD2DRenderer::Impl {
 
         if (!drew) return Error(error, L"Scene has no D2D-renderable component in the current MVP backend.");
         runtime.MarkPaintReady();
+        lastRenderedGeneration = runtime.State().generation;
+        lastError.clear();
+        if (error) error->clear();
+        return true;
+    }
+
+    bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
+        if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
+        std::wstring runtimeError;
+        if (!runtime.SetInput(id, std::move(value), &runtimeError)) return Error(error, runtimeError);
+        lastError.clear();
+        if (error) error->clear();
+        return true;
+    }
+
+    bool PrepareFrame(
+        double timeSeconds,
+        MiaoSceneFrameDemand* demand,
+        std::uint32_t animationFps,
+        std::wstring* error) {
+        if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
+        std::wstring schedulerError;
+        if (!MiaoSceneFrameScheduler::AdvanceAndEvaluate(
+                runtime, timeSeconds, lastRenderedGeneration, demand, animationFps, &schedulerError))
+            return Error(error, schedulerError);
         lastError.clear();
         if (error) error->clear();
         return true;
@@ -158,6 +193,7 @@ struct MiaoSceneD2DRenderer::Impl {
         package = {};
         target = nullptr;
         loaded = false;
+        lastRenderedGeneration = 0;
         lastError.clear();
     }
 
@@ -179,8 +215,26 @@ bool MiaoSceneD2DRenderer::Draw(float timeSeconds, const D2D1_SIZE_F& size, std:
     return impl_->Draw(timeSeconds, size, error);
 }
 
+bool MiaoSceneD2DRenderer::SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
+    return impl_->SetInput(id, std::move(value), error);
+}
+
+bool MiaoSceneD2DRenderer::PrepareFrame(
+    double timeSeconds,
+    MiaoSceneFrameDemand* demand,
+    std::uint32_t animationFps,
+    std::wstring* error) {
+    return impl_->PrepareFrame(timeSeconds, demand, animationFps, error);
+}
+
 void MiaoSceneD2DRenderer::Reset() noexcept { impl_->Reset(); }
 bool MiaoSceneD2DRenderer::Loaded() const noexcept { return impl_->loaded; }
+RuntimeProfile MiaoSceneD2DRenderer::Profile() const noexcept {
+    return impl_->loaded ? impl_->definition.profile : RuntimeProfile::Wallpaper;
+}
+std::uint64_t MiaoSceneD2DRenderer::RuntimeGeneration() const noexcept {
+    return impl_->loaded ? impl_->runtime.State().generation : 0;
+}
 
 std::wstring MiaoSceneD2DRenderer::PackageId() const {
     if (!impl_->loaded) return {};
@@ -198,7 +252,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
 
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-SceneD2D-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".mdwall");
+        (L"MiaoDesk-SceneD2D-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".mdwidget");
     fs::remove_all(root, ec);
     fs::create_directories(root, ec);
     if (ec) {
@@ -207,11 +261,11 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     }
 
     constexpr std::string_view manifest = R"json({
-      "schema":1,"id":"com.goodloong.selftest","name":"Self Test","author":"MiaoDesk","version":"1.0.0",
-      "kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
+      "schema":1,"id":"com.goodloong.selftest-widget","name":"Self Test Widget","author":"MiaoDesk","version":"1.0.0",
+      "kind":"widget","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
     })json";
     constexpr std::string_view scene = R"json({
-      "schema":1,"id":"scene://selftest","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+      "schema":1,"id":"scene://selftest-widget","kind":"widget","profile":"widget","rootNodeId":"node://root",
       "nodes":[
         {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
         {"id":"node://background","name":"Background","parentId":"node://root","enabled":true,"components":[
@@ -226,9 +280,22 @@ bool MiaoSceneD2DRenderer::SelfTest() {
       "materials":[{"id":"material://background","model":"builtin","builtinName":"solidColor","properties":[
         {"name":"color","type":"color","default":[0.2,0.4,0.8,1.0]}
       ],"textures":[]}],
-      "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+      "inputs":[
+        {"id":"input://frame/time","type":"float","default":0.0},
+        {"id":"input://event/pulse","type":"bool","default":false}
+      ],
       "bindings":[{"id":"binding://opacity","sourceKind":"parameter","sourceId":"param://opacity",
-        "target":{"componentId":"component://background/sprite","propertyName":"opacity"},"scale":1.0,"offset":0.0}]
+        "target":{"componentId":"component://background/sprite","propertyName":"opacity"},"scale":1.0,"offset":0.0}],
+      "animations":[{
+        "id":"animation://event-pulse",
+        "target":{"componentId":"component://background/sprite","propertyName":"opacity"},
+        "enabled":true,"loop":"once","duration":0.5,
+        "trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+        "keyframes":[
+          {"time":0.0,"value":0.2,"easing":"easeOut"},
+          {"time":0.5,"value":1.0,"easing":"linear"}
+        ]
+      }]
     })json";
     constexpr std::string_view parameters = R"json({"schema":1,"parameters":[{"id":"param://opacity","type":"float","default":0.9}]})json";
 
@@ -252,7 +319,37 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         target->BeginDraw();
         target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
         ok = renderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
-        ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded();
+        ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded() &&
+             renderer.Profile() == RuntimeProfile::Widget;
+    }
+    if (ok) {
+        MiaoSceneFrameDemand idleDemand;
+        ok = renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;
+    }
+    if (ok) {
+        ok = renderer.SetInput(L"input://event/pulse", true, &error);
+        MiaoSceneFrameDemand activeDemand;
+        ok = ok && renderer.PrepareFrame(1.0, &activeDemand, 60, &error) &&
+             activeDemand.render && activeDemand.continuousAnimation && activeDemand.intervalMs == 17;
+    }
+    if (ok) {
+        target->BeginDraw();
+        ok = renderer.Draw(1.25f, D2D1::SizeF(64.0f, 64.0f), &error);
+        ok = SUCCEEDED(target->EndDraw()) && ok;
+        MiaoSceneFrameDemand activeDemand;
+        ok = ok && renderer.PrepareFrame(1.25, &activeDemand, 60, &error) && activeDemand.continuousAnimation;
+    }
+    if (ok) {
+        MiaoSceneFrameDemand terminalDemand;
+        ok = renderer.PrepareFrame(1.75, &terminalDemand, 60, &error) &&
+             terminalDemand.render && terminalDemand.contentDirty && !terminalDemand.continuousAnimation;
+        if (ok) {
+            target->BeginDraw();
+            ok = renderer.Draw(1.75f, D2D1::SizeF(64.0f, 64.0f), &error);
+            ok = SUCCEEDED(target->EndDraw()) && ok;
+        }
+        MiaoSceneFrameDemand sleepingDemand;
+        ok = ok && renderer.PrepareFrame(1.75, &sleepingDemand, 60, &error) && !sleepingDemand.render;
     }
 
     renderer.Reset();

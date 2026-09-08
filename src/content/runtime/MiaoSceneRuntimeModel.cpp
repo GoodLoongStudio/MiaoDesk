@@ -55,6 +55,15 @@ bool AnimationValueFinite(PropertyType type, const PropertyValue& value) noexcep
     return true;
 }
 
+bool Vec2Finite(const Vec2& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y);
+}
+
+bool ColorFinite(const Color4& value) noexcept {
+    return std::isfinite(value.r) && std::isfinite(value.g) &&
+           std::isfinite(value.b) && std::isfinite(value.a);
+}
+
 const ShaderDefinition* FindShader(const SceneDefinition& scene, std::wstring_view id) noexcept {
     for (const auto& shader : scene.shaders) if (shader.id == id) return &shader;
     return nullptr;
@@ -129,6 +138,37 @@ bool ValidateAnimation(const SceneRuntimeDefinition& runtime, const AnimationTra
     return true;
 }
 
+bool ValidateParticleEmitter(
+    const SceneRuntimeDefinition& runtime,
+    const ParticleEmitterDefinition& emitter,
+    std::wstring* error) {
+    if (!HasPrefix(emitter.id, L"particle://"))
+        return Fail(error, L"Particle emitter id must use the particle:// stable-id scheme: " + emitter.id);
+    if (emitter.maxParticles == 0 || emitter.maxParticles > MiaoSceneRuntimeModel::kMaxParticlesPerEmitter)
+        return Fail(error, L"Particle emitter maxParticles is outside the v1 budget: " + emitter.id);
+    if (!std::isfinite(emitter.spawnRate) || emitter.spawnRate < 0.0 || emitter.spawnRate > 100000.0)
+        return Fail(error, L"Particle emitter spawnRate must be finite and in [0, 100000]: " + emitter.id);
+    if (!std::isfinite(emitter.lifetimeMinSeconds) || !std::isfinite(emitter.lifetimeMaxSeconds) ||
+        emitter.lifetimeMinSeconds <= 0.0 || emitter.lifetimeMaxSeconds < emitter.lifetimeMinSeconds ||
+        emitter.lifetimeMaxSeconds > 600.0)
+        return Fail(error, L"Particle emitter lifetime range must be in (0, 600] seconds: " + emitter.id);
+    if (!Vec2Finite(emitter.position) || !Vec2Finite(emitter.positionSpread) ||
+        !Vec2Finite(emitter.velocity) || !Vec2Finite(emitter.velocitySpread) ||
+        !Vec2Finite(emitter.acceleration))
+        return Fail(error, L"Particle emitter vectors must be finite: " + emitter.id);
+    if (!std::isfinite(emitter.sizeStart) || !std::isfinite(emitter.sizeEnd) ||
+        emitter.sizeStart < 0.0 || emitter.sizeEnd < 0.0 ||
+        emitter.sizeStart > 1000000.0 || emitter.sizeEnd > 1000000.0)
+        return Fail(error, L"Particle emitter sizes must be finite and in [0, 1000000]: " + emitter.id);
+    if (!ColorFinite(emitter.colorStart) || !ColorFinite(emitter.colorEnd) ||
+        emitter.colorStart.a < 0.0 || emitter.colorStart.a > 1.0 ||
+        emitter.colorEnd.a < 0.0 || emitter.colorEnd.a > 1.0)
+        return Fail(error, L"Particle emitter colors must be finite with alpha in [0, 1]: " + emitter.id);
+    if (!emitter.materialId.empty() && !MiaoSceneRuntimeModel::FindMaterial(runtime, emitter.materialId))
+        return Fail(error, L"Particle emitter materialId does not resolve: " + emitter.id);
+    return true;
+}
+
 } // namespace
 
 const ParameterDefinition* MiaoSceneRuntimeModel::FindParameter(
@@ -158,6 +198,12 @@ const AnimationTrackDefinition* MiaoSceneRuntimeModel::FindAnimation(
 const PostProcessDefinition* MiaoSceneRuntimeModel::FindPostProcess(
     const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept {
     for (const auto& effect : runtime.postProcesses) if (effect.id == id) return &effect;
+    return nullptr;
+}
+
+const ParticleEmitterDefinition* MiaoSceneRuntimeModel::FindParticleEmitter(
+    const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept {
+    for (const auto& emitter : runtime.particleEmitters) if (emitter.id == id) return &emitter;
     return nullptr;
 }
 
@@ -276,6 +322,18 @@ bool MiaoSceneRuntimeModel::Validate(const SceneRuntimeDefinition& runtime, std:
         if (!ValidatePostProcess(effect, error)) return false;
         if (!postProcessIds.emplace(effect.id).second)
             return Fail(error, L"Duplicate post-process id: " + effect.id);
+    }
+
+    std::unordered_set<std::wstring> particleIds;
+    std::uint64_t particleBudget = 0;
+    for (const auto& emitter : runtime.particleEmitters) {
+        if (!ValidateParticleEmitter(runtime, emitter, error)) return false;
+        if (!particleIds.emplace(emitter.id).second)
+            return Fail(error, L"Duplicate particle emitter id: " + emitter.id);
+        particleBudget += emitter.maxParticles;
+        if (particleBudget > kMaxParticlesPerScene)
+            return Fail(error, L"Scene particle budget exceeds the v1 maximum of " +
+                               std::to_wstring(kMaxParticlesPerScene) + L" particles.");
     }
 
     if (error) error->clear();
@@ -400,6 +458,25 @@ bool MiaoSceneRuntimeModel::SelfTest() {
         L"postfx://vignette", PostProcessEffectKind::Vignette, true, 0.8, 0.72, 0.22,
     });
 
+    ParticleEmitterDefinition emitter;
+    emitter.id = L"particle://dust";
+    emitter.maxParticles = 2048;
+    emitter.spawnRate = 48.0;
+    emitter.lifetimeMinSeconds = 1.5;
+    emitter.lifetimeMaxSeconds = 3.5;
+    emitter.position = Vec2{0.0, 0.0};
+    emitter.positionSpread = Vec2{640.0, 360.0};
+    emitter.velocity = Vec2{0.0, -12.0};
+    emitter.velocitySpread = Vec2{8.0, 4.0};
+    emitter.acceleration = Vec2{0.0, 2.0};
+    emitter.sizeStart = 3.0;
+    emitter.sizeEnd = 1.0;
+    emitter.colorStart = Color4{1.0, 0.9, 0.75, 0.7};
+    emitter.colorEnd = Color4{1.0, 0.9, 0.75, 0.0};
+    emitter.materialId = L"material://builtin/sprite";
+    emitter.seed = 7;
+    runtime.particleEmitters.push_back(emitter);
+
     std::wstring error;
     if (!Validate(runtime, &error)) return false;
     if (!FindParameter(runtime, L"param://opacity")) return false;
@@ -407,6 +484,7 @@ bool MiaoSceneRuntimeModel::SelfTest() {
     if (!FindMaterial(runtime, L"material://builtin/sprite")) return false;
     if (!FindAnimation(runtime, L"animation://opacity-pulse") || !FindAnimation(runtime, L"animation://event-pulse")) return false;
     if (!FindPostProcess(runtime, L"postfx://vignette")) return false;
+    if (!FindParticleEmitter(runtime, L"particle://dust")) return false;
 
     MiaoPropertyStore store;
     if (!store.Initialize(runtime.scene, &error)) return false;
@@ -445,6 +523,18 @@ bool MiaoSceneRuntimeModel::SelfTest() {
 
     invalid = runtime;
     invalid.postProcesses.front().id = L"bad-id";
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.particleEmitters.front().maxParticles = 0;
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.particleEmitters.front().materialId = L"material://missing";
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.particleEmitters.push_back(runtime.particleEmitters.front());
     if (Validate(invalid, &error)) return false;
 
     return true;

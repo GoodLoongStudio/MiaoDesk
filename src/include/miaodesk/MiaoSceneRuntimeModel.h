@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -125,6 +126,29 @@ struct AnimationTrackDefinition {
     std::wstring triggerInputId;
 };
 
+// M4 v1 CPU-authored emitter contract. The definition is renderer-independent:
+// simulation can run on CPU first while D3D11 consumes the resulting bounded
+// particle state through instanced rendering. Compute remains a later upgrade.
+struct ParticleEmitterDefinition {
+    std::wstring id;
+    bool enabled{true};
+    std::uint32_t maxParticles{1024};
+    double spawnRate{24.0};
+    double lifetimeMinSeconds{1.0};
+    double lifetimeMaxSeconds{2.0};
+    Vec2 position{};
+    Vec2 positionSpread{};
+    Vec2 velocity{};
+    Vec2 velocitySpread{};
+    Vec2 acceleration{};
+    double sizeStart{4.0};
+    double sizeEnd{1.0};
+    Color4 colorStart{1.0, 1.0, 1.0, 1.0};
+    Color4 colorEnd{1.0, 1.0, 1.0, 0.0};
+    std::wstring materialId;
+    std::uint32_t seed{1};
+};
+
 struct SceneRuntimeDefinition {
     SceneDefinition scene;
     RuntimeProfile profile{RuntimeProfile::Wallpaper};
@@ -134,10 +158,14 @@ struct SceneRuntimeDefinition {
     std::vector<PropertyBindingDefinition> bindings;
     std::vector<AnimationTrackDefinition> animations;
     std::vector<PostProcessDefinition> postProcesses;
+    std::vector<ParticleEmitterDefinition> particleEmitters;
 };
 
 class MiaoSceneRuntimeModel {
 public:
+    static constexpr std::uint32_t kMaxParticlesPerEmitter = 65536;
+    static constexpr std::uint32_t kMaxParticlesPerScene = 131072;
+
     static bool Validate(const SceneRuntimeDefinition& runtime, std::wstring* error = nullptr);
 
     static const ParameterDefinition* FindParameter(
@@ -149,6 +177,8 @@ public:
     static const AnimationTrackDefinition* FindAnimation(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const PostProcessDefinition* FindPostProcess(
+        const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
+    static const ParticleEmitterDefinition* FindParticleEmitter(
         const SceneRuntimeDefinition& runtime, std::wstring_view id) noexcept;
     static const PropertyDefinition* FindProperty(
         const SceneDefinition& scene, const PropertyAddress& address) noexcept;

@@ -22,6 +22,7 @@ set(MIAODESK_CORE_SOURCES
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp
     content/scene/MiaoSceneModel.cpp
+    content/serialization/MiaoParticleSerializer.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoParticleRuntime.cpp
     content/runtime/MiaoSceneFrameScheduler.cpp

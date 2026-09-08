@@ -29,6 +29,10 @@ public:
     const PropertyValue* GetInput(std::wstring_view id) const noexcept;
     const PropertyValue* GetProperty(const PropertyAddress& address) const noexcept;
 
+    // Used by future Widget/Wallpaper schedulers to distinguish content that
+    // genuinely needs another frame from content that can sleep at 0 FPS.
+    bool NeedsContinuousAnimation(double timeSeconds) const noexcept;
+
     std::vector<PropertyAddress> ConsumeDirtyProperties();
     const SceneRuntimeDefinition* Definition() const noexcept;
     const MiaoSceneRuntimeState& State() const noexcept;
@@ -39,9 +43,19 @@ public:
     static bool SelfTest();
 
 private:
+    struct AnimationPlaybackState {
+        bool triggered{};
+        double startTime{};
+    };
+
     bool ApplyBinding(const PropertyBindingDefinition& binding, const PropertyValue& source, std::wstring* error);
     bool ApplyBindingsForSource(BindingSourceKind kind, std::wstring_view sourceId, const PropertyValue& value, std::wstring* error);
     bool ApplyAnimation(const AnimationTrackDefinition& animation, double timeSeconds, std::wstring* error);
+    bool TriggerAnimationsForInput(
+        std::wstring_view inputId,
+        const PropertyValue* previous,
+        const PropertyValue& current,
+        std::wstring* error);
     void MarkDirty(const PropertyAddress& address);
 
     SceneRuntimeDefinition definition_;
@@ -49,7 +63,9 @@ private:
     MiaoPropertyStore properties_;
     std::unordered_map<std::wstring, PropertyValue> parameterValues_;
     std::unordered_map<std::wstring, PropertyValue> inputValues_;
+    std::unordered_map<std::wstring, AnimationPlaybackState> animationPlayback_;
     std::vector<PropertyAddress> dirtyProperties_;
+    double timelineTime_{};
     MiaoSceneRuntimeState state_;
 };
 

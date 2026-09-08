@@ -44,6 +44,12 @@ enum class AnimationEasing {
     EaseInOut,
 };
 
+enum class AnimationTriggerMode {
+    Timeline,
+    InputChange,
+    InputRisingEdge,
+};
+
 struct PropertyAddress {
     std::wstring componentId;
     std::wstring propertyName;
@@ -110,6 +116,13 @@ struct AnimationTrackDefinition {
     AnimationLoopMode loopMode{AnimationLoopMode::Loop};
     double durationSeconds{1.0};
     std::vector<AnimationKeyframeDefinition> keyframes;
+
+    // Timeline tracks evaluate against frame time immediately. Input-triggered
+    // tracks stay dormant until their declared InputBus channel fires, then use
+    // the trigger moment as local time zero. This keeps event animation inside
+    // the same property/easing runtime instead of creating a second system.
+    AnimationTriggerMode triggerMode{AnimationTriggerMode::Timeline};
+    std::wstring triggerInputId;
 };
 
 struct SceneRuntimeDefinition {

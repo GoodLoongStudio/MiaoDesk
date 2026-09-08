@@ -114,6 +114,18 @@ bool ValidateAnimation(const SceneRuntimeDefinition& runtime, const AnimationTra
             return Fail(error, L"Animation keyframe value does not match its target type or is non-finite: " + animation.id);
         previousTime = keyframe.timeSeconds;
     }
+
+    if (animation.triggerMode == AnimationTriggerMode::Timeline) {
+        if (!animation.triggerInputId.empty())
+            return Fail(error, L"Timeline animation must not declare triggerInputId: " + animation.id);
+    } else {
+        if (animation.triggerInputId.empty())
+            return Fail(error, L"Input-triggered animation requires triggerInputId: " + animation.id);
+        const auto* input = MiaoSceneRuntimeModel::FindInput(runtime, animation.triggerInputId);
+        if (!input) return Fail(error, L"Animation trigger input does not exist: " + animation.id);
+        if (animation.triggerMode == AnimationTriggerMode::InputRisingEdge && input->type != PropertyType::Bool)
+            return Fail(error, L"inputRisingEdge animation trigger requires a bool input: " + animation.id);
+    }
     return true;
 }
 
@@ -333,6 +345,7 @@ bool MiaoSceneRuntimeModel::SelfTest() {
     root.components.push_back(SceneComponentDefinition{
         L"component://root/transform", ComponentKind::Transform,
         {PropertyDefinition{L"opacity", PropertyType::Float, 1.0},
+         PropertyDefinition{L"pulse", PropertyType::Float, 0.0},
          PropertyDefinition{L"visible", PropertyType::Bool, true}},
     });
     scene.nodes.push_back(root);
@@ -345,6 +358,7 @@ bool MiaoSceneRuntimeModel::SelfTest() {
     runtime.profile = RuntimeProfile::Wallpaper;
     runtime.parameters.push_back(ParameterDefinition{L"param://opacity", PropertyType::Float, 0.75});
     runtime.inputs.push_back(InputChannelDefinition{L"input://audio/bass", PropertyType::Float, 0.0});
+    runtime.inputs.push_back(InputChannelDefinition{L"input://event/pulse", PropertyType::Bool, false});
     runtime.materials.push_back(MaterialDefinition{
         L"material://builtin/sprite", MaterialModel::Builtin, L"sprite", L"", L"",
         {PropertyDefinition{L"tint", PropertyType::Color, Color4{1.0, 1.0, 1.0, 1.0}}}, {},
@@ -368,6 +382,20 @@ bool MiaoSceneRuntimeModel::SelfTest() {
             AnimationKeyframeDefinition{1.0, 0.9, AnimationEasing::Linear},
         },
     });
+    AnimationTrackDefinition eventAnimation{
+        L"animation://event-pulse",
+        PropertyAddress{L"component://root/transform", L"pulse"},
+        true,
+        AnimationLoopMode::Once,
+        0.5,
+        {
+            AnimationKeyframeDefinition{0.0, 0.0, AnimationEasing::EaseOut},
+            AnimationKeyframeDefinition{0.5, 1.0, AnimationEasing::Linear},
+        },
+    };
+    eventAnimation.triggerMode = AnimationTriggerMode::InputRisingEdge;
+    eventAnimation.triggerInputId = L"input://event/pulse";
+    runtime.animations.push_back(std::move(eventAnimation));
     runtime.postProcesses.push_back(PostProcessDefinition{
         L"postfx://vignette", PostProcessEffectKind::Vignette, true, 0.8, 0.72, 0.22,
     });
@@ -377,12 +405,12 @@ bool MiaoSceneRuntimeModel::SelfTest() {
     if (!FindParameter(runtime, L"param://opacity")) return false;
     if (!FindInput(runtime, L"input://audio/bass")) return false;
     if (!FindMaterial(runtime, L"material://builtin/sprite")) return false;
-    if (!FindAnimation(runtime, L"animation://opacity-pulse")) return false;
+    if (!FindAnimation(runtime, L"animation://opacity-pulse") || !FindAnimation(runtime, L"animation://event-pulse")) return false;
     if (!FindPostProcess(runtime, L"postfx://vignette")) return false;
 
     MiaoPropertyStore store;
     if (!store.Initialize(runtime.scene, &error)) return false;
-    if (store.Size() != 2) return false;
+    if (store.Size() != 3) return false;
 
     const PropertyAddress opacity{L"component://root/transform", L"opacity"};
     const auto* initial = store.Get(opacity);
@@ -405,6 +433,14 @@ bool MiaoSceneRuntimeModel::SelfTest() {
 
     invalid = runtime;
     invalid.animations.front().target.propertyName = L"visible";
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.animations[1].triggerInputId = L"input://audio/bass";
+    if (Validate(invalid, &error)) return false;
+
+    invalid = runtime;
+    invalid.animations[1].triggerMode = AnimationTriggerMode::Timeline;
     if (Validate(invalid, &error)) return false;
 
     invalid = runtime;

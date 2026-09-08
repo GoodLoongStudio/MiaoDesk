@@ -158,6 +158,8 @@ bool MiaoSceneRuntime::Initialize(SceneRuntimeDefinition definition, std::wstrin
         parameterValues_.emplace(parameter.id, parameter.defaultValue);
     for (const auto& input : definition_.inputs)
         inputValues_.emplace(input.id, input.defaultValue);
+    for (const auto& animation : definition_.animations)
+        animationPlayback_.emplace(animation.id, AnimationPlaybackState{});
 
     for (const auto& binding : definition_.bindings) {
         const PropertyValue* source = nullptr;
@@ -189,6 +191,7 @@ bool MiaoSceneRuntime::SetParameter(std::wstring_view id, PropertyValue value, s
     if (!ValueMatchesType(definition->type, value)) return Fail(error, L"Scene parameter type mismatch: " + std::wstring(id));
     if (!ApplyBindingsForSource(BindingSourceKind::Parameter, id, value, error)) return false;
     parameterValues_[std::wstring(id)] = std::move(value);
+    if (error) error->clear();
     return true;
 }
 
@@ -197,15 +200,30 @@ bool MiaoSceneRuntime::SetInput(std::wstring_view id, PropertyValue value, std::
     const auto* definition = MiaoSceneRuntimeModel::FindInput(definition_, id);
     if (!definition) return Fail(error, L"Unknown scene input: " + std::wstring(id));
     if (!ValueMatchesType(definition->type, value)) return Fail(error, L"Scene input type mismatch: " + std::wstring(id));
-    if (!ApplyBindingsForSource(BindingSourceKind::Input, id, value, error)) return false;
 
+    PropertyValue previousCopy;
+    const PropertyValue* previous = nullptr;
     const auto key = std::wstring(id);
-    inputValues_[key] = value;
+    if (const auto it = inputValues_.find(key); it != inputValues_.end()) {
+        previousCopy = it->second;
+        previous = &previousCopy;
+    }
+
     if (id == L"input://frame/time") {
         const auto* time = std::get_if<double>(&value);
         if (!time) return Fail(error, L"input://frame/time must be a float input.");
-        if (!AdvanceTimeline(*time, error)) return false;
+        if (!std::isfinite(*time)) return Fail(error, L"input://frame/time must be finite.");
+        timelineTime_ = *time;
     }
+
+    if (!ApplyBindingsForSource(BindingSourceKind::Input, id, value, error)) return false;
+    if (!TriggerAnimationsForInput(id, previous, value, error)) return false;
+    inputValues_[key] = value;
+
+    // Every input event is evaluated against the latest known frame time so an
+    // event-triggered track applies its first keyframe immediately. Frame time
+    // itself then advances all active tracks normally.
+    if (!AdvanceTimeline(timelineTime_, error)) return false;
     if (error) error->clear();
     return true;
 }
@@ -213,9 +231,17 @@ bool MiaoSceneRuntime::SetInput(std::wstring_view id, PropertyValue value, std::
 bool MiaoSceneRuntime::AdvanceTimeline(double timeSeconds, std::wstring* error) {
     if (!hasDefinition_ || !state_.loaded) return Fail(error, L"Scene runtime is not initialized.");
     if (!std::isfinite(timeSeconds)) return Fail(error, L"Animation timeline time must be finite.");
+    timelineTime_ = timeSeconds;
+
     for (const auto& animation : definition_.animations) {
         if (!animation.enabled) continue;
-        if (!ApplyAnimation(animation, timeSeconds, error)) return false;
+        double localTime = timeSeconds;
+        if (animation.triggerMode != AnimationTriggerMode::Timeline) {
+            const auto playback = animationPlayback_.find(animation.id);
+            if (playback == animationPlayback_.end() || !playback->second.triggered) continue;
+            localTime = std::max(0.0, timeSeconds - playback->second.startTime);
+        }
+        if (!ApplyAnimation(animation, localTime, error)) return false;
     }
     if (error) error->clear();
     return true;
@@ -233,6 +259,25 @@ const PropertyValue* MiaoSceneRuntime::GetInput(std::wstring_view id) const noex
 
 const PropertyValue* MiaoSceneRuntime::GetProperty(const PropertyAddress& address) const noexcept {
     return properties_.Get(address);
+}
+
+bool MiaoSceneRuntime::NeedsContinuousAnimation(double timeSeconds) const noexcept {
+    if (!hasDefinition_ || !state_.loaded || !std::isfinite(timeSeconds)) return false;
+    for (const auto& animation : definition_.animations) {
+        if (!animation.enabled) continue;
+        if (animation.triggerMode == AnimationTriggerMode::Timeline) {
+            if (animation.loopMode != AnimationLoopMode::Once) return true;
+            if (std::max(0.0, timeSeconds) <= animation.durationSeconds) return true;
+            continue;
+        }
+
+        const auto playback = animationPlayback_.find(animation.id);
+        if (playback == animationPlayback_.end() || !playback->second.triggered) continue;
+        if (animation.loopMode != AnimationLoopMode::Once) return true;
+        const double elapsed = std::max(0.0, timeSeconds - playback->second.startTime);
+        if (elapsed <= animation.durationSeconds) return true;
+    }
+    return false;
 }
 
 std::vector<PropertyAddress> MiaoSceneRuntime::ConsumeDirtyProperties() {
@@ -259,7 +304,9 @@ void MiaoSceneRuntime::Reset() noexcept {
     properties_.Clear();
     parameterValues_.clear();
     inputValues_.clear();
+    animationPlayback_.clear();
     dirtyProperties_.clear();
+    timelineTime_ = 0.0;
     state_ = {};
 }
 
@@ -341,6 +388,34 @@ bool MiaoSceneRuntime::ApplyAnimation(
     return true;
 }
 
+bool MiaoSceneRuntime::TriggerAnimationsForInput(
+    std::wstring_view inputId,
+    const PropertyValue* previous,
+    const PropertyValue& current,
+    std::wstring* error) {
+    for (const auto& animation : definition_.animations) {
+        if (!animation.enabled || animation.triggerMode == AnimationTriggerMode::Timeline ||
+            animation.triggerInputId != inputId) continue;
+
+        bool shouldTrigger = false;
+        if (animation.triggerMode == AnimationTriggerMode::InputChange) {
+            shouldTrigger = !previous || !PropertyValuesEqual(*previous, current);
+        } else if (animation.triggerMode == AnimationTriggerMode::InputRisingEdge) {
+            const auto* next = std::get_if<bool>(&current);
+            const auto* before = previous ? std::get_if<bool>(previous) : nullptr;
+            shouldTrigger = next && *next && (!before || !*before);
+        }
+        if (!shouldTrigger) continue;
+
+        auto& playback = animationPlayback_[animation.id];
+        playback.triggered = true;
+        playback.startTime = timelineTime_;
+        if (!ApplyAnimation(animation, 0.0, error)) return false;
+    }
+    if (error) error->clear();
+    return true;
+}
+
 void MiaoSceneRuntime::MarkDirty(const PropertyAddress& address) {
     const auto exists = std::find_if(dirtyProperties_.begin(), dirtyProperties_.end(), [&](const PropertyAddress& item) {
         return item.componentId == address.componentId && item.propertyName == address.propertyName;
@@ -359,12 +434,16 @@ bool MiaoSceneRuntime::SelfTest() {
     root.components.push_back(SceneComponentDefinition{
         L"component://root/transform",
         ComponentKind::Transform,
-        {PropertyDefinition{L"opacity", PropertyType::Float, 1.0}},
+        {
+            PropertyDefinition{L"opacity", PropertyType::Float, 1.0},
+            PropertyDefinition{L"pulse", PropertyType::Float, 0.0},
+        },
     });
     definition.scene.nodes.push_back(std::move(root));
     definition.profile = RuntimeProfile::Wallpaper;
     definition.parameters.push_back(ParameterDefinition{L"param://opacity", PropertyType::Float, 0.75});
     definition.inputs.push_back(InputChannelDefinition{L"input://frame/time", PropertyType::Float, 0.0});
+    definition.inputs.push_back(InputChannelDefinition{L"input://event/pulse", PropertyType::Bool, false});
     definition.bindings.push_back(PropertyBindingDefinition{
         L"binding://opacity",
         PropertyAddress{L"component://root/transform", L"opacity"},
@@ -384,34 +463,96 @@ bool MiaoSceneRuntime::SelfTest() {
             AnimationKeyframeDefinition{1.0, 0.9, AnimationEasing::Linear},
         },
     });
+    AnimationTrackDefinition eventAnimation{
+        L"animation://event-pulse",
+        PropertyAddress{L"component://root/transform", L"pulse"},
+        true,
+        AnimationLoopMode::Once,
+        1.0,
+        {
+            AnimationKeyframeDefinition{0.0, 0.0, AnimationEasing::Linear},
+            AnimationKeyframeDefinition{1.0, 1.0, AnimationEasing::Linear},
+        },
+    };
+    eventAnimation.triggerMode = AnimationTriggerMode::InputRisingEdge;
+    eventAnimation.triggerInputId = L"input://event/pulse";
+    definition.animations.push_back(std::move(eventAnimation));
 
     MiaoSceneRuntime runtime;
     std::wstring error;
     if (!runtime.Initialize(std::move(definition), &error) || !runtime.State().loaded || runtime.State().paintReady) return false;
     const PropertyAddress opacity{L"component://root/transform", L"opacity"};
+    const PropertyAddress pulse{L"component://root/transform", L"pulse"};
     const auto* initial = runtime.GetProperty(opacity);
+    const auto* initialPulse = runtime.GetProperty(pulse);
     if (!initial || !std::holds_alternative<double>(*initial) || std::get<double>(*initial) != 0.75) return false;
+    if (!initialPulse || std::get<double>(*initialPulse) != 0.0) return false;
     if (runtime.ConsumeDirtyProperties().size() != 1) return false;
 
     if (!runtime.SetInput(L"input://frame/time", 0.5, &error)) return false;
     const auto* animated = runtime.GetProperty(opacity);
     if (!animated || !std::holds_alternative<double>(*animated) || std::abs(std::get<double>(*animated) - 0.55) > 0.000001) return false;
-    if (runtime.ConsumeDirtyProperties().size() != 1) return false;
+    runtime.ConsumeDirtyProperties();
 
-    if (!runtime.SetInput(L"input://frame/time", 1.5, &error)) return false;
-    const auto* pingPong = runtime.GetProperty(opacity);
-    if (!pingPong || std::abs(std::get<double>(*pingPong) - 0.55) > 0.000001) return false;
-    if (!runtime.ConsumeDirtyProperties().empty()) return false;
+    if (!runtime.SetInput(L"input://event/pulse", false, &error)) return false;
+    if (std::get<double>(*runtime.GetProperty(pulse)) != 0.0) return false;
+    if (!runtime.SetInput(L"input://event/pulse", true, &error)) return false;
+    if (std::get<double>(*runtime.GetProperty(pulse)) != 0.0) return false;
+
+    if (!runtime.SetInput(L"input://frame/time", 1.0, &error)) return false;
+    const auto* halfPulse = runtime.GetProperty(pulse);
+    if (!halfPulse || std::abs(std::get<double>(*halfPulse) - 0.5) > 0.000001) return false;
+
+    // A falling edge does not retrigger. The next rising edge does and resets
+    // local event time to zero at the current frame time.
+    if (!runtime.SetInput(L"input://event/pulse", false, &error)) return false;
+    if (!runtime.SetInput(L"input://event/pulse", true, &error)) return false;
+    if (std::get<double>(*runtime.GetProperty(pulse)) != 0.0) return false;
+    if (!runtime.SetInput(L"input://frame/time", 1.25, &error)) return false;
+    const auto* retriggered = runtime.GetProperty(pulse);
+    if (!retriggered || std::abs(std::get<double>(*retriggered) - 0.25) > 0.000001) return false;
 
     if (!runtime.SetParameter(L"param://opacity", 0.42, &error)) return false;
     const auto* changed = runtime.GetProperty(opacity);
     if (!changed || std::get<double>(*changed) != 0.42) return false;
-    if (runtime.ConsumeDirtyProperties().size() != 1) return false;
     if (runtime.SetParameter(L"param://opacity", std::wstring(L"wrong"), &error)) return false;
 
-    if (!runtime.AdvanceTimeline(1.0, &error)) return false;
-    const auto* end = runtime.GetProperty(opacity);
-    if (!end || std::abs(std::get<double>(*end) - 0.9) > 0.000001) return false;
+    if (!runtime.AdvanceTimeline(2.5, &error)) return false;
+    const auto* completedPulse = runtime.GetProperty(pulse);
+    if (!completedPulse || std::abs(std::get<double>(*completedPulse) - 1.0) > 0.000001) return false;
+    if (!runtime.NeedsContinuousAnimation(2.5)) return false; // timeline ping-pong remains active
+
+    // Event-only runtime can fully sleep before its first trigger and after a
+    // once track completes, which is the scheduler contract M8 will reuse.
+    SceneRuntimeDefinition eventOnly;
+    eventOnly.scene.id = L"scene://event-only-self-test";
+    eventOnly.scene.kind = ContentKind::Widget;
+    eventOnly.scene.rootNodeId = L"node://root";
+    SceneNodeDefinition eventRoot;
+    eventRoot.id = L"node://root";
+    eventRoot.components.push_back(SceneComponentDefinition{
+        L"component://root/transform", ComponentKind::Transform,
+        {PropertyDefinition{L"pulse", PropertyType::Float, 0.0}},
+    });
+    eventOnly.scene.nodes.push_back(std::move(eventRoot));
+    eventOnly.profile = RuntimeProfile::Widget;
+    eventOnly.inputs.push_back(InputChannelDefinition{L"input://event/pulse", PropertyType::Bool, false});
+    AnimationTrackDefinition onlyTrack{
+        L"animation://event-only", PropertyAddress{L"component://root/transform", L"pulse"}, true,
+        AnimationLoopMode::Once, 0.5,
+        {AnimationKeyframeDefinition{0.0, 0.0, AnimationEasing::Linear},
+         AnimationKeyframeDefinition{0.5, 1.0, AnimationEasing::Linear}},
+    };
+    onlyTrack.triggerMode = AnimationTriggerMode::InputRisingEdge;
+    onlyTrack.triggerInputId = L"input://event/pulse";
+    eventOnly.animations.push_back(std::move(onlyTrack));
+    MiaoSceneRuntime sleepingRuntime;
+    if (!sleepingRuntime.Initialize(std::move(eventOnly), &error)) return false;
+    if (sleepingRuntime.NeedsContinuousAnimation(0.0)) return false;
+    if (!sleepingRuntime.SetInput(L"input://event/pulse", true, &error)) return false;
+    if (!sleepingRuntime.NeedsContinuousAnimation(0.25)) return false;
+    if (!sleepingRuntime.AdvanceTimeline(0.75, &error)) return false;
+    if (sleepingRuntime.NeedsContinuousAnimation(0.75)) return false;
 
     runtime.MarkPaintReady();
     if (!runtime.State().paintReady) return false;

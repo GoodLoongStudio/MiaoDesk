@@ -7,6 +7,7 @@
 #include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoGpuParameterBlock.h"
 #include "miaodesk/MiaoParticleRuntime.h"
+#include "miaodesk/MiaoParticleSerializer.h"
 #include "miaodesk/MiaoPostProcessCompiler.h"
 #include "miaodesk/MiaoPostProcessShaderLibrary.h"
 #include "miaodesk/MiaoRenderGraph.h"
@@ -732,6 +733,8 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (package.manifest.kind != ContentKind::Wallpaper || package.manifest.runtime != ContentRuntimeKind::Scene)
             return Error(error, L"Miao Scene D3D11 renderer requires a wallpaper scene package.");
         if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &lastError)) return Error(error, lastError);
+        if (!MiaoParticleSerializer::DeserializeEmitters(package.entrySourceUtf8, &definition, &lastError))
+            return Error(error, lastError);
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);
         if (!runtime.Initialize(definition, &lastError)) return Error(error, lastError);
         if (!particleRuntime.Initialize(definition, &lastError)) return Error(error, lastError);
@@ -1161,9 +1164,9 @@ std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastE
 bool MiaoSceneD3D11Renderer::SelfTest() {
     return TransformMathSelfTest() && MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&
            MiaoPostProcessShaderLibrary::SelfTest() && MiaoShaderContract::SelfTest() &&
-           MiaoGpuParameterPacker::SelfTest() && MiaoParticleRuntime::SelfTest() &&
-           MiaoD3D11ParticleRenderer::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
-           MiaoD3D11RenderTargetPool::SelfTest();
+           MiaoGpuParameterPacker::SelfTest() && MiaoParticleSerializer::SelfTest() &&
+           MiaoParticleRuntime::SelfTest() && MiaoD3D11ParticleRenderer::SelfTest() &&
+           MiaoD3D11TextureLoader::SelfTestPathPolicy() && MiaoD3D11RenderTargetPool::SelfTest();
 }
 
 } // namespace miaodesk::content

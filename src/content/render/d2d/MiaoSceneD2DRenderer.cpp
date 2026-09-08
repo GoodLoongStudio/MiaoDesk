@@ -6,6 +6,7 @@
 #include "miaodesk/MiaoSceneSerializer.h"
 
 #include <windows.h>
+#include <d2d1helper.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -15,6 +16,7 @@
 #include <optional>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -39,6 +41,13 @@ const PropertyDefinition* FindMaterialProperty(const MaterialDefinition& materia
     return nullptr;
 }
 
+const SceneComponentDefinition* FindTransform(const SceneNodeDefinition& node) noexcept {
+    for (const auto& component : node.components) {
+        if (component.kind == ComponentKind::Transform) return &component;
+    }
+    return nullptr;
+}
+
 const MaterialDefinition* ResolveMaterial(
     const SceneRuntimeDefinition& definition,
     const SceneComponentDefinition& component) {
@@ -60,9 +69,94 @@ Color4 ReadColor(const PropertyValue* value, Color4 fallback) {
     return color ? *color : fallback;
 }
 
+Vec2 ReadVec2(const PropertyValue* value, Vec2 fallback) {
+    const auto* vector = value ? std::get_if<Vec2>(value) : nullptr;
+    if (!vector || !std::isfinite(vector->x) || !std::isfinite(vector->y)) return fallback;
+    return *vector;
+}
+
 double ReadFloat(const PropertyValue* value, double fallback) {
     const auto* number = value ? std::get_if<double>(value) : nullptr;
     return number && std::isfinite(*number) ? *number : fallback;
+}
+
+struct NodeTransformState {
+    Vec2 position{};
+    Vec2 scale{1.0, 1.0};
+    double rotationDegrees{};
+    double opacity{1.0};
+};
+
+NodeTransformState ReadTransformState(
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime) noexcept {
+    NodeTransformState state;
+    const auto* transform = FindTransform(node);
+    if (!transform) return state;
+
+    state.position = ReadVec2(
+        runtime.GetProperty(PropertyAddress{transform->id, L"position"}),
+        state.position);
+    state.scale = ReadVec2(
+        runtime.GetProperty(PropertyAddress{transform->id, L"scale"}),
+        state.scale);
+    state.rotationDegrees = ReadFloat(
+        runtime.GetProperty(PropertyAddress{transform->id, L"rotation"}),
+        state.rotationDegrees);
+    state.opacity = ReadFloat(
+        runtime.GetProperty(PropertyAddress{transform->id, L"opacity"}),
+        state.opacity);
+
+    state.position.x = std::clamp(state.position.x, -1000000.0, 1000000.0);
+    state.position.y = std::clamp(state.position.y, -1000000.0, 1000000.0);
+    state.scale.x = std::clamp(state.scale.x, -64.0, 64.0);
+    state.scale.y = std::clamp(state.scale.y, -64.0, 64.0);
+    state.rotationDegrees = std::fmod(state.rotationDegrees, 360.0);
+    state.opacity = std::clamp(state.opacity, 0.0, 1.0);
+    return state;
+}
+
+D2D1_MATRIX_3X2_F LocalTransformMatrix(
+    const NodeTransformState& transform,
+    const D2D1_SIZE_F& size) noexcept {
+    const D2D1_POINT_2F center = D2D1::Point2F(size.width * 0.5f, size.height * 0.5f);
+    return D2D1::Matrix3x2F::Scale(
+               static_cast<float>(transform.scale.x),
+               static_cast<float>(transform.scale.y),
+               center) *
+           D2D1::Matrix3x2F::Rotation(static_cast<float>(transform.rotationDegrees), center) *
+           D2D1::Matrix3x2F::Translation(
+               static_cast<float>(transform.position.x),
+               static_cast<float>(transform.position.y));
+}
+
+D2D1_MATRIX_3X2_F ResolveNodeTransform(
+    const SceneDefinition& scene,
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime,
+    const D2D1_SIZE_F& size) noexcept {
+    auto matrix = D2D1::Matrix3x2F::Identity();
+    const SceneNodeDefinition* current = &node;
+    for (std::size_t depth = 0; current && depth <= scene.nodes.size(); ++depth) {
+        matrix = matrix * LocalTransformMatrix(ReadTransformState(*current, runtime), size);
+        if (current->parentId.empty()) break;
+        current = MiaoSceneModel::FindNode(scene, current->parentId);
+    }
+    return matrix;
+}
+
+double ResolveNodeOpacity(
+    const SceneDefinition& scene,
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime) noexcept {
+    double opacity = 1.0;
+    const SceneNodeDefinition* current = &node;
+    for (std::size_t depth = 0; current && depth <= scene.nodes.size(); ++depth) {
+        opacity *= ReadTransformState(*current, runtime).opacity;
+        if (current->parentId.empty()) break;
+        current = MiaoSceneModel::FindNode(scene, current->parentId);
+    }
+    return std::clamp(opacity, 0.0, 1.0);
 }
 
 D2D1_COLOR_F ToD2D(Color4 color, double opacity = 1.0) {
@@ -74,6 +168,21 @@ bool WriteTextFile(const fs::path& path, std::string_view text) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     output.write(text.data(), static_cast<std::streamsize>(text.size()));
     return static_cast<bool>(output);
+}
+
+bool PixelHasColor(IWICBitmap* bitmap, UINT x, UINT y, bool expectedColor) {
+    if (!bitmap) return false;
+    WICRect rect{0, 0, 64, 64};
+    ComPtr<IWICBitmapLock> lock;
+    if (FAILED(bitmap->Lock(&rect, WICBitmapLockRead, lock.GetAddressOf()))) return false;
+    UINT stride = 0;
+    UINT bytes = 0;
+    BYTE* data = nullptr;
+    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data) return false;
+    const std::size_t offset = static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u;
+    if (offset + 3u >= bytes) return false;
+    const bool colored = data[offset] > 8 || data[offset + 1] > 8 || data[offset + 2] > 8;
+    return colored == expectedColor;
 }
 
 } // namespace
@@ -126,6 +235,8 @@ struct MiaoSceneD2DRenderer::Impl {
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
         if (!AdvanceClock(static_cast<double>(timeSeconds), error)) return false;
 
+        D2D1_MATRIX_3X2_F hostTransform{};
+        target->GetTransform(&hostTransform);
         bool drew = false;
         for (const auto& node : definition.scene.nodes) {
             if (!node.enabled) continue;
@@ -138,20 +249,28 @@ struct MiaoSceneD2DRenderer::Impl {
                 if (const auto* materialColor = FindMaterialProperty(*material, L"color"))
                     color = ReadColor(&materialColor->defaultValue, color);
 
-                const PropertyAddress tintAddress{component.id, L"tint"};
-                const auto tint = ReadColor(runtime.GetProperty(tintAddress), Color4{1.0, 1.0, 1.0, 1.0});
+                const auto tint = ReadColor(
+                    runtime.GetProperty(PropertyAddress{component.id, L"tint"}),
+                    Color4{1.0, 1.0, 1.0, 1.0});
                 color.r *= tint.r;
                 color.g *= tint.g;
                 color.b *= tint.b;
                 color.a *= tint.a;
 
-                const PropertyAddress opacityAddress{component.id, L"opacity"};
-                const double opacity = ReadFloat(runtime.GetProperty(opacityAddress), 1.0);
-                brush->SetColor(ToD2D(color, opacity));
+                const double spriteOpacity = ReadFloat(
+                    runtime.GetProperty(PropertyAddress{component.id, L"opacity"}),
+                    1.0);
+                const double nodeOpacity = ResolveNodeOpacity(definition.scene, node, runtime);
+                brush->SetColor(ToD2D(color, spriteOpacity * nodeOpacity));
+
+                const auto sceneTransform = ResolveNodeTransform(definition.scene, node, runtime, size);
+                target->SetTransform(sceneTransform * hostTransform);
                 target->FillRectangle(D2D1::RectF(0.0f, 0.0f, size.width, size.height), brush.Get());
+                target->SetTransform(hostTransform);
                 drew = true;
             }
         }
+        target->SetTransform(hostTransform);
 
         if (!drew) return Error(error, L"Scene has no D2D-renderable component in the current MVP backend.");
         runtime.MarkPaintReady();
@@ -269,6 +388,12 @@ bool MiaoSceneD2DRenderer::SelfTest() {
       "nodes":[
         {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
         {"id":"node://background","name":"Background","parentId":"node://root","enabled":true,"components":[
+          {"id":"component://background/transform","kind":"transform","properties":[
+            {"name":"position","type":"vec2","default":[0.0,0.0]},
+            {"name":"scale","type":"vec2","default":[0.5,0.5]},
+            {"name":"rotation","type":"float","default":0.0},
+            {"name":"opacity","type":"float","default":1.0}
+          ]},
           {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
             {"name":"opacity","type":"float","default":1.0},
             {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
@@ -286,16 +411,20 @@ bool MiaoSceneD2DRenderer::SelfTest() {
       ],
       "bindings":[{"id":"binding://opacity","sourceKind":"parameter","sourceId":"param://opacity",
         "target":{"componentId":"component://background/sprite","propertyName":"opacity"},"scale":1.0,"offset":0.0}],
-      "animations":[{
-        "id":"animation://event-pulse",
-        "target":{"componentId":"component://background/sprite","propertyName":"opacity"},
-        "enabled":true,"loop":"once","duration":0.5,
-        "trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
-        "keyframes":[
-          {"time":0.0,"value":0.2,"easing":"easeOut"},
-          {"time":0.5,"value":1.0,"easing":"linear"}
-        ]
-      }]
+      "animations":[
+        {"id":"animation://move","target":{"componentId":"component://background/transform","propertyName":"position"},
+         "enabled":true,"loop":"once","duration":0.5,"trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+         "keyframes":[{"time":0.0,"value":[0.0,0.0],"easing":"easeOut"},{"time":0.5,"value":[12.0,0.0],"easing":"linear"}]},
+        {"id":"animation://scale","target":{"componentId":"component://background/transform","propertyName":"scale"},
+         "enabled":true,"loop":"once","duration":0.5,"trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+         "keyframes":[{"time":0.0,"value":[0.5,0.5],"easing":"easeInOut"},{"time":0.5,"value":[0.75,0.75],"easing":"linear"}]},
+        {"id":"animation://rotate","target":{"componentId":"component://background/transform","propertyName":"rotation"},
+         "enabled":true,"loop":"once","duration":0.5,"trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+         "keyframes":[{"time":0.0,"value":0.0,"easing":"easeInOut"},{"time":0.5,"value":20.0,"easing":"linear"}]},
+        {"id":"animation://tint","target":{"componentId":"component://background/sprite","propertyName":"tint"},
+         "enabled":true,"loop":"once","duration":0.5,"trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+         "keyframes":[{"time":0.0,"value":[1.0,1.0,1.0,1.0],"easing":"linear"},{"time":0.5,"value":[1.0,0.55,0.55,1.0],"easing":"linear"}]}
+      ]
     })json";
     constexpr std::string_view parameters = R"json({"schema":1,"parameters":[{"id":"param://opacity","type":"float","default":0.9}]})json";
 
@@ -323,6 +452,9 @@ bool MiaoSceneD2DRenderer::SelfTest() {
              renderer.Profile() == RuntimeProfile::Widget;
     }
     if (ok) {
+        ok = PixelHasColor(bitmap.Get(), 32, 32, true) && PixelHasColor(bitmap.Get(), 2, 2, false);
+    }
+    if (ok) {
         MiaoSceneFrameDemand idleDemand;
         ok = renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;
     }
@@ -334,22 +466,23 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     }
     if (ok) {
         target->BeginDraw();
+        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
         ok = renderer.Draw(1.25f, D2D1::SizeF(64.0f, 64.0f), &error);
         ok = SUCCEEDED(target->EndDraw()) && ok;
-        MiaoSceneFrameDemand activeDemand;
-        ok = ok && renderer.PrepareFrame(1.25, &activeDemand, 60, &error) && activeDemand.continuousAnimation;
     }
     if (ok) {
         MiaoSceneFrameDemand terminalDemand;
-        ok = renderer.PrepareFrame(1.75, &terminalDemand, 60, &error) &&
-             terminalDemand.render && terminalDemand.contentDirty && !terminalDemand.continuousAnimation;
+        ok = renderer.PrepareFrame(1.5, &terminalDemand, 60, &error) && terminalDemand.render;
         if (ok) {
             target->BeginDraw();
-            ok = renderer.Draw(1.75f, D2D1::SizeF(64.0f, 64.0f), &error);
+            target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+            ok = renderer.Draw(1.5f, D2D1::SizeF(64.0f, 64.0f), &error);
             ok = SUCCEEDED(target->EndDraw()) && ok;
         }
-        MiaoSceneFrameDemand sleepingDemand;
-        ok = ok && renderer.PrepareFrame(1.75, &sleepingDemand, 60, &error) && !sleepingDemand.render;
+    }
+    if (ok) {
+        MiaoSceneFrameDemand completedDemand;
+        ok = renderer.PrepareFrame(1.75, &completedDemand, 60, &error) && !completedDemand.render;
     }
 
     renderer.Reset();

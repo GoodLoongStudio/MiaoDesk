@@ -2,9 +2,11 @@
 
 #include "miaodesk/MiaoAssetDatabase.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoD3D11ParticleRenderer.h"
 #include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoGpuParameterBlock.h"
+#include "miaodesk/MiaoParticleRuntime.h"
 #include "miaodesk/MiaoPostProcessCompiler.h"
 #include "miaodesk/MiaoPostProcessShaderLibrary.h"
 #include "miaodesk/MiaoRenderGraph.h"
@@ -21,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -417,6 +420,8 @@ struct MiaoSceneD3D11Renderer::Impl {
     SceneRuntimeDefinition definition;
     MiaoAssetDatabase assets;
     MiaoSceneRuntime runtime;
+    MiaoParticleRuntime particleRuntime;
+    MiaoD3D11ParticleRenderer particleRenderer;
     const SceneComponentDefinition* renderable{};
     const SceneNodeDefinition* renderableNode{};
     const MaterialDefinition* material{};
@@ -462,6 +467,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     void UnbindShaderResources() noexcept {
         if (!context) return;
         ID3D11ShaderResourceView* nullViews[16]{};
+        context->VSSetShaderResources(0, 16, nullViews);
         context->PSSetShaderResources(0, 16, nullViews);
     }
 
@@ -728,12 +734,22 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &lastError)) return Error(error, lastError);
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);
         if (!runtime.Initialize(definition, &lastError)) return Error(error, lastError);
+        if (!particleRuntime.Initialize(definition, &lastError)) return Error(error, lastError);
         if (!ResolveSceneMaterial(error)) return false;
         if (!BuildRenderGraph(error)) return false;
         if (!CreateDeviceAndSwapChain(error)) return false;
         if (!CreateStates(error)) return false;
         if (!CreateTextures(error)) return false;
         if (!CreateShaders(error)) return false;
+
+        if (!definition.particleEmitters.empty()) {
+            std::uint64_t requestedCapacity = 0;
+            for (const auto& emitter : definition.particleEmitters) requestedCapacity += emitter.maxParticles;
+            requestedCapacity = std::min<std::uint64_t>(requestedCapacity, MiaoSceneRuntimeModel::kMaxParticlesPerScene);
+            if (!particleRenderer.Initialize(
+                    device.Get(), static_cast<std::uint32_t>(requestedCapacity), &lastError))
+                return Error(error, lastError);
+        }
 
         loaded = true;
         lastError.clear();
@@ -805,6 +821,27 @@ struct MiaoSceneD3D11Renderer::Impl {
         SetViewport(sceneColor->Width(), sceneColor->Height());
         if (!BindSceneState(frame, object, parameters, error)) return false;
         context->Draw(sceneVertexUsesQuad ? 6u : 3u, 0);
+        return true;
+    }
+
+    bool ExecuteParticlePass(const RenderPassDefinition& pass, std::wstring* error) {
+        if (pass.reads.size() != 1 || pass.writes.size() != 1)
+            return Error(error, L"Miao Scene particle pass requires exactly one input and one output color resource.");
+        if (!particleRenderer.Initialized())
+            return Error(error, L"Miao Scene particle pass is present but the D3D11 particle renderer is not initialized.");
+
+        auto* input = renderTargets.Find(pass.reads.front());
+        auto* output = renderTargets.Find(pass.writes.front());
+        if (!input || !input->Valid() || !output || !output->Valid())
+            return Error(error, L"Miao Scene particle pass resources are unavailable.");
+
+        UnbindShaderResources();
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        std::wstring particleError;
+        if (!particleRenderer.Draw(
+                context.Get(), output->RenderTargetView(), input->ShaderResourceView(),
+                output->Width(), output->Height(), particleRuntime, &particleError))
+            return Error(error, particleError.empty() ? L"Miao Scene particle pass failed." : particleError);
         return true;
     }
 
@@ -947,6 +984,12 @@ struct MiaoSceneD3D11Renderer::Impl {
         frame.mouseVelocity[1] = velocityY;
         previousTime = timeSeconds;
 
+        if (!definition.particleEmitters.empty()) {
+            std::wstring particleError;
+            if (!particleRuntime.Advance(static_cast<double>(frame.deltaTime), &particleError))
+                return Error(error, particleError);
+        }
+
         ObjectConstants object{};
         if (!renderableNode) return Error(error, L"Miao Scene D3D11 renderable node is unavailable.");
         BuildNodeWorld(definition.scene, *renderableNode, runtime, width, height, object.world);
@@ -987,6 +1030,9 @@ struct MiaoSceneD3D11Renderer::Impl {
                 case RenderPassKind::Programmable:
                     if (!ExecuteScenePass(frame, object, parameters, error)) return false;
                     break;
+                case RenderPassKind::Particle:
+                    if (!ExecuteParticlePass(pass, error)) return false;
+                    break;
                 case RenderPassKind::PostProcess: {
                     const auto* postPass = MiaoPostProcessCompiler::FindPass(postProcessPlan, pass.id);
                     if (!postPass) return Error(error, L"RenderGraph post-process pass has no compiled effect plan: " + pass.id);
@@ -1002,7 +1048,6 @@ struct MiaoSceneD3D11Renderer::Impl {
                     if (!ExecutePresentPass(error)) return false;
                     break;
                 case RenderPassKind::Clear:
-                case RenderPassKind::Particle:
                     return Error(error, L"Miao Scene render graph contains an unsupported pass kind for the current runtime.");
             }
         }
@@ -1043,6 +1088,8 @@ struct MiaoSceneD3D11Renderer::Impl {
             context->ClearState();
             context->Flush();
         }
+        particleRenderer.Reset();
+        particleRuntime.Reset();
         for (auto& view : textureViews) view.Reset();
         for (auto& shader : postProcessShaders) shader.Reset();
         renderTargets.Reset();
@@ -1114,7 +1161,8 @@ std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastE
 bool MiaoSceneD3D11Renderer::SelfTest() {
     return TransformMathSelfTest() && MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&
            MiaoPostProcessShaderLibrary::SelfTest() && MiaoShaderContract::SelfTest() &&
-           MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
+           MiaoGpuParameterPacker::SelfTest() && MiaoParticleRuntime::SelfTest() &&
+           MiaoD3D11ParticleRenderer::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
            MiaoD3D11RenderTargetPool::SelfTest();
 }
 

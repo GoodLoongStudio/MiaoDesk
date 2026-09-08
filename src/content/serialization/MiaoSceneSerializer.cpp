@@ -521,6 +521,15 @@ bool ParseAnimationEasing(std::string_view value, AnimationEasing* easing) noexc
     return true;
 }
 
+bool ParseAnimationTrigger(std::string_view value, AnimationTriggerMode* mode) noexcept {
+    if (!mode) return false;
+    if (value == "timeline") *mode = AnimationTriggerMode::Timeline;
+    else if (value == "inputChange") *mode = AnimationTriggerMode::InputChange;
+    else if (value == "inputRisingEdge") *mode = AnimationTriggerMode::InputRisingEdge;
+    else return false;
+    return true;
+}
+
 const char* ContentKindKey(ContentKind kind) noexcept { return kind == ContentKind::Widget ? "widget" : "wallpaper"; }
 const char* ProfileKey(RuntimeProfile profile) noexcept { return profile == RuntimeProfile::Widget ? "widget" : "wallpaper"; }
 
@@ -609,6 +618,15 @@ const char* AnimationEasingKey(AnimationEasing easing) noexcept {
     case AnimationEasing::EaseInOut: return "easeInOut";
     }
     return "linear";
+}
+
+const char* AnimationTriggerKey(AnimationTriggerMode mode) noexcept {
+    switch (mode) {
+    case AnimationTriggerMode::Timeline: return "timeline";
+    case AnimationTriggerMode::InputChange: return "inputChange";
+    case AnimationTriggerMode::InputRisingEdge: return "inputRisingEdge";
+    }
+    return "timeline";
 }
 
 bool ReadVector(const JsonValue& value, std::size_t count, double* output, std::wstring* error) {
@@ -856,6 +874,15 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
             if (loop.empty()) loop = "loop";
             if (!ParseAnimationLoop(loop, &animation.loopMode))
                 return Fail(error, L"Animation loop mode is invalid: " + animation.id);
+
+            if (const auto* trigger = animationValue.Find("trigger")) {
+                if (!RequireObject(*trigger, L"Animation trigger", error)) return false;
+                std::string triggerMode;
+                if (!ReadString8(*trigger, "mode", &triggerMode, true, error) ||
+                    !ParseAnimationTrigger(triggerMode, &animation.triggerMode))
+                    return Fail(error, L"Animation trigger mode is invalid: " + animation.id);
+                if (!ReadString(*trigger, "inputId", &animation.triggerInputId, false, error)) return false;
+            }
 
             const auto* target = animationValue.Find("target");
             if (!target || !RequireObject(*target, L"Animation target", error) ||
@@ -1140,7 +1167,12 @@ bool MiaoSceneSerializer::SerializeScene(
                ",\"propertyName\":" + Quote(animation.target.propertyName) +
                "},\"enabled\":" + std::string(animation.enabled ? "true" : "false") +
                ",\"loop\":" + Quote8(AnimationLoopKey(animation.loopMode)) +
-               ",\"duration\":" + Number(animation.durationSeconds) + ",\"keyframes\":[";
+               ",\"duration\":" + Number(animation.durationSeconds);
+        if (animation.triggerMode != AnimationTriggerMode::Timeline) {
+            out += ",\"trigger\":{\"mode\":" + Quote8(AnimationTriggerKey(animation.triggerMode)) +
+                   ",\"inputId\":" + Quote(animation.triggerInputId) + "}";
+        }
+        out += ",\"keyframes\":[";
         for (std::size_t k = 0; k < animation.keyframes.size(); ++k) {
             if (k) out += ",";
             const auto& keyframe = animation.keyframes[k];
@@ -1210,19 +1242,34 @@ bool MiaoSceneSerializer::SelfTest() {
           {"name":"color","type":"color","default":[0.1,0.2,0.3,1.0]}
         ],"textures":[]}
       ],
-      "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+      "inputs":[
+        {"id":"input://frame/time","type":"float","default":0.0},
+        {"id":"input://event/pulse","type":"bool","default":false}
+      ],
       "bindings":[{"id":"binding://opacity","sourceKind":"parameter","sourceId":"param://opacity",
         "target":{"componentId":"component://root/transform","propertyName":"opacity"},"scale":1.0,"offset":0.0}],
-      "animations":[{
-        "id":"animation://opacity-pulse",
-        "target":{"componentId":"component://root/transform","propertyName":"opacity"},
-        "enabled":true,"loop":"pingPong","duration":2.0,
-        "keyframes":[
-          {"time":0.0,"value":0.35,"easing":"easeInOut"},
-          {"time":1.0,"value":1.0,"easing":"easeOut"},
-          {"time":2.0,"value":0.35,"easing":"linear"}
-        ]
-      }],
+      "animations":[
+        {
+          "id":"animation://opacity-pulse",
+          "target":{"componentId":"component://root/transform","propertyName":"opacity"},
+          "enabled":true,"loop":"pingPong","duration":2.0,
+          "keyframes":[
+            {"time":0.0,"value":0.35,"easing":"easeInOut"},
+            {"time":1.0,"value":1.0,"easing":"easeOut"},
+            {"time":2.0,"value":0.35,"easing":"linear"}
+          ]
+        },
+        {
+          "id":"animation://event-pulse",
+          "target":{"componentId":"component://root/transform","propertyName":"opacity"},
+          "enabled":true,"loop":"once","duration":0.5,
+          "trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
+          "keyframes":[
+            {"time":0.0,"value":0.2,"easing":"easeOut"},
+            {"time":0.5,"value":1.0,"easing":"linear"}
+          ]
+        }
+      ],
       "postProcesses":[
         {"id":"postfx://vignette","effect":"vignette","enabled":true,"amount":0.8,"radius":0.72,"softness":0.22},
         {"id":"postfx://noise-disabled","effect":"noise","enabled":false,"amount":0.15}
@@ -1237,11 +1284,15 @@ bool MiaoSceneSerializer::SelfTest() {
     std::wstring error;
     if (!Deserialize(sceneJson, parametersJson, &first, &error)) return false;
     if (first.scene.id != L"scene://serializer-self-test" || first.scene.nodes.size() != 1 ||
-        first.materials.size() != 1 || first.parameters.size() != 1 || first.animations.size() != 1 ||
-        first.postProcesses.size() != 2) return false;
+        first.materials.size() != 1 || first.parameters.size() != 1 || first.inputs.size() != 2 ||
+        first.animations.size() != 2 || first.postProcesses.size() != 2) return false;
     if (first.animations[0].loopMode != AnimationLoopMode::PingPong || first.animations[0].keyframes.size() != 3 ||
         first.animations[0].keyframes[0].easing != AnimationEasing::EaseInOut ||
         first.animations[0].keyframes[1].easing != AnimationEasing::EaseOut) return false;
+    if (first.animations[0].triggerMode != AnimationTriggerMode::Timeline || !first.animations[0].triggerInputId.empty()) return false;
+    if (first.animations[1].triggerMode != AnimationTriggerMode::InputRisingEdge ||
+        first.animations[1].triggerInputId != L"input://event/pulse" ||
+        first.animations[1].loopMode != AnimationLoopMode::Once) return false;
     if (!std::holds_alternative<double>(first.animations[0].keyframes[1].value) ||
         std::get<double>(first.animations[0].keyframes[1].value) != 1.0) return false;
 
@@ -1249,13 +1300,22 @@ bool MiaoSceneSerializer::SelfTest() {
     std::string serializedParameters;
     if (!SerializeScene(first, &serializedScene, &error) ||
         !SerializeParameters(first, &serializedParameters, &error)) return false;
+    if (serializedScene.find("\"trigger\":{\"mode\":\"inputRisingEdge\",\"inputId\":\"input://event/pulse\"}") == std::string::npos)
+        return false;
+
     SceneRuntimeDefinition second;
     if (!Deserialize(serializedScene, serializedParameters, &second, &error)) return false;
     if (!EquivalentRuntime(first, second) || second.animations[0].id != L"animation://opacity-pulse" ||
         second.animations[0].durationSeconds != 2.0 || second.animations[0].keyframes.size() != 3 ||
         second.animations[0].keyframes[0].easing != AnimationEasing::EaseInOut) return false;
+    if (second.animations[1].triggerMode != AnimationTriggerMode::InputRisingEdge ||
+        second.animations[1].triggerInputId != L"input://event/pulse") return false;
     if (second.postProcesses[0].id != L"postfx://vignette" ||
         second.postProcesses[0].amount != first.postProcesses[0].amount) return false;
+
+    SceneRuntimeDefinition invalidTrigger = first;
+    invalidTrigger.animations[1].triggerInputId = L"input://missing";
+    if (SerializeScene(invalidTrigger, &serializedScene, &error)) return false;
 
     SceneRuntimeDefinition invalid;
     if (Deserialize("{\"schema\":1}", "", &invalid, &error)) return false;

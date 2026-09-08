@@ -30,12 +30,30 @@ ResolvedMonitorWallpaper MakeFallback(const MonitorInfo& monitor, const RECT& re
 
 std::wstring SceneKeyForLibraryId(std::wstring_view id) {
     const auto* definition = FindBuiltinWallpaper(id);
-    return std::wstring(
-        definition ? definition->runtimeKey : DefaultBuiltinWallpaper().runtimeKey);
+    return definition ? std::wstring(definition->runtimeKey) : std::wstring{};
 }
 
 bool SourceAvailable(const WallpaperLibraryItem& item) {
-    if (item.kind == LibraryWallpaperKind::Scene) return true;
+    if (item.kind == LibraryWallpaperKind::Scene) {
+        // Built-in scenes are key-driven and have no source path. Canonical
+        // Content Framework scenes keep their .mdwall package root (or an entry
+        // inside it) as source, so they must still exist on disk.
+        if (item.source.empty()) return FindBuiltinWallpaper(item.id) != nullptr;
+        std::error_code ec;
+        if (fs::is_directory(item.source, ec) && _wcsicmp(item.source.extension().c_str(), L".mdwall") == 0)
+            return true;
+        ec.clear();
+        if (fs::is_regular_file(item.source, ec)) {
+            fs::path current = item.source.parent_path();
+            while (!current.empty()) {
+                if (_wcsicmp(current.extension().c_str(), L".mdwall") == 0) return true;
+                const fs::path parent = current.parent_path();
+                if (parent == current) break;
+                current = parent;
+            }
+        }
+        return false;
+    }
     if (item.kind == LibraryWallpaperKind::Web)
         return WebWallpaperProcessSet::IsSupportedSource(item.source.wstring());
     std::error_code ec;
@@ -91,6 +109,8 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         switch (item->kind) {
         case LibraryWallpaperKind::Scene:
             resolved.kind = ResolvedWallpaperKind::Scene;
+            // Canonical packages intentionally keep an empty legacy sceneKey;
+            // IndependentWallpaperHost resolves their source as .mdwall first.
             resolved.sceneKey = SceneKeyForLibraryId(item->id);
             break;
         case LibraryWallpaperKind::Image:

@@ -406,6 +406,77 @@ bool ReadNumber(const JsonValue& object, std::string_view key, double fallback, 
     return true;
 }
 
+bool ReadUint32(
+    const JsonValue& object,
+    std::string_view key,
+    std::uint32_t fallback,
+    std::uint32_t* output,
+    bool required,
+    std::wstring* error) {
+    const auto* value = object.Find(key);
+    if (!value) {
+        if (required) return Fail(error, L"Missing uint32 field: " + FieldName(key));
+        if (output) *output = fallback;
+        return true;
+    }
+    if (value->type != JsonValue::Type::Number || !std::isfinite(value->number) ||
+        std::floor(value->number) != value->number || value->number < 0.0 ||
+        value->number > static_cast<double>(std::numeric_limits<std::uint32_t>::max()))
+        return Fail(error, L"Field must be an exact uint32 value: " + FieldName(key));
+    if (output) *output = static_cast<std::uint32_t>(value->number);
+    return true;
+}
+
+bool ReadVec2Field(
+    const JsonValue& object,
+    std::string_view key,
+    Vec2 fallback,
+    Vec2* output,
+    bool required,
+    std::wstring* error) {
+    const auto* value = object.Find(key);
+    if (!value) {
+        if (required) return Fail(error, L"Missing vec2 field: " + FieldName(key));
+        if (output) *output = fallback;
+        return true;
+    }
+    double data[2]{};
+    if (value->type != JsonValue::Type::Array || value->array.size() != 2)
+        return Fail(error, L"Field must be a vec2 array: " + FieldName(key));
+    for (std::size_t i = 0; i < 2; ++i) {
+        if (value->array[i].type != JsonValue::Type::Number || !std::isfinite(value->array[i].number))
+            return Fail(error, L"Vec2 field must contain finite numbers: " + FieldName(key));
+        data[i] = value->array[i].number;
+    }
+    if (output) *output = Vec2{data[0], data[1]};
+    return true;
+}
+
+bool ReadColorField(
+    const JsonValue& object,
+    std::string_view key,
+    Color4 fallback,
+    Color4* output,
+    bool required,
+    std::wstring* error) {
+    const auto* value = object.Find(key);
+    if (!value) {
+        if (required) return Fail(error, L"Missing color field: " + FieldName(key));
+        if (output) *output = fallback;
+        return true;
+    }
+    if (value->type != JsonValue::Type::Array || value->array.size() != 4)
+        return Fail(error, L"Field must be a color array: " + FieldName(key));
+    double data[4]{};
+    for (std::size_t i = 0; i < 4; ++i) {
+        if (value->array[i].type != JsonValue::Type::Number || !std::isfinite(value->array[i].number))
+            return Fail(error, L"Color field must contain finite numbers: " + FieldName(key));
+        data[i] = value->array[i].number;
+    }
+    if (output) *output = Color4{data[0], data[1], data[2], data[3]};
+    return true;
+}
+
 bool ReadSchema(const JsonValue& object, std::wstring_view label, std::wstring* error) {
     double schema = 0.0;
     if (!ReadNumber(object, "schema", 0.0, &schema, true, error)) return false;
@@ -910,6 +981,33 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
         }
     }
 
+    runtime->particleEmitters.clear();
+    if (const auto* particleEmitters = root.Find("particleEmitters")) {
+        if (!RequireArray(particleEmitters, L"particleEmitters", error)) return false;
+        for (const auto& emitterValue : particleEmitters->array) {
+            if (!RequireObject(emitterValue, L"Particle emitter", error)) return false;
+            ParticleEmitterDefinition emitter;
+            if (!ReadString(emitterValue, "id", &emitter.id, true, error) ||
+                !ReadBool(emitterValue, "enabled", emitter.enabled, &emitter.enabled, error) ||
+                !ReadUint32(emitterValue, "maxParticles", emitter.maxParticles, &emitter.maxParticles, false, error) ||
+                !ReadNumber(emitterValue, "spawnRate", emitter.spawnRate, &emitter.spawnRate, false, error) ||
+                !ReadNumber(emitterValue, "lifetimeMin", emitter.lifetimeMinSeconds, &emitter.lifetimeMinSeconds, false, error) ||
+                !ReadNumber(emitterValue, "lifetimeMax", emitter.lifetimeMaxSeconds, &emitter.lifetimeMaxSeconds, false, error) ||
+                !ReadVec2Field(emitterValue, "position", emitter.position, &emitter.position, false, error) ||
+                !ReadVec2Field(emitterValue, "positionSpread", emitter.positionSpread, &emitter.positionSpread, false, error) ||
+                !ReadVec2Field(emitterValue, "velocity", emitter.velocity, &emitter.velocity, false, error) ||
+                !ReadVec2Field(emitterValue, "velocitySpread", emitter.velocitySpread, &emitter.velocitySpread, false, error) ||
+                !ReadVec2Field(emitterValue, "acceleration", emitter.acceleration, &emitter.acceleration, false, error) ||
+                !ReadNumber(emitterValue, "sizeStart", emitter.sizeStart, &emitter.sizeStart, false, error) ||
+                !ReadNumber(emitterValue, "sizeEnd", emitter.sizeEnd, &emitter.sizeEnd, false, error) ||
+                !ReadColorField(emitterValue, "colorStart", emitter.colorStart, &emitter.colorStart, false, error) ||
+                !ReadColorField(emitterValue, "colorEnd", emitter.colorEnd, &emitter.colorEnd, false, error) ||
+                !ReadString(emitterValue, "materialId", &emitter.materialId, false, error) ||
+                !ReadUint32(emitterValue, "seed", emitter.seed, &emitter.seed, false, error)) return false;
+            runtime->particleEmitters.push_back(std::move(emitter));
+        }
+    }
+
     runtime->postProcesses.clear();
     if (const auto* postProcesses = root.Find("postProcesses")) {
         if (!RequireArray(postProcesses, L"postProcesses", error)) return false;
@@ -991,17 +1089,24 @@ std::string Number(double value) {
     return stream.str();
 }
 
+std::string SerializeVec2(const Vec2& value) {
+    return "[" + Number(value.x) + "," + Number(value.y) + "]";
+}
+
+std::string SerializeColor(const Color4& value) {
+    return "[" + Number(value.r) + "," + Number(value.g) + "," + Number(value.b) + "," + Number(value.a) + "]";
+}
+
 std::string SerializeValue(const PropertyValue& value) {
     if (const auto* item = std::get_if<bool>(&value)) return *item ? "true" : "false";
     if (const auto* item = std::get_if<std::int64_t>(&value)) return std::to_string(*item);
     if (const auto* item = std::get_if<double>(&value)) return Number(*item);
     if (const auto* item = std::get_if<std::wstring>(&value)) return Quote(*item);
-    if (const auto* item = std::get_if<Vec2>(&value)) return "[" + Number(item->x) + "," + Number(item->y) + "]";
+    if (const auto* item = std::get_if<Vec2>(&value)) return SerializeVec2(*item);
     if (const auto* item = std::get_if<Vec3>(&value)) return "[" + Number(item->x) + "," + Number(item->y) + "," + Number(item->z) + "]";
     if (const auto* item = std::get_if<Vec4>(&value))
         return "[" + Number(item->x) + "," + Number(item->y) + "," + Number(item->z) + "," + Number(item->w) + "]";
-    if (const auto* item = std::get_if<Color4>(&value))
-        return "[" + Number(item->r) + "," + Number(item->g) + "," + Number(item->b) + "," + Number(item->a) + "]";
+    if (const auto* item = std::get_if<Color4>(&value)) return SerializeColor(*item);
     if (const auto* item = std::get_if<AssetReference>(&value)) return Quote(item->id);
     return "null";
 }
@@ -1024,7 +1129,8 @@ bool EquivalentRuntime(const SceneRuntimeDefinition& a, const SceneRuntimeDefini
            a.scene.assets.size() == b.scene.assets.size() && a.scene.shaders.size() == b.scene.shaders.size() &&
            a.materials.size() == b.materials.size() && a.parameters.size() == b.parameters.size() &&
            a.inputs.size() == b.inputs.size() && a.bindings.size() == b.bindings.size() &&
-           a.animations.size() == b.animations.size() && a.postProcesses.size() == b.postProcesses.size();
+           a.animations.size() == b.animations.size() && a.postProcesses.size() == b.postProcesses.size() &&
+           a.particleEmitters.size() == b.particleEmitters.size();
 }
 
 } // namespace
@@ -1184,6 +1290,30 @@ bool MiaoSceneSerializer::SerializeScene(
     }
     out += "],\n";
 
+    out += "  \"particleEmitters\":[";
+    for (std::size_t i = 0; i < runtime.particleEmitters.size(); ++i) {
+        if (i) out += ",";
+        const auto& emitter = runtime.particleEmitters[i];
+        out += "{\"id\":" + Quote(emitter.id) +
+               ",\"enabled\":" + std::string(emitter.enabled ? "true" : "false") +
+               ",\"maxParticles\":" + std::to_string(emitter.maxParticles) +
+               ",\"spawnRate\":" + Number(emitter.spawnRate) +
+               ",\"lifetimeMin\":" + Number(emitter.lifetimeMinSeconds) +
+               ",\"lifetimeMax\":" + Number(emitter.lifetimeMaxSeconds) +
+               ",\"position\":" + SerializeVec2(emitter.position) +
+               ",\"positionSpread\":" + SerializeVec2(emitter.positionSpread) +
+               ",\"velocity\":" + SerializeVec2(emitter.velocity) +
+               ",\"velocitySpread\":" + SerializeVec2(emitter.velocitySpread) +
+               ",\"acceleration\":" + SerializeVec2(emitter.acceleration) +
+               ",\"sizeStart\":" + Number(emitter.sizeStart) +
+               ",\"sizeEnd\":" + Number(emitter.sizeEnd) +
+               ",\"colorStart\":" + SerializeColor(emitter.colorStart) +
+               ",\"colorEnd\":" + SerializeColor(emitter.colorEnd) +
+               ",\"materialId\":" + Quote(emitter.materialId) +
+               ",\"seed\":" + std::to_string(emitter.seed) + "}";
+    }
+    out += "],\n";
+
     out += "  \"postProcesses\":[";
     for (std::size_t i = 0; i < runtime.postProcesses.size(); ++i) {
         if (i) out += ",";
@@ -1270,6 +1400,13 @@ bool MiaoSceneSerializer::SelfTest() {
           ]
         }
       ],
+      "particleEmitters":[
+        {"id":"particle://serializer-self-test/sparks","enabled":true,"maxParticles":64,"spawnRate":12.0,
+         "lifetimeMin":0.5,"lifetimeMax":1.5,"position":[100.0,200.0],"positionSpread":[10.0,20.0],
+         "velocity":[0.0,-30.0],"velocitySpread":[5.0,8.0],"acceleration":[0.0,9.8],
+         "sizeStart":8.0,"sizeEnd":2.0,"colorStart":[1.0,0.8,0.4,0.9],"colorEnd":[0.2,0.4,1.0,0.0],
+         "materialId":"","seed":77}
+      ],
       "postProcesses":[
         {"id":"postfx://vignette","effect":"vignette","enabled":true,"amount":0.8,"radius":0.72,"softness":0.22},
         {"id":"postfx://noise-disabled","effect":"noise","enabled":false,"amount":0.15}
@@ -1285,7 +1422,7 @@ bool MiaoSceneSerializer::SelfTest() {
     if (!Deserialize(sceneJson, parametersJson, &first, &error)) return false;
     if (first.scene.id != L"scene://serializer-self-test" || first.scene.nodes.size() != 1 ||
         first.materials.size() != 1 || first.parameters.size() != 1 || first.inputs.size() != 2 ||
-        first.animations.size() != 2 || first.postProcesses.size() != 2) return false;
+        first.animations.size() != 2 || first.postProcesses.size() != 2 || first.particleEmitters.size() != 1) return false;
     if (first.animations[0].loopMode != AnimationLoopMode::PingPong || first.animations[0].keyframes.size() != 3 ||
         first.animations[0].keyframes[0].easing != AnimationEasing::EaseInOut ||
         first.animations[0].keyframes[1].easing != AnimationEasing::EaseOut) return false;
@@ -1295,12 +1432,16 @@ bool MiaoSceneSerializer::SelfTest() {
         first.animations[1].loopMode != AnimationLoopMode::Once) return false;
     if (!std::holds_alternative<double>(first.animations[0].keyframes[1].value) ||
         std::get<double>(first.animations[0].keyframes[1].value) != 1.0) return false;
+    if (first.particleEmitters[0].id != L"particle://serializer-self-test/sparks" ||
+        first.particleEmitters[0].maxParticles != 64 || first.particleEmitters[0].seed != 77 ||
+        first.particleEmitters[0].position.x != 100.0 || first.particleEmitters[0].colorEnd.a != 0.0) return false;
 
     std::string serializedScene;
     std::string serializedParameters;
     if (!SerializeScene(first, &serializedScene, &error) ||
         !SerializeParameters(first, &serializedParameters, &error)) return false;
-    if (serializedScene.find("\"trigger\":{\"mode\":\"inputRisingEdge\",\"inputId\":\"input://event/pulse\"}") == std::string::npos)
+    if (serializedScene.find("\"trigger\":{\"mode\":\"inputRisingEdge\",\"inputId\":\"input://event/pulse\"}") == std::string::npos ||
+        serializedScene.find("\"particleEmitters\":[{\"id\":\"particle://serializer-self-test/sparks\"") == std::string::npos)
         return false;
 
     SceneRuntimeDefinition second;
@@ -1312,10 +1453,17 @@ bool MiaoSceneSerializer::SelfTest() {
         second.animations[1].triggerInputId != L"input://event/pulse") return false;
     if (second.postProcesses[0].id != L"postfx://vignette" ||
         second.postProcesses[0].amount != first.postProcesses[0].amount) return false;
+    if (second.particleEmitters[0].id != first.particleEmitters[0].id ||
+        second.particleEmitters[0].spawnRate != first.particleEmitters[0].spawnRate ||
+        second.particleEmitters[0].velocity.y != first.particleEmitters[0].velocity.y) return false;
 
     SceneRuntimeDefinition invalidTrigger = first;
     invalidTrigger.animations[1].triggerInputId = L"input://missing";
     if (SerializeScene(invalidTrigger, &serializedScene, &error)) return false;
+
+    SceneRuntimeDefinition invalidParticle = first;
+    invalidParticle.particleEmitters[0].maxParticles = MiaoSceneRuntimeModel::kMaxParticlesPerEmitter + 1;
+    if (SerializeScene(invalidParticle, &serializedScene, &error)) return false;
 
     SceneRuntimeDefinition invalid;
     if (Deserialize("{\"schema\":1}", "", &invalid, &error)) return false;

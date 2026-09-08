@@ -70,6 +70,7 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 
 set(MIAODESK_WALLPAPER_SOURCES
     content/render/d2d/MiaoSceneD2DRenderer.cpp
+    content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
     content/render/d3d11/MiaoD3D11RenderTarget.cpp
     content/render/d3d11/MiaoD3D11TextureLoader.cpp
     content/render/d3d11/MiaoSceneD3D11Renderer.cpp

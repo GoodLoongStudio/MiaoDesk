@@ -7,7 +7,9 @@ namespace miaodesk::content {
 namespace {
 
 constexpr std::wstring_view kSceneColor = L"renderres://scene-color";
+constexpr std::wstring_view kParticleColor = L"renderres://particle-color";
 constexpr std::wstring_view kBackbuffer = L"renderres://backbuffer";
+constexpr std::wstring_view kParticlePass = L"renderpass://particles";
 
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
@@ -69,7 +71,28 @@ bool MiaoPostProcessCompiler::Build(
         true,
     });
 
+    // A particle pass cannot write SceneColor directly because RenderGraph v1
+    // intentionally enforces a single writer per resource. Instead it reads the
+    // completed scene and writes a new color target. The D3D11 particle backend
+    // copies SceneColor first and then alpha-composites instances on top.
     std::wstring previousResource = next.sceneColorResourceId;
+    if (!runtime.particleEmitters.empty()) {
+        RenderResourceDefinition particleColor;
+        particleColor.id = std::wstring(kParticleColor);
+        particleColor.renderTarget = true;
+        particleColor.shaderResource = true;
+        next.graph.resources.push_back(std::move(particleColor));
+
+        next.graph.passes.push_back(RenderPassDefinition{
+            std::wstring(kParticlePass),
+            RenderPassKind::Particle,
+            {next.sceneColorResourceId},
+            {std::wstring(kParticleColor)},
+            true,
+        });
+        previousResource = std::wstring(kParticleColor);
+    }
+
     std::size_t enabledIndex = 0;
     bool bloomBranchActive = false;
     for (const auto& effect : runtime.postProcesses) {
@@ -234,6 +257,23 @@ bool MiaoPostProcessCompiler::SelfTest() {
         L"postfx://orphan-combine", PostProcessEffectKind::BloomCombine, true, 1.0, 0.75, 0.25,
     });
     if (Build(invalidBloom, true, &plan, &error)) return false;
+
+    SceneRuntimeDefinition withParticles = runtime;
+    withParticles.postProcesses.clear();
+    ParticleEmitterDefinition emitter;
+    emitter.id = L"particle://post-compiler-self-test";
+    emitter.maxParticles = 32;
+    emitter.spawnRate = 16.0;
+    withParticles.particleEmitters.push_back(std::move(emitter));
+    if (!Build(withParticles, false, &plan, &error)) return false;
+    if (plan.graph.resources.size() != 3) return false;
+    if (plan.graph.passes.size() != 4) return false;
+    if (plan.finalColorResourceId != L"renderres://particle-color") return false;
+    if (plan.graph.passes[1].kind != RenderPassKind::Particle ||
+        plan.graph.passes[1].reads.size() != 1 ||
+        plan.graph.passes[1].reads[0] != L"renderres://scene-color" ||
+        plan.graph.passes[1].writes.size() != 1 ||
+        plan.graph.passes[1].writes[0] != L"renderres://particle-color") return false;
 
     SceneRuntimeDefinition noEffects = runtime;
     noEffects.postProcesses.clear();

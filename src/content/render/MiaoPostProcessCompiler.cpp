@@ -95,13 +95,15 @@ bool MiaoPostProcessCompiler::Build(
 
     std::size_t enabledIndex = 0;
     bool bloomBranchActive = false;
+    std::wstring bloomSourceResource;
     for (const auto& effect : runtime.postProcesses) {
         if (!effect.enabled) continue;
 
         if (effect.effect == PostProcessEffectKind::BloomThreshold) {
             bloomBranchActive = true;
+            bloomSourceResource = previousResource;
         } else if (effect.effect == PostProcessEffectKind::BloomCombine) {
-            if (!bloomBranchActive)
+            if (!bloomBranchActive || bloomSourceResource.empty())
                 return Fail(error, L"BloomCombine requires an active BloomThreshold branch before it: " + effect.id);
         } else if (bloomBranchActive &&
                    effect.effect != PostProcessEffectKind::BlurHorizontal &&
@@ -110,12 +112,13 @@ bool MiaoPostProcessCompiler::Build(
             // blur passes → Combine. More general branch graphs can be exposed
             // later without making this package-facing list ambiguous.
             bloomBranchActive = false;
+            bloomSourceResource.clear();
         }
 
         const auto outputId = PostResourceId(enabledIndex);
         const auto passId = PostPassId(enabledIndex);
         const bool combinesWithScene = effect.effect == PostProcessEffectKind::BloomCombine;
-        const std::wstring auxiliaryInput = combinesWithScene ? next.sceneColorResourceId : std::wstring{};
+        const std::wstring auxiliaryInput = combinesWithScene ? bloomSourceResource : std::wstring{};
 
         RenderResourceDefinition output;
         output.id = outputId;
@@ -142,7 +145,10 @@ bool MiaoPostProcessCompiler::Build(
         });
 
         previousResource = outputId;
-        if (combinesWithScene) bloomBranchActive = false;
+        if (combinesWithScene) {
+            bloomBranchActive = false;
+            bloomSourceResource.clear();
+        }
         ++enabledIndex;
     }
 
@@ -264,7 +270,7 @@ bool MiaoPostProcessCompiler::SelfTest() {
     emitter.id = L"particle://post-compiler-self-test";
     emitter.maxParticles = 32;
     emitter.spawnRate = 16.0;
-    withParticles.particleEmitters.push_back(std::move(emitter));
+    withParticles.particleEmitters.push_back(emitter);
     if (!Build(withParticles, false, &plan, &error)) return false;
     if (plan.graph.resources.size() != 3) return false;
     if (plan.graph.passes.size() != 4) return false;
@@ -274,6 +280,15 @@ bool MiaoPostProcessCompiler::SelfTest() {
         plan.graph.passes[1].reads[0] != L"renderres://scene-color" ||
         plan.graph.passes[1].writes.size() != 1 ||
         plan.graph.passes[1].writes[0] != L"renderres://particle-color") return false;
+
+    SceneRuntimeDefinition particleBloom = withParticles;
+    particleBloom.postProcesses = bloom.postProcesses;
+    if (!Build(particleBloom, true, &plan, &error)) return false;
+    if (plan.postProcessPasses.size() != 4) return false;
+    const auto* particleCombine = FindPass(plan, L"renderpass://post/3");
+    if (!particleCombine || particleCombine->auxiliaryInputResourceId != L"renderres://particle-color") return false;
+    const auto* threshold = FindPass(plan, L"renderpass://post/0");
+    if (!threshold || threshold->inputResourceId != L"renderres://particle-color") return false;
 
     SceneRuntimeDefinition noEffects = runtime;
     noEffects.postProcesses.clear();

@@ -135,7 +135,7 @@ D2D1_MATRIX_3X2_F ResolveNodeTransform(
     const SceneNodeDefinition& node,
     const MiaoSceneRuntime& runtime,
     const D2D1_SIZE_F& size) noexcept {
-    auto matrix = D2D1::Matrix3x2F::Identity();
+    D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Identity();
     const SceneNodeDefinition* current = &node;
     for (std::size_t depth = 0; current && depth <= scene.nodes.size(); ++depth) {
         matrix = matrix * LocalTransformMatrix(ReadTransformState(*current, runtime), size);

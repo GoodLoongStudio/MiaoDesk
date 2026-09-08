@@ -14,6 +14,14 @@ bool Fail(std::wstring* error, std::wstring message) {
     return false;
 }
 
+bool HasContinuousParticles(const SceneRuntimeDefinition* definition) noexcept {
+    if (!definition) return false;
+    for (const auto& emitter : definition->particleEmitters) {
+        if (emitter.enabled && emitter.maxParticles > 0 && emitter.spawnRate > 0.0) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 std::uint32_t MiaoSceneFrameScheduler::IntervalForFps(std::uint32_t fps) noexcept {
@@ -31,7 +39,8 @@ MiaoSceneFrameDemand MiaoSceneFrameScheduler::Evaluate(
     if (!state.loaded || !std::isfinite(timeSeconds)) return demand;
 
     demand.contentDirty = !state.paintReady || state.generation != lastRenderedGeneration;
-    demand.continuousAnimation = runtime.NeedsContinuousAnimation(timeSeconds);
+    demand.continuousAnimation = runtime.NeedsContinuousAnimation(timeSeconds) ||
+                                 HasContinuousParticles(runtime.Definition());
 
     // A Once track can cross its duration between two scheduler ticks. The
     // runtime does not mutate to the terminal keyframe until the host advances
@@ -160,6 +169,27 @@ bool MiaoSceneFrameScheduler::SelfTest() {
     renderedGeneration = runtime.State().generation;
     if (!AdvanceAndEvaluate(runtime, 0.75, renderedGeneration, &demand, 60, &error)) return false;
     if (demand.render || demand.contentDirty || demand.continuousAnimation || demand.intervalMs != 0) return false;
+
+    SceneRuntimeDefinition particleDefinition;
+    particleDefinition.scene.id = L"scene://frame-scheduler-particle-self-test";
+    particleDefinition.scene.kind = ContentKind::Widget;
+    particleDefinition.scene.rootNodeId = L"node://particle-root";
+    SceneNodeDefinition particleRoot;
+    particleRoot.id = L"node://particle-root";
+    particleDefinition.scene.nodes.push_back(std::move(particleRoot));
+    particleDefinition.profile = RuntimeProfile::Widget;
+    ParticleEmitterDefinition emitter;
+    emitter.id = L"particle://frame-scheduler-self-test";
+    emitter.maxParticles = 8;
+    emitter.spawnRate = 4.0;
+    particleDefinition.particleEmitters.push_back(std::move(emitter));
+
+    MiaoSceneRuntime particleScene;
+    if (!particleScene.Initialize(std::move(particleDefinition), &error)) return false;
+    particleScene.MarkPaintReady();
+    const auto particleGeneration = particleScene.State().generation;
+    demand = Evaluate(particleScene, 10.0, particleGeneration, 60);
+    if (!demand.render || demand.contentDirty || !demand.continuousAnimation || demand.intervalMs != 17) return false;
 
     if (IntervalForFps(0) != 1000 || IntervalForFps(1000) != 5 || IntervalForFps(30) != 34) return false;
     return true;

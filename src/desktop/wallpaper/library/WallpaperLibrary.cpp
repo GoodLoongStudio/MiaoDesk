@@ -1,5 +1,7 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoSceneSerializer.h"
 #include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
@@ -53,6 +55,18 @@ std::wstring Lower(std::wstring value) {
     return value;
 }
 
+std::wstring Utf8ToWide(std::string_view value) {
+    if (value.empty()) return {};
+    const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                             value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (required <= 0) return {};
+    std::wstring result(static_cast<std::size_t>(required), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                            value.data(), static_cast<int>(value.size()), result.data(), required) != required)
+        return {};
+    return result;
+}
+
 fs::path NormalizedAbsolute(const fs::path& value) {
     std::error_code ec;
     fs::path absolute = fs::absolute(value, ec);
@@ -73,6 +87,22 @@ bool PathIsInside(const fs::path& candidate, const fs::path& root) {
     std::wstring base = Lower(NormalizedAbsolute(root).wstring());
     if (!base.empty() && base.back() != L'\\' && base.back() != L'/') base.push_back(fs::path::preferred_separator);
     return value.size() >= base.size() && value.compare(0, base.size(), base) == 0;
+}
+
+fs::path ManagedPackageRoot(const fs::path& source, const fs::path& packageDirectory) {
+    if (source.empty()) return {};
+    const fs::path libraryRoot = NormalizedAbsolute(packageDirectory);
+    fs::path current = NormalizedAbsolute(source);
+    std::error_code ec;
+    if (fs::is_regular_file(current, ec)) current = current.parent_path();
+    ec.clear();
+    while (!current.empty() && PathIsInside(current, libraryRoot) && !SamePath(current, libraryRoot)) {
+        if (Lower(current.extension().wstring()) == L".mdwall") return current;
+        const fs::path parent = current.parent_path();
+        if (parent == current) break;
+        current = parent;
+    }
+    return {};
 }
 
 std::wstring MakeId() {
@@ -192,6 +222,13 @@ bool GenerateShellThumbnail(const fs::path& source, const fs::path& destination)
     const bool saved = SaveHBitmapAsPng(bitmap, destination);
     DeleteObject(bitmap);
     return saved;
+}
+
+bool WriteUtf8File(const fs::path& path, std::string_view value) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return false;
+    output.write(value.data(), static_cast<std::streamsize>(value.size()));
+    return output.good();
 }
 
 } // namespace
@@ -346,9 +383,8 @@ bool WallpaperLibrary::Remove(std::wstring_view id, bool deleteManagedCopy, std:
         if (PathIsInside(item.source, MediaDirectory())) {
             fs::remove(item.source, ec);
         } else if (PathIsInside(item.source, PackageDirectory())) {
-            const fs::path package = item.source.parent_path();
-            if (Lower(package.extension().wstring()) == L".mdwall" && PathIsInside(package, PackageDirectory()))
-                fs::remove_all(package, ec);
+            const fs::path package = ManagedPackageRoot(item.source, PackageDirectory());
+            if (!package.empty()) fs::remove_all(package, ec);
         }
     }
     items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
@@ -437,6 +473,51 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
     for (const auto& entry : fs::directory_iterator(packages, ec)) {
         if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
         if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
+
+        // New Content Framework packages get first chance. They keep the
+        // package root as the library source so per-monitor hosts can resolve
+        // the canonical scene directly rather than translating it to a legacy
+        // built-in scene key.
+        content::LoadedMiaoContentPackage canonical;
+        std::wstring canonicalError;
+        if (content::MiaoContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
+            canonical.manifest.kind == content::ContentKind::Wallpaper &&
+            canonical.manifest.runtime == content::ContentRuntimeKind::Scene) {
+            content::SceneRuntimeDefinition runtime;
+            if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
+
+            const fs::path source = NormalizedAbsolute(entry.path());
+            if (FindSourceIndex(source)) continue;
+            WallpaperLibraryItem item;
+            const std::wstring packageId = Utf8ToWide(canonical.manifest.id);
+            item.id = L"content-" + Lower(packageId.empty() ? entry.path().stem().wstring() : packageId);
+            if (item.id == L"content-") item.id = MakeId();
+            if (FindIndex(item.id)) item.id += L"-" + std::to_wstring(items_.size());
+            item.kind = LibraryWallpaperKind::Scene;
+            const std::wstring packageName = Utf8ToWide(canonical.manifest.name);
+            item.title = SanitizeText(packageName.empty() ? DefaultTitle(entry.path()) : packageName);
+            item.source = source;
+            item.managedCopy = true;
+            item.importedUnixSeconds = NowUnixSeconds();
+
+            if (!canonical.manifest.preview.empty()) {
+                fs::path preview;
+                std::wstring previewError;
+                if (content::MiaoContentPackage::ResolvePackagePath(
+                        canonical.root, canonical.manifest.preview, &preview, &previewError) &&
+                    fs::is_regular_file(preview, ec)) {
+                    item.thumbnail = preview;
+                }
+                ec.clear();
+            }
+            if (!SaveItem(item, error)) return false;
+            items_.push_back(std::move(item));
+            continue;
+        }
+
+        // Compatibility path for the established image/video/web package
+        // format. Legacy Scene packages remain intentionally unsupported here;
+        // canonical Scene content must use Miao Content Package schema v1.
         WallpaperPackageManifest manifest;
         std::wstring packageError;
         if (!WallpaperPackage::Validate(entry.path(), &manifest, &packageError)) continue;
@@ -571,22 +652,71 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && !library.RecentlyUsed(1).empty();
     }
     ok = ok && library.UpsertScene(L"scene-aurora", L"妙喵云境", &error);
-    const fs::path package = library.PackageDirectory() / L"selftest.mdwall";
-    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
+
+    const fs::path legacyPackage = library.PackageDirectory() / L"selftest.mdwall";
+    ok = ok && WallpaperPackage::CreateWeb(legacyPackage, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
+
+    const fs::path canonicalPackage = library.PackageDirectory() / L"canonical-selftest.mdwall";
+    fs::create_directories(canonicalPackage, ec);
+    ok = ok && !ec;
+    ok = ok && WriteUtf8File(canonicalPackage / L"manifest.json", R"json({
+      "schema":1,
+      "id":"com.goodloong.selftest.scene",
+      "name":"Canonical Scene",
+      "author":"MiaoDesk",
+      "version":"1.0.0",
+      "kind":"wallpaper",
+      "runtime":"scene",
+      "entry":"scene.json",
+      "parameters":"parameters.json",
+      "capabilities":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalPackage / L"scene.json", R"json({
+      "schema":1,
+      "id":"scene://library-canonical-selftest",
+      "kind":"wallpaper",
+      "profile":"wallpaper",
+      "rootNodeId":"node://root",
+      "nodes":[{"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[
+        {"id":"component://root/transform","kind":"transform","properties":[
+          {"name":"opacity","type":"float","default":1.0}
+        ]}
+      ]}],
+      "assets":[],
+      "shaders":[],
+      "materials":[],
+      "inputs":[],
+      "bindings":[],
+      "animations":[],
+      "postProcesses":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalPackage / L"parameters.json", R"json({"schema":1,"parameters":[]})json");
 
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
     ok = ok && reloaded.Find(L"scene-aurora").has_value();
+
     const auto packageItems = reloaded.Search(L"Package Web");
     ok = ok && !packageItems.empty();
     if (!packageItems.empty()) {
         ok = ok && reloaded.Remove(packageItems.front().id, true, &error);
-        ok = ok && !fs::exists(package);
-        WallpaperLibrary afterRemoval(root / L"Library");
-        ok = ok && afterRemoval.Load(&error);
-        ok = ok && afterRemoval.Search(L"Package Web").empty();
+        ok = ok && !fs::exists(legacyPackage);
     }
-    if (imported) ok = ok && reloaded.Find(imported->id).has_value();
+
+    const auto canonicalItems = reloaded.Search(L"Canonical Scene");
+    ok = ok && canonicalItems.size() == 1;
+    if (canonicalItems.size() == 1) {
+        ok = ok && canonicalItems.front().kind == LibraryWallpaperKind::Scene;
+        ok = ok && SamePath(canonicalItems.front().source, canonicalPackage);
+        ok = ok && reloaded.Remove(canonicalItems.front().id, true, &error);
+        ok = ok && !fs::exists(canonicalPackage);
+    }
+
+    WallpaperLibrary afterRemoval(root / L"Library");
+    ok = ok && afterRemoval.Load(&error);
+    ok = ok && afterRemoval.Search(L"Package Web").empty();
+    ok = ok && afterRemoval.Search(L"Canonical Scene").empty();
+    if (imported) ok = ok && afterRemoval.Find(imported->id).has_value();
 
     fs::remove_all(root, ec);
     return ok;

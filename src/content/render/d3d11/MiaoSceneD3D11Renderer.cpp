@@ -37,6 +37,7 @@ namespace {
 constexpr std::wstring_view kSceneColorResource = L"renderres://scene-color";
 constexpr std::wstring_view kBackbufferResource = L"renderres://backbuffer";
 constexpr std::size_t kPostProcessEffectCount = 8;
+constexpr double kPi = 3.14159265358979323846;
 
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
@@ -69,6 +70,24 @@ const SceneComponentDefinition* FindRenderable(const SceneRuntimeDefinition& def
         for (const auto& component : node.components) {
             if (component.kind == ComponentKind::SpriteRenderer) return &component;
         }
+    }
+    return nullptr;
+}
+
+const SceneNodeDefinition* FindComponentNode(
+    const SceneDefinition& scene,
+    std::wstring_view componentId) noexcept {
+    for (const auto& node : scene.nodes) {
+        for (const auto& component : node.components) {
+            if (component.id == componentId) return &node;
+        }
+    }
+    return nullptr;
+}
+
+const SceneComponentDefinition* FindTransform(const SceneNodeDefinition& node) noexcept {
+    for (const auto& component : node.components) {
+        if (component.kind == ComponentKind::Transform) return &component;
     }
     return nullptr;
 }
@@ -107,9 +126,132 @@ Color4 ReadColor(const PropertyValue* value, Color4 fallback) {
     return color ? *color : fallback;
 }
 
+Vec2 ReadVec2(const PropertyValue* value, Vec2 fallback) {
+    const auto* vector = value ? std::get_if<Vec2>(value) : nullptr;
+    if (!vector || !std::isfinite(vector->x) || !std::isfinite(vector->y)) return fallback;
+    return *vector;
+}
+
 double ReadFloat(const PropertyValue* value, double fallback) {
     const auto* number = value ? std::get_if<double>(value) : nullptr;
     return number && std::isfinite(*number) ? *number : fallback;
+}
+
+struct NodeTransformState {
+    Vec2 position{};
+    Vec2 scale{1.0, 1.0};
+    double rotationDegrees{};
+    double opacity{1.0};
+};
+
+NodeTransformState ReadTransformState(
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime) noexcept {
+    NodeTransformState state;
+    const auto* transform = FindTransform(node);
+    if (!transform) return state;
+    state.position = ReadVec2(runtime.GetProperty(PropertyAddress{transform->id, L"position"}), state.position);
+    state.scale = ReadVec2(runtime.GetProperty(PropertyAddress{transform->id, L"scale"}), state.scale);
+    state.rotationDegrees = ReadFloat(runtime.GetProperty(PropertyAddress{transform->id, L"rotation"}), 0.0);
+    state.opacity = ReadFloat(runtime.GetProperty(PropertyAddress{transform->id, L"opacity"}), 1.0);
+    state.position.x = std::clamp(state.position.x, -1000000.0, 1000000.0);
+    state.position.y = std::clamp(state.position.y, -1000000.0, 1000000.0);
+    state.scale.x = std::clamp(state.scale.x, -64.0, 64.0);
+    state.scale.y = std::clamp(state.scale.y, -64.0, 64.0);
+    state.rotationDegrees = std::fmod(state.rotationDegrees, 360.0);
+    state.opacity = std::clamp(state.opacity, 0.0, 1.0);
+    return state;
+}
+
+void SetIdentity(float (&matrix)[16]) {
+    std::fill(std::begin(matrix), std::end(matrix), 0.0f);
+    matrix[0] = 1.0f;
+    matrix[5] = 1.0f;
+    matrix[10] = 1.0f;
+    matrix[15] = 1.0f;
+}
+
+void MultiplyColumnMajor(
+    const float (&left)[16],
+    const float (&right)[16],
+    float (&output)[16]) noexcept {
+    float result[16]{};
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            float value = 0.0f;
+            for (int k = 0; k < 4; ++k)
+                value += left[k * 4 + row] * right[column * 4 + k];
+            result[column * 4 + row] = value;
+        }
+    }
+    std::copy(std::begin(result), std::end(result), std::begin(output));
+}
+
+void BuildLocalWorld(
+    const NodeTransformState& transform,
+    unsigned width,
+    unsigned height,
+    float (&matrix)[16]) noexcept {
+    SetIdentity(matrix);
+    const double radians = transform.rotationDegrees * kPi / 180.0;
+    const float cosine = static_cast<float>(std::cos(radians));
+    const float sine = static_cast<float>(std::sin(radians));
+    const float sx = static_cast<float>(transform.scale.x);
+    const float sy = static_cast<float>(transform.scale.y);
+    matrix[0] = cosine * sx;
+    matrix[1] = sine * sx;
+    matrix[4] = -sine * sy;
+    matrix[5] = cosine * sy;
+    matrix[12] = width == 0 ? 0.0f : static_cast<float>(2.0 * transform.position.x / static_cast<double>(width));
+    matrix[13] = height == 0 ? 0.0f : static_cast<float>(-2.0 * transform.position.y / static_cast<double>(height));
+}
+
+void BuildNodeWorld(
+    const SceneDefinition& scene,
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime,
+    unsigned width,
+    unsigned height,
+    float (&world)[16]) noexcept {
+    SetIdentity(world);
+    const SceneNodeDefinition* current = &node;
+    for (std::size_t depth = 0; current && depth <= scene.nodes.size(); ++depth) {
+        float local[16]{};
+        float composed[16]{};
+        BuildLocalWorld(ReadTransformState(*current, runtime), width, height, local);
+        MultiplyColumnMajor(local, world, composed);
+        std::copy(std::begin(composed), std::end(composed), std::begin(world));
+        if (current->parentId.empty()) break;
+        current = MiaoSceneModel::FindNode(scene, current->parentId);
+    }
+}
+
+double ResolveNodeOpacity(
+    const SceneDefinition& scene,
+    const SceneNodeDefinition& node,
+    const MiaoSceneRuntime& runtime) noexcept {
+    double opacity = 1.0;
+    const SceneNodeDefinition* current = &node;
+    for (std::size_t depth = 0; current && depth <= scene.nodes.size(); ++depth) {
+        opacity *= ReadTransformState(*current, runtime).opacity;
+        if (current->parentId.empty()) break;
+        current = MiaoSceneModel::FindNode(scene, current->parentId);
+    }
+    return std::clamp(opacity, 0.0, 1.0);
+}
+
+bool TransformMathSelfTest() noexcept {
+    NodeTransformState transform;
+    transform.position = Vec2{10.0, 5.0};
+    transform.scale = Vec2{0.5, 0.25};
+    transform.rotationDegrees = 0.0;
+    float matrix[16]{};
+    BuildLocalWorld(transform, 100, 50, matrix);
+    return std::abs(matrix[0] - 0.5f) < 0.0001f &&
+           std::abs(matrix[5] - 0.25f) < 0.0001f &&
+           std::abs(matrix[12] - 0.2f) < 0.0001f &&
+           std::abs(matrix[13] + 0.2f) < 0.0001f &&
+           matrix[10] == 1.0f && matrix[15] == 1.0f;
 }
 
 std::size_t PostProcessShaderIndex(PostProcessEffectKind effect) noexcept {
@@ -132,7 +274,7 @@ int TextureRegisterForSlot(std::wstring_view slot) {
     return -1;
 }
 
-std::string EngineVertexShader() {
+std::string EngineFullscreenVertexShader() {
     std::string source(MiaoShaderContract::HlslPreamble());
     source += R"HLSL(
 struct MiaoVertexOutput
@@ -141,7 +283,7 @@ struct MiaoVertexOutput
     float2 uv : TEXCOORD0;
 };
 
-MiaoVertexOutput MiaoBuiltinVertex(uint vertexId : SV_VertexID)
+MiaoVertexOutput MiaoBuiltinFullscreenVertex(uint vertexId : SV_VertexID)
 {
     MiaoVertexOutput output;
     float2 position;
@@ -150,6 +292,34 @@ MiaoVertexOutput MiaoBuiltinVertex(uint vertexId : SV_VertexID)
     else position = float2(3.0, -1.0);
     output.position = float4(position, 0.0, 1.0);
     output.uv = float2((position.x + 1.0) * 0.5, 1.0 - (position.y + 1.0) * 0.5);
+    return output;
+}
+)HLSL";
+    return source;
+}
+
+std::string EngineSceneVertexShader() {
+    std::string source(MiaoShaderContract::HlslPreamble());
+    source += R"HLSL(
+struct MiaoVertexOutput
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+MiaoVertexOutput MiaoBuiltinSceneVertex(uint vertexId : SV_VertexID)
+{
+    MiaoVertexOutput output;
+    float2 position;
+    float2 uv;
+    if (vertexId == 0) { position = float2(-1.0, -1.0); uv = float2(0.0, 1.0); }
+    else if (vertexId == 1) { position = float2(-1.0, 1.0); uv = float2(0.0, 0.0); }
+    else if (vertexId == 2) { position = float2(1.0, -1.0); uv = float2(1.0, 1.0); }
+    else if (vertexId == 3) { position = float2(1.0, -1.0); uv = float2(1.0, 1.0); }
+    else if (vertexId == 4) { position = float2(-1.0, 1.0); uv = float2(0.0, 0.0); }
+    else { position = float2(1.0, 1.0); uv = float2(1.0, 0.0); }
+    output.position = mul(MiaoWorld, float4(position, 0.0, 1.0));
+    output.uv = uv;
     return output;
 }
 )HLSL";
@@ -239,14 +409,6 @@ struct alignas(16) ObjectConstants {
 static_assert(sizeof(ObjectConstants) == 96);
 static_assert(sizeof(MiaoGpuParameterBlock) == 16 * 16);
 
-void SetIdentity(float (&matrix)[16]) {
-    std::fill(std::begin(matrix), std::end(matrix), 0.0f);
-    matrix[0] = 1.0f;
-    matrix[5] = 1.0f;
-    matrix[10] = 1.0f;
-    matrix[15] = 1.0f;
-}
-
 } // namespace
 
 struct MiaoSceneD3D11Renderer::Impl {
@@ -256,6 +418,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     MiaoAssetDatabase assets;
     MiaoSceneRuntime runtime;
     const SceneComponentDefinition* renderable{};
+    const SceneNodeDefinition* renderableNode{};
     const MaterialDefinition* material{};
 
     ComPtr<ID3D11Device> device;
@@ -287,6 +450,7 @@ struct MiaoSceneD3D11Renderer::Impl {
     POINT previousMouse{};
     bool hasPreviousMouse{};
     bool programmable{};
+    bool sceneVertexUsesQuad{};
     bool loaded{};
 
     bool Error(std::wstring* error, std::wstring message) {
@@ -422,6 +586,8 @@ struct MiaoSceneD3D11Renderer::Impl {
     bool ResolveSceneMaterial(std::wstring* error) {
         renderable = FindRenderable(definition);
         if (!renderable) return Error(error, L"Scene has no SpriteRenderer for the D3D11 MVP backend.");
+        renderableNode = FindComponentNode(definition.scene, renderable->id);
+        if (!renderableNode) return Error(error, L"Scene SpriteRenderer has no owning node.");
         const auto materialId = MaterialIdFor(*renderable, runtime);
         material = materialId.empty() ? nullptr : MiaoSceneRuntimeModel::FindMaterial(definition, materialId);
         if (!material) return Error(error, L"Scene SpriteRenderer does not resolve a material.");
@@ -480,13 +646,14 @@ struct MiaoSceneD3D11Renderer::Impl {
         ComPtr<ID3DBlob> scenePsCode;
         ComPtr<ID3DBlob> copyPsCode;
 
-        const auto fullscreenSource = EngineVertexShader();
-        if (!CompileShader(fullscreenSource, "MiaoBuiltinVertex", "vs_5_0", &fullscreenVsCode, error)) return false;
+        const auto fullscreenSource = EngineFullscreenVertexShader();
+        if (!CompileShader(fullscreenSource, "MiaoBuiltinFullscreenVertex", "vs_5_0", &fullscreenVsCode, error)) return false;
         if (FAILED(device->CreateVertexShader(
                 fullscreenVsCode->GetBufferPointer(), fullscreenVsCode->GetBufferSize(), nullptr,
                 fullscreenVertexShader.GetAddressOf())))
             return Error(error, L"Cannot create Miao Scene fullscreen vertex shader.");
 
+        sceneVertexUsesQuad = false;
         if (programmable && !material->vertexShaderId.empty()) {
             std::string source;
             std::string entry;
@@ -497,7 +664,13 @@ struct MiaoSceneD3D11Renderer::Impl {
                     sceneVertexShader.GetAddressOf())))
                 return Error(error, L"Cannot create programmable Miao Scene vertex shader.");
         } else {
-            sceneVertexShader = fullscreenVertexShader;
+            const auto sceneSource = EngineSceneVertexShader();
+            if (!CompileShader(sceneSource, "MiaoBuiltinSceneVertex", "vs_5_0", &sceneVsCode, error)) return false;
+            if (FAILED(device->CreateVertexShader(
+                    sceneVsCode->GetBufferPointer(), sceneVsCode->GetBufferSize(), nullptr,
+                    sceneVertexShader.GetAddressOf())))
+                return Error(error, L"Cannot create transformed Miao Scene vertex shader.");
+            sceneVertexUsesQuad = true;
         }
 
         if (programmable) {
@@ -631,7 +804,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         context->ClearRenderTargetView(target, clear);
         SetViewport(sceneColor->Width(), sceneColor->Height());
         if (!BindSceneState(frame, object, parameters, error)) return false;
-        context->Draw(3, 0);
+        context->Draw(sceneVertexUsesQuad ? 6u : 3u, 0);
         return true;
     }
 
@@ -747,6 +920,10 @@ struct MiaoSceneD3D11Renderer::Impl {
             std::wstring inputError;
             if (!runtime.SetInput(L"input://frame/time", static_cast<double>(timeSeconds), &inputError))
                 return Error(error, inputError);
+        } else {
+            std::wstring timelineError;
+            if (!runtime.AdvanceTimeline(static_cast<double>(timeSeconds), &timelineError))
+                return Error(error, timelineError);
         }
 
         POINT mouse{};
@@ -771,7 +948,8 @@ struct MiaoSceneD3D11Renderer::Impl {
         previousTime = timeSeconds;
 
         ObjectConstants object{};
-        SetIdentity(object.world);
+        if (!renderableNode) return Error(error, L"Miao Scene D3D11 renderable node is unavailable.");
+        BuildNodeWorld(definition.scene, *renderableNode, runtime, width, height, object.world);
         object.size[0] = static_cast<float>(width);
         object.size[1] = static_cast<float>(height);
         Color4 color{1.0, 1.0, 1.0, 1.0};
@@ -790,8 +968,11 @@ struct MiaoSceneD3D11Renderer::Impl {
         object.color[1] = static_cast<float>(color.g);
         object.color[2] = static_cast<float>(color.b);
         object.color[3] = static_cast<float>(color.a);
-        object.opacity = static_cast<float>(ReadFloat(
-            runtime.GetProperty(PropertyAddress{renderable->id, L"opacity"}), 1.0));
+        object.opacity = static_cast<float>(std::clamp(
+            ReadFloat(runtime.GetProperty(PropertyAddress{renderable->id, L"opacity"}), 1.0) *
+                ResolveNodeOpacity(definition.scene, *renderableNode, runtime),
+            0.0,
+            1.0));
 
         MiaoGpuParameterBlock parameters{};
         std::wstring parameterError;
@@ -884,6 +1065,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         definition = {};
         package = {};
         renderable = nullptr;
+        renderableNode = nullptr;
         material = nullptr;
         postProcessPlan = {};
         renderGraph = {};
@@ -895,6 +1077,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         previousMouse = {};
         hasPreviousMouse = false;
         programmable = false;
+        sceneVertexUsesQuad = false;
         loaded = false;
         window = nullptr;
     }
@@ -929,7 +1112,7 @@ std::wstring MiaoSceneD3D11Renderer::PackageId() const {
 std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastError; }
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
-    return MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&
+    return TransformMathSelfTest() && MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&
            MiaoPostProcessShaderLibrary::SelfTest() && MiaoShaderContract::SelfTest() &&
            MiaoGpuParameterPacker::SelfTest() && MiaoD3D11TextureLoader::SelfTestPathPolicy() &&
            MiaoD3D11RenderTargetPool::SelfTest();

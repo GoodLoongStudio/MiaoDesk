@@ -1,6 +1,8 @@
 #include "miaodesk/WallpaperService.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoSceneSerializer.h"
 
 #include "miaodesk/WallpaperMonitorAssignments.h"
 #include "miaodesk/WallpaperPackage.h"
@@ -53,12 +55,52 @@ std::wstring RuntimeSceneKey(const wallpaper::WallpaperLibraryItem& item) {
     return definition ? std::wstring(definition->runtimeKey) : std::wstring{};
 }
 
+fs::path CanonicalScenePackageRoot(const fs::path& source) {
+    if (source.empty()) return {};
+    std::error_code ec;
+    const fs::path normalized = fs::absolute(source, ec).lexically_normal();
+    if (ec) return {};
+    if (fs::is_directory(normalized, ec) && _wcsicmp(normalized.extension().c_str(), L".mdwall") == 0)
+        return normalized;
+    ec.clear();
+    if (fs::is_regular_file(normalized, ec)) {
+        fs::path current = normalized.parent_path();
+        while (!current.empty()) {
+            if (_wcsicmp(current.extension().c_str(), L".mdwall") == 0) return current;
+            const fs::path parent = current.parent_path();
+            if (parent == current) break;
+            current = parent;
+        }
+    }
+    return {};
+}
+
+WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryItem& item) {
+    const fs::path packageRoot = CanonicalScenePackageRoot(item.source);
+    if (packageRoot.empty()) return {false, L"Scene 壁纸既不是内置场景，也不是有效的 .mdwall 内容包。"};
+
+    content::LoadedMiaoContentPackage package;
+    std::wstring error;
+    if (!content::MiaoContentPackage::Load(packageRoot, &package, &error))
+        return {false, error.empty() ? L"无法加载 .mdwall 内容包。" : error};
+    if (package.manifest.kind != content::ContentKind::Wallpaper ||
+        package.manifest.runtime != content::ContentRuntimeKind::Scene)
+        return {false, L".mdwall 内容包不是 Wallpaper Scene Runtime。"};
+
+    content::SceneRuntimeDefinition definition;
+    if (!content::MiaoSceneSerializer::DeserializePackage(package, &definition, &error))
+        return {false, error.empty() ? L"Scene 内容定义无效。" : error};
+    return {true, L"配置化 Scene 内容包可用于显示器分配。"};
+}
+
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
     if (item.id.empty()) return {false, L"壁纸库项目缺少 id。"};
     if (item.kind == wallpaper::LibraryWallpaperKind::Unknown)
         return {false, L"不支持的壁纸库项目类型。"};
-    if (item.kind == wallpaper::LibraryWallpaperKind::Scene && RuntimeSceneKey(item).empty())
-        return {false, L"未知 Scene 壁纸：" + item.id};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Scene) {
+        if (!RuntimeSceneKey(item).empty()) return {true, L"内置 Scene 可用于显示器分配。"};
+        return ValidateCanonicalScene(item);
+    }
     if (item.kind == wallpaper::LibraryWallpaperKind::Web &&
         !wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
         return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
@@ -144,8 +186,12 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
     case wallpaper::LibraryWallpaperKind::Scene: {
         const auto scene = RuntimeSceneKey(item);
         if (scene.empty()) {
-            miaodesk::log::Error(L"WallpaperService", L"未知 Scene 壁纸: " + item.id);
-            return {false, L"未知 Scene 壁纸：" + item.id};
+            const auto canonical = ValidateCanonicalScene(item);
+            if (!canonical.success) {
+                miaodesk::log::Error(L"WallpaperService", L"配置化 Scene 校验失败: " + canonical.message);
+                return canonical;
+            }
+            return {false, L"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"};
         }
         const auto persisted = PersistWallpaperSelection(scene, {}, {});
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择 Scene: " + scene);

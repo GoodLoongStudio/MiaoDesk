@@ -79,6 +79,30 @@
       "offset": 0.0
     }
   ],
+  "animations": [
+    {
+      "id": "animation://shader-pulse/tint-breathe",
+      "target": {
+        "componentId": "component://background/sprite",
+        "propertyName": "tint"
+      },
+      "enabled": true,
+      "loop": "pingPong",
+      "duration": 3.0,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [1.0, 0.92, 1.0, 1.0],
+          "easing": "easeInOut"
+        },
+        {
+          "time": 3.0,
+          "value": [0.82, 0.95, 1.0, 1.0],
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
   "postProcesses": [
     {
       "id": "postfx://shader-pulse/bloom-threshold",

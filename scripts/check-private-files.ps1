@@ -22,7 +22,7 @@ function Get-CandidatePaths {
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to enumerate Git paths.'
     }
-    return @($items | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Replace('\\', '/') })
+    return @($items | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Replace('\', '/') })
 }
 
 $repoRoot = Get-RepositoryRoot
@@ -41,7 +41,7 @@ try {
     )
 
     foreach ($path in $paths) {
-        if ($path -eq '.env.example') { continue }
+        if ($path -match '(?i)(?:^|/)\.env\.example$') { continue }
         foreach ($pattern in $blockedPathPatterns) {
             if ($path -match $pattern) {
                 $violations.Add("blocked tracked path: $path")

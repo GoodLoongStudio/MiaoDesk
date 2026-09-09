@@ -33,6 +33,19 @@ artifacts/
 .env.*
 !.env.example
 
+# Credentials / private keys / signing material
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+.netrc
+.npmrc
+credentials.json
+secrets.json
+service-account*.json
+
 # IDE
 .idea/
 .vscode/

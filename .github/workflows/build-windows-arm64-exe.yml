@@ -27,6 +27,21 @@ jobs:
         with:
           lfs: true
 
+      - name: Publish run metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @"
+          run_id=${{ github.run_id }}
+          artifact_name=MiaoDesk-arm64-exe-${{ github.sha }}
+          source_sha=${{ github.sha }}
+          "@ | Set-Content -Encoding utf8 .github/arm64-last-run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/arm64-last-run.txt
+          git commit -m "ci: record ARM64 build run ${{ github.run_id }}"
+          git push
+
       - name: Generate app icon
         shell: pwsh
         run: .\scripts\generate-miaomiao-icon.ps1
@@ -79,18 +94,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-
-      - name: Publish run metadata
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          @"
-          run_id=${{ github.run_id }}
-          artifact_name=MiaoDesk-arm64-exe-${{ github.sha }}
-          source_sha=${{ github.sha }}
-          "@ | Set-Content -Encoding utf8 .github/arm64-last-run.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/arm64-last-run.txt
-          git commit -m "ci: record ARM64 build run ${{ github.run_id }}"
-          git push

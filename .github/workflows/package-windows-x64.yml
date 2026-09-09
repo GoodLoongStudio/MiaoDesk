@@ -1,0 +1,372 @@
+name: Windows x64 Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - assets/app/**
+      - assets/wallpapers/**
+      - config/**
+      - runtime/x64/**
+      - runtime/agent/**
+      - third_party/webview2/**
+      - packaging/windows/**
+      - packaging/store/**
+      - scripts/generate-miaomiao-icon.ps1
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/package-windows-x64.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-package
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\x64
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\x64
+      MIAODESK_INSTALLER_PATH: C:\pkg\MiaoDesk\MiaoDesk-x64-Setup.exe
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Generate MiaoMiao app icon
+        shell: pwsh
+        run: .\scripts\generate-miaomiao-icon.ps1
+
+      - name: Verify path layout
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }
+
+      - name: Install product files
+        shell: pwsh
+        run: |
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+
+      - name: Stage Runtime
+        shell: pwsh
+        run: |
+          try {
+            .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Runtime staging failed::$details"
+            throw
+          }
+
+      - name: Report package size
+        shell: pwsh
+        run: |
+          $all = @(Get-ChildItem $env:MIAODESK_STAGE_ROOT -File -Recurse -Force)
+          $agent = @(Get-ChildItem (Join-Path $env:MIAODESK_STAGE_ROOT 'AI') -File -Recurse -Force)
+          Write-Host "Package files: $($all.Count)" -ForegroundColor Cyan
+          Write-Host "Agent Runtime files: $($agent.Count)" -ForegroundColor Cyan
+
+      - name: Verify path budget
+        shell: pwsh
+        run: |
+          .\packaging\windows\verify-path-budget.ps1 `
+            -Root $env:MIAODESK_STAGE_ROOT `
+            -MaxInstallRootChars 85 `
+            -MaxProjectedPathChars 248 `
+            -MaxProductDepth 6
+
+      - name: Verify packaged runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:MIAODESK_STAGE_ROOT
+          foreach ($relative in @(
+            'MiaoDesk.exe',
+            'MiaoDeskWallpaper.exe',
+            'MiaoDeskHarness.exe',
+            'Assets\MiaoMiao.ico',
+            'LICENSE',
+            'THIRD-PARTY-NOTICES.md',
+            'Config\product.ini',
+            'Runtime\Node\node.exe',
+            'AI\package-lock.json',
+            'AI\node_modules\@deepseek-ai\dsh\lib\bin.js',
+            'AI\node_modules\pi\dist\cli.js',
+            'AI\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+            'AI\node_modules\pi\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+            'Goz\goz.exe',
+            'Goz\gozd.exe'
+          )) {
+            if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing package file: $relative" }
+          }
+
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
+          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\pi\dist\cli.js" --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
+
+          foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+            $p = Start-Process -FilePath (Join-Path $root $exe) -ArgumentList '--self-test' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
+          }
+
+      - name: Verify login startup stays hidden
+        shell: pwsh
+        run: .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
+      - name: Verify native Widget visibility
+        shell: pwsh
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
+      - name: Verify movable install and DSH Web
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = $env:MIAODESK_STAGE_ROOT
+          $testParent = 'C:\md path test'
+          $testRoot = Join-Path $testParent 'custom install root with spaces'
+          Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $testParent | Out-Null
+          try {
+            Move-Item $original $testRoot
+            $p = Start-Process -FilePath (Join-Path $testRoot 'MiaoDeskHarness.exe') `
+                -ArgumentList '--harness-smoke-test' -WorkingDirectory $testRoot -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "DSH Web smoke failed from moved install, exit=$($p.ExitCode)" }
+          } finally {
+            if (Test-Path $testRoot -PathType Container) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $original -Parent) | Out-Null
+              Move-Item $testRoot $original -Force
+            }
+            Remove-Item $testParent -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+            if (-not $makensis) {
+              choco install nsis --yes --no-progress --limit-output
+              if ($LASTEXITCODE -ne 0) { throw "Unable to install NSIS, choco exit=$LASTEXITCODE" }
+              $makensis = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
+                (Join-Path $env:ProgramFiles 'NSIS\makensis.exe')
+              ) | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+            }
+            if (-not $makensis) { throw 'makensis.exe is missing after NSIS installation.' }
+
+            Remove-Item $env:MIAODESK_INSTALLER_PATH -Force -ErrorAction SilentlyContinue
+            $compilerOutput = @(& $makensis `
+              "/DSTAGE_DIR=$env:MIAODESK_STAGE_ROOT" `
+              "/DOUTPUT_FILE=$env:MIAODESK_INSTALLER_PATH" `
+              .\packaging\windows\installer.nsi 2>&1)
+            $compilerOutput | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+              $tail = ($compilerOutput | Select-Object -Last 30 | Out-String).Trim()
+              throw "NSIS installer build failed, exit=$LASTEXITCODE`n$tail"
+            }
+            if (-not (Test-Path $env:MIAODESK_INSTALLER_PATH -PathType Leaf)) { throw 'NSIS installer was not created.' }
+            Write-Host "Installer bytes: $((Get-Item $env:MIAODESK_INSTALLER_PATH).Length)" -ForegroundColor Cyan
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Installer build failed::$details"
+            throw
+          }
+
+      - name: Verify installer and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $testRoot = 'C:\mdi'
+            Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+            try {
+              $install = Start-Process -FilePath $env:MIAODESK_INSTALLER_PATH `
+                -ArgumentList @('/S',"/D=$testRoot") -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "Silent installer failed: $($install.ExitCode)" }
+              foreach ($relative in @(
+                'MiaoDesk.exe',
+                'Assets\MiaoMiao.ico',
+                'LICENSE',
+                'THIRD-PARTY-NOTICES.md',
+                'Config\product.ini',
+                'Runtime\Node\node.exe',
+                'AI\node_modules\pi\dist\cli.js',
+                'AI\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+                'AI\node_modules\pi\node_modules\@earendil-works\pi-ai\dist\providers\data\.manifest.json',
+                'Uninstall.exe'
+              )) {
+                if (-not (Test-Path (Join-Path $testRoot $relative) -PathType Leaf)) {
+                  throw "Installed file is missing: $relative"
+                }
+              }
+
+              & "$testRoot\Runtime\Node\node.exe" "$testRoot\AI\node_modules\pi\dist\cli.js" --version | Out-Host
+              if ($LASTEXITCODE -ne 0) { throw 'Installed Pi runtime probe failed.' }
+
+              $gozReady = $false
+              for ($attempt = 0; $attempt -lt 60; $attempt++) {
+                $gozProbe = @(& "$testRoot\Goz\goz.exe" --status 2>&1)
+                if ($LASTEXITCODE -eq 0) {
+                  $gozProbe | Out-Host
+                  $gozReady = $true
+                  break
+                }
+                Start-Sleep -Seconds 2
+              }
+              if (-not $gozReady) {
+                $gozProbe | Out-Host
+                throw 'Installed goz index service did not become queryable.'
+              }
+
+              $desktopLinks = @(
+                (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk.lnk'),
+                (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'MiaoDesk.lnk')
+              ) | Select-Object -Unique
+              if (-not ($desktopLinks | Where-Object { Test-Path $_ -PathType Leaf })) {
+                throw "Installer did not create a desktop shortcut. Checked: $($desktopLinks -join ', ')"
+              }
+              $createdDesktopLink = $desktopLinks | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+              $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($createdDesktopLink)
+              $expectedIcon = Join-Path $testRoot 'Assets\MiaoMiao.ico'
+              $actualIcon = ($shortcut.IconLocation -split ',')[0].Trim('"')
+              if (-not (Test-Path $expectedIcon -PathType Leaf)) { throw "Installed icon is missing: $expectedIcon" }
+              if ($actualIcon -ne $expectedIcon) {
+                throw "Desktop shortcut icon is wrong. Expected=$expectedIcon Actual=$actualIcon"
+              }
+
+              $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+              New-Item $runKey -Force | Out-Null
+              New-ItemProperty $runKey -Name 'MiaoDesk' -Value ('"' + (Join-Path $testRoot 'MiaoDesk.exe') + '" --startup') `
+                -PropertyType String -Force | Out-Null
+
+              $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') `
+                -ArgumentList '/S' -Wait -PassThru
+              if ($uninstall.ExitCode -ne 0) { throw "Silent uninstall failed: $($uninstall.ExitCode)" }
+              Start-Sleep -Seconds 2
+              foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Goz','Config','Uninstall.exe')) {
+                if (Test-Path (Join-Path $testRoot $relative)) { throw "Uninstall left product content behind: $relative" }
+              }
+              if (Get-Service -Name 'goz' -ErrorAction SilentlyContinue) {
+                throw 'Uninstall left the goz index service registered.'
+              }
+              if (Get-ItemProperty $runKey -Name 'MiaoDesk' -ErrorAction SilentlyContinue) {
+                throw 'Uninstall left the current-user MiaoDesk startup entry behind.'
+              }
+              foreach ($shortcut in $desktopLinks) {
+                if (Test-Path $shortcut) { throw "Uninstall left desktop shortcut behind: $shortcut" }
+              }
+            } finally {
+              Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=Installer smoke test failed::$details"
+            throw
+          }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-installer-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/MiaoDesk-x64-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/x64/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+      - name: Build MSIX package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & (Join-Path $env:GITHUB_WORKSPACE 'packaging\store\msix\pack-msix.ps1') `
+              -StageRoot $env:MIAODESK_STAGE_ROOT `
+              -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix'
+            if ($LASTEXITCODE -ne 0) { throw "pack-msix.ps1 failed with exit code $LASTEXITCODE" }
+          } catch {
+            $details = ($_ | Out-String).Trim()
+            $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=MSIX packaging failed::$details"
+            throw
+          }
+
+      - name: Verify MSIX manifest and legal notices
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $unpack = Join-Path $env:RUNNER_TEMP 'MiaoDesk-msix-check'
+          Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $unpack | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory('C:\pkg\MiaoDesk\MiaoDesk-x64.msix', $unpack)
+          [xml]$manifest = Get-Content (Join-Path $unpack 'AppxManifest.xml') -Raw
+          $namespaces = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
+          $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+          $namespaces.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
+          $extension = $manifest.SelectSingleNode(
+            '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]',
+            $namespaces)
+          if (-not $extension) { throw 'MSIX manifest is missing windows.startupTask.' }
+          $task = $extension.SelectSingleNode('desktop:StartupTask', $namespaces)
+          if (-not $task -or $task.TaskId -ne 'MiaoDeskStartup' -or $task.Enabled -ne 'false') {
+            throw 'MSIX startup task identity or consent-safe default is invalid.'
+          }
+          if ($manifest.Package.Identity.Version -ne '0.1.2.0') {
+            throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)"
+          }
+          foreach ($relative in @('LICENSE','THIRD-PARTY-NOTICES.md')) {
+            if (-not (Test-Path (Join-Path $unpack $relative) -PathType Leaf)) {
+              throw "MSIX legal notice is missing: $relative"
+            }
+          }
+          Write-Host 'MSIX startup task, version, and legal notices verified.' -ForegroundColor Cyan
+
+      - name: Upload MSIX package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-msix-${{ github.sha }}
+          path: |
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msix
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msixupload
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

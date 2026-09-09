@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "type": "scene",
+  "title": "霓虹之城",
+  "author": "MiaoDesk",
+  "entry": "scene.ini",
+  "fps_cap": 30,
+  "audio": false
+}

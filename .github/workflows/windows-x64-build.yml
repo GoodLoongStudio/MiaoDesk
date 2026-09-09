@@ -1,0 +1,94 @@
+name: Windows x64 Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - assets/app/**
+      - config/**
+      - third_party/webview2/**
+      - scripts/generate-miaomiao-icon.ps1
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/windows-x64-build.yml
+  pull_request:
+    paths:
+      - src/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - assets/app/**
+      - config/**
+      - third_party/webview2/**
+      - scripts/generate-miaomiao-icon.ps1
+      - scripts/verify-path-layout-contract.ps1
+      - .github/workflows/windows-x64-build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\quick-x64
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Generate MiaoMiao app icon
+        shell: pwsh
+        run: .\scripts\generate-miaomiao-icon.ps1
+
+      - name: Verify path layout
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $log | ForEach-Object { "$_" } | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            # Surface compile errors as check annotations so they are readable
+            # without an authenticated log download.
+            $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
+              Select-Object -First 40 | ForEach-Object {
+                $line = $_.Trim()
+                if ($line.Length -gt 500) { $line = $line.Substring(0, 500) }
+                Write-Host "::error::$line"
+              }
+            throw 'x64 build failed.'
+          }
+
+      - name: Verify native Widget visibility
+        shell: pwsh
+        run: |
+          $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
+          .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
+
+      - name: Verify login startup stays hidden
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $app) { throw 'Built MiaoDesk.exe was not found.' }
+          .\packaging\windows\verify-login-startup.ps1 -ProductRoot $app.DirectoryName

@@ -1,0 +1,42 @@
+name: Path Layout Contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - config/**
+      - scripts/**
+      - packaging/**
+      - third_party/webview2/**
+      - docs/PATH_LAYOUT_CONTRACT.md
+      - docs/NATIVE_SOURCE_LAYOUT.md
+      - .github/workflows/path-layout-contract.yml
+  pull_request:
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - config/**
+      - scripts/**
+      - packaging/**
+      - third_party/webview2/**
+      - docs/PATH_LAYOUT_CONTRACT.md
+      - docs/NATIVE_SOURCE_LAYOUT.md
+      - .github/workflows/path-layout-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify path layout contract
+        shell: pwsh
+        run: .\scripts\verify-path-layout-contract.ps1

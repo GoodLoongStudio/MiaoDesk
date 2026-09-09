@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cfe7ff"/>
+      <stop offset="0.5" stop-color="#eef4ff"/>
+      <stop offset="1" stop-color="#f6d7ea"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#f7fbff" stop-opacity="0.56"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#4b6480" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="760" fill="url(#bg)"/>
+  <circle cx="165" cy="140" r="120" fill="#9fd0ff" opacity="0.25"/>
+  <circle cx="1030" cy="170" r="150" fill="#efb7db" opacity="0.24"/>
+  <circle cx="930" cy="640" r="180" fill="#aac8ff" opacity="0.18"/>
+
+  <g filter="url(#shadow)">
+    <rect x="330" y="70" width="540" height="610" rx="28" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.78"/>
+  </g>
+
+  <text x="370" y="118" font-family="Segoe UI, sans-serif" font-size="24" font-weight="600" fill="#34445a">妙喵 AI</text>
+  <circle cx="820" cy="108" r="4" fill="#7f8ea3"/>
+  <circle cx="836" cy="108" r="4" fill="#7f8ea3"/>
+  <circle cx="852" cy="108" r="4" fill="#7f8ea3"/>
+  <line x1="360" y1="138" x2="840" y2="138" stroke="#ffffff" stroke-opacity="0.78"/>
+
+  <rect x="492" y="166" width="326" height="54" rx="18" fill="#deebfa" fill-opacity="0.86"/>
+  <text x="516" y="199" font-family="Segoe UI, sans-serif" font-size="17" fill="#536174">帮我整理一下桌面上的截图</text>
+
+  <text x="374" y="260" font-family="Segoe UI, sans-serif" font-size="17" fill="#445268">好，我先看看桌面上有哪些截图。</text>
+
+  <rect x="370" y="286" width="430" height="160" rx="20" fill="#ffffff" fill-opacity="0.44" stroke="#ffffff" stroke-opacity="0.70"/>
+  <text x="396" y="322" font-family="Segoe UI, sans-serif" font-size="18" font-weight="600" fill="#3e4d63">整理桌面截图</text>
+  <text x="396" y="354" font-family="Segoe UI, sans-serif" font-size="16" fill="#4e6f92">✓ 扫描桌面</text>
+  <text x="396" y="382" font-family="Segoe UI, sans-serif" font-size="16" fill="#4e6f92">✓ 找到 47 个截图</text>
+  <text x="396" y="410" font-family="Segoe UI, sans-serif" font-size="16" fill="#5878a0">● 正在移动文件 23 / 47</text>
+  <rect x="396" y="424" width="330" height="6" rx="3" fill="#dbe8f7"/>
+  <rect x="396" y="424" width="162" height="6" rx="3" fill="#8cbcff"/>
+
+  <text x="374" y="486" font-family="Segoe UI, sans-serif" font-size="16" fill="#6e7c90">你可以随时继续说话、纠正或取消正在进行的动作。</text>
+
+  <rect x="360" y="560" width="480" height="82" rx="22" fill="#ffffff" fill-opacity="0.48" stroke="#ffffff" stroke-opacity="0.82"/>
+  <text x="388" y="608" font-family="Segoe UI, sans-serif" font-size="17" fill="#8692a3">输入消息…</text>
+  <circle cx="760" cy="601" r="18" fill="#eef4fb"/>
+  <path d="M760 590 v13 m-6-8 v7 a6 6 0 0 0 12 0 v-7" fill="none" stroke="#6f7d90" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="808" cy="601" r="20" fill="#8dbdff"/>
+  <path d="M800 601 h16 M808 593 v16" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
+
+  <g filter="url(#shadow)">
+    <rect x="405" y="700" width="390" height="44" rx="22" fill="#ffffff" fill-opacity="0.58" stroke="#ffffff" stroke-opacity="0.82"/>
+  </g>
+  <circle cx="433" cy="722" r="8" fill="none" stroke="#748399" stroke-width="2"/>
+  <line x1="439" y1="728" x2="445" y2="734" stroke="#748399" stroke-width="2" stroke-linecap="round"/>
+  <text x="462" y="728" font-family="Segoe UI, sans-serif" font-size="16" fill="#6d7989">搜索应用、文件或妙喵 AI</text>
+  <text x="768" y="729" font-family="Segoe UI Symbol, sans-serif" font-size="18" fill="#748399">✦</text>
+</svg>

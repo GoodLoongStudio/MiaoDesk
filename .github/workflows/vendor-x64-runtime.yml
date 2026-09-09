@@ -1,0 +1,89 @@
+name: Vendor x64 Runtime Base
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - runtime/x64/runtime-lock.json
+      - runtime/agent/package.json
+      - .github/workflows/vendor-x64-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vendor-x64-runtime
+  cancel-in-progress: true
+
+jobs:
+  vendor:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Materialize pinned x64 base and shared Agent lock
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $root = (Resolve-Path '.').Path
+          $runtime = Join-Path $root 'runtime\x64'
+          $runtimeLockPath = Join-Path $runtime 'runtime-lock.json'
+          $agentRoot = Join-Path $root 'runtime\agent'
+          $agentPackage = Join-Path $agentRoot 'package.json'
+          $runtimeLock = Get-Content $runtimeLockPath -Raw | ConvertFrom-Json
+          if ([string]$runtimeLock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
+          if (-not (Test-Path $agentPackage -PathType Leaf)) { throw 'runtime/agent/package.json is missing' }
+
+          $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Vendor-x64-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+
+          function Sha256([string]$Path) {
+            (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+          }
+          function Ensure-Archive([string]$Path,[string]$Url,[string]$ExpectedHash) {
+            if ((Test-Path $Path -PathType Leaf) -and (Sha256 $Path) -eq $ExpectedHash.ToLowerInvariant()) { return }
+            New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
+            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
+            if ((Sha256 $Path) -ne $ExpectedHash.ToLowerInvariant()) { throw "Checksum mismatch: $Path" }
+          }
+
+          try {
+            $nodeArchive = Join-Path $runtime ('node\' + [string]$runtimeLock.node.archive)
+            Ensure-Archive $nodeArchive (([string]$runtimeLock.node.source).TrimEnd('/') + '/' + [string]$runtimeLock.node.archive) ([string]$runtimeLock.node.sha256)
+
+            $gozArchive = Join-Path $runtime ('goz\' + [string]$runtimeLock.goz.archive)
+            Ensure-Archive $gozArchive ([string]$runtimeLock.goz.source) ([string]$runtimeLock.goz.sha256)
+
+            $nodeExpanded = Join-Path $temp 'node'
+            Expand-Archive $nodeArchive -DestinationPath $nodeExpanded -Force
+            $nodeHome = Get-ChildItem $nodeExpanded -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'npm.cmd') } | Select-Object -First 1
+            if (-not $nodeHome) { throw 'Pinned Node archive does not contain npm.cmd.' }
+            $npmCmd = Join-Path $nodeHome.FullName 'npm.cmd'
+            $oldCache = $env:npm_config_cache
+            $env:npm_config_cache = Join-Path $temp 'npm-cache'
+            try {
+              & $npmCmd install --prefix $agentRoot --package-lock-only --ignore-scripts --no-audit --no-fund
+              if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve runtime/agent/package-lock.json.' }
+            } finally {
+              $env:npm_config_cache = $oldCache
+            }
+            if (-not (Test-Path (Join-Path $agentRoot 'package-lock.json') -PathType Leaf)) { throw 'Agent package-lock.json was not generated.' }
+          } finally {
+            Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Commit runtime changes
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/x64/node runtime/x64/goz runtime/agent/package-lock.json
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'runtime: update x64 base and shared Agent lock'
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -1,0 +1,17 @@
+{
+  "schema": 4,
+  "architecture": "arm64",
+  "node": {
+    "version": "24.19.0",
+    "archive": "node-v24.19.0-win-arm64.zip",
+    "source": "https://nodejs.org/dist/v24.19.0/",
+    "sha256": "8502f4a50b458d4cc38ed8f2001556c2cd239d464920f74017926ccb1e1c157f"
+  },
+  "goz": {
+    "version": "0.1.1",
+    "tag": "v0.1.1",
+    "archive": "goz-v0.1.1-win-arm64.zip",
+    "source": "https://github.com/mustafaahci/goz",
+    "sha256": "076cf0234b37327a730c1cf48e9c11b971f39c130ea11fbd28528cbcebed62a1"
+  }
+}

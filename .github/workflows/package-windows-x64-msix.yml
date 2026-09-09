@@ -1,0 +1,124 @@
+name: Windows x64 MSIX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - assets/app/**
+      - assets/wallpapers/**
+      - config/**
+      - runtime/x64/**
+      - runtime/agent/**
+      - third_party/webview2/**
+      - packaging/windows/**
+      - packaging/store/**
+      - scripts/generate-miaomiao-icon.ps1
+      - .github/workflows/package-windows-x64-msix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x64-msix
+  cancel-in-progress: true
+
+jobs:
+  package-msix:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\msix-x64
+      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\msix-x64
+      MIAODESK_MSIX_PATH: C:\pkg\MiaoDesk\MiaoDesk-x64.msix
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Generate MiaoMiao app icon
+        shell: pwsh
+        run: .\scripts\generate-miaomiao-icon.ps1
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
+          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }
+
+      - name: Install product files
+        shell: pwsh
+        run: |
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+
+      - name: Stage runtime
+        shell: pwsh
+        run: .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
+
+      - name: Verify app and startup mode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
+            $p = Start-Process -FilePath (Join-Path $env:MIAODESK_STAGE_ROOT $exe) -ArgumentList '--self-test' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
+          }
+          .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
+      - name: Build MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\packaging\store\msix\pack-msix.ps1 `
+            -StageRoot $env:MIAODESK_STAGE_ROOT `
+            -OutputMsix $env:MIAODESK_MSIX_PATH
+          if ($LASTEXITCODE -ne 0) { throw "pack-msix.ps1 failed: $LASTEXITCODE" }
+
+      - name: Verify MSIX startup manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $unpack = Join-Path $env:RUNNER_TEMP 'miaodesk-msix-verify'
+          Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $unpack | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($env:MIAODESK_MSIX_PATH, $unpack)
+          [xml]$manifest = Get-Content (Join-Path $unpack 'AppxManifest.xml') -Raw
+          $ns = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
+          $ns.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+          $ns.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
+          $task = $manifest.SelectSingleNode('/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]/desktop:StartupTask', $ns)
+          if (-not $task) { throw 'windows.startupTask is missing.' }
+          if ($task.TaskId -ne 'MiaoDeskStartup') { throw "Unexpected startup TaskId: $($task.TaskId)" }
+          if ($task.Enabled -ne 'true') { throw "Startup task must default to enabled; actual=$($task.Enabled)" }
+          if ($task.DisplayName -ne '妙喵') { throw "Unexpected startup display name: $($task.DisplayName)" }
+          if ($manifest.Package.Identity.Version -ne '0.1.3.0') { throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)" }
+          if ($manifest.Package.Identity.Name -ne '52383Nontrix.42913C45ABF3E') { throw "Unexpected Store identity: $($manifest.Package.Identity.Name)" }
+          Write-Host 'MSIX startup task verified: enabled by default, silent startup supported.' -ForegroundColor Cyan
+
+      - name: Upload MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-windows-x64-msix-startup-${{ github.sha }}
+          path: |
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msix
+            C:/pkg/MiaoDesk/MiaoDesk-x64.msixupload
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

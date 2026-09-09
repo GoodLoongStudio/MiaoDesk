@@ -1,0 +1,92 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# CMake build directory（CI 用 cmake -S . -B build）
+build/
+build-*/
+
+# Vendored WebView2 SDKs intentionally keep Microsoft's build/native tree.
+# Keep both architectures symmetric and deterministic instead of downloading
+# SDK files during ordinary builds.
+!runtime/arm64/webview2-sdk/build/
+!runtime/arm64/webview2-sdk/build/**
+!runtime/x64/webview2-sdk/build/
+!runtime/x64/webview2-sdk/build/**
+
+# Repository-local verified toolchain cache
+.tools/
+
+# Build/package output
+artifacts/
+
+# Local-only private workspace. Real credentials, signing files, personal
+# test data and machine-specific configuration belong here and never in Git.
+/.local/
+/.private/
+/secrets/
+/local-secrets/
+/userdata/
+/user-data/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local configuration overrides. Commit only sanitized *.example files.
+*.local.ini
+*.local.json
+*.local.yml
+*.local.yaml
+*.local.toml
+*.private.ini
+*.private.json
+*.private.yml
+*.private.yaml
+*.private.toml
+
+# Credentials / private keys / signing material
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.pvk
+*.spc
+*.snk
+*.publishsettings
+*.pubxml.user
+.netrc
+.npmrc
+credentials.json
+credentials-*.json
+secrets.json
+secrets-*.json
+client_secret*.json
+service-account*.json
+oauth*.json
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/.codely-cli/
+/.codely-cli
+/.codely

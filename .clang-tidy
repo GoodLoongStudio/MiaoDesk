@@ -1,0 +1,28 @@
+# MiaoDesk .clang-tidy
+# 目标：找真实缺陷，不制造噪音。Win32 / C++23 代码库。
+# 运行: clang-tidy -p build <file>
+# 注意：首次全量运行后按实际情况往 Checks 里追加禁用项，不要一次性放宽。
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
+  -readability-uppercase-literal-suffix
+
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*'
+FormatStyle: file
+
+# 说明：
+# - 保留 bugprone-reserved-identifier：它会标记向 namespace std 添加重载这类
+#   未定义行为（见 docs/DOC-INDEX.md 技术债清单 TD-5）。
+# - Win32 大量 OUT 参数使用裸指针，不开启 cppcoreguidelines-* 全家桶。

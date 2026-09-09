@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "type": "scene",
+  "title": "月影秘境",
+  "author": "MiaoDesk",
+  "entry": "scene.ini",
+  "fps_cap": 30,
+  "audio": false
+}

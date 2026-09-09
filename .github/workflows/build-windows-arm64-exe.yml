@@ -1,7 +1,7 @@
 name: Windows ARM64 EXE
 
 on:
-  push:
+  pull_request:
     branches: [main]
     paths:
       - .github/workflows/build-windows-arm64-exe.yml

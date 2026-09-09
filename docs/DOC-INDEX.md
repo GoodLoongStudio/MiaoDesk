@@ -22,6 +22,7 @@
 - `WINDOWS_CUSTOM_INPUT_IME.md` — Windows 自定义输入/IME
 - `WINDOWS_LAYERED_DIRECT2D_UI_RENDERING.md` — Layered Window + Direct2D 渲染
 - `PATH_LAYOUT_CONTRACT.md` — 路径、MAX_PATH 与安装布局约束
+- `LOCAL_PRIVATE_DATA.md` — 本地隐私数据、凭据、签名文件和机器私有配置的仓库边界
 
 ## AI / Agent
 

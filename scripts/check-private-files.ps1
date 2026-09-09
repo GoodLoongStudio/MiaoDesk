@@ -74,7 +74,7 @@ try {
 
         try {
             $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-            if ($bytes.IndexOf([byte]0) -ge 0) { continue }
+            if ([Array]::IndexOf($bytes, [byte]0) -ge 0) { continue }
             $text = [System.Text.Encoding]::UTF8.GetString($bytes)
         } catch {
             continue

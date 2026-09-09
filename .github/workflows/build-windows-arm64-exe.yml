@@ -1,0 +1,81 @@
+name: Windows ARM64 EXE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-windows-arm64-exe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm64-exe
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 45
+    env:
+      BUILD_ROOT: C:\b\MiaoDesk\arm64-exe
+      OUT_ROOT: C:\pkg\MiaoDesk\arm64-exe
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Generate app icon
+        shell: pwsh
+        run: .\scripts\generate-miaomiao-icon.ps1
+
+      - name: Configure ARM64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item $env:BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:OUT_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $env:OUT_ROOT | Out-Null
+          cmake -S . -B $env:BUILD_ROOT -A ARM64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake ARM64 configure failed.' }
+
+      - name: Build ARM64 EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build $env:BUILD_ROOT --config Release --target MiaoDesk --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 MiaoDesk build failed.' }
+
+      - name: Locate and verify ARM64 EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem $env:BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
+          if (-not $exe) { throw 'MiaoDesk.exe was not produced.' }
+
+          $stream = [System.IO.File]::OpenRead($exe.FullName)
+          try {
+            $reader = [System.IO.BinaryReader]::new($stream)
+            $stream.Position = 0x3C
+            $peOffset = $reader.ReadUInt32()
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) { throw 'MiaoDesk.exe is not a PE image.' }
+            $machine = $reader.ReadUInt16()
+          } finally {
+            $stream.Dispose()
+          }
+          if ($machine -ne 0xAA64) { throw "MiaoDesk.exe is not ARM64; PE machine=0x$($machine.ToString('X4'))" }
+          Copy-Item $exe.FullName (Join-Path $env:OUT_ROOT 'MiaoDesk-arm64.exe') -Force
+          Write-Host "ARM64 EXE: $($exe.FullName)"
+          Write-Host "Bytes: $($exe.Length)"
+
+      - name: Upload ARM64 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-arm64-exe-${{ github.sha }}
+          path: C:/pkg/MiaoDesk/arm64-exe/MiaoDesk-arm64.exe
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

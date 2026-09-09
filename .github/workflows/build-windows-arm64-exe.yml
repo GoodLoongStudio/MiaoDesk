@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 45
     env:
       BUILD_ROOT: C:\b\MiaoDesk\arm64-exe
@@ -79,4 +79,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-# temporary PR build trigger

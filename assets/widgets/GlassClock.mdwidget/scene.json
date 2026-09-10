@@ -68,7 +68,7 @@
     },
     {
       "id": "node://left-glow",
-      "name": "Left Cyan Glow",
+      "name": "Left Accent Glow",
       "parentId": "node://root",
       "enabled": true,
       "components": [
@@ -205,7 +205,7 @@
           "kind": "spriteRenderer",
           "properties": [
             {"name": "opacity", "type": "float", "default": 0.20},
-            {"name": "tint", "type": "color", "default": [0.80, 0.95, 1.0, 1.0]},
+            {"name": "tint", "type": "color", "default": [0.18, 0.98, 0.92, 1.0]},
             {"name": "materialId", "type": "string", "default": "material://card"}
           ]
         }
@@ -266,6 +266,22 @@
       "sourceKind": "parameter",
       "sourceId": "param://background-color",
       "target": {"componentId": "component://card/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-glow-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://left-glow/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-divider-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://divider/sprite", "propertyName": "tint"},
       "scale": 1.0,
       "offset": 0.0
     },

@@ -9,6 +9,7 @@ on:
       - src/**
       - assets/app/**
       - assets/wallpapers/**
+      - assets/widgets/**
       - config/**
       - runtime/x64/**
       - runtime/agent/**
@@ -71,10 +72,19 @@ jobs:
         shell: pwsh
         run: .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
 
-      - name: Verify app and startup mode
+      - name: Verify app, builtin widget, and startup mode
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          foreach ($relative in @(
+            'Widgets\GlassClock.mdwidget\manifest.json',
+            'Widgets\GlassClock.mdwidget\scene.json',
+            'Widgets\GlassClock.mdwidget\parameters.json'
+          )) {
+            if (-not (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT $relative) -PathType Leaf)) {
+              throw "Built-in widget package file is missing: $relative"
+            }
+          }
           foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
             $p = Start-Process -FilePath (Join-Path $env:MIAODESK_STAGE_ROOT $exe) -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
@@ -110,7 +120,16 @@ jobs:
           if ($task.DisplayName -ne '妙喵') { throw "Unexpected startup display name: $($task.DisplayName)" }
           if ($manifest.Package.Identity.Version -ne '0.1.3.0') { throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)" }
           if ($manifest.Package.Identity.Name -ne '52383Nontrix.42913C45ABF3E') { throw "Unexpected Store identity: $($manifest.Package.Identity.Name)" }
-          Write-Host 'MSIX startup task verified: enabled by default, silent startup supported.' -ForegroundColor Cyan
+          foreach ($relative in @(
+            'Widgets\GlassClock.mdwidget\manifest.json',
+            'Widgets\GlassClock.mdwidget\scene.json',
+            'Widgets\GlassClock.mdwidget\parameters.json'
+          )) {
+            if (-not (Test-Path (Join-Path $unpack $relative) -PathType Leaf)) {
+              throw "MSIX built-in widget package file is missing: $relative"
+            }
+          }
+          Write-Host 'MSIX startup task and GlassClock content package verified.' -ForegroundColor Cyan
 
       - name: Upload MSIX
         uses: actions/upload-artifact@v4

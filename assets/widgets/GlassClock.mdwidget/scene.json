@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "id": "scene://glass-clock",
+  "kind": "widget",
+  "profile": "widget",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Glass Clock Root",
+      "parentId": "",
+      "enabled": true,
+      "components": []
+    },
+    {
+      "id": "node://card",
+      "name": "Card",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://card/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+            {"name": "scale", "type": "vec2", "default": [0.98, 0.96]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://card/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.96},
+            {"name": "tint", "type": "color", "default": [0.055, 0.18, 0.42, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://brand",
+      "name": "Brand",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://brand/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [22.0, 14.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.78}
+          ]
+        },
+        {
+          "id": "component://brand/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "妙喵"},
+            {"name": "fontSize", "type": "float", "default": 14.0},
+            {"name": "color", "type": "color", "default": [0.88, 0.95, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://time",
+      "name": "Time",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://time/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -14.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://time/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{time.hhmm}}"},
+            {"name": "fontSize", "type": "float", "default": 86.0},
+            {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Display"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://date",
+      "name": "Date",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://date/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 86.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.86}
+          ]
+        },
+        {
+          "id": "component://date/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{time.date}}"},
+            {"name": "fontSize", "type": "float", "default": 18.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 500}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [
+    {
+      "id": "material://card",
+      "model": "builtin",
+      "builtinName": "solidColor",
+      "vertexShaderId": "",
+      "pixelShaderId": "",
+      "properties": [
+        {"name": "color", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]}
+      ],
+      "textures": []
+    }
+  ],
+  "inputs": [],
+  "bindings": [
+    {
+      "id": "binding://background-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://background-color",
+      "target": {"componentId": "component://card/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://card-opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://card-opacity",
+      "target": {"componentId": "component://card/sprite", "propertyName": "opacity"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://time-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://time/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://date-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://date/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ],
+  "animations": []
+}

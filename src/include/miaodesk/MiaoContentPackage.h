@@ -7,14 +7,9 @@
 #include <string_view>
 #include <vector>
 
-#include "miaodesk/MiaoSceneModel.h"
+#include "miaodesk/MiaoContentModel.h"
 
 namespace miaodesk::content {
-
-enum class ContentRuntimeKind {
-    Scene,
-    Web,
-};
 
 struct MiaoContentPackageManifest {
     std::uint32_t schema{1};

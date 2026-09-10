@@ -21,6 +21,7 @@ namespace {
 
 constexpr wchar_t kNativeHostClass[] = L"MiaoDesk.Native.WidgetSurface";
 constexpr LONG kGeometryTolerancePx = 8;
+constexpr float kPresetGeometryTolerance = 0.0001f;
 
 WidgetServiceResult LoadFailure(const std::wstring& error) {
     return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -295,6 +296,9 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
 WidgetServiceResult WidgetService::CreateNative(
     const NativeWidgetCreateRequest& request,
     wallpaper::DesktopWidget* created) const {
+    const auto* definition = wallpaper::NativePresetDefinition(request.preset);
+    if (!definition) return {false, L"原生桌面小组件 preset 无效。"};
+
     wallpaper::DesktopWidgetStore store;
     std::wstring error;
     if (!store.Load(&error)) return LoadFailure(error);
@@ -304,8 +308,8 @@ WidgetServiceResult WidgetService::CreateNative(
         request.monitorId,
         request.x,
         request.y,
-        request.width,
-        request.height,
+        definition->defaultWidth,
+        definition->defaultHeight,
         &error);
     if (!widget) return {false, error.empty() ? L"创建原生桌面小组件失败。" : error};
     if (created) *created = *widget;
@@ -320,6 +324,18 @@ WidgetServiceResult WidgetService::Update(const WidgetUpdateRequest& request) co
     if (!store.Load(&error)) return LoadFailure(error);
     const auto old = store.Find(request.id);
     if (!old) return {false, L"没有找到桌面小组件：" + request.id};
+
+    if (old->kind == wallpaper::DesktopWidgetKind::Native) {
+        wallpaper::NativeWidgetPreset preset{};
+        if (!wallpaper::ParseNativePreset(old->source.wstring(), &preset))
+            return {false, L"原生桌面小组件 preset 无效：" + old->source.wstring()};
+        const auto* definition = wallpaper::NativePresetDefinition(preset);
+        if (!definition) return {false, L"原生桌面小组件 preset 定义缺失。"};
+        if (request.width && std::fabs(*request.width - definition->defaultWidth) > kPresetGeometryTolerance)
+            return {false, L"内置小组件宽度由 preset 拥有，不能通过通用 Update 修改。"};
+        if (request.height && std::fabs(*request.height - definition->defaultHeight) > kPresetGeometryTolerance)
+            return {false, L"内置小组件高度由 preset 拥有，不能通过通用 Update 修改。"};
+    }
 
     auto widget = *old;
     if (request.title) widget.title = *request.title;

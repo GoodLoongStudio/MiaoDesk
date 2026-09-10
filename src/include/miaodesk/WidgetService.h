@@ -36,7 +36,10 @@ struct ContentWidgetCreateRequest {
     float y{0.05f};
     float width{0.28f};
     float height{0.18f};
-    bool enabled{true};
+    // Keep newly persisted Content widgets dormant until NativeWidgetHost has
+    // an explicit content:<definitionId> runtime route. This avoids recording
+    // an enabled widget that cannot yet produce a desktop Surface.
+    bool enabled{false};
 };
 
 struct WidgetUpdateRequest {

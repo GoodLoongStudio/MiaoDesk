@@ -1,6 +1,7 @@
 #include "miaodesk/WallpaperService.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/MiaoContentDefinitionLoader.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 
@@ -83,14 +84,18 @@ WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryI
     std::wstring error;
     if (!content::MiaoContentPackage::Load(packageRoot, &package, &error))
         return {false, error.empty() ? L"无法加载 .mdwall 内容包。" : error};
-    if (package.manifest.kind != content::ContentKind::Wallpaper ||
-        package.manifest.runtime != content::ContentRuntimeKind::Scene)
+
+    content::ContentDefinition contentDefinition;
+    if (!content::MiaoContentDefinitionLoader::FromPackage(package, &contentDefinition, &error))
+        return {false, error.empty() ? L"ContentDefinition / ParameterSchema 无效。" : error};
+    if (contentDefinition.kind != content::ContentKind::Wallpaper ||
+        contentDefinition.runtime != content::ContentRuntimeKind::Scene)
         return {false, L".mdwall 内容包不是 Wallpaper Scene Runtime。"};
 
-    content::SceneRuntimeDefinition definition;
-    if (!content::MiaoSceneSerializer::DeserializePackage(package, &definition, &error))
+    content::SceneRuntimeDefinition sceneDefinition;
+    if (!content::MiaoSceneSerializer::DeserializePackage(package, &sceneDefinition, &error))
         return {false, error.empty() ? L"Scene 内容定义无效。" : error};
-    return {true, L"配置化 Scene 内容包可用于显示器分配。"};
+    return {true, L"配置化 Scene 内容包已通过 ContentDefinition + Scene Runtime 校验。"};
 }
 
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {

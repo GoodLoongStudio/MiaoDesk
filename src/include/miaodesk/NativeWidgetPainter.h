@@ -33,6 +33,13 @@ struct NativeWidgetPaintContext {
     bool opaqueSurface{false};
 };
 
+// Host-only migration hook. The normal management-preview painter does not call
+// this unless MIAODESK_WIDGET_HOST_CONTENT_DOGFOOD is defined for that source.
+bool TryPaintOfficialWidgetContent(
+    const NativeWidgetPaintContext& context,
+    NativeWidgetPreset preset,
+    std::wstring* error = nullptr);
+
 // Painters author layout constants against the DIP canvas a default-fraction
 // widget occupies on a 1080p monitor. Every font size, margin and radius is
 // multiplied by the card's scale relative to that canvas, so a widget grows
@@ -461,6 +468,12 @@ inline void PaintNativeWidgetPreset(const NativeWidgetPaintContext& context, Nat
 } // namespace native_widget_paint
 
 inline void PaintNativeWidgetPreset(const NativeWidgetPaintContext& context, NativeWidgetPreset preset) {
+#if defined(MIAODESK_WIDGET_HOST_CONTENT_DOGFOOD)
+    if (preset == NativeWidgetPreset::GlassClock &&
+        TryPaintOfficialWidgetContent(context, preset, nullptr)) {
+        return;
+    }
+#endif
     native_widget_paint::PaintNativeWidgetPreset(context, preset);
 }
 

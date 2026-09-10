@@ -8,6 +8,8 @@ $wallpaperExe = Join-Path $ProductRoot 'MiaoDeskWallpaper.exe'
 if (-not (Test-Path $wallpaperExe -PathType Leaf)) {
     throw "Widget visibility smoke test cannot find $wallpaperExe"
 }
+$contentGlassClock = Join-Path $ProductRoot 'Widgets\GlassClock.mdwidget\manifest.json'
+$expectContentGlassClock = Test-Path $contentGlassClock -PathType Leaf
 
 Add-Type -TypeDefinition @'
 using System;
@@ -161,6 +163,15 @@ Enabled=1
         if (-not $logText.Contains($marker)) {
             throw "Native Widget diagnostic log is missing marker: $marker"
         }
+    }
+    if ($expectContentGlassClock) {
+        $contentMarker = '[WidgetContent] GlassClock 已通过 Miao Content Framework / Scene TextRenderer 绘制'
+        if (-not $logText.Contains($contentMarker)) {
+            throw "Packaged GlassClock did not prove the Content Framework route. Missing marker: $contentMarker"
+        }
+        Write-Host 'Packaged GlassClock Content Framework route verified.' -ForegroundColor Green
+    } else {
+        Write-Host 'Built-in Widgets directory is absent; native GlassClock fallback verified for quick-build layout.' -ForegroundColor Yellow
     }
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
     Write-Host 'Native Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green

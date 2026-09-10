@@ -17,6 +17,7 @@ endif()
 set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
     content/asset/MiaoAssetDatabase.cpp
+    content/binding/MiaoContentDataBinding.cpp
     content/model/MiaoContentDefinitionLoader.cpp
     content/model/MiaoContentModel.cpp
     content/package/MiaoContentPackage.cpp

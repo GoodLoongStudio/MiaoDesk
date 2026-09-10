@@ -8,7 +8,9 @@ on:
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**
+      - assets/widgets/**
       - config/**
+      - packaging/windows/verify-widget-visibility.ps1
       - third_party/webview2/**
       - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
@@ -19,7 +21,9 @@ on:
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**
+      - assets/widgets/**
       - config/**
+      - packaging/windows/verify-widget-visibility.ps1
       - third_party/webview2/**
       - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
@@ -39,6 +43,7 @@ jobs:
     timeout-minutes: 15
     env:
       MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\quick-x64
+      MIAODESK_STAGE_ROOT: C:\b\MiaoDesk\quick-stage-x64
 
     steps:
       - uses: actions/checkout@v5
@@ -56,6 +61,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
           cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64
           if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
@@ -77,13 +83,33 @@ jobs:
             throw 'x64 build failed.'
           }
 
-      - name: Verify native Widget visibility
+      - name: Verify native Widget fallback in quick-build layout
         shell: pwsh
         run: |
           $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |
             Select-Object -First 1
           if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
           .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
+
+      - name: Install staged product with built-in content
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+          foreach ($relative in @(
+            'Widgets\GlassClock.mdwidget\manifest.json',
+            'Widgets\GlassClock.mdwidget\scene.json',
+            'Widgets\GlassClock.mdwidget\parameters.json'
+          )) {
+            if (-not (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT $relative) -PathType Leaf)) {
+              throw "Staged built-in widget package file is missing: $relative"
+            }
+          }
+
+      - name: Verify staged GlassClock Content Framework route
+        shell: pwsh
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
 
       - name: Verify login startup stays hidden
         shell: pwsh

@@ -40,6 +40,87 @@
       ]
     },
     {
+      "id": "node://top-glass",
+      "name": "Top Glass Highlight",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://top-glass/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -103.0]},
+            {"name": "scale", "type": "vec2", "default": [0.94, 0.28]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://top-glass/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.10},
+            {"name": "tint", "type": "color", "default": [0.78, 0.95, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://left-glow",
+      "name": "Left Cyan Glow",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://left-glow/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [-192.0, 5.0]},
+            {"name": "scale", "type": "vec2", "default": [0.25, 0.72]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://left-glow/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.10},
+            {"name": "tint", "type": "color", "default": [0.18, 0.98, 0.92, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://bottom-depth",
+      "name": "Bottom Depth",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://bottom-depth/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 116.0]},
+            {"name": "scale", "type": "vec2", "default": [0.94, 0.20]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://bottom-depth/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.18},
+            {"name": "tint", "type": "color", "default": [0.01, 0.045, 0.16, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
       "id": "node://brand",
       "name": "Brand",
       "parentId": "node://root",
@@ -81,7 +162,7 @@
           "id": "component://time/transform",
           "kind": "transform",
           "properties": [
-            {"name": "position", "type": "vec2", "default": [0.0, -14.0]},
+            {"name": "position", "type": "vec2", "default": [0.0, -18.0]},
             {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
             {"name": "rotation", "type": "float", "default": 0.0},
             {"name": "opacity", "type": "float", "default": 1.0}
@@ -104,6 +185,33 @@
       ]
     },
     {
+      "id": "node://divider",
+      "name": "Date Divider",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://divider/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 66.0]},
+            {"name": "scale", "type": "vec2", "default": [0.86, 0.005]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://divider/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.20},
+            {"name": "tint", "type": "color", "default": [0.80, 0.95, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
       "id": "node://date",
       "name": "Date",
       "parentId": "node://root",
@@ -113,7 +221,7 @@
           "id": "component://date/transform",
           "kind": "transform",
           "properties": [
-            {"name": "position", "type": "vec2", "default": [0.0, 86.0]},
+            {"name": "position", "type": "vec2", "default": [0.0, 88.0]},
             {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
             {"name": "rotation", "type": "float", "default": 0.0},
             {"name": "opacity", "type": "float", "default": 0.86}

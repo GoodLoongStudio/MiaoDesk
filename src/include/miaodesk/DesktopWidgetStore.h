@@ -12,6 +12,7 @@ namespace miaodesk::wallpaper {
 
 enum class DesktopWidgetKind {
     Native,
+    Content,
     Unknown,
 };
 

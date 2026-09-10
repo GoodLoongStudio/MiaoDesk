@@ -22,7 +22,7 @@
     {
       "name": "arm64",
       "displayName": "Windows ARM64 - short external build",
-      "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree.",
+      "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree; this preset is used by full ARM64 packaging CI.",
       "generator": "Visual Studio 17 2022",
       "architecture": { "value": "ARM64", "strategy": "set" },
       "binaryDir": "$env{SystemDrive}/b/MiaoDesk/arm64",

@@ -1,5 +1,6 @@
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWidgetPreset.h"
 
 #include <windows.h>
@@ -139,6 +140,17 @@ std::wstring NativeSingletonKey(const DesktopWidget& widget) {
     return key;
 }
 
+bool IsValidPersistedSource(const DesktopWidget& widget) {
+    if (widget.kind == DesktopWidgetKind::Native) {
+        return IsNativePresetSource(widget.source.wstring());
+    }
+    if (widget.kind == DesktopWidgetKind::Content) {
+        std::wstring definitionId;
+        return content::MiaoWidgetContentCatalog::ParseSource(widget.source.wstring(), &definitionId, nullptr);
+    }
+    return false;
+}
+
 } // namespace
 
 DesktopWidgetStore::DesktopWidgetStore() : root_(DefaultRoot()) {}
@@ -152,13 +164,16 @@ fs::path DesktopWidgetStore::PackageDirectory() const { return root_ / L"Package
 const wchar_t* DesktopWidgetStore::KindKey(DesktopWidgetKind kind) noexcept {
     switch (kind) {
     case DesktopWidgetKind::Native: return L"native";
+    case DesktopWidgetKind::Content: return L"content";
     case DesktopWidgetKind::Unknown:
     default: return L"unknown";
     }
 }
 
 DesktopWidgetKind DesktopWidgetStore::ParseKind(std::wstring_view value) noexcept {
-    if (_wcsicmp(std::wstring(value).c_str(), L"native") == 0) return DesktopWidgetKind::Native;
+    const std::wstring kind(value);
+    if (_wcsicmp(kind.c_str(), L"native") == 0) return DesktopWidgetKind::Native;
+    if (_wcsicmp(kind.c_str(), L"content") == 0) return DesktopWidgetKind::Content;
     return DesktopWidgetKind::Unknown;
 }
 
@@ -237,7 +252,7 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
             repairedText = true;
         }
         widget = Normalize(std::move(widget));
-        if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty()) continue;
+        if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty() || !IsValidPersistedSource(widget)) continue;
 
         const std::wstring singletonKey = NativeSingletonKey(widget);
         if (!singletonKey.empty()) {
@@ -363,19 +378,21 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
         return std::nullopt;
     }
     widget = Normalize(std::move(widget));
-    if (widget.kind != DesktopWidgetKind::Native || !IsNativePresetSource(widget.source.wstring())) {
-        if (error) *error = L"Desktop native widget source is invalid.";
+    if (!IsValidPersistedSource(widget)) {
+        if (error) *error = L"Desktop widget source is invalid.";
         return std::nullopt;
     }
 
     const std::wstring singletonKey = NativeSingletonKey(widget);
-    const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
-        return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
-               NativeSingletonKey(existing) == singletonKey;
-    });
-    if (duplicate != items_.end()) {
-        if (error) *error = L"This native widget preset already exists on the target monitor.";
-        return std::nullopt;
+    if (!singletonKey.empty()) {
+        const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
+            return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
+                   NativeSingletonKey(existing) == singletonKey;
+        });
+        if (duplicate != items_.end()) {
+            if (error) *error = L"This native widget preset already exists on the target monitor.";
+            return std::nullopt;
+        }
     }
 
     const auto index = FindIndex(widget.id);
@@ -444,11 +461,32 @@ bool DesktopWidgetStore::SelfTest() {
         const auto saved = store.Upsert(changed, &error);
         ok = ok && saved.has_value() && saved->width <= 0.1001f && !saved->enabled;
 
+        DesktopWidget contentWidget;
+        contentWidget.id = DesktopWidgetStore::MakeId();
+        contentWidget.kind = DesktopWidgetKind::Content;
+        contentWidget.title = L"Content Clock";
+        contentWidget.source = fs::path(content::MiaoWidgetContentCatalog::MakeSource(L"com.goodloong.glass-clock"));
+        contentWidget.monitorId = L"monitor-content";
+        contentWidget.enabled = false;
+        const auto savedContent = store.Upsert(contentWidget, &error);
+        ok = ok && savedContent.has_value() && savedContent->kind == DesktopWidgetKind::Content;
+
+        DesktopWidget invalidContent = contentWidget;
+        invalidContent.id = DesktopWidgetStore::MakeId();
+        invalidContent.source = fs::path(L"content:");
+        ok = ok && !store.Upsert(invalidContent, &error).has_value();
+
         DesktopWidgetStore reloaded(root);
         ok = ok && reloaded.Load(&error);
         const auto persisted = reloaded.Find(created->id);
         ok = ok && persisted.has_value() && !persisted->enabled &&
              persisted->title == L"原生时钟" && persisted->monitorId == L"monitor-test";
+        if (savedContent) {
+            const auto persistedContent = reloaded.Find(savedContent->id);
+            ok = ok && persistedContent.has_value() &&
+                 persistedContent->kind == DesktopWidgetKind::Content &&
+                 persistedContent->source == savedContent->source;
+        }
         ok = ok && reloaded.Remove(created->id, &error);
 
         DesktopWidgetStore reloadedAfterRemove(root);

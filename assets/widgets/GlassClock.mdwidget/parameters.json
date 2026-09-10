@@ -8,6 +8,12 @@
       "default": [0.055, 0.18, 0.42, 1.0]
     },
     {
+      "id": "param://accent-color",
+      "key": "accentColor",
+      "type": "color",
+      "default": [0.18, 0.98, 0.92, 1.0]
+    },
+    {
       "id": "param://text-color",
       "key": "textColor",
       "type": "color",

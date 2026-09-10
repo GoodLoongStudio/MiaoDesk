@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "parameters": [
+    {
+      "id": "param://background-color",
+      "key": "backgroundColor",
+      "type": "color",
+      "default": [0.055, 0.18, 0.42, 1.0]
+    },
+    {
+      "id": "param://text-color",
+      "key": "textColor",
+      "type": "color",
+      "default": [0.98, 0.995, 1.0, 1.0]
+    },
+    {
+      "id": "param://card-opacity",
+      "key": "cardOpacity",
+      "type": "float",
+      "default": 0.96,
+      "min": 0.35,
+      "max": 1.0,
+      "step": 0.01
+    }
+  ]
+}

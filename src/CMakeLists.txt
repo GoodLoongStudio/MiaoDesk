@@ -20,6 +20,7 @@ set(MIAODESK_CORE_SOURCES
     content/binding/MiaoContentDataBinding.cpp
     content/model/MiaoContentDefinitionLoader.cpp
     content/model/MiaoContentModel.cpp
+    content/model/MiaoWidgetContentCatalog.cpp
     content/package/MiaoContentPackage.cpp
     content/render/MiaoRenderGraph.cpp
     content/render/MiaoPostProcessCompiler.cpp

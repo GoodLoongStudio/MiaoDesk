@@ -326,8 +326,13 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
                      L"Widget Surface 未恢复到配置位置；expected=" + RectText(expected) + L" actual=" + RectText(actual),
                      L"等待显示器拓扑稳定后刷新；若仍不一致，重启 Explorer 或 Widget runtime helper 以重新应用显示器布局。");
     } else if (!PropertyReady(window, wallpaper::kNativeWidgetPaintReadyProperty)) {
-        SetAttention(surface, L"widget_paint_pending", L"Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
-                     L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+        if (widget.kind == wallpaper::DesktopWidgetKind::Content) {
+            SetAttention(surface, L"content_paint_pending", L"Content Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
+                         L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+        } else {
+            SetAttention(surface, L"native_paint_pending", L"Native Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
+                         L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+        }
     } else if (!surface.zOrderReported) {
         SetAttention(surface, L"zorder_unreported", L"Widget Surface 已绘制；等待 DesktopShell z-order telemetry", L"点击“刷新”；若持续未报告，重启 DesktopShell supervisor。");
     } else if (!surface.zOrderValid) {

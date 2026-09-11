@@ -23,6 +23,7 @@ set(MIAODESK_CORE_SOURCES
     content/model/MiaoContentModel.cpp
     content/model/MiaoWidgetContentCatalog.cpp
     content/package/MiaoContentPackage.cpp
+    content/package/MiaoContentPackageManager.cpp
     content/render/MiaoRenderGraph.cpp
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp

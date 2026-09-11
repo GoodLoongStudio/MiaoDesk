@@ -429,6 +429,21 @@ void CenterOnOwner(HWND window, HWND owner) {
     SetWindowPos(window, HWND_TOP, x, y, width, height, SWP_NOACTIVATE);
 }
 
+SIZE SettingsWindowSize(HWND owner, int rowCount) {
+    const UINT dpi = owner && IsWindow(owner)
+        ? std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(owner))
+        : std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForSystem());
+    const int clientWidth = MulDiv(510, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    const int clientHeight = MulDiv(std::max(280, 172 + rowCount * 50),
+                                    static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    RECT outer{0, 0, clientWidth, clientHeight};
+    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+    constexpr DWORD exStyle = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
+    if (!AdjustWindowRectExForDpi(&outer, style, FALSE, exStyle, dpi))
+        return SIZE{clientWidth, clientHeight};
+    return SIZE{outer.right - outer.left, outer.bottom - outer.top};
+}
+
 } // namespace
 
 bool ShowContentWidgetSettingsDialog(
@@ -466,15 +481,13 @@ bool ShowContentWidgetSettingsDialog(
     state.controller = &controller;
     state.snapshot = std::move(snapshot);
 
-    const int rowCount = static_cast<int>(state.snapshot.definition.parameters.size());
-    const int width = 510;
-    const int height = std::max(280, 172 + rowCount * 50);
+    const SIZE windowSize = SettingsWindowSize(owner, static_cast<int>(state.snapshot.definition.parameters.size()));
     const std::wstring title = L"小组件设置 · " + state.snapshot.title;
+    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+    constexpr DWORD exStyle = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
     HWND window = CreateWindowExW(
-        WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT,
-        kSettingsClass, title.c_str(),
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-        CW_USEDEFAULT, CW_USEDEFAULT, width, height,
+        exStyle, kSettingsClass, title.c_str(), style,
+        CW_USEDEFAULT, CW_USEDEFAULT, windowSize.cx, windowSize.cy,
         owner, nullptr, instance, &state);
     if (!window) {
         if (status) *status = L"无法创建 Content widget 设置窗口。";
@@ -493,20 +506,34 @@ bool ShowContentWidgetSettingsDialog(
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
 
+    bool repostQuit = false;
+    int quitCode = 0;
     MSG message{};
-    while (state.window && GetMessageW(&message, nullptr, 0, 0) > 0) {
+    while (state.window) {
+        const BOOL result = GetMessageW(&message, nullptr, 0, 0);
+        if (result == -1) {
+            if (state.resultMessage.empty()) state.resultMessage = L"Content widget 设置消息循环读取失败。";
+            break;
+        }
+        if (result == 0) {
+            repostQuit = true;
+            quitCode = static_cast<int>(message.wParam);
+            break;
+        }
         if (!IsDialogMessageW(window, &message)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
     }
 
+    if (state.window && IsWindow(state.window)) DestroyWindow(state.window);
     if (state.font) DeleteObject(state.font);
     if (owner && IsWindow(owner)) {
         EnableWindow(owner, TRUE);
         SetForegroundWindow(owner);
     }
     if (status) *status = state.resultMessage;
+    if (repostQuit) PostQuitMessage(quitCode);
     return state.changed;
 }
 

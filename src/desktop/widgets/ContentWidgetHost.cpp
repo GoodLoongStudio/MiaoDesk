@@ -1,6 +1,7 @@
 #include "miaodesk/ContentWidgetHost.h"
 
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/ContentWidgetInstanceStore.h"
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/DesktopSurfaceTelemetry.h"
 #include "miaodesk/DesktopWidgetStore.h"
@@ -186,10 +187,20 @@ fs::file_time_type PackageStamp(const fs::path& packageRoot) {
     return ec ? fs::file_time_type{} : value;
 }
 
+fs::file_time_type InstanceParameterStamp(std::wstring_view widgetId) {
+    const fs::path path = content::ContentWidgetInstanceStore::InstancePath(widgetId);
+    if (path.empty()) return {};
+    std::error_code ec;
+    if (!fs::exists(path, ec) || ec) return {};
+    const auto value = fs::last_write_time(path, ec);
+    return ec ? fs::file_time_type{} : value;
+}
+
 struct ResolvedContentRuntime {
     std::wstring source;
     fs::path packageRoot;
     fs::file_time_type packageStamp{};
+    content::ContentDefinition definition;
 };
 
 bool ResolveContentRuntime(
@@ -221,6 +232,7 @@ bool ResolveContentRuntime(
     runtime->source = widget.source.wstring();
     runtime->packageRoot = resolved.packageRoot;
     runtime->packageStamp = PackageStamp(resolved.packageRoot);
+    runtime->definition = std::move(resolved.definition);
     return true;
 }
 
@@ -233,6 +245,8 @@ struct ContentSlot {
     std::wstring source;
     fs::path packageRoot;
     fs::file_time_type packageStamp{};
+    content::ContentDefinition definition;
+    fs::file_time_type instanceParameterStamp{};
     RECT region{};
     RECT desktopRegion{};
     HWND hwnd{};
@@ -365,9 +379,6 @@ struct ContentWidgetHostApp {
 
     void ApplyWindowRegion(ContentSlot& slot) {
         if (!slot.hwnd || !IsWindow(slot.hwnd)) return;
-        // The generic Content contract is rectangular. The bundled GlassClock
-        // predates a manifest-level window-shape field, so preserve its rounded
-        // direct-swapchain silhouette until clip metadata is added to .mdwidget.
         if (slot.source != kGlassClockContentSource) {
             SetWindowRgn(slot.hwnd, nullptr, FALSE);
             return;
@@ -534,6 +545,26 @@ struct ContentWidgetHostApp {
         return true;
     }
 
+    bool ApplyInstanceParameters(ContentSlot& slot) {
+        if (!slot.renderer || !slot.renderer->Loaded()) return false;
+        content::ContentParameterValues overrides;
+        std::wstring error;
+        if (!content::ContentWidgetInstanceStore::LoadOverrides(
+                slot.widgetId, slot.definition, &overrides, &error)) {
+            ReportFailure(&slot, L"Content parameter load failed: " + error);
+            return false;
+        }
+        for (const auto& [key, value] : overrides) {
+            const auto* parameter = content::MiaoContentModel::FindParameter(slot.definition, key);
+            if (!parameter) continue;
+            if (!slot.renderer->SetParameter(parameter->runtimeId, value, &error)) {
+                ReportFailure(&slot, L"Content parameter apply failed: " + key + L": " + error);
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool EnsureRenderer(ContentSlot& slot) {
         if (!slot.activeTarget || slot.packageRoot.empty()) return false;
         if (!slot.renderer) slot.renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
@@ -542,6 +573,10 @@ struct ContentWidgetHostApp {
         std::wstring error;
         if (!slot.renderer->Load(slot.packageRoot, slot.activeTarget, &error)) {
             ReportFailure(&slot, L"Content Scene load failed: " + error);
+            return false;
+        }
+        if (!ApplyInstanceParameters(slot)) {
+            slot.renderer->Reset();
             return false;
         }
         slot.rendererTarget = slot.activeTarget;
@@ -778,6 +813,8 @@ struct ContentWidgetHostApp {
         slot.source = runtime.source;
         slot.packageRoot = runtime.packageRoot;
         slot.packageStamp = runtime.packageStamp;
+        slot.definition = runtime.definition;
+        slot.instanceParameterStamp = InstanceParameterStamp(slot.widgetId);
         ResetRenderer(slot);
     }
 
@@ -866,6 +903,13 @@ struct ContentWidgetHostApp {
             const bool runtimeChanged = existing->source != runtime.source ||
                                         existing->packageRoot != runtime.packageRoot ||
                                         existing->packageStamp != runtime.packageStamp;
+            const auto parameterStamp = InstanceParameterStamp(widget.id);
+            const bool parametersChanged = existing->instanceParameterStamp != parameterStamp;
+            if (!runtimeChanged && parametersChanged) {
+                existing->instanceParameterStamp = parameterStamp;
+                ResetRenderer(*existing);
+            }
+
             const LONG oldW = existing->region.right - existing->region.left;
             const LONG oldH = existing->region.bottom - existing->region.top;
             const LONG newW = mappedRegion.right - mappedRegion.left;
@@ -888,7 +932,9 @@ struct ContentWidgetHostApp {
                 CreateSlotWindow(*existing, widget, mappedRegion, desktopRegion);
             }
             if (existing->hwnd && IsWindow(existing->hwnd) &&
-                GetPropW(existing->hwnd, kNativeWidgetPaintReadyProperty) == nullptr) PaintSlot(*existing);
+                (parametersChanged || GetPropW(existing->hwnd, kNativeWidgetPaintReadyProperty) == nullptr)) {
+                PaintSlot(*existing);
+            }
         }
 
         slots.erase(std::remove_if(slots.begin(), slots.end(), [&](const auto& slot) {

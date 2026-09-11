@@ -10,10 +10,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <memory>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
+namespace fs = std::filesystem;
 
 namespace miaodesk::wallpaper {
 namespace {
@@ -91,11 +95,31 @@ RECT FitWidgetAspect(const RECT& bounds, const DesktopWidget& widget) {
     return render;
 }
 
+fs::file_time_type FileStamp(const fs::path& path) {
+    std::error_code ec;
+    if (path.empty() || !fs::exists(path, ec) || ec) return {};
+    const auto stamp = fs::last_write_time(path, ec);
+    return ec ? fs::file_time_type{} : stamp;
+}
+
+fs::file_time_type PackageStamp(const fs::path& root, const content::ContentDefinition& definition) {
+    return std::max(FileStamp(root / L"manifest.json"), FileStamp(root / definition.entry));
+}
+
 } // namespace
 
 struct ContentWidgetPreviewRenderer::Impl {
+    struct CachedScene {
+        std::wstring widgetId;
+        std::wstring source;
+        fs::path packageRoot;
+        fs::file_time_type packageStamp{};
+        std::unique_ptr<content::MiaoSceneD2DRenderer> renderer;
+    };
+
     ComPtr<ID2D1Factory> factory;
     ComPtr<ID2D1DCRenderTarget> target;
+    std::vector<CachedScene> scenes;
 
     bool EnsureTarget(std::wstring* error) {
         if (!factory) {
@@ -113,6 +137,57 @@ struct ContentWidgetPreviewRenderer::Impl {
         return true;
     }
 
+    CachedScene* FindScene(std::wstring_view widgetId) {
+        const auto found = std::find_if(scenes.begin(), scenes.end(), [&](const CachedScene& scene) {
+            return scene.widgetId == widgetId;
+        });
+        return found == scenes.end() ? nullptr : &*found;
+    }
+
+    CachedScene* EnsureScene(
+        const DesktopWidget& widget,
+        const content::ContentDefinition& definition,
+        std::wstring* error) {
+        CachedScene* cached = FindScene(widget.id);
+        const std::wstring source = widget.source.wstring();
+        bool needsLoad = !cached || cached->source != source || !cached->renderer;
+
+        content::ResolvedWidgetContent resolved;
+        if (needsLoad) {
+            if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, error)) return nullptr;
+            if (resolved.definition.kind != content::ContentKind::Widget ||
+                resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
+                Fail(error, L"Content preview 当前只支持 Scene widget。");
+                return nullptr;
+            }
+            if (!cached) {
+                scenes.push_back(CachedScene{});
+                cached = &scenes.back();
+                cached->widgetId = widget.id;
+            }
+            cached->source = source;
+            cached->packageRoot = resolved.packageRoot;
+            cached->packageStamp = PackageStamp(cached->packageRoot, definition);
+            cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+            if (!cached->renderer->Load(cached->packageRoot, target.Get(), error)) {
+                cached->renderer.reset();
+                return nullptr;
+            }
+            return cached;
+        }
+
+        const auto stamp = PackageStamp(cached->packageRoot, definition);
+        if (stamp != cached->packageStamp) {
+            cached->packageStamp = stamp;
+            cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+            if (!cached->renderer->Load(cached->packageRoot, target.Get(), error)) {
+                cached->renderer.reset();
+                return nullptr;
+            }
+        }
+        return cached;
+    }
+
     bool Draw(
         HDC dc,
         const RECT& bounds,
@@ -126,38 +201,35 @@ struct ContentWidgetPreviewRenderer::Impl {
             return Fail(error, L"Content preview 只接受 Content widget。");
         if (!EnsureTarget(error)) return false;
 
-        content::ResolvedWidgetContent resolved;
-        if (!content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, error)) return false;
-        if (resolved.definition.kind != content::ContentKind::Widget ||
-            resolved.definition.runtime != content::ContentRuntimeKind::Scene)
-            return Fail(error, L"Content preview 当前只支持 Scene widget。");
-
         desktop::ContentWidgetSettingsSnapshot settings;
         const auto settingsResult = controller.GetContentSettings(widget.id, &settings);
         if (!settingsResult.success) return Fail(error, settingsResult.message);
+        if (settings.definition.kind != content::ContentKind::Widget ||
+            settings.definition.runtime != content::ContentRuntimeKind::Scene)
+            return Fail(error, L"Content preview 当前只支持 Scene widget。");
+
+        CachedScene* cached = EnsureScene(widget, settings.definition, error);
+        if (!cached || !cached->renderer) return false;
 
         const RECT render = FitWidgetAspect(bounds, widget);
         if (FAILED(target->BindDC(dc, &render)))
             return Fail(error, L"Content preview 无法绑定目标 HDC。");
         target->SetDpi(96.0f, 96.0f);
 
-        content::MiaoSceneD2DRenderer renderer;
-        if (!renderer.Load(resolved.packageRoot, target.Get(), error)) return false;
         for (const auto& parameter : settings.definition.parameters) {
             const auto found = settings.values.find(parameter.key);
             if (found == settings.values.end()) continue;
-            if (!renderer.SetParameter(parameter.runtimeId, found->second, error)) return false;
+            if (!cached->renderer->SetParameter(parameter.runtimeId, found->second, error)) return false;
         }
-        if (!PublishWeather(renderer, settings.definition, error)) return false;
+        if (!PublishWeather(*cached->renderer, settings.definition, error)) return false;
 
         target->BeginDraw();
         target->Clear(D2D1::ColorF(0.973f, 0.980f, 0.992f, 1.0f));
-        const bool rendered = renderer.Draw(
+        const bool rendered = cached->renderer->Draw(
             static_cast<float>(GetTickCount64() / 1000.0), target->GetSize(), error);
         const HRESULT end = target->EndDraw();
-        renderer.Reset();
         if (end == D2DERR_RECREATE_TARGET) {
-            target.Reset();
+            Reset();
             return Fail(error, L"Content preview Direct2D target 需要重建。");
         }
         if (FAILED(end)) return Fail(error, L"Content preview Direct2D 绘制失败。");
@@ -165,6 +237,10 @@ struct ContentWidgetPreviewRenderer::Impl {
     }
 
     void Reset() noexcept {
+        for (auto& scene : scenes) {
+            if (scene.renderer) scene.renderer->Reset();
+        }
+        scenes.clear();
         target.Reset();
         factory.Reset();
     }

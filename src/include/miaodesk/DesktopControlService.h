@@ -62,6 +62,14 @@ public:
         return {true, result.message};
     }
 
+    DesktopControlResult GetContentWidgetSettings(
+        std::wstring_view id,
+        ContentWidgetSettingsSnapshot* settings) const {
+        WidgetService service;
+        const auto result = service.GetContentSettings(id, settings);
+        return {result.success, result.message};
+    }
+
     DesktopControlResult GetContentWidgetParameters(
         std::wstring_view id,
         content::ContentParameterValues* values) const {

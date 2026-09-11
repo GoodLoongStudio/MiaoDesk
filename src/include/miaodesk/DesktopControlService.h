@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "miaodesk/WallpaperService.h"
@@ -26,18 +27,12 @@ struct DesktopState {
     std::size_t widgetCount{};
 };
 
-// Atomic caller-facing desktop snapshot. UI and Pi read wallpaper + Widget
-// state through this contract instead of composing independent store reads that
-// can disagree about the current desktop.
 struct DesktopSnapshot {
     DesktopState desktop;
     std::vector<wallpaper::DesktopWidget> widgets;
     WidgetRuntimeHealth widgetRuntime;
 };
 
-// Facade shared by UI and Pi native tools. Domain ownership remains in
-// WallpaperService / WidgetService; this class coordinates cross-domain intent
-// and runtime activation only.
 class DesktopControlService {
 public:
     DesktopControlService() = default;
@@ -56,10 +51,6 @@ public:
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
 
-    // Content creation crosses the same facade boundary as Native creation.
-    // The Widget runtime coordinator polls persisted state, so EnsureRuntime is
-    // sufficient here while the dedicated Content reload notification is being
-    // generalized beyond the existing NativeWidgetHost message contract.
     DesktopControlResult CreateContentWidget(
         const ContentWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const {
@@ -69,6 +60,32 @@ public:
         const auto runtime = EnsureRuntime();
         if (!runtime.success) return runtime;
         return {true, result.message};
+    }
+
+    DesktopControlResult GetContentWidgetParameters(
+        std::wstring_view id,
+        content::ContentParameterValues* values) const {
+        WidgetService service;
+        const auto result = service.GetContentParameters(id, values);
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult SetContentWidgetParameter(
+        std::wstring_view id,
+        std::wstring_view key,
+        content::ContentParameterValue value) const {
+        WidgetService service;
+        const auto result = service.SetContentParameter(id, key, std::move(value));
+        if (!result.success) return {false, result.message};
+        // ContentWidgetHost observes the instance-state timestamp and reloads
+        // only the affected renderer, so no process restart is required.
+        return {true, result.message};
+    }
+
+    DesktopControlResult ResetContentWidgetParameters(std::wstring_view id) const {
+        WidgetService service;
+        const auto result = service.ResetContentParameters(id);
+        return {result.success, result.message};
     }
 
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;

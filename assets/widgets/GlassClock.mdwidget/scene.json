@@ -321,6 +321,30 @@
       "offset": 0.0
     },
     {
+      "id": "binding://accent-left-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://left-glow/sprite", "propertyName": "opacity"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-right-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://right-glow/sprite", "propertyName": "opacity"},
+      "scale": 0.55,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-divider-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://divider/sprite", "propertyName": "opacity"},
+      "scale": 2.0,
+      "offset": 0.0
+    },
+    {
       "id": "binding://card-opacity",
       "sourceKind": "parameter",
       "sourceId": "param://card-opacity",

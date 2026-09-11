@@ -18,13 +18,29 @@ on:
       - packaging/store/**
       - scripts/generate-miaomiao-icon.ps1
       - .github/workflows/package-windows-x64-msix.yml
+  pull_request:
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - assets/app/**
+      - assets/wallpapers/**
+      - assets/widgets/**
+      - config/**
+      - runtime/x64/**
+      - runtime/agent/**
+      - third_party/webview2/**
+      - packaging/windows/**
+      - packaging/store/**
+      - scripts/generate-miaomiao-icon.ps1
+      - .github/workflows/package-windows-x64-msix.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-x64-msix
+  group: windows-x64-msix-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -90,6 +106,10 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
           }
           .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
+      - name: Verify staged GlassClock Content Framework route
+        shell: pwsh
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
 
       - name: Build MSIX
         shell: pwsh

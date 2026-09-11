@@ -52,6 +52,10 @@ public:
         content::ContentKind kind,
         std::wstring_view source,
         content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult UninstallContentPackage(
+        content::ContentKind kind,
+        std::wstring_view source,
+        content::ContentPackageUninstallResult* uninstalled) const;
 
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
     DesktopControlResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;

@@ -32,6 +32,7 @@ namespace {
 constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
 constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
 constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
+constexpr wchar_t kGlassClockContentSource[] = L"content:com.goodloong.glass-clock";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -131,16 +132,15 @@ std::vector<WebWallpaperRequest> DesiredRequests(HWND host, const RuntimeState& 
     return requests;
 }
 
-bool HasEnabledNativeWidgets() {
+bool HasEnabledWidgetHostItems() {
     DesktopWidgetStore store;
     std::wstring ignored;
     if (!store.Load(&ignored)) return false;
     for (const auto& raw : store.Items()) {
         const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
-        if (widget.enabled && widget.kind == DesktopWidgetKind::Native &&
-            IsNativePresetSource(widget.source.wstring())) {
-            return true;
-        }
+        if (!widget.enabled) continue;
+        if (widget.kind == DesktopWidgetKind::Native && IsNativePresetSource(widget.source.wstring())) return true;
+        if (widget.kind == DesktopWidgetKind::Content && widget.source.wstring() == kGlassClockContentSource) return true;
     }
     return false;
 }
@@ -248,7 +248,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             surfaces.Stop();
             if (activeRequests.empty()) {
                 resetRecovery();
-                if (scope == WallpaperWebRuntimeScope::Widgets && HasEnabledNativeWidgets()) {
+                if (scope == WallpaperWebRuntimeScope::Widgets && HasEnabledWidgetHostItems()) {
                     if (!nativeSurfaces.Active()) nativeSurfaces.Start(surfaceParent);
                     WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
                 } else {
@@ -339,7 +339,7 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 }
 
                 // Web widgets no longer exist: the Widgets scope drives only the
-                // native widget host and never produces web surface requests.
+                // shared Direct2D WidgetHost and never produces web surface requests.
                 std::vector<WebWallpaperRequest> desired;
                 if (scope == WallpaperWebRuntimeScope::WebWallpaper) {
                     const auto desiredInHost = DesiredRequests(host, state);
@@ -358,14 +358,14 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                         stackRepairNeeded = true;
                     }
                 } else if (scope == WallpaperWebRuntimeScope::Widgets) {
-                    const bool wantNative = HasEnabledNativeWidgets();
-                    if (wantNative && !nativeSurfaces.Active()) {
+                    const bool wantWidgetHost = HasEnabledWidgetHostItems();
+                    if (wantWidgetHost && !nativeSurfaces.Active()) {
                         if (!nativeSurfaces.Start(surfaceParent)) {
-                            WriteDiagnostics(scope, L"Native widget host 启动失败：" + nativeSurfaces.LastErrorText());
+                            WriteDiagnostics(scope, L"Widget host 启动失败：" + nativeSurfaces.LastErrorText());
                         } else {
                             WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
                         }
-                    } else if (!wantNative && nativeSurfaces.Active()) {
+                    } else if (!wantWidgetHost && nativeSurfaces.Active()) {
                         nativeSurfaces.Stop();
                     }
                 }
@@ -377,8 +377,8 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             }
 
             const bool hasWebWidgets = !activeRequests.empty();
-            const bool hasNativeWidgets = scope == WallpaperWebRuntimeScope::Widgets && HasEnabledNativeWidgets();
-            if (scopeCanRun && (hasWebWidgets || hasNativeWidgets)) {
+            const bool hasWidgetHostItems = scope == WallpaperWebRuntimeScope::Widgets && HasEnabledWidgetHostItems();
+            if (scopeCanRun && (hasWebWidgets || hasWidgetHostItems)) {
                 if (hasWebWidgets) {
                     surfaces.Tick();
                     if (!surfaces.Active()) {
@@ -399,13 +399,13 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     }
                 }
 
-                if (hasNativeWidgets) {
+                if (hasWidgetHostItems) {
                     if (!nativeSurfaces.Active()) {
                         if (!nativeSurfaces.Start(surfaceParent)) {
-                            WriteDiagnostics(scope, L"Native widget host 启动失败：" + nativeSurfaces.LastErrorText());
+                            WriteDiagnostics(scope, L"Widget host 启动失败：" + nativeSurfaces.LastErrorText());
                         }
                     } else if (!nativeSurfaces.LastErrorText().empty()) {
-                        WriteDiagnostics(scope, L"Native widget 运行异常：" + nativeSurfaces.LastErrorText());
+                        WriteDiagnostics(scope, L"Widget host 运行异常：" + nativeSurfaces.LastErrorText());
                     }
                 } else if (nativeSurfaces.Active()) {
                     nativeSurfaces.Stop();
@@ -431,10 +431,10 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                 const bool hiddenWallpaper = scope == WallpaperWebRuntimeScope::WebWallpaper &&
                                              (!host || !IsWindow(host) || IsWindowVisible(host) == FALSE);
                 if (hasWebWidgets) surfaces.SetPaused(policyPause || hiddenWallpaper);
-                if (hasNativeWidgets) nativeSurfaces.SetPaused(nativePolicyHide);
-                if (hasNativeWidgets && hasWebWidgets) {
+                if (hasWidgetHostItems) nativeSurfaces.SetPaused(nativePolicyHide);
+                if (hasWidgetHostItems && hasWebWidgets) {
                     WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText() + L" · " + surfaces.DiagnosticsText());
-                } else if (hasNativeWidgets) {
+                } else if (hasWidgetHostItems) {
                     WriteDiagnostics(scope, nativeSurfaces.DiagnosticsText());
                 } else if (hasWebWidgets && surfaces.Active()) {
                     WriteDiagnostics(scope, surfaces.DiagnosticsText());

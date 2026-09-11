@@ -7,6 +7,7 @@
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/MiaoWidgetContentCatalog.h"
+#include "miaodesk/NativeWeatherService.h"
 #include "miaodesk/NativeWidgetHost.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
@@ -194,6 +195,14 @@ fs::file_time_type InstanceParameterStamp(std::wstring_view widgetId) {
     if (!fs::exists(path, ec) || ec) return {};
     const auto value = fs::last_write_time(path, ec);
     return ec ? fs::file_time_type{} : value;
+}
+
+bool HasContentCapability(const content::ContentDefinition& definition, std::wstring_view capability) {
+    if (std::find(definition.capabilities.begin(), definition.capabilities.end(), capability) != definition.capabilities.end())
+        return true;
+    if (capability == L"weather.read")
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"weather") != definition.capabilities.end();
+    return false;
 }
 
 struct ResolvedContentRuntime {
@@ -565,6 +574,41 @@ struct ContentWidgetHostApp {
         return true;
     }
 
+    bool ApplyHostData(ContentSlot& slot) {
+        if (!slot.renderer || !slot.renderer->Loaded()) return false;
+        slot.renderer->ClearDataValues();
+        if (!HasContentCapability(slot.definition, L"weather.read")) return true;
+
+        NativeWeatherSnapshot weather;
+        const bool available = NativeWeatherService::ReadCachedSnapshot(&weather) && weather.valid;
+        std::wstring error;
+        auto publish = [&](std::wstring_view path, content::PropertyValue value) {
+            if (slot.renderer->SetDataValue(path, std::move(value), &error)) return true;
+            ReportFailure(&slot, L"Content host data apply failed: " + std::wstring(path) + L": " + error);
+            return false;
+        };
+
+        const std::wstring unavailableStatus = L"天气数据暂不可用";
+        if (!publish(L"weather.available", available) ||
+            !publish(L"weather.location", available ? weather.location : std::wstring{}) ||
+            !publish(L"weather.temperatureC", static_cast<std::int64_t>(available ? weather.temperatureC : 0)) ||
+            !publish(L"weather.highC", static_cast<std::int64_t>(available ? weather.highC : 0)) ||
+            !publish(L"weather.lowC", static_cast<std::int64_t>(available ? weather.lowC : 0)) ||
+            !publish(L"weather.code", static_cast<std::int64_t>(available ? weather.weatherCode : 0)) ||
+            !publish(L"weather.condition", available ? weather.condition : std::wstring{}) ||
+            !publish(L"weather.observedTime", available ? weather.observedTime : std::wstring{}) ||
+            !publish(L"weather.status", available ? weather.status : unavailableStatus)) return false;
+
+        for (std::size_t i = 0; i < weather.hours.size(); ++i) {
+            const auto& hour = weather.hours[i];
+            const std::wstring prefix = L"weather.hour" + std::to_wstring(i) + L".";
+            if (!publish(prefix + L"label", available ? hour.label : std::wstring{}) ||
+                !publish(prefix + L"temperatureC", static_cast<std::int64_t>(available ? hour.temperatureC : 0)) ||
+                !publish(prefix + L"code", static_cast<std::int64_t>(available ? hour.weatherCode : 0))) return false;
+        }
+        return true;
+    }
+
     bool EnsureRenderer(ContentSlot& slot) {
         if (!slot.activeTarget || slot.packageRoot.empty()) return false;
         if (!slot.renderer) slot.renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
@@ -626,6 +670,7 @@ struct ContentWidgetHostApp {
             if (lastError.empty()) ReportFailure(&slot, L"Content render target/renderer unavailable");
             return;
         }
+        if (!ApplyHostData(slot)) return;
 
         const D2D1_SIZE_F size = slot.activeTarget->GetSize();
         const double timeSeconds = static_cast<double>(GetTickCount64()) / 1000.0;

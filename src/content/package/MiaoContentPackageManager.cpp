@@ -389,13 +389,20 @@ bool InstallWithRoots(
     ec.clear();
     fs::rename(stagingRoot, canonicalTarget, ec);
     if (ec) {
-        if (backupCreated) {
-            std::error_code rollbackError;
-            fs::rename(backupRoot, originalExistingRoot, rollbackError);
-        }
+        std::error_code rollbackError;
+        if (backupCreated) fs::rename(backupRoot, originalExistingRoot, rollbackError);
         cleanupStaging();
-        cleanupBackup();
-        return Fail(error, L"Unable to activate staged content package: error=" + std::to_wstring(ec.value()));
+        if (!rollbackError) cleanupBackup();
+
+        std::wstring message = L"Unable to activate staged content package: error=" +
+            std::to_wstring(ec.value());
+        if (rollbackError) {
+            message += L"; rollback failed, previous package preserved at " + backupRoot.wstring() +
+                       L", error=" + std::to_wstring(rollbackError.value());
+        } else if (backupCreated) {
+            message += L"; previous package restored";
+        }
+        return Fail(error, std::move(message));
     }
 
     cleanupStaging();
@@ -411,13 +418,17 @@ bool InstallWithRoots(
 
         std::error_code rollbackError;
         if (backupCreated) fs::rename(backupRoot, originalExistingRoot, rollbackError);
-        cleanupBackup();
+        if (!rollbackError) cleanupBackup();
 
         std::wstring message = L"Activated content package failed final validation";
         if (!activationError.empty()) message += L": " + activationError;
         if (removeError) message += L"; failed to remove invalid target, error=" + std::to_wstring(removeError.value());
-        if (rollbackError) message += L"; rollback failed, error=" + std::to_wstring(rollbackError.value());
-        else if (backupCreated) message += L"; previous package restored";
+        if (rollbackError) {
+            message += L"; rollback failed, previous package preserved at " + backupRoot.wstring() +
+                       L", error=" + std::to_wstring(rollbackError.value());
+        } else if (backupCreated) {
+            message += L"; previous package restored";
+        }
         return Fail(error, std::move(message));
     }
 

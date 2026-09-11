@@ -106,11 +106,9 @@ bool MiaoWidgetContentCatalog::Resolve(
     std::wstring_view source,
     ResolvedWidgetContent* content,
     std::wstring* error) {
-    const fs::path executable = paths::ExecutableDirectory();
-    const fs::path stateRoot = paths::DesktopWidgetsRoot();
     const std::vector<fs::path> roots{
-        executable.empty() ? fs::path{} : executable / L"Widgets",
-        stateRoot.empty() ? fs::path{} : stateRoot / L"Packages",
+        paths::BuiltInWidgetPackagesRoot(),
+        paths::WidgetPackagesRoot(),
     };
     return ResolveInRoots(source, roots, content, error);
 }

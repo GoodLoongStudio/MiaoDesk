@@ -110,6 +110,10 @@ DesktopControlResult FromWidget(WidgetServiceResult result) {
     return {result.success, result.message};
 }
 
+const wchar_t* ContentKindText(content::ContentKind kind) noexcept {
+    return kind == content::ContentKind::Widget ? L"小组件" : L"壁纸";
+}
+
 } // namespace
 
 DesktopControlResult DesktopControlService::EnsureRuntime() const {
@@ -188,6 +192,54 @@ DesktopControlResult DesktopControlService::GetState(DesktopState* state) const 
     state->videoSource = wallpaperState.videoSource;
     state->widgetCount = widgets.size();
     return {true, L"桌面状态读取完成。"};
+}
+
+DesktopControlResult DesktopControlService::InspectContentPackage(
+    const fs::path& package,
+    content::ManagedContentPackageInfo* info) const {
+    if (!info) return {false, L"Content package info 输出不能为空。"};
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Inspect(package, info, &error)) {
+        miaodesk::log::Error(L"DesktopControl", L"InspectContentPackage 失败: " + error);
+        return {false, error.empty() ? L"内容包校验失败。" : error};
+    }
+    return {true, L"内容包已识别：" + info->source};
+}
+
+DesktopControlResult DesktopControlService::InstallContentPackage(
+    const fs::path& package,
+    content::ContentPackageInstallResult* installed,
+    const content::ContentPackageInstallOptions& options) const {
+    if (!installed) return {false, L"Content package install result 输出不能为空。"};
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Install(package, installed, options, &error)) {
+        miaodesk::log::Error(L"DesktopControl", L"InstallContentPackage 失败: " + error);
+        return {false, error.empty() ? L"内容包安装失败。" : error};
+    }
+
+    const auto& info = installed->package;
+    const std::wstring action = installed->replacedExisting ? L"已替换" : L"已安装";
+    miaodesk::log::Info(
+        L"DesktopControl",
+        action + std::wstring(L" Content ") + ContentKindText(info.kind) + L": " + info.source +
+            L" -> " + info.packageRoot.wstring());
+
+    // A package install does not create a widget instance or select a wallpaper.
+    // Runtime/catalog consumers resolve the stable content:<id> source when they
+    // next refresh; callers can explicitly create/apply content afterwards.
+    return {true, action + std::wstring(L" ") + ContentKindText(info.kind) + L"：" + info.name +
+                  L"（" + info.source + L"）"};
+}
+
+DesktopControlResult DesktopControlService::ResolveContentPackage(
+    content::ContentKind kind,
+    std::wstring_view source,
+    content::ManagedContentPackageInfo* info) const {
+    if (!info) return {false, L"Content package info 输出不能为空。"};
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Resolve(kind, source, info, &error))
+        return {false, error.empty() ? L"无法解析内容包。" : error};
+    return {true, L"内容包已解析：" + info->source};
 }
 
 DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& package) const {

@@ -28,6 +28,17 @@ endif()
 include(GNUInstallDirs)
 add_subdirectory(src)
 
+# Development/quick-build binaries must exercise the same Content package
+# discovery contract as installed products. Keep official .mdwidget packages
+# beside MiaoDeskWallpaper.exe after every build instead of making Content-only
+# widget creation mysteriously work only after `cmake --install`.
+add_custom_command(TARGET MiaoDeskWallpaper POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/widgets"
+        "$<TARGET_FILE_DIR:MiaoDeskWallpaper>/Widgets"
+    COMMENT "Staging built-in MiaoDesk widget packages"
+)
+
 # End-user staging is deliberately shallow. Runtime discovery in MiaoDesk is
 # relative to the executable directory, so the three production executables
 # stay at the install root. Do not install repository runtime SDK trees,

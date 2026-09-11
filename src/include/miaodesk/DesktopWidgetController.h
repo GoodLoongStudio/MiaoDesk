@@ -10,9 +10,9 @@
 
 namespace miaodesk::desktop {
 
-// The current production UI still exposes three familiar fixed presets. During
-// migration, GlassClock/WeatherGlass may resolve to Content packages while
-// TodayTasks keeps its Native fallback until a real task data provider exists.
+// The production UI keeps the three familiar preset names while the controller
+// prefers their Scene Content packages whenever those packages are available.
+// Native presets remain the development/runtime fallback for missing packages.
 using WidgetFixedPreset = wallpaper::NativeWidgetPreset;
 
 class DesktopWidgetController {
@@ -54,6 +54,18 @@ public:
         content::ContentParameterValue value) const;
 
     DesktopControlResult ResetContentParameters(std::wstring_view id) const;
+
+    DesktopControlResult GetTodayTasks(TodayTaskSnapshot* snapshot) const {
+        return service_.GetTodayTasks(snapshot);
+    }
+
+    DesktopControlResult ReplaceTodayTasks(const std::vector<TodayTaskItem>& items) const {
+        return service_.ReplaceTodayTasks(items);
+    }
+
+    DesktopControlResult SetTodayTaskCompleted(std::wstring_view id, bool completed) const {
+        return service_.SetTodayTaskCompleted(id, completed);
+    }
 
     DesktopControlResult SetEnabled(std::wstring_view id, bool enabled) const;
     DesktopControlResult MoveTo(std::wstring_view id, float x, float y) const;

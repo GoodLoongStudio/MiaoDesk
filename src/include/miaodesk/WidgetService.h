@@ -38,8 +38,8 @@ struct ContentWidgetCreateRequest {
     // callers should not duplicate a package's default size/aspect ratio.
     std::optional<float> width;
     std::optional<float> height;
-    // Content stays opt-in while host routing is staged. The first supported
-    // enabled route is the official GlassClock Scene package.
+    // Creation remains explicit: callers choose whether a newly persisted
+    // Content widget should become live immediately.
     bool enabled{false};
 };
 
@@ -119,7 +119,9 @@ public:
 
     // Persists a validated stable content:<definitionId> source. Package-owned
     // geometry is applied by default so persisted instances cannot silently
-    // drift away from the .mdwidget contract.
+    // drift away from the .mdwidget contract. Any Widget/Scene content package
+    // is eligible for the desktop runtime; non-Scene runtimes are rejected at
+    // this boundary until a corresponding host is implemented.
     WidgetServiceResult CreateContent(
         const ContentWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const {
@@ -134,8 +136,8 @@ public:
         if (resolved.definition.kind != content::ContentKind::Widget) {
             return {false, L"Content definition 不是 widget：" + resolved.definition.id};
         }
-        if (request.enabled && source != L"content:com.goodloong.glass-clock") {
-            return {false, L"该 Content widget 尚未接入桌面运行时；当前仅 GlassClock 支持启用。"};
+        if (request.enabled && resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
+            return {false, L"该 Content widget 的 runtime 尚未接入桌面宿主；当前支持 Scene runtime。"};
         }
 
         wallpaper::DesktopWidget widget;

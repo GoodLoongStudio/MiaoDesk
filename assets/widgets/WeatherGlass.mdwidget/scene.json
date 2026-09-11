@@ -1,0 +1,380 @@
+{
+  "schema": 1,
+  "id": "scene://weather-glass",
+  "kind": "widget",
+  "profile": "widget",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Weather Glass Root",
+      "parentId": "",
+      "enabled": true,
+      "components": []
+    },
+    {
+      "id": "node://card",
+      "name": "Card",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://card/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+            {"name": "scale", "type": "vec2", "default": [0.98, 0.96]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://card/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.94},
+            {"name": "tint", "type": "color", "default": [0.055, 0.18, 0.42, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://top-glass",
+      "name": "Top Glass Highlight",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://top-glass/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -102.0]},
+            {"name": "scale", "type": "vec2", "default": [0.94, 0.24]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://top-glass/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.08},
+            {"name": "tint", "type": "color", "default": [0.78, 0.95, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://accent",
+      "name": "Accent",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://accent/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -118.0]},
+            {"name": "scale", "type": "vec2", "default": [0.82, 0.008]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://accent/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.58},
+            {"name": "tint", "type": "color", "default": [0.18, 0.82, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://location",
+      "name": "Location",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://location/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [20.0, 18.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.82}
+          ]
+        },
+        {
+          "id": "component://location/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{weather.location}}"},
+            {"name": "fontSize", "type": "float", "default": 15.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://condition",
+      "name": "Condition",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://condition/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [-20.0, 18.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.96}
+          ]
+        },
+        {
+          "id": "component://condition/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{weather.condition}}"},
+            {"name": "fontSize", "type": "float", "default": 15.0},
+            {"name": "color", "type": "color", "default": [0.18, 0.82, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "right"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://temperature",
+      "name": "Temperature",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://temperature/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -28.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://temperature/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{weather.temperatureC}}°"},
+            {"name": "fontSize", "type": "float", "default": 74.0},
+            {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Display"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://range",
+      "name": "Daily Range",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://range/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 47.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.88}
+          ]
+        },
+        {
+          "id": "component://range/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "最高 {{weather.highC}}°  ·  最低 {{weather.lowC}}°"},
+            {"name": "fontSize", "type": "float", "default": 17.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 500}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://forecast",
+      "name": "Hourly Forecast",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://forecast/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 82.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.76}
+          ]
+        },
+        {
+          "id": "component://forecast/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{weather.hour0.label}} {{weather.hour0.temperatureC}}°   {{weather.hour1.label}} {{weather.hour1.temperatureC}}°   {{weather.hour2.label}} {{weather.hour2.temperatureC}}°   {{weather.hour3.label}} {{weather.hour3.temperatureC}}°"},
+            {"name": "fontSize", "type": "float", "default": 13.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 500}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://status",
+      "name": "Status",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://status/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 111.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.62}
+          ]
+        },
+        {
+          "id": "component://status/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{weather.status}}"},
+            {"name": "fontSize", "type": "float", "default": 11.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 400}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [
+    {
+      "id": "material://card",
+      "model": "builtin",
+      "builtinName": "solidColor",
+      "vertexShaderId": "",
+      "pixelShaderId": "",
+      "properties": [
+        {"name": "color", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]}
+      ],
+      "textures": []
+    }
+  ],
+  "inputs": [],
+  "bindings": [
+    {
+      "id": "binding://background-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://background-color",
+      "target": {"componentId": "component://card/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://card-opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://card-opacity",
+      "target": {"componentId": "component://card/sprite", "propertyName": "opacity"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-bar-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://accent/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://condition-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://condition/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://temperature-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://temperature/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://location-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://location/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://range-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://range/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://forecast-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://forecast/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://status-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://status/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ],
+  "animations": []
+}

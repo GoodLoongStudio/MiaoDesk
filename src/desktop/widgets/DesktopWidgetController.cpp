@@ -40,13 +40,14 @@ struct NormalizedRect {
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
 constexpr std::wstring_view kGlassClockDefinitionId = L"com.goodloong.glass-clock";
+constexpr std::wstring_view kTodayTasksDefinitionId = L"com.goodloong.today-tasks";
 constexpr std::wstring_view kWeatherGlassDefinitionId = L"com.goodloong.weather-glass";
 
 std::wstring_view ContentDefinitionIdForPreset(WidgetFixedPreset preset) noexcept {
     switch (preset) {
     case WidgetFixedPreset::GlassClock: return kGlassClockDefinitionId;
+    case WidgetFixedPreset::TodayTasks: return kTodayTasksDefinitionId;
     case WidgetFixedPreset::WeatherGlass: return kWeatherGlassDefinitionId;
-    case WidgetFixedPreset::TodayTasks:
     default: return {};
     }
 }

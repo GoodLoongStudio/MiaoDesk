@@ -346,11 +346,23 @@ struct MiaoSceneD2DRenderer::Impl {
 
                 const double spriteOpacity = ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0);
                 const double nodeOpacity = ResolveNodeOpacity(definition.scene, node, runtime);
+                const double maxCornerRadius = static_cast<double>(std::min(size.width, size.height)) * 0.5;
+                const double cornerRadius = std::clamp(
+                    ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"cornerRadius"}), 0.0),
+                    0.0,
+                    maxCornerRadius);
                 brush->SetColor(ToD2D(color, spriteOpacity * nodeOpacity));
 
                 const auto sceneTransform = ResolveNodeTransform(definition.scene, node, runtime, size);
                 target->SetTransform(sceneTransform * hostTransform);
-                target->FillRectangle(D2D1::RectF(0.0f, 0.0f, size.width, size.height), brush.Get());
+                const auto rect = D2D1::RectF(0.0f, 0.0f, size.width, size.height);
+                if (cornerRadius > 0.0) {
+                    target->FillRoundedRectangle(
+                        D2D1::RoundedRect(rect, static_cast<float>(cornerRadius), static_cast<float>(cornerRadius)),
+                        brush.Get());
+                } else {
+                    target->FillRectangle(rect, brush.Get());
+                }
                 target->SetTransform(hostTransform);
                 drew = true;
             }
@@ -522,6 +534,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
           {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
             {"name":"opacity","type":"float","default":1.0},
             {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+            {"name":"cornerRadius","type":"float","default":12.0},
             {"name":"materialId","type":"string","default":"material://background"}
           ]}
         ]},
@@ -596,7 +609,9 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded() && renderer.Profile() == RuntimeProfile::Widget;
     }
     if (ok) {
-        ok = PixelHasColor(bitmap.Get(), 32, 32, true) && PixelHasColor(bitmap.Get(), 2, 2, false);
+        ok = PixelHasColor(bitmap.Get(), 32, 32, true) &&
+             PixelHasColor(bitmap.Get(), 17, 17, false) &&
+             PixelHasColor(bitmap.Get(), 2, 2, false);
     }
     if (ok) {
         MiaoSceneFrameDemand idleDemand;

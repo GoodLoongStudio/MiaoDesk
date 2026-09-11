@@ -34,6 +34,7 @@
           "properties": [
             {"name": "opacity", "type": "float", "default": 0.96},
             {"name": "tint", "type": "color", "default": [0.055, 0.18, 0.42, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 28.0},
             {"name": "materialId", "type": "string", "default": "material://card"}
           ]
         }

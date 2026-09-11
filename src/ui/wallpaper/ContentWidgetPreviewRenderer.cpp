@@ -8,6 +8,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string_view>
 #include <utility>
@@ -65,6 +66,31 @@ bool PublishWeather(
     return true;
 }
 
+RECT FitWidgetAspect(const RECT& bounds, const DesktopWidget& widget) {
+    RECT render = bounds;
+    InflateRect(&render, -6, -6);
+    if (render.right <= render.left || render.bottom <= render.top) render = bounds;
+
+    const int availableW = std::max<LONG>(1, render.right - render.left);
+    const int availableH = std::max<LONG>(1, render.bottom - render.top);
+    const float screenW = static_cast<float>(std::max(1, GetSystemMetrics(SM_CXSCREEN)));
+    const float screenH = static_cast<float>(std::max(1, GetSystemMetrics(SM_CYSCREEN)));
+    const float physicalW = std::max(1.0f, widget.width * screenW);
+    const float physicalH = std::max(1.0f, widget.height * screenH);
+    const float aspect = std::clamp(physicalW / physicalH, 0.25f, 5.0f);
+
+    if (static_cast<float>(availableW) / static_cast<float>(availableH) > aspect) {
+        const int fittedW = std::max(1, static_cast<int>(std::lround(availableH * aspect)));
+        render.left += (availableW - fittedW) / 2;
+        render.right = render.left + fittedW;
+    } else {
+        const int fittedH = std::max(1, static_cast<int>(std::lround(availableW / aspect)));
+        render.top += (availableH - fittedH) / 2;
+        render.bottom = render.top + fittedH;
+    }
+    return render;
+}
+
 } // namespace
 
 struct ContentWidgetPreviewRenderer::Impl {
@@ -110,9 +136,7 @@ struct ContentWidgetPreviewRenderer::Impl {
         const auto settingsResult = controller.GetContentSettings(widget.id, &settings);
         if (!settingsResult.success) return Fail(error, settingsResult.message);
 
-        RECT render = bounds;
-        InflateRect(&render, -6, -6);
-        if (render.right <= render.left || render.bottom <= render.top) render = bounds;
+        const RECT render = FitWidgetAspect(bounds, widget);
         if (FAILED(target->BindDC(dc, &render)))
             return Fail(error, L"Content preview 无法绑定目标 HDC。");
         target->SetDpi(96.0f, 96.0f);

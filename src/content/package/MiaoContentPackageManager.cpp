@@ -351,6 +351,11 @@ bool InstallWithRoots(
                            std::to_wstring(ec.value()));
     }
 
+    if (!RejectReparseTree(stagingRoot, error)) {
+        cleanupStaging();
+        return false;
+    }
+
     ManagedContentPackageInfo staged;
     if (!InspectWithOrigin(stagingRoot, ManagedContentPackageOrigin::UserManaged, &staged, error)) {
         cleanupStaging();

@@ -275,3 +275,5 @@ WallpaperServiceResult WallpaperService::ClearMonitorAssignment(std::wstring_vie
         return {false, error.empty() ? L"无法清除显示器壁纸分配。" : error};
     return {true, L"显示器壁纸分配已清除。"};
 }
+
+} // namespace miaodesk::desktop

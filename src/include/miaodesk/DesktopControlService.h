@@ -55,9 +55,22 @@ public:
     DesktopControlResult CreateNativeWidget(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
+
+    // Content creation crosses the same facade boundary as Native creation.
+    // The Widget runtime coordinator polls persisted state, so EnsureRuntime is
+    // sufficient here while the dedicated Content reload notification is being
+    // generalized beyond the existing NativeWidgetHost message contract.
     DesktopControlResult CreateContentWidget(
         const ContentWidgetCreateRequest& request,
-        wallpaper::DesktopWidget* created = nullptr) const;
+        wallpaper::DesktopWidget* created = nullptr) const {
+        WidgetService service;
+        const auto result = service.CreateContent(request, created);
+        if (!result.success) return {false, result.message};
+        const auto runtime = EnsureRuntime();
+        if (!runtime.success) return runtime;
+        return {true, result.message};
+    }
+
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;
     DesktopControlResult RemoveWidget(std::wstring_view id) const;
     DesktopControlResult ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const;

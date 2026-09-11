@@ -18,6 +18,9 @@ on:
       - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/package-windows-x64.yml
+  pull_request:
+    paths:
+      - .github/workflows/package-windows-x64.yml
   workflow_dispatch:
 
 permissions:

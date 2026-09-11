@@ -392,6 +392,15 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error) {
+        if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
+        std::wstring runtimeError;
+        if (!runtime.SetParameter(id, std::move(value), &runtimeError)) return Error(error, runtimeError);
+        lastError.clear();
+        if (error) error->clear();
+        return true;
+    }
+
     bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
         if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         std::wstring runtimeError;
@@ -446,6 +455,10 @@ bool MiaoSceneD2DRenderer::Load(const fs::path& packageRoot, ID2D1RenderTarget* 
 
 bool MiaoSceneD2DRenderer::Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error) {
     return impl_->Draw(timeSeconds, size, error);
+}
+
+bool MiaoSceneD2DRenderer::SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error) {
+    return impl_->SetParameter(id, std::move(value), error);
 }
 
 bool MiaoSceneD2DRenderer::SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
@@ -576,6 +589,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     std::wstring error;
     MiaoSceneD2DRenderer renderer;
     if (ok) ok = renderer.Load(root, target.Get(), &error);
+    if (ok) ok = renderer.SetParameter(L"param://opacity", 0.6, &error);
     if (ok) {
         target->BeginDraw();
         target->Clear(D2D1::ColorF(D2D1::ColorF::Black));

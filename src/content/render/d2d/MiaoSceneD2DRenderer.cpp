@@ -123,18 +123,10 @@ NodeTransformState ReadTransformState(
     const auto* transform = FindTransform(node);
     if (!transform) return state;
 
-    state.position = ReadVec2(
-        runtime.GetProperty(PropertyAddress{transform->id, L"position"}),
-        state.position);
-    state.scale = ReadVec2(
-        runtime.GetProperty(PropertyAddress{transform->id, L"scale"}),
-        state.scale);
-    state.rotationDegrees = ReadFloat(
-        runtime.GetProperty(PropertyAddress{transform->id, L"rotation"}),
-        state.rotationDegrees);
-    state.opacity = ReadFloat(
-        runtime.GetProperty(PropertyAddress{transform->id, L"opacity"}),
-        state.opacity);
+    state.position = ReadVec2(runtime.GetProperty(PropertyAddress{transform->id, L"position"}), state.position);
+    state.scale = ReadVec2(runtime.GetProperty(PropertyAddress{transform->id, L"scale"}), state.scale);
+    state.rotationDegrees = ReadFloat(runtime.GetProperty(PropertyAddress{transform->id, L"rotation"}), state.rotationDegrees);
+    state.opacity = ReadFloat(runtime.GetProperty(PropertyAddress{transform->id, L"opacity"}), state.opacity);
 
     state.position.x = std::clamp(state.position.x, -1000000.0, 1000000.0);
     state.position.y = std::clamp(state.position.y, -1000000.0, 1000000.0);
@@ -145,18 +137,11 @@ NodeTransformState ReadTransformState(
     return state;
 }
 
-D2D1_MATRIX_3X2_F LocalTransformMatrix(
-    const NodeTransformState& transform,
-    const D2D1_SIZE_F& size) noexcept {
+D2D1_MATRIX_3X2_F LocalTransformMatrix(const NodeTransformState& transform, const D2D1_SIZE_F& size) noexcept {
     const D2D1_POINT_2F center = D2D1::Point2F(size.width * 0.5f, size.height * 0.5f);
-    return D2D1::Matrix3x2F::Scale(
-               static_cast<float>(transform.scale.x),
-               static_cast<float>(transform.scale.y),
-               center) *
+    return D2D1::Matrix3x2F::Scale(static_cast<float>(transform.scale.x), static_cast<float>(transform.scale.y), center) *
            D2D1::Matrix3x2F::Rotation(static_cast<float>(transform.rotationDegrees), center) *
-           D2D1::Matrix3x2F::Translation(
-               static_cast<float>(transform.position.x),
-               static_cast<float>(transform.position.y));
+           D2D1::Matrix3x2F::Translation(static_cast<float>(transform.position.x), static_cast<float>(transform.position.y));
 }
 
 D2D1_MATRIX_3X2_F ResolveNodeTransform(
@@ -223,6 +208,7 @@ struct MiaoSceneD2DRenderer::Impl {
     SceneRuntimeDefinition definition;
     MiaoAssetDatabase assets;
     MiaoSceneRuntime runtime;
+    ContentDataValues hostData;
     ComPtr<ID2D1SolidColorBrush> brush;
     ComPtr<IDWriteFactory> dwrite;
     std::wstring lastError;
@@ -259,8 +245,7 @@ struct MiaoSceneD2DRenderer::Impl {
     bool AdvanceClock(double timeSeconds, std::wstring* error) {
         std::wstring runtimeError;
         if (MiaoSceneRuntimeModel::FindInput(definition, kFrameTimeInput)) {
-            if (!runtime.SetInput(kFrameTimeInput, timeSeconds, &runtimeError))
-                return Error(error, runtimeError);
+            if (!runtime.SetInput(kFrameTimeInput, timeSeconds, &runtimeError)) return Error(error, runtimeError);
         } else if (!runtime.AdvanceTimeline(timeSeconds, &runtimeError)) {
             return Error(error, runtimeError);
         }
@@ -275,8 +260,7 @@ struct MiaoSceneD2DRenderer::Impl {
         const D2D1_MATRIX_3X2_F& hostTransform,
         bool* drew,
         std::wstring* error) {
-        const std::wstring source = ReadString(
-            runtime.GetProperty(PropertyAddress{component.id, L"value"}));
+        const std::wstring source = ReadString(runtime.GetProperty(PropertyAddress{component.id, L"value"}));
         if (source.empty()) return true;
 
         std::wstring text = source;
@@ -285,25 +269,16 @@ struct MiaoSceneD2DRenderer::Impl {
                 return Error(error, lastError);
         }
 
-        const double fontSize = std::clamp(
-            ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"fontSize"}), 24.0),
-            1.0, 512.0);
-        const Color4 color = ReadColor(
-            runtime.GetProperty(PropertyAddress{component.id, L"color"}),
-            Color4{1.0, 1.0, 1.0, 1.0});
+        const double fontSize = std::clamp(ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"fontSize"}), 24.0), 1.0, 512.0);
+        const Color4 color = ReadColor(runtime.GetProperty(PropertyAddress{component.id, L"color"}), Color4{1.0, 1.0, 1.0, 1.0});
         const double opacity = std::clamp(
-            ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0) *
-                ResolveNodeOpacity(definition.scene, node, runtime),
+            ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0) * ResolveNodeOpacity(definition.scene, node, runtime),
             0.0, 1.0);
-        const std::wstring align = ReadString(
-            runtime.GetProperty(PropertyAddress{component.id, L"align"}), L"left");
-        const std::wstring verticalAlign = ReadString(
-            runtime.GetProperty(PropertyAddress{component.id, L"verticalAlign"}), L"top");
-        std::wstring fontFamily = ReadString(
-            runtime.GetProperty(PropertyAddress{component.id, L"fontFamily"}), L"Segoe UI Variable Text");
+        const std::wstring align = ReadString(runtime.GetProperty(PropertyAddress{component.id, L"align"}), L"left");
+        const std::wstring verticalAlign = ReadString(runtime.GetProperty(PropertyAddress{component.id, L"verticalAlign"}), L"top");
+        std::wstring fontFamily = ReadString(runtime.GetProperty(PropertyAddress{component.id, L"fontFamily"}), L"Segoe UI Variable Text");
         if (fontFamily.empty()) fontFamily = L"Segoe UI";
-        const auto weight = FontWeight(ReadInt(
-            runtime.GetProperty(PropertyAddress{component.id, L"fontWeight"}), 400));
+        const auto weight = FontWeight(ReadInt(runtime.GetProperty(PropertyAddress{component.id, L"fontWeight"}), 400));
 
         ComPtr<IDWriteTextFormat> format;
         HRESULT formatResult = dwrite->CreateTextFormat(
@@ -339,7 +314,9 @@ struct MiaoSceneD2DRenderer::Impl {
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
         if (!AdvanceClock(static_cast<double>(timeSeconds), error)) return false;
 
-        const ContentDataSnapshot data = MiaoTimeDataProvider::CaptureLocalTime();
+        ContentDataSnapshot data = MiaoTimeDataProvider::CaptureLocalTime();
+        for (const auto& [path, value] : hostData) data.values[path] = value;
+
         D2D1_MATRIX_3X2_F hostTransform{};
         target->GetTransform(&hostTransform);
         bool drew = false;
@@ -361,17 +338,13 @@ struct MiaoSceneD2DRenderer::Impl {
                 if (const auto* materialColor = FindMaterialProperty(*material, L"color"))
                     color = ReadColor(&materialColor->defaultValue, color);
 
-                const auto tint = ReadColor(
-                    runtime.GetProperty(PropertyAddress{component.id, L"tint"}),
-                    Color4{1.0, 1.0, 1.0, 1.0});
+                const auto tint = ReadColor(runtime.GetProperty(PropertyAddress{component.id, L"tint"}), Color4{1.0, 1.0, 1.0, 1.0});
                 color.r *= tint.r;
                 color.g *= tint.g;
                 color.b *= tint.b;
                 color.a *= tint.a;
 
-                const double spriteOpacity = ReadFloat(
-                    runtime.GetProperty(PropertyAddress{component.id, L"opacity"}),
-                    1.0);
+                const double spriteOpacity = ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0);
                 const double nodeOpacity = ResolveNodeOpacity(definition.scene, node, runtime);
                 brush->SetColor(ToD2D(color, spriteOpacity * nodeOpacity));
 
@@ -410,6 +383,22 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    bool SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error) {
+        if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
+        if (path.empty() || path.size() > 256) return Error(error, L"Content host data path is invalid.");
+        std::wstring capabilityError;
+        if (!MiaoContentCapabilityBroker::CanRead(contentDefinition, path, &capabilityError))
+            return Error(error, capabilityError);
+        hostData[std::wstring(path)] = std::move(value);
+        lastError.clear();
+        if (error) error->clear();
+        return true;
+    }
+
+    void ClearDataValues() noexcept {
+        hostData.clear();
+    }
+
     bool PrepareFrame(
         double timeSeconds,
         MiaoSceneFrameDemand* demand,
@@ -430,6 +419,7 @@ struct MiaoSceneD2DRenderer::Impl {
         brush.Reset();
         runtime.Reset();
         assets.Clear();
+        hostData.clear();
         definition = {};
         contentDefinition = {};
         package = {};
@@ -463,6 +453,14 @@ bool MiaoSceneD2DRenderer::SetParameter(std::wstring_view id, PropertyValue valu
 
 bool MiaoSceneD2DRenderer::SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
     return impl_->SetInput(id, std::move(value), error);
+}
+
+bool MiaoSceneD2DRenderer::SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error) {
+    return impl_->SetDataValue(path, std::move(value), error);
+}
+
+void MiaoSceneD2DRenderer::ClearDataValues() noexcept {
+    impl_->ClearDataValues();
 }
 
 bool MiaoSceneD2DRenderer::PrepareFrame(
@@ -508,7 +506,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
 
     constexpr std::string_view manifest = R"json({
       "schema":1,"id":"com.goodloong.selftest-widget","name":"Self Test Widget","author":"MiaoDesk","version":"1.0.0",
-      "kind":"widget","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":["clock.read"]
+      "kind":"widget","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":["clock.read","weather.read"]
     })json";
     constexpr std::string_view scene = R"json({
       "schema":1,"id":"scene://selftest-widget","kind":"widget","profile":"widget","rootNodeId":"node://root",
@@ -535,7 +533,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             {"name":"opacity","type":"float","default":1.0}
           ]},
           {"id":"component://clock/text","kind":"textRenderer","properties":[
-            {"name":"value","type":"string","default":"{{time.hhmm}}"},
+            {"name":"value","type":"string","default":"{{time.hhmm}} {{weather.condition}}"},
             {"name":"fontSize","type":"float","default":18.0},
             {"name":"color","type":"color","default":[1.0,1.0,1.0,1.0]},
             {"name":"opacity","type":"float","default":1.0},
@@ -590,12 +588,12 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     MiaoSceneD2DRenderer renderer;
     if (ok) ok = renderer.Load(root, target.Get(), &error);
     if (ok) ok = renderer.SetParameter(L"param://opacity", 0.6, &error);
+    if (ok) ok = renderer.SetDataValue(L"weather.condition", std::wstring(L"晴"), &error);
     if (ok) {
         target->BeginDraw();
         target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
         ok = renderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
-        ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded() &&
-             renderer.Profile() == RuntimeProfile::Widget;
+        ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded() && renderer.Profile() == RuntimeProfile::Widget;
     }
     if (ok) {
         ok = PixelHasColor(bitmap.Get(), 32, 32, true) && PixelHasColor(bitmap.Get(), 2, 2, false);
@@ -607,8 +605,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     if (ok) {
         ok = renderer.SetInput(L"input://event/pulse", true, &error);
         MiaoSceneFrameDemand activeDemand;
-        ok = ok && renderer.PrepareFrame(1.0, &activeDemand, 60, &error) &&
-             activeDemand.render && activeDemand.continuousAnimation && activeDemand.intervalMs == 17;
+        ok = ok && renderer.PrepareFrame(1.0, &activeDemand, 60, &error) && activeDemand.render && activeDemand.continuousAnimation && activeDemand.intervalMs == 17;
     }
     if (ok) {
         target->BeginDraw();

@@ -25,6 +25,7 @@ constexpr int kFirstFieldId = 7200;
 struct Field {
     content::ContentParameterDefinition definition;
     HWND control{};
+    std::wstring initialState;
 };
 
 struct DialogState {
@@ -139,6 +140,18 @@ bool ParseColor(std::wstring text, content::Color4* color) {
     return true;
 }
 
+std::wstring ControlState(const Field& field) {
+    if (!field.control) return {};
+    if (field.definition.type == content::ContentParameterType::Bool)
+        return SendMessageW(field.control, BM_GETCHECK, 0, 0) == BST_CHECKED ? L"1" : L"0";
+    if (field.definition.type == content::ContentParameterType::Enum) {
+        const LRESULT index = SendMessageW(field.control, CB_GETCURSEL, 0, 0);
+        if (index == CB_ERR || index < 0 || static_cast<std::size_t>(index) >= field.definition.choices.size()) return {};
+        return field.definition.choices[static_cast<std::size_t>(index)];
+    }
+    return WindowText(field.control);
+}
+
 bool ParseFieldValue(const Field& field, content::ContentParameterValue* value, std::wstring* error) {
     if (!value) return false;
     const auto& parameter = field.definition;
@@ -218,9 +231,7 @@ void SetFieldValue(Field& field, const content::ContentParameterValue& value) {
     if (field.definition.type == content::ContentParameterType::Bool) {
         const auto* boolean = std::get_if<bool>(&value);
         SendMessageW(field.control, BM_SETCHECK, boolean && *boolean ? BST_CHECKED : BST_UNCHECKED, 0);
-        return;
-    }
-    if (field.definition.type == content::ContentParameterType::Enum) {
+    } else if (field.definition.type == content::ContentParameterType::Enum) {
         const auto* selected = std::get_if<std::wstring>(&value);
         int selectedIndex = 0;
         if (selected) {
@@ -229,10 +240,11 @@ void SetFieldValue(Field& field, const content::ContentParameterValue& value) {
                 selectedIndex = static_cast<int>(found - field.definition.choices.begin());
         }
         SendMessageW(field.control, CB_SETCURSEL, selectedIndex, 0);
-        return;
+    } else {
+        const std::wstring text = ValueText(value);
+        SetWindowTextW(field.control, text.c_str());
     }
-    const std::wstring text = ValueText(value);
-    SetWindowTextW(field.control, text.c_str());
+    field.initialState = ControlState(field);
 }
 
 void SetStatus(DialogState& state, std::wstring text) {
@@ -256,30 +268,32 @@ bool ReloadValues(DialogState& state) {
 }
 
 void Apply(DialogState& state) {
-    std::vector<std::pair<std::wstring, content::ContentParameterValue>> values;
-    values.reserve(state.fields.size());
+    content::ContentParameterValues changes;
     std::wstring error;
     for (const auto& field : state.fields) {
+        if (ControlState(field) == field.initialState) continue;
         content::ContentParameterValue value;
         if (!ParseFieldValue(field, &value, &error)) {
             SetStatus(state, error);
             MessageBeep(MB_ICONWARNING);
             return;
         }
-        values.emplace_back(field.definition.key, std::move(value));
+        changes.emplace(field.definition.key, std::move(value));
+    }
+    if (changes.empty()) {
+        SetStatus(state, L"没有需要应用的变化。");
+        return;
     }
 
-    for (auto& [key, value] : values) {
-        const auto result = state.controller->SetContentParameter(state.snapshot.widgetId, key, std::move(value));
-        if (!result.success) {
-            SetStatus(state, result.message);
-            MessageBeep(MB_ICONERROR);
-            return;
-        }
+    const auto result = state.controller->SetContentParameters(state.snapshot.widgetId, changes);
+    if (!result.success) {
+        SetStatus(state, result.message);
+        MessageBeep(MB_ICONERROR);
+        return;
     }
     state.changed = true;
     ReloadValues(state);
-    SetStatus(state, L"已应用。桌面组件会自动刷新，无需重启。");
+    SetStatus(state, L"已原子应用。桌面组件会自动刷新，无需重启。");
 }
 
 void ResetDefaults(DialogState& state) {
@@ -375,9 +389,10 @@ void BuildControls(DialogState& state) {
                                   fieldId, margin + labelW, y, controlW, S(state.window, 30));
         }
 
-        Field field{parameter, control};
+        Field field{parameter, control, {}};
         const auto value = state.snapshot.values.find(parameter.key);
         if (value != state.snapshot.values.end()) SetFieldValue(field, value->second);
+        else field.initialState = ControlState(field);
         state.fields.push_back(std::move(field));
         ++fieldId;
         y += rowH;

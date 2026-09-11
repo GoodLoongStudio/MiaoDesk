@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cwchar>
+#include <cwctype>
 #include <iomanip>
+#include <locale>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -80,7 +82,7 @@ std::wstring WindowText(HWND control) {
 }
 
 std::wstring Trim(std::wstring value) {
-    const auto notSpace = [](wchar_t ch) { return !iswspace(ch); };
+    const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
     value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
     return value;

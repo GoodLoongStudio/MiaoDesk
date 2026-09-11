@@ -46,8 +46,6 @@ bool RuntimeDetailLooksHealthy(const std::wstring& detail) {
         detail.find(L"找不到") != std::wstring::npos ||
         detail.find(L"unavailable") != std::wstring::npos ||
         detail.find(L"failed") != std::wstring::npos) return false;
-    // Keep compatibility with the old "Native Direct2D Widget host" text while
-    // allowing the shared Content/Native host to drop the legacy prefix.
     return detail.find(L"Direct2D Widget host") != std::wstring::npos;
 }
 
@@ -333,7 +331,7 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     } else if (!PropertyReady(window, wallpaper::kNativeWidgetPaintReadyProperty)) {
         if (widget.kind == wallpaper::DesktopWidgetKind::Content) {
             SetAttention(surface, L"content_paint_pending", L"Content Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
-                         L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+                         L"等待一次重绘；若持续未就绪，查看 ContentWidgetHost diagnostics。 ");
         } else {
             SetAttention(surface, L"native_paint_pending", L"Native Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
                          L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
@@ -422,8 +420,17 @@ WidgetServiceResult WidgetService::Remove(std::wstring_view id) const {
     wallpaper::DesktopWidgetStore store;
     std::wstring error;
     if (!store.Load(&error)) return LoadFailure(error);
+    const auto existing = store.Find(id);
+    if (!existing) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
     if (!store.Remove(id, &error))
         return {false, error.empty() ? L"删除桌面小组件失败。" : error};
+
+    if (existing->kind == wallpaper::DesktopWidgetKind::Content) {
+        std::wstring cleanupError;
+        if (!content::ContentWidgetInstanceStore::Remove(id, &cleanupError)) {
+            return {true, L"桌面小组件已删除，但实例参数清理失败：" + cleanupError};
+        }
+    }
     return {true, L"桌面小组件已删除：" + std::wstring(id)};
 }
 

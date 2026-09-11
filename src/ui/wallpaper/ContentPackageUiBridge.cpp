@@ -238,17 +238,26 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
         return;
     }
     const bool replacing = existingResult.success;
+    const bool sameVersion = replacing && existing.version == inspected.version;
 
     std::wostringstream prompt;
-    prompt << (replacing ? L"将替换/升级已安装内容包：\n\n" : L"将安装内容包：\n\n")
-           << L"名称：" << (inspected.name.empty() ? L"(未命名)" : inspected.name) << L"\n"
-           << L"作者：" << (inspected.author.empty() ? L"(未知)" : inspected.author) << L"\n"
-           << L"版本：" << (inspected.version.empty() ? L"(未声明)" : inspected.version) << L"\n"
-           << L"ID：" << inspected.source << L"\n"
+    if (replacing) {
+        prompt << (sameVersion ? L"将重新安装已安装内容包：\n\n" : L"将替换已安装内容包版本：\n\n")
+               << L"名称：" << (inspected.name.empty() ? L"(未命名)" : inspected.name) << L"\n"
+               << L"作者：" << (inspected.author.empty() ? L"(未知)" : inspected.author) << L"\n"
+               << L"当前版本：" << (existing.version.empty() ? L"(未声明)" : existing.version) << L"\n"
+               << L"新版本：" << (inspected.version.empty() ? L"(未声明)" : inspected.version) << L"\n";
+    } else {
+        prompt << L"将安装内容包：\n\n"
+               << L"名称：" << (inspected.name.empty() ? L"(未命名)" : inspected.name) << L"\n"
+               << L"作者：" << (inspected.author.empty() ? L"(未知)" : inspected.author) << L"\n"
+               << L"版本：" << (inspected.version.empty() ? L"(未声明)" : inspected.version) << L"\n";
+    }
+    prompt << L"ID：" << inspected.source << L"\n"
            << L"类型：" << KindLabel(inspected.kind) << L"\n"
            << L"Runtime：" << RuntimeLabel(inspected.runtime) << L"\n\n"
            << (replacing
-                   ? L"同 ID 的桌面引用不会改变，升级后继续使用 content:<id>。"
+                   ? L"同 ID 的桌面引用不会改变，替换后继续使用 content:<id>。"
                    : L"安装后原下载目录可以移动或删除，MiaoDesk 使用托管副本。")
            << L"\n\n继续吗？";
 
@@ -266,24 +275,38 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
         return;
     }
 
-    miaodesk::log::Info(
-        L"ContentPackageUI",
-        std::wstring(replacing ? L"替换内容包完成: " : L"安装内容包完成: ") + installed.package.source);
+    const wchar_t* completedAction = replacing
+        ? (sameVersion ? L"重装内容包完成: " : L"替换内容包版本完成: ")
+        : L"安装内容包完成: ";
+    miaodesk::log::Info(L"ContentPackageUI", std::wstring(completedAction) + installed.package.source);
 
     if (expectedKind == content::ContentKind::Wallpaper) {
         IndexInstalledWallpaper();
         NudgeWallpaperList(owner);
-        MaybeAssignWallpaperToPrimary(owner, installed.package);
+        if (!replacing) MaybeAssignWallpaperToPrimary(owner, installed.package);
+        else NotifyWallpaperRuntimeReload();
+
+        const wchar_t* action = replacing
+            ? (sameVersion ? L"壁纸内容包已重新安装：" : L"壁纸内容包版本已替换：")
+            : L"壁纸内容包已安装：";
         MessageBoxW(owner,
-                    (std::wstring(replacing ? L"壁纸内容包已替换：" : L"壁纸内容包已安装：") +
-                     installed.package.name + L"\n" + installed.package.source).c_str(),
+                    (std::wstring(action) + installed.package.name + L"\n" + installed.package.source).c_str(),
+                    L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    if (replacing) {
+        RefreshVisibleWidgets(owner);
+        const wchar_t* action = sameVersion ? L"小组件内容包已重新安装：" : L"小组件内容包版本已替换：";
+        MessageBoxW(owner,
+                    (std::wstring(action) + installed.package.name + L"\n" + installed.package.source +
+                     L"\n\n现有桌面实例继续使用同一个 content:<id>，不会自动创建重复实例。").c_str(),
                     L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
         return;
     }
 
     const int create = MessageBoxW(owner,
-        (std::wstring(replacing ? L"小组件内容包已替换：" : L"小组件内容包已安装：") +
-         installed.package.name + L"\n" + installed.package.source +
+        (std::wstring(L"小组件内容包已安装：") + installed.package.name + L"\n" + installed.package.source +
          L"\n\n是否现在创建一个桌面小组件实例？").c_str(),
         L"MiaoDesk 内容包", MB_YESNO | MB_ICONINFORMATION);
     if (create == IDYES && CreateInstalledWidgetInstance(owner, installed.package)) {

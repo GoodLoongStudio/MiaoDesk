@@ -103,6 +103,22 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
 
         const auto item = library.Find(*assignedId);
         if (!item) {
+            // A freshly installed canonical package may already be assigned by
+            // content:<id> while the settings window still holds a pre-install
+            // WallpaperLibrary snapshot. Stable package identity is sufficient
+            // to resolve and render it; a stale UI cache must not force fallback.
+            if (const auto packageRoot = ResolveContentWallpaperRoot(*assignedId)) {
+                ResolvedMonitorWallpaper resolved;
+                resolved.monitorId = StableMonitorKey(monitor);
+                resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
+                resolved.region = region;
+                resolved.wallpaperId = *assignedId;
+                resolved.kind = ResolvedWallpaperKind::Scene;
+                resolved.source = *packageRoot;
+                result.push_back(std::move(resolved));
+                continue;
+            }
+
             result.push_back(MakeFallback(monitor, region, globalFallback, L"保存的壁纸库项目已不存在"));
             result.back().wallpaperId = *assignedId;
             continue;

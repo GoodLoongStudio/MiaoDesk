@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace miaodesk::content {
 
@@ -58,6 +59,10 @@ public:
     static bool Inspect(
         const std::filesystem::path& packageRoot,
         ManagedContentPackageInfo* package,
+        std::wstring* error = nullptr);
+
+    static bool List(
+        std::vector<ManagedContentPackageInfo>* packages,
         std::wstring* error = nullptr);
 
     static bool Resolve(

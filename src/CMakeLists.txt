@@ -161,9 +161,6 @@ set_source_files_properties(ai/pi/PiRuntime.cpp PROPERTIES
 set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.cpp PROPERTIES
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
-set_source_files_properties(desktop/widgets/NativeWidgetHost.cpp PROPERTIES
-    COMPILE_DEFINITIONS "MIAODESK_WIDGET_HOST_CONTENT_DOGFOOD"
-)
 
 foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)
     target_include_directories(${target} PRIVATE include)

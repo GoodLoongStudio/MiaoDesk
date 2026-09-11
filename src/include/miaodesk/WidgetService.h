@@ -53,6 +53,13 @@ struct WidgetUpdateRequest {
     std::optional<bool> enabled;
 };
 
+struct ContentWidgetSettingsSnapshot {
+    std::wstring widgetId;
+    std::wstring title;
+    content::ContentDefinition definition;
+    content::ContentParameterValues values;
+};
+
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
     std::wstring monitorId;
@@ -161,10 +168,10 @@ public:
         return {true, L"Content 桌面小组件已创建：" + saved->id};
     }
 
-    WidgetServiceResult GetContentParameters(
+    WidgetServiceResult GetContentSettings(
         std::wstring_view id,
-        content::ContentParameterValues* values) const {
-        if (!values) return {false, L"Content parameter 输出不能为空。"};
+        ContentWidgetSettingsSnapshot* settings) const {
+        if (!settings) return {false, L"Content widget settings 输出不能为空。"};
         wallpaper::DesktopWidgetStore store;
         std::wstring error;
         if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -179,8 +186,25 @@ public:
         content::ContentParameterValues overrides;
         if (!content::ContentWidgetInstanceStore::LoadOverrides(widget->id, resolved.definition, &overrides, &error))
             return {false, error.empty() ? L"无法读取 Content widget 参数。" : error};
-        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, values, &error))
+        content::ContentParameterValues values;
+        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, &values, &error))
             return {false, error.empty() ? L"Content widget 参数无效。" : error};
+
+        settings->widgetId = widget->id;
+        settings->title = widget->title;
+        settings->definition = std::move(resolved.definition);
+        settings->values = std::move(values);
+        return {true, L"Content widget settings 读取完成。"};
+    }
+
+    WidgetServiceResult GetContentParameters(
+        std::wstring_view id,
+        content::ContentParameterValues* values) const {
+        if (!values) return {false, L"Content parameter 输出不能为空。"};
+        ContentWidgetSettingsSnapshot settings;
+        const auto result = GetContentSettings(id, &settings);
+        if (!result.success) return result;
+        *values = std::move(settings.values);
         return {true, L"Content widget 参数读取完成。"};
     }
 

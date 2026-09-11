@@ -1,4 +1,5 @@
 #include "miaodesk/ContentWidgetSettingsDialog.h"
+#include "miaodesk/TodayTaskEditorDialog.h"
 
 #include <windowsx.h>
 
@@ -20,6 +21,7 @@ constexpr wchar_t kSettingsClass[] = L"MiaoDesk.ContentWidget.Settings";
 constexpr int kApplyId = 7101;
 constexpr int kResetId = 7102;
 constexpr int kCloseId = 7103;
+constexpr int kTasksId = 7104;
 constexpr int kFirstFieldId = 7200;
 
 struct Field {
@@ -44,6 +46,16 @@ struct DialogState {
 int S(HWND window, int px) {
     const UINT dpi = window ? std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window)) : USER_DEFAULT_SCREEN_DPI;
     return MulDiv(px, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+bool HasCapability(const content::ContentDefinition& definition, std::wstring_view capability) {
+    if (std::find(definition.capabilities.begin(), definition.capabilities.end(), capability) !=
+        definition.capabilities.end()) return true;
+    if (capability == L"tasks.read") {
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"tasks") !=
+               definition.capabilities.end();
+    }
+    return false;
 }
 
 std::wstring FriendlyParameterName(std::wstring_view key) {
@@ -307,6 +319,14 @@ void ResetDefaults(DialogState& state) {
     if (ReloadValues(state)) SetStatus(state, L"已恢复 package 默认值。");
 }
 
+void EditTodayTasks(DialogState& state) {
+    std::wstring message;
+    const bool changed = ShowTodayTaskEditorDialog(
+        state.instance, state.window, *state.controller, &message);
+    if (changed) state.changed = true;
+    if (!message.empty()) SetStatus(state, std::move(message));
+}
+
 LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -324,6 +344,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
         switch (LOWORD(wParam)) {
         case kApplyId: Apply(*state); return 0;
         case kResetId: ResetDefaults(*state); return 0;
+        case kTasksId: EditTodayTasks(*state); return 0;
         case kCloseId: DestroyWindow(hwnd); return 0;
         default: break;
         }
@@ -398,6 +419,14 @@ void BuildControls(DialogState& state) {
         y += rowH;
     }
 
+    if (HasCapability(state.snapshot.definition, L"tasks.read")) {
+        MakeControl(state, 0, L"STATIC", L"内容", SS_LEFT | SS_CENTERIMAGE,
+                    0, margin, y, labelW, S(state.window, 34));
+        MakeControl(state, 0, L"BUTTON", L"编辑今日待办…", BS_PUSHBUTTON | WS_TABSTOP,
+                    kTasksId, margin + labelW, y, controlW, S(state.window, 34));
+        y += rowH;
+    }
+
     state.status = MakeControl(state, 0, L"STATIC", L"修改后点击“应用”。",
                                SS_LEFT | SS_CENTERIMAGE, 0,
                                margin, y + S(state.window, 4), labelW + controlW, S(state.window, 28));
@@ -458,7 +487,8 @@ bool ShowContentWidgetSettingsDialog(
         if (status) *status = loaded.message;
         return false;
     }
-    if (snapshot.definition.parameters.empty()) {
+    const bool tasks = HasCapability(snapshot.definition, L"tasks.read");
+    if (snapshot.definition.parameters.empty() && !tasks) {
         if (status) *status = L"该 Content widget 没有可编辑参数。";
         return false;
     }
@@ -481,7 +511,8 @@ bool ShowContentWidgetSettingsDialog(
     state.controller = &controller;
     state.snapshot = std::move(snapshot);
 
-    const SIZE windowSize = SettingsWindowSize(owner, static_cast<int>(state.snapshot.definition.parameters.size()));
+    const int rows = static_cast<int>(state.snapshot.definition.parameters.size()) + (tasks ? 1 : 0);
+    const SIZE windowSize = SettingsWindowSize(owner, rows);
     const std::wstring title = L"小组件设置 · " + state.snapshot.title;
     constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     constexpr DWORD exStyle = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;

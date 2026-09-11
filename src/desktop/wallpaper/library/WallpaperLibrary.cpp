@@ -1,6 +1,7 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 #include "miaodesk/WallpaperPackage.h"
 
@@ -474,10 +475,9 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
         if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
         if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
 
-        // New Content Framework packages get first chance. They keep the
-        // package root as the library source so per-monitor hosts can resolve
-        // the canonical scene directly rather than translating it to a legacy
-        // built-in scene key.
+        // Canonical Content packages are identified by manifest id, never by
+        // their folder name or the original download path. This lets an
+        // existing library record follow a renamed/moved package directory.
         content::LoadedMiaoContentPackage canonical;
         std::wstring canonicalError;
         if (content::MiaoContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
@@ -487,18 +487,32 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
             if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
 
             const fs::path source = NormalizedAbsolute(entry.path());
-            if (FindSourceIndex(source)) continue;
+            const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(canonical.manifest.id);
+            if (stableId.empty()) continue;
+
+            const auto stableIndex = FindIndex(stableId);
+            const auto sourceIndex = stableIndex ? std::optional<std::size_t>{} : FindSourceIndex(source);
+
             WallpaperLibraryItem item;
-            const std::wstring packageId = Utf8ToWide(canonical.manifest.id);
-            item.id = L"content-" + Lower(packageId.empty() ? entry.path().stem().wstring() : packageId);
-            if (item.id == L"content-") item.id = MakeId();
-            if (FindIndex(item.id)) item.id += L"-" + std::to_wstring(items_.size());
+            if (stableIndex) {
+                item = items_[*stableIndex];
+            } else if (sourceIndex) {
+                item = items_[*sourceIndex];
+                if (_wcsicmp(item.id.c_str(), stableId.c_str()) != 0) {
+                    const std::wstring oldSection = SectionName(item.id);
+                    WritePrivateProfileStringW(oldSection.c_str(), nullptr, nullptr, ManifestPath().c_str());
+                }
+            } else {
+                item.importedUnixSeconds = NowUnixSeconds();
+            }
+
+            item.id = stableId;
             item.kind = LibraryWallpaperKind::Scene;
             const std::wstring packageName = Utf8ToWide(canonical.manifest.name);
             item.title = SanitizeText(packageName.empty() ? DefaultTitle(entry.path()) : packageName);
             item.source = source;
             item.managedCopy = true;
-            item.importedUnixSeconds = NowUnixSeconds();
+            item.thumbnail.clear();
 
             if (!canonical.manifest.preview.empty()) {
                 fs::path preview;
@@ -511,7 +525,9 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
                 ec.clear();
             }
             if (!SaveItem(item, error)) return false;
-            items_.push_back(std::move(item));
+            if (stableIndex) items_[*stableIndex] = item;
+            else if (sourceIndex) items_[*sourceIndex] = item;
+            else items_.push_back(std::move(item));
             continue;
         }
 
@@ -703,13 +719,29 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && !fs::exists(legacyPackage);
     }
 
-    const auto canonicalItems = reloaded.Search(L"Canonical Scene");
-    ok = ok && canonicalItems.size() == 1;
-    if (canonicalItems.size() == 1) {
-        ok = ok && canonicalItems.front().kind == LibraryWallpaperKind::Scene;
-        ok = ok && SamePath(canonicalItems.front().source, canonicalPackage);
-        ok = ok && reloaded.Remove(canonicalItems.front().id, true, &error);
-        ok = ok && !fs::exists(canonicalPackage);
+    const std::wstring canonicalId = L"content:com.goodloong.selftest.scene";
+    auto canonicalItem = reloaded.Find(canonicalId);
+    ok = ok && canonicalItem.has_value();
+    if (canonicalItem) {
+        ok = ok && canonicalItem->kind == LibraryWallpaperKind::Scene;
+        ok = ok && SamePath(canonicalItem->source, canonicalPackage);
+    }
+
+    // Moving/renaming a managed package must not change its logical identity.
+    const fs::path movedCanonicalPackage = library.PackageDirectory() / L"renamed-canonical.mdwall";
+    if (ok) {
+        fs::rename(canonicalPackage, movedCanonicalPackage, ec);
+        ok = !ec;
+    }
+    WallpaperLibrary afterMove(root / L"Library");
+    ok = ok && afterMove.Load(&error);
+    canonicalItem = afterMove.Find(canonicalId);
+    ok = ok && canonicalItem.has_value();
+    if (canonicalItem) {
+        ok = ok && SamePath(canonicalItem->source, movedCanonicalPackage);
+        ok = ok && afterMove.Search(L"Canonical Scene").size() == 1;
+        ok = ok && afterMove.Remove(canonicalItem->id, true, &error);
+        ok = ok && !fs::exists(movedCanonicalPackage);
     }
 
     WallpaperLibrary afterRemoval(root / L"Library");

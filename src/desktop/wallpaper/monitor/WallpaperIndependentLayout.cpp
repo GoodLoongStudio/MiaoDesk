@@ -1,11 +1,13 @@
 #include "miaodesk/WallpaperIndependentLayout.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/WebWallpaperHost.h"
 
 #include <windows.h>
 
 #include <algorithm>
 #include <fstream>
+#include <optional>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -33,11 +35,27 @@ std::wstring SceneKeyForLibraryId(std::wstring_view id) {
     return definition ? std::wstring(definition->runtimeKey) : std::wstring{};
 }
 
+bool IsContentId(std::wstring_view id) noexcept {
+    return id.size() > content::MiaoContentPackageManager::kSourcePrefix.size() &&
+           id.substr(0, content::MiaoContentPackageManager::kSourcePrefix.size()) ==
+               content::MiaoContentPackageManager::kSourcePrefix;
+}
+
+std::optional<fs::path> ResolveContentWallpaperRoot(std::wstring_view id) {
+    if (!IsContentId(id)) return std::nullopt;
+    content::ManagedContentPackageInfo package;
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Resolve(
+            content::ContentKind::Wallpaper, id, &package, &error)) return std::nullopt;
+    return package.packageRoot;
+}
+
 bool SourceAvailable(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        // Built-in scenes are key-driven and have no source path. Canonical
-        // Content Framework scenes keep their .mdwall package root (or an entry
-        // inside it) as source, so they must still exist on disk.
+        if (IsContentId(item.id)) return ResolveContentWallpaperRoot(item.id).has_value();
+
+        // Built-in scenes are key-driven and have no source path. Legacy
+        // canonical Scene records may still carry a physical .mdwall path.
         if (item.source.empty()) return FindBuiltinWallpaper(item.id) != nullptr;
         std::error_code ec;
         if (fs::is_directory(item.source, ec) && _wcsicmp(item.source.extension().c_str(), L".mdwall") == 0)
@@ -77,14 +95,30 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         const RECT region = i < regions.size() ? regions[i] : RECT{};
         const auto assignedId = assignments.WallpaperIdFor(monitor);
 
-        // An unassigned monitor must stay untouched.  The old behavior painted
+        // An unassigned monitor must stay untouched. The old behavior painted
         // the global fallback on every unassigned display, so choosing one
-        // monitor still modified the rest of the virtual desktop.  Independent
+        // monitor still modified the rest of the virtual desktop. Independent
         // mode now creates surfaces only for explicitly assigned monitors.
         if (!assignedId) continue;
 
         const auto item = library.Find(*assignedId);
         if (!item) {
+            // A freshly installed canonical package may already be assigned by
+            // content:<id> while the settings window still holds a pre-install
+            // WallpaperLibrary snapshot. Stable package identity is sufficient
+            // to resolve and render it; a stale UI cache must not force fallback.
+            if (const auto packageRoot = ResolveContentWallpaperRoot(*assignedId)) {
+                ResolvedMonitorWallpaper resolved;
+                resolved.monitorId = StableMonitorKey(monitor);
+                resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
+                resolved.region = region;
+                resolved.wallpaperId = *assignedId;
+                resolved.kind = ResolvedWallpaperKind::Scene;
+                resolved.source = *packageRoot;
+                result.push_back(std::move(resolved));
+                continue;
+            }
+
             result.push_back(MakeFallback(monitor, region, globalFallback, L"保存的壁纸库项目已不存在"));
             result.back().wallpaperId = *assignedId;
             continue;
@@ -105,22 +139,30 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
         resolved.region = region;
         resolved.wallpaperId = item->id;
-        resolved.source = item->source;
         switch (item->kind) {
         case LibraryWallpaperKind::Scene:
             resolved.kind = ResolvedWallpaperKind::Scene;
-            // Canonical packages intentionally keep an empty legacy sceneKey;
-            // IndependentWallpaperHost resolves their source as .mdwall first.
             resolved.sceneKey = SceneKeyForLibraryId(item->id);
+            if (const auto currentRoot = ResolveContentWallpaperRoot(item->id)) {
+                // Resolve stable content:<id> immediately before creating the
+                // runtime plan. library.ini can contain an old physical path;
+                // the manifest id remains authoritative.
+                resolved.source = *currentRoot;
+            } else {
+                resolved.source = item->source;
+            }
             break;
         case LibraryWallpaperKind::Image:
             resolved.kind = ResolvedWallpaperKind::Image;
+            resolved.source = item->source;
             break;
         case LibraryWallpaperKind::Video:
             resolved.kind = ResolvedWallpaperKind::Video;
+            resolved.source = item->source;
             break;
         case LibraryWallpaperKind::Web:
             resolved.kind = ResolvedWallpaperKind::Web;
+            resolved.source = item->source;
             break;
         case LibraryWallpaperKind::Unknown:
             break;

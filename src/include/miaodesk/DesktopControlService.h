@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/WallpaperService.h"
 #include "miaodesk/WidgetService.h"
 
@@ -39,6 +40,25 @@ public:
 
     DesktopControlResult GetState(DesktopState* state) const;
     DesktopControlResult GetSnapshot(DesktopSnapshot* snapshot) const;
+
+    DesktopControlResult InspectContentPackage(
+        const std::filesystem::path& package,
+        content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult ListContentPackages(
+        std::vector<content::ManagedContentPackageInfo>* packages) const;
+    DesktopControlResult InstallContentPackage(
+        const std::filesystem::path& package,
+        content::ContentPackageInstallResult* installed,
+        const content::ContentPackageInstallOptions& options = {}) const;
+    DesktopControlResult ResolveContentPackage(
+        content::ContentKind kind,
+        std::wstring_view source,
+        content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult UninstallContentPackage(
+        content::ContentKind kind,
+        std::wstring_view source,
+        content::ContentPackageUninstallResult* uninstalled) const;
+
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
     DesktopControlResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
     DesktopControlResult AssignLibraryItemToMonitor(

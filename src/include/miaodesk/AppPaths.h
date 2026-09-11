@@ -67,9 +67,19 @@ inline fs::path WallpaperLibraryRoot() {
     return root.empty() ? fs::path{} : root / L"WallpaperLibrary";
 }
 
+inline fs::path WallpaperPackagesRoot() {
+    const fs::path root = WallpaperLibraryRoot();
+    return root.empty() ? fs::path{} : root / L"Packages";
+}
+
 inline fs::path DesktopWidgetsRoot() {
     const fs::path root = StateRoot();
     return root.empty() ? fs::path{} : root / L"DesktopWidgets";
+}
+
+inline fs::path WidgetPackagesRoot() {
+    const fs::path root = DesktopWidgetsRoot();
+    return root.empty() ? fs::path{} : root / L"Packages";
 }
 
 inline fs::path PiAgentRoot() {
@@ -98,6 +108,16 @@ inline fs::path ExecutableDirectory() {
         nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
     if (count == 0 || count >= buffer.size()) return {};
     return fs::path(std::wstring(buffer.data(), count)).parent_path();
+}
+
+inline fs::path BuiltInWallpaperPackagesRoot() {
+    const fs::path directory = ExecutableDirectory();
+    return directory.empty() ? fs::path{} : directory / L"Wallpapers";
+}
+
+inline fs::path BuiltInWidgetPackagesRoot() {
+    const fs::path directory = ExecutableDirectory();
+    return directory.empty() ? fs::path{} : directory / L"Widgets";
 }
 
 inline fs::path ProductConfigFile() {

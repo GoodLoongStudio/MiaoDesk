@@ -23,6 +23,9 @@ set(MIAODESK_CORE_SOURCES
     content/model/MiaoContentModel.cpp
     content/model/MiaoWidgetContentCatalog.cpp
     content/package/MiaoContentPackage.cpp
+    content/package/MiaoContentPackageCatalog.cpp
+    content/package/MiaoContentPackageManager.cpp
+    content/package/MiaoContentPackageUninstall.cpp
     content/render/MiaoRenderGraph.cpp
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp
@@ -35,6 +38,7 @@ set(MIAODESK_CORE_SOURCES
     content/shader/MiaoGpuParameterBlock.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
+    desktop/control/DesktopContentPackageLifecycle.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp
@@ -114,6 +118,8 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/render/VideoWallpaperSet.cpp
 
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
+    ui/wallpaper/ContentPackageUiBridge.cpp
+    ui/wallpaper/ContentPackageManagerDialog.cpp
     ui/wallpaper/ContentWidgetSettingsDialog.cpp
     ui/wallpaper/ContentWidgetPreviewRenderer.cpp
     ui/settings/DesktopAiSettingsPage.cpp

@@ -3,6 +3,7 @@
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/MiaoContentDefinitionLoader.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 
 #include "miaodesk/WallpaperMonitorAssignments.h"
@@ -56,7 +57,24 @@ std::wstring RuntimeSceneKey(const wallpaper::WallpaperLibraryItem& item) {
     return definition ? std::wstring(definition->runtimeKey) : std::wstring{};
 }
 
-fs::path CanonicalScenePackageRoot(const fs::path& source) {
+bool IsContentId(std::wstring_view id) noexcept {
+    return id.size() > content::MiaoContentPackageManager::kSourcePrefix.size() &&
+           id.substr(0, content::MiaoContentPackageManager::kSourcePrefix.size()) ==
+               content::MiaoContentPackageManager::kSourcePrefix;
+}
+
+fs::path CanonicalScenePackageRoot(const wallpaper::WallpaperLibraryItem& item) {
+    if (IsContentId(item.id)) {
+        content::ManagedContentPackageInfo package;
+        std::wstring error;
+        if (content::MiaoContentPackageManager::Resolve(
+                content::ContentKind::Wallpaper, item.id, &package, &error)) {
+            return package.packageRoot;
+        }
+        return {};
+    }
+
+    const fs::path& source = item.source;
     if (source.empty()) return {};
     std::error_code ec;
     const fs::path normalized = fs::absolute(source, ec).lexically_normal();
@@ -77,7 +95,7 @@ fs::path CanonicalScenePackageRoot(const fs::path& source) {
 }
 
 WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryItem& item) {
-    const fs::path packageRoot = CanonicalScenePackageRoot(item.source);
+    const fs::path packageRoot = CanonicalScenePackageRoot(item);
     if (packageRoot.empty()) return {false, L"Scene 壁纸既不是内置场景，也不是有效的 .mdwall 内容包。"};
 
     content::LoadedMiaoContentPackage package;

@@ -25,6 +25,8 @@ namespace miaodesk::wallpaper {
 namespace {
 
 constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
 constexpr UINT_PTR kSubclassId = 0x4D435055; // "MCPU"
 
 constexpr int kAddId = 6102;
@@ -131,6 +133,14 @@ const MonitorInfo* PrimaryMonitor(const MonitorTopology& topology) {
 void RefreshVisibleWidgets(HWND owner) {
     SendMessageW(owner, WM_COMMAND, MAKEWPARAM(kWidgetRefreshId, BN_CLICKED),
                  reinterpret_cast<LPARAM>(GetDlgItem(owner, kWidgetRefreshId)));
+}
+
+bool NotifyWidgetRuntimeReload() {
+    const HWND messageWindow = FindWindowExW(
+        HWND_MESSAGE, nullptr, kNativeWidgetHostMessageClass, nullptr);
+    if (!messageWindow || !IsWindow(messageWindow)) return false;
+    const UINT message = RegisterWindowMessageW(kWidgetRuntimeReloadMessageName);
+    return message != 0 && PostMessageW(messageWindow, message, 0, 0) != FALSE;
 }
 
 void NudgeWallpaperList(HWND owner) {
@@ -296,11 +306,19 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
     }
 
     if (replacing) {
+        const auto runtime = control.EnsureRuntime();
+        if (!runtime.success) {
+            miaodesk::log::Warn(L"ContentPackageUI",
+                                L"小组件内容包已替换，但 Widget runtime 未就绪: " + runtime.message);
+        } else if (!NotifyWidgetRuntimeReload()) {
+            miaodesk::log::Warn(L"ContentPackageUI",
+                                L"小组件内容包已替换，但即时 runtime reload 通知失败；保留轮询恢复路径。");
+        }
         RefreshVisibleWidgets(owner);
         const wchar_t* action = sameVersion ? L"小组件内容包已重新安装：" : L"小组件内容包版本已替换：";
         MessageBoxW(owner,
                     (std::wstring(action) + installed.package.name + L"\n" + installed.package.source +
-                     L"\n\n现有桌面实例继续使用同一个 content:<id>，不会自动创建重复实例。").c_str(),
+                     L"\n\n现有桌面实例继续使用同一个 content:<id>，不会自动创建重复实例，并会立即刷新运行内容。").c_str(),
                     L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
         return;
     }

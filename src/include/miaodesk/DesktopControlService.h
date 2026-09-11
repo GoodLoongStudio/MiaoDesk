@@ -55,6 +55,9 @@ public:
     DesktopControlResult CreateNativeWidget(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
+    DesktopControlResult CreateContentWidget(
+        const ContentWidgetCreateRequest& request,
+        wallpaper::DesktopWidget* created = nullptr) const;
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;
     DesktopControlResult RemoveWidget(std::wstring_view id) const;
     DesktopControlResult ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const;

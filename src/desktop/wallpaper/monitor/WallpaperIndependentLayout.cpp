@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <optional>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -40,14 +41,18 @@ bool IsContentId(std::wstring_view id) noexcept {
                content::MiaoContentPackageManager::kSourcePrefix;
 }
 
+std::optional<fs::path> ResolveContentWallpaperRoot(std::wstring_view id) {
+    if (!IsContentId(id)) return std::nullopt;
+    content::ManagedContentPackageInfo package;
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Resolve(
+            content::ContentKind::Wallpaper, id, &package, &error)) return std::nullopt;
+    return package.packageRoot;
+}
+
 bool SourceAvailable(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        if (IsContentId(item.id)) {
-            content::ManagedContentPackageInfo package;
-            std::wstring error;
-            return content::MiaoContentPackageManager::Resolve(
-                content::ContentKind::Wallpaper, item.id, &package, &error);
-        }
+        if (IsContentId(item.id)) return ResolveContentWallpaperRoot(item.id).has_value();
 
         // Built-in scenes are key-driven and have no source path. Legacy
         // canonical Scene records may still carry a physical .mdwall path.
@@ -122,10 +127,14 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         case LibraryWallpaperKind::Scene:
             resolved.kind = ResolvedWallpaperKind::Scene;
             resolved.sceneKey = SceneKeyForLibraryId(item->id);
-            // Canonical Content Scene runtime carries the stable content:<id>
-            // into the host. The host resolves its current packageRoot at load
-            // time, so a package directory move/rename cannot stale this plan.
-            resolved.source = IsContentId(item->id) ? fs::path(item->id) : item->source;
+            if (const auto currentRoot = ResolveContentWallpaperRoot(item->id)) {
+                // Resolve stable content:<id> immediately before creating the
+                // runtime plan. library.ini can contain an old physical path;
+                // the manifest id remains authoritative.
+                resolved.source = *currentRoot;
+            } else {
+                resolved.source = item->source;
+            }
             break;
         case LibraryWallpaperKind::Image:
             resolved.kind = ResolvedWallpaperKind::Image;

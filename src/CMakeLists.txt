@@ -105,6 +105,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
     desktop/widgets/NativeWidgetHost.cpp
+    desktop/widgets/ContentWidgetHost.cpp
     desktop/widgets/OfficialWidgetContentPainter.cpp
 
     desktop/wallpaper/render/WallpaperScaling.cpp

@@ -114,6 +114,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/render/VideoWallpaperSet.cpp
 
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
+    ui/wallpaper/ContentWidgetSettingsDialog.cpp
     ui/settings/DesktopAiSettingsPage.cpp
 )
 

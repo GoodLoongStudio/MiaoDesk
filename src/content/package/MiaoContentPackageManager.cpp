@@ -394,12 +394,32 @@ bool InstallWithRoots(
     }
 
     cleanupStaging();
-    cleanupBackup();
 
     ManagedContentPackageInfo installed;
-    if (!InspectWithOrigin(canonicalTarget, ManagedContentPackageOrigin::UserManaged, &installed, error)) {
-        return false;
+    std::wstring activationError;
+    const bool activationValid =
+        InspectWithOrigin(canonicalTarget, ManagedContentPackageOrigin::UserManaged, &installed, &activationError) &&
+        installed.id == incoming.id && installed.kind == incoming.kind;
+    if (!activationValid) {
+        std::error_code removeError;
+        fs::remove_all(canonicalTarget, removeError);
+
+        std::error_code rollbackError;
+        if (backupCreated) fs::rename(backupRoot, originalExistingRoot, rollbackError);
+        cleanupBackup();
+
+        std::wstring message = L"Activated content package failed final validation";
+        if (!activationError.empty()) message += L": " + activationError;
+        if (removeError) message += L"; failed to remove invalid target, error=" + std::to_wstring(removeError.value());
+        if (rollbackError) message += L"; rollback failed, error=" + std::to_wstring(rollbackError.value());
+        else if (backupCreated) message += L"; previous package restored";
+        return Fail(error, std::move(message));
     }
+
+    // The old version stays in .backup until the final target has been loaded
+    // successfully from its canonical location. Only then is replacement final.
+    cleanupBackup();
+
     result->package = std::move(installed);
     result->replacedExisting = existingFound;
     if (error) error->clear();

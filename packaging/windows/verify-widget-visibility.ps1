@@ -204,11 +204,19 @@ Enabled=1
         }
     }
     if ($expectContentGlassClock) {
-        $contentMarker = '[WidgetContent] GlassClock 已通过 Miao Content Framework / Scene TextRenderer 绘制'
-        if (-not $logText.Contains($contentMarker)) {
-            throw "Packaged GlassClock did not prove the Content Framework route. Missing marker: $contentMarker"
+        # The staged migration proof must come from the dedicated Content host,
+        # not the legacy Native GlassClock dogfood marker. Quick-build above still
+        # proves the backward-compatible native fallback when Widgets/ is absent.
+        foreach ($marker in @(
+            '[ContentWidgetHost] Content 组件宿主启动',
+            '[ContentWidgetHost] Content 组件首次绘制成功',
+            'source="content:com.goodloong.glass-clock"'
+        )) {
+            if (-not $logText.Contains($marker)) {
+                throw "Packaged GlassClock did not prove the dedicated Content Framework route. Missing marker: $marker"
+            }
         }
-        Write-Host 'Packaged GlassClock Content Framework route verified.' -ForegroundColor Green
+        Write-Host 'Packaged GlassClock dedicated Content Framework host route verified.' -ForegroundColor Green
     } else {
         Write-Host 'Built-in Widgets directory is absent; native GlassClock fallback verified for quick-build layout.' -ForegroundColor Yellow
     }

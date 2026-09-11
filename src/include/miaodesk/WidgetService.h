@@ -34,11 +34,12 @@ struct ContentWidgetCreateRequest {
     std::wstring monitorId;
     float x{0.68f};
     float y{0.05f};
-    float width{0.28f};
-    float height{0.18f};
-    // Keep newly persisted Content widgets dormant until NativeWidgetHost has
-    // an explicit content:<definitionId> runtime route. This avoids recording
-    // an enabled widget that cannot yet produce a desktop Surface.
+    // Omitted dimensions come from the package geometry contract. Content
+    // callers should not duplicate a package's default size/aspect ratio.
+    std::optional<float> width;
+    std::optional<float> height;
+    // Content stays opt-in while host routing is staged. The first supported
+    // enabled route is the official GlassClock Scene package.
     bool enabled{false};
 };
 
@@ -116,32 +117,55 @@ public:
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
 
-    // Persists a stable content:<definitionId> source without switching runtime
-    // ownership. NativeWidgetHost keeps its current native:* production path so
-    // Content widgets can be introduced incrementally behind the existing fallback.
+    // Persists a validated stable content:<definitionId> source. Package-owned
+    // geometry is applied by default so persisted instances cannot silently
+    // drift away from the .mdwidget contract.
     WidgetServiceResult CreateContent(
         const ContentWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const {
         const auto source = content::MiaoWidgetContentCatalog::MakeSource(request.definitionId);
         if (source.empty()) return {false, L"Content widget definition id 无效。"};
 
-        wallpaper::DesktopWidgetStore store;
+        content::ResolvedWidgetContent resolved;
         std::wstring error;
-        if (!store.Load(&error))
-            return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
+        if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error)) {
+            return {false, error.empty() ? L"找不到或无法验证 Content widget package。" : error};
+        }
+        if (resolved.definition.kind != content::ContentKind::Widget) {
+            return {false, L"Content definition 不是 widget：" + resolved.definition.id};
+        }
+        if (request.enabled && source != L"content:com.goodloong.glass-clock") {
+            return {false, L"该 Content widget 尚未接入桌面运行时；当前仅 GlassClock 支持启用。"};
+        }
 
         wallpaper::DesktopWidget widget;
         widget.id = wallpaper::DesktopWidgetStore::MakeId();
         widget.kind = wallpaper::DesktopWidgetKind::Content;
-        widget.title = request.title;
+        widget.title = request.title.empty() ? resolved.definition.name : request.title;
         widget.source = source;
         widget.monitorId = request.monitorId;
         widget.x = request.x;
         widget.y = request.y;
-        widget.width = request.width;
-        widget.height = request.height;
+        widget.width = request.width.value_or(resolved.definition.geometry.defaultWidth);
+        widget.height = request.height.value_or(resolved.definition.geometry.defaultHeight);
         widget.enabled = request.enabled;
 
+        content::ContentInstance instance;
+        instance.instanceId = widget.id;
+        instance.definitionId = resolved.definition.id;
+        instance.monitorId = widget.monitorId;
+        instance.enabled = widget.enabled;
+        instance.x = widget.x;
+        instance.y = widget.y;
+        instance.width = widget.width;
+        instance.height = widget.height;
+        if (!content::MiaoContentModel::ValidateInstance(resolved.definition, instance, &error)) {
+            return {false, error.empty() ? L"Content widget geometry/instance 无效。" : error};
+        }
+
+        wallpaper::DesktopWidgetStore store;
+        if (!store.Load(&error))
+            return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
         const auto saved = store.Upsert(std::move(widget), &error);
         if (!saved)
             return {false, error.empty() ? L"创建 Content 桌面小组件失败。" : error};

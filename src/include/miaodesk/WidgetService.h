@@ -37,7 +37,9 @@ struct ContentWidgetCreateRequest {
     float y{0.05f};
     std::optional<float> width;
     std::optional<float> height;
-    bool enabled{false};
+    // Scene Content widgets now have a dedicated production host. New instances
+    // should behave like normal desktop widgets and become live immediately.
+    bool enabled{true};
 };
 
 struct WidgetUpdateRequest {

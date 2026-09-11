@@ -114,6 +114,17 @@ function Wait-WidgetCount([int]$Expected, [bool]$RequireAboveIcons, [int]$Second
     throw "Expected $Expected paint-ready Widget surface(s), observed $count."
 }
 
+function Stop-MiaoDeskWallpaperFamily {
+    Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        Start-Sleep -Milliseconds 100
+        $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+        if ($alive -eq 0) { return }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw 'MiaoDeskWallpaper process family did not stop before cold-start probe.'
+}
+
 try {
     $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
     Wait-WidgetCount 1 $true
@@ -141,6 +152,34 @@ Enabled=1
     [IO.File]::WriteAllText($manifest, $second, [Text.UnicodeEncoding]::new($false, $true))
     Wait-WidgetCount 2 $true
 
+    if ($expectContentGlassClock) {
+        # This is the migration proof that the previous smoke test did not have:
+        # shut down every helper, persist only a real Kind=content record, then
+        # cold-start the product. The coordinator must decide to start WidgetHost,
+        # WidgetHost must route content:<definitionId>, and the Surface must paint
+        # above Explorer icons without any native:* record acting as a bootstrap.
+        Stop-MiaoDeskWallpaperFamily
+        $contentOnlyManifest = @"
+[Widgets]
+Ids=ci-content-widget
+
+[Widget.ci-content-widget]
+Kind=content
+Title=CI Content GlassClock
+Source=content:com.goodloong.glass-clock
+MonitorId=
+X=0.05
+Y=0.05
+Width=0.30
+Height=0.30
+Enabled=1
+"@
+        [IO.File]::WriteAllText($manifest, $contentOnlyManifest, [Text.UnicodeEncoding]::new($false, $true))
+        $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
+        Wait-WidgetCount 1 $true
+        Write-Host 'Content GlassClock cold-start/coordinator/desktop Surface lifecycle verified.' -ForegroundColor Green
+    }
+
     $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
     $logDeadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
@@ -165,16 +204,24 @@ Enabled=1
         }
     }
     if ($expectContentGlassClock) {
-        $contentMarker = '[WidgetContent] GlassClock 已通过 Miao Content Framework / Scene TextRenderer 绘制'
-        if (-not $logText.Contains($contentMarker)) {
-            throw "Packaged GlassClock did not prove the Content Framework route. Missing marker: $contentMarker"
+        # The staged migration proof must come from the dedicated Content host,
+        # not the legacy Native GlassClock dogfood marker. Quick-build above still
+        # proves the backward-compatible native fallback when Widgets/ is absent.
+        foreach ($marker in @(
+            '[ContentWidgetHost] Content 组件宿主启动',
+            '[ContentWidgetHost] Content 组件首次绘制成功',
+            'source="content:com.goodloong.glass-clock"'
+        )) {
+            if (-not $logText.Contains($marker)) {
+                throw "Packaged GlassClock did not prove the dedicated Content Framework route. Missing marker: $marker"
+            }
         }
-        Write-Host 'Packaged GlassClock Content Framework route verified.' -ForegroundColor Green
+        Write-Host 'Packaged GlassClock dedicated Content Framework host route verified.' -ForegroundColor Green
     } else {
         Write-Host 'Built-in Widgets directory is absent; native GlassClock fallback verified for quick-build layout.' -ForegroundColor Yellow
     }
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
-    Write-Host 'Native Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
+    Write-Host 'Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {
@@ -193,7 +240,7 @@ Enabled=1
             ((Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 60 | Out-String).Trim())
     }
     $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-    Write-Host "::error title=Native Widget paint readiness failed::$details"
+    Write-Host "::error title=Widget paint readiness failed::$details"
     throw
 } finally {
     Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

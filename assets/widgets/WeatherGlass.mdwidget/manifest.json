@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "com.goodloong.weather-glass",
+  "name": "玻璃天气",
+  "author": "GoodLoongStudio",
+  "version": "1.0.0",
+  "kind": "widget",
+  "runtime": "scene",
+  "entry": "scene.json",
+  "parameters": "parameters.json",
+  "capabilities": ["weather.read"],
+  "geometry": {
+    "defaultWidth": 0.28,
+    "defaultHeight": 0.28,
+    "resize": false,
+    "aspectRatio": 1.0
+  }
+}

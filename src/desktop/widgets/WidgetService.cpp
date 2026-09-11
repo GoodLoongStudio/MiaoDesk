@@ -46,7 +46,54 @@ bool RuntimeDetailLooksHealthy(const std::wstring& detail) {
         detail.find(L"找不到") != std::wstring::npos ||
         detail.find(L"unavailable") != std::wstring::npos ||
         detail.find(L"failed") != std::wstring::npos) return false;
-    return detail.find(L"Native Direct2D Widget host") != std::wstring::npos;
+    return detail.find(L"Direct2D Widget host") != std::wstring::npos;
+}
+
+bool IsWidgetKind(const wallpaper::DesktopWidget& widget) noexcept {
+    return widget.kind == wallpaper::DesktopWidgetKind::Native ||
+           widget.kind == wallpaper::DesktopWidgetKind::Content;
+}
+
+bool IsSupportedContentRuntime(const wallpaper::DesktopWidget& widget) {
+    if (widget.kind != wallpaper::DesktopWidgetKind::Content) return false;
+    content::ResolvedWidgetContent resolved;
+    std::wstring ignored;
+    return content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &ignored) &&
+           resolved.definition.kind == content::ContentKind::Widget &&
+           resolved.definition.runtime == content::ContentRuntimeKind::Scene;
+}
+
+bool ValidateContentWidget(
+    const wallpaper::DesktopWidget& widget,
+    std::wstring* error) {
+    if (error) error->clear();
+    if (widget.kind != wallpaper::DesktopWidgetKind::Content) return true;
+
+    content::ResolvedWidgetContent resolved;
+    std::wstring resolveError;
+    if (!content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &resolveError)) {
+        if (error) *error = resolveError.empty() ? L"找不到或无法验证 Content widget package。" : resolveError;
+        return false;
+    }
+    if (resolved.definition.kind != content::ContentKind::Widget) {
+        if (error) *error = L"Content definition 不是 widget：" + resolved.definition.id;
+        return false;
+    }
+    if (widget.enabled && resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
+        if (error) *error = L"该 Content widget runtime 尚未接入桌面宿主；当前支持 Scene runtime。";
+        return false;
+    }
+
+    content::ContentInstance instance;
+    instance.instanceId = widget.id;
+    instance.definitionId = resolved.definition.id;
+    instance.monitorId = widget.monitorId;
+    instance.enabled = widget.enabled;
+    instance.x = widget.x;
+    instance.y = widget.y;
+    instance.width = widget.width;
+    instance.height = widget.height;
+    return content::MiaoContentModel::ValidateInstance(resolved.definition, instance, error);
 }
 
 std::wstring WindowText(HWND window) {
@@ -177,9 +224,15 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     WidgetSurfaceHealth surface;
     surface.widgetId = widget.id;
     surface.monitorId = widget.monitorId.empty() ? L"primary" : widget.monitorId;
-    surface.configured = widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Native;
+    surface.configured = widget.enabled && IsWidgetKind(widget);
     if (!surface.configured) {
         SetAttention(surface, L"widget_disabled", L"Widget 未启用 runtime。", L"在小组件页面启用该 Widget 后刷新运行状态。");
+        return surface;
+    }
+    if (widget.kind == wallpaper::DesktopWidgetKind::Content && !IsSupportedContentRuntime(widget)) {
+        SetAttention(surface, L"content_route_unsupported",
+                     L"Content Widget 已启用，但其 package 不是可运行的 Scene widget。",
+                     L"确认 .mdwidget manifest 的 kind=widget、runtime=scene，并检查 package 是否可解析。");
         return surface;
     }
 
@@ -276,8 +329,13 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
                      L"Widget Surface 未恢复到配置位置；expected=" + RectText(expected) + L" actual=" + RectText(actual),
                      L"等待显示器拓扑稳定后刷新；若仍不一致，重启 Explorer 或 Widget runtime helper 以重新应用显示器布局。");
     } else if (!PropertyReady(window, wallpaper::kNativeWidgetPaintReadyProperty)) {
-        SetAttention(surface, L"native_paint_pending", L"Native Widget HWND 已创建，但 layered Direct2D 尚未成功呈现。",
-                     L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+        if (widget.kind == wallpaper::DesktopWidgetKind::Content) {
+            SetAttention(surface, L"content_paint_pending", L"Content Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
+                         L"等待一次重绘；若持续未就绪，查看 ContentWidgetHost diagnostics。 ");
+        } else {
+            SetAttention(surface, L"native_paint_pending", L"Native Widget HWND 已创建，但 Direct2D 尚未成功呈现。",
+                         L"等待一次重绘；若持续未就绪，查看 NativeWidgetHost diagnostics。 ");
+        }
     } else if (!surface.zOrderReported) {
         SetAttention(surface, L"zorder_unreported", L"Widget Surface 已绘制；等待 DesktopShell z-order telemetry", L"点击“刷新”；若持续未报告，重启 DesktopShell supervisor。");
     } else if (!surface.zOrderValid) {
@@ -286,7 +344,9 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     } else if (!compatibilityHealthy) {
         SetAttention(surface, L"runtime_diagnostic_unhealthy", L"Widget runtime 兼容诊断报告异常", L"查看 Widget runtime 日志并只重启 Widget helper。");
     } else {
-        surface.detail = L"Widget Native layered Direct2D/desktop surface/monitor geometry health ready";
+        surface.detail = widget.kind == wallpaper::DesktopWidgetKind::Content
+            ? L"Widget Content Scene/Direct2D desktop surface/monitor geometry health ready"
+            : L"Widget Native Direct2D desktop surface/monitor geometry health ready";
     }
     return surface;
 }
@@ -346,6 +406,10 @@ WidgetServiceResult WidgetService::Update(const WidgetUpdateRequest& request) co
     if (request.height) widget.height = *request.height;
     if (request.enabled) widget.enabled = *request.enabled;
 
+    if (widget.kind == wallpaper::DesktopWidgetKind::Content && !ValidateContentWidget(widget, &error)) {
+        return {false, error.empty() ? L"Content widget 更新无效。" : error};
+    }
+
     if (!store.Upsert(widget, &error))
         return {false, error.empty() ? L"更新桌面小组件失败。" : error};
     return {true, L"桌面小组件已更新：" + request.id};
@@ -356,8 +420,17 @@ WidgetServiceResult WidgetService::Remove(std::wstring_view id) const {
     wallpaper::DesktopWidgetStore store;
     std::wstring error;
     if (!store.Load(&error)) return LoadFailure(error);
+    const auto existing = store.Find(id);
+    if (!existing) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
     if (!store.Remove(id, &error))
         return {false, error.empty() ? L"删除桌面小组件失败。" : error};
+
+    if (existing->kind == wallpaper::DesktopWidgetKind::Content) {
+        std::wstring cleanupError;
+        if (!content::ContentWidgetInstanceStore::Remove(id, &cleanupError)) {
+            return {true, L"桌面小组件已删除，但实例参数清理失败：" + cleanupError};
+        }
+    }
     return {true, L"桌面小组件已删除：" + std::wstring(id)};
 }
 
@@ -392,7 +465,7 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
     result.configuredCount = store.Items().size();
     result.enabledCount = static_cast<std::size_t>(std::count_if(
         store.Items().begin(), store.Items().end(), [](const wallpaper::DesktopWidget& widget) {
-            return widget.enabled && widget.kind == wallpaper::DesktopWidgetKind::Native;
+            return widget.enabled && IsWidgetKind(widget);
         }));
     result.detail = ReadWidgetRuntimeDetail();
     result.runtimeReported = !result.detail.empty();
@@ -403,8 +476,7 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
 
     result.surfaces.reserve(result.enabledCount);
     for (const auto& widget : store.Items()) {
-        if (!widget.enabled) continue;
-        if (widget.kind != wallpaper::DesktopWidgetKind::Native) continue;
+        if (!widget.enabled || !IsWidgetKind(widget)) continue;
         result.surfaces.push_back(InspectWidgetSurface(widget, compatibilityHealthy));
     }
 

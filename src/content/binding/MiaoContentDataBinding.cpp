@@ -21,11 +21,12 @@ bool HasCapability(const ContentDefinition& definition, std::wstring_view capabi
     if (std::find(definition.capabilities.begin(), definition.capabilities.end(), capability) !=
         definition.capabilities.end()) return true;
 
-    // The early framework document used the broader "clock" spelling while
-    // package examples already use "clock.read". Treat clock as a compatible
-    // read-only alias; new content should declare clock.read.
     if (capability == L"clock.read") {
         return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"clock") !=
+               definition.capabilities.end();
+    }
+    if (capability == L"weather.read") {
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"weather") !=
                definition.capabilities.end();
     }
     return false;
@@ -91,6 +92,7 @@ bool ValidClockFields(
 std::optional<std::wstring_view> MiaoContentCapabilityBroker::RequiredCapability(
     std::wstring_view dataPath) noexcept {
     if (StartsWith(dataPath, L"time.")) return L"clock.read";
+    if (StartsWith(dataPath, L"weather.")) return L"weather.read";
     return std::nullopt;
 }
 
@@ -119,6 +121,10 @@ bool MiaoContentCapabilityBroker::SelfTest() {
     std::wstring error;
     if (!CanRead(content, L"time.hhmm", &error)) return false;
     if (CanRead(content, L"weather.temperature", &error)) return false;
+    content.capabilities.push_back(L"weather.read");
+    if (!CanRead(content, L"weather.temperature", &error)) return false;
+    content.capabilities = {L"weather"};
+    if (!CanRead(content, L"weather.condition", &error)) return false;
     content.capabilities.clear();
     if (CanRead(content, L"time.hhmm", &error)) return false;
     content.capabilities = {L"clock"};
@@ -227,10 +233,12 @@ bool MiaoContentDataBinding::SelfTest() {
     clock.version = L"1.0.0";
     clock.entry = L"scene.json";
     clock.kind = ContentKind::Widget;
-    clock.capabilities = {L"clock.read"};
+    clock.capabilities = {L"clock.read", L"weather.read"};
 
-    const auto snapshot = MiaoTimeDataProvider::Capture(2026, 9, 10, 4, 21, 7, 5, 42);
+    auto snapshot = MiaoTimeDataProvider::Capture(2026, 9, 10, 4, 21, 7, 5, 42);
     if (snapshot.generation != 42 || snapshot.values.size() < 10) return false;
+    snapshot.values.emplace(L"weather.temperature", static_cast<std::int64_t>(23));
+    snapshot.values.emplace(L"weather.condition", std::wstring(L"晴"));
 
     std::wstring error;
     const auto* hhmm = Find(clock, snapshot, L"time.hhmm", &error);
@@ -238,13 +246,16 @@ bool MiaoContentDataBinding::SelfTest() {
         std::get<std::wstring>(*hhmm) != L"21:07") return false;
 
     std::wstring resolved;
-    if (!ResolveTemplate(clock, snapshot, L"现在是 {{time.hhmm}} · {{ time.date }}", &resolved, &error)) return false;
-    if (resolved != L"现在是 21:07 · 2026-09-10") return false;
+    if (!ResolveTemplate(clock, snapshot,
+                         L"现在是 {{time.hhmm}} · {{ weather.temperature }}° · {{weather.condition}}",
+                         &resolved, &error)) return false;
+    if (resolved != L"现在是 21:07 · 23° · 晴") return false;
 
     ContentDefinition denied = clock;
+    denied.capabilities = {L"clock.read"};
+    if (ResolveTemplate(denied, snapshot, L"{{weather.temperature}}", &resolved, &error)) return false;
     denied.capabilities.clear();
     if (ResolveTemplate(denied, snapshot, L"{{time.hhmm}}", &resolved, &error)) return false;
-    if (ResolveTemplate(clock, snapshot, L"{{weather.temperature}}", &resolved, &error)) return false;
     if (ResolveTemplate(clock, snapshot, L"{{time.hhmm", &resolved, &error)) return false;
     return MiaoContentCapabilityBroker::SelfTest();
 }

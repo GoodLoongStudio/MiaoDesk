@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "miaodesk/ContentWidgetInstanceStore.h"
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWidgetPreset.h"
@@ -34,12 +35,11 @@ struct ContentWidgetCreateRequest {
     std::wstring monitorId;
     float x{0.68f};
     float y{0.05f};
-    float width{0.28f};
-    float height{0.18f};
-    // Keep newly persisted Content widgets dormant until NativeWidgetHost has
-    // an explicit content:<definitionId> runtime route. This avoids recording
-    // an enabled widget that cannot yet produce a desktop Surface.
-    bool enabled{false};
+    std::optional<float> width;
+    std::optional<float> height;
+    // Scene Content widgets now have a dedicated production host. New instances
+    // should behave like normal desktop widgets and become live immediately.
+    bool enabled{true};
 };
 
 struct WidgetUpdateRequest {
@@ -53,10 +53,6 @@ struct WidgetUpdateRequest {
     std::optional<bool> enabled;
 };
 
-// One configured Widget matched to its live desktop surface. Runtime inspection
-// remains owned by the Widget domain. UI/Pi receive both machine-readable
-// issueCode and human-readable recommendedAction so callers never need to infer
-// remediation from HWND/Native rendering implementation details.
 struct WidgetSurfaceHealth {
     std::wstring widgetId;
     std::wstring monitorId;
@@ -93,8 +89,6 @@ struct WidgetSurfaceHealth {
     }
 };
 
-// Caller-facing Widget runtime summary. UI/Pi clients consume this through
-// DesktopSnapshot rather than reading wallpaper.ini or enumerating HWNDs.
 struct WidgetRuntimeHealth {
     std::size_t configuredCount{};
     std::size_t enabledCount{};
@@ -108,45 +102,119 @@ struct WidgetRuntimeHealth {
     }
 };
 
-// Widget domain service. DesktopWidgetStore is an implementation detail behind
-// this boundary rather than a public UI/AI product API.
 class WidgetService {
 public:
     WidgetServiceResult CreateNative(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
 
-    // Persists a stable content:<definitionId> source without switching runtime
-    // ownership. NativeWidgetHost keeps its current native:* production path so
-    // Content widgets can be introduced incrementally behind the existing fallback.
     WidgetServiceResult CreateContent(
         const ContentWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const {
         const auto source = content::MiaoWidgetContentCatalog::MakeSource(request.definitionId);
         if (source.empty()) return {false, L"Content widget definition id 无效。"};
 
-        wallpaper::DesktopWidgetStore store;
+        content::ResolvedWidgetContent resolved;
         std::wstring error;
-        if (!store.Load(&error))
-            return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
+        if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error)) {
+            return {false, error.empty() ? L"找不到或无法验证 Content widget package。" : error};
+        }
+        if (resolved.definition.kind != content::ContentKind::Widget) {
+            return {false, L"Content definition 不是 widget：" + resolved.definition.id};
+        }
+        if (request.enabled && resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
+            return {false, L"该 Content widget 的 runtime 尚未接入桌面宿主；当前支持 Scene runtime。"};
+        }
 
         wallpaper::DesktopWidget widget;
         widget.id = wallpaper::DesktopWidgetStore::MakeId();
         widget.kind = wallpaper::DesktopWidgetKind::Content;
-        widget.title = request.title;
+        widget.title = request.title.empty() ? resolved.definition.name : request.title;
         widget.source = source;
         widget.monitorId = request.monitorId;
         widget.x = request.x;
         widget.y = request.y;
-        widget.width = request.width;
-        widget.height = request.height;
+        widget.width = request.width.value_or(resolved.definition.geometry.defaultWidth);
+        widget.height = request.height.value_or(resolved.definition.geometry.defaultHeight);
         widget.enabled = request.enabled;
 
+        content::ContentInstance instance;
+        instance.instanceId = widget.id;
+        instance.definitionId = resolved.definition.id;
+        instance.monitorId = widget.monitorId;
+        instance.enabled = widget.enabled;
+        instance.x = widget.x;
+        instance.y = widget.y;
+        instance.width = widget.width;
+        instance.height = widget.height;
+        if (!content::MiaoContentModel::ValidateInstance(resolved.definition, instance, &error)) {
+            return {false, error.empty() ? L"Content widget geometry/instance 无效。" : error};
+        }
+
+        wallpaper::DesktopWidgetStore store;
+        if (!store.Load(&error))
+            return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
         const auto saved = store.Upsert(std::move(widget), &error);
         if (!saved)
             return {false, error.empty() ? L"创建 Content 桌面小组件失败。" : error};
         if (created) *created = *saved;
         return {true, L"Content 桌面小组件已创建：" + saved->id};
+    }
+
+    WidgetServiceResult GetContentParameters(
+        std::wstring_view id,
+        content::ContentParameterValues* values) const {
+        if (!values) return {false, L"Content parameter 输出不能为空。"};
+        wallpaper::DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
+        const auto widget = store.Find(id);
+        if (!widget) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
+        if (widget->kind != wallpaper::DesktopWidgetKind::Content)
+            return {false, L"该桌面小组件不是 Content 类型。"};
+
+        content::ResolvedWidgetContent resolved;
+        if (!content::MiaoWidgetContentCatalog::Resolve(widget->source.wstring(), &resolved, &error))
+            return {false, error.empty() ? L"无法解析 Content widget package。" : error};
+        content::ContentParameterValues overrides;
+        if (!content::ContentWidgetInstanceStore::LoadOverrides(widget->id, resolved.definition, &overrides, &error))
+            return {false, error.empty() ? L"无法读取 Content widget 参数。" : error};
+        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, values, &error))
+            return {false, error.empty() ? L"Content widget 参数无效。" : error};
+        return {true, L"Content widget 参数读取完成。"};
+    }
+
+    WidgetServiceResult SetContentParameter(
+        std::wstring_view id,
+        std::wstring_view key,
+        content::ContentParameterValue value) const {
+        wallpaper::DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
+        const auto widget = store.Find(id);
+        if (!widget) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
+        if (widget->kind != wallpaper::DesktopWidgetKind::Content)
+            return {false, L"该桌面小组件不是 Content 类型。"};
+
+        content::ResolvedWidgetContent resolved;
+        if (!content::MiaoWidgetContentCatalog::Resolve(widget->source.wstring(), &resolved, &error))
+            return {false, error.empty() ? L"无法解析 Content widget package。" : error};
+        if (!content::ContentWidgetInstanceStore::SetParameter(widget->id, resolved.definition, key, std::move(value), &error))
+            return {false, error.empty() ? L"Content widget 参数保存失败。" : error};
+        return {true, L"Content widget 参数已更新：" + std::wstring(key)};
+    }
+
+    WidgetServiceResult ResetContentParameters(std::wstring_view id) const {
+        wallpaper::DesktopWidgetStore store;
+        std::wstring error;
+        if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
+        const auto widget = store.Find(id);
+        if (!widget) return {false, L"没有找到桌面小组件：" + std::wstring(id)};
+        if (widget->kind != wallpaper::DesktopWidgetKind::Content)
+            return {false, L"该桌面小组件不是 Content 类型。"};
+        if (!content::ContentWidgetInstanceStore::Remove(widget->id, &error))
+            return {false, error.empty() ? L"Content widget 参数重置失败。" : error};
+        return {true, L"Content widget 参数已恢复 package 默认值。"};
     }
 
     WidgetServiceResult Update(const WidgetUpdateRequest& request) const;

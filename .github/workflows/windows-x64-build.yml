@@ -83,7 +83,7 @@ jobs:
             throw 'x64 build failed.'
           }
 
-      - name: Verify native Widget fallback in quick-build layout
+      - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh
         run: |
           $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |

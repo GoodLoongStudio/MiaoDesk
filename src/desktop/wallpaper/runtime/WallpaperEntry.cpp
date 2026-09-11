@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include "miaodesk/ContentWidgetHost.h"
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetStore.h"
@@ -472,6 +473,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
     // reference and is no longer routed from the executable entrypoint.
     const int surfaceWebResult = miaodesk::wallpaper::TryRunWebDesktopSurfaceChild(instance);
     if (surfaceWebResult >= 0) return surfaceWebResult;
+
+    const int contentWidgetResult = miaodesk::wallpaper::TryRunContentWidgetHost(instance);
+    if (contentWidgetResult >= 0) return contentWidgetResult;
 
     const int nativeWidgetResult = miaodesk::wallpaper::TryRunNativeWidgetHost(instance);
     if (nativeWidgetResult >= 0) return nativeWidgetResult;

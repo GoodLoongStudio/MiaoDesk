@@ -18,6 +18,7 @@ set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
     content/asset/MiaoAssetDatabase.cpp
     content/binding/MiaoContentDataBinding.cpp
+    content/model/ContentWidgetInstanceStore.cpp
     content/model/MiaoContentDefinitionLoader.cpp
     content/model/MiaoContentModel.cpp
     content/model/MiaoWidgetContentCatalog.cpp
@@ -105,6 +106,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
     desktop/widgets/NativeWidgetHost.cpp
+    desktop/widgets/ContentWidgetHost.cpp
     desktop/widgets/OfficialWidgetContentPainter.cpp
 
     desktop/wallpaper/render/WallpaperScaling.cpp
@@ -159,9 +161,6 @@ set_source_files_properties(ai/pi/PiRuntime.cpp PROPERTIES
 )
 set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.cpp PROPERTIES
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
-)
-set_source_files_properties(desktop/widgets/NativeWidgetHost.cpp PROPERTIES
-    COMPILE_DEFINITIONS "MIAODESK_WIDGET_HOST_CONTENT_DOGFOOD"
 )
 
 foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)

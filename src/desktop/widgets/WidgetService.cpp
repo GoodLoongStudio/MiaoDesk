@@ -20,7 +20,6 @@ namespace miaodesk::desktop {
 namespace {
 
 constexpr wchar_t kNativeHostClass[] = L"MiaoDesk.Native.WidgetSurface";
-constexpr wchar_t kGlassClockContentSource[] = L"content:com.goodloong.glass-clock";
 constexpr LONG kGeometryTolerancePx = 8;
 constexpr float kPresetGeometryTolerance = 0.0001f;
 
@@ -47,7 +46,9 @@ bool RuntimeDetailLooksHealthy(const std::wstring& detail) {
         detail.find(L"找不到") != std::wstring::npos ||
         detail.find(L"unavailable") != std::wstring::npos ||
         detail.find(L"failed") != std::wstring::npos) return false;
-    return detail.find(L"Native Direct2D Widget host") != std::wstring::npos;
+    // Keep compatibility with the old "Native Direct2D Widget host" text while
+    // allowing the shared Content/Native host to drop the legacy prefix.
+    return detail.find(L"Direct2D Widget host") != std::wstring::npos;
 }
 
 bool IsWidgetKind(const wallpaper::DesktopWidget& widget) noexcept {
@@ -56,8 +57,12 @@ bool IsWidgetKind(const wallpaper::DesktopWidget& widget) noexcept {
 }
 
 bool IsSupportedContentRuntime(const wallpaper::DesktopWidget& widget) {
-    return widget.kind == wallpaper::DesktopWidgetKind::Content &&
-           widget.source.wstring() == kGlassClockContentSource;
+    if (widget.kind != wallpaper::DesktopWidgetKind::Content) return false;
+    content::ResolvedWidgetContent resolved;
+    std::wstring ignored;
+    return content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &ignored) &&
+           resolved.definition.kind == content::ContentKind::Widget &&
+           resolved.definition.runtime == content::ContentRuntimeKind::Scene;
 }
 
 bool ValidateContentWidget(
@@ -65,10 +70,6 @@ bool ValidateContentWidget(
     std::wstring* error) {
     if (error) error->clear();
     if (widget.kind != wallpaper::DesktopWidgetKind::Content) return true;
-    if (widget.enabled && !IsSupportedContentRuntime(widget)) {
-        if (error) *error = L"该 Content widget 尚未接入桌面运行时；当前仅 GlassClock 支持启用。";
-        return false;
-    }
 
     content::ResolvedWidgetContent resolved;
     std::wstring resolveError;
@@ -78,6 +79,10 @@ bool ValidateContentWidget(
     }
     if (resolved.definition.kind != content::ContentKind::Widget) {
         if (error) *error = L"Content definition 不是 widget：" + resolved.definition.id;
+        return false;
+    }
+    if (widget.enabled && resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
+        if (error) *error = L"该 Content widget runtime 尚未接入桌面宿主；当前支持 Scene runtime。";
         return false;
     }
 
@@ -228,8 +233,8 @@ WidgetSurfaceHealth InspectWidgetSurface(const wallpaper::DesktopWidget& widget,
     }
     if (widget.kind == wallpaper::DesktopWidgetKind::Content && !IsSupportedContentRuntime(widget)) {
         SetAttention(surface, L"content_route_unsupported",
-                     L"Content Widget 已启用，但当前 Host 尚不支持该 definition。",
-                     L"停用该 Content Widget，或升级到包含对应 Content runtime route 的版本。");
+                     L"Content Widget 已启用，但其 package 不是可运行的 Scene widget。",
+                     L"确认 .mdwidget manifest 的 kind=widget、runtime=scene，并检查 package 是否可解析。");
         return surface;
     }
 

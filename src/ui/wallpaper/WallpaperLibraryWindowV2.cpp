@@ -228,6 +228,8 @@ struct WallpaperLibraryWindow::Impl {
     NativeWeatherSnapshot widgetWeather;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
+    std::wstring lastWallpaperQuery;
+    bool wallpaperQueryInitialized{};
     Page page{Page::Installed};
     int activeNavId{kNavInstalledId};
     bool webBarVisible{};
@@ -392,8 +394,17 @@ struct WallpaperLibraryWindow::Impl {
 
     void RefreshWallpapers() {
         if (!library) return;
+        const std::wstring query = WindowText(search);
+        if (wallpaperQueryInitialized && query == lastWallpaperQuery) {
+            std::wstring error;
+            if (!library->Load(&error) && !error.empty())
+                miaodesk::log::Warn(L"UI.Library", L"重新加载壁纸库失败: " + error);
+        }
+        wallpaperQueryInitialized = true;
+        lastWallpaperQuery = query;
+
         const auto previous = selectedWallpaperId;
-        visibleWallpapers = library->Search(WindowText(search));
+        visibleWallpapers = library->Search(query);
         if (!previous.empty()) {
             const auto it = std::find_if(visibleWallpapers.begin(), visibleWallpapers.end(), [&](const auto& item) {
                 return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;

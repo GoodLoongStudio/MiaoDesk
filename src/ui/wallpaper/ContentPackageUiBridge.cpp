@@ -11,6 +11,8 @@
 #include <wrl/client.h>
 
 #include <filesystem>
+#include <iterator>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -52,7 +54,6 @@ const wchar_t* RuntimeLabel(content::ContentRuntimeKind runtime) noexcept {
     switch (runtime) {
     case content::ContentRuntimeKind::Scene: return L"Scene";
     case content::ContentRuntimeKind::Web: return L"Web";
-    case content::ContentRuntimeKind::Unknown: break;
     }
     return L"Unknown";
 }
@@ -160,7 +161,7 @@ bool CreateInstalledWidgetInstance(HWND owner,
     return true;
 }
 
-void IndexInstalledWallpaper(const content::ManagedContentPackageInfo& package) {
+void IndexInstalledWallpaper() {
     // Keep library.ini synchronized even though the running UI may have loaded
     // its WallpaperLibrary before this install operation.
     WallpaperLibrary library;
@@ -260,7 +261,7 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
         std::wstring(replacing ? L"替换内容包完成: " : L"安装内容包完成: ") + installed.package.source);
 
     if (expectedKind == content::ContentKind::Wallpaper) {
-        IndexInstalledWallpaper(installed.package);
+        IndexInstalledWallpaper();
         NudgeWallpaperList(owner);
         MaybeAssignWallpaperToPrimary(owner, installed.package);
         MessageBoxW(owner,

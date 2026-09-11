@@ -23,6 +23,7 @@ set(MIAODESK_CORE_SOURCES
     content/model/MiaoContentModel.cpp
     content/model/MiaoWidgetContentCatalog.cpp
     content/package/MiaoContentPackage.cpp
+    content/package/MiaoContentPackageCatalog.cpp
     content/package/MiaoContentPackageManager.cpp
     content/package/MiaoContentPackageUninstall.cpp
     content/render/MiaoRenderGraph.cpp
@@ -118,6 +119,7 @@ set(MIAODESK_WALLPAPER_SOURCES
 
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
     ui/wallpaper/ContentPackageUiBridge.cpp
+    ui/wallpaper/ContentPackageManagerDialog.cpp
     ui/wallpaper/ContentWidgetSettingsDialog.cpp
     ui/wallpaper/ContentWidgetPreviewRenderer.cpp
     ui/settings/DesktopAiSettingsPage.cpp

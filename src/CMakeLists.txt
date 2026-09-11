@@ -24,6 +24,7 @@ set(MIAODESK_CORE_SOURCES
     content/model/MiaoWidgetContentCatalog.cpp
     content/package/MiaoContentPackage.cpp
     content/package/MiaoContentPackageManager.cpp
+    content/package/MiaoContentPackageUninstall.cpp
     content/render/MiaoRenderGraph.cpp
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp

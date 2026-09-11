@@ -16,6 +16,17 @@ bool SameSource(std::wstring_view left, std::wstring_view right) noexcept {
 
 } // namespace
 
+DesktopControlResult DesktopControlService::ListContentPackages(
+    std::vector<content::ManagedContentPackageInfo>* packages) const {
+    if (!packages) return {false, L"Content package list 输出不能为空。"};
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::List(packages, &error)) {
+        miaodesk::log::Error(L"DesktopControl", L"ListContentPackages 失败: " + error);
+        return {false, error.empty() ? L"无法读取已安装内容包。" : error};
+    }
+    return {true, L"已读取内容包：" + std::to_wstring(packages->size()) + L" 个。"};
+}
+
 DesktopControlResult DesktopControlService::UninstallContentPackage(
     content::ContentKind kind,
     std::wstring_view source,

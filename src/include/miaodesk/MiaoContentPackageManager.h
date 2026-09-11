@@ -35,6 +35,13 @@ struct ContentPackageInstallResult {
     bool replacedExisting{};
 };
 
+struct ContentPackageUninstallResult {
+    ManagedContentPackageInfo package;
+    // The package is already outside the catalog when this is true. A stale
+    // hidden .trash directory can be cleaned on a later maintenance pass.
+    bool cleanupDeferred{};
+};
+
 class MiaoContentPackageManager {
 public:
     static constexpr std::wstring_view kSourcePrefix = L"content:";
@@ -63,6 +70,12 @@ public:
         const std::filesystem::path& sourceRoot,
         ContentPackageInstallResult* result,
         const ContentPackageInstallOptions& options = {},
+        std::wstring* error = nullptr);
+
+    static bool Uninstall(
+        ContentKind expectedKind,
+        std::wstring_view source,
+        ContentPackageUninstallResult* result,
         std::wstring* error = nullptr);
 
     static bool SelfTest();

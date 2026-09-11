@@ -43,6 +43,7 @@ set(MIAODESK_CORE_SOURCES
     desktop/widgets/DesktopWidgetStore.cpp
     desktop/widgets/DesktopWidgetController.cpp
     desktop/widgets/NativeWidgetPreset.cpp
+    desktop/widgets/TodayTaskStore.cpp
     desktop/wallpaper/library/WallpaperPackage.cpp
     desktop/wallpaper/library/WallpaperLibrary.cpp
     desktop/wallpaper/library/WallpaperLibraryWeb.cpp
@@ -77,7 +78,6 @@ set(MIAODESK_WALLPAPER_SOURCES
     content/render/d2d/MiaoSceneD2DRenderer.cpp
     content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
     content/render/d3d11/MiaoD3D11RenderTarget.cpp
-    content/render/d3d11/MiaoD3D11TextureLoader.cpp
     content/render/d3d11/MiaoSceneD3D11Renderer.cpp
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp

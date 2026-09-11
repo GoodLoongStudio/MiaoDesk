@@ -34,7 +34,9 @@ public:
 
     DesktopControlResult GetContentSettings(
         std::wstring_view id,
-        ContentWidgetSettingsSnapshot* settings) const;
+        ContentWidgetSettingsSnapshot* settings) const {
+        return service_.GetContentWidgetSettings(id, settings);
+    }
 
     DesktopControlResult GetContentParameters(
         std::wstring_view id,

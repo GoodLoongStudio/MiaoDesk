@@ -3,6 +3,7 @@
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWeatherService.h"
+#include "miaodesk/TodayTaskContentProvider.h"
 
 #include <d2d1.h>
 #include <wrl/client.h>
@@ -34,38 +35,52 @@ bool HasCapability(const content::ContentDefinition& definition, std::wstring_vi
         return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"weather") !=
                definition.capabilities.end();
     }
+    if (capability == L"tasks.read") {
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"tasks") !=
+               definition.capabilities.end();
+    }
     return false;
 }
 
-bool PublishWeather(
+bool PublishHostData(
     content::MiaoSceneD2DRenderer& renderer,
     const content::ContentDefinition& definition,
     std::wstring* error) {
     renderer.ClearDataValues();
-    if (!HasCapability(definition, L"weather.read")) return true;
-
-    NativeWeatherSnapshot weather;
-    const bool available = NativeWeatherService::ReadCachedSnapshot(&weather) && weather.valid;
     auto publish = [&](std::wstring_view path, content::PropertyValue value) {
         return renderer.SetDataValue(path, std::move(value), error);
     };
 
-    if (!publish(L"weather.available", available) ||
-        !publish(L"weather.location", available ? weather.location : std::wstring{}) ||
-        !publish(L"weather.temperatureC", static_cast<std::int64_t>(available ? weather.temperatureC : 0)) ||
-        !publish(L"weather.highC", static_cast<std::int64_t>(available ? weather.highC : 0)) ||
-        !publish(L"weather.lowC", static_cast<std::int64_t>(available ? weather.lowC : 0)) ||
-        !publish(L"weather.code", static_cast<std::int64_t>(available ? weather.weatherCode : 0)) ||
-        !publish(L"weather.condition", available ? weather.condition : std::wstring{}) ||
-        !publish(L"weather.observedTime", available ? weather.observedTime : std::wstring{}) ||
-        !publish(L"weather.status", available ? weather.status : std::wstring(L"天气数据暂不可用"))) return false;
+    if (HasCapability(definition, L"weather.read")) {
+        NativeWeatherSnapshot weather;
+        const bool available = NativeWeatherService::ReadCachedSnapshot(&weather) && weather.valid;
+        if (!publish(L"weather.available", available) ||
+            !publish(L"weather.location", available ? weather.location : std::wstring{}) ||
+            !publish(L"weather.temperatureC", static_cast<std::int64_t>(available ? weather.temperatureC : 0)) ||
+            !publish(L"weather.highC", static_cast<std::int64_t>(available ? weather.highC : 0)) ||
+            !publish(L"weather.lowC", static_cast<std::int64_t>(available ? weather.lowC : 0)) ||
+            !publish(L"weather.code", static_cast<std::int64_t>(available ? weather.weatherCode : 0)) ||
+            !publish(L"weather.condition", available ? weather.condition : std::wstring{}) ||
+            !publish(L"weather.observedTime", available ? weather.observedTime : std::wstring{}) ||
+            !publish(L"weather.status", available ? weather.status : std::wstring(L"天气数据暂不可用"))) return false;
 
-    for (std::size_t i = 0; i < weather.hours.size(); ++i) {
-        const auto& hour = weather.hours[i];
-        const std::wstring prefix = L"weather.hour" + std::to_wstring(i) + L".";
-        if (!publish(prefix + L"label", available ? hour.label : std::wstring{}) ||
-            !publish(prefix + L"temperatureC", static_cast<std::int64_t>(available ? hour.temperatureC : 0)) ||
-            !publish(prefix + L"code", static_cast<std::int64_t>(available ? hour.weatherCode : 0))) return false;
+        for (std::size_t i = 0; i < weather.hours.size(); ++i) {
+            const auto& hour = weather.hours[i];
+            const std::wstring prefix = L"weather.hour" + std::to_wstring(i) + L".";
+            if (!publish(prefix + L"label", available ? hour.label : std::wstring{}) ||
+                !publish(prefix + L"temperatureC", static_cast<std::int64_t>(available ? hour.temperatureC : 0)) ||
+                !publish(prefix + L"code", static_cast<std::int64_t>(available ? hour.weatherCode : 0))) return false;
+        }
+    }
+
+    if (HasCapability(definition, L"tasks.read")) {
+        content::ContentDataValues tasks;
+        std::wstring taskError;
+        if (!desktop::TodayTaskContentProvider::Capture(&tasks, &taskError))
+            return Fail(error, taskError.empty() ? L"无法读取 Today Tasks Content 数据。" : taskError);
+        for (const auto& [path, value] : tasks) {
+            if (!publish(path, value)) return false;
+        }
     }
     return true;
 }
@@ -221,7 +236,7 @@ struct ContentWidgetPreviewRenderer::Impl {
             if (found == settings.values.end()) continue;
             if (!cached->renderer->SetParameter(parameter.runtimeId, found->second, error)) return false;
         }
-        if (!PublishWeather(*cached->renderer, settings.definition, error)) return false;
+        if (!PublishHostData(*cached->renderer, settings.definition, error)) return false;
 
         target->BeginDraw();
         target->Clear(D2D1::ColorF(0.973f, 0.980f, 0.992f, 1.0f));

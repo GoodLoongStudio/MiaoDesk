@@ -29,6 +29,12 @@ public:
     bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
     bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
 
+    // Host-owned data providers (weather, tasks, media state, etc.) publish
+    // bounded typed values through declarative paths. Content still needs the
+    // matching capability before a template can read any injected value.
+    bool SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error = nullptr);
+    void ClearDataValues() noexcept;
+
     // Canonical host-side scheduling entry point. It advances runtime animation
     // state to timeSeconds before reporting demand, so a Once animation always
     // receives its terminal frame before an idle Widget drops to 0 FPS.

@@ -37,6 +37,7 @@ set(MIAODESK_CORE_SOURCES
     content/shader/MiaoGpuParameterBlock.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
+    desktop/control/DesktopContentPackageLifecycle.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp

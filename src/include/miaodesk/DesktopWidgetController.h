@@ -42,6 +42,12 @@ public:
         std::wstring_view id,
         content::ContentParameterValues* values) const;
 
+    DesktopControlResult SetContentParameters(
+        std::wstring_view id,
+        const content::ContentParameterValues& changes) const {
+        return service_.SetContentWidgetParameters(id, changes);
+    }
+
     DesktopControlResult SetContentParameter(
         std::wstring_view id,
         std::wstring_view key,

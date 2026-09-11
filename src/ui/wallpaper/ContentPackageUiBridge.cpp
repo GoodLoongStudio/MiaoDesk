@@ -1,3 +1,4 @@
+#include "miaodesk/ContentPackageManagerDialog.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/WallpaperLibrary.h"
@@ -39,6 +40,8 @@ constexpr UINT kMenuWidgetWeatherGlass = 6222;
 constexpr UINT kMenuWidgetAuto = 6223;
 constexpr UINT kMenuInstallWallpaperPackage = 6290;
 constexpr UINT kMenuInstallWidgetPackage = 6291;
+constexpr UINT kMenuManageWallpaperPackages = 6292;
+constexpr UINT kMenuManageWidgetPackages = 6293;
 
 HHOOK g_cbtHook{};
 
@@ -136,6 +139,13 @@ void NudgeWallpaperList(HWND owner) {
     // reaching into WallpaperLibraryWindow::Impl.
     SendMessageW(owner, WM_COMMAND, MAKEWPARAM(kSearchId, EN_CHANGE),
                  reinterpret_cast<LPARAM>(GetDlgItem(owner, kSearchId)));
+}
+
+void ManagePackages(HWND owner, content::ContentKind kind) {
+    const bool changed = ShowContentPackageManagerDialog(GetModuleHandleW(nullptr), owner, kind);
+    if (!changed) return;
+    if (kind == content::ContentKind::Widget) RefreshVisibleWidgets(owner);
+    else NudgeWallpaperList(owner);
 }
 
 bool CreateInstalledWidgetInstance(HWND owner,
@@ -299,6 +309,7 @@ UINT TrackMenuAtControl(HWND owner, int controlId, HMENU menu) {
 void ShowWallpaperAddMenu(HWND owner) {
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, kMenuInstallWallpaperPackage, L"安装 .mdwall 内容包…");
+    AppendMenuW(menu, MF_STRING, kMenuManageWallpaperPackages, L"管理壁纸内容包…");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuImportFile, L"从普通文件导入…");
     AppendMenuW(menu, MF_STRING, kMenuImportWeb, L"添加 HTTPS Web 地址…");
@@ -306,6 +317,8 @@ void ShowWallpaperAddMenu(HWND owner) {
     DestroyMenu(menu);
     if (command == kMenuInstallWallpaperPackage) {
         InstallFromPicker(owner, content::ContentKind::Wallpaper);
+    } else if (command == kMenuManageWallpaperPackages) {
+        ManagePackages(owner, content::ContentKind::Wallpaper);
     } else if (command != 0) {
         SendMessageW(owner, WM_COMMAND, MAKEWPARAM(command, 0), 0);
     }
@@ -318,12 +331,15 @@ void ShowWidgetCreateMenu(HWND owner) {
     AppendMenuW(menu, MF_STRING, kMenuWidgetWeatherGlass, L"玻璃天气");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuInstallWidgetPackage, L"安装 .mdwidget 内容包…");
+    AppendMenuW(menu, MF_STRING, kMenuManageWidgetPackages, L"管理小组件内容包…");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuWidgetAuto, L"自动轮换下一个");
     const UINT command = TrackMenuAtControl(owner, kWidgetCreateId, menu);
     DestroyMenu(menu);
     if (command == kMenuInstallWidgetPackage) {
         InstallFromPicker(owner, content::ContentKind::Widget);
+    } else if (command == kMenuManageWidgetPackages) {
+        ManagePackages(owner, content::ContentKind::Widget);
     } else if (command != 0) {
         SendMessageW(owner, WM_COMMAND, MAKEWPARAM(command, 0), 0);
     }

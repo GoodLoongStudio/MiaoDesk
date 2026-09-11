@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -47,6 +48,30 @@ std::wstring OperationToken() {
     return std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
 }
 
+void CleanupStaleTrash(const fs::path& userRoot) {
+    const fs::path trashRoot = userRoot / L".trash";
+    std::error_code ec;
+    if (!fs::is_directory(trashRoot, ec) || ec) return;
+
+    constexpr auto kMinimumAge = std::chrono::hours(1);
+    const auto now = fs::file_time_type::clock::now();
+    for (const auto& entry : fs::directory_iterator(trashRoot, fs::directory_options::skip_permission_denied, ec)) {
+        if (ec) break;
+
+        std::error_code timeError;
+        const auto modified = fs::last_write_time(entry.path(), timeError);
+        if (timeError || now - modified < kMinimumAge) continue;
+
+        std::error_code cleanupError;
+        fs::remove_all(entry.path(), cleanupError);
+    }
+
+    // Keep maintenance strictly best-effort. Removing an empty hidden parent is
+    // cosmetic and must never make uninstall fail.
+    ec.clear();
+    if (fs::is_empty(trashRoot, ec) && !ec) fs::remove(trashRoot, ec);
+}
+
 } // namespace
 
 bool MiaoContentPackageManager::Uninstall(
@@ -67,6 +92,11 @@ bool MiaoContentPackageManager::Uninstall(
     const fs::path userRoot = UserRoot(expectedKind);
     if (userRoot.empty() || !PathIsInside(package.packageRoot, userRoot))
         return Fail(error, L"Resolved user package is outside the managed content root.");
+
+    // Previous uninstall operations may have intentionally left locked files in
+    // hidden .trash. Reclaim only old entries so an overlapping uninstall in
+    // another process retains a generous window to finish its own cleanup.
+    CleanupStaleTrash(userRoot);
 
     const fs::path trashContainer = userRoot / L".trash" / OperationToken();
     const fs::path trashRoot = trashContainer / package.packageRoot.filename();

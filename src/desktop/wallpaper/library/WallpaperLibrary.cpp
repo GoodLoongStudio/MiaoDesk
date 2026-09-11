@@ -539,17 +539,33 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
         if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
 
         // Canonical Content packages are identified by manifest id, never by
-        // their folder name or the original download path. This lets an
-        // existing library record follow a renamed/moved package directory.
+        // their folder name or original download path. Resolve the concrete
+        // runtime source on every scan so replacements keep stable identity.
         content::LoadedMiaoContentPackage canonical;
         std::wstring canonicalError;
         if (content::MiaoContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
-            canonical.manifest.kind == content::ContentKind::Wallpaper &&
-            canonical.manifest.runtime == content::ContentRuntimeKind::Scene) {
-            content::SceneRuntimeDefinition runtime;
-            if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
+            canonical.manifest.kind == content::ContentKind::Wallpaper) {
+            LibraryWallpaperKind canonicalKind = LibraryWallpaperKind::Unknown;
+            fs::path source;
+            if (canonical.manifest.runtime == content::ContentRuntimeKind::Scene) {
+                content::SceneRuntimeDefinition runtime;
+                if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
+                canonicalKind = LibraryWallpaperKind::Scene;
+                source = NormalizedAbsolute(entry.path());
+            } else if (canonical.manifest.runtime == content::ContentRuntimeKind::Web) {
+                if (!content::MiaoContentPackage::ResolvePackagePath(
+                        canonical.root, canonical.manifest.entry, &source, &canonicalError) ||
+                    !fs::is_regular_file(source, ec)) {
+                    ec.clear();
+                    continue;
+                }
+                ec.clear();
+                canonicalKind = LibraryWallpaperKind::Web;
+                source = NormalizedAbsolute(source);
+            } else {
+                continue;
+            }
 
-            const fs::path source = NormalizedAbsolute(entry.path());
             const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(canonical.manifest.id);
             if (stableId.empty()) continue;
 
@@ -570,7 +586,7 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
             }
 
             item.id = stableId;
-            item.kind = LibraryWallpaperKind::Scene;
+            item.kind = canonicalKind;
             const std::wstring packageName = Utf8ToWide(canonical.manifest.name);
             item.title = SanitizeText(packageName.empty() ? DefaultTitle(entry.path()) : packageName);
             item.source = source;
@@ -596,7 +612,7 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
 
         // Compatibility path for the established image/video/web package
         // format. Legacy Scene packages remain intentionally unsupported here;
-        // canonical Scene content must use Miao Content Package schema v1.
+        // canonical Scene/Web content must use Miao Content Package schema v1.
         WallpaperPackageManifest manifest;
         std::wstring packageError;
         if (!WallpaperPackage::Validate(entry.path(), &manifest, &packageError)) continue;
@@ -771,6 +787,23 @@ bool WallpaperLibrary::SelfTest() {
     })json");
     ok = ok && WriteUtf8File(canonicalPackage / L"parameters.json", R"json({"schema":1,"parameters":[]})json");
 
+    const fs::path canonicalWebPackage = library.PackageDirectory() / L"canonical-web-selftest.mdwall";
+    fs::create_directories(canonicalWebPackage, ec);
+    ok = ok && !ec;
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"manifest.json", R"json({
+      "schema":1,
+      "id":"com.goodloong.selftest.web",
+      "name":"Canonical Web",
+      "author":"MiaoDesk",
+      "version":"1.0.0",
+      "kind":"wallpaper",
+      "runtime":"web",
+      "entry":"index.html",
+      "capabilities":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"index.html",
+                             "<html><body>MiaoDesk canonical web wallpaper</body></html>");
+
     // Seed both a stable record and an older file-level Scene record to prove
     // duplicate collapse preserves user metadata. Also seed an external path;
     // it must remain untouched because it has not been managed-installed.
@@ -827,6 +860,16 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && reloaded.Search(L"Canonical Scene").size() == 1;
     }
 
+    const std::wstring canonicalWebId = L"content:com.goodloong.selftest.web";
+    const auto canonicalWebItem = reloaded.Find(canonicalWebId);
+    ok = ok && canonicalWebItem.has_value();
+    if (canonicalWebItem) {
+        ok = ok && canonicalWebItem->kind == LibraryWallpaperKind::Web;
+        ok = ok && SamePath(canonicalWebItem->source, canonicalWebPackage / L"index.html");
+        ok = ok && canonicalWebItem->managedCopy;
+        ok = ok && reloaded.Search(L"Canonical Web").size() == 1;
+    }
+
     // Moving/renaming a managed package must not change its logical identity.
     const fs::path movedCanonicalPackage = library.PackageDirectory() / L"renamed-canonical.mdwall";
     if (ok) {
@@ -843,11 +886,18 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && afterMove.Remove(canonicalItem->id, true, &error);
         ok = ok && !fs::exists(movedCanonicalPackage);
     }
+    const auto webAfterMove = afterMove.Find(canonicalWebId);
+    ok = ok && webAfterMove.has_value();
+    if (webAfterMove) {
+        ok = ok && afterMove.Remove(webAfterMove->id, true, &error);
+        ok = ok && !fs::exists(canonicalWebPackage);
+    }
 
     WallpaperLibrary afterRemoval(root / L"Library");
     ok = ok && afterRemoval.Load(&error);
     ok = ok && afterRemoval.Search(L"Package Web").empty();
     ok = ok && afterRemoval.Search(L"Canonical Scene").empty();
+    ok = ok && afterRemoval.Search(L"Canonical Web").empty();
     ok = ok && afterRemoval.Find(L"external-scene").has_value();
     if (imported) ok = ok && afterRemoval.Find(imported->id).has_value();
 

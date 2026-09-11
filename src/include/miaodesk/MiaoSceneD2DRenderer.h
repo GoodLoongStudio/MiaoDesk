@@ -26,6 +26,7 @@ public:
         std::wstring* error = nullptr);
 
     bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error = nullptr);
+    bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
     bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
 
     // Canonical host-side scheduling entry point. It advances runtime animation

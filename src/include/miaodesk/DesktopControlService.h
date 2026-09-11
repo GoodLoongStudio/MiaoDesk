@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "miaodesk/TodayTaskStore.h"
 #include "miaodesk/WallpaperService.h"
 #include "miaodesk/WidgetService.h"
 
@@ -99,6 +100,27 @@ public:
         WidgetService service;
         const auto result = service.ResetContentParameters(id);
         return {result.success, result.message};
+    }
+
+    DesktopControlResult GetTodayTasks(TodayTaskSnapshot* snapshot) const {
+        std::wstring error;
+        if (!TodayTaskStore::Load(snapshot, &error))
+            return {false, error.empty() ? L"无法读取今日待办。" : error};
+        return {true, L"今日待办读取完成。"};
+    }
+
+    DesktopControlResult ReplaceTodayTasks(const std::vector<TodayTaskItem>& items) const {
+        std::wstring error;
+        if (!TodayTaskStore::Replace(items, &error))
+            return {false, error.empty() ? L"无法保存今日待办。" : error};
+        return {true, L"今日待办已保存。"};
+    }
+
+    DesktopControlResult SetTodayTaskCompleted(std::wstring_view id, bool completed) const {
+        std::wstring error;
+        if (!TodayTaskStore::SetCompleted(id, completed, &error))
+            return {false, error.empty() ? L"无法更新今日待办完成状态。" : error};
+        return {true, completed ? L"待办已完成。" : L"待办已恢复为未完成。"};
     }
 
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;

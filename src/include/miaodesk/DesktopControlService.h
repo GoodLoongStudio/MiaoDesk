@@ -44,6 +44,8 @@ public:
     DesktopControlResult InspectContentPackage(
         const std::filesystem::path& package,
         content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult ListContentPackages(
+        std::vector<content::ManagedContentPackageInfo>* packages) const;
     DesktopControlResult InstallContentPackage(
         const std::filesystem::path& package,
         content::ContentPackageInstallResult* installed,

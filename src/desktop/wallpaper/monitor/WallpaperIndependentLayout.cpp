@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperIndependentLayout.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/WebWallpaperHost.h"
 
@@ -41,18 +42,45 @@ bool IsContentId(std::wstring_view id) noexcept {
                content::MiaoContentPackageManager::kSourcePrefix;
 }
 
-std::optional<fs::path> ResolveContentWallpaperRoot(std::wstring_view id) {
+struct ResolvedContentWallpaper {
+    ResolvedWallpaperKind kind{ResolvedWallpaperKind::Scene};
+    fs::path source;
+};
+
+std::optional<ResolvedContentWallpaper> ResolveContentWallpaper(std::wstring_view id) {
     if (!IsContentId(id)) return std::nullopt;
+
     content::ManagedContentPackageInfo package;
     std::wstring error;
     if (!content::MiaoContentPackageManager::Resolve(
             content::ContentKind::Wallpaper, id, &package, &error)) return std::nullopt;
-    return package.packageRoot;
+
+    if (package.runtime == content::ContentRuntimeKind::Scene)
+        return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, package.packageRoot};
+    if (package.runtime != content::ContentRuntimeKind::Web) return std::nullopt;
+
+    content::LoadedMiaoContentPackage loaded;
+    if (!content::MiaoContentPackage::Load(package.packageRoot, &loaded, &error) ||
+        loaded.manifest.kind != content::ContentKind::Wallpaper ||
+        loaded.manifest.runtime != content::ContentRuntimeKind::Web) {
+        return std::nullopt;
+    }
+
+    fs::path entry;
+    if (!content::MiaoContentPackage::ResolvePackagePath(
+            loaded.root, loaded.manifest.entry, &entry, &error) ||
+        !WebWallpaperProcessSet::IsSupportedSource(entry.wstring())) {
+        return std::nullopt;
+    }
+    return ResolvedContentWallpaper{ResolvedWallpaperKind::Web, std::move(entry)};
 }
 
 bool SourceAvailable(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) {
-        if (IsContentId(item.id)) return ResolveContentWallpaperRoot(item.id).has_value();
+        if (IsContentId(item.id)) {
+            const auto resolved = ResolveContentWallpaper(item.id);
+            return resolved && resolved->kind == ResolvedWallpaperKind::Scene;
+        }
 
         // Built-in scenes are key-driven and have no source path. Legacy
         // canonical Scene records may still carry a physical .mdwall path.
@@ -72,8 +100,13 @@ bool SourceAvailable(const WallpaperLibraryItem& item) {
         }
         return false;
     }
-    if (item.kind == LibraryWallpaperKind::Web)
+    if (item.kind == LibraryWallpaperKind::Web) {
+        if (IsContentId(item.id)) {
+            const auto resolved = ResolveContentWallpaper(item.id);
+            return resolved && resolved->kind == ResolvedWallpaperKind::Web;
+        }
         return WebWallpaperProcessSet::IsSupportedSource(item.source.wstring());
+    }
     std::error_code ec;
     return !item.source.empty() && fs::exists(item.source, ec) && fs::is_regular_file(item.source, ec);
 }
@@ -105,16 +138,16 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         if (!item) {
             // A freshly installed canonical package may already be assigned by
             // content:<id> while the settings window still holds a pre-install
-            // WallpaperLibrary snapshot. Stable package identity is sufficient
-            // to resolve and render it; a stale UI cache must not force fallback.
-            if (const auto packageRoot = ResolveContentWallpaperRoot(*assignedId)) {
+            // WallpaperLibrary snapshot. Resolve the current package runtime
+            // directly so both Scene and Web content survive a stale UI cache.
+            if (const auto contentWallpaper = ResolveContentWallpaper(*assignedId)) {
                 ResolvedMonitorWallpaper resolved;
                 resolved.monitorId = StableMonitorKey(monitor);
                 resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
                 resolved.region = region;
                 resolved.wallpaperId = *assignedId;
-                resolved.kind = ResolvedWallpaperKind::Scene;
-                resolved.source = *packageRoot;
+                resolved.kind = contentWallpaper->kind;
+                resolved.source = contentWallpaper->source;
                 result.push_back(std::move(resolved));
                 continue;
             }
@@ -143,11 +176,12 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         case LibraryWallpaperKind::Scene:
             resolved.kind = ResolvedWallpaperKind::Scene;
             resolved.sceneKey = SceneKeyForLibraryId(item->id);
-            if (const auto currentRoot = ResolveContentWallpaperRoot(item->id)) {
+            if (const auto current = ResolveContentWallpaper(item->id)) {
                 // Resolve stable content:<id> immediately before creating the
                 // runtime plan. library.ini can contain an old physical path;
                 // the manifest id remains authoritative.
-                resolved.source = *currentRoot;
+                resolved.kind = current->kind;
+                resolved.source = current->source;
             } else {
                 resolved.source = item->source;
             }
@@ -162,7 +196,10 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
             break;
         case LibraryWallpaperKind::Web:
             resolved.kind = ResolvedWallpaperKind::Web;
-            resolved.source = item->source;
+            if (const auto current = ResolveContentWallpaper(item->id))
+                resolved.source = current->source;
+            else
+                resolved.source = item->source;
             break;
         case LibraryWallpaperKind::Unknown:
             break;

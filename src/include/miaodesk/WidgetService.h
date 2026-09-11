@@ -37,8 +37,6 @@ struct ContentWidgetCreateRequest {
     float y{0.05f};
     std::optional<float> width;
     std::optional<float> height;
-    // Scene Content widgets now have a dedicated production host. New instances
-    // should behave like normal desktop widgets and become live immediately.
     bool enabled{true};
 };
 
@@ -51,6 +49,13 @@ struct WidgetUpdateRequest {
     std::optional<float> width;
     std::optional<float> height;
     std::optional<bool> enabled;
+};
+
+struct ContentWidgetSettingsSnapshot {
+    std::wstring widgetId;
+    std::wstring title;
+    content::ContentDefinition definition;
+    content::ContentParameterValues values;
 };
 
 struct WidgetSurfaceHealth {
@@ -161,10 +166,10 @@ public:
         return {true, L"Content 桌面小组件已创建：" + saved->id};
     }
 
-    WidgetServiceResult GetContentParameters(
+    WidgetServiceResult GetContentSettings(
         std::wstring_view id,
-        content::ContentParameterValues* values) const {
-        if (!values) return {false, L"Content parameter 输出不能为空。"};
+        ContentWidgetSettingsSnapshot* settings) const {
+        if (!settings) return {false, L"Content widget settings 输出不能为空。"};
         wallpaper::DesktopWidgetStore store;
         std::wstring error;
         if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -179,15 +184,36 @@ public:
         content::ContentParameterValues overrides;
         if (!content::ContentWidgetInstanceStore::LoadOverrides(widget->id, resolved.definition, &overrides, &error))
             return {false, error.empty() ? L"无法读取 Content widget 参数。" : error};
-        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, values, &error))
+        content::ContentParameterValues values;
+        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, &values, &error))
             return {false, error.empty() ? L"Content widget 参数无效。" : error};
+
+        settings->widgetId = widget->id;
+        settings->title = widget->title;
+        settings->definition = std::move(resolved.definition);
+        settings->values = std::move(values);
+        return {true, L"Content widget settings 读取完成。"};
+    }
+
+    WidgetServiceResult GetContentParameters(
+        std::wstring_view id,
+        content::ContentParameterValues* values) const {
+        if (!values) return {false, L"Content parameter 输出不能为空。"};
+        ContentWidgetSettingsSnapshot settings;
+        const auto result = GetContentSettings(id, &settings);
+        if (!result.success) return result;
+        *values = std::move(settings.values);
         return {true, L"Content widget 参数读取完成。"};
     }
 
-    WidgetServiceResult SetContentParameter(
+    // Applies a set of changed fields in one atomic instance-file replacement.
+    // Existing overrides not present in `changes` are preserved. Callers should
+    // send only user-modified fields so untouched package defaults remain live
+    // across future .mdwidget upgrades.
+    WidgetServiceResult SetContentParameters(
         std::wstring_view id,
-        std::wstring_view key,
-        content::ContentParameterValue value) const {
+        const content::ContentParameterValues& changes) const {
+        if (changes.empty()) return {true, L"Content widget 参数没有变化。"};
         wallpaper::DesktopWidgetStore store;
         std::wstring error;
         if (!store.Load(&error)) return {false, error.empty() ? L"无法读取桌面小组件状态。" : error};
@@ -199,9 +225,29 @@ public:
         content::ResolvedWidgetContent resolved;
         if (!content::MiaoWidgetContentCatalog::Resolve(widget->source.wstring(), &resolved, &error))
             return {false, error.empty() ? L"无法解析 Content widget package。" : error};
-        if (!content::ContentWidgetInstanceStore::SetParameter(widget->id, resolved.definition, key, std::move(value), &error))
+        content::ContentParameterValues overrides;
+        if (!content::ContentWidgetInstanceStore::LoadOverrides(widget->id, resolved.definition, &overrides, &error))
+            return {false, error.empty() ? L"无法读取 Content widget 参数。" : error};
+        for (const auto& [key, value] : changes) {
+            if (!content::MiaoContentModel::FindParameter(resolved.definition, key))
+                return {false, L"未知 Content widget 参数：" + key};
+            overrides[key] = value;
+        }
+        content::ContentParameterValues validated;
+        if (!content::MiaoContentModel::ResolveParameterValues(resolved.definition, overrides, &validated, &error))
+            return {false, error.empty() ? L"Content widget 参数无效。" : error};
+        if (!content::ContentWidgetInstanceStore::SaveOverrides(widget->id, resolved.definition, overrides, &error))
             return {false, error.empty() ? L"Content widget 参数保存失败。" : error};
-        return {true, L"Content widget 参数已更新：" + std::wstring(key)};
+        return {true, L"Content widget 参数已原子更新。"};
+    }
+
+    WidgetServiceResult SetContentParameter(
+        std::wstring_view id,
+        std::wstring_view key,
+        content::ContentParameterValue value) const {
+        content::ContentParameterValues changes;
+        changes.emplace(std::wstring(key), std::move(value));
+        return SetContentParameters(id, changes);
     }
 
     WidgetServiceResult ResetContentParameters(std::wstring_view id) const {

@@ -264,8 +264,6 @@ DesktopControlResult DesktopWidgetController::CreateClock(
         WidgetFixedPreset::WeatherGlass,
     };
 
-    // Native fallback and Content package instances are the same user-facing
-    // preset identity, so migration never creates an overlapping duplicate.
     for (const auto preset : order) {
         const bool exists = std::any_of(existing.begin(), existing.end(), [&](const auto& widget) {
             return MatchesWidgetPreset(widget, preset, monitorId);
@@ -354,6 +352,23 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     request.width = definition->defaultWidth;
     request.height = definition->defaultHeight;
     return service_.CreateNativeWidget(request, created);
+}
+
+DesktopControlResult DesktopWidgetController::GetContentParameters(
+    std::wstring_view id,
+    content::ContentParameterValues* values) const {
+    return service_.GetContentWidgetParameters(id, values);
+}
+
+DesktopControlResult DesktopWidgetController::SetContentParameter(
+    std::wstring_view id,
+    std::wstring_view key,
+    content::ContentParameterValue value) const {
+    return service_.SetContentWidgetParameter(id, key, std::move(value));
+}
+
+DesktopControlResult DesktopWidgetController::ResetContentParameters(std::wstring_view id) const {
+    return service_.ResetContentWidgetParameters(id);
 }
 
 DesktopControlResult DesktopWidgetController::SetEnabled(std::wstring_view id, bool enabled) const {

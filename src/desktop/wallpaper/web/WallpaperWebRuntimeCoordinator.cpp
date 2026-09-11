@@ -3,6 +3,7 @@
 
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/WallpaperIndependentLayout.h"
 #include "miaodesk/WallpaperMonitorAssignments.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
@@ -32,7 +33,6 @@ namespace {
 constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
 constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
 constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
-constexpr wchar_t kGlassClockContentSource[] = L"content:com.goodloong.glass-clock";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -140,7 +140,8 @@ bool HasEnabledWidgetHostItems() {
         const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
         if (!widget.enabled) continue;
         if (widget.kind == DesktopWidgetKind::Native && IsNativePresetSource(widget.source.wstring())) return true;
-        if (widget.kind == DesktopWidgetKind::Content && widget.source.wstring() == kGlassClockContentSource) return true;
+        if (widget.kind == DesktopWidgetKind::Content &&
+            content::MiaoWidgetContentCatalog::IsContentSource(widget.source.wstring())) return true;
     }
     return false;
 }
@@ -284,10 +285,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
             HWND currentSurfaceParent = nullptr;
             std::wstring shellError;
 
-            // Widgets are desktop citizens in their own right. They discover
-            // the Explorer desktop parent directly and never require the native
-            // WallpaperHost to exist. Web wallpaper still follows the native
-            // wallpaper surface because its visibility/layout are wallpaper state.
             if (scope == WallpaperWebRuntimeScope::Widgets) {
                 if (shellHost.EnsureCurrent(&shellError))
                     currentSurfaceParent = shellHost.SurfaceParent();
@@ -338,8 +335,6 @@ struct WallpaperWebRuntimeCoordinator::Impl {
                     }
                 }
 
-                // Web widgets no longer exist: the Widgets scope drives only the
-                // shared Direct2D WidgetHost and never produces web surface requests.
                 std::vector<WebWallpaperRequest> desired;
                 if (scope == WallpaperWebRuntimeScope::WebWallpaper) {
                     const auto desiredInHost = DesiredRequests(host, state);

@@ -44,6 +44,7 @@ set(MIAODESK_CORE_SOURCES
     desktop/widgets/DesktopWidgetController.cpp
     desktop/widgets/NativeWidgetPreset.cpp
     desktop/widgets/TodayTaskStore.cpp
+    desktop/widgets/TodayTaskContentProvider.cpp
     desktop/wallpaper/library/WallpaperPackage.cpp
     desktop/wallpaper/library/WallpaperLibrary.cpp
     desktop/wallpaper/library/WallpaperLibraryWeb.cpp

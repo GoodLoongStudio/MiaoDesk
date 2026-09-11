@@ -16,26 +16,6 @@ enum class DesktopWidgetKind {
     Unknown,
 };
 
-// NativeWidgetHost is currently compiled with the staged Content dogfood flag.
-// In that one translation unit only, treat Content as runtime-equivalent to
-// Native for the existing host gate. Persistence and every other caller still
-// retain the real Content kind. NativeWidgetPreset.h then resolves the staged
-// content:<definitionId> source to the matching host route.
-#if defined(MIAODESK_WIDGET_HOST_CONTENT_DOGFOOD)
-constexpr bool operator==(DesktopWidgetKind lhs, DesktopWidgetKind rhs) noexcept {
-    const int left = static_cast<int>(lhs);
-    const int right = static_cast<int>(rhs);
-    const int native = static_cast<int>(DesktopWidgetKind::Native);
-    const int content = static_cast<int>(DesktopWidgetKind::Content);
-    if ((left == native && right == content) || (left == content && right == native)) return true;
-    return left == right;
-}
-
-constexpr bool operator!=(DesktopWidgetKind lhs, DesktopWidgetKind rhs) noexcept {
-    return !(lhs == rhs);
-}
-#endif
-
 struct DesktopWidget {
     std::wstring id;
     DesktopWidgetKind kind{DesktopWidgetKind::Native};

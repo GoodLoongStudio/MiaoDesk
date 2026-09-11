@@ -302,15 +302,21 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
 
     float placementWidth = definition->defaultWidth;
     float placementHeight = definition->defaultHeight;
+    bool useContentGlassClock = false;
     if (preset == WidgetFixedPreset::GlassClock) {
         const auto source = content::MiaoWidgetContentCatalog::MakeSource(kGlassClockDefinitionId);
         content::ResolvedWidgetContent resolved;
         std::wstring error;
-        if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error)) {
-            return {false, error.empty() ? L"无法加载玻璃时钟 Content package。" : error};
+        if (content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error)) {
+            placementWidth = resolved.definition.geometry.defaultWidth;
+            placementHeight = resolved.definition.geometry.defaultHeight;
+            useContentGlassClock = true;
+        } else {
+            miaodesk::log::Info(
+                L"WidgetController",
+                L"GlassClock Content package unavailable; using native fallback" +
+                    (error.empty() ? std::wstring{} : L": " + error));
         }
-        placementWidth = resolved.definition.geometry.defaultWidth;
-        placementHeight = resolved.definition.geometry.defaultHeight;
     }
 
     const auto placement = AutomaticPlacement(existing, monitorId, placementWidth, placementHeight);
@@ -318,7 +324,7 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
         return {false, L"当前显示器没有足够的空闲区域放置「" + std::wstring(definition->title) + L"」；请先移动或删除现有小组件。"};
     }
 
-    if (preset == WidgetFixedPreset::GlassClock) {
+    if (preset == WidgetFixedPreset::GlassClock && useContentGlassClock) {
         ContentWidgetCreateRequest request;
         request.definitionId = std::wstring(kGlassClockDefinitionId);
         request.title = std::wstring(definition->title);

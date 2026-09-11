@@ -9,6 +9,7 @@
 #include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWeatherService.h"
 #include "miaodesk/NativeWidgetHost.h"
+#include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
@@ -42,6 +43,7 @@ constexpr wchar_t kContentHostMode[] = L"--content-widget-host";
 constexpr UINT kPauseMessage = WM_APP + 941;
 constexpr UINT kResumeMessage = WM_APP + 942;
 constexpr UINT kShutdownMessage = WM_APP + 943;
+constexpr UINT kWeatherUpdatedMessage = WM_APP + 944;
 constexpr UINT_PTR kSyncTimerId = 81;
 constexpr UINT_PTR kRefreshTimerId = 82;
 constexpr UINT kSyncIntervalMs = 1000;
@@ -329,6 +331,8 @@ struct ContentWidgetHostApp {
     HWND parent{};
     HWND messageWindow{};
     bool paused{};
+    bool weatherStarted{};
+    NativeWeatherService weatherService;
     ComPtr<ID2D1Factory1> d2dFactory;
     std::vector<std::unique_ptr<ContentSlot>> slots;
     std::wstring lastError;
@@ -713,6 +717,27 @@ struct ContentWidgetHostApp {
         }
     }
 
+    void SyncWeatherProvider(bool contentWeatherNeeded, bool nativeWeatherEnabled) {
+        const bool shouldRunHere = contentWeatherNeeded && !nativeWeatherEnabled;
+        if (shouldRunHere == weatherStarted) return;
+        if (shouldRunHere) {
+            weatherService.Start(messageWindow, kWeatherUpdatedMessage);
+            weatherStarted = true;
+            miaodesk::log::Info(L"ContentWidgetHost", L"Content Weather 启动共享天气刷新服务");
+        } else {
+            weatherService.Stop();
+            weatherStarted = false;
+            miaodesk::log::Info(L"ContentWidgetHost", L"Content Weather 停止天气刷新服务，改由 Native Weather 或无天气组件状态接管");
+        }
+    }
+
+    void WeatherDataChanged() {
+        for (const auto& slot : slots) {
+            if (!slot || !HasContentCapability(slot->definition, L"weather.read")) continue;
+            slot->nextRefreshAt = 0;
+        }
+    }
+
     bool BeginDrag(ContentSlot& slot) {
         DesktopWidgetStore store;
         std::wstring ignored;
@@ -918,6 +943,18 @@ struct ContentWidgetHostApp {
             return;
         }
 
+        bool nativeWeatherEnabled = false;
+        for (const auto& raw : store.Items()) {
+            const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
+            if (!widget.enabled || widget.kind != DesktopWidgetKind::Native) continue;
+            NativeWidgetPreset preset{};
+            if (ParseNativePreset(widget.source.wstring(), &preset) && preset == NativeWidgetPreset::WeatherGlass) {
+                nativeWeatherEnabled = true;
+                break;
+            }
+        }
+
+        bool contentWeatherNeeded = false;
         std::vector<std::wstring> desiredIds;
         std::wstring rejectedDetail;
         for (const auto& raw : store.Items()) {
@@ -930,6 +967,7 @@ struct ContentWidgetHostApp {
                 if (rejectedDetail.empty()) rejectedDetail = widget.id + L": " + resolveError;
                 continue;
             }
+            if (HasContentCapability(runtime.definition, L"weather.read")) contentWeatherNeeded = true;
             const MonitorInfo* monitor = widget.monitorId.empty()
                 ? PrimaryMonitor(topology) : FindMonitorByStableId(topology, widget.monitorId);
             if (!monitor) continue;
@@ -982,6 +1020,8 @@ struct ContentWidgetHostApp {
             }
         }
 
+        SyncWeatherProvider(contentWeatherNeeded, nativeWeatherEnabled);
+
         slots.erase(std::remove_if(slots.begin(), slots.end(), [&](const auto& slot) {
             if (!slot) return true;
             const bool keep = std::find(desiredIds.begin(), desiredIds.end(), slot->widgetId) != desiredIds.end();
@@ -999,7 +1039,10 @@ struct ContentWidgetHostApp {
         std::wstring summary = L"Content Direct2D Widget host desired=" + std::to_wstring(desiredIds.size()) +
                                L" surfaces=" + std::to_wstring(slots.size()) +
                                L" visible=" + std::to_wstring(visible) +
-                               L" paintReady=" + std::to_wstring(ready);
+                               L" paintReady=" + std::to_wstring(ready) +
+                               L" weatherRefresh=" +
+                               (weatherStarted ? std::wstring(L"content") :
+                                (contentWeatherNeeded && nativeWeatherEnabled ? std::wstring(L"native") : std::wstring(L"off")));
         if (!rejectedDetail.empty()) summary += L" rejected=\"" + rejectedDetail + L"\"";
         if (!lastError.empty()) summary += L" error=\"" + lastError + L"\"";
         WriteDiagnostics(summary);
@@ -1048,6 +1091,10 @@ struct ContentWidgetHostApp {
 
         KillTimer(messageWindow, kSyncTimerId);
         KillTimer(messageWindow, kRefreshTimerId);
+        if (weatherStarted) {
+            weatherService.Stop();
+            weatherStarted = false;
+        }
         for (auto& slot : slots) if (slot) DestroySlot(*slot);
         slots.clear();
         if (messageWindow && IsWindow(messageWindow)) DestroyWindow(messageWindow);
@@ -1070,6 +1117,10 @@ LRESULT CALLBACK ContentHostWindowProc(HWND hwnd, UINT message, WPARAM wParam, L
     }
     if (message == kResumeMessage && gContentHost) {
         gContentHost->SetPaused(false);
+        return 0;
+    }
+    if (message == kWeatherUpdatedMessage && gContentHost) {
+        gContentHost->WeatherDataChanged();
         return 0;
     }
     if (message == WM_TIMER && gContentHost) {

@@ -62,11 +62,27 @@ public:
         return {true, result.message};
     }
 
+    DesktopControlResult GetContentWidgetSettings(
+        std::wstring_view id,
+        ContentWidgetSettingsSnapshot* settings) const {
+        WidgetService service;
+        const auto result = service.GetContentSettings(id, settings);
+        return {result.success, result.message};
+    }
+
     DesktopControlResult GetContentWidgetParameters(
         std::wstring_view id,
         content::ContentParameterValues* values) const {
         WidgetService service;
         const auto result = service.GetContentParameters(id, values);
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult SetContentWidgetParameters(
+        std::wstring_view id,
+        const content::ContentParameterValues& changes) const {
+        WidgetService service;
+        const auto result = service.SetContentParameters(id, changes);
         return {result.success, result.message};
     }
 
@@ -76,10 +92,7 @@ public:
         content::ContentParameterValue value) const {
         WidgetService service;
         const auto result = service.SetContentParameter(id, key, std::move(value));
-        if (!result.success) return {false, result.message};
-        // ContentWidgetHost observes the instance-state timestamp and reloads
-        // only the affected renderer, so no process restart is required.
-        return {true, result.message};
+        return {result.success, result.message};
     }
 
     DesktopControlResult ResetContentWidgetParameters(std::wstring_view id) const {

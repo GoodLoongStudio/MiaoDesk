@@ -32,9 +32,21 @@ public:
         std::wstring monitorId,
         wallpaper::DesktopWidget* created = nullptr) const;
 
+    DesktopControlResult GetContentSettings(
+        std::wstring_view id,
+        ContentWidgetSettingsSnapshot* settings) const {
+        return service_.GetContentWidgetSettings(id, settings);
+    }
+
     DesktopControlResult GetContentParameters(
         std::wstring_view id,
         content::ContentParameterValues* values) const;
+
+    DesktopControlResult SetContentParameters(
+        std::wstring_view id,
+        const content::ContentParameterValues& changes) const {
+        return service_.SetContentWidgetParameters(id, changes);
+    }
 
     DesktopControlResult SetContentParameter(
         std::wstring_view id,

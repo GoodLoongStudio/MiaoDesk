@@ -141,8 +141,10 @@ jobs:
           if (-not $test) { throw 'Content lifecycle test executable was not found.' }
           $stagedTest = Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDeskContentWebReplacementTest.exe'
           Copy-Item $test.FullName $stagedTest -Force
-          $package = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
-          if (-not (Test-Path $package -PathType Container)) { throw "Content lifecycle package is missing: $package" }
+          $builtInPackage = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
+          if (-not (Test-Path $builtInPackage -PathType Container)) {
+            throw "Content lifecycle source package is missing: $builtInPackage"
+          }
 
           function Stop-MiaoDeskWallpaperFamily {
             Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
@@ -165,6 +167,20 @@ jobs:
             # race the isolated service test and make EnsureRuntime target stale helpers.
             Stop-MiaoDeskWallpaperFamily
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $stateBase | Out-Null
+
+            # Exercise the user-managed install path with a distinct package id.
+            # Installing the staged built-in GlassClock directly is intentionally
+            # rejected by MiaoContentPackageManager because user packages may not
+            # shadow a built-in package with the same id.
+            $package = Join-Path $stateBase 'UserGlassClock.mdwidget'
+            Copy-Item $builtInPackage $package -Recurse -Force
+            $manifestPath = Join-Path $package 'manifest.json'
+            $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $manifest.id = 'com.goodloong.ci.user-glass-clock'
+            $manifest.name = 'CI User Glass Clock'
+            $manifest | ConvertTo-Json -Depth 16 | Set-Content $manifestPath -Encoding UTF8
+
             $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
             New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
             # DesktopControlService resolves the runtime as a sibling of the current

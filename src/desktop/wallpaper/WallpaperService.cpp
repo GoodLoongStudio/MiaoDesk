@@ -116,6 +116,37 @@ WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryI
     return {true, L"配置化 Scene 内容包已通过 ContentDefinition + Scene Runtime 校验。"};
 }
 
+WallpaperServiceResult ValidateCanonicalWeb(const wallpaper::WallpaperLibraryItem& item) {
+    content::ManagedContentPackageInfo managed;
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Resolve(
+            content::ContentKind::Wallpaper, item.id, &managed, &error)) {
+        return {false, error.empty() ? L"找不到已安装的 Web 内容包。" : error};
+    }
+    if (managed.runtime != content::ContentRuntimeKind::Web)
+        return {false, L"内容包不是 Wallpaper Web Runtime。"};
+
+    content::LoadedMiaoContentPackage package;
+    if (!content::MiaoContentPackage::Load(managed.packageRoot, &package, &error))
+        return {false, error.empty() ? L"无法加载 Web .mdwall 内容包。" : error};
+    if (package.manifest.kind != content::ContentKind::Wallpaper ||
+        package.manifest.runtime != content::ContentRuntimeKind::Web)
+        return {false, L".mdwall 内容包不是 Wallpaper Web Runtime。"};
+
+    fs::path entry;
+    if (!content::MiaoContentPackage::ResolvePackagePath(
+            package.root, package.manifest.entry, &entry, &error))
+        return {false, error.empty() ? L"Web 内容包 entry 无效。" : error};
+
+    std::error_code ec;
+    if (!fs::is_regular_file(entry, ec))
+        return {false, L"Web 内容包 entry 文件不存在。"};
+    const auto extension = entry.extension().wstring();
+    if (_wcsicmp(extension.c_str(), L".html") != 0 && _wcsicmp(extension.c_str(), L".htm") != 0)
+        return {false, L"Web 内容包 entry 必须是 HTML 文件。"};
+    return {true, L"配置化 Web 内容包已通过 Runtime + entry 校验。"};
+}
+
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
     if (item.id.empty()) return {false, L"壁纸库项目缺少 id。"};
     if (item.kind == wallpaper::LibraryWallpaperKind::Unknown)
@@ -124,9 +155,11 @@ WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryI
         if (!RuntimeSceneKey(item).empty()) return {true, L"内置 Scene 可用于显示器分配。"};
         return ValidateCanonicalScene(item);
     }
-    if (item.kind == wallpaper::LibraryWallpaperKind::Web &&
-        !wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
-        return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Web) {
+        if (IsContentId(item.id)) return ValidateCanonicalWeb(item);
+        if (!wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
+            return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
+    }
     if (item.kind == wallpaper::LibraryWallpaperKind::Image ||
         item.kind == wallpaper::LibraryWallpaperKind::Video) {
         std::error_code ec;

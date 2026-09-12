@@ -84,6 +84,7 @@ jobs:
           }
 
       - name: Run wallpaper self-test
+        id: wallpaper_self_test
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -91,7 +92,36 @@ jobs:
             Select-Object -First 1
           if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
           & $wallpaper.FullName --self-test
-          if ($LASTEXITCODE -ne 0) { throw "MiaoDeskWallpaper self-test failed with exit code $LASTEXITCODE." }
+          $exitCode = $LASTEXITCODE
+          "exit_code=$exitCode" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($exitCode -ne 0) {
+            Write-Host "::error::MiaoDeskWallpaper self-test failed with exit code $exitCode."
+          }
+
+      - name: Fail wallpaper performance-policy self-test (exit 32)
+        if: steps.wallpaper_self_test.outputs.exit_code == '32'
+        shell: pwsh
+        run: throw 'Wallpaper performance-policy self-test failed (exit 32).'
+
+      - name: Fail WallpaperLibrary self-test (exit 33)
+        if: steps.wallpaper_self_test.outputs.exit_code == '33'
+        shell: pwsh
+        run: throw 'WallpaperLibrary self-test failed (exit 33).'
+
+      - name: Fail wallpaper assignments self-test (exit 34)
+        if: steps.wallpaper_self_test.outputs.exit_code == '34'
+        shell: pwsh
+        run: throw 'Wallpaper assignments self-test failed (exit 34).'
+
+      - name: Fail independent wallpaper resolution self-test (exit 35)
+        if: steps.wallpaper_self_test.outputs.exit_code == '35'
+        shell: pwsh
+        run: throw 'Independent wallpaper resolution self-test failed (exit 35).'
+
+      - name: Fail unclassified wallpaper self-test
+        if: steps.wallpaper_self_test.outputs.exit_code != '0' && steps.wallpaper_self_test.outputs.exit_code != '32' && steps.wallpaper_self_test.outputs.exit_code != '33' && steps.wallpaper_self_test.outputs.exit_code != '34' && steps.wallpaper_self_test.outputs.exit_code != '35'
+        shell: pwsh
+        run: throw "MiaoDeskWallpaper self-test failed with exit code ${{ steps.wallpaper_self_test.outputs.exit_code }}."
 
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh

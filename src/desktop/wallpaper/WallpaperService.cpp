@@ -208,7 +208,21 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
             item.kind = wallpaper::LibraryWallpaperKind::Web;
             fs::path resolvedEntry;
             const auto resolved = ResolveCanonicalWebEntry(item, &resolvedEntry);
-            if (resolved.success) next.imageOrWebSource = std::move(resolvedEntry);
+            if (resolved.success) {
+                next.imageOrWebSource = std::move(resolvedEntry);
+            } else {
+                // A canonical Content Web selection must never fall back to
+                // the last persisted physical HTML path. If the package is
+                // missing, damaged, or its entry no longer validates, expose
+                // the safe built-in scene for this state read instead.
+                miaodesk::log::Warn(
+                    L"WallpaperService",
+                    L"Content Web 状态恢复失败，回退到 aurora: id=" + contentSource +
+                        L", reason=" + resolved.message);
+                next.scene = L"aurora";
+                next.imageOrWebSource.clear();
+                next.videoSource.clear();
+            }
         }
     }
 

@@ -123,6 +123,8 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content lifecycle test executable was not found.' }
+          $stagedTest = Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDeskContentWebReplacementTest.exe'
+          Copy-Item $test.FullName $stagedTest -Force
           $package = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
           if (-not (Test-Path $package -PathType Container)) { throw "Content lifecycle package is missing: $package" }
 
@@ -149,7 +151,10 @@ jobs:
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
             $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
             New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
-            & $test.FullName $package
+            # DesktopControlService resolves the runtime as a sibling of the current
+            # module, matching the installed product layout. Run the lifecycle test
+            # from the staged product root so EnsureRuntime exercises that contract.
+            & $stagedTest $package
             if ($LASTEXITCODE -ne 0) {
               $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
               if (Test-Path $wallpaperIni -PathType Leaf) {
@@ -167,6 +172,7 @@ jobs:
             Stop-MiaoDeskWallpaperFamily
             $env:LOCALAPPDATA = $previousLocalAppData
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $stagedTest -Force -ErrorAction SilentlyContinue
           }
 
       - name: Verify staged GlassClock Content Framework route

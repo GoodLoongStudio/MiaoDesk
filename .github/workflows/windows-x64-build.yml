@@ -116,6 +116,33 @@ jobs:
             }
           }
 
+      - name: Verify Content widget install-create-remove-uninstall service lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Content lifecycle test executable was not found.' }
+          $package = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
+          if (-not (Test-Path $package -PathType Container)) { throw "Content lifecycle package is missing: $package" }
+
+          $previousLocalAppData = $env:LOCALAPPDATA
+          $stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-content-widget-service-lifecycle'
+          try {
+            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+            $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
+            New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+            & $test.FullName $package
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Content widget service lifecycle regression failed.'
+            }
+          } finally {
+            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            $env:LOCALAPPDATA = $previousLocalAppData
+            Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Verify staged GlassClock Content Framework route
         shell: pwsh
         run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT

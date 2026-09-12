@@ -116,7 +116,9 @@ WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryI
     return {true, L"配置化 Scene 内容包已通过 ContentDefinition + Scene Runtime 校验。"};
 }
 
-WallpaperServiceResult ValidateCanonicalWeb(const wallpaper::WallpaperLibraryItem& item) {
+WallpaperServiceResult ResolveCanonicalWebEntry(
+    const wallpaper::WallpaperLibraryItem& item,
+    fs::path* resolvedEntry) {
     content::ManagedContentPackageInfo managed;
     std::wstring error;
     if (!content::MiaoContentPackageManager::Resolve(
@@ -144,7 +146,12 @@ WallpaperServiceResult ValidateCanonicalWeb(const wallpaper::WallpaperLibraryIte
     const auto extension = entry.extension().wstring();
     if (_wcsicmp(extension.c_str(), L".html") != 0 && _wcsicmp(extension.c_str(), L".htm") != 0)
         return {false, L"Web 内容包 entry 必须是 HTML 文件。"};
+    if (resolvedEntry) *resolvedEntry = std::move(entry);
     return {true, L"配置化 Web 内容包已通过 Runtime + entry 校验。"};
+}
+
+WallpaperServiceResult ValidateCanonicalWeb(const wallpaper::WallpaperLibraryItem& item) {
+    return ResolveCanonicalWebEntry(item, nullptr);
 }
 
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
@@ -273,8 +280,20 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择视频壁纸: " + source.wstring());
         return persisted.success ? WallpaperServiceResult{true, L"已选择视频壁纸：" + item.title} : persisted;
     }
-    case wallpaper::LibraryWallpaperKind::Web:
-        return {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+    case wallpaper::LibraryWallpaperKind::Web: {
+        if (!IsContentId(item.id))
+            return {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+        fs::path source;
+        const auto valid = ResolveCanonicalWebEntry(item, &source);
+        if (!valid.success) {
+            miaodesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
+            return valid;
+        }
+        const auto persisted = PersistWallpaperSelection(L"web", source, {});
+        if (persisted.success)
+            miaodesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
+        return persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;
+    }
     case wallpaper::LibraryWallpaperKind::Unknown:
         break;
     }

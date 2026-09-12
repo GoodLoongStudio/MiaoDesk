@@ -126,19 +126,45 @@ jobs:
           $package = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
           if (-not (Test-Path $package -PathType Container)) { throw "Content lifecycle package is missing: $package" }
 
+          function Stop-MiaoDeskWallpaperFamily {
+            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
+            $deadline = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+              Start-Sleep -Milliseconds 100
+              $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+              if ($alive -eq 0) { return }
+            } while ([DateTime]::UtcNow -lt $deadline)
+            throw 'MiaoDeskWallpaper process family did not stop before isolated Content lifecycle test.'
+          }
+
           $previousLocalAppData = $env:LOCALAPPDATA
           $stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-content-widget-service-lifecycle'
           try {
-            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            # The previous quick-build smoke starts the same executable family.
+            # Wait for every coordinator/helper process to be gone before changing
+            # LOCALAPPDATA, otherwise named mutex/window state from the old store can
+            # race the isolated service test and make EnsureRuntime target stale helpers.
+            Stop-MiaoDeskWallpaperFamily
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
             $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
             New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
             & $test.FullName $package
             if ($LASTEXITCODE -ne 0) {
-              throw 'Content widget service lifecycle regression failed.'
+              $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+              if (Test-Path $wallpaperIni -PathType Leaf) {
+                Write-Host 'Content lifecycle wallpaper diagnostics:' -ForegroundColor Yellow
+                Get-Content $wallpaperIni | Out-Host
+              }
+              $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+              if (Test-Path $debugLog -PathType Leaf) {
+                Write-Host 'Content lifecycle desktop-debug.log tail:' -ForegroundColor Yellow
+                Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 80 | Out-Host
+              }
+              throw "Content widget service lifecycle regression failed with exit code $LASTEXITCODE."
             }
           } finally {
-            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Stop-MiaoDeskWallpaperFamily
             $env:LOCALAPPDATA = $previousLocalAppData
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
           }

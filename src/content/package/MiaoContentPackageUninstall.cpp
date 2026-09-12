@@ -1,4 +1,5 @@
 #include "miaodesk/MiaoContentPackageManager.h"
+#include "miaodesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -7,6 +8,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -42,6 +44,32 @@ bool PathIsInside(const fs::path& candidate, const fs::path& root) {
     if (!base.empty() && base.back() != L'\\' && base.back() != L'/')
         base.push_back(fs::path::preferred_separator);
     return value.size() >= base.size() && value.compare(0, base.size(), base) == 0;
+}
+
+std::wstring ReadWallpaperProfile(const fs::path& path, const wchar_t* key) {
+    std::vector<wchar_t> buffer(32768);
+    GetPrivateProfileStringW(L"Wallpaper", key, L"", buffer.data(),
+                             static_cast<DWORD>(buffer.size()), path.c_str());
+    return buffer.data();
+}
+
+bool GlobalWebSelectionUsesPackage(const fs::path& packageRoot, fs::path* configPath) {
+    const fs::path stateRoot = paths::EnsureStateRoot();
+    if (stateRoot.empty()) return false;
+    const fs::path config = stateRoot / L"wallpaper.ini";
+    if (configPath) *configPath = config;
+
+    const std::wstring scene = ReadWallpaperProfile(config, L"Scene");
+    if (_wcsicmp(scene.c_str(), L"web") != 0) return false;
+    const std::wstring source = ReadWallpaperProfile(config, L"Image");
+    return !source.empty() && PathIsInside(fs::path(source), packageRoot);
+}
+
+void ClearGlobalWebSelection(const fs::path& config) {
+    if (config.empty()) return;
+    WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"Image", L"", config.c_str());
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
 }
 
 std::wstring OperationToken() {
@@ -104,6 +132,13 @@ bool MiaoContentPackageManager::Uninstall(
     if (userRoot.empty() || !PathIsInside(package.packageRoot, userRoot))
         return Fail(error, L"Resolved user package is outside the managed content root.");
 
+    // Detect the global Web selection before moving the package. The state is
+    // only cleared after the rename succeeds, so a failed uninstall never
+    // changes the user's active wallpaper.
+    fs::path wallpaperConfig;
+    const bool clearsGlobalWeb = expectedKind == ContentKind::Wallpaper &&
+        GlobalWebSelectionUsesPackage(package.packageRoot, &wallpaperConfig);
+
     // Reclaim stale hidden maintenance state left by earlier interrupted
     // operations, while deliberately preserving recoverable .backup data.
     CleanupStaleMaintenance(userRoot);
@@ -126,8 +161,13 @@ bool MiaoContentPackageManager::Uninstall(
     }
 
     // The rename above is the logical uninstall point: .trash is hidden from
-    // every catalog scan. Physical cleanup is best-effort so a locked file can
-    // never leave a half-deleted package visible to the runtime.
+    // every catalog scan. Clear a global Web selection that pointed into the
+    // removed package so the next runtime refresh falls back to a valid Scene
+    // instead of retaining a stale HTML path.
+    if (clearsGlobalWeb) ClearGlobalWebSelection(wallpaperConfig);
+
+    // Physical cleanup is best-effort so a locked file can never leave a
+    // half-deleted package visible to the runtime.
     std::error_code cleanupError;
     fs::remove_all(trashContainer, cleanupError);
 

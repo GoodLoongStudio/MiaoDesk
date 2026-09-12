@@ -63,6 +63,16 @@ bool WaitForWidgetSurface(const miaodesk::desktop::DesktopControlService& servic
     return false;
 }
 
+bool HasContentPackage(const miaodesk::desktop::DesktopControlService& service,
+                       std::wstring_view source) {
+    std::vector<miaodesk::content::ManagedContentPackageInfo> packages;
+    const auto listed = service.ListContentPackages(&packages);
+    if (!listed.success) return false;
+    return std::any_of(packages.begin(), packages.end(), [&](const auto& package) {
+        return package.source == source;
+    });
+}
+
 bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     miaodesk::desktop::DesktopControlService service;
     miaodesk::content::ContentPackageInstallResult installed;
@@ -70,6 +80,7 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     if (!install.success || installed.package.kind != miaodesk::content::ContentKind::Widget ||
         installed.package.source.empty())
         return false;
+    if (!HasContentPackage(service, installed.package.source)) return false;
 
     const std::wstring definitionId = Utf8ToWide(installed.package.id);
     if (definitionId.empty()) return false;
@@ -92,7 +103,10 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     miaodesk::content::ContentPackageUninstallResult blockedResult;
     const auto blocked = service.UninstallContentPackage(
         miaodesk::content::ContentKind::Widget, installed.package.source, &blockedResult);
-    if (blocked.success) return false;
+    if (blocked.success ||
+        blocked.message.find(L"仍被桌面实例引用") == std::wstring::npos ||
+        !HasContentPackage(service, installed.package.source))
+        return false;
 
     const auto remove = service.RemoveWidget(created.id);
     if (!remove.success) return false;
@@ -101,7 +115,8 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     miaodesk::content::ContentPackageUninstallResult removedPackage;
     const auto uninstall = service.UninstallContentPackage(
         miaodesk::content::ContentKind::Widget, installed.package.source, &removedPackage);
-    return uninstall.success && removedPackage.package.source == installed.package.source;
+    return uninstall.success && removedPackage.package.source == installed.package.source &&
+           !HasContentPackage(service, installed.package.source);
 }
 
 bool RunContentWebReplacementContinuity() {

@@ -36,16 +36,19 @@ std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t
 WallpaperServiceResult PersistWallpaperSelection(
     std::wstring_view scene,
     const fs::path& imageOrWebSource,
-    const fs::path& videoSource) {
+    const fs::path& videoSource,
+    std::wstring_view contentSource = {}) {
     const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
     const std::wstring sceneText(scene);
     const std::wstring imageText = imageOrWebSource.wstring();
     const std::wstring videoText = videoSource.wstring();
+    const std::wstring contentText(contentSource);
     bool ok = true;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Enabled", L"1", config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Scene", sceneText.c_str(), config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Image", imageText.c_str(), config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Video", videoText.c_str(), config.c_str()) != FALSE && ok;
+    ok = WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", contentText.c_str(), config.c_str()) != FALSE && ok;
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
     return ok ? WallpaperServiceResult{true, L"壁纸选择已保存。"}
               : WallpaperServiceResult{false, L"无法保存当前壁纸状态。"};
@@ -116,6 +119,44 @@ WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryI
     return {true, L"配置化 Scene 内容包已通过 ContentDefinition + Scene Runtime 校验。"};
 }
 
+WallpaperServiceResult ResolveCanonicalWebEntry(
+    const wallpaper::WallpaperLibraryItem& item,
+    fs::path* resolvedEntry) {
+    content::ManagedContentPackageInfo managed;
+    std::wstring error;
+    if (!content::MiaoContentPackageManager::Resolve(
+            content::ContentKind::Wallpaper, item.id, &managed, &error)) {
+        return {false, error.empty() ? L"找不到已安装的 Web 内容包。" : error};
+    }
+    if (managed.runtime != content::ContentRuntimeKind::Web)
+        return {false, L"内容包不是 Wallpaper Web Runtime。"};
+
+    content::LoadedMiaoContentPackage package;
+    if (!content::MiaoContentPackage::Load(managed.packageRoot, &package, &error))
+        return {false, error.empty() ? L"无法加载 Web .mdwall 内容包。" : error};
+    if (package.manifest.kind != content::ContentKind::Wallpaper ||
+        package.manifest.runtime != content::ContentRuntimeKind::Web)
+        return {false, L".mdwall 内容包不是 Wallpaper Web Runtime。"};
+
+    fs::path entry;
+    if (!content::MiaoContentPackage::ResolvePackagePath(
+            package.root, package.manifest.entry, &entry, &error))
+        return {false, error.empty() ? L"Web 内容包 entry 无效。" : error};
+
+    std::error_code ec;
+    if (!fs::is_regular_file(entry, ec))
+        return {false, L"Web 内容包 entry 文件不存在。"};
+    const auto extension = entry.extension().wstring();
+    if (_wcsicmp(extension.c_str(), L".html") != 0 && _wcsicmp(extension.c_str(), L".htm") != 0)
+        return {false, L"Web 内容包 entry 必须是 HTML 文件。"};
+    if (resolvedEntry) *resolvedEntry = std::move(entry);
+    return {true, L"配置化 Web 内容包已通过 Runtime + entry 校验。"};
+}
+
+WallpaperServiceResult ValidateCanonicalWeb(const wallpaper::WallpaperLibraryItem& item) {
+    return ResolveCanonicalWebEntry(item, nullptr);
+}
+
 WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryItem& item) {
     if (item.id.empty()) return {false, L"壁纸库项目缺少 id。"};
     if (item.kind == wallpaper::LibraryWallpaperKind::Unknown)
@@ -124,9 +165,11 @@ WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryI
         if (!RuntimeSceneKey(item).empty()) return {true, L"内置 Scene 可用于显示器分配。"};
         return ValidateCanonicalScene(item);
     }
-    if (item.kind == wallpaper::LibraryWallpaperKind::Web &&
-        !wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
-        return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
+    if (item.kind == wallpaper::LibraryWallpaperKind::Web) {
+        if (IsContentId(item.id)) return ValidateCanonicalWeb(item);
+        if (!wallpaper::WallpaperLibrary::IsTrustedWebUrl(item.source.wstring()))
+            return {false, L"Web 壁纸必须是可信 HTTPS 地址。"};
+    }
     if (item.kind == wallpaper::LibraryWallpaperKind::Image ||
         item.kind == wallpaper::LibraryWallpaperKind::Video) {
         std::error_code ec;
@@ -152,6 +195,37 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
     next.fpsCap = GetPrivateProfileIntW(L"Wallpaper", L"FpsCap", 30, config.c_str());
     next.imageOrWebSource = ReadProfile(config, L"Image", L"");
     next.videoSource = ReadProfile(config, L"Video", L"");
+
+    // Canonical Content Web selections persist their stable content:<id> in
+    // addition to the last resolved HTML path. Re-resolve that ID on every
+    // state load so package replacement may rename/move the manifest entry
+    // without leaving the global runtime pinned to a stale physical path.
+    if (_wcsicmp(next.scene.c_str(), L"web") == 0) {
+        const std::wstring contentSource = ReadProfile(config, L"ContentSource", L"");
+        if (IsContentId(contentSource)) {
+            wallpaper::WallpaperLibraryItem item;
+            item.id = contentSource;
+            item.kind = wallpaper::LibraryWallpaperKind::Web;
+            fs::path resolvedEntry;
+            const auto resolved = ResolveCanonicalWebEntry(item, &resolvedEntry);
+            if (resolved.success) {
+                next.imageOrWebSource = std::move(resolvedEntry);
+            } else {
+                // A canonical Content Web selection must never fall back to
+                // the last persisted physical HTML path. If the package is
+                // missing, damaged, or its entry no longer validates, expose
+                // the safe built-in scene for this state read instead.
+                miaodesk::log::Warn(
+                    L"WallpaperService",
+                    L"Content Web 状态恢复失败，回退到 aurora: id=" + contentSource +
+                        L", reason=" + resolved.message);
+                next.scene = L"aurora";
+                next.imageOrWebSource.clear();
+                next.videoSource.clear();
+            }
+        }
+    }
+
     *state = next;
     return {true, L"壁纸状态读取完成。"};
 }
@@ -240,8 +314,20 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择视频壁纸: " + source.wstring());
         return persisted.success ? WallpaperServiceResult{true, L"已选择视频壁纸：" + item.title} : persisted;
     }
-    case wallpaper::LibraryWallpaperKind::Web:
-        return {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+    case wallpaper::LibraryWallpaperKind::Web: {
+        if (!IsContentId(item.id))
+            return {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+        fs::path source;
+        const auto valid = ResolveCanonicalWebEntry(item, &source);
+        if (!valid.success) {
+            miaodesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
+            return valid;
+        }
+        const auto persisted = PersistWallpaperSelection(L"web", source, {}, item.id);
+        if (persisted.success)
+            miaodesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
+        return persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;
+    }
     case wallpaper::LibraryWallpaperKind::Unknown:
         break;
     }

@@ -1,6 +1,7 @@
 #include "miaodesk/MiaoContentPackageManager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -20,6 +21,40 @@ const wchar_t* ExtensionFor(ContentKind kind) noexcept {
     return kind == ContentKind::Widget ? L".mdwidget" : L".mdwall";
 }
 
+void CleanupStaleMaintenanceDirectory(
+    const fs::path& userRoot,
+    std::wstring_view directoryName,
+    fs::file_time_type::duration minimumAge) {
+    const fs::path maintenanceRoot = userRoot / directoryName;
+    std::error_code ec;
+    if (!fs::is_directory(maintenanceRoot, ec) || ec) return;
+
+    const auto now = fs::file_time_type::clock::now();
+    for (const auto& entry : fs::directory_iterator(
+             maintenanceRoot, fs::directory_options::skip_permission_denied, ec)) {
+        if (ec) break;
+
+        std::error_code timeError;
+        const auto modified = fs::last_write_time(entry.path(), timeError);
+        if (timeError || now - modified < minimumAge) continue;
+
+        std::error_code cleanupError;
+        fs::remove_all(entry.path(), cleanupError);
+    }
+
+    ec.clear();
+    if (fs::is_empty(maintenanceRoot, ec) && !ec) fs::remove(maintenanceRoot, ec);
+}
+
+void MaintainUserRoot(const fs::path& userRoot) {
+    // Catalog refresh is a natural maintenance point because it already walks
+    // installed content. Keep this best-effort and conservative: uninstall
+    // trash may be reclaimed after an hour, interrupted install staging only
+    // after a day, and recoverable .backup data is deliberately never touched.
+    CleanupStaleMaintenanceDirectory(userRoot, L".trash", std::chrono::hours(1));
+    CleanupStaleMaintenanceDirectory(userRoot, L".staging", std::chrono::hours(24));
+}
+
 bool AppendRoot(ContentKind kind,
                 ManagedContentPackageOrigin origin,
                 std::vector<ManagedContentPackageInfo>* packages,
@@ -28,6 +63,8 @@ bool AppendRoot(ContentKind kind,
         ? MiaoContentPackageManager::BuiltInRoot(kind)
         : MiaoContentPackageManager::UserRoot(kind);
     if (root.empty()) return true;
+
+    if (origin == ManagedContentPackageOrigin::UserManaged) MaintainUserRoot(root);
 
     std::error_code ec;
     if (!fs::exists(root, ec)) {

@@ -36,16 +36,19 @@ std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t
 WallpaperServiceResult PersistWallpaperSelection(
     std::wstring_view scene,
     const fs::path& imageOrWebSource,
-    const fs::path& videoSource) {
+    const fs::path& videoSource,
+    std::wstring_view contentSource = {}) {
     const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
     const std::wstring sceneText(scene);
     const std::wstring imageText = imageOrWebSource.wstring();
     const std::wstring videoText = videoSource.wstring();
+    const std::wstring contentText(contentSource);
     bool ok = true;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Enabled", L"1", config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Scene", sceneText.c_str(), config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Image", imageText.c_str(), config.c_str()) != FALSE && ok;
     ok = WritePrivateProfileStringW(L"Wallpaper", L"Video", videoText.c_str(), config.c_str()) != FALSE && ok;
+    ok = WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", contentText.c_str(), config.c_str()) != FALSE && ok;
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
     return ok ? WallpaperServiceResult{true, L"壁纸选择已保存。"}
               : WallpaperServiceResult{false, L"无法保存当前壁纸状态。"};
@@ -192,6 +195,23 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
     next.fpsCap = GetPrivateProfileIntW(L"Wallpaper", L"FpsCap", 30, config.c_str());
     next.imageOrWebSource = ReadProfile(config, L"Image", L"");
     next.videoSource = ReadProfile(config, L"Video", L"");
+
+    // Canonical Content Web selections persist their stable content:<id> in
+    // addition to the last resolved HTML path. Re-resolve that ID on every
+    // state load so package replacement may rename/move the manifest entry
+    // without leaving the global runtime pinned to a stale physical path.
+    if (_wcsicmp(next.scene.c_str(), L"web") == 0) {
+        const std::wstring contentSource = ReadProfile(config, L"ContentSource", L"");
+        if (IsContentId(contentSource)) {
+            wallpaper::WallpaperLibraryItem item;
+            item.id = contentSource;
+            item.kind = wallpaper::LibraryWallpaperKind::Web;
+            fs::path resolvedEntry;
+            const auto resolved = ResolveCanonicalWebEntry(item, &resolvedEntry);
+            if (resolved.success) next.imageOrWebSource = std::move(resolvedEntry);
+        }
+    }
+
     *state = next;
     return {true, L"壁纸状态读取完成。"};
 }
@@ -289,7 +309,7 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
             miaodesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
             return valid;
         }
-        const auto persisted = PersistWallpaperSelection(L"web", source, {});
+        const auto persisted = PersistWallpaperSelection(L"web", source, {}, item.id);
         if (persisted.success)
             miaodesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
         return persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;

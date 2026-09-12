@@ -4,17 +4,41 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperMonitorAssignments.h"
 
+#include <windows.h>
+
 #include <algorithm>
 #include <vector>
 
 namespace miaodesk::desktop {
 namespace {
 
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
+
 bool SameSource(std::wstring_view left, std::wstring_view right) noexcept {
     return left == right;
 }
 
+bool NotifyWidgetRuntimeReload() {
+    const HWND messageWindow = FindWindowExW(
+        HWND_MESSAGE, nullptr, kNativeWidgetHostMessageClass, nullptr);
+    if (!messageWindow || !IsWindow(messageWindow)) return false;
+    const UINT message = RegisterWindowMessageW(kWidgetRuntimeReloadMessageName);
+    return message != 0 && PostMessageW(messageWindow, message, 0, 0) != FALSE;
+}
+
 } // namespace
+
+DesktopControlResult DesktopControlService::RefreshWidgetRuntime() const {
+    const auto runtime = EnsureRuntime();
+    if (!runtime.success) return runtime;
+    if (!NotifyWidgetRuntimeReload()) {
+        miaodesk::log::Warn(
+            L"DesktopControl",
+            L"Widget runtime 已就绪，但即时 reload 通知失败；保留轮询恢复路径。");
+    }
+    return {true, L"Widget runtime 已就绪并请求即时刷新。"};
+}
 
 DesktopControlResult DesktopControlService::ListContentPackages(
     std::vector<content::ManagedContentPackageInfo>* packages) const {

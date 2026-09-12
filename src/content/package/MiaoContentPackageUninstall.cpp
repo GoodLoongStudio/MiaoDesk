@@ -69,6 +69,7 @@ void ClearGlobalWebSelection(const fs::path& config) {
     if (config.empty()) return;
     WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Image", L"", config.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", L"", config.c_str());
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
 }
 
@@ -163,7 +164,7 @@ bool MiaoContentPackageManager::Uninstall(
     // The rename above is the logical uninstall point: .trash is hidden from
     // every catalog scan. Clear a global Web selection that pointed into the
     // removed package so the next runtime refresh falls back to a valid Scene
-    // instead of retaining a stale HTML path.
+    // instead of retaining stale HTML or stable Content state.
     if (clearsGlobalWeb) ClearGlobalWebSelection(wallpaperConfig);
 
     // Physical cleanup is best-effort so a locked file can never leave a

@@ -53,7 +53,12 @@ std::wstring ReadWallpaperProfile(const fs::path& path, const wchar_t* key) {
     return buffer.data();
 }
 
-bool GlobalWebSelectionUsesPackage(const fs::path& packageRoot, fs::path* configPath) {
+bool GlobalWebSelectionUsesPackage(
+    const fs::path& packageRoot,
+    std::wstring_view packageSource,
+    fs::path* configPath,
+    bool* preserveStableSelection) {
+    if (preserveStableSelection) *preserveStableSelection = false;
     const fs::path stateRoot = paths::EnsureStateRoot();
     if (stateRoot.empty()) return false;
     const fs::path config = stateRoot / L"wallpaper.ini";
@@ -62,14 +67,23 @@ bool GlobalWebSelectionUsesPackage(const fs::path& packageRoot, fs::path* config
     const std::wstring scene = ReadWallpaperProfile(config, L"Scene");
     if (_wcsicmp(scene.c_str(), L"web") != 0) return false;
     const std::wstring source = ReadWallpaperProfile(config, L"Image");
-    return !source.empty() && PathIsInside(fs::path(source), packageRoot);
+    if (source.empty() || !PathIsInside(fs::path(source), packageRoot)) return false;
+
+    const std::wstring contentSource = ReadWallpaperProfile(config, L"ContentSource");
+    if (preserveStableSelection && !packageSource.empty()) {
+        const std::wstring expected(packageSource);
+        *preserveStableSelection = _wcsicmp(contentSource.c_str(), expected.c_str()) == 0;
+    }
+    return true;
 }
 
-void ClearGlobalWebSelection(const fs::path& config) {
+void ReconcileGlobalWebSelectionAfterUninstall(const fs::path& config, bool preserveStableSelection) {
     if (config.empty()) return;
-    WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Image", L"", config.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", L"", config.c_str());
+    if (!preserveStableSelection) {
+        WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());
+        WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", L"", config.c_str());
+    }
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
 }
 
@@ -133,12 +147,15 @@ bool MiaoContentPackageManager::Uninstall(
     if (userRoot.empty() || !PathIsInside(package.packageRoot, userRoot))
         return Fail(error, L"Resolved user package is outside the managed content root.");
 
-    // Detect the global Web selection before moving the package. The state is
-    // only cleared after the rename succeeds, so a failed uninstall never
-    // changes the user's active wallpaper.
+    // Detect the global Web selection before moving the package. Canonical
+    // Content selections keep their stable content:<id> across uninstall so a
+    // later reinstall can recover automatically; legacy direct selections are
+    // cleared after the rename succeeds.
     fs::path wallpaperConfig;
-    const bool clearsGlobalWeb = expectedKind == ContentKind::Wallpaper &&
-        GlobalWebSelectionUsesPackage(package.packageRoot, &wallpaperConfig);
+    bool preserveStableWebSelection = false;
+    const bool reconcilesGlobalWeb = expectedKind == ContentKind::Wallpaper &&
+        GlobalWebSelectionUsesPackage(
+            package.packageRoot, package.source, &wallpaperConfig, &preserveStableWebSelection);
 
     // Reclaim stale hidden maintenance state left by earlier interrupted
     // operations, while deliberately preserving recoverable .backup data.
@@ -162,10 +179,11 @@ bool MiaoContentPackageManager::Uninstall(
     }
 
     // The rename above is the logical uninstall point: .trash is hidden from
-    // every catalog scan. Clear a global Web selection that pointed into the
-    // removed package so the next runtime refresh falls back to a valid Scene
-    // instead of retaining stale HTML or stable Content state.
-    if (clearsGlobalWeb) ClearGlobalWebSelection(wallpaperConfig);
+    // every catalog scan. Drop the now-dead physical HTML path. Canonical
+    // Content Web keeps Scene=web + ContentSource so GetState() safely falls
+    // back while absent and resumes the same stable id after reinstall.
+    if (reconcilesGlobalWeb)
+        ReconcileGlobalWebSelectionAfterUninstall(wallpaperConfig, preserveStableWebSelection);
 
     // Physical cleanup is best-effort so a locked file can never leave a
     // half-deleted package visible to the runtime.

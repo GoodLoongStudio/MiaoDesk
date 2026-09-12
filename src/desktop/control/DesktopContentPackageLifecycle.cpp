@@ -29,7 +29,7 @@ bool NotifyWidgetRuntimeReload() {
 
 } // namespace
 
-DesktopControlResult DesktopControlService::RefreshWidgetRuntime() const {
+DesktopControlResult DesktopControlService::ReloadWidgetRuntime() const {
     const auto runtime = EnsureRuntime();
     if (!runtime.success) return runtime;
     if (!NotifyWidgetRuntimeReload()) {

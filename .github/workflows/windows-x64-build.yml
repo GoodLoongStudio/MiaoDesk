@@ -92,6 +92,22 @@ jobs:
           & $test.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Content web replacement continuity regression failed.' }
 
+      - name: Reset wallpaper runtime before Widget lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+          $deadline = [DateTime]::UtcNow.AddSeconds(5)
+          do {
+            Start-Sleep -Milliseconds 100
+            $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+            if ($alive -eq 0) { break }
+          } while ([DateTime]::UtcNow -lt $deadline)
+          if ($alive -ne 0) {
+            throw 'MiaoDeskWallpaper process family did not stop before quick-build Widget lifecycle.'
+          }
+
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh
         run: |

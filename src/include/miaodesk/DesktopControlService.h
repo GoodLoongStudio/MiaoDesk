@@ -77,7 +77,7 @@ public:
         WidgetService service;
         const auto result = service.CreateContent(request, created);
         if (!result.success) return {false, result.message};
-        const auto runtime = RefreshWidgetRuntime();
+        const auto runtime = ReloadWidgetRuntime();
         if (!runtime.success) return runtime;
         return {true, result.message};
     }
@@ -128,7 +128,7 @@ public:
 
     DesktopControlResult SetWallpaperEnabled(bool enabled) const;
     DesktopControlResult EnsureRuntime() const;
-    DesktopControlResult RefreshWidgetRuntime() const;
+    DesktopControlResult ReloadWidgetRuntime() const;
 };
 
 } // namespace miaodesk::desktop

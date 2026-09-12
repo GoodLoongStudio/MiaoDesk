@@ -334,6 +334,39 @@ bool SelfTestIndependentWallpaperResolution() {
         ok = ok && sceneReplacement[0].source == currentSceneRoot;
     }
 
+    // Uninstall/reinstall continuity contract: monitor assignments intentionally
+    // retain the stable content:<id>. While the package is absent the display
+    // receives the safe global fallback; reinstalling the same id restores the
+    // assignment automatically without rewriting assignments.ini.
+    const auto missingPackage = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [](std::wstring_view) -> std::optional<ResolvedContentWallpaper> {
+            return std::nullopt;
+        });
+    ok = ok && missingPackage.size() == 1;
+    if (missingPackage.size() == 1) {
+        ok = ok && missingPackage[0].fallback;
+        ok = ok && missingPackage[0].wallpaperId == kReplacementId;
+        ok = ok && missingPackage[0].kind == fallback.kind;
+        ok = ok && missingPackage[0].sceneKey == fallback.sceneKey;
+    }
+    ok = ok && assignments.WallpaperIdFor(topology.monitors[1]) == kReplacementId;
+
+    const fs::path reinstalledWebEntry = root / L"reinstalled-v4.mdwall" / L"index.html";
+    const auto reinstalledPackage = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kReplacementId) return std::nullopt;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Web, reinstalledWebEntry};
+        });
+    ok = ok && reinstalledPackage.size() == 1;
+    if (reinstalledPackage.size() == 1) {
+        ok = ok && !reinstalledPackage[0].fallback;
+        ok = ok && reinstalledPackage[0].wallpaperId == kReplacementId;
+        ok = ok && reinstalledPackage[0].kind == ResolvedWallpaperKind::Web;
+        ok = ok && reinstalledPackage[0].source == reinstalledWebEntry;
+    }
+
     fs::remove_all(root, ec);
     return ok;
 }

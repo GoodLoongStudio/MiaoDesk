@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <system_error>
 
@@ -46,6 +47,9 @@ struct ResolvedContentWallpaper {
     ResolvedWallpaperKind kind{ResolvedWallpaperKind::Scene};
     fs::path source;
 };
+
+using ContentWallpaperResolver =
+    std::function<std::optional<ResolvedContentWallpaper>(std::wstring_view)>;
 
 std::optional<ResolvedContentWallpaper> ResolveContentWallpaper(std::wstring_view id) {
     if (!IsContentId(id)) return std::nullopt;
@@ -111,13 +115,12 @@ bool SourceAvailable(const WallpaperLibraryItem& item) {
     return !item.source.empty() && fs::exists(item.source, ec) && fs::is_regular_file(item.source, ec);
 }
 
-} // namespace
-
-std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
+std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapersWithResolver(
     const MonitorTopology& topology,
     const WallpaperMonitorAssignments& assignments,
     const WallpaperLibrary& library,
-    const GlobalWallpaperDescriptor& globalFallback) {
+    const GlobalWallpaperDescriptor& globalFallback,
+    const ContentWallpaperResolver& contentResolver) {
     std::vector<ResolvedMonitorWallpaper> result;
     if (!topology.Valid()) return result;
 
@@ -140,7 +143,7 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
             // content:<id> while the settings window still holds a pre-install
             // WallpaperLibrary snapshot. Resolve the current package runtime
             // directly so both Scene and Web content survive a stale UI cache.
-            if (const auto contentWallpaper = ResolveContentWallpaper(*assignedId)) {
+            if (const auto contentWallpaper = contentResolver(*assignedId)) {
                 ResolvedMonitorWallpaper resolved;
                 resolved.monitorId = StableMonitorKey(monitor);
                 resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
@@ -169,7 +172,7 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         std::optional<ResolvedContentWallpaper> currentContent;
         if (IsContentId(item->id) &&
             (item->kind == LibraryWallpaperKind::Scene || item->kind == LibraryWallpaperKind::Web)) {
-            currentContent = ResolveContentWallpaper(item->id);
+            currentContent = contentResolver(item->id);
             if (!currentContent) {
                 result.push_back(MakeFallback(monitor, region, globalFallback,
                                               L"Content 壁纸包已离线、损坏或 Runtime 无法解析"));
@@ -219,6 +222,17 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         result.push_back(std::move(resolved));
     }
     return result;
+}
+
+} // namespace
+
+std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
+    const MonitorTopology& topology,
+    const WallpaperMonitorAssignments& assignments,
+    const WallpaperLibrary& library,
+    const GlobalWallpaperDescriptor& globalFallback) {
+    return ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, globalFallback, ResolveContentWallpaper);
 }
 
 bool IndependentLayoutHasVideo(const std::vector<ResolvedMonitorWallpaper>& resolved) noexcept {
@@ -273,6 +287,52 @@ bool SelfTestIndependentWallpaperResolution() {
         ok = ok && resolved[0].region.right == 3840;
     }
     ok = ok && !IndependentLayoutHasVideo(resolved) && !IndependentLayoutHasWeb(resolved);
+
+    // Replacement continuity contract: the stable content:<id> is authoritative
+    // even when the WallpaperLibrary snapshot still advertises the old runtime.
+    // First simulate a stale Scene snapshot after the installed package changed
+    // to Web, then mutate the persisted snapshot to Web and simulate Web -> Scene.
+    constexpr wchar_t kReplacementId[] = L"content:com.goodloong.selftest.runtime-replacement";
+    ok = ok && library.UpsertScene(kReplacementId, L"Runtime replacement", &error);
+    ok = ok && assignments.Assign(topology.monitors[1], kReplacementId, &error);
+
+    const fs::path currentWebEntry = root / L"current-v2.mdwall" / L"wallpaper-v2.html";
+    const auto webReplacement = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kReplacementId) return std::nullopt;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Web, currentWebEntry};
+        });
+    ok = ok && webReplacement.size() == 1;
+    if (webReplacement.size() == 1) {
+        ok = ok && !webReplacement[0].fallback;
+        ok = ok && webReplacement[0].wallpaperId == kReplacementId;
+        ok = ok && webReplacement[0].kind == ResolvedWallpaperKind::Web;
+        ok = ok && webReplacement[0].source == currentWebEntry;
+    }
+
+    const std::wstring replacementSection = L"Item." + std::wstring(kReplacementId);
+    ok = ok && WritePrivateProfileStringW(replacementSection.c_str(), L"Kind", L"web",
+                                           library.ManifestPath().c_str()) != FALSE;
+    ok = ok && WritePrivateProfileStringW(replacementSection.c_str(), L"Source",
+                                           (root / L"stale-v1.mdwall" / L"index.html").c_str(),
+                                           library.ManifestPath().c_str()) != FALSE;
+    ok = ok && library.Load(&error);
+
+    const fs::path currentSceneRoot = root / L"current-v3.mdwall";
+    const auto sceneReplacement = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kReplacementId) return std::nullopt;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, currentSceneRoot};
+        });
+    ok = ok && sceneReplacement.size() == 1;
+    if (sceneReplacement.size() == 1) {
+        ok = ok && !sceneReplacement[0].fallback;
+        ok = ok && sceneReplacement[0].wallpaperId == kReplacementId;
+        ok = ok && sceneReplacement[0].kind == ResolvedWallpaperKind::Scene;
+        ok = ok && sceneReplacement[0].source == currentSceneRoot;
+    }
 
     fs::remove_all(root, ec);
     return ok;

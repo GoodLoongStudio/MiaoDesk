@@ -69,7 +69,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             # Surface compile errors as check annotations so they are readable
@@ -82,6 +82,15 @@ jobs:
               }
             throw 'x64 build failed.'
           }
+
+      - name: Verify Content web replacement continuity
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Content web replacement continuity test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Content web replacement continuity regression failed.' }
 
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh

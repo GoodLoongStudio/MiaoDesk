@@ -143,6 +143,7 @@ add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
 add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
+add_executable(MiaoDeskContentWebReplacementTest tests/ContentWebReplacementContinuity.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -171,7 +172,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -191,6 +192,7 @@ if (MSVC)
     target_compile_options(MiaoDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskContentWebReplacementTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -248,4 +250,20 @@ target_link_libraries(MiaoDeskHarness PRIVATE
     shlwapi
     version
     "${WEBVIEW2_LOADER_STATIC}"
+)
+
+target_link_libraries(MiaoDeskContentWebReplacementTest PRIVATE
+    MiaoDeskCore
+    user32
+    gdi32
+    shell32
+    ole32
+    advapi32
+    comctl32
+    d2d1
+    dwrite
+    windowscodecs
+    shlwapi
+    version
+    winhttp
 )

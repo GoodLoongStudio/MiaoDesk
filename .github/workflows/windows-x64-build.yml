@@ -83,6 +83,16 @@ jobs:
             throw 'x64 build failed.'
           }
 
+      - name: Run wallpaper self-test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
+          & $wallpaper.FullName --self-test
+          if ($LASTEXITCODE -ne 0) { throw "MiaoDeskWallpaper self-test failed with exit code $LASTEXITCODE." }
+
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh
         run: |

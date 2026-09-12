@@ -161,7 +161,24 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
             result.back().wallpaperId = item->id;
             continue;
         }
-        if (!SourceAvailable(*item)) {
+
+        // Resolve canonical Content once for this runtime plan. Re-resolving
+        // after the availability check created a race where package replacement
+        // or removal could make us fall back to the stale physical library path.
+        std::optional<ResolvedContentWallpaper> currentContent;
+        if (IsContentId(item->id) &&
+            (item->kind == LibraryWallpaperKind::Scene || item->kind == LibraryWallpaperKind::Web)) {
+            currentContent = ResolveContentWallpaper(item->id);
+            const ResolvedWallpaperKind expectedKind = item->kind == LibraryWallpaperKind::Scene
+                ? ResolvedWallpaperKind::Scene
+                : ResolvedWallpaperKind::Web;
+            if (!currentContent || currentContent->kind != expectedKind) {
+                result.push_back(MakeFallback(monitor, region, globalFallback,
+                                              L"Content 壁纸包已离线、损坏或 Runtime 已变化"));
+                result.back().wallpaperId = item->id;
+                continue;
+            }
+        } else if (!SourceAvailable(*item)) {
             result.push_back(MakeFallback(monitor, region, globalFallback, L"壁纸源文件已离线、被移动或 URL 无效"));
             result.back().wallpaperId = item->id;
             continue;
@@ -176,12 +193,11 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
         case LibraryWallpaperKind::Scene:
             resolved.kind = ResolvedWallpaperKind::Scene;
             resolved.sceneKey = SceneKeyForLibraryId(item->id);
-            if (const auto current = ResolveContentWallpaper(item->id)) {
-                // Resolve stable content:<id> immediately before creating the
-                // runtime plan. library.ini can contain an old physical path;
-                // the manifest id remains authoritative.
-                resolved.kind = current->kind;
-                resolved.source = current->source;
+            if (currentContent) {
+                // Stable content:<id> is authoritative. library.ini can contain
+                // an old physical path after a package replacement.
+                resolved.kind = currentContent->kind;
+                resolved.source = currentContent->source;
             } else {
                 resolved.source = item->source;
             }
@@ -196,10 +212,7 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapers(
             break;
         case LibraryWallpaperKind::Web:
             resolved.kind = ResolvedWallpaperKind::Web;
-            if (const auto current = ResolveContentWallpaper(item->id))
-                resolved.source = current->source;
-            else
-                resolved.source = item->source;
+            resolved.source = currentContent ? currentContent->source : item->source;
             break;
         case LibraryWallpaperKind::Unknown:
             break;

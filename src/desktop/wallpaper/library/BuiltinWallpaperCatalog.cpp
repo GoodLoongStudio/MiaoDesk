@@ -68,12 +68,13 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
     }
 
     wchar_t buffer[128]{};
-    GetPrivateProfileStringW(L"Theme", L"Title", L"", buffer, static_cast<DWORD>(std::size(buffer)), path.c_str());
+    constexpr DWORD bufferCount = static_cast<DWORD>(sizeof(buffer) / sizeof(buffer[0]));
+    GetPrivateProfileStringW(L"Theme", L"Title", L"", buffer, bufferCount, path.c_str());
     bool ok = std::wstring_view(buffer) == L"中文主题标题";
     ok = WritePrivateProfileStringW(L"Theme", L"Author", L"妙喵作者", path.c_str()) != FALSE && ok;
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
     buffer[0] = L'\0';
-    GetPrivateProfileStringW(L"Theme", L"Author", L"", buffer, static_cast<DWORD>(std::size(buffer)), path.c_str());
+    GetPrivateProfileStringW(L"Theme", L"Author", L"", buffer, bufferCount, path.c_str());
     ok = std::wstring_view(buffer) == L"妙喵作者" && ok;
 
     fs::remove(path, ec);

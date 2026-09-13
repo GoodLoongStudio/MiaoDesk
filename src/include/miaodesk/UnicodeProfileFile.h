@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace miaodesk::text {
@@ -28,7 +29,8 @@ inline bool DecodeMultiByte(std::string_view bytes, UINT codePage, DWORD flags, 
     if (required <= 0) return false;
     output->resize(static_cast<std::size_t>(required));
     return MultiByteToWideChar(
-               codePage, flags, bytes.data(), static_cast<int>(bytes.size()), output->data(), required) == required;
+               codePage, flags, bytes.data(), static_cast<int>(bytes.size()),
+               output->data(), required) == required;
 }
 
 inline bool ReadExistingText(const std::filesystem::path& path, std::wstring* text, bool* alreadyUtf16Le) {

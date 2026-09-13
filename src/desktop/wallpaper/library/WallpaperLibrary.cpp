@@ -3,6 +3,7 @@
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/MiaoSceneSerializer.h"
+#include "miaodesk/UnicodeProfileFile.h"
 #include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
@@ -257,7 +258,7 @@ bool WallpaperLibrary::Load(std::wstring* error) {
     }
 
     const fs::path manifest = ManifestPath();
-    if (fs::exists(manifest, ec)) {
+    if (!text::EnsureUtf16LeProfileFile(manifest, error)) return false;
     for (const auto& section : EnumerateSections(manifest)) {
         if (section.rfind(kItemPrefix, 0) != 0) continue;
         WallpaperLibraryItem item;
@@ -272,7 +273,6 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         item.lastUsedUnixSeconds = ReadProfileU64(manifest, section, L"LastUsed", 0);
         if (item.title.empty()) item.title = item.source.empty() ? L"未命名壁纸" : DefaultTitle(item.source);
         if (!item.id.empty() && item.kind != LibraryWallpaperKind::Unknown) items_.push_back(std::move(item));
-    }
     }
 
     // Normalize legacy Scene records whose Source still points at a file inside
@@ -684,6 +684,7 @@ bool WallpaperLibrary::SaveItem(const WallpaperLibraryItem& item, std::wstring* 
         return false;
     }
     const fs::path manifest = ManifestPath();
+    if (!text::EnsureUtf16LeProfileFile(manifest, error)) return false;
     const std::wstring section = SectionName(item.id);
     bool ok = true;
     ok = WriteProfileText(manifest, section, L"Kind", KindKey(item.kind)) && ok;
@@ -728,7 +729,7 @@ bool WallpaperLibrary::SelfTest() {
     fs::create_directories(root, ec);
     if (ec) return false;
 
-    const fs::path sample = root / L"sample.html";
+    const fs::path sample = root / L"中文壁纸.html";
     {
         std::ofstream output(sample, std::ios::binary);
         output << "<html><body>MiaoDesk wallpaper library self-test</body></html>";
@@ -737,12 +738,14 @@ bool WallpaperLibrary::SelfTest() {
     WallpaperLibrary library(root / L"Library");
     std::wstring error;
     bool ok = library.Load(&error);
-    auto imported = library.ImportFile(sample, {}, &error);
+    WallpaperImportOptions unicodeOptions;
+    unicodeOptions.title = L"中文壁纸标题";
+    auto imported = library.ImportFile(sample, unicodeOptions, &error);
     ok = ok && imported.has_value();
     if (imported) {
         ok = ok && library.SetFavorite(imported->id, true, &error);
         ok = ok && library.MarkUsed(imported->id, &error);
-        ok = ok && !library.Search(L"sample").empty();
+        ok = ok && !library.Search(L"中文壁纸标题").empty();
         ok = ok && library.Favorites().size() == 1;
         ok = ok && !library.RecentlyUsed(1).empty();
     }
@@ -837,9 +840,19 @@ bool WallpaperLibrary::SelfTest() {
 
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
-    ok = ok && reloaded.Find(L"scene-aurora").has_value();
+    const auto unicodeScene = reloaded.Find(L"scene-aurora");
+    ok = ok && unicodeScene.has_value();
+    if (unicodeScene) ok = ok && unicodeScene->title == L"妙喵云境";
     ok = ok && !reloaded.Find(L"legacy-scene").has_value();
     ok = ok && reloaded.Find(L"external-scene").has_value();
+    if (imported) {
+        const auto unicodeImported = reloaded.Find(imported->id);
+        ok = ok && unicodeImported.has_value();
+        if (unicodeImported) {
+            ok = ok && unicodeImported->title == L"中文壁纸标题";
+            ok = ok && SamePath(unicodeImported->source, sample);
+        }
+    }
 
     const auto packageItems = reloaded.Search(L"Package Web");
     ok = ok && !packageItems.empty();

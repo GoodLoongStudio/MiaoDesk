@@ -92,6 +92,22 @@ jobs:
           & $test.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Content web replacement continuity regression failed.' }
 
+      - name: Reset wallpaper runtime before Widget lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+          $deadline = [DateTime]::UtcNow.AddSeconds(5)
+          do {
+            Start-Sleep -Milliseconds 100
+            $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+            if ($alive -eq 0) { break }
+          } while ([DateTime]::UtcNow -lt $deadline)
+          if ($alive -ne 0) {
+            throw 'MiaoDeskWallpaper process family did not stop before quick-build Widget lifecycle.'
+          }
+
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh
         run: |
@@ -115,6 +131,120 @@ jobs:
               throw "Staged built-in widget package file is missing: $relative"
             }
           }
+
+      - name: Verify Content widget install-create-remove-uninstall service lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Content lifecycle test executable was not found.' }
+          $stagedTest = Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDeskContentWebReplacementTest.exe'
+          Copy-Item $test.FullName $stagedTest -Force
+          $builtInPackage = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
+          if (-not (Test-Path $builtInPackage -PathType Container)) {
+            throw "Content lifecycle source package is missing: $builtInPackage"
+          }
+
+          function Stop-MiaoDeskWallpaperFamily {
+            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
+            $deadline = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+              Start-Sleep -Milliseconds 100
+              $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+              if ($alive -eq 0) { return }
+            } while ([DateTime]::UtcNow -lt $deadline)
+            throw 'MiaoDeskWallpaper process family did not stop before isolated Content lifecycle test.'
+          }
+
+          $previousLocalAppData = $env:LOCALAPPDATA
+          $stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-content-widget-service-lifecycle'
+          $diagnosticPath = Join-Path $env:RUNNER_TEMP 'content-widget-lifecycle-output.txt'
+          Remove-Item $diagnosticPath -Force -ErrorAction SilentlyContinue
+          try {
+            # The previous quick-build smoke starts the same executable family.
+            # Wait for every coordinator/helper process to be gone before changing
+            # LOCALAPPDATA, otherwise named mutex/window state from the old store can
+            # race the isolated service test and make EnsureRuntime target stale helpers.
+            Stop-MiaoDeskWallpaperFamily
+            Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $stateBase | Out-Null
+
+            # Exercise the user-managed install path with a distinct package id.
+            # Create the destination explicitly and copy the package contents rather
+            # than relying on Copy-Item's directory-container semantics. This keeps
+            # manifest.json at the .mdwidget root on every PowerShell runner version.
+            $package = Join-Path $stateBase 'UserGlassClock.mdwidget'
+            New-Item -ItemType Directory -Force -Path $package | Out-Null
+            Get-ChildItem $builtInPackage -Force |
+              Copy-Item -Destination $package -Recurse -Force
+            $manifestPath = Join-Path $package 'manifest.json'
+            if (-not (Test-Path $manifestPath -PathType Leaf)) {
+              throw "Content lifecycle user package manifest is missing: $manifestPath"
+            }
+            $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $manifest.id = 'com.goodloong.ci.user-glass-clock'
+            $manifest.name = 'CI User Glass Clock'
+            $manifest | ConvertTo-Json -Depth 16 | Set-Content $manifestPath -Encoding UTF8
+            $verifiedManifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($verifiedManifest.id -ne 'com.goodloong.ci.user-glass-clock' -or
+                $verifiedManifest.kind -ne 'widget' -or
+                $verifiedManifest.runtime -ne 'scene') {
+              throw 'Content lifecycle user package manifest preflight failed.'
+            }
+            foreach ($required in @('scene.json', 'parameters.json')) {
+              if (-not (Test-Path (Join-Path $package $required) -PathType Leaf)) {
+                throw "Content lifecycle user package file is missing: $required"
+              }
+            }
+
+            $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
+            New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+            # DesktopControlService resolves the runtime as a sibling of the current
+            # module, matching the installed product layout. Run the lifecycle test
+            # from the staged product root so EnsureRuntime exercises that contract.
+            Write-Host "Running Content lifecycle against user package: $package"
+            $lifecycleOutput = @(& $stagedTest $package 2>&1)
+            $lifecycleExitCode = $LASTEXITCODE
+            $lifecycleOutput | ForEach-Object { "$_" } | Tee-Object -FilePath $diagnosticPath | Write-Host
+            "Content lifecycle test exit code: $lifecycleExitCode" | Tee-Object -FilePath $diagnosticPath -Append | Write-Host
+            if ($lifecycleExitCode -ne 0) {
+              $lifecycleOutput | ForEach-Object { "$_" } |
+                Where-Object { $_ -match '^Content widget lifecycle failed at ' } |
+                Select-Object -First 1 | ForEach-Object {
+                  $line = $_.Trim()
+                  if ($line.Length -gt 500) { $line = $line.Substring(0, 500) }
+                  Write-Host "::error::$line"
+                }
+              $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+              if (Test-Path $wallpaperIni -PathType Leaf) {
+                Write-Host 'Content lifecycle wallpaper diagnostics:' -ForegroundColor Yellow
+                Get-Content $wallpaperIni | Tee-Object -FilePath $diagnosticPath -Append | Out-Host
+              }
+              $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+              if (Test-Path $debugLog -PathType Leaf) {
+                Write-Host 'Content lifecycle desktop-debug.log tail:' -ForegroundColor Yellow
+                Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 80 |
+                  Tee-Object -FilePath $diagnosticPath -Append | Out-Host
+              }
+              throw "Content widget service lifecycle regression failed with exit code $lifecycleExitCode."
+            }
+          } finally {
+            Stop-MiaoDeskWallpaperFamily
+            $env:LOCALAPPDATA = $previousLocalAppData
+            Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $stagedTest -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload Content widget lifecycle diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-widget-lifecycle-diagnostics
+          path: ${{ runner.temp }}\content-widget-lifecycle-output.txt
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Verify staged GlassClock Content Framework route
         shell: pwsh

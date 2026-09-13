@@ -1,9 +1,13 @@
+#include "miaodesk/DesktopControlService.h"
 #include "miaodesk/WallpaperLibrary.h"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <optional>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -25,9 +29,153 @@ bool SameExistingPath(const fs::path& left, const fs::path& right) {
     return !ec && same;
 }
 
-} // namespace
+std::wstring Utf8ToWide(std::string_view value) {
+    if (value.empty()) return {};
+    const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                          static_cast<int>(value.size()), nullptr, 0);
+    if (count <= 0) return {};
+    std::wstring out(static_cast<std::size_t>(count), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                            static_cast<int>(value.size()), out.data(), count) != count)
+        return {};
+    return out;
+}
 
-int wmain() {
+std::optional<miaodesk::desktop::WidgetSurfaceHealth> WaitForWidgetSurfaceHealth(
+    const miaodesk::desktop::DesktopControlService& service,
+    std::wstring_view widgetId,
+    DWORD timeoutMs = 15000) {
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    do {
+        miaodesk::desktop::DesktopSnapshot snapshot;
+        const auto result = service.GetSnapshot(&snapshot);
+        if (!result.success) return std::nullopt;
+        const auto surface = std::find_if(
+            snapshot.widgetRuntime.surfaces.begin(), snapshot.widgetRuntime.surfaces.end(),
+            [&](const auto& item) { return item.widgetId == widgetId; });
+        if (surface != snapshot.widgetRuntime.surfaces.end() &&
+            surface->SurfaceReady() && surface->renderingHealthy)
+            return *surface;
+        Sleep(100);
+    } while (GetTickCount64() < deadline);
+    return std::nullopt;
+}
+
+bool WaitForWidgetSurfaceGone(const miaodesk::desktop::DesktopControlService& service,
+                              std::wstring_view widgetId,
+                              DWORD timeoutMs = 15000) {
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    do {
+        miaodesk::desktop::DesktopSnapshot snapshot;
+        const auto result = service.GetSnapshot(&snapshot);
+        if (!result.success) return false;
+        const auto surface = std::find_if(
+            snapshot.widgetRuntime.surfaces.begin(), snapshot.widgetRuntime.surfaces.end(),
+            [&](const auto& item) { return item.widgetId == widgetId; });
+        if (surface == snapshot.widgetRuntime.surfaces.end()) return true;
+        Sleep(100);
+    } while (GetTickCount64() < deadline);
+    return false;
+}
+
+bool HasContentPackage(const miaodesk::desktop::DesktopControlService& service,
+                       std::wstring_view source) {
+    std::vector<miaodesk::content::ManagedContentPackageInfo> packages;
+    const auto listed = service.ListContentPackages(&packages);
+    if (!listed.success) return false;
+    return std::any_of(packages.begin(), packages.end(), [&](const auto& package) {
+        return package.source == source;
+    });
+}
+
+bool RunContentWidgetLifecycle(const fs::path& packagePath) {
+    miaodesk::desktop::DesktopControlService service;
+    auto fail = [](std::wstring_view stage, std::wstring_view detail = {}) {
+        std::wcerr << L"Content widget lifecycle failed at " << stage;
+        if (!detail.empty()) std::wcerr << L": " << detail;
+        std::wcerr << std::endl;
+        return false;
+    };
+
+    miaodesk::desktop::NativeWidgetCreateRequest warmupRequest;
+    warmupRequest.preset = miaodesk::wallpaper::NativeWidgetPreset::GlassClock;
+    warmupRequest.title = L"CI Widget host warmup";
+    warmupRequest.x = 0.62f;
+    warmupRequest.y = 0.05f;
+    warmupRequest.width = 0.28f;
+    warmupRequest.height = 0.18f;
+
+    miaodesk::wallpaper::DesktopWidget warmup;
+    const auto warmupCreate = service.CreateNativeWidget(warmupRequest, &warmup);
+    if (!warmupCreate.success) return fail(L"warmup create", warmupCreate.message);
+    if (warmup.id.empty()) return fail(L"warmup create", L"created id is empty");
+    const auto warmupSurface = WaitForWidgetSurfaceHealth(service, warmup.id);
+    if (!warmupSurface) return fail(L"warmup surface", L"did not become ready/renderingHealthy");
+    if (warmupSurface->processId == 0) return fail(L"warmup surface", L"host process id is zero");
+
+    miaodesk::content::ContentPackageInstallResult installed;
+    const auto install = service.InstallContentPackage(packagePath, &installed);
+    if (!install.success) return fail(L"package install", install.message);
+    if (installed.package.kind != miaodesk::content::ContentKind::Widget)
+        return fail(L"package install", L"installed package kind is not widget");
+    if (installed.package.source.empty()) return fail(L"package install", L"installed source is empty");
+    if (!HasContentPackage(service, installed.package.source))
+        return fail(L"package catalog", L"installed package not listed");
+
+    const std::wstring definitionId = Utf8ToWide(installed.package.id);
+    if (definitionId.empty()) return fail(L"definition id", L"UTF-8 conversion failed");
+
+    miaodesk::desktop::ContentWidgetCreateRequest request;
+    request.definitionId = definitionId;
+    request.title = L"CI Content widget lifecycle";
+    request.x = 0.05f;
+    request.y = 0.05f;
+    request.width = 0.30f;
+    request.height = 0.30f;
+    request.enabled = true;
+
+    miaodesk::wallpaper::DesktopWidget created;
+    const auto create = service.CreateContentWidget(request, &created);
+    if (!create.success) return fail(L"Content instance create", create.message);
+    if (created.id.empty()) return fail(L"Content instance create", L"created id is empty");
+    if (created.source.wstring() != installed.package.source)
+        return fail(L"Content instance create", L"created source does not match installed package");
+    const auto contentSurface = WaitForWidgetSurfaceHealth(service, created.id);
+    if (!contentSurface) return fail(L"Content surface", L"did not become ready/renderingHealthy");
+    if (contentSurface->processId == 0)
+        return fail(L"Content surface", L"host process id is zero");
+
+    miaodesk::content::ContentPackageUninstallResult blockedResult;
+    const auto blocked = service.UninstallContentPackage(
+        miaodesk::content::ContentKind::Widget, installed.package.source, &blockedResult);
+    if (blocked.success) return fail(L"protected uninstall", L"unexpectedly succeeded while instance exists");
+    if (blocked.message.find(L"仍被桌面实例引用") == std::wstring::npos)
+        return fail(L"protected uninstall", blocked.message);
+    if (!HasContentPackage(service, installed.package.source))
+        return fail(L"protected uninstall", L"package disappeared after rejected uninstall");
+
+    const auto remove = service.RemoveWidget(created.id);
+    if (!remove.success) return fail(L"Content instance remove", remove.message);
+    if (!WaitForWidgetSurfaceGone(service, created.id))
+        return fail(L"Content surface remove", L"surface did not disappear");
+
+    miaodesk::content::ContentPackageUninstallResult removedPackage;
+    const auto uninstall = service.UninstallContentPackage(
+        miaodesk::content::ContentKind::Widget, installed.package.source, &removedPackage);
+    if (!uninstall.success) return fail(L"package uninstall", uninstall.message);
+    if (removedPackage.package.source != installed.package.source)
+        return fail(L"package uninstall", L"removed package source mismatch");
+    if (HasContentPackage(service, installed.package.source))
+        return fail(L"package uninstall", L"package still listed after uninstall");
+
+    const auto warmupRemove = service.RemoveWidget(warmup.id);
+    if (!warmupRemove.success) return fail(L"warmup remove", warmupRemove.message);
+    if (!WaitForWidgetSurfaceGone(service, warmup.id))
+        return fail(L"warmup surface remove", L"surface did not disappear");
+    return true;
+}
+
+bool RunContentWebReplacementContinuity() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
         (L"MiaoDesk-ContentWebReplacement-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
@@ -100,5 +248,12 @@ int wmain() {
     }
 
     fs::remove_all(root, ec);
-    return ok ? 0 : 1;
+    return ok;
+}
+
+} // namespace
+
+int wmain(int argc, wchar_t** argv) {
+    if (argc == 2) return RunContentWidgetLifecycle(fs::path(argv[1])) ? 0 : 2;
+    return RunContentWebReplacementContinuity() ? 0 : 1;
 }

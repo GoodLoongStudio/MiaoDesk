@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <optional>
 #include <string>
 
@@ -89,11 +90,13 @@ bool HasContentPackage(const miaodesk::desktop::DesktopControlService& service,
 
 bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     miaodesk::desktop::DesktopControlService service;
+    auto fail = [](std::wstring_view stage, std::wstring_view detail = {}) {
+        std::wcerr << L"Content widget lifecycle failed at " << stage;
+        if (!detail.empty()) std::wcerr << L": " << detail;
+        std::wcerr << std::endl;
+        return false;
+    };
 
-    // Keep a NativeWidgetHost alive before the Content package is installed and
-    // the Content instance is persisted. This forces CreateContentWidget to
-    // exercise the already-running-host reload path rather than passing only
-    // because a cold runtime startup performs its initial store sync.
     miaodesk::desktop::NativeWidgetCreateRequest warmupRequest;
     warmupRequest.preset = miaodesk::wallpaper::NativeWidgetPreset::GlassClock;
     warmupRequest.title = L"CI Widget host warmup";
@@ -104,20 +107,24 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
 
     miaodesk::wallpaper::DesktopWidget warmup;
     const auto warmupCreate = service.CreateNativeWidget(warmupRequest, &warmup);
-    if (!warmupCreate.success || warmup.id.empty()) return false;
+    if (!warmupCreate.success) return fail(L"warmup create", warmupCreate.message);
+    if (warmup.id.empty()) return fail(L"warmup create", L"created id is empty");
     const auto warmupSurface = WaitForWidgetSurfaceHealth(service, warmup.id);
-    if (!warmupSurface || warmupSurface->processId == 0) return false;
+    if (!warmupSurface) return fail(L"warmup surface", L"did not become ready/renderingHealthy");
+    if (warmupSurface->processId == 0) return fail(L"warmup surface", L"host process id is zero");
     const auto runningHostPid = warmupSurface->processId;
 
     miaodesk::content::ContentPackageInstallResult installed;
     const auto install = service.InstallContentPackage(packagePath, &installed);
-    if (!install.success || installed.package.kind != miaodesk::content::ContentKind::Widget ||
-        installed.package.source.empty())
-        return false;
-    if (!HasContentPackage(service, installed.package.source)) return false;
+    if (!install.success) return fail(L"package install", install.message);
+    if (installed.package.kind != miaodesk::content::ContentKind::Widget)
+        return fail(L"package install", L"installed package kind is not widget");
+    if (installed.package.source.empty()) return fail(L"package install", L"installed source is empty");
+    if (!HasContentPackage(service, installed.package.source))
+        return fail(L"package catalog", L"installed package not listed");
 
     const std::wstring definitionId = Utf8ToWide(installed.package.id);
-    if (definitionId.empty()) return false;
+    if (definitionId.empty()) return fail(L"definition id", L"UTF-8 conversion failed");
 
     miaodesk::desktop::ContentWidgetCreateRequest request;
     request.definitionId = definitionId;
@@ -130,32 +137,43 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
 
     miaodesk::wallpaper::DesktopWidget created;
     const auto create = service.CreateContentWidget(request, &created);
-    if (!create.success || created.id.empty() || created.source.wstring() != installed.package.source)
-        return false;
+    if (!create.success) return fail(L"Content instance create", create.message);
+    if (created.id.empty()) return fail(L"Content instance create", L"created id is empty");
+    if (created.source.wstring() != installed.package.source)
+        return fail(L"Content instance create", L"created source does not match installed package");
     const auto contentSurface = WaitForWidgetSurfaceHealth(service, created.id);
-    if (!contentSurface || contentSurface->processId != runningHostPid) return false;
+    if (!contentSurface) return fail(L"Content surface", L"did not become ready/renderingHealthy");
+    if (contentSurface->processId != runningHostPid)
+        return fail(L"Content surface", L"surface was not created in the already-running host");
 
     miaodesk::content::ContentPackageUninstallResult blockedResult;
     const auto blocked = service.UninstallContentPackage(
         miaodesk::content::ContentKind::Widget, installed.package.source, &blockedResult);
-    if (blocked.success ||
-        blocked.message.find(L"仍被桌面实例引用") == std::wstring::npos ||
-        !HasContentPackage(service, installed.package.source))
-        return false;
+    if (blocked.success) return fail(L"protected uninstall", L"unexpectedly succeeded while instance exists");
+    if (blocked.message.find(L"仍被桌面实例引用") == std::wstring::npos)
+        return fail(L"protected uninstall", blocked.message);
+    if (!HasContentPackage(service, installed.package.source))
+        return fail(L"protected uninstall", L"package disappeared after rejected uninstall");
 
     const auto remove = service.RemoveWidget(created.id);
-    if (!remove.success) return false;
-    if (!WaitForWidgetSurfaceGone(service, created.id)) return false;
+    if (!remove.success) return fail(L"Content instance remove", remove.message);
+    if (!WaitForWidgetSurfaceGone(service, created.id))
+        return fail(L"Content surface remove", L"surface did not disappear");
 
     miaodesk::content::ContentPackageUninstallResult removedPackage;
     const auto uninstall = service.UninstallContentPackage(
         miaodesk::content::ContentKind::Widget, installed.package.source, &removedPackage);
-    if (!uninstall.success || removedPackage.package.source != installed.package.source ||
-        HasContentPackage(service, installed.package.source))
-        return false;
+    if (!uninstall.success) return fail(L"package uninstall", uninstall.message);
+    if (removedPackage.package.source != installed.package.source)
+        return fail(L"package uninstall", L"removed package source mismatch");
+    if (HasContentPackage(service, installed.package.source))
+        return fail(L"package uninstall", L"package still listed after uninstall");
 
     const auto warmupRemove = service.RemoveWidget(warmup.id);
-    return warmupRemove.success && WaitForWidgetSurfaceGone(service, warmup.id);
+    if (!warmupRemove.success) return fail(L"warmup remove", warmupRemove.message);
+    if (!WaitForWidgetSurfaceGone(service, warmup.id))
+        return fail(L"warmup surface remove", L"surface did not disappear");
+    return true;
 }
 
 bool RunContentWebReplacementContinuity() {

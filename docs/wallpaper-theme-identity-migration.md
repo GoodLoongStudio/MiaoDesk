@@ -97,6 +97,20 @@ When both a legacy record and canonical record describe the same managed package
 
 Reinstalling or replacing a package with the same `manifest.id` must update the existing canonical item instead of creating a new identity.
 
+## Wallpaper UI semantics gate
+
+The wallpaper UI must use one user-facing model for managed `.mdwall` content:
+
+- install action: `安装壁纸主题包`;
+- management surface: `壁纸主题包`;
+- package details: show canonical name, author, version, runtime and stable `content:<id>`;
+- apply action: applying a package must go through the normal `DesktopControlService` / wallpaper service path rather than writing assignments directly;
+- reinstall/replace: the UI must explain that the stable content id is retained and existing canonical references continue to point at the same logical theme;
+- uninstall: if a monitor assignment or other active reference still points at the package, uninstall must be rejected by the service layer rather than bypassed by the UI;
+- legacy built-ins: while compatibility mode is active, the UI may present canonical package metadata but must not silently rewrite existing `scene-*` monitor assignments.
+
+The UI must not expose a second concept such as “loose scene package” for the same managed `.mdwall` object. `scene.ini` is a renderer compatibility detail, not a separate install/manage identity.
+
 ## Unicode persistence gate
 
 Any migration code that touches Win32 Profile/INI storage must use the shared Unicode profile helper before reads or writes. A BOM-less profile file must never be allowed to make the active Windows ANSI code page determine persistence.
@@ -111,6 +125,17 @@ A useful sentinel is:
 
 The test must compare the exact reloaded wide strings and must fail on replacement text such as `????`.
 
+### Remaining Unicode audit inventory
+
+The wallpaper branch must not treat the already-converted stores as the end of the audit. In particular:
+
+- `WallpaperService::wallpaper.ini` persists scene selection plus image/Web/video paths and must be normalized through the shared Unicode profile helper before any `GetPrivateProfile*W` / `WritePrivateProfileStringW` access. Unicode file paths are user-visible state and are part of the project-level acceptance requirement.
+- `DesktopWidgetStore::widgets.ini` already creates a UTF-16LE manifest and has a Chinese title round-trip self-test, but its local BOM/create helpers should converge on the shared Unicode helper instead of remaining a parallel implementation.
+- settings/weather/other profile stores should be classified by whether they persist user-visible names, labels or paths; only numeric/internal-only profile data may be deprioritized.
+- a converted store is not considered covered until the test reloads from disk and compares exact Chinese text after a real save path.
+
+No profile path that persists user-visible text may rely on the active ANSI code page, even if the current machine is using a Chinese locale.
+
 ## Automated verification gates
 
 Before enabling persisted identity rewriting, Windows x64 CI should cover:
@@ -123,7 +148,8 @@ Before enabling persisted identity rewriting, Windows x64 CI should cover:
 6. reload resolves the canonical assignment successfully;
 7. package directory rename/reinstall with the same manifest id does not change assignment identity;
 8. missing/invalid canonical package leaves the legacy assignment untouched;
-9. duplicate legacy/canonical library records collapse without losing favorite/imported/last-used metadata.
+9. duplicate legacy/canonical library records collapse without losing favorite/imported/last-used metadata;
+10. wallpaper service state round-trips a non-ASCII image/Web/video path without `????` after the shared helper is wired into `wallpaper.ini`.
 
 Do not implement these checks by editing INI files behind the service/store APIs when an existing product path exists.
 
@@ -133,6 +159,7 @@ Before the migration can be enabled for users, verify on ARM64 Windows, includin
 
 - Chinese theme name and author render without `????`;
 - monitor friendly names and rule names render without `????`;
+- wallpaper file paths containing Chinese characters remain usable after restart;
 - existing `scene-*` assignments still apply before migration;
 - canonical assignments apply after explicit migration;
 - MiaoCloud, NeonCity, and MysticMoon layered visuals are unchanged;

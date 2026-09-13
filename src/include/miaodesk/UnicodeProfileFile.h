@@ -40,7 +40,7 @@ inline bool ReadExistingText(const std::filesystem::path& path, std::wstring* te
 
     std::ifstream input(path, std::ios::binary);
     if (!input) return false;
-    const std::string bytes(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     if (bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == 0xFF &&
         static_cast<unsigned char>(bytes[1]) == 0xFE) {
         *alreadyUtf16Le = true;

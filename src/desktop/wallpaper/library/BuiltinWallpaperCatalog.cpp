@@ -14,7 +14,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr std::array<BuiltinWallpaperDefinition, 3> kWallpapers{{
+// Runtime compatibility definitions keep the established scene-* identity.
+// FindBuiltinWallpaper()/LegacyBuiltinWallpaperId() use this table so existing
+// persisted monitor assignments and runtime lookups remain byte-for-byte stable.
+constexpr std::array<BuiltinWallpaperDefinition, 3> kRuntimeWallpapers{{
     {L"scene-aurora", L"aurora", L"aurora_flow", L"MiaoCloud.mdwall",
      L"content:com.goodloong.miaodesk.theme.miao-cloud",
      L"妙喵云境", L"云端妙喵 · 星光花瓣"},
@@ -22,6 +25,22 @@ constexpr std::array<BuiltinWallpaperDefinition, 3> kWallpapers{{
      L"content:com.goodloong.miaodesk.theme.neon-city",
      L"霓虹之城", L"未来都市 · 雨夜光轨"},
     {L"scene-grid", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
+     L"content:com.goodloong.miaodesk.theme.mystic-moon",
+     L"月影秘境", L"月湖秘境 · 萤火薄雾"},
+}};
+
+// Library/UI enumeration is canonical. The legacy runtime identity is still
+// available through FindBuiltinWallpaper() and LegacyBuiltinWallpaperId(). This
+// lets bootstrap/upsert stop creating new visible scene-* library rows without
+// rewriting any existing monitor assignment on disk.
+constexpr std::array<BuiltinWallpaperDefinition, 3> kLibraryWallpapers{{
+    {L"content:com.goodloong.miaodesk.theme.miao-cloud", L"aurora", L"aurora_flow", L"MiaoCloud.mdwall",
+     L"content:com.goodloong.miaodesk.theme.miao-cloud",
+     L"妙喵云境", L"云端妙喵 · 星光花瓣"},
+    {L"content:com.goodloong.miaodesk.theme.neon-city", L"neon", L"neon_flow", L"NeonCity.mdwall",
+     L"content:com.goodloong.miaodesk.theme.neon-city",
+     L"霓虹之城", L"未来都市 · 雨夜光轨"},
+    {L"content:com.goodloong.miaodesk.theme.mystic-moon", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
      L"content:com.goodloong.miaodesk.theme.mystic-moon",
      L"月影秘境", L"月湖秘境 · 萤火薄雾"},
 }};
@@ -90,11 +109,11 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
 
 std::span<const BuiltinWallpaperDefinition> BuiltinWallpapers() noexcept {
     PrepareUnicodeWallpaperLibrary();
-    return kWallpapers;
+    return kLibraryWallpapers;
 }
 
 const BuiltinWallpaperDefinition* FindBuiltinWallpaper(std::wstring_view key) noexcept {
-    for (const auto& wallpaper : kWallpapers) {
+    for (const auto& wallpaper : kRuntimeWallpapers) {
         if (Same(key, wallpaper.id) || Same(key, wallpaper.runtimeKey) ||
             Same(key, wallpaper.previewKey) || Same(key, wallpaper.contentSource)) {
             return &wallpaper;
@@ -102,7 +121,7 @@ const BuiltinWallpaperDefinition* FindBuiltinWallpaper(std::wstring_view key) no
     }
 
     // Compatibility aliases accepted by older AI/demo requests.
-    if (Same(key, L"ocean")) return &kWallpapers[2];
+    if (Same(key, L"ocean")) return &kRuntimeWallpapers[2];
     return nullptr;
 }
 
@@ -117,34 +136,48 @@ std::wstring_view LegacyBuiltinWallpaperId(std::wstring_view key) noexcept {
 }
 
 const BuiltinWallpaperDefinition& DefaultBuiltinWallpaper() noexcept {
-    return kWallpapers.front();
+    return kRuntimeWallpapers.front();
 }
 
 bool BuiltinWallpaperCatalogSelfTest() noexcept {
-    if (kWallpapers.size() != 3 || !UnicodeProfileRoundTripSelfTest()) return false;
-    for (std::size_t i = 0; i < kWallpapers.size(); ++i) {
-        const auto& item = kWallpapers[i];
-        if (item.id.empty() || item.runtimeKey.empty() || item.previewKey.empty() ||
-            item.packageName.empty() || item.contentSource.empty() || item.title.empty()) return false;
-        if (FindBuiltinWallpaper(item.id) != &item ||
-            FindBuiltinWallpaper(item.runtimeKey) != &item ||
-            FindBuiltinWallpaper(item.previewKey) != &item ||
-            FindBuiltinWallpaper(item.contentSource) != &item ||
-            CanonicalBuiltinWallpaperSource(item.id) != item.contentSource ||
-            CanonicalBuiltinWallpaperSource(item.contentSource) != item.contentSource ||
-            LegacyBuiltinWallpaperId(item.id) != item.id ||
-            LegacyBuiltinWallpaperId(item.contentSource) != item.id) return false;
-        for (std::size_t j = i + 1; j < kWallpapers.size(); ++j) {
-            if (Same(item.id, kWallpapers[j].id) ||
-                Same(item.runtimeKey, kWallpapers[j].runtimeKey) ||
-                Same(item.previewKey, kWallpapers[j].previewKey) ||
-                Same(item.contentSource, kWallpapers[j].contentSource)) return false;
+    if (kRuntimeWallpapers.size() != 3 || kLibraryWallpapers.size() != 3 ||
+        !UnicodeProfileRoundTripSelfTest()) return false;
+
+    for (std::size_t i = 0; i < kRuntimeWallpapers.size(); ++i) {
+        const auto& runtime = kRuntimeWallpapers[i];
+        const auto& library = kLibraryWallpapers[i];
+        if (runtime.id.empty() || runtime.runtimeKey.empty() || runtime.previewKey.empty() ||
+            runtime.packageName.empty() || runtime.contentSource.empty() || runtime.title.empty()) return false;
+        if (library.id != runtime.contentSource || library.contentSource != runtime.contentSource ||
+            library.runtimeKey != runtime.runtimeKey || library.previewKey != runtime.previewKey ||
+            library.packageName != runtime.packageName || library.title != runtime.title) return false;
+        if (FindBuiltinWallpaper(runtime.id) != &runtime ||
+            FindBuiltinWallpaper(runtime.runtimeKey) != &runtime ||
+            FindBuiltinWallpaper(runtime.previewKey) != &runtime ||
+            FindBuiltinWallpaper(runtime.contentSource) != &runtime ||
+            CanonicalBuiltinWallpaperSource(runtime.id) != runtime.contentSource ||
+            CanonicalBuiltinWallpaperSource(runtime.contentSource) != runtime.contentSource ||
+            LegacyBuiltinWallpaperId(runtime.id) != runtime.id ||
+            LegacyBuiltinWallpaperId(runtime.contentSource) != runtime.id) return false;
+        for (std::size_t j = i + 1; j < kRuntimeWallpapers.size(); ++j) {
+            if (Same(runtime.id, kRuntimeWallpapers[j].id) ||
+                Same(runtime.runtimeKey, kRuntimeWallpapers[j].runtimeKey) ||
+                Same(runtime.previewKey, kRuntimeWallpapers[j].previewKey) ||
+                Same(runtime.contentSource, kRuntimeWallpapers[j].contentSource)) return false;
         }
     }
-    return FindBuiltinWallpaper(L"ocean") == &kWallpapers[2] &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.miao-cloud") == &kWallpapers[0] &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.neon-city") == &kWallpapers[1] &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.mystic-moon") == &kWallpapers[2] &&
+
+    const auto libraryEntries = BuiltinWallpapers();
+    if (libraryEntries.size() != kLibraryWallpapers.size()) return false;
+    for (std::size_t i = 0; i < libraryEntries.size(); ++i) {
+        if (libraryEntries[i].id != kRuntimeWallpapers[i].contentSource ||
+            LegacyBuiltinWallpaperId(libraryEntries[i].id) != kRuntimeWallpapers[i].id) return false;
+    }
+
+    return FindBuiltinWallpaper(L"ocean") == &kRuntimeWallpapers[2] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.miao-cloud") == &kRuntimeWallpapers[0] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.neon-city") == &kRuntimeWallpapers[1] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.mystic-moon") == &kRuntimeWallpapers[2] &&
            CanonicalBuiltinWallpaperSource(L"unknown").empty() &&
            LegacyBuiltinWallpaperId(L"unknown").empty() &&
            FindBuiltinWallpaper(L"unknown") == nullptr;

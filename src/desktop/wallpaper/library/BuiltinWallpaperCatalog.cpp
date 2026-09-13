@@ -16,10 +16,13 @@ namespace fs = std::filesystem;
 
 constexpr std::array<BuiltinWallpaperDefinition, 3> kWallpapers{{
     {L"scene-aurora", L"aurora", L"aurora_flow", L"MiaoCloud.mdwall",
+     L"content:com.goodloong.miaodesk.theme.miao-cloud",
      L"妙喵云境", L"云端妙喵 · 星光花瓣"},
     {L"scene-neon", L"neon", L"neon_flow", L"NeonCity.mdwall",
+     L"content:com.goodloong.miaodesk.theme.neon-city",
      L"霓虹之城", L"未来都市 · 雨夜光轨"},
     {L"scene-grid", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
+     L"content:com.goodloong.miaodesk.theme.mystic-moon",
      L"月影秘境", L"月湖秘境 · 萤火薄雾"},
 }};
 
@@ -93,7 +96,7 @@ std::span<const BuiltinWallpaperDefinition> BuiltinWallpapers() noexcept {
 const BuiltinWallpaperDefinition* FindBuiltinWallpaper(std::wstring_view key) noexcept {
     for (const auto& wallpaper : kWallpapers) {
         if (Same(key, wallpaper.id) || Same(key, wallpaper.runtimeKey) ||
-            Same(key, wallpaper.previewKey)) {
+            Same(key, wallpaper.previewKey) || Same(key, wallpaper.contentSource)) {
             return &wallpaper;
         }
     }
@@ -112,17 +115,22 @@ bool BuiltinWallpaperCatalogSelfTest() noexcept {
     for (std::size_t i = 0; i < kWallpapers.size(); ++i) {
         const auto& item = kWallpapers[i];
         if (item.id.empty() || item.runtimeKey.empty() || item.previewKey.empty() ||
-            item.packageName.empty() || item.title.empty()) return false;
+            item.packageName.empty() || item.contentSource.empty() || item.title.empty()) return false;
         if (FindBuiltinWallpaper(item.id) != &item ||
             FindBuiltinWallpaper(item.runtimeKey) != &item ||
-            FindBuiltinWallpaper(item.previewKey) != &item) return false;
+            FindBuiltinWallpaper(item.previewKey) != &item ||
+            FindBuiltinWallpaper(item.contentSource) != &item) return false;
         for (std::size_t j = i + 1; j < kWallpapers.size(); ++j) {
             if (Same(item.id, kWallpapers[j].id) ||
                 Same(item.runtimeKey, kWallpapers[j].runtimeKey) ||
-                Same(item.previewKey, kWallpapers[j].previewKey)) return false;
+                Same(item.previewKey, kWallpapers[j].previewKey) ||
+                Same(item.contentSource, kWallpapers[j].contentSource)) return false;
         }
     }
     return FindBuiltinWallpaper(L"ocean") == &kWallpapers[2] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.miao-cloud") == &kWallpapers[0] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.neon-city") == &kWallpapers[1] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.mystic-moon") == &kWallpapers[2] &&
            FindBuiltinWallpaper(L"unknown") == nullptr;
 }
 

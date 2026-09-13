@@ -1,4 +1,6 @@
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <array>
 #include <cwctype>
@@ -23,9 +25,22 @@ bool Same(std::wstring_view left, std::wstring_view right) noexcept {
     return true;
 }
 
+void PrepareUnicodeWallpaperLibrary() {
+    // Get/WritePrivateProfileStringW still falls back to the system ANSI code
+    // page when an INI file has no Unicode BOM. On Western Windows locales that
+    // turns persisted Chinese titles into literal "????". Normalize the library
+    // manifest before the built-in catalog is upserted; UpsertScene then repairs
+    // any previously damaged built-in title from these canonical wide strings.
+    const auto root = paths::WallpaperLibraryRoot();
+    if (root.empty()) return;
+    std::wstring ignored;
+    text::EnsureUtf16LeProfileFile(root / L"library.ini", &ignored);
+}
+
 } // namespace
 
 std::span<const BuiltinWallpaperDefinition> BuiltinWallpapers() noexcept {
+    PrepareUnicodeWallpaperLibrary();
     return kWallpapers;
 }
 

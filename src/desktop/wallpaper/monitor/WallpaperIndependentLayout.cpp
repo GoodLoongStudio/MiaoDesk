@@ -288,6 +288,36 @@ bool SelfTestIndependentWallpaperResolution() {
     }
     ok = ok && !IndependentLayoutHasVideo(resolved) && !IndependentLayoutHasWeb(resolved);
 
+    // Canonical-library compatibility contract: the UI/library may retain only
+    // the canonical theme package while monitor-assignments.ini intentionally
+    // keeps the old scene-* identity. The exact miss must bridge through the
+    // library alias before runtime resolution, without mutating the assignment
+    // and without falling back to the global wallpaper.
+    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.miaodesk.theme.neon-city";
+    ok = ok && library.Remove(L"scene-neon", false, &error);
+    ok = ok && library.UpsertScene(kNeonCanonical, L"霓虹之城", &error);
+    bool canonicalAliasResolverCalled = false;
+    const fs::path canonicalNeonRoot = root / L"NeonCity.mdwall";
+    const auto canonicalAliasResolved = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kNeonCanonical) return std::nullopt;
+            canonicalAliasResolverCalled = true;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, canonicalNeonRoot};
+        });
+    ok = ok && canonicalAliasResolverCalled;
+    ok = ok && assignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    ok = ok && canonicalAliasResolved.size() == 1;
+    if (canonicalAliasResolved.size() == 1) {
+        ok = ok && canonicalAliasResolved[0].monitorId == L"monitor-b";
+        ok = ok && !canonicalAliasResolved[0].fallback;
+        ok = ok && canonicalAliasResolved[0].wallpaperId == kNeonCanonical;
+        ok = ok && canonicalAliasResolved[0].kind == ResolvedWallpaperKind::Scene;
+        ok = ok && canonicalAliasResolved[0].source == canonicalNeonRoot;
+        ok = ok && canonicalAliasResolved[0].region.left == 1920;
+        ok = ok && canonicalAliasResolved[0].region.right == 3840;
+    }
+
     // Replacement continuity contract: the stable content:<id> is authoritative
     // even when the WallpaperLibrary snapshot still advertises the old runtime.
     // First simulate a stale Scene snapshot after the installed package changed

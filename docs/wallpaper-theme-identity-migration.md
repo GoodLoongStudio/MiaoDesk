@@ -111,6 +111,19 @@ The wallpaper UI must use one user-facing model for managed `.mdwall` content:
 
 The UI must not expose a second concept such as “loose scene package” for the same managed `.mdwall` object. `scene.ini` is a renderer compatibility detail, not a separate install/manage identity.
 
+### Canonical Library/UI + legacy assignment compatibility contract
+
+During the compatibility phase, the runtime has two intentionally different identity surfaces and they must not be collapsed accidentally:
+
+- `WallpaperLibrary::Items()` / `Search()` and wallpaper package-management UI should expose one canonical item per managed `.mdwall`, using `content:<manifest.id>` as the visible/stable identity.
+- persisted monitor assignments may continue to contain `scene-aurora`, `scene-neon`, or `scene-grid` byte-for-byte.
+- assignment loading must not canonicalize or rewrite those values merely because an alias exists.
+- when Independent layout resolves an assigned id, `WallpaperLibrary::Find()` must try exact lookup first and only then resolve a known legacy built-in alias to the canonical library item.
+- if neither the exact id nor the canonical alias exists, the existing fallback path must remain intact; alias support must never turn a resolvable fallback into a hard miss.
+- built-in bootstrap/indexing must not re-insert a visible legacy `scene-*` library row after the canonical `.mdwall` package has already been indexed. Bootstrap may still use the legacy id for renderer/runtime compatibility, but the Library/UI identity must remain canonical.
+
+Regression coverage for this phase must construct the real mismatch that upgrades can produce: a canonical-only library plus a persisted legacy monitor assignment. It must prove that Independent layout resolves the canonical package, does not fall back, and leaves the persisted legacy assignment unchanged.
+
 ## Unicode persistence gate
 
 Any migration code that touches Win32 Profile/INI storage must use the shared Unicode profile helper before reads or writes. A BOM-less profile file must never be allowed to make the active Windows ANSI code page determine persistence.

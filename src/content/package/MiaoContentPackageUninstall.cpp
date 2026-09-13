@@ -1,5 +1,6 @@
 #include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -64,6 +65,11 @@ bool GlobalWebSelectionUsesPackage(
     const fs::path config = stateRoot / L"wallpaper.ini";
     if (configPath) *configPath = config;
 
+    // Uninstall can run independently of WallpaperService. Normalize the shared
+    // profile here as well so a Chinese/non-ASCII Web entry path never falls
+    // back through the active Windows ANSI code page during uninstall/reinstall.
+    if (!text::EnsureUtf16LeProfileFile(config, nullptr)) return false;
+
     const std::wstring scene = ReadWallpaperProfile(config, L"Scene");
     if (_wcsicmp(scene.c_str(), L"web") != 0) return false;
     const std::wstring source = ReadWallpaperProfile(config, L"Image");
@@ -79,6 +85,7 @@ bool GlobalWebSelectionUsesPackage(
 
 void ReconcileGlobalWebSelectionAfterUninstall(const fs::path& config, bool preserveStableSelection) {
     if (config.empty()) return;
+    if (!text::EnsureUtf16LeProfileFile(config, nullptr)) return;
     WritePrivateProfileStringW(L"Wallpaper", L"Image", L"", config.c_str());
     if (!preserveStableSelection) {
         WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());

@@ -16,9 +16,11 @@
 #include "miaodesk/DesktopAiSettingsPage.h"
 #include "miaodesk/LayeredSceneRenderer.h"
 #include "miaodesk/PerformanceUiAdapter.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <algorithm>
 #include <cwchar>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -89,6 +91,15 @@ bool IsPerformanceKey(LPCWSTR key) {
         if (_wcsicmp(key, candidate) == 0) return true;
     }
     return false;
+}
+
+void EnsureLegacyProfileUnicode(LPCWSTR fileName) {
+    if (!fileName || !*fileName) return;
+    // WallpaperEngine.cpp still owns some compatibility reads/writes while the
+    // product is migrating to service APIs. Make every one of those Profile API
+    // calls Unicode-safe so Chinese paths/diagnostics cannot regress depending
+    // on the machine's active ANSI code page.
+    miaodesk::text::EnsureUtf16LeProfileFile(std::filesystem::path(fileName), nullptr);
 }
 
 DWORD CopyProfileValue(std::wstring_view value, LPWSTR output, DWORD size) {
@@ -165,6 +176,7 @@ bool ApplyPerformanceValue(miaodesk::wallpaper::PerformanceConfig* config, LPCWS
 
 UINT WINAPI MiaoDeskGetPrivateProfileIntW(
     LPCWSTR section, LPCWSTR key, INT fallback, LPCWSTR fileName) {
+    EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
         miaodesk::wallpaper::PerformanceUiAdapter adapter;
         miaodesk::wallpaper::PerformanceConfig config;
@@ -178,6 +190,7 @@ UINT WINAPI MiaoDeskGetPrivateProfileIntW(
 
 DWORD WINAPI MiaoDeskGetPrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR fallback, LPWSTR output, DWORD size, LPCWSTR fileName) {
+    EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
         miaodesk::wallpaper::PerformanceUiAdapter adapter;
         miaodesk::wallpaper::PerformanceConfig config;
@@ -191,6 +204,7 @@ DWORD WINAPI MiaoDeskGetPrivateProfileStringW(
 
 BOOL WINAPI MiaoDeskWritePrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR value, LPCWSTR fileName) {
+    EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key) && value) {
         miaodesk::wallpaper::PerformanceUiAdapter adapter;
         miaodesk::wallpaper::PerformanceConfig config;

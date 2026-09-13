@@ -1,4 +1,5 @@
 #include "miaodesk/WallpaperPackage.h"
+#include "miaodesk/MiaoContentPackage.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -166,18 +167,44 @@ bool IsInside(const fs::path& candidate, const fs::path& root) {
     return childText.size() >= prefix.size() && childText.compare(0, prefix.size(), prefix) == 0;
 }
 
-bool WriteManifest(const fs::path& path, const WallpaperPackageManifest& manifest) {
+std::string MakeGeneratedThemeId() {
+    GUID guid{};
+    if (FAILED(CoCreateGuid(&guid))) {
+        return "com.goodloong.miaodesk.theme.web.fallback-" +
+               std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
+    }
+    char suffix[64]{};
+    sprintf_s(suffix, "%08lx%04x%04x%02x%02x%02x%02x%02x%02x%02x%02x",
+              static_cast<unsigned long>(guid.Data1),
+              static_cast<unsigned>(guid.Data2),
+              static_cast<unsigned>(guid.Data3),
+              static_cast<unsigned>(guid.Data4[0]), static_cast<unsigned>(guid.Data4[1]),
+              static_cast<unsigned>(guid.Data4[2]), static_cast<unsigned>(guid.Data4[3]),
+              static_cast<unsigned>(guid.Data4[4]), static_cast<unsigned>(guid.Data4[5]),
+              static_cast<unsigned>(guid.Data4[6]), static_cast<unsigned>(guid.Data4[7]));
+    return std::string("com.goodloong.miaodesk.theme.web.") + suffix;
+}
+
+bool WriteManifest(const fs::path& path, const WallpaperPackageManifest& manifest,
+                   std::string_view stableId) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) return false;
+    const std::string runtime = WideToUtf8(WallpaperPackage::TypeKey(manifest.type));
     output << "{\n"
            << "  \"schema\": " << manifest.schema << ",\n"
-           << "  \"type\": \"" << WideToUtf8(WallpaperPackage::TypeKey(manifest.type)) << "\",\n"
+           << "  \"id\": \"" << stableId << "\",\n"
+           << "  \"name\": \"" << EscapeJson(manifest.title) << "\",\n"
            << "  \"title\": \"" << EscapeJson(manifest.title) << "\",\n"
            << "  \"author\": \"" << EscapeJson(manifest.author) << "\",\n"
+           << "  \"version\": \"1.0.0\",\n"
+           << "  \"kind\": \"wallpaper\",\n"
+           << "  \"runtime\": \"" << runtime << "\",\n"
+           << "  \"type\": \"" << runtime << "\",\n"
            << "  \"entry\": \"" << EscapeJson(manifest.entry.generic_wstring()) << "\",\n"
            << "  \"provenance\": \"" << EscapeJson(manifest.provenance) << "\",\n"
            << "  \"fps_cap\": " << manifest.fpsCap << ",\n"
-           << "  \"audio\": " << (manifest.audio ? "true" : "false") << "\n"
+           << "  \"audio\": " << (manifest.audio ? "true" : "false") << ",\n"
+           << "  \"capabilities\": [\"theme.wallpaper\"]\n"
            << "}\n";
     return static_cast<bool>(output);
 }
@@ -250,8 +277,8 @@ bool WallpaperPackage::CreateWeb(const fs::path& packageDirectory, std::wstring 
     manifest.provenance = std::move(provenance);
     manifest.fpsCap = 30;
     manifest.audio = false;
-    if (!WriteManifest(packageDirectory / L"manifest.json", manifest)) {
-        SetError(error, L"无法写入壁纸包 manifest.json");
+    if (!WriteManifest(packageDirectory / L"manifest.json", manifest, MakeGeneratedThemeId())) {
+        SetError(error, L"无法写入壁纸主题包 manifest.json");
         return false;
     }
     return Validate(packageDirectory, nullptr, error);
@@ -326,11 +353,19 @@ bool WallpaperPackage::SelfTest() {
         (L"MiaoDesk-tdwall-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".mdwall");
     fs::remove_all(root, ec);
     std::wstring error;
-    const bool created = CreateWeb(root, L"Self Test", "<!doctype html><html><body>MiaoDesk</body></html>",
-                                   L"self-test", L"MiaoDesk", &error);
+    const bool created = CreateWeb(root, L"中文 Web 主题", "<!doctype html><html><body>MiaoDesk</body></html>",
+                                   L"self-test", L"妙喵", &error);
     WallpaperPackageManifest manifest;
     bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&
-                 manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";
+                 manifest.entry == fs::path(L"index.html") && manifest.title == L"中文 Web 主题" &&
+                 manifest.author == L"妙喵";
+
+    content::LoadedMiaoContentPackage canonicalWeb;
+    valid = valid && content::MiaoContentPackage::Load(root, &canonicalWeb, &error) &&
+            canonicalWeb.manifest.kind == content::ContentKind::Wallpaper &&
+            canonicalWeb.manifest.runtime == content::ContentRuntimeKind::Web &&
+            canonicalWeb.manifest.name == u8"中文 Web 主题" &&
+            canonicalWeb.manifest.author == u8"妙喵";
 
     // Canonical Content theme manifests use a JSON entry. The legacy layered
     // renderer can coexist during migration through legacy_entry, so validate

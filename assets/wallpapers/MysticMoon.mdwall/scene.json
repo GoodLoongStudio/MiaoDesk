@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "scene://builtin/mystic-moon",
+  "kind": "wallpaper",
+  "profile": "wallpaper",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Root",
+      "parentId": "",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://root/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [],
+  "inputs": [],
+  "bindings": [],
+  "animations": [],
+  "postProcesses": []
+}

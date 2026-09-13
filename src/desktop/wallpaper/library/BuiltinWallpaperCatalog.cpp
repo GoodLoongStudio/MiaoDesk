@@ -106,6 +106,16 @@ const BuiltinWallpaperDefinition* FindBuiltinWallpaper(std::wstring_view key) no
     return nullptr;
 }
 
+std::wstring_view CanonicalBuiltinWallpaperSource(std::wstring_view key) noexcept {
+    const auto* wallpaper = FindBuiltinWallpaper(key);
+    return wallpaper ? wallpaper->contentSource : std::wstring_view{};
+}
+
+std::wstring_view LegacyBuiltinWallpaperId(std::wstring_view key) noexcept {
+    const auto* wallpaper = FindBuiltinWallpaper(key);
+    return wallpaper ? wallpaper->id : std::wstring_view{};
+}
+
 const BuiltinWallpaperDefinition& DefaultBuiltinWallpaper() noexcept {
     return kWallpapers.front();
 }
@@ -119,7 +129,11 @@ bool BuiltinWallpaperCatalogSelfTest() noexcept {
         if (FindBuiltinWallpaper(item.id) != &item ||
             FindBuiltinWallpaper(item.runtimeKey) != &item ||
             FindBuiltinWallpaper(item.previewKey) != &item ||
-            FindBuiltinWallpaper(item.contentSource) != &item) return false;
+            FindBuiltinWallpaper(item.contentSource) != &item ||
+            CanonicalBuiltinWallpaperSource(item.id) != item.contentSource ||
+            CanonicalBuiltinWallpaperSource(item.contentSource) != item.contentSource ||
+            LegacyBuiltinWallpaperId(item.id) != item.id ||
+            LegacyBuiltinWallpaperId(item.contentSource) != item.id) return false;
         for (std::size_t j = i + 1; j < kWallpapers.size(); ++j) {
             if (Same(item.id, kWallpapers[j].id) ||
                 Same(item.runtimeKey, kWallpapers[j].runtimeKey) ||
@@ -131,6 +145,8 @@ bool BuiltinWallpaperCatalogSelfTest() noexcept {
            FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.miao-cloud") == &kWallpapers[0] &&
            FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.neon-city") == &kWallpapers[1] &&
            FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.mystic-moon") == &kWallpapers[2] &&
+           CanonicalBuiltinWallpaperSource(L"unknown").empty() &&
+           LegacyBuiltinWallpaperId(L"unknown").empty() &&
            FindBuiltinWallpaper(L"unknown") == nullptr;
 }
 

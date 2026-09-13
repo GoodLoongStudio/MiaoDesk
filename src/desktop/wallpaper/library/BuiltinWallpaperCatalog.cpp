@@ -2,6 +2,8 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/UnicodeProfileFile.h"
 
+#include <windows.h>
+
 #include <array>
 #include <cwctype>
 #include <filesystem>

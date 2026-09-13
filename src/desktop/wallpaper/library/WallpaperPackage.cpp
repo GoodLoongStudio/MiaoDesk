@@ -364,8 +364,8 @@ bool WallpaperPackage::SelfTest() {
     valid = valid && content::MiaoContentPackage::Load(root, &canonicalWeb, &error) &&
             canonicalWeb.manifest.kind == content::ContentKind::Wallpaper &&
             canonicalWeb.manifest.runtime == content::ContentRuntimeKind::Web &&
-            canonicalWeb.manifest.name == u8"中文 Web 主题" &&
-            canonicalWeb.manifest.author == u8"妙喵";
+            canonicalWeb.manifest.name == "中文 Web 主题" &&
+            canonicalWeb.manifest.author == "妙喵";
 
     // Canonical Content theme manifests use a JSON entry. The legacy layered
     // renderer can coexist during migration through legacy_entry, so validate

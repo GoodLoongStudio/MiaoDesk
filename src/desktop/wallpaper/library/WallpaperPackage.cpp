@@ -278,7 +278,9 @@ bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPacka
     parsed.type = ParseType(Utf8ToWide(ExtractJsonString(json, "type")));
     parsed.title = Utf8ToWide(ExtractJsonString(json, "title"));
     parsed.author = Utf8ToWide(ExtractJsonString(json, "author"));
-    parsed.entry = Utf8ToWide(ExtractJsonString(json, "entry"));
+    const std::wstring canonicalEntry = Utf8ToWide(ExtractJsonString(json, "entry"));
+    const std::wstring legacyEntry = Utf8ToWide(ExtractJsonString(json, "legacy_entry"));
+    parsed.entry = legacyEntry.empty() ? fs::path(canonicalEntry) : fs::path(legacyEntry);
     parsed.provenance = Utf8ToWide(ExtractJsonString(json, "provenance"));
     parsed.fpsCap = ExtractJsonInt(json, "fps_cap", 30);
     parsed.audio = ExtractJsonBool(json, "audio", false);
@@ -327,9 +329,52 @@ bool WallpaperPackage::SelfTest() {
     const bool created = CreateWeb(root, L"Self Test", "<!doctype html><html><body>MiaoDesk</body></html>",
                                    L"self-test", L"MiaoDesk", &error);
     WallpaperPackageManifest manifest;
-    const bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&
-                       manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";
+    bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&
+                 manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";
+
+    // Canonical Content theme manifests use a JSON entry. The legacy layered
+    // renderer can coexist during migration through legacy_entry, so validate
+    // that it still resolves the established scene.ini without changing the
+    // canonical package contract consumed by MiaoContentPackage.
+    const fs::path dual = fs::temp_directory_path() /
+        (L"MiaoDesk-dual-theme-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+         std::to_wstring(GetTickCount64()) + L".mdwall");
+    fs::remove_all(dual, ec);
+    fs::create_directories(dual, ec);
+    if (!ec) {
+        std::ofstream json(dual / L"manifest.json", std::ios::binary | std::ios::trunc);
+        json << R"JSON({
+  "schema": 1,
+  "id": "com.goodloong.selftest.theme",
+  "name": "中文主题",
+  "title": "中文主题",
+  "author": "MiaoDesk",
+  "version": "1.0.0",
+  "kind": "wallpaper",
+  "runtime": "scene",
+  "type": "scene",
+  "entry": "scene.json",
+  "legacy_entry": "scene.ini",
+  "capabilities": ["theme.wallpaper"]
+})JSON";
+        json.close();
+        std::ofstream sceneJson(dual / L"scene.json", std::ios::binary | std::ios::trunc);
+        sceneJson << R"JSON({"schema":1,"id":"scene://dual-theme"})JSON";
+        sceneJson.close();
+        std::ofstream sceneIni(dual / L"scene.ini", std::ios::binary | std::ios::trunc);
+        sceneIni << "[Scene]\nlayer_count=0\n";
+        sceneIni.close();
+        WallpaperPackageManifest dualManifest;
+        valid = valid && Validate(dual, &dualManifest, &error) &&
+                dualManifest.type == WallpaperPackageType::Scene &&
+                dualManifest.title == L"中文主题" &&
+                dualManifest.entry == fs::path(L"scene.ini");
+    } else {
+        valid = false;
+    }
+
     fs::remove_all(root, ec);
+    fs::remove_all(dual, ec);
     return valid;
 }
 

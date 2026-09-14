@@ -83,15 +83,21 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
     std::error_code ec;
     const fs::path tempRoot = fs::temp_directory_path(ec);
     if (ec || tempRoot.empty()) return false;
+    // Exercise the filesystem boundary too: a Unicode profile path must remain
+    // valid on Western Windows code pages just like Chinese wallpaper paths do.
     const fs::path path = tempRoot /
-        (L"MiaoDesk-UnicodeProfile-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"MiaoDesk-UnicodeProfile-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()) + L".ini");
     fs::remove(path, ec);
 
     {
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
         if (!output) return false;
-        output << "[Theme]\nTitle=中文主题标题\n";
+        // Explicit UTF-8 bytes keep the self-test independent from the compiler
+        // execution character set and the host Windows ANSI code page.
+        constexpr char kUtf8Seed[] =
+            "[Theme]\nTitle=\xE4\xB8\xAD\xE6\x96\x87\xE4\xB8\xBB\xE9\xA2\x98\xE6\xA0\x87\xE9\xA2\x98\n";
+        output.write(kUtf8Seed, static_cast<std::streamsize>(sizeof(kUtf8Seed) - 1));
         if (!output.good()) {
             output.close();
             fs::remove(path, ec);
@@ -105,15 +111,31 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
         return false;
     }
 
+    // The Win32 Profile API treats a BOM-less file as ANSI. Lock the storage
+    // contract itself so later refactors cannot accidentally preserve text in
+    // memory while regressing the on-disk encoding.
+    {
+        std::ifstream input(path, std::ios::binary);
+        unsigned char bom[2]{};
+        input.read(reinterpret_cast<char*>(bom), 2);
+        if (!input || bom[0] != 0xFF || bom[1] != 0xFE) {
+            input.close();
+            fs::remove(path, ec);
+            return false;
+        }
+    }
+
     wchar_t buffer[128]{};
     constexpr DWORD bufferCount = static_cast<DWORD>(sizeof(buffer) / sizeof(buffer[0]));
     GetPrivateProfileStringW(L"Theme", L"Title", L"", buffer, bufferCount, path.c_str());
     bool ok = std::wstring_view(buffer) == L"中文主题标题";
-    ok = WritePrivateProfileStringW(L"Theme", L"Author", L"妙喵作者", path.c_str()) != FALSE && ok;
+
+    // Exercise Unicode user text in both values and Profile section/key names.
+    ok = WritePrivateProfileStringW(L"主题", L"作者", L"妙喵作者 · Grüße", path.c_str()) != FALSE && ok;
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
     buffer[0] = L'\0';
-    GetPrivateProfileStringW(L"Theme", L"Author", L"", buffer, bufferCount, path.c_str());
-    ok = std::wstring_view(buffer) == L"妙喵作者" && ok;
+    GetPrivateProfileStringW(L"主题", L"作者", L"", buffer, bufferCount, path.c_str());
+    ok = std::wstring_view(buffer) == L"妙喵作者 · Grüße" && ok;
 
     fs::remove(path, ec);
     return ok;

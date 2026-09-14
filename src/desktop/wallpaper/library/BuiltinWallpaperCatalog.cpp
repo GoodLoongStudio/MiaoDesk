@@ -137,6 +137,16 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
     GetPrivateProfileStringW(L"主题", L"作者", L"", buffer, bufferCount, path.c_str());
     ok = std::wstring_view(buffer) == L"妙喵作者 · Grüße" && ok;
 
+    // User wallpaper paths are persisted through the same Profile API. Include
+    // Chinese, German and a non-BMP character so the self-test catches any
+    // future ACP conversion or UTF-16 surrogate truncation in path handling.
+    constexpr wchar_t kUnicodeWallpaperPath[] = L"C:\\用户\\壁纸\\Grüße\\月亮\U0001F319.mdwall";
+    ok = WritePrivateProfileStringW(L"主题", L"路径", kUnicodeWallpaperPath, path.c_str()) != FALSE && ok;
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
+    buffer[0] = L'\0';
+    GetPrivateProfileStringW(L"主题", L"路径", L"", buffer, bufferCount, path.c_str());
+    ok = std::wstring_view(buffer) == kUnicodeWallpaperPath && ok;
+
     fs::remove(path, ec);
     return ok;
 }

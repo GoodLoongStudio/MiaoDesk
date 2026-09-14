@@ -1,6 +1,7 @@
 #include "miaodesk/ContentPackageManagerDialog.h"
 
 #include "miaodesk/DesktopControlService.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 
 #include <shellapi.h>
 
@@ -42,6 +43,24 @@ const wchar_t* RuntimeText(content::ContentRuntimeKind runtime) noexcept {
     case content::ContentRuntimeKind::Web: return L"Web";
     }
     return L"Unknown";
+}
+
+bool HasCanonicalContentIdentity(const content::ManagedContentPackageInfo& package) {
+    if (package.id.empty() || package.source.empty()) return false;
+    std::string parsedId;
+    if (!content::MiaoContentPackageManager::ParseSource(package.source, &parsedId)) return false;
+    return parsedId == package.id &&
+           package.source == content::MiaoContentPackageManager::MakeSource(package.id);
+}
+
+bool VisibleInPackageManager(const content::ManagedContentPackageInfo& package,
+                             content::ContentKind selectedKind) {
+    if (package.kind != selectedKind) return false;
+    // Wallpaper theme management is canonical-package-only. Legacy scene-* identities
+    // remain runtime/upgrade compatibility state and must not reappear as a second UI row.
+    if (selectedKind == content::ContentKind::Wallpaper)
+        return HasCanonicalContentIdentity(package);
+    return true;
 }
 
 struct DialogState {
@@ -192,7 +211,7 @@ struct DialogState {
 
         packages.clear();
         for (auto& package : all)
-            if (package.kind == kind) packages.push_back(std::move(package));
+            if (VisibleInPackageManager(package, kind)) packages.push_back(std::move(package));
 
         SendMessageW(list, LB_RESETCONTENT, 0, 0);
         int selectedIndex = -1;

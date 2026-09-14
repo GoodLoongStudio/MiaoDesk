@@ -225,23 +225,28 @@ std::optional<std::size_t> WallpaperMonitorAssignments::FindIndex(std::wstring_v
 bool WallpaperMonitorAssignments::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-MonitorAssignments-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-MonitorAssignments-SelfTest-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
-    const fs::path storage = root / L"assignments.ini";
+    // Exercise both Unicode filesystem paths and user-visible monitor text. The
+    // legacy shipped assignment must round-trip byte-for-byte as scene-*; this
+    // storage layer never canonicalizes it to content:<id>.
+    const fs::path storage = root / L"配置-Grüße" / L"显示器-assignments.ini";
     WallpaperMonitorAssignments assignments(storage);
     std::wstring error;
     bool ok = assignments.Load(&error);
-    ok = ok && assignments.AssignById(L"显示器-A", L"wallpaper-one", L"主显示器 中文", &error);
+    ok = ok && assignments.AssignById(L"显示器-A", L"scene-neon", L"主显示器 中文 · Grüße", &error);
     ok = ok && assignments.Items().size() == 1;
-    ok = ok && assignments.WallpaperIdFor(L"显示器-A") == std::optional<std::wstring>(L"wallpaper-one");
+    ok = ok && assignments.WallpaperIdFor(L"显示器-A") == std::optional<std::wstring>(L"scene-neon");
 
     WallpaperMonitorAssignments unicodeReloaded(storage);
     ok = ok && unicodeReloaded.Load(&error);
     ok = ok && unicodeReloaded.Items().size() == 1;
     ok = ok && unicodeReloaded.Items()[0].monitorId == L"显示器-A";
-    ok = ok && unicodeReloaded.Items()[0].lastFriendlyName == L"主显示器 中文";
+    ok = ok && unicodeReloaded.Items()[0].wallpaperId == L"scene-neon";
+    ok = ok && unicodeReloaded.Items()[0].lastFriendlyName == L"主显示器 中文 · Grüße";
+    ok = ok && unicodeReloaded.WallpaperIdFor(L"显示器-A") == std::optional<std::wstring>(L"scene-neon");
 
     // A second target replaces the first one. This is the key regression check
     // for "pick one screen => affect only that screen".

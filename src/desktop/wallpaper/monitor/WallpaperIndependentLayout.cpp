@@ -360,6 +360,32 @@ bool SelfTestIndependentWallpaperResolution() {
         ok = ok && staleAliasResolved[0].source == staleCanonicalNeonRoot;
     }
 
+    // The stale assignment bridge must stay narrower than the catalog's broad
+    // compatibility aliases. A runtime key may resolve through normal catalog
+    // lookup when a Library row exists, but with an empty stale snapshot it must
+    // not be promoted to content:<id>; only the exact shipped scene-* id can do
+    // that. This prevents a compatibility key from becoming a migration route.
+    ok = ok && assignments.Assign(topology.monitors[1], L"neon", &error);
+    bool broadAliasResolverCalled = false;
+    const auto broadAliasResolved = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id == kNeonCanonical) {
+                broadAliasResolverCalled = true;
+                return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, staleCanonicalNeonRoot};
+            }
+            return std::nullopt;
+        });
+    ok = ok && !broadAliasResolverCalled;
+    ok = ok && broadAliasResolved.size() == 1;
+    if (broadAliasResolved.size() == 1) {
+        ok = ok && broadAliasResolved[0].fallback;
+        ok = ok && broadAliasResolved[0].wallpaperId == L"neon";
+    }
+    WallpaperMonitorAssignments persistedBroadAliasAssignments(root / L"assignments.ini");
+    ok = ok && persistedBroadAliasAssignments.Load(&error);
+    ok = ok && persistedBroadAliasAssignments.WallpaperIdFor(topology.monitors[1]) == L"neon";
+
     // Replacement continuity contract: the stable content:<id> is authoritative
     // even when the WallpaperLibrary snapshot still advertises the old runtime.
     // First simulate a stale Scene snapshot after the installed package changed

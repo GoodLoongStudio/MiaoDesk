@@ -1,5 +1,6 @@
 #include "miaodesk/ContentPackageManagerDialog.h"
 #include "miaodesk/DesktopControlService.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
@@ -65,6 +66,14 @@ const wchar_t* RuntimeLabel(content::ContentRuntimeKind runtime) noexcept {
     case content::ContentRuntimeKind::Web: return L"Web";
     }
     return L"Unknown";
+}
+
+bool HasCanonicalContentIdentity(const content::ManagedContentPackageInfo& package) {
+    if (package.id.empty() || package.source.empty()) return false;
+    std::string parsedId;
+    if (!content::MiaoContentPackageManager::ParseSource(package.source, &parsedId)) return false;
+    return parsedId == package.id &&
+           package.source == content::MiaoContentPackageManager::MakeSource(package.id);
 }
 
 bool IsPackageDirectory(const fs::path& path, content::ContentKind* kind = nullptr) {
@@ -196,6 +205,14 @@ void IndexInstalledWallpaper() {
 
 void MaybeAssignWallpaperToPrimary(HWND owner,
                                    const content::ManagedContentPackageInfo& package) {
+    if (!HasCanonicalContentIdentity(package)) {
+        miaodesk::log::Warn(L"ContentPackageUI",
+                            L"拒绝应用非 canonical 壁纸主题包 identity: " + package.source);
+        MessageBoxW(owner,
+                    L"壁纸主题包身份不是 canonical content:<id>，已拒绝应用到显示器。",
+                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+        return;
+    }
     if (package.runtime != content::ContentRuntimeKind::Scene &&
         package.runtime != content::ContentRuntimeKind::Web) return;
     if (MessageBoxW(owner, L"壁纸主题包已安装。是否立即应用到主显示器？",
@@ -244,6 +261,14 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
             std::wstring(KindLabel(inspected.kind)) + L"”，这里需要“" +
             KindLabel(expectedKind) + L"”。";
         MessageBoxW(owner, message.c_str(), L"MiaoDesk 内容包", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    if (expectedKind == content::ContentKind::Wallpaper && !HasCanonicalContentIdentity(inspected)) {
+        miaodesk::log::Warn(L"ContentPackageUI",
+                            L"拒绝安装非 canonical 壁纸主题包 identity: " + inspected.source);
+        MessageBoxW(owner,
+                    L"壁纸主题包必须使用 canonical content:<manifest.id> 身份，当前包已拒绝安装。",
+                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
         return;
     }
 
@@ -299,6 +324,15 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
     miaodesk::log::Info(L"ContentPackageUI", std::wstring(completedAction) + installed.package.source);
 
     if (expectedKind == content::ContentKind::Wallpaper) {
+        if (installed.package.kind != content::ContentKind::Wallpaper ||
+            !HasCanonicalContentIdentity(installed.package)) {
+            miaodesk::log::Warn(L"ContentPackageUI",
+                                L"壁纸主题包安装后 canonical identity 校验失败: " + installed.package.source);
+            MessageBoxW(owner,
+                        L"壁纸主题包安装后的 canonical identity 校验失败，已停止索引和应用。",
+                        L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+            return;
+        }
         IndexInstalledWallpaper();
         NudgeWallpaperList(owner);
         if (!replacing) MaybeAssignWallpaperToPrimary(owner, installed.package);

@@ -21,6 +21,12 @@ struct BuiltinWallpaperDefinition {
 std::span<const BuiltinWallpaperDefinition> BuiltinWallpapers() noexcept;
 const BuiltinWallpaperDefinition* FindBuiltinWallpaper(std::wstring_view key) noexcept;
 
+// Exact persisted legacy identity guard. Unlike FindBuiltinWallpaper(), this
+// intentionally does not accept runtime keys, preview keys, canonical content
+// ids, or compatibility aliases. Destructive legacy-library cleanup must use
+// this boundary so only known shipped scene-* rows are eligible for collapse.
+const BuiltinWallpaperDefinition* FindLegacyBuiltinWallpaper(std::wstring_view key) noexcept;
+
 // Resolve aliases without mutating persisted user state. These helpers are the
 // compatibility boundary for code that needs canonical package identity while
 // legacy scene-* assignments are still supported.

@@ -101,6 +101,8 @@ jobs:
           while ($true) {
             try {
               Write-Host "Running Widget lifecycle smoke attempt $attempt/2."
+              Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Milliseconds 750
               & .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
               if ($LASTEXITCODE -ne 0) { throw "Widget lifecycle smoke exited with code $LASTEXITCODE." }
               break

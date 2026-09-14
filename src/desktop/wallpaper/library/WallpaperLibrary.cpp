@@ -736,7 +736,8 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && legacyNeonAlias->title == L"霓虹之城";
     }
     ok = ok && library.Search(L"妙喵云境").empty();
-    ok = ok && std::none_of(library.Search(L"").begin(), library.Search(L"").end(), [](const auto& item) {
+    const auto visibleInitial = library.Search(L"");
+    ok = ok && std::none_of(visibleInitial.begin(), visibleInitial.end(), [](const auto& item) {
         return FindLegacyBuiltinWallpaper(item.id) != nullptr;
     });
 

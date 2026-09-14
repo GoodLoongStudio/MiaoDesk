@@ -307,6 +307,9 @@ bool SelfTestIndependentWallpaperResolution() {
         });
     ok = ok && canonicalAliasResolverCalled;
     ok = ok && assignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    WallpaperMonitorAssignments persistedAliasAssignments(root / L"assignments.ini");
+    ok = ok && persistedAliasAssignments.Load(&error);
+    ok = ok && persistedAliasAssignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
     ok = ok && canonicalAliasResolved.size() == 1;
     if (canonicalAliasResolved.size() == 1) {
         ok = ok && canonicalAliasResolved[0].monitorId == L"monitor-b";

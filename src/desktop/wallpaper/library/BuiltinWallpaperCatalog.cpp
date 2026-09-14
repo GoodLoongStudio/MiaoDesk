@@ -53,6 +53,20 @@ bool Same(std::wstring_view left, std::wstring_view right) noexcept {
     return true;
 }
 
+bool AcceptedIdentityCollision(const BuiltinWallpaperDefinition& left,
+                               const BuiltinWallpaperDefinition& right) noexcept {
+    const std::array<std::wstring_view, 4> leftKeys{
+        left.id, left.runtimeKey, left.previewKey, left.contentSource};
+    const std::array<std::wstring_view, 4> rightKeys{
+        right.id, right.runtimeKey, right.previewKey, right.contentSource};
+    for (const auto leftKey : leftKeys) {
+        for (const auto rightKey : rightKeys) {
+            if (Same(leftKey, rightKey)) return true;
+        }
+    }
+    return false;
+}
+
 void PrepareUnicodeWallpaperLibrary() {
     // Get/WritePrivateProfileStringW still falls back to the system ANSI code
     // page when an INI file has no Unicode BOM. On Western Windows locales that
@@ -167,14 +181,15 @@ bool BuiltinWallpaperCatalogSelfTest() noexcept {
             FindLegacyBuiltinWallpaper(runtime.previewKey) != nullptr ||
             FindLegacyBuiltinWallpaper(runtime.contentSource) != nullptr ||
             CanonicalBuiltinWallpaperSource(runtime.id) != runtime.contentSource ||
+            CanonicalBuiltinWallpaperSource(runtime.runtimeKey) != runtime.contentSource ||
+            CanonicalBuiltinWallpaperSource(runtime.previewKey) != runtime.contentSource ||
             CanonicalBuiltinWallpaperSource(runtime.contentSource) != runtime.contentSource ||
             LegacyBuiltinWallpaperId(runtime.id) != runtime.id ||
+            LegacyBuiltinWallpaperId(runtime.runtimeKey) != runtime.id ||
+            LegacyBuiltinWallpaperId(runtime.previewKey) != runtime.id ||
             LegacyBuiltinWallpaperId(runtime.contentSource) != runtime.id) return false;
         for (std::size_t j = i + 1; j < kRuntimeWallpapers.size(); ++j) {
-            if (Same(runtime.id, kRuntimeWallpapers[j].id) ||
-                Same(runtime.runtimeKey, kRuntimeWallpapers[j].runtimeKey) ||
-                Same(runtime.previewKey, kRuntimeWallpapers[j].previewKey) ||
-                Same(runtime.contentSource, kRuntimeWallpapers[j].contentSource)) return false;
+            if (AcceptedIdentityCollision(runtime, kRuntimeWallpapers[j])) return false;
         }
     }
 

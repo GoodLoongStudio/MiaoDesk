@@ -240,6 +240,13 @@ bool WriteUtf8File(const fs::path& path, std::string_view value) {
     return output.good();
 }
 
+bool IsLibraryUiVisible(const WallpaperLibraryItem& item) {
+    // Managed built-in themes are presented only under canonical content:<id>
+    // identities. Keep exact shipped scene-* rows in storage for compatibility,
+    // but never surface them as duplicate cards in Library search/browse UI.
+    return FindLegacyBuiltinWallpaper(item.id) == nullptr;
+}
+
 } // namespace
 
 WallpaperLibrary::WallpaperLibrary() : root_(DefaultLibraryRoot()) {}
@@ -502,9 +509,14 @@ std::optional<WallpaperLibraryItem> WallpaperLibrary::Find(std::wstring_view id)
 
 std::vector<WallpaperLibraryItem> WallpaperLibrary::Search(std::wstring_view query) const {
     const std::wstring needle = Lower(std::wstring(query));
-    if (needle.empty()) return items_;
     std::vector<WallpaperLibraryItem> result;
+    result.reserve(items_.size());
     for (const auto& item : items_) {
+        if (!IsLibraryUiVisible(item)) continue;
+        if (needle.empty()) {
+            result.push_back(item);
+            continue;
+        }
         const std::wstring haystack = Lower(item.title + L"\n" + item.source.wstring() + L"\n" + KindKey(item.kind));
         if (haystack.find(needle) != std::wstring::npos) result.push_back(item);
     }
@@ -723,6 +735,10 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && legacyNeonAlias->id == kNeonCanonical;
         ok = ok && legacyNeonAlias->title == L"霓虹之城";
     }
+    ok = ok && library.Search(L"妙喵云境").empty();
+    ok = ok && std::none_of(library.Search(L"").begin(), library.Search(L"").end(), [](const auto& item) {
+        return FindLegacyBuiltinWallpaper(item.id) != nullptr;
+    });
 
     const fs::path legacyPackage = library.PackageDirectory() / L"selftest.mdwall";
     ok = ok && WallpaperPackage::CreateWeb(legacyPackage, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
@@ -787,6 +803,14 @@ bool WallpaperLibrary::SelfTest() {
     ok = ok && !reloaded.Find(L"legacy-scene").has_value();
     ok = ok && reloaded.Find(L"external-scene").has_value();
     ok = ok && reloaded.Find(L"scene-user-custom").has_value();
+    ok = ok && reloaded.Search(L"妙喵云境").empty();
+    const auto visibleReloaded = reloaded.Search(L"");
+    ok = ok && std::none_of(visibleReloaded.begin(), visibleReloaded.end(), [](const auto& item) {
+        return FindLegacyBuiltinWallpaper(item.id) != nullptr;
+    });
+    ok = ok && std::any_of(visibleReloaded.begin(), visibleReloaded.end(), [](const auto& item) {
+        return _wcsicmp(item.id.c_str(), L"scene-user-custom") == 0;
+    });
     if (imported) {
         const auto unicodeImported = reloaded.Find(imported->id);
         ok = ok && unicodeImported.has_value();

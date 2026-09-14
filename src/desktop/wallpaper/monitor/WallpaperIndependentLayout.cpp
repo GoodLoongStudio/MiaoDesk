@@ -155,7 +155,11 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapersWithResolver(
                 resolved.monitorId = StableMonitorKey(monitor);
                 resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
                 resolved.region = region;
-                resolved.wallpaperId = resolverId;
+                // resolverId is allowed to canonicalize only for package lookup.
+                // Keep the resolved descriptor tied to the persisted assignment
+                // so downstream consumers cannot accidentally treat a lookup
+                // alias as an implicit scene-* -> content:<id> migration.
+                resolved.wallpaperId = *assignedId;
                 resolved.kind = contentWallpaper->kind;
                 resolved.source = contentWallpaper->source;
                 result.push_back(std::move(resolved));
@@ -351,7 +355,7 @@ bool SelfTestIndependentWallpaperResolution() {
     if (staleAliasResolved.size() == 1) {
         ok = ok && staleAliasResolved[0].monitorId == L"monitor-b";
         ok = ok && !staleAliasResolved[0].fallback;
-        ok = ok && staleAliasResolved[0].wallpaperId == kNeonCanonical;
+        ok = ok && staleAliasResolved[0].wallpaperId == L"scene-neon";
         ok = ok && staleAliasResolved[0].kind == ResolvedWallpaperKind::Scene;
         ok = ok && staleAliasResolved[0].source == staleCanonicalNeonRoot;
     }

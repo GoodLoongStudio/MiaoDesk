@@ -21,14 +21,14 @@ function Get-MethodBody([string]$name) {
     return $match.Groups[1].Value
 }
 
-foreach ($name in @('RecentlyUsed', 'Favorites')) {
+foreach ($name in @('Search', 'RecentlyUsed', 'Favorites')) {
     $body = Get-MethodBody $name
     if ($body -notmatch 'IsLibraryUiVisible\\s*\\(') {
-        throw "WallpaperLibrary::$name must apply IsLibraryUiVisible() to keep shipped legacy scene-* rows out of derived UI views."
+        throw "WallpaperLibrary::$name must apply IsLibraryUiVisible() to keep shipped legacy scene-* rows out of UI-derived views."
     }
-    if ($body -match 'FindLegacyBuiltinWallpaper\\s*\\(') {
+    if ($name -ne 'Search' -and $body -match 'FindLegacyBuiltinWallpaper\\s*\\(') {
         throw "WallpaperLibrary::$name must reuse the shared IsLibraryUiVisible() gate instead of duplicating a broader legacy filter."
     }
 }
 
-Write-Host 'WallpaperLibrary derived-view canonical gate passed.'
+Write-Host 'WallpaperLibrary canonical UI gate verification passed for Search, RecentlyUsed, and Favorites.'

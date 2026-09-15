@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperMonitorAssignments.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -66,6 +67,12 @@ bool WallpaperMonitorAssignments::Load(std::wstring* error) {
     std::error_code ec;
     if (!fs::exists(storagePath_, ec)) return true;
 
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(storagePath_, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
+
     const UINT rawCount = GetPrivateProfileIntW(L"Assignments", L"Count", 0, storagePath_.c_str());
     const int count = static_cast<int>(std::clamp<UINT>(rawCount, 0U, 1024U));
     for (int i = 0; i < count; ++i) {
@@ -94,6 +101,12 @@ bool WallpaperMonitorAssignments::Save(std::wstring* error) const {
     fs::path temporary = storagePath_;
     temporary += L".tmp";
     DeleteFileW(temporary.c_str());
+
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(temporary, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
 
     const std::wstring count = std::to_wstring(items_.size());
     bool ok = WritePrivateProfileStringW(L"Assignments", L"Version", L"1", temporary.c_str()) != FALSE;
@@ -137,9 +150,9 @@ bool WallpaperMonitorAssignments::AssignById(std::wstring monitorId, std::wstrin
     }
 
     // MiaoDesk's current desktop contract is deliberately single-monitor:
-    // choosing a monitor applies the wallpaper only to that monitor.  Keeping
+    // choosing a monitor applies the wallpaper only to that monitor. Keeping
     // stale assignments for other monitors made Independent mode silently draw
-    // on multiple displays after a user selected exactly one target.  Replace
+    // on multiple displays after a user selected exactly one target. Replace
     // the assignment set atomically instead of accumulating per-monitor state.
     MonitorWallpaperAssignment item;
     item.monitorId = std::move(monitorId);
@@ -212,23 +225,34 @@ std::optional<std::size_t> WallpaperMonitorAssignments::FindIndex(std::wstring_v
 bool WallpaperMonitorAssignments::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-MonitorAssignments-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"MiaoDesk-MonitorAssignments-SelfTest-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
-    const fs::path storage = root / L"assignments.ini";
+    // Exercise both Unicode filesystem paths and user-visible monitor text. The
+    // legacy shipped assignment must round-trip byte-for-byte as scene-*; this
+    // storage layer never canonicalizes it to content:<id>.
+    const fs::path storage = root / L"配置-Grüße" / L"显示器-assignments.ini";
     WallpaperMonitorAssignments assignments(storage);
     std::wstring error;
     bool ok = assignments.Load(&error);
-    ok = ok && assignments.AssignById(L"monitor-A", L"wallpaper-one", L"Panel A", &error);
+    ok = ok && assignments.AssignById(L"显示器-A", L"scene-neon", L"主显示器 中文 · Grüße", &error);
     ok = ok && assignments.Items().size() == 1;
-    ok = ok && assignments.WallpaperIdFor(L"MONITOR-a") == std::optional<std::wstring>(L"wallpaper-one");
+    ok = ok && assignments.WallpaperIdFor(L"显示器-A") == std::optional<std::wstring>(L"scene-neon");
+
+    WallpaperMonitorAssignments unicodeReloaded(storage);
+    ok = ok && unicodeReloaded.Load(&error);
+    ok = ok && unicodeReloaded.Items().size() == 1;
+    ok = ok && unicodeReloaded.Items()[0].monitorId == L"显示器-A";
+    ok = ok && unicodeReloaded.Items()[0].wallpaperId == L"scene-neon";
+    ok = ok && unicodeReloaded.Items()[0].lastFriendlyName == L"主显示器 中文 · Grüße";
+    ok = ok && unicodeReloaded.WallpaperIdFor(L"显示器-A") == std::optional<std::wstring>(L"scene-neon");
 
     // A second target replaces the first one. This is the key regression check
     // for "pick one screen => affect only that screen".
     ok = ok && assignments.AssignById(L"monitor-B", L"wallpaper-two", L"Panel B", &error);
     ok = ok && assignments.Items().size() == 1;
-    ok = ok && !assignments.WallpaperIdFor(L"monitor-A").has_value();
+    ok = ok && !assignments.WallpaperIdFor(L"显示器-A").has_value();
     ok = ok && assignments.WallpaperIdFor(L"monitor-B") == std::optional<std::wstring>(L"wallpaper-two");
 
     MonitorTopology topology;

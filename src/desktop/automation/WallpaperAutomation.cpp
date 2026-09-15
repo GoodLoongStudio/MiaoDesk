@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperAutomation.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -154,6 +155,12 @@ bool WallpaperAutomationStore::Load(std::wstring* error) {
     std::error_code ec;
     if (!fs::exists(storagePath_, ec)) return true;
 
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(storagePath_, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
+
     enabled_ = GetPrivateProfileIntW(L"Automation", L"Enabled", 1, storagePath_.c_str()) != 0;
     activePlaylistId_ = ReadText(storagePath_, L"Automation", L"ActivePlaylist");
     lastMatchedScheduleId_ = ReadText(storagePath_, L"Runtime", L"LastMatchedSchedule");
@@ -244,6 +251,13 @@ bool WallpaperAutomationStore::Save(std::wstring* error) const {
     fs::path temporary = storagePath_;
     temporary += L".tmp";
     DeleteFileW(temporary.c_str());
+
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(temporary, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
+
     bool ok = true;
     ok = WriteText(temporary, L"Automation", L"Version", L"1") && ok;
     ok = WriteText(temporary, L"Automation", L"Enabled", enabled_ ? L"1" : L"0") && ok;
@@ -581,7 +595,7 @@ bool WallpaperAutomationStore::SelfTest() {
 
     WallpaperProfile day;
     day.id = L"profile-day";
-    day.name = L"Day";
+    day.name = L"中文白天配置";
     day.wallpaperId = L"wallpaper-day";
     day.layout = L"clone";
     day.fpsCap = 60;
@@ -589,7 +603,7 @@ bool WallpaperAutomationStore::SelfTest() {
 
     WallpaperPlaylist playlist;
     playlist.id = L"playlist-main";
-    playlist.name = L"Main";
+    playlist.name = L"中文主播放列表";
     playlist.wallpaperIds = {L"wallpaper-a", L"wallpaper-b"};
     playlist.intervalSeconds = 60;
     playlist.order = PlaylistOrder::Sequential;
@@ -598,7 +612,7 @@ bool WallpaperAutomationStore::SelfTest() {
 
     WallpaperSchedule work;
     work.id = L"schedule-work";
-    work.name = L"Work hours";
+    work.name = L"中文工作时段";
     work.dayMask = 1U << 1U; // Monday
     work.startMinute = 8 * 60;
     work.endMinute = 10 * 60;
@@ -626,7 +640,7 @@ bool WallpaperAutomationStore::SelfTest() {
 
     WallpaperSchedule overnight;
     overnight.id = L"schedule-night";
-    overnight.name = L"Friday night";
+    overnight.name = L"周五夜间";
     overnight.dayMask = 1U << 5U; // Friday
     overnight.startMinute = 22 * 60;
     overnight.endMinute = 2 * 60;
@@ -644,7 +658,14 @@ bool WallpaperAutomationStore::SelfTest() {
     ok = ok && reloaded.Playlists().size() == 1;
     ok = ok && reloaded.Schedules().size() == 2;
     ok = ok && reloaded.ActivePlaylistId() == L"playlist-main";
-    ok = ok && reloaded.FindProfile(L"PROFILE-DAY").has_value();
+    const auto reloadedProfile = reloaded.FindProfile(L"PROFILE-DAY");
+    const auto reloadedPlaylist = reloaded.FindPlaylist(L"PLAYLIST-MAIN");
+    const auto reloadedWork = reloaded.FindSchedule(L"SCHEDULE-WORK");
+    const auto reloadedNight = reloaded.FindSchedule(L"SCHEDULE-NIGHT");
+    ok = ok && reloadedProfile.has_value() && reloadedProfile->name == L"中文白天配置";
+    ok = ok && reloadedPlaylist.has_value() && reloadedPlaylist->name == L"中文主播放列表";
+    ok = ok && reloadedWork.has_value() && reloadedWork->name == L"中文工作时段";
+    ok = ok && reloadedNight.has_value() && reloadedNight->name == L"周五夜间";
 
     fs::remove_all(root, ec);
     return ok;

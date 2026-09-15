@@ -1,5 +1,6 @@
 #include "miaodesk/NativeWeatherService.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <winhttp.h>
 
@@ -354,33 +355,13 @@ bool FetchOpenMeteo(double latitude, double longitude, std::wstring location,
 }
 
 bool EnsureUnicodeCacheFile(const fs::path& path) {
-    bool unicode = false;
-    HANDLE existing = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (existing != INVALID_HANDLE_VALUE) {
-        unsigned char bom[2]{};
-        DWORD read = 0;
-        if (ReadFile(existing, bom, sizeof(bom), &read, nullptr) && read == sizeof(bom))
-            unicode = bom[0] == 0xFF && bom[1] == 0xFE;
-        CloseHandle(existing);
-    }
-    if (unicode) return true;
-
-    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return false;
-    const unsigned char bom[2]{0xFF, 0xFE};
-    DWORD written = 0;
-    const bool ok = WriteFile(file, bom, sizeof(bom), &written, nullptr) != FALSE && written == sizeof(bom);
-    FlushFileBuffers(file);
-    CloseHandle(file);
-    return ok;
+    return text::EnsureUtf16LeProfileFile(path);
 }
 
 void SaveCachedSnapshot(const NativeWeatherSnapshot& snapshot) {
     if (!snapshot.valid) return;
     const fs::path path = WeatherCachePath();
-    if (!EnsureUnicodeCacheFile(path)) return;
+    if (path.empty() || !EnsureUnicodeCacheFile(path)) return;
     bool ok = true;
     ok = WriteProfile(path, L"Valid", L"1") && ok;
     ok = WriteProfile(path, L"Location", snapshot.location) && ok;
@@ -506,7 +487,8 @@ bool NativeWeatherService::ReadCachedSnapshot(NativeWeatherSnapshot* snapshot) {
     if (!snapshot) return false;
     const fs::path path = WeatherCachePath();
     std::error_code ec;
-    if (!fs::exists(path, ec)) return false;
+    if (path.empty() || !fs::exists(path, ec)) return false;
+    if (!EnsureUnicodeCacheFile(path)) return false;
     if (_wtoi(ReadProfile(path, L"Valid", L"0").c_str()) == 0) return false;
 
     NativeWeatherSnapshot value;
@@ -538,8 +520,24 @@ bool NativeWeatherService::SelfTest() noexcept {
     const auto temp = ExtractJsonNumber(sample, "\"temperature_2m\"", current, hourly);
     const auto code = ExtractJsonNumber(sample, "\"weather_code\"", current, hourly);
     const auto times = ExtractJsonStringArray(sample, "\"time\"", hourly);
-    return temp && std::lround(*temp) == 22 && code && std::lround(*code) == 2 &&
-           times.size() == 2 && WeatherCondition(2) == L"多云";
+    bool ok = temp && std::lround(*temp) == 22 && code && std::lround(*code) == 2 &&
+              times.size() == 2 && WeatherCondition(2) == L"多云";
+
+    const fs::path roundTripPath = fs::temp_directory_path() /
+        (L"MiaoDesk-Weather-Unicode-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+         std::to_wstring(GetTickCount64()) + L".ini");
+    std::error_code ec;
+    fs::remove(roundTripPath, ec);
+    std::wstring unicodeError;
+    ok = ok && text::EnsureUtf16LeProfileFile(roundTripPath, &unicodeError);
+    ok = ok && WriteProfile(roundTripPath, L"Valid", L"1");
+    ok = ok && WriteProfile(roundTripPath, L"Location", L"杭州·西湖 中文位置");
+    ok = ok && WriteProfile(roundTripPath, L"Condition", L"多云转小雨");
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, roundTripPath.c_str());
+    ok = ok && ReadProfile(roundTripPath, L"Location") == L"杭州·西湖 中文位置" &&
+              ReadProfile(roundTripPath, L"Condition") == L"多云转小雨";
+    fs::remove(roundTripPath, ec);
+    return ok;
 }
 
 } // namespace miaodesk::wallpaper

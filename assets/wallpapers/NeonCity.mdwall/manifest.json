@@ -1,9 +1,17 @@
 {
   "schema": 1,
-  "type": "scene",
+  "id": "com.goodloong.miaodesk.theme.neon-city",
+  "name": "霓虹之城",
   "title": "霓虹之城",
   "author": "MiaoDesk",
-  "entry": "scene.ini",
+  "version": "1.0.0",
+  "kind": "wallpaper",
+  "runtime": "scene",
+  "type": "scene",
+  "entry": "scene.json",
+  "legacy_entry": "scene.ini",
+  "provenance": "builtin-miaodesk",
   "fps_cap": 30,
-  "audio": false
+  "audio": false,
+  "capabilities": ["theme.wallpaper"]
 }

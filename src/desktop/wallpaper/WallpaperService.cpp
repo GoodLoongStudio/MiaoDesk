@@ -5,6 +5,7 @@
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/MiaoSceneSerializer.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include "miaodesk/WallpaperMonitorAssignments.h"
 #include "miaodesk/WallpaperPackage.h"
@@ -33,12 +34,22 @@ std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t
     return buffer.data();
 }
 
+WallpaperServiceResult EnsureWallpaperProfileUnicode(const fs::path& config) {
+    std::wstring error;
+    if (text::EnsureUtf16LeProfileFile(config, &error)) return {true, {}};
+    miaodesk::log::Error(L"WallpaperService", L"wallpaper.ini Unicode 初始化失败: " + error);
+    return {false, error.empty() ? L"无法初始化 Unicode 壁纸配置。" : std::move(error)};
+}
+
 WallpaperServiceResult PersistWallpaperSelection(
     std::wstring_view scene,
     const fs::path& imageOrWebSource,
     const fs::path& videoSource,
     std::wstring_view contentSource = {}) {
     const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
+    if (!unicodeReady.success) return unicodeReady;
+
     const std::wstring sceneText(scene);
     const std::wstring imageText = imageOrWebSource.wstring();
     const std::wstring videoText = videoSource.wstring();
@@ -186,6 +197,8 @@ WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryI
 WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
     if (!state) return {false, L"WallpaperState 输出不能为空。"};
     const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
+    if (!unicodeReady.success) return unicodeReady;
 
     WallpaperState next;
     next.enabled = GetPrivateProfileIntW(L"Wallpaper", L"Enabled", 1, config.c_str()) != 0;
@@ -232,6 +245,9 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
 
 WallpaperServiceResult WallpaperService::SetEnabled(const bool enabled) const {
     const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
+    if (!unicodeReady.success) return unicodeReady;
+
     const wchar_t* value = enabled ? L"1" : L"0";
     if (WritePrivateProfileStringW(L"Wallpaper", L"Enabled", value, config.c_str()) == FALSE) {
         miaodesk::log::Error(L"WallpaperService", L"SetEnabled(" + std::wstring(value) + L") 写入 ini 失败: " + config.wstring());

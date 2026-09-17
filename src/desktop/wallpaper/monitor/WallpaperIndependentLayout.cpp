@@ -141,13 +141,24 @@ std::vector<ResolvedMonitorWallpaper> ResolveIndependentWallpapersWithResolver(
         if (!item) {
             // A freshly installed canonical package may already be assigned by
             // content:<id> while the settings window still holds a pre-install
-            // WallpaperLibrary snapshot. Resolve the current package runtime
-            // directly so both Scene and Web content survive a stale UI cache.
-            if (const auto contentWallpaper = contentResolver(*assignedId)) {
+            // WallpaperLibrary snapshot. A persisted shipped scene-* assignment
+            // can hit the same stale-window race after the visible Library has
+            // canonicalized. Bridge only exact legacy ids to the canonical
+            // package identity for runtime resolution; never rewrite persistence.
+            std::wstring resolverId = *assignedId;
+            if (FindLegacyBuiltinWallpaper(*assignedId)) {
+                const auto canonicalSource = CanonicalBuiltinWallpaperSource(*assignedId);
+                if (!canonicalSource.empty()) resolverId.assign(canonicalSource);
+            }
+            if (const auto contentWallpaper = contentResolver(resolverId)) {
                 ResolvedMonitorWallpaper resolved;
                 resolved.monitorId = StableMonitorKey(monitor);
                 resolved.monitorName = monitor.friendlyName.empty() ? monitor.deviceName : monitor.friendlyName;
                 resolved.region = region;
+                // resolverId is allowed to canonicalize only for package lookup.
+                // Keep the resolved descriptor tied to the persisted assignment
+                // so downstream consumers cannot accidentally treat a lookup
+                // alias as an implicit scene-* -> content:<id> migration.
                 resolved.wallpaperId = *assignedId;
                 resolved.kind = contentWallpaper->kind;
                 resolved.source = contentWallpaper->source;
@@ -287,6 +298,93 @@ bool SelfTestIndependentWallpaperResolution() {
         ok = ok && resolved[0].region.right == 3840;
     }
     ok = ok && !IndependentLayoutHasVideo(resolved) && !IndependentLayoutHasWeb(resolved);
+
+    // Canonical-library compatibility contract: the UI/library may retain only
+    // the canonical theme package while monitor-assignments.ini intentionally
+    // keeps the old scene-* identity. The exact miss must bridge through the
+    // library alias before runtime resolution, without mutating the assignment
+    // and without falling back to the global wallpaper.
+    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.miaodesk.theme.neon-city";
+    ok = ok && library.Remove(L"scene-neon", false, &error);
+    ok = ok && library.UpsertScene(kNeonCanonical, L"霓虹之城", &error);
+    bool canonicalAliasResolverCalled = false;
+    const fs::path canonicalNeonRoot = root / L"NeonCity.mdwall";
+    const auto canonicalAliasResolved = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kNeonCanonical) return std::nullopt;
+            canonicalAliasResolverCalled = true;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, canonicalNeonRoot};
+        });
+    ok = ok && canonicalAliasResolverCalled;
+    ok = ok && assignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    WallpaperMonitorAssignments persistedAliasAssignments(root / L"assignments.ini");
+    ok = ok && persistedAliasAssignments.Load(&error);
+    ok = ok && persistedAliasAssignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    ok = ok && canonicalAliasResolved.size() == 1;
+    if (canonicalAliasResolved.size() == 1) {
+        ok = ok && canonicalAliasResolved[0].monitorId == L"monitor-b";
+        ok = ok && !canonicalAliasResolved[0].fallback;
+        ok = ok && canonicalAliasResolved[0].wallpaperId == kNeonCanonical;
+        ok = ok && canonicalAliasResolved[0].kind == ResolvedWallpaperKind::Scene;
+        ok = ok && canonicalAliasResolved[0].source == canonicalNeonRoot;
+        ok = ok && canonicalAliasResolved[0].region.left == 1920;
+        ok = ok && canonicalAliasResolved[0].region.right == 3840;
+    }
+
+    // Stale-library compatibility contract: both the legacy row and canonical
+    // row can be absent from an already-open Library snapshot immediately after
+    // package lifecycle changes. Exact shipped scene-* assignments must still
+    // resolve through the canonical package resolver without touching the file.
+    ok = ok && library.Remove(kNeonCanonical, false, &error);
+    bool staleAliasResolverCalled = false;
+    const fs::path staleCanonicalNeonRoot = root / L"NeonCity-stale-library.mdwall";
+    const auto staleAliasResolved = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id != kNeonCanonical) return std::nullopt;
+            staleAliasResolverCalled = true;
+            return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, staleCanonicalNeonRoot};
+        });
+    ok = ok && staleAliasResolverCalled;
+    ok = ok && assignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    WallpaperMonitorAssignments persistedStaleAliasAssignments(root / L"assignments.ini");
+    ok = ok && persistedStaleAliasAssignments.Load(&error);
+    ok = ok && persistedStaleAliasAssignments.WallpaperIdFor(topology.monitors[1]) == L"scene-neon";
+    ok = ok && staleAliasResolved.size() == 1;
+    if (staleAliasResolved.size() == 1) {
+        ok = ok && staleAliasResolved[0].monitorId == L"monitor-b";
+        ok = ok && !staleAliasResolved[0].fallback;
+        ok = ok && staleAliasResolved[0].wallpaperId == L"scene-neon";
+        ok = ok && staleAliasResolved[0].kind == ResolvedWallpaperKind::Scene;
+        ok = ok && staleAliasResolved[0].source == staleCanonicalNeonRoot;
+    }
+
+    // The stale assignment bridge must stay narrower than the catalog's broad
+    // compatibility aliases. A runtime key may resolve through normal catalog
+    // lookup when a Library row exists, but with an empty stale snapshot it must
+    // not be promoted to content:<id>; only the exact shipped scene-* id can do
+    // that. This prevents a compatibility key from becoming a migration route.
+    ok = ok && assignments.Assign(topology.monitors[1], L"neon", &error);
+    bool broadAliasResolverCalled = false;
+    const auto broadAliasResolved = ResolveIndependentWallpapersWithResolver(
+        topology, assignments, library, fallback,
+        [&](std::wstring_view id) -> std::optional<ResolvedContentWallpaper> {
+            if (id == kNeonCanonical) {
+                broadAliasResolverCalled = true;
+                return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, staleCanonicalNeonRoot};
+            }
+            return std::nullopt;
+        });
+    ok = ok && !broadAliasResolverCalled;
+    ok = ok && broadAliasResolved.size() == 1;
+    if (broadAliasResolved.size() == 1) {
+        ok = ok && broadAliasResolved[0].fallback;
+        ok = ok && broadAliasResolved[0].wallpaperId == L"neon";
+    }
+    WallpaperMonitorAssignments persistedBroadAliasAssignments(root / L"assignments.ini");
+    ok = ok && persistedBroadAliasAssignments.Load(&error);
+    ok = ok && persistedBroadAliasAssignments.WallpaperIdFor(topology.monitors[1]) == L"neon";
 
     // Replacement continuity contract: the stable content:<id> is authoritative
     // even when the WallpaperLibrary snapshot still advertises the old runtime.

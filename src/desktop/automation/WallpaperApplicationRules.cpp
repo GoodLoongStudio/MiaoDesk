@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperApplicationRules.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -156,6 +157,13 @@ bool WallpaperApplicationRules::Load(std::wstring* error) {
     items_.clear();
     std::error_code ec;
     if (!fs::exists(storagePath_, ec)) return true;
+
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(storagePath_, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
+
     const int rawCount = static_cast<int>(GetPrivateProfileIntW(L"Rules", L"Count", 0, storagePath_.c_str()));
     const int count = std::clamp(rawCount, 0, 2048);
     for (int i = 0; i < count; ++i) {
@@ -187,6 +195,13 @@ bool WallpaperApplicationRules::Save(std::wstring* error) const {
     fs::path temporary = storagePath_;
     temporary += L".tmp";
     DeleteFileW(temporary.c_str());
+
+    std::wstring unicodeError;
+    if (!text::EnsureUtf16LeProfileFile(temporary, &unicodeError)) {
+        SetError(error, std::move(unicodeError));
+        return false;
+    }
+
     bool ok = WritePrivateProfileStringW(L"Rules", L"Version", L"1", temporary.c_str()) != FALSE;
     const std::wstring count = std::to_wstring(items_.size());
     ok = (WritePrivateProfileStringW(L"Rules", L"Count", count.c_str(), temporary.c_str()) != FALSE) && ok;
@@ -344,7 +359,7 @@ bool WallpaperApplicationRules::SelfTest() {
     WallpaperApplicationRule first;
     first.id = L"game";
     first.executable = L"C:/Games/TestGame.EXE";
-    first.displayName = L"Test Game";
+    first.displayName = L"中文游戏规则";
     first.trigger = ApplicationRuleTrigger::Fullscreen;
     first.action = PerformanceAction::Pause;
     first.priority = 250;
@@ -362,6 +377,7 @@ bool WallpaperApplicationRules::SelfTest() {
     ok = ok && loaded.Load(&error);
     const auto game = loaded.Find(L"GAME");
     ok = ok && game.has_value() && game->executable == L"testgame.exe" &&
+         game->displayName == L"中文游戏规则" &&
          game->trigger == ApplicationRuleTrigger::Fullscreen && game->priority == 250;
     ok = ok && NormalizeExecutable(L"D:\\Apps\\FOO.Exe") == L"foo.exe";
     ok = ok && ParseTrigger(L"MAXIMIZED") == ApplicationRuleTrigger::Maximized;

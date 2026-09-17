@@ -1,6 +1,7 @@
 #include "miaodesk/ContentPackageManagerDialog.h"
 
 #include "miaodesk/DesktopControlService.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 
 #include <shellapi.h>
 
@@ -24,7 +25,7 @@ HMENU ControlId(int id) {
 }
 
 const wchar_t* KindText(content::ContentKind kind) noexcept {
-    return kind == content::ContentKind::Widget ? L"小组件" : L"壁纸";
+    return kind == content::ContentKind::Widget ? L"小组件" : L"壁纸主题";
 }
 
 const wchar_t* OriginText(content::ManagedContentPackageOrigin origin) noexcept {
@@ -42,6 +43,24 @@ const wchar_t* RuntimeText(content::ContentRuntimeKind runtime) noexcept {
     case content::ContentRuntimeKind::Web: return L"Web";
     }
     return L"Unknown";
+}
+
+bool HasCanonicalContentIdentity(const content::ManagedContentPackageInfo& package) {
+    if (package.id.empty() || package.source.empty()) return false;
+    std::string parsedId;
+    if (!content::MiaoContentPackageManager::ParseSource(package.source, &parsedId)) return false;
+    return parsedId == package.id &&
+           package.source == content::MiaoContentPackageManager::MakeSource(package.id);
+}
+
+bool VisibleInPackageManager(const content::ManagedContentPackageInfo& package,
+                             content::ContentKind selectedKind) {
+    if (package.kind != selectedKind) return false;
+    // Wallpaper theme management is canonical-package-only. Legacy scene-* identities
+    // remain runtime/upgrade compatibility state and must not reappear as a second UI row.
+    if (selectedKind == content::ContentKind::Wallpaper)
+        return HasCanonicalContentIdentity(package);
+    return true;
 }
 
 struct DialogState {
@@ -74,7 +93,7 @@ struct DialogState {
     bool CreateControls() {
         font = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
         heading = CreateWindowExW(0, L"STATIC",
-            kind == content::ContentKind::Widget ? L"已安装小组件内容包" : L"已安装壁纸内容包",
+            kind == content::ContentKind::Widget ? L"已安装小组件内容包" : L"已安装壁纸主题包",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             0, 0, 10, 10, window, nullptr, instance, nullptr);
         list = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
@@ -152,7 +171,10 @@ struct DialogState {
     void UpdateDetails() const {
         const auto* package = SelectedPackage();
         if (!package) {
-            SetWindowTextW(details, L"没有已安装的内容包。\r\n\r\n可从壁纸页或组件页的添加菜单安装 .mdwall / .mdwidget。 ");
+            SetWindowTextW(details,
+                kind == content::ContentKind::Widget
+                    ? L"没有已安装的小组件内容包。\r\n\r\n可从组件页的创建菜单安装 .mdwidget。"
+                    : L"没有已安装的壁纸主题包。\r\n\r\n可从壁纸页的添加菜单安装 .mdwall 主题包。");
             EnableWindow(openButton, FALSE);
             EnableWindow(uninstallButton, FALSE);
             return;
@@ -189,7 +211,7 @@ struct DialogState {
 
         packages.clear();
         for (auto& package : all)
-            if (package.kind == kind) packages.push_back(std::move(package));
+            if (VisibleInPackageManager(package, kind)) packages.push_back(std::move(package));
 
         SendMessageW(list, LB_RESETCONTENT, 0, 0);
         int selectedIndex = -1;
@@ -224,8 +246,11 @@ struct DialogState {
         const auto* package = SelectedPackage();
         if (!package) return;
         if (package->origin != content::ManagedContentPackageOrigin::UserManaged) {
-            MessageBoxW(window, L"内置内容包不能卸载。", L"MiaoDesk 内容包",
-                        MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(window,
+                        kind == content::ContentKind::Widget
+                            ? L"内置小组件内容包不能卸载。"
+                            : L"内置壁纸主题包不能卸载。",
+                        L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
             return;
         }
 
@@ -345,7 +370,7 @@ bool ShowContentPackageManagerDialog(
     const HWND window = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
         kWindowClass,
-        initialKind == content::ContentKind::Widget ? L"管理小组件内容包" : L"管理壁纸内容包",
+        initialKind == content::ContentKind::Widget ? L"管理小组件内容包" : L"管理壁纸主题包",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
         CW_USEDEFAULT, CW_USEDEFAULT,
         outer.right - outer.left, outer.bottom - outer.top,

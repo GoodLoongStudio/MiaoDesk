@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "id": "scene://shader-pulse",
+  "kind": "wallpaper",
+  "profile": "wallpaper",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Root",
+      "parentId": "",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://root/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://background",
+      "name": "Shader Background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://background/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "tint", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://shader-pulse"}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset://shader/pulse",
+      "type": "shader",
+      "source": "shaders/pulse.hlsl"
+    }
+  ],
+  "shaders": [
+    {
+      "id": "shader://pulse/pixel",
+      "stage": "pixel",
+      "assetId": "asset://shader/pulse",
+      "entryPoint": "main",
+      "userAuthored": true
+    }
+  ],
+  "materials": [
+    {
+      "id": "material://shader-pulse",
+      "model": "programmable",
+      "pixelShaderId": "shader://pulse/pixel",
+      "properties": [],
+      "textures": []
+    }
+  ],
+  "inputs": [
+    {"id": "input://frame/time", "type": "float", "default": 0.0}
+  ],
+  "bindings": [
+    {
+      "id": "binding://opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://opacity",
+      "target": {
+        "componentId": "component://background/sprite",
+        "propertyName": "opacity"
+      },
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ],
+  "animations": [
+    {
+      "id": "animation://shader-pulse/tint-breathe",
+      "target": {
+        "componentId": "component://background/sprite",
+        "propertyName": "tint"
+      },
+      "enabled": true,
+      "loop": "pingPong",
+      "duration": 3.0,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [1.0, 0.92, 1.0, 1.0],
+          "easing": "easeInOut"
+        },
+        {
+          "time": 3.0,
+          "value": [0.82, 0.95, 1.0, 1.0],
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "particleEmitters": [
+    {
+      "id": "particle://shader-pulse/sparks",
+      "enabled": true,
+      "maxParticles": 768,
+      "spawnRate": 60.0,
+      "lifetimeMin": 1.2,
+      "lifetimeMax": 2.8,
+      "position": [1280.0, 900.0],
+      "positionSpread": [520.0, 80.0],
+      "velocity": [0.0, -80.0],
+      "velocitySpread": [45.0, 35.0],
+      "acceleration": [0.0, -12.0],
+      "sizeStart": 10.0,
+      "sizeEnd": 2.0,
+      "colorStart": [0.55, 0.9, 1.0, 0.85],
+      "colorEnd": [0.2, 0.45, 1.0, 0.0],
+      "materialId": "",
+      "seed": 1337
+    }
+  ],
+  "postProcesses": [
+    {
+      "id": "postfx://shader-pulse/bloom-threshold",
+      "effect": "bloomThreshold",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.62,
+      "softness": 0.16
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-horizontal",
+      "effect": "blurHorizontal",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.72,
+      "softness": 0.25
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-vertical",
+      "effect": "blurVertical",
+      "enabled": true,
+      "amount": 1.0,
+      "radius": 0.72,
+      "softness": 0.25
+    },
+    {
+      "id": "postfx://shader-pulse/bloom-combine",
+      "effect": "bloomCombine",
+      "enabled": true,
+      "amount": 0.78,
+      "radius": 0.75,
+      "softness": 0.25
+    },
+    {
+      "id": "postfx://shader-pulse/vignette",
+      "effect": "vignette",
+      "enabled": true,
+      "amount": 0.58,
+      "radius": 0.72,
+      "softness": 0.34
+    },
+    {
+      "id": "postfx://shader-pulse/noise",
+      "effect": "noise",
+      "enabled": true,
+      "amount": 0.12,
+      "radius": 0.75,
+      "softness": 0.25
+    }
+  ]
+}

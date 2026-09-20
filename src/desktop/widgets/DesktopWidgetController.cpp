@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopWidgetController.h"
+#include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogPaths.h"
 #include "miaodesk/RuntimeLogger.h"
@@ -20,6 +21,15 @@ namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
 
+const wchar_t* WidgetKindText(wallpaper::DesktopWidgetKind kind) noexcept {
+    switch (kind) {
+    case wallpaper::DesktopWidgetKind::Native: return L"native";
+    case wallpaper::DesktopWidgetKind::Content: return L"content";
+    case wallpaper::DesktopWidgetKind::Unknown:
+    default: return L"unknown";
+    }
+}
+
 struct NormalizedRect {
     float left;
     float top;
@@ -29,6 +39,17 @@ struct NormalizedRect {
 
 constexpr float kPlacementMargin = 0.03f;
 constexpr float kPlacementGap = 0.025f;
+constexpr std::wstring_view kGlassClockDefinitionId = L"com.goodloong.glass-clock";
+constexpr std::wstring_view kWeatherGlassDefinitionId = L"com.goodloong.weather-glass";
+
+std::wstring_view ContentDefinitionIdForPreset(WidgetFixedPreset preset) noexcept {
+    switch (preset) {
+    case WidgetFixedPreset::GlassClock: return kGlassClockDefinitionId;
+    case WidgetFixedPreset::WeatherGlass: return kWeatherGlassDefinitionId;
+    case WidgetFixedPreset::TodayTasks:
+    default: return {};
+    }
+}
 
 bool SameMonitor(const wallpaper::DesktopWidget& widget, std::wstring_view monitorId) {
     if (widget.monitorId.empty() && monitorId.empty()) return true;
@@ -94,12 +115,20 @@ std::wstring CanonicalMonitorId(std::wstring monitorId) {
     return monitorId;
 }
 
-bool MatchesNativePreset(const wallpaper::DesktopWidget& widget,
+bool MatchesWidgetPreset(const wallpaper::DesktopWidget& widget,
                          wallpaper::NativeWidgetPreset preset,
                          std::wstring_view monitorId) {
-    if (widget.kind != wallpaper::DesktopWidgetKind::Native || !SameMonitor(widget, monitorId)) return false;
-    wallpaper::NativeWidgetPreset existing{};
-    return wallpaper::ParseNativePreset(widget.source.wstring(), &existing) && existing == preset;
+    if (!SameMonitor(widget, monitorId)) return false;
+    if (widget.kind == wallpaper::DesktopWidgetKind::Native) {
+        wallpaper::NativeWidgetPreset existing{};
+        return wallpaper::ParseNativePreset(widget.source.wstring(), &existing) && existing == preset;
+    }
+    if (widget.kind == wallpaper::DesktopWidgetKind::Content) {
+        const auto definitionId = ContentDefinitionIdForPreset(preset);
+        if (definitionId.empty()) return false;
+        return widget.source.wstring() == content::MiaoWidgetContentCatalog::MakeSource(definitionId);
+    }
+    return false;
 }
 
 void AppendUtf8Log(const std::filesystem::path& path, std::wstring_view text) {
@@ -143,8 +172,6 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
         << std::setw(2) << now.wHour << L':' << std::setw(2) << now.wMinute << L':'
         << std::setw(2) << now.wSecond << L" Widget snapshot ===\n";
 
-    // This field is the wallpaper switch only. Widgets are a separate runtime
-    // domain and remain eligible when wallpaper.enabled=false.
     log << L"wallpaper.enabled=" << BoolText(snapshot.desktop.enabled)
         << L" wallpaper.scene=" << snapshot.desktop.scene
         << L" wallpaper.layout=" << snapshot.desktop.layout
@@ -157,7 +184,7 @@ void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
     for (const auto& widget : snapshot.widgets) {
         log << L"config id=" << widget.id << L" title=\"" << widget.title << L"\""
             << L" enabled=" << BoolText(widget.enabled)
-            << L" kind=" << (widget.kind == wallpaper::DesktopWidgetKind::Native ? L"native" : L"unknown")
+            << L" kind=" << WidgetKindText(widget.kind)
             << L" monitor=\"" << (widget.monitorId.empty() ? L"<primary>" : widget.monitorId) << L"\""
             << L" x=" << widget.x << L" y=" << widget.y
             << L" width=" << widget.width << L" height=" << widget.height
@@ -237,17 +264,15 @@ DesktopControlResult DesktopWidgetController::CreateClock(
         WidgetFixedPreset::WeatherGlass,
     };
 
-    // The generic "new widget" action fills the built-in showcase exactly once
-    // per display. Identity comes from native: source, never from localized title.
     for (const auto preset : order) {
         const bool exists = std::any_of(existing.begin(), existing.end(), [&](const auto& widget) {
-            return MatchesNativePreset(widget, preset, monitorId);
+            return MatchesWidgetPreset(widget, preset, monitorId);
         });
         if (!exists) return CreatePreset(preset, monitorId, created);
     }
     for (const auto preset : order) {
         auto disabled = std::find_if(existing.begin(), existing.end(), [&](const auto& widget) {
-            return MatchesNativePreset(widget, preset, monitorId) && !widget.enabled;
+            return MatchesWidgetPreset(widget, preset, monitorId) && !widget.enabled;
         });
         if (disabled != existing.end()) return CreatePreset(preset, monitorId, created);
     }
@@ -264,10 +289,10 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     if (!listed.success) return listed;
 
     const auto* definition = wallpaper::NativePresetDefinition(preset);
-    if (!definition) return {false, L"未知的原生小组件模板。"};
+    if (!definition) return {false, L"未知的小组件模板。"};
 
     auto duplicate = std::find_if(existing.begin(), existing.end(), [&](const auto& widget) {
-        return MatchesNativePreset(widget, preset, monitorId);
+        return MatchesWidgetPreset(widget, preset, monitorId);
     });
     if (duplicate != existing.end()) {
         if (created) *created = *duplicate;
@@ -281,9 +306,41 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
         return {false, L"该显示器已经存在「" + std::wstring(definition->title) + L"」，不会重复创建重叠副本。"};
     }
 
-    const auto placement = AutomaticPlacement(existing, monitorId, definition->defaultWidth, definition->defaultHeight);
+    float placementWidth = definition->defaultWidth;
+    float placementHeight = definition->defaultHeight;
+    const auto contentDefinitionId = ContentDefinitionIdForPreset(preset);
+    bool useContent = false;
+    if (!contentDefinitionId.empty()) {
+        const auto source = content::MiaoWidgetContentCatalog::MakeSource(contentDefinitionId);
+        content::ResolvedWidgetContent resolved;
+        std::wstring error;
+        if (content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error) &&
+            resolved.definition.runtime == content::ContentRuntimeKind::Scene) {
+            placementWidth = resolved.definition.geometry.defaultWidth;
+            placementHeight = resolved.definition.geometry.defaultHeight;
+            useContent = true;
+        } else {
+            miaodesk::log::Info(
+                L"WidgetController",
+                std::wstring(definition->title) + L" Content package unavailable; using native fallback" +
+                    (error.empty() ? std::wstring{} : L": " + error));
+        }
+    }
+
+    const auto placement = AutomaticPlacement(existing, monitorId, placementWidth, placementHeight);
     if (!placement) {
         return {false, L"当前显示器没有足够的空闲区域放置「" + std::wstring(definition->title) + L"」；请先移动或删除现有小组件。"};
+    }
+
+    if (useContent) {
+        ContentWidgetCreateRequest request;
+        request.definitionId = std::wstring(contentDefinitionId);
+        request.title = std::wstring(definition->title);
+        request.monitorId = std::move(monitorId);
+        request.x = placement->first;
+        request.y = placement->second;
+        request.enabled = true;
+        return service_.CreateContentWidget(request, created);
     }
 
     NativeWidgetCreateRequest request;
@@ -295,6 +352,23 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     request.width = definition->defaultWidth;
     request.height = definition->defaultHeight;
     return service_.CreateNativeWidget(request, created);
+}
+
+DesktopControlResult DesktopWidgetController::GetContentParameters(
+    std::wstring_view id,
+    content::ContentParameterValues* values) const {
+    return service_.GetContentWidgetParameters(id, values);
+}
+
+DesktopControlResult DesktopWidgetController::SetContentParameter(
+    std::wstring_view id,
+    std::wstring_view key,
+    content::ContentParameterValue value) const {
+    return service_.SetContentWidgetParameter(id, key, std::move(value));
+}
+
+DesktopControlResult DesktopWidgetController::ResetContentParameters(std::wstring_view id) const {
+    return service_.ResetContentWidgetParameters(id);
 }
 
 DesktopControlResult DesktopWidgetController::SetEnabled(std::wstring_view id, bool enabled) const {

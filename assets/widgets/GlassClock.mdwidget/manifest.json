@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "com.goodloong.glass-clock",
+  "name": "玻璃时钟",
+  "author": "GoodLoongStudio",
+  "version": "1.0.0",
+  "kind": "widget",
+  "runtime": "scene",
+  "entry": "scene.json",
+  "parameters": "parameters.json",
+  "capabilities": ["clock.read"],
+  "geometry": {
+    "defaultWidth": 0.30,
+    "defaultHeight": 0.30,
+    "resize": false,
+    "aspectRatio": 1.0
+  }
+}

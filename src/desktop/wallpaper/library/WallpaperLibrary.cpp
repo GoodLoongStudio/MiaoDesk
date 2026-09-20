@@ -1,5 +1,8 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoContentPackageManager.h"
+#include "miaodesk/MiaoSceneSerializer.h"
 #include "miaodesk/WallpaperPackage.h"
 
 #include <windows.h>
@@ -39,6 +42,12 @@ unsigned long long NowUnixSeconds() {
             std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
+unsigned long long EarliestNonZero(unsigned long long a, unsigned long long b) {
+    if (a == 0) return b;
+    if (b == 0) return a;
+    return std::min(a, b);
+}
+
 std::wstring SanitizeText(std::wstring value) {
     for (auto& ch : value) {
         if (ch == L'\r' || ch == L'\n' || ch == L'\t') ch = L' ';
@@ -51,6 +60,18 @@ std::wstring Lower(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(ch));
     });
     return value;
+}
+
+std::wstring Utf8ToWide(std::string_view value) {
+    if (value.empty()) return {};
+    const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                             value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (required <= 0) return {};
+    std::wstring result(static_cast<std::size_t>(required), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                            value.data(), static_cast<int>(value.size()), result.data(), required) != required)
+        return {};
+    return result;
 }
 
 fs::path NormalizedAbsolute(const fs::path& value) {
@@ -73,6 +94,22 @@ bool PathIsInside(const fs::path& candidate, const fs::path& root) {
     std::wstring base = Lower(NormalizedAbsolute(root).wstring());
     if (!base.empty() && base.back() != L'\\' && base.back() != L'/') base.push_back(fs::path::preferred_separator);
     return value.size() >= base.size() && value.compare(0, base.size(), base) == 0;
+}
+
+fs::path ManagedPackageRoot(const fs::path& source, const fs::path& packageDirectory) {
+    if (source.empty()) return {};
+    const fs::path libraryRoot = NormalizedAbsolute(packageDirectory);
+    fs::path current = NormalizedAbsolute(source);
+    std::error_code ec;
+    if (fs::is_regular_file(current, ec)) current = current.parent_path();
+    ec.clear();
+    while (!current.empty() && PathIsInside(current, libraryRoot) && !SamePath(current, libraryRoot)) {
+        if (Lower(current.extension().wstring()) == L".mdwall") return current;
+        const fs::path parent = current.parent_path();
+        if (parent == current) break;
+        current = parent;
+    }
+    return {};
 }
 
 std::wstring MakeId() {
@@ -194,6 +231,13 @@ bool GenerateShellThumbnail(const fs::path& source, const fs::path& destination)
     return saved;
 }
 
+bool WriteUtf8File(const fs::path& path, std::string_view value) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return false;
+    output.write(value.data(), static_cast<std::streamsize>(value.size()));
+    return output.good();
+}
+
 } // namespace
 
 WallpaperLibrary::WallpaperLibrary() : root_(DefaultLibraryRoot()) {}
@@ -229,6 +273,63 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (item.title.empty()) item.title = item.source.empty() ? L"未命名壁纸" : DefaultTitle(item.source);
         if (!item.id.empty() && item.kind != LibraryWallpaperKind::Unknown) items_.push_back(std::move(item));
     }
+    }
+
+    // Normalize legacy Scene records whose Source still points at a file inside
+    // a managed .mdwall package. External packages intentionally remain path-
+    // based until they pass through the managed content install lifecycle.
+    const auto loadedItems = items_;
+    for (const auto& legacy : loadedItems) {
+        if (legacy.kind != LibraryWallpaperKind::Scene || legacy.source.empty()) continue;
+        if (Lower(legacy.source.wstring()).rfind(L"content:", 0) == 0) continue;
+
+        const fs::path packageRoot = ManagedPackageRoot(legacy.source, PackageDirectory());
+        if (packageRoot.empty()) continue;
+
+        content::LoadedMiaoContentPackage package;
+        std::wstring packageError;
+        if (!content::MiaoContentPackage::Load(packageRoot, &package, &packageError) ||
+            package.manifest.kind != content::ContentKind::Wallpaper ||
+            package.manifest.runtime != content::ContentRuntimeKind::Scene) {
+            continue;
+        }
+        content::SceneRuntimeDefinition runtime;
+        if (!content::MiaoSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
+
+        const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(package.manifest.id);
+        if (stableId.empty()) continue;
+        const auto legacyIndex = FindIndex(legacy.id);
+        if (!legacyIndex) continue;
+        const auto stableIndex = FindIndex(stableId);
+
+        WallpaperLibraryItem migrated = stableIndex ? items_[*stableIndex] : items_[*legacyIndex];
+        migrated.favorite = migrated.favorite || legacy.favorite;
+        migrated.importedUnixSeconds = EarliestNonZero(migrated.importedUnixSeconds, legacy.importedUnixSeconds);
+        migrated.lastUsedUnixSeconds = std::max(migrated.lastUsedUnixSeconds, legacy.lastUsedUnixSeconds);
+        migrated.id = stableId;
+        migrated.kind = LibraryWallpaperKind::Scene;
+        migrated.source = NormalizedAbsolute(packageRoot);
+        migrated.managedCopy = true;
+
+        // Persist the stable identity before removing the legacy section so an
+        // interrupted migration never loses the user's record.
+        if (!SaveItem(migrated, error)) return false;
+        if (_wcsicmp(legacy.id.c_str(), stableId.c_str()) != 0) {
+            const std::wstring oldSection = SectionName(legacy.id);
+            if (!WritePrivateProfileStringW(oldSection.c_str(), nullptr, nullptr, manifest.c_str())) {
+                SetError(error, L"删除旧版 Scene 壁纸记录失败");
+                return false;
+            }
+        }
+
+        if (stableIndex && *stableIndex != *legacyIndex) {
+            items_[*stableIndex] = migrated;
+            const auto removeIndex = FindIndex(legacy.id);
+            if (removeIndex) items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+        } else {
+            const auto replaceIndex = FindIndex(legacy.id);
+            if (replaceIndex) items_[*replaceIndex] = migrated;
+        }
     }
 
     if (!DiscoverPackages(error)) return false;
@@ -346,9 +447,8 @@ bool WallpaperLibrary::Remove(std::wstring_view id, bool deleteManagedCopy, std:
         if (PathIsInside(item.source, MediaDirectory())) {
             fs::remove(item.source, ec);
         } else if (PathIsInside(item.source, PackageDirectory())) {
-            const fs::path package = item.source.parent_path();
-            if (Lower(package.extension().wstring()) == L".mdwall" && PathIsInside(package, PackageDirectory()))
-                fs::remove_all(package, ec);
+            const fs::path package = ManagedPackageRoot(item.source, PackageDirectory());
+            if (!package.empty()) fs::remove_all(package, ec);
         }
     }
     items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
@@ -437,6 +537,82 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
     for (const auto& entry : fs::directory_iterator(packages, ec)) {
         if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
         if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
+
+        // Canonical Content packages are identified by manifest id, never by
+        // their folder name or original download path. Resolve the concrete
+        // runtime source on every scan so replacements keep stable identity.
+        content::LoadedMiaoContentPackage canonical;
+        std::wstring canonicalError;
+        if (content::MiaoContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
+            canonical.manifest.kind == content::ContentKind::Wallpaper) {
+            LibraryWallpaperKind canonicalKind = LibraryWallpaperKind::Unknown;
+            fs::path source;
+            if (canonical.manifest.runtime == content::ContentRuntimeKind::Scene) {
+                content::SceneRuntimeDefinition runtime;
+                if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
+                canonicalKind = LibraryWallpaperKind::Scene;
+                source = NormalizedAbsolute(entry.path());
+            } else if (canonical.manifest.runtime == content::ContentRuntimeKind::Web) {
+                if (!content::MiaoContentPackage::ResolvePackagePath(
+                        canonical.root, canonical.manifest.entry, &source, &canonicalError) ||
+                    !fs::is_regular_file(source, ec)) {
+                    ec.clear();
+                    continue;
+                }
+                ec.clear();
+                canonicalKind = LibraryWallpaperKind::Web;
+                source = NormalizedAbsolute(source);
+            } else {
+                continue;
+            }
+
+            const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(canonical.manifest.id);
+            if (stableId.empty()) continue;
+
+            const auto stableIndex = FindIndex(stableId);
+            const auto sourceIndex = stableIndex ? std::optional<std::size_t>{} : FindSourceIndex(source);
+
+            WallpaperLibraryItem item;
+            if (stableIndex) {
+                item = items_[*stableIndex];
+            } else if (sourceIndex) {
+                item = items_[*sourceIndex];
+                if (_wcsicmp(item.id.c_str(), stableId.c_str()) != 0) {
+                    const std::wstring oldSection = SectionName(item.id);
+                    WritePrivateProfileStringW(oldSection.c_str(), nullptr, nullptr, ManifestPath().c_str());
+                }
+            } else {
+                item.importedUnixSeconds = NowUnixSeconds();
+            }
+
+            item.id = stableId;
+            item.kind = canonicalKind;
+            const std::wstring packageName = Utf8ToWide(canonical.manifest.name);
+            item.title = SanitizeText(packageName.empty() ? DefaultTitle(entry.path()) : packageName);
+            item.source = source;
+            item.managedCopy = true;
+            item.thumbnail.clear();
+
+            if (!canonical.manifest.preview.empty()) {
+                fs::path preview;
+                std::wstring previewError;
+                if (content::MiaoContentPackage::ResolvePackagePath(
+                        canonical.root, canonical.manifest.preview, &preview, &previewError) &&
+                    fs::is_regular_file(preview, ec)) {
+                    item.thumbnail = preview;
+                }
+                ec.clear();
+            }
+            if (!SaveItem(item, error)) return false;
+            if (stableIndex) items_[*stableIndex] = item;
+            else if (sourceIndex) items_[*sourceIndex] = item;
+            else items_.push_back(std::move(item));
+            continue;
+        }
+
+        // Compatibility path for the established image/video/web package
+        // format. Legacy Scene packages remain intentionally unsupported here;
+        // canonical Scene/Web content must use Miao Content Package schema v1.
         WallpaperPackageManifest manifest;
         std::wstring packageError;
         if (!WallpaperPackage::Validate(entry.path(), &manifest, &packageError)) continue;
@@ -571,22 +747,159 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && !library.RecentlyUsed(1).empty();
     }
     ok = ok && library.UpsertScene(L"scene-aurora", L"妙喵云境", &error);
-    const fs::path package = library.PackageDirectory() / L"selftest.mdwall";
-    ok = ok && WallpaperPackage::CreateWeb(package, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
+
+    const fs::path legacyPackage = library.PackageDirectory() / L"selftest.mdwall";
+    ok = ok && WallpaperPackage::CreateWeb(legacyPackage, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
+
+    const fs::path canonicalPackage = library.PackageDirectory() / L"canonical-selftest.mdwall";
+    fs::create_directories(canonicalPackage, ec);
+    ok = ok && !ec;
+    ok = ok && WriteUtf8File(canonicalPackage / L"manifest.json", R"json({
+      "schema":1,
+      "id":"com.goodloong.selftest.scene",
+      "name":"Canonical Scene",
+      "author":"MiaoDesk",
+      "version":"1.0.0",
+      "kind":"wallpaper",
+      "runtime":"scene",
+      "entry":"scene.json",
+      "parameters":"parameters.json",
+      "capabilities":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalPackage / L"scene.json", R"json({
+      "schema":1,
+      "id":"scene://library-canonical-selftest",
+      "kind":"wallpaper",
+      "profile":"wallpaper",
+      "rootNodeId":"node://root",
+      "nodes":[{"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[
+        {"id":"component://root/transform","kind":"transform","properties":[
+          {"name":"opacity","type":"float","default":1.0}
+        ]}
+      ]}],
+      "assets":[],
+      "shaders":[],
+      "materials":[],
+      "inputs":[],
+      "bindings":[],
+      "animations":[],
+      "postProcesses":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalPackage / L"parameters.json", R"json({"schema":1,"parameters":[]})json");
+
+    const fs::path canonicalWebPackage = library.PackageDirectory() / L"canonical-web-selftest.mdwall";
+    fs::create_directories(canonicalWebPackage, ec);
+    ok = ok && !ec;
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"manifest.json", R"json({
+      "schema":1,
+      "id":"com.goodloong.selftest.web",
+      "name":"Canonical Web",
+      "author":"MiaoDesk",
+      "version":"1.0.0",
+      "kind":"wallpaper",
+      "runtime":"web",
+      "entry":"index.html",
+      "capabilities":[]
+    })json");
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"index.html",
+                             "<html><body>MiaoDesk canonical web wallpaper</body></html>");
+
+    // Seed both a stable record and an older file-level Scene record to prove
+    // duplicate collapse preserves user metadata. Also seed an external path;
+    // it must remain untouched because it has not been managed-installed.
+    const fs::path libraryManifest = library.ManifestPath();
+    const std::wstring stableSection = SectionName(L"content:com.goodloong.selftest.scene");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"Kind", L"scene");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"Title", L"Stable Scene");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"Source", canonicalPackage.wstring());
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"Favorite", L"0");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"ManagedCopy", L"1");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"Imported", L"220");
+    ok = ok && WriteProfileText(libraryManifest, stableSection, L"LastUsed", L"120");
+
+    const std::wstring legacySection = SectionName(L"legacy-scene");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"Kind", L"scene");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"Title", L"Legacy Scene");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"Source", (canonicalPackage / L"scene.json").wstring());
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"Favorite", L"1");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"ManagedCopy", L"1");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"Imported", L"110");
+    ok = ok && WriteProfileText(libraryManifest, legacySection, L"LastUsed", L"330");
+
+    const fs::path externalScene = root / L"external.mdwall" / L"scene.json";
+    const std::wstring externalSection = SectionName(L"external-scene");
+    ok = ok && WriteProfileText(libraryManifest, externalSection, L"Kind", L"scene");
+    ok = ok && WriteProfileText(libraryManifest, externalSection, L"Title", L"External Legacy Scene");
+    ok = ok && WriteProfileText(libraryManifest, externalSection, L"Source", externalScene.wstring());
+    ok = ok && WriteProfileText(libraryManifest, externalSection, L"Favorite", L"0");
+    ok = ok && WriteProfileText(libraryManifest, externalSection, L"ManagedCopy", L"0");
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, libraryManifest.c_str());
 
     WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
     ok = ok && reloaded.Find(L"scene-aurora").has_value();
+    ok = ok && !reloaded.Find(L"legacy-scene").has_value();
+    ok = ok && reloaded.Find(L"external-scene").has_value();
+
     const auto packageItems = reloaded.Search(L"Package Web");
     ok = ok && !packageItems.empty();
     if (!packageItems.empty()) {
         ok = ok && reloaded.Remove(packageItems.front().id, true, &error);
-        ok = ok && !fs::exists(package);
-        WallpaperLibrary afterRemoval(root / L"Library");
-        ok = ok && afterRemoval.Load(&error);
-        ok = ok && afterRemoval.Search(L"Package Web").empty();
+        ok = ok && !fs::exists(legacyPackage);
     }
-    if (imported) ok = ok && reloaded.Find(imported->id).has_value();
+
+    const std::wstring canonicalId = L"content:com.goodloong.selftest.scene";
+    auto canonicalItem = reloaded.Find(canonicalId);
+    ok = ok && canonicalItem.has_value();
+    if (canonicalItem) {
+        ok = ok && canonicalItem->kind == LibraryWallpaperKind::Scene;
+        ok = ok && SamePath(canonicalItem->source, canonicalPackage);
+        ok = ok && canonicalItem->favorite;
+        ok = ok && canonicalItem->importedUnixSeconds == 110;
+        ok = ok && canonicalItem->lastUsedUnixSeconds == 330;
+        ok = ok && reloaded.Search(L"Canonical Scene").size() == 1;
+    }
+
+    const std::wstring canonicalWebId = L"content:com.goodloong.selftest.web";
+    const auto canonicalWebItem = reloaded.Find(canonicalWebId);
+    ok = ok && canonicalWebItem.has_value();
+    if (canonicalWebItem) {
+        ok = ok && canonicalWebItem->kind == LibraryWallpaperKind::Web;
+        ok = ok && SamePath(canonicalWebItem->source, canonicalWebPackage / L"index.html");
+        ok = ok && canonicalWebItem->managedCopy;
+        ok = ok && reloaded.Search(L"Canonical Web").size() == 1;
+    }
+
+    // Moving/renaming a managed package must not change its logical identity.
+    const fs::path movedCanonicalPackage = library.PackageDirectory() / L"renamed-canonical.mdwall";
+    if (ok) {
+        fs::rename(canonicalPackage, movedCanonicalPackage, ec);
+        ok = !ec;
+    }
+    WallpaperLibrary afterMove(root / L"Library");
+    ok = ok && afterMove.Load(&error);
+    canonicalItem = afterMove.Find(canonicalId);
+    ok = ok && canonicalItem.has_value();
+    if (canonicalItem) {
+        ok = ok && SamePath(canonicalItem->source, movedCanonicalPackage);
+        ok = ok && afterMove.Search(L"Canonical Scene").size() == 1;
+        ok = ok && afterMove.Remove(canonicalItem->id, true, &error);
+        ok = ok && !fs::exists(movedCanonicalPackage);
+    }
+    const auto webAfterMove = afterMove.Find(canonicalWebId);
+    ok = ok && webAfterMove.has_value();
+    if (webAfterMove) {
+        ok = ok && afterMove.Remove(webAfterMove->id, true, &error);
+        ok = ok && !fs::exists(canonicalWebPackage);
+    }
+
+    WallpaperLibrary afterRemoval(root / L"Library");
+    ok = ok && afterRemoval.Load(&error);
+    ok = ok && afterRemoval.Search(L"Package Web").empty();
+    ok = ok && afterRemoval.Search(L"Canonical Scene").empty();
+    ok = ok && afterRemoval.Search(L"Canonical Web").empty();
+    ok = ok && afterRemoval.Find(L"external-scene").has_value();
+    if (imported) ok = ok && afterRemoval.Find(imported->id).has_value();
 
     fs::remove_all(root, ec);
     return ok;

@@ -18,6 +18,9 @@ on:
       - scripts/generate-miaomiao-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/package-windows-x64.yml
+  pull_request:
+    paths:
+      - .github/workflows/package-windows-x64.yml
   workflow_dispatch:
 
 permissions:
@@ -347,10 +350,10 @@ jobs:
             $namespaces)
           if (-not $extension) { throw 'MSIX manifest is missing windows.startupTask.' }
           $task = $extension.SelectSingleNode('desktop:StartupTask', $namespaces)
-          if (-not $task -or $task.TaskId -ne 'MiaoDeskStartup' -or $task.Enabled -ne 'false') {
-            throw 'MSIX startup task identity or consent-safe default is invalid.'
+          if (-not $task -or $task.TaskId -ne 'MiaoDeskStartup' -or $task.Enabled -ne 'true') {
+            throw 'MSIX startup task identity or default-enabled state is invalid.'
           }
-          if ($manifest.Package.Identity.Version -ne '0.1.2.0') {
+          if ($manifest.Package.Identity.Version -ne '0.1.3.0') {
             throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)"
           }
           foreach ($relative in @('LICENSE','THIRD-PARTY-NOTICES.md')) {

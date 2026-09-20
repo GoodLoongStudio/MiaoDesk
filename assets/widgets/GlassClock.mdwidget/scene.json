@@ -1,0 +1,379 @@
+{
+  "schema": 1,
+  "id": "scene://glass-clock",
+  "kind": "widget",
+  "profile": "widget",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Glass Clock Root",
+      "parentId": "",
+      "enabled": true,
+      "components": []
+    },
+    {
+      "id": "node://card",
+      "name": "Card",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://card/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+            {"name": "scale", "type": "vec2", "default": [0.98, 0.96]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://card/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.96},
+            {"name": "tint", "type": "color", "default": [0.055, 0.18, 0.42, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 28.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://top-glass",
+      "name": "Top Glass Highlight",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://top-glass/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -103.0]},
+            {"name": "scale", "type": "vec2", "default": [0.94, 0.28]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://top-glass/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.10},
+            {"name": "tint", "type": "color", "default": [0.78, 0.95, 1.0, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 24.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://left-glow",
+      "name": "Left Accent Glow",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://left-glow/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [-192.0, 5.0]},
+            {"name": "scale", "type": "vec2", "default": [0.25, 0.72]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://left-glow/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.10},
+            {"name": "tint", "type": "color", "default": [0.18, 0.98, 0.92, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 28.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://right-glow",
+      "name": "Right Accent Glow",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://right-glow/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [202.0, -54.0]},
+            {"name": "scale", "type": "vec2", "default": [0.18, 0.42]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://right-glow/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.055},
+            {"name": "tint", "type": "color", "default": [0.18, 0.98, 0.92, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 28.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://bottom-depth",
+      "name": "Bottom Depth",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://bottom-depth/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 116.0]},
+            {"name": "scale", "type": "vec2", "default": [0.94, 0.20]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://bottom-depth/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.18},
+            {"name": "tint", "type": "color", "default": [0.01, 0.045, 0.16, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 24.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://brand",
+      "name": "Brand",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://brand/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [22.0, 14.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.78}
+          ]
+        },
+        {
+          "id": "component://brand/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "妙喵"},
+            {"name": "fontSize", "type": "float", "default": 14.0},
+            {"name": "color", "type": "color", "default": [0.88, 0.95, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://time",
+      "name": "Time",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://time/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -18.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://time/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{time.hhmm}}"},
+            {"name": "fontSize", "type": "float", "default": 86.0},
+            {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Display"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://divider",
+      "name": "Date Divider",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://divider/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 66.0]},
+            {"name": "scale", "type": "vec2", "default": [0.86, 0.005]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://divider/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.20},
+            {"name": "tint", "type": "color", "default": [0.18, 0.98, 0.92, 1.0]},
+            {"name": "cornerRadius", "type": "float", "default": 4.0},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://date",
+      "name": "Date",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://date/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 88.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.86}
+          ]
+        },
+        {
+          "id": "component://date/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{time.date}}"},
+            {"name": "fontSize", "type": "float", "default": 18.0},
+            {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "center"},
+            {"name": "verticalAlign", "type": "string", "default": "center"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 500}
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [
+    {
+      "id": "material://card",
+      "model": "builtin",
+      "builtinName": "solidColor",
+      "vertexShaderId": "",
+      "pixelShaderId": "",
+      "properties": [
+        {"name": "color", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]}
+      ],
+      "textures": []
+    }
+  ],
+  "inputs": [],
+  "bindings": [
+    {
+      "id": "binding://background-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://background-color",
+      "target": {"componentId": "component://card/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-glow-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://left-glow/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-right-glow-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://right-glow/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-divider-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-color",
+      "target": {"componentId": "component://divider/sprite", "propertyName": "tint"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-left-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://left-glow/sprite", "propertyName": "opacity"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-right-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://right-glow/sprite", "propertyName": "opacity"},
+      "scale": 0.55,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://accent-divider-intensity",
+      "sourceKind": "parameter",
+      "sourceId": "param://accent-intensity",
+      "target": {"componentId": "component://divider/sprite", "propertyName": "opacity"},
+      "scale": 2.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://card-opacity",
+      "sourceKind": "parameter",
+      "sourceId": "param://card-opacity",
+      "target": {"componentId": "component://card/sprite", "propertyName": "opacity"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://time-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://time/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    },
+    {
+      "id": "binding://date-color",
+      "sourceKind": "parameter",
+      "sourceId": "param://text-color",
+      "target": {"componentId": "component://date/text", "propertyName": "color"},
+      "scale": 1.0,
+      "offset": 0.0
+    }
+  ],
+  "animations": []
+}

@@ -1,0 +1,199 @@
+#include "miaodesk/MiaoContentPackageManager.h"
+#include "miaodesk/AppPaths.h"
+
+#include <windows.h>
+
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <string>
+#include <system_error>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace miaodesk::content {
+namespace {
+
+bool Fail(std::wstring* error, std::wstring message) {
+    if (error) *error = std::move(message);
+    return false;
+}
+
+fs::path NormalizedAbsolute(const fs::path& path) {
+    std::error_code ec;
+    fs::path absolute = fs::absolute(path, ec);
+    if (ec) absolute = path;
+    absolute = absolute.lexically_normal();
+    ec.clear();
+    const fs::path canonical = fs::weakly_canonical(absolute, ec);
+    return ec ? absolute : canonical;
+}
+
+std::wstring Lower(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+        return (ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch;
+    });
+    return value;
+}
+
+bool PathIsInside(const fs::path& candidate, const fs::path& root) {
+    const std::wstring value = Lower(NormalizedAbsolute(candidate).wstring());
+    std::wstring base = Lower(NormalizedAbsolute(root).wstring());
+    if (value == base) return true;
+    if (!base.empty() && base.back() != L'\\' && base.back() != L'/')
+        base.push_back(fs::path::preferred_separator);
+    return value.size() >= base.size() && value.compare(0, base.size(), base) == 0;
+}
+
+std::wstring ReadWallpaperProfile(const fs::path& path, const wchar_t* key) {
+    std::vector<wchar_t> buffer(32768);
+    GetPrivateProfileStringW(L"Wallpaper", key, L"", buffer.data(),
+                             static_cast<DWORD>(buffer.size()), path.c_str());
+    return buffer.data();
+}
+
+bool GlobalWebSelectionUsesPackage(
+    const fs::path& packageRoot,
+    std::wstring_view packageSource,
+    fs::path* configPath,
+    bool* preserveStableSelection) {
+    if (preserveStableSelection) *preserveStableSelection = false;
+    const fs::path stateRoot = paths::EnsureStateRoot();
+    if (stateRoot.empty()) return false;
+    const fs::path config = stateRoot / L"wallpaper.ini";
+    if (configPath) *configPath = config;
+
+    const std::wstring scene = ReadWallpaperProfile(config, L"Scene");
+    if (_wcsicmp(scene.c_str(), L"web") != 0) return false;
+    const std::wstring source = ReadWallpaperProfile(config, L"Image");
+    if (source.empty() || !PathIsInside(fs::path(source), packageRoot)) return false;
+
+    const std::wstring contentSource = ReadWallpaperProfile(config, L"ContentSource");
+    if (preserveStableSelection && !packageSource.empty()) {
+        const std::wstring expected(packageSource);
+        *preserveStableSelection = _wcsicmp(contentSource.c_str(), expected.c_str()) == 0;
+    }
+    return true;
+}
+
+void ReconcileGlobalWebSelectionAfterUninstall(const fs::path& config, bool preserveStableSelection) {
+    if (config.empty()) return;
+    WritePrivateProfileStringW(L"Wallpaper", L"Image", L"", config.c_str());
+    if (!preserveStableSelection) {
+        WritePrivateProfileStringW(L"Wallpaper", L"Scene", L"aurora", config.c_str());
+        WritePrivateProfileStringW(L"Wallpaper", L"ContentSource", L"", config.c_str());
+    }
+    WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
+}
+
+std::wstring OperationToken() {
+    return std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+}
+
+void CleanupStaleMaintenanceDirectory(
+    const fs::path& userRoot,
+    std::wstring_view directoryName,
+    fs::file_time_type::duration minimumAge) {
+    const fs::path maintenanceRoot = userRoot / directoryName;
+    std::error_code ec;
+    if (!fs::is_directory(maintenanceRoot, ec) || ec) return;
+
+    const auto now = fs::file_time_type::clock::now();
+    for (const auto& entry : fs::directory_iterator(
+             maintenanceRoot, fs::directory_options::skip_permission_denied, ec)) {
+        if (ec) break;
+
+        std::error_code timeError;
+        const auto modified = fs::last_write_time(entry.path(), timeError);
+        if (timeError || now - modified < minimumAge) continue;
+
+        std::error_code cleanupError;
+        fs::remove_all(entry.path(), cleanupError);
+    }
+
+    // Maintenance is strictly best-effort. Removing an empty hidden parent is
+    // cosmetic and must never make uninstall fail.
+    ec.clear();
+    if (fs::is_empty(maintenanceRoot, ec) && !ec) fs::remove(maintenanceRoot, ec);
+}
+
+void CleanupStaleMaintenance(const fs::path& userRoot) {
+    // Locked uninstall trash can be retried fairly quickly. Install staging is
+    // more conservative because another process may still be copying a large
+    // package; only reclaim staging containers that have been idle for a day.
+    CleanupStaleMaintenanceDirectory(userRoot, L".trash", std::chrono::hours(1));
+    CleanupStaleMaintenanceDirectory(userRoot, L".staging", std::chrono::hours(24));
+}
+
+} // namespace
+
+bool MiaoContentPackageManager::Uninstall(
+    ContentKind expectedKind,
+    std::wstring_view source,
+    ContentPackageUninstallResult* result,
+    std::wstring* error) {
+    if (!result) return Fail(error, L"Content package uninstall result is null.");
+    *result = {};
+
+    ManagedContentPackageInfo package;
+    if (!Resolve(expectedKind, source, &package, error)) return false;
+    if (package.origin == ManagedContentPackageOrigin::BuiltIn)
+        return Fail(error, L"Built-in content packages cannot be uninstalled: " + package.source);
+    if (package.origin != ManagedContentPackageOrigin::UserManaged)
+        return Fail(error, L"Only user-managed content packages can be uninstalled.");
+
+    const fs::path userRoot = UserRoot(expectedKind);
+    if (userRoot.empty() || !PathIsInside(package.packageRoot, userRoot))
+        return Fail(error, L"Resolved user package is outside the managed content root.");
+
+    // Detect the global Web selection before moving the package. Canonical
+    // Content selections keep their stable content:<id> across uninstall so a
+    // later reinstall can recover automatically; legacy direct selections are
+    // cleared after the rename succeeds.
+    fs::path wallpaperConfig;
+    bool preserveStableWebSelection = false;
+    const bool reconcilesGlobalWeb = expectedKind == ContentKind::Wallpaper &&
+        GlobalWebSelectionUsesPackage(
+            package.packageRoot, package.source, &wallpaperConfig, &preserveStableWebSelection);
+
+    // Reclaim stale hidden maintenance state left by earlier interrupted
+    // operations, while deliberately preserving recoverable .backup data.
+    CleanupStaleMaintenance(userRoot);
+
+    const fs::path trashContainer = userRoot / L".trash" / OperationToken();
+    const fs::path trashRoot = trashContainer / package.packageRoot.filename();
+    std::error_code ec;
+    fs::create_directories(trashContainer, ec);
+    if (ec)
+        return Fail(error, L"Unable to create content package trash directory: error=" +
+                           std::to_wstring(ec.value()));
+
+    ec.clear();
+    fs::rename(package.packageRoot, trashRoot, ec);
+    if (ec) {
+        std::error_code cleanupError;
+        fs::remove_all(trashContainer, cleanupError);
+        return Fail(error, L"Unable to move content package out of the catalog: error=" +
+                           std::to_wstring(ec.value()));
+    }
+
+    // The rename above is the logical uninstall point: .trash is hidden from
+    // every catalog scan. Drop the now-dead physical HTML path. Canonical
+    // Content Web keeps Scene=web + ContentSource so GetState() safely falls
+    // back while absent and resumes the same stable id after reinstall.
+    if (reconcilesGlobalWeb)
+        ReconcileGlobalWebSelectionAfterUninstall(wallpaperConfig, preserveStableWebSelection);
+
+    // Physical cleanup is best-effort so a locked file can never leave a
+    // half-deleted package visible to the runtime.
+    std::error_code cleanupError;
+    fs::remove_all(trashContainer, cleanupError);
+
+    result->package = std::move(package);
+    result->cleanupDeferred = static_cast<bool>(cleanupError);
+    if (error) error->clear();
+    return true;
+}
+
+} // namespace miaodesk::content

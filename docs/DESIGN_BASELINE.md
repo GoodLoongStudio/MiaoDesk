@@ -1,11 +1,11 @@
 # MiaoDesk 设计基线
 
 - 状态：当前唯一设计基线
-- 日期：2026-09-02
+- 日期：2026-09-05
 - 适用分支：`main`
-- 目标：先把 Windows 桌面核心做稳定、做轻、做快，再扩展能力
+- 目标：先把 Windows 桌面核心做稳定、做轻、做快，再在稳定 Host 之上扩展可配置、可参数化的内容能力
 
-与本文冲突的旧设计、阶段计划、Wallpaper Editor / Scene Editor / Widget Editor 方案均作废。
+与本文冲突的旧设计、阶段计划、旧 Wallpaper Editor / Scene Editor / Widget Editor 方案均作废。
 
 ## 1. 产品定位
 
@@ -19,7 +19,18 @@ MiaoDesk
 └─ AI
 ```
 
-当前开发优先级不是“做一个完整桌面编辑器”，而是先保证 Wallpaper 与 Widgets 在真实 Windows 桌面上长期稳定运行，并维持低常驻资源占用。
+当前产品底座仍优先保证 Wallpaper 与 Widgets 在真实 Windows 桌面上长期稳定运行，并维持低常驻资源占用。
+
+在此基础上，下一阶段正式进入：
+
+```text
+MiaoDesk Content Framework
+妙喵内容框架
+```
+
+目标不是恢复旧式大型 Editor，而是把 Wallpaper / Widget 的内容从宿主代码中抽离为统一的 Package、Definition、Instance、Parameter、Scene Runtime 与 Capability 模型，让官方内容与用户内容使用同一套底层框架。
+
+详细契约：`docs/MIAODESK_CONTENT_FRAMEWORK.md`。
 
 ## 2. 最高设计原则：Native C++ 与性能优先
 
@@ -37,10 +48,11 @@ Windows Shell APIs
 原则：
 
 1. 能用 Native C++ 稳定实现的常驻能力，不引入 Web Runtime。
-2. WebView2 只用于内容本身就是 Web 的能力，例如 Web Wallpaper 与 DeepSeek Harness。
+2. WebView2 只用于内容本身就是 Web 的能力、独立 Harness，以及明确隔离的临时 Preview / 高级内容 Runtime；不得成为所有 Wallpaper / Widget 的默认承载层。
 3. AI、Node、Pi、Harness 等较重 Runtime 不进入桌面渲染主路径。
 4. 桌面 Surface 不依赖系统 Node、全局 npm 或在线安装。
 5. 真实 Windows 用户体验、稳定性和性能优先于架构形式上的“完整”。
+6. 官方内容与用户内容优先共享同一 Content Runtime；不允许长期维护“官方 hardcode renderer / 用户另一套 renderer”的双轨架构。
 
 ## 3. Windows 桌面组合模型
 
@@ -72,6 +84,8 @@ Windows Background / WorkerW
 - Wallpaper 故障不能拖垮 Widget；
 - Progman / WorkerW / Raised Desktop / Explorer recovery 只能由 `DesktopShellHost` 统一处理。
 
+Content Framework 只能复用这些 Host 能力，不得重新实现第二套 Shell attachment / z-order ownership。
+
 ## 4. Wallpaper 设计基线
 
 正式保留四类 Wallpaper：
@@ -87,7 +101,7 @@ Scene
 
 - Image：WIC + Native rendering；
 - Video：Media Foundation；
-- Scene：Native Direct2D，后续只有明确性能收益时才引入更重 GPU 路径；
+- Scene：Native Direct2D / Content Scene Runtime；只有明确性能收益时才引入更重 GPU 路径；
 - Web：独立 WebView2 Host，按需启动。
 
 当前用户侧核心操作：
@@ -100,23 +114,34 @@ Scene
 多显示器应用
 ```
 
-当前阶段不做 Wallpaper Editor。
+下一阶段增加的能力不是旧 Wallpaper Editor，而是：
 
-明确删除/停止规划：
+```text
+导入 / 创建 Content Package
+配置 ParameterValues
+Preview
+保存 / 应用 ContentInstance
+```
 
-- Scene Editor；
-- Wallpaper Editor；
-- Timeline / Keyframe Editor；
-- Inspector；
+`.mdwall` 继续作为 Wallpaper 内容包，并逐步迁移到 `MiaoDesk Content Framework` 的共享 Package / Parameter / Scene 契约。
+
+明确不恢复旧路线：
+
+- 旧 Scene Editor；
+- 旧 Wallpaper Editor；
+- 旧 Timeline / Keyframe Editor；
+- 旧 Inspector-first 编辑模式；
 - Shader / Particle 可视化编辑器；
 - 旧 Wallpaper Engine parity 驱动的编辑器路线；
-- 为编辑器预留的大型 typed-property UI。
+- 为旧编辑器预留的大型 typed-property UI。
 
-`.mdwall` 当前是运行时资源包，不等于“编辑器工程格式”。
+用户创作能力应建立在 Content Runtime 之上，而不是复活旧 Editor 代码。
 
 ## 5. Widget 设计基线
 
-Widget 只提供 Native Widget（Web Widget / WebView2 承载组件已整体移除，AI 不能创建或修改组件，只能通过 `desktop_widget_list` 读取状态）：
+### 5.1 当前生产基线
+
+当前正式内置 Widget 仍是三款 Native Widget：
 
 ```text
 玻璃时钟    GlassClock
@@ -124,16 +149,24 @@ Widget 只提供 Native Widget（Web Widget / WebView2 承载组件已整体移�
 玻璃天气    WeatherGlass
 ```
 
-Native Widget 使用：
+Legacy Web Widget / WebView2 常驻组件路径已整体移除。
+
+Native Widget 当前使用两种 presentation path，由 Windows Desktop parent 能力决定：
 
 ```text
-NativeWidgetPainter
-  ↓
+Layered path
 Direct2D
   ↓
 32-bit premultiplied-alpha DIB
   ↓
 UpdateLayeredWindow
+
+Raised Desktop direct path
+Direct2D
+  ↓
+D3D11 / DXGI swapchain
+  ↓
+DWM composition
 ```
 
 一个 Widget 必须有真实的渲染成功状态，不能只因为 `enabled=true` 或 HWND 存在就认为正常。
@@ -153,9 +186,9 @@ PaintReady
 last error
 ```
 
-### 5.1 Widget 尺寸与位置
+### 5.2 Widget 尺寸与位置
 
-内置 Widget 的尺寸由 Preset 拥有：
+当前三款内置 Widget 的尺寸由 Preset 拥有：
 
 ```text
 GlassClock     30% × 30%
@@ -163,7 +196,7 @@ TodayTasks     22% × 48%
 WeatherGlass   28% × 28%
 ```
 
-用户当前只需要修改：
+在旧三款 Preset 完成迁移前，普通 caller 只能修改：
 
 ```text
 x
@@ -171,15 +204,20 @@ y
 enabled
 ```
 
-不在当前范围：
+不能绕过 Preset 直接修改 `width/height`。
 
-- 自由 resize；
-- 数值 Inspector；
-- 任意 z-index；
-- Widget Editor；
-- 自定义 Widget 包编辑器。
+进入 Content Framework 后，尺寸策略由 `ContentDefinition.geometry` 拥有：
 
-### 5.2 Widget 交互模型
+```text
+defaultWidth / defaultHeight
+resize allowed
+min / max size
+aspect ratio policy
+```
+
+`ContentInstance` 只能在 Definition 允许的范围内修改尺寸。
+
+### 5.3 Widget 交互模型
 
 正常状态（自上而下）：
 
@@ -191,9 +229,30 @@ Widget Surface（可交互）
 
 Widget Surface 直接接收鼠标输入：
 
-- 按住 Widget 表面拖动即移动组件，结束后只持久化归一化 `x/y`；
+- 按住 Widget 表面拖动即移动组件，结束后持久化归一化位置；
+- 允许 resize 的 ContentDefinition 以后可增加直接 resize，但必须受 geometry policy 约束；
 - 不引入临时移动模式、Move Overlay 或其他额外交互 Surface；
 - Widget 不进入 click-through 状态；click-through 只属于 Wallpaper Surface。
+
+### 5.4 下一阶段 Widget Content
+
+用户自定义 Widget 正式重新进入路线，但采用新框架：
+
+```text
+.mdwidget
+  ↓
+ContentDefinition
+  ↓
+ParameterSchema
+  ↓
+Scene Runtime
+  ↓
+Widget Host
+```
+
+第一阶段默认 Runtime 是 Native Scene Runtime，不恢复 Web Widget 作为默认路径。
+
+官方 GlassClock 将作为第一份 Widget dogfood，验证官方内容与用户内容共享同一框架。
 
 ## 6. Settings Center
 
@@ -205,13 +264,15 @@ Widget Surface 直接接收鼠标输入：
 API 配置
 ```
 
-设置中心负责“管理和控制”，不承担编辑器职责。
+设置中心负责“管理和控制”，不承担旧式大型编辑器职责。
 
-Wallpaper 页面：资源库 + 激活/停用/删除等明确动作。
+Wallpaper 页面：资源库 + 激活/停用/删除等明确动作；Content Framework 进入实现后增加 Package 导入、参数设置与 Preview。
 
-Widget 页面：三款内置 Widget 的创建、激活、停用、删除与运行状态；位置通过在桌面上直接拖动修改。
+Widget 页面：当前三款内置 Widget 的创建、激活、停用、删除与运行状态；位置通过在桌面上直接拖动修改。Content Framework 进入实现后增加 `.mdwidget` 导入、Instance 管理、参数配置与受策略约束的尺寸能力。
 
 API 配置：Provider / Model / Base URL / API Key。
+
+完整 Visual Creator 不作为 Content Framework 第一阶段的前置条件。
 
 ## 7. Search 与 AI
 
@@ -230,21 +291,70 @@ DeepSeek Harness 是独立的高级工作台，用户明确打开时才显示 We
 
 AI 不得进入 Wallpaper / Widget 的每帧渲染路径。
 
-## 8. 明确移除的旧方向
+当前 AI 对既有 Widget 仍保持只读 `desktop_widget_list` 边界，不直接修改 Widget persistence。
+
+当 Content Framework 的 Definition / Parameter / Preview / commit 边界稳定后，AI 可以在后续阶段通过同一声明式 Content API 修改 ParameterValues 或生成候选 ContentDefinition，但不得绕过 Preview / capability / validation 直接写底层状态。
+
+## 8. MiaoDesk Content Framework 原则
+
+新的用户创作路线必须满足：
+
+```text
+Definition ≠ Instance
+Package ≠ Runtime host
+ParameterSchema ≠ hardcoded settings UI
+Content capability ≠ arbitrary system permission
+Preview ≠ Apply
+```
+
+统一目标：
+
+```text
+官方内容 ─┐
+用户内容 ─┼→ Package / Definition / Parameters / Scene
+AI 内容 ──┤                         ↓
+Creator ──┘                   Content Runtime
+                                  ↓
+                        Wallpaper / Widget Host
+```
+
+第一阶段优先实现：
+
+```text
+ContentDefinition + ContentInstance
+ParameterSchema + ParameterValues
+.mdwidget / .mdwall shared package contract
+Native Scene Runtime MVP
+Data Binding MVP
+Capability Broker MVP
+Package validation / Preview / reload
+GlassClock dogfood
+一个 Scene Wallpaper dogfood
+```
+
+## 9. 明确移除的旧方向
 
 以下内容不再作为当前设计的一部分：
 
-- Wallpaper / Scene / Widget Editor；
-- Timeline / Keyframe / Inspector；
+- 旧 Wallpaper / Scene / Widget Editor 架构；
+- 旧 Timeline / Keyframe / Inspector-first 编辑器；
 - 以 Wallpaper Engine 全功能 parity 为开发清单；
-- Web Widget（WebView2 承载的常驻组件）；
-- AI 生成/应用组件的 A2UI 预览链；
-- 编辑器和 AI 共用 typed property schema 的旧方案；
-- 为未来编辑器保留的 UI、导航和架构层。
+- Legacy Web Widget（WebView2 承载的默认常驻组件）；
+- 旧 AI 生成/应用组件的 A2UI 预览链；
+- 编辑器和 AI 共用旧 typed property schema 的方案；
+- 为旧编辑器保留的 UI、导航和架构层。
 
-如果未来重新出现编辑需求，必须基于届时的产品目标重新立项，不允许从旧 Editor 代码/文档直接复活。
+这些旧方向的移除不再等于“禁止用户创作”。用户创作现在通过 `MiaoDesk Content Framework` 重新立项，采用 Runtime-first 路线：
 
-## 9. 完成标准
+```text
+Content Runtime
+→ Parameter / Package tooling
+→ Visual Creator
+```
+
+不允许直接从旧 Editor 代码/文档复活实现。
+
+## 10. 完成标准
 
 ```text
 代码存在        ≠ 完成
@@ -252,7 +362,19 @@ AI 不得进入 Wallpaper / Widget 的每帧渲染路径。
 CI 绿色         ≠ 完成
 HWND 存在       ≠ Widget 正常
 配置 enabled    ≠ Runtime 正常
+Package 可解析   ≠ Content Framework 完成
 真实 Windows 用户流程稳定通过 = 完成
+```
+
+Content Framework 额外要求：
+
+```text
+至少一个官方 Widget 通过用户内容框架运行
+至少一个官方 Wallpaper 通过用户内容框架运行
+同一 Definition 可产生不同参数 Instance
+Parameter schema 可以驱动设置 UI / Preview
+Package / capability / schema validation 生效
+新内容不破坏现有 Shell / z-order / multi-monitor / low-resource 基线
 ```
 
 当前所有正式交付只进入 `main`。

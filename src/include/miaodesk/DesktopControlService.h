@@ -3,8 +3,10 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/WallpaperService.h"
 #include "miaodesk/WidgetService.h"
 
@@ -26,24 +28,37 @@ struct DesktopState {
     std::size_t widgetCount{};
 };
 
-// Atomic caller-facing desktop snapshot. UI and Pi read wallpaper + Widget
-// state through this contract instead of composing independent store reads that
-// can disagree about the current desktop.
 struct DesktopSnapshot {
     DesktopState desktop;
     std::vector<wallpaper::DesktopWidget> widgets;
     WidgetRuntimeHealth widgetRuntime;
 };
 
-// Facade shared by UI and Pi native tools. Domain ownership remains in
-// WallpaperService / WidgetService; this class coordinates cross-domain intent
-// and runtime activation only.
 class DesktopControlService {
 public:
     DesktopControlService() = default;
 
     DesktopControlResult GetState(DesktopState* state) const;
     DesktopControlResult GetSnapshot(DesktopSnapshot* snapshot) const;
+
+    DesktopControlResult InspectContentPackage(
+        const std::filesystem::path& package,
+        content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult ListContentPackages(
+        std::vector<content::ManagedContentPackageInfo>* packages) const;
+    DesktopControlResult InstallContentPackage(
+        const std::filesystem::path& package,
+        content::ContentPackageInstallResult* installed,
+        const content::ContentPackageInstallOptions& options = {}) const;
+    DesktopControlResult ResolveContentPackage(
+        content::ContentKind kind,
+        std::wstring_view source,
+        content::ManagedContentPackageInfo* info) const;
+    DesktopControlResult UninstallContentPackage(
+        content::ContentKind kind,
+        std::wstring_view source,
+        content::ContentPackageUninstallResult* uninstalled) const;
+
     DesktopControlResult ApplyWebPackage(const std::filesystem::path& package) const;
     DesktopControlResult ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const;
     DesktopControlResult AssignLibraryItemToMonitor(
@@ -55,6 +70,57 @@ public:
     DesktopControlResult CreateNativeWidget(
         const NativeWidgetCreateRequest& request,
         wallpaper::DesktopWidget* created = nullptr) const;
+
+    DesktopControlResult CreateContentWidget(
+        const ContentWidgetCreateRequest& request,
+        wallpaper::DesktopWidget* created = nullptr) const {
+        WidgetService service;
+        const auto result = service.CreateContent(request, created);
+        if (!result.success) return {false, result.message};
+        const auto runtime = EnsureRuntime();
+        if (!runtime.success) return runtime;
+        return {true, result.message};
+    }
+
+    DesktopControlResult GetContentWidgetSettings(
+        std::wstring_view id,
+        ContentWidgetSettingsSnapshot* settings) const {
+        WidgetService service;
+        const auto result = service.GetContentSettings(id, settings);
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult GetContentWidgetParameters(
+        std::wstring_view id,
+        content::ContentParameterValues* values) const {
+        WidgetService service;
+        const auto result = service.GetContentParameters(id, values);
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult SetContentWidgetParameters(
+        std::wstring_view id,
+        const content::ContentParameterValues& changes) const {
+        WidgetService service;
+        const auto result = service.SetContentParameters(id, changes);
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult SetContentWidgetParameter(
+        std::wstring_view id,
+        std::wstring_view key,
+        content::ContentParameterValue value) const {
+        WidgetService service;
+        const auto result = service.SetContentParameter(id, key, std::move(value));
+        return {result.success, result.message};
+    }
+
+    DesktopControlResult ResetContentWidgetParameters(std::wstring_view id) const {
+        WidgetService service;
+        const auto result = service.ResetContentParameters(id);
+        return {result.success, result.message};
+    }
+
     DesktopControlResult UpdateWidget(const WidgetUpdateRequest& request) const;
     DesktopControlResult RemoveWidget(std::wstring_view id) const;
     DesktopControlResult ListWidgets(std::vector<wallpaper::DesktopWidget>* widgets) const;

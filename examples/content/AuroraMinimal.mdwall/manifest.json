@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "com.goodloong.aurora-minimal",
+  "name": "Aurora Minimal",
+  "author": "GoodLoong",
+  "version": "1.0.0",
+  "kind": "wallpaper",
+  "runtime": "scene",
+  "entry": "scene.json",
+  "parameters": "parameters.json",
+  "capabilities": ["clock.read"]
+}

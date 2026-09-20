@@ -5,7 +5,8 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 
-# Wallpaper/media assets use Git LFS so .mdwall packs can grow without bloating Git history.
+# Wallpaper/widget media assets use Git LFS so .mdwall/.mdwidget packs can grow
+# without bloating Git history.
 assets/wallpapers/**/*.png filter=lfs diff=lfs merge=lfs -text
 assets/wallpapers/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 assets/wallpapers/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
@@ -13,6 +14,13 @@ assets/wallpapers/**/*.webp filter=lfs diff=lfs merge=lfs -text
 assets/wallpapers/**/*.gif filter=lfs diff=lfs merge=lfs -text
 assets/wallpapers/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
 assets/wallpapers/**/*.webm filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.png filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.webp filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.gif filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+assets/widgets/**/*.webm filter=lfs diff=lfs merge=lfs -text
 
 # 其他二进制保持普通 Git 二进制，防止行尾转换或无意义 diff
 *.png binary

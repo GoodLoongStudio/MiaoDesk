@@ -16,7 +16,29 @@ endif()
 
 set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
+    content/asset/MiaoAssetDatabase.cpp
+    content/binding/MiaoContentDataBinding.cpp
+    content/model/ContentWidgetInstanceStore.cpp
+    content/model/MiaoContentDefinitionLoader.cpp
+    content/model/MiaoContentModel.cpp
+    content/model/MiaoWidgetContentCatalog.cpp
+    content/package/MiaoContentPackage.cpp
+    content/package/MiaoContentPackageCatalog.cpp
+    content/package/MiaoContentPackageManager.cpp
+    content/package/MiaoContentPackageUninstall.cpp
+    content/render/MiaoRenderGraph.cpp
+    content/render/MiaoPostProcessCompiler.cpp
+    content/render/MiaoPostProcessShaderLibrary.cpp
+    content/scene/MiaoSceneModel.cpp
+    content/serialization/MiaoSceneSerializer.cpp
+    content/runtime/MiaoParticleRuntime.cpp
+    content/runtime/MiaoSceneFrameScheduler.cpp
+    content/runtime/MiaoSceneRuntime.cpp
+    content/runtime/MiaoSceneRuntimeModel.cpp
+    content/shader/MiaoGpuParameterBlock.cpp
+    content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
+    desktop/control/DesktopContentPackageLifecycle.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp
@@ -56,6 +78,11 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 )
 
 set(MIAODESK_WALLPAPER_SOURCES
+    content/render/d2d/MiaoSceneD2DRenderer.cpp
+    content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
+    content/render/d3d11/MiaoD3D11RenderTarget.cpp
+    content/render/d3d11/MiaoD3D11TextureLoader.cpp
+    content/render/d3d11/MiaoSceneD3D11Renderer.cpp
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp
 
@@ -83,12 +110,18 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/web/WallpaperWebRuntimeCoordinator.cpp
 
     desktop/widgets/NativeWidgetHost.cpp
+    desktop/widgets/ContentWidgetHost.cpp
+    desktop/widgets/OfficialWidgetContentPainter.cpp
 
     desktop/wallpaper/render/WallpaperScaling.cpp
     desktop/wallpaper/render/VideoWallpaperPlayer.cpp
     desktop/wallpaper/render/VideoWallpaperSet.cpp
 
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
+    ui/wallpaper/ContentPackageUiBridge.cpp
+    ui/wallpaper/ContentPackageManagerDialog.cpp
+    ui/wallpaper/ContentWidgetSettingsDialog.cpp
+    ui/wallpaper/ContentWidgetPreviewRenderer.cpp
     ui/settings/DesktopAiSettingsPage.cpp
 )
 
@@ -110,6 +143,7 @@ add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
 add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
+add_executable(MiaoDeskContentWebReplacementTest tests/ContentWebReplacementContinuity.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -138,7 +172,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -158,6 +192,7 @@ if (MSVC)
     target_compile_options(MiaoDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskContentWebReplacementTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -188,6 +223,7 @@ target_link_libraries(MiaoDeskWallpaper PRIVATE
     comctl32
     d2d1
     d3d11
+    d3dcompiler
     dxgi
     dwrite
     windowscodecs
@@ -214,4 +250,20 @@ target_link_libraries(MiaoDeskHarness PRIVATE
     shlwapi
     version
     "${WEBVIEW2_LOADER_STATIC}"
+)
+
+target_link_libraries(MiaoDeskContentWebReplacementTest PRIVATE
+    MiaoDeskCore
+    user32
+    gdi32
+    shell32
+    ole32
+    advapi32
+    comctl32
+    d2d1
+    dwrite
+    windowscodecs
+    shlwapi
+    version
+    winhttp
 )

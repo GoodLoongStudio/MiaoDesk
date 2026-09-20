@@ -1,5 +1,7 @@
 #include "miaodesk/WallpaperLibraryWindow.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
+#include "miaodesk/ContentWidgetPreviewRenderer.h"
+#include "miaodesk/ContentWidgetSettingsDialog.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/DesktopWidgetController.h"
@@ -70,6 +72,7 @@ constexpr UINT kMenuWidgetWeatherGlass = 6222;
 constexpr UINT kMenuWidgetAuto = 6223;
 constexpr UINT kMenuWidgetToggle = 6230;
 constexpr UINT kMenuWidgetRemove = 6231;
+constexpr UINT kMenuWidgetSettings = 6232;
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -82,7 +85,6 @@ int RectWidth(const RECT& rect) {
 int RectHeight(const RECT& rect) {
     return std::max(1, static_cast<int>(rect.bottom - rect.top));
 }
-
 
 int DesktopResizeHitTest(HWND window, LPARAM lParam) {
     if (!window || !IsWindow(window) || IsZoomed(window)) return HTNOWHERE;
@@ -226,6 +228,8 @@ struct WallpaperLibraryWindow::Impl {
     NativeWeatherSnapshot widgetWeather;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
+    std::wstring lastWallpaperQuery;
+    bool wallpaperQueryInitialized{};
     Page page{Page::Installed};
     int activeNavId{kNavInstalledId};
     bool webBarVisible{};
@@ -244,6 +248,7 @@ struct WallpaperLibraryWindow::Impl {
     Microsoft::WRL::ComPtr<ID2D1Factory> widgetPreviewFactory;
     Microsoft::WRL::ComPtr<IDWriteFactory> widgetPreviewDWrite;
     Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> widgetPreviewTarget;
+    ContentWidgetPreviewRenderer widgetContentPreview;
 
     ~Impl() {
         if (window && IsWindow(window)) DestroyWindow(window);
@@ -389,8 +394,17 @@ struct WallpaperLibraryWindow::Impl {
 
     void RefreshWallpapers() {
         if (!library) return;
+        const std::wstring query = WindowText(search);
+        if (wallpaperQueryInitialized && query == lastWallpaperQuery) {
+            std::wstring error;
+            if (!library->Load(&error) && !error.empty())
+                miaodesk::log::Warn(L"UI.Library", L"重新加载壁纸库失败: " + error);
+        }
+        wallpaperQueryInitialized = true;
+        lastWallpaperQuery = query;
+
         const auto previous = selectedWallpaperId;
-        visibleWallpapers = library->Search(WindowText(search));
+        visibleWallpapers = library->Search(query);
         if (!previous.empty()) {
             const auto it = std::find_if(visibleWallpapers.begin(), visibleWallpapers.end(), [&](const auto& item) {
                 return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;
@@ -652,11 +666,16 @@ struct WallpaperLibraryWindow::Impl {
 
         RECT preview = card;
         preview.bottom -= S(50);
-        NativeWidgetPreset nativePreset{};
-        const bool exactNativePreview = widget.kind == DesktopWidgetKind::Native &&
-            ParseNativePreset(widget.source.wstring(), &nativePreset) &&
-            DrawNativeWidgetPreview(dc, preview, widget, nativePreset);
-        if (!exactNativePreview) {
+        bool exactPreview = false;
+        if (widget.kind == DesktopWidgetKind::Content) {
+            std::wstring ignored;
+            exactPreview = widgetContentPreview.Draw(dc, preview, widget, widgetController, &ignored);
+        } else if (widget.kind == DesktopWidgetKind::Native) {
+            NativeWidgetPreset nativePreset{};
+            exactPreview = ParseNativePreset(widget.source.wstring(), &nativePreset) &&
+                           DrawNativeWidgetPreview(dc, preview, widget, nativePreset);
+        }
+        if (!exactPreview) {
             FillSolid(dc, preview, RGB(72, 87, 132));
             SetBkMode(dc, TRANSPARENT);
             HGDIOBJ previewOld = SelectObject(dc, titleFont);
@@ -769,12 +788,13 @@ struct WallpaperLibraryWindow::Impl {
             EnableWindow(widgetToggleButton, widget ? TRUE : FALSE);
             EnableWindow(widgetRemoveButton, widget ? TRUE : FALSE);
             if (!widget) {
-                SetStatus(L"在桌面按住小组件即可拖动位置；也可在此启用、停用或删除。");
+                SetStatus(L"在桌面按住小组件即可拖动位置；Content 组件可双击或右键进入设置。");
             } else {
                 const auto* health = HealthFor(widget->id);
                 std::wostringstream text;
                 text << widget->title << L" · " << (widget->enabled ? L"已启用" : L"已停用")
                      << L" · " << FriendlyMonitor(widget->monitorId);
+                if (widget->kind == DesktopWidgetKind::Content) text << L" · 双击可设置";
                 if (widget->enabled && health) {
                     if (health->renderingHealthy) text << L" · 运行正常";
                     else if (!health->detail.empty()) text << L" · " << health->detail;
@@ -974,9 +994,32 @@ struct WallpaperLibraryWindow::Impl {
         DestroyMenu(menu);
     }
 
+    void ConfigureWidget() {
+        const auto current = SelectedWidget();
+        if (!current) return;
+        if (current->kind != DesktopWidgetKind::Content) {
+            SetStatus(L"该原生小组件暂无可编辑的 Content 参数。");
+            return;
+        }
+
+        std::wstring message;
+        const bool changed = ShowContentWidgetSettingsDialog(
+            instance, window, widgetController, current->id, &message);
+        if (!message.empty()) SetStatus(message);
+        if (changed) {
+            widgetContentPreview.Reset();
+            RefreshWidgetHealth();
+            InvalidateRect(widgetGrid, nullptr, FALSE);
+        }
+    }
+
     void ShowWidgetContextMenu(POINT screen) {
         HMENU menu = CreatePopupMenu();
         const auto current = SelectedWidget();
+        if (current && current->kind == DesktopWidgetKind::Content) {
+            AppendMenuW(menu, MF_STRING, kMenuWidgetSettings, L"设置…");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        }
         const wchar_t* toggle = current && current->enabled ? L"停用" : L"启用";
         AppendMenuW(menu, MF_STRING, kMenuWidgetToggle, toggle);
         AppendMenuW(menu, MF_STRING, kMenuWidgetRemove, L"删除");
@@ -1219,13 +1262,16 @@ struct WallpaperLibraryWindow::Impl {
             return 0;
         }
         case WM_LBUTTONDBLCLK: {
-            if (!widgets) {
-                POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-                const int hit = self->HitTest(hwnd, pt, false);
-                if (hit >= 0) {
-                    self->selectedWallpaperId = self->visibleWallpapers[static_cast<std::size_t>(hit)].id;
-                    self->ApplySelected();
-                }
+            POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            const int hit = self->HitTest(hwnd, pt, widgets);
+            if (hit < 0) return 0;
+            if (widgets) {
+                self->selectedWidgetId = self->visibleWidgets[static_cast<std::size_t>(hit)].id;
+                self->UpdateFooter();
+                self->ConfigureWidget();
+            } else {
+                self->selectedWallpaperId = self->visibleWallpapers[static_cast<std::size_t>(hit)].id;
+                self->ApplySelected();
             }
             return 0;
         }
@@ -1346,6 +1392,7 @@ struct WallpaperLibraryWindow::Impl {
                     self->SetStatus(L"已创建桌面小组件：" + created.title);
                 }
             }
+            else if (id == kMenuWidgetSettings) self->ConfigureWidget();
             else if (id == kMenuWidgetToggle) self->ToggleWidget();
             else if (id == kMenuWidgetRemove) self->RemoveWidget();
             return 0;

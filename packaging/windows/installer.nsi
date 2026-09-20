@@ -38,7 +38,11 @@ VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} ${PRODUCT_VERSION} Installer"
 VIAddVersionKey "LegalCopyright" "Copyright (c) GoodLoongStudio"
 InstallDir "$PROGRAMFILES64\MiaoDesk"
-RequestExecutionLevel highest
+
+; File search depends on gozd, which must run as an elevated Windows service to
+; read the NTFS index. A per-user/unelevated installation silently skipped that
+; service and left MiaoDesk's file-search UI permanently unavailable.
+RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
@@ -57,17 +61,8 @@ Var InstallMode
 
 Function .onInit
     SetRegView 64
-    UserInfo::GetAccountType
-    Pop $0
-    StrCmp $0 "Admin" 0 LimitedUser
     StrCpy $InstallMode "all"
     SetShellVarContext all
-    Return
-
-LimitedUser:
-    StrCpy $InstallMode "current"
-    SetShellVarContext current
-    StrCpy $INSTDIR "$LOCALAPPDATA\MiaoDesk"
 FunctionEnd
 
 Function CheckInstallDirectoryLength
@@ -93,7 +88,6 @@ Section "MiaoDesk"
     ; A previous MiaoDesk release may already own the goz service. Stop it
     ; before replacing the executable because Windows keeps service images
     ; locked while they are running.
-    StrCmp $InstallMode "all" 0 GozUpgradeStopped
     IfFileExists "$INSTDIR\Goz\gozd.exe" 0 GozUpgradeStopped
     nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" uninstall'
     Pop $0
@@ -105,15 +99,34 @@ GozUpgradeStopped:
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
     ; File search is client/server: goz.exe only queries the elevated gozd
-    ; indexer. Shipping both binaries without registering the daemon leaves the
-    ; search UI permanently disconnected after a normal installation.
-    StrCmp $InstallMode "all" 0 SkipGozServiceInstall
+    ; indexer. Install the daemon as a service and do not let setup finish until
+    ; the pipe/index is genuinely queryable. On a fresh machine the first NTFS
+    ; snapshot can take several seconds; launching MiaoDesk before that point
+    ; made file search look permanently broken.
     nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" install'
     Pop $0
-    StrCmp $0 "0" SkipGozServiceInstall
+    StrCmp $0 "0" GozServiceInstalled
     SetErrorLevel 5
     Abort "无法安装文件搜索索引服务（gozd 返回 $0）。"
-SkipGozServiceInstall:
+
+GozServiceInstalled:
+    StrCpy $1 0
+GozServiceReadyCheck:
+    nsExec::ExecToLog '"$INSTDIR\Goz\goz.exe" --status'
+    Pop $0
+    StrCmp $0 "0" GozServiceReady
+    IntOp $1 $1 + 1
+    IntCmp $1 60 GozServiceTimeout GozServiceRetry GozServiceTimeout
+
+GozServiceRetry:
+    Sleep 1000
+    Goto GozServiceReadyCheck
+
+GozServiceTimeout:
+    SetErrorLevel 5
+    Abort "文件搜索索引服务启动超时。请重新运行安装程序；如果问题持续，请检查 Windows 服务 goz。"
+
+GozServiceReady:
 
     ; Recreate shortcut files instead of updating them in place. Explorer may
     ; otherwise keep the previous shortcut/icon metadata when an application is
@@ -127,7 +140,6 @@ SkipGozServiceInstall:
     ; not keep rendering a cached icon from the previous MiaoDesk installation.
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 
-    StrCmp $InstallMode "all" 0 PerUser
     WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayName" "${PRODUCT_NAME}"
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
@@ -137,19 +149,6 @@ SkipGozServiceInstall:
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
     WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoModify" 1
     WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoRepair" 1
-    Goto Done
-
-PerUser:
-    WriteRegStr HKCU "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "DisplayName" "${PRODUCT_NAME}"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "DisplayIcon" "$INSTDIR\MiaoDesk.exe"
-    WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-    WriteRegDWORD HKCU "${UNINSTALL_REG_KEY}" "NoModify" 1
-    WriteRegDWORD HKCU "${UNINSTALL_REG_KEY}" "NoRepair" 1
-Done:
 SectionEnd
 
 Section "Uninstall"
@@ -163,6 +162,8 @@ Section "Uninstall"
     DeleteRegKey HKLM "${PRODUCT_REG_KEY}"
     Goto RemoveFiles
 
+; Legacy cleanup for older per-user installations that existed before file
+; search became a required service-backed feature.
 PerUserUninstall:
     StrCpy $InstallMode "current"
     SetShellVarContext current

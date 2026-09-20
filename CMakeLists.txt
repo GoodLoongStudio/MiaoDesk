@@ -63,3 +63,13 @@ install(DIRECTORY
     DESTINATION "Wallpapers"
     PATTERN "README.md" EXCLUDE
 )
+
+# Built-in widgets use the same external Miao Content Package contract as user
+# content. Keep them as real .mdwidget directories in the staged product so the
+# host can dogfood package discovery instead of embedding a second private
+# format in native code.
+install(DIRECTORY
+    "${CMAKE_SOURCE_DIR}/assets/widgets/"
+    DESTINATION "Widgets"
+    PATTERN "README.md" EXCLUDE
+)

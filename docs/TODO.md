@@ -67,20 +67,42 @@
    静态断言过,但在 macOS 上宽字符字面量按一字节一字发出却按 2 字节读,
    `L"视频壁纸…"` 长度 16 变 38 并夹入 `U+0000`,`printf` 在第一个 NUL 截断 —— 给出一个
    看似是产品 bug 的假消息。判定之前先验工具链本身。
+4. **"只有 Windows 能跑"里裹着的往往是纯逻辑。** `MiaoSceneD2DRenderer::SelfTest`
+   三个阶段连续两轮在 Windows CI 上红着,报的是"返回 false",而带标签的 Step 又因为
+   我自己紧接着推送、被 concurrency cancel 掉,始终没读到原因。停下来在本机按同样的
+   方式把那个包写一遍,根因三分钟就出来了:三个子包一个 `manifest.json` 都没写,
+   `MiaoContentPackage::Load` 在第一行就拒了 —— 一步都没走到绘制。附带还挖出两条
+   (manifest 声明了 parameters.json 就得有这个文件;manifest 的 kind 与 scene 的 kind
+   必须一致,而且目录扩展名还得和 kind 匹配)。三条全是五十行以内的纯逻辑判断,
+   只因为唯一能走到它的测试是 Windows-only 的,就花了三轮 90 秒的 CI。
+   **可迁移的判据:看到"WIC / D2D / 真机才能验",先问一句"这个断言断言的是绘制,
+   还是包的形状 / 数据结构 / 算术?"后者几乎总能在本机验。**
+5. **推送频率会吃掉诊断。** 工作流的 concurrency 组是 `cancel-in-progress`,
+   连着推两个提交,前一个的 build 会被 cancel 成 `cancelled` —— 于是那一轮猩红的
+   Step 注解永远读不到。改了代码要等一轮跑完再改下一轮,尤其是当上一轮正是为了拿诊断。
+6. **本地脚本本身也会报假绿。** 我那个"编译并运行测试"的助手脚本最后一句是 `echo`,
+   把测试自己的退出码吃掉了;而编译失败时它会跑去跑上一个二进制,于是一份
+   `ALL CHECKS PASSED` 是残留产物打印的。Gate 的退出码必须显式 `exit $rc`,
+   失败路径上不能留下上一次的二进制。
 
-现在有七个本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+现在有**十一个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
-| 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部 105 个独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
-| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 6 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
-| CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被编译 | CMakeLists 的意图是否合理 |
+| 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
+| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 10 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+| CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
+| CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
+| 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
 | 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | skill 白名单 | `scripts/verify-skill-allowlist.sh` | `kContentSkills` 与 `skills/` 是否一致 | CI 上真实的注入效果 |
 | 工作流 paths | `scripts/verify-workflow-paths.sh` | 每个工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽 |
 | 媒体包离线 | `scripts/verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 第 5 节;以及测试自己写 fixture 的方式 |
+| 场景 fixture 一致性 | `scripts/verify-scene-fixture-parity.sh` | 贴图 fixture 的 scene / manifest / parameters 两份没有分叉 | Windows 那份是否真能画出来 |
+| MiaoCloud 几何 | `python3 scripts/generate-miao-cloud-scene.py --check` | scene.json 与 scene.ini 逐字节一致 + 每层逆合成 assert | 动画与粒子(刻意未迁移) |
+| 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个 scene.json 声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
 
-后三个由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
+其中除交叉语法与纯逻辑测试外,都由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
 构建能否通过,所以不该被构建类工作流挡住。
 
 `MediaWallpaperPackageTest` 明确只能由 CI 覆盖:它链接 `WallpaperLibrary.cpp` →
@@ -88,7 +110,7 @@
 要求 UTF-16 `wchar_t`),而 macOS 的 `wchar_t` 是 4 字节。这是产品设计约束。
 
 **下面所有标"待 Windows 编译/真机验收"的项,字面意思就是没验证过。** 离线通过 ≠ Windows
-通过;本机六个测试全绿也仍然不等于 Windows 验证。
+通过;本机十个测试全绿也仍然不等于 Windows 验证。
 
 ## P0 — 阻塞商业发布
 

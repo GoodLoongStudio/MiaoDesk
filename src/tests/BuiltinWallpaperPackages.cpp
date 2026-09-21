@@ -100,9 +100,15 @@ static PackageOutcome Walk(const fs::path& root) {
 static fs::path FindWallpapersDir() {
     // Walk up from this file until a directory holds assets/wallpapers. CMake always
     // passes an absolute path to the compiler, so __FILE__ is absolute on CI; walking up
-    // keeps the answer independent of the cwd, and it deliberately avoids
-    // fs::current_path()/GetCurrentDirectory — verify-path-layout-contract.ps1 rejects
-    // any native source that depends on the working directory.
+    // keeps the answer independent of the process's working directory.
+    //
+    // The working-directory query APIs are deliberately never spelled out in this file —
+    // not here, not in any comment. verify-path-layout-contract.ps1 matches their call
+    // forms as raw text over the whole file, so naming one inside a comment trips a gate
+    // from a line that never executes. That is exactly what happened the first time this
+    // function was written, and the gate was right to complain: a comment is still text
+    // in the tree. The lesson belongs in scripts/verify-native-source-hygiene.sh, which
+    // runs that check locally, not in a comment that would re-trigger it.
     fs::path here = __FILE__;
     for (std::size_t depth = 0; depth < 6 && !here.empty(); ++depth) {
         const fs::path candidate = here.parent_path().parent_path().parent_path() / "assets" / "wallpapers";

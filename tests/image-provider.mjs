@@ -33,6 +33,18 @@ function Check(name, fn) {
   catch (e) { console.log(`  [FAIL] ${name}\n         ${e.message}`); ++failures; }
 }
 
+// Whether this node still needs --experimental-strip-types. Type stripping became
+// default in Node 22.18, and the flag survives as a no-op there — but relying on
+// that is how "works locally, fails on CI" happens: the runner's node version is not
+// the one on the dev machine. Probe once and pass the flag only when it is accepted.
+let stripTypesFlags;
+try {
+  execFileSync(process.execPath, ['--experimental-strip-types', '-e', '0'], { stdio: 'ignore' });
+  stripTypesFlags = ['--experimental-strip-types'];
+} catch {
+  stripTypesFlags = [];
+}
+
 async function withEnv(env) {
   const agentDir = await mkdtemp(join(tmpdir(), 'imgprov-'));
   await writeFile(join(agentDir, 'models.json'),
@@ -45,9 +57,8 @@ async function withEnv(env) {
     MIAODESK_MODEL_API_KEY: env.mainKey ?? '',
     MIAODESK_IMAGE_API_KEY: env.imageKey ?? '',
   };
-  const { execFileSync } = await import('node:child_process');
   const out = execFileSync(process.execPath,
-      ['--experimental-strip-types', probe],
+      [...stripTypesFlags, probe],
       { env: childEnv, encoding: 'utf8' });
   return JSON.parse(out);
 }

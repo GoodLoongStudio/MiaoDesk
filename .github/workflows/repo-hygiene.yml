@@ -47,3 +47,15 @@ jobs:
       - name: Verify the content-skill allowlist matches skills/
         shell: bash
         run: bash scripts/verify-skill-allowlist.sh
+
+      # 这两个 node 闸门是可移植的(纯 JS + 读仓库文本),但此前只挂在
+      # windows-x64-build 后面 —— 于是验证它们要等一整轮 15 分钟的 Windows 构建,
+      # 而 2026-09-22 那次失败就是在这条路上被拖了很久才暴露。放到这里,每次推送
+      # 几秒内就能知道它们是否仍然通过。
+      - name: Verify image_generate provider parameterisation
+        shell: bash
+        run: node tests/image-provider.mjs
+
+      - name: Verify web audio bridge shim
+        shell: bash
+        run: node tests/WebAudioBridge.mjs

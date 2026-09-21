@@ -65,14 +65,32 @@
     后者是 pi-ai 语义,目前靠 `providerId` 直接透传,可能需要在某处做一次映射)。
 - **状态**:🟡 代码已实施并通过离线验证;待 Windows 编译与真实 provider 联调
 
-### P0-3 TodayTasks 组件进入主干
+### P0-3 TodayTasks 组件进入主干 ✅ 已完成(2026-09-22,commit `bca7f9b`)
 
 - **依据**:`DESIGN_BASELINE.md` §5.1 明确三款内置 Widget(GlassClock / **TodayTasks** / WeatherGlass)
-- **为什么阻塞**:主干只有 GlassClock 与 WeatherGlass 两个 `.mdwidget` 内容包,TodayTasks 整套
-  (9 个新文件)在未合入分支 `feat/content-widget-settings` 上。设计基线承诺的三款缺一款。
-- **内容**:`TodayTaskStore` / `TodayTaskEditorDialog` / `TodayTaskContentProvider` / 声明式 Scene / 外观参数。
-- **依赖**:先把该分支从备份恢复到远端(内容已在本地 `_check/*` 引用与 608M bundle 中)
-- **状态**:❌ 未开始 —— 分支已不在远端
+- **此前状态**:主干只有 GlassClock 与 WeatherGlass 两个 `.mdwidget` 内容包,TodayTasks 整套
+  (9 个新文件)在未合入分支 `feat/content-widget-settings`(25 提交)上;而我早前误删了远端分支。
+- **已实施**:该分支内容完整保存在本地 `_check/*` 引用与 bundle 中,已合入 `main`(`bca7f9b`)。
+  三款内置 Widget 现已齐备。
+- **冲突处理**(两条独立历史各自创建同名文件,均非对方祖先):
+  `ContentWidgetPreviewRenderer.cpp` / `ContentWidgetSettingsDialog.cpp` 在 main 与分支上
+  各有版本。逐行比对确认分支版把 `PublishWeather` 泛化成 `PublishHostData`、天气发布语句
+  与 hour 循环逐字节相同(仅缩进)、只新增 tasks 分支,才取分支版 ——
+  按 add/add 常规做法直接取一侧会**静默删掉天气发布**。
+- **验证**(走产品自己的代码,非逻辑复刻):
+  - `TodayTasks.mdwidget` 通过 `MiaoSceneSerializer::Deserialize` +
+    `MiaoSceneRuntimeModel::Validate` + `MiaoSceneRuntime::Initialize`
+    (11 节点 / 4 参数 / 10 绑定,kind=widget,profile=widget,spatial=2d)
+  - `{{tasks.*}}` 模板替换 7 例全部正确:计数、进度文本、空态、三条任务
+    (含 marker 与 detail 两行)、空槽位;`tasks.pending` / `item0.title` /
+    `progressText` 均过 `tasks.read` capability 闸
+  - 既有 `MiaoSceneRuntime::SelfTest` 仍通过
+  - 离线验证需最小 `windows.h` 替身(`GetLocalTime` / `GetTickCount64` /
+    `MultiByteToWideChar` / `swprintf_s` 模板重载 等),因为 `model/` 与 `binding/`
+    子域含 `windows.h` —— 此前"内容框架整层零处包含 `windows.h`"的说法只对
+    `runtime/`、`scene/`、`serialization/` 三个子域成立。
+- **遗留**:真机未验证(需 Windows 桌面置入该 Widget、编辑任务、确认重绘与持久化)。
+- **状态**:✅ 代码已合入并通过包级/替换级验证;真机验收未做
 
 ### P0-4 壁纸 `.mdwall` dogfood 补齐 ❌ 仍未完成(阻塞点已定位,不是"补内容"那么简单)
 

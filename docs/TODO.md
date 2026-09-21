@@ -3,7 +3,6 @@
 - 状态:活清单,随开发更新
 - 建立:2026-09-20
 - 上游:`DEVELOPMENT_ROADMAP.md`(阶段规划)· `DESIGN_BASELINE.md`(设计绳准) · `LOCAL_AI_ARCHITECTURE.md` · `WALLPAPER_ENGINE_BENCHMARK.md`(能力基准)
-
 ## 怎么用这份清单
 
 `DEVELOPMENT_ROADMAP.md` 回答"按什么阶段走",本清单回答"下一步具体做什么、什么还没做"。
@@ -18,28 +17,55 @@
 5. 阻塞商业发布的项标 `P0`,门的验收项标 `P1`,本地 AI 实施标 `P2`,技术债标 `P3`。
 6. 对标 Wallpaper Engine 的差距项以 `B-x` 编号,依据统一指向 `WALLPAPER_ENGINE_BENCHMARK.md` 的小节号。
 
-## 全局验证状态(2026-09-22 更新,读这份清单前先读它)
+## 全局验证状态(2026-09-22 晚更新,读这份清单前先读它)
 
-**结论:至今没有任何一次 Windows 侧构建在本次开发中通过过。**
+**`Windows x64 Build` 已恢复通过:#367 / `023aa299`,20 个验证步骤全部 success、零 skipped。**
+这是 9/17 的 #353 之后第一次,中间隔了 14 次失败。三个打包工作流(MSIX / x64 Package /
+ARM64 Package)在同一提交上仍在跑。
 
-- `Windows x64 Build` 最后一次成功是 **#353 / `321c39f`(2026-09-17)**。之后提交的
-  工作流全失败,而失败点一直是我引入的类型错误,不是产品设计问题。
-- 2026-09-21 修掉四处编译错误(`NativeTools.cpp` 对 `std::wstring` 调 `.wstring()`、
-  `constexpr` 非静态数据成员、`std::max(int, LONG)`、缺 `<cstring>`),同一类错误的
-  共同根因是:**那批代码从 9/17 起没经过任何认 Windows 头文件的编译器**。
-- 2026-09-22 又发现**平行的第二个故障源**,和编译错误无关:
-  `content/render/d3d11/MiaoD3D11TextureLoader.cpp` 在磁盘上、语法没问题,但没进
-  `MIAODESK_*_SOURCES`,从来没被编译过 → 四个打包工作流挂在
+修复链路(全部是工程/闸门缺陷,不是产品设计问题):
+
+- **编译错误四处**:`NativeTools.cpp` 对 `std::wstring` 调 `.wstring()`;`constexpr` 非静态
+  数据成员;`std::max(int, LONG)` 推导失败;缺 `<cstring>`。共同根因是那批代码从 9/17 起
+  **没经过任何认 Windows 头文件的编译器** —— 本机只跑过剥离出来的逻辑片段和不含
+  `windows.h` 的纯逻辑测试,两者都看不见 MSVC 才能看见的类型错误。
+- **链接错误**:`content/render/d3d11/MiaoD3D11TextureLoader.cpp` 在磁盘上、语法没问题,但
+  **没进 `MIAODESK_*_SOURCES`,从来没被编译过** → 四个打包工作流挂在
   `LNK2019: unresolved external MiaoD3D11TextureLoader::LoadImageW`。
   这个类别落在所有闸门盲区里:语法闸门扫"磁盘上有什么",照样编译它,看不出它未被收录。
-- 同期还在 `packaging/windows/stage.ps1` 里发现**未解决的合并冲突标记**(我早前合
-  `_check/fix/unicode-wallpaper-theme-packages` 时留下的)。`.ps1` 不进 C++ 编译器,
-  所以它带着三行尖括号一路绿灯。
-- 教训(三次,都写进提交里):判断 CI 步骤成败必须区分 `success` / `failure` /
-  `skipped` / `null`。把"被跳过"读成"通过",让"17 个验证步骤通过"这个结论完全失实 ——
-  那些步骤根本没运行。
+- **三个"永远不可能通过"的闸门**(今天连中三次同一个类别):
+  1. `stage.ps1` 的 SKILL.md frontmatter 检查 —— `$head` 是 `Object[]`,而
+     `$array -notmatch 're'` 是**过滤**不是布尔,6 行里只有一行匹配 → 非空数组 → 恒真必抛。
+  2. `verify-web-audio-bridge.ps1` 那一步 —— 直接调用 `.ps1` **不设置 `$LASTEXITCODE`**,
+     那一步之前没有原生命令,所以它是 `$null`,而 `$null -ne 0` 恒真,一律抛错。
+  3. (同一类)已逐项排查,另几处"整段 run 只有一句直接调用"是没问题的,脚本 throw 会让
+     pwsh 非零退出。
+- **两个 Windows 专属失败**:
+  1. `tests/image-provider.mjs` 的 `await import(绝对路径)` —— ESM 按 URL 规则解析,
+     POSIX 的 `/abs/path.mjs` 碰巧被接受,Windows 的 `D:\…` 被解析成协议 `d:` 而抛
+     `ERR_UNSUPPORTED_ESM_URL_SCHEME`。这个闸门只在 Windows CI 上跑,所以本地永不过。
+  2. `tests/MediaWallpaperPackage.cpp` 的 fixture —— `std::string` 从 `const char*` 构造在
+     **第一个 NUL 处截断**,`clip.mp4` 被写成 0 字节,`CreateVideo` 于是正确地拒绝
+     "源文件为空",正面断言以一种看起来像产品 bug 的方式失败。
+- **`stage.ps1` 里留着未解决的合并冲突标记**(我早前合 `_check/fix/unicode-wallpaper-theme-packages`
+  留下的)。`.ps1` 不进 C++ 编译器,所以它带着三行尖括号一路绿灯。
 
-现在有五个本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+教训(每条都写进了对应提交):
+
+1. **判断 CI 步骤成败必须区分 `success` / `failure` / `skipped` / `null`。** 我最初的轮询
+   脚本把 `null`(被跳过、根本没跑)也打印成 "ok",于是"Configure 失败、但 Build 和 17 个
+   验证步骤通过"这个结论**完全失实** —— Configure 一失败后面全部 skipped。这个假象让
+   上面所有故障都被掩盖了很久。
+2. **闸门写完必须注入一个已知失效,确认它真的会响。** 我写的闸门里有三个自己试过假绿:
+   过滤器用 `startswith('error:')` 匹配 gcc 输出(而 gcc 的行以路径开头)、comm 的列搞反
+   导致一侧永远漏报、正则把 `was not declared` 写成 `was not been declared`。干净状态下
+   它们和正确版本长得完全一样。
+3. **替身/旗标的缺陷会伪装成产品缺陷。** `-fshort-wchar` 能让 `sizeof(wchar_t)==2` 那条
+   静态断言过,但在 macOS 上宽字符字面量按一字节一字发出却按 2 字节读,
+   `L"视频壁纸…"` 长度 16 变 38 并夹入 `U+0000`,`printf` 在第一个 NUL 截断 —— 给出一个
+   看似是产品 bug 的假消息。判定之前先验工具链本身。
+
+现在有七个本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -48,6 +74,8 @@
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被编译 | CMakeLists 的意图是否合理 |
 | 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | skill 白名单 | `scripts/verify-skill-allowlist.sh` | `kContentSkills` 与 `skills/` 是否一致 | CI 上真实的注入效果 |
+| 工作流 paths | `scripts/verify-workflow-paths.sh` | 每个工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽 |
+| 媒体包离线 | `scripts/verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 第 5 节;以及测试自己写 fixture 的方式 |
 
 后三个由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
 构建能否通过,所以不该被构建类工作流挡住。
@@ -526,10 +554,14 @@
   之后依然成立",而不是它在这个进程里碰巧成立。
 - **本机能验到什么**:C# 探针块用 macOS pwsh 的 `Add-Type` 真编译通过,两个方法
   (`PaintReadyWidgetCount(Boolean)` / `VisibleWallpaperSurfaceCount()`)签名确认存在;
-  `if` 赋值、报错插值、`-ne 0` 分支方向逐条跑过。剩下只有 CI 能答:Windows 上真的
-  观测到几个表层。
+  `if` 赋值、报错插值、`-ne 0` 分支方向逐条跑过。另外对两条可能创建该表层的代码路径都
+  核对过:Web/Content coordinator 在 `enabled=0` 时 `DesiredRequests()` 直接返回空、
+  根本不 `Start()`;遗留 `WallpaperEngine.cpp:318` 的 `ShowWindow` 被 `config_.enabled`
+  闸住,窗口顶多被创建但不可见,而探针第一件事就是查 `IsWindowVisible`。所以 0 是必然
+  结果,不是偶然。
 - **验收**:CI 中新增断言,模拟 reload 后壁纸仍保持停用。
-- **状态**:✅ 断言已写入并通过本机可验的全部部分;Windows 上真实观测待 CI 确认
+- **状态**:✅ **已在真实 Windows CI 通过** —— `Windows x64 Build #367`
+  的 `Verify staged GlassClock Content Framework route` 步骤 success。
 
 ### P1-2 低常驻资源基线
 

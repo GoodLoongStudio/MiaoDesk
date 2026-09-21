@@ -72,6 +72,31 @@ public static class MiaoDeskWidgetProbe {
         }, IntPtr.Zero);
         return found;
     }
+
+    // 壁纸停用时必须一个都看不到。类名与 IndependentWallpaperHost 的
+    // kSurfaceClass 逐字一致;wallpaper 停用时根本不该创建这个表层。
+    private static bool IsVisibleWallpaperSurface(IntPtr window) {
+        var name = new StringBuilder(160);
+        if (GetClassName(window, name, name.Capacity) <= 0 ||
+            !String.Equals(name.ToString(), "MiaoDesk.Native.IndependentWallpaperSurface", StringComparison.OrdinalIgnoreCase) ||
+            !IsWindowVisible(window)) return false;
+        Rect rect;
+        if (!GetClientRect(window, out rect) || rect.Right <= rect.Left || rect.Bottom <= rect.Top) return false;
+        return GetParent(window) != IntPtr.Zero;
+    }
+
+    public static int VisibleWallpaperSurfaceCount() {
+        int found = 0;
+        EnumWindows((top, ignored) => {
+            if (IsVisibleWallpaperSurface(top)) found++;
+            EnumChildWindows(top, (child, childIgnored) => {
+                if (IsVisibleWallpaperSurface(child)) found++;
+                return true;
+            }, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
 }
 '@
 
@@ -220,6 +245,22 @@ Enabled=1
     } else {
         Write-Host 'Built-in Widgets directory is absent; native GlassClock fallback verified for quick-build layout.' -ForegroundColor Yellow
     }
+
+    # P1-1 停用幂等:Shell reload 之后壁纸不得被重新拉起。
+    #
+    # 这里用"停掉整族再冷启"当 reload 的 CI 等价物:壁纸运行时进程消失、再被拉起来,
+    # 而 wallpaper.ini 全程是 Enabled=0(本脚本开头写死的)。要证的是两件事同时成立 ——
+    # 组件重建出来,壁纸没有跟着回来。只证后一件会把"什么都没起来"也算通过,只证前一件
+    # 则盖不住"顺便把壁纸也拉起来了"这个回归,所以两个断言都要。
+    $expectedAfterReload = if ($expectContentGlassClock) { 1 } else { 2 }
+    Stop-MiaoDeskWallpaperFamily
+    $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
+    Wait-WidgetCount $expectedAfterReload $true
+    $resurrected = [MiaoDeskWidgetProbe]::VisibleWallpaperSurfaceCount()
+    if ($resurrected -ne 0) {
+        throw "Shell reload 后壁纸被重新拉起:wallpaper.ini 是 Enabled=0,却观察到 $resurrected 个可见的 IndependentWallpaperSurface。停用不是幂等的。"
+    }
+    Write-Host "停用幂等:运行时 reload 后壁纸保持停用(0 个 IndependentWallpaperSurface),组件重建 $expectedAfterReload 个。" -ForegroundColor Green
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
     Write-Host 'Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 

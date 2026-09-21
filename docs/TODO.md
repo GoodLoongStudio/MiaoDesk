@@ -486,13 +486,26 @@
 
 ## P1 — 门的其余验收项
 
-### P1-1 停用幂等的 reload 断言
+### P1-1 停用幂等的 reload 断言 ✅ 已实施(2026-09-22),待 Windows CI 确认
 
 - **依据**:`DEVELOPMENT_ROADMAP.md` §3 P0-2
 - **现状**:`verify-widget-visibility.ps1:132-137` 已断言 `Enabled 1→0→1` 与壁纸停用下的组件生命周期,
   但缺一条独立断言:**Shell repair / reload 之后壁纸不得被重新拉起**。
+- **已实施**:
+  - 探针新增 `VisibleWallpaperSurfaceCount()`,数可见的
+    `MiaoDesk.Native.IndependentWallpaperSurface`(类名与 `IndependentWallpaperHost`
+    的 `kSurfaceClass` 逐字一致)。
+  - 新增断言:用"停掉整族再冷启"当 reload 的 CI 等价物,
+    `wallpaper.ini` 全程 `Enabled=0`,要求 `VisibleWallpaperSurfaceCount() == 0` **且**
+    组件重建数与 reload 前一致(1 = Content GlassClock 布局,2 = quick-build 布局)。
+  - 两个断言都要:只断言壁纸数,会把"什么都没起来"也判成通过;只断言组件数,
+    则盖不住"顺便把壁纸也拉起来了"这个回归。
+- **为什么是"冷启"而不是触发一次 `RepairSurfaceStack`**:`RepairSurfaceStack` 只对
+  **已存在**的 MiaoDesk 表层重新排序(`RepairKnownMiaoDeskSurfaces`),不创建表层,
+  所以它不可能凭空造出一个壁纸表层。真正会"重新拉起"的路径是运行时进程整体重启
+  (Coordinator 重新评估 `Enabled`),这恰好就是冷启覆盖的场景。
 - **验收**:CI 中新增断言,模拟 reload 后壁纸仍保持停用。
-- **状态**:❌ 未开始
+- **状态**:✅ 断言已写入;本机为 macOS 无法执行 PowerShell 闸门,待 Windows CI 确认
 
 ### P1-2 低常驻资源基线
 

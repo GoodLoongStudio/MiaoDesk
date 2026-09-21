@@ -13,12 +13,19 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// pathToFileURL is required, not decoration: `import()` treats its argument as a URL
+// specifier. On POSIX an absolute path happens to be accepted, but on Windows
+// "D:\a\MiaoDesk\tests\..." is parsed as a URL with protocol "d:" and fails with
+// ERR_UNSUPPORTED_ESM_URL_SCHEME. This gate is Windows-only in CI, so the POSIX-only
+// behaviour hid the bug locally.
+import { pathToFileURL } from 'node:url';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const extractScript = join(here, 'extract-image-provider.mjs');
 const probe = join(here, 'image-provider-probe.mjs');
 
 // Write the extracted module before any probe imports it.
-await import(extractScript);
+await import(pathToFileURL(extractScript).href);
 
 let failures = 0;
 function Check(name, fn) {

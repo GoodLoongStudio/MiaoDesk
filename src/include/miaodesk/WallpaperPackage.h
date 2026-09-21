@@ -34,6 +34,25 @@ public:
         std::wstring author = L"MiaoDesk",
         std::wstring* error = nullptr);
 
+    // Copy an existing local image or video into a new .mdwall package. The manifest
+    // type decides which entry extensions Validate accepts, so a declarative
+    // "video wallpaper" is one manifest plus one asset with nothing else required.
+    static bool CreateImage(
+        const std::filesystem::path& packageDirectory,
+        std::wstring title,
+        const std::filesystem::path& sourceFile,
+        std::wstring provenance = L"user-authored",
+        std::wstring author = L"MiaoDesk",
+        std::wstring* error = nullptr);
+
+    static bool CreateVideo(
+        const std::filesystem::path& packageDirectory,
+        std::wstring title,
+        const std::filesystem::path& sourceFile,
+        std::wstring provenance = L"user-authored",
+        std::wstring author = L"MiaoDesk",
+        std::wstring* error = nullptr);
+
     static bool Validate(
         const std::filesystem::path& packageDirectory,
         WallpaperPackageManifest* manifest = nullptr,

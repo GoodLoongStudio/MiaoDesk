@@ -17,6 +17,11 @@ struct ModelConfig {
     std::wstring baseUrl;
     std::wstring model;
     std::wstring endpoint;
+    // Model capability hints from the active Profile. 0 means "not configured";
+    // consumers apply their own default. Tracked here so a change forces the Pi
+    // session to restart with the new values instead of silently keeping the old ones.
+    unsigned contextWindow{};
+    unsigned maxTokens{};
 };
 
 struct ModelProbeResult {
@@ -56,13 +61,17 @@ public:
             refreshed.baseUrl = profile.baseUrl;
             refreshed.model = profile.model;
             refreshed.endpoint = profile.endpoint;
+            refreshed.contextWindow = profile.contextWindow;
+            refreshed.maxTokens = profile.maxTokens;
             if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
         }
 
         if (refreshed.providerId == config_.providerId &&
             refreshed.baseUrl == config_.baseUrl &&
             refreshed.model == config_.model &&
-            refreshed.endpoint == config_.endpoint) {
+            refreshed.endpoint == config_.endpoint &&
+            refreshed.contextWindow == config_.contextWindow &&
+            refreshed.maxTokens == config_.maxTokens) {
             return;
         }
 

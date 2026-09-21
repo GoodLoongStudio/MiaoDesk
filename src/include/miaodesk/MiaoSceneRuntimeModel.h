@@ -21,6 +21,40 @@ enum class BindingSourceKind {
     Input,
 };
 
+// How a binding remaps its source before scale/offset are applied.
+//
+// This is the deliberate alternative to a general script language. A linear
+// binding (`* scale + offset`) makes audio and pointer input feel mechanical — a
+// spectrum bar cannot sit near zero until the music is loud, and a parallax layer
+// cannot overshoot the cursor. Those effects need a nonlinear response, not code.
+//
+// The set is closed on purpose: every member is a pure function of one float, so a
+// binding can never acquire side effects, file access, or unbounded runtime, and the
+// AI authoring path stays inside "declarative content only". Adding a member means
+// adding a branch to ApplyBindingResponse and a case to its serializer.
+enum class BindingResponse {
+    Linear,
+    Square,
+    Cube,
+    SquareRoot,
+    SmoothStep,
+    // Damped overshoot: reads as a spring following the cursor. Peaks above 1 and
+    // settles at 1, so callers that need a bounded value should clamp downstream.
+    Elastic,
+    // Hard switch at the midpoint. Turns a continuous spectrum level into an
+    // on/off trigger for a strobe or a threshold-driven bloom.
+    Threshold,
+    Invert,
+};
+
+inline constexpr std::size_t kBindingResponseCount = 8;
+
+// Stable JSON keys for BindingResponse. These live beside the enum so the
+// serializer, the authoring skills and the validation error messages cannot drift
+// apart on spelling.
+const char* BindingResponseKey(BindingResponse response) noexcept;
+bool ParseBindingResponse(std::string_view value, BindingResponse* response) noexcept;
+
 enum class PostProcessEffectKind {
     Copy,
     Vignette,
@@ -87,6 +121,12 @@ struct PropertyBindingDefinition {
     std::wstring sourceId;
     double scale{1.0};
     double offset{};
+    // Defaults to Linear, which reproduces the original `scale * value + offset`
+    // behaviour exactly, so existing packages are unaffected.
+    BindingResponse response{BindingResponse::Linear};
+    // Values below this magnitude map to zero. Keeps a resting spectrum level from
+    // making a "quiet" wallpaper jitter.
+    double deadzone{};
 };
 
 // Creative-runtime description of a built-in post process. It deliberately
@@ -104,6 +144,54 @@ struct PostProcessDefinition {
 // Timeline animation targets the same stable PropertyAddress used by bindings
 // and AI patches. The easing value belongs to the segment that starts at this
 // keyframe and ends at the next keyframe.
+// Light and fog are scene-level resources rather than per-node components: a light
+// needs a node for placement but is otherwise shared, exactly like a material.
+// Both are 3D-only, so a 2D scene that declares either is an authoring error rather
+// than a silently ignored light.
+enum class LightType {
+    Point,
+    Spot,
+    Tube,
+    Directional,
+};
+
+// The light ceiling is not arbitrary: Wallpaper Engine documents a 12-light limit
+// per scene, and matching it keeps authoring expectations aligned while a scene
+// stays inside what a deferred renderer can actually shade.
+inline constexpr std::uint32_t kMaxLightsPerScene = 12;
+
+struct LightDefinition {
+    std::wstring id;  // light://<name>
+    LightType type{LightType::Point};
+    // The node whose Transform carries the light's world position and direction.
+    std::wstring nodeId;
+    Color4 color{1.0, 1.0, 1.0, 1.0};
+    double intensity{1.0};
+    // Attenuation radius in scene units. 0 means unbounded.
+    double range{};
+    // Cosine of the spot cone. Both are cosines rather than degrees so the renderer
+    // does not have to convert per frame. -1 means "unused" for a non-spot light.
+    double spotInnerCos{-1.0};
+    double spotOuterCos{-1.0};
+};
+
+enum class FogMode {
+    // Linear between start and end distances.
+    Linear,
+    // Density-based exponential falloff.
+    Exponential,
+};
+
+struct FogDefinition {
+    std::wstring id;  // fog://<name>
+    FogMode mode{FogMode::Linear};
+    Color4 color{0.5, 0.5, 0.5, 1.0};
+    // Linear mode: near distance. Exponential mode: density.
+    double startOrDensity{};
+    // Linear mode: far distance. Ignored by Exponential, where density carries it.
+    double end{1.0};
+};
+
 struct AnimationKeyframeDefinition {
     double timeSeconds{};
     PropertyValue value{0.0};
@@ -159,6 +247,9 @@ struct SceneRuntimeDefinition {
     std::vector<AnimationTrackDefinition> animations;
     std::vector<PostProcessDefinition> postProcesses;
     std::vector<ParticleEmitterDefinition> particleEmitters;
+    // 3D-only. A 2D scene that declares either is rejected by Validate.
+    std::vector<LightDefinition> lights;
+    std::vector<FogDefinition> fog;
 };
 
 class MiaoSceneRuntimeModel {

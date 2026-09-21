@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cwchar>
 #include <cwctype>
 #include <filesystem>
@@ -32,6 +33,11 @@ struct RuntimeProfile {
     std::wstring model;
     std::wstring apiKey;
     std::wstring error;
+    // Optional model capability hints. 0 means "not configured"; consumers apply
+    // their own default. These must not be hardcoded per model, otherwise the
+    // product reports a context window the selected model does not actually have.
+    unsigned contextWindow{};
+    unsigned maxTokens{};
 };
 
 inline std::wstring Trim(std::wstring value) {
@@ -50,6 +56,19 @@ inline std::wstring Lower(std::wstring value) {
 
 inline bool ParseBool(const std::wstring& value) {
     return value == L"1" || _wcsicmp(value.c_str(), L"true") == 0 || _wcsicmp(value.c_str(), L"yes") == 0;
+}
+
+// Optional positive integer for profile keys such as contextWindow / maxTokens.
+// Returns 0 when the key is absent, empty, non-numeric or out of range so callers
+// can treat 0 as "not configured" and apply their own default.
+inline unsigned ParsePositiveUInt(const std::wstring& value) {
+    if (value.empty()) return 0;
+    wchar_t* end = nullptr;
+    const unsigned long parsed = wcstoul(value.c_str(), &end, 10);
+    if (end == value.c_str() || parsed == 0 || parsed > 4000000ul) return 0;
+    while (end && *end && std::iswspace(*end)) ++end;
+    if (end && *end != L'\0') return 0;
+    return static_cast<unsigned>(parsed);
 }
 
 inline fs::path LocalStateRoot() {
@@ -136,6 +155,8 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     profile.model = Trim(ReadIni(path, section.c_str(), L"model"));
     profile.explicitDefault = ParseBool(ReadIni(path, section.c_str(), L"default", L"0"));
     profile.apiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id);
+    profile.contextWindow = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"contextWindow")));
+    profile.maxTokens = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"maxTokens")));
 
     while (profile.baseUrl.size() > 1 && profile.baseUrl.back() == L'/') profile.baseUrl.pop_back();
     const auto lowerBase = Lower(profile.baseUrl);

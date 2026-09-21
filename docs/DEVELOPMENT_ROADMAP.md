@@ -52,7 +52,7 @@ artifact upload
 
 已存在：
 
-- Image / Video / Web / Scene 路径；
+- 载体 × 运行时路径（壁纸/组件 × Scene/Web）；
 - `DesktopShellHost`；
 - Progman / WorkerW / Raised Desktop 处理；
 - 多显示器基础结构；
@@ -171,7 +171,7 @@ ContentInstance
 
 1. 激活 / 停用形成明确状态机；
 2. stop/reload/Explorer repair 幂等；
-3. Image / Video / Web / Scene 分类型 smoke；
+3. 按载体 × 运行时分类型 smoke；
 4. 多显示器启停；
 5. 停用 Wallpaper 后 Widgets 独立存活。
 

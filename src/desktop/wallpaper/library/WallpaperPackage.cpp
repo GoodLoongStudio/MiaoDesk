@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cwctype>
 #include <fstream>
@@ -149,6 +150,146 @@ bool IsSafeRelativeEntry(const fs::path& entry) {
         if (part == L"..") return false;
     }
     return true;
+}
+
+// Extension sets mirror WallpaperLibrary::InferKind so that anything a package
+// declares is something the library can actually play.
+bool HasImageExtension(const fs::path& entry) {
+    const auto extension = Lower(entry.extension().wstring());
+    return extension == L".jpg" || extension == L".jpeg" || extension == L".png" ||
+           extension == L".bmp" || extension == L".gif" || extension == L".webp" ||
+           extension == L".tif" || extension == L".tiff";
+}
+
+bool HasVideoExtension(const fs::path& entry) {
+    const auto extension = Lower(entry.extension().wstring());
+    return extension == L".mp4" || extension == L".mov" || extension == L".wmv" ||
+           extension == L".m4v" || extension == L".avi" || extension == L".mkv" ||
+           extension == L".webm";
+}
+
+// Sandbox ceilings match the limits the content skills publish (image <= 25 MiB,
+// video <= 250 MiB).
+constexpr std::uintmax_t kMaxImageBytes = 25u * 1024u * 1024u;
+constexpr std::uintmax_t kMaxVideoBytes = 250u * 1024u * 1024u;
+
+// The asset name is derived from a caller-supplied path, so it is scrubbed as a
+// whole rather than stem-only: the extension comes from the same untrusted input
+// and must not be able to reintroduce a path separator.
+std::wstring SanitizedAssetName(const fs::path& sourceFile, std::wstring_view fallbackExtension) {
+    std::wstring stem = sourceFile.stem().wstring();
+    // Trailing dots and spaces are dropped by Windows anyway, and a stem that is
+    // only dots would read as a traversal component once combined.
+    while (!stem.empty() && (stem.back() == L'.' || stem.back() == L' ')) stem.pop_back();
+    if (stem.empty()) stem = L"wallpaper";
+    if (stem.size() > 120) stem.resize(120);
+
+    auto extension = Lower(sourceFile.extension().wstring());
+    if (extension.empty()) extension = std::wstring(fallbackExtension);
+
+    std::wstring name = stem + extension;
+    constexpr std::wstring_view invalid = L"<>:\"/\\|?*";
+    for (auto& ch : name) {
+        if (invalid.find(ch) != std::wstring_view::npos || ch < 32) ch = L'_';
+    }
+    if (name == L".." || name == L".") name = L"wallpaper";
+    if (name.size() > 160) name.resize(160);
+    return name;
+}
+
+// Shared body of CreateImage / CreateVideo. The manifest type decides which entry
+// extensions Validate accepts, so a declarative media wallpaper is one manifest
+// plus one copied asset with nothing else required.
+bool CreateMediaPackage(const fs::path& packageDirectory, WallpaperPackageType type, std::wstring title,
+                        const fs::path& sourceFile, std::uintmax_t maxBytes,
+                        std::wstring_view fallbackExtension, std::wstring_view typeLabel,
+                        std::wstring provenance, std::wstring author, std::wstring* error) {
+    SetError(error, L"");
+    if (packageDirectory.empty()) {
+        SetError(error, L"壁纸包目录不能为空");
+        return false;
+    }
+    if (sourceFile.empty()) {
+        SetError(error, std::wstring(typeLabel) + L"壁纸必须指定源文件");
+        return false;
+    }
+    if (title.empty()) title = L"MiaoDesk Wallpaper";
+    if (title.size() > 256) title.resize(256);
+    if (author.empty()) author = L"MiaoDesk";
+    if (provenance.empty()) provenance = L"user-authored";
+
+    std::error_code ec;
+    if (!fs::exists(sourceFile, ec) || !fs::is_regular_file(sourceFile, ec)) {
+        SetError(error, std::wstring(typeLabel) + L"壁纸源文件不存在或不是普通文件：" + sourceFile.wstring());
+        return false;
+    }
+    const auto expected = type == WallpaperPackageType::Image ? HasImageExtension : HasVideoExtension;
+    if (!expected(sourceFile)) {
+        SetError(error, std::wstring(typeLabel) + L"壁纸源文件扩展名不受支持：" + sourceFile.wstring());
+        return false;
+    }
+    const auto size = fs::file_size(sourceFile, ec);
+    if (ec) {
+        SetError(error, L"无法读取壁纸源文件大小：" + sourceFile.wstring());
+        return false;
+    }
+    if (size == 0) {
+        SetError(error, std::wstring(typeLabel) + L"壁纸源文件为空：" + sourceFile.wstring());
+        return false;
+    }
+    if (size > maxBytes) {
+        SetError(error, std::wstring(typeLabel) + L"壁纸源文件超过大小上限：" + sourceFile.wstring());
+        return false;
+    }
+
+    fs::create_directories(packageDirectory, ec);
+    if (ec) {
+        SetError(error, L"无法创建 .mdwall 目录：" + packageDirectory.wstring());
+        return false;
+    }
+    const fs::path assets = packageDirectory / L"assets";
+    fs::create_directories(assets, ec);
+    if (ec) {
+        SetError(error, L"无法创建壁纸资产目录");
+        return false;
+    }
+    const fs::path entry = assets / SanitizedAssetName(sourceFile, fallbackExtension);
+    fs::copy_file(sourceFile, entry, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        SetError(error, L"无法复制壁纸源文件：" + sourceFile.wstring());
+        return false;
+    }
+
+    WallpaperPackageManifest manifest;
+    manifest.schema = 1;
+    manifest.type = type;
+    manifest.title = std::move(title);
+    manifest.author = std::move(author);
+    manifest.entry = fs::path(L"assets") / entry.filename();
+    manifest.provenance = std::move(provenance);
+    manifest.fpsCap = 30;
+    manifest.audio = false;
+    if (!WriteManifest(packageDirectory / L"manifest.json", manifest)) {
+        SetError(error, L"无法写入壁纸包 manifest.json");
+        return false;
+    }
+    return Validate(packageDirectory, nullptr, error);
+}
+
+bool WallpaperPackage::CreateImage(const fs::path& packageDirectory, std::wstring title,
+                                   const fs::path& sourceFile, std::wstring provenance,
+                                   std::wstring author, std::wstring* error) {
+    return CreateMediaPackage(packageDirectory, WallpaperPackageType::Image, std::move(title), sourceFile,
+                              kMaxImageBytes, L".png", L"图片", std::move(provenance), std::move(author),
+                              error);
+}
+
+bool WallpaperPackage::CreateVideo(const fs::path& packageDirectory, std::wstring title,
+                                   const fs::path& sourceFile, std::wstring provenance,
+                                   std::wstring author, std::wstring* error) {
+    return CreateMediaPackage(packageDirectory, WallpaperPackageType::Video, std::move(title), sourceFile,
+                              kMaxVideoBytes, L".mp4", L"视频", std::move(provenance), std::move(author),
+                              error);
 }
 
 bool IsInside(const fs::path& candidate, const fs::path& root) {
@@ -310,6 +451,18 @@ bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPacka
         const auto extension = Lower(resolvedEntry.extension().wstring());
         if (extension != L".html" && extension != L".htm") {
             SetError(error, L"Web .mdwall 的 entry 必须是 HTML 文件");
+            return false;
+        }
+    } else if (parsed.type == WallpaperPackageType::Image) {
+        // Without this, a package declaring type "image" with entry "notes.txt" would
+        // validate and then fail later in the library with no usable diagnosis.
+        if (!HasImageExtension(resolvedEntry)) {
+            SetError(error, L"图片 .mdwall 的 entry 必须是图片文件");
+            return false;
+        }
+    } else if (parsed.type == WallpaperPackageType::Video) {
+        if (!HasVideoExtension(resolvedEntry)) {
+            SetError(error, L"视频 .mdwall 的 entry 必须是视频文件");
             return false;
         }
     }

@@ -27,11 +27,34 @@ if (-not (Test-Path $appPathsHeader -PathType Leaf)) { Fail 'shared AppPaths.h i
 if (-not (Test-Path $productConfig -PathType Leaf)) { Fail 'config/product.ini is missing.' }
 if (-not (Test-Path $agentRuntimeScript -PathType Leaf)) { Fail 'Agent Runtime staging script is missing.' }
 if (Test-Path (Join-Path $sourceRoot 'native')) { Fail 'obsolete src/native container returned.' }
-foreach ($relative in @('app','ai','desktop','harness','search','ui','include\miaodesk')) {
+$canonicalSourceDomains = @('app','ai','content','desktop','harness','search','tests','ui','include\miaodesk')
+$canonicalTopLevel = $canonicalSourceDomains | ForEach-Object { ($_ -split '\\')[0] }
+foreach ($relative in $canonicalSourceDomains) {
     if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Container)) {
         Fail "source domain is missing: src/$($relative -replace '\\','/')"
     }
 }
+
+# Anti-drift guard: a source domain that exists but is absent from
+# docs/NATIVE_SOURCE_LAYOUT.md means the normative layout contract has fallen
+# behind the code. Register the new domain in the doc in the same change that
+# introduces it, so the layout contract cannot silently drift from src/.
+$layoutDoc = Join-Path $RepoRoot 'docs\NATIVE_SOURCE_LAYOUT.md'
+if (-not (Test-Path $layoutDoc -PathType Leaf)) { Fail 'docs/NATIVE_SOURCE_LAYOUT.md is missing.' }
+$layoutDocText = Get-Content $layoutDoc -Raw
+$buildArtifactDirs = @('CMakeFiles','CMakeScripts','out','build','x64','arm64','Debug','Release','RelWithDebInfo','MinSizeRel','.vs','.cache')
+foreach ($domainDir in Get-ChildItem $sourceRoot -Directory) {
+    if ($buildArtifactDirs -contains $domainDir.Name) {
+        Fail "in-tree build directory detected: src/$($domainDir.Name). Build and staging must stay outside the source tree."
+    }
+    if ($canonicalTopLevel -notcontains $domainDir.Name) {
+        Fail "undocumented source domain: src/$($domainDir.Name) exists but is not registered as a canonical source domain"
+    }
+    if ($layoutDocText -notmatch [regex]::Escape($domainDir.Name)) {
+        Fail "source domain is undocumented: src/$($domainDir.Name) is missing from docs/NATIVE_SOURCE_LAYOUT.md"
+    }
+}
+
 if (@(Get-ChildItem $sourceRoot -File -Include *.cpp,*.cc,*.cxx -ErrorAction SilentlyContinue).Count -gt 0) {
     Fail 'implementation files must live in a source domain, not directly under src/.'
 }

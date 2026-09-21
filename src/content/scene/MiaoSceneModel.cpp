@@ -1,8 +1,13 @@
 #include "miaodesk/MiaoSceneModel.h"
 
+#include <algorithm>
+#include <cwctype>
+#include <filesystem>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+
+namespace fs = std::filesystem;
 
 namespace miaodesk::content {
 namespace {
@@ -10,6 +15,13 @@ namespace {
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
     return false;
+}
+
+std::wstring Lower(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return value;
 }
 
 bool HasPrefix(std::wstring_view value, std::wstring_view prefix) noexcept {
@@ -132,6 +144,17 @@ bool MiaoSceneModel::Validate(const SceneDefinition& scene, std::wstring* error)
             return Fail(error, L"Asset source cannot be empty: " + asset.id);
         if (!assets.emplace(asset.id, asset.type).second)
             return Fail(error, L"Duplicate asset id: " + asset.id);
+    }
+
+    // The mesh extension set is deliberately narrow: only the formats a v1 loader
+    // is planned to accept. Declaring an unsupported extension is caught here rather
+    // than surfacing later as a loader failure with no authoring context.
+    for (const auto& asset : scene.assets) {
+        if (asset.type != AssetType::Mesh) continue;
+        const auto extension = Lower(fs::path(asset.source).extension().wstring());
+        if (extension != L".obj" && extension != L".fbx") {
+            return Fail(error, L"Mesh asset must use a .obj or .fbx source: " + asset.id);
+        }
     }
 
     std::unordered_set<std::wstring> shaderIds;

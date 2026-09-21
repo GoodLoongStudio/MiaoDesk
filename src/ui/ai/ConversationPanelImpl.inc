@@ -360,8 +360,8 @@ std::wstring FriendlyToolName(const std::wstring& raw) {
     if (raw == L"file_open") return L"打开文件";
     if (raw == L"image_generate") return L"生成图片";
     if (raw == L"settings_open") return L"打开妙喵设置";
-    if (raw == L"wallpaper_create_web_package") return L"制作动态壁纸";
     if (raw == L"wallpaper_validate_package") return L"检查壁纸包";
+    if (raw == L"content_skill_get") return L"查阅内容创作规范";
     if (raw == L"wallpaper_state_get") return L"读取桌面状态";
     if (raw == L"desktop_widget_list") return L"查看桌面组件";
     if (raw == L"read") return L"读取文件";
@@ -696,7 +696,8 @@ void ClearConversation(ConversationState& state) {
                  L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。"
                  L"配置 API Key 后解锁完整 Agent。");
     } else {
-        AddEntry(state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+        AddEntry(state, EntryKind::Assistant,
+                 L"你好，我在这里。直接告诉我你想做什么 —— 也可以说「做一个有飘落落叶的动态壁纸」或「帮我做一个桌面倒数日组件」，我会按内置创作规范生成，你确认后才落到桌面。");
     }
     AppendRouteLog(L"route: Pi session reset by user");
 }
@@ -1344,7 +1345,8 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
                  L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。"
                  L"配置 API Key 后解锁完整 Agent。");
     } else {
-        AddEntry(*state, EntryKind::Assistant, L"你好，我在这里。直接告诉我你想做什么。" );
+        AddEntry(*state, EntryKind::Assistant,
+                 L"你好，我在这里。直接告诉我你想做什么 —— 也可以说「做一个有飘落落叶的动态壁纸」或「帮我做一个桌面倒数日组件」，我会按内置创作规范生成，你确认后才落到桌面。");
     }
     ApplyWindowGlass(*state);
     PlacePanel(*state);

@@ -478,9 +478,64 @@ bool ReadColorField(
 }
 
 bool ReadSchema(const JsonValue& object, std::wstring_view label, std::wstring* error) {
-    double schema = 0.0;
-    if (!ReadNumber(object, "schema", 0.0, &schema, true, error)) return false;
-    return schema == 1.0 || Fail(error, std::wstring(label) + L" schema version must be 1.");
+    const auto* value = object.Find("schema");
+    // The label matters: scene.json and parameters.json both carry a schema field, and
+    // "Missing numeric field: schema" alone does not say which file the caller got wrong.
+    if (!value) return Fail(error, std::wstring(label) + L" is missing the numeric field: schema");
+    if (value->type != JsonValue::Type::Number || !std::isfinite(value->number))
+        return Fail(error, std::wstring(label) + L" field must be a finite number: schema");
+    if (value->number != 1.0)
+        return Fail(error, std::wstring(label) + L" schema version must be 1.");
+    return true;
+}
+
+const char* SpatialModeKey(SceneSpatialMode mode) noexcept {
+    switch (mode) {
+    case SceneSpatialMode::TwoD: return "2d";
+    case SceneSpatialMode::ThreeD: return "3d";
+    }
+    return "2d";
+}
+
+bool ParseSpatialMode(std::string_view value, SceneSpatialMode* mode) noexcept {
+    if (value == "2d") *mode = SceneSpatialMode::TwoD;
+    else if (value == "3d") *mode = SceneSpatialMode::ThreeD;
+    else return false;
+    return true;
+}
+
+const char* LightTypeKey(LightType type) noexcept {
+    switch (type) {
+    case LightType::Point: return "point";
+    case LightType::Spot: return "spot";
+    case LightType::Tube: return "tube";
+    case LightType::Directional: return "directional";
+    }
+    return "point";
+}
+
+bool ParseLightType(std::string_view value, LightType* type) noexcept {
+    if (value == "point") *type = LightType::Point;
+    else if (value == "spot") *type = LightType::Spot;
+    else if (value == "tube") *type = LightType::Tube;
+    else if (value == "directional") *type = LightType::Directional;
+    else return false;
+    return true;
+}
+
+const char* FogModeKey(FogMode mode) noexcept {
+    switch (mode) {
+    case FogMode::Linear: return "linear";
+    case FogMode::Exponential: return "exponential";
+    }
+    return "linear";
+}
+
+bool ParseFogMode(std::string_view value, FogMode* mode) noexcept {
+    if (value == "linear") *mode = FogMode::Linear;
+    else if (value == "exponential") *mode = FogMode::Exponential;
+    else return false;
+    return true;
 }
 
 bool ParseContentKind(std::string_view value, ContentKind* kind) noexcept {
@@ -810,6 +865,12 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
     if (!ReadString8(root, "profile", &profile, true, error) || !ParseProfile(profile, &runtime->profile))
         return Fail(error, L"scene.json profile must be wallpaper or widget.");
     if (!ReadString(root, "rootNodeId", &runtime->scene.rootNodeId, true, error)) return false;
+    std::string spatial;
+    if (ReadString8(root, "spatial", &spatial, false, error) && !spatial.empty()) {
+        // Absent means 2D, which is what every package written before this field meant.
+        if (!ParseSpatialMode(spatial, &runtime->scene.spatial))
+            return Fail(error, L"scene.json spatial must be 2d or 3d.");
+    }
     runtime->scene.schemaVersion = 1;
 
     const auto* nodes = root.Find("nodes");
@@ -928,7 +989,61 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
             !ReadString(*target, "propertyName", &binding.target.propertyName, true, error) ||
             !ReadNumber(bindingValue, "scale", 1.0, &binding.scale, false, error) ||
             !ReadNumber(bindingValue, "offset", 0.0, &binding.offset, false, error)) return false;
+        std::string response;
+        if (ReadString8(bindingValue, "response", &response, false, error) && !response.empty()) {
+            if (!ParseBindingResponse(response, &binding.response))
+                return Fail(error, L"Binding response is invalid: " + binding.id);
+        }
+        if (!ReadNumber(bindingValue, "deadzone", 0.0, &binding.deadzone, false, error)) return false;
+        if (!std::isfinite(binding.deadzone) || binding.deadzone < 0.0 || binding.deadzone >= 1.0)
+            return Fail(error, L"Binding deadzone must be in [0, 1): " + binding.id);
         runtime->bindings.push_back(std::move(binding));
+    }
+
+    runtime->lights.clear();
+    if (const auto* lights = root.Find("lights")) {
+        if (!RequireArray(lights, L"lights", error)) return false;
+        for (const auto& lightValue : lights->array) {
+            if (!RequireObject(lightValue, L"Light", error)) return false;
+            LightDefinition light;
+            if (!ReadString(lightValue, "id", &light.id, true, error)) return false;
+            std::string type;
+            if (ReadString8(lightValue, "type", &type, false, error) && !type.empty()) {
+                if (!ParseLightType(type, &light.type))
+                    return Fail(error, L"Light type is invalid: " + light.id);
+            }
+            if (!ReadString(lightValue, "nodeId", &light.nodeId, true, error)) return false;
+            if (!ReadColorField(lightValue, "color", light.color, &light.color, false, error)) return false;
+            if (!ReadNumber(lightValue, "intensity", light.intensity, &light.intensity, false, error)) return false;
+            if (!ReadNumber(lightValue, "range", light.range, &light.range, false, error)) return false;
+            if (!ReadNumber(lightValue, "spotInnerCos", light.spotInnerCos, &light.spotInnerCos, false, error))
+                return false;
+            if (!ReadNumber(lightValue, "spotOuterCos", light.spotOuterCos, &light.spotOuterCos, false, error))
+                return false;
+            runtime->lights.push_back(std::move(light));
+        }
+    }
+
+    runtime->fog.clear();
+    if (const auto* fog = root.Find("fog")) {
+        if (!RequireArray(fog, L"fog", error)) return false;
+        for (const auto& fogValue : fog->array) {
+            if (!RequireObject(fogValue, L"Fog", error)) return false;
+            FogDefinition fogDefinition;
+            if (!ReadString(fogValue, "id", &fogDefinition.id, true, error)) return false;
+            std::string mode;
+            if (ReadString8(fogValue, "mode", &mode, false, error) && !mode.empty()) {
+                if (!ParseFogMode(mode, &fogDefinition.mode))
+                    return Fail(error, L"Fog mode is invalid: " + fogDefinition.id);
+            }
+            if (!ReadColorField(fogValue, "color", fogDefinition.color, &fogDefinition.color, false, error))
+                return false;
+            if (!ReadNumber(fogValue, "start", fogDefinition.startOrDensity, &fogDefinition.startOrDensity,
+                            false, error))
+                return false;
+            if (!ReadNumber(fogValue, "end", fogDefinition.end, &fogDefinition.end, false, error)) return false;
+            runtime->fog.push_back(std::move(fogDefinition));
+        }
     }
 
     runtime->animations.clear();
@@ -1185,6 +1300,7 @@ bool MiaoSceneSerializer::SerializeScene(
     out += "{\n  \"schema\":1,\n  \"id\":" + Quote(runtime.scene.id) +
            ",\n  \"kind\":" + Quote8(ContentKindKey(runtime.scene.kind)) +
            ",\n  \"profile\":" + Quote8(ProfileKey(runtime.profile)) +
+           ",\n  \"spatial\":" + Quote8(SpatialModeKey(runtime.scene.spatial)) +
            ",\n  \"rootNodeId\":" + Quote(runtime.scene.rootNodeId) + ",\n";
 
     out += "  \"nodes\":[";
@@ -1260,7 +1376,9 @@ bool MiaoSceneSerializer::SerializeScene(
                ",\"sourceId\":" + Quote(binding.sourceId) +
                ",\"target\":{\"componentId\":" + Quote(binding.target.componentId) +
                ",\"propertyName\":" + Quote(binding.target.propertyName) +
-               "},\"scale\":" + Number(binding.scale) + ",\"offset\":" + Number(binding.offset) + "}";
+               "},\"scale\":" + Number(binding.scale) + ",\"offset\":" + Number(binding.offset) +
+               ",\"response\":" + Quote8(BindingResponseKey(binding.response)) +
+               ",\"deadzone\":" + Number(binding.deadzone) + "}";
     }
     out += "],\n";
 
@@ -1314,6 +1432,33 @@ bool MiaoSceneSerializer::SerializeScene(
     }
     out += "],\n";
 
+    out += "  \"lights\":[";
+    for (std::size_t i = 0; i < runtime.lights.size(); ++i) {
+        if (i) out += ",";
+        const auto& light = runtime.lights[i];
+        out += "{\"id\":" + Quote(light.id) +
+               ",\"type\":" + Quote8(LightTypeKey(light.type)) +
+               ",\"nodeId\":" + Quote(light.nodeId) +
+               ",\"color\":" + SerializeColor(light.color) +
+               ",\"intensity\":" + Number(light.intensity) +
+               ",\"range\":" + Number(light.range) +
+               ",\"spotInnerCos\":" + Number(light.spotInnerCos) +
+               ",\"spotOuterCos\":" + Number(light.spotOuterCos) + "}";
+    }
+    out += "],\n";
+
+    out += "  \"fog\":[";
+    for (std::size_t i = 0; i < runtime.fog.size(); ++i) {
+        if (i) out += ",";
+        const auto& fogDefinition = runtime.fog[i];
+        out += "{\"id\":" + Quote(fogDefinition.id) +
+               ",\"mode\":" + Quote8(FogModeKey(fogDefinition.mode)) +
+               ",\"color\":" + SerializeColor(fogDefinition.color) +
+               ",\"start\":" + Number(fogDefinition.startOrDensity) +
+               ",\"end\":" + Number(fogDefinition.end) + "}";
+    }
+    out += "],\n";
+
     out += "  \"postProcesses\":[";
     for (std::size_t i = 0; i < runtime.postProcesses.size(); ++i) {
         if (i) out += ",";
@@ -1357,6 +1502,7 @@ bool MiaoSceneSerializer::SelfTest() {
       "id":"scene://serializer-self-test",
       "kind":"wallpaper",
       "profile":"wallpaper",
+      "spatial":"2d",
       "rootNodeId":"node://root",
       "nodes":[
         {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[
@@ -1377,7 +1523,7 @@ bool MiaoSceneSerializer::SelfTest() {
         {"id":"input://event/pulse","type":"bool","default":false}
       ],
       "bindings":[{"id":"binding://opacity","sourceKind":"parameter","sourceId":"param://opacity",
-        "target":{"componentId":"component://root/transform","propertyName":"opacity"},"scale":1.0,"offset":0.0}],
+        "target":{"componentId":"component://root/transform","propertyName":"opacity"},"scale":1.0,"offset":0.0,"response":"linear","deadzone":0.0}],
       "animations":[
         {
           "id":"animation://opacity-pulse",

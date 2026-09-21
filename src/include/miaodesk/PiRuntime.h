@@ -71,6 +71,10 @@ private:
         std::wstring apiKey;
         std::wstring signature;
         std::wstring message;
+        // Model capability hints. 0 means "not configured"; ConfigurePiAgent
+        // applies its own default rather than reporting an invented value.
+        unsigned contextWindow{};
+        unsigned maxTokens{};
     };
 
     ProviderSetup BuildProviderSetup(const L3Agent& agent) const;

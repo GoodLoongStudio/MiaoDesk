@@ -13,6 +13,44 @@ bool Fail(std::wstring* error, std::wstring message) {
     return false;
 }
 
+// Applies a BindingResponse to an already-normalised [0, 1] input. Pure and total:
+// every branch returns a finite value for any finite input, so a binding can never
+// produce NaN and stall the runtime.
+double ApplyBindingResponse(BindingResponse response, double t) {
+    switch (response) {
+    case BindingResponse::Linear:
+        return t;
+    case BindingResponse::Square:
+        return t * t;
+    case BindingResponse::Cube:
+        return t * t * t;
+    case BindingResponse::SquareRoot:
+        return t <= 0.0 ? 0.0 : std::sqrt(t);
+    case BindingResponse::SmoothStep:
+        return t * t * (3.0 - 2.0 * t);
+    case BindingResponse::Elastic: {
+        if (t <= 0.0) return 0.0;
+        if (t >= 1.0) return 1.0;
+        // Underdamped unit step response: 1 - e^(-kt)(cos(wt) + (k/w) sin(wt)).
+        // This is the shape that actually overshoots. The obvious variant,
+        // 1 - e^(-kt)(1 + cos(wt))/2, never exceeds 1 because (1 + cos) is never
+        // negative — it is a critically damped approach wearing an elastic's name.
+        // k < w is what makes it underdamped; the overshoot is e^(-k*pi/w_d).
+        constexpr double kDecay = 6.0;
+        constexpr double kOmega = 3.0 * 3.14159265358979323846;
+        const double envelope = std::exp(-kDecay * t);
+        const double oscillation =
+            std::cos(kOmega * t) + (kDecay / kOmega) * std::sin(kOmega * t);
+        return 1.0 - envelope * oscillation;
+    }
+    case BindingResponse::Threshold:
+        return t >= 0.5 ? 1.0 : 0.0;
+    case BindingResponse::Invert:
+        return 1.0 - t;
+    }
+    return t;
+}
+
 bool ValueMatchesType(PropertyType type, const PropertyValue& value) noexcept {
     switch (type) {
     case PropertyType::Bool: return std::holds_alternative<bool>(value);
@@ -316,7 +354,22 @@ bool MiaoSceneRuntime::ApplyBinding(
     std::wstring* error) {
     PropertyValue output = source;
     if (const auto* value = std::get_if<double>(&source)) {
-        const double transformed = *value * binding.scale + binding.offset;
+        // Normalise into [0, 1] first: the response curves are defined on that range,
+        // and an input channel already carries it. The deadzone then suppresses
+        // resting noise before the curve sees it.
+        double normalized = *value;
+        if (binding.deadzone > 0.0) {
+            const double magnitude = std::abs(normalized);
+            if (magnitude <= binding.deadzone) {
+                normalized = 0.0;
+            } else {
+                // Rescale so the value leaves the deadzone at 0 rather than jumping.
+                normalized = (normalized - std::copysign(binding.deadzone, normalized)) /
+                             (1.0 - binding.deadzone);
+            }
+        }
+        const double shaped = ApplyBindingResponse(binding.response, normalized);
+        const double transformed = shaped * binding.scale + binding.offset;
         if (!std::isfinite(transformed)) return Fail(error, L"Binding produced a non-finite float: " + binding.id);
         output = transformed;
     } else if (const auto* value = std::get_if<std::int64_t>(&source)) {

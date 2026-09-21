@@ -16,6 +16,11 @@ endif()
 
 set(MIAODESK_CORE_SOURCES
     ai/agent/L3Agent.cpp
+    # Native tools live in the core library, not in the app target, so the
+    # content-skill gate can link them without compiling a second copy. Each
+    # implementation file must keep exactly one CMake owner.
+    ai/tools/NativeTools.cpp
+    content/input/MiaoAudioCapture.cpp
     content/asset/MiaoAssetDatabase.cpp
     content/binding/MiaoContentDataBinding.cpp
     content/model/ContentWidgetInstanceStore.cpp
@@ -66,7 +71,6 @@ set(MIAODESK_APP_SOURCES
 
     ai/pi/PiRuntime.cpp
     ai/pi/PiNativeToolsExtension.cpp
-    ai/tools/NativeTools.cpp
     ai/tools/NativeToolIsolation.cpp
     ai/tools/DesktopWidgetTools.cpp
     ai/agent/L3PersistenceSelfTest.cpp
@@ -144,6 +148,11 @@ add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURC
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskContentWebReplacementTest tests/ContentWebReplacementContinuity.cpp)
+add_executable(MiaoDeskContentSkillLoadingTest tests/ContentSkillLoading.cpp)
+add_executable(MiaoDeskMediaPackageTest tests/MediaWallpaperPackage.cpp)
+# No Windows dependency: the input bus core is pure logic, so this gate runs on
+# every build rather than only where audio hardware exists.
+add_executable(MiaoDeskInputBusCoreTest tests/InputBusCore.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -172,7 +181,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -193,6 +202,14 @@ if (MSVC)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentWebReplacementTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskContentSkillLoadingTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskMediaPackageTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskInputBusCoreTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskInputBusPublisherTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskAudioIngressTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskBindingResponseTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSceneRuntimeTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSceneSpatial3DTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -267,3 +284,55 @@ target_link_libraries(MiaoDeskContentWebReplacementTest PRIVATE
     version
     winhttp
 )
+
+# content_skill_get reaches into NativeTools.cpp, which links against oleaut32 for
+# its PowerPoint path even though this gate only exercises the skill allowlist.
+target_link_libraries(MiaoDeskContentSkillLoadingTest PRIVATE
+    MiaoDeskCore
+    user32
+    shell32
+    ole32
+    oleaut32
+    advapi32
+    shlwapi
+)
+
+target_link_libraries(MiaoDeskMediaPackageTest PRIVATE
+    MiaoDeskCore
+    user32
+    shell32
+    ole32
+    advapi32
+    shlwapi
+)
+
+# MiaoDeskInputBusCoreTest intentionally links nothing: MiaoInputBus.h is pure C++
+# with no Windows or library dependency, which is what makes it runnable everywhere.
+add_executable(MiaoDeskInputBusPublisherTest tests/InputBusPublisher.cpp)
+add_executable(MiaoDeskAudioIngressTest tests/AudioIngress.cpp)
+add_executable(MiaoDeskBindingResponseTest tests/BindingResponse.cpp)
+add_executable(MiaoDeskSceneRuntimeTest tests/MiaoSceneRuntimeTest.cpp)
+add_executable(MiaoDeskSceneSpatial3DTest tests/SceneSpatial3D.cpp)
+
+target_link_libraries(MiaoDeskInputBusPublisherTest PRIVATE
+    MiaoDeskCore
+)
+
+target_link_libraries(MiaoDeskAudioIngressTest PRIVATE
+    MiaoDeskCore
+)
+
+# Both drive the real scene runtime and serializer, so they must link the same
+# translation units those use.
+target_link_libraries(MiaoDeskBindingResponseTest PRIVATE
+    MiaoDeskCore
+)
+
+target_link_libraries(MiaoDeskSceneRuntimeTest PRIVATE
+    MiaoDeskCore
+)
+
+target_link_libraries(MiaoDeskSceneSpatial3DTest PRIVATE
+    MiaoDeskCore
+)
+

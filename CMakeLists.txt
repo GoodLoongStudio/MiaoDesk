@@ -73,3 +73,14 @@ install(DIRECTORY
     DESTINATION "Widgets"
     PATTERN "README.md" EXCLUDE
 )
+
+# Content-creation skills ship next to the executable. The native tool
+# content_skill_get resolves them relative to the executable directory
+# (see paths::ExecutableDirectory), so the staged layout must stay
+# <install>/skills/<name>/SKILL.md. Any rename here silently breaks AI-driven
+# content creation, and packaging/windows/stage.ps1 asserts the set.
+install(DIRECTORY
+    "${CMAKE_SOURCE_DIR}/skills/"
+    DESTINATION "skills"
+    FILES_MATCHING PATTERN "*.md"
+)

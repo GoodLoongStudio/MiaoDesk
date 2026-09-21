@@ -69,7 +69,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest --parallel 2>&1
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             # Surface compile errors as check annotations so they are readable
@@ -83,6 +83,19 @@ jobs:
             throw 'x64 build failed.'
           }
 
+      - name: Verify web audio bridge shim
+        shell: pwsh
+        run: |
+          node --version
+          & node tests/WebAudioBridge.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'web audio bridge shim gate failed.' }
+
+      - name: Verify web audio bridge has not drifted
+        shell: pwsh
+        run: |
+          .\scripts\verify-web-audio-bridge.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'embedded web audio bridge differs from its source of truth.' }
+
       - name: Verify Content web replacement continuity
         shell: pwsh
         run: |
@@ -91,6 +104,78 @@ jobs:
           if (-not $test) { throw 'Content web replacement continuity test executable was not found.' }
           & $test.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Content web replacement continuity regression failed.' }
+
+      - name: Verify content skill loading gate
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentSkillLoadingTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Content skill loading test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'content_skill_get allowlist/path gate failed.' }
+
+      - name: Verify media wallpaper package gate
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskMediaPackageTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Media wallpaper package test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'media wallpaper package type/entry gate failed.' }
+
+      - name: Verify Scene input bus core
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusCoreTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Scene input bus core test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Scene input bus channel contract / analysis gate failed.' }
+
+      - name: Verify Scene input bus publisher
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusPublisherTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Scene input bus publisher test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Scene input bus publisher gate failed.' }
+
+      - name: Verify audio ingress conversion
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskAudioIngressTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Audio ingress test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'audio downmix/resample/window gate failed.' }
+
+      - name: Verify binding response curves
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskBindingResponseTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Binding response test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'binding response curve gate failed.' }
+
+      - name: Verify scene runtime binding end to end
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneRuntimeTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Scene runtime test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'binding response round-trip / backward-compat gate failed.' }
+
+      - name: Verify 3D scene spatial mode, lights and fog
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneSpatial3DTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw '3D scene test executable was not found.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw '3D scene spatial/light/fog gate failed.' }
 
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh

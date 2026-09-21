@@ -6,6 +6,33 @@
 #include <utility>
 
 namespace miaodesk::content {
+
+const char* BindingResponseKey(BindingResponse response) noexcept {
+    switch (response) {
+    case BindingResponse::Linear: return "linear";
+    case BindingResponse::Square: return "square";
+    case BindingResponse::Cube: return "cube";
+    case BindingResponse::SquareRoot: return "sqrt";
+    case BindingResponse::SmoothStep: return "smoothstep";
+    case BindingResponse::Elastic: return "elastic";
+    case BindingResponse::Threshold: return "threshold";
+    case BindingResponse::Invert: return "invert";
+    }
+    return "linear";
+}
+
+bool ParseBindingResponse(std::string_view value, BindingResponse* response) noexcept {
+    if (value == "linear") *response = BindingResponse::Linear;
+    else if (value == "square") *response = BindingResponse::Square;
+    else if (value == "cube") *response = BindingResponse::Cube;
+    else if (value == "sqrt") *response = BindingResponse::SquareRoot;
+    else if (value == "smoothstep") *response = BindingResponse::SmoothStep;
+    else if (value == "elastic") *response = BindingResponse::Elastic;
+    else if (value == "threshold") *response = BindingResponse::Threshold;
+    else if (value == "invert") *response = BindingResponse::Invert;
+    else return false;
+    return true;
+}
 namespace {
 
 bool Fail(std::wstring* error, std::wstring message) {
@@ -135,6 +162,52 @@ bool ValidateAnimation(const SceneRuntimeDefinition& runtime, const AnimationTra
         if (animation.triggerMode == AnimationTriggerMode::InputRisingEdge && input->type != PropertyType::Bool)
             return Fail(error, L"inputRisingEdge animation trigger requires a bool input: " + animation.id);
     }
+    return true;
+}
+
+bool ValidateLight(const SceneRuntimeDefinition& runtime, const LightDefinition& light, std::wstring* error) {
+    if (!HasPrefix(light.id, L"light://"))
+        return Fail(error, L"Light id must use the light:// stable-id scheme: " + light.id);
+    if (!MiaoSceneModel::FindNode(runtime.scene, light.nodeId))
+        return Fail(error, L"Light nodeId does not resolve to a scene node: " + light.id);
+    if (!ColorFinite(light.color))
+        return Fail(error, L"Light color must be finite: " + light.id);
+    if (light.color.r < 0.0 || light.color.g < 0.0 || light.color.b < 0.0 || light.color.a < 0.0)
+        return Fail(error, L"Light color channels must be non-negative: " + light.id);
+    if (!std::isfinite(light.intensity) || light.intensity < 0.0)
+        return Fail(error, L"Light intensity must be a non-negative finite number: " + light.id);
+    if (!std::isfinite(light.range) || light.range < 0.0)
+        return Fail(error, L"Light range must be a non-negative finite number: " + light.id);
+    if (light.type == LightType::Spot) {
+        // Cosine cones: the inner cone must be at least as wide as the outer, and both
+        // must sit strictly inside (-1, 1]. inner == outer is a hard-edged spotlight
+        // (zero-width penumbra) and is a legitimate authoring choice, so equality is
+        // allowed; only a narrower inner cone than outer is rejected.
+        const auto valid = [](double cosine) {
+            return std::isfinite(cosine) && cosine > -1.0 && cosine <= 1.0;
+        };
+        if (!valid(light.spotInnerCos) || !valid(light.spotOuterCos))
+            return Fail(error, L"Spot light cone cosines must be in (-1, 1]: " + light.id);
+        if (light.spotInnerCos < light.spotOuterCos)
+            return Fail(error, L"Spot light inner cone must be at least as wide as the outer cone: " +
+                               light.id);
+    } else if (light.spotInnerCos != -1.0 || light.spotOuterCos != -1.0) {
+        return Fail(error, L"Only a spot light may declare cone cosines: " + light.id);
+    }
+    return true;
+}
+
+bool ValidateFog(const FogDefinition& fog, std::wstring* error) {
+    if (!HasPrefix(fog.id, L"fog://"))
+        return Fail(error, L"Fog id must use the fog:// stable-id scheme: " + fog.id);
+    if (!ColorFinite(fog.color))
+        return Fail(error, L"Fog color must be finite: " + fog.id);
+    if (!std::isfinite(fog.startOrDensity) || fog.startOrDensity < 0.0)
+        return Fail(error, L"Fog start/density must be a non-negative finite number: " + fog.id);
+    if (!std::isfinite(fog.end) || fog.end < 0.0)
+        return Fail(error, L"Fog end must be a non-negative finite number: " + fog.id);
+    if (fog.mode == FogMode::Linear && fog.end <= fog.startOrDensity)
+        return Fail(error, L"Linear fog end must be greater than its start: " + fog.id);
     return true;
 }
 
@@ -308,6 +381,14 @@ bool MiaoSceneRuntimeModel::Validate(const SceneRuntimeDefinition& runtime, std:
             return Fail(error, L"Binding source and target types must match in v1: " + binding.id);
         if ((binding.scale != 1.0 || binding.offset != 0.0) && !IsNumeric(source->type))
             return Fail(error, L"Binding scale/offset are only valid for numeric values in v1: " + binding.id);
+        // A response curve and a deadzone only make sense on a float source: Threshold
+        // yields 0.0/1.0 and would be silently misread on an int or bool target.
+        if ((binding.response != BindingResponse::Linear || binding.deadzone != 0.0) &&
+            source->type != PropertyType::Float)
+            return Fail(error, L"Binding response/deadzone are only valid for float sources in v1: " +
+                           binding.id);
+        if (!std::isfinite(binding.deadzone) || binding.deadzone < 0.0 || binding.deadzone >= 1.0)
+            return Fail(error, L"Binding deadzone must be in [0, 1): " + binding.id);
     }
 
     std::unordered_set<std::wstring> animationIds;
@@ -334,6 +415,30 @@ bool MiaoSceneRuntimeModel::Validate(const SceneRuntimeDefinition& runtime, std:
         if (particleBudget > kMaxParticlesPerScene)
             return Fail(error, L"Scene particle budget exceeds the v1 maximum of " +
                                std::to_wstring(kMaxParticlesPerScene) + L" particles.");
+    }
+
+    // Lights and fog are 3D-only. Rejecting them on a 2D scene is better than
+    // accepting and silently dropping them: the author gets a diagnosable error
+    // instead of asking why the light does nothing.
+    if (!runtime.lights.empty() && runtime.scene.spatial != SceneSpatialMode::ThreeD)
+        return Fail(error, L"Lights require a 3D scene: scene.spatial must be threeD.");
+    if (!runtime.fog.empty() && runtime.scene.spatial != SceneSpatialMode::ThreeD)
+        return Fail(error, L"Fog requires a 3D scene: scene.spatial must be threeD.");
+
+    std::unordered_set<std::wstring> lightIds;
+    for (const auto& light : runtime.lights) {
+        if (!ValidateLight(runtime, light, error)) return false;
+        if (!lightIds.emplace(light.id).second) return Fail(error, L"Duplicate light id: " + light.id);
+        if (lightIds.size() > kMaxLightsPerScene)
+            return Fail(error, L"Scene exceeds the maximum of " +
+                               std::to_wstring(kMaxLightsPerScene) + L" lights.");
+    }
+
+    std::unordered_set<std::wstring> fogIds;
+    for (const auto& fogDefinition : runtime.fog) {
+        if (!ValidateFog(fogDefinition, error)) return false;
+        if (!fogIds.emplace(fogDefinition.id).second)
+            return Fail(error, L"Duplicate fog id: " + fogDefinition.id);
     }
 
     if (error) error->clear();

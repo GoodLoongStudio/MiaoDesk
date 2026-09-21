@@ -321,7 +321,7 @@ jobs:
             $uninstall = Start-Process -FilePath (Join-Path $testRoot 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
             if ($uninstall.ExitCode -ne 0) { throw "Silent ARM64 uninstall failed: $($uninstall.ExitCode)" }
             Start-Sleep -Seconds 2
-            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Goz','Config','Uninstall.exe')) {
+            foreach ($relative in @('MiaoDesk.exe','Runtime','AI','Pi','Goz','Config','Wallpapers','Widgets','skills','Uninstall.exe')) {
               if (Test-Path (Join-Path $testRoot $relative)) { throw "ARM64 uninstall left product content behind: $relative" }
             }
             if (Get-Service -Name 'goz' -ErrorAction SilentlyContinue) {

@@ -103,7 +103,7 @@ Wallpaper -> Pi runtime
 
 - wallpaper state / package validation
 - library / package / import / apply
-- Image / Video / Web / Scene lifecycle
+- wallpaper lifecycle across 载体 × 运行时
 - per-monitor assignment
 - scaling / render / Web runtime
 
@@ -124,6 +124,24 @@ Wallpaper -> Pi runtime
 `DesktopWidgetStore` 是内部 persistence，不是产品 API。UI/AI 应通过 `WidgetService`、`DesktopWidgetController` 或 `DesktopControlService`。
 
 当前内置 Widget 仅三款 Native C++ / Direct2D preset；Web Widget（WebView2 组件）路径已整体移除，不恢复旧 Widget Editor。
+
+### Content Framework — `src/content/`
+
+负责 Wallpaper 与 Widget 共用的内容层，与宿主实现解耦：
+
+- `ContentDefinition` / `ContentInstance` 的模型、参数解析与校验（`model/`）
+- `.mdwidget` / `.mdwall` 包的 ingress、目录、托管生命周期与卸载（`package/`）
+- Scene object model 及其 JSON 序列化（`scene/`、`serialization/`）
+- D2D / D3D11 渲染后端、post-process 与 render graph（`render/`）
+- Scene runtime 与帧调度（`runtime/`）
+- 声明式数据绑定与 `MiaoContentCapabilityBroker`（`binding/`）
+- Asset database（`asset/`）与 shader contract / GPU parameter block（`shader/`）
+
+边界：`content/` 不拥有 Windows Shell 挂载、z-order、显示器分配或 Widget persistence —— 这些分别归 `desktop/shell/`、`desktop/wallpaper/` 和 `desktop/widgets/`。宿主侧桥接层位于 `ui/wallpaper/`（`ContentPackageUiBridge`、`ContentWidgetSettingsDialog`、`ContentWidgetPreviewRenderer`）与 `desktop/widgets/`（`WidgetService` 的 Content 分支）。
+
+`WidgetService` 的 Content 分支在 Create 与 Update 两条路径上都经 `MiaoContentModel::ValidateInstance` 按 Definition 的 geometry policy 校验；Native preset 分支则直接拒绝与 preset 默认值不符的 width/height。
+
+第三方内容不得绕过 Capability Broker 获得 Windows API / 文件系统 / 注册表 / 原生 DLL 权限。契约细节见 `MIAODESK_CONTENT_FRAMEWORK.md` 与 `MIAO_CONTENT_PACKAGE_V1.md`。
 
 ### Automation — `src/desktop/automation/`
 
@@ -234,3 +252,13 @@ Explorer restarts -> desktop runtime recovers without UI/AI special handling
 ```
 
 Domain service 拥有状态转换；客户端只表达 intent。
+
+## 8. 保持当前
+
+本文件只描述当前有效的模块边界，因此它落后于代码即为失效。新增或移除一个 domain 时，同一改动必须更新：
+
+- 本文件的 Domain ownership 与依赖方向
+- `NATIVE_SOURCE_LAYOUT.md` 的物理树与 ownership rules
+- `scripts/verify-path-layout-contract.ps1` 的 canonical source domain 列表
+
+后者已由 CI 强制：`src/` 下任何未在 `NATIVE_SOURCE_LAYOUT.md` 中出现的顶层目录会直接让 path layout contract 失败。

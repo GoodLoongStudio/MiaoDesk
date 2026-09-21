@@ -22,7 +22,8 @@ std::string NativeToolDefinitionsJsonRaw();
 inline std::string NativeToolDefinitionsJson() {
     std::string json = R"JSON([
 {"type":"function","name":"settings_open","description":"Open the native MiaoDesk Settings Center. Use this only for MiaoDesk settings/configuration UI.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory without applying it.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory without applying it.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
+{"type":"function","name":"content_skill_get","description":"Load a MiaoDesk content-creation skill specification before writing any .mdwall/.mdwidget package. Omit name to get the index of available skills.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Skill name. One of: content-package-basics, wallpaper-content, widget-content, content-review. Omit to list them."}},"additionalProperties":false}}
 ])JSON";
     json.erase(std::remove(json.begin(), json.end(), '\r'), json.end());
     json.erase(std::remove(json.begin(), json.end(), '\n'), json.end());

@@ -38,8 +38,31 @@ foreach ($relative in @(
     'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
     'Wallpapers\MiaoCloud.mdwall\assets\blink.png',
     'Wallpapers\NeonCity.mdwall\manifest.json',
-    'Wallpapers\MysticMoon.mdwall\manifest.json'
+    'Wallpapers\MysticMoon.mdwall\manifest.json',
+    'skills\README.md',
+    'skills\content-package-basics\SKILL.md',
+    'skills\wallpaper-content\SKILL.md',
+    'skills\widget-content\SKILL.md',
+    'skills\content-review\SKILL.md'
 )) { Assert-File $relative }
+
+# The staged skill set must match the closed allowlist in
+# src/ai/tools/NativeTools.cpp (kContentSkills). A skill that exists in the repo but
+# is neither staged nor allowlisted is unreachable at runtime; one that is staged but
+# not allowlisted is dead weight. Both directions fail the build.
+$expectedSkills = @('content-package-basics', 'wallpaper-content', 'widget-content', 'content-review')
+$stagedSkills = @(Get-ChildItem (Join-Path $Destination 'skills') -Directory | Select-Object -ExpandProperty Name)
+$missing = @($expectedSkills | Where-Object { $stagedSkills -notcontains $_ })
+if ($missing.Count -gt 0) { throw "Staged skills are missing: $($missing -join ', ')" }
+$unexpected = @($stagedSkills | Where-Object { $expectedSkills -notcontains $_ })
+if ($unexpected.Count -gt 0) { throw "Staged skill is absent from the kContentSkills allowlist: $($unexpected -join ', ')" }
+foreach ($skill in $expectedSkills) {
+    $head = Get-Content (Join-Path $Destination "skills\$skill\SKILL.md") -TotalCount 6
+    if ($head -notmatch ('^name:\s*' + [regex]::Escape($skill) + '\s*$')) {
+        throw "SKILL.md frontmatter name does not match its directory: skills\$skill"
+    }
+}
+Write-Host "Content skills staged and allowlist-consistent: $($expectedSkills -join ', ')" -ForegroundColor Cyan
 
 foreach ($relative in @(
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',

@@ -1,4 +1,5 @@
 #include "miaodesk/NativeTools.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/WallpaperPackage.h"
 #include <windows.h>
 #include <shlobj.h>
@@ -517,46 +518,91 @@ NativeToolResult OpenSettingsCenter(std::string_view) {
     return {true, L"已打开妙喵设置中心。"};
 }
 
-NativeToolResult CreateWebWallpaperPackage(std::string_view arguments) {
-    auto desktop = KnownFolder(FOLDERID_Desktop);
-    if (desktop.empty()) return {false, L"无法定位桌面目录。"};
+// Content-creation skills ship next to the executable. The skill name is a closed
+// allowlist on purpose: the caller picks from a fixed set, so no model-supplied
+// string can steer the resolved path outside the skills directory.
+constexpr std::wstring_view kContentSkills[] = {
+    L"content-package-basics",
+    L"wallpaper-content",
+    L"widget-content",
+    L"content-review",
+};
 
-    auto title = Utf8ToWide(ExtractJsonString(arguments, "title"));
-    auto name = SanitizeFileName(Utf8ToWide(ExtractJsonString(arguments, "name")),
-                                 title.empty() ? L"AI Wallpaper" : title);
-    const auto html = ExtractJsonString(arguments, "html");
-    const bool openAfter = ExtractJsonBool(arguments, "open_after_create", false);
-    if (html.empty()) return {false, L"缺少 Web 壁纸 HTML 内容。"};
-    if (title.empty()) title = name;
+// Skill specs are developer-authored prompts, not generated content. A generous
+// ceiling keeps a future oversized file from flooding a tool result.
+constexpr std::size_t kContentSkillMaxBytes = 64 * 1024;
 
-    auto root = desktop / L"MiaoDesk Wallpapers";
+std::wstring ContentSkillPath(std::wstring_view name) {
+    for (const auto candidate : kContentSkills) {
+        if (candidate != name) continue;
+        const auto root = miaodesk::paths::ExecutableDirectory();
+        if (root.empty()) return {};
+        return root / L"skills" / std::wstring(name) / L"SKILL.md";
+    }
+    return {};
+}
+
+std::wstring ContentSkillIndexPath() {
+    const auto root = miaodesk::paths::ExecutableDirectory();
+    if (root.empty()) return {};
+    return root / L"skills" / L"README.md";
+}
+
+std::wstring ReadTextFileBounded(const fs::path& path, bool* tooLarge) {
+    if (tooLarge) *tooLarge = false;
     std::error_code ec;
-    fs::create_directories(root, ec);
-    if (ec) return {false, L"无法创建 MiaoDesk Wallpapers 目录。"};
+    const auto size = fs::file_size(path, ec);
+    if (ec) return {};
+    if (size > kContentSkillMaxBytes) {
+        if (tooLarge) *tooLarge = true;
+        return {};
+    }
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return {};
+    std::string bytes(static_cast<std::size_t>(size), '\0');
+    stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    if (!stream && !stream.eof()) return {};
+    return Utf8ToWide(bytes);
+}
 
-    if (name.size() < 7 || _wcsicmp(name.c_str() + name.size() - 7, L".mdwall") != 0) name += L".mdwall";
-    fs::path package = root / name;
-    if (fs::exists(package, ec)) {
-        const auto stem = package.stem().wstring();
-        bool found = false;
-        for (int i = 2; i <= 99; ++i) {
-            auto candidate = root / (stem + L" " + std::to_wstring(i) + L".mdwall");
-            if (!fs::exists(candidate, ec)) {
-                package = std::move(candidate);
-                found = true;
-                break;
-            }
+NativeToolResult LoadContentSkill(std::string_view arguments) {
+    const auto requested = Utf8ToWide(ExtractJsonString(arguments, "name"));
+
+    // No name: hand back the index so the caller can see what is available.
+    if (requested.empty()) {
+        const auto index = ContentSkillIndexPath();
+        bool tooLarge = false;
+        auto text = ReadTextFileBounded(index, &tooLarge);
+        if (text.empty()) {
+            return {false, L"内容创作 skill 索引不可用：" + index.wstring()};
         }
-        if (!found) return {false, L"同名 AI 壁纸过多，请换一个名称。"};
+        return {true, text};
     }
 
-    std::wstring error;
-    if (!wallpaper::WallpaperPackage::CreateWeb(package, title, html, L"ai-generated", L"妙喵", &error)) {
-        fs::remove_all(package, ec);
-        return {false, error.empty() ? L"AI Web 壁纸包生成失败。" : std::move(error)};
+    const auto path = ContentSkillPath(requested);
+    if (path.empty()) {
+        std::wstring valid;
+        for (const auto candidate : kContentSkills) {
+            if (!valid.empty()) valid += L" / ";
+            valid += candidate;
+        }
+        return {false, L"未知内容创作 skill：" + requested + L"。可用：" + valid};
     }
-    if (openAfter) ShellExecuteW(nullptr, L"open", package.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    return {true, L"AI 壁纸包已生成并通过校验：" + package.wstring()};
+
+    std::error_code ec;
+    if (!fs::exists(path, ec)) {
+        return {false, L"内容创作 skill 未随产品安装：" + path.wstring()};
+    }
+
+    bool tooLarge = false;
+    const auto text = ReadTextFileBounded(path, &tooLarge);
+    if (tooLarge) {
+        return {false, L"内容创作 skill 文件过大：" + path.wstring()};
+    }
+    if (text.empty()) {
+        return {false, L"内容创作 skill 读取失败：" + path.wstring()};
+    }
+    return {true, text};
 }
 
 NativeToolResult ValidateWallpaperPackage(std::string_view arguments) {
@@ -581,8 +627,8 @@ std::string NativeToolDefinitionsJson() {
 {"type":"function","name":"file_create","description":"Create a UTF-8 text file in one of the user's safe folders.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"},"content":{"type":"string"}},"required":["location","file_name","content"],"additionalProperties":false}},
 {"type":"function","name":"folder_list","description":"List files and folders from Desktop, Documents, or Downloads.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["location"],"additionalProperties":false}},
 {"type":"function","name":"file_open","description":"Open an existing file from Desktop, Documents, or Downloads with its registered Windows application. No command-line arguments are allowed.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"}},"required":["location","file_name"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_create_web_package","description":"Create a validated MiaoDesk .mdwall Web wallpaper package on the user's desktop. Use this when the user asks the Turing Intelligent Desktop to generate an interactive/procedural HTML wallpaper.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Package folder name; .mdwall is added automatically"},"title":{"type":"string","description":"User-facing wallpaper title"},"html":{"type":"string","description":"Complete self-contained HTML/CSS/JS for the wallpaper; local assets are not supported by this first generator tool"},"open_after_create":{"type":"boolean"}},"required":["name","title","html"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
+{"type":"function","name":"content_skill_get","description":"Load a MiaoDesk content-creation skill specification. Call this BEFORE writing any .mdwall/.mdwidget package so the package follows the project's own authoring rules. Omit name to get the index of available skills.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Skill name. One of: content-package-basics, wallpaper-content, widget-content, content-review. Omit to list them."}},"additionalProperties":false}}
 ])JSON";
 }
 
@@ -592,8 +638,8 @@ NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view a
     if (toolName == "file_create") return CreateFile(argumentsJson);
     if (toolName == "folder_list") return ListFolder(argumentsJson);
     if (toolName == "file_open") return OpenFile(argumentsJson);
-    if (toolName == "wallpaper_create_web_package") return CreateWebWallpaperPackage(argumentsJson);
     if (toolName == "wallpaper_validate_package") return ValidateWallpaperPackage(argumentsJson);
+    if (toolName == "content_skill_get") return LoadContentSkill(argumentsJson);
     return {false, L"未知 Native Tool：" + Utf8ToWide(toolName)};
 }
 

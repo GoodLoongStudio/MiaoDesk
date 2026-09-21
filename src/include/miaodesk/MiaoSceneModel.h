@@ -18,6 +18,18 @@ enum class RuntimeProfile {
     Widget,
 };
 
+// Whether a scene is authored in 2D or 3D space. This is the dimension Wallpaper
+// Engine splits its scenes on ("differentiates between 2D and 3D scenes"), and it
+// is deliberately NOT RuntimeProfile: RuntimeProfile already means "wallpaper
+// semantics vs widget semantics" and must not be overloaded.
+//
+// TwoD is the default so every existing package keeps its current meaning. ThreeD
+// is what unlocks lights, fog and 3D model assets.
+enum class SceneSpatialMode {
+    TwoD,
+    ThreeD,
+};
+
 enum class ComponentKind {
     Transform,
     SpriteRenderer,
@@ -139,6 +151,8 @@ struct SceneDefinition {
     std::wstring id;
     ContentKind kind{ContentKind::Wallpaper};
     std::wstring rootNodeId;
+    // Defaults to TwoD so scenes written before this field existed are unchanged.
+    SceneSpatialMode spatial{SceneSpatialMode::TwoD};
     std::vector<SceneNodeDefinition> nodes;
     std::vector<AssetDefinition> assets;
     std::vector<ShaderDefinition> shaders;

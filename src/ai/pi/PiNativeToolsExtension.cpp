@@ -56,6 +56,7 @@ const TOOL_NAMES = [
   "desktop_widget_list",
   "desktop_preview_wallpaper",
   "desktop_preview_examples",
+  "content_skill_get",
 ] as const;
 
 function textResult(text: string) {
@@ -240,6 +241,13 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
   native("wallpaper_validate_package", "Validate MiaoDesk Wallpaper",
     "Validate an existing local .mdwall package. This does not apply it.",
     Type.Object({ path: Type.String() }, { additionalProperties: false }));
+  native("content_skill_get", "Load Content Skill",
+    "Load a MiaoDesk content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
+    Type.Object({
+      name: Type.Optional(Type.String({
+        description: "content-package-basics | wallpaper-content | widget-content | content-review",
+      })),
+    }, { additionalProperties: false }));
   native("wallpaper_state_get", "Read Desktop State",
     "Read current MiaoDesk desktop state. This is read-only.",
     Type.Object({}, { additionalProperties: false }));

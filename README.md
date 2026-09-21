@@ -1,6 +1,8 @@
 # MiaoDesk
 
-MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口、Pi Agent 和 DeepSeek Harness 工作台。
+MiaoDesk 是一个漂亮的智能桌面。用户感知到三个界面：顶部搜索框（应用搜索 / 文件搜索 / 进入 AI 聊天）、动态桌面（动态壁纸与动态小组件）、以及 DeepSeek Harness 专业工作台。所有功能都对照这三者设计。
+
+产品愿景完整定义见 `docs/PRODUCT_VISION.md`。
 
 ## 产品进程
 
@@ -16,15 +18,16 @@ MiaoDesk 是 Windows 原生 AI 桌面：动态壁纸引擎、顶部搜索入口�
 
 Wallpaper、Widgets、Search Bar 属于常驻桌面路径，**Native C++ 与性能优先**。
 
-- Wallpaper：Image / Video / Web / Scene；Native 路径优先，Web 内容才按需启动 WebView2。
+- Wallpaper：载体取壁纸层，运行时 Scene（内部再分静态图 / 动态场景 / 视频）优先；Web 内容按需启动 WebView2。
 - Widgets：三款内置组件全部 Native C++ / Direct2D；Web Widget（WebView2 承载组件）路径已整体移除。
 - Windows Shell：Progman / WorkerW / Raised Desktop / Explorer recovery 统一由 `DesktopShellHost` 管理。
 - 旧 Wallpaper / Scene / Widget Editor、Inspector、Timeline 和 Wallpaper Engine parity 路线已退出当前设计。
 
-当前唯一设计与开发基线：
+当前产品愿景与唯一设计/开发基线：
 
-- `docs/DESIGN_BASELINE.md`
-- `docs/DEVELOPMENT_ROADMAP.md`
+- `docs/PRODUCT_VISION.md` — 产品是什么、用户感受到什么
+- `docs/DESIGN_BASELINE.md` — 唯一设计基线
+- `docs/DEVELOPMENT_ROADMAP.md` — 唯一开发路线
 
 ## 仓库结构
 
@@ -39,6 +42,7 @@ runtime/arm64/             ARM64 Node/Goz 基础 Runtime
 packaging/windows/         Windows staging、验证与 installer
 .github/workflows/         正式 package、Runtime vendor、路径 contract
 docs/                      当前基线与必要技术契约
+skills/                    AI 内容创作 skill 集（生成壁纸/组件内容包）
 ```
 
 `src/` 不再额外套 `native/src`。`runtime/<arch>` 只存真正与 CPU 架构相关的基础 Runtime；DSH/Pi 不允许再按架构复制一份。
@@ -174,6 +178,8 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 - `docs/DESIGN_BASELINE.md` — 当前唯一设计基线
 - `docs/DEVELOPMENT_ROADMAP.md` — 当前唯一开发基线与路线
 - `docs/DOC-INDEX.md` — 当前有效技术文档索引
+- `docs/LOCAL_AI_ARCHITECTURE.md` — 本地 AI 架构（DGX Spark + 开源模型，含按任务切换模型）
+- `docs/LOCAL_AI_DEPLOYMENT.md` — 本地 AI 部署手册
 - `docs/NATIVE_SOURCE_LAYOUT.md` — 当前源码布局
 - `docs/DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain 边界
 - `docs/L3-PI-RUNTIME-CONTRACT.md` — Pi / AI runtime 契约

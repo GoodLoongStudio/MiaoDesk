@@ -372,6 +372,8 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.model = agent.Config().model;
     setup.apiType = DetectApiType(agent);
     setup.apiKey = LoadApiKey();
+    setup.contextWindow = agent.Config().contextWindow;
+    setup.maxTokens = agent.Config().maxTokens;
     if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
 
     if (setup.nodePath.empty()) { setup.message = L"未找到 Bundled Node Runtime"; return setup; }
@@ -383,8 +385,12 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
 
     const auto credentialHash = std::hash<std::wstring>{}(setup.apiKey);
     // agent-tools-v1 forces existing Pi processes to restart after the fixed Agent tool allowlist landed.
+    // The capability hints are part of the signature so editing them in the Profile
+    // restarts the session instead of silently keeping the previous values.
     setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
                       std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
+                      L"|ctx=" + std::to_wstring(setup.contextWindow) +
+                      L"|max=" + std::to_wstring(setup.maxTokens) +
                       L"|agent-tools-v1";
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
@@ -429,7 +435,12 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     models += "      \"apiKey\": \"$MIAODESK_MODEL_API_KEY\",\n";
     // Chat capability is conservative by default. Image generation is a separate Pi tool/provider
     // and must not cause every arbitrary chat endpoint to be advertised as vision-capable.
-    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\"], \"contextWindow\": 128000, \"maxTokens\": 16384 }]\n";
+    // contextWindow / maxTokens come from the Profile when the user set them; otherwise keep the
+    // historical defaults. They must never be derived from the model name, which is unreliable.
+    const unsigned contextWindow = setup.contextWindow ? setup.contextWindow : 128000u;
+    const unsigned maxTokens = setup.maxTokens ? setup.maxTokens : 16384u;
+    models += "      \"models\": [{ \"id\": \"" + model + "\", \"name\": \"" + model + "\", \"input\": [\"text\"], \"contextWindow\": " +
+              std::to_string(contextWindow) + ", \"maxTokens\": " + std::to_string(maxTokens) + " }]\n";
     models += "    }\n  }\n}\n";
 
     std::ofstream modelsFile(modelsPath, std::ios::binary | std::ios::trunc);
@@ -485,7 +496,21 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
         L"Never claim an action succeeded unless the tool result confirms it. "
         L"Desktop wallpaper changes are preview-first: use desktop_preview_wallpaper, and never claim the desktop was applied until the user clicks Apply. "
-        L"Desktop widgets are native-only presets; list them with desktop_widget_list instead of trying to generate one.";
+        L"Desktop widgets are native-only presets; list them with desktop_widget_list instead of trying to generate one. "
+
+        // Content creation is skill-driven. The specs live on disk and are loaded on
+        // demand so the session prompt stays small; the unconditional rules below are
+        // the ones that must hold even if the model never loads a skill.
+        L"When the user asks you to create or modify a wallpaper (.mdwall) or a desktop widget (.mdwidget), "
+        L"you MUST call content_skill_get first: once with no name for the index, then content-package-basics, "
+        L"then the matching domain skill (wallpaper-content or widget-content), and follow them exactly. "
+        L"Run content-review over your own output before delivering. "
+        L"Desktop content is classified as carrier (Wallpaper/Widget) times runtime (Scene/Web); "
+        L"Web runtime and Script components are NOT yours to produce. "
+        L"Never output HTML, CSS, JavaScript, shell commands, or any executable code for desktop content; "
+        L"you write JSON content packages only. "
+        L"After writing the package, validate it with wallpaper_validate_package, then create the sandbox "
+        L"preview with desktop_preview_wallpaper and tell the user it is waiting for their Apply decision.";
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
     // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.
@@ -493,7 +518,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"read,bash,edit,write,grep,find,ls,"
         L"settings_open,ppt_create,file_create,folder_list,file_open,image_generate,"
         L"wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,"
-        L"desktop_preview_wallpaper,desktop_preview_examples";
+        L"desktop_preview_wallpaper,desktop_preview_examples,content_skill_get";
 
     std::wstring extensionPath;
     if (!EnsurePiNativeToolsExtension(&error, &extensionPath) || extensionPath.empty()) {

@@ -122,6 +122,7 @@ bool IsAllowedPiNativeTool(std::string_view tool) {
            tool == "wallpaper_validate_package" ||
            tool == "wallpaper_state_get" ||
            tool == "desktop_widget_list" ||
+           tool == "content_skill_get" ||
            miaodesk::preview::IsGeneratedPreviewTool(tool);
 }
 

@@ -222,5 +222,6 @@ Check('13. 帧在退订回调内部退订自己不会跳过其他监听者', () 
   assert.deepEqual(order.slice(3), ['first','third'], 'second is gone on the next frame');
 });
 
-console.log(`\n${failures ? 'SOME CHECKS FAILED' : 'ALL CHECKS PASSED'} (${failures} failure(s))`);
+console.log(`\n${failures ? 'SOME CHECKS FAILED' : 'ALL CHECKS PASSED'} (${failures} failure(s)) ` +
+            `node=${process.version} platform=${process.platform}/${process.arch}`);
 process.exit(failures ? 1 : 0);

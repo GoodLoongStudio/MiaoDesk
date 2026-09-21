@@ -109,5 +109,10 @@ for (const url of ['https://openrouter.ai/api/v1', 'http://192.168.1.50:8000/v1'
   Check(`非 loopback: ${url}`, () => assert.equal(r.loopback, false));
 }
 
-console.log(`\n${failures ? 'SOME CHECKS FAILED' : 'ALL CHECKS PASSED'} (${failures} failure(s))`);
+// The node version and platform ride along in the summary line on purpose: CI's
+// annotation channel only surfaces lines matching an error-ish pattern, and
+// "FAILED" is the one reliable way to get the environment into a line that shows up
+// when the gate fails. Without it a Windows-only failure reads as a bare exit code.
+console.log(`\n${failures ? 'SOME CHECKS FAILED' : 'ALL CHECKS PASSED'} (${failures} failure(s)) ` +
+            `node=${process.version} platform=${process.platform}/${process.arch}`);
 process.exit(failures ? 1 : 0);

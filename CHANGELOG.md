@@ -42,6 +42,18 @@ MiaoDesk 所有显著变更均记录于此文件。
   （`PiRuntime::ProviderSetup` 已 provider-neutral，loopback 已免密钥）；推理服务器选 vLLM；
   主模型并行评估 gpt-oss-120b 与 Qwen3.6-35B-A3B 两个候选（前者有实测吞吐，后者纸面占优但无实测），
   以 §8 验收清单定夺；按任务切换模型的模型路由设计（L1 网关分流 + L2 多 provider）。图像模型选型(商用许可是硬过滤器,主选 Z-Image-Turbo)。
+- **`image_generate` 本地化（P0-2，方案 A 已实施）** — provider 与 model 从硬编码改为环境变量
+  `MIAODESK_IMAGE_PROVIDER` / `MIAODESK_IMAGE_MODEL`，provider 取 profile 已推导的 `providerId`，
+  不另造名称表。**未配置 provider 时明确报错，不静默回落到用户没选过的云端**；key 解析重写为
+  "专用 image key 优先 → loopback 免密钥 → 复用主 key"，其中 loopback 免密钥与 profile 自身
+  对 loopback 的处理一致，这是全本地跑起来的关键。`ApiRuntimeProfile` 增读 `imageModel`，
+  `ModelConfig` 纳入 `ReloadConfig()` 变更检测，session `signature` 纳入 `img=provider:model`——
+  否则改配置不会重启 Pi 会话，修复会静默失效。原"必须先确认 `getImageModel` 支持哪些 provider
+  字符串"这个前置条件随之消失：provider 由用户 profile 决定，产品只透传，不维护白名单。
+  验证：`tests/image-provider.mjs` 从 `.cpp` 原始字符串抽取真实逻辑（非手抄副本）跑 28 项断言，
+  覆盖 loopback 这条原先必然失效的路径。抽取器最初漏了 import，使 `currentMiaoDeskBaseUrl`
+  的 catch 吞掉 ReferenceError 并返回空串，表现与"未配置 profile"完全一致，已修复并注明。
+
 - **阻塞级发现：图片生成在本地模式下必然失效** — `src/ai/pi/PiNativeToolsExtension.cpp` 把
   `image_generate` 硬编码到 `getImageModel("openrouter", "google/gemini-2.5-flash-image")`，
   且凭据只在 baseUrl 含 `openrouter.ai` 时才复用主 key。baseUrl 指向本地推理服务时该工具直接抛错

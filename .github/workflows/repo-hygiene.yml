@@ -55,6 +55,13 @@ jobs:
         shell: bash
         run: bash scripts/verify-workflow-paths.sh
 
+      # 贴图场景 fixture 有两份,一份给 Windows 上的真渲染,一份给本机验 schema。
+      # 只改一边的后果是:本机那份永远绿着,Windows 那份跑真渲染时才因为一个字段名
+      # 写错而失败,报的却是"绘制失败",没有任何线索指向 fixture。
+      - name: Verify the two textured-sprite scene fixtures have not drifted
+        shell: bash
+        run: bash scripts/verify-scene-fixture-parity.sh
+
       # 这两个 node 闸门是可移植的(纯 JS + 读仓库文本),但此前只挂在
       # windows-x64-build 后面 —— 于是验证它们要等一整轮 15 分钟的 Windows 构建,
       # 而 2026-09-22 那次失败就是在这条路上被拖了很久才暴露。放到这里,每次推送

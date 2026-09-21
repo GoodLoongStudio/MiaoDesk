@@ -85,6 +85,7 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 
 set(MIAODESK_WALLPAPER_SOURCES
     content/render/d2d/MiaoSceneD2DRenderer.cpp
+    content/render/d2d/MiaoD2DTextureLoader.cpp
     content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
     content/render/d3d11/MiaoD3D11RenderTarget.cpp
     # MiaoSceneD3D11Renderer.cpp references MiaoD3D11TextureLoader::LoadImageW and
@@ -170,6 +171,14 @@ add_executable(MiaoDeskSceneSpatial3DTest tests/SceneSpatial3D.cpp)
 add_executable(MiaoDeskPointerAttributionTest tests/PointerAttribution.cpp)
 # Pure logic: spriteRenderer texture contract validation, no Windows needed.
 add_executable(MiaoDeskSpriteTextureContractTest tests/SpriteTextureContract.cpp)
+# Windows-only: drives the real D2D renderer against a real package and reads pixels
+# back. Its SelfTest had no caller at all before this target existed.
+add_executable(MiaoDeskSceneD2DRendererTest tests/SceneD2DRenderer.cpp)
+# Pure logic: pins the textured-sprite scene fixture's schema (including the
+# assetReference-as-a-bare-string shape) on every commit, without a render target.
+# scripts/verify-scene-fixture-parity.sh keeps it identical to the copy the Windows
+# SelfTest renders.
+add_executable(MiaoDeskSceneTextureFixtureTest tests/SceneTextureFixture.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -198,7 +207,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -229,6 +238,8 @@ if (MSVC)
     target_compile_options(MiaoDeskSceneSpatial3DTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskPointerAttributionTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteTextureContractTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSceneD2DRendererTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSceneTextureFixtureTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -347,5 +358,32 @@ target_link_libraries(MiaoDeskSceneRuntimeTest PRIVATE
 
 target_link_libraries(MiaoDeskSceneSpatial3DTest PRIVATE
     MiaoDeskCore
+)
+
+target_link_libraries(MiaoDeskSceneTextureFixtureTest PRIVATE
+    MiaoDeskCore
+)
+
+# This one drives the real D2D renderer: it owns a render target, so it links the same
+# graphics and codec libraries MiaoDeskWallpaper does. The renderer's own two TUs come
+# in through target_sources because they belong to MIAODESK_WALLPAPER_SOURCES — they
+# are not in MiaoDeskCore, so without listing them the SelfTest's symbols are missing
+# at link time (the same shape of failure as the LNK2019 recorded in
+# verify-cmake-covers-sources.sh).
+target_sources(MiaoDeskSceneD2DRendererTest PRIVATE
+    content/render/d2d/MiaoSceneD2DRenderer.cpp
+    content/render/d2d/MiaoD2DTextureLoader.cpp
+)
+target_link_libraries(MiaoDeskSceneD2DRendererTest PRIVATE
+    MiaoDeskCore
+    user32
+    gdi32
+    shell32
+    ole32
+    advapi32
+    d2d1
+    dwrite
+    windowscodecs
+    shlwapi
 )
 

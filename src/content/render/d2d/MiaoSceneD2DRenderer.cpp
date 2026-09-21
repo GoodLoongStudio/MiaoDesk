@@ -4,6 +4,7 @@
 #include "miaodesk/MiaoContentDataBinding.h"
 #include "miaodesk/MiaoContentDefinitionLoader.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoD2DTextureLoader.h"
 #include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 
@@ -18,6 +19,7 @@
 #include <fstream>
 #include <optional>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -199,6 +201,70 @@ bool PixelHasColor(IWICBitmap* bitmap, UINT x, UINT y, bool expectedColor) {
     return colored == expectedColor;
 }
 
+// Reads one positional channel of one pixel. The target's WIC bitmap is
+// 32bppPBGRA, so index 0 is blue, 1 green, 2 red, 3 alpha — the texture assertions
+// index it in that order, and a swap would look exactly like a renderer colour bug.
+UINT32 PixelChannel(IWICBitmap* bitmap, UINT x, UINT y, UINT channel) {
+    if (!bitmap) return 0;
+    WICRect rect{0, 0, 64, 64};
+    ComPtr<IWICBitmapLock> lock;
+    if (FAILED(bitmap->Lock(&rect, WICBitmapLockRead, lock.GetAddressOf()))) return 0;
+    UINT stride = 0;
+    UINT bytes = 0;
+    BYTE* data = nullptr;
+    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data) return 0;
+    const std::size_t offset = static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u;
+    if (offset + channel >= bytes) return 0;
+    return data[offset + channel];
+}
+
+// Writes a 2x2 flat-colour PNG for the textured-sprite fixture. 2x2 because the
+// destination rect is far larger, which is the upscale case a brush has to survive.
+//
+// Written rather than checked in for two reasons: a stray test image in the package
+// tree would itself be an asset the asset database must know about, and a malformed
+// image should fail inside the loader under test rather than in packaging.
+bool WriteSelfTestPng(IWICImagingFactory* factory, const fs::path& path, const UINT8 (&bgra)[4]) {
+    if (!factory) return false;
+    ComPtr<IWICBitmap> bitmap;
+    if (FAILED(factory->CreateBitmap(2, 2, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, bitmap.GetAddressOf())))
+        return false;
+    WICRect rect{0, 0, 2, 2};
+    ComPtr<IWICBitmapLock> lock;
+    if (FAILED(bitmap->Lock(&rect, WICBitmapLockWrite, lock.GetAddressOf()))) return false;
+    UINT stride = 0;
+    UINT bytes = 0;
+    BYTE* data = nullptr;
+    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data) return false;
+    // PBGRA with alpha 255 means premultiplying is the identity, so the written bytes
+    // are the literal colour.
+    for (UINT y = 0; y < 2; ++y) {
+        for (UINT x = 0; x < 2; ++x) {
+            BYTE* pixel = data + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u;
+            pixel[0] = bgra[0];
+            pixel[1] = bgra[1];
+            pixel[2] = bgra[2];
+            pixel[3] = bgra[3];
+        }
+    }
+    lock.Reset();
+
+    ComPtr<IWICStream> stream;
+    if (FAILED(factory->CreateStream(stream.GetAddressOf()))) return false;
+    if (FAILED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE))) return false;
+    ComPtr<IWICBitmapEncoder> encoder;
+    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf()))) return false;
+    if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) return false;
+    ComPtr<IWICBitmapFrameEncode> frame;
+    ComPtr<IPropertyBag2> options;
+    if (FAILED(encoder->CreateNewFrame(frame.GetAddressOf(), options.GetAddressOf()))) return false;
+    if (FAILED(frame->Initialize(nullptr))) return false;
+    if (FAILED(frame->SetSize(2, 2))) return false;
+    if (FAILED(frame->WriteSource(bitmap.Get(), nullptr))) return false;
+    if (FAILED(frame->Commit())) return false;
+    return SUCCEEDED(encoder->Commit());
+}
+
 } // namespace
 
 struct MiaoSceneD2DRenderer::Impl {
@@ -211,6 +277,13 @@ struct MiaoSceneD2DRenderer::Impl {
     ContentDataValues hostData;
     ComPtr<ID2D1SolidColorBrush> brush;
     ComPtr<IDWriteFactory> dwrite;
+    // Keyed by asset id, not by path: the asset id is what the scene names, and two
+    // components naming the same asset must share one bitmap.
+    //
+    // An ID2D1Bitmap is bound to the render target that created it, so this cache
+    // cannot outlive either one. Reset() drops it, and Load() calls Reset() first,
+    // which is also the path the hosts take when D2D reports D2DERR_RECREATE_TARGET.
+    std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> spriteTextures;
     std::wstring lastError;
     std::uint64_t lastRenderedGeneration{};
     bool loaded{};
@@ -309,6 +382,149 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    // A SpriteRenderer names its image with a `texture` asset reference. An empty or
+    // absent reference is not an error: it means "solid colour", which is what the
+    // renderer could always do. A present reference that does not resolve is an error,
+    // and the checks repeat MiaoSceneModel::Validate on purpose — that validator
+    // already rejects all three, so these can only fire for a package loaded through a
+    // path that did not run it. Either way the outcome has to be a message rather than
+    // a silently blank rectangle.
+    bool ResolveSpriteTexture(
+        const SceneComponentDefinition& component,
+        ID2D1Bitmap** bitmap,
+        std::wstring* error) {
+        *bitmap = nullptr;
+
+        const auto* value = runtime.GetProperty(PropertyAddress{component.id, L"texture"});
+        if (!value) {
+            if (const auto* declared = FindDefinitionProperty(component, L"texture"))
+                value = &declared->defaultValue;
+        }
+        const auto* reference = value ? std::get_if<AssetReference>(value) : nullptr;
+        if (!reference || reference->id.empty()) return true;
+
+        if (const auto cached = spriteTextures.find(reference->id); cached != spriteTextures.end()) {
+            *bitmap = cached->second.Get();
+            return true;
+        }
+
+        const auto* asset = assets.Find(reference->id);
+        if (!asset) return Error(error, L"SpriteRenderer texture asset is missing from the package: " + reference->id);
+        if (asset->type != AssetType::Image)
+            return Error(error, L"SpriteRenderer texture must reference an Image asset: " + reference->id);
+
+        std::wstring loadError;
+        ComPtr<ID2D1Bitmap> decoded;
+        if (!MiaoD2DTextureLoader::LoadImageW(target, asset->resolvedPath, decoded.GetAddressOf(), &loadError))
+            return Error(error, loadError);
+        *bitmap = decoded.Get();
+        spriteTextures.emplace(reference->id, std::move(decoded));
+        return true;
+    }
+
+    bool DrawSpriteComponent(
+        const SceneNodeDefinition& node,
+        const SceneComponentDefinition& component,
+        const D2D1_SIZE_F& size,
+        const D2D1_MATRIX_3X2_F& hostTransform,
+        bool* drew,
+        std::wstring* error) {
+        ID2D1Bitmap* texture = nullptr;
+        if (!ResolveSpriteTexture(component, &texture, error)) return false;
+
+        // A textured sprite carries its own image and needs no material. A sprite with
+        // no texture falls back to the builtin solid-colour path this backend has
+        // always had; anything programmable belongs to the D3D11 backend, which has a
+        // shader path and this one does not.
+        const auto* material = ResolveMaterial(definition, component);
+        const bool solidMaterial =
+            material && material->model == MaterialModel::Builtin && material->builtinName == L"solidColor";
+        if (!texture && !solidMaterial) return true;
+
+        Color4 color{1.0, 1.0, 1.0, 1.0};
+        if (solidMaterial) {
+            if (const auto* materialColor = FindMaterialProperty(*material, L"color"))
+                color = ReadColor(&materialColor->defaultValue, color);
+        }
+
+        const auto tint = ReadColor(runtime.GetProperty(PropertyAddress{component.id, L"tint"}), Color4{1.0, 1.0, 1.0, 1.0});
+        color.r *= tint.r;
+        color.g *= tint.g;
+        color.b *= tint.b;
+        color.a *= tint.a;
+
+        const double spriteOpacity = ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0);
+        const double nodeOpacity = ResolveNodeOpacity(definition.scene, node, runtime);
+        const double maxCornerRadius = static_cast<double>(std::min(size.width, size.height)) * 0.5;
+        const double cornerRadius = std::clamp(
+            ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"cornerRadius"}), 0.0),
+            0.0,
+            maxCornerRadius);
+
+        const auto sceneTransform = ResolveNodeTransform(definition.scene, node, runtime, size);
+        target->SetTransform(sceneTransform * hostTransform);
+        const auto rect = D2D1::RectF(0.0f, 0.0f, size.width, size.height);
+
+        if (texture) {
+            // A bitmap brush rather than DrawBitmap, for one concrete reason: DrawBitmap
+            // has no rounded rect at all, so cornerRadius would have to silently stop
+            // working the moment a sprite gains a texture. A brush goes through exactly
+            // the same FillRectangle / FillRoundedRectangle calls as the solid colour,
+            // so opacity and cornerRadius behave identically whether or not the sprite
+            // has an image.
+            //
+            // Tint is the one thing this path cannot carry, and it is refused rather
+            // than partly applied. ID2D1BitmapBrush has no colour member — SetColor
+            // belongs to ID2D1SolidColorBrush, and the brush interface itself only
+            // offers opacity and transform — and a plain ID2D1RenderTarget has neither a
+            // blend-mode setter nor the ID2D1DeviceContext effect API that could
+            // multiply the image. There is no one-pass way to colour a bitmap here.
+            //
+            // The tempting workarounds were each rejected for a stated reason, not out
+            // of caution:
+            //   * Re-decoding the bitmap per tint needs a cache keyed on the tint, and
+            //     tint is animatable — an animated tint on a full-screen texture turns
+            //     into one decode per frame.
+            //   * PushLayer with an opacity brush can carry tint.alpha, never RGB.
+            //   * Ignoring the RGB part draws the wrong colour with no signal, which is
+            //     the failure DESIGN_BASELINE §10 warns about.
+            // If the 2D backend ever renders through an ID2D1DeviceContext this
+            // restriction lifts; until then an explicit non-white tint on a textured
+            // sprite is a hard error that names the component.
+            if (tint.r != 1.0 || tint.g != 1.0 || tint.b != 1.0) {
+                return Error(error,
+                    L"SpriteRenderer tint is not supported on a textured sprite in the D2D backend: clear the "
+                    L"component's tint to draw the image as authored. (component " + component.id + L")");
+            }
+            ComPtr<ID2D1BitmapBrush> textured;
+            const auto brushProperties = D2D1::BitmapBrushProperties(
+                D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            if (FAILED(target->CreateBitmapBrush(texture, brushProperties, textured.GetAddressOf())))
+                return Error(error, L"Cannot create Miao Scene D2D bitmap brush.");
+            textured->SetOpacity(static_cast<float>(spriteOpacity * nodeOpacity));
+            if (cornerRadius > 0.0) {
+                target->FillRoundedRectangle(
+                    D2D1::RoundedRect(rect, static_cast<float>(cornerRadius), static_cast<float>(cornerRadius)),
+                    textured.Get());
+            } else {
+                target->FillRectangle(rect, textured.Get());
+            }
+        } else {
+            brush->SetColor(ToD2D(color, spriteOpacity * nodeOpacity));
+            if (cornerRadius > 0.0) {
+                target->FillRoundedRectangle(
+                    D2D1::RoundedRect(rect, static_cast<float>(cornerRadius), static_cast<float>(cornerRadius)),
+                    brush.Get());
+            } else {
+                target->FillRectangle(rect, brush.Get());
+            }
+        }
+
+        target->SetTransform(hostTransform);
+        if (drew) *drew = true;
+        return true;
+    }
+
     bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error) {
         if (!loaded || !target || !brush || !dwrite) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
@@ -331,40 +547,10 @@ struct MiaoSceneD2DRenderer::Impl {
                     continue;
                 }
                 if (component.kind != ComponentKind::SpriteRenderer) continue;
-                const auto* material = ResolveMaterial(definition, component);
-                if (!material || material->model != MaterialModel::Builtin || material->builtinName != L"solidColor") continue;
-
-                Color4 color{1.0, 1.0, 1.0, 1.0};
-                if (const auto* materialColor = FindMaterialProperty(*material, L"color"))
-                    color = ReadColor(&materialColor->defaultValue, color);
-
-                const auto tint = ReadColor(runtime.GetProperty(PropertyAddress{component.id, L"tint"}), Color4{1.0, 1.0, 1.0, 1.0});
-                color.r *= tint.r;
-                color.g *= tint.g;
-                color.b *= tint.b;
-                color.a *= tint.a;
-
-                const double spriteOpacity = ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"opacity"}), 1.0);
-                const double nodeOpacity = ResolveNodeOpacity(definition.scene, node, runtime);
-                const double maxCornerRadius = static_cast<double>(std::min(size.width, size.height)) * 0.5;
-                const double cornerRadius = std::clamp(
-                    ReadFloat(runtime.GetProperty(PropertyAddress{component.id, L"cornerRadius"}), 0.0),
-                    0.0,
-                    maxCornerRadius);
-                brush->SetColor(ToD2D(color, spriteOpacity * nodeOpacity));
-
-                const auto sceneTransform = ResolveNodeTransform(definition.scene, node, runtime, size);
-                target->SetTransform(sceneTransform * hostTransform);
-                const auto rect = D2D1::RectF(0.0f, 0.0f, size.width, size.height);
-                if (cornerRadius > 0.0) {
-                    target->FillRoundedRectangle(
-                        D2D1::RoundedRect(rect, static_cast<float>(cornerRadius), static_cast<float>(cornerRadius)),
-                        brush.Get());
-                } else {
-                    target->FillRectangle(rect, brush.Get());
+                if (!DrawSpriteComponent(node, component, size, hostTransform, &drew, error)) {
+                    target->SetTransform(hostTransform);
+                    return false;
                 }
-                target->SetTransform(hostTransform);
-                drew = true;
             }
         }
         target->SetTransform(hostTransform);
@@ -434,6 +620,7 @@ struct MiaoSceneD2DRenderer::Impl {
     void Reset() noexcept {
         dwrite.Reset();
         brush.Reset();
+        spriteTextures.clear();
         runtime.Reset();
         assets.Clear();
         hostData.clear();
@@ -650,6 +837,133 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     if (ok) {
         MiaoSceneFrameDemand completedDemand;
         ok = renderer.PrepareFrame(1.75, &completedDemand, 60, &error) && !completedDemand.render;
+    }
+
+    // --- Phase B: a textured sprite, in a package that has no material at all. ---
+    //
+    // This is the phase that did not exist before, and the reason it matters: the
+    // renderer's only other verifier is this function, and nothing called this
+    // function. A draw path that no test reaches is not a verified draw path.
+    //
+    // The scene deliberately declares no materials. A textured sprite does not need
+    // one, and if the textured branch were still gated behind a solidColor material
+    // lookup this phase would draw nothing and fail on the first pixel assertion.
+    if (ok) {
+        const fs::path textured = root / L"textured.mdwidget";
+        fs::create_directories(textured / L"assets", ec);
+        // Flat magenta, chosen because neither the phase-A blue nor the black clear
+        // colour is anywhere near it, so a pass cannot come from the wrong source.
+        constexpr UINT8 kMagentaBgra[4] = {0xB0, 0x00, 0xB0, 0xFF};
+        constexpr std::string_view texturedScene = R"json({
+          "schema":1,"id":"scene://selftest-textured","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+          "nodes":[
+            {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+            {"id":"node://panel","name":"Panel","parentId":"node://root","enabled":true,"components":[
+              {"id":"component://panel/transform","kind":"transform","properties":[
+                {"name":"position","type":"vec2","default":[0.0,0.0]},
+                {"name":"scale","type":"vec2","default":[1.0,1.0]},
+                {"name":"rotation","type":"float","default":0.0},
+                {"name":"opacity","type":"float","default":1.0}]},
+              {"id":"component://panel/sprite","kind":"spriteRenderer","properties":[
+                {"name":"opacity","type":"float","default":1.0},
+                {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+                {"name":"cornerRadius","type":"float","default":0.0},
+                {"name":"texture","type":"assetReference","default":"asset://panel/texture"}]}
+            ]}
+          ],
+          "assets":[{"id":"asset://panel/texture","type":"image","source":"assets/panel.png"}],
+          "shaders":[],"materials":[],
+          "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+          "bindings":[],"animations":[]
+        })json";
+
+        // The same manifest works: the manifest describes the package, and both phases
+        // are scene-runtime content.
+        ok = WriteSelfTestPng(wic.Get(), textured / L"assets" / L"panel.png", kMagentaBgra) &&
+             WriteTextFile(textured / L"scene.json", texturedScene);
+
+        MiaoSceneD2DRenderer texturedRenderer;
+        if (ok) ok = texturedRenderer.Load(textured, target.Get(), &error);
+        if (ok) {
+            target->BeginDraw();
+            target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+            ok = texturedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
+            ok = SUCCEEDED(target->EndDraw()) && ok;
+        }
+        if (ok) {
+            // Scale 1.0 / position 0 covers the whole target, so the centre must be the
+            // texture's colour and not the black clear, and not the phase-A blue.
+            ok = PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0] &&
+                 PixelChannel(bitmap.Get(), 32, 32, 1) == kMagentaBgra[1] &&
+                 PixelChannel(bitmap.Get(), 32, 32, 2) == kMagentaBgra[2];
+        }
+        if (ok) {
+            // cornerRadius is 0 here, so the corners are covered too. That this holds
+            // is the point of using a brush rather than the solid path: the rounded
+            // variant would leave them black.
+            ok = PixelHasColor(bitmap.Get(), 1, 1, true);
+        }
+        if (ok) {
+            // A second draw must reuse the decoded bitmap, not re-decode per frame, and
+            // must produce the same pixels.
+            target->BeginDraw();
+            target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+            ok = texturedRenderer.Draw(2.0f, D2D1::SizeF(64.0f, 64.0f), &error);
+            ok = SUCCEEDED(target->EndDraw()) && ok &&
+                 PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0];
+        }
+
+        // A non-white tint on a textured sprite is refused, not silently dropped. This
+        // pins that refusal: without it the constraint could be quietly removed and
+        // the scene would start drawing the wrong colour with nothing failing.
+        if (ok) {
+            constexpr std::string_view tintedScene = R"json({
+              "schema":1,"id":"scene://selftest-tinted","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+              "nodes":[
+                {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+                {"id":"node://panel","name":"Panel","parentId":"node://root","enabled":true,"components":[
+                  {"id":"component://panel/transform","kind":"transform","properties":[
+                    {"name":"position","type":"vec2","default":[0.0,0.0]},
+                    {"name":"scale","type":"vec2","default":[1.0,1.0]},
+                    {"name":"rotation","type":"float","default":0.0},
+                    {"name":"opacity","type":"float","default":1.0}]},
+                  {"id":"component://panel/sprite","kind":"spriteRenderer","properties":[
+                    {"name":"opacity","type":"float","default":1.0},
+                    {"name":"tint","type":"color","default":[0.0,1.0,0.0,1.0]},
+                    {"name":"cornerRadius","type":"float","default":0.0},
+                    {"name":"texture","type":"assetReference","default":"asset://panel/texture"}]}
+                ]}
+              ],
+              "assets":[{"id":"asset://panel/texture","type":"image","source":"assets/panel.png"}],
+              "shaders":[],"materials":[],
+              "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+              "bindings":[],"animations":[]
+            })json";
+            const fs::path tinted = root / L"tinted.mdwidget";
+            fs::create_directories(tinted / L"assets", ec);
+            MiaoSceneD2DRenderer tintedRenderer;
+            std::wstring tintedError;
+            // Load must still succeed: a non-white tint is a perfectly legal scene, and
+            // the model validator accepts it. It is the draw path that refuses, which
+            // is what makes the next assertion meaningful.
+            if (ok && WriteSelfTestPng(wic.Get(), tinted / L"assets" / L"panel.png", kMagentaBgra) &&
+                       WriteTextFile(tinted / L"scene.json", tintedScene)) {
+                if (!tintedRenderer.Load(tinted, target.Get(), &tintedError)) {
+                    ok = false;
+                } else {
+                    target->BeginDraw();
+                    target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+                    const bool drew = tintedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &tintedError);
+                    ok = SUCCEEDED(target->EndDraw()) && !drew &&
+                         // the message has to name the offending component, not the backend
+                         tintedError.find(L"component://panel/sprite") != std::wstring::npos &&
+                         // and nothing may have been painted
+                         PixelHasColor(bitmap.Get(), 32, 32, false);
+                }
+            }
+        }
+        fs::remove_all(root / L"textured.mdwidget", ec);
+        fs::remove_all(root / L"tinted.mdwidget", ec);
     }
 
     renderer.Reset();

@@ -217,7 +217,40 @@
   8. 验收:`MiaoSceneSerializer::Deserialize` + `Validate` + `Initialize` 通过,
      且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`;
      最终以"壁纸在真机上显示全部 5 层且眨眼动画生效"为准。
-- **状态**:❌ 未完成 —— 分支只做了 manifest 规范化;内容迁移被"渲染契约不支持贴图 sprite"阻塞
+- **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除(2026-09-22;契约校验在 `f41903e`,
+  D2D 绘制与测试在紧随其后的那一提交)
+
+  走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
+  之间开一条直接引用路径",没有新增 builtin 材质 ——
+  `PropertyType::AssetReference` 早就存在,`MiaoAssetDatabase` 也早就在沿组件属性
+  收集资产依赖,所以缺的只是一条校验规则和 D2D 的绘制路径。
+
+  已落地:
+  - `MiaoSceneModel::Validate` 强制 spriteRenderer 的 `texture`(assetReference)
+    非空时必须指向一个真实存在的 `AssetType::Image` 资产,报错点名 asset id。
+    (该校验器是加载链的必经点:`Deserialize` → `MiaoSceneRuntimeModel::Validate`
+     → `MiaoSceneModel::Validate`)
+  - `MiaoD2DTextureLoader`(新)WIC 解码 → `ID2D1Bitmap`,8192/128MiB 上限
+    (比 D3D11 的 16384/512MiB 紧,理由写在该 .cpp 里)。
+  - `MiaoSceneD2DRenderer` 用 **bitmap brush** 走 FillRectangle/FillRoundedRectangle,
+    transform / opacity / cornerRadius 对贴图 sprite 全部继续生效;按 asset id 缓存,
+    `Reset()`(即 D2DERR_RECREATE_TARGET 后的重载路径)清空。
+  - **真机证据补齐了此前最大的一个洞**:`MiaoSceneD2DRenderer::SelfTest()` 有 150 多行
+    真实像素断言,却**从来没有任何地方调用它**。已加 `MiaoDeskSceneD2DRendererTest`
+    把它挂进 CMake 与 CI(Windows)。同时补了贴图 sprite 的 fixture 与断言。
+
+  **仍未完成 / 未验证**:
+  - D2D 侧的贴图绘制**未在真 Windows 上编译运行过**,只有本机 mingw 交叉语法门 +
+    本地 fixture schema 门。真机验证见上面第 8 条。
+  - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件),
+    不是静忽略。原因:\`ID2D1BitmapBrush\` 没有颜色成员,普通
+    \`ID2D1RenderTarget\` 既不能设混合模式也没有 effect API,一条 pass 内无法给位图
+    染色。三种权宜做法都被否(理由写在渲染器注释里)。
+  - **D3D11 后端仍然没有经 \`texture\` 属性的贴图路径**。它的取图一直是
+    \`material.textures[]\` + 可编程材质那条。所以上面第 1 条的 D3D11 半边仍未动;
+    \`tint\` 在 D3D11 里是 shader 常量,对贴图是免费的 —— 这正是两边允许分叉的地方,
+    但 content-review 把它当差异记录,别当成 bug。
+  - 内容迁移(第 2–7 条)一行未动。
 
 ### P0-5 本地 AI 组件许可证书面确认
 

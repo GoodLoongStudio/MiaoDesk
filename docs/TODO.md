@@ -22,9 +22,9 @@
 **`Windows x64 Build` 已恢复通过:#367 / `023aa299`,20 个验证步骤全部 success、零 skipped。**
 这是 9/17 的 #353 之后第一次,中间隔了 14 次失败。
 
-三个打包工作流在 `023aa299` 上仍在跑,但它们各自都已在更早的提交上成功过一次
-(x64 Package #207 / `a7ffc79f`、MSIX #271 / `a7ffc79f`、ARM64 Package #132 / `4f4e092`)
-—— 即 `stage.ps1` 的 frontmatter 与冲突标记修好之后。
+同一提交 `023aa299` 上,全部工作流齐绿,无一带病:
+`build` / `scan`(Repo Hygiene)/ `verify`(Path Layout)/ `package-msix` /
+`package`(x64 Package 与 ARM64 Package)/ `installer`(ARM64)。
 
 修复链路(全部是工程/闸门缺陷,不是产品设计问题):
 

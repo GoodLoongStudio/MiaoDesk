@@ -59,9 +59,17 @@ int wmain() {
     // A tiny but non-empty payload per extension is enough: Validate checks the
     // extension and existence, not the codec.
     //
-    // The string literals are split on purpose: \x18f would otherwise be one hex
-    // escape (f is a hex digit) instead of byte 0x18 followed by 'f'.
-    WriteBytes(sourceDir / L"clip.mp4", "\x00\x00\x00\x18" "ftypmp42media-payload");
+    // The payload is a char array with an explicit length, not a string literal.
+    // Both problems bite otherwise:
+    //   * "\x18f" is one hex escape (f is a hex digit), not byte 0x18 then 'f';
+    //   * std::string from a const char* stops at the first NUL, so a literal that
+    //     begins with \x00 would silently become an EMPTY file — and CreateVideo
+    //     then correctly refuses it as "source is empty", failing the positive
+    //     assertion for a test-harness reason rather than a product one.
+    constexpr char kClipBytes[] = {0, 0, 0, 0x18, 'f', 't', 'y', 'p',
+                                   'm', 'p', '4', '2', 'm', 'e', 'd', 'i', 'a', '-',
+                                   'p', 'a', 'y', 'l', 'o', 'a', 'd'};
+    WriteBytes(sourceDir / L"clip.mp4", std::string(kClipBytes, sizeof(kClipBytes)));
     WriteBytes(sourceDir / L"photo.png", "\x89PNG\r\n\x1a\npayload");
     WriteBytes(sourceDir / L"notes.txt", "not a media file");
     WriteBytes(sourceDir / L"empty.mp4", "");

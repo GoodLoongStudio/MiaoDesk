@@ -6,7 +6,7 @@
 - **`.sh`** —— 在开发机上运行(作者在 macOS)。它们不是 CI 的替代品,而是在推送前
   先把最便宜的一类错误挡掉,把 CI 留给只有 Windows 才能回答的问题。
 
-## 开发机上先跑这五个
+## 开发机上先跑这七个
 
 ```bash
 bash scripts/verify-windows-syntax.sh        # 交叉编译全部独立 TU,查类型/成员是否真存在
@@ -14,13 +14,17 @@ bash scripts/run-pure-logic-tests.sh         # 真实编译并运行不依赖 Wi
 bash scripts/verify-skill-allowlist.sh       # content_skill_get 白名单 与 skills/ 目录双向比对
 bash scripts/verify-no-conflict-markers.sh   # 拒绝未解决的合并冲突标记
 bash scripts/verify-cmake-covers-sources.sh  # 磁盘上的 .cpp 是否真的被 CMake 编译
+bash scripts/verify-workflow-paths.sh        # 工作流的 paths 过滤是否覆盖它自己跑的文件
+bash scripts/verify-media-package-offline.sh # CreateVideo/CreateImage + Validate(CI 第 1 节)
 ```
 
 依赖:`brew install mingw-w64`(`verify-windows-syntax.sh` 用)、`clang++`
-(`run-pure-logic-tests.sh` 用)、`cmake`(`verify-cmake-covers-sources.sh` 用)。
+(`run-pure-logic-tests.sh` / `verify-media-package-offline.sh` 用)、`cmake`
+(`verify-cmake-covers-sources.sh` 用)。
 
-后三个另有 `.github/workflows/repo-hygiene.yml` 在 CI 里跑 —— 它们不需要 Windows,
-也不依赖构建能否通过,所以不该被构建类工作流挡住。
+其中四个(冲突标记 / CMake 收录 / 工作流 paths / skill 白名单)连同样两个 node 闸门一起,
+由 `.github/workflows/repo-hygiene.yml` 在 CI 里跑 —— 它们不需要 Windows,也不依赖构建
+能否通过,所以不该被构建类工作流挡住。
 
 ### 为什么需要它们
 
@@ -29,7 +33,7 @@ bash scripts/verify-cmake-covers-sources.sh  # 磁盘上的 .cpp 是否真的被
 里剥出来单独编译的逻辑片段,和不含 `windows.h` 的纯逻辑测试。两者都看不见
 MSVC 才能看见的类型错误。
 
-事后补的三个闸门都有明确的边界,不假装自己比 CI 强:
+事后补的闸门都有明确的边界,不假装自己比 CI 强:
 
 | 闸门 | 能答 | 不能答 |
 | --- | --- | --- |
@@ -38,12 +42,18 @@ MSVC 才能看见的类型错误。
 | `verify-skill-allowlist.sh` | 白名单与 `skills/` 是否一致 | CI 上真实的注入效果 |
 | `verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | `verify-cmake-covers-sources.sh` | 磁盘上的 `.cpp` 是否真的被 CMake 编译 | CMakeLists 本身的意图是否合理 |
+| `verify-workflow-paths.sh` | 工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽(过宽不算错) |
+| `verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 见下面「各闸门的覆盖边界」 |
 
-九个 CMake 测试目标里,三个只有 CI 能覆盖:`MediaWallpaperPackageTest` /
-`ContentWebReplacementContinuity` / `ContentSkillLoading`。共同原因是它们 include
-`WallpaperLibrary.h` 或 `NativeTools.h`,那两条链都会拉到 `UnicodeProfileFile.h:72` 的
-`static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化要求 UTF-16 `wchar_t`),而
-macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线验证去绕过它。
+九个 CMake 测试目标里,三个原本只有 CI 能覆盖,共同原因是它们 include
+`WallpaperLibrary.h` 或 `NativeTools.h`,而那两条链都会拉到 `UnicodeProfileFile.h:72` 的
+`static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化要求 UTF-16 `wchar_t`),macOS 的
+`wchar_t` 是 4 字节。这是产品设计约束,不为离线验证去绕过它(也别用 `-fshort-wchar`,
+见规矩第 7 条)。
+
+其中 `MediaWallpaperPackageTest` 的**第 1 节**已经能离线跑了 —— 那一节只依赖
+`WallpaperPackage.cpp`,不需要 `WallpaperLibrary`。见
+`scripts/verify-media-package-offline.sh`。
 
 ## 写闸门的规矩(都是踩出来的)
 
@@ -62,6 +72,14 @@ macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线验证�
    在磁盘上看不出来。
 5. **替身的缺陷会被伪装成产品缺陷。** `windows-shim/` 的 `MultiByteToWideChar` 一旦
    写成有损窄化,含中文的自检就会假失败。改替身前先怀疑替身。
+6. **`std::string` 从 `const char*` 构造会在第一个 NUL 处截断。** 测试里写二进制 fixture
+   时 `"\x00\x00\x00\x18ftyp…"` 会变成**空文件**,于是被验代码正确地拒绝"源文件为空",
+   正面断言以一种看起来像产品 bug 的方式失败。要用显式长度的构造:
+   `std::string(charArray, sizeof(charArray))`。同一 session 里这个坑出现了三次。
+7. **`-fshort-wchar` 不能用来绕开 `sizeof(wchar_t)==2`。** 它确实能让那条静态断言过,
+   但在 macOS/Darwin 上宽字符字面量按一字节一字(UTF-8)发出、却按 2 字节 `wchar_t` 读,
+   于是 `L"视频壁纸…"` 长度从 16 变 38 并夹入 `U+0000`,`printf("%s")` 在第一个 NUL
+   截断,得到一个**看似是产品 bug 的假消息**。判定之前先验工具链本身。
 
 ## PowerShell 闸门的三个陷阱(2026-09-22 连中三次)
 
@@ -79,6 +97,12 @@ macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线验证�
    `& script.ps1 -A X $gateOut = -B Y 2>&1` 当合法命令放过 —— PowerShell 对命令参数很
    宽松。改造工作流后要**执行级**验证:造一个假脚本(回显参数、按环境变量决定退出码),
    把步骤原样跑一遍,覆盖成功/失败两条路径。
+
+## 各闸门的覆盖边界
+
+| 闸门 | 覆盖 | 明确不覆盖 |
+| --- | --- | --- |
+| `verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`,即 CI 测试第 1 节 | 第 5 节(library 导入手写包)—— 它要 `WallpaperLibrary.cpp`,需要真 Windows SDK;以及**测试自己写 fixture 的方式**(驱动自带一份字节逻辑,看不见测试里的) |
 
 ## 有一半闸门其实能在 macOS 上跑
 

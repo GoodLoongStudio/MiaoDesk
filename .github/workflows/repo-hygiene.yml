@@ -48,6 +48,13 @@ jobs:
         shell: bash
         run: bash scripts/verify-skill-allowlist.sh
 
+      # paths 过滤覆盖它自己会执行的文件。同一个缺口 2026-09-22 撞了三次:tests/**、
+      # scripts/**、runtime/agent/package-lock.json 都不在相应工作流的过滤里,于是
+      # 改了那些文件,唯一验证它们的工作流根本不触发 —— 改完等于没验。
+      - name: Verify every workflow's paths filter covers what it runs
+        shell: bash
+        run: bash scripts/verify-workflow-paths.sh
+
       # 这两个 node 闸门是可移植的(纯 JS + 读仓库文本),但此前只挂在
       # windows-x64-build 后面 —— 于是验证它们要等一整轮 15 分钟的 Windows 构建,
       # 而 2026-09-22 那次失败就是在这条路上被拖了很久才暴露。放到这里,每次推送

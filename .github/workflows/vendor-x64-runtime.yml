@@ -5,7 +5,11 @@ on:
     branches: [main]
     paths:
       - runtime/x64/runtime-lock.json
+      # The build step runs npm ci against runtime/agent, so package-lock.json is as
+      # much an input as package.json. Listing only package.json meant a lockfile
+      # change did not re-vendor the runtime.
       - runtime/agent/package.json
+      - runtime/agent/package-lock.json
       - .github/workflows/vendor-x64-runtime.yml
   workflow_dispatch:
 

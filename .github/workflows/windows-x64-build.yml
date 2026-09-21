@@ -5,10 +5,15 @@ on:
     branches: [main]
     paths:
       - src/**
-      # Two steps below run node tests/*.mjs. Without this entry an edit to those
+      # Three steps below run node tests/*.mjs. Without this entry an edit to those
       # files changed nothing that the filter lists, so the workflow that is the
       # only thing validating them never ran.
       - tests/**
+      # scripts/** rather than two hand-listed files: this workflow executes
+      # scripts/verify-web-audio-bridge.ps1 and packaging/windows/verify-login-startup.ps1,
+      # and any gate it runs must be able to trigger it when the gate itself changes.
+      - scripts/**
+      - packaging/windows/*.ps1
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**
@@ -22,10 +27,15 @@ on:
   pull_request:
     paths:
       - src/**
-      # Two steps below run node tests/*.mjs. Without this entry an edit to those
+      # Three steps below run node tests/*.mjs. Without this entry an edit to those
       # files changed nothing that the filter lists, so the workflow that is the
       # only thing validating them never ran.
       - tests/**
+      # scripts/** rather than two hand-listed files: this workflow executes
+      # scripts/verify-web-audio-bridge.ps1 and packaging/windows/verify-login-startup.ps1,
+      # and any gate it runs must be able to trigger it when the gate itself changes.
+      - scripts/**
+      - packaging/windows/*.ps1
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**

@@ -165,6 +165,9 @@ add_executable(MiaoDeskAudioIngressTest tests/AudioIngress.cpp)
 add_executable(MiaoDeskBindingResponseTest tests/BindingResponse.cpp)
 add_executable(MiaoDeskSceneRuntimeTest tests/MiaoSceneRuntimeTest.cpp)
 add_executable(MiaoDeskSceneSpatial3DTest tests/SceneSpatial3D.cpp)
+# Pure logic: reproduces the host's per-monitor attribution arithmetic against a fake
+# topology, without needing real monitors.
+add_executable(MiaoDeskPointerAttributionTest tests/PointerAttribution.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"

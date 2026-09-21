@@ -57,7 +57,7 @@ run() {  # run <目标名> <测试源文件名> <额外源文件...>
 
 echo
 echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
-for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore; do
+for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution; do
   run "$t" "$t.cpp"
 done
 

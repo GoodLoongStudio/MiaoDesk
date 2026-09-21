@@ -16,7 +16,15 @@ foreach ($relative in @(
     'MiaoDeskWallpaper.exe',
     'MiaoDeskHarness.exe',
     'Assets\MiaoMiao.ico',
-    'Wallpapers\MiaoCloud.mdwall\manifest.json'
+    'Wallpapers\MiaoCloud.mdwall\manifest.json',
+    'Wallpapers\MiaoCloud.mdwall\scene.json',
+    'Wallpapers\MiaoCloud.mdwall\scene.ini',
+    'Wallpapers\NeonCity.mdwall\manifest.json',
+    'Wallpapers\NeonCity.mdwall\scene.json',
+    'Wallpapers\NeonCity.mdwall\scene.ini',
+    'Wallpapers\MysticMoon.mdwall\manifest.json',
+    'Wallpapers\MysticMoon.mdwall\scene.json',
+    'Wallpapers\MysticMoon.mdwall\scene.ini'
 )) { Assert-File $relative }
 
 & (Join-Path $PSScriptRoot 'prepare-runtime-base.ps1') -DeployDir $Destination -Architecture $Architecture
@@ -36,6 +44,7 @@ foreach ($relative in @(
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
     'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
     'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
+<<<<<<< HEAD
     'Wallpapers\MiaoCloud.mdwall\assets\blink.png',
     'Wallpapers\NeonCity.mdwall\manifest.json',
     'Wallpapers\MysticMoon.mdwall\manifest.json',
@@ -44,6 +53,9 @@ foreach ($relative in @(
     'skills\wallpaper-content\SKILL.md',
     'skills\widget-content\SKILL.md',
     'skills\content-review\SKILL.md'
+=======
+    'Wallpapers\MiaoCloud.mdwall\assets\blink.png'
+>>>>>>> _check/fix/unicode-wallpaper-theme-packages
 )) { Assert-File $relative }
 
 # The staged skill set must match the closed allowlist in

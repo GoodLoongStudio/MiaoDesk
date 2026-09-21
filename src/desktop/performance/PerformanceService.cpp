@@ -1,5 +1,6 @@
 #include "miaodesk/PerformanceService.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -17,6 +18,14 @@ namespace {
 fs::path ConfigPath() {
     const fs::path directory = paths::EnsureStateRoot();
     return directory.empty() ? fs::path{} : directory / L"wallpaper.ini";
+}
+
+bool EnsureConfigProfile(const fs::path& path, std::wstring* error) {
+    if (path.empty()) {
+        if (error) *error = L"壁纸性能配置路径不可用。";
+        return false;
+    }
+    return text::EnsureUtf16LeProfileFile(path, error);
 }
 
 std::wstring ReadText(const fs::path& path, const wchar_t* key, const wchar_t* fallback) {
@@ -39,6 +48,10 @@ bool WriteAction(const fs::path& path, const wchar_t* key, wallpaper::Performanc
 PerformanceServiceResult PerformanceService::GetConfig(wallpaper::PerformanceConfig* config) const {
     if (!config) return {false, L"PerformanceConfig 输出不能为空。"};
     const fs::path path = ConfigPath();
+    std::wstring profileError;
+    if (!EnsureConfigProfile(path, &profileError)) {
+        return {false, profileError.empty() ? L"无法准备 Unicode 性能配置。" : profileError};
+    }
 
     wallpaper::PerformanceConfig next;
     next.fpsCap = wallpaper::NormalizeFpsCap(
@@ -61,6 +74,11 @@ PerformanceServiceResult PerformanceService::GetConfig(wallpaper::PerformanceCon
 
 PerformanceServiceResult PerformanceService::SaveConfig(const wallpaper::PerformanceConfig& config) const {
     const fs::path path = ConfigPath();
+    std::wstring profileError;
+    if (!EnsureConfigProfile(path, &profileError)) {
+        return {false, profileError.empty() ? L"无法准备 Unicode 性能配置。" : profileError};
+    }
+
     bool ok = true;
     ok = WriteText(path, L"FpsCap", std::to_wstring(wallpaper::NormalizeFpsCap(config.fpsCap))) && ok;
     ok = WriteText(path, L"ThrottleFps", std::to_wstring(wallpaper::NormalizeFpsCap(config.throttleFps))) && ok;

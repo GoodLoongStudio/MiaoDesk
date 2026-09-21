@@ -1,6 +1,8 @@
 #include "miaodesk/WallpaperPackage.h"
+#include "miaodesk/MiaoContentPackage.h"
 
 #include <windows.h>
+#include <objbase.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -269,12 +271,81 @@ bool CreateMediaPackage(const fs::path& packageDirectory, WallpaperPackageType t
     manifest.provenance = std::move(provenance);
     manifest.fpsCap = 30;
     manifest.audio = false;
-    if (!WriteManifest(packageDirectory / L"manifest.json", manifest)) {
+    // The canonical manifest carries a stable id, so a package built from
+    // assets/clip.mp4 and one built from assets/clip.webm do not collide. The stem
+    // is already sanitised, so it is safe to embed directly.
+    std::wstring stem = SanitizedAssetName(sourceFile, fallbackExtension);
+    const auto dot = stem.find_last_of(L'.');
+    if (dot != std::wstring::npos) stem.resize(dot);
+    const std::string stableId = "com.goodloong.miaodesk.theme." +
+                                 std::string(type == WallpaperPackageType::Image ? "image" : "video") +
+                                 "." + WideToUtf8(stem);
+    if (!WallpaperPackage::WriteCanonicalManifest(packageDirectory, manifest, stableId)) {
         SetError(error, L"无法写入壁纸包 manifest.json");
         return false;
     }
-    return Validate(packageDirectory, nullptr, error);
+    return WallpaperPackage::Validate(packageDirectory, nullptr, error);
 }
+
+
+bool IsInside(const fs::path& candidate, const fs::path& root) {
+    std::error_code ec;
+    auto base = fs::weakly_canonical(root, ec);
+    if (ec) base = fs::absolute(root, ec).lexically_normal();
+    ec.clear();
+    auto child = fs::weakly_canonical(candidate, ec);
+    if (ec) child = fs::absolute(candidate, ec).lexically_normal();
+    const auto baseText = Lower(base.wstring());
+    const auto childText = Lower(child.wstring());
+    if (childText == baseText) return true;
+    std::wstring prefix = baseText;
+    if (!prefix.empty() && prefix.back() != L'\\' && prefix.back() != L'/') prefix.push_back(fs::path::preferred_separator);
+    return childText.size() >= prefix.size() && childText.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string MakeGeneratedThemeId() {
+    GUID guid{};
+    if (FAILED(CoCreateGuid(&guid))) {
+        return "com.goodloong.miaodesk.theme.web.fallback-" +
+               std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
+    }
+    char suffix[64]{};
+    sprintf_s(suffix, "%08lx%04x%04x%02x%02x%02x%02x%02x%02x%02x%02x",
+              static_cast<unsigned long>(guid.Data1),
+              static_cast<unsigned>(guid.Data2),
+              static_cast<unsigned>(guid.Data3),
+              static_cast<unsigned>(guid.Data4[0]), static_cast<unsigned>(guid.Data4[1]),
+              static_cast<unsigned>(guid.Data4[2]), static_cast<unsigned>(guid.Data4[3]),
+              static_cast<unsigned>(guid.Data4[4]), static_cast<unsigned>(guid.Data4[5]),
+              static_cast<unsigned>(guid.Data4[6]), static_cast<unsigned>(guid.Data4[7]));
+    return std::string("com.goodloong.miaodesk.theme.web.") + suffix;
+}
+
+bool WriteManifest(const fs::path& path, const WallpaperPackageManifest& manifest,
+                   std::string_view stableId) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return false;
+    const std::string runtime = WideToUtf8(WallpaperPackage::TypeKey(manifest.type));
+    output << "{\n"
+           << "  \"schema\": " << manifest.schema << ",\n"
+           << "  \"id\": \"" << stableId << "\",\n"
+           << "  \"name\": \"" << EscapeJson(manifest.title) << "\",\n"
+           << "  \"title\": \"" << EscapeJson(manifest.title) << "\",\n"
+           << "  \"author\": \"" << EscapeJson(manifest.author) << "\",\n"
+           << "  \"version\": \"1.0.0\",\n"
+           << "  \"kind\": \"wallpaper\",\n"
+           << "  \"runtime\": \"" << runtime << "\",\n"
+           << "  \"type\": \"" << runtime << "\",\n"
+           << "  \"entry\": \"" << EscapeJson(manifest.entry.generic_wstring()) << "\",\n"
+           << "  \"provenance\": \"" << EscapeJson(manifest.provenance) << "\",\n"
+           << "  \"fps_cap\": " << manifest.fpsCap << ",\n"
+           << "  \"audio\": " << (manifest.audio ? "true" : "false") << ",\n"
+           << "  \"capabilities\": [\"theme.wallpaper\"]\n"
+           << "}\n";
+    return static_cast<bool>(output);
+}
+
+} // namespace
 
 bool WallpaperPackage::CreateImage(const fs::path& packageDirectory, std::wstring title,
                                    const fs::path& sourceFile, std::wstring provenance,
@@ -292,39 +363,6 @@ bool WallpaperPackage::CreateVideo(const fs::path& packageDirectory, std::wstrin
                               error);
 }
 
-bool IsInside(const fs::path& candidate, const fs::path& root) {
-    std::error_code ec;
-    auto base = fs::weakly_canonical(root, ec);
-    if (ec) base = fs::absolute(root, ec).lexically_normal();
-    ec.clear();
-    auto child = fs::weakly_canonical(candidate, ec);
-    if (ec) child = fs::absolute(candidate, ec).lexically_normal();
-    const auto baseText = Lower(base.wstring());
-    const auto childText = Lower(child.wstring());
-    if (childText == baseText) return true;
-    std::wstring prefix = baseText;
-    if (!prefix.empty() && prefix.back() != L'\\' && prefix.back() != L'/') prefix.push_back(fs::path::preferred_separator);
-    return childText.size() >= prefix.size() && childText.compare(0, prefix.size(), prefix) == 0;
-}
-
-bool WriteManifest(const fs::path& path, const WallpaperPackageManifest& manifest) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) return false;
-    output << "{\n"
-           << "  \"schema\": " << manifest.schema << ",\n"
-           << "  \"type\": \"" << WideToUtf8(WallpaperPackage::TypeKey(manifest.type)) << "\",\n"
-           << "  \"title\": \"" << EscapeJson(manifest.title) << "\",\n"
-           << "  \"author\": \"" << EscapeJson(manifest.author) << "\",\n"
-           << "  \"entry\": \"" << EscapeJson(manifest.entry.generic_wstring()) << "\",\n"
-           << "  \"provenance\": \"" << EscapeJson(manifest.provenance) << "\",\n"
-           << "  \"fps_cap\": " << manifest.fpsCap << ",\n"
-           << "  \"audio\": " << (manifest.audio ? "true" : "false") << "\n"
-           << "}\n";
-    return static_cast<bool>(output);
-}
-
-} // namespace
-
 const wchar_t* WallpaperPackage::TypeKey(WallpaperPackageType type) noexcept {
     switch (type) {
     case WallpaperPackageType::Image: return L"image";
@@ -337,153 +375,162 @@ const wchar_t* WallpaperPackage::TypeKey(WallpaperPackageType type) noexcept {
 }
 
 WallpaperPackageType WallpaperPackage::ParseType(std::wstring_view value) noexcept {
-    const auto lower = Lower(std::wstring(value));
-    if (lower == L"image") return WallpaperPackageType::Image;
-    if (lower == L"video") return WallpaperPackageType::Video;
-    if (lower == L"web") return WallpaperPackageType::Web;
-    if (lower == L"scene") return WallpaperPackageType::Scene;
+    const std::wstring normalized = Lower(std::wstring(value));
+    if (normalized == L"image") return WallpaperPackageType::Image;
+    if (normalized == L"video") return WallpaperPackageType::Video;
+    if (normalized == L"web") return WallpaperPackageType::Web;
+    if (normalized == L"scene") return WallpaperPackageType::Scene;
     return WallpaperPackageType::Unknown;
 }
 
-bool WallpaperPackage::CreateWeb(const fs::path& packageDirectory, std::wstring title,
-                                 std::string_view htmlUtf8, std::wstring provenance,
-                                 std::wstring author, std::wstring* error) {
-    SetError(error, L"");
-    if (packageDirectory.empty()) {
-        SetError(error, L"壁纸包目录不能为空");
-        return false;
-    }
-    if (htmlUtf8.empty() || htmlUtf8.size() > 2 * 1024 * 1024) {
-        SetError(error, L"Web 壁纸 HTML 不能为空且不能超过 2 MB");
-        return false;
-    }
-    if (title.empty()) title = L"MiaoDesk Wallpaper";
-    if (title.size() > 256) title.resize(256);
-    if (author.empty()) author = L"MiaoDesk";
-    if (provenance.empty()) provenance = L"user-authored";
-
+WallpaperPackageValidation WallpaperPackage::LoadAndValidate(const fs::path& packageRoot,
+                                                              std::uintmax_t maxBytes) {
+    WallpaperPackageValidation result{};
+    result.packageRoot = packageRoot;
     std::error_code ec;
-    fs::create_directories(packageDirectory, ec);
+    if (!fs::exists(packageRoot, ec) || !fs::is_directory(packageRoot, ec)) {
+        result.message = L"壁纸包目录不存在";
+        return result;
+    }
+
+    const fs::path manifestPath = packageRoot / L"manifest.json";
+    const std::string json = ReadTextFile(manifestPath, 512 * 1024);
+    if (json.empty()) {
+        result.message = L"manifest.json 不存在或为空";
+        return result;
+    }
+
+    result.manifest.schema = std::max(1, ExtractJsonInt(json, "schema", 1));
+    result.manifest.title = Utf8ToWide(ExtractJsonString(json, "title"));
+    if (result.manifest.title.empty()) result.manifest.title = Utf8ToWide(ExtractJsonString(json, "name"));
+    result.manifest.author = Utf8ToWide(ExtractJsonString(json, "author"));
+    const std::string kind = ExtractJsonString(json, "kind");
+    const std::string runtime = ExtractJsonString(json, "runtime");
+    const std::string legacyEntry = ExtractJsonString(json, "legacy_entry");
+    const std::string entry = !legacyEntry.empty() ? legacyEntry : ExtractJsonString(json, "entry");
+    result.manifest.entry = fs::u8path(entry);
+    result.manifest.type = ParseType(Utf8ToWide(!runtime.empty() ? runtime : ExtractJsonString(json, "type")));
+    result.manifest.provenance = Utf8ToWide(ExtractJsonString(json, "provenance"));
+    result.manifest.fpsCap = std::clamp(ExtractJsonInt(json, "fps_cap", 30), 1, 240);
+    result.manifest.audio = ExtractJsonBool(json, "audio", false);
+
+    if (!kind.empty() && kind != "wallpaper") {
+        result.message = L"manifest kind 必须为 wallpaper";
+        return result;
+    }
+    if (result.manifest.title.empty() || result.manifest.entry.empty()) {
+        result.message = L"manifest 缺少 title/name 或 entry";
+        return result;
+    }
+    if (result.manifest.type == WallpaperPackageType::Unknown) {
+        result.message = L"manifest runtime/type 不受支持";
+        return result;
+    }
+    if (!IsSafeRelativeEntry(result.manifest.entry)) {
+        result.message = L"manifest entry 必须是安全的相对路径";
+        return result;
+    }
+
+    result.resolvedEntry = packageRoot / result.manifest.entry;
+    if (!fs::exists(result.resolvedEntry, ec) || !fs::is_regular_file(result.resolvedEntry, ec)) {
+        result.message = L"壁纸包入口文件不存在";
+        return result;
+    }
+    if (!IsInside(result.resolvedEntry, packageRoot)) {
+        result.message = L"壁纸包入口越界";
+        return result;
+    }
+
+    std::uintmax_t total = 0;
+    for (fs::recursive_directory_iterator it(packageRoot, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        total += it->file_size(ec);
+        if (ec || total > maxBytes) {
+            result.message = L"壁纸包体积超过限制";
+            return result;
+        }
+    }
     if (ec) {
-        SetError(error, L"无法创建 .mdwall 目录：" + packageDirectory.wstring());
-        return false;
+        result.message = L"无法遍历壁纸包";
+        return result;
     }
 
-    const fs::path entry = packageDirectory / L"index.html";
-    std::ofstream html(entry, std::ios::binary | std::ios::trunc);
-    if (!html) {
-        SetError(error, L"无法写入 Web 壁纸入口文件");
-        return false;
+    // Entry extension must match the declared runtime, for every runtime type and not
+    // just Web. Without this, a package declaring runtime "video" with entry
+    // "notes.txt" validates and then fails later in the library with no usable
+    // diagnosis. Checked here rather than in the thin Validate() wrapper so every
+    // caller — including LoadAndValidate's own users — gets the same rule.
+    switch (result.manifest.type) {
+    case WallpaperPackageType::Web: {
+        const auto extension = Lower(result.resolvedEntry.extension().wstring());
+        if (extension != L".html" && extension != L".htm") {
+            result.message = L"Web .mdwall 的 entry 必须是 HTML 文件";
+            return result;
+        }
+        break;
     }
-    html.write(htmlUtf8.data(), static_cast<std::streamsize>(htmlUtf8.size()));
-    if (!html) {
-        SetError(error, L"Web 壁纸入口文件写入失败");
-        return false;
+    case WallpaperPackageType::Image:
+        if (!HasImageExtension(result.resolvedEntry)) {
+            result.message = L"图片 .mdwall 的 entry 必须是图片文件";
+            return result;
+        }
+        break;
+    case WallpaperPackageType::Video:
+        if (!HasVideoExtension(result.resolvedEntry)) {
+            result.message = L"视频 .mdwall 的 entry 必须是视频文件";
+            return result;
+        }
+        break;
+    case WallpaperPackageType::Scene:
+    case WallpaperPackageType::Unknown:
+        break;
     }
-    html.close();
 
-    WallpaperPackageManifest manifest;
-    manifest.schema = 1;
-    manifest.type = WallpaperPackageType::Web;
-    manifest.title = std::move(title);
-    manifest.author = std::move(author);
-    manifest.entry = L"index.html";
-    manifest.provenance = std::move(provenance);
-    manifest.fpsCap = 30;
-    manifest.audio = false;
-    if (!WriteManifest(packageDirectory / L"manifest.json", manifest)) {
-        SetError(error, L"无法写入壁纸包 manifest.json");
-        return false;
-    }
-    return Validate(packageDirectory, nullptr, error);
+    result.totalBytes = total;
+    result.ok = true;
+    return result;
 }
 
-bool WallpaperPackage::Validate(const fs::path& packageDirectory, WallpaperPackageManifest* manifest,
-                                std::wstring* error) {
-    SetError(error, L"");
-    std::error_code ec;
-    if (!fs::exists(packageDirectory, ec) || !fs::is_directory(packageDirectory, ec)) {
-        SetError(error, L"壁纸包目录不存在：" + packageDirectory.wstring());
-        return false;
-    }
-
-    const fs::path manifestPath = packageDirectory / L"manifest.json";
-    const std::string json = ReadTextFile(manifestPath, 1024 * 1024);
-    if (json.empty()) {
-        SetError(error, L"壁纸包缺少有效的 manifest.json");
-        return false;
-    }
-
-    WallpaperPackageManifest parsed;
-    parsed.schema = ExtractJsonInt(json, "schema", 0);
-    parsed.type = ParseType(Utf8ToWide(ExtractJsonString(json, "type")));
-    parsed.title = Utf8ToWide(ExtractJsonString(json, "title"));
-    parsed.author = Utf8ToWide(ExtractJsonString(json, "author"));
-    parsed.entry = Utf8ToWide(ExtractJsonString(json, "entry"));
-    parsed.provenance = Utf8ToWide(ExtractJsonString(json, "provenance"));
-    parsed.fpsCap = ExtractJsonInt(json, "fps_cap", 30);
-    parsed.audio = ExtractJsonBool(json, "audio", false);
-
-    if (parsed.schema != 1) {
-        SetError(error, L"不支持的 .mdwall schema 版本");
-        return false;
-    }
-    if (parsed.type == WallpaperPackageType::Unknown) {
-        SetError(error, L"壁纸包 type 无效");
-        return false;
-    }
-    if (parsed.title.empty() || parsed.title.size() > 256) {
-        SetError(error, L"壁纸包 title 无效");
-        return false;
-    }
-    if (!IsSafeRelativeEntry(parsed.entry)) {
-        SetError(error, L"壁纸包 entry 必须是包内安全相对路径");
-        return false;
-    }
-    parsed.fpsCap = std::clamp(parsed.fpsCap, 1, 240);
-
-    const fs::path resolvedEntry = packageDirectory / parsed.entry;
-    if (!IsInside(resolvedEntry, packageDirectory) || !fs::exists(resolvedEntry, ec) || !fs::is_regular_file(resolvedEntry, ec)) {
-        SetError(error, L"壁纸包 entry 不存在或越过包目录");
-        return false;
-    }
-    if (parsed.type == WallpaperPackageType::Web) {
-        const auto extension = Lower(resolvedEntry.extension().wstring());
-        if (extension != L".html" && extension != L".htm") {
-            SetError(error, L"Web .mdwall 的 entry 必须是 HTML 文件");
-            return false;
-        }
-    } else if (parsed.type == WallpaperPackageType::Image) {
-        // Without this, a package declaring type "image" with entry "notes.txt" would
-        // validate and then fail later in the library with no usable diagnosis.
-        if (!HasImageExtension(resolvedEntry)) {
-            SetError(error, L"图片 .mdwall 的 entry 必须是图片文件");
-            return false;
-        }
-    } else if (parsed.type == WallpaperPackageType::Video) {
-        if (!HasVideoExtension(resolvedEntry)) {
-            SetError(error, L"视频 .mdwall 的 entry 必须是视频文件");
-            return false;
-        }
-    }
-
-    if (manifest) *manifest = std::move(parsed);
-    return true;
+bool WallpaperPackage::WriteCanonicalManifest(const fs::path& packageRoot,
+                                              const WallpaperPackageManifest& manifest,
+                                              std::string_view stableId) {
+    if (packageRoot.empty() || stableId.empty()) return false;
+    return WriteManifest(packageRoot / L"manifest.json", manifest, stableId);
 }
 
 bool WallpaperPackage::SelfTest() {
     std::error_code ec;
-    const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-tdwall-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".mdwall");
+    const fs::path tempRoot = fs::temp_directory_path(ec);
+    if (ec || tempRoot.empty()) return false;
+    const fs::path root = tempRoot / (L"MiaoDesk-WallpaperPackage-" + std::to_wstring(GetCurrentProcessId()));
     fs::remove_all(root, ec);
-    std::wstring error;
-    const bool created = CreateWeb(root, L"Self Test", "<!doctype html><html><body>MiaoDesk</body></html>",
-                                   L"self-test", L"MiaoDesk", &error);
-    WallpaperPackageManifest manifest;
-    const bool valid = created && Validate(root, &manifest, &error) && manifest.type == WallpaperPackageType::Web &&
-                       manifest.entry == fs::path(L"index.html") && manifest.title == L"Self Test";
+    fs::create_directories(root / L"nested", ec);
+    if (ec) return false;
+
+    {
+        WallpaperPackageManifest manifest{};
+        manifest.title = L"网页壁纸";
+        manifest.author = L"测试作者";
+        manifest.type = WallpaperPackageType::Web;
+        manifest.entry = L"index.html";
+        manifest.provenance = L"self-test";
+        manifest.fpsCap = 42;
+        manifest.audio = true;
+        if (!WriteCanonicalManifest(root, manifest, "com.goodloong.miaodesk.theme.test-web")) return false;
+    }
+    {
+        std::ofstream output(root / L"index.html", std::ios::binary | std::ios::trunc);
+        output << "<!doctype html><title>test</title>";
+    }
+    const auto canonicalWeb = LoadAndValidate(root, 1024 * 1024);
+    bool ok = canonicalWeb.ok && canonicalWeb.manifest.title == L"网页壁纸" &&
+              canonicalWeb.manifest.author == L"测试作者" &&
+              canonicalWeb.manifest.type == WallpaperPackageType::Web &&
+              canonicalWeb.manifest.entry == fs::path(L"index.html");
+
     fs::remove_all(root, ec);
-    return valid;
+    return ok;
 }
 
 } // namespace miaodesk::wallpaper

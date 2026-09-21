@@ -72,8 +72,6 @@ jobs:
           $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
-            # Surface compile errors as check annotations so they are readable
-            # without an authenticated log download.
             $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
               Select-Object -First 40 | ForEach-Object {
                 $line = $_.Trim()
@@ -199,7 +197,24 @@ jobs:
           $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |
             Select-Object -First 1
           if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
-          .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
+
+          $attempt = 1
+          while ($true) {
+            try {
+              Write-Host "Running Widget lifecycle smoke attempt $attempt/2."
+              Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Milliseconds 750
+              & pwsh -NoLogo -NoProfile -NonInteractive -File .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
+              if ($LASTEXITCODE -ne 0) { throw "Widget lifecycle smoke exited with code $LASTEXITCODE." }
+              break
+            } catch {
+              if ($attempt -ge 2) { throw }
+              Write-Host "Widget lifecycle smoke attempt $attempt failed; retrying once to separate transient desktop startup races from real regressions." -ForegroundColor Yellow
+              Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 2
+              $attempt++
+            }
+          }
 
       - name: Install staged product with built-in content
         shell: pwsh

@@ -1,0 +1,184 @@
+# Wallpaper theme identity migration
+
+This document defines the compatibility contract for moving wallpaper themes from legacy `scene-*` library identities to canonical Miao Content Package identities (`content:<manifest.id>`).
+
+## Invariants
+
+The migration must preserve all of the following:
+
+- Existing `scene-aurora`, `scene-neon`, `scene-grid`, and other legacy scene assignments continue to resolve until an explicit migration succeeds.
+- Existing layered `scene.ini` rendering remains visually unchanged while built-in themes carry canonical `scene.json` metadata in parallel.
+- A canonical package is identified by `manifest.id`, not by directory name, download path, or current package location.
+- The same package id must not produce duplicate library items after reinstall, package rename, or package replacement.
+- Monitor assignments must never be rewritten to a canonical id unless the canonical package has already been validated and indexed successfully.
+- User-visible names, monitor friendly names, rule names, and other profile-backed Unicode text must survive the migration byte-for-byte through the UTF-16LE profile path.
+- Migration must not change Store identity/signing and must not require release-time behavior.
+
+## Canonical identity
+
+For a validated wallpaper package:
+
+```text
+manifest.id = com.goodloong.wallpaper.miaocloud
+library id  = content:com.goodloong.wallpaper.miaocloud
+```
+
+`manifest.id` is the stable identity. `name`, `version`, package directory, `entry`, and preview assets may change between versions without changing assignment identity.
+
+The canonical wallpaper manifest contract is:
+
+```text
+schema
+id
+name
+author
+version
+kind = wallpaper
+runtime = scene | web
+entry = canonical runtime entry
+```
+
+For migrated layered scenes, `entry` points at canonical `scene.json`. A compatibility field such as `legacy_entry=scene.ini` may remain while the production renderer still depends on the legacy layered scene path.
+
+## Migration phases
+
+### Phase 0: dual identity, no assignment rewrite
+
+Built-in and managed `.mdwall` packages expose canonical metadata and are indexed by stable content id, while existing `scene-*` assignments remain untouched.
+
+This is the current safe compatibility phase.
+
+### Phase 1: resolve aliases
+
+Add an explicit alias table from known legacy scene ids to canonical content ids. Resolution may use the alias as a fallback, but persistence still keeps the original assignment id.
+
+Example:
+
+```text
+scene-aurora -> content:com.goodloong.wallpaper.miaocloud
+scene-neon   -> content:com.goodloong.wallpaper.neoncity
+scene-grid   -> content:com.goodloong.wallpaper.mysticmoon
+```
+
+The concrete mapping must be derived from the shipped manifests and covered by tests rather than inferred from folder names.
+
+### Phase 2: transactional assignment migration
+
+Only after canonical package validation and alias resolution are proven should persisted monitor assignments be rewritten.
+
+For each legacy assignment:
+
+1. Load the current assignment without modifying it.
+2. Resolve its legacy id to one exact canonical content id.
+3. Resolve and validate the canonical package through `MiaoContentPackageManager`.
+4. Verify the package has `kind=wallpaper` and a supported runtime.
+5. Verify the concrete runtime entry exists and passes the same validation used by normal package install/indexing.
+6. Persist a temporary UTF-16LE assignment file containing the canonical id while preserving monitor id and friendly name exactly.
+7. Reload the temporary file and verify the round-trip values.
+8. Atomically replace the original assignment file.
+9. Request the normal wallpaper runtime reload through the existing service path.
+
+If any step fails, keep the legacy assignment unchanged.
+
+### Phase 3: retire aliases only after compatibility window
+
+Legacy aliases can be removed only after supported upgrades can no longer contain persisted `scene-*` identities. Until then, resolution should remain backward compatible even if new writes use canonical identities.
+
+## Duplicate and reinstall handling
+
+When both a legacy record and canonical record describe the same managed package:
+
+- prefer the canonical `content:<id>` record;
+- preserve `favorite` with logical OR;
+- preserve the earliest non-zero import timestamp;
+- preserve the latest last-used timestamp;
+- refresh package name/source/preview from the currently validated canonical package;
+- write the canonical record before deleting an obsolete duplicate record.
+
+Reinstalling or replacing a package with the same `manifest.id` must update the existing canonical item instead of creating a new identity.
+
+## Wallpaper UI semantics gate
+
+The wallpaper UI must use one user-facing model for managed `.mdwall` content:
+
+- install action: `安装壁纸主题包`;
+- management surface: `壁纸主题包`;
+- package details: show canonical name, author, version, runtime and stable `content:<id>`;
+- apply action: applying a package must go through the normal `DesktopControlService` / wallpaper service path rather than writing assignments directly;
+- reinstall/replace: the UI must explain that the stable content id is retained and existing canonical references continue to point at the same logical theme;
+- uninstall: if a monitor assignment or other active reference still points at the package, uninstall must be rejected by the service layer rather than bypassed by the UI;
+- legacy built-ins: while compatibility mode is active, the UI may present canonical package metadata but must not silently rewrite existing `scene-*` monitor assignments.
+
+The UI must not expose a second concept such as “loose scene package” for the same managed `.mdwall` object. `scene.ini` is a renderer compatibility detail, not a separate install/manage identity.
+
+### Canonical Library/UI + legacy assignment compatibility contract
+
+During the compatibility phase, the runtime has two intentionally different identity surfaces and they must not be collapsed accidentally:
+
+- `WallpaperLibrary::Items()` / `Search()` and wallpaper package-management UI should expose one canonical item per managed `.mdwall`, using `content:<manifest.id>` as the visible/stable identity.
+- persisted monitor assignments may continue to contain `scene-aurora`, `scene-neon`, or `scene-grid` byte-for-byte.
+- assignment loading must not canonicalize or rewrite those values merely because an alias exists.
+- when Independent layout resolves an assigned id, `WallpaperLibrary::Find()` must try exact lookup first and only then resolve a known legacy built-in alias to the canonical library item.
+- if neither the exact id nor the canonical alias exists, the existing fallback path must remain intact; alias support must never turn a resolvable fallback into a hard miss.
+- built-in bootstrap/indexing must not re-insert a visible legacy `scene-*` library row after the canonical `.mdwall` package has already been indexed. Bootstrap may still use the legacy id for renderer/runtime compatibility, but the Library/UI identity must remain canonical.
+
+Regression coverage for this phase must construct the real mismatch that upgrades can produce: a canonical-only library plus a persisted legacy monitor assignment. It must prove that Independent layout resolves the canonical package, does not fall back, and leaves the persisted legacy assignment unchanged.
+
+## Unicode persistence gate
+
+Any migration code that touches Win32 Profile/INI storage must use the shared Unicode profile helper before reads or writes. A BOM-less profile file must never be allowed to make the active Windows ANSI code page determine persistence.
+
+Automated coverage must include at least one round-trip containing Chinese text for each profile-backed user-visible category touched by the migration, including monitor friendly names and theme/library titles.
+
+A useful sentinel is:
+
+```text
+中文主题标题 / 作者-妙桌 / 主显示器-中文
+```
+
+The test must compare the exact reloaded wide strings and must fail on replacement text such as `????`.
+
+### Remaining Unicode audit inventory
+
+The wallpaper branch must not treat the already-converted stores as the end of the audit. In particular:
+
+- `WallpaperService::wallpaper.ini` persists scene selection plus image/Web/video paths and must be normalized through the shared Unicode profile helper before any `GetPrivateProfile*W` / `WritePrivateProfileStringW` access. Unicode file paths are user-visible state and are part of the project-level acceptance requirement.
+- `DesktopWidgetStore::widgets.ini` already creates a UTF-16LE manifest and has a Chinese title round-trip self-test, but its local BOM/create helpers should converge on the shared Unicode helper instead of remaining a parallel implementation.
+- settings/weather/other profile stores should be classified by whether they persist user-visible names, labels or paths; only numeric/internal-only profile data may be deprioritized.
+- a converted store is not considered covered until the test reloads from disk and compares exact Chinese text after a real save path.
+
+No profile path that persists user-visible text may rely on the active ANSI code page, even if the current machine is using a Chinese locale.
+
+## Automated verification gates
+
+Before enabling persisted identity rewriting, Windows x64 CI should cover:
+
+1. legacy `scene-*` assignment resolves before migration;
+2. canonical package is validated and indexed under `content:<id>`;
+3. layered legacy visual entry remains available during the compatibility phase;
+4. migration writes a canonical assignment through the real assignment store;
+5. monitor id and Unicode friendly name survive exact round-trip;
+6. reload resolves the canonical assignment successfully;
+7. package directory rename/reinstall with the same manifest id does not change assignment identity;
+8. missing/invalid canonical package leaves the legacy assignment untouched;
+9. duplicate legacy/canonical library records collapse without losing favorite/imported/last-used metadata;
+10. wallpaper service state round-trips a non-ASCII image/Web/video path without `????` after the shared helper is wired into `wallpaper.ini`.
+
+Do not implement these checks by editing INI files behind the service/store APIs when an existing product path exists.
+
+## Manual ARM64 / Windows UI gate
+
+Before the migration can be enabled for users, verify on ARM64 Windows, including a Western locale/code page:
+
+- Chinese theme name and author render without `????`;
+- monitor friendly names and rule names render without `????`;
+- wallpaper file paths containing Chinese characters remain usable after restart;
+- existing `scene-*` assignments still apply before migration;
+- canonical assignments apply after explicit migration;
+- MiaoCloud, NeonCity, and MysticMoon layered visuals are unchanged;
+- install/manage/apply wording consistently presents `.mdwall` as a wallpaper theme package;
+- package reinstall and uninstall behavior remains coherent with the displayed canonical identity.
+
+## Enablement rule
+
+Do not silently rewrite all legacy assignments merely because canonical packages exist. Enable persisted `scene-* -> content:<id>` migration only after the alias mapping, transactional write path, Windows x64 regression coverage, and ARM64 visual/Unicode checks above are all satisfied.

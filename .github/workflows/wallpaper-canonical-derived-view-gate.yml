@@ -1,0 +1,29 @@
+name: Wallpaper Canonical Derived-View Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/desktop/wallpaper/library/WallpaperLibrary.cpp'
+      - 'packaging/windows/verify-wallpaper-library-canonical-derived-views.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-view-runtime.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-view-gate.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-views.ps1'
+      - '.github/workflows/wallpaper-canonical-derived-view-gate.yml'
+
+jobs:
+  canonical-derived-view-gate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify canonical derived views and exact-first alias resolution
+        shell: pwsh
+        run: .\packaging\windows\verify-wallpaper-library-canonical-derived-views.ps1
+
+      - name: Verify runtime gate remains read-only and exact-first
+        shell: pwsh
+        run: .\packaging\windows\verify-wallpaper-library-derived-view-runtime.ps1

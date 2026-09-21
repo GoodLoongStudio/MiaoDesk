@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "com.goodloong.today-tasks",
+  "name": "今日待办",
+  "author": "GoodLoongStudio",
+  "version": "1.0.0",
+  "kind": "widget",
+  "runtime": "scene",
+  "entry": "scene.json",
+  "parameters": "parameters.json",
+  "capabilities": ["tasks.read"],
+  "geometry": {
+    "defaultWidth": 0.22,
+    "defaultHeight": 0.48,
+    "resize": false,
+    "aspectRatio": 0.4583333333
+  }
+}

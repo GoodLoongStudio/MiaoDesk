@@ -29,6 +29,10 @@ bool HasCapability(const ContentDefinition& definition, std::wstring_view capabi
         return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"weather") !=
                definition.capabilities.end();
     }
+    if (capability == L"tasks.read") {
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"tasks") !=
+               definition.capabilities.end();
+    }
     return false;
 }
 
@@ -93,6 +97,7 @@ std::optional<std::wstring_view> MiaoContentCapabilityBroker::RequiredCapability
     std::wstring_view dataPath) noexcept {
     if (StartsWith(dataPath, L"time.")) return L"clock.read";
     if (StartsWith(dataPath, L"weather.")) return L"weather.read";
+    if (StartsWith(dataPath, L"tasks.")) return L"tasks.read";
     return std::nullopt;
 }
 
@@ -121,10 +126,15 @@ bool MiaoContentCapabilityBroker::SelfTest() {
     std::wstring error;
     if (!CanRead(content, L"time.hhmm", &error)) return false;
     if (CanRead(content, L"weather.temperature", &error)) return false;
+    if (CanRead(content, L"tasks.pending", &error)) return false;
     content.capabilities.push_back(L"weather.read");
     if (!CanRead(content, L"weather.temperature", &error)) return false;
+    content.capabilities.push_back(L"tasks.read");
+    if (!CanRead(content, L"tasks.pending", &error) || !CanRead(content, L"tasks.item0.title", &error)) return false;
     content.capabilities = {L"weather"};
     if (!CanRead(content, L"weather.condition", &error)) return false;
+    content.capabilities = {L"tasks"};
+    if (!CanRead(content, L"tasks.completed", &error)) return false;
     content.capabilities.clear();
     if (CanRead(content, L"time.hhmm", &error)) return false;
     content.capabilities = {L"clock"};
@@ -233,12 +243,14 @@ bool MiaoContentDataBinding::SelfTest() {
     clock.version = L"1.0.0";
     clock.entry = L"scene.json";
     clock.kind = ContentKind::Widget;
-    clock.capabilities = {L"clock.read", L"weather.read"};
+    clock.capabilities = {L"clock.read", L"weather.read", L"tasks.read"};
 
     auto snapshot = MiaoTimeDataProvider::Capture(2026, 9, 10, 4, 21, 7, 5, 42);
     if (snapshot.generation != 42 || snapshot.values.size() < 10) return false;
     snapshot.values.emplace(L"weather.temperature", static_cast<std::int64_t>(23));
     snapshot.values.emplace(L"weather.condition", std::wstring(L"晴"));
+    snapshot.values.emplace(L"tasks.pending", static_cast<std::int64_t>(2));
+    snapshot.values.emplace(L"tasks.item0.title", std::wstring(L"完成迁移"));
 
     std::wstring error;
     const auto* hhmm = Find(clock, snapshot, L"time.hhmm", &error);
@@ -247,13 +259,14 @@ bool MiaoContentDataBinding::SelfTest() {
 
     std::wstring resolved;
     if (!ResolveTemplate(clock, snapshot,
-                         L"现在是 {{time.hhmm}} · {{ weather.temperature }}° · {{weather.condition}}",
+                         L"现在是 {{time.hhmm}} · {{ weather.temperature }}° · {{weather.condition}} · {{tasks.pending}} 项待办",
                          &resolved, &error)) return false;
-    if (resolved != L"现在是 21:07 · 23° · 晴") return false;
+    if (resolved != L"现在是 21:07 · 23° · 晴 · 2 项待办") return false;
 
     ContentDefinition denied = clock;
     denied.capabilities = {L"clock.read"};
     if (ResolveTemplate(denied, snapshot, L"{{weather.temperature}}", &resolved, &error)) return false;
+    if (ResolveTemplate(denied, snapshot, L"{{tasks.item0.title}}", &resolved, &error)) return false;
     denied.capabilities.clear();
     if (ResolveTemplate(denied, snapshot, L"{{time.hhmm}}", &resolved, &error)) return false;
     if (ResolveTemplate(clock, snapshot, L"{{time.hhmm", &resolved, &error)) return false;

@@ -11,6 +11,7 @@
 #include "miaodesk/NativeWidgetHost.h"
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogger.h"
+#include "miaodesk/TodayTaskContentProvider.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/WidgetService.h"
@@ -186,8 +187,16 @@ void MarkPaintReady(HWND hwnd, bool ready) {
 
 fs::file_time_type PackageStamp(const fs::path& packageRoot) {
     std::error_code ec;
-    const auto value = fs::last_write_time(packageRoot / L"manifest.json", ec);
-    return ec ? fs::file_time_type{} : value;
+    fs::file_time_type latest{};
+    if (!fs::exists(packageRoot, ec) || ec) return latest;
+    for (fs::recursive_directory_iterator it(packageRoot, fs::directory_options::skip_permission_denied, ec), end;
+         it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const auto value = it->last_write_time(ec);
+        if (!ec && value > latest) latest = value;
+        ec.clear();
+    }
+    return latest;
 }
 
 fs::file_time_type InstanceParameterStamp(std::wstring_view widgetId) {
@@ -204,7 +213,21 @@ bool HasContentCapability(const content::ContentDefinition& definition, std::wst
         return true;
     if (capability == L"weather.read")
         return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"weather") != definition.capabilities.end();
+    if (capability == L"tasks.read")
+        return std::find(definition.capabilities.begin(), definition.capabilities.end(), L"tasks") != definition.capabilities.end();
     return false;
+}
+
+HWND FindContentHostMessageWindow(DWORD processId) {
+    if (!processId) return nullptr;
+    for (HWND window = FindWindowExW(HWND_MESSAGE, nullptr, kContentWidgetHostMessageClass, nullptr);
+         window;
+         window = FindWindowExW(HWND_MESSAGE, window, kContentWidgetHostMessageClass, nullptr)) {
+        DWORD owner = 0;
+        GetWindowThreadProcessId(window, &owner);
+        if (owner == processId) return window;
+    }
+    return nullptr;
 }
 
 struct ResolvedContentRuntime {
@@ -581,10 +604,6 @@ struct ContentWidgetHostApp {
     bool ApplyHostData(ContentSlot& slot) {
         if (!slot.renderer || !slot.renderer->Loaded()) return false;
         slot.renderer->ClearDataValues();
-        if (!HasContentCapability(slot.definition, L"weather.read")) return true;
-
-        NativeWeatherSnapshot weather;
-        const bool available = NativeWeatherService::ReadCachedSnapshot(&weather) && weather.valid;
         std::wstring error;
         auto publish = [&](std::wstring_view path, content::PropertyValue value) {
             if (slot.renderer->SetDataValue(path, std::move(value), &error)) return true;
@@ -592,23 +611,39 @@ struct ContentWidgetHostApp {
             return false;
         };
 
-        const std::wstring unavailableStatus = L"天气数据暂不可用";
-        if (!publish(L"weather.available", available) ||
-            !publish(L"weather.location", available ? weather.location : std::wstring{}) ||
-            !publish(L"weather.temperatureC", static_cast<std::int64_t>(available ? weather.temperatureC : 0)) ||
-            !publish(L"weather.highC", static_cast<std::int64_t>(available ? weather.highC : 0)) ||
-            !publish(L"weather.lowC", static_cast<std::int64_t>(available ? weather.lowC : 0)) ||
-            !publish(L"weather.code", static_cast<std::int64_t>(available ? weather.weatherCode : 0)) ||
-            !publish(L"weather.condition", available ? weather.condition : std::wstring{}) ||
-            !publish(L"weather.observedTime", available ? weather.observedTime : std::wstring{}) ||
-            !publish(L"weather.status", available ? weather.status : unavailableStatus)) return false;
+        if (HasContentCapability(slot.definition, L"weather.read")) {
+            NativeWeatherSnapshot weather;
+            const bool available = NativeWeatherService::ReadCachedSnapshot(&weather) && weather.valid;
+            const std::wstring unavailableStatus = L"天气数据暂不可用";
+            if (!publish(L"weather.available", available) ||
+                !publish(L"weather.location", available ? weather.location : std::wstring{}) ||
+                !publish(L"weather.temperatureC", static_cast<std::int64_t>(available ? weather.temperatureC : 0)) ||
+                !publish(L"weather.highC", static_cast<std::int64_t>(available ? weather.highC : 0)) ||
+                !publish(L"weather.lowC", static_cast<std::int64_t>(available ? weather.lowC : 0)) ||
+                !publish(L"weather.code", static_cast<std::int64_t>(available ? weather.weatherCode : 0)) ||
+                !publish(L"weather.condition", available ? weather.condition : std::wstring{}) ||
+                !publish(L"weather.observedTime", available ? weather.observedTime : std::wstring{}) ||
+                !publish(L"weather.status", available ? weather.status : unavailableStatus)) return false;
 
-        for (std::size_t i = 0; i < weather.hours.size(); ++i) {
-            const auto& hour = weather.hours[i];
-            const std::wstring prefix = L"weather.hour" + std::to_wstring(i) + L".";
-            if (!publish(prefix + L"label", available ? hour.label : std::wstring{}) ||
-                !publish(prefix + L"temperatureC", static_cast<std::int64_t>(available ? hour.temperatureC : 0)) ||
-                !publish(prefix + L"code", static_cast<std::int64_t>(available ? hour.weatherCode : 0))) return false;
+            for (std::size_t i = 0; i < weather.hours.size(); ++i) {
+                const auto& hour = weather.hours[i];
+                const std::wstring prefix = L"weather.hour" + std::to_wstring(i) + L".";
+                if (!publish(prefix + L"label", available ? hour.label : std::wstring{}) ||
+                    !publish(prefix + L"temperatureC", static_cast<std::int64_t>(available ? hour.temperatureC : 0)) ||
+                    !publish(prefix + L"code", static_cast<std::int64_t>(available ? hour.weatherCode : 0))) return false;
+            }
+        }
+
+        if (HasContentCapability(slot.definition, L"tasks.read")) {
+            content::ContentDataValues tasks;
+            std::wstring taskError;
+            if (!desktop::TodayTaskContentProvider::Capture(&tasks, &taskError)) {
+                ReportFailure(&slot, taskError.empty() ? L"Today Tasks Content data unavailable" : taskError);
+                return false;
+            }
+            for (const auto& [path, value] : tasks) {
+                if (!publish(path, value)) return false;
+            }
         }
         return true;
     }
@@ -788,7 +823,16 @@ struct ContentWidgetHostApp {
         request.x = slot.dragPreviewX;
         request.y = slot.dragPreviewY;
         const desktop::WidgetService service;
-        if (!service.Update(request).success) return;
+        const auto result = service.Update(request);
+        if (!result.success) {
+            SetWindowPos(slot.hwnd, nullptr,
+                         slot.dragStartRegion.left, slot.dragStartRegion.top,
+                         slot.dragStartRegion.right - slot.dragStartRegion.left,
+                         slot.dragStartRegion.bottom - slot.dragStartRegion.top,
+                         SWP_NOACTIVATE | SWP_NOZORDER);
+            slot.region = slot.dragStartRegion;
+            return;
+        }
         slot.geometryGraceUntil = GetTickCount64() + 2000;
     }
 
@@ -1212,17 +1256,8 @@ bool ContentWidgetProcessSet::Start(HWND parentWindow) {
 void ContentWidgetProcessSet::Stop() {
     if (process_) {
         const DWORD pid = GetProcessId(process_);
-        for (HWND window = GetTopWindow(nullptr); window; window = GetWindow(window, GW_HWNDNEXT)) {
-            DWORD owner = 0;
-            GetWindowThreadProcessId(window, &owner);
-            if (owner != pid) continue;
-            wchar_t className[160]{};
-            if (GetClassNameW(window, className, static_cast<int>(std::size(className))) > 0 &&
-                _wcsicmp(className, kContentWidgetHostMessageClass) == 0) {
-                PostMessageW(window, kShutdownMessage, 0, 0);
-                break;
-            }
-        }
+        if (HWND window = FindContentHostMessageWindow(pid))
+            PostMessageW(window, kShutdownMessage, 0, 0);
         if (WaitForSingleObject(process_, 700) == WAIT_TIMEOUT) TerminateProcess(process_, 0);
         CloseHandle(process_);
         process_ = nullptr;
@@ -1243,17 +1278,8 @@ void ContentWidgetProcessSet::SetPaused(bool paused) {
     paused_ = paused;
     if (!process_) return;
     const DWORD pid = GetProcessId(process_);
-    for (HWND window = GetTopWindow(nullptr); window; window = GetWindow(window, GW_HWNDNEXT)) {
-        DWORD owner = 0;
-        GetWindowThreadProcessId(window, &owner);
-        if (owner != pid) continue;
-        wchar_t className[160]{};
-        if (GetClassNameW(window, className, static_cast<int>(std::size(className))) > 0 &&
-            _wcsicmp(className, kContentWidgetHostMessageClass) == 0) {
-            PostMessageW(window, paused ? kPauseMessage : kResumeMessage, 0, 0);
-            break;
-        }
-    }
+    if (HWND window = FindContentHostMessageWindow(pid))
+        PostMessageW(window, paused ? kPauseMessage : kResumeMessage, 0, 0);
 }
 
 bool ContentWidgetProcessSet::Active() const noexcept {

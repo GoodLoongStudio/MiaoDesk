@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "parameters": [
+    {
+      "id": "param://background-color",
+      "key": "backgroundColor",
+      "type": "color",
+      "default": [0.07, 0.30, 0.38, 1.0]
+    },
+    {
+      "id": "param://accent-color",
+      "key": "accentColor",
+      "type": "color",
+      "default": [0.34, 0.98, 0.82, 1.0]
+    },
+    {
+      "id": "param://text-color",
+      "key": "textColor",
+      "type": "color",
+      "default": [0.98, 0.995, 1.0, 1.0]
+    },
+    {
+      "id": "param://card-opacity",
+      "key": "cardOpacity",
+      "type": "float",
+      "default": 0.94,
+      "min": 0.35,
+      "max": 1.0,
+      "step": 0.01
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "schema": 1,
+  "id": "scene://today-tasks",
+  "kind": "widget",
+  "profile": "widget",
+  "rootNodeId": "node://root",
+  "nodes": [
+    {
+      "id": "node://root",
+      "name": "Today Tasks Root",
+      "parentId": "",
+      "enabled": true,
+      "components": []
+    },
+    {
+      "id": "node://card",
+      "name": "Card",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://card/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+            {"name": "scale", "type": "vec2", "default": [0.97, 0.98]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://card/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.94},
+            {"name": "tint", "type": "color", "default": [0.07, 0.30, 0.38, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://accent",
+      "name": "Accent",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://accent/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [0.0, -216.0]},
+            {"name": "scale", "type": "vec2", "default": [0.78, 0.007]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.72}
+          ]
+        },
+        {
+          "id": "component://accent/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {"name": "opacity", "type": "float", "default": 0.7},
+            {"name": "tint", "type": "color", "default": [0.34, 0.98, 0.82, 1.0]},
+            {"name": "materialId", "type": "string", "default": "material://card"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://title",
+      "name": "Title",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://title/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [18.0, 22.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://title/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "今日待办"},
+            {"name": "fontSize", "type": "float", "default": 26.0},
+            {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Display"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://count",
+      "name": "Pending Count",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://count/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [18.0, 62.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 1.0}
+          ]
+        },
+        {
+          "id": "component://count/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{tasks.pending}} 项待办"},
+            {"name": "fontSize", "type": "float", "default": 38.0},
+            {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Display"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://progress",
+      "name": "Progress",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://progress/transform",
+          "kind": "transform",
+          "properties": [
+            {"name": "position", "type": "vec2", "default": [18.0, 112.0]},
+            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+            {"name": "rotation", "type": "float", "default": 0.0},
+            {"name": "opacity", "type": "float", "default": 0.78}
+          ]
+        },
+        {
+          "id": "component://progress/text",
+          "kind": "textRenderer",
+          "properties": [
+            {"name": "value", "type": "string", "default": "{{tasks.progressText}}"},
+            {"name": "fontSize", "type": "float", "default": 14.0},
+            {"name": "color", "type": "color", "default": [0.34, 0.98, 0.82, 1.0]},
+            {"name": "opacity", "type": "float", "default": 1.0},
+            {"name": "align", "type": "string", "default": "left"},
+            {"name": "verticalAlign", "type": "string", "default": "top"},
+            {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+            {"name": "fontWeight", "type": "int", "default": 600}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://task0",
+      "name": "Task 0",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://task0/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 154.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 1.0}
+        ]},
+        {"id": "component://task0/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.item0.marker}}  {{tasks.item0.title}}\n{{tasks.item0.detail}}"},
+          {"name": "fontSize", "type": "float", "default": 15.0},
+          {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 500}
+        ]}
+      ]
+    },
+    {
+      "id": "node://task1",
+      "name": "Task 1",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://task1/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 226.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 1.0}
+        ]},
+        {"id": "component://task1/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.item1.marker}}  {{tasks.item1.title}}\n{{tasks.item1.detail}}"},
+          {"name": "fontSize", "type": "float", "default": 15.0},
+          {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 500}
+        ]}
+      ]
+    },
+    {
+      "id": "node://task2",
+      "name": "Task 2",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://task2/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 298.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 1.0}
+        ]},
+        {"id": "component://task2/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.item2.marker}}  {{tasks.item2.title}}\n{{tasks.item2.detail}}"},
+          {"name": "fontSize", "type": "float", "default": 15.0},
+          {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 500}
+        ]}
+      ]
+    },
+    {
+      "id": "node://task3",
+      "name": "Task 3",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://task3/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 370.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 1.0}
+        ]},
+        {"id": "component://task3/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.item3.marker}}  {{tasks.item3.title}}\n{{tasks.item3.detail}}"},
+          {"name": "fontSize", "type": "float", "default": 15.0},
+          {"name": "color", "type": "color", "default": [0.98, 0.995, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 500}
+        ]}
+      ]
+    },
+    {
+      "id": "node://empty",
+      "name": "Empty Hint",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://empty/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 444.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 0.62}
+        ]},
+        {"id": "component://empty/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.emptyText}}"},
+          {"name": "fontSize", "type": "float", "default": 12.0},
+          {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 400}
+        ]}
+      ]
+    }
+  ],
+  "assets": [],
+  "shaders": [],
+  "materials": [
+    {
+      "id": "material://card",
+      "model": "builtin",
+      "builtinName": "solidColor",
+      "vertexShaderId": "",
+      "pixelShaderId": "",
+      "properties": [
+        {"name": "color", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]}
+      ],
+      "textures": []
+    }
+  ],
+  "inputs": [],
+  "bindings": [
+    {"id": "binding://background-color", "sourceKind": "parameter", "sourceId": "param://background-color", "target": {"componentId": "component://card/sprite", "propertyName": "tint"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://card-opacity", "sourceKind": "parameter", "sourceId": "param://card-opacity", "target": {"componentId": "component://card/sprite", "propertyName": "opacity"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://accent-color", "sourceKind": "parameter", "sourceId": "param://accent-color", "target": {"componentId": "component://accent/sprite", "propertyName": "tint"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://progress-color", "sourceKind": "parameter", "sourceId": "param://accent-color", "target": {"componentId": "component://progress/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://title-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://title/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://count-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://count/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://task0-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://task0/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://task1-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://task1/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://task2-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://task2/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0},
+    {"id": "binding://task3-color", "sourceKind": "parameter", "sourceId": "param://text-color", "target": {"componentId": "component://task3/text", "propertyName": "color"}, "scale": 1.0, "offset": 0.0}
+  ]
+}

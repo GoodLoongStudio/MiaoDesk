@@ -299,6 +299,26 @@ struct MiaoSceneD2DRenderer::Impl {
             return Error(error, L"Miao Scene D2D renderer requires a scene-runtime content package.");
         if (!MiaoContentDefinitionLoader::FromPackage(package, &contentDefinition, &lastError)) return Error(error, lastError);
         if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &lastError)) return Error(error, lastError);
+        // A 3D scene is valid content — the model validator accepts it, and the whole
+        // point of the B-4 declaration layer was to give a renderer something precise to
+        // implement against. This backend has no projection, no depth buffer and no mesh
+        // loader, so it cannot honour lights, fog, mesh assets or the third axis.
+        //
+        // The validation layer already refuses the mirror-image case (lights/fog declared
+        // without spatial:3d), but nothing on the render path refused the 3D scene itself
+        // — so a hand-placed package would load here and draw as a flat 2D scene with
+        // every light silently ignored. That is the failure DESIGN_BASELINE §10 names, and
+        // the skill already tells authors not to produce it; the renderer has to say it too.
+        //
+        // The hosts degrade to a built-in wallpaper on a Load failure, so this surfaces as
+        // a visible one rather than a desktop with a missing glow.
+        if (definition.scene.spatial == SceneSpatialMode::ThreeD) {
+            return Error(error,
+                L"This package declares spatial:3d, which the D2D backend cannot render. "
+                L"Lights, fog, mesh assets and the third axis are not implemented; the D3D11 "
+                L"backend is the planned home for 3D. Declare spatial:2d, or use the D3D11 backend. "
+                L"(scene " + definition.scene.id + L")");
+        }
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);
         if (!runtime.Initialize(definition, &lastError)) return Error(error, lastError);
         if (FAILED(target->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), brush.GetAddressOf())))
@@ -983,6 +1003,52 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 }
             }
         }
+        // --- Phase C: a 3D scene is legal content this backend cannot draw. ---
+        //
+        // The model validator accepts spatial:3d deliberately — that is what makes the
+        // declaration layer useful. Light/fog declared *without* 3d is already refused by
+        // MiaoSceneRuntimeModel::Validate; the reverse (a valid 3D scene reaching a
+        // backend with no projection) was refused by nobody, so it drew flat and dropped
+        // every light silently. This pins the refusal.
+        if (ok) {
+            constexpr std::string_view spatial3DScene = R"json({
+              "schema":1,"id":"scene://selftest-spatial-3d","kind":"wallpaper","profile":"wallpaper",
+              "spatial":"3d","rootNodeId":"node://root",
+              "nodes":[
+                {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+                {"id":"node://panel","name":"Panel","parentId":"node://root","enabled":true,"components":[
+                  {"id":"component://panel/transform","kind":"transform","properties":[
+                    {"name":"position","type":"vec2","default":[0.0,0.0]},
+                    {"name":"scale","type":"vec2","default":[1.0,1.0]},
+                    {"name":"rotation","type":"float","default":0.0},
+                    {"name":"opacity","type":"float","default":1.0}]},
+                  {"id":"component://panel/sprite","kind":"spriteRenderer","properties":[
+                    {"name":"opacity","type":"float","default":1.0},
+                    {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+                    {"name":"cornerRadius","type":"float","default":0.0}]}
+                ]}
+              ],
+              "assets":[],"shaders":[],
+              "lights":[{"id":"light://key","type":"point","nodeId":"node://root",
+                         "color":[1.0,1.0,1.0,1.0],"intensity":1.0,"range":100.0}],
+              "fog":[],"materials":[],
+              "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+              "bindings":[],"animations":[]
+            })json";
+            const fs::path spatial3D = root / L"spatial3d.mdwidget";
+            fs::create_directories(spatial3D, ec);
+            MiaoSceneD2DRenderer spatialRenderer;
+            std::wstring spatialError;
+            if (ok && WriteTextFile(spatial3D / L"scene.json", spatial3DScene)) {
+                const bool loaded = spatialRenderer.Load(spatial3D, target.Get(), &spatialError);
+                error = spatialError;  // Step prints `error`, so surface the refusal's reason
+                Step(!loaded && spatialError.find(L"scene://selftest-spatial-3d") != std::wstring::npos,
+                     "C. spatial:3d 的场景被拒,且报错点名场景 id(而不是静默按 2D 画)");
+                error.clear();
+            }
+            fs::remove_all(spatial3D, ec);
+        }
+
         fs::remove_all(root / L"textured.mdwidget", ec);
         fs::remove_all(root / L"tinted.mdwidget", ec);
     }

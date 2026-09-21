@@ -733,6 +733,17 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (package.manifest.kind != ContentKind::Wallpaper || package.manifest.runtime != ContentRuntimeKind::Scene)
             return Error(error, L"Miao Scene D3D11 renderer requires a wallpaper scene package.");
         if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &lastError)) return Error(error, lastError);
+        // Same rule as the D2D backend, and the plan says 3D lands *here* — but "planned
+        // home" is not "implemented". There is no projection matrix, no depth buffer and
+        // no mesh loader in this file, so a 3D scene would load and then draw flat with
+        // every light and the fog silently dropped. The model validator accepts 3D
+        // scenes on purpose; the renderer has to be the one to say it cannot draw them.
+        if (definition.scene.spatial == SceneSpatialMode::ThreeD) {
+            return Error(error,
+                L"This package declares spatial:3d, which neither the D2D11 nor the D2D scene backend "
+                L"can render yet: lights, fog, mesh assets and the third axis are not implemented. "
+                L"Declare spatial:2d. (scene " + definition.scene.id + L")");
+        }
         if (!MiaoParticleSerializer::DeserializeEmitters(package.entrySourceUtf8, &definition, &lastError))
             return Error(error, lastError);
         if (!assets.Build(package.root, definition, &lastError)) return Error(error, lastError);

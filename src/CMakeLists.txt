@@ -155,6 +155,11 @@ add_executable(MiaoDeskMediaPackageTest tests/MediaWallpaperPackage.cpp)
 # No Windows dependency: the input bus core is pure logic, so this gate runs on
 # every build rather than only where audio hardware exists.
 add_executable(MiaoDeskInputBusCoreTest tests/InputBusCore.cpp)
+add_executable(MiaoDeskInputBusPublisherTest tests/InputBusPublisher.cpp)
+add_executable(MiaoDeskAudioIngressTest tests/AudioIngress.cpp)
+add_executable(MiaoDeskBindingResponseTest tests/BindingResponse.cpp)
+add_executable(MiaoDeskSceneRuntimeTest tests/MiaoSceneRuntimeTest.cpp)
+add_executable(MiaoDeskSceneSpatial3DTest tests/SceneSpatial3D.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -310,12 +315,6 @@ target_link_libraries(MiaoDeskMediaPackageTest PRIVATE
 
 # MiaoDeskInputBusCoreTest intentionally links nothing: MiaoInputBus.h is pure C++
 # with no Windows or library dependency, which is what makes it runnable everywhere.
-add_executable(MiaoDeskInputBusPublisherTest tests/InputBusPublisher.cpp)
-add_executable(MiaoDeskAudioIngressTest tests/AudioIngress.cpp)
-add_executable(MiaoDeskBindingResponseTest tests/BindingResponse.cpp)
-add_executable(MiaoDeskSceneRuntimeTest tests/MiaoSceneRuntimeTest.cpp)
-add_executable(MiaoDeskSceneSpatial3DTest tests/SceneSpatial3D.cpp)
-
 target_link_libraries(MiaoDeskInputBusPublisherTest PRIVATE
     MiaoDeskCore
 )

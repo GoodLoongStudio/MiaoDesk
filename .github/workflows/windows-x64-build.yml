@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - src/**
+      # Two steps below run node tests/*.mjs. Without this entry an edit to those
+      # files changed nothing that the filter lists, so the workflow that is the
+      # only thing validating them never ran.
+      - tests/**
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**
@@ -18,6 +22,10 @@ on:
   pull_request:
     paths:
       - src/**
+      # Two steps below run node tests/*.mjs. Without this entry an edit to those
+      # files changed nothing that the filter lists, so the workflow that is the
+      # only thing validating them never ran.
+      - tests/**
       - CMakeLists.txt
       - CMakePresets.json
       - assets/app/**

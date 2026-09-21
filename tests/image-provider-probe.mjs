@@ -1,6 +1,6 @@
 // Runs the extracted logic in a child process so the module-level process.env reads
 // see the target environment before import.
-const mod = await import('./extracted-image-provider.ts');
+const mod = await import('./extracted-image-provider.mts');
 const { calls } = await import('./stub-get-image-model.mjs');
 const out = {
   provider: mod.IMAGE_PROVIDER,

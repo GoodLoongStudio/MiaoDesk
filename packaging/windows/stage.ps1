@@ -65,8 +65,12 @@ if ($missing.Count -gt 0) { throw "Staged skills are missing: $($missing -join '
 $unexpected = @($stagedSkills | Where-Object { $expectedSkills -notcontains $_ })
 if ($unexpected.Count -gt 0) { throw "Staged skill is absent from the kContentSkills allowlist: $($unexpected -join ', ')" }
 foreach ($skill in $expectedSkills) {
-    $head = Get-Content (Join-Path $Destination "skills\$skill\SKILL.md") -TotalCount 6
-    if ($head -notmatch ('^name:\s*' + [regex]::Escape($skill) + '\s*$')) {
+    # Get-Content -TotalCount 返回的是字符串数组,而 `$array -notmatch 're'` 在
+    # PowerShell 里是「过滤」不是「布尔判断」—— 它返回不匹配的元素。前 6 行里只有
+    # 一行是 name:,于是结果是非空数组、恒为真值,这里必然 throw。先 join 成单个
+    # 字符串,并用 (?m) 让 ^/$ 按行锚定。
+    $head = (Get-Content (Join-Path $Destination "skills\$skill\SKILL.md") -TotalCount 6) -join "`n"
+    if ($head -notmatch ('(?m)^name:\s*' + [regex]::Escape($skill) + '\s*$')) {
         throw "SKILL.md frontmatter name does not match its directory: skills\$skill"
     }
 }

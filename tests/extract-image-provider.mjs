@@ -62,6 +62,11 @@ export { currentMiaoDeskBaseUrl, resolveImageApiKey, generateImage,
          IMAGE_PROVIDER, IMAGE_MODEL, DEFAULT_IMAGE_MODEL, isLoopback };
 `;
 
-const target = join(here, 'extracted-image-provider.ts');
+// .mts rather than .ts: Node decides whether a stripped .ts file is ESM or CJS from
+// the nearest package.json "type" field (this repo has none for tests/), and that
+// decision is what made this gate platform- and Node-version-sensitive. .mts is
+// unambiguously ESM, so the extracted module — which uses export/import — resolves
+// the same way everywhere.
+const target = join(here, 'extracted-image-provider.mts');
 await writeFile(target, module, 'utf8');
 export default target;

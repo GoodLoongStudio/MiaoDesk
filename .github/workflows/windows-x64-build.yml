@@ -63,8 +63,18 @@ jobs:
           Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
-          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+          $gateOut = cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'CMake configure failed.'
+          }
 
       - name: Build
         shell: pwsh
@@ -85,21 +95,51 @@ jobs:
         shell: pwsh
         run: |
           node --version
-          & node tests/image-provider.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'image provider parameterisation gate failed.' }
+          $gateOut = & node tests/image-provider.mjs 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'image provider parameterisation gate failed.'
+          }
 
       - name: Verify web audio bridge shim
         shell: pwsh
         run: |
           node --version
-          & node tests/WebAudioBridge.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'web audio bridge shim gate failed.' }
+          $gateOut = & node tests/WebAudioBridge.mjs 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'web audio bridge shim gate failed.'
+          }
 
       - name: Verify web audio bridge has not drifted
         shell: pwsh
         run: |
-          .\scripts\verify-web-audio-bridge.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'embedded web audio bridge differs from its source of truth.' }
+          $gateOut = .\scripts\verify-web-audio-bridge.ps1 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'embedded web audio bridge differs from its source of truth.'
+          }
 
       - name: Verify Content web replacement continuity
         shell: pwsh
@@ -107,8 +147,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content web replacement continuity test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'Content web replacement continuity regression failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'Content web replacement continuity regression failed.'
+          }
 
       - name: Verify content skill loading gate
         shell: pwsh
@@ -116,8 +166,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentSkillLoadingTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content skill loading test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'content_skill_get allowlist/path gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'content_skill_get allowlist/path gate failed.'
+          }
 
       - name: Verify media wallpaper package gate
         shell: pwsh
@@ -125,8 +185,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskMediaPackageTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Media wallpaper package test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'media wallpaper package type/entry gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'media wallpaper package type/entry gate failed.'
+          }
 
       - name: Verify Scene input bus core
         shell: pwsh
@@ -134,8 +204,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusCoreTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene input bus core test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'Scene input bus channel contract / analysis gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'Scene input bus channel contract / analysis gate failed.'
+          }
 
       - name: Verify Scene input bus publisher
         shell: pwsh
@@ -143,8 +223,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusPublisherTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene input bus publisher test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'Scene input bus publisher gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'Scene input bus publisher gate failed.'
+          }
 
       - name: Verify audio ingress conversion
         shell: pwsh
@@ -152,8 +242,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskAudioIngressTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Audio ingress test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'audio downmix/resample/window gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'audio downmix/resample/window gate failed.'
+          }
 
       - name: Verify binding response curves
         shell: pwsh
@@ -161,8 +261,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskBindingResponseTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Binding response test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'binding response curve gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'binding response curve gate failed.'
+          }
 
       - name: Verify scene runtime binding end to end
         shell: pwsh
@@ -170,8 +280,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneRuntimeTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene runtime test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'binding response round-trip / backward-compat gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'binding response round-trip / backward-compat gate failed.'
+          }
 
       - name: Verify 3D scene spatial mode, lights and fog
         shell: pwsh
@@ -179,8 +299,18 @@ jobs:
           $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneSpatial3DTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw '3D scene test executable was not found.' }
-          & $test.FullName
-          if ($LASTEXITCODE -ne 0) { throw '3D scene spatial/light/fog gate failed.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw '3D scene spatial/light/fog gate failed.'
+          }
 
       - name: Reset wallpaper runtime before Widget lifecycle
         shell: pwsh
@@ -211,8 +341,18 @@ jobs:
               Write-Host "Running Widget lifecycle smoke attempt $attempt/2."
               Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
               Start-Sleep -Milliseconds 750
-              & pwsh -NoLogo -NoProfile -NonInteractive -File .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName
-              if ($LASTEXITCODE -ne 0) { throw "Widget lifecycle smoke exited with code $LASTEXITCODE." }
+              $gateOut = & pwsh -NoLogo -NoProfile -NonInteractive -File .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName 2>&1
+              $gateExit = $LASTEXITCODE
+              $gateOut | Write-Host
+              if ($gateExit -ne 0) {
+                  $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                      $line = $_.Line.Trim()
+                      if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                      Write-Host "::error::$line"
+                  }
+                  Write-Host "::error::exit code $gateExit"
+                  throw "Widget lifecycle smoke exited with code $gateExit."
+              }
               break
             } catch {
               if ($attempt -ge 2) { throw }
@@ -227,8 +367,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
-          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+          $gateOut = cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'cmake --install failed.'
+          }
           foreach ($relative in @(
             'Widgets\GlassClock.mdwidget\manifest.json',
             'Widgets\GlassClock.mdwidget\scene.json',

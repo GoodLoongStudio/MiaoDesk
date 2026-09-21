@@ -60,20 +60,50 @@ jobs:
           Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
           New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
-          cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT"
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+          $gateOut = cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT" 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'CMake configure failed.'
+          }
 
       - name: Build
         shell: pwsh
         run: |
-          cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
-          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed.' }
+          $gateOut = cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'x64 build failed.'
+          }
 
       - name: Install product files
         shell: pwsh
         run: |
-          cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT
-          if ($LASTEXITCODE -ne 0) { throw 'cmake --install failed.' }
+          $gateOut = cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'cmake --install failed.'
+          }
 
       - name: Stage Runtime
         shell: pwsh
@@ -129,10 +159,30 @@ jobs:
             if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "Missing package file: $relative" }
           }
 
-          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'DSH probe failed.' }
-          & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\pi\dist\cli.js" --version | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'Pi probe failed.' }
+          $gateOut = & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\@deepseek-ai\dsh\lib\bin.js" --help | Out-Host 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'DSH probe failed.'
+          }
+          $gateOut = & "$root\Runtime\Node\node.exe" "$root\AI\node_modules\pi\dist\cli.js" --version | Out-Host 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'Pi probe failed.'
+          }
 
           foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
             $p = Start-Process -FilePath (Join-Path $root $exe) -ArgumentList '--self-test' -Wait -PassThru
@@ -176,8 +226,18 @@ jobs:
           try {
             $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
             if (-not $makensis) {
-              choco install nsis --yes --no-progress --limit-output
-              if ($LASTEXITCODE -ne 0) { throw "Unable to install NSIS, choco exit=$LASTEXITCODE" }
+              $gateOut = choco install nsis --yes --no-progress --limit-output 2>&1
+              $gateExit = $LASTEXITCODE
+              $gateOut | Write-Host
+              if ($gateExit -ne 0) {
+                  $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                      $line = $_.Line.Trim()
+                      if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                      Write-Host "::error::$line"
+                  }
+                  Write-Host "::error::exit code $gateExit"
+                  throw "Unable to install NSIS, choco exit=$gateExit"
+              }
               $makensis = @(
                 (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
                 (Join-Path $env:ProgramFiles 'NSIS\makensis.exe')
@@ -232,8 +292,18 @@ jobs:
                 }
               }
 
-              & "$testRoot\Runtime\Node\node.exe" "$testRoot\AI\node_modules\pi\dist\cli.js" --version | Out-Host
-              if ($LASTEXITCODE -ne 0) { throw 'Installed Pi runtime probe failed.' }
+              $gateOut = & "$testRoot\Runtime\Node\node.exe" "$testRoot\AI\node_modules\pi\dist\cli.js" --version | Out-Host 2>&1
+              $gateExit = $LASTEXITCODE
+              $gateOut | Write-Host
+              if ($gateExit -ne 0) {
+                  $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                      $line = $_.Line.Trim()
+                      if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                      Write-Host "::error::$line"
+                  }
+                  Write-Host "::error::exit code $gateExit"
+                  throw 'Installed Pi runtime probe failed.'
+              }
 
               $gozReady = $false
               for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -323,8 +393,18 @@ jobs:
           try {
             & (Join-Path $env:GITHUB_WORKSPACE 'packaging\store\msix\pack-msix.ps1') `
               -StageRoot $env:MIAODESK_STAGE_ROOT `
-              -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix'
-            if ($LASTEXITCODE -ne 0) { throw "pack-msix.ps1 failed with exit code $LASTEXITCODE" }
+              $gateOut = -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix' 2>&1
+              $gateExit = $LASTEXITCODE
+              $gateOut | Write-Host
+              if ($gateExit -ne 0) {
+                  $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                      $line = $_.Line.Trim()
+                      if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                      Write-Host "::error::$line"
+                  }
+                  Write-Host "::error::exit code $gateExit"
+                  throw "pack-msix.ps1 failed with exit code $gateExit"
+              }
           } catch {
             $details = ($_ | Out-String).Trim()
             $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')

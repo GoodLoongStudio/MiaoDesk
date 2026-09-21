@@ -382,7 +382,7 @@ jobs:
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
-              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|not supported' | Select-Object -First 12 | ForEach-Object {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|DIAG' | Select-Object -First 20 | ForEach-Object {
                   $line = $_.Line.Trim()
                   if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
                   Write-Host "::error::$line"

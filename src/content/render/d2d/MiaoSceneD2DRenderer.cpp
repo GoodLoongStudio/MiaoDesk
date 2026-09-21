@@ -949,8 +949,13 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 const bool drew = solidRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &solidError);
                 Step(SUCCEEDED(target->EndDraw()) && drew, "A2. 首帧绘制并 EndDraw");
             }
+            // The DIAG prefix is load-bearing: the CI step surfaces this test's output
+            // through a Select-String filter, and a diagnostic line that matches none of
+            // its patterns is silently dropped. First version of this dump printed plain
+            // lines, ran, failed, and told us nothing new — the round trip was wasted on
+            // output nobody could read.
             auto dump = [&](UINT x, UINT y, const char* what) {
-                std::printf("         %-18s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
+                std::printf("         DIAG %-16s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
                             PixelChannel(bitmap.Get(), x, y, 0), PixelChannel(bitmap.Get(), x, y, 1),
                             PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3));
             };
@@ -964,7 +969,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             dump(2, 2, "outer corner");
             // An edge scan, not just a centre/corner triple: it distinguishes "sprite not
             // drawn" from "drawn at the wrong extent, or scaled, or unrounded".
-            std::printf("         y=32 横向扫描(0=暗,1=有颜色):");
+            std::printf("         DIAG y=32 scan:");
             for (UINT x = 0; x < 64; ++x) {
                 const bool lit = PixelChannel(bitmap.Get(), x, 32, 0) > 8 ||
                                  PixelChannel(bitmap.Get(), x, 32, 1) > 8 ||
@@ -972,7 +977,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 std::printf("%d", lit ? 1 : 0);
                 if (x % 8 == 7) std::printf(" ");
             }
-            std::printf("\n         (每 8 像素一组;0.5 缩放 + 12 圆角应为 00000000 11111111 11111111 11111111 00000000)\n");
+            std::printf("\n         DIAG expect : 00000000 11111111 11111111 11111111 00000000\n");
             Step(centreColoured && innerCornerClear && outerCornerClear,
                  "A2. 纯色 sprite 落在中心、圆角让四角留黑");
         }

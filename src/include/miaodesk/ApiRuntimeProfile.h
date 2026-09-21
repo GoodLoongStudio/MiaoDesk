@@ -38,6 +38,10 @@ struct RuntimeProfile {
     // product reports a context window the selected model does not actually have.
     unsigned contextWindow{};
     unsigned maxTokens{};
+    // Image-generation model. Empty means "not configured": the product must report
+    // an explicit failure rather than silently falling back to a cloud model the
+    // user never chose.
+    std::wstring imageModel;
 };
 
 inline std::wstring Trim(std::wstring value) {
@@ -157,6 +161,7 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     profile.apiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id);
     profile.contextWindow = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"contextWindow")));
     profile.maxTokens = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"maxTokens")));
+    profile.imageModel = Trim(ReadIni(path, section.c_str(), L"imageModel"));
 
     while (profile.baseUrl.size() > 1 && profile.baseUrl.back() == L'/') profile.baseUrl.pop_back();
     const auto lowerBase = Lower(profile.baseUrl);

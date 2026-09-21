@@ -75,6 +75,12 @@ private:
         // applies its own default rather than reporting an invented value.
         unsigned contextWindow{};
         unsigned maxTokens{};
+        // Image provider and model handed to the Pi extension's image_generate tool.
+        // Empty means the Profile did not configure one, which the extension reports
+        // as an explicit "not configured" failure instead of silently falling back to
+        // a cloud provider the user never chose.
+        std::wstring imageProvider;
+        std::wstring imageModel;
     };
 
     ProviderSetup BuildProviderSetup(const L3Agent& agent) const;

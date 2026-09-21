@@ -81,6 +81,13 @@ jobs:
             throw 'x64 build failed.'
           }
 
+      - name: Verify image_generate provider parameterisation
+        shell: pwsh
+        run: |
+          node --version
+          & node tests/image-provider.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'image provider parameterisation gate failed.' }
+
       - name: Verify web audio bridge shim
         shell: pwsh
         run: |

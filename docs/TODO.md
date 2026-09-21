@@ -28,21 +28,42 @@
 - **依赖**:需要一台真实多显示器 / 多 DPI Windows 机器
 - **状态**:❌ 未开始 —— **需硬件,无法用 CI 替代**
 
-### P0-2 `image_generate` 本地化
+### P0-2 `image_generate` 本地化 🟡 已实施(方案 A),待 Windows 与真机验证
 
 - **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.1 / §7.5
-- **为什么阻塞**:`src/ai/pi/PiNativeToolsExtension.cpp:46,154` 把图片生成硬编码到
-  `getImageModel("openrouter", "google/gemini-2.5-flash-image")`,凭据只在 baseUrl 含 `openrouter.ai`
-  时才复用主 key。**baseUrl 指向本地推理服务时该工具直接抛错"需要 OpenRouter API Key"** ——
-  即启用本地 AI,图片生成必然失效。这是"全本地 AI"的唯一硬缺口。
-- **候选方案**(推荐顺序):
-  - A. 参数化 provider + model(从环境变量或 `models.json` 读取)
-  - B. 直连本地图像 HTTP 服务(`POST /v1/images/generations`)
-  - C. 保留云端,文档标注本地模式下不可用
-- **前置验证**:`@earendil-works/pi-ai/compat` 的 `getImageModel` 支持哪些 provider 字符串。
-  本仓库未安装 `node_modules`,无法静态确认。**先做这个验证再定方案。**
-- **验收**:baseUrl 指向本地服务时,`image_generate` 端到端成功;抓包或防火墙日志证实不触网。
-- **状态**:❌ 未开始
+- **缺陷(已修)**:`src/ai/pi/PiNativeToolsExtension.cpp` 把 `getImageModel` 的 provider
+  硬编码成 `"openrouter"`,且凭据只在 baseUrl 含 `openrouter.ai` 时才复用主 key ——
+  baseUrl 指向本地推理服务时 `image_generate` 直接抛"需要 OpenRouter API Key"。
+- **已实施(2026-09-22,方案 A:参数化 provider + model)**:
+  - provider 与 model 改为从环境变量 `MIAODESK_IMAGE_PROVIDER` / `MIAODESK_IMAGE_MODEL`
+    读取,默认值只为向后兼容保留 openrouter + `google/gemini-2.5-flash-image`。
+  - **未配置 provider 时明确报错**,不静默回落到云端 provider —— 用户没选过就不该替他选。
+  - key 解析规则重写:专用 `MIAODESK_IMAGE_API_KEY` 优先;loopback 端点视为免密钥
+    (与 profile 自身对 loopback 的处理一致,这是"全本地跑起来"的关键);
+    其余情况复用主 model key,而不再限定 openrouter。
+  - C++ 侧:`ApiRuntimeProfile` 增读 `imageModel` 键;`ModelConfig` 增 `imageModel` 并
+    **纳入 `ReloadConfig()` 变更检测**;`ProviderSetup` 增 `imageProvider` / `imageModel`;
+    `BuildProviderSetup` 从 `agent.Config()` 取值;`PiRuntime` 把两个变量导出给扩展进程;
+    **session `signature` 纳入 `img=provider:model`** —— 否则改配置不会重启 Pi 会话,
+    修复会静默失效。
+  - provider 直接取 profile 已推导出的 `providerId`(`deepseek` / `anthropic` / `google` /
+    `local-openai-compatible` / `openai-compatible`),不另造一套名称。
+- **原"前置验证"为何不再阻塞**:此前认为必须先确认 `getImageModel` 支持哪些 provider 字符串
+  (未安装 `node_modules`,无法静态确认)。改参数化后这不再是前置条件 ——
+  provider 由用户的 profile 决定,产品只负责透传,不维护一张 provider 白名单。
+- **验证(离线,node)**:`tests/image-provider.mjs` 28 项断言全过。
+  测的是**从 `.cpp` 原始字符串里抽出来的真实逻辑**(`tests/extract-image-provider.mjs`),
+  不是手抄副本。覆盖:未配置明确失败 / openrouter 向后兼容 / **loopback(原必然失效路径)** /
+  其他云厂商 / 专用 image key 优先 / model 覆盖 / loopback 六种写法与两种非 loopback。
+- **抽取器本身的一个教训**:抽出的模块最初漏了 `import { readFile }` / `join`,
+  导致 `currentMiaoDeskBaseUrl` 的 `try` 吞掉 ReferenceError 并返回 "" ——
+  表现和"没有配置 profile"完全一样,差点被判成产品缺陷。已在抽取器里注明。
+- **仍未验证**:
+  - Windows 编译(依赖 `windows.h` / `wincred.h`)。
+  - 真实 provider 是否接受传入的 provider 字符串(`getImageModel` 的行为),需实机 + node_modules。
+  - `models.json` 的 provider 名与 `getImageModel` 期望的是否一致(前者是产品语义,
+    后者是 pi-ai 语义,目前靠 `providerId` 直接透传,可能需要在某处做一次映射)。
+- **状态**:🟡 代码已实施并通过离线验证;待 Windows 编译与真实 provider 联调
 
 ### P0-3 TodayTasks 组件进入主干
 

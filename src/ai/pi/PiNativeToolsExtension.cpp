@@ -44,6 +44,22 @@ import { spawn } from "node:child_process";
 
 const HOST = process.env.MIAODESK_NATIVE_TOOL_HOST ?? "";
 const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
+// The image provider is configurable rather than hardcoded so a local inference
+// endpoint can be selected. The default is "openrouter" purely for backward
+// compatibility with existing behaviour.
+//
+// MIAODESK_IMAGE_PROVIDER selects the provider string handed to getImageModel.
+// MIAODESK_IMAGE_MODEL overrides the model id. Both are exported by the host
+// (PiRuntime.cpp) from the active API profile; an empty provider means the host
+// did not configure image generation at all, which is a clearer failure than
+// silently falling back to a cloud provider the user never chose.
+const IMAGE_PROVIDER = (process.env.MIAODESK_IMAGE_PROVIDER ?? "").trim();
+const IMAGE_MODEL = (process.env.MIAODESK_IMAGE_MODEL ?? "").trim();
+// A loopback endpoint is the product's own local inference server, which the
+// profile already treats as keyless. Treating it as keyless here too is what makes
+// "run everything locally" work without inventing a token.
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]", "::1"];
+function isLoopback(baseUrl) { return LOOPBACK_HOSTS.some((h) => baseUrl.includes(h)); }
 const TOOL_NAMES = [
   "settings_open",
   "ppt_create",
@@ -138,22 +154,34 @@ async function currentMiaoDeskBaseUrl(): Promise<string> {
   } catch { return ""; }
 }
 
-async function resolveOpenRouterApiKey(): Promise<string> {
-  const explicit = process.env.OPENROUTER_API_KEY?.trim();
+// Resolves the credential for the configured image provider.
+//
+// The old rule was "reuse the main key only when baseUrl contains openrouter.ai",
+// which made image generation impossible the moment baseUrl pointed at a local
+// inference server. The new rules:
+//   * an explicit provider-specific env var wins;
+//   * a loopback endpoint is keyless, matching how the profile itself treats it;
+//   * otherwise reuse the main model key, whatever the provider is.
+async function resolveImageApiKey(): Promise<string> {
+  const explicit = process.env.MIAODESK_IMAGE_API_KEY?.trim();
   if (explicit) return explicit;
+  if (!IMAGE_PROVIDER) return "";
   const baseUrl = (await currentMiaoDeskBaseUrl()).toLowerCase();
-  return baseUrl.includes("openrouter.ai")
-    ? process.env.MIAODESK_MODEL_API_KEY?.trim() ?? ""
-    : "";
+  if (isLoopback(baseUrl)) return "local";
+  return process.env.MIAODESK_MODEL_API_KEY?.trim() ?? "";
 }
 
 async function generateImage(prompt: string, fileName: string, signal?: AbortSignal): Promise<string> {
-  const apiKey = await resolveOpenRouterApiKey();
-  if (!apiKey) throw new Error("图片生成能力当前未配置：需要 OpenRouter API Key。聊天和其他 Pi 工具仍可正常使用。");
-  console.error(`[MiaoDesk][artifact] image_generate start model=${DEFAULT_IMAGE_MODEL}`);
+  if (!IMAGE_PROVIDER) {
+    throw new Error("图片生成能力未配置：API Profile 未指定图片 Provider。聊天和其他 Pi 工具仍可正常使用。");
+  }
+  const imageModel = IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
+  const apiKey = await resolveImageApiKey();
+  if (!apiKey) throw new Error(`图片生成能力当前未配置：需要 ${IMAGE_PROVIDER} 的 API Key。聊天和其他 Pi 工具仍可正常使用。`);
+  console.error(`[MiaoDesk][artifact] image_generate start provider=${IMAGE_PROVIDER} model=${imageModel}`);
   const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
-  const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
-  if (!model) throw new Error(`Pi 图片模型不可用：${DEFAULT_IMAGE_MODEL}`);
+  const model = getImageModel(IMAGE_PROVIDER, imageModel);
+  if (!model) throw new Error(`Pi 图片模型不可用：${IMAGE_PROVIDER}/${imageModel}`);
   const result = await generateImages(model, { input: [{ type: "text", text: prompt }] }, { apiKey, signal });
   if (result.stopReason === "error") {
     const providerText = result.output

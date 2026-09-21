@@ -374,6 +374,11 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.apiKey = LoadApiKey();
     setup.contextWindow = agent.Config().contextWindow;
     setup.maxTokens = agent.Config().maxTokens;
+    // Image generation follows the profile, so a profile pointing at a local
+    // inference server yields a local image provider rather than a hardcoded
+    // cloud one. Loopback stays keyless exactly as the profile itself treats it.
+    setup.imageProvider = agent.Config().providerId;
+    setup.imageModel = agent.Config().imageModel;
     if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
 
     if (setup.nodePath.empty()) { setup.message = L"未找到 Bundled Node Runtime"; return setup; }
@@ -387,10 +392,15 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     // agent-tools-v1 forces existing Pi processes to restart after the fixed Agent tool allowlist landed.
     // The capability hints are part of the signature so editing them in the Profile
     // restarts the session instead of silently keeping the previous values.
+    // The image provider/model are part of the signature for the same reason the
+    // capability hints are: changing them must restart the Pi session, or the
+    // extension keeps running with the previous image configuration and the change
+    // appears to have silently done nothing.
     setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
                       std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
                       L"|ctx=" + std::to_wstring(setup.contextWindow) +
                       L"|max=" + std::to_wstring(setup.maxTokens) +
+                      L"|img=" + setup.imageProvider + L":" + setup.imageModel +
                       L"|agent-tools-v1";
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
@@ -541,6 +551,8 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
 
     auto environment = BuildEnvironmentBlock({
         {L"PI_CODING_AGENT_DIR", setup.agentDir},
+        {L"MIAODESK_IMAGE_PROVIDER", setup.imageProvider},
+        {L"MIAODESK_IMAGE_MODEL", setup.imageModel},
         {L"PI_OFFLINE", L"1"},
         {L"PI_SKIP_VERSION_CHECK", L"1"},
         {L"PI_TELEMETRY", L"0"},

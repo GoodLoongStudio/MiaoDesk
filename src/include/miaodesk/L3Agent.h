@@ -22,6 +22,9 @@ struct ModelConfig {
     // session to restart with the new values instead of silently keeping the old ones.
     unsigned contextWindow{};
     unsigned maxTokens{};
+    // Image model from the active Profile. Empty means image generation is not
+    // configured, which is reported explicitly instead of silently falling back.
+    std::wstring imageModel;
 };
 
 struct ModelProbeResult {
@@ -63,6 +66,7 @@ public:
             refreshed.endpoint = profile.endpoint;
             refreshed.contextWindow = profile.contextWindow;
             refreshed.maxTokens = profile.maxTokens;
+            refreshed.imageModel = profile.imageModel;
             if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
         }
 
@@ -71,7 +75,8 @@ public:
             refreshed.model == config_.model &&
             refreshed.endpoint == config_.endpoint &&
             refreshed.contextWindow == config_.contextWindow &&
-            refreshed.maxTokens == config_.maxTokens) {
+            refreshed.maxTokens == config_.maxTokens &&
+            refreshed.imageModel == config_.imageModel) {
             return;
         }
 

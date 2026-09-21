@@ -39,10 +39,11 @@ if [ ! -f "$WORK/build/compile_commands.json" ]; then
   exit 2
 fi
 
-python3 - "$SRC" "$WORK/build/compile_commands.json" <<'PY'
+python3 - "$SRC" "$WORK/build/compile_commands.json" "$ROOT/src/CMakeLists.txt" <<'PY'
 import json, os, re, sys
 
-src, cc_path = sys.argv[1], sys.argv[2]
+src, cc_path, cmake_path = sys.argv[1], sys.argv[2], sys.argv[3]
+cmake_text = open(cmake_path, encoding='utf-8').read()
 entries = json.load(open(cc_path, encoding='utf-8'))
 
 # CMake 给出的是绝对路径,统一换成相对 src/ 的形式,才能和磁盘清单对齐。
@@ -98,7 +99,38 @@ if missing:
     print("修法:把它加进对应的 MIAODESK_*_SOURCES 清单,或用 add_executable 建目标。")
     sys.exit(1)
 
+# 目标声明顺序:CMake 顺序执行。foreach(...) 里对尚不存在的目标调用
+# target_include_directories,Configure 阶段直接报错
+# "Cannot specify include directories for target X which is not built by this project",
+# 而拖到编译时才表现为"Cannot open include file"——两处相隔很远,极难反推。
+#
+# 这个错 2026-09-21 犯过一次(5 个测试目标追加在 foreach 之后),2026-09-22 又犯一次。
+foreach_line = None
+for i, line in enumerate(cmake_text.splitlines()):
+    if line.startswith('foreach(target'):
+        foreach_line = i
+        break
+
+declared_after = []
+if foreach_line is not None:
+    for m in re.finditer(r'^add_executable\(\s*([A-Za-z0-9_]+)', cmake_text, re.M):
+        line_no = cmake_text[:m.start()].count('\n') + 1
+        if line_no > foreach_line:
+            declared_after.append((m.group(1), line_no))
+
+if declared_after:
+    print()
+    print("❌ 这些目标声明在 foreach(target ...) 之后:")
+    for name, line_no in declared_after:
+        print(f"      {name}(第 {line_no} 行)")
+    print(f"   foreach 在第 {foreach_line + 1} 行。CMake 顺序执行,循环里对尚不存在的目标")
+    print("   调用 target_include_directories 会在 Configure 阶段失败;而它拖到编译期才")
+    print("   表现为 Cannot open include file。把 add_executable 移到 foreach 之前。")
+    sys.exit(1)
+
 print()
 print("✅ 磁盘上每个 .cpp 要么被 CMake 编译,要么是被 #include 的实现单元")
+if foreach_line is not None:
+    print("✅ 所有 add_executable 都声明在 foreach(target ...) 之前")
 sys.exit(0)
 PY

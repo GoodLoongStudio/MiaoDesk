@@ -63,6 +63,15 @@ jobs:
         shell: bash
         run: python3 scripts/generate-miao-cloud-scene.py --check
 
+      # stage.ps1 里那份手写的壁纸资产断言清单。真正的拷贝是 CMake 的
+      # install(DIRECTORY ...) 整目录,所以少列一项不会让文件消失 —— 但会让
+      # "它是否真的进了打包产物"失去检查。cloud.png 就是这样被漏了一整天:
+      # MiaoCloud 的 scene.json 从空壳填成 5 层的同一天,断言清单还是 4 项。
+      # 判据从 scene.json 的 assets[].source 推,所以增删资产只需改一处。
+      - name: Verify the staged wallpaper asset assertions match scene.json
+        shell: bash
+        run: bash scripts/verify-staged-wallpaper-assets.sh
+
       # verify-path-layout-contract.ps1 里与平台无关的那几条。整段那个 .ps1 在
       # macOS 上跑不了(它按反斜杠比对一个 allowlist,而 macOS 的 FullName 是正斜杠,
       # 假阳性),于是那些规则本机一直没人跑得动 —— 2026-09-22 就有一句**注释**里的

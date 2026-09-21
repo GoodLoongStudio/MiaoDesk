@@ -41,8 +41,15 @@ foreach ($relative in @(
     'AI\node_modules\pi\dist\cli.js',
     'Goz\goz.exe',
     'Goz\gozd.exe',
+    # 这里列出的是**断言**,不是拷贝清单 —— 真正的拷贝是根 CMakeLists 的
+    # install(DIRECTORY assets/wallpapers/ DESTINATION Wallpapers),整目录。
+    # scripts/verify-staged-wallpaper-assets.sh 从每个 scene.json 的
+    # assets[].source 推出应有的集合与这里比对:少列一项,该文件是否真的进了打包
+    # 产物就没有检查兜底。cloud.png 就是在 MiaoCloud scene.json 从空壳填成 5 层的
+    # 同一天补上的 —— 前面四项一直在,第五项被漏掉了整整一天。
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
     'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
+    'Wallpapers\MiaoCloud.mdwall\assets\cloud.png',
     'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
     'Wallpapers\MiaoCloud.mdwall\assets\blink.png',
     'Wallpapers\NeonCity.mdwall\manifest.json',

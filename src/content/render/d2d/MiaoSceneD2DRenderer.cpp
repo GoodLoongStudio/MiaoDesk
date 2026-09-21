@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <system_error>
 #include <unordered_map>
@@ -187,19 +188,41 @@ bool WriteTextFile(const fs::path& path, std::string_view text) {
     return static_cast<bool>(output);
 }
 
-bool PixelHasColor(IWICBitmap* bitmap, UINT x, UINT y, bool expectedColor) {
-    if (!bitmap) return false;
+// Fraction of this pixel that the sprite covers, derived from the blue channel.
+//
+// Why coverage instead of "is any channel above 8": the sprite is drawn over a black
+// clear, so the result at each pixel is the sprite colour scaled by its own coverage.
+// A point on the antialiased edge of the rounded corner has non-zero coverage, and
+// BlueChannel > 8 is exactly what that looks like. The DIAG run showed this precisely:
+//
+//   DIAG centre       (32,32) BGRA = 204,102, 51   -> coverage 1.000
+//   DIAG inner corner (17,17) BGRA =  19, 10,  5   -> coverage 0.093
+//
+// (17,17) is 1.07px outside the corner arc — squarely inside the antialiasing band, so
+// it legitimately has ~9% coverage. The original assertion asked for "no colour" there
+// and could never be satisfied by a correct renderer. Measuring coverage lets the
+// assertion say what it actually means: this point should be essentially uncovered.
+//
+// Returns NaN when the pixel cannot be read, so callers cannot mistake a read failure
+// for a coverage of zero.
+double PixelCoverage(IWICBitmap* bitmap, UINT x, UINT y) {
+    if (!bitmap) return std::numeric_limits<double>::quiet_NaN();
     WICRect rect{0, 0, 64, 64};
     ComPtr<IWICBitmapLock> lock;
-    if (FAILED(bitmap->Lock(&rect, WICBitmapLockRead, lock.GetAddressOf()))) return false;
+    if (FAILED(bitmap->Lock(&rect, WICBitmapLockRead, lock.GetAddressOf())))
+        return std::numeric_limits<double>::quiet_NaN();
     UINT stride = 0;
     UINT bytes = 0;
     BYTE* data = nullptr;
-    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data) return false;
+    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data)
+        return std::numeric_limits<double>::quiet_NaN();
     const std::size_t offset = static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u;
-    if (offset + 3u >= bytes) return false;
-    const bool colored = data[offset] > 8 || data[offset + 1] > 8 || data[offset + 2] > 8;
-    return colored == expectedColor;
+    if (offset + 3u >= bytes) return std::numeric_limits<double>::quiet_NaN();
+    // The SelfTest sprites are solid blue-dominant colours, so the blue channel carries
+    // the signal. Dividing by the SelfTest's own max blue value keeps this a ratio
+    // rather than an absolute, and the assertion thresholds below are fractions.
+    const double blue = data[offset];
+    return std::clamp(blue / 204.0, 0.0, 1.0);  // 204 = round(0.8 * 255)
 }
 
 // Reads one positional channel of one pixel. The target's WIC bitmap is
@@ -955,25 +978,36 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             // lines, ran, failed, and told us nothing new — the round trip was wasted on
             // output nobody could read.
             auto dump = [&](UINT x, UINT y, const char* what) {
-                std::printf("         DIAG %-16s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
+                const double coverage = PixelCoverage(bitmap.Get(), x, y);
+                std::printf("         DIAG %-16s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u  覆盖率 = %.3f\n",
+                            what, x, y,
                             PixelChannel(bitmap.Get(), x, y, 0), PixelChannel(bitmap.Get(), x, y, 1),
-                            PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3));
+                            PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3),
+                            coverage);
             };
             // Dumped unconditionally, not only on failure: a passing assertion that prints
             // its numbers is what makes the next failing one diagnosable.
-            const bool centreColoured = PixelHasColor(bitmap.Get(), 32, 32, true);
-            const bool innerCornerClear = PixelHasColor(bitmap.Get(), 17, 17, false);
-            const bool outerCornerClear = PixelHasColor(bitmap.Get(), 2, 2, false);
+            // Thresholds are fractions of the sprite, so antialiasing cannot flip a
+            // verdict: a point fully inside reads ~1.0, a point well outside reads 0.0,
+            // and a point on the antialiased edge reads something in between — which is
+            // why the "dark" probe below is deliberately 2.5px outside the arc rather
+            // than the 1.07px that used to be sampled there.
+            const double centreCoverage = PixelCoverage(bitmap.Get(), 32, 32);
+            const double innerCornerCoverage = PixelCoverage(bitmap.Get(), 16, 16);
+            const double outerCornerCoverage = PixelCoverage(bitmap.Get(), 2, 2);
             dump(32, 32, "centre");
-            dump(17, 17, "inner corner");
+            dump(16, 16, "inner corner");
             dump(2, 2, "outer corner");
+            const bool centreColoured = centreCoverage > 0.5;
+            const bool innerCornerClear = innerCornerCoverage < 0.02;
+            const bool outerCornerClear = outerCornerCoverage < 0.02;
             // An edge scan, not just a centre/corner triple: it distinguishes "sprite not
             // drawn" from "drawn at the wrong extent, or scaled, or unrounded".
             std::printf("         DIAG y=32 scan:");
             for (UINT x = 0; x < 64; ++x) {
-                const bool lit = PixelChannel(bitmap.Get(), x, 32, 0) > 8 ||
-                                 PixelChannel(bitmap.Get(), x, 32, 1) > 8 ||
-                                 PixelChannel(bitmap.Get(), x, 32, 2) > 8;
+                // Coverage-based, so the two edge pixels report "lit" rather than sitting
+                // in the antialiasing no-man's-land between the old 0 and the old 1.
+                const bool lit = PixelCoverage(bitmap.Get(), x, 32) > 0.25;
                 std::printf("%d", lit ? 1 : 0);
                 if (x % 8 == 7) std::printf(" ");
             }
@@ -1041,7 +1075,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                     PixelChannel(bitmap.Get(), 32, 32, 1) == kMagentaBgra[1] &&
                     PixelChannel(bitmap.Get(), 32, 32, 2) == kMagentaBgra[2]),
              "B. 中心像素是 PNG 的品红(不是黑底,也不是 A 阶段的蓝)");
-        Step(ok && PixelHasColor(bitmap.Get(), 1, 1, true),
+        Step(ok && PixelCoverage(bitmap.Get(), 1, 1) > 0.5,
              "B. 四角也有颜色(cornerRadius=0,即整块被 brush 覆盖)");
         Step(ok && [&] {
             // A second draw must reuse the decoded bitmap, not re-decode per frame, and
@@ -1100,7 +1134,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                                          // the message has to name the offending component
                                          tintedError.find(L"component://panel/sprite") != std::wstring::npos &&
                                          // and nothing may have been painted
-                                         PixelHasColor(bitmap.Get(), 32, 32, false);
+                                         PixelCoverage(bitmap.Get(), 32, 32) < 0.02;
                     if (tintedError.empty()) tintedError = L"(绘制路径没有给出任何报错)";
                     error = tintedError;  // Step prints `error`, so surface the refusal's reason
                     Step(SUCCEEDED(target->EndDraw()) && refused,

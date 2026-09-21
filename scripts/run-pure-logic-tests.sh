@@ -1,51 +1,73 @@
 #!/usr/bin/env bash
-# 在 macOS 上真正编译并运行那 5 个 CI 从未跑过的测试目标。
+# 在 macOS 上真正编译并运行那些只依赖 content/ 纯逻辑层的测试目标。
 #
-# 原因:CMake 里它们链接 MiaoDeskCore,而 MiaoDeskCore 需要 Windows。但它们的实现
-# 依赖只落在 content/ 下少数纯逻辑源文件里,把那些单独链接起来即可运行。
-# 之前这些目标只做过 -fsyntax-only,等于从未验证过行为。
+# 为什么需要它:CMake 里这些目标链接 MiaoDeskCore,而 MiaoDeskCore 需要 Windows。
+# 先前我在本机只做过 -fsyntax-only,于是"编译通过"被当成了"测试通过";而 CI 里
+# 这些步骤其实一直是被跳过的。两者叠加,让这批测试从未真正验证过行为。
+#
+# 做法:挑出 content/ 下不依赖 Windows 头的源文件,连同测试一起链接。少数还需要
+# windows.h 的目标用 scripts/windows-shim(一个最小替身)补齐。
+#
+# 这不是 CI 的替代品,Windows 专属路径仍然只有 CI 能覆盖。
 set -u
-cd "$(dirname "$0")/../src" || exit 2
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/.." && pwd)
+cd "$ROOT/src" || exit 2
 
 CXX=${CXX:-clang++}
-STD="-std=c++2b -Iinclude"
+STD="-std=c++2b -Iinclude -Wno-deprecated-declarations"
+SHIM="$HERE/windows-shim"
 
-# 挑出不依赖 Windows 头的 content 源文件
+# 只保留不依赖 Windows 头的实现,否则单个文件就能让整个链接失败。
 SRCS=()
 for f in $(find content -name '*.cpp' | sort); do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then SRCS+=("$f"); fi
 done
-echo "可运行的实现源文件:${#SRCS[@]} 个"
-printf '   %s\n' "${SRCS[@]}"
+echo "可链接的实现源文件:${#SRCS[@]} 个"
 
-# 这些测试用 wmain 作入口(Windows 控制台程序)。在 macOS 上链接需要一个普通 main
-# 转接,否则报 "_main" undefined。
-cat >"/tmp/wmain_shim.cpp" <<'SHIM'
+# 测试用 wmain 作入口(Windows 控制台程序),macOS 上需要一个 main 转接。
+cat >/tmp/wmain_shim.cpp <<'SHIM'
 extern int wmain();
 int main() { return wmain(); }
 SHIM
 
-PASS=0; FAIL=0
-for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D; do
-  printf '%-22s ' "$t"
-  if $CXX $STD -O1 -Wno-deprecated-declarations -o "/tmp/r_$t" "/tmp/wmain_shim.cpp" \
-       "tests/$t.cpp" "${SRCS[@]}" 2>/tmp/lk_"$t"; then
-    if out=$("/tmp/r_$t" 2>&1); then rc=0; else rc=$?; fi
-    if [ "$rc" -eq 0 ]; then
-      echo "PASS"
-      printf '%s\n' "$out" | sed 's/^/        /' | tail -12
-      PASS=$((PASS+1))
-    else
-      echo "RUN FAIL (rc=$rc)"
-      printf '%s\n' "$out" | tail -15
-      FAIL=$((FAIL+1))
-    fi
+PASS=0; FAIL=0; SKIP=0
+
+run() {  # run <目标名> <测试源文件名> <额外源文件...>
+  local name="$1" file="$2"; shift 2
+  printf '%-26s ' "$name"
+  if ! $CXX $STD -I"$SHIM" -O1 -o "/tmp/run_$name" /tmp/wmain_shim.cpp \
+       "tests/$file" "$@" "${SRCS[@]}" 2>/tmp/build_"$name"; then
+    echo "BUILD FAIL"
+    grep -E "error:" /tmp/build_"$name" | head -4 | sed 's/^/      /'
+    FAIL=$((FAIL+1)); return
+  fi
+  local out rc=0
+  out=$("/tmp/run_$name" 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "PASS"
+    printf '%s\n' "$out" | grep -E "ALL CHECKS|PASSED|FAIL|failure" | tail -3 | sed 's/^/      /'
+    PASS=$((PASS+1))
   else
-    echo "LINK FAIL"
-    head -10 /tmp/lk_"$t"
+    echo "RUN FAIL (rc=$rc)"
+    printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
     FAIL=$((FAIL+1))
   fi
-done
+}
+
 echo
-echo "=== 通过 $PASS / 失败 $FAIL ==="
+echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
+for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore; do
+  run "$t" "$t.cpp"
+done
+
+echo
+echo "--- 只能在 Windows 上验证的目标 ---"
+echo "MediaWallpaperPackageTest  跳过(CI-only)"
+echo "      MediaWallpaperPackageTest 链接 WallpaperLibrary.cpp,而 UnicodeProfileFile.h:72"
+echo "      有静态断言 sizeof(wchar_t) == 2(Windows 配置持久化要求 UTF-16 wchar_t)。"
+echo "      macOS 的 wchar_t 是 4 字节,这是产品自身的设计约束,不是替身的缺陷,"
+echo "      也不该为了离线验证去绕过它。该目标只有 CI 能覆盖。"
+SKIP=$((SKIP+1))
+
 [ "$FAIL" -eq 0 ]

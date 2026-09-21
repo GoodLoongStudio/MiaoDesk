@@ -58,7 +58,10 @@ int wmain() {
 
     // A tiny but non-empty payload per extension is enough: Validate checks the
     // extension and existence, not the codec.
-    WriteBytes(sourceDir / L"clip.mp4", "\x00\x00\x00\x18ftypmp42media-payload");
+    //
+    // The string literals are split on purpose: \x18f would otherwise be one hex
+    // escape (f is a hex digit) instead of byte 0x18 followed by 'f'.
+    WriteBytes(sourceDir / L"clip.mp4", "\x00\x00\x00\x18" "ftypmp42media-payload");
     WriteBytes(sourceDir / L"photo.png", "\x89PNG\r\n\x1a\npayload");
     WriteBytes(sourceDir / L"notes.txt", "not a media file");
     WriteBytes(sourceDir / L"empty.mp4", "");

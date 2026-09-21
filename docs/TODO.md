@@ -518,8 +518,18 @@
   **已存在**的 MiaoDesk 表层重新排序(`RepairKnownMiaoDeskSurfaces`),不创建表层,
   所以它不可能凭空造出一个壁纸表层。真正会"重新拉起"的路径是运行时进程整体重启
   (Coordinator 重新评估 `Enabled`),这恰好就是冷启覆盖的场景。
+- **为什么期望值是 0**(不是"反正测一下"):`WallpaperWebRuntimeCoordinator` 的
+  `DesiredRequests()` 第一行就是 `if (!host || !IsWindow(host) || !state.enabled) return requests;`,
+  返回空列表;`startRequests()` 拿到空列表只调 `surfaces.Stop()` 并写
+  「未启用 Web 壁纸」,**不会 `Start()`**。所以 `Enabled=0` 时
+  `IndependentWallpaperSurface` 压根不创建。这条断言验的是"这个结论在整轮运行时重启
+  之后依然成立",而不是它在这个进程里碰巧成立。
+- **本机能验到什么**:C# 探针块用 macOS pwsh 的 `Add-Type` 真编译通过,两个方法
+  (`PaintReadyWidgetCount(Boolean)` / `VisibleWallpaperSurfaceCount()`)签名确认存在;
+  `if` 赋值、报错插值、`-ne 0` 分支方向逐条跑过。剩下只有 CI 能答:Windows 上真的
+  观测到几个表层。
 - **验收**:CI 中新增断言,模拟 reload 后壁纸仍保持停用。
-- **状态**:✅ 断言已写入;本机为 macOS 无法执行 PowerShell 闸门,待 Windows CI 确认
+- **状态**:✅ 断言已写入并通过本机可验的全部部分;Windows 上真实观测待 CI 确认
 
 ### P1-2 低常驻资源基线
 

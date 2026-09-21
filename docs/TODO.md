@@ -53,14 +53,60 @@
 - **依赖**:先把该分支从备份恢复到远端(内容已在本地 `_check/*` 引用与 608M bundle 中)
 - **状态**:❌ 未开始 —— 分支已不在远端
 
-### P0-4 壁纸 `.mdwall` dogfood 补齐
+### P0-4 壁纸 `.mdwall` dogfood 补齐 ❌ 仍未完成(阻塞点已定位,不是"补内容"那么简单)
 
 - **依据**:`MIAODESK_CONTENT_FRAMEWORK.md` §17 第一阶段第 10 项;§19 完成标准
-- **为什么阻塞**:三个官方壁纸包(`MiaoCloud` / `MysticMoon` / `NeonCity`)只有 `manifest.json` + `scene.ini`
-  (旧格式),缺 `scene.json` / `parameters.json`。Phase 3 十项卡在最后一项,完成标准里
-  "至少一个官方 Wallpaper 通过同一框架运行"未达成。
-- **依赖**:同 P0-3,补齐提交在未合入分支 `fix/unicode-wallpaper-theme-packages` 上
-- **状态**:❌ 未开始
+- **原判断被两次推翻**:
+  第一次:我以为合入 `fix/unicode-wallpaper-theme-packages` 就能关上。**错** ——
+  实测该分支加的三份 `scene.json` 是空壳且被 `legacy_entry` 遮蔽(见下)。
+  第二次:我以为"剩余工作就是把 scene.ini 的 5 个 Layer 翻译成 scene.json 节点"。
+  **也错** —— 读完渲染契约后发现根本性的阻塞。
+- **实测证据(一):scene.json 被遮蔽且是空壳**
+  三个包的 `manifest.json` 同时写 `"entry": "scene.json"` 与
+  `"legacy_entry": "scene.ini"`,而 `WallpaperPackage::LoadAndValidate`
+  **优先取 `legacy_entry`**。实测 MiaoCloud / MysticMoon / NeonCity 解析出的
+  entry 全部是 `scene.ini`。即便解除遮蔽,这三份 scene.json 各只有 1 个 root 节点
+  (单个 transform + opacity)、0 资产、0 绑定、0 动画、0 后处理;
+  而 `scene.ini` 描述 5 个 Layer、引用 5 个真实资产。
+- **实测证据(二):渲染契约不支持贴图 sprite —— 这才是真阻塞**
+  - `spriteRenderer` 的属性只有 `opacity` / `tint` / `cornerRadius` / `materialId`,
+    **没有 asset / texture 属性**;取图只能经由 material。
+  - builtin 材质**只有 `solidColor` 一种**(D2D 渲染器 `MiaoSceneD2DRenderer.cpp:335`
+    只处理 solidColor;D3D11 `MiaoSceneD3D11Renderer.cpp:602` 明确报错
+    "D3D11 MVP currently supports builtin solidColor or programmable materials")。
+  - 仓库内所有包的 `materials[].textures` **一律为 `[]`**,没有一个贴图样例。
+  - `textures[]` 取图只对**可编程材质**开放
+    (`MiaoSceneD3D11Renderer.cpp:610-625`:需 `MaterialModel::Programmable` +
+    pixelShaderId + texture slot + `AssetType::Image` 资产 + `MiaoD3D11TextureLoader`)。
+  - D2D 渲染器**完全没有取图路径**(全文件无 bitmap/WIC 纹理加载,sprite 只能出纯色)。
+  结论:把 scene.ini 的图片图层迁到 scene.json,要么给两个渲染器都加一个带贴图的
+  builtin 材质,要么为每层写可编程材质 + 像素 shader。两者都是渲染侧改动,
+  需要 D3D11 / DirectWrite / D3DCompiler,本机(macOS)无法编译验证。
+- **所以刻意不做的**:不写一份"能通过校验但渲染不出来"的 scene.json。
+  那会得到三个校验通过、桌面上却什么都没有的官方壁纸 ——
+  正是 `content-review` 与 `wallpaper-content` 反复禁止的那种静默失败。
+- **剩余工作(按依赖顺序)**:
+  1. **渲染侧**(阻塞项):为 D2D 与 D3D11 加带贴图的 builtin 材质
+     (例如 `builtinName: "textured"` + 一个固定 texture slot),或在
+     `AssetType::Image` 与 `SpriteRenderer` 之间开一条直接引用路径。
+     输出需含 Windows 侧编译与真机截图验证。
+  2. 内容迁移:5 个 Layer → 5 个 `node://<name>`,各带 `Transform` +
+     `SpriteRenderer{materialId}`;`design_width/height` 与各层
+     x/y/width/height 映射到 Transform 的 `position` / `scale`;
+     `opacity` 映射到两处;文件引用 → `AssetDefinition{asset://<name>, Image}`。
+  3. 动画:`none` / `drift` / `sway` / `breathe` / `blink` / `float` 六种
+     → `AnimationTrackDefinition`(注意 `blink` 是间歇触发,与
+     `AnimationTriggerMode::InputRisingEdge` 的语义最接近)。
+  4. `[Particles]` → `ParticleEmitterDefinition`
+     (sparkle / petal / flow 各一个,注意 `kMaxParticlesPerScene = 131072` 预算)。
+  5. 补 `parameters.json`(外观参数)。
+  6. 从 `manifest.json` 删 `legacy_entry`,删除 `scene.ini`。
+  7. 重跑 `verify-wallpaper-library-derived-views.ps1` 等 6 个脚本 ——
+     需先确认它们的输入源是否仍指向 `scene.ini`。
+  8. 验收:`MiaoSceneSerializer::Deserialize` + `Validate` + `Initialize` 通过,
+     且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`;
+     最终以"壁纸在真机上显示全部 5 层且眨眼动画生效"为准。
+- **状态**:❌ 未完成 —— 分支只做了 manifest 规范化;内容迁移被"渲染契约不支持贴图 sprite"阻塞
 
 ### P0-5 本地 AI 组件许可证书面确认
 

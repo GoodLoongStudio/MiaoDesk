@@ -123,6 +123,23 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
   选择"按需加载"而非"常驻注入":4 份规范合计 9,307 UTF-16 字符,虽塞得进 Windows
   命令行上限(实测 1,969 / 32,767),但常驻意味着每轮对话都付这份 token,
   对 32K 上下文的本地小模型不可接受。同时新增 6 个 Windows CI 测试门。
+- **P0-4 并未完成(实测结论,勿误记)** — `fix/unicode-wallpaper-theme-packages`
+  给三个官方包加了 `scene.json`,但(1) manifest 同时保留 `legacy_entry=scene.ini`,
+  而 `LoadAndValidate` 优先取 `legacy_entry`,实测三个包解析出的 entry 全是
+  `scene.ini`,`scene.json` 被遮蔽;(2) 这三份 `scene.json` 是空壳 —— 各只有 1 个 root
+  节点、0 资产、0 绑定、0 动画,而同目录 `scene.ini` 描述 5 个 Layer、引用 5 个真实资产。
+  §19「至少一个官方 Wallpaper 通过 Content Framework 运行」仍未达成;
+  当前状态正是 skill 禁止的「scene.ini 与 scene.json 描述同一个包」。
+  剩余工作已按依赖顺序写入 `docs/TODO.md` P0-4。
+
+- **未合入分支已全部处理完毕** — 三支此前不在主干的工作已合并:
+  `feat/content-widget-settings`(P0-3,TodayTasks,25 提交)、
+  `fix/unicode-wallpaper-theme-packages`(canonical manifest 与 Unicode 主题,78 提交)、
+  `fix/content-widget-install-runtime-reload`(16 提交)。
+  两条独立历史各自创建 `ContentWidgetPreviewRenderer.cpp` 与
+  `ContentWidgetSettingsDialog.cpp`(均非对方祖先),已逐行比对天气发布语句确认
+  分支版是正确超集后取分支版;按 add/add 常规做法直接取一侧会静默删掉天气发布。
+
 - **对标 Wallpaper Engine 能力基准（B-8 + 差距清单）** — 新增
   `docs/WALLPAPER_ENGINE_BENCHMARK.md`:官方三类创作类型(Scene 含 2D/3D 子类、Web、Video;
   Application 已因恶意软件风险从 Workshop 移除)逐能力对标,每项带代码证据。

@@ -14,8 +14,10 @@ bash scripts/run-pure-logic-tests.sh         # 真实编译并运行不依赖 Wi
 bash scripts/verify-skill-allowlist.sh       # content_skill_get 白名单 与 skills/ 目录双向比对
 bash scripts/verify-no-conflict-markers.sh   # 拒绝未解决的合并冲突标记
 bash scripts/verify-cmake-covers-sources.sh  # 磁盘上的 .cpp 是否真的被 CMake 编译
+bash scripts/verify-cmake-target-hygiene.sh  # CMake 目标结构:顺序 / 清单 / 链接 / 单一 owner
 bash scripts/verify-workflow-paths.sh        # 工作流的 paths 过滤是否覆盖它自己跑的文件
 bash scripts/verify-media-package-offline.sh # CreateVideo/CreateImage + Validate(CI 第 1 节)
+bash scripts/verify-scene-fixture-parity.sh  # 两份贴图场景 fixture 是否已分叉
 ```
 
 依赖:`brew install mingw-w64`(`verify-windows-syntax.sh` 用)、`clang++`
@@ -42,7 +44,9 @@ MSVC 才能看见的类型错误。
 | `verify-skill-allowlist.sh` | 白名单与 `skills/` 是否一致 | CI 上真实的注入效果 |
 | `verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | `verify-cmake-covers-sources.sh` | 磁盘上的 `.cpp` 是否真的被 CMake 编译 | CMakeLists 本身的意图是否合理 |
+| `verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 清单一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链接到的库是否真是它需要的那个;`LINKS_NOTHING` 里的登记是否仍然成立 |
 | `verify-workflow-paths.sh` | 工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽(过宽不算错) |
+| `verify-scene-fixture-parity.sh` | 两份贴图场景 fixture(真渲染用的那份 / 本机验 schema 的那份)是否分叉 | Windows 那份是否真能画出来 —— 那只有 CI 能答 |
 | `verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 见下面「各闸门的覆盖边界」 |
 
 九个 CMake 测试目标里,三个原本只有 CI 能覆盖,共同原因是它们 include

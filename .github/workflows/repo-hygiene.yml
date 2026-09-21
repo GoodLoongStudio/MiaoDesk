@@ -55,6 +55,16 @@ jobs:
         shell: bash
         run: bash scripts/verify-workflow-paths.sh
 
+      # CMake 目标结构。一天之内在本仓库踩了三次,而这三类错此前没有任何闸门看得见:
+      #   add_executable 追加在 foreach 之后 → Configure 期报错、编译期表现为找不到头文件;
+      #   有声明但没有 target_link_libraries → 编译通过、链接才 LNK2019,而本机语法门
+      #     只做 -fsyntax-only,看不见;
+      #   同一个 .cpp 出现在两处源清单 → verify-path-layout-contract.ps1 的 one-owner
+      #     规则,而那个脚本在 macOS 上会因反斜杠 allowlist 假阳性,本机一直没人跑得动它。
+      - name: Verify CMake target structure
+        shell: bash
+        run: bash scripts/verify-cmake-target-hygiene.sh
+
       # 贴图场景 fixture 有两份,一份给 Windows 上的真渲染,一份给本机验 schema。
       # 只改一边的后果是:本机那份永远绿着,Windows 那份跑真渲染时才因为一个字段名
       # 写错而失败,报的却是"绘制失败",没有任何线索指向 fixture。

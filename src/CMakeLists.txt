@@ -83,9 +83,16 @@ set(MIAODESK_HARNESS_CORE_SOURCES
     harness/HarnessSettingsBridge.cpp
 )
 
-set(MIAODESK_WALLPAPER_SOURCES
-    content/render/d2d/MiaoSceneD2DRenderer.cpp
+# The 2D scene renderer is a library, not part of the wallpaper EXE's source list, so
+# that the D2D renderer SelfTest target can link it. Two CMake owners for one .cpp is
+# a path-layout-contract violation (scripts/verify-path-layout-contract.ps1), and the
+# contract's own prescribed remedy is a library target.
+set(MIAODESK_SCENE2D_SOURCES
     content/render/d2d/MiaoD2DTextureLoader.cpp
+    content/render/d2d/MiaoSceneD2DRenderer.cpp
+)
+
+set(MIAODESK_WALLPAPER_SOURCES
     content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
     content/render/d3d11/MiaoD3D11RenderTarget.cpp
     # MiaoSceneD3D11Renderer.cpp references MiaoD3D11TextureLoader::LoadImageW and
@@ -152,6 +159,7 @@ endif()
 
 add_library(MiaoDeskCore STATIC ${MIAODESK_CORE_SOURCES})
 add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
+add_library(MiaoDeskScene2D STATIC ${MIAODESK_SCENE2D_SOURCES})
 add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
@@ -192,6 +200,7 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MI
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_HARNESS_CORE_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_APP_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_WALLPAPER_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_SCENE2D_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_HARNESS_SOURCES})
 
 set_source_files_properties(ai/tools/NativeTools.cpp PROPERTIES
@@ -207,7 +216,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -224,6 +233,7 @@ target_include_directories(MiaoDeskCore SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}"
 if (MSVC)
     target_compile_options(MiaoDeskCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarnessCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskScene2D PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -262,6 +272,7 @@ target_link_libraries(MiaoDesk PRIVATE
 
 target_link_libraries(MiaoDeskWallpaper PRIVATE
     MiaoDeskCore
+    MiaoDeskScene2D
     user32
     gdi32
     shell32
@@ -360,22 +371,23 @@ target_link_libraries(MiaoDeskSceneSpatial3DTest PRIVATE
     MiaoDeskCore
 )
 
+# MiaoSceneModel.cpp lives in MiaoDeskCore; without this line the target compiles and
+# then fails to link MiaoSceneModel::Validate.
+target_link_libraries(MiaoDeskSpriteTextureContractTest PRIVATE
+    MiaoDeskCore
+)
+
 target_link_libraries(MiaoDeskSceneTextureFixtureTest PRIVATE
     MiaoDeskCore
 )
 
 # This one drives the real D2D renderer: it owns a render target, so it links the same
-# graphics and codec libraries MiaoDeskWallpaper does. The renderer's own two TUs come
-# in through target_sources because they belong to MIAODESK_WALLPAPER_SOURCES — they
-# are not in MiaoDeskCore, so without listing them the SelfTest's symbols are missing
-# at link time (the same shape of failure as the LNK2019 recorded in
-# verify-cmake-covers-sources.sh).
-target_sources(MiaoDeskSceneD2DRendererTest PRIVATE
-    content/render/d2d/MiaoSceneD2DRenderer.cpp
-    content/render/d2d/MiaoD2DTextureLoader.cpp
-)
+# graphics and codec libraries MiaoDeskWallpaper does. The renderer comes from the
+# MiaoDeskScene2D library rather than from listing its .cpp here, because each
+# implementation file has exactly one CMake owner.
 target_link_libraries(MiaoDeskSceneD2DRendererTest PRIVATE
     MiaoDeskCore
+    MiaoDeskScene2D
     user32
     gdi32
     shell32

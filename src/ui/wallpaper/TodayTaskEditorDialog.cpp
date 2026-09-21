@@ -332,9 +332,13 @@ void LayoutEditor(EditorState& state) {
     const int statusH = S(state.window, 28);
     const int gap = S(state.window, 8);
     const int buttonW = S(state.window, 96);
-    const int listBottom = rc.bottom - margin - statusH - gap - buttonH - gap;
-    MoveWindow(state.list, margin, margin, std::max(1, rc.right - margin * 2), std::max(1, listBottom - margin), TRUE);
-    MoveWindow(state.status, margin, listBottom + gap, std::max(1, rc.right - margin * 2), statusH, TRUE);
+    // RECT.right/bottom are LONG, so the arithmetic stays long until it is
+    // explicitly narrowed. std::max(1, LONG) cannot deduce a single template
+    // argument and is ill-formed; keep everything int and cast at the source.
+    const int listBottom = static_cast<int>(rc.bottom) - margin - statusH - gap - buttonH - gap;
+    const int contentWidth = std::max(1, static_cast<int>(rc.right) - margin * 2);
+    MoveWindow(state.list, margin, margin, contentWidth, std::max(1, listBottom - margin), TRUE);
+    MoveWindow(state.status, margin, listBottom + gap, contentWidth, statusH, TRUE);
     int x = margin;
     for (const int id : {kAddId, kEditId, kToggleId, kDeleteId}) {
         HWND button = GetDlgItem(state.window, id);
@@ -344,7 +348,7 @@ void LayoutEditor(EditorState& state) {
     MoveWindow(GetDlgItem(state.window, kCloseId), rc.right - margin - buttonW,
                rc.bottom - margin - buttonH, buttonW, buttonH, TRUE);
 
-    const int listW = std::max(1, rc.right - margin * 2 - GetSystemMetrics(SM_CXVSCROLL) - S(state.window, 8));
+    const int listW = std::max(1, contentWidth - GetSystemMetrics(SM_CXVSCROLL) - S(state.window, 8));
     ListView_SetColumnWidth(state.list, 0, S(state.window, 70));
     ListView_SetColumnWidth(state.list, 1, std::max(S(state.window, 180), listW * 45 / 100));
     ListView_SetColumnWidth(state.list, 2, LVSCW_AUTOSIZE_USEHEADER);

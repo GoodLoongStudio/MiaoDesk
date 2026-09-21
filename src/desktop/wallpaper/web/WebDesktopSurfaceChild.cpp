@@ -348,7 +348,9 @@ private:
     // src/desktop/wallpaper/web/WallpaperWebAudioBridge.js, which is the source of
     // truth and the file the CI gate asserts against. Duplicating it here is what
     // lets the product ship without adding a packaging step, at the cost of a guard.
-    constexpr std::string_view kWebAudioBridgeScript = R"MDWBRIDGE(
+    // static is required, not decoration: a non-static constexpr data member is
+    // ill-formed C++, and this bridge script is the same for every instance.
+    static constexpr std::string_view kWebAudioBridgeScript = R"MDWBRIDGE(
 // MiaoDesk web wallpaper audio bridge.
 //
 // Injected into every web wallpaper by WebDesktopSurfaceChild. Hand-authored web

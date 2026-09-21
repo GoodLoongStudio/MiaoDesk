@@ -175,17 +175,44 @@ def build():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--write", action="store_true", help="写回 scene.json")
+    ap.add_argument("--check", action="store_true",
+                    help="只比对:重新生成并与磁盘上的 scene.json 逐字节比较,不一致则非零退出")
     args = ap.parse_args()
+    if args.write and args.check:
+        ap.error("--write 与 --check 互斥")
+
+    # build() 里包含对每层的逆合成 assert,所以三种模式都会先验几何。
     doc = build()
     text = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
-    if not args.write:
-        sys.stdout.write(text)
+
+    if args.check:
+        target = PACKAGE / "scene.json"
+        try:
+            on_disk = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            sys.exit("❌ 读不到 %s:%s" % (target, exc))
+        if on_disk != text:
+            sys.exit(
+                "❌ %s 与重新生成的结果不一致。\n"
+                "  scene.ini 是几何的唯一来源;scene.json 是它的产物。\n"
+                "  手改 scene.json 会让二者悄悄分叉 —— 而分叉的后果是图层位置\n"
+                "  与源不符,却没有任何测试会报错。\n"
+                "  修法:改 scene.ini,然后 python3 %s --write;\n"
+                "  或者确认这次偏离是有意的,并把理由写进提交信息。"
+                % (target, __file__))
+        print("✅ %s 与 scene.ini 一致(%d 节点 / %d 资产,几何逐字节复现)"
+              % (target, len(doc["nodes"]), len(doc["assets"])))
         return 0
-    target = PACKAGE / "scene.json"
-    target.write_text(text, encoding="utf-8")
-    print("已写入 %s" % target)
-    print("节点 %d 个(1 root + %d 图层),资产 %d 个" % (len(doc["nodes"]), len(doc["nodes"]) - 1, len(doc["assets"])))
+
+    if args.write:
+        target = PACKAGE / "scene.json"
+        target.write_text(text, encoding="utf-8")
+        print("已写入 %s" % target)
+        print("节点 %d 个(1 root + %d 图层),资产 %d 个" % (len(doc["nodes"]), len(doc["nodes"]) - 1, len(doc["assets"])))
+        return 0
+
+    sys.stdout.write(text)
     return 0
 
 

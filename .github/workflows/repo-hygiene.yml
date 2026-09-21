@@ -55,6 +55,14 @@ jobs:
         shell: bash
         run: bash scripts/verify-workflow-paths.sh
 
+      # MiaoCloud 的 scene.json 是 scene.ini 的产物,不是第二份手写源。
+      # 分叉的后果很具体:图层位置与源不符,而**没有任何测试会发现** ——
+      # C++ 侧的 BuiltinWallpaperPackages 只验它能解析与资产在不在,不验几何。
+      # 生成器内部还会对每层做一次逆合成 assert,所以这一步同时是几何校验。
+      - name: Verify MiaoCloud scene.json has not drifted from scene.ini
+        shell: bash
+        run: python3 scripts/generate-miao-cloud-scene.py --check
+
       # verify-path-layout-contract.ps1 里与平台无关的那几条。整段那个 .ps1 在
       # macOS 上跑不了(它按反斜杠比对一个 allowlist,而 macOS 的 FullName 是正斜杠,
       # 假阳性),于是那些规则本机一直没人跑得动 —— 2026-09-22 就有一句**注释**里的

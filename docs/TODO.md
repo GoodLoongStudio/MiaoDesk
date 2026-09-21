@@ -528,7 +528,7 @@ ARM64 Package)在同一提交上仍在跑。
 
 ## P1 — 门的其余验收项
 
-### P1-1 停用幂等的 reload 断言 ✅ 已实施(2026-09-22),待 Windows CI 确认
+### P1-1 停用幂等的 reload 断言 ✅ 已在真实 Windows CI 通过
 
 - **依据**:`DEVELOPMENT_ROADMAP.md` §3 P0-2
 - **现状**:`verify-widget-visibility.ps1:132-137` 已断言 `Enabled 1→0→1` 与壁纸停用下的组件生命周期,

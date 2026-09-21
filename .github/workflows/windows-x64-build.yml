@@ -136,7 +136,11 @@ jobs:
       - name: Verify web audio bridge has not drifted
         shell: pwsh
         run: |
-          $gateOut = .\scripts\verify-web-audio-bridge.ps1 2>&1
+          # 必须经子 pwsh 调用:.\script.ps1 是 PowerShell 脚本而不是原生可执行文件,
+          # 直接调用不会设置 $LASTEXITCODE。那一步之前又没有别的原生命令,于是
+          # $LASTEXITCODE 是 $null,而 `$null -ne 0` 恒为真 —— 这一步从写下来就
+          # 不可能通过,和脚本本身过没过无关。
+          $gateOut = & pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\verify-web-audio-bridge.ps1 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {

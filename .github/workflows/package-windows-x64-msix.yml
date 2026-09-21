@@ -145,9 +145,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\packaging\store\msix\pack-msix.ps1 `
+          $gateOut = & .\packaging\store\msix\pack-msix.ps1 `
             -StageRoot $env:MIAODESK_STAGE_ROOT `
-            $gateOut = -OutputMsix $env:MIAODESK_MSIX_PATH 2>&1
+            -OutputMsix $env:MIAODESK_MSIX_PATH 2>&1
             $gateExit = $LASTEXITCODE
             $gateOut | Write-Host
             if ($gateExit -ne 0) {

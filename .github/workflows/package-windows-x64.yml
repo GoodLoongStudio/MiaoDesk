@@ -391,9 +391,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           try {
-            & (Join-Path $env:GITHUB_WORKSPACE 'packaging\store\msix\pack-msix.ps1') `
+            $gateOut = & (Join-Path $env:GITHUB_WORKSPACE 'packaging\store\msix\pack-msix.ps1') `
               -StageRoot $env:MIAODESK_STAGE_ROOT `
-              $gateOut = -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix' 2>&1
+              -OutputMsix 'C:\pkg\MiaoDesk\MiaoDesk-x64.msix' 2>&1
               $gateExit = $LASTEXITCODE
               $gateOut | Write-Host
               if ($gateExit -ne 0) {

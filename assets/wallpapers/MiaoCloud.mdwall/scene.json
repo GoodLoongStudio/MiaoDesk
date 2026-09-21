@@ -15,16 +15,428 @@
           "id": "component://root/transform",
           "kind": "transform",
           "properties": [
-            {"name": "opacity", "type": "float", "default": 1.0}
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/background",
+      "name": "background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/0/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        },
+        {
+          "id": "component://layer/0/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/background/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/cloud_pedestal",
+      "name": "cloud_pedestal",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                39.00000000000003,
+                51.000000000000014
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                0.7476076555023924,
+                0.7470775770456961
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.92
+            }
+          ]
+        },
+        {
+          "id": "component://layer/1/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/cloud_pedestal/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/tail",
+      "name": "tail",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                689.5,
+                167.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                0.16447368421052633,
+                0.2922422954303932
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        },
+        {
+          "id": "component://layer/2/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/tail/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/cat",
+      "name": "cat",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                494.0,
+                130.00000000000003
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                0.29904306220095694,
+                0.6641870350690755
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        },
+        {
+          "id": "component://layer/3/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/cat/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/blink",
+      "name": "blink",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/4/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                468.0,
+                30.5
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                0.16507177033492823,
+                0.30818278427205104
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.98
+            }
+          ]
+        },
+        {
+          "id": "component://layer/4/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/blink/image"
+            }
           ]
         }
       ]
     }
   ],
-  "assets": [],
+  "assets": [
+    {
+      "id": "asset://layer/background/image",
+      "type": "image",
+      "source": "assets/background.jpg"
+    },
+    {
+      "id": "asset://layer/cloud_pedestal/image",
+      "type": "image",
+      "source": "assets/cloud.png"
+    },
+    {
+      "id": "asset://layer/tail/image",
+      "type": "image",
+      "source": "assets/tail.png"
+    },
+    {
+      "id": "asset://layer/cat/image",
+      "type": "image",
+      "source": "assets/cat.png"
+    },
+    {
+      "id": "asset://layer/blink/image",
+      "type": "image",
+      "source": "assets/blink.png"
+    }
+  ],
   "shaders": [],
   "materials": [],
-  "inputs": [],
+  "inputs": [
+    {
+      "id": "input://frame/time",
+      "type": "float",
+      "default": 0.0
+    }
+  ],
   "bindings": [],
   "animations": [],
   "postProcesses": []

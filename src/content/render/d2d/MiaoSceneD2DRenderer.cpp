@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <optional>
 #include <system_error>
@@ -794,50 +795,68 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     if (ok) ok = SUCCEEDED(factory->CreateWicBitmapRenderTarget(bitmap.Get(), D2D1::RenderTargetProperties(), target.GetAddressOf()));
 
     std::wstring error;
-    MiaoSceneD2DRenderer renderer;
-    if (ok) ok = renderer.Load(root, target.Get(), &error);
-    if (ok) ok = renderer.SetParameter(L"param://opacity", 0.6, &error);
-    if (ok) ok = renderer.SetDataValue(L"weather.condition", std::wstring(L"晴"), &error);
-    if (ok) {
-        target->BeginDraw();
-        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-        ok = renderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
-        ok = SUCCEEDED(target->EndDraw()) && ok && renderer.Loaded() && renderer.Profile() == RuntimeProfile::Widget;
-    }
-    if (ok) {
-        ok = PixelHasColor(bitmap.Get(), 32, 32, true) &&
-             PixelHasColor(bitmap.Get(), 17, 17, false) &&
-             PixelHasColor(bitmap.Get(), 2, 2, false);
-    }
-    if (ok) {
-        MiaoSceneFrameDemand idleDemand;
-        ok = renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;
-    }
-    if (ok) {
-        ok = renderer.SetInput(L"input://event/pulse", true, &error);
-        MiaoSceneFrameDemand activeDemand;
-        ok = ok && renderer.PrepareFrame(1.0, &activeDemand, 60, &error) && activeDemand.render && activeDemand.continuousAnimation && activeDemand.intervalMs == 17;
-    }
-    if (ok) {
-        target->BeginDraw();
-        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-        ok = renderer.Draw(1.25f, D2D1::SizeF(64.0f, 64.0f), &error);
-        ok = SUCCEEDED(target->EndDraw()) && ok;
-    }
-    if (ok) {
-        MiaoSceneFrameDemand terminalDemand;
-        ok = renderer.PrepareFrame(1.5, &terminalDemand, 60, &error) && terminalDemand.render;
-        if (ok) {
-            target->BeginDraw();
-            target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-            ok = renderer.Draw(1.5f, D2D1::SizeF(64.0f, 64.0f), &error);
-            ok = SUCCEEDED(target->EndDraw()) && ok;
+    // A boolean with no output is unactionable in CI: this gate runs as a Windows step
+    // whose only signal is the ::error:: annotations the wrapper emits, and
+    // "SelfTest returned false" names nothing — it does not say which of the two phases
+    // failed, or why. Every step below prints its own line, so the annotation carries
+    // the failing step's name plus the renderer's error text.
+    std::printf("\n--- MiaoSceneD2DRenderer::SelfTest ---\n");
+    int failures = 0;
+    auto Step = [&](bool condition, const char* what) {
+        std::printf("  [%s] %s\n", condition ? "PASS" : "FAIL", what);
+        if (!condition) {
+            ++failures;
+            ok = false;  // every step is guarded by `ok &&`, so this stops the cascade
+            if (!error.empty()) std::printf("         (error = %ls)\n", error.c_str());
         }
-    }
-    if (ok) {
+        return condition;
+    };
+
+    MiaoSceneD2DRenderer renderer;
+    Step(ok && renderer.Load(root, target.Get(), &error), "A. 加载纯色 + 文本的 widget 场景");
+    Step(ok && renderer.SetParameter(L"param://opacity", 0.6, &error), "A. 参数透传(param://opacity)");
+    Step(ok && renderer.SetDataValue(L"weather.condition", std::wstring(L"晴"), &error), "A. 宿主数据注入(weather.condition)");
+    Step(ok && [&] {
+        target->BeginDraw();
+        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+        const bool drew = renderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
+        return SUCCEEDED(target->EndDraw()) && drew && renderer.Loaded() &&
+               renderer.Profile() == RuntimeProfile::Widget;
+    }(), "A. 首帧绘制并 EndDraw,Loaded 与 profile 正确");
+    Step(ok && (PixelHasColor(bitmap.Get(), 32, 32, true) &&
+                PixelHasColor(bitmap.Get(), 17, 17, false) &&
+                PixelHasColor(bitmap.Get(), 2, 2, false)),
+         "A. 纯色 sprite 落在中心、圆角让四角留黑");
+    Step(ok && [&] {
+        MiaoSceneFrameDemand idleDemand;
+        return renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;
+    }(), "A. 静止时帧调度器不要求重绘");
+    Step(ok && [&] {
+        if (!renderer.SetInput(L"input://event/pulse", true, &error)) return false;
+        MiaoSceneFrameDemand activeDemand;
+        return renderer.PrepareFrame(1.0, &activeDemand, 60, &error) && activeDemand.render &&
+               activeDemand.continuousAnimation && activeDemand.intervalMs == 17;
+    }(), "A. 脉冲触发后进入连续动画(17ms 间隔)");
+    Step(ok && [&] {
+        target->BeginDraw();
+        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+        const bool drew = renderer.Draw(1.25f, D2D1::SizeF(64.0f, 64.0f), &error);
+        return SUCCEEDED(target->EndDraw()) && drew;
+    }(), "A. 动画进行中再画一帧");
+    Step(ok && [&] {
+        MiaoSceneFrameDemand terminalDemand;
+        if (!renderer.PrepareFrame(1.5, &terminalDemand, 60, &error) || !terminalDemand.render) return false;
+        target->BeginDraw();
+        target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+        const bool drew = renderer.Draw(1.5f, D2D1::SizeF(64.0f, 64.0f), &error);
+        return SUCCEEDED(target->EndDraw()) && drew;
+    }(), "A. 动画收尾帧");
+    Step(ok && [&] {
         MiaoSceneFrameDemand completedDemand;
-        ok = renderer.PrepareFrame(1.75, &completedDemand, 60, &error) && !completedDemand.render;
-    }
+        return renderer.PrepareFrame(1.75, &completedDemand, 60, &error) && !completedDemand.render;
+    }(), "A. 动画结束后回到静止");
+
+    ok = failures == 0;
 
     // --- Phase B: a textured sprite, in a package that has no material at all. ---
     //
@@ -881,37 +900,32 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         // are scene-runtime content.
         ok = WriteSelfTestPng(wic.Get(), textured / L"assets" / L"panel.png", kMagentaBgra) &&
              WriteTextFile(textured / L"scene.json", texturedScene);
+        Step(ok, "B. 用 WIC 写出 2x2 品红 PNG 并落成包内资产");
 
         MiaoSceneD2DRenderer texturedRenderer;
-        if (ok) ok = texturedRenderer.Load(textured, target.Get(), &error);
-        if (ok) {
+        Step(ok && texturedRenderer.Load(textured, target.Get(), &error),
+             "B. 贴图场景加载(该场景一个 material 都没有)");
+        Step(ok && [&] {
             target->BeginDraw();
             target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-            ok = texturedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
-            ok = SUCCEEDED(target->EndDraw()) && ok;
-        }
-        if (ok) {
-            // Scale 1.0 / position 0 covers the whole target, so the centre must be the
-            // texture's colour and not the black clear, and not the phase-A blue.
-            ok = PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0] &&
-                 PixelChannel(bitmap.Get(), 32, 32, 1) == kMagentaBgra[1] &&
-                 PixelChannel(bitmap.Get(), 32, 32, 2) == kMagentaBgra[2];
-        }
-        if (ok) {
-            // cornerRadius is 0 here, so the corners are covered too. That this holds
-            // is the point of using a brush rather than the solid path: the rounded
-            // variant would leave them black.
-            ok = PixelHasColor(bitmap.Get(), 1, 1, true);
-        }
-        if (ok) {
+            const bool drew = texturedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &error);
+            return SUCCEEDED(target->EndDraw()) && drew;
+        }(), "B. 贴图 sprite 首帧绘制");
+        Step(ok && (PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0] &&
+                    PixelChannel(bitmap.Get(), 32, 32, 1) == kMagentaBgra[1] &&
+                    PixelChannel(bitmap.Get(), 32, 32, 2) == kMagentaBgra[2]),
+             "B. 中心像素是 PNG 的品红(不是黑底,也不是 A 阶段的蓝)");
+        Step(ok && PixelHasColor(bitmap.Get(), 1, 1, true),
+             "B. 四角也有颜色(cornerRadius=0,即整块被 brush 覆盖)");
+        Step(ok && [&] {
             // A second draw must reuse the decoded bitmap, not re-decode per frame, and
             // must produce the same pixels.
             target->BeginDraw();
             target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-            ok = texturedRenderer.Draw(2.0f, D2D1::SizeF(64.0f, 64.0f), &error);
-            ok = SUCCEEDED(target->EndDraw()) && ok &&
-                 PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0];
-        }
+            const bool drew = texturedRenderer.Draw(2.0f, D2D1::SizeF(64.0f, 64.0f), &error);
+            return SUCCEEDED(target->EndDraw()) && drew &&
+                   PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0];
+        }(), "B. 连画第二遍结果一致(位图缓存生效,不是每帧重解码)");
 
         // A non-white tint on a textured sprite is refused, not silently dropped. This
         // pins that refusal: without it the constraint could be quietly removed and
@@ -948,17 +962,24 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             // is what makes the next assertion meaningful.
             if (ok && WriteSelfTestPng(wic.Get(), tinted / L"assets" / L"panel.png", kMagentaBgra) &&
                        WriteTextFile(tinted / L"scene.json", tintedScene)) {
-                if (!tintedRenderer.Load(tinted, target.Get(), &tintedError)) {
-                    ok = false;
-                } else {
+                // Load must still succeed: a non-white tint is a perfectly legal scene,
+                // and the model validator accepts it. It is the draw path that refuses.
+                Step(tintedRenderer.Load(tinted, target.Get(), &tintedError),
+                     "B. 非白色 tint 的场景仍然能加载(它在模型层合法)");
+                if (ok) {
                     target->BeginDraw();
                     target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
                     const bool drew = tintedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &tintedError);
-                    ok = SUCCEEDED(target->EndDraw()) && !drew &&
-                         // the message has to name the offending component, not the backend
-                         tintedError.find(L"component://panel/sprite") != std::wstring::npos &&
-                         // and nothing may have been painted
-                         PixelHasColor(bitmap.Get(), 32, 32, false);
+                    const bool refused = !drew &&
+                                         // the message has to name the offending component
+                                         tintedError.find(L"component://panel/sprite") != std::wstring::npos &&
+                                         // and nothing may have been painted
+                                         PixelHasColor(bitmap.Get(), 32, 32, false);
+                    if (tintedError.empty()) tintedError = L"(绘制路径没有给出任何报错)";
+                    error = tintedError;  // Step prints `error`, so surface the refusal's reason
+                    Step(SUCCEEDED(target->EndDraw()) && refused,
+                         "B. 非白色 tint 作用于贴图被拒,且报错点名组件、没有画出任何东西");
+                    error.clear();
                 }
             }
         }
@@ -973,7 +994,8 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     factory.Reset();
     fs::remove_all(root, ec);
     if (shouldUninitialize) CoUninitialize();
-    return ok;
+    std::printf("--- SelfTest:%d failure(s) ---\n", failures);
+    return failures == 0;
 }
 
 } // namespace miaodesk::content

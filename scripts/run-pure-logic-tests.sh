@@ -25,6 +25,10 @@ for f in $(find content -name '*.cpp' | sort); do
 done
 echo "可链接的实现源文件:${#SRCS[@]} 个"
 
+# 源码必须用绝对路径喂给编译器:CMake 就是这么做的,于是 __FILE__ 是绝对路径;
+# BuiltinWallpaperPackages.cpp 靠 __FILE__ 向上找 assets/wallpapers(不用 cwd ——
+# verify-path-layout-contract.ps1 禁止源码依赖当前工作目录)。传相对路径会让
+# __FILE__ 变成相对路径,那个查找就失败。
 # 测试用 wmain 作入口(Windows 控制台程序),macOS 上需要一个 main 转接。
 cat >/tmp/wmain_shim.cpp <<'SHIM'
 extern int wmain();
@@ -37,7 +41,7 @@ run() {  # run <目标名> <测试源文件名> <额外源文件...>
   local name="$1" file="$2"; shift 2
   printf '%-26s ' "$name"
   if ! $CXX $STD -I"$SHIM" -O1 -o "/tmp/run_$name" /tmp/wmain_shim.cpp \
-       "tests/$file" "$@" "${SRCS[@]}" 2>/tmp/build_"$name"; then
+       "$ROOT/src/tests/$file" "$@" "${SRCS[@]}" 2>/tmp/build_"$name"; then
     echo "BUILD FAIL"
     grep -E "error:" /tmp/build_"$name" | head -4 | sed 's/^/      /'
     FAIL=$((FAIL+1)); return
@@ -57,7 +61,7 @@ run() {  # run <目标名> <测试源文件名> <额外源文件...>
 
 echo
 echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
-for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture; do
+for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages; do
   run "$t" "$t.cpp"
 done
 

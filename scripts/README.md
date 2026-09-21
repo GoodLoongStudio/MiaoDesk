@@ -50,12 +50,48 @@ MSVC 才能看见的类型错误。
    过滤器用 `startswith('error:')` 匹配 gcc 输出(而 gcc 的行以路径开头)、comm 的列
    搞反导致一侧永远漏报、正则把 `was not declared` 写成 `was not been declared`。
    干净状态下这些都看起来完全正常。
-2. **区分 `success` / `failure` / `skipped` / `null`。** 把 CI 里被跳过的步骤读成
+2. **注入的失效必须真的落进去。** 有两次"测试没被捕到"其实是替换目标字符串不存在,
+   tamper 空操作 —— 空操作的测试和通过的闸门站在一起,读起来就是"闸门漏报",而真因
+   在测试自己。注入前先 `assert` 锚点确实在文件里,注入后确认文件内容真的变了。
+3. **区分 `success` / `failure` / `skipped` / `null`。** 把 CI 里被跳过的步骤读成
    通过,让"17 个验证步骤通过"这个结论完全失实。`conclusion` 为 `null` 等于没跑。
-3. **别硬编码另一个源文件里的常量。** 从源码解析,否则两处迟早对不上,而这种漂移
+   顺带:`cmd | tail` 之后 `$?` 取到的是 `tail` 的退出码,不是被验程序的,zsh 里尤其
+   容易看错。
+4. **别硬编码另一个源文件里的常量。** 从源码解析,否则两处迟早对不上,而这种漂移
    在磁盘上看不出来。
-4. **替身的缺陷会被伪装成产品缺陷。** `windows-shim/` 的 `MultiByteToWideChar` 一旦
+5. **替身的缺陷会被伪装成产品缺陷。** `windows-shim/` 的 `MultiByteToWideChar` 一旦
    写成有损窄化,含中文的自检就会假失败。改替身前先怀疑替身。
+
+## 有一半闸门其实能在 macOS 上跑
+
+不是因为它们是可移植的,而是因为 macOS 装了 `brew install powershell` 之后,PowerShell
+脚本可以直接执行。已验证可跑的:
+
+```bash
+brew install powershell
+pwsh -NoProfile -File scripts/verify-web-audio-bridge.ps1
+```
+
+它四个方向都验过:干净树通过;改 `.js` 来源失败;给 `.cpp` 和 `.js` **同时**加一条
+`chrome.webview.postMessage`(逐字节仍然一致,只违反只读性)失败;恢复后通过。
+正因为两侧都改才过得去第一关,验证的是真正想验证的那条属性。
+
+## 有一半闸门其实能在 macOS 上跑
+
+不是因为它们是可移植的,而是因为 macOS 装了 `brew install powershell` 之后,PowerShell
+脚本可以直接执行。已验证可跑的:
+
+```bash
+brew install powershell
+pwsh -NoProfile -File scripts/verify-web-audio-bridge.ps1
+```
+
+它四个方向都验过:干净树通过;改 `.js` 来源失败;给 `.cpp` 和 `.js` **同时**加一条
+`chrome.webview.postMessage`(逐字节仍然一致,只违反只读性)失败;恢复后通过。
+正因为两侧都改才过得去第一关,验证的是真正想验证的那条属性。
+
+只解析不执行的话,全部 17 个 `.ps1` 都能用 `[Parser]::ParseFile` 检查语法 —— 手改完
+PowerShell 门禁后先跑一遍,一次几秒。
 
 ## 其他
 

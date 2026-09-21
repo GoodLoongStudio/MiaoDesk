@@ -12,10 +12,15 @@
 bash scripts/verify-windows-syntax.sh        # 交叉编译全部独立 TU,查类型/成员是否真存在
 bash scripts/run-pure-logic-tests.sh         # 真实编译并运行不依赖 Windows 的测试目标
 bash scripts/verify-skill-allowlist.sh       # content_skill_get 白名单 与 skills/ 目录双向比对
+bash scripts/verify-no-conflict-markers.sh   # 拒绝未解决的合并冲突标记
+bash scripts/verify-cmake-covers-sources.sh  # 磁盘上的 .cpp 是否真的被 CMake 编译
 ```
 
 依赖:`brew install mingw-w64`(`verify-windows-syntax.sh` 用)、`clang++`
-(`run-pure-logic-tests.sh` 用)。
+(`run-pure-logic-tests.sh` 用)、`cmake`(`verify-cmake-covers-sources.sh` 用)。
+
+后三个另有 `.github/workflows/repo-hygiene.yml` 在 CI 里跑 —— 它们不需要 Windows,
+也不依赖构建能否通过,所以不该被构建类工作流挡住。
 
 ### 为什么需要它们
 
@@ -31,6 +36,8 @@ MSVC 才能看见的类型错误。
 | `verify-windows-syntax.sh` | 这个类型/成员存不存在;模板能不能推导 | Windows SDK 齐不齐;MSVC 与 mingw 的差异 |
 | `run-pure-logic-tests.sh` | 这 6 个纯逻辑测试目标的行为对不对 | 任何需要 Windows 的目标 |
 | `verify-skill-allowlist.sh` | 白名单与 `skills/` 是否一致 | CI 上真实的注入效果 |
+| `verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
+| `verify-cmake-covers-sources.sh` | 磁盘上的 `.cpp` 是否真的被 CMake 编译 | CMakeLists 本身的意图是否合理 |
 
 `MediaWallpaperPackageTest` 只有 CI 能覆盖 —— 它链接 `WallpaperLibrary.cpp` →
 `UnicodeProfileFile.h:72` 的 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化

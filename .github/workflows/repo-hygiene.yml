@@ -1,0 +1,49 @@
+name: Repo Hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+# 这三个闸门都和"构建能否通过"无关,也都不需要 Windows 镜像或构建产物。它们各自挡住的
+# 都是真正发生过、而且被现有闸门放过去的事故:
+#
+#   no-conflict-markers     2026-09-22 stage.ps1 里留着 <<<<<<< 三行,干掉了三个打包
+#                           工作流。.ps1 不进 C++ 编译器,所以在被 pwsh 解析前一路绿灯。
+#
+#   cmake-covers-sources    MiaoD3D11TextureLoader.cpp 在磁盘上、语法没问题,但没进
+#                           MIAODESK_*_SOURCES,从来没被编译过 → 链接期 LNK2019。
+#                           语法闸门扫的是"磁盘上有什么",照样编译它,所以看不出它没被收录。
+#
+#   skill-allowlist         kContentSkills 是封闭白名单。任何一侧单独变更都静默失衡:
+#                           多建目录而没进白名单 → 该 skill 对 AI 不可达;白名单里有而
+#                           磁盘没有 → 只在用户真的用时才报错。
+#
+# 用 ubuntu-latest + shell: bash:只读文本和跑一次 CMake Configure,不需要 Windows;
+# 显式指定 shell 是为了不依赖某个镜像的默认 shell。
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify no unresolved merge conflict markers
+        shell: bash
+        run: bash scripts/verify-no-conflict-markers.sh
+
+      - name: Verify every source file is actually compiled by CMake
+        shell: bash
+        run: bash scripts/verify-cmake-covers-sources.sh
+
+      - name: Verify the content-skill allowlist matches skills/
+        shell: bash
+        run: bash scripts/verify-skill-allowlist.sh

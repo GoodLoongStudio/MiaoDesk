@@ -87,6 +87,10 @@ set(MIAODESK_WALLPAPER_SOURCES
     content/render/d2d/MiaoSceneD2DRenderer.cpp
     content/render/d3d11/MiaoD3D11ParticleRenderer.cpp
     content/render/d3d11/MiaoD3D11RenderTarget.cpp
+    # MiaoSceneD3D11Renderer.cpp references MiaoD3D11TextureLoader::LoadImageW and
+    # ::SelfTestPathPolicy. Listing the loader is what makes those symbols exist at
+    # link time; omitting it produced LNK2019/LNK1120 in every packaging workflow.
+    content/render/d3d11/MiaoD3D11TextureLoader.cpp
     content/render/d3d11/MiaoSceneD3D11Renderer.cpp
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp

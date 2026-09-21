@@ -26,7 +26,11 @@ bool Fail(std::wstring* error, std::wstring message) {
 
 } // namespace
 
-bool MiaoD3D11TextureLoader::LoadImage(
+// The W suffix is required, not decoration: <windows.h> maps the plain name LoadImage
+// onto a LoadImageA/LoadImageW macro, so spelling it without the suffix here makes the
+// preprocessor rename the qualified member differently from the declaration. The header
+// documents the same rule; the two spellings must match exactly.
+bool MiaoD3D11TextureLoader::LoadImageW(
     ID3D11Device* device,
     const std::filesystem::path& path,
     ID3D11ShaderResourceView** view,

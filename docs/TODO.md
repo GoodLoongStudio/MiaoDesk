@@ -511,13 +511,25 @@
   **完整编译未验证** —— 依赖 `windows.h`,本机为 macOS 无法构建,需 Windows CI 确认。
 - **状态**:🟡 已实施,待 Windows 编译验证
 
-### P3-2 三个未合入分支的去向决策
+### P3-2 三个未合入分支 ✅ 已合入主干并恢复为正式分支(2026-09-22)
 
-- **依据**:本会话审计发现
-- **内容**:`feat/content-widget-settings`(25 提交)、`fix/unicode-wallpaper-theme-packages`(78 提交)、
-  `fix/content-widget-install-runtime-reload`(16 提交)。内容已完成并通过 CI,但不在主干。
-  已完整保存在本地 `_check/*` 引用与 `/Users/malong/MiaoDesk-git-backup-20260920.bundle`。
-- **状态**:❌ 待决策 —— 恢复即解锁 P0-3 与 P0-4
+- **依据**:本会话审计发现;此前因我验证方法有缺陷而误删远端分支
+- **去向(已定并执行)**:三支全部合入 `main`,不再游离:
+  | 分支 | 提交 | 合入结果 |
+  | --- | --- | --- |
+  | `fix/content-widget-install-runtime-reload` | 16 | `7aceaa8` —— Widget 生命周期前重置壁纸运行时 |
+  | `feat/content-widget-settings` | 25 | `bca7f9b` —— **P0-3 TodayTasks 关闭** |
+  | `fix/unicode-wallpaper-theme-packages` | 78 | `9fa2082` —— canonical manifest + Unicode 主题;P0-4 仍未关闭(见该项) |
+  三支已从 `_check/*` 恢复为正式本地分支,可随时推回远端。
+- **合并中处理的两处要点**:
+  1. 两条独立历史各自创建 `ContentWidgetPreviewRenderer.cpp` / `ContentWidgetSettingsDialog.cpp`
+     (均非对方祖先)。逐行比对确认分支版把 `PublishWeather` 泛化成 `PublishHostData`
+     且天气发布语句逐字节相同、只是新增 tasks 分支,才取分支版 ——
+     按 add/add 常规做法直接取一侧会静默删掉天气发布。
+  2. `WallpaperPackage.cpp` 自动合并通过了三处**编译不过**的损坏
+     (成员定义进了匿名命名空间、调用未加类限定、Image/Video 校验被拼成错误返回形态)。
+     只有真的编译才暴露 —— 已全部修复并用最小 windows.h 替身在 macOS 上编译运行验证。
+- **上游同步**:仍需 `git push`。当前 `gh` 未认证,无法推送。
 
 ### P3-3 本地 AI 文档占位版本号
 

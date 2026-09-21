@@ -87,6 +87,13 @@ if missing:
           "别的代码引用其符号时会在链接期报 LNK2019 / LNK1120:")
     for f in missing:
         print(f"      {f}")
+        if os.path.basename(f) in {os.path.basename(x) for x in included}:
+            # 只有当某个 #include 它的文件本身被 CMake 编译时,这才是"实现单元"而
+            # 不是漏编。此时正确的做法恰恰是不动 CMake。
+            print(f"      ⚠ 它同时也是被别的 .cpp #include 的实现单元。"
+                  f"如果 #include 它的那个文件已被 CMake 编译,这不算漏编 ——")
+            print(f"        但要小心:再把它也加进 CMake 会让每个定义出现两次,"
+                  f"链接期报 LNK2005。")
     print()
     print("修法:把它加进对应的 MIAODESK_*_SOURCES 清单,或用 add_executable 建目标。")
     sys.exit(1)

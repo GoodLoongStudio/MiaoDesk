@@ -9,6 +9,10 @@ using HWND = HWND__*;
 
 namespace miaodesk::content {
 
+// Forward declaration rather than an include: this header deliberately keeps the
+// D3D headers out so a consumer does not pull d3d11.h through the renderer.
+class MiaoSceneRuntime;
+
 class MiaoSceneD3D11Renderer {
 public:
     MiaoSceneD3D11Renderer();
@@ -23,6 +27,10 @@ public:
     void Reset() noexcept;
 
     bool Loaded() const noexcept;
+
+    // The scene runtime this renderer owns, or nullptr when nothing is loaded. See
+    // MiaoSceneD2DRenderer::Runtime for why a host needs it.
+    MiaoSceneRuntime* Runtime() noexcept;
     bool UsesProgrammableMaterial() const noexcept;
     std::wstring PackageId() const;
     std::wstring LastErrorText() const;

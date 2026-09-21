@@ -29,6 +29,11 @@ public:
     bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
     bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
 
+    // The scene runtime this renderer owns, or nullptr when nothing is loaded. A host
+    // needs it to publish audio/pointer input through InputBusPublisher, which writes
+    // only the channels the scene declared.
+    MiaoSceneRuntime* Runtime() noexcept;
+
     // Host-owned data providers (weather, tasks, media state, etc.) publish
     // bounded typed values through declarative paths. Content still needs the
     // matching capability before a template can read any injected value.

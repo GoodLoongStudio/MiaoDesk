@@ -221,6 +221,57 @@ int wmain() {
         Check(frame.level >= 0.0 && frame.level <= 1.0, "noise level in [0,1]");
     }
 
+    std::printf("\n12. 谁按下就关掉 click-through(DeclaresInteractiveInput)\n");
+    {
+        // The host decides whether it may write the press/click channels by asking the
+        // channel contract about what the scene declared. Getting this wrong in either
+        // direction is user-visible: false positive steals the desktop click, false
+        // negative makes a scene that asks for clicks silently never receive them.
+        auto ids = [](std::initializer_list<std::wstring_view> list) {
+            std::vector<std::wstring_view> out;
+            for (auto id : list) out.push_back(id);
+            return out;
+        };
+        const std::vector<std::wstring> empty;
+        Check(!DeclaresInteractiveInput(ids({})), "空声明 -> 不交互");
+        Check(!DeclaresInteractiveInput(ids({kAudioBass})), "只有音频通道 -> 不交互");
+        Check(!DeclaresInteractiveInput(ids({kPointerX, kPointerY})), "只有位置通道 -> 不交互");
+        Check(!DeclaresInteractiveInput(ids({kPointerInside})), "只有区域内标记 -> 不交互");
+        Check(!DeclaresInteractiveInput(ids({kPointerEnter, kPointerLeave})), "只有进入/离开沿 -> 不交互");
+        Check(!DeclaresInteractiveInput(ids({kFrameTimeInput, kAudioLevel, kPointerX})),
+              "混合但不含按压 -> 不交互");
+        Check(DeclaresInteractiveInput(ids({kPointerDown})), "声明 down -> 交互");
+        Check(DeclaresInteractiveInput(ids({kPointerClick})), "声明 click -> 交互");
+        Check(DeclaresInteractiveInput(ids({kPointerX, kAudioBass, kPointerDown})),
+              "按压夹在别的通道中间也算");
+        // 未知 id 不得被当成交互通道,否则将来拼错一个名字就会静默抢走点击。
+        Check(!DeclaresInteractiveInput(ids({L"input://pointer/pressed"})), "拼错的 id -> 不交互");
+        // 与逐通道查询必须一致:这张表只有一个真相来源。
+        for (const auto channel : kInteractivePointerChannels) {
+            Check(ChannelRequiresInteraction(channel),
+                  "交互集合里的每个通道,单查也返回 true");
+        }
+        // Counted against an explicit list rather than a kAllChannels constant so this
+        // test never depends on a second, hand-maintained enumeration of the contract.
+        const std::vector<std::wstring_view> everyChannel = {
+            kFrameTimeInput, kEventPulse,
+            kAudioLevel, kAudioBass, kAudioLowMid, kAudioMid, kAudioHighMid, kAudioTreble, kAudioBeat,
+            kPointerX, kPointerY, kPointerInside, kPointerDown,
+            kPointerClick, kPointerEnter, kPointerLeave,
+        };
+        std::size_t interactiveCount = 0;
+        for (const auto& channel : everyChannel) {
+            if (ChannelRequiresInteraction(channel)) ++interactiveCount;
+        }
+        Check(interactiveCount == 2, "全部通道里交互的恰好两个(down / click)");
+        // 位置类通道一个都不该被判成交互,否则视差壁纸会抢走点击。
+        std::size_t positionInteractive = 0;
+        for (const auto& channel : kPositionOnlyChannels) {
+            if (ChannelRequiresInteraction(channel)) ++positionInteractive;
+        }
+        Check(positionInteractive == 0, "位置类通道一律不交互");
+    }
+
     std::printf("\n%s (%d failure(s))\n", failures ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED", failures);
     return failures ? 1 : 0;
 }

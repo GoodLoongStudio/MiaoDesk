@@ -395,6 +395,11 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    // Exposed so a host can drive the scene's InputBus through InputBusPublisher
+    // instead of re-implementing the "only write declared channels" rule. Null until a
+    // package is loaded; the renderer owns the lifetime.
+    MiaoSceneRuntime* Runtime() noexcept { return loaded ? &runtime : nullptr; }
+
     bool SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error) {
         if (!loaded) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         if (path.empty() || path.size() > 256) return Error(error, L"Content host data path is invalid.");
@@ -465,6 +470,10 @@ bool MiaoSceneD2DRenderer::SetParameter(std::wstring_view id, PropertyValue valu
 
 bool MiaoSceneD2DRenderer::SetInput(std::wstring_view id, PropertyValue value, std::wstring* error) {
     return impl_->SetInput(id, std::move(value), error);
+}
+
+MiaoSceneRuntime* MiaoSceneD2DRenderer::Runtime() noexcept {
+    return impl_ ? impl_->Runtime() : nullptr;
 }
 
 bool MiaoSceneD2DRenderer::SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error) {

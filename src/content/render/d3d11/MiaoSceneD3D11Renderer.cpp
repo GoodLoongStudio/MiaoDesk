@@ -1149,6 +1149,12 @@ bool MiaoSceneD3D11Renderer::Resize(unsigned width, unsigned height, std::wstrin
 }
 
 void MiaoSceneD3D11Renderer::Reset() noexcept { impl_->Reset(); }
+MiaoSceneRuntime* MiaoSceneD3D11Renderer::Runtime() noexcept {
+    // Same seam as the D2D renderer: the host publishes audio/pointer input through
+    // InputBusPublisher against this pointer rather than re-implementing the
+    // declared-channel rule.
+    return impl_ && impl_->loaded ? &impl_->runtime : nullptr;
+}
 bool MiaoSceneD3D11Renderer::Loaded() const noexcept { return impl_->loaded; }
 bool MiaoSceneD3D11Renderer::UsesProgrammableMaterial() const noexcept { return impl_->programmable; }
 

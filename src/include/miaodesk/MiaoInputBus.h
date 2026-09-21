@@ -148,6 +148,21 @@ inline bool ChannelRequiresInteraction(std::wstring_view id) {
     return false;
 }
 
+// True when the scene declared at least one channel that requires click-through to be
+// disabled. The host asks this rather than hardcoding channel names, so adding a new
+// interactive channel changes behaviour in exactly one place.
+//
+// Takes a range of ids so a caller can hand over SceneRuntimeDefinition::inputs without
+// first projecting it into a container of a particular type.
+template <typename Range>
+bool DeclaresInteractiveInput(const Range& declaredIds) {
+    for (const auto& id : declaredIds) {
+        if (ChannelRequiresInteraction(id)) return true;
+    }
+    return false;
+}
+
+
 // ---------------------------------------------------------------------------
 // Audio analysis
 // ---------------------------------------------------------------------------

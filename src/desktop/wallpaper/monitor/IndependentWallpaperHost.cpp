@@ -1,9 +1,12 @@
 #include "miaodesk/IndependentWallpaperHost.h"
 #include "miaodesk/LayeredSceneRenderer.h"
 #include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoInputBusPublisher.h"
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/MiaoSceneD3D11Renderer.h"
+#include "miaodesk/MiaoSceneRuntimeModel.h"
 #include "miaodesk/MiaoSceneSerializer.h"
+#include "miaodesk/MiaoWallpaperAudioTap.h"
 #include "miaodesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
@@ -86,8 +89,26 @@ struct IndependentWallpaperHost::Impl {
         std::unique_ptr<VideoWallpaperPlayer> video;
         std::unique_ptr<content::MiaoSceneD2DRenderer> canonicalScene;
         std::unique_ptr<content::MiaoSceneD3D11Renderer> gpuScene;
+        // Per slot, not per host: pointer coordinates are normalised against the
+        // monitor the slot lives on, so the state that depends on that mapping must
+        // be too. Reusing one normaliser across monitors would carry the previous
+        // monitor's smoothing and edge state into the next frame.
+        content::inputbus::PointerNormalizer pointer;
+        // Wall-clock of the previous pointer sample for this slot, for the real frame
+        // delta that PointerNormalizer's smoothing wants.
+        double pointerSeconds{};
+        // Filled by SamplePointer; GetMonitorInfoW writes the whole struct.
+        MONITORINFO monitorInfo{};
+        // True only when the scene declares a press/click channel. Those are the two
+        // channels that force click-through off, so this flag is what decides whether
+        // the publisher is allowed to write them at all.
+        bool pointerInteractive{};
         std::wstring error;
     };
+
+    // Audio is captured once per process, not per monitor: every slot shows the same
+    // desktop session's sound, and one loopback client is all a device gives us.
+    wallpaper::MiaoWallpaperAudioTap audioTap;
 
     HWND parent{};
     wallpaper::ScaleMode scaleMode{wallpaper::ScaleMode::Cover};
@@ -326,7 +347,87 @@ struct IndependentWallpaperHost::Impl {
         wallpaper::scenes::PaintMysticMoon(context, size);
     }
 
+    // Publishes the latest audio analysis and the pointer's per-monitor position into
+    // a slot's scene runtime.
+    //
+    // Two deliberate omissions:
+    //   * Nothing is published unless the scene declared the channel. InputBusPublisher
+    //     enforces that, so a wallpaper that never mentions audio costs one mutex copy
+    //     of an already-analysed frame and nothing else.
+    //   * The audio tap is only started once a scene wallpapers exists. A user with no
+    //     scene wallpaper should not have their sound card opened at all.
+    // A wallpaper opts into taking the click only by declaring a channel that needs it.
+    // Reading the declaration rather than a setting means a scene that never asks for
+    // press input can never accidentally turn click-through off, and the question is
+    // answered by the channel contract itself rather than by a list kept here.
+    bool SceneWantsPointerPress(const content::MiaoSceneRuntime& runtime) const {
+        const content::SceneRuntimeDefinition* definition = runtime.Definition();
+        if (!definition) return false;
+        std::vector<std::wstring_view> ids;
+        ids.reserve(definition->inputs.size());
+        for (const auto& input : definition->inputs) ids.push_back(input.id);
+        return content::inputbus::DeclaresInteractiveInput(ids);
+    }
+
+    void PublishInputs(Slot& slot, double timeSeconds) {
+        content::MiaoSceneRuntime* runtime = nullptr;
+        if (slot.canonicalScene) runtime = slot.canonicalScene->Runtime();
+        else if (slot.gpuScene) runtime = slot.gpuScene->Runtime();
+        if (!runtime) return;
+
+        content::InputBusPublisher publisher(*runtime);
+        content::inputbus::AudioSpectrumFrame audio;
+        if (audioTap.LatestFrame(&audio)) publisher.PublishAudio(audio);
+        slot.pointerInteractive = SceneWantsPointerPress(*runtime);
+        publisher.PublishPointer(SamplePointer(slot, timeSeconds), slot.pointerInteractive);
+    }
+
+    // Global cursor position, attributed to this slot's monitor and normalised against
+    // that monitor's pixel size — never against the virtual desktop, because a
+    // wallpaper has no business knowing the desktop layout or which side of it is on.
+    content::inputbus::PointerNormalizer::Result SamplePointer(Slot& slot, double timeSeconds) {
+        content::inputbus::PointerNormalizer::Result result;
+        RECT monitor{};
+        HMONITOR handle = nullptr;
+        POINT cursor{};
+        if (!GetCursorPos(&cursor)) return result;
+        // MONITOR_DEFAULTTONEAREST so a cursor parked between monitors still resolves
+        // to a real rect rather than failing open.
+        handle = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        if (!handle || !GetMonitorInfoW(handle, &slot.monitorInfo)) return result;
+        monitor = slot.monitorInfo.rcMonitor;
+
+        const long width = monitor.right - monitor.left;
+        const long height = monitor.bottom - monitor.top;
+        if (width <= 0 || height <= 0) return result;
+        slot.pointer.Configure(width, height);
+
+        content::inputbus::PointerSample sample;
+        sample.x = cursor.x - monitor.left;
+        sample.y = cursor.y - monitor.top;
+        const bool inside = cursor.x >= monitor.left && cursor.x < monitor.right &&
+                            cursor.y >= monitor.top && cursor.y < monitor.bottom;
+        sample.inside = inside;
+        // GetAsyncKeyState is read rather than tracked from WM_INPUT on purpose: the
+        // wallpaper surface never takes focus, so it never receives mouse messages.
+        sample.down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+        // A frame delta of zero would make Smooth() substitute 1/60, so pass the real
+        // elapsed time and let the low-pass track the actual render rate. The previous
+        // stamp lives on the slot, not in a function-local static: two monitors draw at
+        // different times, and a shared static would hand one monitor the other's delta.
+        const double delta = slot.pointerSeconds > 0.0 ? timeSeconds - slot.pointerSeconds : 0.0;
+        slot.pointerSeconds = timeSeconds;
+        result = slot.pointer.Apply(sample, delta);
+        return result;
+    }
+
     void DrawSlot(Slot& slot) {
+        // Input is published before the draw, not after: the bindings that read
+        // input://* are evaluated during Draw, so a value written afterwards would
+        // only ever affect the following frame and make every reaction one frame late.
+        const double timeSeconds = static_cast<double>(GetTickCount64()) / 1000.0;
+        PublishInputs(slot, timeSeconds);
         if (slot.gpuScene) {
             std::wstring error;
             if (!slot.gpuScene->Draw(time, &error)) {
@@ -382,6 +483,12 @@ struct IndependentWallpaperHost::Impl {
             return false;
         }
         if (!EnsureFactories() || !EnsureSurfaceClass()) return false;
+        // Opening the sound card is a side effect the user would notice, so it happens
+        // only when at least one slot is going to run a Scene wallpaper. PublishInputs
+        // re-reads LatestFrame every frame, so starting later needs no other change.
+        for (const auto& resolved : wallpapers) {
+            if (resolved.kind == wallpaper::ResolvedWallpaperKind::Scene) { audioTap.Start(); break; }
+        }
         parent = parentWindow;
         scaleMode = nextScaleMode;
         focalX = wallpaper::ClampFocal(nextFocalX);
@@ -440,6 +547,7 @@ struct IndependentWallpaperHost::Impl {
             if (slot->window && IsWindow(slot->window)) DestroyWindow(slot->window);
         }
         slots.clear();
+        audioTap.Stop();
         parent = nullptr;
         paused = false;
         time = 0.0f;
@@ -558,6 +666,11 @@ std::wstring IndependentWallpaperHost::DiagnosticsText() const {
     text << impl_->slots.size() << L" 个独立 Surface · Scene " << scenes << L" · Canonical " << canonicalScenes
          << L" · GPU " << gpuScenes << L" · 图片 " << images << L" · 视频 " << videos;
     if (fallbacks > 0) text << L" · fallback " << fallbacks;
+    // The tap failing is not fatal — scenes simply never see audio — but it is invisible
+    // otherwise, and "why does my audio-reactive wallpaper not react" is exactly the
+    // report that would otherwise take a support round trip.
+    const std::wstring audioError = impl_->audioTap.LastErrorText();
+    if (!audioError.empty()) text << L" · 音频采集未生效:" << audioError;
     const auto error = LastErrorText();
     if (!error.empty()) text << L" · " << error;
     return text.str();

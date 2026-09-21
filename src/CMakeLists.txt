@@ -111,6 +111,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/performance/WallpaperPerformancePolicy.cpp
     ui/performance/PerformanceUiAdapter.cpp
 
+    desktop/wallpaper/monitor/MiaoWallpaperAudioTap.cpp
     desktop/wallpaper/monitor/WallpaperIndependentLayout.cpp
     desktop/wallpaper/monitor/IndependentWallpaperHost.cpp
 

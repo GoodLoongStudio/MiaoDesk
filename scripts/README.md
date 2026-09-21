@@ -63,6 +63,23 @@ macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线验证�
 5. **替身的缺陷会被伪装成产品缺陷。** `windows-shim/` 的 `MultiByteToWideChar` 一旦
    写成有损窄化,含中文的自检就会假失败。改替身前先怀疑替身。
 
+## PowerShell 闸门的三个陷阱(2026-09-22 连中三次)
+
+1. **`.\script.ps1` 之后查 `$LASTEXITCODE` 是错的。** `.ps1` 是 PowerShell 脚本,不是
+   原生可执行文件,直接调用不设置 `$LASTEXITCODE`;它保留的是之前某个原生命令的值。
+   那一步之前没有原生命令时它是 `$null`,而 `$null -ne 0` 恒为真 —— 这一步从写下来就
+   不可能通过,与脚本本身过没过无关。要用 `& pwsh -NoProfile -File script.ps1`,它能正确
+   传递退出码。
+   (整段 `run:` 只有一句直接调用是另一回事:脚本 throw 会让 pwsh 进程非零退出,步骤
+   照旧失败,那个形式没问题。)
+2. **`$array -notmatch 're'` 是过滤,不是布尔。** `Get-Content -TotalCount 6` 得到
+   `Object[]`,`-notmatch` 返回**不匹配的元素**。6 行里只有一行匹配时结果是非空数组、
+   恒为真值,`if` 必进。要先 `-join` 成单串,并用 `(?m)` 让 `^`/`$` 按行锚定。
+3. **`[Parser]::ParseFile` 通过不等于语义正确。** 它把
+   `& script.ps1 -A X $gateOut = -B Y 2>&1` 当合法命令放过 —— PowerShell 对命令参数很
+   宽松。改造工作流后要**执行级**验证:造一个假脚本(回显参数、按环境变量决定退出码),
+   把步骤原样跑一遍,覆盖成功/失败两条路径。
+
 ## 有一半闸门其实能在 macOS 上跑
 
 不是因为它们是可移植的,而是因为 macOS 装了 `brew install powershell` 之后,PowerShell

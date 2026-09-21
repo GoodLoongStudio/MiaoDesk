@@ -532,7 +532,9 @@ constexpr std::wstring_view kContentSkills[] = {
 // ceiling keeps a future oversized file from flooding a tool result.
 constexpr std::size_t kContentSkillMaxBytes = 64 * 1024;
 
-std::wstring ContentSkillPath(std::wstring_view name) {
+// Returns a path rather than a std::wstring: callers append the path into error
+// messages, and fs::path is what .wstring() actually belongs to.
+fs::path ContentSkillPath(std::wstring_view name) {
     for (const auto candidate : kContentSkills) {
         if (candidate != name) continue;
         const auto root = miaodesk::paths::ExecutableDirectory();
@@ -542,7 +544,7 @@ std::wstring ContentSkillPath(std::wstring_view name) {
     return {};
 }
 
-std::wstring ContentSkillIndexPath() {
+fs::path ContentSkillIndexPath() {
     const auto root = miaodesk::paths::ExecutableDirectory();
     if (root.empty()) return {};
     return root / L"skills" / L"README.md";

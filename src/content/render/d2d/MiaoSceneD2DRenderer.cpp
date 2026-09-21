@@ -863,10 +863,40 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         return SUCCEEDED(target->EndDraw()) && drew && renderer.Loaded() &&
                renderer.Profile() == RuntimeProfile::Widget;
     }(), "A. 首帧绘制并 EndDraw,Loaded 与 profile 正确");
-    Step(ok && (PixelHasColor(bitmap.Get(), 32, 32, true) &&
-                PixelHasColor(bitmap.Get(), 17, 17, false) &&
-                PixelHasColor(bitmap.Get(), 2, 2, false)),
-         "A. 纯色 sprite 落在中心、圆角让四角留黑");
+    // This assertion had never executed before the SelfTest was ever called, and it is
+    // the one that fails on Windows. Rather than a third round of guessing, dump the
+    // actual channel values on failure: BGRA at each sampled point, so one CI round
+    // says whether the wrong pixel, the wrong expectation, or the drawing itself is at
+    // fault. The numbers are the diagnosis; the label alone is not.
+    if (ok) {
+        auto dump = [&](UINT x, UINT y, const char* what) {
+            std::printf("         %-18s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
+                        PixelChannel(bitmap.Get(), x, y, 0), PixelChannel(bitmap.Get(), x, y, 1),
+                        PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3));
+        };
+        // Dumped unconditionally, not only on failure. A passing assertion that prints
+        // its numbers is what makes the *next* failing one diagnosable, and the edge
+        // scan says whether the sprite is drawn at all and to what extent — which a
+        // centre/corner triple cannot distinguish (a text glyph at the centre would also
+        // make the centre "coloured").
+        const bool centreColoured = PixelHasColor(bitmap.Get(), 32, 32, true);
+        const bool innerCornerClear = PixelHasColor(bitmap.Get(), 17, 17, false);
+        const bool outerCornerClear = PixelHasColor(bitmap.Get(), 2, 2, false);
+        dump(32, 32, "centre");
+        dump(17, 17, "inner corner");
+        dump(2, 2, "outer corner");
+        std::printf("         y=32 横向扫描(0=暗,1=有颜色):");
+        for (UINT x = 0; x < 64; ++x) {
+            const bool lit = PixelChannel(bitmap.Get(), x, 32, 0) > 8 ||
+                             PixelChannel(bitmap.Get(), x, 32, 1) > 8 ||
+                             PixelChannel(bitmap.Get(), x, 32, 2) > 8;
+            std::printf("%d", lit ? 1 : 0);
+            if (x % 8 == 7) std::printf(" ");
+        }
+        std::printf("\n         (每 8 像素一组;纯色 0.5 缩放 + 12 圆角应该是 00000000 11111111 11111111 11111111 00000000)\n");
+        Step(centreColoured && innerCornerClear && outerCornerClear,
+             "A. 纯色 sprite 落在中心、圆角让四角留黑");
+    }
     Step(ok && [&] {
         MiaoSceneFrameDemand idleDemand;
         return renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;

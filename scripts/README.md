@@ -6,7 +6,7 @@
 - **`.sh`** —— 在开发机上运行(作者在 macOS)。它们不是 CI 的替代品,而是在推送前
   先把最便宜的一类错误挡掉,把 CI 留给只有 Windows 才能回答的问题。
 
-## 开发机上先跑这三个
+## 开发机上先跑这五个
 
 ```bash
 bash scripts/verify-windows-syntax.sh        # 交叉编译全部独立 TU,查类型/成员是否真存在
@@ -39,10 +39,11 @@ MSVC 才能看见的类型错误。
 | `verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | `verify-cmake-covers-sources.sh` | 磁盘上的 `.cpp` 是否真的被 CMake 编译 | CMakeLists 本身的意图是否合理 |
 
-`MediaWallpaperPackageTest` 只有 CI 能覆盖 —— 它链接 `WallpaperLibrary.cpp` →
-`UnicodeProfileFile.h:72` 的 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化
-要求 UTF-16 `wchar_t`),而 macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线
-验证去绕过它。
+九个 CMake 测试目标里,三个只有 CI 能覆盖:`MediaWallpaperPackageTest` /
+`ContentWebReplacementContinuity` / `ContentSkillLoading`。共同原因是它们 include
+`WallpaperLibrary.h` 或 `NativeTools.h`,那两条链都会拉到 `UnicodeProfileFile.h:72` 的
+`static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化要求 UTF-16 `wchar_t`),而
+macOS 的 `wchar_t` 是 4 字节。这是产品设计约束,不为离线验证去绕过它。
 
 ## 写闸门的规矩(都是踩出来的)
 
@@ -61,20 +62,6 @@ MSVC 才能看见的类型错误。
    在磁盘上看不出来。
 5. **替身的缺陷会被伪装成产品缺陷。** `windows-shim/` 的 `MultiByteToWideChar` 一旦
    写成有损窄化,含中文的自检就会假失败。改替身前先怀疑替身。
-
-## 有一半闸门其实能在 macOS 上跑
-
-不是因为它们是可移植的,而是因为 macOS 装了 `brew install powershell` 之后,PowerShell
-脚本可以直接执行。已验证可跑的:
-
-```bash
-brew install powershell
-pwsh -NoProfile -File scripts/verify-web-audio-bridge.ps1
-```
-
-它四个方向都验过:干净树通过;改 `.js` 来源失败;给 `.cpp` 和 `.js` **同时**加一条
-`chrome.webview.postMessage`(逐字节仍然一致,只违反只读性)失败;恢复后通过。
-正因为两侧都改才过得去第一关,验证的是真正想验证的那条属性。
 
 ## 有一半闸门其实能在 macOS 上跑
 

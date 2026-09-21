@@ -19,7 +19,7 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 ### 新增
 
-- **Today Tasks 待办组件** — 设计基线 §5.1 三款内置 Widget 中最后一块未内容化的部分。
+- **Today Tasks 待办组件（P0-3 已完成，commit `bca7f9b`）** — 设计基线 §5.1 三款内置 Widget 中最后一块未内容化的部分。此前该整套(9 个文件,25 提交)在未合入分支上且远端分支已被我误删,内容完整保存在本地引用与 bundle 中,现已合入主干,三款内置 Widget 齐备。
   含持久化任务存储（`TodayTaskStore`）、任务编辑器对话框（`TodayTaskEditorDialog`）、
   Content 数据提供者（`TodayTaskContentProvider`）、声明式 Scene 与外观参数。
   同时补上 Phase 2 中"Tasks 无变化不重绘"这一项。

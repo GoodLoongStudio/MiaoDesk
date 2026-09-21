@@ -330,13 +330,43 @@
     ②`kPointerInside` 归为 Float01 但语义是状态,与发布器写 bool 冲突;
     ③`kPointerEnter/Leave` 被误列为"需要交互",实际可由位置流推导
 - **尚未完成(必须 Windows 侧,本机无法验证)**:
-  - WASAPI loopback 采集(共享模式环回 + 设备变更处理)
-  - 桌面宿主的光标全局追踪与 `FeedAnalyzer` / `InputBusPublisher` 的实际接线
-  - `input://pointer/x|y` 的按显示器归属(多显示器下要知道光标在哪块屏)
+  - ~~WASAPI loopback 采集(共享模式环回 + 设备变更处理)~~ ✅ 已实施见下
+  - ~~桌面宿主的光标全局追踪与 `FeedAnalyzer` / `InputBusPublisher` 的实际接线~~ ✅ 已实施见下
+  - `input://pointer/x|y` 的按显示器归属 —— **已实施**(`MonitorFromPoint` +
+    `GetMonitorInfoW` → 该 slot 显示器的像素尺寸),但多显示器下的真机表现未验
+- **已实施(2026-09-22 深夜,commit `667292d`)**:
+  - **`MiaoWallpaperAudioTap`**(`src/desktop/wallpaper/monitor/`):WASAPI 共享模式 +
+    `AUDCLNT_STREAMFLAGS_LOOPBACK`,经 `IMMNotificationClient` 监听默认设备变更。
+    - 分析跑在采集线程,渲染线程只拷一份已算好的 `AudioSpectrumFrame`。16ms 的渲染帧
+      不该等一个音频包。
+    - 设备丢失是常态(拔 USB 耳机、切换默认输出):采集线程自行重建并退避 400ms,
+      不上报壁纸死亡。宿主继续跑。
+    - 混音格式只接受 32 位浮点,其余明确报错 —— 把 int16 当 float 读出来的噪声和真
+      信号完全一样,静默错比报错难查得多。
+    - 等待时长问 `IAudioClient::GetDevicePeriod` 而不是写死:设备周期 10ms 与 1.3ms
+      差 8 倍。
+    - 采集线程独占所有 COM 对象的生命周期(`CoInitializeEx` 的作用域就是这个函数)。
+  - **两个渲染器新增 `Runtime()` 接缝**:`InputBusPublisher` 要的是 `MiaoSceneRuntime&`,
+    没有这个访问器就只能绕过它重写"只写声明通道"的规则 —— 而那正是这个类的全部价值。
+    D3D11 头继续用前向声明,不把 `d3d11.h` 泄给使用方。
+  - **宿主接线**(`IndependentWallpaperHost`):
+    - 输入在**绘制前**发布。绘制后才写,绑定读到的是上一帧的值,所有反应晚一帧。
+    - 光标归属:`MonitorFromPoint` + `GetMonitorInfoW` → 该 slot 显示器的物理像素尺寸,
+      在**那块显示器内**归一化,不用虚拟桌面坐标。
+    - 按 `VK_LBUTTON` 的 `GetAsyncKeyState` 读按压,而不是从窗口消息推 —— 壁纸表层
+      从不获得焦点,因此永远收不到鼠标消息。
+    - 帧间隔用上一帧的真实时间戳(存在 slot 上,不是函数内 static:两个显示器的绘制
+      时刻不同,共享 static 会把一个的 delta 递给另一个)。
+    - `pointerInteractive` 由"场景是否声明了按压通道"推导,读声明而非开关。
+  - **音频 tap 只在至少一个 slot 跑 Scene 壁纸时才启动** —— 打开声卡是用户能察觉的
+    副作用;它的失败进 `DiagnosticsText()`,否则"音频壁纸为什么不响应"要来回一个支持轮次。
+  - **`DeclaresInteractiveInput` 提到 `MiaoInputBus.h`**:宿主向契约提问,新增交互通道
+    只需改一处。`InputBusCore` 加 14 项断言并双向验证(把 `kInteractivePointerChannels`
+    里的 `kPointerDown` 换成 `kPointerInside` → 6 处 FAIL;还原 → 全绿)。
 - **验收**:一份只用声明式绑定的音频响应壁纸,播放音乐时低频通道驱动
   SpriteRenderer 缩放;鼠标移动时 `input://pointer/x` 驱动 Transform 视差,
   且桌面图标仍可正常点击(证明确实没有抢走输入)。真机验证,不靠单测。
-- **状态**:🟡 契约 / 分析 / 入口 / 发布器已完成并测试;**WASAPI 采集与宿主接线未做**
+- **状态**:🟡 采集 / 接线 / 按显示器归属已实施;**待 Windows 编译与真机验收**
 
 ### B-3 表达力上限:响应曲线已落地,通用脚本解释器明确延后
 

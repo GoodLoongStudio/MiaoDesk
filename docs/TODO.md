@@ -18,6 +18,33 @@
 5. 阻塞商业发布的项标 `P0`,门的验收项标 `P1`,本地 AI 实施标 `P2`,技术债标 `P3`。
 6. 对标 Wallpaper Engine 的差距项以 `B-x` 编号,依据统一指向 `WALLPAPER_ENGINE_BENCHMARK.md` 的小节号。
 
+## 全局验证状态(2026-09-22 更新,读这份清单前先读它)
+
+**结论:至今没有任何一次 Windows 侧构建在本次开发中通过过。**
+
+- `Windows x64 Build` 最后一次成功是 **#353 / `321c39f`(2026-09-17)**。之后提交的
+  工作流全失败,而失败点一直是我引入的类型错误,不是产品设计问题。
+- 2026-09-21 修掉四处编译错误(`NativeTools.cpp` 对 `std::wstring` 调 `.wstring()`、
+  `constexpr` 非静态数据成员、`std::max(int, LONG)`、缺 `<cstring>`),同一类错误的
+  共同根因是:**那批代码从 9/17 起没经过任何认 Windows 头文件的编译器**。
+- 教训(两次,都写进提交里):判断 CI 步骤成败必须区分 `success` / `failure` /
+  `skipped` / `null`。把"被跳过"读成"通过",让"17 个验证步骤通过"这个结论完全失实 ——
+  那些步骤根本没运行。
+
+现在有两个本机闸门,新增 C++ 后先跑:
+
+| 闸门 | 命令 | 覆盖 | 不覆盖 |
+| --- | --- | --- | --- |
+| 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部 105 个独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
+| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 6 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+
+`MediaWallpaperPackageTest` 明确只能由 CI 覆盖:它链接 `WallpaperLibrary.cpp` →
+`UnicodeProfileFile.h:72` 有 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化
+要求 UTF-16 `wchar_t`),而 macOS 的 `wchar_t` 是 4 字节。这是产品设计约束。
+
+**下面所有标"待 Windows 编译/真机验收"的项,字面意思就是没验证过。** 离线通过 ≠ Windows
+通过;本机六个测试全绿也仍然不等于 Windows 验证。
+
 ## P0 — 阻塞商业发布
 
 ### P0-1 真实 Windows 多 DPI / 多显示器视觉闭环

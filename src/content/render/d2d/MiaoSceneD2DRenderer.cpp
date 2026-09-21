@@ -863,40 +863,6 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         return SUCCEEDED(target->EndDraw()) && drew && renderer.Loaded() &&
                renderer.Profile() == RuntimeProfile::Widget;
     }(), "A. 首帧绘制并 EndDraw,Loaded 与 profile 正确");
-    // This assertion had never executed before the SelfTest was ever called, and it is
-    // the one that fails on Windows. Rather than a third round of guessing, dump the
-    // actual channel values on failure: BGRA at each sampled point, so one CI round
-    // says whether the wrong pixel, the wrong expectation, or the drawing itself is at
-    // fault. The numbers are the diagnosis; the label alone is not.
-    if (ok) {
-        auto dump = [&](UINT x, UINT y, const char* what) {
-            std::printf("         %-18s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
-                        PixelChannel(bitmap.Get(), x, y, 0), PixelChannel(bitmap.Get(), x, y, 1),
-                        PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3));
-        };
-        // Dumped unconditionally, not only on failure. A passing assertion that prints
-        // its numbers is what makes the *next* failing one diagnosable, and the edge
-        // scan says whether the sprite is drawn at all and to what extent — which a
-        // centre/corner triple cannot distinguish (a text glyph at the centre would also
-        // make the centre "coloured").
-        const bool centreColoured = PixelHasColor(bitmap.Get(), 32, 32, true);
-        const bool innerCornerClear = PixelHasColor(bitmap.Get(), 17, 17, false);
-        const bool outerCornerClear = PixelHasColor(bitmap.Get(), 2, 2, false);
-        dump(32, 32, "centre");
-        dump(17, 17, "inner corner");
-        dump(2, 2, "outer corner");
-        std::printf("         y=32 横向扫描(0=暗,1=有颜色):");
-        for (UINT x = 0; x < 64; ++x) {
-            const bool lit = PixelChannel(bitmap.Get(), x, 32, 0) > 8 ||
-                             PixelChannel(bitmap.Get(), x, 32, 1) > 8 ||
-                             PixelChannel(bitmap.Get(), x, 32, 2) > 8;
-            std::printf("%d", lit ? 1 : 0);
-            if (x % 8 == 7) std::printf(" ");
-        }
-        std::printf("\n         (每 8 像素一组;纯色 0.5 缩放 + 12 圆角应该是 00000000 11111111 11111111 11111111 00000000)\n");
-        Step(centreColoured && innerCornerClear && outerCornerClear,
-             "A. 纯色 sprite 落在中心、圆角让四角留黑");
-    }
     Step(ok && [&] {
         MiaoSceneFrameDemand idleDemand;
         return renderer.PrepareFrame(1.0, &idleDemand, 60, &error) && !idleDemand.render;
@@ -927,6 +893,91 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     }(), "A. 动画结束后回到静止");
 
     ok = failures == 0;
+
+    // --- Phase A-geometry: the solid sprite's own pixels, with nothing else on top. ---
+    //
+    // These pixel assertions used to live in phase A, and phase A is where they cannot
+    // pass: that scene also has a centred white TextRenderer, and "HH:MM 晴" at 18px in a
+    // 64px box is wider than the box, so it word-wraps to two lines. Its first line lands
+    // at x≈[9.7,54.3], y≈[10.4,32] — which contains the (17,17) probe the assertion
+    // expected to be a dark rounded corner. The sprite was drawn correctly the whole
+    // time; the assertion was reading the clock's ink.
+    //
+    // A corner probe can only speak for the sprite when the sprite is alone. So this
+    // phase draws the same kind of sprite in a package with no TextRenderer, and the
+    // geometry assertions live here. Phase A keeps the structural checks (load, binding,
+    // host data, first frame, frame demand, animation lifecycle) where they always were.
+    if (ok) {
+        constexpr std::string_view solidSpriteScene = R"json({
+          "schema":1,"id":"scene://selftest-solid-sprite","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+          "nodes":[
+            {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[
+              {"id":"component://root/transform","kind":"transform","properties":[
+                {"name":"position","type":"vec2","default":[0.0,0.0]},
+                {"name":"scale","type":"vec2","default":[1.0,1.0]},
+                {"name":"rotation","type":"float","default":0.0},
+                {"name":"opacity","type":"float","default":1.0}]}]},
+            {"id":"node://panel","name":"Panel","parentId":"node://root","enabled":true,"components":[
+              {"id":"component://panel/transform","kind":"transform","properties":[
+                {"name":"position","type":"vec2","default":[0.0,0.0]},
+                {"name":"scale","type":"vec2","default":[0.5,0.5]},
+                {"name":"rotation","type":"float","default":0.0},
+                {"name":"opacity","type":"float","default":1.0}]},
+              {"id":"component://panel/sprite","kind":"spriteRenderer","properties":[
+                {"name":"opacity","type":"float","default":1.0},
+                {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+                {"name":"cornerRadius","type":"float","default":12.0},
+                {"name":"materialId","type":"string","default":"material://panel"}]}
+            ]}
+          ],
+          "assets":[],"shaders":[],
+          "materials":[{"id":"material://panel","model":"builtin","builtinName":"solidColor","properties":[
+            {"name":"color","type":"color","default":[0.2,0.4,0.8,1.0]}
+          ],"textures":[]}],
+          "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+          "bindings":[],"animations":[]
+        })json";
+        const fs::path solid = root / L"solid.mdwall";
+        MiaoSceneD2DRenderer solidRenderer;
+        std::wstring solidError;
+        if (ok && writeWallpaperPackage(solid, solidSpriteScene)) {
+            Step(solidRenderer.Load(solid, target.Get(), &solidError),
+                 "A2. 只有纯色 sprite 的场景加载(没有任何文本覆盖)");
+            if (ok) {
+                target->BeginDraw();
+                target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+                const bool drew = solidRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &solidError);
+                Step(SUCCEEDED(target->EndDraw()) && drew, "A2. 首帧绘制并 EndDraw");
+            }
+            auto dump = [&](UINT x, UINT y, const char* what) {
+                std::printf("         %-18s (%2u,%2u) BGRA = %3u,%3u,%3u,%3u\n", what, x, y,
+                            PixelChannel(bitmap.Get(), x, y, 0), PixelChannel(bitmap.Get(), x, y, 1),
+                            PixelChannel(bitmap.Get(), x, y, 2), PixelChannel(bitmap.Get(), x, y, 3));
+            };
+            // Dumped unconditionally, not only on failure: a passing assertion that prints
+            // its numbers is what makes the next failing one diagnosable.
+            const bool centreColoured = PixelHasColor(bitmap.Get(), 32, 32, true);
+            const bool innerCornerClear = PixelHasColor(bitmap.Get(), 17, 17, false);
+            const bool outerCornerClear = PixelHasColor(bitmap.Get(), 2, 2, false);
+            dump(32, 32, "centre");
+            dump(17, 17, "inner corner");
+            dump(2, 2, "outer corner");
+            // An edge scan, not just a centre/corner triple: it distinguishes "sprite not
+            // drawn" from "drawn at the wrong extent, or scaled, or unrounded".
+            std::printf("         y=32 横向扫描(0=暗,1=有颜色):");
+            for (UINT x = 0; x < 64; ++x) {
+                const bool lit = PixelChannel(bitmap.Get(), x, 32, 0) > 8 ||
+                                 PixelChannel(bitmap.Get(), x, 32, 1) > 8 ||
+                                 PixelChannel(bitmap.Get(), x, 32, 2) > 8;
+                std::printf("%d", lit ? 1 : 0);
+                if (x % 8 == 7) std::printf(" ");
+            }
+            std::printf("\n         (每 8 像素一组;0.5 缩放 + 12 圆角应为 00000000 11111111 11111111 11111111 00000000)\n");
+            Step(centreColoured && innerCornerClear && outerCornerClear,
+                 "A2. 纯色 sprite 落在中心、圆角让四角留黑");
+        }
+        fs::remove_all(solid, ec);
+    }
 
     // --- Phase B: a textured sprite, in a package that has no material at all. ---
     //

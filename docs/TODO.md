@@ -27,7 +27,15 @@
 - 2026-09-21 修掉四处编译错误(`NativeTools.cpp` 对 `std::wstring` 调 `.wstring()`、
   `constexpr` 非静态数据成员、`std::max(int, LONG)`、缺 `<cstring>`),同一类错误的
   共同根因是:**那批代码从 9/17 起没经过任何认 Windows 头文件的编译器**。
-- 教训(两次,都写进提交里):判断 CI 步骤成败必须区分 `success` / `failure` /
+- 2026-09-22 又发现**平行的第二个故障源**,和编译错误无关:
+  `content/render/d3d11/MiaoD3D11TextureLoader.cpp` 在磁盘上、语法没问题,但没进
+  `MIAODESK_*_SOURCES`,从来没被编译过 → 四个打包工作流挂在
+  `LNK2019: unresolved external MiaoD3D11TextureLoader::LoadImageW`。
+  这个类别落在所有闸门盲区里:语法闸门扫"磁盘上有什么",照样编译它,看不出它未被收录。
+- 同期还在 `packaging/windows/stage.ps1` 里发现**未解决的合并冲突标记**(我早前合
+  `_check/fix/unicode-wallpaper-theme-packages` 时留下的)。`.ps1` 不进 C++ 编译器,
+  所以它带着三行尖括号一路绿灯。
+- 教训(三次,都写进提交里):判断 CI 步骤成败必须区分 `success` / `failure` /
   `skipped` / `null`。把"被跳过"读成"通过",让"17 个验证步骤通过"这个结论完全失实 ——
   那些步骤根本没运行。
 

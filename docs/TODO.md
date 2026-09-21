@@ -164,7 +164,7 @@
 - **遗留**:真机未验证(需 Windows 桌面置入该 Widget、编辑任务、确认重绘与持久化)。
 - **状态**:✅ 代码已合入并通过包级/替换级验证;真机验收未做
 
-### P0-4 壁纸 `.mdwall` dogfood 补齐 ❌ 仍未完成(阻塞点已定位,不是"补内容"那么简单)
+### P0-4 壁纸 `.mdwall` dogfood 补齐 🟡 部分完成(新增一个此前未记录的硬阻塞)
 
 - **依据**:`MIAODESK_CONTENT_FRAMEWORK.md` §17 第一阶段第 10 项;§19 完成标准
 - **原判断被两次推翻**:
@@ -217,8 +217,60 @@
   8. 验收:`MiaoSceneSerializer::Deserialize` + `Validate` + `Initialize` 通过,
      且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`;
      最终以"壁纸在真机上显示全部 5 层且眨眼动画生效"为准。
+  ## 新增:第三个阻塞 —— 两个包根本没有美术资源(2026-09-22 发现)
+
+  走 `MiaoContentPackage::Load → MiaoSceneSerializer::DeserializePackage →
+  MiaoSceneRuntimeModel::Validate → MiaoSceneRuntime::Initialize →
+  MiaoAssetDatabase::Build` 这条链跑三个真包(新增
+  `MiaoDeskBuiltinWallpaperPackagesTest`,纯逻辑,每轮都跑)时暴露:
+
+  - **NeonCity.mdwall 与 MysticMoon.mdwall 里没有任何资产文件。** 目录下只有
+    `manifest.json` / `scene.ini` / `scene.json` 三个文件。
+  - 它们的 `scene.ini` 各声明 5 个图片图层(`assets/background.jpg`、
+    `assets/city_glow.png` …、`assets/moon_glow.png` …)。
+  - 而 git 历史里从来没有这两个路径下 `assets/*` 的记录(`git log --all` 为空),
+    那些文件名在全仓库也搜不到。
+  - 只有 **MiaoCloud** 真的带着自己的 5 张图(background.jpg / cloud.png /
+    tail.png / cat.png / blink.png)。
+
+  所以对那两个包,P0-4 的"内容迁移"不是写 scene.json 的问题 —— **没有素材可写**。
+  这不属于开发工作能闭合的范围,需要补美术资产。`MiaoCloud.mdwall` 的 scene.json
+  已填成 5 层,那两个仍是空壳,并且这件事被测试钉成了断言,不会被当成一次性发现。
+
+  另注:`LayeredSceneRenderer.h::LoadBitmap` 在文件缺失时返回 false,而
+  `DrawLayer` 是 `if (!layer.bitmap) return;` —— 即**缺图的图层被静默跳过**。
+  这解释了那两个包今天在桌面上为什么"看起来还在跑":它们本来就在静默缺图。
+
+  ## 已落地(2026-09-22)
+
+  上面第三节的 D2D 渲染侧改动(见"实测证据(二)"之后的更新)+ MiaoCloud 内容迁移:
+
+  - `scripts/generate-miao-cloud-scene.py` 从 `scene.ini` 生成 `scene.json`。
+    几何映射由脚本算而非手写,并对每层做一次逆合成 assert 回原矩形;
+    它当场抓到了"先 round 再 verify 会让宽度差 1e-3"。
+    映射:`scale = (w/dw, h/dh)`;
+    `position = (x - dw/2·(1-sx), y - dh/2·(1-sy))`。
+  - `MiaoCloud.mdwall/scene.json`:1 个 root + 5 个图层节点,5 个 Image 资产,
+    5 个 sprite 各带 `texture` 资产引用。
+  - `MiaoDeskBuiltinWallpaperPackagesTest` 把三个包走完整链并断言。
+
+  ## 仍未完成 / 未验证
+
+  - **D2D 贴图绘制未在真 Windows 上验证过。** `MiaoDeskSceneD2DRendererTest`
+    已在 CI 里跑起来了(它此前**从未被执行过** —— `SelfTest()` 一个调用方都没有),
+    而在 6b3677b 之前的轮次里它返回 false 且只报"返回 false",不指出哪一步;
+    已把两段都拆成带标签的 Step,下一轮就能定位。
+  - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件)。
+    原因与三种被否的权宜做法见渲染器注释。
+  - **NeonCity / MysticMoon:缺 10 张美术资产**(上面第一节)。
+  - **动画与粒子按设计留空,且被测试显式记录为缺口**:`scene.ini` 的六种动画全是
+    解析式正弦(`drift` 还让 y 轴用 `speed*0.77` 的另一个周期),场景动画是线性
+    关键帧轨;要在"完全复现"与"循环处连续"之间取舍属于要看真实桌面效果的决定。
+  - **`legacy_entry` 刻意保留**:切入口需要真机验收,不在一台编译不了的机器上猜。
+  - D3D11 后端仍没有经 `texture` 属性的贴图路径(它的取图一直是
+    `material.textures[]` + 可编程材质)。
 - **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除(2026-09-22;契约校验在 `f41903e`,
-  D2D 绘制与测试在紧随其后的那一提交)
+  D2D 绘制、测试与 MiaoCloud 内容迁移在 `6b3677b`)
 
   走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
   之间开一条直接引用路径",没有新增 builtin 材质 ——

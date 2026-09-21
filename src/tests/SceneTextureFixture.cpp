@@ -11,19 +11,39 @@
 // textured sprite still needed a solidColor material to reach the draw path, that scene
 // would be invalid, and this test is what says so out loud.
 #include "miaodesk/MiaoAssetDatabase.h"
+#include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneModel.h"
 #include "miaodesk/MiaoSceneRuntimeModel.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <system_error>
 
 using namespace miaodesk::content;
 
-// Must stay byte-identical to the `texturedScene` literal in
-// MiaoSceneD2DRenderer.cpp's SelfTest. scripts/verify-scene-fixture-parity.sh enforces
-// that, because the two copies are otherwise free to drift — and the copy that drifts
-// is always the one nobody runs.
+namespace fs = std::filesystem;
+static std::error_code error_removal;
+
+// The three literals below must stay byte-identical to `texturedScene` /
+// `wallpaperManifest` / `emptyParameters` in MiaoSceneD2DRenderer.cpp's SelfTest.
+// scripts/verify-scene-fixture-parity.sh enforces all three, because the two copies are
+// otherwise free to drift — and the copy that drifts is always the one nobody runs.
+//
+// Why the manifest and the parameter file are here and not just the scene: the first
+// version of this SelfTest wrote scene.json into its sub-packages and nothing else, so
+// every phase died at MiaoContentPackage::Load with "requires manifest.json". That is
+// fifty lines of pure logic — no D2D, no WIC — and it cost a 90-second Windows round
+// trip to find out, because the only test that reaches it is the Windows-only one.
+// Writing the whole package here means the package's *shape* is pinned on every commit.
+constexpr std::string_view kWallpaperManifest = R"json({
+  "schema":1,"id":"com.goodloong.selftest-textured","name":"Self Test Textured","author":"MiaoDesk","version":"1.0.0",
+  "kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
+})json";
+constexpr std::string_view kEmptyParameters = R"json({"schema":1,"parameters":[]})json";
 constexpr std::string_view kTexturedScene = R"json({
   "schema":1,"id":"scene://selftest-textured","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
   "nodes":[
@@ -53,15 +73,57 @@ static void Check(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
+// Writes the whole package the way MiaoSceneD2DRenderer's SelfTest does — manifest,
+// parameters, scene, and a placeholder image — then hands the directory to
+// MiaoContentPackage::Load. The image is deliberately not a real PNG: WIC decoding is
+// Windows-only and is covered by the Windows test. Everything before the decoder is
+// package plumbing, and that plumbing is exactly what was missing the first time.
+bool WriteFixturePackage(const fs::path& package) {
+    std::error_code ec;
+    fs::remove_all(package, ec);
+    fs::create_directories(package / L"assets", ec);
+    if (ec) return false;
+    const char placeholder[] = "not-a-real-png; the asset database only needs the file to exist";
+    {
+        std::ofstream image(package / L"assets" / L"panel.png", std::ios::binary | std::ios::trunc);
+        image.write(placeholder, sizeof(placeholder) - 1);
+        if (!image) return false;
+    }
+    auto write = [](const fs::path& path, std::string_view text) {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(text.data(), static_cast<std::streamsize>(text.size()));
+        return static_cast<bool>(out);
+    };
+    return write(package / L"manifest.json", kWallpaperManifest) &&
+           write(package / L"parameters.json", kEmptyParameters) &&
+           write(package / L"scene.json", kTexturedScene);
+}
+
 int wmain() {
     std::wstring error;
 
+    std::printf("\n0. 整个包的形状:MiaoContentPackage::Load 必须接受\n");
+    const fs::path package = fs::temp_directory_path() / L"MiaoDesk-SceneTextureFixture.mdwall";
+    Check(WriteFixturePackage(package), "manifest.json + parameters.json + scene.json 落盘");
+    LoadedMiaoContentPackage loaded;
+    const bool packageLoaded = MiaoContentPackage::Load(package, &loaded, &error);
+    Check(packageLoaded, "MiaoContentPackage::Load 接受这个包");
+    if (!packageLoaded) {
+        std::printf("         (error = %ls)\n", error.c_str());
+        std::printf("         这一种失败此前只能等一轮 Windows CI —— 包形状是纯逻辑,\n");
+        std::printf("         而唯一能走到它的测试是 Windows-only 的那个。\n");
+        fs::remove_all(package, error_removal);
+        std::printf("\nSOME CHECKS FAILED (%d failure(s))\n", failures + 1);
+        return 1;
+    }
+
     std::printf("\n1. 贴图场景 fixture 能被反序列化\n");
     SceneRuntimeDefinition runtime;
-    const bool parsed = MiaoSceneSerializer::Deserialize(kTexturedScene, "{\"schema\":1,\"parameters\":[]}", &runtime, &error);
+    const bool parsed = MiaoSceneSerializer::DeserializePackage(loaded, &runtime, &error);
     Check(parsed, "texturedScene 反序列化成功");
     if (!parsed) {
         std::printf("         (error = %ls)\n", error.c_str());
+        fs::remove_all(package, error_removal);
         std::printf("\nSOME CHECKS FAILED (%d failure(s))\n", failures + 1);
         return 1;
     }
@@ -141,6 +203,15 @@ int wmain() {
         }
     }
 
+    std::printf("\n9. 资产文件真的在磁盘上(MiaoAssetDatabase::Build)\n");
+    {
+        MiaoAssetDatabase assets;
+        const bool built = assets.Build(package, runtime, &error);
+        Check(built, "assets/panel.png 解析成功");
+        if (built) Check(assets.Size() == 1, "恰好一个资产");
+    }
+
+    fs::remove_all(package, error_removal);
     std::printf("\n%s (%d failure(s))\n", failures ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED", failures);
     return failures ? 1 : 0;
 }

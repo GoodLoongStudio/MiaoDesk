@@ -814,6 +814,26 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     if (ok) ok = SUCCEEDED(wic->CreateBitmap(64, 64, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, bitmap.GetAddressOf()));
     if (ok) ok = SUCCEEDED(factory->CreateWicBitmapRenderTarget(bitmap.Get(), D2D1::RenderTargetProperties(), target.GetAddressOf()));
 
+    // Phases B and C build their own sub-packages, so each one needs the files
+    // MiaoContentPackage::Load insists on: a manifest whose kind matches the scene,
+    // the parameter file the manifest declares, and a directory extension matching
+    // the kind (.mdwall for wallpaper). The first version of this test wrote only
+    // scene.json into each sub-package and every phase failed at Load with
+    // "Miao content package requires manifest.json" — a cost of one Windows round trip
+    // for something ContentPackage::Load decides in fifty lines of pure logic.
+    const auto writeWallpaperPackage = [&](const fs::path& package, std::string_view sceneJson) {
+        constexpr std::string_view wallpaperManifest = R"json({
+          "schema":1,"id":"com.goodloong.selftest-textured","name":"Self Test Textured","author":"MiaoDesk","version":"1.0.0",
+          "kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
+        })json";
+        constexpr std::string_view emptyParameters = R"json({"schema":1,"parameters":[]})json";
+        std::error_code local;
+        fs::create_directories(package / L"assets", local);
+        return WriteTextFile(package / L"manifest.json", wallpaperManifest) &&
+               WriteTextFile(package / L"parameters.json", emptyParameters) &&
+               WriteTextFile(package / L"scene.json", sceneJson);
+    };
+
     std::wstring error;
     // A boolean with no output is unactionable in CI: this gate runs as a Windows step
     // whose only signal is the ::error:: annotations the wrapper emits, and
@@ -888,7 +908,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
     // one, and if the textured branch were still gated behind a solidColor material
     // lookup this phase would draw nothing and fail on the first pixel assertion.
     if (ok) {
-        const fs::path textured = root / L"textured.mdwidget";
+        const fs::path textured = root / L"textured.mdwall";
         fs::create_directories(textured / L"assets", ec);
         // Flat magenta, chosen because neither the phase-A blue nor the black clear
         // colour is anywhere near it, so a pass cannot come from the wrong source.
@@ -919,7 +939,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
         // The same manifest works: the manifest describes the package, and both phases
         // are scene-runtime content.
         ok = WriteSelfTestPng(wic.Get(), textured / L"assets" / L"panel.png", kMagentaBgra) &&
-             WriteTextFile(textured / L"scene.json", texturedScene);
+             writeWallpaperPackage(textured, texturedScene);
         Step(ok, "B. 用 WIC 写出 2x2 品红 PNG 并落成包内资产");
 
         MiaoSceneD2DRenderer texturedRenderer;
@@ -973,7 +993,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
               "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
               "bindings":[],"animations":[]
             })json";
-            const fs::path tinted = root / L"tinted.mdwidget";
+            const fs::path tinted = root / L"tinted.mdwall";
             fs::create_directories(tinted / L"assets", ec);
             MiaoSceneD2DRenderer tintedRenderer;
             std::wstring tintedError;
@@ -981,7 +1001,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             // the model validator accepts it. It is the draw path that refuses, which
             // is what makes the next assertion meaningful.
             if (ok && WriteSelfTestPng(wic.Get(), tinted / L"assets" / L"panel.png", kMagentaBgra) &&
-                       WriteTextFile(tinted / L"scene.json", tintedScene)) {
+                       writeWallpaperPackage(tinted, tintedScene)) {
                 // Load must still succeed: a non-white tint is a perfectly legal scene,
                 // and the model validator accepts it. It is the draw path that refuses.
                 Step(tintedRenderer.Load(tinted, target.Get(), &tintedError),
@@ -1035,11 +1055,11 @@ bool MiaoSceneD2DRenderer::SelfTest() {
               "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
               "bindings":[],"animations":[]
             })json";
-            const fs::path spatial3D = root / L"spatial3d.mdwidget";
+            const fs::path spatial3D = root / L"spatial3d.mdwall";
             fs::create_directories(spatial3D, ec);
             MiaoSceneD2DRenderer spatialRenderer;
             std::wstring spatialError;
-            if (ok && WriteTextFile(spatial3D / L"scene.json", spatial3DScene)) {
+            if (ok && writeWallpaperPackage(spatial3D, spatial3DScene)) {
                 const bool loaded = spatialRenderer.Load(spatial3D, target.Get(), &spatialError);
                 error = spatialError;  // Step prints `error`, so surface the refusal's reason
                 Step(!loaded && spatialError.find(L"scene://selftest-spatial-3d") != std::wstring::npos,
@@ -1049,8 +1069,9 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             fs::remove_all(spatial3D, ec);
         }
 
-        fs::remove_all(root / L"textured.mdwidget", ec);
-        fs::remove_all(root / L"tinted.mdwidget", ec);
+        fs::remove_all(root / L"textured.mdwall", ec);
+        fs::remove_all(root / L"tinted.mdwall", ec);
+        fs::remove_all(root / L"spatial3d.mdwall", ec);
     }
 
     renderer.Reset();

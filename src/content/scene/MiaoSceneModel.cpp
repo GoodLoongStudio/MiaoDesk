@@ -28,6 +28,24 @@ bool HasPrefix(std::wstring_view value, std::wstring_view prefix) noexcept {
     return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
 }
 
+// File-local rather than shared: these two lookups are only needed by validation, and
+// putting them in a header would drag MiaoSceneRuntimeModel's PropertyAddress into this
+// layer for no other reason.
+const AssetDefinition* FindAsset(const SceneDefinition& scene, std::wstring_view id) noexcept {
+    for (const auto& asset : scene.assets) {
+        if (asset.id == id) return &asset;
+    }
+    return nullptr;
+}
+
+const PropertyDefinition* FindProperty(const SceneComponentDefinition& component,
+                                       std::wstring_view name) noexcept {
+    for (const auto& property : component.properties) {
+        if (property.name == name) return &property;
+    }
+    return nullptr;
+}
+
 bool PropertyTypeMatches(const PropertyDefinition& property) noexcept {
     switch (property.type) {
     case PropertyType::Bool:
@@ -103,6 +121,28 @@ bool MiaoSceneModel::Validate(const SceneDefinition& scene, std::wstring* error)
                     return Fail(error, L"Duplicate component property: " + property.name);
                 if (!PropertyTypeMatches(property))
                     return Fail(error, L"Component property default value does not match its declared type: " + property.name);
+            }
+
+            // A SpriteRenderer names its image through a `texture` asset reference. This
+            // is the one place the rule lives: without it, a typo'd or missing asset id
+            // would pass validation and then surface as a blank rectangle at render
+            // time, which reads as a renderer bug rather than an authoring mistake.
+            // (The property itself needs no special-casing — assetReference is already a
+            // general property type, and MiaoAssetDatabase already tracks the dependency.)
+            if (component.kind == ComponentKind::SpriteRenderer) {
+                const auto* texture = FindProperty(component, L"texture");
+                if (texture) {
+                    const auto* reference = std::get_if<AssetReference>(&texture->defaultValue);
+                    if (!reference)
+                        return Fail(error, L"SpriteRenderer texture must be an assetReference: " + component.id);
+                    if (!reference->id.empty()) {
+                        const auto* asset = FindAsset(scene, reference->id);
+                        if (!asset)
+                            return Fail(error, L"SpriteRenderer texture references a missing asset: " + reference->id);
+                        if (asset->type != AssetType::Image)
+                            return Fail(error, L"SpriteRenderer texture must reference an Image asset: " + reference->id);
+                    }
+                }
             }
         }
     }

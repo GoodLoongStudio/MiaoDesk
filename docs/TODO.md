@@ -39,12 +39,18 @@
   `skipped` / `null`。把"被跳过"读成"通过",让"17 个验证步骤通过"这个结论完全失实 ——
   那些步骤根本没运行。
 
-现在有两个本机闸门,新增 C++ 后先跑:
+现在有五个本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
 | 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部 105 个独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
 | 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 6 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+| CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被编译 | CMakeLists 的意图是否合理 |
+| 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
+| skill 白名单 | `scripts/verify-skill-allowlist.sh` | `kContentSkills` 与 `skills/` 是否一致 | CI 上真实的注入效果 |
+
+后三个由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
+构建能否通过,所以不该被构建类工作流挡住。
 
 `MediaWallpaperPackageTest` 明确只能由 CI 覆盖:它链接 `WallpaperLibrary.cpp` →
 `UnicodeProfileFile.h:72` 有 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化

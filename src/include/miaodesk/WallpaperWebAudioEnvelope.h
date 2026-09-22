@@ -61,8 +61,14 @@ inline std::string BuildAudioBridgeEnvelope(const content::inputbus::AudioSpectr
     if (frame.bands.size() != 5) return {};
     if (frame.spectrum.size() != content::inputbus::kSpectrumBins) return {};
 
+    // `> 0` rather than `>= 0`: with `>=`, a negative zero passes the range check and
+    // reaches the formatter, which writes "-0.0000" — legal JSON, but it is a wart that
+    // reaches the page, and the asymmetry is worse than the wart: -1e-300 would clamp to
+    // 0.0000 while -0.0 did not. With `>`, anything that is not strictly positive —
+    // NaN, any negative value, and both zeros — becomes 0.0, which is what the shim's
+    // own unit() ends up with anyway.
     auto unit = [](double value) {
-        if (!(value >= 0.0)) return 0.0;  // false for NaN, and for < 0
+        if (!(value > 0.0)) return 0.0;
         if (value > 1.0) return 1.0;
         return value;
     };

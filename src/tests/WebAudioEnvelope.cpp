@@ -125,6 +125,20 @@ static void TestValueCoercion() {
     frame.level = -std::numeric_limits<double>::quiet_NaN();
     Check(BuildAudioBridgeEnvelope(frame).find("\"level\":0.0000") != std::string::npos,
           "level=-NaN 钳到 0");
+
+    // 负零。第一版 unit() 写的是 `!(value >= 0.0)`,于是 -0.0 被判为在区间内、
+    // 一路走到格式化,产出 "level":-0.0000 —— 合法 JSON,但是个疙瘩,而且比疙瘩更糟的
+    // 是不对称:-1e-300 会被钳成 0.0000,-0.0 却不会。
+    frame.level = -0.0;
+    const std::string negativeZero = BuildAudioBridgeEnvelope(frame);
+    Check(negativeZero.find("-0.0000") == std::string::npos && negativeZero.find("\"level\":0.0000") != std::string::npos,
+          "level=-0.0 输出 0.0000(不输出 -0.0000)");
+
+    // 次正规数与极小额:固定小数位下必须落成 0.0000,不能变成科学计数法。
+    frame.level = std::numeric_limits<double>::denorm_min();
+    Check(BuildAudioBridgeEnvelope(frame).find("e-") == std::string::npos &&
+              BuildAudioBridgeEnvelope(frame).find("\"level\":0.0000") != std::string::npos,
+          "denorm_min 落成 0.0000(不出科学计数法)");
 }
 
 static void TestLocaleIndependence() {

@@ -109,15 +109,20 @@ bool WriteMagentaPng(IWICImagingFactory* factory, const fs::path& path) {
     ComPtr<IWICBitmapEncoder> encoder;
     if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())))
         return false;
+    // This block is deliberately identical to MiaoSceneD2DRenderer's WriteSelfTestPng,
+    // which is proven on this exact runner. My first version drifted from it in two ways —
+    // it passed nullptr for the frame's property bag and it called
+    // SetPixelFormat(PBGRA), which PNG does not support. Neither was the crash, but
+    // "identical to the path that works" is worth more here than a shorter version.
     ComPtr<IWICBitmapFrameEncode> frame;
+    ComPtr<IPropertyBag2> options;
     if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) return false;
-    if (FAILED(encoder->CreateNewFrame(frame.GetAddressOf(), nullptr))) return false;
+    if (FAILED(encoder->CreateNewFrame(frame.GetAddressOf(), options.GetAddressOf()))) return false;
     if (FAILED(frame->Initialize(nullptr))) return false;
     if (FAILED(frame->SetSize(2, 2))) return false;
-    WICPixelFormatGUID format = GUID_WICPixelFormat32bppPBGRA;
-    if (FAILED(frame->SetPixelFormat(&format))) return false;
     if (FAILED(frame->WriteSource(bitmap.Get(), nullptr))) return false;
-    return SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit());
+    if (FAILED(frame->Commit())) return false;
+    return SUCCEEDED(encoder->Commit());
 }
 
 } // namespace

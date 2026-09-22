@@ -92,7 +92,21 @@ for (const [index, pair] of pairs.entries()) {
     const f = received[0];
     const want = pair.input;
     const near = (a, b) => Math.abs(a - b) <= 5e-5;   // 四位小数的一半,含 round
+    // 期望值 = 输入值经过两侧一致的钳位。非有限值在输入行里是 "nan"/"inf"/"-inf",
+    // 而三者钳出来的结果不同(nan 与 -inf -> 0,+inf -> 1)—— 用一个 null 标记分辨不出,
+    // 所以我第一版的 null 方案本身就是错的,是被这条样本抓出来的。
+    const expect = (v) => {
+      if (v === 'nan' || v === '-inf') return 0;
+      if (v === 'inf') return 1;
+      if (v === null || v === undefined) return 0;
+      if (!(v >= 0)) return 0;
+      if (v > 1) return 1;
+      return v;
+    };
     const cmp = (label, got, exp) => {
+      // expect 作用在**期望**侧:收到的一侧已经被 shim 钳过了。反过来写给收到值再套一次
+      // 钳位是无效运算,而期望侧仍是原始输入,于是永远拿 1 去比 2。
+      exp = expect(exp);
       if (!near(got, exp)) {
         throw new Error(`${label}: 收到 ${got},发出 ${exp}(信封 ${out[index * 2 + 1]})`);
       }

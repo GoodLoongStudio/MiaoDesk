@@ -68,12 +68,23 @@ assert old in s
 open(p, 'w', encoding='utf-8').write(s.replace(old, new))
 PY
 
+cat > /tmp/m5.py <<'PY5'
+p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+s = open(p, encoding='utf-8').read()
+old = '        if (!(value > 0.0)) return 0.0;'
+new = '        if (value < 0.0) return 0.0;'
+assert old in s
+open(p, 'w', encoding='utf-8').write(s.replace(old, new))
+PY5
+
+
 echo "=== 注入已知失效 ==="
 fails=0
 run 'beat 发 1/0 而非布尔'      'beat: 收到'                /tmp/m1.py || fails=$((fails+1))
 run '字段名 bands -> band'      '信封被接受'                /tmp/m2.py || fails=$((fails+1))
 run 'spectrum 少发一条'         '信封被接受'                /tmp/m3.py || fails=$((fails+1))
 run '精度降到一位小数'          'bands\[1\]'               /tmp/m4.py || fails=$((fails+1))
+run 'NaN 不被钳(产出非法 JSON)' 'is not valid JSON'          /tmp/m5.py || fails=$((fails+1))
 
 echo
 echo "=== 还原后复跑(必须全绿) ==="

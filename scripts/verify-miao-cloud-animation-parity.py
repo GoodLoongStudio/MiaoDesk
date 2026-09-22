@@ -43,6 +43,11 @@ INI = PACKAGE / "scene.ini"
 # 均匀采样 + 线性插值的解析上界:A*(1-cos(pi/(N-1)))。
 SAMPLES = 16
 BOUND = 1.0 - math.cos(math.pi / (SAMPLES - 1))
+# 第二项:采样值按 6 位小数写入(见 generate-miao-cloud-scene.py 的 rounded()),
+# 每个值最多引入 0.5e-6 的量化误差,而轨值与解析值各一次,所以是 1e-6。
+# 少了这一项, breathe 的最大误差会刚好压在解析上界上并被判 FAIL ——
+# 那不是迁移变差了,是上界算漏了一项。
+ROUNDING = 1e-6
 
 
 def fail(msg):
@@ -243,8 +248,9 @@ def main():
                     note = " (方波,精确)" if worst[key] < 1e-9 else " (方波!)"
                     ok = worst[key] < 1e-9
                 else:
-                    ok = worst[key] <= bound + 1e-9
-                    note = f" (上界 {bound:.4f})"
+                    limit = bound + ROUNDING
+                    ok = worst[key] <= limit
+                    note = f" (上界 {limit:.4f} = {bound:.4f} + {ROUNDING:g})"
                 print(f"    {label:<16} 最大误差 {worst[key]:.4f}{note}  {'ok' if ok else 'FAIL'}")
                 if not ok:
                     failures += 1

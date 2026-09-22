@@ -93,12 +93,32 @@ def period_of(speed):
     return 2.0 * math.pi / speed if speed > 0 else 0.0
 
 
+def rounded(value, places=6):
+    """把采样值按固定小数位写进 scene.json。
+
+    为什么必须 round:关键帧的值来自 math.sin / math.cos,而**超越函数的结果
+    依赖平台的 libm**。glibc 与 macOS 的 sin 在末位可能不同,json.dumps 会
+    把这个末位差原样写进产物 —— 于是"重新生成与磁盘逐字节一致"这道门在
+    另一个平台上必红,而差异只是 1e-16 的相对量。
+    2026-09-22 就这么红了两轮:在 macOS 上生成、在 Linux CI 上校验,报
+    "不一致",而我本机复现不出来,因为本机就是生成它的那一边。
+
+    小数位取 6:本项目动画幅值最大 14px,6 位是 1e-6 px,远小于声明的
+    A*(1-cos(pi/15)) = 0.306px 误差上界。乘加除是 IEEE 精确舍入、与平台
+    无关的,所以 time 本来不需要 round;round 它是为了让同一份产物在任何
+    机器上都逐字节相同。
+    """
+    if isinstance(value, list):
+        return [round(v, places) for v in value]
+    return round(value, places)
+
+
 def track(component_id, prop, fn, period, name):
     """一个周期内均匀采样,Linear,loop。"""
     keys = []
     for i in range(SAMPLES_PER_PERIOD):
         t = period * i / (SAMPLES_PER_PERIOD - 1)
-        keys.append({"time": t, "value": fn(t), "easing": "linear"})
+        keys.append({"time": t, "value": rounded(fn(t)), "easing": "linear"})
     return {
         "id": "animation://miao-cloud/%s" % name,
         "target": {"componentId": component_id, "propertyName": prop},

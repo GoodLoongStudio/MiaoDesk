@@ -56,7 +56,7 @@ const SceneComponentDefinition* FindTransform(const SceneNodeDefinition& node) n
     return nullptr;
 }
 
-// The materialId as authored, without the fallback below. The material policy needs the
+// The materialId as authored, without any fallback. The material policy needs the
 // distinction: "author wrote no materialId" and "author wrote a materialId that names
 // nothing" are different situations, and only the second is a mistake worth reporting.
 //
@@ -73,22 +73,6 @@ std::wstring DeclaredMaterialId(const SceneComponentDefinition& component, const
         }
     }
     return {};
-}
-
-const MaterialDefinition* ResolveMaterial(
-    const SceneRuntimeDefinition& definition,
-    const SceneComponentDefinition& component) {
-    if (const auto* property = FindDefinitionProperty(component, L"materialId")) {
-        if (property->type == PropertyType::String) {
-            if (const auto* id = std::get_if<std::wstring>(&property->defaultValue)) {
-                if (const auto* material = MiaoSceneRuntimeModel::FindMaterial(definition, *id)) return material;
-            }
-        }
-    }
-    for (const auto& material : definition.materials) {
-        if (material.model == MaterialModel::Builtin) return &material;
-    }
-    return nullptr;
 }
 
 Color4 ReadColor(const PropertyValue* value, Color4 fallback) {
@@ -516,26 +500,28 @@ struct MiaoSceneD2DRenderer::Impl {
         // textured sprite with no materialId drew here and failed to *load* on D3D11 —
         // MiaoCloud, the only fully populated wallpaper in the repository.
         //
-        // The sprite's materialId as *declared*, which may legitimately be empty. Empty
-        // matters: ResolveMaterial then applies this backend's long-standing fallback of
-        // taking the scene's first builtin material. The policy is handed the declared id
-        // alongside the resolved material so that an id naming *nothing* is an error
-        // instead of being quietly replaced by that fallback.
+        // The sprite's materialId as *declared*, which may legitimately be empty. Empty is
+        // meaningful: with no materialId the policy applies the shared "scene's first
+        // builtin" fallback. The declared id is handed in separately so that an id naming
+        // *nothing* stays an error instead of being quietly replaced by that fallback.
         const std::wstring declaredMaterialId = DeclaredMaterialId(component, runtime);
-        const auto* material = declaredMaterialId.empty()
-            ? ResolveMaterial(definition, component)
-            : MiaoSceneRuntimeModel::FindMaterial(definition, declaredMaterialId);
 
         SpriteMaterialInput input;
         input.materialId = declaredMaterialId;
-        input.material = material;
+        // The scene's materials, not a pre-resolved pointer. The policy owns the lookup
+        // (including the "scene's first builtin" fallback for a sprite that declares no
+        // materialId) precisely so that this backend and the D3D11 one cannot resolve the
+        // same content to different materials — which is what they did before.
+        input.sceneMaterials = &definition.materials;
         input.componentId = component.id;
         // The id, not the decoded bitmap: this decision is about what the author asked
         // for, and asking needs no WIC work.
         if (const auto* reference = ResolveTextureReference(component)) input.textureAssetId = reference->id;
 
+        const MaterialDefinition* material = nullptr;
         SpriteDrawPath path = SpriteDrawPath::SolidColor;
-        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/false, &path, error)) return false;
+        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/false, &material, &path, error))
+            return false;
 
         // With no shader path the policy can only have returned these two, so a sprite it
         // refused (a programmable material here, nothing to draw) has already returned

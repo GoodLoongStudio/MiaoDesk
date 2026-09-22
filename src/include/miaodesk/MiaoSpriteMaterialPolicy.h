@@ -44,11 +44,11 @@ enum class SpriteDrawPath {
 };
 
 struct SpriteMaterialInput {
-    // Empty when the sprite declares no materialId at all. Non-empty-and-null below means
-    // an id that names no material, which is always an error: dropping it silently leaves
-    // the author asking why the colour is ignored.
     std::wstring materialId;
-    const MaterialDefinition* material{};
+    // The scene's materials in declaration order. Only consulted when `materialId` is
+    // empty, to apply one fallback rule both backends share (see the comment on
+    // `resolvedMaterial` below). Null when the caller already resolved it.
+    const std::vector<MaterialDefinition>* sceneMaterials{};
     // Empty when the sprite declares no texture.
     std::wstring textureAssetId;
     // The component being decided for. Only used to make diagnostics name something.
@@ -60,9 +60,18 @@ struct SpriteMaterialInput {
 // `backendHasShaderPath` is the one legitimate difference between the backends: D3D11 can
 // run a package-authored pixel shader, D2D cannot. It is passed rather than inferred so
 // the rule itself stays identical on both sides.
+//
+// `resolvedMaterial` receives the material to draw with, which is not always the one the
+// caller looked up: when the sprite declares no `materialId` at all, both backends apply
+// the same fallback of taking the scene's first builtin material. That fallback used to
+// live in D2D's ResolveMaterial only, so a sprite with a material-bearing scene but no
+// materialId and no texture drew on D2D and was refused by D3D11 — the same
+// one-backend-only failure as MiaoCloud. Moving the fallback here is what makes it one
+// rule. May be null (a textured sprite needs no material).
 bool ResolveSpriteDrawPath(
     const SpriteMaterialInput& input,
     bool backendHasShaderPath,
+    const MaterialDefinition** resolvedMaterial,
     SpriteDrawPath* path,
     std::wstring* error);
 

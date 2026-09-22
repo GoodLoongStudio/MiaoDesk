@@ -648,18 +648,24 @@ struct MiaoSceneD3D11Renderer::Impl {
         renderableNode = FindComponentNode(definition.scene, renderable->id);
         if (!renderableNode) return Error(error, L"Scene SpriteRenderer has no owning node.");
         const auto materialId = MaterialIdFor(*renderable, runtime);
-        material = materialId.empty() ? nullptr : MiaoSceneRuntimeModel::FindMaterial(definition, materialId);
 
         SpriteMaterialInput input;
         input.materialId = materialId;
-        input.material = material;
+        // The scene's materials, not a pre-resolved pointer: the policy owns the lookup so
+        // both backends resolve the same content the same way. D2D had a
+        // "scene's first builtin" fallback that this backend lacked, so a sprite with no
+        // materialId and no texture drew on D2D and was refused to load here.
+        input.sceneMaterials = &definition.materials;
         const auto texture = SpriteTextureReference();
         input.textureAssetId = texture.id;
         input.componentId = renderable->id;
 
+        const MaterialDefinition* resolved = nullptr;
         SpriteDrawPath path = SpriteDrawPath::SolidColor;
-        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/true, &path, error)) return false;
+        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/true, &resolved, &path, error))
+            return false;
 
+        material = resolved;
         programmable = path == SpriteDrawPath::ProgrammableMaterial;
         textured = path == SpriteDrawPath::SpriteTexture;
         return true;

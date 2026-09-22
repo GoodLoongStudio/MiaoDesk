@@ -397,7 +397,12 @@
      初速度/寿命/尺寸/颜色来源**。把发射器参数编出来等于替用户编一份视觉 ——
      正是这个仓库反复拒绝的"校验通过但桌面上不是你想要的东西"。
      已由 `BuiltinWallpaperPackages` 把 `emitterCount == 0` 连同理由钉住。
-  5. 补 `parameters.json`(外观参数)。仍未做。
+  5. ~~补 `parameters.json`~~ **不适用**。`MiaoContentPackage::Load` 只在
+     `manifest.parameters` 非空时才要求这个文件存在(`MiaoContentPackage.cpp:461`
+     的 `if (!manifest.parameters.empty())`),而 MiaoCloud 的 manifest 没有
+     `parameters` 键 —— 没有参数要暴露,也没有文件要补。动画的振幅/速度/相位
+     已是轨道里的定值,不是用户可调项。若将来想让用户改外观(比如"云飘多快"),
+     那是**新增产品能力**,不属于 P0-4 的迁移范围。
   6. 从 `manifest.json` 删 `legacy_entry`,删除 `scene.ini`。
   7. 重跑 `verify-wallpaper-library-derived-views.ps1` 等 6 个脚本 ——
      需先确认它们的输入源是否仍指向 `scene.ini`。
@@ -540,7 +545,8 @@
     没有颜色成员,非白色 tint 显式拒绝;D3D11 的 tint 是 shader 常量,免费。
     content-review 把它当差异记录,别当成 bug。
   - ~~内容迁移(第 2–7 条)~~:第 2 条(几何 + 5 层 + 5 个 Image 资产)已落地,
-    第 3–5 条(动画 / 粒子 / parameters.json)仍未做;第 6 条(`legacy_entry` 切换)
+    第 3 条(动画)已迁移并被逐点复核;第 4 条(粒子)刻意不做、第 5 条不适用;
+    第 6 条(`legacy_entry` 切换)
     刻意保留,需真机验收。
 
 ### P0-5 本地 AI 组件许可证书面确认
@@ -1135,6 +1141,7 @@
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
 | 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
+| 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

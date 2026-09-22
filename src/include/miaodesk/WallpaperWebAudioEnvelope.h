@@ -18,9 +18,14 @@ namespace miaodesk::wallpaper {
 // This exists as its own pure function rather than inline at the postMessage call site
 // for one reason: the contract between host and page lives entirely in field names,
 // array lengths and value ranges, and that is the part most likely to drift. Keeping it
-// here means it can be tested on every machine (see tests/WebAudioEnvelope.cpp) instead
-// of only wherever the WebView2 surface happens to run, and the node-side shim test
-// (tests/WebAudioBridge.mjs) checks the two sides against each other.
+// here means it can be tested on every machine (tests/WebAudioEnvelope.cpp) instead of
+// only wherever the WebView2 surface happens to run.
+//
+// The two halves are checked against each other, not just each on its own:
+// tests/WebAudioEnvelopeParity.mjs compiles and runs tests/WebAudioEnvelopeDump.cpp —
+// the real call to this function — and feeds its real output through the real shim.
+// Before that existed, the page side was covered by tests/WebAudioBridge.mjs against
+// hand-written frames, which is not the same thing as the bytes this actually produces.
 //
 // Three decisions worth stating, because each one is a bug that has already happened or
 // that "looks fine" until a particular machine sees it:

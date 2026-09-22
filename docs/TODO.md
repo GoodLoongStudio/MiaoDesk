@@ -545,8 +545,10 @@
   没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径。
   (这一行先前写的是"尚未在 Windows 上编译或运行过",与同一节下面那段
   "新代码在 Windows 上编译链接通过"自相矛盾 —— 以后者为准,它有 commit 号。)
-  落在本机证据范围内的:材质策略合并为一份 + 16 项断言 + 注入已知失效确认闸门会响
-  + 12 个纯逻辑测试全过 + 交叉语法门 114 文件零真实错误。
+  落在本机证据范围内的(`0937328` 当时的数,不是现在的):材质策略合并为一份 +
+  16 项断言 + 注入已知失效确认闸门会响 + 12 个纯逻辑测试全过 + 交叉语法门 114 个文件
+  零真实错误。现在这两个数分别是 14 个目标与 122 个文件 —— 写下来是为了让
+  "12 / 114"不会被当成当前值读。
   不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;
   真机截图没有人看过。此前"`4b19282`,31 步全绿"是 D2D 半边的实测证据,D3D11 半边没有对应物。
   补充(`9a03f26` 与 `6c8321a`,`0937328`):`build` / `installer` / `package` /
@@ -1301,7 +1303,7 @@
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
 | 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
 | 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
-| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而 14 个闸门无一报警 —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
+| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而当时的 14 个闸门无一报警(现在 16 个) —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
 | 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |

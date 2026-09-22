@@ -165,6 +165,21 @@ jobs:
             exit 1
           }
 
+      # 版本库里不得躺本机产物。2026-09-22 一个 cpython-314.pyc 跟着文档闸门的
+      # 提交进了库:.gitignore 有 .NET/Node/CMake/IDE/OS/logs 各节,唯独没有 Python,
+      # 而 scripts/*.py 早就在跑。上面那些闸门全都管不到它 —— 原生源码那条只扫
+      # src/、暂存资源那条只管 assets/*.mdwall、CMake 那条问「编了什么」而不是
+      # 「多出了什么」。判据用 git ls-files,因为这类文件一旦提交就长期安静地待着。
+      - name: Verify no machine-local artifacts are tracked
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-no-build-artifacts.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       # CMake 目标结构。一天之内在本仓库踩了三次,而这三类错此前没有任何闸门看得见:
       #   add_executable 追加在 foreach 之后 → Configure 期报错、编译期表现为找不到头文件;
       #   有声明但没有 target_link_libraries → 编译通过、链接才 LNK2019,而本机语法门

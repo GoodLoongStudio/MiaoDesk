@@ -222,7 +222,34 @@
     `Validate` 整scene 拒掉("Animation keyframe time is outside the track duration")。
     time 由乘除得来,本来就不需要 round。**"顺手一起 round"不是无害的。**
 
-现在有**十四个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+17. **"多提交了一个文件"是一整类没有任何闸门在看的缺陷 —— 因为现有闸门全都只问
+    "这里的东西对不对",没有一条问"这里有没有不该在的东西"。**
+    2026-09-22,`scripts/__pycache__/generate-miao-cloud-scene.cpython-314.pyc`
+    跟着一个文档闸门的提交进了库。彼时有**十四个**闸门,无一报警:原生源码那条只扫
+    `src/` 的形状(而 pyc 在 `scripts/`),暂存资产那条只管 `assets/*.mdwall`,
+    CMake 那条问"CMake 编了什么"而不是"多出来了什么"。
+    根因是 `.gitignore` 有 .NET / Node / CMake / IDE / OS / logs 各节,
+    **唯独没有 Python** —— 而 `scripts/*.py` 早就在跑了,只是从没人在 `git add -A`
+    之后看过一眼暂存区。
+    **判据:每一步 `git add -A` 之后,暂存区里都可能混进工具链的副产物。
+    加门时问的不是"我要查的那条规则有没有被违反",而是"这一类错误,
+    现有门里有没有任何一条看得见"。**
+    写这道门时我自己先犯了同一个毛病的变体:第一版按"所有二进制扩展名"扫,
+    当场误报三个**故意**提交的二进制 —— vendored 的 `WebView2LoaderStatic.lib`
+    与 `downloads/store/` 下的 Store 分发包。它们的引入提交本来就写明了意图,
+    README 也登记了。所以判据必须区分**工具链顺带产生的副产物**(永远无可辩解,按名字一票否决)
+    与**刻意引入的依赖/分**(正当,但要登记理由)。
+    第三版才落到对的形状:**按区域登记**。由 git 自己判定哪些被跟踪文件是二进制
+    (`git ls-files` 减去 `git grep -I` 的补集,共 24 个),再要求每一个都落在登记过的
+    目录前缀下 —— `assets/`(产品图片)、`runtime/*/{node,goz}/`(锁版本的 vendored 运行时)、
+    `third_party/webview2/lib/`、`downloads/store/` 等 9 个区域,每个都注明引入它的提交号。
+    区域级比逐文件 allowlist 少一层维护,又比扩展名白名单多一层保证:新出现的区域会红,
+    不管里面装的是什么扩展名(实测:一个新 `.zip` 落在未登记目录 → 红)。
+    顺带被注入测试逼出一个真缺陷:第一版把解释器缓存也放在 `binaries` 里查,于是判据
+    依赖了 git 的二进制启发式(靠 NUL/长度)。注入一个**不含 NUL**的假 `.pyc`,连打两轮
+    都是绿的。改成按名字判之后这条路堵上了 —— **「必然成立的规则」不该架在启发式上。**
+
+现在有**十五个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -231,6 +258,7 @@
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
 | CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
 | 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
+| **本机产物入库** | `scripts/verify-no-build-artifacts.sh` | 版本库里有没有解释器缓存(**按名字判**);git 判为二进制的 24 个文件是否都落在 9 个登记区域;`.gitignore` 是否真的挡住缓存;登记区域是否已空(表过期) | 内容恰好是纯文本的 `.a` 落在 `src/` 下(那是源码形状门的事);未跟踪的产物;登记二进制的内容是否仍最新 |
 | 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
 | skill 白名单 | `scripts/verify-skill-allowlist.sh` | `kContentSkills` 与 `skills/` 是否一致 | CI 上真实的注入效果 |
 | 工作流 paths | `scripts/verify-workflow-paths.sh` | 每个工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽 |
@@ -1151,6 +1179,7 @@
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
 | 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
 | 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
+| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而 14 个闸门无一报警 —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

@@ -10,6 +10,21 @@ node_modules/
 dist/
 .pnpm-store/
 
+# Python. CPython writes its bytecode cache next to the source file, so any
+# `python3 scripts/*.py` run leaves a __pycache__/ directory whose contents are
+# named after the interpreter version (cpython-314.pyc). Those are unusable on
+# any other machine or Python build, are binary so they cannot be diffed, and
+# were committed accidentally because nothing here covered them — see
+# scripts/verify-no-build-artifacts.sh, which fails the build if they reappear.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
 # CMake build directory（CI 用 cmake -S . -B build）
 build/
 build-*/

@@ -7,6 +7,7 @@
 #include "miaodesk/MiaoD2DTextureLoader.h"
 #include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneSerializer.h"
+#include "miaodesk/MiaoSpriteMaterialPolicy.h"
 
 #include <windows.h>
 #include <d2d1helper.h>
@@ -53,6 +54,25 @@ const SceneComponentDefinition* FindTransform(const SceneNodeDefinition& node) n
         if (component.kind == ComponentKind::Transform) return &component;
     }
     return nullptr;
+}
+
+// The materialId as authored, without the fallback below. The material policy needs the
+// distinction: "author wrote no materialId" and "author wrote a materialId that names
+// nothing" are different situations, and only the second is a mistake worth reporting.
+//
+// Live value first, declared default second — the order the D3D11 backend's MaterialIdFor
+// uses. Reading only the default here would have left a runtime-driven materialId (an
+// animation, a parameter binding) invisible to this backend while the other one honoured
+// it, which is the same class of per-backend divergence the shared policy was written for.
+std::wstring DeclaredMaterialId(const SceneComponentDefinition& component, const MiaoSceneRuntime& runtime) {
+    if (const auto* current = runtime.GetProperty(PropertyAddress{component.id, L"materialId"}))
+        if (const auto* id = std::get_if<std::wstring>(current)) return *id;
+    if (const auto* property = FindDefinitionProperty(component, L"materialId")) {
+        if (property->type == PropertyType::String) {
+            if (const auto* id = std::get_if<std::wstring>(&property->defaultValue)) return *id;
+        }
+    }
+    return {};
 }
 
 const MaterialDefinition* ResolveMaterial(
@@ -433,6 +453,21 @@ struct MiaoSceneD2DRenderer::Impl {
     // already rejects all three, so these can only fire for a package loaded through a
     // path that did not run it. Either way the outcome has to be a message rather than
     // a silently blank rectangle.
+    // The sprite's `texture` assetReference, resolved the same way the draw path resolves
+    // it — live value first, declared default second — but without decoding anything.
+    // Shared by the draw path and by the material policy, which only needs the id.
+    const AssetReference* ResolveTextureReference(const SceneComponentDefinition& component) const {
+        const auto* value = runtime.GetProperty(PropertyAddress{component.id, L"texture"});
+        if (!value) {
+            if (const auto* declared = FindDefinitionProperty(component, L"texture"))
+                value = &declared->defaultValue;
+        }
+        if (!value) return nullptr;
+        const auto* reference = std::get_if<AssetReference>(value);
+        if (!reference || reference->id.empty()) return nullptr;
+        return reference;
+    }
+
     bool ResolveSpriteTexture(
         const SceneComponentDefinition& component,
         ID2D1Bitmap** bitmap,
@@ -474,19 +509,52 @@ struct MiaoSceneD2DRenderer::Impl {
         bool* drew,
         std::wstring* error) {
         ID2D1Bitmap* texture = nullptr;
-        if (!ResolveSpriteTexture(component, &texture, error)) return false;
 
-        // A textured sprite carries its own image and needs no material. A sprite with
-        // no texture falls back to the builtin solid-colour path this backend has
-        // always had; anything programmable belongs to the D3D11 backend, which has a
-        // shader path and this one does not.
-        const auto* material = ResolveMaterial(definition, component);
-        const bool solidMaterial =
-            material && material->model == MaterialModel::Builtin && material->builtinName == L"solidColor";
-        if (!texture && !solidMaterial) return true;
+        // Which of the two ways to reach a texture this sprite is using, and whether it is
+        // drawable here at all. This is the same rule the D3D11 backend applies, with
+        // `backendHasShaderPath` false; while each backend carried its own copy, a
+        // textured sprite with no materialId drew here and failed to *load* on D3D11 —
+        // MiaoCloud, the only fully populated wallpaper in the repository.
+        //
+        // The sprite's materialId as *declared*, which may legitimately be empty. Empty
+        // matters: ResolveMaterial then applies this backend's long-standing fallback of
+        // taking the scene's first builtin material. The policy is handed the declared id
+        // alongside the resolved material so that an id naming *nothing* is an error
+        // instead of being quietly replaced by that fallback.
+        const std::wstring declaredMaterialId = DeclaredMaterialId(component, runtime);
+        const auto* material = declaredMaterialId.empty()
+            ? ResolveMaterial(definition, component)
+            : MiaoSceneRuntimeModel::FindMaterial(definition, declaredMaterialId);
+
+        SpriteMaterialInput input;
+        input.materialId = declaredMaterialId;
+        input.material = material;
+        input.componentId = component.id;
+        // The id, not the decoded bitmap: this decision is about what the author asked
+        // for, and asking needs no WIC work.
+        if (const auto* reference = ResolveTextureReference(component)) input.textureAssetId = reference->id;
+
+        SpriteDrawPath path = SpriteDrawPath::SolidColor;
+        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/false, &path, error)) return false;
+
+        // With no shader path the policy can only have returned these two, so a sprite it
+        // refused (a programmable material here, nothing to draw) has already returned
+        // false above. Skipping instead would surface only as the scene-level "no
+        // D2D-renderable component" further down, which names neither the component nor
+        // the reason.
+        const bool drawTextured = path == SpriteDrawPath::SpriteTexture;
+        if (drawTextured && !ResolveSpriteTexture(component, &texture, error)) return false;
+
+        // The material colour is read on *both* paths, not just the solid one: a solidColor
+        // material alongside a texture tints the image, which is what MiaoObjectColor does
+        // on the D3D11 side. Restricting it to SolidColor here would silently stop
+        // honouring a colour that used to be honoured.
+        const bool applyMaterialColor =
+            material != nullptr && material->model == MaterialModel::Builtin &&
+            material->builtinName == L"solidColor";
 
         Color4 color{1.0, 1.0, 1.0, 1.0};
-        if (solidMaterial) {
+        if (applyMaterialColor) {
             if (const auto* materialColor = FindMaterialProperty(*material, L"color"))
                 color = ReadColor(&materialColor->defaultValue, color);
         }

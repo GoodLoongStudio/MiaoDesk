@@ -34,6 +34,7 @@ set(MIAODESK_CORE_SOURCES
     content/render/MiaoRenderGraph.cpp
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp
+    content/render/MiaoSpriteMaterialPolicy.cpp
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoParticleRuntime.cpp
@@ -192,6 +193,10 @@ add_executable(MiaoDeskSceneTextureFixtureTest tests/SceneTextureFixture.cpp)
 # "the built-in wallpapers actually resolve their images" a checked fact instead of an
 # assumption, and it is where the missing-art blocker on NeonCity/MysticMoon is pinned.
 add_executable(MiaoDeskBuiltinWallpaperPackagesTest tests/BuiltinWallpaperPackages.cpp)
+# Pure logic: the two render backends must agree about which SpriteRenderers they can
+# draw. That rule is platform-independent (material + texture -> a draw path), so the
+# parity is checkable on every commit even though only one backend can render here.
+add_executable(MiaoDeskSpriteMaterialPolicyTest tests/SpriteMaterialPolicy.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -221,7 +226,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -256,6 +261,7 @@ if (MSVC)
     target_compile_options(MiaoDeskSceneD2DRendererTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneTextureFixtureTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskBuiltinWallpaperPackagesTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -388,6 +394,10 @@ target_link_libraries(MiaoDeskSceneTextureFixtureTest PRIVATE
 )
 
 target_link_libraries(MiaoDeskBuiltinWallpaperPackagesTest PRIVATE
+    MiaoDeskCore
+)
+
+target_link_libraries(MiaoDeskSpriteMaterialPolicyTest PRIVATE
     MiaoDeskCore
 )
 

@@ -14,6 +14,7 @@
 #include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneSerializer.h"
 #include "miaodesk/MiaoShaderContract.h"
+#include "miaodesk/MiaoSpriteMaterialPolicy.h"
 
 #include <windows.h>
 #include <d3d11.h>
@@ -347,6 +348,35 @@ float4 MiaoBuiltinSolid(MiaoVertexOutput input) : SV_Target
     return source;
 }
 
+// The sprite's own `texture` asset, sampled at t0. Tint is free on this path: it is a
+// shader constant (MiaoObjectColor) and this shader is one instruction, so there is no
+// reason to refuse a non-white tint the way the D2D backend has to — `ID2D1BitmapBrush`
+// has no colour member and `ID2D1RenderTarget` has no effect API.
+//
+// The output stays in *straight* alpha on purpose. `alphaBlend` is
+// SRC_ALPHA / INV_SRC_ALPHA (see CreateStates), so the blend stage does the
+// premultiplication; premultiplying here too would double it and every sprite would
+// show a dark halo around its transparent pixels. That also matches
+// `MiaoD3D11TextureLoader`, which decodes to 32bppBGRA (not PBGRA).
+std::string EngineTexturedPixelShader() {
+    std::string source(MiaoShaderContract::HlslPreamble());
+    source += R"HLSL(
+struct MiaoVertexOutput
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+float4 MiaoBuiltinTextured(MiaoVertexOutput input) : SV_Target
+{
+    float4 albedo = MiaoInputTexture.Sample(MiaoLinearSampler, input.uv);
+    return float4(albedo.rgb * MiaoObjectColor.rgb,
+                  albedo.a * MiaoObjectColor.a * MiaoObjectOpacity);
+}
+)HLSL";
+    return source;
+}
+
 std::string EngineCopyPixelShader() {
     std::string source(MiaoShaderContract::HlslPreamble());
     source += R"HLSL(
@@ -456,6 +486,10 @@ struct MiaoSceneD3D11Renderer::Impl {
     POINT previousMouse{};
     bool hasPreviousMouse{};
     bool programmable{};
+    // The sprite's own `texture` assetReference, drawn by a builtin textured pixel shader
+    // instead of `solidColor`. Only reachable for a non-programmable material: the two
+    // would both want t0 (see ResolveSceneMaterial).
+    bool textured{};
     bool sceneVertexUsesQuad{};
     bool loaded{};
 
@@ -590,6 +624,24 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
+    // Reads the sprite's own `texture` assetReference, without decoding anything: the
+    // value may come from the live runtime (an animation driving it) or from the
+    // declared default, and by this point we only need to know *whether* one exists.
+    // Mirrors D2D's ResolveSpriteTexture, which reads the same property.
+    AssetReference SpriteTextureReference() const {
+        const auto* value = runtime.GetProperty(PropertyAddress{renderable->id, L"texture"});
+        if (!value) {
+            if (const auto* declared = FindComponentProperty(*renderable, L"texture"))
+                value = &declared->defaultValue;
+        }
+        const auto* reference = value ? std::get_if<AssetReference>(value) : nullptr;
+        if (!reference || reference->id.empty()) return {};
+        return *reference;
+    }
+
+    // The material and the sprite texture are two different ways to reach t0. That is a
+    // resource conflict, not a style preference, and the two backends must not disagree
+    // about it — see MiaoSpriteMaterialPolicy.h for the case that forced this to be shared.
     bool ResolveSceneMaterial(std::wstring* error) {
         renderable = FindRenderable(definition);
         if (!renderable) return Error(error, L"Scene has no SpriteRenderer for the D3D11 MVP backend.");
@@ -597,15 +649,42 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!renderableNode) return Error(error, L"Scene SpriteRenderer has no owning node.");
         const auto materialId = MaterialIdFor(*renderable, runtime);
         material = materialId.empty() ? nullptr : MiaoSceneRuntimeModel::FindMaterial(definition, materialId);
-        if (!material) return Error(error, L"Scene SpriteRenderer does not resolve a material.");
-        programmable = material->model == MaterialModel::Programmable;
-        if (!programmable && material->builtinName != L"solidColor")
-            return Error(error, L"D3D11 MVP currently supports builtin solidColor or programmable materials.");
+
+        SpriteMaterialInput input;
+        input.materialId = materialId;
+        input.material = material;
+        const auto texture = SpriteTextureReference();
+        input.textureAssetId = texture.id;
+        input.componentId = renderable->id;
+
+        SpriteDrawPath path = SpriteDrawPath::SolidColor;
+        if (!ResolveSpriteDrawPath(input, /*backendHasShaderPath=*/true, &path, error)) return false;
+
+        programmable = path == SpriteDrawPath::ProgrammableMaterial;
+        textured = path == SpriteDrawPath::SpriteTexture;
         return true;
     }
 
     bool CreateTextures(std::wstring* error) {
         for (auto& view : textureViews) view.Reset();
+        if (textured) {
+            const AssetReference texture = SpriteTextureReference();
+            const auto* asset = assets.Find(texture.id);
+            if (!asset) return Error(error, L"SpriteRenderer texture asset is missing from the package: " + texture.id);
+            if (asset->type != AssetType::Image)
+                return Error(error, L"SpriteRenderer texture must reference an Image asset: " + texture.id);
+            // t0 is where the builtin textured pixel shader samples. It is also the slot a
+            // programmable material would use for `input`, which is why the two are mutually
+            // exclusive and why this can only run on the non-programmable branch.
+            std::wstring loadError;
+            if (!MiaoD3D11TextureLoader::LoadImageW(
+                    device.Get(), asset->resolvedPath,
+                    textureViews[static_cast<std::size_t>(MiaoShaderContract::kInputTextureRegister)]
+                        .GetAddressOf(),
+                    &loadError))
+                return Error(error, loadError);
+            return true;
+        }
         for (const auto& binding : material->textures) {
             const int registerIndex = TextureRegisterForSlot(binding.slot);
             if (registerIndex < 0 || registerIndex >= static_cast<int>(textureViews.size()))
@@ -617,7 +696,7 @@ struct MiaoSceneD3D11Renderer::Impl {
             if (asset->type != AssetType::Image)
                 return Error(error, L"D3D11 v1 texture binding currently accepts image assets only: " + binding.asset.id);
             std::wstring loadError;
-            if (!MiaoD3D11TextureLoader::LoadImage(
+            if (!MiaoD3D11TextureLoader::LoadImageW(
                     device.Get(), asset->resolvedPath,
                     textureViews[static_cast<std::size_t>(registerIndex)].GetAddressOf(), &loadError))
                 return Error(error, loadError);
@@ -685,6 +764,12 @@ struct MiaoSceneD3D11Renderer::Impl {
             std::string entry;
             if (!LoadShaderSource(material->pixelShaderId, ShaderStage::Pixel, &source, &entry, error)) return false;
             if (!CompileShader(source, entry, "ps_5_0", &scenePsCode, error)) return false;
+        } else if (textured) {
+            // Samples t0, which CreateTextures filled from the sprite's own texture
+            // assetReference. Everything else about the pass (world matrix, opacity,
+            // parameter block, the post-process graph) is unchanged.
+            const auto source = EngineTexturedPixelShader();
+            if (!CompileShader(source, "MiaoBuiltinTextured", "ps_5_0", &scenePsCode, error)) return false;
         } else {
             const auto source = EngineSolidPixelShader();
             if (!CompileShader(source, "MiaoBuiltinSolid", "ps_5_0", &scenePsCode, error)) return false;
@@ -1013,7 +1098,9 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (const auto* tint = runtime.GetProperty(PropertyAddress{renderable->id, L"tint"}))
             color = ReadColor(tint, color);
         if (!programmable) {
-            if (const auto* property = FindMaterialProperty(*material, L"color")) {
+            // `material` can be null here: a textured sprite needs no material (see
+            // ResolveSceneMaterial, which now mirrors the D2D backend on this point).
+            if (const auto* property = material ? FindMaterialProperty(*material, L"color") : nullptr) {
                 const auto materialColor = ReadColor(&property->defaultValue, Color4{1.0, 1.0, 1.0, 1.0});
                 color.r *= materialColor.r;
                 color.g *= materialColor.g;
@@ -1138,6 +1225,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         previousMouse = {};
         hasPreviousMouse = false;
         programmable = false;
+        textured = false;
         sceneVertexUsesQuad = false;
         loaded = false;
         window = nullptr;

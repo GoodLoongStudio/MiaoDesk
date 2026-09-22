@@ -164,8 +164,12 @@
 `UnicodeProfileFile.h:72` 有 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化
 要求 UTF-16 `wchar_t`),而 macOS 的 `wchar_t` 是 4 字节。这是产品设计约束。
 
-**下面所有标"待 Windows 编译/真机验收"的项,字面意思就是没验证过。** 离线通过 ≠ Windows
-通过;本机十个测试全绿也仍然不等于 Windows 验证。
+**"待 Windows 编译"与"待真机验收"是两件事,不要互相顶替。** 前者问的是"能不能编过、
+断言跑没跑",后者问的是"用户桌面上看到的是不是对的"。
+`023aa299`(全绿)之后,凡是文件逐字节未变的项,前一个问题已经有答案,
+不再写"未验证"。
+2026-09-22 顺着这条把 B-1 / B-5 / P2-4 / P3-1 / P3-3 五处已经失效的"待 Windows 编译"
+标记按证据改掉了 —— **把已验证的写成未验证,和把未验证的写成已验证同样失真。**
 
 ## P0 — 阻塞商业发布
 
@@ -478,11 +482,14 @@
   要求左值引用,临时对象绑不上,无法编译 —— 已修为命名变量;
   ②卸载清单漏掉产品自有子树(`skills/` 必然残留,`Widgets/` 是同类既有漏洞)——
   已补 `RMDir /r` 并把 ARM64 卸载残留检查加宽到 10 项。
-  **完整编译未验证** —— 测试依赖 `windows.h`,本机为 macOS 无法构建,需 Windows CI 确认。
+  **已由 Windows CI 验证编译与运行**:`ContentSkillLoading.cpp` 自 `023aa299`(全绿那次)起
+  逐字节未变,而那次构建包含 `Verify content skill loading gate` 这一步并 success,
+  所以"能在 Windows 上编过 + 7 组 dispatch 断言真的跑过"已有证据。此前写的
+  "完整编译未验证"在那之后已失效。
 - **验收**:真实 Windows 上,用户在对话面板说「做一个有飘落落叶的动态壁纸」→ AI 调用
   `content_skill_get` → 产出 `.mdwall` → `wallpaper_validate_package` 通过 →
   `desktop_preview_wallpaper` 预览可见 → 用户点 Apply 后桌面出现该壁纸。全程零手写文件。
-- **状态**:🟡 已实施,待 Windows 编译与真机验收
+- **状态**:🟡 已实施并已通过 Windows 编译与 CI 运行;**仍待真机验收**(验收标准见上一条)
 
 ### B-2 音频 + 指针输入总线接通(最高优先的能力差距)
 
@@ -702,10 +709,11 @@
   以及既有 web-mp4 回归)、源文件缺 / 空 / 扩展名错 / 越界全部拒绝、
   恶意源路径产出的包仍校验通过且资产仍在包内、库能把手写 video 包导入为 Video 项。
   净化逻辑另在 macOS 上离线跑了 33 项断言。
-  **完整编译未验证** —— 依赖 `windows.h`,需 Windows CI 确认。
+  **已由 Windows CI 验证编译与运行**:`MediaWallpaperPackage.cpp` 自 `023aa299` 起未变,
+  而 `Verify media wallpaper package gate` 这一步在那次全绿构建里 success。
 - **验收**:skill 产出"一个 manifest + 一个视频资产"的 `.mdwall` →
   `wallpaper_validate_package` 通过 → 库导入为 Video 项 → 预览循环播放。
-- **状态**:✅ 代码已完成(2026-09-20),待 Windows 编译与真机验收
+- **状态**:✅ 代码已完成(2026-09-20),已通过 Windows CI 编译与运行;**待真机验收**
 
 ### B-6 Web 音频监听 API ✅
 
@@ -866,10 +874,12 @@
 - **验证情况**:`ParsePositiveUInt` 逻辑抽出为独立程序,以 C++23 编译并跑 15 个用例全过
   (空串 / 正常值 / 前后空白 / 零 / 非数字 / 数字后跟垃圾 / 负数 / 小数 / 超上限 / 边界 / 十六进制 / 科学计数法);
   JSON 拼装产物经 Python `json` 校验为合法且字段为数字类型。
-  **完整编译未验证** —— 代码依赖 `windows.h` / `wincred.h`,本机为 macOS 无法构建;
-  需在 Windows CI 上确认。
+  **已在 Windows CI 上编译**:`Windows x64 Build` #367 / `023aa299` 全绿,而 `PiRuntime.cpp`
+  与 `ApiRuntimeProfile.h` 自那时到现在**逐字节未变**(`git diff 023aa299 HEAD` 为空),
+  所以那次绿构建覆盖的正是这几行代码。没有独立测试步骤 —— 需要的是"能编过 +
+  `ReloadConfig()` 认得这两个字段",后者至今没有断言。
 - **遗留**:未配置时的默认值仍是 128000 / 16384,这个默认值本身是否合理待评估(见 P3-5)。
-- **状态**:🟡 已实施,待 Windows 编译验证
+- **状态**:✅ 已实施并通过 Windows 编译;默认值合理性仍开放
 
 ### P2-5 L2 多 provider 配置
 
@@ -897,8 +907,9 @@
   - helper(`KnownFolder` / `ExtractJsonString` / `ExtractJsonBool` / `SanitizeFileName`)经核实
     各有 6 / 15 / 3 / 5 个其他调用方,删除不会孤立它们
 - **验证情况**:全仓库零残留引用;括号平衡复查通过。
-  **完整编译未验证** —— 依赖 `windows.h`,本机为 macOS 无法构建,需 Windows CI 确认。
-- **状态**:🟡 已实施,待 Windows 编译验证
+  **已在 Windows CI 上编译**:`NativeTools.cpp` 自 `023aa299`(全绿那次)起逐字节未变,
+  所以那次构建已经证明删除之后仍然编译并链接通过。
+- **状态**:✅ 已实施并通过 Windows 编译
 
 ### P3-2 三个未合入分支 ✅ 已合入主干并恢复为正式分支(2026-09-22)
 
@@ -970,6 +981,7 @@
 | 2026-09-20 | B-3 绑定响应曲线 | 闭集 8 条曲线 + deadzone,零代码执行;默认 Linear 逐位兼容;两个 Windows CI 测试;**通用脚本解释器延后并记录触发条件** |
 | 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
 | 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
+| 2026-09-22 | 五处已失效的"待 Windows 编译"标记 | 按证据改掉:`023aa299` 全绿之后文件逐字节未变的项,"能不能编过"已经有答案(B-1 / B-5 / P2-4 / P3-1 / P3-3)。区别:`待真机验收`仍然保留 |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
 | 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |

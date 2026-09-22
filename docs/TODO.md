@@ -249,7 +249,7 @@
     依赖了 git 的二进制启发式(靠 NUL/长度)。注入一个**不含 NUL**的假 `.pyc`,连打两轮
     都是绿的。改成按名字判之后这条路堵上了 —— **「必然成立的规则」不该架在启发式上。**
 
-现在有**十五个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+现在有**十八个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -257,6 +257,9 @@
 | 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 13 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
 | CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
+| **文档引用:这一行在不在** | `scripts/verify-doc-code-citations.sh` | `docs/` 里每条 `文件.cpp:行号` 都指向真实存在的行 | **这一行说的是不是那件事**(后者要人读) |
+| **文档引用:这一行讲的东西在不在这一行** | `scripts/verify-doc-citation-symbols.sh` | 取引用**同一行**的符号,验证它出现在被引那一行 ±3 行内 | 没有相邻符号的引用(仍要人读) |
+| **文档引用:那个符号还在不在** | `scripts/verify-doc-symbols-exist.sh` | `docs/` 反引号里的 `A::B` 形态符号仍存在于 `src/` | 裸常量与环境变量/配置键(窄判据,8% 假阳性那条路已量过) |
 | 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
 | **本机产物入库** | `scripts/verify-no-build-artifacts.sh` | 版本库里有没有解释器缓存(**按名字判**);git 判为二进制的 24 个文件是否都落在 9 个登记区域;`.gitignore` 是否真的挡住缓存;登记区域是否已空(表过期) | 内容恰好是纯文本的 `.a` 落在 `src/` 下(那是源码形状门的事);未跟踪的产物;登记二进制的内容是否仍最新 |
 | 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |

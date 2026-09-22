@@ -137,16 +137,27 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $libraryIni = Join-Path $RUNNER_TEMP 'wallpaper.ini'
-          $assignmentsIni = Join-Path $RUNNER_TEMP 'monitor-assignments.ini'
-          foreach ($path in @($libraryIni, $assignmentsIni)) {
-            # 只写 BOM:空的 canonical-only 库。这个闸门随后会断言它是 UTF-16LE+BOM,
-            # 且不含 scene-aurora / scene-neon / scene-grid 三行。
-            [System.IO.File]::WriteAllBytes($path, [byte[]](0xFF, 0xFE))
-          }
-          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
-          Invoke-WallpaperGate 'verify-wallpaper-theme-canonical-gate.ps1' @{
-            LibraryIni = $libraryIni
-            AssignmentsIni = $assignmentsIni
-            CanonicalNeonPackage = 'assets\wallpapers\NeonCity.mdwall'
+          try {
+            # $RUNNER_TEMP 必须写 $env:RUNNER_TEMP。GitHub 把 RUNNER_TEMP 放进进程
+            # 环境,不放进 PowerShell 变量表;裸写 $RUNNER_TEMP 是 $null,
+            # 于是 Join-Path 抛 "Cannot bind argument to parameter 'Path'
+            # because it is null." —— 这一步在任何门跑起来之前就失败了,
+            # 而 annotations 里连一行 ::error:: 都不会有。
+            # 这一步自 c55ef67 加进来之后一次都没成功跑过,所以没人发现。
+            $libraryIni = Join-Path $env:RUNNER_TEMP 'wallpaper.ini'
+            $assignmentsIni = Join-Path $env:RUNNER_TEMP 'monitor-assignments.ini'
+            foreach ($path in @($libraryIni, $assignmentsIni)) {
+              # 只写 BOM:空的 canonical-only 库。这个闸门随后会断言它是 UTF-16LE+BOM,
+              # 且不含 scene-aurora / scene-neon / scene-grid 三行。
+              [System.IO.File]::WriteAllBytes($path, [byte[]](0xFF, 0xFE))
+            }
+            . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+            Invoke-WallpaperGate 'verify-wallpaper-theme-canonical-gate.ps1' @{
+              LibraryIni = $libraryIni
+              AssignmentsIni = $assignmentsIni
+              CanonicalNeonPackage = 'assets\wallpapers\NeonCity.mdwall'
+            }
+          } catch {
+            Write-Host ("::error::STEP canonical-package-identity -> {0}" -f $_.Exception.Message)
+            throw
           }

@@ -7,13 +7,17 @@
 // a wrong sampler would all survive every compile-and-link gate in this repository.
 //
 // So this draws one frame into a real swap chain, copies the scene colour target out of
-// the GPU, and asserts on the bytes. The shim's clear colour is opaque black and the
-// texture is flat magenta, which makes the assertion two-sided rather than a smoke test:
-//   · magenta pixels exist  -> the texture was sampled and written (the path ran)
-//   · black pixels exist    -> the magenta is the sprite, not a blanket clear of the
-//                              whole target, and not the scene colour being wrong
-// A pass that came from "everything got filled with the texture's colour" would fail the
-// second half, which is the half a naive `any pixel is magenta` check would miss.
+// the GPU, and asserts on two specific pixels. The shim clears to opaque black and the
+// texture is flat magenta; the sprite is deliberately half-scale so both are visible:
+//
+//   · centre is magenta -> the texture was sampled and written (the path ran)
+//   · corner is black   -> the clear survived, so the magenta is a sprite and not the
+//                          whole target having been filled with the texture's colour
+//
+// The second assertion is the one a naive `any pixel is magenta` check would miss. It
+// matters more than it looks: the D2D path's own textured test deliberately uses
+// scale 1.0 and asserts full coverage, which is the right thing for *that* test and the
+// wrong thing here — full coverage cannot distinguish a drawn sprite from a fill.
 //
 // The fixture here is deliberately separate from the one verify-scene-fixture-parity.sh
 // pins. That one exists to prove a *scene document* is well formed on every machine and
@@ -98,7 +102,6 @@ bool WriteMagentaPng(IWICImagingFactory* factory, const fs::path& path) {
     if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())))
         return false;
     ComPtr<IWICBitmapFrameEncode> frame;
-    ComPtr<IWICStream> writer;
     if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) return false;
     if (FAILED(encoder->CreateNewFrame(frame.GetAddressOf(), nullptr))) return false;
     if (FAILED(frame->Initialize(nullptr))) return false;
@@ -131,6 +134,14 @@ int wmain() {
     // A minimal one-sprite scene. `texture` is the sprite's own assetReference and there
     // is deliberately no material in the package at all — that is the case this path is
     // for (a textured sprite needs no material; see MiaoSpriteMaterialPolicy).
+    //
+    // scale is 0.5, not 1.0, and that is the whole point. At scale 1.0 with
+    // cornerRadius 0 the sprite covers the entire surface — that is what the D2D path
+    // asserts (PixelCoverage > 0.5, "整块被 brush 覆盖"). Full coverage is a *weaker*
+    // assertion for this test: a renderer that filled the whole target with the texture's
+    // colour would satisfy it just as well as one that drew a sprite. At 0.5 the centre
+    // is the sprite and the corners are the clear colour, so "the texture was sampled"
+    // and "the magenta is the sprite, not a blanket fill" can be checked separately.
     constexpr std::string_view sceneJson = R"json({
       "schema":1,"id":"scene://selftest-d3d11-textured","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
       "nodes":[
@@ -138,7 +149,7 @@ int wmain() {
         {"id":"node://panel","name":"Panel","parentId":"node://root","enabled":true,"components":[
           {"id":"component://panel/transform","kind":"transform","properties":[
             {"name":"position","type":"vec2","default":[0.0,0.0]},
-            {"name":"scale","type":"vec2","default":[1.0,1.0]},
+            {"name":"scale","type":"vec2","default":[0.5,0.5]},
             {"name":"rotation","type":"float","default":0.0},
             {"name":"opacity","type":"float","default":1.0}]},
           {"id":"component://panel/sprite","kind":"spriteRenderer","properties":[
@@ -170,18 +181,36 @@ int wmain() {
     Step(wrote, "写出含 2x2 品红 PNG 的贴图包");
 
     // A real window is required: the renderer builds a swap chain for the HWND it is
-    // given. It never has to be visible for one frame to be drawn and read back.
+    // given.
+    //
+    // WS_VISIBLE is deliberate. A swap chain for a window that has never been shown is a
+    // configuration nothing else in this repo exercises — the host creates its slots with
+    // WS_CHILD | WS_VISIBLE before handing the HWND to this renderer — and Present on an
+    // unshown window is exactly the kind of thing that works on one driver and not
+    // another. Matching the host costs one 64x64 popup flashing on a CI desktop.
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpfnWndProc = DefWindowProcW;
     wc.lpszClassName = kTestWindowClass;
     RegisterClassExW(&wc);
-    const HWND window = CreateWindowExW(0, kTestWindowClass, L"", WS_POPUP,
+    const HWND window = CreateWindowExW(0, kTestWindowClass, L"", WS_POPUP | WS_VISIBLE,
                                         0, 0, static_cast<int>(kSurfaceSize),
                                         static_cast<int>(kSurfaceSize),
                                         nullptr, nullptr, wc.hInstance, nullptr);
     Step(window != nullptr, "创建 64x64 测试窗口(交换链需要真实 HWND)");
+
+    // Present goes through DXGI, which occasionally needs the window's queue serviced
+    // before it will complete. The host pumps its own loop; this test does not, so pump
+    // once here rather than leave a driver-dependent failure in place.
+    auto pump = [&] {
+        MSG message{};
+        while (PeekMessageW(&message, window, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    };
+    pump();
 
     std::wstring error;
     MiaoSceneD3D11Renderer renderer;
@@ -194,6 +223,7 @@ int wmain() {
     Step(loaded, "加载贴图场景(该场景一个 material 都没有)");
 
     const bool drew = loaded && renderer.Draw(1.0f, &error);
+    pump();
     if (!drew && !error.empty()) std::printf("      %ls\n", error.c_str());
     Step(drew, "绘制一帧");
 
@@ -207,24 +237,37 @@ int wmain() {
     if (read) std::printf("      %ux%u, %zu 字节\n", width, height, pixels.size());
 
     // BGRA, tightly packed. Magenta is the written texture's colour; black is the shim's
-    // clear. Both halves are asserted, for the reason in the file header.
+    // clear colour. Two positions are checked rather than a histogram, because the two
+    // questions are different: the centre asks "did the textured path run at all", the
+    // corner asks "is what ran a sprite, or did something fill the whole target".
+    auto pixelAt = [&](unsigned x, unsigned y) {
+        const std::size_t i = (static_cast<std::size_t>(y) * width + x) * 4u;
+        return std::make_tuple(pixels[i + 0], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
+    };
+    auto isMagenta = [&](unsigned x, unsigned y) {
+        const auto [b, g, r, a] = pixelAt(x, y);
+        return a == 0xFF && r > 0x60 && b > 0x60 && g < 0x40;
+    };
+    auto isClearBlack = [&](unsigned x, unsigned y) {
+        const auto [b, g, r, a] = pixelAt(x, y);
+        return a == 0xFF && r == 0 && g == 0 && b == 0;
+    };
+
     unsigned magenta = 0;
     unsigned black = 0;
-    unsigned other = 0;
-    for (std::size_t i = 0; i + 3 < pixels.size(); i += 4) {
-        const unsigned b = pixels[i + 0];
-        const unsigned g = pixels[i + 1];
-        const unsigned r = pixels[i + 2];
-        const unsigned a = pixels[i + 3];
-        if (a == 0xFF && r > 0x60 && b > 0x60 && g < 0x40) ++magenta;
-        else if (a == 0xFF && r == 0 && g == 0 && b == 0) ++black;
-        else ++other;
+    for (unsigned y = 0; y < height; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            if (isMagenta(x, y)) ++magenta;
+            else if (isClearBlack(x, y)) ++black;
+        }
     }
-    const unsigned total = magenta + black + other;
-    std::printf("      品红 %u / 黑 %u / 其它 %u(共 %u)\n", magenta, black, other, total);
+    std::printf("      %ux%u:品红 %u / 黑 %u(共 %u)\n", width, height, magenta, black,
+                width * height);
 
-    Step(read && magenta > 0, "有像素是贴图的品红 —— 贴图被采样并写进了帧缓冲");
-    Step(read && black > 0, "也有像素是清屏黑 —— 品红来自 sprite,不是整块被填成贴图色");
+    Step(read && isMagenta(width / 2, height / 2),
+         "中心像素是贴图的品红 —— 贴图被采样并写进了帧缓冲(这条路径真的跑了)");
+    Step(read && isClearBlack(1, 1),
+         "左上角仍是清屏黑 —— 品红是 sprite,不是整块目标被填成贴图色");
 
     if (window) DestroyWindow(window);
     UnregisterClassW(kTestWindowClass, wc.hInstance);

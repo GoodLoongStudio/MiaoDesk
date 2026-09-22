@@ -35,6 +35,12 @@ set(MIAODESK_CORE_SOURCES
     content/render/MiaoPostProcessCompiler.cpp
     content/render/MiaoPostProcessShaderLibrary.cpp
     content/render/MiaoSpriteMaterialPolicy.cpp
+    # Lives under render/d3d11/ but is compiled into MiaoDeskCore, not into
+    # MiaoDeskSceneD3D11: it is the platform-free half of the D3D11 render-target and
+    # texture-loader *rules* (dimension arithmetic, path policy, and their self-tests).
+    # It used to sit in .cpp files that include <d3d11.h>, which is why those pure
+    # assertions could only run where a D3D11 toolchain existed. See the file header.
+    content/render/d3d11/MiaoD3D11RenderPolicy.cpp
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoParticleRuntime.cpp

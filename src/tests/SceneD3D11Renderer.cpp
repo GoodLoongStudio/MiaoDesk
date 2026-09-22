@@ -11,20 +11,25 @@
 // What is being run, and why each piece is here:
 //
 //   · MiaoD3D11TextureLoader::SelfTestPathPolicy — which image paths a package may
-//     name. Pure policy, but it lives beside D3D11 code and shadows a same-named
-//     method on the D2D loader, so "it passes" has meant two different things.
-//   · MiaoD3D11ParticleRenderer::SelfTest
-//   · MiaoD3D11RenderTargetPool::SelfTest
+//     name. Reported explicitly, like its D2D counterpart in SceneD2DRenderer.cpp,
+//     because it is the security-relevant one and because the two same-named methods
+//     mean "it passes" has historically meant two different things.
+//   · MiaoD3D11ParticleRenderer::SelfTest — the particle-budget rule. Windows-only for
+//     a reason that cannot be fixed by moving code: its *header* includes d3d11.h.
 //   · MiaoSceneD3D11Renderer::SelfTest — the aggregator. It is the *only* route to
 //     TransformMathSelfTest(), which is file-local to MiaoSceneD3D11Renderer.cpp and
-//     has no other way in. Calling it also re-runs the seven content-layer self-tests
-//     that ContentSelfTests already covers on every machine; that duplication is the
-//     price of reaching TransformMathSelfTest, and it is cheap.
+//     has no other way in. It also re-runs the seven content-layer self-tests and the
+//     render-target-pool rule that ContentSelfTests already covers on every machine;
+//     that duplication is the price of reaching TransformMathSelfTest, and it is cheap.
+//
+// MiaoD3D11RenderTargetPool::SelfTest is deliberately not called separately here: it is
+// now in ContentSelfTests (it is pure arithmetic, moved to MiaoD3D11RenderPolicy.cpp)
+// and it is inside the aggregator anyway, so a separate call would only be a second
+// name for the same verdict.
 //
 // Each is reported separately rather than behind one boolean, so a failure names the
 // piece that failed instead of "the D3D11 self-test failed".
 #include "miaodesk/MiaoD3D11ParticleRenderer.h"
-#include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoSceneD3D11Renderer.h"
 
@@ -49,16 +54,9 @@ int wmain() {
     }
     std::printf("  [PASS] 粒子渲染器自测通过\n");
 
-    std::printf("\n3. 渲染目标池(MiaoD3D11RenderTargetPool::SelfTest)\n");
-    if (!MiaoD3D11RenderTargetPool::SelfTest()) {
-        std::printf("  [FAIL] MiaoD3D11RenderTargetPool::SelfTest 返回 false\n");
-        return 1;
-    }
-    std::printf("  [PASS] 渲染目标池自测通过\n");
-
     // The aggregator is the only way to reach TransformMathSelfTest. Its boolean is the
     // whole verdict for that piece plus the seven pure-logic ones.
-    std::printf("\n4. 渲染器聚合自测(MiaoSceneD3D11Renderer::SelfTest)\n");
+    std::printf("\n3. 渲染器聚合自测(MiaoSceneD3D11Renderer::SelfTest)\n");
     std::printf("   这也是 TransformMathSelfTest 唯一的入口 —— 它在 "
                 "MiaoSceneD3D11Renderer.cpp 里是文件局部的。\n");
     if (!MiaoSceneD3D11Renderer::SelfTest()) {

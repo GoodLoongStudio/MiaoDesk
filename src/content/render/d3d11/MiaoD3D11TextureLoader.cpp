@@ -121,6 +121,10 @@ bool MiaoD3D11TextureLoader::LoadImageW(
 }
 
 bool MiaoD3D11TextureLoader::SelfTestPathPolicy() {
+    // Windows-only, and not because of the header: one assertion here is
+    // `!IsSafeRelativePath(L"C:\\outside.png")`, and a drive letter plus a backslash
+    // only escapes a package where a backslash is a path separator. On POSIX that
+    // string is a legal relative filename, so this returns false there.
     return MiaoContentPackage::IsSafeRelativePath(L"assets/background.png") &&
            !MiaoContentPackage::IsSafeRelativePath(L"../outside.png") &&
            !MiaoContentPackage::IsSafeRelativePath(L"C:\\outside.png");

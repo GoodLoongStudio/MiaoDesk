@@ -1197,6 +1197,21 @@
   那是从 D2D 那条照抄过来的,**错**。理由写错的代价很具体:它让人以为这里需要一个 GPU,
   而真正的改进方向是把那几个纯逻辑自测搬进一个不含 `d3d11.h` 的文件,
   让它们回到每台机器都能跑 —— 那才是这一类问题的正解,和教训 15 是同一件事。
+- **已按上面那个方向做了一步,并且它当场抓出一个我没想到的平台依赖(2026-09-22)。**
+  `MiaoD3D11RenderPolicy.cpp`(平台无关,进 `MiaoDeskCore`)现在持有
+  `kMaxRenderTargetDimension` / `ValidateDimensions` / `ResolveDimensions` /
+  `RenderTargetPool::SelfTest`,于是尺寸自测回到每台机器都能跑,已接进 `ContentSelfTests`
+  (第七项 → 第八项)。搬过去之后本机立刻跑出结果:**它是 1(通过)**。
+  但同一个提交里我一开始把 `MiaoD3D11TextureLoader::SelfTestPathPolicy` 也搬了过去,
+  本机一跑返回 **0(失败)** —— 它的三条断言里有一条是
+  `!IsSafeRelativePath(L"C:\outside.png")`,而"盘符 + 反斜杠"**只在 Windows 上构成逃逸**,
+  因为只有在那儿反斜杠才是路径分隔符;POSIX 上那只是一个合法的相对文件名。
+  它在 Windows CI 上一直是绿的,恰恰因为它在 Windows 上跑。
+  **所以那条自测看着平台无关、其实不是**,已搬回 Windows-only 文件并把原因写进注释。
+  这正是"多一台机器跑一跑"的价值:不是跑得更快,是能看见只在一侧成立的东西。
+  剩下两个仍是 Windows-only,理由各不相同、也已分开写清:
+  `MiaoD3D11ParticleRenderer::SelfTest` 的**头文件**就 include 了 `d3d11.h`
+  (挪不动),`TransformMathSelfTest` 是 Windows-only `.cpp` 里的文件局部符号。
 - **顺序是按记录执行的,而且记录是对的**:第 1 步的库先要证明 MSVC 编得过、链得上,
   才允许有测试目标依赖它 —— 否则真出链接问题分不清是谁引入的。证据是
   `7109050` / `a1348b06` 两次 `build` 全绿,**然后**才建这个目标。

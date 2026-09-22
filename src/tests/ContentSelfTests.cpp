@@ -16,15 +16,28 @@
 // rather than waiting for a 90-second Windows round trip to tell us they broke.
 //
 // Windows-only members of that aggregator are deliberately *not* called from here:
-// `MiaoD3D11ParticleRenderer::SelfTest`, `MiaoD3D11TextureLoader::SelfTestPathPolicy`,
-// `MiaoD3D11RenderTargetPool::SelfTest` and the file-local `TransformMathSelfTest` all
-// need d3d11.h / d3dcompiler.h. They need a Windows target, which is a separate piece
-// of work from this one.
+// `MiaoD3D11ParticleRenderer::SelfTest`, `MiaoD3D11TextureLoader::SelfTestPathPolicy` and
+// the file-local `TransformMathSelfTest`.
+//
+// `MiaoD3D11RenderTargetPool::SelfTest` *used* to be in that list, on the stated grounds
+// that it "needs d3d11.h". That was wrong twice over, and the correction is instructive:
+// its *implementation* did sit in a .cpp that includes d3d11.h, but it is pure
+// arithmetic, and moving it to MiaoD3D11RenderPolicy.cpp made it runnable here. The
+// lesson is that "this needs d3d11.h" was doing duty as an explanation when it was only
+// a description of where the code happened to be filed.
+//
+// The remaining three really are Windows-only, and for different reasons worth keeping
+// apart: the particle renderer's *header* includes d3d11.h, so nothing about it can be
+// reached here; `TransformMathSelfTest` is file-local to a Windows-only .cpp; and
+// `SelfTestPathPolicy` looks platform-free but is not — one of its three assertions is
+// `!IsSafeRelativePath(L"C:\\outside.png")`, and a drive letter plus a backslash only
+// escapes a package where a backslash is a separator. Running it here returns false.
 #include "miaodesk/MiaoGpuParameterBlock.h"
 #include "miaodesk/MiaoParticleRuntime.h"
 #include "miaodesk/MiaoPostProcessCompiler.h"
 #include "miaodesk/MiaoPostProcessShaderLibrary.h"
 #include "miaodesk/MiaoRenderGraph.h"
+#include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoSceneRuntimeModel.h"
 #include "miaodesk/MiaoShaderContract.h"
 
@@ -53,13 +66,17 @@ int wmain() {
     Run("MiaoGpuParameterPacker::SelfTest", MiaoGpuParameterPacker::SelfTest);
     Run("MiaoParticleRuntime::SelfTest", MiaoParticleRuntime::SelfTest);
     Run("MiaoSceneRuntimeModel::SelfTest", MiaoSceneRuntimeModel::SelfTest);
+    // 第八项,来自 P3-6 第 2 步之后的一次更正:渲染目标池的尺寸自测此前也只在 Windows
+    // 上跑,而它是纯算术 —— 只是实现躺在一个 include 了 d3d11.h 的 .cpp 里。
+    // 现已搬进 MiaoD3D11RenderPolicy.cpp(平台无关),于是回到每台机器都能跑。
+    Run("MiaoD3D11RenderTargetPool::SelfTest", MiaoD3D11RenderTargetPool::SelfTest);
 
     std::printf("\n");
     if (failures != 0) {
         std::printf("FAILED:%d 项自测失败\n", failures);
         return 1;
     }
-    std::printf("七项内容层自测全部通过 —— 它们此前在任何机器上都没有被执行过。\n");
+    std::printf("八项内容层自测全部通过 —— 它们此前在任何机器上都没有被执行过。\n");
     std::printf("ALL CHECKS PASSED\n");
     return 0;
 }

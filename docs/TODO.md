@@ -254,7 +254,7 @@
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
 | 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
-| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 13 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 14 个测试目标真编译并运行通过(另 6 个显式列为 Windows-only;两者相加应等于 `add_executable(*Test)` 的个数,这个等式本身可查) | 任何需要 Windows 的目标;以及"跳过清单是否列全"要靠这个等式 |
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
 | CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
 | **文档引用:这一行在不在** | `scripts/verify-doc-code-citations.sh` | `docs/` 里每条 `文件.cpp:行号` 都指向真实存在的行 | **这一行说的是不是那件事**(后者要人读) |

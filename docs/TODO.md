@@ -664,8 +664,8 @@
 - **现状(声明层已就位,只缺数据源)**:
   - `input://frame/time` / `input://event/pulse` 已在
     `MiaoSceneFrameScheduler.cpp:113-114` 推入总线
-  - `input://audio/bass` 等仅出现在 `MiaoSceneRuntimeModel.cpp:418` 的**测试桩**里
-  - `BindingSourceKind::Input` 求值链路已接通(`MiaoSceneRuntime.cpp:219`)
+  - `input://audio/bass` 等仅出现在 `MiaoSceneRuntimeModel.cpp:523` 的**测试桩**里
+  - `BindingSourceKind::Input` 求值链路已接通(`MiaoSceneRuntime.cpp:257`)
   - `ComponentKind::InputBinding`、`AnimationTriggerMode::InputChange/InputRisingEdge`、
     `AssetType::Audio` 均已定义,但**没有任何生产者**
 - **已实施方案(2026-09-20)**:按"可验证性"切分。内容框架整层
@@ -857,7 +857,7 @@
 - **原判断被推翻(2026-09-20)**:我写这一项时没有查 manifest 层。
   `WallpaperPackageType` 一直就有 `{Image, Video, Web, Scene}` 四值,
   `WallpaperLibrary::ImportPackages` 把 `type: video` 映射到 `LibraryWallpaperKind::Video`,
-  `WallpaperService.cpp:307` 完整播放,`desktop_preview_wallpaper` 也已有 `mode=video`。
+  `WallpaperService.cpp:323` 完整播放,`desktop_preview_wallpaper` 也已有 `mode=video`。
   **"视频壁纸作为一类轻量产物"在产品层本来就通了**,我说的"没通"是错的。
 - **真实缺口(两个,都已修)**:
   1. `WallpaperPackage::Validate` 只对 Web 类型校验 entry 扩展名,

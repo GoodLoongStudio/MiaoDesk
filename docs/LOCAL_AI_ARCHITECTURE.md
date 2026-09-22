@@ -67,7 +67,7 @@
 | Provider-neutral 路由 | 已有 | `Conversation Panel → Pi Runtime → Provider` |
 | Provider 注入 | `providerId` + `baseUrl` + `model` + `apiKey` | `PiRuntime::ProviderSetup`(`PiRuntime.h:62-70`) |
 | loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:374` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"miaodesk-local"` |
-| 多 Profile + 默认选择 | 已有 | `LoadDefault()`(`ApiRuntimeProfile.h:185`) |
+| 多 Profile + 默认选择 | 已有 | `LoadDefault()`(`ApiRuntimeProfile.h:211`) |
 | 凭据存储 | Windows Credential Manager,按 profile 隔离 | `MiaoDesk/ApiProfile/<id>` |
 | Header 安全校验 | 已有,拒绝控制字符与非 ASCII | `IsHttpHeaderSafe()` |
 | 工具沙箱 | **宿主侧强制,与模型无关** | `main.cpp` allowlist |
@@ -287,7 +287,7 @@ async function resolveOpenRouterApiKey() {
 
 ### 7.3 当前产品配置的实际形态(改动的基准)
 
-`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:413`)写出:
+`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:429`)写出:
 
 ```json
 {
@@ -567,8 +567,8 @@ wallpaper_validate_package · wallpaper_state_get · desktop_widget_list
 | 约束 | 值 | 来源 |
 | --- | --- | --- |
 | 动画帧率 | 1–240,默认 60 | `MiaoSceneFrameScheduler.h:19-21` |
-| 每 emitter 粒子 | ≤ 65536 | `MiaoSceneRuntimeModel.h:166` |
-| 每 scene 粒子 | ≤ 131072 | `MiaoSceneRuntimeModel.h:167` |
+| 每 emitter 粒子 | ≤ 65536 | `MiaoSceneRuntimeModel.h:257` |
+| 每 scene 粒子 | ≤ 131072 | `MiaoSceneRuntimeModel.h:258` |
 | 渲染目标单维 | ≤ 16384 | `MiaoD3D11RenderPolicy.cpp:50` |
 | 沙箱图片 / 视频 | ≤ 25 MiB / 250 MiB | `AI_GENERATED_DESKTOP_SANDBOX.md:74` |
 

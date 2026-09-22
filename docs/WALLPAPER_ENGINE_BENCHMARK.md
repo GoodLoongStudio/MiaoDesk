@@ -97,16 +97,16 @@ enum class ContentRuntimeKind {   // 运行时维度:用什么引擎解释它
 | --- | --- | --- | --- |
 | 2D / 3D 场景区分 | ◐ | `SceneSpatialMode{TwoD, ThreeD}` 已加在 `SceneDefinition` 上(B-4);渲染器仍只做 2D | **契约已有,渲染器 2D** |
 | 3D 模型导入(FBX 骨骼/顶点动画,OBJ) | ✗ | `AssetType::Mesh` 枚举存在,mesh 扩展名已限定 `.obj`/`.fbx`(B-4),但**无任何模型加载器** | **缺加载器** |
-| 专用模型编辑器 + PBR 材质 | ◐ | `MaterialDefinition` 有 `MaterialModel`/纹理槽/自定义 property(`MiaoSceneRuntimeModel.h:73`),无 PBR 参数集 | 部分 |
+| 专用模型编辑器 + PBR 材质 | ◐ | `MaterialDefinition` 有 `MaterialModel`/纹理槽/自定义 property(`MiaoSceneRuntimeModel.h:107`),无 PBR 参数集 | 部分 |
 | 灯光(点/聚光/管状/平行,上限 12) | ◐ | `LightType` 四种 + `LightDefinition` 已定义并有校验(B-4);缺着色实现 | **契约已有,缺实现** |
 | 雾 | ◐ | `FogMode{Linear, Exponential}` + `FogDefinition` 已定义并有校验(B-4);缺着色实现 | 同上 |
 | 刚体/柔体物理(jiggle bone) | ✗ | 无 | 缺 |
-| 粒子系统 + 专用编辑器 | ✓ | `ParticleEmitterDefinition`(`MiaoSceneRuntimeModel.h:132`)+ `MiaoD3D11ParticleRenderer` + `MiaoParticleSerializer` + `MiaoParticleRuntime` | 已有 |
-| 时间线动画(关键帧 + 缓动) | ✓ | `AnimationTrackDefinition` / `AnimationKeyframeDefinition`,含 `Once/Loop/PingPong` 与 5 种缓动(`MiaoSceneRuntimeModel.h:35-51,107`) | 已有 |
+| 粒子系统 + 专用编辑器 | ✓ | `ParticleEmitterDefinition`(`MiaoSceneRuntimeModel.h:220`)+ `MiaoD3D11ParticleRenderer` + `MiaoParticleSerializer` + `MiaoParticleRuntime` | 已有 |
+| 时间线动画(关键帧 + 缓动) | ✓ | `AnimationTrackDefinition` / `AnimationKeyframeDefinition`,含 `Once/Loop/PingPong` 与 5 种缓动(`MiaoSceneRuntimeModel.h:195-215`) | 已有 |
 | 逐层视差 | ◐ | `Transform` 组件 + `input://event/pulse` 输入通道已定义,无数据源驱动 | 见 4.3 |
 | 木偶形变 + IK 绑定 | ✗ | 无 | 缺 |
 | 自定义 shader 编程 | ✓ | `ShaderStage{Vertex,Pixel,Compute}` + `MiaoPostProcessCompiler` + `MiaoPostProcessShaderLibrary` + `MiaoRenderGraph` | 已有 |
-| 后处理特效库 | ✓ | `PostProcessEffectKind` 枚举(`MiaoSceneRuntimeModel.h:21-33`) | 已有 |
+| 后处理特效库 | ✓ | `PostProcessEffectKind` 枚举(`MiaoSceneRuntimeModel.h:58-67`) | 已有 |
 | SceneScript(类 JS 脚本) | ◐ | `ComponentKind::Script` 与 `AssetType::Script` 存在,`src/content/` 无脚本解释器。**已按别的方式补齐**:声明式绑定加闭集响应曲线(8 条 + deadzone),覆盖绝大多数效果,且不引入代码执行面;通用解释器延后 | **缺解释器,手感已补** |
 | 用户可调属性(颜色/滑杆/下拉/文本/贴图/快捷键) | ✓ | `ContentParameterType{Bool,Int,Float,String,Color,Enum,Asset}` 7 种(`MiaoContentModel.h:20`) | 已有 |
 | 资源/特效复用与分享 | ◐ | 包级复用有(`ContentPackageManager`),无跨包资产包 | 部分 |
@@ -140,11 +140,11 @@ MiaoDesk 的输入总线**声明层已经就位**,这是好消息:
 definition.inputs.push_back(InputChannelDefinition{std::wstring(kFrameTimeInput), PropertyType::Float, 0.0});
 definition.inputs.push_back(InputChannelDefinition{L"input://event/pulse", PropertyType::Bool, false});
 
-// src/content/runtime/MiaoSceneRuntimeModel.cpp:418(测试桩)
+// src/content/runtime/MiaoSceneRuntimeModel.cpp:523(测试桩)
 runtime.inputs.push_back(InputChannelDefinition{L"input://audio/bass", PropertyType::Float, 0.0});
 ```
 
-`BindingSourceKind::Input` 的求值链路也在 `MiaoSceneRuntime.cpp:219` 接通了。
+`BindingSourceKind::Input` 的求值链路也在 `MiaoSceneRuntime.cpp:257` 接通了。
 **缺的只是:谁往这些通道里写真实数据。**
 
 ### 4.4 分发与生态

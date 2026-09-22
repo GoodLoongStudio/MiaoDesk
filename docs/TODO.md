@@ -288,12 +288,39 @@
     5 个 sprite 各带 `texture` 资产引用。
   - `MiaoDeskBuiltinWallpaperPackagesTest` 把三个包走完整链并断言。
 
+  ## 已在真实 Windows CI 上验证(2026-09-22,`4b19282`)
+
+  **`Windows x64 Build` 全绿:31 个步骤 success、0 失败、0 条 `::error::` 注解。**
+  其中第 21 步 `Render a textured sprite through the real D2D backend` 通过 ——
+  这是 `MiaoSceneD2DRenderer::SelfTest()` **第一次真正被执行**(在那之前它一个调用方
+  都没有),于是贴图路径第一次有了执行级证据。实测值:
+
+      centre       (32,32) BGRA = 204,102,51  覆盖率 1.000   ← solidColor(0.2,0.4,0.8)
+      inner corner (16,16) BGRA =   0,  0, 0  覆盖率 0.000   ← 圆角外
+      outer corner ( 2, 2) BGRA =   0,  0, 0  覆盖率 0.000
+      y=32 扫描: 16..48 亮、其余暗             ← 0.5 缩放的精确范围
+
+  即:sprite 的位置、缩放、颜色、圆角全部正确;贴图 sprite 也在同一个 SelfTest 里
+  画出了包内 PNG 的颜色。另外两条拒绝路径(tint 作用于贴图、spatial:3d)
+  都在 Windows 上验过会拒绝且报错点名组件/场景。
+
+  这一段值得记的是**过程**:SelfTest 跑起来之后连续红了六轮,而六轮的根因全在
+  **测试自己的管道**上,渲染器每次都是对的:
+  1. 子包一个 `manifest.json` 都没写 → `Load` 第一行就拒;
+  2. manifest 的 kind 与 scene 不一致、目录扩展名还得和 kind 匹配;
+  3. 像素探针 `(17,17)` 取在圆角弧的**抗锯齿带**上(弧外 1.07px,覆盖率 9.3%),
+     而判据是「任一通道 > 8」—— 正确的渲染器永远不可能让它通过;
+  4. 断言在 `EndDraw()` **之前**读像素,读到的是上一帧的残留画面;
+  5. 诊断行被 CI 步骤的 `Select-String` 过滤器(`FAIL|rror|...`)整行滤掉,
+     白跑一轮什么也没读到;
+  6. 带标签的 Step 第一次跑之前,报错只有一句"返回 false"。
+  真正起作用的三个动作:把断言拆成会自报名字的 Step、**在本机先验断言输入**
+  (材质/绑定/transform/按渲染器公式反算探针明暗)、以及上一轮那次文本覆盖的算术。
+
   ## 仍未完成 / 未验证
 
-  - **D2D 贴图绘制未在真 Windows 上验证过。** `MiaoDeskSceneD2DRendererTest`
-    已在 CI 里跑起来了(它此前**从未被执行过** —— `SelfTest()` 一个调用方都没有),
-    而在 6b3677b 之前的轮次里它返回 false 且只报"返回 false",不指出哪一步;
-    已把两段都拆成带标签的 Step,下一轮就能定位。
+  - **真机桌面验收未做**:多显示器 / 多 DPI / click-through / 资源占用仍要真机。
+    Windows CI 证明的是"渲染器在离屏位图上画对了",不是"用户桌面上看到对了"。
   - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件)。
     原因与三种被否的权宜做法见渲染器注释。
   - **NeonCity / MysticMoon:缺 10 张美术资产**(上面第一节)。
@@ -303,8 +330,9 @@
   - **`legacy_entry` 刻意保留**:切入口需要真机验收,不在一台编译不了的机器上猜。
   - D3D11 后端仍没有经 `texture` 属性的贴图路径(它的取图一直是
     `material.textures[]` + 可编程材质)。
-- **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除(2026-09-22;契约校验在 `f41903e`,
-  D2D 绘制、测试与 MiaoCloud 内容迁移在 `6b3677b`)
+- **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除,并在真实 Windows CI 上验证通过
+  (`4b19282`,31 步全绿)。契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在
+  `6b3677b` 之后陆续落地。
 
   走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
   之间开一条直接引用路径",没有新增 builtin 材质 ——

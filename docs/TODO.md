@@ -1021,6 +1021,29 @@
 - **内容**:我曾在验证方法有缺陷(zsh 变量不分词导致路径比对静默失效)的情况下删除了 42 个远程分支,
   其中 3 个含有未合入工作。已全部救回本地,但**尚未推回远端**。
 - **状态**:🟡 本地已恢复,远端待推回
+### P3-6 D3D11 渲染器的 Windows-only 自测仍无调用方
+
+- **依据**:2026-09-22 清点 SelfTest 调用方时发现(见教训 15)
+- **现状**:`MiaoSceneD3D11Renderer::SelfTest()` 本身仍然**零调用方**,而它里面这四项是
+  Windows-only,所以教训 15 那次只搬走了纯逻辑那七项:
+  - `MiaoD3D11ParticleRenderer::SelfTest`
+  - `MiaoD3D11TextureLoader::SelfTestPathPolicy`
+  - `MiaoD3D11RenderTargetPool::SelfTest`
+  - 文件内的 `TransformMathSelfTest`
+  (注意 `MiaoD3D11TextureLoader::SelfTestPathPolicy` 在 D2D 测试里已被调过一次 ——
+  同名不同类,D2D 调的是 `MiaoD2DTextureLoader` 的那个。)
+- **为什么这次没做**:这四个要一个 Windows 测试目标,而四个 D3D11 渲染器 `.cpp` 现在
+  直接列在 `MIAODESK_WALLPAPER_SOURCES` 里。两条路都不可取:
+  1. 建一个 `MiaoDeskSceneD3D11` 库把它们搬出去,让 `MiaoDeskWallpaper` 链它 ——
+     这改的是**产品主程序的链接结构**,而本机编译不了 Windows,改错了我验不出来;
+  2. 在测试目标里再编一遍这些 `.cpp` —— 违反"每个实现文件只有一个 CMake owner"
+     (路径契约,`verify-cmake-target-hygiene.sh` 会拦)。
+  D2D 那份当初之所以做得动,是因为 `MiaoDeskScene2D` 库已经先存在了。
+- **做法(下一步)**:先建 `MiaoDeskSceneD3D11` 库并让 `MiaoDeskWallpaper` 改链它,
+  **在 Windows 上确认链接不变之后再**建测试目标;不要反过来。
+  参考 `src/tests/SceneD2DRenderer.cpp` 的形状。
+- **状态**:❌ 未开始 —— 需要 Windows 侧的构建与链接验证
+
 ### P3-5 contextWindow / maxTokens 默认值合理性
 
 - **依据**:P2-4 实施时发现

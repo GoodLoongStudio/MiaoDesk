@@ -79,25 +79,27 @@ echo "      共同原因:三者都 include WallpaperLibrary.h 或 NativeTools.h,
 echo "      拉到 UnicodeProfileFile.h:72 的 static_assert(sizeof(wchar_t) == 2)"
 echo "      (Windows 配置持久化要求 UTF-16 wchar_t)。macOS 的 wchar_t 是 4 字节,"
 echo "      这是产品自身的设计约束,不是替身的缺陷 —— 绕过它去换取离线验证,正是 shim"
-echo "      共同原因:三者都 include WallpaperLibrary.h 或 NativeTools.h,而那两条链都会"
-echo "      拉到 UnicodeProfileFile.h:72 的 static_assert(sizeof(wchar_t) == 2)"
-echo "      (Windows 配置持久化要求 UTF-16 wchar_t)。macOS 的 wchar_t 是 4 字节,"
-echo "      这是产品自身的设计约束,不是替身的缺陷 —— 绕过它去换取离线验证,正是 shim"
 echo "      头部写着的'替身缺陷伪装成产品缺陷'。这三个目标只有 CI 能覆盖。"
 echo "  SceneD2DRendererTest           跳过(CI-only)"
 echo "  SceneD3D11Test                 跳过(CI-only)"
 echo "  SceneD3D11TexturedSpriteTest   跳过(CI-only)"
+echo "  WallpaperAudioTapTest          跳过(CI-only)"
+echo "      它和上面几条的理由都不同,值得单独说:它要一台有回放端点的机器。CI 虚机通常"
+echo "      没有,于是它走的是『没有默认播放设备』那一支 —— 那一支同样是真断言(原因文本"
+echo "      必须留、宿主才能写进 DiagnosticsText;线程必须仍在退避重试;3 秒墙钟里 CPU"
+echo "      不能烧掉 1 秒)。但『静音读作静音』只有当机器真有端点时才覆盖得到。所以它"
+echo "      属于 Windows 而不属于替身:伪造一个 loopback 端点等于伪造被测对象。"
 echo "      这两个的理由**不一样**,分开写:"
 echo "        SceneD2DRendererTest  真要 D2D1 设备 + WIC 位图回读,换不了替身。"
 echo "        SceneD3D11Test        四个自测里三个已经搬进 ContentSelfTests 了 —— 见"
 echo "                             MiaoD3D11RenderPolicy.cpp。剩下两个挪不动,理由不同:"
 echo "                             粒子那条的**头文件**就 include 了 d3d11.h(依赖在声明里,"
 echo "                             不在归档位置);TransformMath 是 Windows-only .cpp 里的"
-echo "                             文件局部符号,没有别的入口。SceneD3D11TexturedSpriteTest 更进一步:它要真实的
+echo "                             文件局部符号,没有别的入口。SceneD3D11TexturedSpriteTest 更进一步:它要真实的"
 echo "                              D3D11 设备、交换链、WIC 写 PNG 与像素回读,一样都替不了。"
 echo "      这一条我第一版写成了'要真实 D3D11 设备',是**错的**:那只对 D2D 那条成立。"
 echo "      写错理由比不写更麻烦 —— 它会让人以为这里需要一个 GPU,"
 echo "      而真正的改进方向是把那几个纯逻辑自测搬到不含 d3d11.h 的文件里去。"
-SKIP=$((SKIP+6))
+SKIP=$((SKIP+7))
 
 [ "$FAIL" -eq 0 ]

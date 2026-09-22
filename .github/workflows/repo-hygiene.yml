@@ -23,6 +23,11 @@ concurrency:
 #                           MIAODESK_*_SOURCES,从来没被编译过 → 链接期 LNK2019。
 #                           语法闸门扫的是"磁盘上有什么",照样编译它,所以看不出它没被收录。
 #
+#   shell-scripts-parse    run-pure-logic-tests.sh 第 98 行一句 echo 的引号没有闭合,
+#                           于是最后一行 `[ "$FAIL" -eq 0 ]` 被吞进字符串、从不执行 ——
+#                           那个脚本从写出起就不可能失败,却一直打印 14 行 PASS 并退出 0。
+#                           bash -n 一条就能看见;注入一个已知失效验证过它会响。
+#
 #   skill-allowlist         kContentSkills 是封闭白名单。任何一侧单独变更都静默失衡:
 #                           多建目录而没进白名单 → 该 skill 对 AI 不可达;白名单里有而
 #                           磁盘没有 → 只在用户真的用时才报错。
@@ -40,6 +45,16 @@ jobs:
         shell: bash
         run: |
           out=$(bash scripts/verify-no-conflict-markers.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+      - name: Verify every gate script parses
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-shell-scripts-parse.sh 2>&1) || {
             echo "$out" | tail -20 | while IFS= read -r line; do
               echo "::error::$line"
             done

@@ -35,9 +35,17 @@ public:
     MiaoWallpaperAudioTap(const MiaoWallpaperAudioTap&) = delete;
     MiaoWallpaperAudioTap& operator=(const MiaoWallpaperAudioTap&) = delete;
 
-    // Spawns the capture thread. Idempotent: a second call while running is a no-op.
-    // Returns false only when the capture client could not be created at all, in which
-    // case LastErrorText explains why and the product can carry on without audio.
+    // Spawns the capture thread. Idempotent: a second call while running is a no-op
+    // that returns true.
+    //
+    // Returns false only when the thread itself could not be created — there is no
+    // other synchronous failure, because a machine with no audio endpoint is not an
+    // error. That case is reported asynchronously through LastErrorText() and the
+    // absence of frames, and the thread keeps retrying on a 400 ms backoff. The
+    // implementation always returned true, while this comment used to promise false
+    // when "the capture client could not be created" — a caller that trusted it would
+    // have swallowed the reason a user's audio wallpaper sat still, because nothing
+    // was ever going to set the return value.
     bool Start();
 
     // Signals the capture thread and joins it. Safe to call when not running.

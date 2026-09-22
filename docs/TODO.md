@@ -771,7 +771,34 @@
 - **验收**:一份只用声明式绑定的音频响应壁纸,播放音乐时低频通道驱动
   SpriteRenderer 缩放;鼠标移动时 `input://pointer/x` 驱动 Transform 视差,
   且桌面图标仍可正常点击(证明确实没有抢走输入)。真机验证,不靠单测。
-- **状态**:🟡 采集 / 接线 / 按显示器归属已实施;**待 Windows 编译与真机验收**
+- **Windows 编译这半条已经有答案**:`MiaoWallpaperAudioTap.cpp`、`IndependentWallpaperHost.cpp`
+  与 `WebDesktopSurfaceChild.cpp` 自 `667292d` 起逐字节未变,而 `1a826b22` 的 `build`
+  success 里包含 `MiaoDeskWallpaper` 目标 —— 也就是说它们被 MSVC 编过并链过。
+  所以这一项从"待 Windows 编译"降级为"待 Windows 执行 + 真机验收"。
+- **执行这半条 2026-09-22 补上(新增 `MiaoDeskWallpaperAudioTapTest`)**:在此之前,
+  `MiaoWallpaperAudioTap` 全仓只有一个调用方,而那个调用方是 MiaoDeskWallpaper.exe ——
+  它让这段代码有编译链接证据,**没有执行证据**。这与 P0-4 最后那条是同一类:
+  "能编过"不等于"跑得过"。具体到这一处,编译器看不见的东西有四样:采集线程自持的
+  COM 单元、`Stop()` 的 join、无端点机器的退避重试、以及"静音必须读作静音"。
+  新目标跑真的 `MiaoWallpaperAudioTap`(为此把它从 `MIAODESK_WALLPAPER_SOURCES`
+  搬进新的 `MiaoDeskWallpaperAudio` 库 —— 每个实现文件只能有一个 CMake owner,
+  复用的正是 P3-6 那条路),断言按"本机有没有回放端点"分两支并**先打印走了哪支**,
+  所以"没收到帧"永远不能被读成任一支的结果。
+  仍在执行证据之外的:分支只有在真有端点的机器上才覆盖得到。
+- **顺手修掉两个真缺陷**(都是读这个文件时发现的,不是测试跑出来的):
+  1. `MiaoWallpaperAudioTap::Start()` 的头文件承诺"采集客户端建不起来时返回 false",
+     而实现**恒返回 true**。调用方照注释写 `if (!Start()) { show error }`,在一台没有
+     声卡的机器上就什么都不会显示 —— 而那正是"音频壁纸为什么不响应"最常见的原因。
+     宿主实际读的是 `LastErrorText()`,所以这个错今天没有咬人。改成实话:
+     只有线程本身建不出来才返回 false(现在真的会了,`std::thread` 抛异常被接住),
+     设备不可用是异步经 `LastErrorText()` 报告的,并且线程继续退避重试。
+  2. `Impl::Run()` 的 `ownsApartment = SUCCEEDED(apartment) || apartment == RPC_E_CHANGED_MODE`
+     —— `RPC_E_CHANGED_MODE` 表示 `CoInitializeEx` **失败**了(本线程已被别人以另一种
+     单元模型初始化),对它调 `CoUninitialize()` 是在减一个不属于自己的计数。这正是
+     本清单教训 18 的形状。该分支现在是死的(没有别的代码先在这条线程上初始化 COM),
+     死的不等于对的。
+- **状态**:🟡 采集 / 接线 / 按显示器归属 / 音频 tap 执行均已实施;**待真机验收**
+  (播放音乐时低频驱动缩放 + 视差 + 桌面图标仍可点击)
 
 ### B-3 表达力上限:响应曲线已落地,通用脚本解释器明确延后
 
@@ -1325,7 +1352,7 @@
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
 | 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
 | 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
-| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而当时的 14 个闸门无一报警(现在 16 个) —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
+| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而当时的 14 个闸门无一报警(现在 17 个) —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
 | 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |
@@ -1335,6 +1362,8 @@
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
 | 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |
+| 2026-09-22 | 音频 tap 第一次真的运行 + 一个不可能失败的门 | 新增 `MiaoDeskWallpaperAudioTapTest` 与 `MiaoDeskWallpaperAudio` 库(实现文件只能有一个 CMake owner,复用 P3-6 那条路);断言分"有没有回放端点"两支且先打印走了哪支。途中修掉:①`Start()` 头文件恒假承诺,②`ownsApartment` 把失败调用当成自己有权的单元(教训 18 的形状),③**`run-pure-logic-tests.sh` 从写出起就不可能失败** —— 第 98 行 echo 的引号没闭合,把最后一行 `[ "$FAIL" -eq 0 ]` 吞进字符串;改完之后注入已知失效才第一次看到它退出 1。新增 `verify-shell-scripts-parse.sh`(`bash -n`,注入验证过会响) |
+| 2026-09-22 | 两处过期的"待 Windows 编译" | B-2 与 P0-2 的文件自各自提交起逐字节未变,而 `1a826b22` 的 build 覆盖它们 —— "能不能编过"已经有答案。保留的是"待真机验收" |
 | 2026-09-22 | D3D11 贴图 sprite 绘制路径 | `EngineTexturedPixelShader()` + t0 绑定 + 按 `textured` 选 shader;**待 Windows 编译与真机**,HLSL 只有 `D3DCompile` 能验(`0937328`) |
 | 2026-09-20 | B-5 media 壁纸包校验 | 补齐 Image/Video entry 扩展名校验(关掉 type/entry 不匹配漏洞);新增 `CreateImage`/`CreateVideo`;资产名净化改为净全名 |
 

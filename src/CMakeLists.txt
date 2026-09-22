@@ -118,6 +118,18 @@ set(MIAODESK_SCENE_D3D11_SOURCES
     content/render/d3d11/MiaoSceneD3D11Renderer.cpp
 )
 
+# Same reasoning as MIAODESK_SCENE2D_SOURCES and MIAODESK_SCENE_D3D11_SOURCES, one
+# domain over. MiaoWallpaperAudioTap is the Windows half of the Scene input bus, and
+# it is the only translation unit in MIAODESK_WALLPAPER_SOURCES that had never been
+# executed by anything: MiaoDeskWallpaper.exe references it, so it compiled and
+# linked, and no test could reach it because a test cannot link an executable.
+# Compiling it a second time inside a test target is what the path-layout contract's
+# "one CMake owner" rule exists to prevent, so a library target is the remedy —
+# exactly the one P3-6 used for the D3D11 renderers.
+set(MIAODESK_WALLPAPER_AUDIO_SOURCES
+    desktop/wallpaper/monitor/MiaoWallpaperAudioTap.cpp
+)
+
 set(MIAODESK_WALLPAPER_SOURCES
     desktop/wallpaper/runtime/WallpaperEntry.cpp
     desktop/wallpaper/legacy/WallpaperEngineProduction.cpp
@@ -138,7 +150,6 @@ set(MIAODESK_WALLPAPER_SOURCES
     desktop/performance/WallpaperPerformancePolicy.cpp
     ui/performance/PerformanceUiAdapter.cpp
 
-    desktop/wallpaper/monitor/MiaoWallpaperAudioTap.cpp
     desktop/wallpaper/monitor/WallpaperIndependentLayout.cpp
     desktop/wallpaper/monitor/IndependentWallpaperHost.cpp
 
@@ -180,6 +191,7 @@ add_library(MiaoDeskCore STATIC ${MIAODESK_CORE_SOURCES})
 add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
 add_library(MiaoDeskScene2D STATIC ${MIAODESK_SCENE2D_SOURCES})
 add_library(MiaoDeskSceneD3D11 STATIC ${MIAODESK_SCENE_D3D11_SOURCES})
+add_library(MiaoDeskWallpaperAudio STATIC ${MIAODESK_WALLPAPER_AUDIO_SOURCES})
 add_executable(MiaoDesk WIN32 ${MIAODESK_APP_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskWallpaper WIN32 ${MIAODESK_WALLPAPER_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
 add_executable(MiaoDeskHarness WIN32 ${MIAODESK_HARNESS_SOURCES} ${MIAODESK_WINDOWS_RESOURCES})
@@ -237,6 +249,13 @@ add_executable(MiaoDeskSceneD3D11TexturedSpriteTest tests/SceneD3D11TexturedSpri
 # draw. That rule is platform-independent (material + texture -> a draw path), so the
 # parity is checkable on every commit even though only one backend can render here.
 add_executable(MiaoDeskSpriteMaterialPolicyTest tests/SpriteMaterialPolicy.cpp)
+# Windows-only: runs the real WASAPI loopback tap. It had compile-and-link evidence
+# from MiaoDeskWallpaper.exe and nothing else — a capture thread that owns a COM
+# apartment, a join at Stop(), and a retry loop for machines with no sound card are
+# all things only running it can show. The assertions branch on whether the machine
+# has a render endpoint and the branch that ran is printed, so "no frame arrived" can
+# never be read as either outcome.
+add_executable(MiaoDeskWallpaperAudioTapTest tests/WallpaperAudioTap.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -252,6 +271,7 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MI
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_WALLPAPER_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_SCENE2D_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_SCENE_D3D11_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_WALLPAPER_AUDIO_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${MIAODESK_HARNESS_SOURCES})
 
 set_source_files_properties(ai/tools/NativeTools.cpp PROPERTIES
@@ -267,7 +287,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -286,6 +306,7 @@ if (MSVC)
     target_compile_options(MiaoDeskHarnessCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskScene2D PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneD3D11 PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskWallpaperAudio PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDesk PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaper PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarness PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -309,6 +330,7 @@ if (MSVC)
     target_compile_options(MiaoDeskSceneD3D11Test PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneD3D11TexturedSpriteTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskWallpaperAudioTapTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -333,6 +355,7 @@ target_link_libraries(MiaoDeskWallpaper PRIVATE
     MiaoDeskCore
     MiaoDeskScene2D
     MiaoDeskSceneD3D11
+    MiaoDeskWallpaperAudio
     user32
     gdi32
     shell32
@@ -514,6 +537,19 @@ target_link_libraries(MiaoDeskSceneD3D11TexturedSpriteTest PRIVATE
     d3dcompiler
     dxgi
     windowscodecs
+    shlwapi
+)
+
+# Drives the real capture thread: ole32 for CoInitializeEx/CoUninitialize (the
+# apartment the thread owns for exactly as long as it runs), user32 and advapi32 for
+# the same reason MiaoDeskWallpaper lists them, and the tap itself from the library
+# rather than by listing its .cpp here.
+target_link_libraries(MiaoDeskWallpaperAudioTapTest PRIVATE
+    MiaoDeskCore
+    MiaoDeskWallpaperAudio
+    user32
+    ole32
+    advapi32
     shlwapi
 )
 

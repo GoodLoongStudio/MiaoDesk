@@ -91,7 +91,16 @@ struct MiaoWallpaperAudioTap::Impl {
         std::lock_guard<std::mutex> guard(lifecycle_);
         if (worker.joinable()) return true;  // Already running.
         stopRequested.store(false);
-        worker = std::thread([this] { Run(); });
+        // The header promises false only here — when the thread could not be created at
+        // all. std::thread throws on failure, and an exception escaping Start() would
+        // terminate the wallpaper process over something that is not fatal: audio is
+        // optional and the host carries on without it.
+        try {
+            worker = std::thread([this] { Run(); });
+        } catch (const std::system_error&) {
+            SetError(L"无法启动音频采集线程");
+            return false;
+        }
         return true;
     }
 
@@ -130,7 +139,17 @@ private:
     // apartment's lifetime is exactly this function's.
     void Run() {
         HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        const bool ownsApartment = SUCCEEDED(apartment) || apartment == RPC_E_CHANGED_MODE;
+        // SUCCEEDED is the whole test. This thread owns the apartment only when it
+        // initialised it; RPC_E_CHANGED_MODE means the call *failed* because some other
+        // code had already put this thread in a different apartment, and calling
+        // CoUninitialize for a call that failed decrements a count this function does
+        // not own. It used to read `SUCCEEDED(apartment) || apartment ==
+        // RPC_E_CHANGED_MODE`, which is exactly the mistake recorded as TODO lesson 18 —
+        // releasing COM objects on an apartment you did not set up. Nothing in the
+        // product initialises COM on this thread before this line, so the branch was
+        // dead; dead is not the same as correct, and the next caller to reuse this
+        // thread would find out the hard way.
+        const bool ownsApartment = SUCCEEDED(apartment);
         DeviceEvents events;
         ComPtr<IMMDeviceEnumerator> enumerator;
         if (SUCCEEDED(CoCreateInstance(kClsIdMMDeviceEnumerator, nullptr, CLSCTX_ALL,

@@ -55,6 +55,16 @@ jobs:
         shell: bash
         run: bash scripts/verify-workflow-paths.sh
 
+      # skills/ 是用户制作壁纸时唯一读到的规范。它此前只写了"material 优先引用
+      # builtin",而渲染器只接受 builtinName:"solidColor" 一个值、programmable
+      # 只有 D3D11 能画、texture 与 material 同时写会被拒 —— 规范在教作者写
+      # 渲染器会拒的包。这个门从 MiaoSpriteMaterialPolicy.cpp 读出认可的 builtin 名,
+      # 再按小节核对 skills 是否说到它。判据是关键词命中,措辞层面的改写抓不到,
+      # 这一点写在这个脚本自己的头部了。
+      - name: Verify the content skills state the renderer's sprite-material rule
+        shell: bash
+        run: bash scripts/verify-skill-material-rule.sh
+
       # MiaoCloud 的 scene.json 是 scene.ini 的产物,不是第二份手写源。
       # 分叉的后果很具体:图层位置与源不符,而**没有任何测试会发现** ——
       # C++ 侧的 BuiltinWallpaperPackages 只验它能解析与资产在不在,不验几何。

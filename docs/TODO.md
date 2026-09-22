@@ -138,7 +138,20 @@
     `ERROR  poll failed:` —— **让失败自己留痕**,而不是靠人去猜沉默意味着什么。
     附带代价:那个坏脚本每小时 60 次的配额被它自己烧光了。
 
-现在有**十二个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+12. **"闸门绿了"最容易被误读成"它证明的那件事成立"。** 写 skill 漂移门时连中三次同类:
+    ①第一版按**全文**搜关键词,把正面提示词里"只有 `builtinName:"solidColor"` 一种能用"
+    整句删掉,门仍然报绿 —— 因为"solidColor"这个词在反面提示词里还活着。
+    ②按小节切分的实现写错了(partition 循环让除最后一节外每节都拿到剩下的全部文本),
+    于是"正面小节必须有 X"永远被"反面小节也有 X"满足。
+    ③切成小节之后同类仍在:同一个小节里换个说法,关键词照样命中。
+    没有去堆一个能覆盖措辞的解析器(那是把工具做成编译器),而是**把上限写进脚本头部
+    和它的输出** —— 成功信息现在逐条列出"只证明了这些",并显式写"这是已知上限,不是通过"。
+    **判据:一个闸门的输出,能不能让外人正确说出它证明了什么、没证明什么?
+    不能,那它的 ✅ 比没有门更坏 —— 它会把"没验"洗成"验过"。**
+    另:这条规则我在教训 2 里已经写过("闸门写完必须注入一个已知失效"),这次仍然
+    三个版本里只有一个真的会响。**要执行,不是记录。**
+
+现在有**十三个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -155,6 +168,7 @@
 | MiaoCloud 几何 | `python3 scripts/generate-miao-cloud-scene.py --check` | scene.json 与 scene.ini 逐字节一致 + 每层逆合成 assert | 动画与粒子(刻意未迁移) |
 | 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个 scene.json 声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
 | **渲染后端一致性** | `MiaoDeskSpriteMaterialPolicyTest`(在 `run-pure-logic-tests.sh` 与 Windows CI 里) | D2D 与 D3D11 对"哪个 SpriteRenderer 能画"判断一致;10 个形态 × 2 个后端,含必须被拒的那些 | HLSL 与真实绘制(只有 Windows 能编译/跑) |
+| **skill 材质规则** | `scripts/verify-skill-material-rule.sh` | `skills/` 是否说到渲染器真正执行的 sprite 材质规则(名字从代码读出,不手抄) | 措辞改写;同一个词在小节别处仍命中的情况 |
 | 壁纸库派生视图(4 个 .ps1) | `packaging/windows/verify-wallpaper-library-*.ps1` | `WallpaperLibrary.cpp` 的 `RecentlyUsed`/`Favorites` 等派生视图仍是"用户可见"的那一份 | CRLF 之外的形状(已在读入处归一化) |
 
 其中除交叉语法与纯逻辑测试外,都由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
@@ -982,6 +996,7 @@
 | 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
 | 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
 | 2026-09-22 | 五处已失效的"待 Windows 编译"标记 | 按证据改掉:`023aa299` 全绿之后文件逐字节未变的项,"能不能编过"已经有答案(B-1 / B-5 / P2-4 / P3-1 / P3-3)。区别:`待真机验收`仍然保留 |
+| 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
 | 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |

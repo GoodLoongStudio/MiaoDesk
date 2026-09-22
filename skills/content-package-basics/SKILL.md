@@ -64,6 +64,33 @@ description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 
 - asset 只引用包内相对路径。
 - material 优先引用 builtin 模型(builtinName);builtin 无法表达时才自定义 shader。
 - 保持节点与组件数量最小化:能用一个节点表达的不要拆成多个。
+
+【sprite 怎么拿到一张图:两种途径,选一种】
+一个 spriteRenderer 要到"画出图像"这一步,只有两条路,共用同一个纹理寄存器(t0),
+所以**只能选一条**;两条都写会被拒绝,报错点名组件。
+
+1. 组件自带的 `texture` 属性(assetReference),指向一个 `AssetType::Image` 资产。
+   - **不需要 material**,也不用声明 `materials[]` —— 仓库里唯一填满的壁纸
+     MiaoCloud 就是这种:5 个图层 sprite 各有 texture,`materials` 是空数组。
+   - 这是图片图层该用的写法,优先级高于 shader 路线。
+2. `materialId` 指向一个 material。
+   - builtin material:**只有 `builtinName: "solidColor"` 一种能用**。
+     别的 builtin 名一律被拒 —— 不会静默忽略,而是明确报错。
+   - programmable material(`model: "programmable"` + `pixelShaderId`):
+     **只有 D3D11 后端能画**。D2D 后端没有 shader 路径,会拒绝加载整个包。
+     用它就要接受"这份内容在 D2D 后端上不可见"。
+   - `solidColor` 的 `color` 属性会给贴图染色,它和 `texture` 可以同时存在。
+
+【`tint` 在两个后端上不一样,这不是 bug】
+- D3D11:tint 是 shader 常量,对贴图免费,染成什么颜色都行。
+- D2D:`ID2D1BitmapBrush` 没有颜色成员,一条 pass 内无法给位图染色,
+  所以**贴图 sprite 上非白色 tint 会被明确拒绝**;白色(默认)不受影响。
+- 结论:想让一个包在两个后端都能加载,贴图 sprite 的 tint 保持默认白色,
+  要染色就走 `solidColor` 的 `color` —— 那条路两个后端都通。
+
+【`materialId` 写错名字没有兜底】
+`materialId` 指向一个不存在的 material 是硬错误(报错点名该 id),
+不会被"取场景里第一个 builtin material"这种兜底悄悄替换。
 ```
 
 ## 反面提示词
@@ -80,6 +107,10 @@ description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 
 - 给出越界默认值,或缺 min/max/step 的无界 float
 - 出现悬空 parentId / rootNodeId / sourceId(指向不存在的对象)
 - 用自定义 shader 表达一个 builtin material 就能做到的效果
+- 在 spriteRenderer 上同时写 programmable material 和 texture(两者都要 t0)
+- 给贴图 sprite 写非白色 tint(在 D2D 后端会被拒;要染色就用 solidColor 的 color)
+- 把 `builtinName` 写成 solidColor 以外的值(只有这一个是可用的)
+- 写 programmable material,却假定内容在 D2D 后端上也能显示
 - 无意义地堆叠节点、组件或 pass 来"增加细节"
 - 输出 HTML / JavaScript / CSS / shell 命令 / 原生可执行文件
 ```

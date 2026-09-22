@@ -36,6 +36,7 @@ description: MiaoDesk 内容包安全与性能门禁。任何壁纸或组件内�
 - 把超标项四舍五入成达标
 - 用"用户应该不会触发"为理由放过越界路径或越权能力
 - 在未通过安全检查时先交付,再补性能优化
+- 把 programmable material 当作“两个后端都能画”,或反过来把 D2D 对贴图 tint 的限制当作 bug
 - 自行修改内容来让检查通过后,不重新跑完整门禁
 - 把预览当作已应用,或跳过用户确认
 - 报告"基本通过""大部分通过"等模糊结论;只报通过与不通过
@@ -87,6 +88,13 @@ description: MiaoDesk 内容包安全与性能门禁。任何壁纸或组件内�
 [ ] 未使用 input://pointer/down 或 input://event/pointer/click(壁纸不得关闭 click-through)
 [ ] 未把 input://audio/beat 当电平用(它是单帧沿)
 [ ] 音频/指针效果全部是声明式绑定,无脚本
+[ ] 每个 spriteRenderer 只走一条到纹理的路:texture 或 materialId,没有两个都写
+[ ] texture 指向一个真实存在的 Image 资产,不是别的类型
+[ ] 若走 materialId:builtin 的 builtinName 恰为 solidColor(唯一的可用值)
+[ ] 若走 programmable material:已确认接受“仅 D3D11 可渲染”,D2D 后端会拒绝加载
+[ ] solidColor 的 color 未越界;它与 texture 同时存在时是染色,不是冲突
+[ ] 贴图 sprite 的 tint 为白色(默认),或已确认只需在 D3D11 后端上运行
+[ ] materialId 指向的 material 真实存在(不接受“取第一个 builtin”的兜底)
 [ ] response 取值在闭集内(linear/square/cube/sqrt/smoothstep/elastic/threshold/invert),未发明新曲线
 [ ] response / deadzone 未用在 bool / int 源上
 [ ] deadzone 在 [0, 1) 内

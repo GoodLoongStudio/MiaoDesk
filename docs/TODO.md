@@ -554,9 +554,17 @@
     比没有记录更糟 —— 它会让人去重写一份已经存在、而且已经被共享策略钉住的代码。
     真正仍未做的是**执行**:没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径,
     HLSL 只在被 `D3DCompile` 编译这个意义上成立过。
-- **状态**:🟡 渲染侧阻塞的**两个半边**都已落地 —— D3D11 半边在 `0937328`。
-  **已编译并链接通过**(`build` 多轮 success,见下面补充段),**但从未被执行**:
-  没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径。
+- **状态**:✅ **D3D11 贴图路径已经真的执行并通过(`1a826b22`,`build` success)。**
+  第 26 步「Render a textured sprite through D3D11 and read the pixels back」为
+  `success`(不是 skipped、不是 cancelled);同一轮第 27、28 步(D3D11 自测、两个后端
+  对"哪些 sprite 能画"的判定一致)同为 success;该 job 33 个真实验证步骤只有第 34 步
+  (上传诊断产物)因条件未满足而跳过,与渲染无关。
+  **这验到的是**:贴图被真的采样并写进了帧缓冲(中心品红)、清屏色仍然存在(左上角黑,
+  所以品红是画出来的 sprite,不是整块目标被灌成贴图色)。
+  **这没验到的**:真实 GPU。CI 是虚拟机,D3D11 设备多半由 WARP 软件光栅器支撑;
+  也没有人看过真机截图 —— 后者属于 P0-1。
+  在此之前,"渲染器能画贴图 sprite"只有编译链接层的证据,而 HLSL 是运行时由
+  `D3DCompile` 编译的,所以那道证据**从来不足以支持这个主张**。
   (这一行先前写的是"尚未在 Windows 上编译或运行过",与同一节下面那段
   "新代码在 Windows 上编译链接通过"自相矛盾 —— 以后者为准,它有 commit 号。)
   落在本机证据范围内的(`0937328` 当时的数,不是现在的):材质策略合并为一份 +
@@ -1321,6 +1329,7 @@
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
 | 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |
+| 2026-09-22 | **D3D11 贴图路径第一次真的执行并通过** | `MiaoSceneD3D11Renderer::ReadBackPixels` + `MiaoDeskSceneD3D11TexturedSpriteTest`:往真实交换链画一帧品红贴图 sprite,把场景颜色目标读回 CPU,断言中心品红、左上角黑。`1a826b22` `build` success,第 26 步 success。此前这条路径只有编译链接证据 —— 而 HLSL 是运行时编译的,那从来不够。途中修掉两个自己的错:断言自相矛盾(scale 1.0 铺满导致'黑色存在'不可能成立)、`CoUninitialize` 早于 COM 对象释放(0xC0000005,日志全空) |
 | 2026-09-22 | B-6 宿主开始真正推送音频帧 | 阻碍解除:B-2 的 WASAPI 已落地,而 web 桌面 surface 是独立进程、自己持 loopback。信封单独做成纯函数 `WallpaperWebAudioEnvelope.h`(locale 逗号小数点 / 精度两处已在注释里写明),并用 `tests/WebAudioEnvelopeParity.mjs` 把 C++ 真实输出喂给真 shim 比对 —— 契约有两份实现而此前没有任何东西检查它们之间是否一致。四向注入验证过门会响。**真机播放音乐仍未验** |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

@@ -142,6 +142,19 @@ jobs:
       # macOS 上跑不了(它按反斜杠比对一个 allowlist,而 macOS 的 FullName 是正斜杠,
       # 假阳性),于是那些规则本机一直没人跑得动 —— 2026-09-22 就有一句**注释**里的
       # fs::current_path() 连红两次提交。这里把不依赖分隔符的检查搬过来。
+      # docs/ 里的 "File.cpp:123" 引用会随代码改动静默腐烂:文档不是代码,
+      # 没有任何测试覆盖它,而失效的引用比没有引用更坏 —— 它让读者以为有依据。
+      # 只查"这一行还在不在",不查"这一行说的是不是那件事"(后者要人读)。
+      - name: Verify documentation code citations still point at real lines
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-doc-code-citations.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify native source shape and path policy
         shell: bash
         run: |

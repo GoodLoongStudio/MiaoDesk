@@ -79,7 +79,17 @@ echo "      共同原因:三者都 include WallpaperLibrary.h 或 NativeTools.h,
 echo "      拉到 UnicodeProfileFile.h:72 的 static_assert(sizeof(wchar_t) == 2)"
 echo "      (Windows 配置持久化要求 UTF-16 wchar_t)。macOS 的 wchar_t 是 4 字节,"
 echo "      这是产品自身的设计约束,不是替身的缺陷 —— 绕过它去换取离线验证,正是 shim"
+echo "      共同原因:三者都 include WallpaperLibrary.h 或 NativeTools.h,而那两条链都会"
+echo "      拉到 UnicodeProfileFile.h:72 的 static_assert(sizeof(wchar_t) == 2)"
+echo "      (Windows 配置持久化要求 UTF-16 wchar_t)。macOS 的 wchar_t 是 4 字节,"
+echo "      这是产品自身的设计约束,不是替身的缺陷 —— 绕过它去换取离线验证,正是 shim"
 echo "      头部写着的'替身缺陷伪装成产品缺陷'。这三个目标只有 CI 能覆盖。"
-SKIP=$((SKIP+3))
+echo "  SceneD2DRendererTest           跳过(CI-only)"
+echo "  SceneD3D11Test                 跳过(CI-only)"
+echo "      这两个是渲染器自测:要真实 D2D1/D3D11 设备、WIC 位图回读、Windows 头文件,"
+echo "      不是'纯逻辑换个替身就能跑'的那一类。它们此前**根本没出现在这份清单里** ——"
+echo "      跑的不列、跳过的也不列,于是 14+3 看着像覆盖了全部目标,而实际有 19 个。"
+echo "      漏一个名字和'这个目标不存在'是两件事,前者才查得出来。"
+SKIP=$((SKIP+5))
 
 [ "$FAIL" -eq 0 ]

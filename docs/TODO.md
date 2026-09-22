@@ -1172,10 +1172,29 @@
   **没验到的:MSVC 实际编译与最终链接。** 本机没有 MSVC,compile_commands 的
   toolchain 是 host 默认(那个 `-DCMAKE_VS_PLATFORM_NAME=x64` 在非 Windows 上被忽略),
   它证明的是"CMake 给这四个 TU 的编译环境没变",不是"MSVC 编得过、链得上"。
-- **第 2 步(未做):建测试目标**,参考 `src/tests/SceneD2DRenderer.cpp` 的形状,
-  链 `MiaoDeskSceneD3D11` 后调用那四个 SelfTest。**必须在 Windows 上确认上面这个库的
-  链接不变之后再建** —— 顺序不能反,否则真出了链接问题分不清是谁引入的。
-- **状态**:🟡 第 1 步完成(编译环境等价性已在本机逐 token 验过);第 2 步待 Windows 链接确认
+- **第 2 步已完成(2026-09-22):`MiaoDeskSceneD3D11Test`。** 参考
+  `src/tests/SceneD2DRenderer.cpp` 的形状,链 `MiaoDeskSceneD3D11` 而不是再把它的
+  `.cpp` 编一遍。调用的四个:
+  `MiaoD3D11TextureLoader::SelfTestPathPolicy` / `MiaoD3D11ParticleRenderer::SelfTest` /
+  `MiaoD3D11RenderTargetPool::SelfTest` / `MiaoSceneD3D11Renderer::SelfTest`。
+  **逐个报而不聚合成一个布尔** —— "D3D11 自测失败"不告诉你是哪一类,
+  而四个里三个是公开静态成员、本来就分得开。
+  第四个(聚合器)是 `TransformMathSelfTest()` **唯一**的入口:它在
+  `MiaoSceneD3D11Renderer.cpp` 里是文件局部的,没有别的路能进去。调它也会重跑
+  `ContentSelfTests` 已经在每台机器上覆盖的那七个纯逻辑自测 —— 这点冗余是到达
+  `TransformMathSelfTest` 的代价,写进注释了。
+- **顺序是按记录执行的,而且记录是对的**:第 1 步的库先要证明 MSVC 编得过、链得上,
+  才允许有测试目标依赖它 —— 否则真出链接问题分不清是谁引入的。证据是
+  `7109050` / `a1348b06` 两次 `build` 全绿,**然后**才建这个目标。
+- **顺带补了两处此前不显眼的漏**:
+  1. `MiaoDeskWebAudioEnvelopeTest` **从来没进过 Windows CI 的 `--target` 列表** ——
+     它只在 macOS 本地跑过。现在建了也跑了。
+  2. `run-pure-logic-tests.sh` 的"只能在 Windows 上验证"清单只列了 3 个,
+     而 `SceneD2DRendererTest` 与新的 `SceneD3D11Test` 既不在跑清单也不在跳过清单。
+     于是"14 跑 + 3 跳过"看着像覆盖了全部,实际有 19 个目标。改成 5 个并写明原因。
+- **仍未验**:MSVC 编译这个新测试目标、以及四个自测在真实 D3D11 设备上的结果。
+  `verify-windows-syntax.sh` 只做了 mingw 语法层(且 WRL Callback 是登记过的缺口)。
+- **状态**:🟡 第 1、2 步均已完成(结构等价性与 CI 绿灯都有);**四个自测的真实执行结果待 Windows**
 
 ### P3-5 contextWindow / maxTokens 默认值合理性
 
@@ -1225,6 +1244,7 @@
 | 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而 14 个闸门无一报警 —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
+| 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |
 | 2026-09-22 | B-6 宿主开始真正推送音频帧 | 阻碍解除:B-2 的 WASAPI 已落地,而 web 桌面 surface 是独立进程、自己持 loopback。信封单独做成纯函数 `WallpaperWebAudioEnvelope.h`(locale 逗号小数点 / 精度两处已在注释里写明),并用 `tests/WebAudioEnvelopeParity.mjs` 把 C++ 真实输出喂给真 shim 比对 —— 契约有两份实现而此前没有任何东西检查它们之间是否一致。四向注入验证过门会响。**真机播放音乐仍未验** |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

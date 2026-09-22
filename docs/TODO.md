@@ -521,8 +521,13 @@
     `verify-wallpaper-theme-canonical-gate.ps1` 只读 `manifest.json` 的 id/kind/runtime,
     没有一个读 `scene.ini`。所以删 `legacy_entry` 与 `scene.ini` 不会破坏它们。
     —— 但那个闸门此前从未被调用过,已接进工作流并改成 push + PR 都触发。)
-  - D3D11 后端仍没有经 `texture` 属性的贴图路径(它的取图一直是
-    `material.textures[]` + 可编程材质)。
+  - ~~D3D11 后端仍没有经 `texture` 属性的贴图路径~~ **这条已过期,2026-09-22 更正**。
+    它在 `0937328` 就落了地:`MiaoBuiltinTextured` 像素着色器、按 sprite 自己的
+    `texture` assetReference 取图(`input.textureAssetId = texture.id`)、绑 t0、
+    经 `ResolveSpriteDrawPath` 与 D2D 共用同一份策略。留着"没有这条路径"的记录
+    比没有记录更糟 —— 它会让人去重写一份已经存在、而且已经被共享策略钉住的代码。
+    真正仍未做的是**执行**:没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径,
+    HLSL 只在被 `D3DCompile` 编译这个意义上成立过。
 - **状态**:🟡 渲染侧阻塞的**两个半边**都已落地 —— D3D11 半边在 `0937328`,
   但**只到"本机能验证的那一层"为止**,尚未在 Windows 上编译或运行过。
   落在本机证据范围内的:材质策略合并为一份 + 16 项断言 + 注入已知失效确认闸门会响
@@ -1183,6 +1188,15 @@
   `MiaoSceneD3D11Renderer.cpp` 里是文件局部的,没有别的路能进去。调它也会重跑
   `ContentSelfTests` 已经在每台机器上覆盖的那七个纯逻辑自测 —— 这点冗余是到达
   `TransformMathSelfTest` 的代价,写进注释了。
+- **一处必须更正的表述:这四个自测本身是纯逻辑,一个都没碰 D3D11 设备。**
+  逐个读过实现之后:`MiaoD3D11ParticleRenderer::SelfTest` 是 `sizeof` 加两个常量比较;
+  `MiaoD3D11TextureLoader::SelfTestPathPolicy` 是三个路径字符串判断;
+  `MiaoD3D11RenderTargetPool::SelfTest` 是尺寸算术;`TransformMathSelfTest` 是矩阵乘法。
+  它们之所以只能在 Windows 上跑,是因为**实现所在的 `.cpp` include 了 `d3d11.h`**,
+  不是因为需要显卡。我先前在 `run-pure-logic-tests.sh` 里写的理由是"要真实 D3D11 设备",
+  那是从 D2D 那条照抄过来的,**错**。理由写错的代价很具体:它让人以为这里需要一个 GPU,
+  而真正的改进方向是把那几个纯逻辑自测搬进一个不含 `d3d11.h` 的文件,
+  让它们回到每台机器都能跑 —— 那才是这一类问题的正解,和教训 15 是同一件事。
 - **顺序是按记录执行的,而且记录是对的**:第 1 步的库先要证明 MSVC 编得过、链得上,
   才允许有测试目标依赖它 —— 否则真出链接问题分不清是谁引入的。证据是
   `7109050` / `a1348b06` 两次 `build` 全绿,**然后**才建这个目标。

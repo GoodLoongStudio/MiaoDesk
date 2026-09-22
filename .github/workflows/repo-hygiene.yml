@@ -231,3 +231,18 @@ jobs:
             done
             exit 1
           }
+
+      # 上面那条只验页面侧 shim 自身;这一条验**宿主侧与页面侧对得上**。
+      # 它编译 src/tests/WebAudioEnvelopeDump.cpp —— 也就是真实调
+      # BuildAudioBridgeEnvelope 那个函数 —— 把输出喂给真的 shim,再比对监听者收到的值。
+      # 之所以值得单独一步:B-6 的契约有两份实现而没有任何编译器在检查它们之间的关系,
+      # 一旦对不上,表现是"页面什么都收不到",而 shim 的丢弃路径是静默 return。
+      - name: Verify the host-side audio envelope against the shim
+        shell: bash
+        run: |
+          out=$(node tests/WebAudioEnvelopeParity.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

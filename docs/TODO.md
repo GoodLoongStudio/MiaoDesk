@@ -897,12 +897,38 @@
      (形状错丢帧,值错强转为静音)。死代码删除,决策写进注释。
   2. 我在测试里把一条**合法帧**(带未知多余字段)错放进"应丢弃"组。
      多余字段必须忽略——这是前向兼容,宿主以后加字段不该破坏旧内容。
-- **尚未完成**:宿主侧**还没有**真正推送音频帧。`AudioSpectrumAnalyzer` 与
-  `FeedAnalyzer` 已就绪并有测试,但 `WebDesktopSurfaceChild` 到分析器之间没有连线 ——
-  那需要 WASAPI 采集(B-2 剩余)先落地。
+- **宿主已真正推送帧(2026-09-22)**:当初的阻碍是"`WebDesktopSurfaceChild` 到分析器之间
+  没有连线,而那需要 WASAPI 先落地"。B-2 的 `MiaoWallpaperAudioTap` 落地之后这个阻碍
+  消失了 —— web 桌面 surface 是**独立进程**,所以它自己持有一个 loopback 客户端,
+  不去等独立壁纸宿主喂它。现在是 `SetTimer` 16ms 一拍,读 `LatestFrame`、
+  `BuildAudioBridgeEnvelope` 造信封、`PostWebMessageAsJson` 发出去。
+  `Pause` 时跳过读帧与投递;tap 起不来不杀 surface ——
+  没有采集设备的机器照样要显示网页内容。
+- **一处刻意没做,记在这里免得它躲在注释里**:`Pause` 时**没有**停掉 loopback 客户端。
+  `MiaoWallpaperAudioTap::Start()` 没有把自己写成可重入,而"暂停/恢复时重启采集线程"
+  这条路径在本机没法测 —— 于是代价是一个暂停中的 surface 仍然占着一个 WASAPI
+  loopback 客户端(可能挡到别的应用)。正确的修法是补上这条,但要用真机验证,
+  不是靠猜。没有写成"暂停即停"那样的注释,因为代码并没有那么做。
+- **信封单独做成纯函数**(`src/include/miaodesk/WallpaperWebAudioEnvelope.h`),
+  因为 B-6 的契约有两份实现而**没有编译器在检查它们之间的关系**:宿主侧这个构造器,
+  页面侧 `normalizeFrame()`。对不上的表现是"页面什么都收不到",而 shim 的丢弃路径是
+  静默 `return`。做成纯函数就能在每台机器上测,而不是只在跑 WebView2 的地方测。
+  三处容易错的地方都写在头注释里,其中两处已经咬过:
+  - **locale**:`ostringstream` 跟全局 locale 走,逗号小数点的机器上会发出 `"level":0,5`,
+    页面 `JSON.parse` 抛 —— 而且**只在那台机器上**。函数内 `imbue(std::locale::classic())`。
+  - **精度**:第一版注释写"四位小数"而代码没写 `setprecision`,实际落在 6 位。
+    注释与代码不符,正是 `verify-doc-code-citations.sh` 那一类问题的人肉版。
+- **契约两头对上的验证**:`tests/WebAudioEnvelopeParity.mjs` 编译并运行
+  `tests/WebAudioEnvelopeDump.cpp` —— 也就是真的调 `BuildAudioBridgeEnvelope` ——
+  把它的真实输出喂给真的 shim,再比对监听者收到的值。4 组样本 × 3 条断言
+  (信封被接受 / 值一致 / 退订后不再收到)。已接入 repo-hygiene。
+  四向注入验证:beat 发 1/0、字段名改名、spectrum 少发一条、精度降到一位,分别按预期的
+  原因变红(`scripts/inject-audio-envelope-failures.sh`)。
 - **验收**:一份手工 Web 壁纸调用 `wallpaper.registerAudioListener`,播放音乐时
   每帧收到 5 频段 + 16 频谱桶;退订后不再收到;另一个故意抛错的监听者不影响它。
-- **状态**:✅ 契约 + shim + 测试 + 宿主注入已完成;**宿主尚未推送帧(依赖 B-2 的 WASAPI 采集)**
+  前两条已由上面的 node 契约门覆盖;**真机播放音乐仍未验**。
+- **状态**:✅ 契约 + shim + 测试 + 宿主注入 + 信封 + 宿主推帧均已完成;
+  **仅剩真机验收(播放音乐、听声辨形)**
 
 ### B-7 明确不做项(写下来避免反复被提起)
 
@@ -1192,6 +1218,7 @@
 | 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而 14 个闸门无一报警 —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
+| 2026-09-22 | B-6 宿主开始真正推送音频帧 | 阻碍解除:B-2 的 WASAPI 已落地,而 web 桌面 surface 是独立进程、自己持 loopback。信封单独做成纯函数 `WallpaperWebAudioEnvelope.h`(locale 逗号小数点 / 精度两处已在注释里写明),并用 `tests/WebAudioEnvelopeParity.mjs` 把 C++ 真实输出喂给真 shim 比对 —— 契约有两份实现而此前没有任何东西检查它们之间是否一致。四向注入验证过门会响。**真机播放音乐仍未验** |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |

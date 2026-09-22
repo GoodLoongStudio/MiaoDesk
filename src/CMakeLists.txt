@@ -213,6 +213,11 @@ add_executable(MiaoDeskSceneSerializerSelfTest tests/SceneSerializerSelfTest.cpp
 # MiaoSceneD3D11Renderer::SelfTest, an aggregator with no caller. Seven of them,
 # ~290 lines, and none of them ran on any machine.
 add_executable(MiaoDeskContentSelfTests tests/ContentSelfTests.cpp)
+# Pure logic: pins the host->page audio envelope against the shim's contract — field
+# names, array lengths, value ranges, and that the decimal point survives a locale
+# whose decimal separator is a comma. The page-side half is covered by
+# tests/WebAudioBridge.mjs; the two halves had nothing checking them against each other.
+add_executable(MiaoDeskWebAudioEnvelopeTest tests/WebAudioEnvelope.cpp)
 # Pure logic: the two render backends must agree about which SpriteRenderers they can
 # draw. That rule is platform-independent (material + texture -> a draw path), so the
 # parity is checkable on every commit even though only one backend can render here.
@@ -247,7 +252,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -285,6 +290,7 @@ if (MSVC)
     target_compile_options(MiaoDeskBuiltinWallpaperPackagesTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneSerializerSelfTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentSelfTests PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskWebAudioEnvelopeTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
@@ -429,6 +435,13 @@ target_link_libraries(MiaoDeskSceneSerializerSelfTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskContentSelfTests PRIVATE
+    MiaoDeskCore
+)
+
+# Links nothing beyond MiaoDeskCore: the envelope builder is a header-only pure
+# function over content::inputbus::AudioSpectrumFrame, which is exactly why it
+# can run on every machine.
+target_link_libraries(MiaoDeskWebAudioEnvelopeTest PRIVATE
     MiaoDeskCore
 )
 

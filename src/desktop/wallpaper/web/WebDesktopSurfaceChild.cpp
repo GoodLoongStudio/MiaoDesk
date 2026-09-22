@@ -1,5 +1,7 @@
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoWallpaperAudioTap.h"
+#include "miaodesk/WallpaperWebAudioEnvelope.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -34,6 +36,18 @@ constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-surface.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
 constexpr UINT kShutdownMessage = WM_APP + 903;
+// The audio bridge is driven by a plain window timer rather than a NavigationCompleted
+// handler: the shim attaches lazily, on the page's first registerAudioListener call, so
+// frames sent before the page's script runs are dropped by the transport with no error
+// and no harm. Wiring an extra WRL event handler to avoid those few dropped frames would
+// buy nothing and cost a place to get the callback lifetime wrong.
+//
+// 16 ms matches the render cadence the rest of the host uses (see B-2's notes on why the
+// analysis runs on the capture thread and the render thread only copies a finished
+// frame): pushing faster would just repeat identical values, pushing slower would make
+// the visualisation stutter.
+constexpr UINT_PTR kAudioBridgeTimerId = 1;
+constexpr UINT kAudioBridgeIntervalMs = 16;
 
 struct LaunchOptions {
     HWND parent{};
@@ -264,7 +278,9 @@ private:
                     : DefWindowProcW(window, message, wParam, lParam);
     }
 
-    LRESULT HandleMessage(UINT message, WPARAM, LPARAM lParam) {
+    // wParam is named because the audio-bridge timer case reads it. It was unnamed while
+    // nothing did, and an unnamed parameter that becomes used is a compile error.
+    LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         switch (message) {
         case WM_NCHITTEST:
             return HTTRANSPARENT;
@@ -282,7 +298,12 @@ private:
         case kShutdownMessage:
             DestroyWindow(hwnd_);
             return 0;
+        case WM_TIMER:
+            // The timer id is ours; anything else belongs to WebView2 or COM.
+            if (wParam == kAudioBridgeTimerId) PumpAudioFrame();
+            return 0;
         case WM_DESTROY:
+            StopAudioBridge();
             ClearReadyProperties();
             webview_.Reset();
             if (controller_) controller_->Close();
@@ -642,6 +663,11 @@ private:
                                     Fail(69);
                                     return S_OK;
                                 }
+                                // Started here rather than before Navigate so the tap
+                                // does not capture a device while the surface is still
+                                // failing to come up — a failed Create leaves this
+                                // process a WASAPI loopback client nobody asked for.
+                                StartAudioBridge();
                                 return S_OK;
                             }).Get());
                 }).Get());
@@ -652,6 +678,48 @@ private:
         if (!controller_ || !hwnd_) return;
         RECT bounds{};
         if (GetClientRect(hwnd_, &bounds)) controller_->put_Bounds(bounds);
+    }
+
+    // The last piece of B-6: until now the shim was installed and nothing was ever sent
+    // through it, because the desktop web surface is its own process and had no audio
+    // source of its own. MiaoWallpaperAudioTap is the same WASAPI loopback capture the
+    // independent wallpaper host uses, so both hosts feed the page the same frame shape.
+    void StartAudioBridge() {
+        if (!hwnd_ || !IsWindow(hwnd_)) return;
+        if (audioTimer_ != 0) return;
+        // A tap that cannot start is not a reason to kill the surface: a machine with no
+        // render/capture device, or one where the loopback client is already taken, must
+        // still show its web content. The bridge simply never delivers a frame, which is
+        // exactly what a silent machine looks like anyway.
+        audioTap_.Start();
+        audioTimer_ = SetTimer(hwnd_, kAudioBridgeTimerId, kAudioBridgeIntervalMs, nullptr);
+    }
+
+    void StopAudioBridge() {
+        if (audioTimer_ != 0 && hwnd_ && IsWindow(hwnd_)) KillTimer(hwnd_, kAudioBridgeTimerId);
+        audioTimer_ = 0;
+        audioTap_.Stop();
+    }
+
+    void PumpAudioFrame() {
+        // While paused the host has asked this surface to stop doing work, so the frame
+        // read and the post are both skipped. What is *not* done here is stopping the
+        // loopback client: MiaoWallpaperAudioTap::Start() does not document itself as
+        // re-entrant, and a pause/resume that restarts a capture thread is not something
+        // that can be tested on this machine. So the cost is a WASAPI loopback client that
+        // stays open on a paused surface — worth closing, but not by guessing.
+        // Tracked in docs/TODO.md under B-6 rather than left implicit in a comment.
+        if (paused_ || !webview_ || !hwnd_ || !IsWindow(hwnd_)) return;
+        content::inputbus::AudioSpectrumFrame frame;
+        if (!audioTap_.LatestFrame(&frame)) return;
+        const std::string envelope = BuildAudioBridgeEnvelope(frame);
+        // An empty envelope means the frame could not be expressed (the builder refuses
+        // rather than emitting something the page would silently drop); skipping it
+        // leaves the previous frame's values standing, which is better than a lie.
+        if (envelope.empty()) return;
+        const std::wstring wide = Utf8ToWide(envelope);
+        if (wide.empty()) return;
+        webview_->PostWebMessageAsJson(wide.c_str());
     }
 
     void Pause() {
@@ -685,6 +753,10 @@ private:
     std::wstring allowedOrigin_;
     ComPtr<ICoreWebView2Controller> controller_;
     ComPtr<ICoreWebView2> webview_;
+    // This surface is its own process, so it owns its own loopback client rather than
+    // expecting a frame to arrive from the independent wallpaper host.
+    MiaoWallpaperAudioTap audioTap_;
+    UINT_PTR audioTimer_{};
 };
 
 } // namespace

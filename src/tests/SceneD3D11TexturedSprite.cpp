@@ -57,6 +57,14 @@ void Step(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
+// Printed *before* each risky call rather than after. The first run died with
+// 0xC0000005 and, with default buffering, took everything it had printed with it — so
+// there was nothing to read and nothing to conclude. With unbuffered stdout and a line
+// emitted before each phase, the last line before the silence names the phase that
+// died, which is the only way to diagnose an access violation I cannot reproduce
+// locally.
+void Phase(const char* what) { std::printf("  -- %s\n", what); }
+
 bool WriteTextFile(const fs::path& path, std::string_view text) {
     std::ofstream out(path, std::ios::binary);
     if (!out) return false;
@@ -115,6 +123,12 @@ bool WriteMagentaPng(IWICImagingFactory* factory, const fs::path& path) {
 } // namespace
 
 int wmain() {
+    // Unbuffered, deliberately. The first run of this test died with 0xC0000005, and with
+    // default buffering everything it had printed went down with it — the log would have
+    // been empty and I would have learned nothing about where. One line per Step, flushed
+    // as it happens, is what makes an access violation locatable.
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
     std::printf("D3D11 贴图 sprite 的真实渲染与回读\n");
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -171,6 +185,7 @@ int wmain() {
     })json";
     constexpr std::string_view parametersJson = R"json({"schema":1,"parameters":[]})json";
 
+    Phase("创建 WIC 工厂并写包文件");
     ComPtr<IWICImagingFactory> wic;
     const bool wrote = SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                                   IID_PPV_ARGS(wic.GetAddressOf()))) &&
@@ -188,6 +203,7 @@ int wmain() {
     // WS_CHILD | WS_VISIBLE before handing the HWND to this renderer — and Present on an
     // unshown window is exactly the kind of thing that works on one driver and not
     // another. Matching the host costs one 64x64 popup flashing on a CI desktop.
+    Phase("创建测试窗口");
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -213,6 +229,7 @@ int wmain() {
     pump();
 
     std::wstring error;
+    Phase("renderer.Load");
     MiaoSceneD3D11Renderer renderer;
     const bool loaded = wrote && window &&
         renderer.Load(root, window, &error);
@@ -222,11 +239,13 @@ int wmain() {
     }
     Step(loaded, "加载贴图场景(该场景一个 material 都没有)");
 
+    Phase("renderer.Draw");
     const bool drew = loaded && renderer.Draw(1.0f, &error);
     pump();
-    if (!drew && !error.empty()) std::printf("      %ls\n", error.c_str());
+    if (!drew && !error.empty()) std::printf("      Draw 失败: %ls\n", error.c_str());
     Step(drew, "绘制一帧");
 
+    Phase("renderer.ReadBackPixels");
     std::vector<unsigned char> pixels;
     unsigned width = 0;
     unsigned height = 0;
@@ -240,9 +259,23 @@ int wmain() {
     // clear colour. Two positions are checked rather than a histogram, because the two
     // questions are different: the centre asks "did the textured path run at all", the
     // corner asks "is what ran a sprite, or did something fill the whole target".
+    // Bounds-checked, and the whole block below is gated on the readback having produced a
+    // real buffer. Without that gate, a readback that returns true with zero dimensions
+    // makes the centre/corner lookups index into an empty vector — which is an access
+    // violation, and is the most likely cause of the first run's 0xC0000005.
+    const bool framed = read && width > 0 && height > 0 &&
+        pixels.size() == static_cast<std::size_t>(width) * height * 4u;
     auto pixelAt = [&](unsigned x, unsigned y) {
+        if (x >= width || y >= height) return std::make_tuple(0u, 0u, 0u, 0u);
         const std::size_t i = (static_cast<std::size_t>(y) * width + x) * 4u;
-        return std::make_tuple(pixels[i + 0], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
+        if (i + 3 >= pixels.size()) return std::make_tuple(0u, 0u, 0u, 0u);
+        // Widened to unsigned on both branches: a tuple<unsigned char,...> and a
+        // tuple<unsigned,...> in one lambda is a deduction conflict, and mingw's gate
+        // caught exactly that on the first attempt.
+        return std::make_tuple(static_cast<unsigned>(pixels[i + 0]),
+                               static_cast<unsigned>(pixels[i + 1]),
+                               static_cast<unsigned>(pixels[i + 2]),
+                               static_cast<unsigned>(pixels[i + 3]));
     };
     auto isMagenta = [&](unsigned x, unsigned y) {
         const auto [b, g, r, a] = pixelAt(x, y);
@@ -255,7 +288,7 @@ int wmain() {
 
     unsigned magenta = 0;
     unsigned black = 0;
-    for (unsigned y = 0; y < height; ++y) {
+    for (unsigned y = 0; framed && y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
             if (isMagenta(x, y)) ++magenta;
             else if (isClearBlack(x, y)) ++black;
@@ -264,11 +297,12 @@ int wmain() {
     std::printf("      %ux%u:品红 %u / 黑 %u(共 %u)\n", width, height, magenta, black,
                 width * height);
 
-    Step(read && isMagenta(width / 2, height / 2),
+    Step(framed && isMagenta(width / 2, height / 2),
          "中心像素是贴图的品红 —— 贴图被采样并写进了帧缓冲(这条路径真的跑了)");
-    Step(read && isClearBlack(1, 1),
+    Step(framed && isClearBlack(1, 1),
          "左上角仍是清屏黑 —— 品红是 sprite,不是整块目标被填成贴图色");
 
+    Phase("销毁渲染器(离开作用域)");
     if (window) DestroyWindow(window);
     UnregisterClassW(kTestWindowClass, wc.hInstance);
     fs::remove_all(root, ec);

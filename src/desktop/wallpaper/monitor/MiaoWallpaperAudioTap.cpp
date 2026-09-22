@@ -150,27 +150,41 @@ private:
         // dead; dead is not the same as correct, and the next caller to reuse this
         // thread would find out the hard way.
         const bool ownsApartment = SUCCEEDED(apartment);
-        DeviceEvents events;
-        ComPtr<IMMDeviceEnumerator> enumerator;
-        if (SUCCEEDED(CoCreateInstance(kClsIdMMDeviceEnumerator, nullptr, CLSCTX_ALL,
-                                      kIIdIMMDeviceEnumerator, &enumerator)) &&
-            enumerator) {
-            enumerator->RegisterEndpointNotificationCallback(&events);
-        }
+        // The inner scope is not tidiness, it is the fix for a crash. `enumerator` used
+        // to be declared at function scope, so its destructor ran *after*
+        // CoUninitialize() at the bottom of this function — releasing an
+        // IMMDeviceEnumerator on a torn-down apartment, which is undefined behaviour
+        // and shows up as 0xC0000005 with an empty log. That is the same mistake as
+        // lesson 18 again, and this function never ran until the new
+        // MiaoDeskWallpaperAudioTapTest ran it, which is why no gate had ever seen it.
+        //
+        // Everything COM now dies before the apartment does: the brace below ends the
+        // lifetimes of both `events` and `enumerator` while COM is still up.
+        // MiaoSceneD2DRenderer's self-test spells the same discipline out as five
+        // explicit Reset() calls; this is that list, expressed as a scope.
+        {
+            DeviceEvents events;
+            ComPtr<IMMDeviceEnumerator> enumerator;
+            if (SUCCEEDED(CoCreateInstance(kClsIdMMDeviceEnumerator, nullptr, CLSCTX_ALL,
+                                           kIIdIMMDeviceEnumerator, &enumerator)) &&
+                enumerator) {
+                enumerator->RegisterEndpointNotificationCallback(&events);
+            }
 
-        running.store(true);
-        while (!stopRequested.load()) {
-            CaptureOnce(enumerator.Get(), events);
-            if (stopRequested.load()) break;
-            // Device loss, or an initialisation failure: back off and retry rather
-            // than reporting a dead wallpaper.
-            std::unique_lock<std::mutex> lock(lifecycle_);
-            wake.wait_for(lock, std::chrono::milliseconds(kRestartDelayMs),
-                          [this] { return stopRequested.load(); });
-        }
+            running.store(true);
+            while (!stopRequested.load()) {
+                CaptureOnce(enumerator.Get(), events);
+                if (stopRequested.load()) break;
+                // Device loss, or an initialisation failure: back off and retry rather
+                // than reporting a dead wallpaper.
+                std::unique_lock<std::mutex> lock(lifecycle_);
+                wake.wait_for(lock, std::chrono::milliseconds(kRestartDelayMs),
+                              [this] { return stopRequested.load(); });
+            }
 
-        if (enumerator) enumerator->UnregisterEndpointNotificationCallback(&events);
-        running.store(false);
+            if (enumerator) enumerator->UnregisterEndpointNotificationCallback(&events);
+            running.store(false);
+        }
         if (ownsApartment) CoUninitialize();
     }
 

@@ -26,7 +26,6 @@
 #include "miaodesk/MiaoWallpaperAudioTap.h"
 
 #include <windows.h>
-#include <objbase.h>
 
 #include <chrono>
 #include <cstdint>
@@ -73,6 +72,20 @@ bool WaitForFrame(miaodesk::wallpaper::MiaoWallpaperAudioTap* tap, double second
 
 bool InUnitRange(double value) { return value >= 0.0 && value <= 1.0; }
 
+// `Running()` is set by the capture thread, not by Start(): Impl::Start() returns as
+// soon as the thread exists, and `running` is stored inside Run(). Asserting Running()
+// immediately after Start() is therefore a race against the scheduler — it passes
+// usually and fails on a loaded machine, which is the worst kind of failure to
+// reproduce. Poll instead.
+bool WaitForRunning(miaodesk::wallpaper::MiaoWallpaperAudioTap* tap, double seconds) {
+    const double deadline = NowSeconds() + seconds;
+    while (NowSeconds() < deadline) {
+        if (tap->Running()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+}
+
 // Never returns before `milliseconds` have elapsed; used only where a wait is part of
 // the measurement (the CPU burn check) rather than a poll.
 void Settle(int milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
@@ -104,7 +117,7 @@ int wmain() {
     Step(started, "Start() 返回真(线程已创建)");
     const bool startedAgain = tap.Start();
     Step(startedAgain, "重复 Start() 是幂等的(不会起第二个采集线程)");
-    Step(tap.Running(), "启动后 Running() 为真");
+    Step(WaitForRunning(&tap, 2.0), "启动后 Running() 为真(等线程把自己标成运行中,不和它赛跑)");
 
     // ---------------------------------------------------------------- 哪个分支
     // Nothing is playing on a CI runner, so the two outcomes below are: an endpoint
@@ -179,7 +192,7 @@ int wmain() {
     Phase("Stop 之后重新 Start()");
     const bool restarted = tap.Start();
     Step(restarted, "停止后可以再次启动(设备枚举是重新做的,不是一次性的)");
-    Step(tap.Running(), "重启后 Running() 为真");
+    Step(WaitForRunning(&tap, 2.0), "重启后 Running() 为真");
     tap.Stop();
     Step(!tap.Running(), "第二次 Stop() 之后 Running() 为假");
 
@@ -189,7 +202,7 @@ int wmain() {
     {
         miaodesk::wallpaper::MiaoWallpaperAudioTap forgotten;
         Step(forgotten.Start(), "作用域内的实例启动成功");
-        Step(forgotten.Running(), "作用域内的实例在运行");
+        Step(WaitForRunning(&forgotten, 2.0), "作用域内的实例在运行(析构里才有 Stop,这里不能崩也不能挂)");
     }
     std::printf("      析构已完成(没有 Stop 的实例也安全退出)\n");
 

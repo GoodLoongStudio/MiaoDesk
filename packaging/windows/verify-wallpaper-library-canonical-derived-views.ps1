@@ -5,6 +5,12 @@ $libraryPath = Join-Path $repoRoot 'src/desktop/wallpaper/library/WallpaperLibra
 if (-not (Test-Path -LiteralPath $libraryPath)) { throw "WallpaperLibrary.cpp not found: $libraryPath" }
 
 $source = Get-Content -LiteralPath $libraryPath -Raw -Encoding UTF8
+# 仓库里统一 LF(.gitattributes 的 * text=auto),但 Windows runner 检出时是 CRLF。
+# 下面这些正则用 \n 定位"空行"与"函数结尾",CRLF 下空行是 \r\n\r\n,\n\n 永远
+# 匹配不上 —— 于是闸门在 Windows 上必失败,报的是 RecentlyUsed() implementation not
+# found 这种和真实问题无关的消息。2026-09-22 c55ef67 第一次在 push 上跑就踩到:
+# 本机(LF)全绿、Windows CI 全红,差别只在行尾。在读入处归一化,比改十几处正则可靠。
+$source = $source -replace "`r`n", "`n"
 
 function Assert-Contains([string]$text, [string]$needle, [string]$message) {
     if ($text.IndexOf($needle, [System.StringComparison]::Ordinal) -lt 0) {

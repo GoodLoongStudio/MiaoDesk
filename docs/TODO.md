@@ -374,20 +374,29 @@
   entry 全部是 `scene.ini`。即便解除遮蔽,这三份 scene.json 各只有 1 个 root 节点
   (单个 transform + opacity)、0 资产、0 绑定、0 动画、0 后处理;
   而 `scene.ini` 描述 5 个 Layer、引用 5 个真实资产。
-- **实测证据(二):渲染契约不支持贴图 sprite —— 这才是真阻塞**
+- **实测证据(二):渲染契约不支持贴图 sprite —— 这是当时的真阻塞,2026-09-22 已解除**
   - `spriteRenderer` 的属性只有 `opacity` / `tint` / `cornerRadius` / `materialId`,
     **没有 asset / texture 属性**;取图只能经由 material。
-  - builtin 材质**只有 `solidColor` 一种**(D2D 渲染器 `MiaoSceneD2DRenderer.cpp:335`
-    只处理 solidColor;D3D11 `MiaoSceneD3D11Renderer.cpp:602` 明确报错
-    "D3D11 MVP currently supports builtin solidColor or programmable materials")。
+  - builtin 材质**当时只有 `solidColor` 一种**;D3D11 明确报错
+    "D3D11 MVP currently supports builtin solidColor or programmable materials"。
   - 仓库内所有包的 `materials[].textures` **一律为 `[]`**,没有一个贴图样例。
-  - `textures[]` 取图只对**可编程材质**开放
-    (`MiaoSceneD3D11Renderer.cpp:610-625`:需 `MaterialModel::Programmable` +
-    pixelShaderId + texture slot + `AssetType::Image` 资产 + `MiaoD3D11TextureLoader`)。
-  - D2D 渲染器**完全没有取图路径**(全文件无 bitmap/WIC 纹理加载,sprite 只能出纯色)。
-  结论:把 scene.ini 的图片图层迁到 scene.json,要么给两个渲染器都加一个带贴图的
-  builtin 材质,要么为每层写可编程材质 + 像素 shader。两者都是渲染侧改动,
-  需要 D3D11 / DirectWrite / D3DCompiler,本机(macOS)无法编译验证。
+  - `textures[]` 取图只对**可编程材质**开放,需 `MaterialModel::Programmable` +
+    pixelShaderId + texture slot + `AssetType::Image` 资产 + `MiaoD3D11TextureLoader`。
+  - D2D 渲染器当时完全没有取图路径,sprite 只能出纯色。
+  结论(当时):迁移要么给两个渲染器都加一个带贴图的 builtin 材质,要么为每层写可编程
+  材质 + 像素 shader。两者都是渲染侧改动,需要 D3D11 / DirectWrite / D3DCompiler,
+  本机(macOS)无法编译验证。
+  **解除情况(2026-09-22)**:渲染侧已按第一条路落地 ——
+  `SpriteDrawPath::SpriteTexture` + `MiaoBuiltinTextured` + t0,两个后端共用
+  `ResolveSpriteDrawPath`;唯一保留的后端差异是"非白色 tint 作用于贴图"D2D 仍然拒
+  (D2D 没法在一个 pass 里给位图上色,见 `MiaoSpriteMaterialPolicy.h` 的说明)。
+  上面那两处**行号引用已删**(刻意写成"第 NNN 行"而不是 `文件.cpp:行号`,
+  免得那个形状又被引用门当成一条合法引用计数 —— 我要的正是它**不**被算作证据):
+  它们仍然解析得过去(所以 `verify-doc-code-citations.sh` 是绿的),但指到的已经不是
+  原来那行 —— D2D 渲染器那份现在是一条关于 spatial:3d 的注释,D3D11 那份现在是一句
+  `CreateConstantBuffer`,而那句报错在全文件里已经不存在。
+  这正是那道门自己声明的边界:它查"这一行在不在",不查"这一行说的是不是那件事"。
+  **一条能解析但指错地方的引用,比没有引用更坏。**
 - **所以刻意不做的**:不写一份"能通过校验但渲染不出来"的 scene.json。
   那会得到三个校验通过、桌面上却什么都没有的官方壁纸 ——
   正是 `content-review` 与 `wallpaper-content` 反复禁止的那种静默失败。
@@ -528,8 +537,11 @@
     比没有记录更糟 —— 它会让人去重写一份已经存在、而且已经被共享策略钉住的代码。
     真正仍未做的是**执行**:没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径,
     HLSL 只在被 `D3DCompile` 编译这个意义上成立过。
-- **状态**:🟡 渲染侧阻塞的**两个半边**都已落地 —— D3D11 半边在 `0937328`,
-  但**只到"本机能验证的那一层"为止**,尚未在 Windows 上编译或运行过。
+- **状态**:🟡 渲染侧阻塞的**两个半边**都已落地 —— D3D11 半边在 `0937328`。
+  **已编译并链接通过**(`build` 多轮 success,见下面补充段),**但从未被执行**:
+  没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径。
+  (这一行先前写的是"尚未在 Windows 上编译或运行过",与同一节下面那段
+  "新代码在 Windows 上编译链接通过"自相矛盾 —— 以后者为准,它有 commit 号。)
   落在本机证据范围内的:材质策略合并为一份 + 16 项断言 + 注入已知失效确认闸门会响
   + 12 个纯逻辑测试全过 + 交叉语法门 114 文件零真实错误。
   不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;

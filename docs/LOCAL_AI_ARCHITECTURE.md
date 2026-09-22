@@ -569,7 +569,7 @@ wallpaper_validate_package · wallpaper_state_get · desktop_widget_list
 | 动画帧率 | 1–240,默认 60 | `MiaoSceneFrameScheduler.h:19-21` |
 | 每 emitter 粒子 | ≤ 65536 | `MiaoSceneRuntimeModel.h:166` |
 | 每 scene 粒子 | ≤ 131072 | `MiaoSceneRuntimeModel.h:167` |
-| 渲染目标单维 | ≤ 16384 | `MiaoD3D11RenderTarget.cpp:18` |
+| 渲染目标单维 | ≤ 16384 | `MiaoD3D11RenderPolicy.cpp:50` |
 | 沙箱图片 / 视频 | ≤ 25 MiB / 250 MiB | `AI_GENERATED_DESKTOP_SANDBOX.md:74` |
 
 AI / Node / Pi 不进入每帧渲染路径 —— 本地推理同样遵守。

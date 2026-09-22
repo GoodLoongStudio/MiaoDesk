@@ -36,26 +36,75 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # 这一层包装只做一件事:失败时用 ::error:: 把**脚本名**和异常消息写进
+      # check-run 的 annotations。GitHub 匿名 API 读得到 annotations,读不到 job log;
+      # 而这几个门此前失败时 annotations 只有一句 "Process completed with exit
+      # 1." —— 不说是哪一步、更不说是为什么。2026-09-22 因此只能靠整个 gate
+      # 16~18 秒的总时长去猜是第几步。
+      # 每个 run 是独立进程,shell 变量不跨步骤共享,所以包装函数写进
+      # $RUNNER_TEMP 的文件,后面每一步各自 dot-source。
+      - name: Load the wallpaper gate wrapper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wrapper = Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1'
+          @'
+          function Invoke-WallpaperGate([string]$script, [hashtable]$parameters) {
+              $path = Join-Path $env:GITHUB_WORKSPACE ('packaging/windows/' + $script)
+              if (-not (Test-Path -LiteralPath $path)) {
+                  Write-Host ("::error::GATE {0} -> not found at {1}" -f $script, $path)
+                  throw "gate script not found: $script"
+              }
+              # $LASTEXITCODE 必须判空。直接调用 .ps1 **不设置**它,本步之前又没有
+              # 原生命令,所以它是 $null,而 $null -ne 0 恒真 —— 于是每个**通过**的
+              # 门都会被这句判成失败。同一个错 TODO 教训 3 记过一次(那次是
+              # verify-web-audio-bridge 那一步),这里又犯了一遍:教训写了不等于会照做。
+              try {
+                  & $path @parameters
+                  if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+                      throw ("{0} exited with code {1}" -f $script, $LASTEXITCODE)
+                  }
+              } catch {
+                  Write-Host ("::error::GATE {0} -> {1}" -f $script, $_.Exception.Message)
+                  throw
+              }
+          }
+          '@ | Set-Content -LiteralPath $wrapper -Encoding UTF8
+          . $wrapper
+          Write-Host "::notice::wallpaper gate wrapper loaded"
+
       - name: Verify canonical derived views and exact-first alias resolution
         shell: pwsh
-        run: .\packaging\windows\verify-wallpaper-library-canonical-derived-views.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          Invoke-WallpaperGate 'verify-wallpaper-library-canonical-derived-views.ps1' @{}
 
       - name: Verify runtime gate remains read-only and exact-first
         shell: pwsh
-        run: .\packaging\windows\verify-wallpaper-library-derived-view-runtime.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          Invoke-WallpaperGate 'verify-wallpaper-library-derived-view-runtime.ps1' @{}
 
       # 这一步此前不存在。derived-view-gate 与 derived-views 两个脚本一直列在本工作流的
       # paths 里,却从来没有被任何一步调用过 —— 一次都没跑过。它们各自独立断言同一组
       # 不变量,所以漏掉它们等于把覆盖压在最薄的那一个版本上。
       - name: Verify derived views gate (previously never invoked)
         shell: pwsh
-        run: .\packaging\windows\verify-wallpaper-library-derived-view-gate.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          Invoke-WallpaperGate 'verify-wallpaper-library-derived-view-gate.ps1' @{}
 
       - name: Verify legacy scene rows stay out of derived views (previously never invoked)
         shell: pwsh
         run: |
-          .\packaging\windows\verify-wallpaper-library-derived-views.ps1 `
-            -SourcePath src\desktop\wallpaper\library\WallpaperLibrary.cpp
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          Invoke-WallpaperGate 'verify-wallpaper-library-derived-views.ps1' @{
+            SourcePath = 'src\desktop\wallpaper\library\WallpaperLibrary.cpp'
+          }
 
       # 同理,这个"canonical 身份"闸门自从 ad848d6 以 standalone 脚本的身份进来之后,
       # 没有任何工作流调用它。它验的是内置壁纸 manifest 的 id / kind / runtime,
@@ -73,6 +122,9 @@ jobs:
             # 且不含 scene-aurora / scene-neon / scene-grid 三行。
             [System.IO.File]::WriteAllBytes($path, [byte[]](0xFF, 0xFE))
           }
-          .\packaging\windows\verify-wallpaper-theme-canonical-gate.ps1 `
-            -LibraryIni $libraryIni -AssignmentsIni $assignmentsIni `
-            -CanonicalNeonPackage assets\wallpapers\NeonCity.mdwall
+          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          Invoke-WallpaperGate 'verify-wallpaper-theme-canonical-gate.ps1' @{
+            LibraryIni = $libraryIni
+            AssignmentsIni = $assignmentsIni
+            CanonicalNeonPackage = 'assets\wallpapers\NeonCity.mdwall'
+          }

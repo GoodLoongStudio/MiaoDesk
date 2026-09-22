@@ -1130,15 +1130,27 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                     target->BeginDraw();
                     target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
                     const bool drew = tintedRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &tintedError);
-                    const bool refused = !drew &&
-                                         // the message has to name the offending component
-                                         tintedError.find(L"component://panel/sprite") != std::wstring::npos &&
-                                         // and nothing may have been painted
-                                         PixelCoverage(bitmap.Get(), 32, 32) < 0.02;
+                    // EndDraw first, then read the bitmap. A WIC bitmap render target does
+                    // not write through until EndDraw, so Clear(black) and the refused draw
+                    // are still sitting in the batch. Reading the pixel before EndDraw reads
+                    // the *previous* frame's contents — which here was phase B's magenta
+                    // textured sprite, so the "nothing may have been painted" check compared
+                    // against magenta and could never pass. The renderer was right; the
+                    // assertion was reading a stale frame.
+                    const HRESULT ended = target->EndDraw();
+                    const bool namedComponent =
+                        tintedError.find(L"component://panel/sprite") != std::wstring::npos;
+                    const bool nothingPainted = PixelCoverage(bitmap.Get(), 32, 32) < 0.02;
                     if (tintedError.empty()) tintedError = L"(绘制路径没有给出任何报错)";
                     error = tintedError;  // Step prints `error`, so surface the refusal's reason
-                    Step(SUCCEEDED(target->EndDraw()) && refused,
+                    Step(SUCCEEDED(ended) && !drew && namedComponent && nothingPainted,
                          "B. 非白色 tint 作用于贴图被拒,且报错点名组件、没有画出任何东西");
+                    if (!SUCCEEDED(ended) || drew || !namedComponent || !nothingPainted) {
+                        std::printf("         DIAG drew=%d namedComponent=%d nothingPainted=%d "
+                                    "pixelCoverage=%.3f\n",
+                                    drew ? 1 : 0, namedComponent ? 1 : 0, nothingPainted ? 1 : 0,
+                                    PixelCoverage(bitmap.Get(), 32, 32));
+                    }
                     error.clear();
                 }
             }

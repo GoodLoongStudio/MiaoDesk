@@ -386,14 +386,23 @@ def main():
         except OSError as exc:
             sys.exit("❌ 读不到 %s:%s" % (target, exc))
         if on_disk != text:
+            # 把差异本身打出来。上一版只说"不一致",而定位它要的正是差异在哪一行 ——
+            # 2026-09-22 这道门在 Linux CI 上红了一轮,我手上只有"不一致"三个字,
+            # 本机却复现不出来,等于没有信息。
+            import difflib
+            diff = list(difflib.unified_diff(
+                on_disk.splitlines(), text.splitlines(),
+                "scene.json(磁盘)", "scene.ini 重新生成", lineterm="", n=1))
+            shown = diff[:24]
             sys.exit(
-                "❌ %s 与重新生成的结果不一致。\n"
+                "❌ %s 与重新生成的结果不一致(%d 行不同,下面是最多 24 行差异)。\n"
                 "  scene.ini 是几何的唯一来源;scene.json 是它的产物。\n"
                 "  手改 scene.json 会让二者悄悄分叉 —— 而分叉的后果是图层位置\n"
                 "  与源不符,却没有任何测试会报错。\n"
                 "  修法:改 scene.ini,然后 python3 %s --write;\n"
-                "  或者确认这次偏离是有意的,并把理由写进提交信息。"
-                % (target, __file__))
+                "  或者确认这次偏离是有意的,并把理由写进提交信息。\n%s"
+                % (target, max(0, len(diff) - 2), __file__,
+                   "\n".join("    " + line for line in shown)))
         print("✅ %s 与 scene.ini 一致(%d 节点 / %d 资产,几何逐字节复现)"
               % (target, len(doc["nodes"]), len(doc["assets"])))
         return 0

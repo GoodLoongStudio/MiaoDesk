@@ -39,15 +39,25 @@ def parse_workflow(path):
                 patterns.append(m.group(1))
             elif line.strip() and not line.strip().startswith('#'):
                 in_paths = False
-    # run: 块
+    # run: 块。两种写法都要认:
+    #   run: |                多行,后面整段都是命令
+    #   run: .\scripts\x.ps1    单行,GitHub 同样会执行它
+    # 只认 `run: |` 是这里原来的实现,后果是这个闸门对整个 workflow 抽不到任何引用,
+    # 于是一条都没比对就报绿 —— 2026-09-22 就是靠这个空洞,让三个从来没被调用过的
+    # 闸门脚本一直留在 paths 列表里而没人发现(它们全写成单行 run:)。
     runs = []
     for i, line in enumerate(lines):
-        if line.strip() == 'run: |':
+        stripped = line.strip()
+        if stripped == 'run: |':
             b = len(line) - len(line.lstrip())
             body, k = [], i + 1
             while k < len(lines) and (len(lines[k]) - len(lines[k].lstrip()) > b or not lines[k].strip()):
                 body.append(lines[k]); k += 1
             runs.append('\n'.join(body))
+        elif stripped.startswith('run:'):
+            command = stripped[len('run:'):].strip()
+            if command:
+                runs.append(command)
     return patterns, runs, text
 
 def referenced_files(run_text):
@@ -74,7 +84,9 @@ def referenced_files(run_text):
 def matches(patterns, rel):
     import fnmatch
     for pat in patterns:
-        pat = pat.rstrip('/')
+        pat = pat.rstrip('/').strip('"\'')
+        if not pat:
+            continue
         if rel == pat:
             return True
         if fnmatch.fnmatch(rel, pat):

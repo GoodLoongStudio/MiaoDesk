@@ -1,6 +1,20 @@
 name: Wallpaper Canonical Derived-View Gate
 
+# push 与 pull_request 都触发。此前只有 pull_request —— 于是直接推到 main 的改动
+# 完全不经这道闸,而 main 上就真的带着一个未被发现的回归(见
+# verify-wallpaper-library-derived-view-runtime.ps1 断言的 IsLibraryUiVisible 门禁,
+# RecentlyUsed()/Favorites() 两个视图漏了它)。
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/desktop/wallpaper/library/WallpaperLibrary.cpp'
+      - 'packaging/windows/verify-wallpaper-library-canonical-derived-views.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-view-runtime.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-view-gate.ps1'
+      - 'packaging/windows/verify-wallpaper-library-derived-views.ps1'
+      - 'packaging/windows/verify-wallpaper-theme-canonical-gate.ps1'
+      - '.github/workflows/wallpaper-canonical-derived-view-gate.yml'
   pull_request:
     branches: [main]
     paths:
@@ -9,7 +23,9 @@ on:
       - 'packaging/windows/verify-wallpaper-library-derived-view-runtime.ps1'
       - 'packaging/windows/verify-wallpaper-library-derived-view-gate.ps1'
       - 'packaging/windows/verify-wallpaper-library-derived-views.ps1'
+      - 'packaging/windows/verify-wallpaper-theme-canonical-gate.ps1'
       - '.github/workflows/wallpaper-canonical-derived-view-gate.yml'
+  workflow_dispatch:
 
 jobs:
   canonical-derived-view-gate:
@@ -27,3 +43,36 @@ jobs:
       - name: Verify runtime gate remains read-only and exact-first
         shell: pwsh
         run: .\packaging\windows\verify-wallpaper-library-derived-view-runtime.ps1
+
+      # 这一步此前不存在。derived-view-gate 与 derived-views 两个脚本一直列在本工作流的
+      # paths 里,却从来没有被任何一步调用过 —— 一次都没跑过。它们各自独立断言同一组
+      # 不变量,所以漏掉它们等于把覆盖压在最薄的那一个版本上。
+      - name: Verify derived views gate (previously never invoked)
+        shell: pwsh
+        run: .\packaging\windows\verify-wallpaper-library-derived-view-gate.ps1
+
+      - name: Verify legacy scene rows stay out of derived views (previously never invoked)
+        shell: pwsh
+        run: |
+          .\packaging\windows\verify-wallpaper-library-derived-views.ps1 `
+            -SourcePath src\desktop\wallpaper\library\WallpaperLibrary.cpp
+
+      # 同理,这个"canonical 身份"闸门自从 ad848d6 以 standalone 脚本的身份进来之后,
+      # 没有任何工作流调用它。它验的是内置壁纸 manifest 的 id / kind / runtime,
+      # 正是 P0-4 要动 legacy_entry 时最该有人看着的那条不变量。
+      # 它需要 library.ini 与 monitor-assignments.ini;这里生成"canonical-only"的
+      # 最小夹具(UTF-16LE + BOM、不含 scene-* 行),不把运行时状态文件提交进仓库。
+      - name: Verify canonical wallpaper package identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $libraryIni = Join-Path $RUNNER_TEMP 'wallpaper.ini'
+          $assignmentsIni = Join-Path $RUNNER_TEMP 'monitor-assignments.ini'
+          foreach ($path in @($libraryIni, $assignmentsIni)) {
+            # 只写 BOM:空的 canonical-only 库。这个闸门随后会断言它是 UTF-16LE+BOM,
+            # 且不含 scene-aurora / scene-neon / scene-grid 三行。
+            [System.IO.File]::WriteAllBytes($path, [byte[]](0xFF, 0xFE))
+          }
+          .\packaging\windows\verify-wallpaper-theme-canonical-gate.ps1 `
+            -LibraryIni $libraryIni -AssignmentsIni $assignmentsIni `
+            -CanonicalNeonPackage assets\wallpapers\NeonCity.mdwall

@@ -84,7 +84,15 @@
    把测试自己的退出码吃掉了;而编译失败时它会跑去跑上一个二进制,于是一份
    `ALL CHECKS PASSED` 是残留产物打印的。Gate 的退出码必须显式 `exit $rc`,
    失败路径上不能留下上一次的二进制。
-7. **一个探针只能代表它单独在场的那个东西。** `MiaoSceneD2DRenderer` 的 SelfTest 里
+7. **闸门自己也会有"什么都没验到"的模式。** `verify-workflow-paths.sh` 只解析
+   `run: |` 多行块,不认单行的 `run: .\script.ps1`。后果是对某些工作流它一个引用都
+   抽不到,于是**一条都没比对就报绿**。2026-09-22 就是靠这个空洞,三个从来没被任何
+   步骤调用过的闸门脚本(`derived-view-gate` / `derived-views` /
+   `theme-canonical-gate`)一直留在 paths 列表里而没人发现;连带的第二个缺口
+   (`build-windows-arm64-exe.yml` 跑 `generate-miaomiao-icon.ps1` 却没把它列进
+   paths)也同样被藏在里面。修好之后第一个跑出来的就是它自己。
+   **判据:闸门的"通过"要能回答"我刚才比对了多少条"。零条比对不可能是通过。**
+8. **一个探针只能代表它单独在场的那个东西。** `MiaoSceneD2DRenderer` 的 SelfTest 里
    "纯色 sprite 落在中心、圆角让四角留黑"这条断言,一直读的是**时钟字形的墨**:
    同一场景还有居中的白色 TextRenderer,而 `"HH:MM 晴"` 在 18px / 64px 盒子里比盒子
    宽、会 word-wrap 成两行,第一行落在 x∈[9.7,54.3]、y∈[10.4,32] —— 正好盖住断言里
@@ -328,6 +336,11 @@
     解析式正弦(`drift` 还让 y 轴用 `speed*0.77` 的另一个周期),场景动画是线性
     关键帧轨;要在"完全复现"与"循环处连续"之间取舍属于要看真实桌面效果的决定。
   - **`legacy_entry` 刻意保留**:切入口需要真机验收,不在一台编译不了的机器上猜。
+    (原清单第 7 条"重跑那 6 个脚本、确认输入源是否仍指向 scene.ini"**已完成**:
+    逐个查过,`verify-wallpaper-library-*` 那四个读的是 `WallpaperLibrary.cpp` 而不是包,
+    `verify-wallpaper-theme-canonical-gate.ps1` 只读 `manifest.json` 的 id/kind/runtime,
+    没有一个读 `scene.ini`。所以删 `legacy_entry` 与 `scene.ini` 不会破坏它们。
+    —— 但那个闸门此前从未被调用过,已接进工作流并改成 push + PR 都触发。)
   - D3D11 后端仍没有经 `texture` 属性的贴图路径(它的取图一直是
     `material.textures[]` + 可编程材质)。
 - **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除,并在真实 Windows CI 上验证通过

@@ -525,7 +525,15 @@ std::vector<WallpaperLibraryItem> WallpaperLibrary::Search(std::wstring_view que
 
 std::vector<WallpaperLibraryItem> WallpaperLibrary::RecentlyUsed(std::size_t limit) const {
     std::vector<WallpaperLibraryItem> result;
-    for (const auto& item : items_) if (item.lastUsedUnixSeconds > 0) result.push_back(item);
+    for (const auto& item : items_) {
+        // Same gate as Search(): a shipped legacy scene-* row that has been used must not
+        // resurface in a UI-derived view. The other three derived views already filtered;
+        // these two did not, and the gate that asserts it was only wired to pull_request,
+        // so main carried the regression unguarded.
+        if (!IsLibraryUiVisible(item)) continue;
+        if (item.lastUsedUnixSeconds <= 0) continue;
+        result.push_back(item);
+    }
     std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a.lastUsedUnixSeconds > b.lastUsedUnixSeconds; });
     if (result.size() > limit) result.resize(limit);
     return result;
@@ -533,7 +541,15 @@ std::vector<WallpaperLibraryItem> WallpaperLibrary::RecentlyUsed(std::size_t lim
 
 std::vector<WallpaperLibraryItem> WallpaperLibrary::Favorites() const {
     std::vector<WallpaperLibraryItem> result;
-    std::copy_if(items_.begin(), items_.end(), std::back_inserter(result), [](const auto& item) { return item.favorite; });
+    for (const auto& item : items_) {
+        // Same canonical gate. Kept as an explicit push rather than a std::copy_if whose
+        // predicate returns the favourite flag alone: the derived-view gates reject that
+        // form by its literal text, because it reads as "favourite-ness decides
+        // visibility". Those gates match raw source, so this comment cannot name the
+        // form either — spelling it out here would fail the very gate it describes.
+        if (!IsLibraryUiVisible(item)) continue;
+        if (item.favorite) result.push_back(item);
+    }
     return result;
 }
 

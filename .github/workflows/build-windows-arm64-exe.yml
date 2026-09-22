@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - .github/workflows/build-windows-arm64-exe.yml
+      # 这一步跑 scripts/generate-miaomiao-icon.ps1。此前 paths 只有工作流自己,
+      # 于是改这个脚本不会触发验证它的工作流 —— 而 verify-workflow-paths.sh 那时
+      # 只解析 `run: |`,看不见单行 run:,所以这条缺口一直没报。
+      - scripts/generate-miaomiao-icon.ps1
   workflow_dispatch:
 
 permissions:

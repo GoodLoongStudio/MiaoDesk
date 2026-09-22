@@ -151,6 +151,25 @@
     另:这条规则我在教训 2 里已经写过("闸门写完必须注入一个已知失效"),这次仍然
     三个版本里只有一个真的会响。**要执行,不是记录。**
 
+13. **一个从来没跑过的门,会攒下不止一层 bug,而它报的错指向完全无关的地方。**
+    `1455b4c` 把 CRLF 修掉之后,`canonical-derived-view-gate` 还是红的,但报错从
+    "RecentlyUsed() implementation not found" 变成 "Missing IsLibraryUiVisible() gate."
+    —— 我据此判断"CRLF 修错了",**错了**。两层叠着,修好一层下一层才露出来。
+    真正叠了三层:
+      ① CRLF 未归一化;
+      ② 单引号正则写成双反滑线 —— PowerShell 的转义符是反引号不是反斜杠,
+         单引号里 `\\(` 原样进正则,被 .NET 读成"一个字面反斜杠 + 一个捕获组的开始",
+         于是这条 pattern 在找一个**签名里带反斜杠**的函数;
+      ③ `Get-FunctionBlock` 返回 `$match.Value`(string),四个调用点却都写 `$block.Value` ——
+         PS7 上 `("hello").Value` 不报错,静默返回空串,于是每条断言都拿空文本比,
+         稳定地报 "Search() must use shared canonical gate."
+    最坏的是第 ③ 层:**它把门自己的缺陷伪装成产品缺陷**,而产品那段代码是对的。
+    而这个门从 `61a638f` 到 `c55ef67` 第一次被工作流调用之间,一次都没成功过。
+    **可迁移的判据:一个门的报错在点名别处时,先问"这个门自己跑通过吗?"
+    没跑通过过的门,它说的每一个字都还不能信。**
+    修完之后按教训 2 补了注入验证:分别从 RecentlyUsed / Favorites / Search 里
+    删掉闸门行,四个门各自报错且点名那个函数;CRLF 检出上 5 个步骤全绿。
+
 现在有**十三个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
@@ -403,6 +422,8 @@
   不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;
   真机截图没有人看过。此前"`4b19282`,31 步全绿"是 D2D 半边的实测证据,D3D11 半边没有对应物。
   契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在 `6b3677b` 之后陆续落地。
+  同一轮还把 `skills/` 的 sprite 材质规则补齐(此前它只写"material 优先引用 builtin",
+  在教作者写渲染器会拒的包),并加了 `verify-skill-material-rule.sh` 让规则不脱钩。
 
   走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
   之间开一条直接引用路径",没有新增 builtin 材质 ——
@@ -996,6 +1017,7 @@
 | 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
 | 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
 | 2026-09-22 | 五处已失效的"待 Windows 编译"标记 | 按证据改掉:`023aa299` 全绿之后文件逐字节未变的项,"能不能编过"已经有答案(B-1 / B-5 / P2-4 / P3-1 / P3-3)。区别:`待真机验收`仍然保留 |
+| 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |

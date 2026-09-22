@@ -1209,9 +1209,19 @@
   它在 Windows CI 上一直是绿的,恰恰因为它在 Windows 上跑。
   **所以那条自测看着平台无关、其实不是**,已搬回 Windows-only 文件并把原因写进注释。
   这正是"多一台机器跑一跑"的价值:不是跑得更快,是能看见只在一侧成立的东西。
-  剩下两个仍是 Windows-only,理由各不相同、也已分开写清:
-  `MiaoD3D11ParticleRenderer::SelfTest` 的**头文件**就 include 了 `d3d11.h`
-  (挪不动),`TransformMathSelfTest` 是 Windows-only `.cpp` 里的文件局部符号。
+  剩下的两个**真的**挪不动,而且理由不同、必须分开说:
+  `MiaoD3D11ParticleRenderer::SelfTest` 的**头文件**就 include 了 `d3d11.h` ——
+  这是唯一一处依赖在声明里、而不是在归档位置的情况;`TransformMathSelfTest` 是
+  Windows-only `.cpp` 里的文件局部符号。
+- **顺带把路径安全规则改成按平台拆断言,而不是整条留在 Windows(2026-09-22)。**
+  `SelfTestPathPolicy` 三条断言里有两条(包内资源放行、`../` 逃逸拒绝)在任何平台上
+  语义相同,只有"盘符 + 反斜杠必须拒"那条是 Windows 专属(POSIX 上等价的逃逸是
+  根路径 `/etc/passwd`)。按 `#ifdef _WIN32` 拆开之后,两条跨平台成立的断言
+  从"等一轮 Windows CI"变成"每次提交都在本机跑",而每个平台都不少断言。
+  `ContentSelfTests` 由七项增至**九项**。
+  `SceneD3D11Renderer.cpp` 里那两个显式调用随之删掉 —— 不是为了让代码短,
+  而是因为一个号称 Windows-only 的目标不该再扛着可移植的工作,
+  否则下一个人看跳过清单会以为那些规则需要一块 GPU。
 - **顺序是按记录执行的,而且记录是对的**:第 1 步的库先要证明 MSVC 编得过、链得上,
   才允许有测试目标依赖它 —— 否则真出链接问题分不清是谁引入的。证据是
   `7109050` / `a1348b06` 两次 `build` 全绿,**然后**才建这个目标。

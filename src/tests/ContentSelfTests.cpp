@@ -38,6 +38,7 @@
 #include "miaodesk/MiaoPostProcessShaderLibrary.h"
 #include "miaodesk/MiaoRenderGraph.h"
 #include "miaodesk/MiaoD3D11RenderTarget.h"
+#include "miaodesk/MiaoD3D11TextureLoader.h"
 #include "miaodesk/MiaoSceneRuntimeModel.h"
 #include "miaodesk/MiaoShaderContract.h"
 
@@ -70,13 +71,17 @@ int wmain() {
     // 上跑,而它是纯算术 —— 只是实现躺在一个 include 了 d3d11.h 的 .cpp 里。
     // 现已搬进 MiaoD3D11RenderPolicy.cpp(平台无关),于是回到每台机器都能跑。
     Run("MiaoD3D11RenderTargetPool::SelfTest", MiaoD3D11RenderTargetPool::SelfTest);
+    // 第九项:包内路径安全规则。它此前整个自测都被当成 Windows-only,而其中两条断言
+    // (包内资源放行、../ 逃逸拒绝)在任何平台上语义相同。按平台拆开之后,
+    // 这两条从"等一轮 Windows CI"变成"每次提交都在本机跑"。见 MiaoD3D11RenderPolicy.cpp。
+    Run("MiaoD3D11TextureLoader::SelfTestPathPolicy", MiaoD3D11TextureLoader::SelfTestPathPolicy);
 
     std::printf("\n");
     if (failures != 0) {
         std::printf("FAILED:%d 项自测失败\n", failures);
         return 1;
     }
-    std::printf("八项内容层自测全部通过 —— 它们此前在任何机器上都没有被执行过。\n");
+    std::printf("九项内容层自测全部通过 —— 它们此前在任何机器上都没有被执行过。\n");
     std::printf("ALL CHECKS PASSED\n");
     return 0;
 }

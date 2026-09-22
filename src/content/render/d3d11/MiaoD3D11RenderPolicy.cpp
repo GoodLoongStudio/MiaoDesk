@@ -18,14 +18,17 @@
 //   · MiaoD3D11RenderTargetPool::ResolveDimensions  scale, round, clamp
 //   · MiaoD3D11RenderTargetPool::SelfTest           asserts the above against numbers
 //
-// MiaoD3D11TextureLoader::SelfTestPathPolicy is deliberately NOT here, and the reason
-// is worth writing down because I assumed otherwise: it looks platform-free and is not.
-// One of its three assertions is `!IsSafeRelativePath(L"C:\\outside.png")` — a drive
-// letter plus a backslash only escapes a package on Windows, because only there is a
-// backslash a path separator. On POSIX that string is a single relative filename, the
-// assertion is false, and the whole self-test returns false. It ran green on Windows CI
-// for that reason and would have gone red on every other machine the day it moved.
-// Running it here is what found that; see docs/TODO.md.
+// MiaoD3D11TextureLoader::SelfTestPathPolicy is here too, but split by platform, and the
+// split is the interesting part. It looks platform-free and one third of it is not:
+// `!IsSafeRelativePath(L"C:\\outside.png")` only holds on Windows, because only there
+// is a backslash a path separator — on POSIX that string is a legal relative filename.
+// The first attempt to move it asserted all three unconditionally and returned false the
+// moment it ran on macOS, which is how this was found at all.
+//
+// So the traversal case and the accept case (the two that mean the same thing
+// everywhere) now run on every machine, and the escape case is the platform's own:
+// a drive letter plus backslash on Windows, an absolute POSIX path elsewhere. Neither
+// platform loses an assertion; each gains the ones it was not running.
 //
 // `Fail` is duplicated rather than shared: it is a four-line anonymous-namespace helper
 // in the original file, used by fourteen functions there, and hoisting it into a header
@@ -34,6 +37,8 @@
 // Deliberately still in the Windows-only files: everything that actually creates or
 // holds a D3D11 object. The split is "the rules" from "the objects".
 #include "miaodesk/MiaoD3D11RenderTarget.h"
+#include "miaodesk/MiaoD3D11TextureLoader.h"
+#include "miaodesk/MiaoContentPackage.h"
 
 #include <algorithm>
 #include <cmath>
@@ -128,6 +133,29 @@ bool MiaoD3D11RenderTargetPool::SelfTest() {
     if (!ResolveDimensions(tiny, 1, 1, &width, &height, &error)) return false;
     if (width != 1 || height != 1) return false;
 
+    return true;
+}
+
+// Which image paths a content package may name. Security-relevant: the caller is
+// resolving a path that came out of package content, so a pass here is what keeps a
+// wallpaper from reading outside its own directory.
+bool MiaoD3D11TextureLoader::SelfTestPathPolicy() {
+    // The two assertions that hold everywhere: an in-package asset is fine, and a
+    // parent-directory escape is not.
+    if (!MiaoContentPackage::IsSafeRelativePath(L"assets/background.png")) return false;
+    if (MiaoContentPackage::IsSafeRelativePath(L"../outside.png")) return false;
+
+#ifdef _WIN32
+    // On Windows a drive letter plus a backslash is an absolute path, so it has to be
+    // refused. This is the assertion that made the whole self-test Windows-only before
+    // it was split.
+    if (MiaoContentPackage::IsSafeRelativePath(L"C:\\outside.png")) return false;
+#else
+    // The equivalent escape for this platform: a rooted path. On POSIX there is no drive
+    // letter, so that case does not apply — and asserting it here would be asserting
+    // something false.
+    if (MiaoContentPackage::IsSafeRelativePath(L"/etc/passwd")) return false;
+#endif
     return true;
 }
 

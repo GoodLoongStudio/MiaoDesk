@@ -308,8 +308,20 @@ int wmain() {
          "左上角仍是清屏黑 —— 品红是 sprite,不是整块目标被填成贴图色");
 
     Phase("销毁渲染器(离开作用域)");
+    Phase("释放 COM 对象(必须在 CoUninitialize 之前)");
     if (window) DestroyWindow(window);
     UnregisterClassW(kTestWindowClass, wc.hInstance);
+    // Every COM object goes away *before* the apartment does. Not tidiness — releasing
+    // COM objects on an uninitialized apartment is undefined behaviour, and it is what
+    // killed the first run: `renderer` held a device, a swap chain and render targets, and
+    // `wic` held the imaging factory, and both were destroyed at scope exit, i.e. after
+    // CoUninitialize had already torn the apartment down. 0xC0000005 with nothing before
+    // it in the log.
+    //
+    // MiaoSceneD2DRenderer's self-test spells the same discipline out as five explicit
+    // Reset() calls before its CoUninitialize; this is that list, one file over.
+    renderer.Reset();
+    wic.Reset();
     fs::remove_all(root, ec);
     if (shouldUninitialize) CoUninitialize();
 

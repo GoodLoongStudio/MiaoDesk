@@ -51,6 +51,7 @@ jobs:
           @'
           function Invoke-WallpaperGate([string]$script, [hashtable]$parameters) {
               $path = Join-Path $env:GITHUB_WORKSPACE ('packaging/windows/' + $script)
+              Write-Host ("::notice::GATE-START {0}" -f $script)
               if (-not (Test-Path -LiteralPath $path)) {
                   Write-Host ("::error::GATE {0} -> not found at {1}" -f $script, $path)
                   throw "gate script not found: $script"
@@ -64,6 +65,7 @@ jobs:
                   if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
                       throw ("{0} exited with code {1}" -f $script, $LASTEXITCODE)
                   }
+                  Write-Host ("::notice::GATE-OK {0}" -f $script)
               } catch {
                   Write-Host ("::error::GATE {0} -> {1}" -f $script, $_.Exception.Message)
                   throw
@@ -77,14 +79,24 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          try {
+              . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          } catch {
+              Write-Host ("::error::STEP wrapper load failed -> {0}" -f $_.Exception.Message)
+              throw
+          }
           Invoke-WallpaperGate 'verify-wallpaper-library-canonical-derived-views.ps1' @{}
 
       - name: Verify runtime gate remains read-only and exact-first
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          try {
+              . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          } catch {
+              Write-Host ("::error::STEP wrapper load failed -> {0}" -f $_.Exception.Message)
+              throw
+          }
           Invoke-WallpaperGate 'verify-wallpaper-library-derived-view-runtime.ps1' @{}
 
       # 这一步此前不存在。derived-view-gate 与 derived-views 两个脚本一直列在本工作流的
@@ -94,14 +106,24 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          try {
+              . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          } catch {
+              Write-Host ("::error::STEP wrapper load failed -> {0}" -f $_.Exception.Message)
+              throw
+          }
           Invoke-WallpaperGate 'verify-wallpaper-library-derived-view-gate.ps1' @{}
 
       - name: Verify legacy scene rows stay out of derived views (previously never invoked)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          try {
+              . (Join-Path $env:RUNNER_TEMP 'wallpaper-gate-wrapper.ps1')
+          } catch {
+              Write-Host ("::error::STEP wrapper load failed -> {0}" -f $_.Exception.Message)
+              throw
+          }
           Invoke-WallpaperGate 'verify-wallpaper-library-derived-views.ps1' @{
             SourcePath = 'src\desktop\wallpaper\library\WallpaperLibrary.cpp'
           }

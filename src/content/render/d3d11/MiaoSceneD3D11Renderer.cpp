@@ -602,8 +602,12 @@ struct MiaoSceneD3D11Renderer::Impl {
         // mingw's d3d11.h declares ID3D11View::GetResource as returning void (the real SDK
         // returns HRESULT), so that route does not even compile there. Texture() sits
         // beside RenderTargetView() and ShaderResourceView() anyway.
-        ComPtr<ID3D11Texture2D> source;
-        source = sceneColor->Texture();
+        //
+        // A raw pointer on purpose. The pool owns this texture and outlives the call, so
+        // there is nothing to hold a reference to; assigning it into a ComPtr would attach
+        // without AddRef, which is correct today and a dangling pointer the day someone
+        // lets the ComPtr outlive the function.
+        ID3D11Texture2D* source = sceneColor->Texture();
         if (!source) return Error(error, L"Miao Scene colour target has no texture to read back.");
 
         D3D11_TEXTURE2D_DESC from{};
@@ -628,7 +632,7 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (FAILED(device->CreateTexture2D(&stagingDesc, nullptr, staging.GetAddressOf())))
             return Error(error, L"Cannot create a staging texture to read the Miao Scene back.");
 
-        context->CopyResource(staging.Get(), source.Get());
+        context->CopyResource(staging.Get(), source);
 
         D3D11_MAPPED_SUBRESOURCE mapped{};
         if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)))

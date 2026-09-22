@@ -229,6 +229,10 @@ add_executable(MiaoDeskWebAudioEnvelopeTest tests/WebAudioEnvelope.cpp)
 # library had to be proved to compile and link under MSVC before anything was allowed to
 # depend on it, otherwise a link failure could not be attributed to either change.
 add_executable(MiaoDeskSceneD3D11Test tests/SceneD3D11Renderer.cpp)
+# The first thing that actually renders a textured sprite through the D3D11 backend and
+# reads the pixels back. Every other gate proves that path compiles and links; an HLSL
+# shader is compiled at runtime, so "it linked" never meant "it draws".
+add_executable(MiaoDeskSceneD3D11TexturedSpriteTest tests/SceneD3D11TexturedSprite.cpp)
 # Pure logic: the two render backends must agree about which SpriteRenderers they can
 # draw. That rule is platform-independent (material + texture -> a draw path), so the
 # parity is checkable on every commit even though only one backend can render here.
@@ -263,7 +267,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -303,6 +307,7 @@ if (MSVC)
     target_compile_options(MiaoDeskContentSelfTests PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWebAudioEnvelopeTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneD3D11Test PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSceneD3D11TexturedSpriteTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
@@ -482,6 +487,23 @@ target_link_libraries(MiaoDeskSceneD2DRendererTest PRIVATE
 # the MiaoDeskSceneD3D11 library that P3-6 step 1 created — listing its .cpp here instead
 # would give one implementation file two CMake owners.
 target_link_libraries(MiaoDeskSceneD3D11Test PRIVATE
+    MiaoDeskCore
+    MiaoDeskSceneD3D11
+    user32
+    shell32
+    ole32
+    advapi32
+    d3d11
+    d3dcompiler
+    dxgi
+    windowscodecs
+    shlwapi
+)
+
+# Same links plus ole32/windowscodecs, which it needs for the WIC PNG it writes as the
+# sprite's texture. It owns a real window and a real swap chain, so it is the one target
+# here that cannot run anywhere but Windows.
+target_link_libraries(MiaoDeskSceneD3D11TexturedSpriteTest PRIVATE
     MiaoDeskCore
     MiaoDeskSceneD3D11
     user32

@@ -166,6 +166,14 @@ KNOWN = [
      "上一条 Callback 缺失的级联报错(lambda 返回类型塌成空结构)"),
     (r"'__assume' was not declared",
      "__assume 是 MSVC intrin 专属,mingw 用 __builtin_unreachable"),
+    # mingw 的 d3d11.h 把 ID3D11View::GetResource 声明成返回 void(真 SDK 返回 HRESULT),
+    # 于是 `if (FAILED(view->GetResource(&res)))` 在 mingw 下报 "void value not ignored"。
+    # 这一条值得登记而不是顺手绕开:它是**下游头文件的 bug**,写在仓库代码里毫无问题。
+    # 绕开的办法是用 MiaoD3D11RenderTarget::Texture() 直接拿纹理 —— 那个访问器就是为此
+    # 存在的,而且比 view->GetResource 这条间接路更直接。
+    (r"void value not ignored as it ought to be",
+     "mingw 的 d3d11.h 把 ID3D11View::GetResource 声明成 void(真 SDK 返回 HRESULT);"
+     "改用 MiaoD3D11RenderTarget::Texture()"),
     (r"fatal error:", "mingw 没有整套 Windows SDK,缺头文件属环境噪声"),
 ]
 text = open(sys.argv[1]).read()

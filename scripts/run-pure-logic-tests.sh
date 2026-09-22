@@ -86,16 +86,18 @@ echo "      这是产品自身的设计约束,不是替身的缺陷 —— 绕�
 echo "      头部写着的'替身缺陷伪装成产品缺陷'。这三个目标只有 CI 能覆盖。"
 echo "  SceneD2DRendererTest           跳过(CI-only)"
 echo "  SceneD3D11Test                 跳过(CI-only)"
+echo "  SceneD3D11TexturedSpriteTest   跳过(CI-only)"
 echo "      这两个的理由**不一样**,分开写:"
 echo "        SceneD2DRendererTest  真要 D2D1 设备 + WIC 位图回读,换不了替身。"
 echo "        SceneD3D11Test        四个自测里三个已经搬进 ContentSelfTests 了 —— 见"
 echo "                             MiaoD3D11RenderPolicy.cpp。剩下两个挪不动,理由不同:"
 echo "                             粒子那条的**头文件**就 include 了 d3d11.h(依赖在声明里,"
 echo "                             不在归档位置);TransformMath 是 Windows-only .cpp 里的"
-echo "                             文件局部符号,没有别的入口。"
+echo "                             文件局部符号,没有别的入口。SceneD3D11TexturedSpriteTest 更进一步:它要真实的
+echo "                              D3D11 设备、交换链、WIC 写 PNG 与像素回读,一样都替不了。"
 echo "      这一条我第一版写成了'要真实 D3D11 设备',是**错的**:那只对 D2D 那条成立。"
 echo "      写错理由比不写更麻烦 —— 它会让人以为这里需要一个 GPU,"
 echo "      而真正的改进方向是把那几个纯逻辑自测搬到不含 d3d11.h 的文件里去。"
-SKIP=$((SKIP+5))
+SKIP=$((SKIP+6))
 
 [ "$FAIL" -eq 0 ]

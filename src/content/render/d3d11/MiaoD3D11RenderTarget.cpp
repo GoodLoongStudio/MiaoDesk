@@ -83,6 +83,8 @@ bool MiaoD3D11RenderTarget::Valid() const noexcept {
 unsigned MiaoD3D11RenderTarget::Width() const noexcept { return impl_->width; }
 unsigned MiaoD3D11RenderTarget::Height() const noexcept { return impl_->height; }
 
+ID3D11Texture2D* MiaoD3D11RenderTarget::Texture() const noexcept { return impl_ ? impl_->texture.Get() : nullptr; }
+
 ID3D11RenderTargetView* MiaoD3D11RenderTarget::RenderTargetView() const noexcept {
     return impl_->renderTargetView.Get();
 }

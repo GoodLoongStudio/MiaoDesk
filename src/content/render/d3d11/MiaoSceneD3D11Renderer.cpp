@@ -26,12 +26,14 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -570,6 +572,85 @@ struct MiaoSceneD3D11Renderer::Impl {
         std::wstring poolError;
         if (!renderTargets.Build(device.Get(), renderGraph, width, height, &poolError))
             return Error(error, poolError.empty() ? L"Cannot build Miao Scene render targets." : poolError);
+        return true;
+    }
+
+    // Copies the scene colour target out of the GPU into CPU-visible BGRA.
+    //
+    // This exists for the same reason Runtime() does: something the host (or a test)
+    // needs lives inside the renderer. Before this existed, "the textured sprite path
+    // draws" was a compile-and-link fact only — the D3D11 renderer had no way to say
+    // what it had actually drawn, so nothing could assert it.
+    //
+    // It reads `renderres://scene-color`, not the swap chain's back buffer. Two reasons:
+    // that is what the scene pass actually drew into (the Present pass only copies it),
+    // and the back buffer's contents are undefined after Present returns, while a Draw()
+    // has already Presented by the time a caller can call this.
+    bool ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width, unsigned* height,
+                        std::wstring* error) {
+        if (!bgra || !width || !height) return Error(error, L"Read-back output is null.");
+        *width = 0;
+        *height = 0;
+        bgra->clear();
+        if (!device || !context) return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
+
+        const auto* sceneColor = renderTargets.Find(kSceneColorResource);
+        if (!sceneColor || !sceneColor->RenderTargetView())
+            return Error(error, L"Miao Scene render graph has no scene colour target to read back.");
+
+        // Read the texture directly rather than going through the view's GetResource:
+        // mingw's d3d11.h declares ID3D11View::GetResource as returning void (the real SDK
+        // returns HRESULT), so that route does not even compile there. Texture() sits
+        // beside RenderTargetView() and ShaderResourceView() anyway.
+        ComPtr<ID3D11Texture2D> source;
+        source = sceneColor->Texture();
+        if (!source) return Error(error, L"Miao Scene colour target has no texture to read back.");
+
+        D3D11_TEXTURE2D_DESC from{};
+        source->GetDesc(&from);
+        // 32-bit BGRA is the only format the pool builds (MiaoD3D11RenderPolicy refuses
+        // anything else), so this is asserting the invariant rather than handling a case.
+        // If it ever widens, guessing 4 bytes per pixel would be a silent corruption.
+        if (from.Format != DXGI_FORMAT_B8G8R8A8_UNORM && from.Format != DXGI_FORMAT_R8G8B8A8_UNORM)
+            return Error(error, L"Miao Scene colour target is not a 32-bit RGBA format.");
+
+        D3D11_TEXTURE2D_DESC stagingDesc = from;
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.BindFlags = 0;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        stagingDesc.MiscFlags = 0;
+        // A staging texture cannot be multisampled. The scene target is not, but stating
+        // it beats inheriting a sample count and failing deep inside CreateTexture2D.
+        stagingDesc.SampleDesc.Count = 1;
+        stagingDesc.SampleDesc.Quality = 0;
+
+        ComPtr<ID3D11Texture2D> staging;
+        if (FAILED(device->CreateTexture2D(&stagingDesc, nullptr, staging.GetAddressOf())))
+            return Error(error, L"Cannot create a staging texture to read the Miao Scene back.");
+
+        context->CopyResource(staging.Get(), source.Get());
+
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)))
+            // Nothing was mapped, so there is nothing to unmap. Calling Unmap here would
+            // be the classic "clean up what I did not acquire".
+            return Error(error, L"Cannot map the Miao Scene staging texture.");
+
+        const std::size_t rowBytes = static_cast<std::size_t>(from.Width) * 4u;
+        bgra->resize(rowBytes * static_cast<std::size_t>(from.Height));
+        const auto* rows = static_cast<const std::uint8_t*>(mapped.pData);
+        // RowPitch is not necessarily rowBytes: the driver may pad rows for alignment,
+        // so each row is copied from its own offset rather than treating the texture as
+        // one tightly packed block.
+        for (UINT y = 0; y < from.Height; ++y) {
+            std::memcpy(bgra->data() + static_cast<std::size_t>(y) * rowBytes,
+                        rows + static_cast<std::size_t>(y) * mapped.RowPitch, rowBytes);
+        }
+        context->Unmap(staging.Get(), 0);
+
+        *width = from.Width;
+        *height = from.Height;
+        if (error) error->clear();
         return true;
     }
 
@@ -1271,6 +1352,11 @@ std::wstring MiaoSceneD3D11Renderer::PackageId() const {
 }
 
 std::wstring MiaoSceneD3D11Renderer::LastErrorText() const { return impl_->lastError; }
+
+bool MiaoSceneD3D11Renderer::ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width,
+                                            unsigned* height, std::wstring* error) {
+    return impl_ && impl_->ReadBackPixels(bgra, width, height, error);
+}
 
 bool MiaoSceneD3D11Renderer::SelfTest() {
     return TransformMathSelfTest() && MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() &&

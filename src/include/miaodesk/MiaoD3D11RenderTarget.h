@@ -8,6 +8,7 @@
 #include "miaodesk/MiaoRenderGraph.h"
 
 struct ID3D11Device;
+struct ID3D11Texture2D;
 struct ID3D11RenderTargetView;
 struct ID3D11ShaderResourceView;
 
@@ -28,6 +29,7 @@ public:
     bool Valid() const noexcept;
     unsigned Width() const noexcept;
     unsigned Height() const noexcept;
+    ID3D11Texture2D* Texture() const noexcept;
     ID3D11RenderTargetView* RenderTargetView() const noexcept;
     ID3D11ShaderResourceView* ShaderResourceView() const noexcept;
 

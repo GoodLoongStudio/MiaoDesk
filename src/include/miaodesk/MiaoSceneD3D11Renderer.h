@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 struct HWND__;
 using HWND = HWND__*;
@@ -34,6 +35,22 @@ public:
     bool UsesProgrammableMaterial() const noexcept;
     std::wstring PackageId() const;
     std::wstring LastErrorText() const;
+
+    // The last drawn frame as tightly packed BGRA, or nothing when nothing was drawn.
+    //
+    // Same justification as Runtime(): this is something the host needs that lives inside
+    // the renderer. It is also what turns "the textured sprite path draws" from a
+    // compile-and-link statement into a checkable one — before it existed, the D3D11
+    // renderer could not report what it had drawn, so no test could assert it.
+    //
+    // Reads the scene colour target, not the swap chain: that is what the scene pass drew
+    // into, and the back buffer is undefined once Draw() has Presented.
+    //
+    // Returns false with a message when the renderer is not loaded, when the render graph
+    // has no scene colour target, or when that target is not a 32-bit RGBA format — never
+    // by guessing a pixel size.
+    bool ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width, unsigned* height,
+                        std::wstring* error = nullptr);
 
     static bool SelfTest();
 

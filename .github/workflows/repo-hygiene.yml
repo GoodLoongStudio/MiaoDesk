@@ -155,6 +155,19 @@ jobs:
             exit 1
           }
 
+      # 上一条只证明"这一行存在"。2026-09-22 人工核对过:30 条能解析的引用里 10 条指的
+      # 是错的地方,而那一条门十条全放行。所以有了这一条 —— 它取引用同一行里的符号,
+      # 验证符号真的出现在被引那一行附近。只覆盖有符号可核的那些,边界写在脚本头部。
+      - name: Verify what a documentation citation talks about is on the line it cites
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-doc-citation-symbols.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify native source shape and path policy
         shell: bash
         run: |

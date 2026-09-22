@@ -187,12 +187,27 @@
     **匿名 API 读得到 check-run 的 annotations,读不到 job log。所以诊断信息要主动
     写进 annotations,不能指望去翻日志。**
 
+15. **"SelfTest 存在"和"SelfTest 在跑"是两件事,而仓库里躺了三个没人调用的。**
+    这一轮顺手清点时发现 `MiaoSceneD3D11Renderer::SelfTest` 与
+    `MiaoSceneSerializer::SelfTest` **全仓零调用方**。后者 120 行,多在与粒子发射器
+    (id 方案、每 emitter 65536、每 scene 131072、spawnRate、lifetime、颜色),而
+    `content-review` 的性能清单里正写着"每 emitter 粒子数 ≤ 65536 / 每 scene 粒子总数
+    ≤ 131072"—— 一条对用户可言的约束,背后没有任何执行。
+    同一类此前已经犯过:D2D 的 SelfTest 有 150 行真实像素断言,也是零调用方,
+    接进 CI 之后第一轮就抓出六个测试自身的缺陷。
+    **判据:每加一个 SelfTest,同时给它一个调用方(测试目标 + runner + CI 步骤);
+    并且用注入失效证明它真的会响 —— 这次把 `ValidateParticleEmitter` 的上限判断删掉,
+    新测试立刻 FAIL,还原后再绿。**
+    顺带记录一个不是缺陷的发现:`MiaoParticleSerializer::SelfTest` 是
+    `return true;` 的桩。它旁边真正该被覆盖的东西(`DeserializeEmitters` 只是转调
+    `MiaoSceneRuntimeModel::Validate`)已经由新测试覆盖,所以桩保持原样,不去填。
+
 现在有**十三个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
 | 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
-| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 11 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 12 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
 | CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
 | 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
@@ -1045,6 +1060,7 @@
 | 2026-09-22 | `canonical-derived-view-gate` 首次在 Windows 上通过 | 五步全绿(`9a03f26`)。此前它自 `61a638f` 起从未成功运行过 |
 | 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
+| 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
 | 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |

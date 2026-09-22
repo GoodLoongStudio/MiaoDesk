@@ -205,6 +205,23 @@
     `return true;` 的桩。它旁边真正该被覆盖的(`DeserializeEmitters` 只是转调
     `MiaoSceneRuntimeModel::Validate`)已经由新测试覆盖,所以桩保持原样。
 
+16. **不要把"逐字节相等"的门,架在由超越函数算出的产物上。**
+    MiaoCloud 的动画迁到关键帧轨之后,`generate-miao-cloud-scene.py --check`
+    在 Linux CI 上连红三轮,而本机(Python 3.14 与 3.9 都试过)全绿。
+    根因:`math.sin` / `math.cos` 的结果**依赖平台的 libm**,glibc 与 macOS 的 sin
+    可能差 1 ulp,而 `json.dumps` 会把这个末位差原样写进 scene.json ——
+    于是"在 macOS 上生成、在 Linux 上校验"必红,差异却是 1e-16 的相对量。
+    **判据:凡是要提交进仓库、又被逐字节门守着的小数,先问它是怎么算出来的。
+    乘加除是 IEEE 精确舍入、与平台无关;sin/cos/sqrt/exp/log 不是。**
+    修法是把采样值按固定小数位 round(这里 6 位,即 1e-6 px,比一个像素还小七个
+    数量级,远小于声明的 0.306px 误差上界),**不是**把门的容差放宽 ——
+    放宽容差会让门再也抓不住真的分叉。
+    顺带:breathe 的误差随后刚好压在解析上界上被判 FAIL,那是**上界算漏了一项**
+    (还有 round 带来的 1e-6),不是迁移变差了。上界也要跟着写全。
+    以及:我一开始连 `time` 也 round 了,结果末键向上进位越过 duration,被
+    `Validate` 整scene 拒掉("Animation keyframe time is outside the track duration")。
+    time 由乘除得来,本来就不需要 round。**"顺手一起 round"不是无害的。**
+
 现在有**十四个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
@@ -1110,6 +1127,7 @@
 | 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
+| 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

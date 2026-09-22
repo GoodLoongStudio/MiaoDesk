@@ -1114,25 +1114,35 @@
 ### P3-6 D3D11 渲染器的 Windows-only 自测仍无调用方
 
 - **依据**:2026-09-22 清点 SelfTest 调用方时发现(见教训 15)
-- **现状**:`MiaoSceneD3D11Renderer::SelfTest()` 本身仍然**零调用方**,而它里面这四项是
-  Windows-only,所以教训 15 那次只搬走了纯逻辑那七项:
+- **现状**:`MiaoSceneD3D11Renderer::SelfTest()` 本身零调用方,而它里面这四项是 Windows-only:
   - `MiaoD3D11ParticleRenderer::SelfTest`
   - `MiaoD3D11TextureLoader::SelfTestPathPolicy`
   - `MiaoD3D11RenderTargetPool::SelfTest`
   - 文件内的 `TransformMathSelfTest`
-  (注意 `MiaoD3D11TextureLoader::SelfTestPathPolicy` 在 D2D 测试里已被调过一次 ——
-  同名不同类,D2D 调的是 `MiaoD2DTextureLoader` 的那个。)
-- **为什么这次没做**:这四个要一个 Windows 测试目标,而四个 D3D11 渲染器 `.cpp` 现在
-  直接列在 `MIAODESK_WALLPAPER_SOURCES` 里。两条路都不可取:
-  1. 建一个 `MiaoDeskSceneD3D11` 库把它们搬出去,让 `MiaoDeskWallpaper` 链它 ——
-     这改的是**产品主程序的链接结构**,而本机编译不了 Windows,改错了我验不出来;
-  2. 在测试目标里再编一遍这些 `.cpp` —— 违反"每个实现文件只有一个 CMake owner"
-     (路径契约,`verify-cmake-target-hygiene.sh` 会拦)。
-  D2D 那份当初之所以做得动,是因为 `MiaoDeskScene2D` 库已经先存在了。
-- **做法(下一步)**:先建 `MiaoDeskSceneD3D11` 库并让 `MiaoDeskWallpaper` 改链它,
-  **在 Windows 上确认链接不变之后再**建测试目标;不要反过来。
-  参考 `src/tests/SceneD2DRenderer.cpp` 的形状。
-- **状态**:❌ 未开始 —— 需要 Windows 侧的构建与链接验证
+- **第 1 步已完成(2026-09-22):建立 `MiaoDeskSceneD3D11` 库。**
+  四个 `.cpp` 从 `MIAODESK_WALLPAPER_SOURCES` 搬到 `MIAODESK_SCENE_D3D11_SOURCES`,
+  新库加入公共属性 foreach、MSVC 选项段、`source_group`,并由 `MiaoDeskWallpaper` 链它 ——
+  与既有的 `MiaoDeskScene2D` 逐处对称。这一步就是"做法(下一步)"里写的那件事。
+  (当初拦路的正是它:建库要改产品主程序的链接结构,而本机编不了 Windows。)
+- **这一步在本机验到了哪一层(以及没验到哪一层)**:
+  本机跑 CMake Configure 能生成 compile_commands.json,于是把四个 TU 在搬迁**前/后**的
+  编译命令逐 token 比对 —— 归一化掉必然不同的产物名之后,**14 个 token 顺序与取值完全一致**。
+  唯一真正消失的是 `-isystem third_party/webview2/include`:它们原先作为可执行目标的
+  源文件继承了它,搬进库之后不再继承。而这一项的消失是可证明无害的 ——
+  四个文件的传递依赖闭包共 19 个头,没有一个引用 WebView2;且 `MiaoDeskScene2D`
+  这两个渲染器文件本来就在没有该 include 的情况下编译通过。
+  链接侧:`MiaoDeskSceneD3D11Renderer.cpp` 里真的调用了 particle / rendertarget /
+  textureloader(分别出现 3 / 4 / 5 次),而 `IndependentWallpaperHost.cpp`
+  在 `MIAODESK_WALLPAPER_SOURCES` 里引用 renderer,所以对象链会被拉进最终链接。
+  写这一步时被 `verify-cmake-target-hygiene.sh` 当场拦住一次:新库漏了 MSVC 段,
+  缺 `/W4 /permissive- /utf-8 /EHsc`。
+  **没验到的:MSVC 实际编译与最终链接。** 本机没有 MSVC,compile_commands 的
+  toolchain 是 host 默认(那个 `-DCMAKE_VS_PLATFORM_NAME=x64` 在非 Windows 上被忽略),
+  它证明的是"CMake 给这四个 TU 的编译环境没变",不是"MSVC 编得过、链得上"。
+- **第 2 步(未做):建测试目标**,参考 `src/tests/SceneD2DRenderer.cpp` 的形状,
+  链 `MiaoDeskSceneD3D11` 后调用那四个 SelfTest。**必须在 Windows 上确认上面这个库的
+  链接不变之后再建** —— 顺序不能反,否则真出了链接问题分不清是谁引入的。
+- **状态**:🟡 第 1 步完成(编译环境等价性已在本机逐 token 验过);第 2 步待 Windows 链接确认
 
 ### P3-5 contextWindow / maxTokens 默认值合理性
 
@@ -1181,6 +1191,7 @@
 | 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
 | 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而 14 个闸门无一报警 —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
 | 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
+| 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |

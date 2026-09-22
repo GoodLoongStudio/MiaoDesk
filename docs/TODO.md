@@ -170,6 +170,23 @@
     修完之后按教训 2 补了注入验证:分别从 RecentlyUsed / Favorites / Search 里
     删掉闸门行,四个门各自报错且点名那个函数;CRLF 检出上 5 个步骤全绿。
 
+14. **"从来没跑过的步骤"会一个接一个地藏在最先失败的那一步后面,而且症状指向别处。**
+    `canonical-derived-view-gate` 这一轮连修四次才绿,每一层都是"之前的步骤失败了,
+    所以我一次都没跑过":
+      ① CRLF 未归一化(教训 10);
+      ② 单引号正则双反斜杠(教训 13);
+      ③ `Get-FunctionBlock` 返回 string,调用点 `.Value` 在 PS7 上静默给空串;
+      ④ 第 5 步 `Join-Path $RUNNER_TEMP ...` —— 裸写 `$RUNNER_TEMP` 是未定义的
+         PowerShell 变量,不是环境变量;GitHub 把 RUNNER_TEMP 放在进程**环境**里,
+         PowerShell 要 `$env:RUNNER_TEMP` 才读得到。于是 `Join-Path $null` 抛
+        "Cannot bind argument to parameter 'Path' because it is null."
+    **定位它靠的是一个朴素办法:让每一步自报姓名。** 给四个门加 `::notice::GATE-START /
+    ::notice::GATE-OK`、失败加 `::error::GATE <名> -> <异常>` 之后,annotations 一眼
+    就给出答案:四个门全是 GATE-OK,第 5 步连 GATE-START 都没有 —— 于是范围立刻缩到
+    "它在调用门之前就死了"。此前我只有"整个 gate 跑了 18 秒"这一个信号。
+    **匿名 API 读得到 check-run 的 annotations,读不到 job log。所以诊断信息要主动
+    写进 annotations,不能指望去翻日志。**
+
 现在有**十三个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
@@ -421,6 +438,12 @@
   + 12 个纯逻辑测试全过 + 交叉语法门 114 文件零真实错误。
   不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;
   真机截图没有人看过。此前"`4b19282`,31 步全绿"是 D2D 半边的实测证据,D3D11 半边没有对应物。
+  补充(`9a03f26` 与 `6c8321a`,`0937328`):`build` / `installer` / `package` /
+  `package-msix` / `scan` / `verify` 全部 success —— 即**新代码在 Windows 上编译链接通过、
+  新测试目标 `MiaoDeskSpriteMaterialPolicyTest` 被构建**,`Verify the two render backends
+  agree on which sprites are drawable` 这一步走的是 `windows-x64-build.yml`,它在那几轮
+  同为 success。HLSL 仍未被执行(没有真渲染步骤跑到 D3D11 的贴图路径)——
+  **"编过去了"不等于"画出来了"**,后者仍然只有真机能给。
   契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在 `6b3677b` 之后陆续落地。
   同一轮还把 `skills/` 的 sprite 材质规则补齐(此前它只写"material 优先引用 builtin",
   在教作者写渲染器会拒的包),并加了 `verify-skill-material-rule.sh` 让规则不脱钩。
@@ -1017,6 +1040,9 @@
 | 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
 | 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
 | 2026-09-22 | 五处已失效的"待 Windows 编译"标记 | 按证据改掉:`023aa299` 全绿之后文件逐字节未变的项,"能不能编过"已经有答案(B-1 / B-5 / P2-4 / P3-1 / P3-3)。区别:`待真机验收`仍然保留 |
+| 2026-09-22 | 自报姓名的 gate 包装 | `Invoke-WallpaperGate`(写 `$RUNNER_TEMP` 文件、每步 dot-source):`::notice::GATE-START/OK` + `::error::GATE <名> -> <异常>`。第一次加 `::error::` 仍然什么都看不到,因为失败在 try/catch **之外** |
+| 2026-09-22 | 第 5 步 `$RUNNER_TEMP` → `$env:RUNNER_TEMP` | 裸写环境变量在 pwsh 里是 `$null`,`Join-Path $null` 抛"Path 为 null"。该步自加入起一次都没成功跑过(`9a03f26`) |
+| 2026-09-22 | `canonical-derived-view-gate` 首次在 Windows 上通过 | 五步全绿(`9a03f26`)。此前它自 `61a638f` 起从未成功运行过 |
 | 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |

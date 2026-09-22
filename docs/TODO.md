@@ -1144,10 +1144,10 @@
   `fix/content-widget-install-runtime-reload`(df7d81d)、
   `fix/unicode-wallpaper-theme-packages`(321c39f)。
 - **状态**:✅ 已推回远端
-### P3-6 D3D11 渲染器的 Windows-only 自测仍无调用方
+### P3-6 D3D11 渲染器的 Windows-only 自测 ✅ 已有调用方并在 Windows CI 执行通过
 
 - **依据**:2026-09-22 清点 SelfTest 调用方时发现(见教训 15)
-- **现状**:`MiaoSceneD3D11Renderer::SelfTest()` 本身零调用方,而它里面这四项是 Windows-only:
+- **当时的现状**:`MiaoSceneD3D11Renderer::SelfTest()` 零调用方,而它里面这四项是 Windows-only:
   - `MiaoD3D11ParticleRenderer::SelfTest`
   - `MiaoD3D11TextureLoader::SelfTestPathPolicy`
   - `MiaoD3D11RenderTargetPool::SelfTest`
@@ -1192,9 +1192,14 @@
   2. `run-pure-logic-tests.sh` 的"只能在 Windows 上验证"清单只列了 3 个,
      而 `SceneD2DRendererTest` 与新的 `SceneD3D11Test` 既不在跑清单也不在跳过清单。
      于是"14 跑 + 3 跳过"看着像覆盖了全部,实际有 19 个目标。改成 5 个并写明原因。
-- **仍未验**:MSVC 编译这个新测试目标、以及四个自测在真实 D3D11 设备上的结果。
-  `verify-windows-syntax.sh` 只做了 mingw 语法层(且 WRL Callback 是登记过的缺口)。
-- **状态**:🟡 第 1、2 步均已完成(结构等价性与 CI 绿灯都有);**四个自测的真实执行结果待 Windows**
+- **四个自测已经真的跑过并返回 true(2026-09-22,`65dbc31e` `build` success,0 条失败标注)**。
+  这一步是干净的:两个新步骤都挂在 `windows-x64-build.yml` 的 `build` job 里,
+  任一步失败都会 `throw`,所以 job 绿 = 两个 exe 都被找到、都以 0 退出。
+  也就是说这四个自测自写下以来**第一次执行**,并且通过。
+  一处必须说清的边界:GitHub 的 Windows runner 是虚拟机,D3D11 设备多半由 WARP
+  软件光栅器支撑,不是真实 GPU。所以验到的是"设备能建、四条自测的逻辑在 Windows
+  原生路径上成立",**不是**"在用户显卡上画面正确"。后者属于 P0-1。
+- **状态**:✅ 第 1、2 步均完成并已在 Windows CI 执行通过;**真实 GPU 上的画面仍属 P0-1**
 
 ### P3-5 contextWindow / maxTokens 默认值合理性
 

@@ -196,6 +196,10 @@ add_executable(MiaoDeskBuiltinWallpaperPackagesTest tests/BuiltinWallpaperPackag
 # Pure logic: MiaoSceneSerializer::SelfTest had no caller anywhere in the repository.
 # 120 lines of assertions, concentrated on particle emitters, and none of them ran.
 add_executable(MiaoDeskSceneSerializerSelfTest tests/SceneSerializerSelfTest.cpp)
+# Pure logic: runs the content-layer SelfTests that were reachable only through
+# MiaoSceneD3D11Renderer::SelfTest, an aggregator with no caller. Seven of them,
+# ~290 lines, and none of them ran on any machine.
+add_executable(MiaoDeskContentSelfTests tests/ContentSelfTests.cpp)
 # Pure logic: the two render backends must agree about which SpriteRenderers they can
 # draw. That rule is platform-independent (material + texture -> a draw path), so the
 # parity is checkable on every commit even though only one backend can render here.
@@ -229,7 +233,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -265,6 +269,7 @@ if (MSVC)
     target_compile_options(MiaoDeskSceneTextureFixtureTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskBuiltinWallpaperPackagesTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneSerializerSelfTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskContentSelfTests PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
@@ -407,6 +412,10 @@ target_link_libraries(MiaoDeskSpriteMaterialPolicyTest PRIVATE
 target_link_libraries(MiaoDeskSceneSerializerSelfTest PRIVATE
     MiaoDeskCore
 )
+target_link_libraries(MiaoDeskContentSelfTests PRIVATE
+    MiaoDeskCore
+)
+
 
 
 # This one drives the real D2D renderer: it owns a render target, so it links the same

@@ -63,7 +63,7 @@ echo
 echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # SpriteMaterialPolicy 是唯一能同时钉住两个渲染后端的地方:D3D11 那份本机编译不了，
 # 但'什么形态能画、什么形态该被拒'是纯逻辑，于是后端口径的一致性能每轮都验。
-for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest; do
+for t in InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests; do
   run "$t" "$t.cpp"
 done
 

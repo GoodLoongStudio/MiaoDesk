@@ -97,7 +97,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest --parallel 2>&1
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
@@ -429,6 +429,25 @@ jobs:
               }
               Write-Host "::error::exit code $gateExit"
               throw 'scene serializer self-test gate failed.'
+          }
+
+      - name: Run the content-layer self-tests that had no caller
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentSelfTests.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Content self-tests executable was not found.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'content self-tests gate failed.'
           }
 
       - name: Verify the two render backends agree on which sprites are drawable

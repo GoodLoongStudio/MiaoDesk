@@ -168,6 +168,21 @@ jobs:
             exit 1
           }
 
+      # 第三道:文档讲的那个符号还在不在。与上面两道分开 —— 它们管"指对地方",
+      # 这道管"讲的东西没被删掉"。第一次跑就抓到 TODO.md 引用了一个已不存在的
+      # WallpaperLibrary::ImportPackages(导入路径早变成 ImportFile/ImportWebUrl,
+      # 而那段映射仍在 WallpaperLibrary.cpp:626-627)。判据刻意取窄:放宽到全部
+      # 反引号标识符会有 8% 假阳性,而且多数是文档在正当讲"被删掉的代码"。
+      - name: Verify the symbols documentation names still exist in the source
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-doc-symbols-exist.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify native source shape and path policy
         shell: bash
         run: |

@@ -856,7 +856,8 @@
 - **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.2 / §7 G5
 - **原判断被推翻(2026-09-20)**:我写这一项时没有查 manifest 层。
   `WallpaperPackageType` 一直就有 `{Image, Video, Web, Scene}` 四值,
-  `WallpaperLibrary::ImportPackages` 把 `type: video` 映射到 `LibraryWallpaperKind::Video`,
+  `WallpaperLibrary::DiscoverPackages` 里 `WallpaperPackageType::Video` 到
+  `LibraryWallpaperKind::Video` 的映射在 `WallpaperLibrary.cpp:626-627`,
   `WallpaperService.cpp:323` 完整播放,`desktop_preview_wallpaper` 也已有 `mode=video`。
   **"视频壁纸作为一类轻量产物"在产品层本来就通了**,我说的"没通"是错的。
 - **真实缺口(两个,都已修)**:

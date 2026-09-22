@@ -105,12 +105,45 @@
    再往下,给断言加了无条件 dump 和 y=32 边缘扫描 —— 于是下一轮的失败自带结论。
    **"把断言改成会解释自己的"通常比"再猜一个修法"便宜。**
 
-现在有**十一个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+9. **两个后端各写一份规则,等于写了两份规则。** 给 D3D11 补贴图 sprite 时,顺手把
+   仓库里八份 `scene.json` 的 sprite 形态全列出来对了一遍,结果发现 MiaoCloud 的五个
+   图层是 `texture` + 无 `materialId` —— D2D 画得出来,D3D11 连包都加载不了
+   ("does not resolve a material")。同类别的分叉还有三格(materialId 指向不存在的
+   material、可编程材质无 texture、programmable + texture 两边都要 t0)。
+   根因不是某一处写错,而是**同一个判断在两个文件里各有一份**。
+   现在它是一份实现(`MiaoSpriteMaterialPolicy.cpp`),两个后端调用它,唯一允许的差异
+   (`backendHasShaderPath`)是显式传进去的,并且被测试钉住:任何两个后端都接受的形态
+   必须解析到同一个 path。
+   **可迁移的判据:凡是"两个后端/两个平台各判一次"的逻辑,先问它们判的是不是同一件事;
+   是,就合并成一份,并且给合并后的那份写一个 parity 断言。**
+   这次也顺手照见一条:验证合并后的规则时,我把本次要修的 bug 原样注入回去
+   (D3D11 上"texture + 空 materialId"被拒),2 项断言立刻红。**闸门注入已知失效后
+   真的会响,才是闸门。**
+
+10. **行尾差异会让门在本机全绿、Windows 全红,而报的是无关的嫌疑对象。**
+    `c55ef67` 的 `canonical-derived-view-gate` 在 Windows CI 上红,报的是
+    "RecentlyUsed() implementation not found." —— 而那个函数在同一个提交里刚刚修好,
+    515/533/550 三处 `IsLibraryUiVisible(item) continue` 都在。把源文件转成 CRLF
+    就在本机复现出完全相同的消息:那些门按 `\n` 定位"函数结尾 + 一个空行",
+    `\n}\n\n` 在 CRLF 下永远匹配不上(空行是 `\r\n\r\n`)。
+    教训不在正则,而在**仓库存 LF(`.gitattributes` 的 `* text=auto`)、runner 检出 CRLF**,
+    所以这类门只可能在 Windows 上坏。修法是在**读入处归一化**,而不是改十几处正则。
+
+11. **看门脚本自己也要先跑通一次,否则"静默"和"还在跑"完全一样。**
+    我那个轮询 CI 的看门脚本,把 `python3 -c '...'` 嵌在 bash 单引号里,里面写的是
+    `\"html_url\"` —— 单引号不转义,于是 Python 每轮都 SyntaxError,而脚本一句输出都没有。
+    我隔一段时间去看它的输出文件,看到的是空的,判断成"还在跑"。它已经在 md 里写过
+    "覆盖率:只 grep 成功标记的话,崩掉是静默的",结果同一个错以另一种形式又犯一次。
+    现在:看门脚本单独放一个 `.py` 文件(不再嵌套引号),并且每次 poll 失败都打
+    `ERROR  poll failed:` —— **让失败自己留痕**,而不是靠人去猜沉默意味着什么。
+    附带代价:那个坏脚本每小时 60 次的配额被它自己烧光了。
+
+现在有**十二个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
 | 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
-| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 10 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
+| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 12 个测试目标真编译并运行通过 | 任何需要 Windows 的目标 |
 | CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
 | CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
 | 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
@@ -121,6 +154,8 @@
 | 场景 fixture 一致性 | `scripts/verify-scene-fixture-parity.sh` | 贴图 fixture 的 scene / manifest / parameters 两份没有分叉 | Windows 那份是否真能画出来 |
 | MiaoCloud 几何 | `python3 scripts/generate-miao-cloud-scene.py --check` | scene.json 与 scene.ini 逐字节一致 + 每层逆合成 assert | 动画与粒子(刻意未迁移) |
 | 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个 scene.json 声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
+| **渲染后端一致性** | `MiaoDeskSpriteMaterialPolicyTest`(在 `run-pure-logic-tests.sh` 与 Windows CI 里) | D2D 与 D3D11 对"哪个 SpriteRenderer 能画"判断一致;10 个形态 × 2 个后端,含必须被拒的那些 | HLSL 与真实绘制(只有 Windows 能编译/跑) |
+| 壁纸库派生视图(4 个 .ps1) | `packaging/windows/verify-wallpaper-library-*.ps1` | `WallpaperLibrary.cpp` 的 `RecentlyUsed`/`Favorites` 等派生视图仍是"用户可见"的那一份 | CRLF 之外的形状(已在读入处归一化) |
 
 其中除交叉语法与纯逻辑测试外,都由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
 构建能否通过,所以不该被构建类工作流挡住。
@@ -343,9 +378,13 @@
     —— 但那个闸门此前从未被调用过,已接进工作流并改成 push + PR 都触发。)
   - D3D11 后端仍没有经 `texture` 属性的贴图路径(它的取图一直是
     `material.textures[]` + 可编程材质)。
-- **状态**:🟡 渲染侧阻塞的 **D2D 半边**已解除,并在真实 Windows CI 上验证通过
-  (`4b19282`,31 步全绿)。契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在
-  `6b3677b` 之后陆续落地。
+- **状态**:🟡 渲染侧阻塞的**两个半边**都已落地 —— D3D11 半边在 `0937328`,
+  但**只到"本机能验证的那一层"为止**,尚未在 Windows 上编译或运行过。
+  落在本机证据范围内的:材质策略合并为一份 + 16 项断言 + 注入已知失效确认闸门会响
+  + 12 个纯逻辑测试全过 + 交叉语法门 114 文件零真实错误。
+  不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;
+  真机截图没有人看过。此前"`4b19282`,31 步全绿"是 D2D 半边的实测证据,D3D11 半边没有对应物。
+  契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在 `6b3677b` 之后陆续落地。
 
   走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
   之间开一条直接引用路径",没有新增 builtin 材质 ——
@@ -373,11 +412,16 @@
     不是静忽略。原因:\`ID2D1BitmapBrush\` 没有颜色成员,普通
     \`ID2D1RenderTarget\` 既不能设混合模式也没有 effect API,一条 pass 内无法给位图
     染色。三种权宜做法都被否(理由写在渲染器注释里)。
-  - **D3D11 后端仍然没有经 \`texture\` 属性的贴图路径**。它的取图一直是
-    \`material.textures[]\` + 可编程材质那条。所以上面第 1 条的 D3D11 半边仍未动;
-    \`tint\` 在 D3D11 里是 shader 常量,对贴图是免费的 —— 这正是两边允许分叉的地方,
-    但 content-review 把它当差异记录,别当成 bug。
-  - 内容迁移(第 2–7 条)一行未动。
+  - ~~D3D11 后端没有经 \`texture\` 属性的贴图路径~~ **已落地(`0937328`,待 Windows 编译)**:
+    新增 \`EngineTexturedPixelShader()\` 采 t0,\`CreateTextures\` 从 sprite 的 texture 资产填 t0,
+    \`CreateShaders\` 按 \`textured\` 选 shader;**故意不预乘 alpha**(混合阶段做,shader 里
+    再做一次会让透明像素周围出黑边,且 \`MiaoD3D11TextureLoader\` 解的是非 PBGRA)。
+    \`tint\` 在两边分叉这一点**依然是分叉,而且是允许的**:D2D 的 \`ID2D1BitmapBrush\`
+    没有颜色成员,非白色 tint 显式拒绝;D3D11 的 tint 是 shader 常量,免费。
+    content-review 把它当差异记录,别当成 bug。
+  - ~~内容迁移(第 2–7 条)~~:第 2 条(几何 + 5 层 + 5 个 Image 资产)已落地,
+    第 3–5 条(动画 / 粒子 / parameters.json)仍未做;第 6 条(`legacy_entry` 切换)
+    刻意保留,需真机验收。
 
 ### P0-5 本地 AI 组件许可证书面确认
 
@@ -926,6 +970,10 @@
 | 2026-09-20 | B-3 绑定响应曲线 | 闭集 8 条曲线 + deadzone,零代码执行;默认 Linear 逐位兼容;两个 Windows CI 测试;**通用脚本解释器延后并记录触发条件** |
 | 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
 | 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
+| 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
+| 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
+| 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |
+| 2026-09-22 | D3D11 贴图 sprite 绘制路径 | `EngineTexturedPixelShader()` + t0 绑定 + 按 `textured` 选 shader;**待 Windows 编译与真机**,HLSL 只有 `D3DCompile` 能验(`0937328`) |
 | 2026-09-20 | B-5 media 壁纸包校验 | 补齐 Image/Video entry 扩展名校验(关掉 type/entry 不匹配漏洞);新增 `CreateImage`/`CreateVideo`;资产名净化改为净全名 |
 
 ## 维护约定

@@ -73,6 +73,14 @@ jobs:
         shell: bash
         run: python3 scripts/generate-miao-cloud-scene.py --check
 
+      # MiaoCloud 的动画从 scene.ini 的解析式正弦迁到 scene.json 的关键帧轨,
+      # 是一次有损迁移。损失量必须是个数:这个脚本读两个源、按引擎自己的
+      # easing/局部时间代码求值,逐点比,上界是解析解 A*(1-cos(pi/15))。
+      # 没有它,"亚像素"就只是注释里的一句话。
+      - name: Verify MiaoCloud's migrated animations still match scene.ini
+        shell: bash
+        run: python3 scripts/verify-miao-cloud-animation-parity.py
+
       # stage.ps1 里那份手写的壁纸资产断言清单。真正的拷贝是 CMake 的
       # install(DIRECTORY ...) 整目录,所以少列一项不会让文件消失 —— 但会让
       # "它是否真的进了打包产物"失去检查。cloud.png 就是这样被漏了一整天:

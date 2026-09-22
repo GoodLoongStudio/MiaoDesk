@@ -136,7 +136,15 @@ int wmain() {
         // MiaoCloud is the only package that ships its art, so it is the only one that
         // can be migrated to scene.json. Its scene.json is authored with all five
         // layers, each a SpriteRenderer naming a real Image asset.
-        {"MiaoCloud", 6, true},
+        //
+        // 9 nodes, not 6: 1 root + 5 layer nodes + 3 "axis-y" parents. Three of the five
+        // layers (cloud_pedestal / tail / cat) animate y on a *different frequency* than
+        // x — drift uses speed*0.77, sway speed*0.81, per LayeredSceneRenderer.h:229 —
+        // and one animation track drives one whole property, with position being a vec2
+        // and PropertyAddress having no .x/.y component addressing. So each Lissajous
+        // axis gets its own node and the two are composed by the parent-chain
+        // transform multiply. background animates nothing, hence 3 and not 4.
+        {"MiaoCloud", 9, true},
         // These two declare five image layers in scene.ini and own no images at all.
         // Asserting the current state keeps that from being rediscovered as a surprise
         // later — and keeps anyone from "finishing" P0-4 by editing scene.json alone.
@@ -171,7 +179,7 @@ int wmain() {
 
         if (spec.expectedNodes > 0) {
             Check(out.nodeCount == static_cast<std::size_t>(spec.expectedNodes),
-                  "节点数符合预期(1 root + 5 图层)");
+                  "节点数符合预期(1 root + 5 图层 + 3 个 axis-y 父节点)");
         } else {
             Check(out.nodeCount == 1, "仍是空壳(只有 root)");
         }
@@ -183,10 +191,29 @@ int wmain() {
             // animations and three particle emitters; the scene.json carries neither
             // yet. Asserting the count pins the state in both directions — it stops the
             // gap from silently growing, and it stops someone reading 0 as "correct".
-            Check(out.animationCount == 0,
-                  "[记录在案的缺口] 动画尚未迁移:scene.ini 是解析式正弦,场景动画是线性关键帧轨");
+            // 8 tracks, and the arithmetic is the acceptance criterion:
+            //   drift  (cloud_pedestal) -> axis-y, axis-x                     = 2
+            //   sway   (tail)           -> axis-y, axis-x, angle              = 3
+            //   breathe(cat)            -> axis-y, scale                      = 2
+            //   blink  (blink)          -> opacity square wave                = 1
+            // background is animation=none, so it contributes none.
+            //
+            // Fidelity is not asserted here — it is asserted, in pixels, by
+            // scripts/verify-miao-cloud-animation-parity.py, which samples the engine's
+            // own easing/local-time code against the legacy analytic formulas. This
+            // assertion only pins that the migration exists and did not silently lose a
+            // layer: 0 would mean "never migrated", and a count that stops matching the
+            // arithmetic above means scene.ini and the generator drifted apart.
+            Check(out.animationCount == 8,
+                  "动画已迁移:4 个 scene.ini 动画层 -> 8 条关键帧轨(推导见上方注释)");
+            // Still a gap, and deliberately: [Particles] carries only counts and two
+            // opacities, while LayeredSceneRenderer.h:273-314 generates its particles
+            // procedurally (per-index sine jitter, a kPi arch, i%5 frequency classes).
+            // There is no declarative per-particle source to map from, so writing
+            // emitters here would mean inventing the visuals rather than migrating them.
             Check(out.emitterCount == 0,
-                  "[记录在案的缺口] 粒子尚未迁移:scene.ini [Particles] 的三个发射器未映射");
+                  "[记录在案的缺口] 粒子未迁移:[Particles] 只有计数,legacy 是过程式生成,"
+                  "无可映射的声明式来源");
         } else {
             Check(out.assetCount == 0, "scene.json 尚未声明任何资产(原因见本文件开头)");
         }

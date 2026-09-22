@@ -117,9 +117,49 @@
       ]
     },
     {
+      "id": "node://layer/cloud_pedestal/axis-y",
+      "name": "cloud_pedestal drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "node://layer/cloud_pedestal",
       "name": "cloud_pedestal",
-      "parentId": "node://root",
+      "parentId": "node://layer/cloud_pedestal/axis-y",
       "enabled": true,
       "components": [
         {
@@ -188,9 +228,49 @@
       ]
     },
     {
+      "id": "node://layer/tail/axis-y",
+      "name": "tail drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "node://layer/tail",
       "name": "tail",
-      "parentId": "node://root",
+      "parentId": "node://layer/tail/axis-y",
       "enabled": true,
       "components": [
         {
@@ -259,9 +339,49 @@
       ]
     },
     {
+      "id": "node://layer/cat/axis-y",
+      "name": "cat drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "node://layer/cat",
       "name": "cat",
-      "parentId": "node://root",
+      "parentId": "node://layer/cat/axis-y",
       "enabled": true,
       "components": [
         {
@@ -358,7 +478,7 @@
             {
               "name": "rotation",
               "type": "float",
-              "default": 0.0
+              "default": 14.84
             },
             {
               "name": "opacity",
@@ -438,6 +558,977 @@
     }
   ],
   "bindings": [],
-  "animations": [],
+  "animations": [
+    {
+      "id": "animation://miao-cloud/cloud_pedestal-axis-y",
+      "target": {
+        "componentId": "component://layer/1/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 37.090822356432035,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            6.447426958020196
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.4727214904288024,
+          "value": [
+            0.0,
+            4.781282645862458
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.945442980857605,
+          "value": [
+            0.0,
+            2.2884111276458934
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.418164471286407,
+          "value": [
+            0.0,
+            -0.6001474641030822
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.89088596171521,
+          "value": [
+            0.0,
+            -3.3849351071400866
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.363607452144011,
+          "value": [
+            0.0,
+            -5.584436718982507
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 14.836328942572814,
+          "value": [
+            0.0,
+            -6.8183384890979575
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.309050433001616,
+          "value": [
+            0.0,
+            -6.873287591787797
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 19.78177192343042,
+          "value": [
+            0.0,
+            -5.739782828000028
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 22.254493413859223,
+          "value": [
+            0.0,
+            -3.6138174689610603
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 24.727214904288022,
+          "value": [
+            0.0,
+            -0.862990239037688
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 27.199936394716826,
+          "value": [
+            0.0,
+            2.0370558432355015
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 29.67265788514563,
+          "value": [
+            0.0,
+            4.5848764641419075
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 32.14537937557443,
+          "value": [
+            0.0,
+            6.3399302921031095
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 34.61810086600323,
+          "value": [
+            0.0,
+            6.998752576101145
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 37.090822356432035,
+          "value": [
+            0.0,
+            6.447426958020193
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/cloud_pedestal-axis-x",
+      "target": {
+        "componentId": "component://layer/1/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 28.559933214452666,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            44.45185679232114,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.9039955476301778,
+          "value": [
+            49.22532860310604,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.8079910952603555,
+          "value": [
+            52.23074820421984,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.711986642890533,
+          "value": [
+            52.948451243250034,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.615982190520711,
+          "value": [
+            51.25434034462087,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.519977738150889,
+          "value": [
+            47.44134267321971,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.423973285781067,
+          "value": [
+            42.16876016642816,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.327968833411244,
+          "value": [
+            36.3482702395788,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 15.231964381041422,
+          "value": [
+            30.986288478514872,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.1359599286716,
+          "value": [
+            27.009950241799377,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 19.039955476301778,
+          "value": [
+            25.106800534459246,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.943951023931955,
+          "value": [
+            25.605911230465896,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 22.847946571562133,
+          "value": [
+            28.420981556201447,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 24.75194211919231,
+          "value": [
+            33.065260278235186,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 26.65593766682249,
+          "value": [
+            38.73570941357983,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 28.559933214452666,
+          "value": [
+            44.45185679232114,
+            51.000000000000014
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/tail-axis-y",
+      "target": {
+        "componentId": "component://layer/2/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 8.61890988639175,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            2.866009467376818
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.5745939924261166,
+          "value": [
+            0.0,
+            2.2576332400272823
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1491879848522333,
+          "value": [
+            0.0,
+            1.258891715522925
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.72378197727835,
+          "value": [
+            0.0,
+            0.042476376732455905
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.2983759697044666,
+          "value": [
+            0.0,
+            -1.1812835134808224
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.872969962130583,
+          "value": [
+            0.0,
+            -2.20078875258945
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4475639545567,
+          "value": [
+            0.0,
+            -2.839757622837215
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.022157946982817,
+          "value": [
+            0.0,
+            -2.987706601708325
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.596751939408933,
+          "value": [
+            0.0,
+            -2.619053966681689
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.17134593183505,
+          "value": [
+            0.0,
+            -1.7975431074574602
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.745939924261166,
+          "value": [
+            0.0,
+            -0.6652207147873688
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.320533916687283,
+          "value": [
+            0.0,
+            0.5821243828099302
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.8951279091134,
+          "value": [
+            0.0,
+            1.7288148861853998
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.469721901539517,
+          "value": [
+            0.0,
+            2.5765775899492316
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.044315893965633,
+          "value": [
+            0.0,
+            2.978826620938282
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.61890988639175,
+          "value": [
+            0.0,
+            2.866009467376818
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/tail-axis-x",
+      "target": {
+        "componentId": "component://layer/2/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 6.981317007977318,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            690.6820808266453,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.46542113386515455,
+          "value": [
+            692.1341659961273,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.9308422677303091,
+          "value": [
+            693.1307799342321,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.3962634015954636,
+          "value": [
+            693.4995990371079,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.8616845354606182,
+          "value": [
+            693.1768511312513,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.327105669325773,
+          "value": [
+            692.2183422616573,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.792526803190927,
+          "value": [
+            690.7898073196587,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.2579479370560818,
+          "value": [
+            689.1382529745595,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.7233690709212364,
+          "value": [
+            687.5492479765273,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.1887902047863905,
+          "value": [
+            686.2975457253796,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.654211338651546,
+          "value": [
+            685.5995769116972,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.1196324725167,
+          "value": [
+            685.576026684214,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.585053606381854,
+          "value": [
+            686.2309670912084,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.050474740247009,
+          "value": [
+            687.4511529863646,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.5158958741121635,
+          "value": [
+            689.0256031433692,
+            167.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977318,
+          "value": [
+            690.6820808266453,
+            167.0
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/tail-angle",
+      "target": {
+        "componentId": "component://layer/2/transform",
+        "propertyName": "rotation"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 6.981317007977318,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": 2.511921756621386,
+          "easing": "linear"
+        },
+        {
+          "time": 0.46542113386515455,
+          "value": 5.597602741770633,
+          "easing": "linear"
+        },
+        {
+          "time": 0.9308422677303091,
+          "value": 7.715407360243274,
+          "easing": "linear"
+        },
+        {
+          "time": 1.3962634015954636,
+          "value": 8.499147953854433,
+          "easing": "linear"
+        },
+        {
+          "time": 1.8616845354606182,
+          "value": 7.8133086539089724,
+          "easing": "linear"
+        },
+        {
+          "time": 2.327105669325773,
+          "value": 5.776477306021899,
+          "easing": "linear"
+        },
+        {
+          "time": 2.792526803190927,
+          "value": 2.740840554274779,
+          "easing": "linear"
+        },
+        {
+          "time": 3.2579479370560818,
+          "value": -0.7687124290611974,
+          "easing": "linear"
+        },
+        {
+          "time": 3.7233690709212364,
+          "value": -4.1453480498793125,
+          "easing": "linear"
+        },
+        {
+          "time": 4.1887902047863905,
+          "value": -6.805215333568519,
+          "easing": "linear"
+        },
+        {
+          "time": 4.654211338651546,
+          "value": -8.288399062643286,
+          "easing": "linear"
+        },
+        {
+          "time": 5.1196324725167,
+          "value": -8.33844329604541,
+          "easing": "linear"
+        },
+        {
+          "time": 5.585053606381854,
+          "value": -6.946694931182077,
+          "easing": "linear"
+        },
+        {
+          "time": 6.050474740247009,
+          "value": -4.353799903975126,
+          "easing": "linear"
+        },
+        {
+          "time": 6.5158958741121635,
+          "value": -1.008093320340453,
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977318,
+          "value": 2.511921756621383,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/cat-axis-y",
+      "target": {
+        "componentId": "component://layer/3/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 7.662421106316569,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            4.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.510828073754438,
+          "value": [
+            0.0,
+            4.110954559391704
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.021656147508876,
+          "value": [
+            0.0,
+            3.011087728614862
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.5324842212633139,
+          "value": [
+            0.0,
+            1.3905764746872635
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.043312295017752,
+          "value": [
+            0.0,
+            -0.470378084704441
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.5541403687721895,
+          "value": [
+            0.0,
+            -2.249999999999999
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.0649684425266277,
+          "value": [
+            0.0,
+            -3.640576474687263
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.5757965162810654,
+          "value": [
+            0.0,
+            -4.401664203302125
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.086624590035504,
+          "value": [
+            0.0,
+            -4.401664203302125
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.597452663789941,
+          "value": [
+            0.0,
+            -3.640576474687265
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.108280737544379,
+          "value": [
+            0.0,
+            -2.2500000000000018
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.619108811298817,
+          "value": [
+            0.0,
+            -0.4703780847044401
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.129936885053255,
+          "value": [
+            0.0,
+            1.3905764746872626
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.640764958807694,
+          "value": [
+            0.0,
+            3.011087728614863
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.151593032562131,
+          "value": [
+            0.0,
+            4.110954559391702
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.662421106316569,
+          "value": [
+            0.0,
+            4.5
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/cat-scale",
+      "target": {
+        "componentId": "component://layer/3/transform",
+        "propertyName": "scale"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 7.662421106316569,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.29904306220095694,
+            0.6641870350690755
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.510828073754438,
+          "value": [
+            0.3002593799135042,
+            0.6668885271192602
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.021656147508876,
+          "value": [
+            0.3012653852436525,
+            0.6691229066516831
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.5324842212633139,
+          "value": [
+            0.3018871307305477,
+            0.6705038291464874
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.043312295017752,
+          "value": [
+            0.30201711093112527,
+            0.6707925205590349
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.5541403687721895,
+          "value": [
+            0.30163285108787213,
+            0.6699390635214164
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.0649684425266277,
+          "value": [
+            0.300800793218578,
+            0.6680910285088503
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.5757965162810654,
+          "value": [
+            0.29966480768785214,
+            0.6655679575638799
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.086624590035504,
+          "value": [
+            0.2984213167140617,
+            0.662806112574271
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.597452663789941,
+          "value": [
+            0.2972853311833359,
+            0.6602830416293008
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.108280737544379,
+          "value": [
+            0.29645327331404175,
+            0.6584350066167346
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.619108811298817,
+          "value": [
+            0.2960690134707887,
+            0.6575815495791162
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.129936885053255,
+          "value": [
+            0.29619899367136615,
+            0.6578702409916635
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.640764958807694,
+          "value": [
+            0.2968207391582614,
+            0.659251163486468
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.151593032562131,
+          "value": [
+            0.2978267444884097,
+            0.6614855430188908
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.662421106316569,
+          "value": [
+            0.29904306220095694,
+            0.6641870350690755
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://miao-cloud/blink-blink",
+      "target": {
+        "componentId": "component://layer/4/sprite",
+        "propertyName": "opacity"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 4.4,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": 0.0,
+          "easing": "linear"
+        },
+        {
+          "time": 2.8292040000000003,
+          "value": 0.0,
+          "easing": "linear"
+        },
+        {
+          "time": 2.833370666666667,
+          "value": 1.0,
+          "easing": "linear"
+        },
+        {
+          "time": 3.0092040000000004,
+          "value": 1.0,
+          "easing": "linear"
+        },
+        {
+          "time": 3.0133706666666673,
+          "value": 0.0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "particleEmitters": [],
   "postProcesses": []
 }

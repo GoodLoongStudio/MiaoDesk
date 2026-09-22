@@ -205,7 +205,7 @@
     `return true;` 的桩。它旁边真正该被覆盖的(`DeserializeEmitters` 只是转调
     `MiaoSceneRuntimeModel::Validate`)已经由新测试覆盖,所以桩保持原样。
 
-现在有**十三个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+现在有**十四个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -222,6 +222,7 @@
 | MiaoCloud 几何 | `python3 scripts/generate-miao-cloud-scene.py --check` | scene.json 与 scene.ini 逐字节一致 + 每层逆合成 assert | 动画与粒子(刻意未迁移) |
 | 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个 scene.json 声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
 | **渲染后端一致性** | `MiaoDeskSpriteMaterialPolicyTest`(在 `run-pure-logic-tests.sh` 与 Windows CI 里) | D2D 与 D3D11 对"哪个 SpriteRenderer 能画"判断一致;10 个形态 × 2 个后端,含必须被拒的那些 | HLSL 与真实绘制(只有 Windows 能编译/跑) |
+| **MiaoCloud 动画保真** | `python3 scripts/verify-miao-cloud-animation-parity.py` | 迁移后的关键帧轨逐点复现 scene.ini 的解析式运动,误差 ≤ 解析上界 | 粒子(刻意未迁移);真机观感 |
 | **skill 材质规则** | `scripts/verify-skill-material-rule.sh` | `skills/` 是否说到渲染器真正执行的 sprite 材质规则(名字从代码读出,不手抄) | 措辞改写;同一个词在小节别处仍命中的情况 |
 | 壁纸库派生视图(4 个 .ps1) | `packaging/windows/verify-wallpaper-library-*.ps1` | `WallpaperLibrary.cpp` 的 `RecentlyUsed`/`Favorites` 等派生视图仍是"用户可见"的那一份 | CRLF 之外的形状(已在读入处归一化) |
 
@@ -354,18 +355,40 @@
      `SpriteRenderer{materialId}`;`design_width/height` 与各层
      x/y/width/height 映射到 Transform 的 `position` / `scale`;
      `opacity` 映射到两处;文件引用 → `AssetDefinition{asset://<name>, Image}`。
-  3. 动画:`none` / `drift` / `sway` / `breathe` / `blink` / `float` 六种
-     → `AnimationTrackDefinition`(注意 `blink` 是间歇触发,与
-     `AnimationTriggerMode::InputRisingEdge` 的语义最接近)。
-  4. `[Particles]` → `ParticleEmitterDefinition`
-     (sparkle / petal / flow 各一个,注意 `kMaxParticlesPerScene = 131072` 预算)。
-  5. 补 `parameters.json`(外观参数)。
+  3. ~~动画~~ ✅ **已迁移(2026-09-22)**。六种里五种落到关键帧轨,`background`
+     是 `none`。两个此前没写入记录的发现:
+     - **`blink` 不是间歇触发,是方波。** 原判断它与 `InputRisingEdge` 最接近
+       是错的:legacy 是 `cycle = fmod(t+phase, blinkInterval)`,
+       `cycle > blinkDuration` 时隐藏 —— "可见 duration 秒、隐藏其余"自我循环,
+       与输入无关。它的 `rotation` 也不是动画:`speed=0` 使
+       `wave = sin(phase) = sin(pi/2) = 1`,角度恒为 `rotation_amplitude`,
+       写成一条永不变的轨反而误导,所以那是静态值。
+     - **李萨如的两根轴必须拆到父子两个节点。** drift 的 y 用 `speed*0.77`、
+       sway 用 `speed*0.81`,与 x 频率不同;而一条轨只能动一个完整属性,
+       `position` 是 vec2 且 `PropertyAddress` 没有 `.x/.y` 寻址。
+       节点变换沿 parentId 链连乘,父节点动 y、子节点动 x,合成即原曲线。
+       代价:5 个图层节点变成 9 个(多 3 个 axis-y 父节点)。
+     - 采样数取 16/周期。均匀采样 + 线性插值的最大误差是解析解
+       `A*(1-cos(pi/15))`,在最大幅值 14px 上 0.306px —— 亚像素。
+       这个数由 `scripts/verify-miao-cloud-animation-parity.py` 逐点复核
+       (按引擎自己的 easing 与局部时间代码求值,不是按我的理解),
+       已接进 `repo-hygiene.yml`。把采样数改成 4 复现过它报 6 项超界。
+  4. 粒子:`[Particles]` → `ParticleEmitterDefinition` —— **刻意不做**。
+     legacy 的粒子不是声明式的:`LayeredSceneRenderer.h:273-314` 按索引
+     过程式生成(逐索引正弦抖动、`kPi` 拱形、`i%5` 分频的五类)。
+     `[Particles]` 段里只有三个计数和两个不透明度,**没有每粒子的
+     初速度/寿命/尺寸/颜色来源**。把发射器参数编出来等于替用户编一份视觉 ——
+     正是这个仓库反复拒绝的"校验通过但桌面上不是你想要的东西"。
+     已由 `BuiltinWallpaperPackages` 把 `emitterCount == 0` 连同理由钉住。
+  5. 补 `parameters.json`(外观参数)。仍未做。
   6. 从 `manifest.json` 删 `legacy_entry`,删除 `scene.ini`。
   7. 重跑 `verify-wallpaper-library-derived-views.ps1` 等 6 个脚本 ——
      需先确认它们的输入源是否仍指向 `scene.ini`。
   8. 验收:`MiaoSceneSerializer::Deserialize` + `Validate` + `Initialize` 通过,
-     且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`;
-     最终以"壁纸在真机上显示全部 5 层且眨眼动画生效"为准。
+     且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`
+     —— 这两条**已满足并由 `MiaoDeskBuiltinWallpaperPackagesTest` 每轮钉住**
+     (5 资产 / 8 轨,推导写在测试注释里);
+     最终"壁纸在真机上显示全部 5 层且眨眼动画生效"仍需真机。
   ## 新增:第三个阻塞 —— 两个包根本没有美术资源(2026-09-22 发现)
 
   走 `MiaoContentPackage::Load → MiaoSceneSerializer::DeserializePackage →
@@ -1087,6 +1110,7 @@
 | 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
 | 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
 | 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
+| 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
 | 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
 | 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |

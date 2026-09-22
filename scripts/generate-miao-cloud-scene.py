@@ -16,6 +16,7 @@ scale about the centre and then that translation yields exactly (x, y, w, h).
 
 Run:  python3 scripts/generate-miao-cloud-scene.py [--write]
 """
+import math
 import argparse
 import configparser
 import json
@@ -75,6 +76,78 @@ def transform_for(layer, design_w, design_h):
     }
 
 
+# --- 动画迁移 ---------------------------------------------------------------
+# scene.ini 的动画是解析式的(x 走 sin、y 走 cos,而且 y 的频率是 speed*0.77 或
+# speed*0.81 —— 见 LayeredSceneRenderer.h:229-244),场景动画是线性插值的关键帧轨。
+# 一条轨只能动一个完整属性,而 position 是 vec2、没有 .x/.y 寻址,所以一个
+# Lissajous 的两根轴必须拆到父子两个节点上:节点变换沿 parentId 链连乘,
+# 父节点动 y、子节点动 x,合成结果就是原来的两频李萨如图。
+#
+# 采样数 16(即 15 个区间)不是拍的:均匀采样 + 线性插值的最大误差是
+# A*(1-cos(pi/15)) = A*0.0219,对最大的 drift 幅值 14px 是 0.306px —— 亚像素。
+# 这个数由 scripts/verify-miao-cloud-animation-parity.py 逐点复核,不是注释里的口号。
+SAMPLES_PER_PERIOD = 16
+
+
+def period_of(speed):
+    return 2.0 * math.pi / speed if speed > 0 else 0.0
+
+
+def track(component_id, prop, fn, period, name):
+    """一个周期内均匀采样,Linear,loop。"""
+    keys = []
+    for i in range(SAMPLES_PER_PERIOD):
+        t = period * i / (SAMPLES_PER_PERIOD - 1)
+        keys.append({"time": t, "value": fn(t), "easing": "linear"})
+    return {
+        "id": "animation://miao-cloud/%s" % name,
+        "target": {"componentId": component_id, "propertyName": prop},
+        "enabled": True,
+        "loop": "loop",
+        "duration": period,
+        "keyframes": keys,
+    }
+
+
+def animation_plan(layer):
+    """按 scene.ini 的 animation 名给出每根轴/每个属性的运动函数。
+
+    返回 (x_fn, y_fn, angle_fn, scale_fn, extra)——extra 是不随关键帧走的静态量。
+    频率乘数直接抄 LayeredSceneRenderer,不猜:drift 0.77、sway 0.81、breathe 1.0。
+    """
+    kind = layer["animation"]
+    speed = num(layer.get("speed"), 0.0)
+    phase = num(layer.get("phase"), 0.0)
+    ax = num(layer.get("amplitude_x"), 0.0)
+    ay = num(layer.get("amplitude_y"), 0.0)
+    if kind in ("none", "") or speed <= 0 and kind != "blink":
+        return None
+
+    if kind in ("drift", "float"):
+        return {
+            "x": lambda t: math.sin(t * speed + phase) * ax,
+            "y": lambda t: math.cos(t * speed * 0.77 + phase) * ay,
+            "angle": None, "scale": None,
+        }
+    if kind == "breathe":
+        sa = num(layer.get("scale_amplitude"), 0.0)
+        return {
+            "x": None,
+            "y": lambda t: math.cos(t * speed + phase) * ay,
+            "angle": None,
+            "scale": lambda t: 1.0 + math.sin(t * speed + phase) * sa,
+        }
+    if kind == "sway":
+        ra = num(layer.get("rotation_amplitude"), 0.0)
+        return {
+            "x": lambda t: math.sin(t * speed + phase) * ax,
+            "y": lambda t: math.cos(t * speed * 0.81 + phase) * ay,
+            "angle": lambda t: math.sin(t * speed + phase) * ra,
+            "scale": None,
+        }
+    return None
+
+
 def verify(layers, transforms, design_w, design_h):
     """Re-compose each transformed sprite and assert it lands on the legacy rect."""
     for layer, tr in zip(layers, transforms):
@@ -90,8 +163,7 @@ def verify(layers, transforms, design_w, design_h):
 
 
 def build():
-    cp_layers = read_layers(PACKAGE / "scene.ini")
-    scene_cfg, layers = cp_layers
+    scene_cfg, layers = read_layers(PACKAGE / "scene.ini")
     design_w, design_h = num(scene_cfg["design_width"]), num(scene_cfg["design_height"])
     transforms = [transform_for(l, design_w, design_h) for l in layers]
     verify(layers, transforms, design_w, design_h)
@@ -113,39 +185,154 @@ def build():
         }],
     }]
     assets = []
+    animations = []
+
     for index, (layer, tr) in enumerate(zip(layers, transforms)):
         node_id = "node://layer/%s" % layer["name"]
         asset_id = "asset://layer/%s/image" % layer["name"]
+        transform_id = "component://layer/%d/transform" % index
+        sprite_id = "component://layer/%d/sprite" % index
         assets.append({
             "id": asset_id,
             "type": "image",
             "source": layer["file"].replace("\\", "/"),
         })
+
+        # scene.ini 的 static 值。动画轨是"绝对赋值"(MiaoSceneRuntime::ApplyAnimation
+        # 走 properties_.Set),不是叠加,所以关键帧里必须带上静态偏移。
+        static_position = list(tr["position"])
+        static_scale = list(tr["scale"])
+        static_rotation = tr["rotation"]
+        static_sprite_opacity = 1.0
+        parent_id = "node://root"
+
+        plan = animation_plan(layer)
+        if layer["animation"] == "blink":
+            # blink 的 rotation 是**固定**的:speed=0 使 wave=sin(phase)=sin(pi/2)=1,
+            # 于是 angle = rotation_amplitude 恒定(LayeredSceneRenderer.h:243-245)。
+            # 它不是一个动画,是一个静态角度;写成动画反而多一条永不变的轨。
+            static_rotation = num(layer.get("rotation_amplitude"), 0.0)
+            interval = max(0.6, num(layer.get("blink_interval"), 4.8))
+            duration = min(max(num(layer.get("blink_duration"), 0.16), 0.04), 0.5)
+            phase = num(layer.get("phase"), 0.0)
+            # 不透明度是方波。legacy 的相位在 cycle 里:cycle=fmod(t+phase,interval),
+            # 于是可见窗口相对 t=0 平移了 phase。动画轨没有 phase 字段,只能用
+            # 关键帧的**时刻**把窗口摆回去:
+            #   fmod(t+phase,interval) <= duration
+            #     ⟺ 局部时间 lt ∈ [interval-phase, interval+phase... ]
+            #   解得 lt ∈ [interval-phase, interval-phase+duration]
+            # 两侧的台阶各占一帧(1/240s,即文档允许的最高帧率的倒数):
+            # 关键帧时间必须严格递增(ApplyAnimation 对 span<=0 直接报错),
+            # 所以零宽台阶只能用一帧的斜坡表达,时间误差 ≤ 4.2ms。
+            edge = 1.0 / 240.0
+            start = max(0.0, interval - phase)
+            stop = min(interval, interval - phase + duration)
+            keys = [{"time": 0.0, "value": 0.0, "easing": "linear"}]
+            keys.append({"time": start, "value": 0.0, "easing": "linear"})
+            keys.append({"time": start + edge, "value": 1.0, "easing": "linear"})
+            keys.append({"time": stop, "value": 1.0, "easing": "linear"})
+            keys.append({"time": min(interval, stop + edge), "value": 0.0, "easing": "linear"})
+            # 去掉时间相同或倒退的键(极端参数下会出现)
+            filtered = [keys[0]]
+            for k in keys[1:]:
+                if k["time"] > filtered[-1]["time"]:
+                    filtered.append(k)
+            animations.append({
+                "id": "animation://miao-cloud/%s-blink" % layer["name"],
+                "target": {"componentId": sprite_id, "propertyName": "opacity"},
+                "enabled": True,
+                "loop": "loop",
+                "duration": interval,
+                "keyframes": filtered,
+            })
+
+        if plan:
+            x_fn, y_fn, angle_fn, scale_fn = plan["x"], plan["y"], plan["angle"], plan["scale"]
+            speed = num(layer.get("speed"), 0.0)
+
+            # y 轴与 x 轴频率不同(drift 0.77、sway 0.81),必须拆到父节点:
+            # 一条轨动一个完整属性,而 position 是 vec2、没有 .x/.y 寻址。
+            if y_fn is not None:
+                axis_id = "node://layer/%s/axis-y" % layer["name"]
+                axis_transform_id = "component://layer/%d/axis-y/transform" % index
+                # y 轴频率乘数因动画而异:LayeredSceneRenderer 里 drift 用 0.77、
+                # sway 用 0.81、breathe 用 1.0(就是 speed 本身)。第一版把非 drift
+                # 一律按 0.81 算,于是 breathe 的周期从 7.66s 变成 9.46s ——
+                # 是 parity 检查把它抓出来的(误差 8.9px,是上界的 90 倍)。
+                y_multiplier = {"drift": 0.77, "float": 0.77, "sway": 0.81}.get(
+                    layer["animation"], 1.0)
+                period_y = period_of(speed * y_multiplier)
+                nodes.append({
+                    "id": axis_id,
+                    "name": "%s drift axis" % layer["name"],
+                    "parentId": "node://root",
+                    "enabled": True,
+                    "components": [{
+                        "id": axis_transform_id,
+                        "kind": "transform",
+                        "properties": [
+                            {"name": "position", "type": "vec2", "default": [0.0, 0.0]},
+                            {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+                            {"name": "rotation", "type": "float", "default": 0.0},
+                            {"name": "opacity", "type": "float", "default": 1.0},
+                        ],
+                    }],
+                })
+                # 父节点的 position.x 恒为 0(该轴不横向移动),只有 y 跟着走。
+                animations.append(track(
+                    axis_transform_id, "position",
+                    lambda t, f=y_fn: [0.0, f(t)],
+                    period_y, "%s-axis-y" % layer["name"]))
+                parent_id = axis_id
+
+            if x_fn is not None:
+                period_x = period_of(speed)
+                bx, by = static_position
+                animations.append(track(
+                    transform_id, "position",
+                    lambda t, f=x_fn, bx=bx, by=by: [bx + f(t), by],
+                    period_x, "%s-axis-x" % layer["name"]))
+
+            if angle_fn is not None:
+                period_a = period_of(speed)
+                animations.append(track(
+                    transform_id, "rotation",
+                    lambda t, f=angle_fn: f(t),
+                    period_a, "%s-angle" % layer["name"]))
+
+            if scale_fn is not None:
+                period_s = period_of(speed)
+                sx, sy = static_scale
+                # legacy 是 layerScale(=1+wave*scaleAmplitude) 乘在原始尺寸上,
+                # 所以这里要乘 static_scale,不是替换它。
+                animations.append(track(
+                    transform_id, "scale",
+                    lambda t, f=scale_fn, sx=sx, sy=sy: [sx * f(t), sy * f(t)],
+                    period_s, "%s-scale" % layer["name"]))
+
         nodes.append({
             "id": node_id,
             "name": layer["name"],
-            "parentId": "node://root",
+            "parentId": parent_id,
             "enabled": True,
             "components": [
                 {
-                    "id": "component://layer/%d/transform" % index,
+                    "id": transform_id,
                     "kind": "transform",
                     "properties": [
-                        {"name": "position", "type": "vec2", "default": tr["position"]},
-                        {"name": "scale", "type": "vec2", "default": tr["scale"]},
-                        {"name": "rotation", "type": "float", "default": tr["rotation"]},
+                        {"name": "position", "type": "vec2", "default": static_position},
+                        {"name": "scale", "type": "vec2", "default": static_scale},
+                        {"name": "rotation", "type": "float", "default": static_rotation},
                         {"name": "opacity", "type": "float", "default": tr["opacity"]},
                     ],
                 },
                 {
-                    "id": "component://layer/%d/sprite" % index,
+                    "id": sprite_id,
                     "kind": "spriteRenderer",
                     "properties": [
-                        {"name": "opacity", "type": "float", "default": 1.0},
+                        {"name": "opacity", "type": "float", "default": static_sprite_opacity},
                         {"name": "tint", "type": "color", "default": [1.0, 1.0, 1.0, 1.0]},
                         {"name": "cornerRadius", "type": "float", "default": 0.0},
-                        # assetReference 的默认值是裸字符串(asset id),不是对象 ——
-                        # SceneTextureFixture 用一条断言钉住了这个形状。
                         {"name": "texture", "type": "assetReference", "default": asset_id},
                     ],
                 },
@@ -164,11 +351,17 @@ def build():
         "materials": [],
         "inputs": [{"id": "input://frame/time", "type": "float", "default": 0.0}],
         "bindings": [],
-        # 动画刻意为空:scene.ini 的六种动画都是解析式正弦(drift 还让 y 轴用
-        # speed*0.77 的另一个周期),而场景动画是线性插值的关键帧轨。要在
-        # "完全复现"与"循环处连续"之间做取舍,属于要看真实桌面效果才能定的决定,
-        # 不能在这里替用户猜。见 docs/TODO.md P0-4。
-        "animations": [],
+        # 动画已迁移(2026-09-22)。六种 scene.ini 动画里五种落到关键帧轨,
+        # 关键帧在正弦极值/等分点上按 16 采样/周期生成;Lissajous 的两根轴
+        # 因为频率不同(drift 0.77、sway 0.81)而拆到父子两个节点,靠变换连乘合成。
+        # 最大误差 A*(1-cos(pi/15)),即最大幅值 14px 上 0.306px —— 由
+        # scripts/verify-miao-cloud-animation-parity.py 逐点复核。
+        "animations": animations,
+        # 粒子刻意留空。scene.ini 的 [Particles] 只有计数与两个不透明度,
+        # 而 legacy 的粒子是 LayeredSceneRenderer.h:273-314 里**过程式生成**的
+        # (正弦抖动、kPi 拱形、按 i%5 分频),没有一个"每粒子初速度/寿命/尺寸"的
+        # 声明式来源。把发射器参数编出来等于替用户编一份视觉,这里不做。
+        "particleEmitters": [],
         "postProcesses": [],
     }
 

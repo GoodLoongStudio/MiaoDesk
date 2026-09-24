@@ -30,6 +30,9 @@
 # 按 manifest 解出生效入口,再按入口的种类取资产 —— scene.json 走 assets[].source,
 # scene.ini 走 [Layer*] 的 file。生效入口会连同结果一起打印,这样"门在检查哪个文件"
 # 不再是隐含假设。
+# 2026-09-24:三个内置动态壁纸完成 Scene Runtime 迁移后,产品包不再允许
+# legacy_entry / scene.ini 回流。历史 INI 只保留在 tests/fixtures 作为迁移证据。
+# 这道门因此也承担一个 release invariant: shipped .mdwall 必须只有 canonical entry。
 # ---------------------------------------------------------------------------
 set -u
 
@@ -45,6 +48,11 @@ import sys
 root = sys.argv[1]
 stage_ps1 = os.path.join(root, 'packaging', 'windows', 'stage.ps1')
 wallpapers = os.path.join(root, 'assets', 'wallpapers')
+BUILTIN_SCENE_PACKAGES = {
+    'MiaoCloud.mdwall',
+    'NeonCity.mdwall',
+    'MysticMoon.mdwall',
+}
 
 problems = []
 
@@ -187,6 +195,16 @@ for name in sorted(os.listdir(wallpapers)):
     if not os.path.isfile(manifest):
         continue
     try:
+        manifest_doc = load_json(manifest)
+    except (OSError, ValueError) as exc:
+        problems.append(f"{name}/manifest.json 读不了:{exc}")
+        continue
+    if name in BUILTIN_SCENE_PACKAGES:
+        if (manifest_doc.get('legacy_entry') or '').strip():
+            problems.append(f"{name} 又声明了 legacy_entry —— 内置壁纸必须只走 canonical scene.json")
+        if os.path.isfile(os.path.join(package, 'scene.ini')):
+            problems.append(f"{name} 又携带了 scene.ini —— legacy 运行时文件不得重新进入发货包")
+    try:
         entry, why = effective_entry(package)
     except (OSError, ValueError) as exc:
         problems.append(f"{name}/manifest.json 读不了:{exc}")
@@ -224,7 +242,7 @@ for path in sorted(asserted_asset_paths):
         continue
     name = parts[1]
     # parts[2:] 而不是 parts[3:]:相对包的路径还要带上 assets/ 这一层目录,
-    # 否则 'background.jpg' 永远匹配不上 scene.ini 里的 'assets/background.jpg',
+    # 否则 'background.jpg' 永远匹配不上入口文件里的 'assets/background.jpg',
     # 每一条既有断言都会被误报成"没有引用它"。
     source = '/'.join(parts[2:])
     if name not in declared:

@@ -1,4 +1,5 @@
 #include "miaodesk/TodayTaskEditorDialog.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <commctrl.h>
 
@@ -139,7 +140,7 @@ bool EditTaskItem(HINSTANCE instance, HWND owner, std::wstring* title, std::wstr
     state.window = CreateWindowExW(
         WS_EX_DLGMODALFRAME, kItemClass, title->empty() ? L"新增待办" : L"编辑待办",
         WS_POPUP | WS_CAPTION | WS_SYSMENU,
-        CW_USEDEFAULT, CW_USEDEFAULT, 560, 300,
+        CW_USEDEFAULT, CW_USEDEFAULT, S(owner, 560), S(owner, 300),
         owner, nullptr, instance, &state);
     if (!state.window) return false;
 
@@ -148,9 +149,7 @@ bool EditTaskItem(HINSTANCE instance, HWND owner, std::wstring* title, std::wstr
     const int labelH = S(state.window, 22);
     const int editH = S(state.window, 34);
     const int detailH = S(state.window, 74);
-    state.font = CreateFontW(-S(state.window, 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
+    state.font = ui::CreateUiFont(state.window, 14, FW_NORMAL);
     auto make = [&](const wchar_t* klass, const wchar_t* text, DWORD style, int id,
                     int x, int y, int w, int h) {
         HWND control = CreateWindowExW(klass == std::wstring(L"EDIT") ? WS_EX_CLIENTEDGE : 0,
@@ -428,7 +427,7 @@ bool ShowTodayTaskEditorDialog(
     state.window = CreateWindowExW(
         WS_EX_DLGMODALFRAME, kEditorClass, L"今日待办",
         WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 780, 560,
+        CW_USEDEFAULT, CW_USEDEFAULT, S(owner, 780), S(owner, 560),
         owner, nullptr, instance, &state);
     if (!state.window) return false;
 

@@ -21,7 +21,7 @@ foreach ($relative in @(
     'Wallpapers\NeonCity.mdwall\manifest.json',
     'Wallpapers\NeonCity.mdwall\scene.json',
     'Wallpapers\MysticMoon.mdwall\manifest.json',
-    'Wallpapers\MysticMoon.mdwall\scene.json',
+    'Wallpapers\MysticMoon.mdwall\scene.json'
 )) { Assert-File $relative }
 
 & (Join-Path $PSScriptRoot 'prepare-runtime-base.ps1') -DeployDir $Destination -Architecture $Architecture

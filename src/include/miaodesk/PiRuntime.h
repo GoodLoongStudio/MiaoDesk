@@ -80,6 +80,7 @@ private:
         // image shim/ComfyUI port.
         std::wstring imageProvider;
         std::wstring imageBaseUrl;
+        std::wstring imageApiKey;
         std::wstring imageModel;
     };
 

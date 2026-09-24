@@ -10,6 +10,7 @@
 #include "miaodesk/NativeWidgetPainter.h"
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/NativeWeatherService.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -244,6 +245,7 @@ struct WallpaperLibraryWindow::Impl {
     HFONT smallFont{};
     HFONT cardTitleFont{};
     HFONT cardSmallFont{};
+    UINT fontScaleDpi{};
 
     Microsoft::WRL::ComPtr<ID2D1Factory> widgetPreviewFactory;
     Microsoft::WRL::ComPtr<IDWriteFactory> widgetPreviewDWrite;
@@ -265,12 +267,11 @@ struct WallpaperLibraryWindow::Impl {
     int S(int px) const { return MulDiv(px, static_cast<int>(Dpi()), USER_DEFAULT_SCREEN_DPI); }
 
     HFONT MakeFont(int size, int weight, const wchar_t* face = L"Segoe UI Variable Text") const {
-        return CreateFontW(-S(size), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                           DEFAULT_PITCH | FF_DONTCARE, face);
+        return ui::CreateUiFont(window, size, weight, face);
     }
 
     void RebuildFonts() {
+        fontScaleDpi = ui::EffectiveFontDpi(window);
         for (HFONT* font : {&brandFont, &titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
             if (*font) { DeleteObject(*font); *font = nullptr; }
         }
@@ -295,6 +296,19 @@ struct WallpaperLibraryWindow::Impl {
                              wallpaperToggleButton, logsButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
+    }
+
+    void RefreshFontScaleIfNeeded() {
+        if (!window || !bodyFont) return;
+        const UINT next = ui::EffectiveFontDpi(window);
+        if (next == fontScaleDpi) return;
+        fontScaleDpi = next;
+        RebuildFonts();
+        ApplyFonts();
+        Layout();
+        InvalidateRect(window, nullptr, TRUE);
+        if (wallpaperGrid) InvalidateRect(wallpaperGrid, nullptr, TRUE);
+        if (widgetGrid) InvalidateRect(widgetGrid, nullptr, TRUE);
     }
 
     std::wstring SelectedTargetId() const {
@@ -1334,13 +1348,22 @@ struct WallpaperLibraryWindow::Impl {
                              suggested->right - suggested->left, suggested->bottom - suggested->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
-            miaodesk::log::Info(L"UI.Library", L"显示器 DPI 缩放发生变化: 当前 DPI=" + std::to_wstring(self->Dpi()));
+            miaodesk::log::Info(
+                L"UI.Library",
+                L"显示器缩放发生变化: 系统 DPI=" + std::to_wstring(self->Dpi()) +
+                L", 字体有效 DPI=" + std::to_wstring(ui::EffectiveFontDpi(hwnd)));
             self->RebuildFonts();
             self->ApplyFonts();
             self->Layout();
             InvalidateRect(hwnd, nullptr, TRUE);
             return 0;
         }
+        case WM_MOVE:
+            self->RefreshFontScaleIfNeeded();
+            return 0;
+        case WM_DISPLAYCHANGE:
+            self->RefreshFontScaleIfNeeded();
+            return 0;
         case WM_SIZE: {
             const int width = LOWORD(lParam);
             const int height = HIWORD(lParam);

@@ -28,7 +28,11 @@ bool MiaoParticleRuntime::Initialize(const SceneRuntimeDefinition& definition, s
         state.definition = item;
         state.randomState = item.seed == 0 ? 0x6d2b79f5u : item.seed;
         emitters_.push_back(std::move(state));
-        reserveCount += item.maxParticles;
+        // Analytic fields are evaluated statelessly by MiaoAnalyticParticleField.
+        // Reserving their legacy/default maxParticles value here would imply that
+        // MiaoParticleRuntime owns them and, worse, would size the simulated pool for
+        // particles this runtime must never create.
+        if (item.mode == ParticleEmitterMode::Simulated) reserveCount += item.maxParticles;
     }
     particles_.reserve(reserveCount);
     initialized_ = true;
@@ -76,6 +80,11 @@ bool MiaoParticleRuntime::Advance(double deltaSeconds, std::wstring* error) {
 
     for (std::size_t index = 0; index < emitters_.size(); ++index) {
         auto& emitter = emitters_[index];
+        // One emitter has exactly one owner. Analytic modes are pure per-frame fields
+        // rendered from EvaluateAnalyticParticleField; feeding their otherwise-unused
+        // spawnRate/lifetime defaults into the simulator creates a second, unrelated
+        // visual on top of the authored one.
+        if (emitter.definition.mode != ParticleEmitterMode::Simulated) continue;
         if (!emitter.definition.enabled || emitter.definition.spawnRate <= 0.0) continue;
 
         emitter.spawnCarry += emitter.definition.spawnRate * step;
@@ -150,6 +159,7 @@ void MiaoParticleRuntime::Spawn(std::size_t emitterIndex) {
     if (emitterIndex >= emitters_.size()) return;
     auto& state = emitters_[emitterIndex];
     const auto& emitter = state.definition;
+    if (emitter.mode != ParticleEmitterMode::Simulated) return;
 
     MiaoParticleState particle;
     particle.emitterIndex = static_cast<std::uint32_t>(emitterIndex);
@@ -197,6 +207,20 @@ bool MiaoParticleRuntime::SelfTest() {
     emitter.colorEnd = Color4{1.0, 1.0, 1.0, 0.0};
     emitter.seed = 42;
     definition.particleEmitters.push_back(emitter);
+
+    // A deliberately "dangerous" analytic emitter: if the simulator forgets the mode
+    // boundary, these default simulation fields would immediately create extra particles
+    // and the existing LiveCount assertions below go red. Analytic samples belong to
+    // MiaoAnalyticParticleField instead.
+    ParticleEmitterDefinition analytic;
+    analytic.id = L"particle://self-test/analytic";
+    analytic.mode = ParticleEmitterMode::Sparkle;
+    analytic.analyticCount = 4;
+    analytic.spawnRate = 1000.0;
+    analytic.maxParticles = 4;
+    analytic.lifetimeMinSeconds = 1.0;
+    analytic.lifetimeMaxSeconds = 1.0;
+    definition.particleEmitters.push_back(analytic);
 
     MiaoParticleRuntime runtime;
     std::wstring error;

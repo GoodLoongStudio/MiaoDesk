@@ -177,7 +177,7 @@ docker run -d --name miaodesk-vllm-b --gpus all --ipc host \
 
 ## 2. 图像生成服务
 
-✅ **产品侧 OpenAI-compatible 图片调用链已接通。** MiaoDesk 可为图片单独配置 `imageBaseUrl` / `imageModel`，并直接调用 `<imageBaseUrl>/images/generations`；聊天和图片可以使用不同端口。选型依据与许可分析见 `LOCAL_AI_ARCHITECTURE.md` §7.6。
+✅ **产品侧 OpenAI-compatible 图片调用链已接通。** Image API Key 独立保存在 Windows Credential Manager，不写入 `api-profiles.ini`；本地 loopback 端点可留空。 MiaoDesk 可为图片单独配置 `imageBaseUrl` / `imageModel`，并直接调用 `<imageBaseUrl>/images/generations`；聊天和图片可以使用不同端口。选型依据与许可分析见 `LOCAL_AI_ARCHITECTURE.md` §7.6。
 
 ### 2.1 为什么单独一节
 

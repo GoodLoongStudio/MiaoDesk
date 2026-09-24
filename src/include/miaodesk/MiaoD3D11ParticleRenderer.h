@@ -5,8 +5,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoParticleRuntime.h"
 
 namespace miaodesk::content {
@@ -17,6 +19,13 @@ namespace miaodesk::content {
 // bounded set of instanced soft particles.
 class MiaoD3D11ParticleRenderer {
 public:
+    // One analytic dot is one ellipse instance; a comet head additionally expands to
+    // two thin rectangle instances for its cross. Keep that expansion budget separate
+    // from the simulated-particle pool.
+    static constexpr std::uint32_t kMaxGpuInstances =
+        MiaoSceneRuntimeModel::kMaxParticlesPerScene +
+        MiaoSceneRuntimeModel::kMaxAnalyticSamplesPerScene * 3u;
+
     MiaoD3D11ParticleRenderer();
     ~MiaoD3D11ParticleRenderer();
 
@@ -35,6 +44,7 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         const MiaoParticleRuntime& particles,
+        std::span<const AnalyticParticleSample> analyticSamples = {},
         std::wstring* error = nullptr);
 
     void Reset() noexcept;

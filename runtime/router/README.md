@@ -78,3 +78,21 @@ The test starts two real loopback HTTP backends plus the router and proves tools
 skill signatures, short/long requests, streaming and fast-backend fallback.
 
 This router is DGX/local-infrastructure code. It is not staged into the Windows package.
+
+
+## DGX smoke / latency report
+
+After the real primary and fast model servers are attached:
+
+```bash
+MIAODESK_ROUTER_BASE_URL=http://127.0.0.1:8000/v1 \
+MIAODESK_ROUTER_SMOKE_RUNS=3 \
+node runtime/router/smoke.mjs
+```
+
+If the router requires inbound auth, also set `MIAODESK_ROUTER_API_KEY`.
+
+The report exercises short / tools / content-skill / long-chat routes and prints
+p50 / p95 / max latency, the actual route header, selected upstream model and the
+router's current in-memory metrics. This is the first deployment-day evidence for P2-3;
+it measures routing, not answer quality.

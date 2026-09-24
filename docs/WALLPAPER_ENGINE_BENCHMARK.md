@@ -101,7 +101,7 @@ enum class ContentRuntimeKind {   // 运行时维度:用什么引擎解释它
 | 灯光(点/聚光/管状/平行,上限 12) | ◐ | `LightType` 四种 + `LightDefinition` 已定义并有校验(B-4);缺着色实现 | **契约已有,缺实现** |
 | 雾 | ◐ | `FogMode{Linear, Exponential}` + `FogDefinition` 已定义并有校验(B-4);缺着色实现 | 同上 |
 | 刚体/柔体物理(jiggle bone) | ✗ | 无 | 缺 |
-| 粒子系统 + 专用编辑器 | ✓ | `ParticleEmitterDefinition`(`MiaoSceneRuntimeModel.h:220`)+ `MiaoD3D11ParticleRenderer` + `MiaoParticleSerializer` + `MiaoParticleRuntime` | 已有 |
+| 粒子系统 + 专用编辑器 | ✓ | `ParticleEmitterDefinition`(`MiaoSceneRuntimeModel.h:245`)+ `MiaoD3D11ParticleRenderer` + `MiaoParticleSerializer` + `MiaoParticleRuntime` | 已有 |
 | 时间线动画(关键帧 + 缓动) | ✓ | `AnimationTrackDefinition` / `AnimationKeyframeDefinition`,含 `Once/Loop/PingPong` 与 5 种缓动(`MiaoSceneRuntimeModel.h:195-215`) | 已有 |
 | 逐层视差 | ◐ | `Transform` 组件 + `input://event/pulse` 输入通道已定义,无数据源驱动 | 见 4.3 |
 | 木偶形变 + IK 绑定 | ✗ | 无 | 缺 |

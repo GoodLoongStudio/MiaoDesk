@@ -1,5 +1,7 @@
 #include "miaodesk/MiaoSceneRuntimeModel.h"
 
+#include "miaodesk/MiaoAnalyticParticleField.h"
+
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -217,26 +219,50 @@ bool ValidateParticleEmitter(
     std::wstring* error) {
     if (!HasPrefix(emitter.id, L"particle://"))
         return Fail(error, L"Particle emitter id must use the particle:// stable-id scheme: " + emitter.id);
-    if (emitter.maxParticles == 0 || emitter.maxParticles > MiaoSceneRuntimeModel::kMaxParticlesPerEmitter)
-        return Fail(error, L"Particle emitter maxParticles is outside the v1 budget: " + emitter.id);
-    if (!std::isfinite(emitter.spawnRate) || emitter.spawnRate < 0.0 || emitter.spawnRate > 100000.0)
-        return Fail(error, L"Particle emitter spawnRate must be finite and in [0, 100000]: " + emitter.id);
-    if (!std::isfinite(emitter.lifetimeMinSeconds) || !std::isfinite(emitter.lifetimeMaxSeconds) ||
-        emitter.lifetimeMinSeconds <= 0.0 || emitter.lifetimeMaxSeconds < emitter.lifetimeMinSeconds ||
-        emitter.lifetimeMaxSeconds > 600.0)
-        return Fail(error, L"Particle emitter lifetime range must be in (0, 600] seconds: " + emitter.id);
-    if (!Vec2Finite(emitter.position) || !Vec2Finite(emitter.positionSpread) ||
-        !Vec2Finite(emitter.velocity) || !Vec2Finite(emitter.velocitySpread) ||
-        !Vec2Finite(emitter.acceleration))
-        return Fail(error, L"Particle emitter vectors must be finite: " + emitter.id);
-    if (!std::isfinite(emitter.sizeStart) || !std::isfinite(emitter.sizeEnd) ||
-        emitter.sizeStart < 0.0 || emitter.sizeEnd < 0.0 ||
-        emitter.sizeStart > 1000000.0 || emitter.sizeEnd > 1000000.0)
-        return Fail(error, L"Particle emitter sizes must be finite and in [0, 1000000]: " + emitter.id);
-    if (!ColorFinite(emitter.colorStart) || !ColorFinite(emitter.colorEnd) ||
-        emitter.colorStart.a < 0.0 || emitter.colorStart.a > 1.0 ||
-        emitter.colorEnd.a < 0.0 || emitter.colorEnd.a > 1.0)
-        return Fail(error, L"Particle emitter colors must be finite with alpha in [0, 1]: " + emitter.id);
+
+    // The two halves are validated separately, and only the one this emitter uses.
+    // Running the simulated constraints over an analytic emitter would be a second,
+    // wrong opinion: a stateless field has no pool to size and no lifetime to bound,
+    // and the defaults those fields carry would either pass meaninglessly or reject a
+    // legitimate emitter for a field it never reads.
+    if (IsAnalyticEmitterMode(emitter.mode)) {
+        if (emitter.analyticCount == 0 ||
+            emitter.analyticCount > MiaoSceneRuntimeModel::kMaxAnalyticSamplesPerEmitter)
+            return Fail(error, L"Analytic particle emitter count is outside the budget: " + emitter.id);
+        if (!ColorFinite(emitter.analyticColor) ||
+            emitter.analyticColor.r < 0.0 || emitter.analyticColor.r > 1.0 ||
+            emitter.analyticColor.g < 0.0 || emitter.analyticColor.g > 1.0 ||
+            emitter.analyticColor.b < 0.0 || emitter.analyticColor.b > 1.0 ||
+            emitter.analyticColor.a < 0.0 || emitter.analyticColor.a > 1.0)
+            return Fail(error, L"Analytic particle emitter color must be finite with channels in [0, 1]: " + emitter.id);
+        if (!std::isfinite(emitter.analyticOpacity) ||
+            emitter.analyticOpacity < 0.0 || emitter.analyticOpacity > 1.0)
+            return Fail(error, L"Analytic particle emitter opacity must be in [0, 1]: " + emitter.id);
+        if (!std::isfinite(emitter.analyticSpeed) || emitter.analyticSpeed < 0.0 ||
+            emitter.analyticSpeed > 100.0)
+            return Fail(error, L"Analytic particle emitter speed must be finite and in [0, 100]: " + emitter.id);
+    } else {
+        if (emitter.maxParticles == 0 || emitter.maxParticles > MiaoSceneRuntimeModel::kMaxParticlesPerEmitter)
+            return Fail(error, L"Particle emitter maxParticles is outside the v1 budget: " + emitter.id);
+        if (!std::isfinite(emitter.spawnRate) || emitter.spawnRate < 0.0 || emitter.spawnRate > 100000.0)
+            return Fail(error, L"Particle emitter spawnRate must be finite and in [0, 100000]: " + emitter.id);
+        if (!std::isfinite(emitter.lifetimeMinSeconds) || !std::isfinite(emitter.lifetimeMaxSeconds) ||
+            emitter.lifetimeMinSeconds <= 0.0 || emitter.lifetimeMaxSeconds < emitter.lifetimeMinSeconds ||
+            emitter.lifetimeMaxSeconds > 600.0)
+            return Fail(error, L"Particle emitter lifetime range must be in (0, 600] seconds: " + emitter.id);
+        if (!Vec2Finite(emitter.position) || !Vec2Finite(emitter.positionSpread) ||
+            !Vec2Finite(emitter.velocity) || !Vec2Finite(emitter.velocitySpread) ||
+            !Vec2Finite(emitter.acceleration))
+            return Fail(error, L"Particle emitter vectors must be finite: " + emitter.id);
+        if (!std::isfinite(emitter.sizeStart) || !std::isfinite(emitter.sizeEnd) ||
+            emitter.sizeStart < 0.0 || emitter.sizeEnd < 0.0 ||
+            emitter.sizeStart > 1000000.0 || emitter.sizeEnd > 1000000.0)
+            return Fail(error, L"Particle emitter sizes must be finite and in [0, 1000000]: " + emitter.id);
+        if (!ColorFinite(emitter.colorStart) || !ColorFinite(emitter.colorEnd) ||
+            emitter.colorStart.a < 0.0 || emitter.colorStart.a > 1.0 ||
+            emitter.colorEnd.a < 0.0 || emitter.colorEnd.a > 1.0)
+            return Fail(error, L"Particle emitter colors must be finite with alpha in [0, 1]: " + emitter.id);
+    }
     if (!emitter.materialId.empty() && !MiaoSceneRuntimeModel::FindMaterial(runtime, emitter.materialId))
         return Fail(error, L"Particle emitter materialId does not resolve: " + emitter.id);
     return true;

@@ -25,6 +25,46 @@ cat /etc/dgx-release            # 确认 DGX OS 版本
 docker info | grep -i nvidia    # 确认 NVIDIA Container Runtime
 ```
 
+### 0.1 先量出口,再决定走哪条路(2026-09-22 实测)
+
+**下面 §1.1 / §1.2 写的两条命令,在妙喵爱美丽那台节点上一条都跑不起来。** 先花十秒量一下
+真实出口,否则会照着文档空转到怀疑人生:
+
+```bash
+for u in https://huggingface.co https://modelscope.cn https://pypi.org \
+         https://pypi.tuna.tsinghua.edu.cn https://registry-1.docker.io https://nvcr.io; do
+  printf '%-38s ' "$u"; curl -s -o /dev/null -m 8 -w '%{http_code}\n' "$u"
+done
+```
+
+该节点(gx10-9e57)的实测结果:
+
+| 可达 | 不可达 |
+| --- | --- |
+| `modelscope.cn`(302) | `huggingface.co`、`hf-mirror.com` |
+| `mirrors.aliyun.com`(301) | `pypi.org` |
+| `pypi.tuna.tsinghua.edu.cn`(302) | `registry-1.docker.io`、`auth.docker.io` |
+| `mirrors.cloud.tencent.com`(200) | `nvcr.io`、`ghcr.io`、`github.com` |
+
+于是本节两条命令的真实状态:
+
+- **`docker pull nvcr.io/nvidia/vllm:<TAG>` —— 走不通。** NGC 不可达。本文档开头
+  "所有版本号在部署当天必须重新核对"把注意力放在 TAG 上,而真正的障碍是 registry 本身:
+  核对出一个正确的 TAG 也拉不到。占位符不是这个坑的形状。
+- **`huggingface-cli download …` —— 走不通。** HuggingFace 与 hf-mirror 都不通。
+  模型改从 **ModelScope** 拉(`modelscope download --model <id> --local_dir …`),
+  它恰好可达。
+
+**容器路线死了不等于没路走。** 那台节点上已经有一套能用的原生环境,不需要任何镜像:
+
+```text
+~/envs/vllm/bin/python   vllm 0.28.0 · torch 2.13.0+cu130 · cuda available True
+~/models/<model>         权重已在磁盘上
+```
+
+`pip install` 同样受限 —— 装新包用 `-i https://pypi.tuna.tsinghua.edu.cn/simple`。
+下次换机器/换网络,**先跑上面那个 for 循环**,不要假设出口和今天一样。
+
 ## 1. 推理服务器(vLLM)
 
 ### 1.1 拉取镜像
@@ -38,6 +78,9 @@ docker pull nvcr.io/nvidia/vllm:<TAG-FROM-PLAYBOOK>
 ```
 
 > ⚠️ 不要使用 `:latest`。部署完成后把实际使用的 TAG 记录到部署台账,复现与回滚都依赖它。
+>
+> ⚠️ **先读 §0.1。** NGC 不可达时这条命令必然失败,与 TAG 是否正确无关。此时改走节点上
+> 已有的原生 venv:`~/envs/vllm/bin/vllm serve <本地权重目录>`,并用 `tmux` 托管。
 
 ### 1.2 准备模型目录
 
@@ -70,6 +113,24 @@ huggingface-cli download openai/gpt-oss-20b \
 ```bash
 sha256sum /srv/miaodesk/models/*/*.safetensors | tee /srv/miaodesk/models/SHA256SUMS
 ```
+
+> ⚠️ **HuggingFace 与 hf-mirror 在实测节点上均不可达**(见 §0.1)。等价写法,从可达的
+> ModelScope 拉:
+>
+> ```bash
+> pip install modelscope
+> modelscope download --model AI-ModelScope/gpt-oss-120b \
+>   --local_dir /srv/miaodesk/models/gpt-oss-120b
+> ```
+>
+> 三条实务:
+> 1. **大文件不要用 scp 上传** —— 黑客松手册红线 #7,公网带宽 50 台节点共用,
+>    单次 >1 GB 严禁 scp。一律在节点上直接拉。
+> 2. **先看仓库里 / 节点上已有什么。** 2026-09-22 那次部署,`~/models/` 下已经躺着完整的
+>    Nemotron-3.5-Lightning-30B-A3B-NVFP4,`~/envs/vllm` 已经装好 —— 整个部署零下载。
+>    照着本文档从零开始拉,是在重复别人已经做完的事。
+> 3. SHA-256 校验照做,但**ModelScope 的哈希与 HF 页面的不是同一个来源**,记台账时
+>    要写清校验值来自哪里,否则"校验通过"不是一个可复现的陈述。
 
 ### 1.3 启动参数
 

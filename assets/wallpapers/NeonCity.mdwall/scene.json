@@ -15,17 +15,1725 @@
           "id": "component://root/transform",
           "kind": "transform",
           "properties": [
-            {"name": "opacity", "type": "float", "default": 1.0}
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/background",
+      "name": "background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/0/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        },
+        {
+          "id": "component://layer/0/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/background/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/city_glow/axis-y",
+      "name": "city_glow drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/city_glow",
+      "name": "city_glow",
+      "parentId": "node://layer/city_glow/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.56
+            }
+          ]
+        },
+        {
+          "id": "component://layer/1/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/city_glow/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/haze/axis-y",
+      "name": "haze drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/haze",
+      "name": "haze",
+      "parentId": "node://layer/haze/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                -8.704148513061227e-14,
+                2.220446049250313e-15
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0119617224880382,
+                1.004250797024442
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.46
+            }
+          ]
+        },
+        {
+          "id": "component://layer/2/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/haze/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/rain_far/axis-y",
+      "name": "rain_far drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/rain_far",
+      "name": "rain_far",
+      "parentId": "node://layer/rain_far/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                -3.019806626980426e-14,
+                3.4999999999999574
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.014354066985646,
+                1.0626992561105206
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.62
+            }
+          ]
+        },
+        {
+          "id": "component://layer/3/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/rain_far/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/rain_near/axis-y",
+      "name": "rain_near drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/4/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/rain_near",
+      "name": "rain_near",
+      "parentId": "node://layer/rain_near/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/4/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                -4.618527782440651e-14,
+                -0.5000000000000213
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0215311004784688,
+                1.1052072263549415
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.82
+            }
+          ]
+        },
+        {
+          "id": "component://layer/4/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/rain_near/image"
+            }
           ]
         }
       ]
     }
   ],
-  "assets": [],
+  "assets": [
+    {
+      "id": "asset://layer/background/image",
+      "type": "image",
+      "source": "assets/background.jpg"
+    },
+    {
+      "id": "asset://layer/city_glow/image",
+      "type": "image",
+      "source": "assets/city_glow.png"
+    },
+    {
+      "id": "asset://layer/haze/image",
+      "type": "image",
+      "source": "assets/haze.png"
+    },
+    {
+      "id": "asset://layer/rain_far/image",
+      "type": "image",
+      "source": "assets/rain_2.png"
+    },
+    {
+      "id": "asset://layer/rain_near/image",
+      "type": "image",
+      "source": "assets/rain_1.png"
+    }
+  ],
   "shaders": [],
   "materials": [],
-  "inputs": [],
+  "inputs": [
+    {
+      "id": "input://frame/time",
+      "type": "float",
+      "default": 0.0
+    }
+  ],
   "bindings": [],
-  "animations": [],
+  "animations": [
+    {
+      "id": "animation://neon-city/city_glow-axis-y",
+      "target": {
+        "componentId": "component://layer/1/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 8.726646259971648,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            1.4701
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.5817764173314433,
+          "value": [
+            0.0,
+            1.221794
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1635528346628865,
+          "value": [
+            0.0,
+            0.762229
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7453292519943298,
+          "value": [
+            0.0,
+            0.170867
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.327105669325773,
+          "value": [
+            0.0,
+            -0.450039
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.908882086657216,
+          "value": [
+            0.0,
+            -0.993129
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4906585039886595,
+          "value": [
+            0.0,
+            -1.364498
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.072434921320103,
+          "value": [
+            0.0,
+            -1.499933
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.654211338651546,
+          "value": [
+            0.0,
+            -1.376016
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.235987755982989,
+          "value": [
+            0.0,
+            -1.014173
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.817764173314432,
+          "value": [
+            0.0,
+            -0.476971
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.399540590645875,
+          "value": [
+            0.0,
+            0.142704
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977319,
+          "value": [
+            0.0,
+            0.737704
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.563093425308762,
+          "value": [
+            0.0,
+            1.205149
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.144869842640206,
+          "value": [
+            0.0,
+            1.464212
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.726646259971648,
+          "value": [
+            0.0,
+            1.4701
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/city_glow-scale",
+      "target": {
+        "componentId": "component://layer/1/transform",
+        "propertyName": "scale"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 8.726646259971648,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            1.000497,
+            1.000497
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.5817764173314433,
+          "value": [
+            1.00145,
+            1.00145
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1635528346628865,
+          "value": [
+            1.002153,
+            1.002153
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7453292519943298,
+          "value": [
+            1.002484,
+            1.002484
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.327105669325773,
+          "value": [
+            1.002385,
+            1.002385
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.908882086657216,
+          "value": [
+            1.001874,
+            1.001874
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4906585039886595,
+          "value": [
+            1.001038,
+            1.001038
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.072434921320103,
+          "value": [
+            1.000024,
+            1.000024
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.654211338651546,
+          "value": [
+            0.999005,
+            0.999005
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.235987755982989,
+          "value": [
+            0.998158,
+            0.998158
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.817764173314432,
+          "value": [
+            0.99763,
+            0.99763
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.399540590645875,
+          "value": [
+            0.997511,
+            0.997511
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977319,
+          "value": [
+            0.997823,
+            0.997823
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.563093425308762,
+          "value": [
+            0.998512,
+            0.998512
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.144869842640206,
+          "value": [
+            0.999457,
+            0.999457
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.726646259971648,
+          "value": [
+            1.000497,
+            1.000497
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/haze-axis-y",
+      "target": {
+        "componentId": "component://layer/2/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 50.99988074009404,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            1.814384
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.3999920493396028,
+          "value": [
+            0.0,
+            0.207576
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.7999840986792055,
+          "value": [
+            0.0,
+            -1.435124
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.199976148018807,
+          "value": [
+            0.0,
+            -2.829679
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.599968197358411,
+          "value": [
+            0.0,
+            -3.734956
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 16.999960246698016,
+          "value": [
+            0.0,
+            -3.994425
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.399952296037615,
+          "value": [
+            0.0,
+            -3.563222
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 23.79994434537722,
+          "value": [
+            0.0,
+            -2.515906
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 27.199936394716822,
+          "value": [
+            0.0,
+            -1.033566
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 30.599928444056427,
+          "value": [
+            0.0,
+            0.627486
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 33.99992049339603,
+          "value": [
+            0.0,
+            2.180041
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 37.39991254273563,
+          "value": [
+            0.0,
+            3.355646
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 40.79990459207523,
+          "value": [
+            0.0,
+            3.95103
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 44.19989664141484,
+          "value": [
+            0.0,
+            3.863245
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 47.59988869075444,
+          "value": [
+            0.0,
+            3.107469
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 50.99988074009404,
+          "value": [
+            0.0,
+            1.814384
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/haze-axis-x",
+      "target": {
+        "componentId": "component://layer/2/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 39.269908169872416,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            10.694488,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.6179938779914944,
+          "value": [
+            11.983831,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.235987755982989,
+          "value": [
+            11.201061,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.853981633974483,
+          "value": [
+            8.481525,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.471975511965978,
+          "value": [
+            4.295457,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.089969389957473,
+          "value": [
+            -0.633335,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 15.707963267948966,
+          "value": [
+            -5.452617,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 18.32595714594046,
+          "value": [
+            -9.329093,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.943951023931955,
+          "value": [
+            -11.592483,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 23.561944901923447,
+          "value": [
+            -11.851428,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 26.179938779914945,
+          "value": [
+            -10.061153,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 28.797932657906436,
+          "value": [
+            -6.531214,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 31.41592653589793,
+          "value": [
+            -1.871968,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 34.033920413889426,
+          "value": [
+            3.110958,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 36.65191429188092,
+          "value": [
+            7.555971,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 39.269908169872416,
+          "value": [
+            10.694488,
+            0.0
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/rain_far-axis-y",
+      "target": {
+        "componentId": "component://layer/3/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 8.589453598331628,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            29.473952
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.5726302398887753,
+          "value": [
+            0.0,
+            21.857292
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1452604797775505,
+          "value": [
+            0.0,
+            10.461308
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7178907196663256,
+          "value": [
+            0.0,
+            -2.743531
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.290520959555101,
+          "value": [
+            0.0,
+            -15.473989
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.8631511994438763,
+          "value": [
+            0.0,
+            -25.528854
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.435781439332651,
+          "value": [
+            0.0,
+            -31.169547
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.008411679221426,
+          "value": [
+            0.0,
+            -31.420743
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.581041919110202,
+          "value": [
+            0.0,
+            -26.239007
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.153672158998977,
+          "value": [
+            0.0,
+            -16.520308
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.726302398887753,
+          "value": [
+            0.0,
+            -3.945098
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.298932638776528,
+          "value": [
+            0.0,
+            9.312255
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.871562878665302,
+          "value": [
+            0.0,
+            20.959435
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.444193118554078,
+          "value": [
+            0.0,
+            28.982538
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.016823358442853,
+          "value": [
+            0.0,
+            31.994297
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.589453598331628,
+          "value": [
+            0.0,
+            29.473952
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/rain_far-axis-x",
+      "target": {
+        "componentId": "component://layer/3/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 6.613879270715354,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            3.894183,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.44092528471435694,
+          "value": [
+            7.303806,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.8818505694287139,
+          "value": [
+            9.450534,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.3227758541430708,
+          "value": [
+            9.963179,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7637011388574277,
+          "value": [
+            8.7531,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.2046264235717845,
+          "value": [
+            6.02953,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.6455517082861415,
+          "value": [
+            2.2634,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.0864769930004985,
+          "value": [
+            -1.894093,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.5274022777148555,
+          "value": [
+            -5.72408,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.968327562429212,
+          "value": [
+            -8.564321,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.409252847143569,
+          "value": [
+            -9.923714,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.850178131857927,
+          "value": [
+            -9.567206,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.291103416572283,
+          "value": [
+            -7.556442,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.73202870128664,
+          "value": [
+            -4.2391,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.172953986000997,
+          "value": [
+            -0.188779,
+            3.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.613879270715354,
+          "value": [
+            3.894183,
+            3.5
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/rain_near-axis-y",
+      "target": {
+        "componentId": "component://layer/4/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 5.627573047182791,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            -6.957603
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.3751715364788527,
+          "value": [
+            0.0,
+            -28.136793
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.7503430729577054,
+          "value": [
+            0.0,
+            -44.450876
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.125514609436558,
+          "value": [
+            0.0,
+            -53.078999
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.5006861459154108,
+          "value": [
+            0.0,
+            -52.52928
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.8758576823942639,
+          "value": [
+            0.0,
+            -42.896772
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.251029218873116,
+          "value": [
+            0.0,
+            -25.847023
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.626200755351969,
+          "value": [
+            0.0,
+            -4.328088
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.0013722918308217,
+          "value": [
+            0.0,
+            17.939213
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.3765438283096745,
+          "value": [
+            0.0,
+            37.10466
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.7517153647885277,
+          "value": [
+            0.0,
+            49.854375
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.12688690126738,
+          "value": [
+            0.0,
+            53.983815
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.502058437746232,
+          "value": [
+            0.0,
+            48.778964
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.877229974225085,
+          "value": [
+            0.0,
+            35.139786
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.252401510703938,
+          "value": [
+            0.0,
+            15.42462
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.627573047182791,
+          "value": [
+            0.0,
+            -6.957603
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://neon-city/rain_near-axis-x",
+      "target": {
+        "componentId": "component://layer/4/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 4.333231246330749,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            14.874972,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.2888820830887166,
+          "value": [
+            12.802877,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.5777641661774332,
+          "value": [
+            8.517047,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.8666462492661499,
+          "value": [
+            2.758543,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1555283323548664,
+          "value": [
+            -3.476938,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.4444104154435828,
+          "value": [
+            -9.111225,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7332924985322997,
+          "value": [
+            -13.170099,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.0221745816210164,
+          "value": [
+            -14.951742,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.311056664709733,
+          "value": [
+            -14.148094,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.5999387477984492,
+          "value": [
+            -10.898112,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.8888208308871657,
+          "value": [
+            -5.763747,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.177702913975883,
+          "value": [
+            0.367222,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4665849970645994,
+          "value": [
+            6.434695,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.755467080153316,
+          "value": [
+            11.389551,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.044349163242033,
+          "value": [
+            14.37505,
+            -0.5
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.333231246330749,
+          "value": [
+            14.874972,
+            -0.5
+          ],
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "particleEmitters": [
+    {
+      "id": "particle://neon-city/sparkle",
+      "enabled": true,
+      "mode": "sparkle",
+      "analyticColor": [
+        1.0,
+        0.92,
+        0.78,
+        1.0
+      ],
+      "analyticCount": 8,
+      "analyticOpacity": 0.34
+    }
+  ],
   "postProcesses": []
 }

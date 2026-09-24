@@ -15,17 +15,1725 @@
           "id": "component://root/transform",
           "kind": "transform",
           "properties": [
-            {"name": "opacity", "type": "float", "default": 1.0}
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/background",
+      "name": "background",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/0/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        },
+        {
+          "id": "component://layer/0/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/background/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/moon_glow/axis-y",
+      "name": "moon_glow drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/moon_glow",
+      "name": "moon_glow",
+      "parentId": "node://layer/moon_glow/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/1/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                8.526512829121202e-14,
+                2.220446049250313e-15
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0035885167464116,
+                1.004250797024442
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.56
+            }
+          ]
+        },
+        {
+          "id": "component://layer/1/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/moon_glow/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/water_glow/axis-y",
+      "name": "water_glow drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/water_glow",
+      "name": "water_glow",
+      "parentId": "node://layer/water_glow/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/2/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                -4.3520742565306136e-14,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.005980861244019,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.5
+            }
+          ]
+        },
+        {
+          "id": "component://layer/2/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/water_glow/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/fog/axis-y",
+      "name": "fog drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/fog",
+      "name": "fog",
+      "parentId": "node://layer/fog/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/3/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                1.0658141036401503e-14,
+                4.440892098500626e-15
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0239234449760766,
+                1.0085015940488842
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.72
+            }
+          ]
+        },
+        {
+          "id": "component://layer/3/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/fog/image"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/fireflies/axis-y",
+      "name": "fireflies drift axis",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/4/axis-y/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node://layer/fireflies",
+      "name": "fireflies",
+      "parentId": "node://layer/fireflies/axis-y",
+      "enabled": true,
+      "components": [
+        {
+          "id": "component://layer/4/transform",
+          "kind": "transform",
+          "properties": [
+            {
+              "name": "position",
+              "type": "vec2",
+              "default": [
+                -1.509903313490213e-14,
+                4.440892098500626e-15
+              ]
+            },
+            {
+              "name": "scale",
+              "type": "vec2",
+              "default": [
+                1.007177033492823,
+                1.0085015940488842
+              ]
+            },
+            {
+              "name": "rotation",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 0.92
+            }
+          ]
+        },
+        {
+          "id": "component://layer/4/sprite",
+          "kind": "spriteRenderer",
+          "properties": [
+            {
+              "name": "opacity",
+              "type": "float",
+              "default": 1.0
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "default": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "cornerRadius",
+              "type": "float",
+              "default": 0.0
+            },
+            {
+              "name": "texture",
+              "type": "assetReference",
+              "default": "asset://layer/fireflies/image"
+            }
           ]
         }
       ]
     }
   ],
-  "assets": [],
+  "assets": [
+    {
+      "id": "asset://layer/background/image",
+      "type": "image",
+      "source": "assets/background.jpg"
+    },
+    {
+      "id": "asset://layer/moon_glow/image",
+      "type": "image",
+      "source": "assets/moon_glow.png"
+    },
+    {
+      "id": "asset://layer/water_glow/image",
+      "type": "image",
+      "source": "assets/water_glow.png"
+    },
+    {
+      "id": "asset://layer/fog/image",
+      "type": "image",
+      "source": "assets/fog.png"
+    },
+    {
+      "id": "asset://layer/fireflies/image",
+      "type": "image",
+      "source": "assets/fireflies.png"
+    }
+  ],
   "shaders": [],
   "materials": [],
-  "inputs": [],
+  "inputs": [
+    {
+      "id": "input://frame/time",
+      "type": "float",
+      "default": 0.0
+    }
+  ],
   "bindings": [],
-  "animations": [],
+  "animations": [
+    {
+      "id": "animation://mystic-moon/moon_glow-axis-y",
+      "target": {
+        "componentId": "component://layer/1/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 13.089969389957473,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            1.485604
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.8726646259971649,
+          "value": [
+            0.0,
+            0.943777
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7453292519943298,
+          "value": [
+            0.0,
+            0.238763
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.6179938779914944,
+          "value": [
+            0.0,
+            -0.507536
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4906585039886595,
+          "value": [
+            0.0,
+            -1.166077
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.363323129985824,
+          "value": [
+            0.0,
+            -1.622993
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.235987755982989,
+          "value": [
+            0.0,
+            -1.799278
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.1086523819801535,
+          "value": [
+            0.0,
+            -1.664452
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977319,
+          "value": [
+            0.0,
+            -1.241828
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.853981633974484,
+          "value": [
+            0.0,
+            -0.60448
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.726646259971648,
+          "value": [
+            0.0,
+            0.137388
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.599310885968812,
+          "value": [
+            0.0,
+            0.855501
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.471975511965978,
+          "value": [
+            0.0,
+            1.425689
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.344640137963143,
+          "value": [
+            0.0,
+            1.749363
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.217304763960307,
+          "value": [
+            0.0,
+            1.770556
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.089969389957473,
+          "value": [
+            0.0,
+            1.485604
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/moon_glow-scale",
+      "target": {
+        "componentId": "component://layer/1/transform",
+        "propertyName": "scale"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 13.089969389957473,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            1.005572,
+            1.006235
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 0.8726646259971649,
+          "value": [
+            1.00658,
+            1.007244
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.7453292519943298,
+          "value": [
+            1.00707,
+            1.007735
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.6179938779914944,
+          "value": [
+            1.006959,
+            1.007623
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4906585039886595,
+          "value": [
+            1.006264,
+            1.006928
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.363323129985824,
+          "value": [
+            1.005107,
+            1.005771
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.235987755982989,
+          "value": [
+            1.003688,
+            1.00435
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.1086523819801535,
+          "value": [
+            1.002251,
+            1.002913
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977319,
+          "value": [
+            1.001046,
+            1.001706
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.853981633974484,
+          "value": [
+            1.00028,
+            1.00094
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.726646259971648,
+          "value": [
+            1.000086,
+            1.000746
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.599310885968812,
+          "value": [
+            1.000498,
+            1.001158
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.471975511965978,
+          "value": [
+            1.001444,
+            1.002105
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.344640137963143,
+          "value": [
+            1.002761,
+            1.003423
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.217304763960307,
+          "value": [
+            1.004221,
+            1.004884
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.089969389957473,
+          "value": [
+            1.005572,
+            1.006235
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/water_glow-axis-y",
+      "target": {
+        "componentId": "component://layer/2/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 37.090822356432035,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            -0.454404
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.4727214904288024,
+          "value": [
+            0.0,
+            -1.207318
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.945442980857605,
+          "value": [
+            0.0,
+            -1.751475
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.418164471286407,
+          "value": [
+            0.0,
+            -1.992787
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.89088596171521,
+          "value": [
+            0.0,
+            -1.889527
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.363607452144011,
+          "value": [
+            0.0,
+            -1.459551
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 14.836328942572814,
+          "value": [
+            0.0,
+            -0.777206
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.309050433001616,
+          "value": [
+            0.0,
+            0.039526
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 19.78177192343042,
+          "value": [
+            0.0,
+            0.849423
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 22.254493413859223,
+          "value": [
+            0.0,
+            1.512447
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 24.727214904288022,
+          "value": [
+            0.0,
+            1.913956
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 27.199936394716826,
+          "value": [
+            0.0,
+            1.984524
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 29.67265788514563,
+          "value": [
+            0.0,
+            1.71195
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 32.14537937557443,
+          "value": [
+            0.0,
+            1.143364
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 34.61810086600323,
+          "value": [
+            0.0,
+            0.37708
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 37.090822356432035,
+          "value": [
+            0.0,
+            -0.454404
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/water_glow-axis-x",
+      "target": {
+        "componentId": "component://layer/2/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 28.559933214452666,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            4.869238,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.9039955476301778,
+          "value": [
+            3.986213,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.8079910952603555,
+          "value": [
+            2.413936,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.711986642890533,
+          "value": [
+            0.424267,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.615982190520711,
+          "value": [
+            -1.638761,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.519977738150889,
+          "value": [
+            -3.418433,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.423973285781067,
+          "value": [
+            -4.607027,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.327968833411244,
+          "value": [
+            -4.999023,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 15.231964381041422,
+          "value": [
+            -4.526644,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.1359599286716,
+          "value": [
+            -3.271566,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 19.039955476301778,
+          "value": [
+            -1.450805,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.943951023931955,
+          "value": [
+            0.620813,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 22.847946571562133,
+          "value": [
+            2.585088,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 24.75194211919231,
+          "value": [
+            4.102377,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 26.65593766682249,
+          "value": [
+            4.910327,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 28.559933214452666,
+          "value": [
+            4.869238,
+            0.0
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/fog-axis-y",
+      "target": {
+        "componentId": "component://layer/3/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 67.99984098679207,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            4.776682
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.533322732452804,
+          "value": [
+            0.0,
+            3.762722
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.066645464905609,
+          "value": [
+            0.0,
+            2.098153
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.599968197358413,
+          "value": [
+            0.0,
+            0.070794
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 18.133290929811217,
+          "value": [
+            0.0,
+            -1.968806
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 22.66661366226402,
+          "value": [
+            0.0,
+            -3.667981
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 27.199936394716826,
+          "value": [
+            0.0,
+            -4.732929
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 31.73325912716963,
+          "value": [
+            0.0,
+            -4.979511
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 36.266581859622434,
+          "value": [
+            0.0,
+            -4.36509
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 40.79990459207524,
+          "value": [
+            0.0,
+            -2.995905
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 45.33322732452804,
+          "value": [
+            0.0,
+            -1.108701
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 49.86655005698085,
+          "value": [
+            0.0,
+            0.970207
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 54.39987278943365,
+          "value": [
+            0.0,
+            2.881358
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 58.933195521886454,
+          "value": [
+            0.0,
+            4.294296
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 63.46651825433926,
+          "value": [
+            0.0,
+            4.964711
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 67.99984098679207,
+          "value": [
+            0.0,
+            4.776682
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/fog-axis-x",
+      "target": {
+        "componentId": "component://layer/3/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 52.35987755982989,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            7.092485,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.4906585039886595,
+          "value": [
+            15.804996,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.981317007977319,
+          "value": [
+            21.78468,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.471975511965978,
+          "value": [
+            23.997594,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.962634015954638,
+          "value": [
+            22.061107,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.453292519943297,
+          "value": [
+            16.310054,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.943951023931955,
+          "value": [
+            7.738844,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 24.434609527920614,
+          "value": [
+            -2.170482,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 27.925268031909276,
+          "value": [
+            -11.704512,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 31.415926535897935,
+          "value": [
+            -19.214726,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 34.90658503988659,
+          "value": [
+            -23.402539,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 38.39724354387525,
+          "value": [
+            -23.54384,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 41.88790204786391,
+          "value": [
+            -19.614197,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 45.37856055185257,
+          "value": [
+            -12.293082,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 48.86921905584123,
+          "value": [
+            -2.846381,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 52.35987755982989,
+          "value": [
+            7.092485,
+            0.0
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/fireflies-axis-y",
+      "target": {
+        "componentId": "component://layer/4/axis-y/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 21.47363399582907,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            3.623578
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.431575599721938,
+          "value": [
+            0.0,
+            -0.480642
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.863151199443876,
+          "value": [
+            0.0,
+            -4.501754
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.294726799165814,
+          "value": [
+            0.0,
+            -7.744471
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.726302398887752,
+          "value": [
+            0.0,
+            -9.6481
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.157877998609689,
+          "value": [
+            0.0,
+            -9.883484
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.589453598331628,
+          "value": [
+            0.0,
+            -8.409924
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 10.021029198053565,
+          "value": [
+            0.0,
+            -5.482212
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.452604797775503,
+          "value": [
+            0.0,
+            -1.606575
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.88418039749744,
+          "value": [
+            0.0,
+            2.546852
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 14.315755997219378,
+          "value": [
+            0.0,
+            6.259906
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 15.747331596941317,
+          "value": [
+            0.0,
+            8.890566
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 17.178907196663257,
+          "value": [
+            0.0,
+            9.983966
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 18.610482796385195,
+          "value": [
+            0.0,
+            9.351047
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 20.04205839610713,
+          "value": [
+            0.0,
+            7.101247
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 21.47363399582907,
+          "value": [
+            0.0,
+            3.623578
+          ],
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "animation://mystic-moon/fireflies-axis-x",
+      "target": {
+        "componentId": "component://layer/4/transform",
+        "propertyName": "position"
+      },
+      "enabled": true,
+      "loop": "loop",
+      "duration": 16.534698176788385,
+      "keyframes": [
+        {
+          "time": 0.0,
+          "value": [
+            6.524274,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 1.1023132117858923,
+          "value": [
+            6.99191,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 2.2046264235717845,
+          "value": [
+            6.250581,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 3.3069396353576774,
+          "value": [
+            4.42847,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 4.409252847143569,
+          "value": [
+            1.840637,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 5.5115660589294615,
+          "value": [
+            -1.06546,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 6.613879270715355,
+          "value": [
+            -3.787328,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 7.7161924825012465,
+          "value": [
+            -5.854334,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 8.818505694287138,
+          "value": [
+            -6.909071,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 9.920818906073032,
+          "value": [
+            -6.769168,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 11.023132117858923,
+          "value": [
+            -5.458814,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 12.125445329644815,
+          "value": [
+            -3.204581,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 13.22775854143071,
+          "value": [
+            -0.396248,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 14.3300717532166,
+          "value": [
+            2.480601,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 15.432384965002493,
+          "value": [
+            4.928531,
+            0.0
+          ],
+          "easing": "linear"
+        },
+        {
+          "time": 16.534698176788385,
+          "value": [
+            6.524274,
+            0.0
+          ],
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "particleEmitters": [
+    {
+      "id": "particle://mystic-moon/sparkle",
+      "enabled": true,
+      "mode": "sparkle",
+      "analyticColor": [
+        1.0,
+        0.92,
+        0.78,
+        1.0
+      ],
+      "analyticCount": 16,
+      "analyticOpacity": 0.34
+    }
+  ],
   "postProcesses": []
 }

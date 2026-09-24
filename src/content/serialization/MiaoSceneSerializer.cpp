@@ -538,6 +538,49 @@ bool ParseFogMode(std::string_view value, FogMode* mode) noexcept {
     return true;
 }
 
+// Absent means Simulated: every package written before the analytic modes existed
+// omits `mode`, and those packages mean the simulation. Defaulting the other way
+// would reinterpret a pile of existing content.
+bool ParseEmitterMode(std::string_view value, ParticleEmitterMode* mode) noexcept {
+    if (!mode) return false;
+    if (value == "simulated") *mode = ParticleEmitterMode::Simulated;
+    else if (value == "sparkle") *mode = ParticleEmitterMode::Sparkle;
+    else if (value == "cometTrail") *mode = ParticleEmitterMode::CometTrail;
+    else if (value == "petalFall") *mode = ParticleEmitterMode::PetalFall;
+    else return false;
+    return true;
+}
+
+const char* EmitterModeName(ParticleEmitterMode mode) noexcept {
+    switch (mode) {
+    case ParticleEmitterMode::Simulated: return "simulated";
+    case ParticleEmitterMode::Sparkle: return "sparkle";
+    case ParticleEmitterMode::CometTrail: return "cometTrail";
+    case ParticleEmitterMode::PetalFall: return "petalFall";
+    }
+    return "simulated";
+}
+
+// Same shape as the fog-mode read: absent or empty means the default, and a value
+// that is present but unrecognised is a hard failure rather than a silent fallback.
+bool ReadEmitterMode(const JsonValue& object,
+                     const char* key,
+                     ParticleEmitterMode* mode,
+                     std::wstring* error) {
+    std::string text;
+    if (!ReadString8(object, key, &text, false, error)) return false;
+    if (text.empty()) return true;
+    if (!ParseEmitterMode(text, mode)) {
+        // Utf8ToWide in this file is (string_view, wstring*) -> bool, not a
+        // single-argument converter. Naming the offending value matters: a bare
+        // "mode is invalid" sends the reader hunting for which emitter broke.
+        std::wstring bad;
+        Utf8ToWide(text, &bad);
+        return Fail(error, L"Particle emitter mode is invalid: " + bad);
+    }
+    return true;
+}
+
 bool ParseContentKind(std::string_view value, ContentKind* kind) noexcept {
     if (!kind) return false;
     if (value == "wallpaper") *kind = ContentKind::Wallpaper;
@@ -1104,6 +1147,7 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
             ParticleEmitterDefinition emitter;
             if (!ReadString(emitterValue, "id", &emitter.id, true, error) ||
                 !ReadBool(emitterValue, "enabled", emitter.enabled, &emitter.enabled, error) ||
+                !ReadEmitterMode(emitterValue, "mode", &emitter.mode, error) ||
                 !ReadUint32(emitterValue, "maxParticles", emitter.maxParticles, &emitter.maxParticles, false, error) ||
                 !ReadNumber(emitterValue, "spawnRate", emitter.spawnRate, &emitter.spawnRate, false, error) ||
                 !ReadNumber(emitterValue, "lifetimeMin", emitter.lifetimeMinSeconds, &emitter.lifetimeMinSeconds, false, error) ||
@@ -1118,7 +1162,14 @@ bool ParseSceneRoot(const JsonValue& root, SceneRuntimeDefinition* runtime, std:
                 !ReadColorField(emitterValue, "colorStart", emitter.colorStart, &emitter.colorStart, false, error) ||
                 !ReadColorField(emitterValue, "colorEnd", emitter.colorEnd, &emitter.colorEnd, false, error) ||
                 !ReadString(emitterValue, "materialId", &emitter.materialId, false, error) ||
-                !ReadUint32(emitterValue, "seed", emitter.seed, &emitter.seed, false, error)) return false;
+                !ReadUint32(emitterValue, "seed", emitter.seed, &emitter.seed, false, error) ||
+                // Analytic-field half. Read unconditionally rather than only when
+                // mode is analytic, so a package that later flips mode picks up the
+                // values it always carried instead of silently reverting to defaults.
+                !ReadUint32(emitterValue, "analyticCount", emitter.analyticCount, &emitter.analyticCount, false, error) ||
+                !ReadColorField(emitterValue, "analyticColor", emitter.analyticColor, &emitter.analyticColor, false, error) ||
+                !ReadNumber(emitterValue, "analyticSpeed", emitter.analyticSpeed, &emitter.analyticSpeed, false, error) ||
+                !ReadNumber(emitterValue, "analyticOpacity", emitter.analyticOpacity, &emitter.analyticOpacity, false, error)) return false;
             runtime->particleEmitters.push_back(std::move(emitter));
         }
     }
@@ -1238,14 +1289,43 @@ std::string SerializeProperties(const std::vector<PropertyDefinition>& propertie
     return out;
 }
 
+// Emitters are compared field-by-field, not by count. The count-only version let a
+// round-trip lose every field and still report "equivalent", which is why the
+// analytic fields added with the emitter-mode split needed this before they could be
+// trusted: a serializer that dropped analyticCount would otherwise have looked fine.
+bool EquivalentEmitter(const ParticleEmitterDefinition& a,
+                       const ParticleEmitterDefinition& b) noexcept {
+    const auto near = [](double x, double y) {
+        return std::fabs(x - y) <= 1e-9 * (1.0 + std::fabs(x) + std::fabs(y));
+    };
+    return a.id == b.id && a.enabled == b.enabled && a.mode == b.mode &&
+           a.maxParticles == b.maxParticles && near(a.spawnRate, b.spawnRate) &&
+           near(a.lifetimeMinSeconds, b.lifetimeMinSeconds) &&
+           near(a.lifetimeMaxSeconds, b.lifetimeMaxSeconds) &&
+           near(a.sizeStart, b.sizeStart) && near(a.sizeEnd, b.sizeEnd) &&
+           a.materialId == b.materialId && a.seed == b.seed &&
+           a.analyticCount == b.analyticCount &&
+           near(a.analyticColor.r, b.analyticColor.r) &&
+           near(a.analyticColor.g, b.analyticColor.g) &&
+           near(a.analyticColor.b, b.analyticColor.b) &&
+           near(a.analyticColor.a, b.analyticColor.a) &&
+           near(a.analyticSpeed, b.analyticSpeed) &&
+           near(a.analyticOpacity, b.analyticOpacity);
+}
+
 bool EquivalentRuntime(const SceneRuntimeDefinition& a, const SceneRuntimeDefinition& b) noexcept {
-    return a.scene.id == b.scene.id && a.scene.kind == b.scene.kind && a.profile == b.profile &&
-           a.scene.rootNodeId == b.scene.rootNodeId && a.scene.nodes.size() == b.scene.nodes.size() &&
-           a.scene.assets.size() == b.scene.assets.size() && a.scene.shaders.size() == b.scene.shaders.size() &&
-           a.materials.size() == b.materials.size() && a.parameters.size() == b.parameters.size() &&
-           a.inputs.size() == b.inputs.size() && a.bindings.size() == b.bindings.size() &&
-           a.animations.size() == b.animations.size() && a.postProcesses.size() == b.postProcesses.size() &&
-           a.particleEmitters.size() == b.particleEmitters.size();
+    if (a.scene.id != b.scene.id || a.scene.kind != b.scene.kind || a.profile != b.profile ||
+        a.scene.rootNodeId != b.scene.rootNodeId || a.scene.nodes.size() != b.scene.nodes.size() ||
+        a.scene.assets.size() != b.scene.assets.size() || a.scene.shaders.size() != b.scene.shaders.size() ||
+        a.materials.size() != b.materials.size() || a.parameters.size() != b.parameters.size() ||
+        a.inputs.size() != b.inputs.size() || a.bindings.size() != b.bindings.size() ||
+        a.animations.size() != b.animations.size() || a.postProcesses.size() != b.postProcesses.size() ||
+        a.particleEmitters.size() != b.particleEmitters.size())
+        return false;
+    for (std::size_t i = 0; i < a.particleEmitters.size(); ++i) {
+        if (!EquivalentEmitter(a.particleEmitters[i], b.particleEmitters[i])) return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -1414,6 +1494,11 @@ bool MiaoSceneSerializer::SerializeScene(
         const auto& emitter = runtime.particleEmitters[i];
         out += "{\"id\":" + Quote(emitter.id) +
                ",\"enabled\":" + std::string(emitter.enabled ? "true" : "false") +
+               // Quoted explicitly. EmitterModeName returns a const char*, and
+               // concatenating it raw emits `"mode":simulated` — invalid JSON, caught
+               // by the round-trip in SelfTest as a bare "returns false". The name is
+               // pure ASCII so no wide/narrow conversion is needed here.
+               ",\"mode\":\"" + std::string(EmitterModeName(emitter.mode)) + "\"" +
                ",\"maxParticles\":" + std::to_string(emitter.maxParticles) +
                ",\"spawnRate\":" + Number(emitter.spawnRate) +
                ",\"lifetimeMin\":" + Number(emitter.lifetimeMinSeconds) +
@@ -1428,7 +1513,14 @@ bool MiaoSceneSerializer::SerializeScene(
                ",\"colorStart\":" + SerializeColor(emitter.colorStart) +
                ",\"colorEnd\":" + SerializeColor(emitter.colorEnd) +
                ",\"materialId\":" + Quote(emitter.materialId) +
-               ",\"seed\":" + std::to_string(emitter.seed) + "}";
+               ",\"seed\":" + std::to_string(emitter.seed) +
+               // Analytic-field half, always written. A reader that only understands
+               // the simulated model ignores these keys (Deserialize treats them as
+               // optional), and an emitter swapped between modes keeps its values.
+               ",\"analyticCount\":" + std::to_string(emitter.analyticCount) +
+               ",\"analyticColor\":" + SerializeColor(emitter.analyticColor) +
+               ",\"analyticSpeed\":" + Number(emitter.analyticSpeed) +
+               ",\"analyticOpacity\":" + Number(emitter.analyticOpacity) + "}";
     }
     out += "],\n";
 

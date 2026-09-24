@@ -214,12 +214,38 @@ struct AnimationTrackDefinition {
     std::wstring triggerInputId;
 };
 
+// How an emitter produces its particles. This is a *model* distinction, not a
+// tuning knob: the two modes compute different things and cannot express each
+// other, which is exactly why migrating the builtin wallpapers' particles needs
+// this enum rather than more fields.
+enum class ParticleEmitterMode {
+    // spawnRate / lifetime / velocity / acceleration — a real particle simulation.
+    // This is the original M4 contract.
+    Simulated,
+    // Stateless twinkle field: position from a per-index hash, brightness from a
+    // per-index pulse. Nothing persists between frames.
+    Sparkle,
+    // Bright heads travelling an arch, each dragging a fading trail.
+    CometTrail,
+    // Per-index falling drift with sine sway and a fade near the bottom.
+    PetalFall,
+};
+
 // M4 v1 CPU-authored emitter contract. The definition is renderer-independent:
 // simulation can run on CPU first while D3D11 consumes the resulting bounded
 // particle state through instanced rendering. Compute remains a later upgrade.
+//
+// `mode` decides which of these fields mean anything:
+//   Simulated  — spawnRate / lifetime* / velocity* / acceleration / size* / color*
+//   Sparkle / CometTrail / PetalFall — count / color / speed
+// The unused half is ignored by Validate and by the runtime rather than defaulted
+// into something plausible: an emitter that silently changes meaning because a
+// field it never used happened to be non-zero is the failure mode this split exists
+// to prevent.
 struct ParticleEmitterDefinition {
     std::wstring id;
     bool enabled{true};
+    ParticleEmitterMode mode{ParticleEmitterMode::Simulated};
     std::uint32_t maxParticles{1024};
     double spawnRate{24.0};
     double lifetimeMinSeconds{1.0};
@@ -235,6 +261,21 @@ struct ParticleEmitterDefinition {
     Color4 colorEnd{1.0, 1.0, 1.0, 0.0};
     std::wstring materialId;
     std::uint32_t seed{1};
+
+    // Analytic-field fields. Ignored by Simulated.
+    //
+    // `count` is a sample count, not a pool size: an analytic field is evaluated
+    // from scratch every frame and holds nothing, so there is no spawn budget to
+    // run out of. Naming it `maxParticles` would invite someone to tune it as a cap.
+    std::uint32_t analyticCount{};
+    // Base tint for the field. Per-sample colour is multiplied from this, so a
+    // scene can recolour a preset without a second set of formulas.
+    Color4 analyticColor{1.0, 0.92, 0.78, 1.0};
+    // CometTrail path speed, in normalised units per second.
+    double analyticSpeed{0.10};
+    // Peak alpha applied to the field, corresponding to scene.ini's
+    // [Particles] `opacity` / `flow_opacity`. Per-sample alpha multiplies it.
+    double analyticOpacity{1.0};
 };
 
 struct SceneRuntimeDefinition {
@@ -256,6 +297,13 @@ class MiaoSceneRuntimeModel {
 public:
     static constexpr std::uint32_t kMaxParticlesPerEmitter = 65536;
     static constexpr std::uint32_t kMaxParticlesPerScene = 131072;
+    // Analytic-field sample budget, per emitter and per scene. Separate from the
+    // simulated budget because it bounds a different thing: a simulation's
+    // maxParticles is a pool that refills over time, while an analytic count is
+    // re-evaluated every frame — so a scene with two analytic emitters pays twice
+    // per frame, not once.
+    static constexpr std::uint32_t kMaxAnalyticSamplesPerEmitter = 4096;
+    static constexpr std::uint32_t kMaxAnalyticSamplesPerScene = 16384;
 
     static bool Validate(const SceneRuntimeDefinition& runtime, std::wstring* error = nullptr);
 

@@ -1529,6 +1529,47 @@
       ]
     }
   ],
-  "particleEmitters": [],
+  "particleEmitters": [
+    {
+      "id": "particle://miao-cloud/sparkle",
+      "enabled": true,
+      "mode": "sparkle",
+      "analyticColor": [
+        1.0,
+        0.92,
+        0.78,
+        1.0
+      ],
+      "analyticCount": 38,
+      "analyticOpacity": 0.55
+    },
+    {
+      "id": "particle://miao-cloud/comet",
+      "enabled": true,
+      "mode": "cometTrail",
+      "analyticColor": [
+        1.0,
+        0.84,
+        0.98,
+        1.0
+      ],
+      "analyticCount": 4,
+      "analyticOpacity": 0.85,
+      "analyticSpeed": 0.1
+    },
+    {
+      "id": "particle://miao-cloud/petal",
+      "enabled": true,
+      "mode": "petalFall",
+      "analyticColor": [
+        1.0,
+        0.66,
+        0.83,
+        1.0
+      ],
+      "analyticCount": 14,
+      "analyticOpacity": 0.55
+    }
+  ],
   "postProcesses": []
 }

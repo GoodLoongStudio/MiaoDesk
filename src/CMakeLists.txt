@@ -44,6 +44,7 @@ set(MIAODESK_CORE_SOURCES
     content/scene/MiaoSceneModel.cpp
     content/serialization/MiaoSceneSerializer.cpp
     content/runtime/MiaoParticleRuntime.cpp
+    content/runtime/MiaoAnalyticParticleField.cpp
     content/runtime/MiaoSceneFrameScheduler.cpp
     content/runtime/MiaoSceneRuntime.cpp
     content/runtime/MiaoSceneRuntimeModel.cpp

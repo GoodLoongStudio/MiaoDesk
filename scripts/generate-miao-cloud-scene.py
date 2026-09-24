@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate MiaoCloud.mdwall/scene.json from its scene.ini.
+"""Generate a builtin wallpaper's scene.json from its scene.ini.
 
 Why a script and not a hand-written JSON: the layer geometry mapping is arithmetic, and
 arithmetic done by hand is arithmetic nobody checks. The renderer's transform is
@@ -14,7 +14,15 @@ fills the whole render target. So a legacy layer at (x, y, w, h) inside a
 which is verified by the inverse: composing the sprite's target rect (0,0,dw,dh) with
 scale about the centre and then that translation yields exactly (x, y, w, h).
 
-Run:  python3 scripts/generate-miao-cloud-scene.py [--write]
+This handles **all three** builtin wallpapers, not just MiaoCloud. Writing a second
+generator for NeonCity / MysticMoon would have duplicated the transform arithmetic and
+the animation frequency table (drift 0.77 / sway 0.81 / breathe 1.0) — the same
+"two backends, two copies of one rule" shape the repo has already been bitten by. The
+two remaining packages use only forms MiaoCloud already covered: note that scene.ini's
+`float` and `drift` are the *same branch* in LayeredSceneRenderer.h:231-233, so MysticMoon's
+`float` is not a new animation type.
+
+Run:  python3 scripts/generate-miao-cloud-scene.py [--package NAME|all] [--write|--check]
 """
 import math
 import argparse
@@ -24,7 +32,15 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PACKAGE = ROOT / "assets" / "wallpapers" / "MiaoCloud.mdwall"
+
+# scene id / animation id prefix per package. These are part of the on-disk format
+# (the empty-shell scene.json files already used neon-city / mystic-moon), so they are
+# fixed here rather than derived — a rename would change every animation id in the file.
+SLUGS = {"MiaoCloud": "miao-cloud", "NeonCity": "neon-city", "MysticMoon": "mystic-moon"}
+
+
+def package_dir(name):
+    return ROOT / "assets" / "wallpapers" / (name + ".mdwall")
 
 
 def read_layers(path):
@@ -33,15 +49,27 @@ def read_layers(path):
     ConfigParser preserves section order, and the .ini's section order *is* the layer
     stacking order. Drawn back-to-front like scene.ini lists them, so the order is
     carried through rather than re-sorted.
+
+    read_string on text we read ourselves, **not** cp.read(path): read() silently
+    ignores a file it cannot open and returns the list it did manage to read, so a
+    wrong path here yields an empty layer list — which then reports as
+    "layer_count says N but there are 0 Layer sections", pointing the reader at the
+    .ini's contents rather than at the path that was wrong. Same defect, same fix, as
+    in scripts/generate-builtin-wallpaper-art.py.
     """
+    text = path.read_text(encoding="utf-8")
     cp = configparser.ConfigParser()
-    cp.read(path, encoding="utf-8")
+    cp.read_string(text, source=str(path))
     scene = dict(cp["Scene"])
     layers = [dict(cp[name]) for name in cp.sections() if name.startswith("Layer")]
     if len(layers) != int(scene["layer_count"]):
         raise SystemExit("scene.ini 声明 layer_count=%s,实际有 %d 个 Layer 段"
                          % (scene["layer_count"], len(layers)))
-    return scene, layers
+    # The whole mapping, not just [Scene]: [Particles] is a separate section and the
+    # particle emitters are built from it. Returning only [Scene] here silently gave
+    # particle_emitters() nothing to read, and an empty emitter list looks exactly
+    # like "this package declares no particles".
+    return scene, layers, cp
 
 
 def num(value, default=0.0):
@@ -85,7 +113,7 @@ def transform_for(layer, design_w, design_h):
 #
 # 采样数 16(即 15 个区间)不是拍的:均匀采样 + 线性插值的最大误差是
 # A*(1-cos(pi/15)) = A*0.0219,对最大的 drift 幅值 14px 是 0.306px —— 亚像素。
-# 这个数由 scripts/verify-miao-cloud-animation-parity.py 逐点复核,不是注释里的口号。
+# 这个数由 scripts/verify-builtin-wallpaper-animation-parity.py 逐点复核,不是注释里的口号。
 SAMPLES_PER_PERIOD = 16
 
 
@@ -113,14 +141,14 @@ def rounded(value, places=6):
     return round(value, places)
 
 
-def track(component_id, prop, fn, period, name):
+def track(component_id, prop, fn, period, name, slug):
     """一个周期内均匀采样,Linear,loop。"""
     keys = []
     for i in range(SAMPLES_PER_PERIOD):
         t = period * i / (SAMPLES_PER_PERIOD - 1)
         keys.append({"time": t, "value": rounded(fn(t)), "easing": "linear"})
     return {
-        "id": "animation://miao-cloud/%s" % name,
+        "id": "animation://%s/%s" % (slug, name),
         "target": {"componentId": component_id, "propertyName": prop},
         "enabled": True,
         "loop": "loop",
@@ -182,8 +210,72 @@ def verify(layers, transforms, design_w, design_h):
             "%s: 合成结果 %s 与 scene.ini 的 %s 不符" % (layer["name"], got, want))
 
 
-def build():
-    scene_cfg, layers = read_layers(PACKAGE / "scene.ini")
+def particle_emitters(cfg, slug):
+    """ Declarative emitters from scene.ini's [Particles].
+
+    The legacy renderer draws three *stateless analytic fields* — sparkles, a comet
+    trail, and falling petals — evaluated from the index every frame. Those map onto
+    the analytic emitter modes, one emitter per field, carrying only what [Particles]
+    actually declares. clamps match LayeredSceneRenderer's own reads so a scene.ini
+    value outside the range produces what legacy produced, not what the text said.
+    """
+    try:
+        particles = dict(cfg["Particles"])
+    except KeyError:
+        return []
+
+    def clamp(value, low, high, default):
+        if value is None:
+            return default
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return max(low, min(high, parsed))
+
+    sparkles = int(clamp(particles.get("sparkle_count"), 0, 96, 22))
+    petals = int(clamp(particles.get("petal_count"), 0, 64, 12))
+    opacity = clamp(particles.get("opacity"), 0.0, 1.0, 0.46)
+    comets = int(clamp(particles.get("flow_count"), 0, 12, 0))
+    comet_opacity = clamp(particles.get("flow_opacity"), 0.0, 1.0, 0.0)
+    comet_speed = clamp(particles.get("flow_speed"), 0.005, 0.5, 0.065)
+
+    emitters = []
+    if sparkles > 0:
+        emitters.append({
+            "id": "particle://%s/sparkle" % slug,
+            "enabled": True,
+            "mode": "sparkle",
+            # The legacy sparkle's fixed tint. Declared so an author can recolour the
+            # field later without the formula knowing about it.
+            "analyticColor": [1.0, 0.92, 0.78, 1.0],
+            "analyticCount": sparkles,
+            "analyticOpacity": round(opacity, 6),
+        })
+    if comets > 0:
+        emitters.append({
+            "id": "particle://%s/comet" % slug,
+            "enabled": True,
+            "mode": "cometTrail",
+            "analyticColor": [1.0, 0.84, 0.98, 1.0],
+            "analyticCount": comets,
+            "analyticOpacity": round(comet_opacity, 6),
+            "analyticSpeed": round(comet_speed, 6),
+        })
+    if petals > 0:
+        emitters.append({
+            "id": "particle://%s/petal" % slug,
+            "enabled": True,
+            "mode": "petalFall",
+            "analyticColor": [1.0, 0.66, 0.83, 1.0],
+            "analyticCount": petals,
+            "analyticOpacity": round(opacity, 6),
+        })
+    return emitters
+
+
+def build(slug, name):
+    scene_cfg, layers, ini_cfg = read_layers(package_dir(name) / "scene.ini")
     design_w, design_h = num(scene_cfg["design_width"]), num(scene_cfg["design_height"])
     transforms = [transform_for(l, design_w, design_h) for l in layers]
     verify(layers, transforms, design_w, design_h)
@@ -258,7 +350,7 @@ def build():
                 if k["time"] > filtered[-1]["time"]:
                     filtered.append(k)
             animations.append({
-                "id": "animation://miao-cloud/%s-blink" % layer["name"],
+                "id": "animation://%s/%s-blink" % (slug, layer["name"]),
                 "target": {"componentId": sprite_id, "propertyName": "opacity"},
                 "enabled": True,
                 "loop": "loop",
@@ -302,7 +394,7 @@ def build():
                 animations.append(track(
                     axis_transform_id, "position",
                     lambda t, f=y_fn: [0.0, f(t)],
-                    period_y, "%s-axis-y" % layer["name"]))
+                    period_y, "%s-axis-y" % layer["name"], slug))
                 parent_id = axis_id
 
             if x_fn is not None:
@@ -311,14 +403,14 @@ def build():
                 animations.append(track(
                     transform_id, "position",
                     lambda t, f=x_fn, bx=bx, by=by: [bx + f(t), by],
-                    period_x, "%s-axis-x" % layer["name"]))
+                    period_x, "%s-axis-x" % layer["name"], slug))
 
             if angle_fn is not None:
                 period_a = period_of(speed)
                 animations.append(track(
                     transform_id, "rotation",
                     lambda t, f=angle_fn: f(t),
-                    period_a, "%s-angle" % layer["name"]))
+                    period_a, "%s-angle" % layer["name"], slug))
 
             if scale_fn is not None:
                 period_s = period_of(speed)
@@ -328,7 +420,7 @@ def build():
                 animations.append(track(
                     transform_id, "scale",
                     lambda t, f=scale_fn, sx=sx, sy=sy: [sx * f(t), sy * f(t)],
-                    period_s, "%s-scale" % layer["name"]))
+                    period_s, "%s-scale" % layer["name"], slug))
 
         nodes.append({
             "id": node_id,
@@ -361,7 +453,7 @@ def build():
 
     return {
         "schema": 1,
-        "id": "scene://builtin/miao-cloud",
+        "id": "scene://builtin/%s" % slug,
         "kind": "wallpaper",
         "profile": "wallpaper",
         "rootNodeId": "node://root",
@@ -375,19 +467,32 @@ def build():
         # 关键帧在正弦极值/等分点上按 16 采样/周期生成;Lissajous 的两根轴
         # 因为频率不同(drift 0.77、sway 0.81)而拆到父子两个节点,靠变换连乘合成。
         # 最大误差 A*(1-cos(pi/15)),即最大幅值 14px 上 0.306px —— 由
-        # scripts/verify-miao-cloud-animation-parity.py 逐点复核。
+        # scripts/verify-builtin-wallpaper-animation-parity.py 逐点复核。
         "animations": animations,
-        # 粒子刻意留空。scene.ini 的 [Particles] 只有计数与两个不透明度,
-        # 而 legacy 的粒子是 LayeredSceneRenderer.h:273-314 里**过程式生成**的
-        # (正弦抖动、kPi 拱形、按 i%5 分频),没有一个"每粒子初速度/寿命/尺寸"的
-        # 声明式来源。把发射器参数编出来等于替用户编一份视觉,这里不做。
-        "particleEmitters": [],
+        # 粒子已迁移(2026-09-23)。此前这里刻意留空,理由是"legacy 的粒子是过程式
+        # 生成的,没有每粒子的声明式来源" —— 那个理由只对**有状态发射器**成立。
+        # 事实上 legacy 的三种粒子全是**无状态解析场**:每帧按索引现算,不存任何
+        # 跨帧状态。所以它不需要"每粒子初速度/寿命",它需要的是另一种 emitter 模型。
+        #
+        # 于是 ParticleEmitterDefinition 多了 mode(Simulated / Sparkle / CometTrail /
+        # PetalFall),解析场的公式在 MiaoAnalyticParticleField.cpp 里**只存在一份**,
+        # 两个渲染后端都调它。这里声明的只有 scene.ini 真正暴露过的那些量:
+        # 计数、不透明度、以及彗星的流速。配方与常数一律不暴露 —— 0.78 的场高、
+        # i%5 的脉动分频、11 段尾迹都是设计常量,不是创作旋钮。
+        #
+        # clamp 与 LayeredSceneRenderer 读 [Particles] 时的那几处一致(96/64/12、
+        # opacity [0,1]、flow_speed [0.005,0.5]):scene.ini 写 0.001 时 legacy 实际
+        # 用 0.005,scene.json 若照抄 0.001 就已分叉。
+        "particleEmitters": particle_emitters(ini_cfg, slug),
         "postProcesses": [],
     }
 
 
 def main():
     ap = argparse.ArgumentParser()
+    choices = sorted(SLUGS) + ["all"]
+    ap.add_argument("--package", default="all", choices=choices,
+                    help="生成/校验哪一个包(默认 all = 三个内置壁纸)")
     ap.add_argument("--write", action="store_true", help="写回 scene.json")
     ap.add_argument("--check", action="store_true",
                     help="只比对:重新生成并与磁盘上的 scene.json 逐字节比较,不一致则非零退出")
@@ -395,46 +500,64 @@ def main():
     if args.write and args.check:
         ap.error("--write 与 --check 互斥")
 
-    # build() 里包含对每层的逆合成 assert,所以三种模式都会先验几何。
-    doc = build()
-    text = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+    names = sorted(SLUGS) if args.package == "all" else [args.package]
+    failures = []
+    for name in names:
+        slug = SLUGS[name]
+        # build() 里包含对每层的逆合成 assert,所以三种模式都会先验几何。
+        doc = build(slug, name)
+        text = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+        target = package_dir(name) / "scene.json"
 
-    if args.check:
-        target = PACKAGE / "scene.json"
-        try:
-            on_disk = target.read_text(encoding="utf-8")
-        except OSError as exc:
-            sys.exit("❌ 读不到 %s:%s" % (target, exc))
-        if on_disk != text:
-            # 把差异本身打出来。上一版只说"不一致",而定位它要的正是差异在哪一行 ——
-            # 2026-09-22 这道门在 Linux CI 上红了一轮,我手上只有"不一致"三个字,
-            # 本机却复现不出来,等于没有信息。
-            import difflib
-            diff = list(difflib.unified_diff(
-                on_disk.splitlines(), text.splitlines(),
-                "scene.json(磁盘)", "scene.ini 重新生成", lineterm="", n=1))
-            shown = diff[:24]
-            sys.exit(
-                "❌ %s 与重新生成的结果不一致(%d 行不同,下面是最多 24 行差异)。\n"
-                "  scene.ini 是几何的唯一来源;scene.json 是它的产物。\n"
-                "  手改 scene.json 会让二者悄悄分叉 —— 而分叉的后果是图层位置\n"
-                "  与源不符,却没有任何测试会报错。\n"
-                "  修法:改 scene.ini,然后 python3 %s --write;\n"
-                "  或者确认这次偏离是有意的,并把理由写进提交信息。\n%s"
-                % (target, max(0, len(diff) - 2), __file__,
-                   "\n".join("    " + line for line in shown)))
-        print("✅ %s 与 scene.ini 一致(%d 节点 / %d 资产,几何逐字节复现)"
-              % (target, len(doc["nodes"]), len(doc["assets"])))
-        return 0
+        if args.check:
+            try:
+                on_disk = target.read_text(encoding="utf-8")
+            except OSError as exc:
+                failures.append("❌ 读不到 %s:%s" % (target, exc))
+                continue
+            if on_disk != text:
+                # 把差异本身打出来。上一版只说"不一致",而定位它要的正是差异在哪一行 ——
+                # 2026-09-22 这道门在 Linux CI 上红了一轮,我手上只有"不一致"三个字,
+                # 本机却复现不出来,等于没有信息。
+                import difflib
+                diff = list(difflib.unified_diff(
+                    on_disk.splitlines(), text.splitlines(),
+                    "scene.json(磁盘)", "scene.ini 重新生成", lineterm="", n=1))
+                failures.append(
+                    "❌ %s 与重新生成的结果不一致(%d 行不同,下面是最多 24 行差异)。\n"
+                    "  scene.ini 是几何的唯一来源;scene.json 是它的产物。\n"
+                    "  手改 scene.json 会让二者悄悄分叉 —— 而分叉的后果是图层位置\n"
+                    "  与源不符,却没有任何测试会报错。\n"
+                    "  修法:改 scene.ini,然后 python3 %s --package %s --write;\n"
+                    "  或者确认这次偏离是有意的,并把理由写进提交信息。\n%s"
+                    % (target, max(0, len(diff) - 2), __file__, name,
+                       "\n".join("    " + line for line in diff[:24])))
+                continue
+            print("✅ %s 与 scene.ini 一致(%d 节点 / %d 资产,几何逐字节复现)"
+                  % (target, len(doc["nodes"]), len(doc["assets"])))
+            continue
 
-    if args.write:
-        target = PACKAGE / "scene.json"
-        target.write_text(text, encoding="utf-8")
-        print("已写入 %s" % target)
-        print("节点 %d 个(1 root + %d 图层),资产 %d 个" % (len(doc["nodes"]), len(doc["nodes"]) - 1, len(doc["assets"])))
-        return 0
+        if args.write:
+            target.write_text(text, encoding="utf-8")
+            print("已写入 %s" % target)
+            # 节点分三类,分开数:1 root + N 图层 + M 个 axis-y 父节点。
+            # 早先这里把 len(nodes)-1 一律印成"图层",于是 MiaoCloud 印的是
+            # "1 root + 8 图层",而它只有 5 层 —— 剩下 3 个是给李萨如 y 轴加的父节点。
+            # 一个读起来像概况、其实是错分类的数字,比没有更坏事。
+            layer_nodes = sum(1 for n in doc["nodes"]
+                              if n["id"].startswith("node://layer/") and "/axis-" not in n["id"])
+            axis_nodes = len(doc["nodes"]) - 1 - layer_nodes
+            print("节点 %d 个(1 root + %d 图层 + %d 个 axis-y 父节点),资产 %d 个,动画 %d 条"
+                  % (len(doc["nodes"]), layer_nodes, axis_nodes,
+                     len(doc["assets"]), len(doc["animations"])))
+            continue
 
-    sys.stdout.write(text)
+        sys.stdout.write(text)
+
+    if failures:
+        for f in failures:
+            print(f, file=sys.stderr)
+        return 1
     return 0
 
 

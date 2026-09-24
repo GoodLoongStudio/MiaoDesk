@@ -6,14 +6,22 @@
 // render contract had no textured-sprite path — and that has since been implemented.
 // Walking the real packages here surfaced a second, harder blocker that the TODO had no
 // line for: NeonCity and MysticMoon declare five image layers each in scene.ini, and
-// **neither package contains any asset file**. They never have: git has no record of
+// **neither package contained any asset file**. They never had: git had no record of
 // `assets/wallpapers/NeonCity.mdwall/assets/*` or the MysticMoon equivalent, and the
-// filenames appear nowhere else in the tree. Only MiaoCloud actually ships its five
+// filenames appeared nowhere else in the tree. Only MiaoCloud actually shipped its five
 // images.
 //
-// No amount of renderer work closes that. So this test pins both halves as facts rather
-// than discoveries: which packages have a populated scene.json, and which ones' asset
-// references all resolve to real files on disk.
+// Both halves were then closed, and in the opposite order to the one assumed:
+// the art **did** exist — it was in the working tree, uncommitted and unverified, because
+// the generator's --check had never once run to completion (it died on a silent
+// configparser path at HEAD, and on a missing stream method after that). With the gate
+// fixed, the ten files reproduce byte-for-byte from their generator. That left the real
+// work: generating the scene.json both packages were missing.
+//
+// So this test now pins the *migrated* state — all three packages with a populated
+// scene.json whose asset references resolve — rather than the empty shells it started
+// from. The node counts below are derived, not rounded.
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoAssetDatabase.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoSceneModel.h"
@@ -47,7 +55,9 @@ struct PackageOutcome {
     std::size_t resolvedCount{};
     std::size_t texturedSpriteCount{};
     std::size_t animationCount{};
+    std::size_t axisYNodeCount{};
     std::size_t emitterCount{};
+    std::vector<ParticleEmitterDefinition> emitters;
     std::wstring error;
 };
 
@@ -70,6 +80,12 @@ static PackageOutcome Walk(const fs::path& root) {
     out.assetCount = definition.scene.assets.size();
 
     for (const auto& node : definition.scene.nodes) {
+        // Counted here rather than derived from expectedNodes, because the number is
+        // composed at generation time and differs per package: it is however many
+        // layers move y on a different frequency than x. Printing it derived means the
+        // message cannot go stale the way a hardcoded "3" did the moment a second
+        // package with four such layers existed.
+        if (node.id.find(L"/axis-y") != std::wstring::npos) ++out.axisYNodeCount;
         for (const auto& component : node.components) {
             if (component.kind != ComponentKind::SpriteRenderer) continue;
             for (const auto& property : component.properties) {
@@ -87,6 +103,7 @@ static PackageOutcome Walk(const fs::path& root) {
     out.resolvedCount = assets.Size();
     out.animationCount = definition.animations.size();
     out.emitterCount = definition.particleEmitters.size();
+    out.emitters = definition.particleEmitters;
 
     // The last link of the chain the D2D renderer runs. If Initialize fails, the
     // renderer's Load fails, and the host falls back to a built-in wallpaper — so this
@@ -129,27 +146,36 @@ int wmain() {
 
     struct Spec {
         const char* name;
-        int expectedNodes;      // 0 means "still an empty shell"
+        int expectedNodes;      // 1 root + N layer nodes + M "axis-y" parents
         bool expectsAssets;
+        std::size_t expectedEmitters;  // analytic particle fields from [Particles]
     };
     const Spec specs[] = {
-        // MiaoCloud is the only package that ships its art, so it is the only one that
-        // can be migrated to scene.json. Its scene.json is authored with all five
-        // layers, each a SpriteRenderer naming a real Image asset.
+        // All three builtin wallpapers now ship their art and have a populated
+        // scene.json, generated from scene.ini by
+        // scripts/generate-miao-cloud-scene.py (arithmetic nobody does by hand).
         //
-        // 9 nodes, not 6: 1 root + 5 layer nodes + 3 "axis-y" parents. Three of the five
-        // layers (cloud_pedestal / tail / cat) animate y on a *different frequency* than
-        // x — drift uses speed*0.77, sway speed*0.81, per LayeredSceneRenderer.h:229 —
-        // and one animation track drives one whole property, with position being a vec2
-        // and PropertyAddress having no .x/.y component addressing. So each Lissajous
-        // axis gets its own node and the two are composed by the parent-chain
-        // transform multiply. background animates nothing, hence 3 and not 4.
-        {"MiaoCloud", 9, true},
-        // These two declare five image layers in scene.ini and own no images at all.
-        // Asserting the current state keeps that from being rediscovered as a surprise
-        // later — and keeps anyone from "finishing" P0-4 by editing scene.json alone.
-        {"NeonCity", 1, false},
-        {"MysticMoon", 1, false},
+        // Node counts are not "layers + 1". A layer whose y-axis moves at a
+        // different frequency than its x-axis gets an extra parent node: one
+        // animation track drives one whole property, and `position` is a vec2 with
+        // no .x/.y addressing, so a Lissajous cannot be expressed as a single track.
+        // The two axes are composed by the parent-chain transform multiply instead.
+        // The frequency multipliers are the renderer's own: drift 0.77, sway 0.81,
+        // breathe 1.0 (LayeredSceneRenderer.h:229-244).
+        //
+        // So: 9 = 1 root + 5 layers + 3 parents. Three of MiaoCloud's five layers
+        // (cloud_pedestal / tail / cat) animate y; `background` animates nothing.
+        {"MiaoCloud", 9, true, 3},
+        // 10 = 1 root + 5 layers + 4 parents. city_glow is `breathe` (y + scale), and
+        // haze / rain_far / rain_near are `drift`; `background` animates nothing.
+        // Four animated layers, four parents.
+        {"NeonCity", 10, true, 1},
+        // 10 = 1 root + 5 layers + 4 parents. moon_glow is `breathe`, water_glow and
+        // fog are `drift`, and fireflies is `float`. `float` is **not** a fifth
+        // animation kind — scene.ini's `float` and `drift` share one branch in
+        // LayeredSceneRenderer.h:231-233 and move identically — so nothing new had to
+        // be migrated for it.
+        {"MysticMoon", 10, true, 1},
     };
 
     for (const auto& spec : specs) {
@@ -179,7 +205,11 @@ int wmain() {
 
         if (spec.expectedNodes > 0) {
             Check(out.nodeCount == static_cast<std::size_t>(spec.expectedNodes),
-                  "节点数符合预期(1 root + 5 图层 + 3 个 axis-y 父节点)");
+                  "节点数符合预期");
+            std::printf("         组成 = 1 root + %zu 图层 + %zu 个 axis-y 父节点"
+                        "(期望 %d 个)\n",
+                        out.nodeCount - 1 - out.axisYNodeCount, out.axisYNodeCount,
+                        spec.expectedNodes);
         } else {
             Check(out.nodeCount == 1, "仍是空壳(只有 root)");
         }
@@ -187,33 +217,51 @@ int wmain() {
             Check(out.assetCount == 5, "scene.json 声明了 5 个 Image 资产");
             Check(out.resolvedCount == 5, "5 个资产全部解析到真实文件");
             Check(out.texturedSpriteCount == 5, "5 个 sprite 都带 texture 资产引用");
-            // Recorded gaps, not passes. MiaoCloud's scene.ini drives six analytic
-            // animations and three particle emitters; the scene.json carries neither
-            // yet. Asserting the count pins the state in both directions — it stops the
-            // gap from silently growing, and it stops someone reading 0 as "correct".
-            // 8 tracks, and the arithmetic is the acceptance criterion:
-            //   drift  (cloud_pedestal) -> axis-y, axis-x                     = 2
-            //   sway   (tail)           -> axis-y, axis-x, angle              = 3
-            //   breathe(cat)            -> axis-y, scale                      = 2
-            //   blink  (blink)          -> opacity square wave                = 1
-            // background is animation=none, so it contributes none.
+            // Recorded gaps, not passes. scene.ini's [Particles] carries only counts
+            // and two opacities, while LayeredSceneRenderer.h:273-314 generates its
+            // particles procedurally (per-index sine jitter, a kPi arch, i%5 frequency
+            // classes). There is no declarative per-particle source to map from, so
+            // writing emitter parameters would be inventing the user's visual.
+            //
+            // 8 tracks each, but reached by different arithmetic per package — this is
+            // pinned as a count precisely so that arithmetic cannot drift silently:
+            //   MiaoCloud : drift(cloud_pedestal)=2, sway(tail)=3, breathe(cat)=2,
+            //               blink(blink)=1                     -> 8
+            //   NeonCity  : breathe(city_glow)=2, drift(haze/rain_far/rain_near)=2*3 -> 8
+            //   MysticMoon: breathe(moon_glow)=2, drift(water_glow/fog)=2*2,
+            //               float(fireflies)=2                  -> 8
+            // `background` is animation=none in all three and contributes none.
+            // Note `float` is not a fifth kind: it shares one branch with `drift` in
+            // LayeredSceneRenderer.h:231-233 and moves identically.
             //
             // Fidelity is not asserted here — it is asserted, in pixels, by
-            // scripts/verify-miao-cloud-animation-parity.py, which samples the engine's
-            // own easing/local-time code against the legacy analytic formulas. This
-            // assertion only pins that the migration exists and did not silently lose a
-            // layer: 0 would mean "never migrated", and a count that stops matching the
-            // arithmetic above means scene.ini and the generator drifted apart.
+            // scripts/verify-builtin-wallpaper-animation-parity.py, which samples the engine's
+            // own easing/local-time code against the legacy analytic formulas (and today
+            // only covers MiaoCloud). This assertion only pins that the migration exists
+            // and did not silently lose a layer: 0 would mean "never migrated", and a
+            // count that stops matching the arithmetic above means scene.ini and the
+            // generator drifted apart.
             Check(out.animationCount == 8,
-                  "动画已迁移:4 个 scene.ini 动画层 -> 8 条关键帧轨(推导见上方注释)");
-            // Still a gap, and deliberately: [Particles] carries only counts and two
-            // opacities, while LayeredSceneRenderer.h:273-314 generates its particles
-            // procedurally (per-index sine jitter, a kPi arch, i%5 frequency classes).
-            // There is no declarative per-particle source to map from, so writing
-            // emitters here would mean inventing the visuals rather than migrating them.
-            Check(out.emitterCount == 0,
-                  "[记录在案的缺口] 粒子未迁移:[Particles] 只有计数,legacy 是过程式生成,"
-                  "无可映射的声明式来源");
+                  "动画已迁移(4 个 scene.ini 动画层 -> 8 条关键帧轨,推导见上方注释)");
+            // Particles are migrated as of 2026-09-23. The old assertion pinned
+            // `emitterCount == 0` with the reason "[Particles] carries only counts,
+            // there is no declarative per-particle source" — and that reason was
+            // right about *simulated* emitters and wrong about these particles:
+            // the legacy sparkles / comet trail / petals are a **stateless analytic
+            // field**, evaluated from the index every frame, which needs a different
+            // emitter *model*, not more fields. MiaoAnalyticParticleField.cpp holds
+            // that model once for both render backends, and the generator declares
+            // only what scene.ini exposed (counts, opacities, comet speed).
+            //
+            // Pinned per package, because the counts differ and a future package's
+            // [Particles] will too: 0 would mean the migration silently vanished.
+            Check(out.emitterCount == spec.expectedEmitters,
+                  "scene.ini 的 [Particles] 已迁成声明式解析场发射器");
+            for (const auto& emitter : out.emitters) {
+                if (!IsAnalyticEmitterMode(emitter.mode)) {
+                    Check(false, "particle emitter mode is analytic, not simulated");
+                }
+            }
         } else {
             Check(out.assetCount == 0, "scene.json 尚未声明任何资产(原因见本文件开头)");
         }

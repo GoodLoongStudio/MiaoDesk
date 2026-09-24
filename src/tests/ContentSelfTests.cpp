@@ -33,6 +33,7 @@
 // `!IsSafeRelativePath(L"C:\\outside.png")`, and a drive letter plus a backslash only
 // escapes a package where a backslash is a separator. Running it here returns false.
 #include "miaodesk/MiaoGpuParameterBlock.h"
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoParticleRuntime.h"
 #include "miaodesk/MiaoPostProcessCompiler.h"
 #include "miaodesk/MiaoPostProcessShaderLibrary.h"
@@ -66,6 +67,10 @@ int wmain() {
     Run("MiaoShaderContract::SelfTest", MiaoShaderContract::SelfTest);
     Run("MiaoGpuParameterPacker::SelfTest", MiaoGpuParameterPacker::SelfTest);
     Run("MiaoParticleRuntime::SelfTest", MiaoParticleRuntime::SelfTest);
+    // 解析场粒子。MiaoParticleRuntime 模拟的是"有状态发射器";内置壁纸的粒子是
+    // "无状态解析场",两者不是参数差别而是模型差别,所以是另一份实现。它平台无关,
+    // 于是每台机器都能跑 —— 包括"位置是否落在 legacy 那个 hash 上"这类保真断言。
+    Run("MiaoAnalyticParticleField SelfTest", MiaoAnalyticParticleFieldSelfTest);
     Run("MiaoSceneRuntimeModel::SelfTest", MiaoSceneRuntimeModel::SelfTest);
     // 第八项,来自 P3-6 第 2 步之后的一次更正:渲染目标池的尺寸自测此前也只在 Windows
     // 上跑,而它是纯算术 —— 只是实现躺在一个 include 了 d3d11.h 的 .cpp 里。

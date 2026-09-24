@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""逐点复核 MiaoCloud 的 scene.json 动画是否复现 scene.ini 的解析式运动。
+"""逐点复核内置壁纸的 scene.json 动画是否复现 scene.ini 的解析式运动。
 
 为什么需要它:动画从"解析式正弦"迁到"线性插值关键帧轨"是一次**有损**迁移,
 损失量必须是个数,不能是注释里的一句"亚像素"。这个脚本把两个源都读进来,
 按引擎的真实语义求值,再逐点比。
+
+覆盖**三个**内置壁纸。2026-09-23 之前只复核 MiaoCloud —— 那时另外两个包的
+scene.json 还是空壳,没有可校验的产物。两个包迁完之后只复核一个,
+等于让"保真"对三分之二的迁移不成立,而报告照样全绿。
 
 引擎语义(摘自 src/content/runtime/MiaoSceneRuntime.cpp,不是推测):
   AnimationLocalTime  PingPong: period = duration*2, 折回 [0, duration]
@@ -25,6 +29,9 @@ scene.ini 的公式摘自 src/include/miaodesk/LayeredSceneRenderer.h:229-244:
                cycle = fmod(max(0, t+phase), blinkInterval)
                cycle > blinkDuration 时 opacity = 0
 
+`float` 与 `drift` 是**同一个分支、同一条公式**(LayeredSceneRenderer.h:231),
+所以 MysticMoon 的 `float` 不需要第五套迁移规则。
+
 李萨如的两根轴频率不同,而场景一条轨只能动一个完整属性(position 是 vec2、
 没有 .x/.y 寻址),所以生成器把 y 轴放到父节点、x 轴留在子节点,靠节点变换
 连乘合成。这里按同样的连乘来比。
@@ -36,9 +43,13 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PACKAGE = ROOT / "assets" / "wallpapers" / "MiaoCloud.mdwall"
-SCENE = PACKAGE / "scene.json"
-INI = PACKAGE / "scene.ini"
+WALLPAPERS = ROOT / "assets" / "wallpapers"
+PACKAGES = ("MiaoCloud", "NeonCity", "MysticMoon")
+
+
+def paths(name):
+    package = WALLPAPERS / (name + ".mdwall")
+    return package / "scene.json", package / "scene.ini"
 
 # 均匀采样 + 线性插值的解析上界:A*(1-cos(pi/(N-1)))。
 SAMPLES = 16
@@ -55,9 +66,15 @@ def fail(msg):
     sys.exit(1)
 
 
-def read_ini():
+def read_ini(ini_path):
+    """Layers in file order.
+
+    read_string on text we read ourselves, not cfg.read(path): read() silently
+    ignores a file it cannot open and returns the ones it did read, so a wrong path
+    here yields an empty layer list that reads like "this package has no layers".
+    """
     cfg = configparser.ConfigParser()
-    cfg.read(INI, encoding="utf-8")
+    cfg.read_string(ini_path.read_text(encoding="utf-8"), source=str(ini_path))
     layers = []
     for section in cfg.sections():
         if not section.startswith("Layer"):
@@ -123,9 +140,18 @@ def num(value, default=0.0):
         return default
 
 
-def main():
-    ini_cfg, layers = read_ini()
-    doc = json.loads(SCENE.read_text(encoding="utf-8"))
+def check_package(package):
+    """Return the failure count for one package.
+
+    The parameter is `package`, not `name`: the per-layer loop below binds
+    `name = layer["name"]`, and a parameter with that name would be silently
+    reassigned by it. It happens to be harmless here because paths()/read_ini()
+    are called before the loop, which is precisely why it would have been hard to
+    notice later.
+    """
+    scene_path, ini_path = paths(package)
+    ini_cfg, layers = read_ini(ini_path)
+    doc = json.loads(scene_path.read_text(encoding="utf-8"))
     tracks = {a["id"]: a for a in doc.get("animations", [])}
     by_target = {}
     for a in doc.get("animations", []):
@@ -258,8 +284,19 @@ def main():
 
     if failures:
         print(f"❌ {failures} 项超出误差上界")
+    return failures
+
+
+def main():
+    total = 0
+    for name in PACKAGES:
+        print(f"\n{'=' * 62}\n{name}\n{'=' * 62}")
+        total += check_package(name)
+    if total:
+        print(f"\n❌ 三个包合计 {total} 项超出误差上界")
         return 1
-    print(f"✅ 全部在解析上界 A*(1-cos(pi/{SAMPLES-1})) = {BOUND*100:.2f}% 幅值之内")
+    print(f"\n✅ 三个包的迁移动画全部在解析上界 A*(1-cos(pi/{SAMPLES-1})) "
+          f"= {BOUND*100:.2f}% 幅值之内")
     print("   (最大幅值 14px 上约 0.306px —— 亚像素)")
     return 0
 

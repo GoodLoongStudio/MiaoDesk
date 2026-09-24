@@ -263,7 +263,41 @@
     而那些在 `WM_DESTROY` 等处已经把 COM 对象释放掉了(`WebDesktopSurfaceChild` 正是如此);
     **在不能编译验证的机器上批量改三十处收尾顺序,风险大于收益**。只修了自己那一处,
     并把判据写下来。
-现在有**十八个**本机闸门,新增 C++ 或改动 CI 脚本后先跑:
+
+19. **"门读的文件"和"产品读的文件"不是一回事时,门会绿着覆盖 0 个对象。
+    2026-09-22 修 P0-4 美术资产时挖到:`verify-staged-wallpaper-assets.sh` 从每个包的
+    `scene.json` 的 `assets[]` 推出"应有的资产",而 `WallpaperPackage.cpp:409` 是
+    **`legacy_entry` 优先** —— 三个包的 manifest 全都同时写 `"entry": "scene.json"`
+    与 `"legacy_entry": "scene.ini"`,于是产品三个包**全都加载 scene.ini**,
+    `entry` 指向的 scene.json 一个都没被读过。NeonCity 与 MysticMoon 的 scene.json 是
+    空壳(0 资产),门于是推出 0 个应有资产,报"✅ 覆盖了每个资产"。
+    实际有 15 个真实资产文件,门覆盖 5 个 —— **三分之二没有任何兜底**,
+    而它一直在打印成功。MiaoCloud 那 5 个是**蒙对的**:它的 scene.json 恰好和 scene.ini
+    声明一致,不是因为门读对了文件。
+    **可迁移判据:门从某个文件推"应有集合"时,先确认产品也读那个文件。
+    两者不一致时,门不是"覆盖得少",而是"在验一个产品不碰的东西"。**
+    修法不是给 scene.json 补资产(那是迁移工作),而是让门按 manifest 解出**生效入口**
+    再取资产;`stage.ps1` 的断言从 5 条补到 15 条,生效入口连同结果一起打印。
+
+20. **一个正则能同时吞掉"两条路径"和"一条注释 + 一条路径",而且错误会互相抵消。
+    接着上一条:`stage.ps1` 的断言清单一开始用一句
+    `re.findall(r"'([^']*Wallpapers[^']*)'", text)` 抽路径。它匹配的是**任意两个单引号
+    之间含 Wallpapers 的内容**,而资产清单上面那段注释里正好写了
+    `install(DIRECTORY assets/wallpapers/ DESTINATION Wallpapers)` ——
+    于是注释和它后面第一个被引号包起来的路径被**整段吞掉**,那条路径从来没被检查过。
+    它一直没被发现,是因为 `stage.ps1` 恰好把其中一条路径在第二个手写列表里**重复了一遍**;
+    而当我把那个(只列了 15 张图里 4 张的)LFS 检查改成从暂存树推导、删掉重复之后,
+    缺陷当场露出来,门开始报"少 MiaoCloud 的 background.jpg"—— 而那行明明在。
+    **被巧合掩住的缺陷仍然是缺陷,而且删掉那个"多余"的副本时它就会反咬一口。**
+    现在改成按 PowerShell 自己的字符串/注释状态机扫描(`#` 行注释、`<# #>` 块注释、
+    `''` 是转义引号),并用注入测试固定:删掉那第一行 → 门指名道姓报 background.jpg。
+    **可迁移判据:用引号/括号配对抽结构时,问一句"两个边界之间能不能夹别的东西";
+    能,就别用正则,或者先按词法状态把注释剥掉。**
+现在有**二十一个**本机闸门(其中 4 个壁纸库派生视图是 Windows-only),新增 C++ 或改动 CI 脚本后先跑:
+
+> 这个数字 2026-09-22 之前写的是"十八个",而同一张表已经列到 20 行 —— 一个读起来像现状、
+> 其实是快照的计数。改数字不如让它可核对:行数就是闸门数,对不上就是这里过期了。
+> (教训「把读起来像现状的计数标注日期」的同一条。)
 
 | 闸门 | 命令 | 覆盖 | 不覆盖 |
 | --- | --- | --- | --- |
@@ -281,10 +315,11 @@
 | 工作流 paths | `scripts/verify-workflow-paths.sh` | 每个工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽 |
 | 媒体包离线 | `scripts/verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 第 5 节;以及测试自己写 fixture 的方式 |
 | 场景 fixture 一致性 | `scripts/verify-scene-fixture-parity.sh` | 贴图 fixture 的 scene / manifest / parameters 两份没有分叉 | Windows 那份是否真能画出来 |
-| MiaoCloud 几何 | `python3 scripts/generate-miao-cloud-scene.py --check` | scene.json 与 scene.ini 逐字节一致 + 每层逆合成 assert | 动画与粒子(刻意未迁移) |
-| 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个 scene.json 声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
+| 三个包几何一致 | `python3 scripts/generate-miao-cloud-scene.py --check` | 三个包的 scene.json 与各自 scene.ini 逐字节一致 + 每层逆合成 assert | 动画保真(下一行);粒子(刻意未迁移) |
+| 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个包**生效入口**(legacy_entry 优先)声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
+| **壁纸美术资产可复现** | `python3 scripts/generate-builtin-wallpaper-art.py --check` | NeonCity / MysticMoon 的每个资产与重新渲染**逐字节**一致;尺寸与 scene.ini 的 Layer 盒子一致 | 画面好不好看(要人看);PIL/libjpeg 换版本后误报 —— 已改成把编码器身份连同结果一起打出来 |
 | **渲染后端一致性** | `MiaoDeskSpriteMaterialPolicyTest`(在 `run-pure-logic-tests.sh` 与 Windows CI 里) | D2D 与 D3D11 对"哪个 SpriteRenderer 能画"判断一致;10 个形态 × 2 个后端,含必须被拒的那些 | HLSL 与真实绘制(只有 Windows 能编译/跑) |
-| **MiaoCloud 动画保真** | `python3 scripts/verify-miao-cloud-animation-parity.py` | 迁移后的关键帧轨逐点复现 scene.ini 的解析式运动,误差 ≤ 解析上界 | 粒子(刻意未迁移);真机观感 |
+| **三个包动画保真** | `python3 scripts/verify-builtin-wallpaper-animation-parity.py` | 三个包的迁移动画逐点复现 scene.ini 的解析式运动,误差 ≤ 解析上界 `A*(1-cos(pi/15))` | 粒子(刻意未迁移);真机观感 |
 | **skill 材质规则** | `scripts/verify-skill-material-rule.sh` | `skills/` 是否说到渲染器真正执行的 sprite 材质规则(名字从代码读出,不手抄) | 措辞改写;同一个词在小节别处仍命中的情况 |
 | 壁纸库派生视图(4 个 .ps1) | `packaging/windows/verify-wallpaper-library-*.ps1` | `WallpaperLibrary.cpp` 的 `RecentlyUsed`/`Favorites` 等派生视图仍是"用户可见"的那一份 | CRLF 之外的形状(已在读入处归一化) |
 
@@ -441,7 +476,7 @@
        代价:5 个图层节点变成 9 个(多 3 个 axis-y 父节点)。
      - 采样数取 16/周期。均匀采样 + 线性插值的最大误差是解析解
        `A*(1-cos(pi/15))`,在最大幅值 14px 上 0.306px —— 亚像素。
-       这个数由 `scripts/verify-miao-cloud-animation-parity.py` 逐点复核
+       这个数由 `scripts/verify-builtin-wallpaper-animation-parity.py` 逐点复核
        (按引擎自己的 easing 与局部时间代码求值,不是按我的理解),
        已接进 `repo-hygiene.yml`。把采样数改成 4 复现过它报 6 项超界。
   4. 粒子:`[Particles]` → `ParticleEmitterDefinition` —— **刻意不做**。
@@ -488,6 +523,117 @@
   另注:`LayeredSceneRenderer.h::LoadBitmap` 在文件缺失时返回 false,而
   `DrawLayer` 是 `if (!layer.bitmap) return;` —— 即**缺图的图层被静默跳过**。
   这解释了那两个包今天在桌面上为什么"看起来还在跑":它们本来就在静默缺图。
+
+  ## 上面这条"没有素材可写"当天就被推翻了一部分(2026-09-22 晚)
+
+  **素材是有的,只是不在 git 里,而且唯一能验它的门是坏的。**
+
+  - 磁盘上两个包的 `assets/` 各有 5 张真图(共 10 个文件),加起来 ~330 KB。
+    它们**不在版本库里**(`git status` 显示 untracked),所以上面"git 历史里没有记录"
+    那句是对的,但结论"没有素材"过头了 —— 素材存在于工作树,只是没人提交、也没人验。
+  - 生成它们的 `scripts/generate-builtin-wallpaper-art.py` 有一个 `--check`
+    (重新渲染并与磁盘文件比 sha256),**它是坏的,而且从来没跑完过**:
+    at HEAD 它第一行就死(`configparser.read()` 打不开不存在的 `scene.ini` 却静默
+    返回空 → 每个图层都被报成"scene.ini 里没有对应图层",一个字节都没比);
+    修好之后走到下一层,JPEG 路径崩在 `_FakePath` 没有 `write()`
+    (PIL 的 `Image.save` 先试 `fileno()`,失败才把参数当流用)。
+    **PNG 那一半走 `write_bytes()` 是好的,所以唯一坏掉的那半也正好是从没被验证过的那半。**
+  - 已修好并接入 CI(`repo-hygiene.yml`;该脚本此前除自己 docstring 外**全仓零引用**)。
+    修好后跑起来:两个包的 10 个文件**与重新渲染逐字节一致**,包括 JPEG。
+    注入一个已知失效(翻转 JPEG 中间一个字节)确认它会响,退出码 1。
+    另外补了编码器身份输出(PIL 版本 + libjpeg)—— 否则升级 PIL 会让门对着
+    没人动过的图误报,会哭的狼比没有门更糟。
+  - **所以这一项的剩余工作从"补美术资产"变成"提交已有资产 + 写 scene.json"**,
+    后者才是真正的迁移工作。判据也变了:不再是"有没有素材",而是"素材能不能逐字节复现"。
+
+  ## scene.json 迁移已做完(2026-09-23)
+
+  两个包的 `scene.json` 都从 `scene.ini` 生成完毕,不再是空壳:
+
+  | 包 | 节点 | 资产 | 动画轨 | 组成 |
+  | --- | --- | --- | --- | --- |
+  | MiaoCloud(此前已迁) | 9 | 5 | 8 | 1 root + 5 层 + 3 axis-y |
+  | NeonCity | 10 | 5 | 8 | 1 root + 5 层 + 4 axis-y |
+  | MysticMoon | 10 | 5 | 8 | 1 root + 5 层 + 4 axis-y |
+
+  三个包全部通过 `Load → Deserialize → Validate → MiaoAssetDatabase::Build →
+  MiaoSceneRuntime::Initialize`,且 15 个资产全部解析到真实文件
+  (`MiaoDeskBuiltinWallpaperPackagesTest`,纯逻辑,每轮都跑)。
+
+  **没有新增第二种动画形态。** 我一度以为 MysticMoon 的 `float` 是第五种、要另做映射,
+  查了 `LayeredSceneRenderer.h:231-233` 才发现 `float` 和 `drift` **是同一个分支、
+  同一条公式**,行为完全一致。所以两个包用的形态 MiaoCloud 全都覆盖过。
+
+  **保真门也只复核了一个包,已一起补上。** `animation-parity` 此前只覆盖 MiaoCloud
+  (脚本名就叫 `verify-miao-cloud-...`)。两个包的动画迁完之后只复核一个,等于让
+  "保真"对三分之二的迁移不成立,而报告照样全绿 —— 和教训 19 是同一形状。
+  已推广到三个包并改名 `verify-builtin-wallpaper-animation-parity.py`(名字不再骗人),
+  注入一个 40px 的关键帧扰动验证过它会响,退出码 1;干净时 0。
+  实测三个包全部在解析上界内,最大误差 0.5244px(上界 0.5245)。
+
+  **做法上是把生成器推广到三个包,而不是另写一个。** 该脚本原本除包路径和
+  `animation://miao-cloud/` 前缀外已是包无关的,而变换算术与动画频率表
+  (drift 0.77 / sway 0.81 / breathe 1.0)再抄一份就是"两个后端各写一份规则"。
+  推广后**先验 MiaoCloud 逐字节不变**(回归),才生成另外两个。
+  顺带修了同一文件里的 `cp.read()` 静默失败(与美术资产脚本同一个缺陷)。
+
+  ### 但第 6 项"删 legacy_entry、删 scene.ini"做不了,原因不是没人做
+
+  删掉 `legacy_entry` 会让 `WallpaperPackage.cpp:409` 改走 `entry`,即三个包都从
+  scene runtime 渲染。而三个包的 `particleEmitters` 都是 `[]`,`scene.ini` 的
+  `[Particles]` 却声明了真实粒子:
+
+  | 包 | sparkles | petals | flow |
+  | --- | --- | --- | --- |
+  | MiaoCloud | 38 | 14 | 4(带 11 段尾迹) |
+  | NeonCity | 8 | 0 | 0 |
+  | MysticMoon | 16 | 0 | 0 |
+
+  也就是说这一步会**静默丢掉 80 个粒子**(56 + 8 + 16)。正是这个仓库反复拒绝的那种失败:
+  校验全过、桌面上少一层光。
+
+  **而"粒子刻意不做"当初的理由比我记的更深。** 不是"编不出参数",是**模型不匹配**:
+  legacy 的粒子是**无状态解析场**,每帧按索引现算
+  (`LocalHash01(i*79+19)` 定位、`i%5` 分频脉动、彗星沿 `sin(p*pi)` 拱形拖 11 段尾迹);
+  而 `ParticleEmitterDefinition` 建的是一个**有状态发射器**(spawnRate / lifetime /
+  velocity / acceleration)。把前者塞进后者不是"参数填多少",是换一种渲染模型,
+  出来的是另一种视觉。
+
+  所以第 6 项的真实前置是:**给 scene runtime 加一个解析场发射器形态**(把
+  `LayeredSceneRenderer.h:268-317` 的公式原样搬成声明式),而不是填 emitter 参数。
+
+  ### 这个前置 2026-09-23 已经做完了(声明层这一半)
+
+  `ParticleEmitterDefinition` 多了 `mode`(`Simulated` / `Sparkle` / `CometTrail` /
+  `PetalFall`),解析场的公式在 **`MiaoAnalyticParticleField.cpp` 里只存在一份** ——
+  纯函数,按帧从索引现算,输入设计空间尺寸与时间,输出一堆 (x, y, rx, ry, color, cross)。
+  两个渲染后端都将调它,公式不会再分叉。
+
+  - 每帧上限与 legacy 的 clamp 一致(96 / 64 / 12 / 11 段尾迹)。
+  - hash 常量**逐字节照抄** `LocalHash01` —— 那些常数是视觉的一部分,
+    换个 hash 就等于重新设计三个壁纸。
+  - 算术全用 float,和 legacy 那几行一样。用 double 再转型"更准",但**不一样**,
+    而这个模块的全部主张就是"迁完之后落在同一个像素上"。
+  - `SelfTest` 接进了 `MiaoDeskContentSelfTests`,于是**每台机器都跑**,
+    包括"位置是否落在 legacy 那个 hash 上"和"每帧上限是否生效"。
+  - 生成器按 `[Particles]` 声明,clamp 与 legacy 读取时一致
+    (scene.ini 写 0.001 时 legacy 实际用 0.005,照抄 0.001 就已分叉)。
+
+  三个包的粒子现在都在 scene.json 里,数量与 scene.ini 一致:
+
+  | 包 | sparkle | cometTrail | petalFall |
+  | --- | --- | --- | --- |
+  | MiaoCloud | 38 | 4 | 14 |
+  | NeonCity | 8 | — | — |
+  | MysticMoon | 16 | — | — |
+
+  **剩余的前置只剩渲染侧接线**:两个渲染器要在画完节点之后遍历 `particleEmitters`,
+  调 `EvaluateAnalyticParticleField` 并画出来(D2D 画椭圆与十字、D3D11 同理)。
+  那需要 Windows 才能编译验证。在此之前 `legacy_entry` 仍然必须留着 ——
+  它仍是唯一真正在渲染的那条路。
+
+  `scene.json` 的状态因此从"内容缺失"变成"**内容完整、已校验、有门看着,
+  只差渲染器消费**"。
 
   ## 已落地(2026-09-22)
 
@@ -554,7 +700,8 @@
     比没有记录更糟 —— 它会让人去重写一份已经存在、而且已经被共享策略钉住的代码。
     真正仍未做的是**执行**:没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径,
     HLSL 只在被 `D3DCompile` 编译这个意义上成立过。
-- **状态**:✅ **D3D11 贴图路径已经真的执行并通过(`1a826b22`,`build` success)。**
+- **状态**:🟡 **D3D11 贴图路径已真执行并通过(`1a826b22`,`build` success);
+  第三个阻塞"没有素材可写"当天被部分推翻 —— 素材在工作树里且已可逐字节复现。**
   第 26 步「Render a textured sprite through D3D11 and read the pixels back」为
   `success`(不是 skipped、不是 cancelled);同一轮第 27、28 步(D3D11 自测、两个后端
   对"哪些 sprite 能画"的判定一致)同为 success;该 job 33 个真实验证步骤只有第 34 步
@@ -1089,6 +1236,42 @@
 
 ## P2 — 本地 AI 落地
 
+### P2-0 DGX Spark 节点已连通并跑起第一个本地模型 ✅(2026-09-22)
+
+- **依据**:`LOCAL_AI_DEPLOYMENT.md` §0 / §1;队内节点《登录信息表.xlsx》
+- **已打通**:节点 `gx10-9e57`(妙喵爱美丽),`ssh -p 6017 asus_gx10@61.172.235.130`。
+  DGX OS 7.5.0 / GB10 / 128 GB 统一内存 / 916 GB NVMe(余 769 GB)/ 20 核。
+  **部署零下载** —— 节点上已有 `~/envs/vllm`(vllm 0.28.0 / torch 2.13.0+cu130)与
+  `~/models/Nemotron-3.5-Lightning-30B-A3B-NVFP4`(21 GB,52 shard,NVFP4 混合精度)。
+- **已跑起来**:`nemotron-30b-a3b`,vLLM V1 引擎;`NemotronHForCausalLM` 架构受
+  vLLM 0.28.0 支持,Marlin NVFP4 GEMM + fp8_e4m3 KV cache + Mamba2 hybrid 全部解析成功。
+  **只绑 `127.0.0.1:8000`** —— 8000 没有公网映射,物理上从跳板机进不来;三个转发端口
+  7017/8017/9017 已 curl 验证无服务在听。API key 从 `~/vllm.token` 读,
+  不进命令行、不进启动脚本。凭证只存本地,未进仓库。
+- **必须先量出口,否则照着文档空转**:HF / hf-mirror / PyPI / Docker Hub / NGC /
+  GitHub **全部不可达**,只有 ModelScope 和国内镜像可达。于是
+  `LOCAL_AI_DEPLOYMENT.md` 的 `docker pull nvcr.io/nvidia/vllm` 与
+  `huggingface-cli download` 两条**在这台机器上走不通**,已把实测出口表写回该文档 §0.1。
+  **这一条的形状值得记:占位 TAG / SHA-256 不是障碍,registry 不可达才是 ——
+  核对出一个正确的 TAG 也拉不到。文档开头那句"所有版本号必须当天核对"把注意力
+  放错了地方。**
+- **仍未解决(两条,都不是 bug,但会咬人)**:
+  1. **reasoning 字段名。** OpenAI 兼容响应里叫 `reasoning`,而 chat template 的变量叫
+     `reasoning_content`。照模板的名字读会一直读到 null,进而误判"模型不输出思考过程"。
+     带 `--reasoning-parser nemotron_v3` 后:`content` 干净、`reasoning` 有思考过程、
+     `completion_tokens_details.reasoning_tokens` 正常计数。
+     要更快就加 `chat_template_kwargs: {"enable_thinking": false}`(122 → 3 token)。
+  2. **工具调用没有对口 parser。** 模型模板是一套 XML 形状(function 内嵌 parameter),
+     vLLM 0.28.0 的 48 个 tool parser 没一个吃它。要接 Pi 必须自己写。
+- **一次没有结论的失败,记下来免得重复**:`--reasoning-parser nemotron_v3` 有一次在
+  `Capturing CUDA graphs (mixed prefill-decode, PIECEWISE)` 55% 处抛
+  `CUDA error: an illegal instruction`。**同一条命令重跑就成功了** —— parser 是
+  API server 进程里的纯文本后处理,不跑 CUDA kernel,不该是原因;真因是上一次
+  `tmux kill-session` 之后 EngineCore 残留、仍占 83 GB(`pgrep` 看得见,GPU 96%)。
+  **判据:kill 掉 tmux 会话不等于 kill 掉 vLLM**(多进程结构),重启前先
+  `nvidia-smi --query-compute-apps=pid,used_memory` 确认 GPU 真空。
+- **状态**:✅ 已连通并跑通;待接 Pi、待写 tool parser
+
 ### P2-1 主模型 A/B 实测定夺
 
 - **依据**:`LOCAL_AI_ARCHITECTURE.md` §6.2 / §8
@@ -1353,7 +1536,7 @@
 | 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
 | 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
 | 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而当时的 14 个闸门无一报警(现在 17 个) —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
-| 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-miao-cloud-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
+| 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-builtin-wallpaper-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
 | 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
 | 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |
 | 2026-09-22 | **D3D11 贴图路径第一次真的执行并通过** | `MiaoSceneD3D11Renderer::ReadBackPixels` + `MiaoDeskSceneD3D11TexturedSpriteTest`:往真实交换链画一帧品红贴图 sprite,把场景颜色目标读回 CPU,断言中心品红、左上角黑。`1a826b22` `build` success,第 26 步 success。此前这条路径只有编译链接证据 —— 而 HLSL 是运行时编译的,那从来不够。途中修掉两个自己的错:断言自相矛盾(scale 1.0 铺满导致'黑色存在'不可能成立)、`CoUninitialize` 早于 COM 对象释放(0xC0000005,日志全空) |

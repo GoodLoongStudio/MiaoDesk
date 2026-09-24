@@ -2,6 +2,7 @@
 #include "miaodesk/ApiProfileNotifications.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/L3Agent.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <commctrl.h>
 #include <shlobj.h>
@@ -322,9 +323,7 @@ struct PageState {
     }
 
     HFONT MakeFont(int px, int weight) const {
-        return CreateFontW(-S(px), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                           DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
+        return ui::CreateUiFont(parent, px, weight);
     }
 
     void RebuildFonts() {

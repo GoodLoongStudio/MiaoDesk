@@ -187,7 +187,15 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
         profile.providerId = L"local-openai-compatible";
     }
 
-    if (profile.imageProvider.empty()) profile.imageProvider = profile.providerId;
+    if (profile.imageProvider.empty()) {
+        if (profile.imageBaseUrl.empty()) {
+            profile.imageProvider = profile.providerId;
+        } else {
+            profile.imageProvider = NeedsKey(profile.imageBaseUrl)
+                ? L"openai-compatible"
+                : L"local-openai-compatible";
+        }
+    }
     if (profile.imageBaseUrl.empty()) profile.imageBaseUrl = profile.baseUrl;
 
     const auto normalized = Lower(profile.baseUrl);

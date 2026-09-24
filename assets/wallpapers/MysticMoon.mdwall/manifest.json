@@ -9,7 +9,6 @@
   "runtime": "scene",
   "type": "scene",
   "entry": "scene.json",
-  "legacy_entry": "scene.ini",
   "provenance": "builtin-miaodesk",
   "fps_cap": 30,
   "audio": false,

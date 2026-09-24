@@ -103,20 +103,50 @@ async function proxyChat(req, res) {
   const headers = { "content-type": "application/json" };
   if (upstream.apiKey) headers.authorization = `Bearer ${upstream.apiKey}`;
 
-  let upstreamResponse;
-  try {
-    upstreamResponse = await fetch(upstream.baseUrl + "/chat/completions", {
+  const outboundJson = JSON.stringify(outboundBody);
+  const requestUpstream = async (target) => {
+    const targetHeaders = { "content-type": "application/json" };
+    if (target.apiKey) targetHeaders.authorization = `Bearer ${target.apiKey}`;
+    return fetch(target.baseUrl + "/chat/completions", {
       method: "POST",
-      headers,
-      body: JSON.stringify(outboundBody),
+      headers: targetHeaders,
+      body: JSON.stringify({ ...body, model: target.model }),
       signal: AbortSignal.timeout(600000),
     });
+  };
+
+  let selected = upstream;
+  let upstreamResponse;
+  try {
+    upstreamResponse = await requestUpstream(selected);
+    // The fast path is an optimisation, never a single point of failure. Network
+    // failures and 5xx responses fall back to the primary model. 4xx responses are
+    // preserved because retrying an invalid request against a larger model only hides
+    // the real client error.
+    if (classification.upstream === "fast" && upstreamResponse.status >= 500) {
+      try { await upstreamResponse.body?.cancel(); } catch {}
+      selected = upstreamFor({ upstream: "primary" });
+      upstreamResponse = await requestUpstream(selected);
+    }
   } catch (error) {
-    json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
-      (error instanceof Error ? error.message : String(error)) } }, {
-      "x-miaodesk-route": classification.route,
-    });
-    return;
+    if (classification.upstream === "fast") {
+      try {
+        selected = upstreamFor({ upstream: "primary" });
+        upstreamResponse = await requestUpstream(selected);
+      } catch (fallbackError) {
+        json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+          (fallbackError instanceof Error ? fallbackError.message : String(fallbackError)) } }, {
+          "x-miaodesk-route": classification.route + "-fallback-failed",
+        });
+        return;
+      }
+    } else {
+      json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+        (error instanceof Error ? error.message : String(error)) } }, {
+        "x-miaodesk-route": classification.route,
+      });
+      return;
+    }
   }
 
   const responseHeaders = {};
@@ -124,8 +154,9 @@ async function proxyChat(req, res) {
     const value = upstreamResponse.headers.get(name);
     if (value) responseHeaders[name] = value;
   }
-  responseHeaders["x-miaodesk-route"] = classification.route;
-  responseHeaders["x-miaodesk-upstream-model"] = upstream.model;
+  const fellBack = classification.upstream === "fast" && selected.model !== upstream.model;
+  responseHeaders["x-miaodesk-route"] = fellBack ? classification.route + "-fallback-primary" : classification.route;
+  responseHeaders["x-miaodesk-upstream-model"] = selected.model;
 
   res.writeHead(upstreamResponse.status, responseHeaders);
   if (!upstreamResponse.body) {

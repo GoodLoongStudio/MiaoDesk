@@ -353,7 +353,7 @@
 - **已完成**:
   - provider / model 不再硬编码 OpenRouter + Gemini。
   - Profile 增加 `imageBaseUrl` / `imageProvider` / `imageModel`；图片服务可与聊天服务使用不同端口。
-  - API 配置中心直接展示 Image Base URL + Image Model，不要求手改 INI。
+  - API 配置中心直接展示 Image Base URL + Image Model + Image API Key；图片 Key 独立保存在 Windows Credential Manager，不写明文 INI。
   - `PiRuntime` 把图片 provider / base URL / model 导出到扩展进程，并全部纳入 session signature。
   - loopback 图片端点免密钥；非 loopback 仍遵守显式 image key 优先、否则复用主 key。
   - `local-openai-compatible` / `openai-compatible` 不再交给第三方 `getImageModel` 猜 provider 名；

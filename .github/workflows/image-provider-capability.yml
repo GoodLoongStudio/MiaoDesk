@@ -1,0 +1,64 @@
+name: Image Provider Capability
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/image-provider-capability.yml
+      - packaging/windows/prepare-runtime-base.ps1
+      - packaging/windows/build-agent-runtime.ps1
+      - runtime/agent/**
+      - runtime/x64/**
+      - tests/image-provider-installed.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-provider-capability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Prepare pinned x64 runtime
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'MiaoDesk-ImageProviderProbe'
+          .\packaging\windows\prepare-runtime-base.ps1 -DeployDir $root -Architecture x64
+          .\packaging\windows\build-agent-runtime.ps1 -Root $root -Architecture x64
+          "MIAODESK_PROBE_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Probe installed Pi image provider registries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:MIAODESK_PROBE_ROOT
+          $node = Join-Path $root 'Runtime\Node\node.exe'
+          $probeSource = Join-Path $PWD 'tests\image-provider-installed.mjs'
+          foreach ($location in @(
+            [pscustomobject]@{ Label='agent-root'; Directory=(Join-Path $root 'AI') },
+            [pscustomobject]@{ Label='pi-runtime'; Directory=(Join-Path $root 'AI\node_modules\pi') }
+          )) {
+            if (-not (Test-Path $location.Directory -PathType Container)) {
+              throw "Provider probe directory is missing: $($location.Directory)"
+            }
+            $probeTarget = Join-Path $location.Directory '.miaodesk-image-provider-probe.mjs'
+            Copy-Item $probeSource $probeTarget -Force
+            try {
+              $out = & $node $probeTarget $location.Label 2>&1
+              $exit = $LASTEXITCODE
+              $out | Write-Host
+              if ($exit -ne 0) {
+                throw "Installed image provider probe failed for $($location.Label), exit=$exit"
+              }
+            } finally {
+              Remove-Item $probeTarget -Force -ErrorAction SilentlyContinue
+            }
+          }

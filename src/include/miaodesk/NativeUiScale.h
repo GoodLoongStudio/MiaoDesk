@@ -16,10 +16,11 @@ namespace miaodesk::ui {
 // resolution. The landscape/portrait-neutral baseline is 1920x1080:
 //   1920x1080 -> 96  (1.00x)
 //   2560x1440 -> 128 (1.33x)
-//   3840x2160 -> 192 (2.00x)
-// The result is capped at 2x so an unusually large virtual/remote desktop cannot
-// create absurdly large controls. Native DPI can still win when Windows scaling
-// is larger than the resolution-derived factor.
+//   3840x2160 -> 144 (1.50x cap)
+// The resolution contribution is capped at 1.5x because existing native controls
+// still size their geometry from Windows DPI. A 2x font inside a 100%-DPI 28px
+// label would clip. Native DPI is not capped: if Windows itself is set to 175%
+// or 200%, that larger accessibility choice still wins.
 constexpr UINT ResolutionFontDpiForSize(int width, int height) noexcept {
     if (width <= 0 || height <= 0) return USER_DEFAULT_SCREEN_DPI;
     const std::int64_t longEdge = std::max(width, height);
@@ -28,7 +29,7 @@ constexpr UINT ResolutionFontDpiForSize(int width, int height) noexcept {
     const std::int64_t fromShort = shortEdge * USER_DEFAULT_SCREEN_DPI / 1080;
     const std::int64_t derived = std::min(fromLong, fromShort);
     return static_cast<UINT>(std::clamp<std::int64_t>(
-        derived, USER_DEFAULT_SCREEN_DPI, USER_DEFAULT_SCREEN_DPI * 2));
+        derived, USER_DEFAULT_SCREEN_DPI, USER_DEFAULT_SCREEN_DPI * 3 / 2));
 }
 
 inline HMONITOR MonitorForWindow(HWND window) noexcept {
@@ -74,6 +75,6 @@ inline HFONT CreateUiFont(HWND window, int logicalPx, int weight = FW_NORMAL,
 static_assert(ResolutionFontDpiForSize(1920, 1080) == 96);
 static_assert(ResolutionFontDpiForSize(2560, 1440) == 128);
 static_assert(ResolutionFontDpiForSize(1440, 2560) == 128);
-static_assert(ResolutionFontDpiForSize(3840, 2160) == 192);
+static_assert(ResolutionFontDpiForSize(3840, 2160) == 144);
 
 } // namespace miaodesk::ui

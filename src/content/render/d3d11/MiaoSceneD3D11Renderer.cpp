@@ -600,10 +600,11 @@ struct MiaoSceneD3D11Renderer::Impl {
     // draws" was a compile-and-link fact only — the D3D11 renderer had no way to say
     // what it had actually drawn, so nothing could assert it.
     //
-    // It reads `renderres://scene-color`, not the swap chain's back buffer. Two reasons:
-    // that is what the scene pass actually drew into (the Present pass only copies it),
-    // and the back buffer's contents are undefined after Present returns, while a Draw()
-    // has already Presented by the time a caller can call this.
+    // It reads the render graph's final colour resource, not the swap chain's back
+    // buffer. With no particle/post-process pass that is scene-color; otherwise it is
+    // particle-color or the last post-process output. The back buffer's contents are
+    // undefined after Present returns, while Draw() has already Presented by the time
+    // a caller can call this.
     bool ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width, unsigned* height,
                         std::wstring* error) {
         if (!bgra || !width || !height) return Error(error, L"Read-back output is null.");
@@ -614,7 +615,8 @@ struct MiaoSceneD3D11Renderer::Impl {
 
         const std::wstring_view readbackId = postProcessPlan.finalColorResourceId.empty()
             ? kSceneColorResource
-            : std::wstring_view(postProcessPlan.finalColorResourceId);
+            : std::wstring_view(postProcessPlan.finalColorResourceId.data(),
+                                postProcessPlan.finalColorResourceId.size());
         const auto* finalColor = renderTargets.Find(readbackId);
         if (!finalColor || !finalColor->RenderTargetView())
             return Error(error, L"Miao Scene render graph has no final colour target to read back.");

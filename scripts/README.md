@@ -15,7 +15,7 @@ bash scripts/verify-skill-allowlist.sh       # content_skill_get 白名单 与 s
 bash scripts/verify-no-conflict-markers.sh   # 拒绝未解决的合并冲突标记
 bash scripts/verify-cmake-covers-sources.sh  # 磁盘上的 .cpp 是否真的被 CMake 编译
 bash scripts/verify-native-source-hygiene.sh  # 源码形状/路径策略(路径契约的跨平台部分)
-python3 scripts/generate-miao-cloud-scene.py --check  # MiaoCloud scene.json 未与 scene.ini 分叉
+python3 scripts/generate-miao-cloud-scene.py --check  # 三个内置 scene.json 未与冻结 legacy fixture 分叉
 bash scripts/verify-staged-wallpaper-assets.sh  # stage.ps1 的资产断言清单覆盖 scene.json 声明的资产
 bash scripts/verify-scene-fixture-parity.sh  # 两份贴图场景 fixture 是否已分叉
 bash scripts/verify-cmake-target-hygiene.sh  # CMake 目标结构:顺序 / 清单 / 链接 / 单一 owner

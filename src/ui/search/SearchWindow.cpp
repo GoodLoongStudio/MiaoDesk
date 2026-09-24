@@ -378,6 +378,13 @@ void SearchWindow::ShowAndFocus() {
     Draw();
 }
 
+void SearchWindow::OpenContentCreator(creator::ContentCreatorKind kind) {
+    const std::wstring prompt = creator::InitialPrompt(kind);
+    if (prompt.empty()) return;
+    ShowAndFocus();
+    StartL3(prompt);
+}
+
 int SearchWindow::RunMessageLoop() {
     MSG msg{};
     BOOL result = 0;
@@ -749,6 +756,13 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         return 0;
 
     case WM_COPYDATA: {
+        creator::ContentCreatorKind creatorKind{};
+        if (creator::DecodeCopyData(
+                reinterpret_cast<const COPYDATASTRUCT*>(lParam), &creatorKind)) {
+            OpenContentCreator(creatorKind);
+            return TRUE;
+        }
+
         std::vector<SearchResult> received;
         bool querySucceeded = false;
         if (files_.HandleCopyData(

@@ -299,7 +299,10 @@ def skyline(surface, rng, horizon, palette, window_palette):
     while x < surface.width:
         width = rng.randint(46, 118)
         height = rng.randint(int(horizon * 0.18), int(horizon * 0.95))
-        top = horizon - height
+        # int() here, not at each use: `top` feeds range() in two places and a float
+        # in range() is a TypeError, while a rounded int used consistently is the same
+        # pixels either way.
+        top = int(horizon - height)
         body = rng.choice(palette)
         for yy in range(int(top), surface.height):
             row = yy * surface.width * 4
@@ -560,32 +563,42 @@ def render(plan):
     return entries
 
 
-def write_package(name, plan, root, dry_run):
+def write_package(package_root, plan, dry_run):
+    """Render and write one package, returning what it wrote.
+
+    Every file it writes is read back and checked for the size it was asked for.
+    Not paranoia: the JPEG path goes through an external converter (PIL or sips),
+    and a converter that quietly resampled or fell back to another format would
+    otherwise be discovered by a user on a desktop, not by this script.
+    """
     written = []
     for entry in render(plan):
-        target = root / "assets" / name / entry["file"]
+        target = package_root / entry["file"]
+        if dry_run:
+            print("  %-26s %4dx%-4d  (dry run:加 --write 才落盘)"
+                  % (entry["file"], entry["width"], entry["height"]))
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         if entry["kind"] == "jpg":
-            rgb = entry["surface"].to_rgb()
-            if not dry_run:
-                write_jpeg(target, entry["width"], entry["height"], rgb)
+            write_jpeg(target, entry["width"], entry["height"],
+                       entry["surface"].to_rgb())
         else:
-            if not dry_run:
-                write_png(target, entry["width"], entry["height"], entry["surface"].px)
-        size = read_jpeg_size(target) if entry["kind"] == "jpg" else read_png_size(target)
+            write_png(target, entry["width"], entry["height"], entry["surface"].px)
+        size = (read_jpeg_size(target) if entry["kind"] == "jpg" else read_png_size(target))
         if size != (entry["width"], entry["height"]):
             raise SystemExit("❌ %s 写出来是 %s,应为 %s —— 转换器不诚实"
                              % (target, size, (entry["width"], entry["height"])))
+        digest = hashlib.sha256(target.read_bytes()).hexdigest()
         written.append({
             "file": entry["file"],
             "bytes": target.stat().st_size,
             "width": entry["width"],
             "height": entry["height"],
-            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "sha256": digest,
         })
-        print("  %-26s %4dx%-4d %8d B  %s" % (entry["file"], entry["width"],
-                                              entry["height"], written[-1]["bytes"],
-                                              written[-1]["sha256"][:12]))
+        print("  %-26s %4dx%-4d %8d B  %s"
+              % (entry["file"], entry["width"], entry["height"],
+                 written[-1]["bytes"], digest[:12]))
     return written
 
 
@@ -605,7 +618,14 @@ def main():
         # alone — a .ini edit that changes a layer box must fail loudly here.
         import configparser
         ini = configparser.ConfigParser()
-        ini.read(WALLPAPERS / name / "scene.ini", encoding="utf-8")
+        package_root = WALLPAPERS / (name + ".mdwall")
+        scene_ini = package_root / "scene.ini"
+        # read_string, not read(). configparser.read() silently ignores a file it
+        # cannot open and returns the list of the ones it did read, so a wrong path
+        # here produces an empty layer list — which then looks exactly like "this
+        # package's scene.ini declares no layers". A loud failure is the only useful
+        # one; the first version of this script did it the silent way.
+        ini.read_string(scene_ini.read_text(encoding="utf-8"), source=str(scene_ini))
         declared = {dict(ini[section])["file"].replace("\\", "/"): section
                     for section in ini.sections() if section.startswith("Layer")}
         for relative, kind, width, height, maker, seed in plan:
@@ -621,8 +641,9 @@ def main():
 
         if args.check:
             ok = True
+            encoders = []
             for entry in render(plan):
-                target = WALLPAPERS / name / entry["file"]
+                target = package_root / entry["file"]
                 if not target.exists():
                     print("    ❌ 缺 %s" % entry["file"])
                     ok = False
@@ -633,7 +654,10 @@ def main():
                 # image through, which is exactly the failure this script exists to
                 # make impossible.
                 if entry["kind"] == "jpg":
-                    regenerated = hashlib.sha256(_jpeg_bytes(entry)).hexdigest()
+                    regenerated, converter = _jpeg_bytes(entry)
+                    regenerated = hashlib.sha256(regenerated).hexdigest()
+                    if converter not in encoders:
+                        encoders.append(converter)
                 else:
                     regenerated = hashlib.sha256(_png_bytes(entry)).hexdigest()
                 if digest != regenerated:
@@ -642,11 +666,14 @@ def main():
                     ok = False
             if not ok:
                 sys.exit("❌ %s 的美术资产与脚本产物不一致" % name)
-            print("    ✅ 与重新渲染逐字节一致")
+            # The encoder identity is part of the result, not decoration: a JPEG
+            # mismatch means either the art changed or the encoder did, and only
+            # this line tells the two apart.
+            print("    ✅ 与重新渲染逐字节一致(jpeg 编码器:%s)"
+                  % " + ".join(encoders) if encoders else "")
+            print("      encoder: %s" % _jpeg_encoder_id())
         else:
-            write_package(name, plan, WALLPAPERS, dry_run=not args.write)
-            if not args.write:
-                print("    (dry run:加 --write 才落盘)")
+            write_package(package_root, plan, dry_run=not args.write)
 
 
 def _png_bytes(entry):
@@ -657,20 +684,45 @@ def _png_bytes(entry):
     return buffer.getvalue()
 
 
+def _jpeg_encoder_id():
+    """Name the encoder that will produce the comparison bytes.
+
+    --check compares the digest of a re-encode, so its answer is only meaningful
+    for the encoder that produced the committed file in the first place. PIL's
+    own version *and* the libjpeg it was built against both change the emitted
+    bytes at identical quality. So a PIL upgrade surfaces as a mismatch on art
+    nobody touched — a gate that cries wolf, which is worse than no gate,
+    because people learn to stop believing it. Printing the identity next to
+    the result makes that case attributable in one look instead of a bisect.
+    """
+    try:
+        import PIL
+        from PIL import Image
+    except ImportError:
+        return "sips(macOS)"
+    libjpeg = getattr(getattr(Image, "core", None), "jpeglib_version", "unknown")
+    return "PIL %s / libjpeg %s" % (PIL.__version__, libjpeg)
+
+
 def _jpeg_bytes(entry):
-    """Same for a JPEG background. The encoder is deterministic for a given
-    input and quality, so a committed file that came from this script hashes the
-    same way twice."""
+    """Same for a JPEG background, plus the encoder that made it.
+
+    Returned as a pair because the caller has to print the encoder identity:
+    see _jpeg_encoder_id. The encoder is deterministic for a given input and
+    quality, so a committed file that came from this script hashes the same way
+    twice — but only under the same encoder, which is exactly what that note is
+    about.
+    """
     buffer = io.BytesIO()
-    write_jpeg(_FakePath(buffer), entry["width"], entry["height"],
-               entry["surface"].to_rgb())
-    return buffer.getvalue()
+    converter = write_jpeg(_FakePath(buffer), entry["width"], entry["height"],
+                           entry["surface"].to_rgb())
+    return buffer.getvalue(), converter
 
 
 class _FakePath:
     """Lets write_png / write_jpeg write into memory instead of to disk.
 
-    Only the three methods those two writers use are provided, so a caller
+    Only the methods those two writers actually use are provided, so a caller
     cannot quietly start depending on a real path here."""
 
     def __init__(self, buffer):
@@ -679,10 +731,30 @@ class _FakePath:
     def write_bytes(self, data):
         self._buffer.write(data)
 
+    # PIL does NOT treat its `path` argument as a path. Image.save() calls
+    # fp.fileno() first, and only when that raises AttributeError does it fall
+    # back to using the object as a byte stream. So an in-memory target has to
+    # offer write()/flush(), not just write_bytes().
+    #
+    # Until 2026-09-22 it did not, and the JPEG half of --check died with
+    # `AttributeError: '_FakePath' object has no attribute 'write'`. The PNG
+    # half went through write_bytes() and worked, so the one broken path was
+    # also the one with no evidence at all — and at HEAD the script died before
+    # reaching either, which is why this had never once run to completion.
+    def write(self, data):
+        self._buffer.write(data)
+
+    def flush(self):
+        pass
+
     def exists(self):
         return self._buffer.tell() > 0
 
     def with_suffix(self, _suffix):
+        # Deliberately returns self: the sips fallback in write_jpeg cannot work
+        # in memory (it shell out to a real path), so there is no temp .png to
+        # hand back. PIL is the encoder for the in-memory path; if it were ever
+        # missing, that is a loud failure here, not a silent wrong answer.
         return self
 
     def unlink(self, missing_ok=False):

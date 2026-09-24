@@ -1,6 +1,7 @@
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 
 #include "miaodesk/MiaoAssetDatabase.h"
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoContentDataBinding.h"
 #include "miaodesk/MiaoContentDefinitionLoader.h"
 #include "miaodesk/MiaoContentPackage.h"
@@ -623,6 +624,60 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    bool DrawAnalyticParticles(
+        double timeSeconds,
+        const D2D1_SIZE_F& size,
+        const D2D1_MATRIX_3X2_F& hostTransform,
+        bool* drew) {
+        if (!target || !brush) return false;
+
+        // Legacy LayeredSceneRenderer evaluates these fields against the *current
+        // render target size* (not the source artwork's 1672x941 design box).
+        // Preserve that behaviour here so ultrawide / portrait / scaled surfaces do
+        // not relocate the particles during the scene-runtime migration.
+        target->SetTransform(hostTransform);
+        for (const auto& emitter : definition.particleEmitters) {
+            if (!IsAnalyticEmitterMode(emitter.mode)) continue;
+            const auto samples = EvaluateAnalyticParticleField(
+                emitter,
+                static_cast<double>(size.width),
+                static_cast<double>(size.height),
+                timeSeconds);
+            for (const auto& sample : samples) {
+                if (!std::isfinite(sample.x) || !std::isfinite(sample.y) ||
+                    !std::isfinite(sample.radiusX) || !std::isfinite(sample.radiusY))
+                    continue;
+                const float rx = static_cast<float>(std::max(0.0, sample.radiusX));
+                const float ry = static_cast<float>(std::max(0.0, sample.radiusY));
+                if (rx <= 0.0f || ry <= 0.0f) continue;
+
+                const float x = static_cast<float>(sample.x);
+                const float y = static_cast<float>(sample.y);
+                brush->SetColor(ToD2D(sample.color));
+                target->FillEllipse(
+                    D2D1::Ellipse(D2D1::Point2F(x, y), rx, ry),
+                    brush.Get());
+
+                // CometTrail marks only the head sample with cross=true. These two
+                // one-pixel strokes reproduce LayeredSceneRenderer's visible moving
+                // light head without copying any of the field formula into this backend.
+                if (sample.cross) {
+                    const float radius = std::max(rx, ry);
+                    target->DrawLine(
+                        D2D1::Point2F(x - radius * 3.0f, y),
+                        D2D1::Point2F(x + radius * 3.0f, y),
+                        brush.Get(), 1.0f);
+                    target->DrawLine(
+                        D2D1::Point2F(x, y - radius * 3.0f),
+                        D2D1::Point2F(x, y + radius * 3.0f),
+                        brush.Get(), 1.0f);
+                }
+                if (drew) *drew = true;
+            }
+        }
+        return true;
+    }
+
     bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error) {
         if (!loaded || !target || !brush || !dwrite) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
@@ -650,6 +705,12 @@ struct MiaoSceneD2DRenderer::Impl {
                     return false;
                 }
             }
+        }
+        target->SetTransform(hostTransform);
+        if (!DrawAnalyticParticles(
+                static_cast<double>(timeSeconds), size, hostTransform, &drew)) {
+            target->SetTransform(hostTransform);
+            return Error(error, L"Cannot draw analytic particles in the D2D backend.");
         }
         target->SetTransform(hostTransform);
 
@@ -1209,7 +1270,97 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 }
             }
         }
-        // --- Phase C: a 3D scene is legal content this backend cannot draw. ---
+        // --- Phase C: analytic particles are pixels, not just parsed declarations. ---
+        //
+        // The pure MiaoAnalyticParticleField self-test pins Sparkle / CometTrail /
+        // PetalFall formula fidelity. This phase pins the missing execution link: a
+        // Scene Runtime emitter must actually reach a Windows D2D target. CometTrail
+        // is used because its head has both a filled ellipse and the legacy cross,
+        // covering the renderer-specific geometry the pure field cannot test.
+        if (ok) {
+            constexpr std::string_view particleScene = R"json({
+              "schema":1,"id":"scene://selftest-analytic-particle","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+              "nodes":[{"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]}],
+              "assets":[],"shaders":[],"materials":[],
+              "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+              "bindings":[],"animations":[],
+              "particleEmitters":[{
+                "id":"particle://selftest/comet","enabled":true,"mode":"cometTrail",
+                "analyticCount":1,"analyticColor":[1.0,0.84,0.98,1.0],
+                "analyticSpeed":0.10,"analyticOpacity":1.0
+              }]
+            })json";
+            const fs::path particles = root / L"particles.mdwall";
+            MiaoSceneD2DRenderer particleSceneRenderer;
+            std::wstring particleError;
+            if (ok && writeWallpaperPackage(particles, particleScene)) {
+                Step(particleSceneRenderer.Load(particles, target.Get(), &particleError),
+                     "C. 只有解析粒子的 Scene Runtime 场景可以加载");
+                if (ok) {
+                    target->BeginDraw();
+                    target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+                    const bool drew = particleSceneRenderer.Draw(
+                        0.0f, D2D1::SizeF(64.0f, 64.0f), &particleError);
+                    const HRESULT ended = target->EndDraw();
+                    error = particleError;
+                    Step(SUCCEEDED(ended) && drew,
+                         "C. 没有 Sprite/Text 时解析粒子本身也算一次有效绘制");
+
+                    ParticleEmitterDefinition emitter;
+                    emitter.id = L"particle://selftest/comet";
+                    emitter.mode = ParticleEmitterMode::CometTrail;
+                    emitter.analyticCount = 1;
+                    emitter.analyticColor = Color4{1.0, 0.84, 0.98, 1.0};
+                    emitter.analyticSpeed = 0.10;
+                    emitter.analyticOpacity = 1.0;
+                    const auto samples =
+                        EvaluateAnalyticParticleField(emitter, 64.0, 64.0, 0.0);
+                    Step(!samples.empty() && samples.front().cross,
+                         "C. 共享解析场给 comet head 标记 cross");
+
+                    if (ok && !samples.empty()) {
+                        const auto& head = samples.front();
+                        const int cx = std::clamp(
+                            static_cast<int>(std::lround(head.x)), 0, 63);
+                        const int cy = std::clamp(
+                            static_cast<int>(std::lround(head.y)), 0, 63);
+
+                        UINT32 centreRed = 0;
+                        for (int y = std::max(0, cy - 2); y <= std::min(63, cy + 2); ++y)
+                            for (int x = std::max(0, cx - 2); x <= std::min(63, cx + 2); ++x)
+                                centreRed = std::max(
+                                    centreRed,
+                                    PixelChannel(bitmap.Get(), static_cast<UINT>(x),
+                                                 static_cast<UINT>(y), 2));
+
+                        // The cross extends to radius*3 while the ellipse ends at
+                        // radius. Probe the horizontal band strictly outside the
+                        // ellipse; a hit here can only come from the cross stroke.
+                        const int crossStart = std::clamp(
+                            static_cast<int>(std::ceil(head.x + head.radiusX * 1.5)), 0, 63);
+                        const int crossEnd = std::clamp(
+                            static_cast<int>(std::floor(head.x + head.radiusX * 2.7)), 0, 63);
+                        UINT32 crossRed = 0;
+                        for (int y = std::max(0, cy - 1); y <= std::min(63, cy + 1); ++y)
+                            for (int x = crossStart; x <= crossEnd; ++x)
+                                crossRed = std::max(
+                                    crossRed,
+                                    PixelChannel(bitmap.Get(), static_cast<UINT>(x),
+                                                 static_cast<UINT>(y), 2));
+
+                        std::printf(
+                            "         DIAG analytic comet centre=(%d,%d) centreRed=%u crossRed=%u\n",
+                            cx, cy, centreRed, crossRed);
+                        Step(centreRed > 32, "C. comet head 的椭圆真实落到 D2D 像素");
+                        Step(crossRed > 8, "C. comet head 的十字延伸到椭圆之外");
+                    }
+                    error.clear();
+                }
+            }
+            fs::remove_all(particles, ec);
+        }
+
+        // --- Phase D: a 3D scene is legal content this backend cannot draw. ---
         //
         // The model validator accepts spatial:3d deliberately — that is what makes the
         // declaration layer useful. Light/fog declared *without* 3d is already refused by
@@ -1249,7 +1400,7 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 const bool loaded = spatialRenderer.Load(spatial3D, target.Get(), &spatialError);
                 error = spatialError;  // Step prints `error`, so surface the refusal's reason
                 Step(!loaded && spatialError.find(L"scene://selftest-spatial-3d") != std::wstring::npos,
-                     "C. spatial:3d 的场景被拒,且报错点名场景 id(而不是静默按 2D 画)");
+                     "D. spatial:3d 的场景被拒,且报错点名场景 id(而不是静默按 2D 画)");
                 error.clear();
             }
             fs::remove_all(spatial3D, ec);

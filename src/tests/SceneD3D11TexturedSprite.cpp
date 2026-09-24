@@ -1,4 +1,5 @@
-// Renders a textured sprite through the D3D11 backend and reads the pixels back.
+// Renders a textured sprite and an analytic comet through the D3D11 backend and
+// reads both final frames back.
 //
 // Why this file exists: the D3D11 textured draw path (SpriteDrawPath::SpriteTexture +
 // MiaoBuiltinTextured + t0) has been compiled and linked for a while, and until now
@@ -24,6 +25,7 @@
 // is rendered by the D2D backend; this one exists to put one textured sprite in front of
 // a D3D11 device. It is minimal on purpose — one node, one transform, one sprite — so
 // that a failure means the textured path and nothing else.
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoSceneD3D11Renderer.h"
 
 #include <windows.h>
@@ -31,6 +33,7 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -306,6 +309,237 @@ int wmain() {
          "中心像素是贴图的品红 —— 贴图被采样并写进了帧缓冲(这条路径真的跑了)");
     Step(framed && isClearBlack(1, 1),
          "左上角仍是清屏黑 —— 品红是 sprite,不是整块目标被填成贴图色");
+
+    // Phase 2: the particle pass writes renderres://particle-color, so this also pins
+    // ReadBackPixels to the render graph's *final* colour rather than scene-color.
+    // A black solid sprite gives the D3D11 MVP backend the renderable it currently
+    // requires while leaving every non-particle pixel unambiguously black.
+    Phase("重载解析 comet 粒子场景");
+    renderer.Reset();
+    constexpr std::string_view particleSceneJson = R"json({
+      "schema":1,"id":"scene://selftest-d3d11-analytic","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+      "nodes":[
+        {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+        {"id":"node://background","name":"Background","parentId":"node://root","enabled":true,"components":[
+          {"id":"component://background/transform","kind":"transform","properties":[
+            {"name":"position","type":"vec2","default":[0.0,0.0]},
+            {"name":"scale","type":"vec2","default":[1.0,1.0]},
+            {"name":"rotation","type":"float","default":0.0},
+            {"name":"opacity","type":"float","default":1.0}]},
+          {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
+            {"name":"opacity","type":"float","default":1.0},
+            {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+            {"name":"cornerRadius","type":"float","default":0.0},
+            {"name":"materialId","type":"string","default":"material://black"}]}
+        ]}
+      ],
+      "assets":[],"shaders":[],
+      "materials":[{"id":"material://black","model":"builtin","builtinName":"solidColor","properties":[
+        {"name":"color","type":"color","default":[0.0,0.0,0.0,1.0]}
+      ],"textures":[]}],
+      "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+      "bindings":[],"animations":[],
+      "particleEmitters":[{
+        "id":"particle://selftest/comet","enabled":true,"mode":"cometTrail",
+        "analyticCount":1,"analyticColor":[1.0,0.84,0.98,1.0],
+        "analyticSpeed":0.10,"analyticOpacity":1.0
+      }]
+    })json";
+    const bool wroteParticleScene = WriteTextFile(root / L"scene.json", particleSceneJson);
+    Step(wroteParticleScene, "写出带 CometTrail emitter 的场景");
+
+    error.clear();
+    const bool particleLoaded = wroteParticleScene && renderer.Load(root, window, &error);
+    if (!particleLoaded && !error.empty()) std::printf("      Load 失败: %ls\n", error.c_str());
+    Step(particleLoaded, "加载带解析粒子的 D3D11 Scene Runtime 场景");
+
+    Phase("绘制解析粒子帧");
+    const bool particleDrew = particleLoaded && renderer.Draw(0.0f, &error);
+    pump();
+    if (!particleDrew && !error.empty()) std::printf("      Draw 失败: %ls\n", error.c_str());
+    Step(particleDrew, "绘制包含 analytic particle pass 的一帧");
+
+    pixels.clear();
+    width = 0;
+    height = 0;
+    error.clear();
+    const bool particleRead =
+        particleDrew && renderer.ReadBackPixels(&pixels, &width, &height, &error);
+    if (!particleRead && !error.empty()) std::printf("      ReadBack 失败: %ls\n", error.c_str());
+    const bool particleFramed = particleRead && width > 0 && height > 0 &&
+        pixels.size() == static_cast<std::size_t>(width) * height * 4u;
+    Step(particleFramed, "把 particle-color 最终目标读回 CPU");
+
+    miaodesk::content::ParticleEmitterDefinition expectedEmitter;
+    expectedEmitter.id = L"particle://selftest/comet";
+    expectedEmitter.mode = miaodesk::content::ParticleEmitterMode::CometTrail;
+    expectedEmitter.analyticCount = 1;
+    expectedEmitter.analyticColor = miaodesk::content::Color4{1.0, 0.84, 0.98, 1.0};
+    expectedEmitter.analyticSpeed = 0.10;
+    expectedEmitter.analyticOpacity = 1.0;
+    const auto expectedSamples = miaodesk::content::EvaluateAnalyticParticleField(
+        expectedEmitter, static_cast<double>(width), static_cast<double>(height), 0.0);
+    Step(particleFramed && !expectedSamples.empty() && expectedSamples.front().cross,
+         "共享解析场产生带 cross 标记的 comet head");
+
+    if (particleFramed && !expectedSamples.empty()) {
+        const auto& head = expectedSamples.front();
+        const int cx = std::clamp(static_cast<int>(std::lround(head.x)), 0,
+                                  static_cast<int>(width) - 1);
+        const int cy = std::clamp(static_cast<int>(std::lround(head.y)), 0,
+                                  static_cast<int>(height) - 1);
+
+        auto greenAt = [&](int x, int y) -> unsigned {
+            if (x < 0 || y < 0 || x >= static_cast<int>(width) ||
+                y >= static_cast<int>(height))
+                return 0;
+            const auto [b, g, r, a] = pixelAt(static_cast<unsigned>(x), static_cast<unsigned>(y));
+            (void)b; (void)r; (void)a;
+            return g;
+        };
+        unsigned headGreen = 0;
+        for (int y = std::max(0, cy - 2);
+             y <= std::min(static_cast<int>(height) - 1, cy + 2); ++y)
+            for (int x = std::max(0, cx - 2);
+                 x <= std::min(static_cast<int>(width) - 1, cx + 2); ++x)
+                headGreen = std::max(headGreen, greenAt(x, y));
+
+        const double radius = std::max(head.radiusX, head.radiusY);
+        const int probeY = std::clamp(
+            static_cast<int>(std::lround(head.y - radius * 2.25)),
+            0, static_cast<int>(height) - 1);
+        unsigned crossGreen = 0;
+        for (int y = std::max(0, probeY - 1);
+             y <= std::min(static_cast<int>(height) - 1, probeY + 1); ++y)
+            for (int x = std::max(0, cx - 1);
+                 x <= std::min(static_cast<int>(width) - 1, cx + 1); ++x)
+                crossGreen = std::max(crossGreen, greenAt(x, y));
+
+        std::printf("      analytic comet centre=(%d,%d), headGreen=%u, crossGreen=%u\n",
+                    cx, cy, headGreen, crossGreen);
+        Step(headGreen > 32,
+             "comet 椭圆真实写进 D3D11 最终颜色目标");
+        Step(crossGreen > 8,
+             "comet 十字在椭圆外仍有 GPU 像素");
+        Step(isClearBlack(1, 1),
+             "粒子之外仍是黑底 —— particle pass 是叠加而不是整屏填充");
+    }
+
+    // Phase 3: PetalFall is intentionally anisotropic. A scalar particle size
+    // would turn it into a circle, which is exactly the bug this GPU-instance change
+    // is meant to prevent. Use a 512px target so the legacy radii span enough physical
+    // pixels for a stable readback assertion.
+    Phase("把测试窗口放大到 1024x1024 并验证 PetalFall 椭圆");
+    renderer.Reset();
+    SetWindowPos(window, nullptr, 0, 0, 1024, 1024,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump();
+
+    constexpr std::string_view petalSceneJson = R"json({
+      "schema":1,"id":"scene://selftest-d3d11-petal","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+      "nodes":[
+        {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+        {"id":"node://background","name":"Background","parentId":"node://root","enabled":true,"components":[
+          {"id":"component://background/transform","kind":"transform","properties":[
+            {"name":"position","type":"vec2","default":[0.0,0.0]},
+            {"name":"scale","type":"vec2","default":[1.0,1.0]},
+            {"name":"rotation","type":"float","default":0.0},
+            {"name":"opacity","type":"float","default":1.0}]},
+          {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
+            {"name":"opacity","type":"float","default":1.0},
+            {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+            {"name":"cornerRadius","type":"float","default":0.0},
+            {"name":"materialId","type":"string","default":"material://black"}]}
+        ]}
+      ],
+      "assets":[],"shaders":[],
+      "materials":[{"id":"material://black","model":"builtin","builtinName":"solidColor","properties":[
+        {"name":"color","type":"color","default":[0.0,0.0,0.0,1.0]}
+      ],"textures":[]}],
+      "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+      "bindings":[],"animations":[],
+      "particleEmitters":[{
+        "id":"particle://selftest/petal","enabled":true,"mode":"petalFall",
+        "analyticCount":1,"analyticColor":[0.2,1.0,0.2,1.0],
+        "analyticOpacity":1.0
+      }]
+    })json";
+    const bool wrotePetalScene = WriteTextFile(root / L"scene.json", petalSceneJson);
+    Step(wrotePetalScene, "写出带 PetalFall emitter 的场景");
+
+    error.clear();
+    const bool petalLoaded = wrotePetalScene && renderer.Load(root, window, &error);
+    if (!petalLoaded && !error.empty()) std::printf("      Load 失败: %ls\n", error.c_str());
+    Step(petalLoaded, "加载 PetalFall D3D11 场景");
+
+    const bool petalDrew = petalLoaded && renderer.Draw(0.0f, &error);
+    pump();
+    if (!petalDrew && !error.empty()) std::printf("      Draw 失败: %ls\n", error.c_str());
+    Step(petalDrew, "绘制 PetalFall 一帧");
+
+    pixels.clear();
+    width = 0;
+    height = 0;
+    error.clear();
+    const bool petalRead =
+        petalDrew && renderer.ReadBackPixels(&pixels, &width, &height, &error);
+    if (!petalRead && !error.empty()) std::printf("      ReadBack 失败: %ls\n", error.c_str());
+    const bool petalFramed = petalRead && width > 0 && height > 0 &&
+        pixels.size() == static_cast<std::size_t>(width) * height * 4u;
+    Step(petalFramed, "把 PetalFall 最终颜色目标读回 CPU");
+
+    miaodesk::content::ParticleEmitterDefinition petalEmitter;
+    petalEmitter.id = L"particle://selftest/petal";
+    petalEmitter.mode = miaodesk::content::ParticleEmitterMode::PetalFall;
+    petalEmitter.analyticCount = 1;
+    petalEmitter.analyticColor = miaodesk::content::Color4{0.2, 1.0, 0.2, 1.0};
+    petalEmitter.analyticOpacity = 1.0;
+    const auto petalSamples = miaodesk::content::EvaluateAnalyticParticleField(
+        petalEmitter, static_cast<double>(width), static_cast<double>(height), 0.0);
+    Step(petalFramed && !petalSamples.empty(), "共享解析场产生 PetalFall sample");
+
+    if (petalFramed && !petalSamples.empty()) {
+        const auto& petal = petalSamples.front();
+        const int cx = std::clamp(static_cast<int>(std::lround(petal.x)), 0,
+                                  static_cast<int>(width) - 1);
+        const int cy = std::clamp(static_cast<int>(std::lround(petal.y)), 0,
+                                  static_cast<int>(height) - 1);
+
+        int minX = static_cast<int>(width);
+        int minY = static_cast<int>(height);
+        int maxX = -1;
+        int maxY = -1;
+        const int scan = 16;
+        for (int y = std::max(0, cy - scan);
+             y <= std::min(static_cast<int>(height) - 1, cy + scan); ++y) {
+            for (int x = std::max(0, cx - scan);
+                 x <= std::min(static_cast<int>(width) - 1, cx + scan); ++x) {
+                const auto [b, g, r, a] =
+                    pixelAt(static_cast<unsigned>(x), static_cast<unsigned>(y));
+                (void)b; (void)r;
+                // Background is exactly black; the green petal has a very large
+                // green-to-background margin, so a small threshold keeps antialiasing
+                // edge pixels while excluding the clear.
+                if (a > 0 && g > 5) {
+                    minX = std::min(minX, x);
+                    minY = std::min(minY, y);
+                    maxX = std::max(maxX, x);
+                    maxY = std::max(maxY, y);
+                }
+            }
+        }
+        const int litWidth = maxX >= minX ? maxX - minX + 1 : 0;
+        const int litHeight = maxY >= minY ? maxY - minY + 1 : 0;
+        std::printf(
+            "      petal centre=(%d,%d), expected radii=(%.3f,%.3f), lit=%dx%d\n",
+            cx, cy, petal.radiusX, petal.radiusY, litWidth, litHeight);
+        Step(litWidth > 0 && litHeight > 0,
+             "PetalFall 椭圆真实写进 D3D11 最终颜色目标");
+        Step(litHeight > litWidth,
+             "PetalFall GPU 像素保持 radiusY > radiusX 的椭圆比例");
+        Step(isClearBlack(1, 1),
+             "PetalFall 之外仍是黑底");
+    }
 
     Phase("销毁渲染器(离开作用域)");
     Phase("释放 COM 对象(必须在 CoUninitialize 之前)");

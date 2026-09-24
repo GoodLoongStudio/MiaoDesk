@@ -64,9 +64,10 @@ cbuffer MiaoParticleFrame : register(b0)
 struct MiaoParticleInstance
 {
     float2 position;
-    float size;
-    float reserved;
+    float2 size;
     float4 color;
+    float shape;
+    float3 reserved;
 };
 
 StructuredBuffer<MiaoParticleInstance> MiaoParticles : register(t2);
@@ -76,6 +77,7 @@ struct MiaoParticleVsOut
     float4 position : SV_Position;
     float2 local : TEXCOORD0;
     float4 color : COLOR0;
+    nointerpolation float shape : TEXCOORD1;
 };
 
 MiaoParticleVsOut MiaoParticleVS(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
@@ -98,11 +100,15 @@ MiaoParticleVsOut MiaoParticleVS(uint vertexId : SV_VertexID, uint instanceId : 
         1.0);
     output.local = corner;
     output.color = item.color;
+    output.shape = item.shape;
     return output;
 }
 
 float4 MiaoParticlePS(MiaoParticleVsOut input) : SV_Target
 {
+    // shape=1 is an engine-generated cross stroke rectangle. Unlike the soft
+    // ellipse, it must keep its 1px body opaque all the way to the rectangle edge.
+    if (input.shape > 0.5) return input.color;
     const float distanceFromCenter = length(input.local);
     const float edge = 1.0 - smoothstep(0.38, 0.5, distanceFromCenter);
     return float4(input.color.rgb, input.color.a * edge);
@@ -146,11 +152,12 @@ static_assert(sizeof(ParticleFrameConstants) == 16);
 
 struct alignas(16) ParticleGpuInstance {
     float position[2]{};
-    float size{};
-    float reserved{};
+    float size[2]{};
     float color[4]{};
+    float shape{};
+    float reserved[3]{};
 };
-static_assert(sizeof(ParticleGpuInstance) == 32);
+static_assert(sizeof(ParticleGpuInstance) == 48);
 
 } // namespace
 
@@ -269,28 +276,64 @@ struct MiaoD3D11ParticleRenderer::Impl {
         return true;
     }
 
-    bool UploadParticles(ID3D11DeviceContext* context, const MiaoParticleRuntime& runtime, std::wstring* error) {
+    bool UploadParticles(
+        ID3D11DeviceContext* context,
+        const MiaoParticleRuntime& runtime,
+        std::span<const AnalyticParticleSample> analyticSamples,
+        UINT* uploadedCount,
+        std::wstring* error) {
+        if (uploadedCount) *uploadedCount = 0;
+
+        std::size_t analyticInstances = 0;
+        for (const auto& sample : analyticSamples)
+            analyticInstances += sample.cross ? 3u : 1u;
         const auto& particles = runtime.Particles();
-        if (particles.size() > capacity)
-            return Error(error, L"Live particle count exceeds the GPU particle-buffer capacity.");
-        if (particles.empty()) return true;
+        const std::size_t total = particles.size() + analyticInstances;
+        if (total > capacity)
+            return Error(error, L"Live + analytic particle instances exceed the GPU particle-buffer capacity.");
+        if (total == 0) return true;
 
         D3D11_MAPPED_SUBRESOURCE mapped{};
         if (FAILED(context->Map(particleBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
             return Error(error, L"Cannot map Miao particle structured buffer.");
         auto* output = static_cast<ParticleGpuInstance*>(mapped.pData);
-        for (std::size_t index = 0; index < particles.size(); ++index) {
-            const auto& particle = particles[index];
-            auto& gpu = output[index];
-            gpu.position[0] = static_cast<float>(particle.position.x);
-            gpu.position[1] = static_cast<float>(particle.position.y);
-            gpu.size = static_cast<float>(std::max(0.0, particle.size));
-            gpu.color[0] = static_cast<float>(particle.color.r);
-            gpu.color[1] = static_cast<float>(particle.color.g);
-            gpu.color[2] = static_cast<float>(particle.color.b);
-            gpu.color[3] = static_cast<float>(particle.color.a);
+        std::size_t index = 0;
+
+        auto write = [&](double x, double y, double width, double height,
+                         const Color4& color, float shape) {
+            auto& gpu = output[index++];
+            gpu.position[0] = static_cast<float>(x);
+            gpu.position[1] = static_cast<float>(y);
+            gpu.size[0] = static_cast<float>(std::max(0.0, width));
+            gpu.size[1] = static_cast<float>(std::max(0.0, height));
+            gpu.color[0] = static_cast<float>(color.r);
+            gpu.color[1] = static_cast<float>(color.g);
+            gpu.color[2] = static_cast<float>(color.b);
+            gpu.color[3] = static_cast<float>(color.a);
+            gpu.shape = shape;
+        };
+
+        for (const auto& particle : particles) {
+            const double size = std::max(0.0, particle.size);
+            write(particle.position.x, particle.position.y, size, size,
+                  particle.color, 0.0f);
         }
+
+        for (const auto& sample : analyticSamples) {
+            const double rx = std::max(0.0, sample.radiusX);
+            const double ry = std::max(0.0, sample.radiusY);
+            write(sample.x, sample.y, rx * 2.0, ry * 2.0, sample.color, 0.0f);
+            if (sample.cross) {
+                const double radius = std::max(rx, ry);
+                // D2D uses DrawLine(..., 1.0f) from -radius*3 to +radius*3.
+                // Two opaque 1px rectangles are the D3D11 equivalent.
+                write(sample.x, sample.y, radius * 6.0, 1.0, sample.color, 1.0f);
+                write(sample.x, sample.y, 1.0, radius * 6.0, sample.color, 1.0f);
+            }
+        }
+
         context->Unmap(particleBuffer.Get(), 0);
+        if (uploadedCount) *uploadedCount = static_cast<UINT>(index);
         return true;
     }
 
@@ -310,10 +353,14 @@ struct MiaoD3D11ParticleRenderer::Impl {
         std::uint32_t width,
         std::uint32_t height,
         const MiaoParticleRuntime& particles,
+        std::span<const AnalyticParticleSample> analyticSamples,
         std::wstring* error) {
         if (!initialized || !context || !output || !sceneColor || !particles.Initialized())
             return Error(error, L"Miao particle renderer draw state is incomplete.");
-        if (!UploadFrame(context, width, height, error) || !UploadParticles(context, particles, error)) return false;
+        UINT liveCount = 0;
+        if (!UploadFrame(context, width, height, error) ||
+            !UploadParticles(context, particles, analyticSamples, &liveCount, error))
+            return false;
 
         ID3D11ShaderResourceView* nullSrvs[3]{};
         context->VSSetShaderResources(0, 3, nullSrvs);
@@ -335,7 +382,6 @@ struct MiaoD3D11ParticleRenderer::Impl {
         ID3D11ShaderResourceView* nullScene{};
         context->PSSetShaderResources(0, 1, &nullScene);
 
-        const auto liveCount = static_cast<UINT>(particles.LiveCount());
         if (liveCount > 0) {
             context->VSSetShader(particleVertexShader.Get(), nullptr, 0);
             context->PSSetShader(particlePixelShader.Get(), nullptr, 0);
@@ -380,8 +426,8 @@ bool MiaoD3D11ParticleRenderer::Initialize(
     std::wstring* error) {
     impl_->Reset();
     if (!device) return Fail(error, L"Miao particle renderer device is null.");
-    if (maxParticles == 0 || maxParticles > MiaoSceneRuntimeModel::kMaxParticlesPerScene)
-        return Fail(error, L"Miao particle renderer capacity exceeds the scene budget.");
+    if (maxParticles == 0 || maxParticles > MiaoD3D11ParticleRenderer::kMaxGpuInstances)
+        return Fail(error, L"Miao particle renderer capacity exceeds the GPU instance budget.");
 
     impl_->device = device;
     impl_->capacity = maxParticles;
@@ -403,8 +449,10 @@ bool MiaoD3D11ParticleRenderer::Draw(
     std::uint32_t width,
     std::uint32_t height,
     const MiaoParticleRuntime& particles,
+    std::span<const AnalyticParticleSample> analyticSamples,
     std::wstring* error) {
-    return impl_->Draw(context, output, sceneColor, width, height, particles, error);
+    return impl_->Draw(
+        context, output, sceneColor, width, height, particles, analyticSamples, error);
 }
 
 void MiaoD3D11ParticleRenderer::Reset() noexcept { impl_->Reset(); }
@@ -412,8 +460,9 @@ bool MiaoD3D11ParticleRenderer::Initialized() const noexcept { return impl_->ini
 std::uint32_t MiaoD3D11ParticleRenderer::Capacity() const noexcept { return impl_->capacity; }
 
 bool MiaoD3D11ParticleRenderer::SelfTest() {
-    return sizeof(ParticleGpuInstance) == 32 &&
-           MiaoSceneRuntimeModel::kMaxParticlesPerScene >= MiaoSceneRuntimeModel::kMaxParticlesPerEmitter;
+    return sizeof(ParticleGpuInstance) == 48 &&
+           MiaoSceneRuntimeModel::kMaxParticlesPerScene >= MiaoSceneRuntimeModel::kMaxParticlesPerEmitter &&
+           kMaxGpuInstances >= MiaoSceneRuntimeModel::kMaxParticlesPerScene;
 }
 
 } // namespace miaodesk::content

@@ -1,6 +1,7 @@
 #include "miaodesk/MiaoSceneD3D11Renderer.h"
 
 #include "miaodesk/MiaoAssetDatabase.h"
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoD3D11ParticleRenderer.h"
 #include "miaodesk/MiaoD3D11RenderTarget.h"
@@ -49,6 +50,23 @@ constexpr double kPi = 3.14159265358979323846;
 bool Fail(std::wstring* error, std::wstring message) {
     if (error) *error = std::move(message);
     return false;
+}
+
+std::uint64_t ParticleGpuInstanceCapacity(const ParticleEmitterDefinition& emitter) noexcept {
+    if (emitter.mode == ParticleEmitterMode::Simulated) return emitter.maxParticles;
+
+    const AnalyticParticleLimits limits;
+    if (emitter.mode == ParticleEmitterMode::Sparkle)
+        return std::min(emitter.analyticCount, limits.maxSparkles);
+    if (emitter.mode == ParticleEmitterMode::PetalFall)
+        return std::min(emitter.analyticCount, limits.maxPetals);
+    if (emitter.mode == ParticleEmitterMode::CometTrail) {
+        const std::uint64_t comets = std::min(emitter.analyticCount, limits.maxComets);
+        // Each comet can produce maxTrailSteps ellipse samples. Its head can also
+        // expand into two rectangle instances for the cross.
+        return comets * static_cast<std::uint64_t>(limits.maxTrailSteps + 2u);
+    }
+    return 0;
 }
 
 std::string ReadTextFile(const fs::path& path, std::size_t maxBytes = 4 * 1024 * 1024) {
@@ -582,10 +600,11 @@ struct MiaoSceneD3D11Renderer::Impl {
     // draws" was a compile-and-link fact only — the D3D11 renderer had no way to say
     // what it had actually drawn, so nothing could assert it.
     //
-    // It reads `renderres://scene-color`, not the swap chain's back buffer. Two reasons:
-    // that is what the scene pass actually drew into (the Present pass only copies it),
-    // and the back buffer's contents are undefined after Present returns, while a Draw()
-    // has already Presented by the time a caller can call this.
+    // It reads the render graph's final colour resource, not the swap chain's back
+    // buffer. With no particle/post-process pass that is scene-color; otherwise it is
+    // particle-color or the last post-process output. The back buffer's contents are
+    // undefined after Present returns, while Draw() has already Presented by the time
+    // a caller can call this.
     bool ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width, unsigned* height,
                         std::wstring* error) {
         if (!bgra || !width || !height) return Error(error, L"Read-back output is null.");
@@ -594,9 +613,13 @@ struct MiaoSceneD3D11Renderer::Impl {
         bgra->clear();
         if (!device || !context) return Error(error, L"Miao Scene D3D11 renderer is not loaded.");
 
-        const auto* sceneColor = renderTargets.Find(kSceneColorResource);
-        if (!sceneColor || !sceneColor->RenderTargetView())
-            return Error(error, L"Miao Scene render graph has no scene colour target to read back.");
+        const std::wstring_view readbackId = postProcessPlan.finalColorResourceId.empty()
+            ? kSceneColorResource
+            : std::wstring_view(postProcessPlan.finalColorResourceId.data(),
+                                postProcessPlan.finalColorResourceId.size());
+        const auto* finalColor = renderTargets.Find(readbackId);
+        if (!finalColor || !finalColor->RenderTargetView())
+            return Error(error, L"Miao Scene render graph has no final colour target to read back.");
 
         // Read the texture directly rather than going through the view's GetResource:
         // mingw's d3d11.h declares ID3D11View::GetResource as returning void (the real SDK
@@ -607,8 +630,8 @@ struct MiaoSceneD3D11Renderer::Impl {
         // there is nothing to hold a reference to; assigning it into a ComPtr would attach
         // without AddRef, which is correct today and a dangling pointer the day someone
         // lets the ComPtr outlive the function.
-        ID3D11Texture2D* source = sceneColor->Texture();
-        if (!source) return Error(error, L"Miao Scene colour target has no texture to read back.");
+        ID3D11Texture2D* source = finalColor->Texture();
+        if (!source) return Error(error, L"Miao Scene final colour target has no texture to read back.");
 
         D3D11_TEXTURE2D_DESC from{};
         source->GetDesc(&from);
@@ -934,8 +957,11 @@ struct MiaoSceneD3D11Renderer::Impl {
 
         if (!definition.particleEmitters.empty()) {
             std::uint64_t requestedCapacity = 0;
-            for (const auto& emitter : definition.particleEmitters) requestedCapacity += emitter.maxParticles;
-            requestedCapacity = std::min<std::uint64_t>(requestedCapacity, MiaoSceneRuntimeModel::kMaxParticlesPerScene);
+            for (const auto& emitter : definition.particleEmitters)
+                requestedCapacity += ParticleGpuInstanceCapacity(emitter);
+            if (requestedCapacity == 0 ||
+                requestedCapacity > MiaoD3D11ParticleRenderer::kMaxGpuInstances)
+                return Error(error, L"Particle GPU instance requirement exceeds the renderer budget.");
             if (!particleRenderer.Initialize(
                     device.Get(), static_cast<std::uint32_t>(requestedCapacity), &lastError))
                 return Error(error, lastError);
@@ -1014,7 +1040,10 @@ struct MiaoSceneD3D11Renderer::Impl {
         return true;
     }
 
-    bool ExecuteParticlePass(const RenderPassDefinition& pass, std::wstring* error) {
+    bool ExecuteParticlePass(
+        const RenderPassDefinition& pass,
+        double timeSeconds,
+        std::wstring* error) {
         if (pass.reads.size() != 1 || pass.writes.size() != 1)
             return Error(error, L"Miao Scene particle pass requires exactly one input and one output color resource.");
         if (!particleRenderer.Initialized())
@@ -1025,12 +1054,31 @@ struct MiaoSceneD3D11Renderer::Impl {
         if (!input || !input->Valid() || !output || !output->Valid())
             return Error(error, L"Miao Scene particle pass resources are unavailable.");
 
+        // Keep the field formula in one platform-independent place. D3D11 only turns
+        // the returned samples into GPU instances; it does not know the hash, pulse,
+        // comet arch, petal drift, or any other legacy formula.
+        std::vector<AnalyticParticleSample> analyticSamples;
+        for (const auto& emitter : definition.particleEmitters) {
+            if (!IsAnalyticEmitterMode(emitter.mode)) continue;
+            auto samples = EvaluateAnalyticParticleField(
+                emitter,
+                static_cast<double>(output->Width()),
+                static_cast<double>(output->Height()),
+                timeSeconds);
+            analyticSamples.insert(
+                analyticSamples.end(),
+                std::make_move_iterator(samples.begin()),
+                std::make_move_iterator(samples.end()));
+        }
+
         UnbindShaderResources();
         context->OMSetRenderTargets(0, nullptr, nullptr);
         std::wstring particleError;
+        const std::span<const AnalyticParticleSample> analyticSpan(
+            analyticSamples.data(), analyticSamples.size());
         if (!particleRenderer.Draw(
                 context.Get(), output->RenderTargetView(), input->ShaderResourceView(),
-                output->Width(), output->Height(), particleRuntime, &particleError))
+                output->Width(), output->Height(), particleRuntime, analyticSpan, &particleError))
             return Error(error, particleError.empty() ? L"Miao Scene particle pass failed." : particleError);
         return true;
     }
@@ -1223,7 +1271,7 @@ struct MiaoSceneD3D11Renderer::Impl {
                     if (!ExecuteScenePass(frame, object, parameters, error)) return false;
                     break;
                 case RenderPassKind::Particle:
-                    if (!ExecuteParticlePass(pass, error)) return false;
+                    if (!ExecuteParticlePass(pass, static_cast<double>(timeSeconds), error)) return false;
                     break;
                 case RenderPassKind::PostProcess: {
                     const auto* postPass = MiaoPostProcessCompiler::FindPass(postProcessPlan, pass.id);

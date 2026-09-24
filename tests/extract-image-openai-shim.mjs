@@ -17,8 +17,16 @@ function between(startMarker, endMarker) {
 }
 
 const constants = between('const IMAGE_PROVIDER', 'const TOOL_NAMES');
-const baseUrl = between('async function currentMiaoDeskBaseUrl', '// Resolves the credential');
-const key = between('// Resolves the credential', 'function usesOpenAICompatibleImageShim');
+let baseUrl = between('async function currentMiaoDeskBaseUrl', '// Resolves the credential');
+baseUrl = baseUrl.replace(
+  'async function currentMiaoDeskBaseUrl(): Promise<string>',
+  'async function currentMiaoDeskBaseUrl()'
+);
+let key = between('// Resolves the credential', 'function usesOpenAICompatibleImageShim');
+key = key.replace(
+  'async function resolveImageApiKey(): Promise<string>',
+  'async function resolveImageApiKey()'
+);
 let shim = between('function usesOpenAICompatibleImageShim', 'async function generateImage');
 shim = shim
   .replace('function usesOpenAICompatibleImageShim(provider: string): boolean',

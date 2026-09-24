@@ -3,6 +3,7 @@ param(
     [ValidateSet('desktop-only','wallpaper','widgets-3','ai-idle','custom')]
     [string]$Scenario,
     [int]$DurationSeconds = 20,
+    [int]$WarmupSeconds = 5,
     [double]$SampleIntervalSeconds = 1.0,
     [string]$OutputDirectory = "",
     [string]$CompareTo = "",
@@ -13,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'This collector must run on Windows.' }
 if ($DurationSeconds -lt 5) { throw 'DurationSeconds must be at least 5.' }
+if ($WarmupSeconds -lt 0) { throw 'WarmupSeconds cannot be negative.' }
 if ($SampleIntervalSeconds -lt 0.25) { throw 'SampleIntervalSeconds must be at least 0.25.' }
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -100,6 +102,26 @@ function Percentile([double[]]$Values, [double]$P) {
 $firstGraph = Get-OwnedProcessGraph
 if ($firstGraph.RootPids.Count -eq 0) {
     throw 'No running MiaoDesk root process was found.'
+}
+
+$computerSystem = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+$operatingSystem = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+$processors = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue)
+$videoControllers = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
+
+$machine = [ordered]@{
+    computerName=$env:COMPUTERNAME
+    windowsCaption=if ($operatingSystem) { [string]$operatingSystem.Caption } else { '' }
+    windowsVersion=if ($operatingSystem) { [string]$operatingSystem.Version } else { [Environment]::OSVersion.VersionString }
+    windowsBuild=if ($operatingSystem) { [string]$operatingSystem.BuildNumber } else { '' }
+    totalPhysicalMemoryBytes=if ($computerSystem) { [int64]$computerSystem.TotalPhysicalMemory } else { 0 }
+    cpu=@($processors | ForEach-Object { [string]$_.Name })
+    gpu=@($videoControllers | ForEach-Object { [string]$_.Name })
+}
+
+if ($WarmupSeconds -gt 0) {
+    Write-Host "Warm-up: $WarmupSeconds second(s)..." -ForegroundColor Cyan
+    Start-Sleep -Seconds $WarmupSeconds
 }
 
 $deadline = (Get-Date).AddSeconds($DurationSeconds)
@@ -249,7 +271,9 @@ $report = [pscustomobject][ordered]@{
     schema=1
     scenario=$Scenario
     generatedAt=(Get-Date).ToString('o')
+    machine=$machine
     durationSeconds=$DurationSeconds
+    warmupSeconds=$WarmupSeconds
     sampleIntervalSeconds=$SampleIntervalSeconds
     logicalProcessors=$logicalProcessors
     gpuAvailable=$gpuAvailableAny
@@ -267,7 +291,10 @@ $summaryPath = Join-Path $OutputDirectory "performance-$Scenario.txt"
 $lines = @(
     "MiaoDesk performance baseline: $Scenario"
     "Generated: $($report.generatedAt)"
-    "Duration: $DurationSeconds s @ $SampleIntervalSeconds s"
+    "Duration: $DurationSeconds s after $WarmupSeconds s warm-up @ $SampleIntervalSeconds s"
+    "Machine: $($machine.computerName) · $($machine.windowsCaption) $($machine.windowsVersion) build $($machine.windowsBuild)"
+    "CPU: $($machine.cpu -join ' | ')"
+    "GPU: $($machine.gpu -join ' | ')"
     ('CPU avg / p95 / peak: {0:N2}% / {1:N2}% / {2:N2}%' -f $metrics.averageCpuPercent,$metrics.p95CpuPercent,$metrics.peakCpuPercent)
     ('Working set avg / peak: {0:N1} MB / {1:N1} MB' -f ($metrics.averageWorkingSetBytes/$mb),($metrics.peakWorkingSetBytes/$mb))
     ('Private memory avg / peak: {0:N1} MB / {1:N1} MB' -f ($metrics.averagePrivateMemoryBytes/$mb),($metrics.peakPrivateMemoryBytes/$mb))

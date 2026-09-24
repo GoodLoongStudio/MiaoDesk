@@ -57,6 +57,7 @@ Optional variables:
 - `GET /health`
 - `GET /v1/health`
 - `GET /v1/models`
+- `GET /metrics` (also `/v1/metrics`)
 - `POST /v1/chat/completions`
 
 The gateway rewrites only the model id. It preserves messages, tools, tool_choice,

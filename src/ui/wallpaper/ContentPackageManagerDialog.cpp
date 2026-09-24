@@ -78,6 +78,7 @@ struct DialogState {
     HWND closeButton{};
     HFONT font{};
     HFONT headingFont{};
+    UINT fontScaleDpi{};
     desktop::DesktopControlService control;
     std::vector<content::ManagedContentPackageInfo> packages;
     bool changed{};
@@ -99,9 +100,23 @@ struct DialogState {
     }
 
     void RebuildFonts() {
+        fontScaleDpi = ui::EffectiveFontDpi(window);
         DestroyFonts();
         font = ui::CreateUiFont(window, 14, FW_NORMAL);
         headingFont = ui::CreateUiFont(window, 15, FW_SEMIBOLD);
+    }
+
+    void RefreshFontScaleIfNeeded() {
+        if (!window || !font) return;
+        const UINT next = ui::EffectiveFontDpi(window);
+        if (next == fontScaleDpi) return;
+        RebuildFonts();
+        ApplyFont(heading, headingFont);
+        for (HWND child : {list, details, refreshButton, openButton, uninstallButton, closeButton})
+            ApplyFont(child);
+        SendMessageW(list, LB_SETITEMHEIGHT, 0,
+                     static_cast<LPARAM>(std::max(S(22), ui::ScaleFontPx(window, 20))));
+        Layout();
     }
 
     bool CreateControls() {
@@ -313,6 +328,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (!state->CreateControls()) return -1;
         state->Layout();
         state->Refresh(true);
+        return 0;
+    case WM_MOVE:
+        state->RefreshFontScaleIfNeeded();
+        return 0;
+    case WM_DISPLAYCHANGE:
+        state->RefreshFontScaleIfNeeded();
         return 0;
     case WM_SIZE:
         state->Layout();

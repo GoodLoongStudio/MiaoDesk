@@ -721,7 +721,7 @@ struct PageState {
         const int contentW = std::max(S(560), width - margin * 2);
         const int headerH = S(82);
         const int bodyTop = margin + headerH;
-        const int bodyH = std::max(S(360), height - bodyTop - margin);
+        const int bodyH = std::max(S(500), height - bodyTop - margin);
         const int gap = S(16);
         const int leftW = std::clamp(contentW * 38 / 100, S(300), S(430));
         const int rightX = margin + leftW + gap;
@@ -839,7 +839,7 @@ struct PageState {
         const int contentW = std::max(S(560), width - margin * 2);
         const int headerH = S(82);
         const int bodyTop = margin + headerH;
-        const int bodyH = std::max(S(360), height - bodyTop - margin);
+        const int bodyH = std::max(S(500), height - bodyTop - margin);
         const int gap = S(16);
         const int leftW = std::clamp(contentW * 38 / 100, S(300), S(430));
         const int rightX = margin + leftW + gap;

@@ -58,6 +58,7 @@ struct PackageOutcome {
     std::size_t axisYNodeCount{};
     std::size_t emitterCount{};
     std::vector<ParticleEmitterDefinition> emitters;
+    fs::path entry;
     std::wstring error;
 };
 
@@ -69,6 +70,7 @@ static PackageOutcome Walk(const fs::path& root) {
     LoadedMiaoContentPackage package;
     if (!MiaoContentPackage::Load(root, &package, &out.error)) return out;
     out.loaded = true;
+    out.entry = package.manifest.entry;
 
     SceneRuntimeDefinition definition;
     if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &out.error)) return out;
@@ -151,9 +153,9 @@ int wmain() {
         std::size_t expectedEmitters;  // analytic particle fields from [Particles]
     };
     const Spec specs[] = {
-        // All three builtin wallpapers now ship their art and have a populated
-        // scene.json, generated from scene.ini by
-        // scripts/generate-miao-cloud-scene.py (arithmetic nobody does by hand).
+        // All three builtin wallpapers now ship their art and a populated canonical
+        // scene.json. The old scene.ini files live only under tests/fixtures as frozen
+        // migration evidence; they are not runtime package content anymore.
         //
         // Node counts are not "layers + 1". A layer whose y-axis moves at a
         // different frequency than its x-axis gets an extra parent node: one
@@ -181,6 +183,11 @@ int wmain() {
     for (const auto& spec : specs) {
         const fs::path root = wallpapers / (std::string(spec.name) + ".mdwall");
         std::printf("\n%s\n", spec.name);
+        std::error_code legacyError;
+        const bool legacyIniExists = fs::exists(root / "scene.ini", legacyError);
+        Check(!legacyError && !legacyIniExists,
+              "发货包不再携带 legacy scene.ini，只保留 canonical Scene Runtime");
+
         const PackageOutcome out = Walk(root);
 
         Check(out.loaded, "manifest.json 与入口文件通过 MiaoContentPackage::Load");
@@ -188,6 +195,8 @@ int wmain() {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
         }
+        Check(out.entry == fs::path("scene.json"),
+              "manifest canonical runtime entry 是 scene.json");
         Check(out.deserialized, "scene.json 通过 MiaoSceneSerializer::DeserializePackage");
         Check(out.runtimeValid, "反序列化结果通过 MiaoSceneRuntimeModel::Validate");
         if (!out.runtimeValid) {
@@ -217,11 +226,9 @@ int wmain() {
             Check(out.assetCount == 5, "scene.json 声明了 5 个 Image 资产");
             Check(out.resolvedCount == 5, "5 个资产全部解析到真实文件");
             Check(out.texturedSpriteCount == 5, "5 个 sprite 都带 texture 资产引用");
-            // Recorded gaps, not passes. scene.ini's [Particles] carries only counts
-            // and two opacities, while LayeredSceneRenderer.h:273-314 generates its
-            // particles procedurally (per-index sine jitter, a kPi arch, i%5 frequency
-            // classes). There is no declarative per-particle source to map from, so
-            // writing emitter parameters would be inventing the user's visual.
+            // The animation and particle counts below pin the migrated Scene Runtime
+            // representation. Formula-level fidelity is checked separately against the
+            // frozen legacy fixtures; this executable test checks the shipped package.
             //
             // 8 tracks each, but reached by different arithmetic per package — this is
             // pinned as a count precisely so that arithmetic cannot drift silently:
@@ -242,7 +249,7 @@ int wmain() {
             // count that stops matching the arithmetic above means scene.ini and the
             // generator drifted apart.
             Check(out.animationCount == 8,
-                  "动画已迁移(4 个 scene.ini 动画层 -> 8 条关键帧轨,推导见上方注释)");
+                  "动画迁移保持为 8 条关键帧轨(旧公式基准保存在 tests/fixtures)");
             // Particles are migrated as of 2026-09-23. The old assertion pinned
             // `emitterCount == 0` with the reason "[Particles] carries only counts,
             // there is no declarative per-particle source" — and that reason was
@@ -256,7 +263,7 @@ int wmain() {
             // Pinned per package, because the counts differ and a future package's
             // [Particles] will too: 0 would mean the migration silently vanished.
             Check(out.emitterCount == spec.expectedEmitters,
-                  "scene.ini 的 [Particles] 已迁成声明式解析场发射器");
+                  "legacy [Particles] 已迁成声明式解析场发射器");
             for (const auto& emitter : out.emitters) {
                 if (!IsAnalyticEmitterMode(emitter.mode)) {
                     Check(false, "particle emitter mode is analytic, not simulated");

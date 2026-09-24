@@ -120,14 +120,10 @@ jobs:
             exit 1
           }
 
-      # 三个内置壁纸的 scene.json 都是 scene.ini 的产物,不是第二份手写源。
-      # 分叉的后果很具体:图层位置与源不符,而**没有任何测试会发现** ——
-      # C++ 侧的 BuiltinWallpaperPackages 只验它能解析与资产在不在,不验几何。
-      # 生成器内部还会对每层做一次逆合成 assert,所以这一步同时是几何校验。
-      # 2026-09-23 之前它只覆盖 MiaoCloud;NeonCity 与 MysticMoon 的 scene.json
-      # 是空壳,没有可校验的产物。两个包的 scene.json 生成之后,同一个生成器
-      # 一次覆盖三个包。
-      - name: Verify builtin wallpaper scene.json has not drifted from scene.ini
+      # 三个内置壁纸运行时现在只携带 scene.json。旧 scene.ini 被移到 tests/fixtures
+      # 作为冻结的迁移基准,不再进入 .mdwall 或安装包。这个门仍用那份基准复核几何,
+      # 生成器内部还会对每层做一次逆合成 assert。
+      - name: Verify builtin scene.json matches frozen legacy migration fixtures
         shell: bash
         run: |
           out=$(python3 scripts/generate-miao-cloud-scene.py --check 2>&1) || {
@@ -159,13 +155,9 @@ jobs:
             exit 1
           }
 
-      # 动画从 scene.ini 的解析式正弦迁到 scene.json 的关键帧轨,是一次有损迁移。
-      # 损失量必须是个数:这个脚本读两个源、按引擎自己的 easing/局部时间代码求值,
-      # 逐点比,上界是解析解 A*(1-cos(pi/15))。
-      # 没有它,"亚像素"就只是注释里的一句话。
-      # 2026-09-23 之前只复核 MiaoCloud;另外两个包的动画迁完之后,
-      # 同一个脚本一次覆盖三个包 —— 否则"保真"只对三分之一的迁移成立。
-      - name: Verify migrated wallpaper animations still match scene.ini
+      # 动画从旧解析式迁到 scene.json 的关键帧轨是一次有损迁移。旧解析式输入现在
+      # 只保存在 tests/fixtures;这个脚本逐点比对,上界是 A*(1-cos(pi/15))。
+      - name: Verify migrated wallpaper animations match frozen legacy fixtures
         shell: bash
         run: |
           out=$(python3 scripts/verify-builtin-wallpaper-animation-parity.py 2>&1) || {
@@ -179,11 +171,8 @@ jobs:
       # install(DIRECTORY ...) 整目录,所以少列一项不会让文件消失 —— 但会让
       # "它是否真的进了打包产物"失去检查。cloud.png 就是这样被漏了一整天:
       # MiaoCloud scene.json 从空壳填成 5 层的同一天,断言清单还是 4 项。
-      # 判据从每个包的**生效入口**推(manifest 的 legacy_entry 优先,和
-      # WallpaperPackage.cpp 同一个规则),所以增删资产只需改一处。
-      # 2026-09-22 这一步的名字写的是"match scene.json",而门读的是 scene.json、
-      # 产品读的是 scene.ini —— 名字、门、产品三方不一致,门于是对三分之二的
-      # 资产一无所知却报绿。名字现在说的是它真正比照的东西。
+      # 判据从每个包的生效入口推。对三个内置包还额外断言 legacy_entry 与
+      # scene.ini 都不得回流,让产品入口、门禁与打包清单保持同一个 canonical 来源。
       - name: Verify the staged wallpaper asset assertions match each package's effective entry
         shell: bash
         run: |

@@ -18,13 +18,10 @@ foreach ($relative in @(
     'Assets\MiaoMiao.ico',
     'Wallpapers\MiaoCloud.mdwall\manifest.json',
     'Wallpapers\MiaoCloud.mdwall\scene.json',
-    'Wallpapers\MiaoCloud.mdwall\scene.ini',
     'Wallpapers\NeonCity.mdwall\manifest.json',
     'Wallpapers\NeonCity.mdwall\scene.json',
-    'Wallpapers\NeonCity.mdwall\scene.ini',
     'Wallpapers\MysticMoon.mdwall\manifest.json',
-    'Wallpapers\MysticMoon.mdwall\scene.json',
-    'Wallpapers\MysticMoon.mdwall\scene.ini'
+    'Wallpapers\MysticMoon.mdwall\scene.json'
 )) { Assert-File $relative }
 
 & (Join-Path $PSScriptRoot 'prepare-runtime-base.ps1') -DeployDir $Destination -Architecture $Architecture
@@ -43,15 +40,14 @@ foreach ($relative in @(
     'Goz\gozd.exe',
     # 这里列出的是**断言**,不是拷贝清单 —— 真正的拷贝是根 CMakeLists 的
     # install(DIRECTORY assets/wallpapers/ DESTINATION Wallpapers),整目录。
-    # scripts/verify-staged-wallpaper-assets.sh 从每个包**真正生效的入口**
-    # (manifest 的 legacy_entry 优先,见 WallpaperPackage.cpp)推出应有的集合与这里
+    # scripts/verify-staged-wallpaper-assets.sh 从每个包 manifest 的 canonical entry
+    # 推出应有的集合与这里
     # 比对:少列一项,该文件是否真的进了打包产物就没有检查兜底。cloud.png 就是在
     # MiaoCloud scene.json 从空壳填成 5 层的同一天补上的 —— 前面四项一直在,
     # 第五项被漏掉了整整一天。
     # 2026-09-22:NeonCity 与 MysticMoon 的 10 个资产此前一条都没列。原因不是谁忘了
-    # 写,而是那个门此前只读 scene.json,而这两个包的 scene.json 是空壳 —— 产品实际
-    # 加载的是 scene.ini(legacy_entry 优先)。门推出 0 个资产,于是报"✅ 覆盖了每个
-    # 资产"。门读错文件时,手写清单看着没问题也会一直漏。
+    # 写,而是那个门此前读错了运行时入口。现在三个内置包只保留 scene.json,
+    # stage 清单与产品入口都从同一个 canonical manifest entry 推导。
     'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
     'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
     'Wallpapers\MiaoCloud.mdwall\assets\cloud.png',

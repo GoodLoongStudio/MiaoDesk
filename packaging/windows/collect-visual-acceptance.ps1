@@ -69,6 +69,39 @@ public static class MiaoDeskAcceptanceNative
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr CreateWindowEx(
+        uint exStyle, string className, string windowName, uint style,
+        int x, int y, int width, int height,
+        IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll")]
+    public static extern bool DestroyWindow(IntPtr hwnd);
+
+    public static uint MonitorDpi(int x, int y)
+    {
+        var previous = SetThreadDpiAwarenessContext(new IntPtr(-4)); // PER_MONITOR_AWARE_V2
+        IntPtr hwnd = IntPtr.Zero;
+        try
+        {
+            hwnd = CreateWindowEx(
+                0, "STATIC", "", 0x80000000u, // WS_POPUP, never shown
+                x, y, 1, 1,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (hwnd == IntPtr.Zero) return 96;
+            var dpi = GetDpiForWindow(hwnd);
+            return dpi == 0 ? 96u : dpi;
+        }
+        finally
+        {
+            if (hwnd != IntPtr.Zero) DestroyWindow(hwnd);
+            if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+        }
+    }
+
     public static string ClassName(IntPtr hwnd)
     {
         var buffer = new StringBuilder(512);
@@ -133,6 +166,38 @@ function Get-WindowPropertyInt([IntPtr]$Hwnd, [string]$Name) {
     $value = [MiaoDeskAcceptanceNative]::GetProp($Hwnd, $Name)
     if ($value -eq [IntPtr]::Zero) { return 0 }
     return $value.ToInt64()
+}
+
+function Get-MonitorSnapshot {
+    $result = @()
+    foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+        $bounds = $screen.Bounds
+        $centerX = $bounds.Left + [int]([Math]::Floor($bounds.Width / 2.0))
+        $centerY = $bounds.Top + [int]([Math]::Floor($bounds.Height / 2.0))
+        $dpi = [uint32][MiaoDeskAcceptanceNative]::MonitorDpi($centerX, $centerY)
+        $result += [pscustomobject][ordered]@{
+            deviceName = $screen.DeviceName
+            primary = $screen.Primary
+            left = $bounds.Left
+            top = $bounds.Top
+            right = $bounds.Right
+            bottom = $bounds.Bottom
+            width = $bounds.Width
+            height = $bounds.Height
+            orientation = if ($bounds.Height -gt $bounds.Width) { 'portrait' } else { 'landscape' }
+            dpi = $dpi
+            scalePercent = [Math]::Round(($dpi / 96.0) * 100.0)
+        }
+    }
+    return @($result | Sort-Object @{Expression='primary';Descending=$true}, left, top)
+}
+
+function Test-RectOverlapsMonitor($Rect, $Monitor) {
+    if ($null -eq $Rect) { return $false }
+    return ($Rect.left -lt $Monitor.right -and
+            $Rect.right -gt $Monitor.left -and
+            $Rect.top -lt $Monitor.bottom -and
+            $Rect.bottom -gt $Monitor.top)
 }
 
 function Get-MiaoDeskSurfaceSnapshot {
@@ -230,6 +295,7 @@ function Save-VirtualDesktopScreenshot([string]$Path) {
     }
 }
 
+$monitors = @(Get-MonitorSnapshot)
 $surfaceBefore = @(Get-MiaoDeskSurfaceSnapshot)
 $processes = @(Get-MiaoDeskProcessSnapshot)
 
@@ -243,6 +309,16 @@ $wallpaperSurfaces = @($surfaceBefore | Where-Object {
 
 $surfaceWarnings = @()
 foreach ($surface in $surfaceBefore) {
+    $onMonitor = $false
+    foreach ($monitor in $monitors) {
+        if (Test-RectOverlapsMonitor $surface.rect $monitor) {
+            $onMonitor = $true
+            break
+        }
+    }
+    if (-not $onMonitor) {
+        $surfaceWarnings += "Surface is outside every monitor: $($surface.class) $($surface.title)"
+    }
     if (-not $surface.visible) {
         $surfaceWarnings += "Surface not visible: $($surface.class) $($surface.title)"
     }
@@ -265,8 +341,12 @@ $report = [pscustomobject][ordered]@{
     user = $env:USERNAME
     os = [Environment]::OSVersion.VersionString
     virtualScreen = $virtualScreen
+    monitors = $monitors
     screenshot = [IO.Path]::GetFileName($screenshotPath)
     summary = [ordered]@{
+        monitorCount = $monitors.Count
+        mixedDpi = (@($monitors | Select-Object -ExpandProperty dpi -Unique).Count -gt 1)
+        portraitMonitorCount = @($monitors | Where-Object { $_.orientation -eq 'portrait' }).Count
         surfaceCount = $surfaceBefore.Count
         widgetSurfaceCount = $widgetSurfaces.Count
         wallpaperSurfaceCount = $wallpaperSurfaces.Count
@@ -297,6 +377,8 @@ $summaryPath = Join-Path $OutputDirectory 'README.txt'
     "Screenshot: $screenshotPath"
     "Report: $reportPath"
     ''
+    "Monitors: $($report.summary.monitorCount) · mixed DPI=$($report.summary.mixedDpi) · portrait=$($report.summary.portraitMonitorCount)"
+    $($monitors | ForEach-Object { "  $($_.deviceName): $($_.width)x$($_.height) @ ($($_.left),$($_.top)) · $($_.dpi) DPI ($($_.scalePercent)%) · $($_.orientation) · primary=$($_.primary)" })
     "Surfaces: $($report.summary.surfaceCount)"
     "Widgets: $($report.summary.widgetSurfaceCount)"
     "Wallpaper surfaces: $($report.summary.wallpaperSurfaceCount)"

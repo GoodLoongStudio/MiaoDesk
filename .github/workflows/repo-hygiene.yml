@@ -40,6 +40,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      # The builtin wallpaper-art gate reads committed LFS images and re-encodes
+      # JPEG layers through Pillow.  The old job checked out LFS pointers only and
+      # had no Pillow installed, so Linux fell through to the macOS-only `sips`
+      # fallback before it could verify a single JPEG byte.
+      - name: Prepare wallpaper art verifier
+        shell: bash
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir Pillow
 
       - name: Verify no unresolved merge conflict markers
         shell: bash

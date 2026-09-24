@@ -668,16 +668,16 @@
     Windows CI 证明的是"渲染器在离屏位图上画对了",不是"用户桌面上看到对了"。
   - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件)。
     原因与三种被否的权宜做法见渲染器注释。
-  - **NeonCity / MysticMoon:缺 10 张美术资产**(上面第一节)。
-  - **动画与粒子按设计留空,且被测试显式记录为缺口**:`scene.ini` 的六种动画全是
-    解析式正弦(`drift` 还让 y 轴用 `speed*0.77` 的另一个周期),场景动画是线性
-    关键帧轨;要在"完全复现"与"循环处连续"之间取舍属于要看真实桌面效果的决定。
-  - **`legacy_entry` 刻意保留**:切入口需要真机验收,不在一台编译不了的机器上猜。
-    (原清单第 7 条"重跑那 6 个脚本、确认输入源是否仍指向 scene.ini"**已完成**:
-    逐个查过,`verify-wallpaper-library-*` 那四个读的是 `WallpaperLibrary.cpp` 而不是包,
-    `verify-wallpaper-theme-canonical-gate.ps1` 只读 `manifest.json` 的 id/kind/runtime,
-    没有一个读 `scene.ini`。所以删 `legacy_entry` 与 `scene.ini` 不会破坏它们。
-    —— 但那个闸门此前从未被调用过,已接进工作流并改成 push + PR 都触发。)
+  - ~~**NeonCity / MysticMoon:缺 10 张美术资产**~~ **已闭环**:两包的 10 张资产已生成、
+    提交并由 `generate-builtin-wallpaper-art.py --check` 做逐字节可复现校验。
+  - ~~**动画与粒子按设计留空**~~ **已闭环**:动画已迁成关键帧轨并由
+    `verify-builtin-wallpaper-animation-parity.py` 与冻结 legacy fixture 逐点比对;
+    Sparkle / CometTrail / PetalFall 已统一进入 `MiaoAnalyticParticleField`,
+    D2D 有像素级证据,D3D11 有最终颜色目标 GPU readback / comet cross / petal 椭圆证据。
+  - ~~**`legacy_entry` 刻意保留**~~ **已闭环(#66 / `d4f7bb5`)**:三个内置包现在只以
+    `entry=scene.json` 运行,`legacy_entry` 与运行时 `scene.ini` 已删除。旧 INI 仅冻结在
+    `tests/fixtures/legacy-wallpaper-scenes/**` 作为迁移回归基准,不会进入 .mdwall 或安装包。
+    `verify-staged-wallpaper-assets.sh` 还会拒绝这些 legacy 字段/文件回流。
   - ~~D3D11 后端仍没有经 `texture` 属性的贴图路径~~ **这条已过期,2026-09-22 更正**。
     它在 `0937328` 就落了地:`MiaoBuiltinTextured` 像素着色器、按 sprite 自己的
     `texture` assetReference 取图(`input.textureAssetId = texture.id`)、绑 t0、
@@ -748,10 +748,9 @@
     \`tint\` 在两边分叉这一点**依然是分叉,而且是允许的**:D2D 的 \`ID2D1BitmapBrush\`
     没有颜色成员,非白色 tint 显式拒绝;D3D11 的 tint 是 shader 常量,免费。
     content-review 把它当差异记录,别当成 bug。
-  - ~~内容迁移(第 2–7 条)~~:第 2 条(几何 + 5 层 + 5 个 Image 资产)已落地,
-    第 3 条(动画)已迁移并被逐点复核;第 4 条(粒子)刻意不做、第 5 条不适用;
-    第 6 条(`legacy_entry` 切换)
-    刻意保留,需真机验收。
+  - **内容迁移(第 2–7 条)已全部闭环**:几何 / 5 层 Image 资产 / 动画 / 解析粒子
+    均已进入 canonical Scene Runtime;三个内置包也已删除 `legacy_entry` 与运行时
+    `scene.ini`。这里剩下的真机任务属于 P0-1 的视觉/桌面组合验收,不再是 P0-4 内容迁移。
 
 ### P0-5 本地 AI 组件许可证 / 分发边界
 

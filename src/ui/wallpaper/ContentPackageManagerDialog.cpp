@@ -2,6 +2,7 @@
 
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/MiaoContentPackageManager.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <shellapi.h>
 
@@ -76,6 +77,8 @@ struct DialogState {
     HWND uninstallButton{};
     HWND closeButton{};
     HFONT font{};
+    HFONT headingFont{};
+    UINT fontScaleDpi{};
     desktop::DesktopControlService control;
     std::vector<content::ManagedContentPackageInfo> packages;
     bool changed{};
@@ -86,12 +89,38 @@ struct DialogState {
         return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     }
 
-    void ApplyFont(HWND child) const {
-        if (child && font) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    void ApplyFont(HWND child, HFONT use = nullptr) const {
+        HFONT selected = use ? use : font;
+        if (child && selected) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(selected), TRUE);
+    }
+
+    void DestroyFonts() noexcept {
+        if (headingFont) { DeleteObject(headingFont); headingFont = nullptr; }
+        if (font) { DeleteObject(font); font = nullptr; }
+    }
+
+    void RebuildFonts() {
+        fontScaleDpi = ui::EffectiveFontDpi(window);
+        DestroyFonts();
+        font = ui::CreateUiFont(window, 14, FW_NORMAL);
+        headingFont = ui::CreateUiFont(window, 15, FW_SEMIBOLD);
+    }
+
+    void RefreshFontScaleIfNeeded() {
+        if (!window || !font) return;
+        const UINT next = ui::EffectiveFontDpi(window);
+        if (next == fontScaleDpi) return;
+        RebuildFonts();
+        ApplyFont(heading, headingFont);
+        for (HWND child : {list, details, refreshButton, openButton, uninstallButton, closeButton})
+            ApplyFont(child);
+        SendMessageW(list, LB_SETITEMHEIGHT, 0,
+                     static_cast<LPARAM>(std::max(S(22), ui::ScaleFontPx(window, 20))));
+        Layout();
     }
 
     bool CreateControls() {
-        font = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        RebuildFonts();
         heading = CreateWindowExW(0, L"STATIC",
             kind == content::ContentKind::Widget ? L"已安装小组件内容包" : L"已安装壁纸主题包",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -115,8 +144,14 @@ struct DialogState {
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
             0, 0, 10, 10, window, ControlId(kCloseId), instance, nullptr);
 
-        for (HWND child : {heading, list, details, refreshButton, openButton, uninstallButton, closeButton})
+        ApplyFont(heading, headingFont);
+        for (HWND child : {list, details, refreshButton, openButton, uninstallButton, closeButton})
             ApplyFont(child);
+        // LISTBOX does not reliably grow its row height when a larger font is
+        // assigned after creation. Pin an explicit readable row height so the
+        // selected row is not vertically clipped on 1440p/4K monitors.
+        SendMessageW(list, LB_SETITEMHEIGHT, 0,
+                     static_cast<LPARAM>(std::max(S(22), ui::ScaleFontPx(window, 20))));
         return heading && list && details && refreshButton && openButton && uninstallButton && closeButton;
     }
 
@@ -294,9 +329,32 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         state->Layout();
         state->Refresh(true);
         return 0;
+    case WM_MOVE:
+        state->RefreshFontScaleIfNeeded();
+        return 0;
+    case WM_DISPLAYCHANGE:
+        state->RefreshFontScaleIfNeeded();
+        return 0;
     case WM_SIZE:
         state->Layout();
         return 0;
+    case WM_DPICHANGED: {
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+        if (suggested) {
+            SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+                         suggested->right - suggested->left, suggested->bottom - suggested->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        state->RebuildFonts();
+        state->ApplyFont(state->heading, state->headingFont);
+        for (HWND child : {state->list, state->details, state->refreshButton, state->openButton,
+                           state->uninstallButton, state->closeButton})
+            state->ApplyFont(child);
+        SendMessageW(state->list, LB_SETITEMHEIGHT, 0,
+                     static_cast<LPARAM>(std::max(state->S(22), ui::ScaleFontPx(hwnd, 20))));
+        state->Layout();
+        return 0;
+    }
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         const int notification = HIWORD(wParam);
@@ -326,6 +384,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         DestroyWindow(hwnd);
         return 0;
     case WM_NCDESTROY:
+        state->DestroyFonts();
         state->window = nullptr;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         return DefWindowProcW(hwnd, message, wParam, lParam);
@@ -362,8 +421,11 @@ bool ShowContentPackageManagerDialog(
     const UINT dpi = owner && IsWindow(owner)
         ? std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(owner))
         : USER_DEFAULT_SCREEN_DPI;
-    RECT outer{0, 0, MulDiv(760, dpi, USER_DEFAULT_SCREEN_DPI),
-                    MulDiv(520, dpi, USER_DEFAULT_SCREEN_DPI)};
+    // Client geometry stays DPI-aware, while fonts additionally use the monitor
+    // resolution policy from NativeUiScale. This avoids giant dialogs on portrait
+    // displays but still makes text readable at 1440p/4K when Windows scaling is low.
+    RECT outer{0, 0, MulDiv(820, dpi, USER_DEFAULT_SCREEN_DPI),
+                    MulDiv(560, dpi, USER_DEFAULT_SCREEN_DPI)};
     AdjustWindowRectExForDpi(&outer, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
                              FALSE, WS_EX_DLGMODALFRAME, dpi);
 

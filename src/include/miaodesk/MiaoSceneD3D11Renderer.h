@@ -43,11 +43,13 @@ public:
     // compile-and-link statement into a checkable one — before it existed, the D3D11
     // renderer could not report what it had drawn, so no test could assert it.
     //
-    // Reads the scene colour target, not the swap chain: that is what the scene pass drew
-    // into, and the back buffer is undefined once Draw() has Presented.
+    // Reads the render graph's final colour target, not the swap chain. With no particle
+    // or post-process pass this is scene-color; otherwise it is particle-color or the
+    // final post-process output. The back buffer is undefined once Draw() has Presented,
+    // so reading it would make execution-level tests driver-dependent.
     //
     // Returns false with a message when the renderer is not loaded, when the render graph
-    // has no scene colour target, or when that target is not a 32-bit RGBA format — never
+    // has no final colour target, or when that target is not a 32-bit RGBA format — never
     // by guessing a pixel size.
     bool ReadBackPixels(std::vector<unsigned char>* bgra, unsigned* width, unsigned* height,
                         std::wstring* error = nullptr);

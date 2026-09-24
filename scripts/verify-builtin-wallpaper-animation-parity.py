@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""逐点复核内置壁纸的 scene.json 动画是否复现 scene.ini 的解析式运动。
+"""逐点复核内置壁纸的 scene.json 动画是否复现冻结 legacy fixture 的解析式运动。
 
 为什么需要它:动画从"解析式正弦"迁到"线性插值关键帧轨"是一次**有损**迁移,
 损失量必须是个数,不能是注释里的一句"亚像素"。这个脚本把两个源都读进来,
@@ -44,12 +44,13 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WALLPAPERS = ROOT / "assets" / "wallpapers"
+LEGACY_FIXTURES = ROOT / "tests" / "fixtures" / "legacy-wallpaper-scenes"
 PACKAGES = ("MiaoCloud", "NeonCity", "MysticMoon")
 
 
 def paths(name):
     package = WALLPAPERS / (name + ".mdwall")
-    return package / "scene.json", package / "scene.ini"
+    return package / "scene.json", LEGACY_FIXTURES / name / "scene.ini"
 
 # 均匀采样 + 线性插值的解析上界:A*(1-cos(pi/(N-1)))。
 SAMPLES = 16
@@ -158,7 +159,7 @@ def check_package(package):
         by_target.setdefault(a["target"]["componentId"], []).append(a)
 
     animated = [l for l in layers if l.get("animation") not in ("", "none")]
-    print(f"scene.ini 带动画的层: {len(animated)} 个({', '.join(l['name'] for l in animated)})")
+    print(f"legacy fixture 带动画的层: {len(animated)} 个({', '.join(l['name'] for l in animated)})")
     print(f"scene.json 动画轨:     {len(doc.get('animations', []))} 条")
     print()
 

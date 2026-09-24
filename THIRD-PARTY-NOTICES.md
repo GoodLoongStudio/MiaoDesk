@@ -68,7 +68,12 @@ MiaoDesk keeps only the headers and x64/ARM64 static loaders required by the nat
 # 本地 AI 推理栈(Local AI Inference Stack)
 
 以下组件用于 `docs/LOCAL_AI_ARCHITECTURE.md` 描述的可选本地 AI 模式。**它们由用户在自己的硬件上
-部署,MiaoDesk 不安卓、不分发、不打包这些组件**;此处列出是为满足许可透明度与归属要求。
+部署，MiaoDesk 不安装、不分发、不打包这些组件**；此处列出是为满足许可透明度与归属要求。
+
+Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1` 强制这一边界：常见模型权重
+扩展名以及当前许可未完成书面确认的模型名称一旦出现在 staged package，打包立即失败。该门禁只是
+**分发边界**，不是对上游许可证作法律结论；若未来要把任何本地模型权重随 MiaoDesk 一起分发，必须先
+单独完成许可证审核并显式修改这条门禁。
 
 ## vLLM
 

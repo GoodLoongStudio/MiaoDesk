@@ -1277,13 +1277,25 @@
 - **已知障碍**:ComfyUI 的 API 不是 OpenAI 兼容,需自写薄 shim;vLLM-Omni 的 API 匹配但硬件支持未记录。
 - **状态**:❌ 未开始
 
-### P2-3 模型路由器 L1 上线
+### P2-3 模型路由器 L1 上线 🟡 代码已完成，待 DGX 真机部署
 
 - **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.2 / §7.4
-- **内容**:DGX Spark 上跑路由器,对外暴露单一 endpoint,按请求特征分流(有 tools → 主模型;
-  命中 skill 签名 → 主模型严格 JSON;短请求无 tools → 轻量模型;其余 → 主模型)。
-- **注意**:分流签名必须固定,否则前缀缓存命中率崩塌。
-- **状态**:❌ 未开始
+- **已实施**:
+  - `runtime/router/server.mjs`:零 npm 依赖的 OpenAI-compatible L1 gateway；Windows 客户端只看一个
+    `/v1` endpoint 和一个公共 model `miaodesk`。
+  - 固定顺序分流:`tools/tool_choice` → 主模型；稳定 content-skill 签名 → 主模型；
+    短请求无 tools → 轻量模型；其余 → 主模型。
+  - 请求体除 `model` 外原样转发，SSE 流式响应原样透传。
+  - fast 后端网络失败或 5xx 自动单次回退 primary；4xx 不回退，避免掩盖客户端错误。
+  - 响应增加 `x-miaodesk-route` / `x-miaodesk-upstream-model`，便于真机看分流。
+  - 可选入站 Bearer key、primary/fast 独立 upstream key；路由器不进入 Windows 安装包。
+- **自动验证**:`tests/local-ai-router.mjs` 同时启动 primary / fast 两个真实 loopback HTTP 后端和
+  router，覆盖 tools、skill、短/长请求、model rewrite、SSE 流、fast 故障回退、models/health。
+  已接 Repo Hygiene。
+- **仍未完成**:DGX 上把 primary/fast 端口指向实际 vLLM 服务，记录各路由的 p50/p95、缓存命中率、
+  fallback 次数和显存/统一内存占用。
+- **注意**:skill 签名列表必须保持稳定，否则前缀缓存命中率会崩。
+- **状态**:🟡 产品/路由代码已闭环；待 DGX 真机部署与性能数据
 
 ### P2-4 修复 `models.json` 硬编码常量 ✅
 

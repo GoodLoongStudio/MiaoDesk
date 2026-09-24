@@ -206,8 +206,8 @@ export function createRouterServer() {
       json(res, 200, {
         ok: true,
         publicModel: PUBLIC_MODEL,
-        primary: PRIMARY_BASE_URL,
-        fast: FAST_BASE_URL,
+        primaryConfigured: Boolean(PRIMARY_BASE_URL && PRIMARY_MODEL),
+        fastConfigured: Boolean(FAST_BASE_URL && FAST_MODEL),
       });
       return;
     }

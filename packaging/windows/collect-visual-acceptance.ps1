@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-if (-not $IsWindows) {
+if ($env:OS -ne 'Windows_NT') {
     throw 'This visual-acceptance collector must run on Windows.'
 }
 

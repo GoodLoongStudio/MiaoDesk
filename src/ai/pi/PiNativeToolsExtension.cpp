@@ -48,12 +48,12 @@ const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 // endpoint can be selected. The default is "openrouter" purely for backward
 // compatibility with existing behaviour.
 //
-// MIAODESK_IMAGE_PROVIDER selects the provider string handed to getImageModel.
-// MIAODESK_IMAGE_MODEL overrides the model id. Both are exported by the host
-// (PiRuntime.cpp) from the active API profile; an empty provider means the host
-// did not configure image generation at all, which is a clearer failure than
-// silently falling back to a cloud provider the user never chose.
+// MIAODESK_IMAGE_PROVIDER / BASE_URL / MODEL are exported by the host from the
+// active API profile. Generic OpenAI-compatible providers are called directly by
+// MiaoDesk so local image generation does not depend on pi-ai recognising a custom
+// provider name. Named cloud providers keep using pi-ai compat.
 const IMAGE_PROVIDER = (process.env.MIAODESK_IMAGE_PROVIDER ?? "").trim();
+const IMAGE_BASE_URL = (process.env.MIAODESK_IMAGE_BASE_URL ?? "").trim();
 const IMAGE_MODEL = (process.env.MIAODESK_IMAGE_MODEL ?? "").trim();
 // A loopback endpoint is the product's own local inference server, which the
 // profile already treats as keyless. Treating it as keyless here too is what makes
@@ -166,9 +166,54 @@ async function resolveImageApiKey(): Promise<string> {
   const explicit = process.env.MIAODESK_IMAGE_API_KEY?.trim();
   if (explicit) return explicit;
   if (!IMAGE_PROVIDER) return "";
-  const baseUrl = (await currentMiaoDeskBaseUrl()).toLowerCase();
+  const baseUrl = (IMAGE_BASE_URL || await currentMiaoDeskBaseUrl()).toLowerCase();
   if (isLoopback(baseUrl)) return "local";
   return process.env.MIAODESK_MODEL_API_KEY?.trim() ?? "";
+}
+
+function usesOpenAICompatibleImageShim(provider: string): boolean {
+  const normalized = provider.trim().toLowerCase();
+  return normalized === "openai-compatible" || normalized === "local-openai-compatible";
+}
+
+function openAIImageEndpoint(baseUrl: string): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, "");
+  if (!normalized) return "";
+  if (normalized.endsWith("/images/generations")) return normalized;
+  return normalized + "/images/generations";
+}
+
+async function generateOpenAICompatibleImage(
+  prompt: string, imageModel: string, apiKey: string, signal?: AbortSignal
+): Promise<{ data: string; mimeType: string }> {
+  const baseUrl = IMAGE_BASE_URL || await currentMiaoDeskBaseUrl();
+  const endpoint = openAIImageEndpoint(baseUrl);
+  if (!endpoint) throw new Error("图片生成能力未配置 imageBaseUrl。");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey && apiKey !== "local") headers.Authorization = `Bearer ${apiKey}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: imageModel,
+      prompt,
+      n: 1,
+      response_format: "b64_json",
+    }),
+    signal,
+  });
+  const raw = await response.text();
+  let body: any = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch {}
+  if (!response.ok) {
+    const detail = String(body?.error?.message ?? body?.message ?? raw ?? "").trim();
+    throw new Error(detail || `OpenAI-compatible image endpoint returned HTTP ${response.status}`);
+  }
+  const data = String(body?.data?.[0]?.b64_json ?? "");
+  if (!data) {
+    throw new Error("OpenAI-compatible image endpoint did not return data[0].b64_json.");
+  }
+  return { data, mimeType: "image/png" };
 }
 
 async function generateImage(prompt: string, fileName: string, signal?: AbortSignal): Promise<string> {
@@ -179,21 +224,26 @@ async function generateImage(prompt: string, fileName: string, signal?: AbortSig
   const apiKey = await resolveImageApiKey();
   if (!apiKey) throw new Error(`图片生成能力当前未配置：需要 ${IMAGE_PROVIDER} 的 API Key。聊天和其他 Pi 工具仍可正常使用。`);
   console.error(`[MiaoDesk][artifact] image_generate start provider=${IMAGE_PROVIDER} model=${imageModel}`);
-  const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
-  const model = getImageModel(IMAGE_PROVIDER, imageModel);
-  if (!model) throw new Error(`Pi 图片模型不可用：${IMAGE_PROVIDER}/${imageModel}`);
-  const result = await generateImages(model, { input: [{ type: "text", text: prompt }] }, { apiKey, signal });
-  if (result.stopReason === "error") {
-    const providerText = result.output
-      .filter((block: any) => block?.type === "text")
-      .map((block: any) => String(block.text ?? ""))
-      .filter(Boolean)
-      .join("\n");
-    throw new Error(providerText || "Pi 图片生成 Provider 返回失败。");
+  let image: { data: string; mimeType: string } | undefined;
+  if (usesOpenAICompatibleImageShim(IMAGE_PROVIDER)) {
+    image = await generateOpenAICompatibleImage(prompt, imageModel, apiKey, signal);
+  } else {
+    const { getImageModel, generateImages } = await import("@earendil-works/pi-ai/compat");
+    const model = getImageModel(IMAGE_PROVIDER, imageModel);
+    if (!model) throw new Error(`Pi 图片模型不可用：${IMAGE_PROVIDER}/${imageModel}`);
+    const result = await generateImages(model, { input: [{ type: "text", text: prompt }] }, { apiKey, signal });
+    if (result.stopReason === "error") {
+      const providerText = result.output
+        .filter((block: any) => block?.type === "text")
+        .map((block: any) => String(block.text ?? ""))
+        .filter(Boolean)
+        .join("\n");
+      throw new Error(providerText || "Pi 图片生成 Provider 返回失败。");
+    }
+    image = result.output.find((block: any) => block?.type === "image") as
+      | { type: "image"; data: string; mimeType: string }
+      | undefined;
   }
-  const image = result.output.find((block: any) => block?.type === "image") as
-    | { type: "image"; data: string; mimeType: string }
-    | undefined;
   if (!image?.data) throw new Error("Pi 图片生成完成，但 Provider 没有返回图片数据。");
   const outputDir = join(process.cwd(), "MiaoDesk Images");
   await mkdir(outputDir, { recursive: true });

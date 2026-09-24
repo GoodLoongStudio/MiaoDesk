@@ -52,6 +52,7 @@ set(MIAODESK_CORE_SOURCES
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
     desktop/control/DesktopContentPackageLifecycle.cpp
+    desktop/control/ContentCreatorBridge.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp
@@ -169,6 +170,7 @@ set(MIAODESK_WALLPAPER_SOURCES
     ui/wallpaper/WallpaperLibraryWindowV2.cpp
     ui/wallpaper/ContentPackageUiBridge.cpp
     ui/wallpaper/ContentPackageManagerDialog.cpp
+    ui/wallpaper/ContentSkillBrowserDialog.cpp
     ui/wallpaper/ContentWidgetSettingsDialog.cpp
     ui/wallpaper/ContentWidgetPreviewRenderer.cpp
     ui/wallpaper/TodayTaskEditorDialog.cpp

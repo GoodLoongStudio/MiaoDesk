@@ -22,8 +22,11 @@ struct ModelConfig {
     // session to restart with the new values instead of silently keeping the old ones.
     unsigned contextWindow{};
     unsigned maxTokens{};
-    // Image model from the active Profile. Empty means image generation is not
-    // configured, which is reported explicitly instead of silently falling back.
+    // Image generation may use a separate OpenAI-compatible endpoint.
+    std::wstring imageProvider;
+    std::wstring imageBaseUrl;
+    std::wstring imageApiKey;
+    // Empty means image generation is not configured.
     std::wstring imageModel;
 };
 
@@ -66,6 +69,9 @@ public:
             refreshed.endpoint = profile.endpoint;
             refreshed.contextWindow = profile.contextWindow;
             refreshed.maxTokens = profile.maxTokens;
+            refreshed.imageProvider = profile.imageProvider;
+            refreshed.imageBaseUrl = profile.imageBaseUrl;
+            refreshed.imageApiKey = profile.imageApiKey;
             refreshed.imageModel = profile.imageModel;
             if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
         }
@@ -76,6 +82,9 @@ public:
             refreshed.endpoint == config_.endpoint &&
             refreshed.contextWindow == config_.contextWindow &&
             refreshed.maxTokens == config_.maxTokens &&
+            refreshed.imageProvider == config_.imageProvider &&
+            refreshed.imageBaseUrl == config_.imageBaseUrl &&
+            refreshed.imageApiKey == config_.imageApiKey &&
             refreshed.imageModel == config_.imageModel) {
             return;
         }

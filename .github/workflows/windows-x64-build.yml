@@ -126,6 +126,22 @@ jobs:
               throw 'image provider parameterisation gate failed.'
           }
 
+      - name: Verify local OpenAI image shim HTTP contract
+        shell: pwsh
+        run: |
+          $gateOut = & node tests/image-openai-shim.mjs 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'local OpenAI image shim gate failed.'
+          }
+
       - name: Verify web audio bridge shim
         shell: pwsh
         run: |

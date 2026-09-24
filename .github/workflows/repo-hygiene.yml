@@ -312,6 +312,16 @@ jobs:
             exit 1
           }
 
+      - name: Verify local OpenAI image shim HTTP contract
+        shell: bash
+        run: |
+          out=$(node tests/image-openai-shim.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify web audio bridge shim
         shell: bash
         run: |

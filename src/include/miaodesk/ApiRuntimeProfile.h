@@ -38,9 +38,13 @@ struct RuntimeProfile {
     // product reports a context window the selected model does not actually have.
     unsigned contextWindow{};
     unsigned maxTokens{};
-    // Image-generation model. Empty means "not configured": the product must report
-    // an explicit failure rather than silently falling back to a cloud model the
-    // user never chose.
+    // Optional image endpoint. Empty imageProvider/imageBaseUrl inherit the chat
+    // profile for backward compatibility. A distinct endpoint lets a local vLLM chat
+    // service and an OpenAI-compatible image shim live on different ports.
+    std::wstring imageProvider;
+    std::wstring imageBaseUrl;
+    std::wstring imageApiKey;
+    // Empty means image generation is not configured.
     std::wstring imageModel;
 };
 
@@ -159,11 +163,15 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     profile.model = Trim(ReadIni(path, section.c_str(), L"model"));
     profile.explicitDefault = ParseBool(ReadIni(path, section.c_str(), L"default", L"0"));
     profile.apiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id);
+    profile.imageApiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id + L"/Image");
     profile.contextWindow = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"contextWindow")));
     profile.maxTokens = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"maxTokens")));
+    profile.imageProvider = Trim(ReadIni(path, section.c_str(), L"imageProvider"));
+    profile.imageBaseUrl = Trim(ReadIni(path, section.c_str(), L"imageBaseUrl"));
     profile.imageModel = Trim(ReadIni(path, section.c_str(), L"imageModel"));
 
     while (profile.baseUrl.size() > 1 && profile.baseUrl.back() == L'/') profile.baseUrl.pop_back();
+    while (profile.imageBaseUrl.size() > 1 && profile.imageBaseUrl.back() == L'/') profile.imageBaseUrl.pop_back();
     const auto lowerBase = Lower(profile.baseUrl);
     const auto lowerType = Lower(profile.serviceType);
 
@@ -180,6 +188,17 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     } else if (!NeedsKey(profile.baseUrl)) {
         profile.providerId = L"local-openai-compatible";
     }
+
+    if (profile.imageProvider.empty()) {
+        if (profile.imageBaseUrl.empty()) {
+            profile.imageProvider = profile.providerId;
+        } else {
+            profile.imageProvider = NeedsKey(profile.imageBaseUrl)
+                ? L"openai-compatible"
+                : L"local-openai-compatible";
+        }
+    }
+    if (profile.imageBaseUrl.empty()) profile.imageBaseUrl = profile.baseUrl;
 
     const auto normalized = Lower(profile.baseUrl);
     for (const wchar_t* suffix : {L"/chat/completions", L"/responses", L"/messages"}) {

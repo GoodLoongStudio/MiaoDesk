@@ -7,6 +7,7 @@ on:
       - CMakeLists.txt
       - CMakePresets.json
       - src/**
+      - tests/**
       - assets/app/**
       - assets/wallpapers/**
       - config/**
@@ -20,6 +21,7 @@ on:
       - .github/workflows/package-windows-x64.yml
   pull_request:
     paths:
+      - tests/**
       - .github/workflows/package-windows-x64.yml
   workflow_dispatch:
 
@@ -115,6 +117,45 @@ jobs:
             $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Host "::error title=Runtime staging failed::$details"
             throw
+          }
+
+      - name: Probe installed Pi image provider registries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:MIAODESK_STAGE_ROOT
+          $node = Join-Path $root 'Runtime\Node\node.exe'
+          $probeSource = Join-Path $PWD 'tests\image-provider-installed.mjs'
+          if (-not (Test-Path $node -PathType Leaf)) { throw "Staged Node runtime is missing: $node" }
+          if (-not (Test-Path $probeSource -PathType Leaf)) { throw "Image provider probe is missing: $probeSource" }
+
+          $locations = @(
+            [pscustomobject]@{ Label='agent-root'; Directory=(Join-Path $root 'AI') },
+            [pscustomobject]@{ Label='pi-runtime'; Directory=(Join-Path $root 'AI\node_modules\pi') }
+          )
+
+          foreach ($location in $locations) {
+            if (-not (Test-Path $location.Directory -PathType Container)) {
+              throw "Provider probe directory is missing: $($location.Directory)"
+            }
+            $probeTarget = Join-Path $location.Directory '.miaodesk-image-provider-probe.mjs'
+            Copy-Item $probeSource $probeTarget -Force
+            try {
+              $out = & $node $probeTarget $location.Label 2>&1
+              $exit = $LASTEXITCODE
+              $out | Write-Host
+              if ($exit -ne 0) {
+                $out | Select-String -Pattern 'FAIL|rror|xception|not found|missing|Error' |
+                  Select-Object -First 12 | ForEach-Object {
+                    $line = $_.Line.Trim()
+                    if ($line.Length -gt 500) { $line = $line.Substring(0,500) }
+                    Write-Host "::error::$line"
+                  }
+                throw "Installed image provider probe failed for $($location.Label), exit=$exit"
+              }
+            } finally {
+              Remove-Item $probeTarget -Force -ErrorAction SilentlyContinue
+            }
           }
 
       - name: Report package size

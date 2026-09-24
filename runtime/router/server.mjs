@@ -147,14 +147,14 @@ async function proxyChat(req, res) {
         upstreamResponse = await requestUpstream(selected);
       } catch (fallbackError) {
         metrics.upstreamFailures += 1;
-        metrics.upstreamFailures += 1;
-      json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+        json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
           (fallbackError instanceof Error ? fallbackError.message : String(fallbackError)) } }, {
           "x-miaodesk-route": classification.route + "-fallback-failed",
         });
         return;
       }
     } else {
+      metrics.upstreamFailures += 1;
       json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
         (error instanceof Error ? error.message : String(error)) } }, {
         "x-miaodesk-route": classification.route,

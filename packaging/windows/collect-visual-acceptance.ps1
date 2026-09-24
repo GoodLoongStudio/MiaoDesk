@@ -176,6 +176,11 @@ function Get-MiaoDeskProcessSnapshot {
     $items = @()
     foreach ($process in @(Get-Process -ErrorAction SilentlyContinue |
                            Where-Object { $_.ProcessName -like 'MiaoDesk*' })) {
+        $startTime = $null
+        $processPath = $null
+        try { $startTime = $process.StartTime.ToString('o') } catch {}
+        try { $processPath = $process.Path } catch {}
+
         $items += [pscustomobject][ordered]@{
             name = $process.ProcessName
             id = $process.Id
@@ -183,8 +188,8 @@ function Get-MiaoDeskProcessSnapshot {
             workingSetBytes = [int64]$process.WorkingSet64
             privateMemoryBytes = [int64]$process.PrivateMemorySize64
             handleCount = $process.HandleCount
-            startTime = try { $process.StartTime.ToString('o') } catch { $null }
-            path = try { $process.Path } catch { $null }
+            startTime = $startTime
+            path = $processPath
         }
     }
     return @($items | Sort-Object name, id)

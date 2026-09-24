@@ -177,24 +177,17 @@ docker run -d --name miaodesk-vllm-b --gpus all --ipc host \
 
 ## 2. 图像生成服务
 
-⚠️ **本节的产品侧前置改动未完成前,本地图像服务无人调用。** 选型依据与许可分析见
-`LOCAL_AI_ARCHITECTURE.md` §7.6。
+✅ **产品侧 OpenAI-compatible 图片调用链已接通。** MiaoDesk 可为图片单独配置 `imageBaseUrl` / `imageModel`，并直接调用 `<imageBaseUrl>/images/generations`；聊天和图片可以使用不同端口。选型依据与许可分析见 `LOCAL_AI_ARCHITECTURE.md` §7.6。
 
 ### 2.1 为什么单独一节
 
-`image_generate` 是一个独立的 Pi tool/provider,不走 `models.json` 里的 `miaodesk` chat provider
-(该 provider 的 `input` 明确是 `["text"]`)。因此图像服务必须独立部署、独立端口。
+`image_generate` 是独立的图片能力，不把聊天 provider 宣称为 vision-capable。对于 `local-openai-compatible` / `openai-compatible`，MiaoDesk 自己通过 OpenAI Images 兼容协议调用图片端点；具名云 provider 仍可走 Pi compat。建议图片服务独立部署、独立端口。
 
 ### 2.2 产品侧前置改动(必须)
 
 `src/ai/pi/PiNativeToolsExtension.cpp` 当前硬编码:
 
-```javascript
-const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
-const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
-```
-
-不改这段代码,本地图像服务无人调用。三个方案见架构文档 §7.5,**推荐顺序:A → B → C**。
+现在不再依赖 `getImageModel()` 是否认识本地 provider 名。通用 OpenAI-compatible 图片端点由 MiaoDesk 直接请求 `/images/generations`，要求返回 `data[0].b64_json`。配置中心可直接填写 Image Base URL 与 Image Model。
 
 ### 2.3 运行时:ComfyUI + OpenAI 兼容 shim
 

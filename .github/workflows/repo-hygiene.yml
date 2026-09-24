@@ -51,6 +51,23 @@ jobs:
         shell: bash
         run: python3 -m pip install --disable-pip-version-check --no-cache-dir Pillow
 
+      - name: Verify Windows PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $errors = @()
+          Get-ChildItem packaging/windows -Filter *.ps1 -File -Recurse | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
+            foreach ($parseError in @($parseErrors)) {
+              $errors += "$($_.FullName):$($parseError.Extent.StartLineNumber): $($parseError.Message)"
+            }
+          }
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "::error::$_" }
+            exit 1
+          }
+
       - name: Verify no unresolved merge conflict markers
         shell: bash
         run: |

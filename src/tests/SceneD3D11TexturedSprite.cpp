@@ -425,6 +425,122 @@ int wmain() {
              "粒子之外仍是黑底 —— particle pass 是叠加而不是整屏填充");
     }
 
+    // Phase 3: PetalFall is intentionally anisotropic. A scalar particle size
+    // would turn it into a circle, which is exactly the bug this GPU-instance change
+    // is meant to prevent. Use a 512px target so the legacy radii span enough physical
+    // pixels for a stable readback assertion.
+    Phase("把测试窗口放大到 512x512 并验证 PetalFall 椭圆");
+    renderer.Reset();
+    SetWindowPos(window, nullptr, 0, 0, 512, 512,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump();
+
+    constexpr std::string_view petalSceneJson = R"json({
+      "schema":1,"id":"scene://selftest-d3d11-petal","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+      "nodes":[
+        {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+        {"id":"node://background","name":"Background","parentId":"node://root","enabled":true,"components":[
+          {"id":"component://background/transform","kind":"transform","properties":[
+            {"name":"position","type":"vec2","default":[0.0,0.0]},
+            {"name":"scale","type":"vec2","default":[1.0,1.0]},
+            {"name":"rotation","type":"float","default":0.0},
+            {"name":"opacity","type":"float","default":1.0}]},
+          {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
+            {"name":"opacity","type":"float","default":1.0},
+            {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+            {"name":"cornerRadius","type":"float","default":0.0},
+            {"name":"materialId","type":"string","default":"material://black"}]}
+        ]}
+      ],
+      "assets":[],"shaders":[],
+      "materials":[{"id":"material://black","model":"builtin","builtinName":"solidColor","properties":[
+        {"name":"color","type":"color","default":[0.0,0.0,0.0,1.0]}
+      ],"textures":[]}],
+      "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+      "bindings":[],"animations":[],
+      "particleEmitters":[{
+        "id":"particle://selftest/petal","enabled":true,"mode":"petalFall",
+        "analyticCount":1,"analyticColor":[0.2,1.0,0.2,1.0],
+        "analyticOpacity":1.0
+      }]
+    })json";
+    const bool wrotePetalScene = WriteTextFile(root / L"scene.json", petalSceneJson);
+    Step(wrotePetalScene, "写出带 PetalFall emitter 的场景");
+
+    error.clear();
+    const bool petalLoaded = wrotePetalScene && renderer.Load(root, window, &error);
+    if (!petalLoaded && !error.empty()) std::printf("      Load 失败: %ls\n", error.c_str());
+    Step(petalLoaded, "加载 PetalFall D3D11 场景");
+
+    const bool petalDrew = petalLoaded && renderer.Draw(0.0f, &error);
+    pump();
+    if (!petalDrew && !error.empty()) std::printf("      Draw 失败: %ls\n", error.c_str());
+    Step(petalDrew, "绘制 PetalFall 一帧");
+
+    pixels.clear();
+    width = 0;
+    height = 0;
+    error.clear();
+    const bool petalRead =
+        petalDrew && renderer.ReadBackPixels(&pixels, &width, &height, &error);
+    if (!petalRead && !error.empty()) std::printf("      ReadBack 失败: %ls\n", error.c_str());
+    const bool petalFramed = petalRead && width > 0 && height > 0 &&
+        pixels.size() == static_cast<std::size_t>(width) * height * 4u;
+    Step(petalFramed, "把 PetalFall 最终颜色目标读回 CPU");
+
+    miaodesk::content::ParticleEmitterDefinition petalEmitter;
+    petalEmitter.id = L"particle://selftest/petal";
+    petalEmitter.mode = miaodesk::content::ParticleEmitterMode::PetalFall;
+    petalEmitter.analyticCount = 1;
+    petalEmitter.analyticColor = miaodesk::content::Color4{0.2, 1.0, 0.2, 1.0};
+    petalEmitter.analyticOpacity = 1.0;
+    const auto petalSamples = miaodesk::content::EvaluateAnalyticParticleField(
+        petalEmitter, static_cast<double>(width), static_cast<double>(height), 0.0);
+    Step(petalFramed && !petalSamples.empty(), "共享解析场产生 PetalFall sample");
+
+    if (petalFramed && !petalSamples.empty()) {
+        const auto& petal = petalSamples.front();
+        const int cx = std::clamp(static_cast<int>(std::lround(petal.x)), 0,
+                                  static_cast<int>(width) - 1);
+        const int cy = std::clamp(static_cast<int>(std::lround(petal.y)), 0,
+                                  static_cast<int>(height) - 1);
+
+        int minX = static_cast<int>(width);
+        int minY = static_cast<int>(height);
+        int maxX = -1;
+        int maxY = -1;
+        const int scan = 8;
+        for (int y = std::max(0, cy - scan);
+             y <= std::min(static_cast<int>(height) - 1, cy + scan); ++y) {
+            for (int x = std::max(0, cx - scan);
+                 x <= std::min(static_cast<int>(width) - 1, cx + scan); ++x) {
+                const auto [b, g, r, a] =
+                    pixelAt(static_cast<unsigned>(x), static_cast<unsigned>(y));
+                (void)b; (void)r;
+                // Background is exactly black; the green petal has a very large
+                // green-to-background margin, so a small threshold keeps antialiasing
+                // edge pixels while excluding the clear.
+                if (a > 0 && g > 5) {
+                    minX = std::min(minX, x);
+                    minY = std::min(minY, y);
+                    maxX = std::max(maxX, x);
+                    maxY = std::max(maxY, y);
+                }
+            }
+        }
+        const int litWidth = maxX >= minX ? maxX - minX + 1 : 0;
+        const int litHeight = maxY >= minY ? maxY - minY + 1 : 0;
+        std::printf(
+            "      petal centre=(%d,%d), expected radii=(%.3f,%.3f), lit=%dx%d\n",
+            cx, cy, petal.radiusX, petal.radiusY, litWidth, litHeight);
+        Step(litWidth > 0 && litHeight > 0,
+             "PetalFall 椭圆真实写进 D3D11 最终颜色目标");
+        Step(litHeight > litWidth,
+             "PetalFall GPU 像素保持 radiusY > radiusX 的椭圆比例");
+        Step(isClearBlack(1, 1),
+             "PetalFall 之外仍是黑底");
+    }
+
     Phase("销毁渲染器(离开作用域)");
     Phase("释放 COM 对象(必须在 CoUninitialize 之前)");
     if (window) DestroyWindow(window);

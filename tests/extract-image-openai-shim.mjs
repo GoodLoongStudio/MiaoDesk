@@ -25,10 +25,9 @@ shim = shim
            'function usesOpenAICompatibleImageShim(provider)')
   .replace('function openAIImageEndpoint(baseUrl: string): string',
            'function openAIImageEndpoint(baseUrl)')
-  .replace(
-    'async function generateOpenAICompatibleImage(\\n  prompt: string, imageModel: string, apiKey: string, signal?: AbortSignal\\n): Promise<{ data: string; mimeType: string }>',
-    'async function generateOpenAICompatibleImage(prompt, imageModel, apiKey, signal)'
-  )
+  .replace('  prompt: string, imageModel: string, apiKey: string, signal?: AbortSignal',
+           '  prompt, imageModel, apiKey, signal')
+  .replace('): Promise<{ data: string; mimeType: string }>', ')')
   .replace('  const headers: Record<string, string> = { "Content-Type": "application/json" };',
            '  const headers = { "Content-Type": "application/json" };')
   .replace('  let body: any = {};',

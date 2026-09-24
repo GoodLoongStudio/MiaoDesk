@@ -99,11 +99,6 @@ async function proxyChat(req, res) {
 
   const classification = classifyRequest(body);
   const upstream = upstreamFor(classification);
-  const outboundBody = { ...body, model: upstream.model };
-  const headers = { "content-type": "application/json" };
-  if (upstream.apiKey) headers.authorization = `Bearer ${upstream.apiKey}`;
-
-  const outboundJson = JSON.stringify(outboundBody);
   const requestUpstream = async (target) => {
     const targetHeaders = { "content-type": "application/json" };
     if (target.apiKey) targetHeaders.authorization = `Bearer ${target.apiKey}`;

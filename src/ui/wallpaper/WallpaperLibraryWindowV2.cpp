@@ -1,6 +1,8 @@
 #include "miaodesk/WallpaperLibraryWindow.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/ContentWidgetPreviewRenderer.h"
+#include "miaodesk/ContentSkillBrowserDialog.h"
+#include "miaodesk/ContentCreatorBridge.h"
 #include "miaodesk/ContentWidgetSettingsDialog.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
 #include "miaodesk/DesktopControlService.h"
@@ -60,6 +62,8 @@ constexpr int kWebConfirmId = 6151;
 constexpr int kWebCancelId = 6152;
 constexpr int kWallpaperToggleId = 6160;
 constexpr int kOpenLogsId = 6170;
+constexpr int kCreatorId = 6171;
+constexpr int kSkillsId = 6172;
 constexpr UINT kDeferredWidgetRefresh = WM_APP + 0x235;
 
 constexpr UINT kMenuImportFile = 6201;
@@ -215,6 +219,8 @@ struct WallpaperLibraryWindow::Impl {
     HWND webCancel{};
     HWND wallpaperToggleButton{};
     HWND logsButton{};
+    HWND creatorButton{};
+    HWND skillsButton{};
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
@@ -293,7 +299,7 @@ struct WallpaperLibraryWindow::Impl {
         set(addButton, bodyFont);
         for (HWND button : nav) set(button, bodyFont);
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
-                             wallpaperToggleButton, logsButton,
+                             wallpaperToggleButton, logsButton, creatorButton, skillsButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
     }
@@ -404,6 +410,32 @@ struct WallpaperLibraryWindow::Impl {
     void OpenLogs() {
         miaodesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
         miaodesk::log::ShowLiveLogConsole(instance, window);
+    }
+
+    void OpenCreator() {
+        if (page == Page::AI) return;
+        const auto kind = page == Page::Widgets
+            ? miaodesk::creator::ContentCreatorKind::Widget
+            : miaodesk::creator::ContentCreatorKind::Wallpaper;
+        std::wstring error;
+        if (!miaodesk::creator::OpenConversation(kind, window, &error)) {
+            MessageBoxW(
+                window,
+                error.empty() ? L"无法打开 AI 创作窗口。" : error.c_str(),
+                L"妙喵 AI", MB_OK | MB_ICONERROR);
+            return;
+        }
+        SetStatus(page == Page::Widgets
+            ? L"已打开 AI 组件创作窗口。"
+            : L"已打开 AI 壁纸创作窗口。");
+    }
+
+    void OpenSkills() {
+        if (page == Page::AI) return;
+        const auto domain = page == Page::Widgets
+            ? ContentSkillBrowserDomain::Widget
+            : ContentSkillBrowserDomain::Wallpaper;
+        ShowContentSkillBrowserDialog(instance, window, domain);
     }
 
     void RefreshWallpapers() {
@@ -832,6 +864,14 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(widgetGrid, widgets ? SW_SHOW : SW_HIDE);
         ShowWindow(search, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(addButton, installed ? SW_SHOW : SW_HIDE);
+        const bool contentPage = installed || widgets;
+        ShowWindow(creatorButton, contentPage ? SW_SHOW : SW_HIDE);
+        ShowWindow(skillsButton, contentPage ? SW_SHOW : SW_HIDE);
+        if (contentPage) {
+            SetWindowTextW(
+                creatorButton,
+                widgets ? L"✨ AI 制作组件" : L"✨ AI 制作壁纸");
+        }
         if (!installed && webBarVisible) HideWebBar();
         if (ai) ShowDesktopAiSettingsPage(window);
         else HideDesktopAiSettingsPage(window);
@@ -1120,6 +1160,12 @@ struct WallpaperLibraryWindow::Impl {
             place(button, S(12), navY, sidebarW - S(24), S(38));
             navY += S(42);
         }
+        if (installed || widgets) {
+            navY += S(10);
+            place(creatorButton, S(12), navY, sidebarW - S(24), S(38));
+            navY += S(42);
+            place(skillsButton, S(12), navY, sidebarW - S(24), S(38));
+        }
         place(logsButton, S(12), height - S(46), sidebarW - S(24), S(32));
 
         const int contentLeft = sidebarW;
@@ -1394,6 +1440,8 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kWidgetRefreshId && notification == BN_CLICKED) self->RefreshWidgets();
             else if (id == kWallpaperToggleId && notification == BN_CLICKED) self->ToggleWallpaper();
             else if (id == kOpenLogsId && notification == BN_CLICKED) self->OpenLogs();
+            else if (id == kCreatorId && notification == BN_CLICKED) self->OpenCreator();
+            else if (id == kSkillsId && notification == BN_CLICKED) self->OpenSkills();
             else if (id == kWebConfirmId && notification == BN_CLICKED) self->ImportWeb();
             else if (id == kWebCancelId && notification == BN_CLICKED) self->HideWebBar();
             else if (id == kMenuImportFile) self->ImportFile();
@@ -1549,6 +1597,8 @@ struct WallpaperLibraryWindow::Impl {
         webConfirm = button(L"添加 Web", kWebConfirmId, 0, false);
         webCancel = button(L"取消", kWebCancelId, 0, false);
         wallpaperToggleButton = button(L"停止壁纸", kWallpaperToggleId, 0, false);
+        creatorButton = button(L"✨ AI 制作壁纸", kCreatorId, 0, true);
+        skillsButton = button(L"Skills / 创作规范", kSkillsId, 0, true);
         logsButton = button(L"实时日志面板 ↗", kOpenLogsId, 0, true);
 
         ApplyFonts();

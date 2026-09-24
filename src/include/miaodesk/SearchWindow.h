@@ -1,5 +1,6 @@
 #pragma once
 #include "miaodesk/AppSearch.h"
+#include "miaodesk/ContentCreatorBridge.h"
 #include "miaodesk/GozSearch.h"
 #include "miaodesk/L3Agent.h"
 #include "miaodesk/InputImeAnchor.h"
@@ -23,6 +24,7 @@ public:
 
     bool Create(bool showOnLaunch = true);
     void ShowAndFocus();
+    void OpenContentCreator(creator::ContentCreatorKind kind);
     int RunMessageLoop();
     bool SelfTest();
     const std::wstring& LastCreateError() const noexcept { return lastCreateError_; }

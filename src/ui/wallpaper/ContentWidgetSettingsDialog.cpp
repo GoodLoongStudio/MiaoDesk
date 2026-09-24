@@ -1,5 +1,6 @@
 #include "miaodesk/ContentWidgetSettingsDialog.h"
 #include "miaodesk/TodayTaskEditorDialog.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <windowsx.h>
 
@@ -376,8 +377,8 @@ HWND MakeControl(DialogState& state, DWORD exStyle, const wchar_t* klass, const 
 
 void BuildControls(DialogState& state) {
     const int margin = S(state.window, 20);
-    const int labelW = S(state.window, 180);
-    const int controlW = S(state.window, 260);
+    const int labelW = S(state.window, 210);
+    const int controlW = S(state.window, 310);
     const int rowH = S(state.window, 50);
     int y = S(state.window, 18);
 
@@ -462,7 +463,7 @@ SIZE SettingsWindowSize(HWND owner, int rowCount) {
     const UINT dpi = owner && IsWindow(owner)
         ? std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(owner))
         : std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForSystem());
-    const int clientWidth = MulDiv(510, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    const int clientWidth = MulDiv(570, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     const int clientHeight = MulDiv(std::max(280, 172 + rowCount * 50),
                                     static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     RECT outer{0, 0, clientWidth, clientHeight};
@@ -525,11 +526,7 @@ bool ShowContentWidgetSettingsDialog(
         return false;
     }
 
-    const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window));
-    state.font = CreateFontW(-MulDiv(14, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI),
-                             0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
+    state.font = ui::CreateUiFont(window, 14, FW_NORMAL);
     BuildControls(state);
     CenterOnOwner(window, owner);
 

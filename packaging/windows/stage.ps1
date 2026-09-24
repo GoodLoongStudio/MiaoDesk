@@ -30,6 +30,9 @@ if ($LASTEXITCODE -ne 0) { throw "Base Runtime staging failed with exit code $LA
 & (Join-Path $PSScriptRoot 'build-agent-runtime.ps1') -Root $Destination -Architecture $Architecture
 if ($LASTEXITCODE -ne 0) { throw "Agent Runtime staging failed with exit code $LASTEXITCODE" }
 
+& (Join-Path $PSScriptRoot 'verify-no-bundled-local-models.ps1') -Root $Destination
+if ($LASTEXITCODE -ne 0) { throw "Local model exclusion gate failed with exit code $LASTEXITCODE" }
+
 foreach ($relative in @(
     'Runtime\Node\node.exe',
     'AI\package.json',

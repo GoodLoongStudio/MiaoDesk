@@ -394,6 +394,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     const bool startupLaunch = miaodesk::startup::IsStartupLaunch(args);
+    const auto creatorKind = miaodesk::creator::ParseCommandLine(args);
     HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\MiaoDesk.Native.Search.Singleton");
     if (!mutex) {
         const DWORD mutexError = GetLastError();
@@ -402,7 +403,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             2, L"无法创建单实例锁，Win32=" + std::to_wstring(mutexError));
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (!startupLaunch) ActivateExistingSearchWindow();
+        if (creatorKind != miaodesk::creator::ContentCreatorKind::None) {
+            // The single running MiaoDesk process owns L3/Pi and the conversation
+            // surface. Forward creator mode instead of starting a second AI stack.
+            if (!miaodesk::creator::SendToRunningApp(creatorKind))
+                ActivateExistingSearchWindow();
+        } else if (!startupLaunch) {
+            ActivateExistingSearchWindow();
+        }
         CloseHandle(mutex);
         if (SUCCEEDED(com)) CoUninitialize();
         return 0;
@@ -411,7 +419,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     if (!startupLaunch) miaodesk::startup::PromptForConsentIfNeeded();
 
     miaodesk::SearchWindow window(instance);
-    if (!window.Create(!startupLaunch)) {
+    const bool showSearchOnLaunch =
+        !startupLaunch && creatorKind == miaodesk::creator::ContentCreatorKind::None;
+    if (!window.Create(showSearchOnLaunch)) {
         const std::wstring reason = window.LastCreateError().empty()
             ? L"搜索窗口初始化失败" : window.LastCreateError();
         if (SUCCEEDED(com)) CoUninitialize();
@@ -421,6 +431,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     miaodesk::log::Info(L"App", startupLaunch
         ? L"MiaoDesk 登录启动成功，已静默驻留托盘"
         : L"MiaoDesk 主窗口启动成功");
+
+    if (creatorKind != miaodesk::creator::ContentCreatorKind::None)
+        window.OpenContentCreator(creatorKind);
 
     // Keep MiaoDesk startup responsive, then prewarm the full DeepSeek workbench in the
     // background. If the user opens it earlier, the UI launches the same singleton owner.

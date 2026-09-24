@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a builtin wallpaper's scene.json from its scene.ini.
+"""Rebuild a builtin wallpaper's scene.json from its frozen legacy migration fixture.
 
 Why a script and not a hand-written JSON: the layer geometry mapping is arithmetic, and
 arithmetic done by hand is arithmetic nobody checks. The renderer's transform is
@@ -32,6 +32,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+LEGACY_FIXTURES = ROOT / "tests" / "fixtures" / "legacy-wallpaper-scenes"
 
 # scene id / animation id prefix per package. These are part of the on-disk format
 # (the empty-shell scene.json files already used neon-city / mystic-moon), so they are
@@ -41,6 +42,13 @@ SLUGS = {"MiaoCloud": "miao-cloud", "NeonCity": "neon-city", "MysticMoon": "myst
 
 def package_dir(name):
     return ROOT / "assets" / "wallpapers" / (name + ".mdwall")
+
+
+def legacy_scene_path(name):
+    # scene.ini no longer ships in the .mdwall package. It is frozen under tests/
+    # solely as migration evidence so the canonical scene.json can be compared with
+    # the exact legacy composition that preceded it.
+    return LEGACY_FIXTURES / name / "scene.ini"
 
 
 def read_layers(path):
@@ -275,7 +283,7 @@ def particle_emitters(cfg, slug):
 
 
 def build(slug, name):
-    scene_cfg, layers, ini_cfg = read_layers(package_dir(name) / "scene.ini")
+    scene_cfg, layers, ini_cfg = read_layers(legacy_scene_path(name))
     design_w, design_h = num(scene_cfg["design_width"]), num(scene_cfg["design_height"])
     transforms = [transform_for(l, design_w, design_h) for l in layers]
     verify(layers, transforms, design_w, design_h)
@@ -522,18 +530,18 @@ def main():
                 import difflib
                 diff = list(difflib.unified_diff(
                     on_disk.splitlines(), text.splitlines(),
-                    "scene.json(磁盘)", "scene.ini 重新生成", lineterm="", n=1))
+                    "scene.json(磁盘)", "冻结的 legacy fixture 重新生成", lineterm="", n=1))
                 failures.append(
                     "❌ %s 与重新生成的结果不一致(%d 行不同,下面是最多 24 行差异)。\n"
-                    "  scene.ini 是几何的唯一来源;scene.json 是它的产物。\n"
+                    "  tests/fixtures 下的 scene.ini 是迁移基准;运行时唯一入口是 scene.json。\n"
                     "  手改 scene.json 会让二者悄悄分叉 —— 而分叉的后果是图层位置\n"
                     "  与源不符,却没有任何测试会报错。\n"
-                    "  修法:改 scene.ini,然后 python3 %s --package %s --write;\n"
+                    "  若这是有意的视觉改动,请同时更新迁移基准或移除对应旧保真断言;否则用 python3 %s --package %s --write 恢复。\n"
                     "  或者确认这次偏离是有意的,并把理由写进提交信息。\n%s"
                     % (target, max(0, len(diff) - 2), __file__, name,
                        "\n".join("    " + line for line in diff[:24])))
                 continue
-            print("✅ %s 与 scene.ini 一致(%d 节点 / %d 资产,几何逐字节复现)"
+            print("✅ %s 与冻结 legacy scene fixture 一致(%d 节点 / %d 资产,几何逐字节复现)"
                   % (target, len(doc["nodes"]), len(doc["assets"])))
             continue
 

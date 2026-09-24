@@ -14,6 +14,19 @@ const INBOUND_API_KEY = process.env.MIAODESK_ROUTER_API_KEY || "";
 const SHORT_USER_CHARS = Number(process.env.MIAODESK_ROUTER_SHORT_USER_CHARS || 240);
 const SHORT_TOTAL_CHARS = Number(process.env.MIAODESK_ROUTER_SHORT_TOTAL_CHARS || 900);
 
+const metrics = {
+  startedAt: new Date().toISOString(),
+  requests: 0,
+  routes: {
+    "primary-tools": 0,
+    "primary-skill": 0,
+    "fast-short": 0,
+    "primary-chat": 0,
+  },
+  fallbackPrimary: 0,
+  upstreamFailures: 0,
+};
+
 const SKILL_SIGNATURES = Object.freeze([
   "name: content-package-basics",
   "name: wallpaper-content",
@@ -98,6 +111,8 @@ async function proxyChat(req, res) {
   }
 
   const classification = classifyRequest(body);
+  metrics.requests += 1;
+  metrics.routes[classification.route] = (metrics.routes[classification.route] || 0) + 1;
   const upstream = upstreamFor(classification);
   const requestUpstream = async (target) => {
     const targetHeaders = { "content-type": "application/json" };
@@ -121,15 +136,19 @@ async function proxyChat(req, res) {
     if (classification.upstream === "fast" && upstreamResponse.status >= 500) {
       try { await upstreamResponse.body?.cancel(); } catch {}
       selected = upstreamFor({ upstream: "primary" });
+      metrics.fallbackPrimary += 1;
       upstreamResponse = await requestUpstream(selected);
     }
   } catch (error) {
     if (classification.upstream === "fast") {
       try {
         selected = upstreamFor({ upstream: "primary" });
+        metrics.fallbackPrimary += 1;
         upstreamResponse = await requestUpstream(selected);
       } catch (fallbackError) {
-        json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+        metrics.upstreamFailures += 1;
+        metrics.upstreamFailures += 1;
+      json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
           (fallbackError instanceof Error ? fallbackError.message : String(fallbackError)) } }, {
           "x-miaodesk-route": classification.route + "-fallback-failed",
         });
@@ -193,6 +212,11 @@ export function createRouterServer() {
       return;
     }
 
+    if (req.method === "GET" && (url.pathname === "/metrics" || url.pathname === "/v1/metrics")) {
+      json(res, 200, metrics);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/v1/models") {
       json(res, 200, {
         object: "list",
@@ -210,7 +234,7 @@ export function createRouterServer() {
   });
 }
 
-export { classifyRequest, textOf };
+export { classifyRequest, textOf, metrics };
 
 if (import.meta.url === new URL(process.argv[1] || "", "file://").href) {
   const server = createRouterServer();

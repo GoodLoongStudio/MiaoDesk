@@ -160,7 +160,10 @@ async function proxyChat(req, res) {
   }
 
   const reader = upstreamResponse.body.getReader();
-  req.once("close", () => reader.cancel().catch(() => {}));
+  // IncomingMessage "close" can fire after the request body has been consumed even
+  // while the response stream is still healthy. Tie cancellation to the outgoing
+  // response lifecycle instead, otherwise long SSE completions can be truncated.
+  res.once("close", () => reader.cancel().catch(() => {}));
   try {
     while (true) {
       const { done, value } = await reader.read();

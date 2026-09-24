@@ -2,6 +2,7 @@
 
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/RuntimeLogPaths.h"
+#include "miaodesk/NativeUiScale.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -126,13 +127,8 @@ private:
 
         if (!window_) return;
 
-        uiFont_ = CreateFontW(-S(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
-        logFont_ = CreateFontW(-S(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                               OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                               FIXED_PITCH | FF_MODERN, L"Consolas");
+        uiFont_ = miaodesk::ui::CreateUiFont(window_, 13, FW_NORMAL, L"Segoe UI Variable Text");
+        logFont_ = miaodesk::ui::CreateUiFont(window_, 13, FW_NORMAL, L"Consolas");
 
         auto makeButton = [&](const wchar_t* text, int id) {
             HWND h = CreateWindowExW(0, L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,

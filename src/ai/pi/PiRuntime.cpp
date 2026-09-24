@@ -374,10 +374,10 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.apiKey = LoadApiKey();
     setup.contextWindow = agent.Config().contextWindow;
     setup.maxTokens = agent.Config().maxTokens;
-    // Image generation follows the profile, so a profile pointing at a local
-    // inference server yields a local image provider rather than a hardcoded
-    // cloud one. Loopback stays keyless exactly as the profile itself treats it.
-    setup.imageProvider = agent.Config().providerId;
+    // Image generation can use its own endpoint/provider. Empty image settings
+    // inherit the chat profile at ApiRuntimeProfile load time.
+    setup.imageProvider = agent.Config().imageProvider;
+    setup.imageBaseUrl = agent.Config().imageBaseUrl;
     setup.imageModel = agent.Config().imageModel;
     if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
 
@@ -400,8 +400,8 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
                       std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
                       L"|ctx=" + std::to_wstring(setup.contextWindow) +
                       L"|max=" + std::to_wstring(setup.maxTokens) +
-                      L"|img=" + setup.imageProvider + L":" + setup.imageModel +
-                      L"|agent-tools-v1";
+                      L"|img=" + setup.imageProvider + L":" + setup.imageBaseUrl + L":" + setup.imageModel +
+                      L"|agent-tools-v2";
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
     return setup;
@@ -552,6 +552,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     auto environment = BuildEnvironmentBlock({
         {L"PI_CODING_AGENT_DIR", setup.agentDir},
         {L"MIAODESK_IMAGE_PROVIDER", setup.imageProvider},
+        {L"MIAODESK_IMAGE_BASE_URL", setup.imageBaseUrl},
         {L"MIAODESK_IMAGE_MODEL", setup.imageModel},
         {L"PI_OFFLINE", L"1"},
         {L"PI_SKIP_VERSION_CHECK", L"1"},

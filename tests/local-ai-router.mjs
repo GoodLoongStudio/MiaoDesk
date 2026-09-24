@@ -138,6 +138,16 @@ try {
   assert.equal(out.response.headers.get("x-miaodesk-upstream-model"), "primary-model");
   assert.equal(JSON.parse(out.text).choices[0].message.content, "primary");
 
+  const metricsResponse = await fetch(base + "/metrics");
+  const metrics = await metricsResponse.json();
+  assert.equal(metrics.requests, 6);
+  assert.equal(metrics.routes["primary-tools"], 1);
+  assert.equal(metrics.routes["primary-skill"], 1);
+  assert.equal(metrics.routes["primary-chat"], 1);
+  assert.equal(metrics.routes["fast-short"], 3);
+  assert.equal(metrics.fallbackPrimary, 1);
+  assert.equal(metrics.upstreamFailures, 0);
+
   const models = await fetch(base + "/v1/models");
   const modelsJson = await models.json();
   assert.deepEqual(modelsJson.data.map(x => x.id), ["miaodesk"]);

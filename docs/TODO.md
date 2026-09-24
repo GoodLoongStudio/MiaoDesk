@@ -347,42 +347,27 @@
 - **依赖**:需要一台真实多显示器 / 多 DPI Windows 机器
 - **状态**:❌ 未开始 —— **需硬件,无法用 CI 替代**
 
-### P0-2 `image_generate` 本地化 🟡 已实施(方案 A),待 Windows 与真机验证
+### P0-2 `image_generate` 本地化 🟡 产品链已闭合，待 DGX 真机服务联调
 
 - **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.1 / §7.5
-- **缺陷(已修)**:`src/ai/pi/PiNativeToolsExtension.cpp` 把 `getImageModel` 的 provider
-  硬编码成 `"openrouter"`,且凭据只在 baseUrl 含 `openrouter.ai` 时才复用主 key ——
-  baseUrl 指向本地推理服务时 `image_generate` 直接抛"需要 OpenRouter API Key"。
-- **已实施(2026-09-22,方案 A:参数化 provider + model)**:
-  - provider 与 model 改为从环境变量 `MIAODESK_IMAGE_PROVIDER` / `MIAODESK_IMAGE_MODEL`
-    读取,默认值只为向后兼容保留 openrouter + `google/gemini-2.5-flash-image`。
-  - **未配置 provider 时明确报错**,不静默回落到云端 provider —— 用户没选过就不该替他选。
-  - key 解析规则重写:专用 `MIAODESK_IMAGE_API_KEY` 优先;loopback 端点视为免密钥
-    (与 profile 自身对 loopback 的处理一致,这是"全本地跑起来"的关键);
-    其余情况复用主 model key,而不再限定 openrouter。
-  - C++ 侧:`ApiRuntimeProfile` 增读 `imageModel` 键;`ModelConfig` 增 `imageModel` 并
-    **纳入 `ReloadConfig()` 变更检测**;`ProviderSetup` 增 `imageProvider` / `imageModel`;
-    `BuildProviderSetup` 从 `agent.Config()` 取值;`PiRuntime` 把两个变量导出给扩展进程;
-    **session `signature` 纳入 `img=provider:model`** —— 否则改配置不会重启 Pi 会话,
-    修复会静默失效。
-  - provider 直接取 profile 已推导出的 `providerId`(`deepseek` / `anthropic` / `google` /
-    `local-openai-compatible` / `openai-compatible`),不另造一套名称。
-- **原"前置验证"为何不再阻塞**:此前认为必须先确认 `getImageModel` 支持哪些 provider 字符串
-  (未安装 `node_modules`,无法静态确认)。改参数化后这不再是前置条件 ——
-  provider 由用户的 profile 决定,产品只负责透传,不维护一张 provider 白名单。
-- **验证(离线,node)**:`tests/image-provider.mjs` 28 项断言全过。
-  测的是**从 `.cpp` 原始字符串里抽出来的真实逻辑**(`tests/extract-image-provider.mjs`),
-  不是手抄副本。覆盖:未配置明确失败 / openrouter 向后兼容 / **loopback(原必然失效路径)** /
-  其他云厂商 / 专用 image key 优先 / model 覆盖 / loopback 六种写法与两种非 loopback。
-- **抽取器本身的一个教训**:抽出的模块最初漏了 `import { readFile }` / `join`,
-  导致 `currentMiaoDeskBaseUrl` 的 `try` 吞掉 ReferenceError 并返回 "" ——
-  表现和"没有配置 profile"完全一样,差点被判成产品缺陷。已在抽取器里注明。
-- **仍未验证**:
-  - Windows 编译(依赖 `windows.h` / `wincred.h`)。
-  - 真实 provider 是否接受传入的 provider 字符串(`getImageModel` 的行为),需实机 + node_modules。
-  - `models.json` 的 provider 名与 `getImageModel` 期望的是否一致(前者是产品语义,
-    后者是 pi-ai 语义,目前靠 `providerId` 直接透传,可能需要在某处做一次映射)。
-- **状态**:🟡 代码已实施并通过离线验证;待 Windows 编译与真实 provider 联调
+- **已完成**:
+  - provider / model 不再硬编码 OpenRouter + Gemini。
+  - Profile 增加 `imageBaseUrl` / `imageProvider` / `imageModel`；图片服务可与聊天服务使用不同端口。
+  - API 配置中心直接展示 Image Base URL + Image Model，不要求手改 INI。
+  - `PiRuntime` 把图片 provider / base URL / model 导出到扩展进程，并全部纳入 session signature。
+  - loopback 图片端点免密钥；非 loopback 仍遵守显式 image key 优先、否则复用主 key。
+  - `local-openai-compatible` / `openai-compatible` 不再交给第三方 `getImageModel` 猜 provider 名；
+    MiaoDesk 自己直接调用 `<imageBaseUrl>/images/generations`。
+  - 请求固定 `response_format=b64_json`，只接受 `data[0].b64_json`，再走现有图片落盘路径。
+  - 具名云 provider 仍走 `@earendil-works/pi-ai/compat`，保持原有兼容性。
+- **自动验证**:
+  - `tests/image-provider.mjs`：参数、密钥与 provider 决策回归。
+  - `tests/image-openai-shim.mjs`：启动真实 loopback HTTP server，验证 URL / body / auth /
+    `b64_json` 响应解析；同时在 Repo Hygiene 与 Windows x64 Build 执行。
+- **仍未完成**:
+  - DGX / 局域网真实图片服务按该协议上线并生成一张真实图片；
+  - 记录模型名、端口、首图延迟、峰值显存/统一内存与错误恢复表现。
+- **状态**:🟡 产品侧硬缺口已解除；剩余是实际图片推理服务部署与真机验收
 
 ### P0-3 TodayTasks 组件进入主干 ✅ 已完成(2026-09-22,commit `bca7f9b`)
 

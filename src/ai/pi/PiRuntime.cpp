@@ -378,6 +378,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     // inherit the chat profile at ApiRuntimeProfile load time.
     setup.imageProvider = agent.Config().imageProvider;
     setup.imageBaseUrl = agent.Config().imageBaseUrl;
+    setup.imageApiKey = agent.Config().imageApiKey;
     setup.imageModel = agent.Config().imageModel;
     if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
 
@@ -389,6 +390,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     if (setup.apiKey.empty()) { setup.message = L"未配置 API Key"; return setup; }
 
     const auto credentialHash = std::hash<std::wstring>{}(setup.apiKey);
+    const auto imageCredentialHash = std::hash<std::wstring>{}(setup.imageApiKey);
     // agent-tools-v1 forces existing Pi processes to restart after the fixed Agent tool allowlist landed.
     // The capability hints are part of the signature so editing them in the Profile
     // restarts the session instead of silently keeping the previous values.
@@ -401,6 +403,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
                       L"|ctx=" + std::to_wstring(setup.contextWindow) +
                       L"|max=" + std::to_wstring(setup.maxTokens) +
                       L"|img=" + setup.imageProvider + L":" + setup.imageBaseUrl + L":" + setup.imageModel +
+                      L":key=" + std::to_wstring(static_cast<unsigned long long>(imageCredentialHash)) +
                       L"|agent-tools-v2";
     setup.ok = true;
     setup.message = L"Pi Runtime 就绪";
@@ -553,6 +556,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         {L"PI_CODING_AGENT_DIR", setup.agentDir},
         {L"MIAODESK_IMAGE_PROVIDER", setup.imageProvider},
         {L"MIAODESK_IMAGE_BASE_URL", setup.imageBaseUrl},
+        {L"MIAODESK_IMAGE_API_KEY", setup.imageApiKey},
         {L"MIAODESK_IMAGE_MODEL", setup.imageModel},
         {L"PI_OFFLINE", L"1"},
         {L"PI_SKIP_VERSION_CHECK", L"1"},

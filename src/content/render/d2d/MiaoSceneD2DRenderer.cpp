@@ -1,6 +1,7 @@
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 
 #include "miaodesk/MiaoAssetDatabase.h"
+#include "miaodesk/MiaoAnalyticParticleField.h"
 #include "miaodesk/MiaoContentDataBinding.h"
 #include "miaodesk/MiaoContentDefinitionLoader.h"
 #include "miaodesk/MiaoContentPackage.h"
@@ -623,6 +624,60 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    bool DrawAnalyticParticles(
+        double timeSeconds,
+        const D2D1_SIZE_F& size,
+        const D2D1_MATRIX_3X2_F& hostTransform,
+        bool* drew) {
+        if (!target || !brush) return false;
+
+        // Legacy LayeredSceneRenderer evaluates these fields against the *current
+        // render target size* (not the source artwork's 1672x941 design box).
+        // Preserve that behaviour here so ultrawide / portrait / scaled surfaces do
+        // not relocate the particles during the scene-runtime migration.
+        target->SetTransform(hostTransform);
+        for (const auto& emitter : definition.particleEmitters) {
+            if (!IsAnalyticEmitterMode(emitter.mode)) continue;
+            const auto samples = EvaluateAnalyticParticleField(
+                emitter,
+                static_cast<double>(size.width),
+                static_cast<double>(size.height),
+                timeSeconds);
+            for (const auto& sample : samples) {
+                if (!std::isfinite(sample.x) || !std::isfinite(sample.y) ||
+                    !std::isfinite(sample.radiusX) || !std::isfinite(sample.radiusY))
+                    continue;
+                const float rx = static_cast<float>(std::max(0.0, sample.radiusX));
+                const float ry = static_cast<float>(std::max(0.0, sample.radiusY));
+                if (rx <= 0.0f || ry <= 0.0f) continue;
+
+                const float x = static_cast<float>(sample.x);
+                const float y = static_cast<float>(sample.y);
+                brush->SetColor(ToD2D(sample.color));
+                target->FillEllipse(
+                    D2D1::Ellipse(D2D1::Point2F(x, y), rx, ry),
+                    brush.Get());
+
+                // CometTrail marks only the head sample with cross=true. These two
+                // one-pixel strokes reproduce LayeredSceneRenderer's visible moving
+                // light head without copying any of the field formula into this backend.
+                if (sample.cross) {
+                    const float radius = std::max(rx, ry);
+                    target->DrawLine(
+                        D2D1::Point2F(x - radius * 3.0f, y),
+                        D2D1::Point2F(x + radius * 3.0f, y),
+                        brush.Get(), 1.0f);
+                    target->DrawLine(
+                        D2D1::Point2F(x, y - radius * 3.0f),
+                        D2D1::Point2F(x, y + radius * 3.0f),
+                        brush.Get(), 1.0f);
+                }
+                if (drew) *drew = true;
+            }
+        }
+        return true;
+    }
+
     bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error) {
         if (!loaded || !target || !brush || !dwrite) return Error(error, L"Miao Scene D2D renderer is not loaded.");
         if (size.width <= 0.0f || size.height <= 0.0f) return Error(error, L"Miao Scene D2D render size is invalid.");
@@ -650,6 +705,12 @@ struct MiaoSceneD2DRenderer::Impl {
                     return false;
                 }
             }
+        }
+        target->SetTransform(hostTransform);
+        if (!DrawAnalyticParticles(
+                static_cast<double>(timeSeconds), size, hostTransform, &drew)) {
+            target->SetTransform(hostTransform);
+            return Error(error, L"Cannot draw analytic particles in the D2D backend.");
         }
         target->SetTransform(hostTransform);
 

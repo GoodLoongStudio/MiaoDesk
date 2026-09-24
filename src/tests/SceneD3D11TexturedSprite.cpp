@@ -429,9 +429,9 @@ int wmain() {
     // would turn it into a circle, which is exactly the bug this GPU-instance change
     // is meant to prevent. Use a 512px target so the legacy radii span enough physical
     // pixels for a stable readback assertion.
-    Phase("把测试窗口放大到 512x512 并验证 PetalFall 椭圆");
+    Phase("把测试窗口放大到 1024x1024 并验证 PetalFall 椭圆");
     renderer.Reset();
-    SetWindowPos(window, nullptr, 0, 0, 512, 512,
+    SetWindowPos(window, nullptr, 0, 0, 1024, 1024,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     pump();
 
@@ -509,7 +509,7 @@ int wmain() {
         int minY = static_cast<int>(height);
         int maxX = -1;
         int maxY = -1;
-        const int scan = 8;
+        const int scan = 16;
         for (int y = std::max(0, cy - scan);
              y <= std::min(static_cast<int>(height) - 1, cy + scan); ++y) {
             for (int x = std::max(0, cx - scan);

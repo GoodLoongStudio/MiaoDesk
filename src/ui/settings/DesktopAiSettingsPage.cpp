@@ -38,6 +38,8 @@ constexpr int kTypeId = 7302;
 constexpr int kApiUrlId = 7303;
 constexpr int kApiKeyId = 7304;
 constexpr int kModelId = 7305;
+constexpr int kImageBaseUrlId = 7306;
+constexpr int kImageModelId = 7307;
 constexpr int kNewId = 7312;
 constexpr int kTestId = 7313;
 constexpr int kSaveId = 7314;
@@ -159,6 +161,8 @@ struct ApiProfile {
     std::wstring serviceType{L"OpenAI Compatible"};
     std::wstring baseUrl;
     std::wstring model;
+    std::wstring imageBaseUrl;
+    std::wstring imageModel;
     bool isDefault{};
     bool lastOk{};
     std::wstring lastMessage;
@@ -186,6 +190,8 @@ public:
             profile.serviceType = ReadIni(path_, cursor, L"type", L"OpenAI Compatible");
             profile.baseUrl = ReadIni(path_, cursor, L"baseUrl");
             profile.model = ReadIni(path_, cursor, L"model");
+            profile.imageBaseUrl = ReadIni(path_, cursor, L"imageBaseUrl");
+            profile.imageModel = ReadIni(path_, cursor, L"imageModel");
             profile.isDefault = ParseBool(ReadIni(path_, cursor, L"default"));
             profile.lastOk = ParseBool(ReadIni(path_, cursor, L"lastOk"));
             profile.lastMessage = ReadIni(path_, cursor, L"lastMessage");
@@ -217,6 +223,8 @@ public:
         WriteIni(path_, section.c_str(), L"type", profile.serviceType);
         WriteIni(path_, section.c_str(), L"baseUrl", profile.baseUrl);
         WriteIni(path_, section.c_str(), L"model", profile.model);
+        WriteIni(path_, section.c_str(), L"imageBaseUrl", profile.imageBaseUrl);
+        WriteIni(path_, section.c_str(), L"imageModel", profile.imageModel);
         WriteIni(path_, section.c_str(), L"default", profile.isDefault ? L"1" : L"0");
         WriteIni(path_, section.c_str(), L"lastOk", profile.lastOk ? L"1" : L"0");
         WriteIni(path_, section.c_str(), L"lastMessage", profile.lastMessage);
@@ -286,6 +294,8 @@ struct PageState {
     HWND apiUrl{};
     HWND apiKey{};
     HWND model{};
+    HWND imageBaseUrl{};
+    HWND imageModel{};
     HWND addButton{};
     HWND testButton{};
     HWND saveButton{};
@@ -334,9 +344,9 @@ struct PageState {
         headingFont = MakeFont(15, FW_SEMIBOLD);
         bodyFont = MakeFont(13, FW_NORMAL);
         smallFont = MakeFont(11, FW_NORMAL);
-        for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, addButton,
-                             testButton, saveButton, setDefaultButton, deleteButton,
-                             revealButton, copyButton, probeModelsButton}) {
+        for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, imageBaseUrl,
+                             imageModel, addButton, testButton, saveButton, setDefaultButton,
+                             deleteButton, revealButton, copyButton, probeModelsButton}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         if (profileList) SendMessageW(profileList, LB_SETITEMHEIGHT, 0, S(72));
@@ -361,9 +371,9 @@ struct PageState {
     }
 
     void EnableForm(bool enabled) {
-        for (HWND control : {name, serviceType, apiUrl, apiKey, model, testButton, saveButton,
-                             setDefaultButton, deleteButton, revealButton, copyButton,
-                             probeModelsButton}) {
+        for (HWND control : {name, serviceType, apiUrl, apiKey, model, imageBaseUrl, imageModel,
+                             testButton, saveButton, setDefaultButton, deleteButton,
+                             revealButton, copyButton, probeModelsButton}) {
             if (control) EnableWindow(control, enabled ? TRUE : FALSE);
         }
     }
@@ -391,6 +401,8 @@ struct PageState {
             SetWindowTextW(apiUrl, L"");
             SetWindowTextW(apiKey, L"");
             SetWindowTextW(model, L"");
+            SetWindowTextW(imageBaseUrl, L"");
+            SetWindowTextW(imageModel, L"");
             SetStatus(L"还没有 API 配置，点击“新增配置”开始。", true);
             return;
         }
@@ -413,6 +425,8 @@ struct PageState {
         SetWindowTextW(name, profile.name.c_str());
         SetWindowTextW(apiUrl, profile.baseUrl.c_str());
         SetWindowTextW(model, profile.model.c_str());
+        SetWindowTextW(imageBaseUrl, profile.imageBaseUrl.c_str());
+        SetWindowTextW(imageModel, profile.imageModel.c_str());
 
         SendMessageW(serviceType, CB_SETCURSEL, 0, 0);
         const int count = static_cast<int>(SendMessageW(serviceType, CB_GETCOUNT, 0, 0));
@@ -443,6 +457,8 @@ struct PageState {
         profile.name = Trim(WindowText(name));
         profile.baseUrl = Trim(WindowText(apiUrl));
         profile.model = Trim(WindowText(model));
+        profile.imageBaseUrl = Trim(WindowText(imageBaseUrl));
+        profile.imageModel = Trim(WindowText(imageModel));
         const int typeIndex = static_cast<int>(SendMessageW(serviceType, CB_GETCURSEL, 0, 0));
         if (typeIndex != CB_ERR) {
             wchar_t buffer[256]{};
@@ -735,7 +751,9 @@ struct PageState {
         const int probeW = S(104);
         const int modelGap = S(8);
         place(model, fieldX, y, std::max(S(120), fieldW - probeW - modelGap), rowH);
-        place(probeModelsButton, fieldX + fieldW - probeW, y, probeW, rowH);
+        place(probeModelsButton, fieldX + fieldW - probeW, y, probeW, rowH); y += rowH + rowGap;
+        place(imageBaseUrl, fieldX, y, fieldW, rowH); y += rowH + rowGap;
+        place(imageModel, fieldX, y, fieldW, rowH);
 
         const int actionY = bodyTop + bodyH - S(66);
         int actionX = rightX + S(18);
@@ -845,7 +863,8 @@ struct PageState {
 
         const int labelW = S(112);
         int y = bodyTop + S(58);
-        for (const auto& label : {L"配置名称", L"接口类型", L"Base URL", L"API Key", L"Model"}) {
+        for (const auto& label : {L"配置名称", L"接口类型", L"Base URL", L"API Key", L"Model",
+                                  L"Image Base URL", L"Image Model"}) {
             RECT labelRect{rightX + S(18), y, rightX + S(18) + labelW - S(10), y + S(36)};
             DrawTextSimple(dc, bodyFont, RGB(68, 88, 124), label, labelRect);
             y += S(54);
@@ -995,6 +1014,8 @@ bool CreatePage(PageState& state) {
     state.apiUrl = edit(kApiUrlId);
     state.apiKey = edit(kApiKeyId, ES_PASSWORD);
     state.model = edit(kModelId);
+    state.imageBaseUrl = edit(kImageBaseUrlId);
+    state.imageModel = edit(kImageModelId);
     state.addButton = button(L"＋ 新增配置", kNewId);
     state.testButton = button(L"测试连接", kTestId);
     state.saveButton = button(L"保存", kSaveId);
@@ -1005,7 +1026,8 @@ bool CreatePage(PageState& state) {
     state.probeModelsButton = button(L"探测模型", kProbeModelsId);
 
     if (!state.profileList || !state.name || !state.serviceType || !state.apiUrl || !state.apiKey ||
-        !state.model || !state.addButton || !state.testButton || !state.saveButton ||
+        !state.model || !state.imageBaseUrl || !state.imageModel || !state.addButton ||
+        !state.testButton || !state.saveButton ||
         !state.setDefaultButton || !state.deleteButton || !state.revealButton || !state.copyButton ||
         !state.probeModelsButton)
         return false;
@@ -1014,6 +1036,10 @@ bool CreatePage(PageState& state) {
     SendMessageW(state.apiUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://api.example.com/v1"));
     SendMessageW(state.apiKey, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"粘贴 API Key"));
     SendMessageW(state.model, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 deepseek-chat"));
+    SendMessageW(state.imageBaseUrl, EM_SETCUEBANNER, TRUE,
+                 reinterpret_cast<LPARAM>(L"可选，例如 http://127.0.0.1:8188/v1"));
+    SendMessageW(state.imageModel, EM_SETCUEBANNER, TRUE,
+                 reinterpret_cast<LPARAM>(L"可选，例如 Z-Image-Turbo"));
     state.RebuildFonts();
     state.LoadProfiles();
     return true;

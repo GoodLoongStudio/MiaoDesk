@@ -127,6 +127,17 @@ try {
   assert.match(out.text, /data: .*fast.*fast-model/);
   assert.match(out.text, /data: \[DONE\]/);
 
+  // Fast backend outage must degrade to primary instead of taking short chats down.
+  await new Promise((resolve, reject) => fast.server.close(error => error ? reject(error) : resolve()));
+  out = await post(base, {
+    model: "miaodesk",
+    messages: [{ role: "user", content: "fast is down" }],
+  });
+  assert.equal(out.response.status, 200);
+  assert.equal(out.response.headers.get("x-miaodesk-route"), "fast-short-fallback-primary");
+  assert.equal(out.response.headers.get("x-miaodesk-upstream-model"), "primary-model");
+  assert.equal(JSON.parse(out.text).choices[0].message.content, "primary");
+
   const models = await fetch(base + "/v1/models");
   const modelsJson = await models.json();
   assert.deepEqual(modelsJson.data.map(x => x.id), ["miaodesk"]);
@@ -134,11 +145,11 @@ try {
   const health = await fetch(base + "/health");
   assert.equal((await health.json()).ok, true);
 
-  assert.equal(primary.requests.length, 3);
+  assert.equal(primary.requests.length, 4);
   assert.equal(fast.requests.length, 2);
   console.log("ALL CHECKS PASSED: L1 router classification, model rewrite and streaming proxy");
 } finally {
   router.close();
   primary.server.close();
-  fast.server.close();
+  if (fast.server.listening) fast.server.close();
 }

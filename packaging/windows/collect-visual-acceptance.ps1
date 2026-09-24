@@ -77,31 +77,40 @@ public static class MiaoDeskAcceptanceNative
     public static extern uint GetDpiForWindow(IntPtr hwnd);
 
     [DllImport("user32.dll")]
-    public static extern IntPtr MonitorFromPoint(POINT point, uint flags);
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
 
-    [DllImport("shcore.dll")]
-    public static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr CreateWindowEx(
+        uint exStyle, string className, string windowName, uint style,
+        int x, int y, int width, int height,
+        IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll")]
+    public static extern bool DestroyWindow(IntPtr hwnd);
 
     public static uint[] MonitorDpi(int x, int y)
     {
-        var point = new POINT { X = x, Y = y };
-        var monitor = MonitorFromPoint(point, 2); // MONITOR_DEFAULTTONEAREST
-        if (monitor == IntPtr.Zero) return new uint[] { 96, 96 };
-        uint dpiX = 96, dpiY = 96;
+        // PowerShell itself may be system-DPI-aware, in which case GetDpiForMonitor can
+        // collapse a mixed-DPI desktop to one value. Create a hidden probe window while
+        // this thread is explicitly Per-Monitor-V2 and ask Windows for that window's DPI.
+        var previous = SetThreadDpiAwarenessContext(new IntPtr(-4)); // PER_MONITOR_AWARE_V2
+        IntPtr hwnd = IntPtr.Zero;
         try
         {
-            if (GetDpiForMonitor(monitor, 0, out dpiX, out dpiY) != 0)
-                return new uint[] { 96, 96 };
+            hwnd = CreateWindowEx(
+                0, "STATIC", "", 0x80000000u, // WS_POPUP, never shown
+                x, y, 1, 1,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (hwnd == IntPtr.Zero) return new uint[] { 96, 96 };
+            var dpi = GetDpiForWindow(hwnd);
+            if (dpi == 0) dpi = 96;
+            return new uint[] { dpi, dpi };
         }
-        catch (DllNotFoundException)
+        finally
         {
-            return new uint[] { 96, 96 };
+            if (hwnd != IntPtr.Zero) DestroyWindow(hwnd);
+            if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
         }
-        catch (EntryPointNotFoundException)
-        {
-            return new uint[] { 96, 96 };
-        }
-        return new uint[] { dpiX, dpiY };
     }
 
     public static string ClassName(IntPtr hwnd)

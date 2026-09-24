@@ -768,14 +768,18 @@
     第 6 条(`legacy_entry` 切换)
     刻意保留,需真机验收。
 
-### P0-5 本地 AI 组件许可证书面确认
+### P0-5 本地 AI 组件许可证 / 分发边界
 
-- **依据**:`THIRD-PARTY-NOTICES.md`「明确排除的组件」
-- **为什么阻塞**:商用分发前必须确认。两个待确认:
-  - `DeepSeek-R1-0528-Qwen3-8B` 模型权重条款(代码 MIT,权重可能另有条款)
-  - GLM 系列(官方模型卡写 "mistralai/MIT + deepseek license",社区报告为 MIT)——
-    **澄清前不得进入任何分发版本**
-- **状态**:❌ 未开始 —— 需向模型方取得书面确认
+- **依据**:`THIRD-PARTY-NOTICES.md`「本地 AI 推理栈 / 明确排除的组件」
+- **当前 v1 发布边界**:MiaoDesk 只连接用户自管的本地推理服务，**不随安装包分发模型权重**。
+  `packaging/windows/verify-no-bundled-local-models.ps1` 已接入 `stage.ps1`，对 x64 / ARM64 /
+  MSIX 共用的 staged product 做硬检查：常见模型权重文件，以及当前许可未完成书面确认的
+  DeepSeek-R1-0528-Qwen3-8B / GLM / 本地图像模型名称一旦进入安装包，打包直接失败。
+- **仍待书面确认**:
+  - `DeepSeek-R1-0528-Qwen3-8B` 模型权重条款；
+  - GLM 系列的模型权重分发条款。
+- **状态**:🟡 **当前 v1 分发不再被它阻塞** —— 因为未确认的模型被技术门禁禁止进入发布包；
+  若未来要把这些权重随 MiaoDesk 分发，必须先取得书面确认，再单独修改门禁。
 
 ### B-1 skill 接入产品(`src/` 零引用 `skills/`)
 

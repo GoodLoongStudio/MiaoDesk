@@ -43,6 +43,7 @@ struct RuntimeProfile {
     // service and an OpenAI-compatible image shim live on different ports.
     std::wstring imageProvider;
     std::wstring imageBaseUrl;
+    std::wstring imageApiKey;
     // Empty means image generation is not configured.
     std::wstring imageModel;
 };
@@ -162,6 +163,7 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     profile.model = Trim(ReadIni(path, section.c_str(), L"model"));
     profile.explicitDefault = ParseBool(ReadIni(path, section.c_str(), L"default", L"0"));
     profile.apiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id);
+    profile.imageApiKey = ReadCredential(L"MiaoDesk/ApiProfile/" + profile.id + L"/Image");
     profile.contextWindow = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"contextWindow")));
     profile.maxTokens = ParsePositiveUInt(Trim(ReadIni(path, section.c_str(), L"maxTokens")));
     profile.imageProvider = Trim(ReadIni(path, section.c_str(), L"imageProvider"));

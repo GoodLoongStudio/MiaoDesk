@@ -91,6 +91,7 @@ struct ConversationState {
     PiRuntime* pi{};
     ConversationPanelMode mode{ConversationPanelMode::General};
     std::wstring headerTitle{L"妙喵 AI"};
+    std::wstring inputCue{L"输入消息…"};
     HBRUSH inputBrush{};
     HFONT titleFont{};
     HFONT bodyFont{};

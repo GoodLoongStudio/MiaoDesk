@@ -76,6 +76,31 @@ bool CanonicalSceneUsesGpu(const fs::path& packageRoot, bool* usesGpu, std::wstr
     return true;
 }
 
+bool BuiltinSceneDesignSize(const fs::path& packageRoot, D2D1_SIZE_F* size) {
+    if (!size) return false;
+    const std::wstring name = packageRoot.filename().wstring();
+    if (_wcsicmp(name.c_str(), L"MiaoCloud.mdwall") != 0 &&
+        _wcsicmp(name.c_str(), L"NeonCity.mdwall") != 0 &&
+        _wcsicmp(name.c_str(), L"MysticMoon.mdwall") != 0) {
+        return false;
+    }
+
+    // Frozen migration design space from tests/fixtures/legacy-wallpaper-scenes/*/scene.ini.
+    // The canonical scene transforms were generated from these exact dimensions.
+    *size = D2D1::SizeF(1672.0f, 941.0f);
+    return true;
+}
+
+D2D1_MATRIX_3X2_F CoverDesignSpace(const D2D1_SIZE_F& design, const D2D1_SIZE_F& target) {
+    const float sx = target.width / std::max(1.0f, design.width);
+    const float sy = target.height / std::max(1.0f, design.height);
+    const float scale = std::max(sx, sy);
+    const float offsetX = (target.width - design.width * scale) * 0.5f;
+    const float offsetY = (target.height - design.height * scale) * 0.5f;
+    return D2D1::Matrix3x2F::Scale(scale, scale) *
+           D2D1::Matrix3x2F::Translation(offsetX, offsetY);
+}
+
 } // namespace
 
 struct IndependentWallpaperHost::Impl {
@@ -448,7 +473,23 @@ struct IndependentWallpaperHost::Impl {
             DrawImage(slot, size);
         } else if (slot.canonicalScene) {
             std::wstring error;
-            if (!slot.canonicalScene->Draw(time, size, &error)) {
+            bool drew = false;
+            D2D1_SIZE_F design{};
+            const auto packageRoot = CanonicalScenePackageRoot(slot.wallpaper.source);
+            if (!packageRoot.empty() && BuiltinSceneDesignSize(packageRoot, &design)) {
+                // Built-in scene transforms were authored in the frozen 1672x941
+                // migration space. Render in that space, then cover this monitor
+                // independently. This preserves aspect ratio on mixed landscape /
+                // portrait topologies instead of stretching scene geometry to the
+                // virtual desktop or to the monitor's raw dimensions.
+                const auto original = slot.renderTarget->GetTransform();
+                slot.renderTarget->SetTransform(CoverDesignSpace(design, size) * original);
+                drew = slot.canonicalScene->Draw(time, design, &error);
+                slot.renderTarget->SetTransform(original);
+            } else {
+                drew = slot.canonicalScene->Draw(time, size, &error);
+            }
+            if (!drew) {
                 FallbackSlotToMiaoCloud(slot, error.empty() ? L"外部 Scene 绘制失败，已回退妙喵云境" : error);
                 DrawMiaoCloud(slot, size);
             }

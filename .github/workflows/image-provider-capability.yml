@@ -22,10 +22,20 @@ jobs:
   probe:
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
     steps:
       - uses: actions/checkout@v5
         with:
           lfs: true
+
+      - name: Restore agent npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MIAODESK_NPM_CACHE }}
+          key: miaodesk-agent-npm-${{ runner.os }}-x64-${{ hashFiles('runtime/agent/package-lock.json') }}
+          restore-keys: |
+            miaodesk-agent-npm-${{ runner.os }}-x64-
 
       - name: Prepare pinned x64 runtime
         shell: pwsh

@@ -294,6 +294,47 @@ bool WriteSelfTestPng(IWICImagingFactory* factory, const fs::path& path, const U
     return SUCCEEDED(encoder->Commit());
 }
 
+bool WriteSelfTestQuadrantPng(IWICImagingFactory* factory, const fs::path& path) {
+    if (!factory) return false;
+    ComPtr<IWICBitmap> bitmap;
+    if (FAILED(factory->CreateBitmap(2, 2, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, bitmap.GetAddressOf())))
+        return false;
+    WICRect rect{0, 0, 2, 2};
+    ComPtr<IWICBitmapLock> lock;
+    if (FAILED(bitmap->Lock(&rect, WICBitmapLockWrite, lock.GetAddressOf()))) return false;
+    UINT stride = 0;
+    UINT bytes = 0;
+    BYTE* data = nullptr;
+    if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&bytes, &data)) || !data) return false;
+
+    constexpr UINT8 pixels[2][2][4] = {
+        {{0x00, 0x00, 0xFF, 0xFF}, {0x00, 0xFF, 0x00, 0xFF}},
+        {{0xFF, 0x00, 0x00, 0xFF}, {0xFF, 0xFF, 0xFF, 0xFF}},
+    };
+    for (UINT y = 0; y < 2; ++y) {
+        for (UINT x = 0; x < 2; ++x) {
+            BYTE* pixel = data + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u;
+            for (UINT channel = 0; channel < 4; ++channel) pixel[channel] = pixels[y][x][channel];
+        }
+    }
+    lock.Reset();
+
+    ComPtr<IWICStream> stream;
+    if (FAILED(factory->CreateStream(stream.GetAddressOf()))) return false;
+    if (FAILED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE))) return false;
+    ComPtr<IWICBitmapEncoder> encoder;
+    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf()))) return false;
+    if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) return false;
+    ComPtr<IWICBitmapFrameEncode> frame;
+    ComPtr<IPropertyBag2> options;
+    if (FAILED(encoder->CreateNewFrame(frame.GetAddressOf(), options.GetAddressOf()))) return false;
+    if (FAILED(frame->Initialize(nullptr))) return false;
+    if (FAILED(frame->SetSize(2, 2))) return false;
+    if (FAILED(frame->WriteSource(bitmap.Get(), nullptr))) return false;
+    if (FAILED(frame->Commit())) return false;
+    return SUCCEEDED(encoder->Commit());
+}
+
 } // namespace
 
 struct MiaoSceneD2DRenderer::Impl {
@@ -1291,6 +1332,67 @@ bool MiaoSceneD2DRenderer::SelfTest() {
             return SUCCEEDED(target->EndDraw()) && drew &&
                    PixelChannel(bitmap.Get(), 32, 32, 0) == kMagentaBgra[0];
         }(), "B. 连画第二遍结果一致(位图缓存生效,不是每帧重解码)");
+
+        // B2 reproduces the mixed-resolution regression directly. A 2x2 background
+        // contains four different quadrants; rendering it to 64x64 must preserve all
+        // four. Without a bitmap-brush scale transform, CLAMP repeats the last source
+        // row/column and almost the entire target becomes the bottom-right white pixel.
+        if (ok) {
+            constexpr std::string_view scalingScene = R"json({
+              "schema":1,"id":"scene://selftest-wallpaper-scaling","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root",
+              "nodes":[
+                {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[]},
+                {"id":"node://layer/background","name":"background","parentId":"node://root","enabled":true,"components":[
+                  {"id":"component://background/transform","kind":"transform","properties":[
+                    {"name":"position","type":"vec2","default":[0.0,0.0]},
+                    {"name":"scale","type":"vec2","default":[1.0,1.0]},
+                    {"name":"rotation","type":"float","default":0.0},
+                    {"name":"opacity","type":"float","default":1.0}]},
+                  {"id":"component://background/sprite","kind":"spriteRenderer","properties":[
+                    {"name":"opacity","type":"float","default":1.0},
+                    {"name":"tint","type":"color","default":[1.0,1.0,1.0,1.0]},
+                    {"name":"cornerRadius","type":"float","default":0.0},
+                    {"name":"texture","type":"assetReference","default":"asset://layer/background/image"}]}
+                ]}
+              ],
+              "assets":[{"id":"asset://layer/background/image","type":"image","source":"assets/background.png"}],
+              "shaders":[],"materials":[],
+              "inputs":[{"id":"input://frame/time","type":"float","default":0.0}],
+              "bindings":[],"animations":[]
+            })json";
+            const fs::path scaling = root / L"scaling.mdwall";
+            fs::create_directories(scaling / L"assets", ec);
+            MiaoSceneD2DRenderer scalingRenderer;
+            std::wstring scalingError;
+            Step(WriteSelfTestQuadrantPng(wic.Get(), scaling / L"assets" / L"background.png") &&
+                 writeWallpaperPackage(scaling, scalingScene) &&
+                 scalingRenderer.Load(scaling, target.Get(), &scalingError),
+                 "B2. 2x2 四象限背景作为 wallpaper 设计画布加载");
+            if (ok) {
+                target->BeginDraw();
+                target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+                const bool drew = scalingRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &scalingError);
+                const HRESULT ended = target->EndDraw();
+                const bool topLeftRed =
+                    PixelChannel(bitmap.Get(), 8, 8, 2) > 200 &&
+                    PixelChannel(bitmap.Get(), 8, 8, 1) < 40 &&
+                    PixelChannel(bitmap.Get(), 8, 8, 0) < 40;
+                const bool topRightGreen =
+                    PixelChannel(bitmap.Get(), 56, 8, 1) > 200 &&
+                    PixelChannel(bitmap.Get(), 56, 8, 2) < 40;
+                const bool bottomLeftBlue =
+                    PixelChannel(bitmap.Get(), 8, 56, 0) > 200 &&
+                    PixelChannel(bitmap.Get(), 8, 56, 1) < 40;
+                const bool bottomRightWhite =
+                    PixelChannel(bitmap.Get(), 56, 56, 0) > 200 &&
+                    PixelChannel(bitmap.Get(), 56, 56, 1) > 200 &&
+                    PixelChannel(bitmap.Get(), 56, 56, 2) > 200;
+                Step(SUCCEEDED(ended) && drew && topLeftRed && topRightGreen &&
+                         bottomLeftBlue && bottomRightWhite,
+                     "B2. 背景完整缩放到目标,四边没有 CLAMP 条纹");
+            }
+            fs::remove_all(scaling, ec);
+        }
 
         // A non-white tint on a textured sprite is refused, not silently dropped. This
         // pins that refusal: without it the constraint could be quietly removed and

@@ -76,4 +76,35 @@ jobs:
             deleted=$((deleted + 1))
           done
 
+          mapfile -t repository_branches < <(
+            gh api --paginate -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/branches?per_page=100" --jq '.[].name' |
+            sort -u
+          )
+
+          for branch in "${repository_branches[@]}"; do
+            if [[ -z "$branch" || "$branch" == "$DEFAULT_BRANCH" || -n "${open_head_set[$branch]:-}" ]]; then
+              continue
+            fi
+
+            case "$branch" in
+              feat/*|fix/*|ci/*|docs/*|test/*|perf/*|verify/*|chore/*|build/*)
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            encoded=$(jq -rn --arg value "$branch" '$value | @uri')
+            default_encoded=$(jq -rn --arg value "$DEFAULT_BRANCH" '$value | @uri')
+            ahead=$(gh api -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/compare/$default_encoded...$encoded" --jq '.ahead_by' 2>/dev/null || echo "unknown")
+
+            if [[ "$ahead" != "0" ]]; then
+              continue
+            fi
+
+            gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded"
+            echo "Deleted branch fully contained in $DEFAULT_BRANCH: $branch"
+            deleted=$((deleted + 1))
+          done
+
           echo "Cleanup complete: deleted=$deleted skipped_missing=$skipped"

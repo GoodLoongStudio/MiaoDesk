@@ -356,3 +356,13 @@ jobs:
             done
             exit 1
           }
+
+      - name: Verify dedicated content creator modes
+        shell: bash
+        run: |
+          out=$(node tests/content-creator-modes.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

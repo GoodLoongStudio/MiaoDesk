@@ -68,6 +68,10 @@ jobs:
             exit 1
           }
 
+      - name: Verify RC evidence verifier behavior
+        shell: pwsh
+        run: ./packaging/windows/verify-rc-evidence.ps1 -SelfTest
+
       - name: Verify no unresolved merge conflict markers
         shell: bash
         run: |

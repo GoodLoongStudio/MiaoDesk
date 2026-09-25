@@ -19,8 +19,18 @@ on:
       - .github/workflows/package-windows-arm64.yml
   pull_request:
     paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - src/**
+      - assets/app/**
+      - assets/wallpapers/**
+      - config/**
+      - runtime/arm64/**
       - runtime/agent/**
+      - third_party/webview2/**
       - packaging/windows/**
+      - scripts/generate-miaomiao-icon.ps1
+      - scripts/verify-path-layout-contract.ps1
       - .github/workflows/package-windows-arm64.yml
   workflow_dispatch:
 

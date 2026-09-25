@@ -426,7 +426,31 @@ inline bool PaintPackagedScene(std::wstring_view packageName,
 
     if (entry.canonicalRenderer) {
         std::wstring drawError;
-        if (!entry.canonicalRenderer->Draw(context.time, targetSize, &drawError)) {
+
+        // All three shipped built-ins were migrated from the same frozen
+        // 1672x941 scene.ini design space. Render their canonical scene.json in
+        // that authored space, then cover the current surface. Rendering directly
+        // against an arbitrary monitor size changes the transform arithmetic and,
+        // on portrait/mixed-resolution desktops, distorts the composition.
+        constexpr float kBuiltinDesignWidth = 1672.0f;
+        constexpr float kBuiltinDesignHeight = 941.0f;
+        const D2D1_SIZE_F design = D2D1::SizeF(kBuiltinDesignWidth, kBuiltinDesignHeight);
+        const float scale = std::max(
+            targetSize.width / kBuiltinDesignWidth,
+            targetSize.height / kBuiltinDesignHeight);
+        const float offsetX = (targetSize.width - kBuiltinDesignWidth * scale) * 0.5f;
+        const float offsetY = (targetSize.height - kBuiltinDesignHeight * scale) * 0.5f;
+
+        D2D1_MATRIX_3X2_F original{};
+        context.target->GetTransform(&original);
+        context.target->SetTransform(
+            D2D1::Matrix3x2F::Scale(scale, scale) *
+            D2D1::Matrix3x2F::Translation(offsetX, offsetY) *
+            original);
+        const bool drew = entry.canonicalRenderer->Draw(context.time, design, &drawError);
+        context.target->SetTransform(original);
+
+        if (!drew) {
             if (!drawError.empty() && drawError != entry.error) {
                 entry.error = drawError;
                 ReportPackagedSceneFailure(packageName, entry.error);

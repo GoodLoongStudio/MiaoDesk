@@ -1017,7 +1017,7 @@ void PaintConversation(ConversationState& state, HDC target) {
 
     const int avatarR = Px(state, 17);
     DrawAvatar(dc, Px(state, 34), Px(state, 34), avatarR, false);
-    RECT title{Px(state, 60), Px(state, 15), Px(state, 220), Px(state, 42)};
+    RECT title{Px(state, 60), Px(state, 15), Px(state, 310), Px(state, 42)};
     DrawWrapped(dc, state.titleFont, RGB(36, 43, 55), state.headerTitle, title, DT_SINGLELINE);
     HBRUSH online = CreateSolidBrush(RGB(83, 190, 104));
     HGDIOBJ oldBrush = SelectObject(dc, online);

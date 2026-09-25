@@ -11,6 +11,10 @@ permissions:
   contents: write
   pull-requests: read
 
+concurrency:
+  group: cleanup-merged-branches
+  cancel-in-progress: false
+
 jobs:
   cleanup:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
@@ -71,7 +75,15 @@ jobs:
               continue
             fi
 
-            gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded"
+            delete_output=$(gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded" 2>&1) || {
+              if grep -qE 'HTTP 404|Reference does not exist' <<<"$delete_output"; then
+                echo "Branch already removed by another cleanup: $branch"
+                skipped=$((skipped + 1))
+                continue
+              fi
+              echo "$delete_output" >&2
+              exit 1
+            }
             echo "Deleted merged branch: $branch ($current_sha)"
             deleted=$((deleted + 1))
           done
@@ -102,7 +114,15 @@ jobs:
               continue
             fi
 
-            gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded"
+            delete_output=$(gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded" 2>&1) || {
+              if grep -qE 'HTTP 404|Reference does not exist' <<<"$delete_output"; then
+                echo "Branch already removed by another cleanup: $branch"
+                skipped=$((skipped + 1))
+                continue
+              fi
+              echo "$delete_output" >&2
+              exit 1
+            }
             echo "Deleted branch fully contained in $DEFAULT_BRANCH: $branch"
             deleted=$((deleted + 1))
           done

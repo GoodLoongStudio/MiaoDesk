@@ -126,11 +126,20 @@ Enabled=1
 "@
 [IO.File]::WriteAllText($manifest, $manifestText, [Text.UnicodeEncoding]::new($false, $true))
 New-Item -ItemType Directory -Force -Path (Split-Path $wallpaperIni -Parent) | Out-Null
-# Keep the fixture on the current schema. A versionless profile asks every helper
-# process that cold-starts during this test to run the legacy migration/save path;
-# those concurrent writers can race and replace Enabled=0 with the default 1.
-# This smoke test is about disabled-state runtime/reload semantics, not migration.
-[IO.File]::WriteAllText($wallpaperIni, "[Wallpaper]`r`nVersion=9`r`nEnabled=0`r`n", [Text.UnicodeEncoding]::new($false, $true))
+
+function Set-WallpaperDisabledFixture {
+    # Keep the fixture on the current schema and reassert it before every cold start.
+    # This gate deliberately restarts the whole wallpaper/helper family multiple times;
+    # a process from the previous phase may persist a fuller profile while shutting down.
+    # The invariant under test is "cold start from Enabled=0 keeps wallpaper off while
+    # Widgets recover", so every cold-start boundary must start from that exact state.
+    [IO.File]::WriteAllText(
+        $wallpaperIni,
+        "[Wallpaper]`r`nVersion=9`r`nEnabled=0`r`n",
+        [Text.UnicodeEncoding]::new($false, $true))
+}
+
+Set-WallpaperDisabledFixture
 
 function Wait-WidgetCount([int]$Expected, [bool]$RequireAboveIcons, [int]$Seconds = 15) {
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
@@ -153,6 +162,10 @@ function Stop-MiaoDeskWallpaperFamily {
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'MiaoDeskWallpaper process family did not stop before cold-start probe.'
 }
+
+$debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+Stop-MiaoDeskWallpaperFamily
+Remove-Item $debugLog -Force -ErrorAction SilentlyContinue
 
 try {
     $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
@@ -204,12 +217,12 @@ Height=0.30
 Enabled=1
 "@
         [IO.File]::WriteAllText($manifest, $contentOnlyManifest, [Text.UnicodeEncoding]::new($false, $true))
+        Set-WallpaperDisabledFixture
         $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
         Wait-WidgetCount 1 $true
         Write-Host 'Content GlassClock cold-start/coordinator/desktop Surface lifecycle verified.' -ForegroundColor Green
     }
 
-    $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
     $logDeadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
         Start-Sleep -Milliseconds 200
@@ -258,6 +271,7 @@ Enabled=1
     # 则盖不住"顺便把壁纸也拉起来了"这个回归,所以两个断言都要。
     $expectedAfterReload = if ($expectContentGlassClock) { 1 } else { 2 }
     Stop-MiaoDeskWallpaperFamily
+    Set-WallpaperDisabledFixture
     $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
     Wait-WidgetCount $expectedAfterReload $true
     $resurrected = [MiaoDeskWidgetProbe]::VisibleWallpaperSurfaceCount()

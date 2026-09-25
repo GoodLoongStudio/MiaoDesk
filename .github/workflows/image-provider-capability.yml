@@ -23,7 +23,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     env:
-      MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
     steps:
       - uses: actions/checkout@v5
         with:
@@ -32,12 +31,14 @@ jobs:
       - name: Restore agent npm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.MIAODESK_NPM_CACHE }}
+          path: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
           key: miaodesk-agent-npm-${{ runner.os }}-x64-${{ hashFiles('runtime/agent/package-lock.json') }}
           restore-keys: |
             miaodesk-agent-npm-${{ runner.os }}-x64-
 
       - name: Prepare pinned x64 runtime
+        env:
+          MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
         shell: pwsh
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'MiaoDesk-ImageProviderProbe'

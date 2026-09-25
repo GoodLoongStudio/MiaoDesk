@@ -212,6 +212,22 @@ std::wstring CurrentTimeText() {
     return text;
 }
 
+std::wstring ConversationWelcome(ConversationPanelMode mode, bool demoMode) {
+    if (mode == ConversationPanelMode::WallpaperCreator) {
+        return demoMode
+            ? L"这里是壁纸 AI 创作工作台。完整生成能力需要配置模型；配置后我会严格按壁纸 Skill 链生成可预览的 .mdwall，再由你确认是否应用。"
+            : L"这里是壁纸 AI 创作工作台。告诉我你想要的画面、动效和交互感觉；我会按 content-package-basics → wallpaper-content → content-review 生成可预览的 .mdwall，你确认后才应用。";
+    }
+    if (mode == ConversationPanelMode::WidgetCreator) {
+        return demoMode
+            ? L"这里是组件 AI 创作工作台。完整生成能力需要配置模型；配置后我会严格按组件 Skill 链生成可预览的 .mdwidget，再由你确认是否放到桌面。"
+            : L"这里是组件 AI 创作工作台。告诉我组件要显示什么、尺寸和交互方式；我会按 content-package-basics → widget-content → content-review 生成可预览的 .mdwidget，你确认后才放到桌面。";
+    }
+    return demoMode
+        ? L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。配置 API Key 后解锁完整 Agent。"
+        : L"你好，我在这里。直接告诉我你想做什么 —— 也可以说「做一个有飘落落叶的动态壁纸」或「帮我做一个桌面倒数日组件」，我会按内置创作规范生成，你确认后才落到桌面。";
+}
+
 bool ContainsHttpStatus(const std::wstring& text, int status) {
     return text.find(L"HTTP " + std::to_wstring(status)) != std::wstring::npos;
 }
@@ -693,14 +709,9 @@ void ClearConversation(ConversationState& state) {
     state.artifactHits.clear();
     state.pendingConfirmation = false;
     state.pi->ResetSession();
-    if (!state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()) {
-        AddEntry(state, EntryKind::Assistant,
-                 L"你好，我是妙喵。当前是演示模式：可以说「一键体验」「给我一个动态壁纸」或「右上角加个待办小组件」。"
-                 L"配置 API Key 后解锁完整 Agent。");
-    } else {
-        AddEntry(state, EntryKind::Assistant,
-                 L"你好，我在这里。直接告诉我你想做什么 —— 也可以说「做一个有飘落落叶的动态壁纸」或「帮我做一个桌面倒数日组件」，我会按内置创作规范生成，你确认后才落到桌面。");
-    }
+    AddEntry(state, EntryKind::Assistant,
+             ConversationWelcome(state.mode,
+                                 !state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()));
     AppendRouteLog(L"route: Pi session reset by user");
 }
 

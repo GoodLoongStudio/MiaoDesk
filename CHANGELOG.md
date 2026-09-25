@@ -15,7 +15,18 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 ## [未发布]
 
-> 以下工作已在分支上开发完成并通过 CI，但尚未合并进 `main`。合并后请移入对应的版本区块。
+> 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
+
+### RC 准备状态
+
+- 内置 MiaoCloud / NeonCity / MysticMoon 已全部以 `scene.json` 为正式运行入口，运行包不再包含 `legacy_entry` / `scene.ini`。
+- D2D / D3D11 已共享解析粒子字段实现，并分别有像素级 / GPU readback 回归证据。
+- Wallpaper / Widget 管理页已接入 Skill 浏览器与 AI 内容创作入口；Skill 与 AI 共用 `content_skill_get` 源。
+- Windows 视觉验收采集器已覆盖截图、surface readiness、mixed-DPI / 横竖屏拓扑与 off-monitor 警告。
+- Windows 性能基线采集器已覆盖 CPU、Working Set、Private Memory、Handles、Threads、进程数和 best-effort GPU，并支持回归阈值比较。
+- AI 路径已具备独立 OpenAI-compatible image endpoint/model/credential、实际 Pi image-provider 探针、L1 fast→primary fallback router、route/fallback metrics 和 DGX A/B evaluator。
+- 正式包禁止未经审核的本地模型权重进入 staging。
+- RC exact-SHA gate 已加入：x64 Build / x64 Package / x64 MSIX / Repo Hygiene / ARM64 Package 必须来自同一目标 SHA 才能算通过。
 
 ### 新增
 

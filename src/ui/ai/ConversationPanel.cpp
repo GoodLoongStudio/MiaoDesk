@@ -111,6 +111,7 @@ void ConfigureConversationMode(ConversationState& state, ConversationPanelMode m
     const bool modeChanged = state.mode != mode;
     state.mode = mode;
     state.headerTitle = ConversationTitle(mode);
+    state.inputCue = ConversationInputCue(mode);
     if (state.window) SetWindowTextW(state.window, state.headerTitle.c_str());
     if (state.input) {
         SendMessageW(

@@ -38,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-arm64-package
+  group: windows-arm64-package-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:

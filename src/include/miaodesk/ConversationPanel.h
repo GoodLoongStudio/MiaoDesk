@@ -5,13 +5,22 @@
 
 namespace miaodesk {
 
+enum class ConversationPanelMode {
+    General = 0,
+    WallpaperCreator,
+    WidgetCreator,
+};
+
 // Canonical AI conversation surface API. The implementation remains Pi-first and
 // retains Direct Model only as the transport fallback; UI presentation does not own runtime policy.
+// Creator modes are presentation/session scopes only: they reuse the same Pi/L3 backend while
+// keeping wallpaper and widget authoring visually and conversationally distinct.
 bool ShowConversationPanel(
     HINSTANCE instance,
     HWND owner,
     L3Agent& agent,
-    const std::wstring& initialPrompt);
+    const std::wstring& initialPrompt,
+    ConversationPanelMode mode = ConversationPanelMode::General);
 
 // Temporary source/API compatibility only. New UI code must call ShowConversationPanel.
 inline bool ShowL3CliWindow(

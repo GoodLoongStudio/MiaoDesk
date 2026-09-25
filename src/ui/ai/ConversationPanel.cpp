@@ -89,6 +89,43 @@ void EnsureConversationPlacementPersistence(HWND window) {
         kConversationPlacementSubclassId, 0);
 }
 
+const wchar_t* ConversationTitle(ConversationPanelMode mode) {
+    switch (mode) {
+    case ConversationPanelMode::WallpaperCreator: return L"妙喵 · 壁纸 AI";
+    case ConversationPanelMode::WidgetCreator: return L"妙喵 · 组件 AI";
+    case ConversationPanelMode::General: break;
+    }
+    return L"妙喵 AI";
+}
+
+const wchar_t* ConversationInputCue(ConversationPanelMode mode) {
+    switch (mode) {
+    case ConversationPanelMode::WallpaperCreator: return L"描述你想制作的壁纸…";
+    case ConversationPanelMode::WidgetCreator: return L"描述你想制作的桌面组件…";
+    case ConversationPanelMode::General: break;
+    }
+    return L"输入消息…";
+}
+
+void ConfigureConversationMode(ConversationState& state, ConversationPanelMode mode) {
+    const bool modeChanged = state.mode != mode;
+    state.mode = mode;
+    state.headerTitle = ConversationTitle(mode);
+    state.inputCue = ConversationInputCue(mode);
+    if (state.window) SetWindowTextW(state.window, state.headerTitle.c_str());
+    if (state.input) {
+        SendMessageW(
+            state.input, EM_SETCUEBANNER, TRUE,
+            reinterpret_cast<LPARAM>(ConversationInputCue(mode)));
+    }
+    if (modeChanged) {
+        // The creator surfaces share one Pi/L3 runtime, but not one conversational scope.
+        // Switching between General / Wallpaper / Widget resets the model session and visible
+        // timeline so domain instructions and artifacts cannot leak across authoring modes.
+        ClearConversation(state);
+    }
+}
+
 BOOL MiaoDeskPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
     HDC hdcSrc, POINT* source, COLORREF colorKey,
@@ -324,7 +361,9 @@ BOOL MiaoDeskPresentConversationLayered(
 
 namespace miaodesk {
 
-bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
+bool ShowConversationPanel(
+    HINSTANCE instance, HWND owner, L3Agent& agent,
+    const std::wstring& initialPrompt, ConversationPanelMode mode) {
     const bool wasVisible = gConversationState && IsWindow(gConversationState->window) &&
                             IsWindowVisible(gConversationState->window);
     // Install the visible Direct2D surface and semantic bridge before the first model turn.
@@ -333,6 +372,7 @@ bool ShowConversationPanel(HINSTANCE instance, HWND owner, L3Agent& agent, const
 
     EnsureConversationInputOverlay(instance);
     if (gConversationState && IsWindow(gConversationState->window)) {
+        ConfigureConversationMode(*gConversationState, mode);
         EnsureConversationPlacementPersistence(gConversationState->window);
         if (!wasVisible) {
             window_placement::Restore(

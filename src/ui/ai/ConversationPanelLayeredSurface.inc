@@ -402,7 +402,7 @@ bool RenderConversationLayerSurface(ConversationState& state) {
     auto symbolFormat = LayerFormat(static_cast<float>(Px(state, 17)), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     LayerAvatar(target, static_cast<float>(Px(state, 34)), static_cast<float>(Px(state, 34)), static_cast<float>(Px(state, 17)), false);
-    LayerText(target, L"妙喵 AI", titleFormat.Get(), text.Get(), Px(state, 60.0f), Px(state, 14.0f), Px(state, 180.0f), Px(state, 28.0f));
+    LayerText(target, state.headerTitle, titleFormat.Get(), text.Get(), Px(state, 60.0f), Px(state, 14.0f), Px(state, 250.0f), Px(state, 28.0f));
     auto online = LayerBrush(target, 0x53BE68, 0.98f);
     target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(Px(state, 63.0f), Px(state, 50.0f)), Px(state, 4.0f), Px(state, 4.0f)), online.Get());
     LayerText(target, state.busy ? L"正在工作" : L"在线", smallFormat.Get(), secondary.Get(), Px(state, 74.0f), Px(state, 40.0f), Px(state, 120.0f), Px(state, 20.0f));
@@ -472,7 +472,7 @@ bool RenderConversationLayerSurface(ConversationState& state) {
         }
         inputTextTop = chipY + Px(state, 2.0f);
     }
-    if (inputText.empty()) LayerText(target, L"输入消息…", bodyFormat.Get(), secondary.Get(), inputLeft, inputTextTop, inputRight - inputLeft, Px(state, 30.0f));
+    if (inputText.empty()) LayerText(target, state.inputCue, bodyFormat.Get(), secondary.Get(), inputLeft, inputTextTop, inputRight - inputLeft, Px(state, 30.0f));
     else LayerText(target, inputText, bodyFormat.Get(), text.Get(), inputLeft, inputTextTop, inputRight - inputLeft, Px(state, 36.0f));
 
     auto footer = LayerLayout(L"Enter 发送 · Shift + Enter 换行 · Esc 停止 / 收起", smallFormat.Get(), w - Px(state, 80.0f), Px(state, 18.0f));

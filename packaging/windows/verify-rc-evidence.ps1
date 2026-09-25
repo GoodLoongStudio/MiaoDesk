@@ -37,50 +37,50 @@ function Add-VisualErrors(
     if ($null -eq $report) { return $null }
 
     if ((Get-PropertyValue $report 'schema') -ne 1) {
-        $Errors.Add("$Label: acceptance schema must be 1.")
+        $Errors.Add("${Label}: acceptance schema must be 1.")
     }
 
     $summary = Get-PropertyValue $report 'summary'
     if ($null -eq $summary) {
-        $Errors.Add("$Label: acceptance summary is missing.")
+        $Errors.Add("${Label}: acceptance summary is missing.")
     }
     else {
         if ([int](Get-PropertyValue $summary 'warningCount') -ne 0) {
-            $Errors.Add("$Label: acceptance report contains runtime warnings.")
+            $Errors.Add("${Label}: acceptance report contains runtime warnings.")
         }
         if ([int](Get-PropertyValue $summary 'widgetSurfaceCount') -lt 1) {
-            $Errors.Add("$Label: no widget surface was captured.")
+            $Errors.Add("${Label}: no widget surface was captured.")
         }
         if ($RequireTopology) {
             if ([int](Get-PropertyValue $summary 'monitorCount') -lt 2) {
-                $Errors.Add("$Label: RC visual sign-off requires at least two monitors.")
+                $Errors.Add("${Label}: RC visual sign-off requires at least two monitors.")
             }
             if ((Get-PropertyValue $summary 'mixedDpi') -ne $true) {
-                $Errors.Add("$Label: RC visual sign-off requires a mixed-DPI topology.")
+                $Errors.Add("${Label}: RC visual sign-off requires a mixed-DPI topology.")
             }
             if ([int](Get-PropertyValue $summary 'portraitMonitorCount') -lt 1) {
-                $Errors.Add("$Label: RC visual sign-off requires at least one portrait monitor.")
+                $Errors.Add("${Label}: RC visual sign-off requires at least one portrait monitor.")
             }
         }
     }
 
     $screenshotName = [string](Get-PropertyValue $report 'screenshot')
     if ([string]::IsNullOrWhiteSpace($screenshotName)) {
-        $Errors.Add("$Label: screenshot field is missing.")
+        $Errors.Add("${Label}: screenshot field is missing.")
     }
     else {
         $screenshotPath = Join-Path (Split-Path -Parent $ReportPath) $screenshotName
         if (-not (Test-Path $screenshotPath -PathType Leaf)) {
-            $Errors.Add("$Label: screenshot file is missing: $screenshotPath")
+            $Errors.Add("${Label}: screenshot file is missing: $screenshotPath")
         }
         elseif ((Get-Item $screenshotPath).Length -le 0) {
-            $Errors.Add("$Label: screenshot file is empty: $screenshotPath")
+            $Errors.Add("${Label}: screenshot file is empty: $screenshotPath")
         }
     }
 
     $machine = [string](Get-PropertyValue $report 'machine')
     if ([string]::IsNullOrWhiteSpace($machine)) {
-        $Errors.Add("$Label: machine name is missing.")
+        $Errors.Add("${Label}: machine name is missing.")
     }
     return $report
 }
@@ -110,28 +110,28 @@ function Add-PerformanceErrors(
     if ($null -eq $report) { return $null }
 
     if ((Get-PropertyValue $report 'schema') -ne 1) {
-        $Errors.Add("$Scenario: performance schema must be 1.")
+        $Errors.Add("${Scenario}: performance schema must be 1.")
     }
     if ([string](Get-PropertyValue $report 'scenario') -ne $Scenario) {
-        $Errors.Add("$Scenario: scenario field does not match the file slot.")
+        $Errors.Add("${Scenario}: scenario field does not match the file slot.")
     }
     if ([int](Get-PropertyValue $report 'durationSeconds') -lt 20) {
-        $Errors.Add("$Scenario: durationSeconds must be at least 20 for RC evidence.")
+        $Errors.Add("${Scenario}: durationSeconds must be at least 20 for RC evidence.")
     }
 
     $samples = @(Get-PropertyValue $report 'samples')
     if ($samples.Count -lt 5) {
-        $Errors.Add("$Scenario: fewer than 5 performance samples were captured.")
+        $Errors.Add("${Scenario}: fewer than 5 performance samples were captured.")
     }
 
     $machine = Get-PropertyValue $report 'machine'
     if ($null -eq $machine -or [string]::IsNullOrWhiteSpace([string](Get-PropertyValue $machine 'computerName'))) {
-        $Errors.Add("$Scenario: machine identity is missing.")
+        $Errors.Add("${Scenario}: machine identity is missing.")
     }
 
     $metrics = Get-PropertyValue $report 'metrics'
     if ($null -eq $metrics) {
-        $Errors.Add("$Scenario: metrics are missing.")
+        $Errors.Add("${Scenario}: metrics are missing.")
     }
     else {
         foreach ($name in @(
@@ -143,19 +143,19 @@ function Add-PerformanceErrors(
         )) {
             $value = Get-PropertyValue $metrics $name
             if ($null -eq $value -or [double]$value -le 0) {
-                $Errors.Add("$Scenario: metric '$name' must be present and greater than zero.")
+                $Errors.Add("${Scenario}: metric '$name' must be present and greater than zero.")
             }
         }
         foreach ($name in @('averageCpuPercent','p95CpuPercent','peakCpuPercent')) {
             if ($null -eq (Get-PropertyValue $metrics $name)) {
-                $Errors.Add("$Scenario: metric '$name' is missing.")
+                $Errors.Add("${Scenario}: metric '$name' is missing.")
             }
         }
     }
 
     $comparison = Get-PropertyValue $report 'comparison'
     if ($null -ne $comparison -and (Get-PropertyValue $comparison 'passed') -eq $false) {
-        $Errors.Add("$Scenario: performance comparison reports a regression.")
+        $Errors.Add("${Scenario}: performance comparison reports a regression.")
     }
 
     return $report
@@ -254,7 +254,7 @@ function Test-EvidenceRoot([string]$Root) {
             $machine = Get-PropertyValue $report 'machine'
             $computerName = [string](Get-PropertyValue $machine 'computerName')
             if (-not [string]::Equals($visualMachine, $computerName, [StringComparison]::OrdinalIgnoreCase)) {
-                $errors.Add("$scenario: performance machine '$computerName' does not match visual machine '$visualMachine'.")
+                $errors.Add("${scenario}: performance machine '$computerName' does not match visual machine '$visualMachine'.")
             }
         }
     }

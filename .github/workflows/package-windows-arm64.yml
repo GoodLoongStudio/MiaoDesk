@@ -33,7 +33,6 @@ jobs:
     env:
       MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\arm64
       MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\arm64
-      MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-arm64
 
     steps:
       - uses: actions/checkout@v5
@@ -43,7 +42,7 @@ jobs:
       - name: Restore agent npm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.MIAODESK_NPM_CACHE }}
+          path: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-arm64
           key: miaodesk-agent-npm-${{ runner.os }}-arm64-${{ hashFiles('runtime/agent/package-lock.json') }}
           restore-keys: |
             miaodesk-agent-npm-${{ runner.os }}-arm64-
@@ -109,6 +108,8 @@ jobs:
           }
 
       - name: Stage Runtime
+        env:
+          MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-arm64
         shell: pwsh
         run: |
           try {

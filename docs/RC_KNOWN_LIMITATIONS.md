@@ -32,3 +32,50 @@ The following are RC sign-off items, not automatic CI claims:
 ## RC rule
 
 Do not promote the version or label a build RC-complete until Issue #60's blocking P0 items are signed off and the exact-SHA release gate confirms that x64 Build, x64 Package, x64 MSIX, Repo Hygiene and ARM64 Package all succeeded for the same commit.
+
+## RC evidence bundle
+
+The final physical sign-off is collected under one evidence root so the release cannot accidentally mix screenshots from one machine with performance captures from another.
+
+Expected layout:
+
+```text
+<evidence-root>/
+  visual/
+    initial/
+      acceptance.json
+      desktop.png
+    explorer-restart/
+      acceptance.json
+      desktop.png
+    sleep-resume/
+      acceptance.json
+      desktop.png
+  performance/
+    performance-desktop-only.json
+    performance-wallpaper.json
+    performance-widgets-3.json
+    performance-ai-idle.json
+  manual-signoff.json
+```
+
+Use the existing collectors with explicit output folders, then copy `packaging/windows/rc-manual-signoff.template.json` to `manual-signoff.json`. Only flip a manual check to `true` after it was actually performed.
+
+The verifier checks that:
+
+- all three visual captures exist and have screenshots;
+- the initial capture is multi-monitor, mixed-DPI and includes a portrait monitor;
+- no visual collector runtime warnings remain;
+- all four performance scenarios exist, contain at least 20 seconds of measurements, and share one hardware/OS fingerprint;
+- visual and performance evidence identify the same reference machine;
+- no stored performance comparison reports a regression;
+- the manual sign-off binds the evidence to a full candidate commit SHA and explicitly confirms every human-only check.
+
+Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\verify-rc-evidence.ps1 -EvidenceRoot C:\MiaoDesk-RC-Evidence
+```
+
+The verifier does not turn telemetry into a visual judgment. It only prevents missing, mixed-machine, regressed, or unsigned evidence from being treated as complete.
+

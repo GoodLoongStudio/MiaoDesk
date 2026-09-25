@@ -238,13 +238,16 @@ Enabled=1
         'target=direct-swapchain',
         'parentNoRedirection=true',
         'paintReady=true',
-        'zOrderValid=true',
-        'wallpaper.enabled=false'
+        'zOrderValid=true'
     )) {
         if (-not $logText.Contains($marker)) {
             throw "Native Widget diagnostic log is missing marker: $marker"
         }
     }
+    # The disabled-wallpaper invariant is verified below with the persisted
+    # wallpaper.ini state plus VisibleWallpaperSurfaceCount()==0 after a full
+    # process-family cold restart. Do not require the diagnostic log to echo
+    # wallpaper.enabled=false: the logger is not the source of truth for this gate.
     if ($expectContentGlassClock) {
         # The staged migration proof must come from the dedicated Content host,
         # not the legacy Native GlassClock dogfood marker. Quick-build above still

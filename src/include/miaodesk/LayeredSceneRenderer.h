@@ -1,5 +1,6 @@
 #pragma once
 
+#include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/SceneWallpaperPainter.h"
 #include "miaodesk/WallpaperPackage.h"
 
@@ -349,9 +350,30 @@ struct CacheKeyHash {
 };
 
 struct CacheEntry {
-    std::unique_ptr<Renderer> renderer;
+    std::unique_ptr<Renderer> legacyRenderer;
+    std::unique_ptr<::miaodesk::content::MiaoSceneD2DRenderer> canonicalRenderer;
+    std::wstring error;
     bool attempted{};
 };
+
+inline bool UsesCanonicalSceneJson(const WallpaperPackageManifest& manifest) {
+    auto extension = manifest.entry.extension().wstring();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return extension == L".json";
+}
+
+inline void ReportPackagedSceneFailure(std::wstring_view packageName, std::wstring_view error) {
+    std::wstring message = L"[Wallpaper] Packaged scene unavailable: ";
+    message.append(packageName);
+    if (!error.empty()) {
+        message.append(L" · ");
+        message.append(error);
+    }
+    message.append(L"\r\n");
+    OutputDebugStringW(message.c_str());
+}
 
 inline thread_local std::unordered_map<CacheKey, CacheEntry, CacheKeyHash> gRenderers;
 
@@ -363,18 +385,63 @@ inline bool PaintPackagedScene(std::wstring_view packageName,
     using namespace layered_scene_detail;
     if (!context.target || packageName.empty()) return false;
     const auto packageRoot = LocatePackage(packageName);
-    if (packageRoot.empty()) return false;
+    if (packageRoot.empty()) {
+        ReportPackagedSceneFailure(packageName, L"package directory not found");
+        return false;
+    }
 
     CacheKey key{context.target, std::wstring(packageName)};
     auto& entry = gRenderers[key];
     if (!entry.attempted) {
         entry.attempted = true;
-        auto renderer = std::make_unique<Renderer>(context.target, packageRoot);
-        if (renderer->Initialize()) entry.renderer = std::move(renderer);
+
+        WallpaperPackageManifest manifest;
+        if (!WallpaperPackage::Validate(packageRoot, &manifest, &entry.error) ||
+            manifest.type != WallpaperPackageType::Scene) {
+            if (entry.error.empty()) entry.error = L"wallpaper package is not a valid Scene";
+            ReportPackagedSceneFailure(packageName, entry.error);
+        } else if (UsesCanonicalSceneJson(manifest)) {
+            // Built-in wallpapers were migrated to canonical scene.json. The previous
+            // bridge still handed manifest.entry to GetPrivateProfile* as if it were
+            // scene.ini; that parsed layer_count=0, failed initialization and silently
+            // painted the simplified procedural fallback instead. Canonical JSON must
+            // go through the same Miao Scene renderer used by the rest of the product.
+            auto renderer = std::make_unique<::miaodesk::content::MiaoSceneD2DRenderer>();
+            if (renderer->Load(packageRoot, context.target, &entry.error)) {
+                entry.canonicalRenderer = std::move(renderer);
+            } else {
+                ReportPackagedSceneFailure(packageName, entry.error);
+            }
+        } else {
+            // Compatibility only for pre-canonical developer/third-party packages.
+            auto renderer = std::make_unique<Renderer>(context.target, packageRoot);
+            if (renderer->Initialize()) {
+                entry.legacyRenderer = std::move(renderer);
+            } else {
+                entry.error = L"legacy layered scene failed to initialize";
+                ReportPackagedSceneFailure(packageName, entry.error);
+            }
+        }
     }
-    if (!entry.renderer) return false;
-    entry.renderer->Draw(context, targetSize);
-    return true;
+
+    if (entry.canonicalRenderer) {
+        std::wstring drawError;
+        if (!entry.canonicalRenderer->Draw(context.time, targetSize, &drawError)) {
+            if (!drawError.empty() && drawError != entry.error) {
+                entry.error = drawError;
+                ReportPackagedSceneFailure(packageName, entry.error);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    if (entry.legacyRenderer) {
+        entry.legacyRenderer->Draw(context, targetSize);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace miaodesk::wallpaper::scenes

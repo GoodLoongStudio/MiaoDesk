@@ -600,6 +600,21 @@ struct MiaoSceneD2DRenderer::Impl {
                 D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             if (FAILED(target->CreateBitmapBrush(texture, brushProperties, textured.GetAddressOf())))
                 return Error(error, L"Cannot create Miao Scene D2D bitmap brush.");
+
+            // Sprite textures are authored against the scene rect, not against their
+            // native bitmap pixel dimensions. Without this transform a smaller source
+            // bitmap covers only its native-width/native-height corner; CLAMP then
+            // repeats the final row/column across the rest of the monitor, producing
+            // the horizontal/vertical "smear" bands seen on larger and portrait
+            // displays. Stretch the bitmap into the sprite's untransformed scene rect;
+            // the node transform below then positions/scales that rect exactly as the
+            // scene author intended.
+            const D2D1_SIZE_F textureSize = texture->GetSize();
+            const float textureWidth = std::max(1.0f, textureSize.width);
+            const float textureHeight = std::max(1.0f, textureSize.height);
+            textured->SetTransform(D2D1::Matrix3x2F::Scale(
+                size.width / textureWidth,
+                size.height / textureHeight));
             textured->SetOpacity(static_cast<float>(spriteOpacity * nodeOpacity));
             if (cornerRadius > 0.0) {
                 target->FillRoundedRectangle(

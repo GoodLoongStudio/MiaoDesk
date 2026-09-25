@@ -1,0 +1,79 @@
+name: Cleanup merged branches
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Delete unchanged merged same-repository branches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          deleted=0
+          skipped=0
+
+          mapfile -t open_heads < <(
+            gh api --paginate -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq '.[] | select(.head.repo.full_name == .base.repo.full_name) | .head.ref' |
+            sort -u
+          )
+
+          mapfile -t merged_heads < <(
+            gh api --paginate -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/pulls?state=closed&per_page=100" --jq '.[] | select(.merged_at != null) | select(.head.repo.full_name == .base.repo.full_name) | [.head.ref, .head.sha] | @tsv' |
+            sort -u
+          )
+
+          declare -A open_head_set=()
+          for open_branch in "${open_heads[@]}"; do
+            open_head_set["$open_branch"]=1
+          done
+
+          for merged_head in "${merged_heads[@]}"; do
+            IFS=$'\t' read -r branch merged_sha <<<"$merged_head"
+
+            if [[ -z "$branch" || -z "$merged_sha" || "$branch" == "$DEFAULT_BRANCH" ]]; then
+              continue
+            fi
+
+            if [[ -n "${open_head_set[$branch]:-}" ]]; then
+              echo "Keep branch with open PR: $branch"
+              continue
+            fi
+
+            encoded=$(jq -rn --arg value "$branch" '$value | @uri')
+            current_sha=$(gh api -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/ref/heads/$encoded" --jq '.object.sha' 2>/dev/null || true)
+
+            if [[ -z "$current_sha" ]]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            # Branch names can be reused after an older PR was merged. Only delete when the
+            # live ref still points to the exact head SHA GitHub recorded for a merged PR.
+            if [[ "$current_sha" != "$merged_sha" ]]; then
+              continue
+            fi
+
+            gh api --method DELETE -H "Accept: application/vnd.github+json" "repos/$REPOSITORY/git/refs/heads/$encoded"
+            echo "Deleted merged branch: $branch ($current_sha)"
+            deleted=$((deleted + 1))
+          done
+
+          echo "Cleanup complete: deleted=$deleted skipped_missing=$skipped"

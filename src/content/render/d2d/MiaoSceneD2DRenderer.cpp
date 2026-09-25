@@ -764,16 +764,16 @@ struct MiaoSceneD2DRenderer::Impl {
         D2D1_SIZE_F sceneCanvas = size;
         D2D1_MATRIX_3X2_F sceneHostTransform = hostTransform;
         if (definition.profile == RuntimeProfile::Wallpaper) {
-            sceneCanvas = ResolveWallpaperCanvasSize(size, error);
-            if (!error || error->empty()) {
-                // Each monitor owns its own render target and therefore its own cover
-                // transform. A portrait monitor crops the same authored canvas around
-                // the centre instead of stretching it or sampling outside the bitmap.
-                sceneHostTransform = CoverCanvasTransform(sceneCanvas, size) * hostTransform;
-            } else {
+            std::wstring canvasError;
+            sceneCanvas = ResolveWallpaperCanvasSize(size, &canvasError);
+            if (!canvasError.empty()) {
                 target->SetTransform(hostTransform);
-                return false;
+                return Error(error, canvasError);
             }
+            // Each monitor owns its own render target and therefore its own cover
+            // transform. A portrait monitor crops the same authored canvas around
+            // the centre instead of stretching it or sampling outside the bitmap.
+            sceneHostTransform = CoverCanvasTransform(sceneCanvas, size) * hostTransform;
         }
 
         bool drew = false;

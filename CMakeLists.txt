@@ -28,6 +28,13 @@ endif()
 include(GNUInstallDirs)
 add_subdirectory(src)
 
+# P0-6's creator surface belongs to the main MiaoDesk process because it borrows the
+# canonical L3/Pi runtime. Keep the translation unit owned by that target so Repo
+# Hygiene can prove it is compiled and so no second AI stack appears in Wallpaper.
+target_sources(MiaoDesk PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/ui/ai/ContentCreatorDialog.cpp"
+)
+
 # End-user staging is deliberately shallow. Runtime discovery in MiaoDesk is
 # relative to the executable directory, so the three production executables
 # stay at the install root. Do not install repository runtime SDK trees,

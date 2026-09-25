@@ -370,3 +370,13 @@ jobs:
             done
             exit 1
           }
+
+      - name: Verify canonical wallpaper production bridge
+        shell: bash
+        run: |
+          out=$(node tests/wallpaper-production-bridge.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

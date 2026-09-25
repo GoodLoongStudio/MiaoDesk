@@ -22,7 +22,6 @@ jobs:
   probe:
     runs-on: windows-latest
     timeout-minutes: 15
-    env:
     steps:
       - uses: actions/checkout@v5
         with:

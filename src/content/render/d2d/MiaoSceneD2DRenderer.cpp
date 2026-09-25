@@ -313,6 +313,8 @@ struct MiaoSceneD2DRenderer::Impl {
     // cannot outlive either one. Reset() drops it, and Load() calls Reset() first,
     // which is also the path the hosts take when D2D reports D2DERR_RECREATE_TARGET.
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> spriteTextures;
+    D2D1_SIZE_F wallpaperCanvasSize{};
+    bool wallpaperCanvasResolved{};
     std::wstring lastError;
     std::uint64_t lastRenderedGeneration{};
     bool loaded{};
@@ -486,6 +488,63 @@ struct MiaoSceneD2DRenderer::Impl {
         return true;
     }
 
+    D2D1_SIZE_F ResolveWallpaperCanvasSize(const D2D1_SIZE_F& targetSize, std::wstring* error) {
+        if (definition.profile != RuntimeProfile::Wallpaper) return targetSize;
+        if (wallpaperCanvasResolved) {
+            return wallpaperCanvasSize.width > 0.0f && wallpaperCanvasSize.height > 0.0f
+                ? wallpaperCanvasSize
+                : targetSize;
+        }
+
+        wallpaperCanvasResolved = true;
+        wallpaperCanvasSize = {};
+
+        // Canonical wallpaper coordinates need a stable authored canvas. The migrated
+        // built-ins all carry a full-canvas background sprite whose bitmap dimensions
+        // are the frozen legacy design_width/design_height. Using the target monitor
+        // size as the scene coordinate space breaks the migration math on every aspect
+        // ratio other than the authored one.
+        for (const auto& node : definition.scene.nodes) {
+            const bool backgroundNode =
+                node.name == L"background" ||
+                node.id == L"node://layer/background" ||
+                node.id.find(L"/background") != std::wstring::npos;
+            if (!backgroundNode) continue;
+
+            for (const auto& component : node.components) {
+                if (component.kind != ComponentKind::SpriteRenderer) continue;
+                ID2D1Bitmap* bitmap = nullptr;
+                if (!ResolveSpriteTexture(component, &bitmap, error)) return targetSize;
+                if (!bitmap) continue;
+                const D2D1_SIZE_U pixels = bitmap->GetPixelSize();
+                if (pixels.width == 0 || pixels.height == 0) continue;
+                wallpaperCanvasSize = D2D1::SizeF(
+                    static_cast<float>(pixels.width),
+                    static_cast<float>(pixels.height));
+                return wallpaperCanvasSize;
+            }
+        }
+
+        // A wallpaper with no full-canvas background is still valid content. Such
+        // scenes keep target-relative coordinates rather than guessing a design size
+        // from an icon-sized texture.
+        return targetSize;
+    }
+
+    static D2D1_MATRIX_3X2_F CoverCanvasTransform(
+        const D2D1_SIZE_F& canvas,
+        const D2D1_SIZE_F& targetSize) noexcept {
+        const float safeCanvasWidth = std::max(1.0f, canvas.width);
+        const float safeCanvasHeight = std::max(1.0f, canvas.height);
+        const float scale = std::max(
+            targetSize.width / safeCanvasWidth,
+            targetSize.height / safeCanvasHeight);
+        const float offsetX = (targetSize.width - safeCanvasWidth * scale) * 0.5f;
+        const float offsetY = (targetSize.height - safeCanvasHeight * scale) * 0.5f;
+        return D2D1::Matrix3x2F::Scale(scale, scale) *
+               D2D1::Matrix3x2F::Translation(offsetX, offsetY);
+    }
+
     bool DrawSpriteComponent(
         const SceneNodeDefinition& node,
         const SceneComponentDefinition& component,
@@ -600,6 +659,19 @@ struct MiaoSceneD2DRenderer::Impl {
                 D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             if (FAILED(target->CreateBitmapBrush(texture, brushProperties, textured.GetAddressOf())))
                 return Error(error, L"Cannot create Miao Scene D2D bitmap brush.");
+
+            // A sprite fills the whole local scene canvas; its Transform then places
+            // that canvas-sized quad into the authored layer box. The bitmap therefore
+            // has to map its *entire* pixel rectangle onto the local canvas first.
+            // Leaving the brush at the D2D default 1:1 mapping makes CLAMP repeat the
+            // last source row/column when a monitor is larger than the source image —
+            // the horizontal/vertical stripe artifact seen on mixed resolutions.
+            const D2D1_SIZE_U texturePixels = texture->GetPixelSize();
+            if (texturePixels.width == 0 || texturePixels.height == 0)
+                return Error(error, L"SpriteRenderer texture has an empty pixel size.");
+            textured->SetTransform(D2D1::Matrix3x2F::Scale(
+                size.width / static_cast<float>(texturePixels.width),
+                size.height / static_cast<float>(texturePixels.height)));
             textured->SetOpacity(static_cast<float>(spriteOpacity * nodeOpacity));
             if (cornerRadius > 0.0) {
                 target->FillRoundedRectangle(
@@ -688,19 +760,35 @@ struct MiaoSceneD2DRenderer::Impl {
 
         D2D1_MATRIX_3X2_F hostTransform{};
         target->GetTransform(&hostTransform);
+
+        D2D1_SIZE_F sceneCanvas = size;
+        D2D1_MATRIX_3X2_F sceneHostTransform = hostTransform;
+        if (definition.profile == RuntimeProfile::Wallpaper) {
+            sceneCanvas = ResolveWallpaperCanvasSize(size, error);
+            if (!error || error->empty()) {
+                // Each monitor owns its own render target and therefore its own cover
+                // transform. A portrait monitor crops the same authored canvas around
+                // the centre instead of stretching it or sampling outside the bitmap.
+                sceneHostTransform = CoverCanvasTransform(sceneCanvas, size) * hostTransform;
+            } else {
+                target->SetTransform(hostTransform);
+                return false;
+            }
+        }
+
         bool drew = false;
         for (const auto& node : definition.scene.nodes) {
             if (!node.enabled) continue;
             for (const auto& component : node.components) {
                 if (component.kind == ComponentKind::TextRenderer) {
-                    if (!DrawTextComponent(node, component, data, size, hostTransform, &drew, error)) {
+                    if (!DrawTextComponent(node, component, data, sceneCanvas, sceneHostTransform, &drew, error)) {
                         target->SetTransform(hostTransform);
                         return false;
                     }
                     continue;
                 }
                 if (component.kind != ComponentKind::SpriteRenderer) continue;
-                if (!DrawSpriteComponent(node, component, size, hostTransform, &drew, error)) {
+                if (!DrawSpriteComponent(node, component, sceneCanvas, sceneHostTransform, &drew, error)) {
                     target->SetTransform(hostTransform);
                     return false;
                 }
@@ -780,6 +868,8 @@ struct MiaoSceneD2DRenderer::Impl {
         dwrite.Reset();
         brush.Reset();
         spriteTextures.clear();
+        wallpaperCanvasSize = {};
+        wallpaperCanvasResolved = false;
         runtime.Reset();
         assets.Clear();
         hostData.clear();

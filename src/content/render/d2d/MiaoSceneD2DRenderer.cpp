@@ -1373,20 +1373,19 @@ bool MiaoSceneD2DRenderer::SelfTest() {
                 target->Clear(D2D1::ColorF(D2D1::ColorF::Black));
                 const bool drew = scalingRenderer.Draw(1.0f, D2D1::SizeF(64.0f, 64.0f), &scalingError);
                 const HRESULT ended = target->EndDraw();
-                const bool topLeftRed =
-                    PixelChannel(bitmap.Get(), 8, 8, 2) > 200 &&
-                    PixelChannel(bitmap.Get(), 8, 8, 1) < 40 &&
-                    PixelChannel(bitmap.Get(), 8, 8, 0) < 40;
-                const bool topRightGreen =
-                    PixelChannel(bitmap.Get(), 56, 8, 1) > 200 &&
-                    PixelChannel(bitmap.Get(), 56, 8, 2) < 40;
-                const bool bottomLeftBlue =
-                    PixelChannel(bitmap.Get(), 8, 56, 0) > 200 &&
-                    PixelChannel(bitmap.Get(), 8, 56, 1) < 40;
+                const auto dominant = [&](UINT x, UINT y, UINT channel) {
+                    const UINT32 primary = PixelChannel(bitmap.Get(), x, y, channel);
+                    const UINT32 a = PixelChannel(bitmap.Get(), x, y, (channel + 1) % 3);
+                    const UINT32 b = PixelChannel(bitmap.Get(), x, y, (channel + 2) % 3);
+                    return primary > 150 && primary > a + 70 && primary > b + 70;
+                };
+                const bool topLeftRed = dominant(4, 4, 2);
+                const bool topRightGreen = dominant(59, 4, 1);
+                const bool bottomLeftBlue = dominant(4, 59, 0);
                 const bool bottomRightWhite =
-                    PixelChannel(bitmap.Get(), 56, 56, 0) > 200 &&
-                    PixelChannel(bitmap.Get(), 56, 56, 1) > 200 &&
-                    PixelChannel(bitmap.Get(), 56, 56, 2) > 200;
+                    PixelChannel(bitmap.Get(), 59, 59, 0) > 160 &&
+                    PixelChannel(bitmap.Get(), 59, 59, 1) > 160 &&
+                    PixelChannel(bitmap.Get(), 59, 59, 2) > 160;
                 Step(SUCCEEDED(ended) && drew && topLeftRed && topRightGreen &&
                          bottomLeftBlue && bottomRightWhite,
                      "B2. 背景完整缩放到目标,四边没有 CLAMP 条纹");

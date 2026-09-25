@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "candidateSha": "REPLACE_WITH_FULL_40_CHARACTER_GIT_SHA",
+  "reviewer": "REPLACE_WITH_REVIEWER_NAME",
+  "reviewedAt": "REPLACE_WITH_ISO_8601_TIMESTAMP",
+  "checks": {
+    "wallpaperComposition": false,
+    "widgetAlphaZOrderInteraction": false,
+    "noClippingLandscapePortrait": false,
+    "mixedDpiDrag": false,
+    "wallpaperOffWidgetsAlive": false,
+    "explorerRestartRecovery": false,
+    "sleepResumeRecovery": false,
+    "cleanInstallerSmoke": false
+  }
+}

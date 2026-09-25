@@ -1,0 +1,40 @@
+name: RC Same-SHA Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-rc-ci.mjs'
+      - '.github/workflows/rc-same-sha-gate.yml'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Exact commit SHA whose release workflows must all be green'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-rc-ci.mjs --self-test
+
+  verify-target:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify all RC workflows succeeded on the exact SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-rc-ci.mjs '${{ inputs.target_sha }}'

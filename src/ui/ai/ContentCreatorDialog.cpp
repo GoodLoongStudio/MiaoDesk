@@ -48,11 +48,23 @@ constexpr int kPreset5Id = 7814;
 constexpr int kPreviewId = 7820;
 constexpr int kLibraryId = 7821;
 constexpr int kApplyId = 7822;
+constexpr int kPreviewPlayPauseId = 7823;
+constexpr int kPreviewReloadId = 7824;
+constexpr int kPreviewFullscreenId = 7825;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
 constexpr UINT_PTR kPreviewTimerId = 0x7830;
 constexpr UINT kPreviewFrameMs = 33;
+
+enum class PreviewSandboxState {
+    Empty,
+    Loading,
+    Playing,
+    Paused,
+    StaticPreview,
+    Error,
+};
 
 struct CreatorWindowPlacement {
     int x{};
@@ -425,6 +437,9 @@ struct DialogState {
     HWND skillText{};
     HWND resultNote{};
     HWND preview{};
+    HWND previewPlayPause{};
+    HWND previewReload{};
+    HWND previewFullscreen{};
     HWND library{};
     HWND apply{};
     std::array<HWND, 5> presets{};
@@ -437,8 +452,15 @@ struct DialogState {
     ComPtr<ID2D1HwndRenderTarget> previewTarget;
     std::unique_ptr<content::MiaoSceneD2DRenderer> scenePreview;
     ULONGLONG previewStartedAt{};
+    ULONGLONG previewElapsedMs{};
     std::wstring previewRenderError;
+    PreviewSandboxState previewState{PreviewSandboxState::Empty};
     bool previewLive{};
+    bool previewPlaying{};
+    bool previewFullscreenActive{};
+    RECT previewRestoreRect{};
+    LONG_PTR previewRestoreStyle{};
+    LONG_PTR previewRestoreExStyle{};
     bool primed{};
     bool busy{};
     fs::path generatedPackage;
@@ -480,7 +502,8 @@ struct DialogState {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
         for (HWND child : {note, transcript, prompt, send, clear, previewHeading,
                            skillHeading, skillList, skillDetailHeading, skillText,
-                           resultNote, preview, library, apply}) {
+                           resultNote, preview, previewPlayPause, previewReload,
+                           previewFullscreen, library, apply}) {
             if (child && bodyFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         for (HWND child : presets)
@@ -537,13 +560,23 @@ struct DialogState {
         // Left: focused conversation workspace.
         place(transcript, margin, bodyTop, leftW, bodyH);
 
-        // Middle: result preview. Clicking the pane opens the full preview flow.
+        // Middle: live preview sandbox + compact toolbar.
         const int sectionHeadingH = compactVertical ? S(24) : S(28);
-        const int previewButtonH = compactVertical ? S(34) : S(38);
+        const int previewButtonH = compactVertical ? S(32) : S(36);
+        const int previewToolGap = compactHorizontal ? S(3) : S(5);
         place(previewHeading, previewX, bodyTop, previewW, sectionHeadingH);
         place(previewPane, previewX, bodyTop + sectionHeadingH + S(6), previewW,
               bodyH - sectionHeadingH - previewButtonH - S(14));
-        place(preview, previewX, bodyTop + bodyH - previewButtonH, previewW, previewButtonH);
+        const int previewToolbarTop = bodyTop + bodyH - previewButtonH;
+        const int previewToolW = std::max(1, (previewW - previewToolGap * 3) / 4);
+        place(previewPlayPause, previewX, previewToolbarTop, previewToolW, previewButtonH);
+        place(previewReload, previewX + previewToolW + previewToolGap, previewToolbarTop,
+              previewToolW, previewButtonH);
+        place(previewFullscreen, previewX + (previewToolW + previewToolGap) * 2,
+              previewToolbarTop, previewToolW, previewButtonH);
+        place(preview, previewX + (previewToolW + previewToolGap) * 3,
+              previewToolbarTop,
+              std::max(1, previewW - (previewToolW + previewToolGap) * 3), previewButtonH);
 
         // Right: Skill chain and readable Skill detail.
         const int skillListH = compactVertical ? S(84) : S(112);
@@ -646,14 +679,180 @@ struct DialogState {
         if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
     }
 
+    const wchar_t* PreviewStateLabel() const noexcept {
+        switch (previewState) {
+        case PreviewSandboxState::Loading: return L"加载中";
+        case PreviewSandboxState::Playing: return L"播放中";
+        case PreviewSandboxState::Paused: return L"已暂停";
+        case PreviewSandboxState::StaticPreview: return L"静态预览";
+        case PreviewSandboxState::Error: return L"加载失败";
+        case PreviewSandboxState::Empty: default: return L"未加载";
+        }
+    }
+
+    void UpdatePreviewChrome() const {
+        if (previewHeading) {
+            std::wstring title = L"预览效果 · ";
+            title += PreviewStateLabel();
+            if (previewLive) title += L" · Scene D2D";
+            SetWindowTextW(previewHeading, title.c_str());
+        }
+        if (previewPlayPause) {
+            SetWindowTextW(previewPlayPause, previewPlaying ? L"暂停" : L"播放");
+            EnableWindow(previewPlayPause, previewLive ? TRUE : FALSE);
+        }
+        const bool hasPackage = !generatedPackage.empty();
+        if (previewReload) EnableWindow(previewReload, hasPackage ? TRUE : FALSE);
+        if (previewFullscreen) {
+            EnableWindow(previewFullscreen,
+                         (previewLive || previewBitmap) ? TRUE : FALSE);
+            SetWindowTextW(previewFullscreen, previewFullscreenActive ? L"退出" : L"全屏");
+        }
+        if (preview) EnableWindow(preview, !lastUserPrompt.empty() && !busy ? TRUE : FALSE);
+    }
+
+    void SetPreviewError(std::wstring message) {
+        previewRenderError = std::move(message);
+        previewState = PreviewSandboxState::Error;
+        previewPlaying = false;
+        if (window) KillTimer(window, kPreviewTimerId);
+        UpdatePreviewChrome();
+        if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+    }
+
+    void PausePreview() {
+        if (!previewLive || !previewPlaying) return;
+        if (previewStartedAt != 0) previewElapsedMs += GetTickCount64() - previewStartedAt;
+        previewStartedAt = 0;
+        previewPlaying = false;
+        previewState = PreviewSandboxState::Paused;
+        if (window) KillTimer(window, kPreviewTimerId);
+        UpdatePreviewChrome();
+    }
+
+    void ResumePreview() {
+        if (!previewLive || previewPlaying) return;
+        previewStartedAt = GetTickCount64();
+        previewPlaying = true;
+        previewState = PreviewSandboxState::Playing;
+        if (window) SetTimer(window, kPreviewTimerId, kPreviewFrameMs, nullptr);
+        UpdatePreviewChrome();
+        DrawLivePreview();
+    }
+
+    void TogglePreviewPlayback() {
+        if (!previewLive) return;
+        if (previewPlaying) PausePreview();
+        else ResumePreview();
+    }
+
+    void ReloadPreview() {
+        if (generatedPackage.empty()) return;
+        const fs::path package = generatedPackage;
+        SetGeneratedPackage(package, L"已重新加载");
+    }
+
+    void SetCreatorControlsVisible(bool visible) const {
+        const int show = visible ? SW_SHOW : SW_HIDE;
+        for (HWND child : {heading, note, transcript, prompt, send, clear,
+                           previewHeading, skillHeading, skillList, skillDetailHeading,
+                           skillText, resultNote, library, apply}) {
+            if (child) ShowWindow(child, show);
+        }
+        for (HWND child : presets) if (child) ShowWindow(child, show);
+    }
+
+    void LayoutFullscreenPreview() const {
+        if (!window || !previewFullscreenActive) return;
+        RECT rc{};
+        GetClientRect(window, &rc);
+        const int width = std::max(1, static_cast<int>(rc.right - rc.left));
+        const int height = std::max(1, static_cast<int>(rc.bottom - rc.top));
+        const int margin = S(12);
+        const int buttonH = S(38);
+        const int gap = S(6);
+        const int buttonW = S(86);
+        if (previewPane)
+            SetWindowPos(previewPane, HWND_BOTTOM, 0, 0, width, height,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        const int toolbarW = buttonW * 3 + gap * 2;
+        const int left = width - margin - toolbarW;
+        if (previewPlayPause)
+            SetWindowPos(previewPlayPause, HWND_TOP, left, margin, buttonW, buttonH,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if (previewReload)
+            SetWindowPos(previewReload, HWND_TOP, left + buttonW + gap, margin,
+                         buttonW, buttonH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if (previewFullscreen)
+            SetWindowPos(previewFullscreen, HWND_TOP, left + (buttonW + gap) * 2, margin,
+                         buttonW, buttonH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    void SetFullscreenPreview(bool enable) {
+        if (!window || enable == previewFullscreenActive) return;
+        if (enable) {
+            previewRestoreStyle = GetWindowLongPtrW(window, GWL_STYLE);
+            previewRestoreExStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+            GetWindowRect(window, &previewRestoreRect);
+            const MONITORINFO monitor = MonitorInfoForWindow(window);
+            previewFullscreenActive = true;
+            SetCreatorControlsVisible(false);
+            ShowWindow(previewPane, SW_SHOW);
+            ShowWindow(previewPlayPause, SW_SHOW);
+            ShowWindow(previewReload, SW_SHOW);
+            ShowWindow(previewFullscreen, SW_SHOW);
+            SetWindowLongPtrW(window, GWL_STYLE,
+                              (previewRestoreStyle & ~static_cast<LONG_PTR>(WS_OVERLAPPEDWINDOW)) |
+                              WS_POPUP | WS_VISIBLE);
+            SetWindowLongPtrW(window, GWL_EXSTYLE,
+                              previewRestoreExStyle | WS_EX_APPWINDOW);
+            SetWindowPos(window, HWND_TOP,
+                         monitor.rcMonitor.left, monitor.rcMonitor.top,
+                         monitor.rcMonitor.right - monitor.rcMonitor.left,
+                         monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+                         SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+            LayoutFullscreenPreview();
+            SetFocus(window);
+        } else {
+            previewFullscreenActive = false;
+            SetWindowLongPtrW(window, GWL_STYLE, previewRestoreStyle);
+            SetWindowLongPtrW(window, GWL_EXSTYLE, previewRestoreExStyle);
+            SetWindowPos(window, nullptr,
+                         previewRestoreRect.left, previewRestoreRect.top,
+                         previewRestoreRect.right - previewRestoreRect.left,
+                         previewRestoreRect.bottom - previewRestoreRect.top,
+                         SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+            SetCreatorControlsVisible(true);
+            ShowWindow(previewPlayPause, SW_SHOW);
+            ShowWindow(previewReload, SW_SHOW);
+            ShowWindow(previewFullscreen, SW_SHOW);
+            ShowWindow(preview, SW_SHOW);
+            Layout();
+            SetFocus(window);
+        }
+        UpdatePreviewChrome();
+        ResizeLivePreview();
+        if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+    }
+
+    void ToggleFullscreenPreview() {
+        if (!previewLive && !previewBitmap) return;
+        SetFullscreenPreview(!previewFullscreenActive);
+    }
+
     void StopLivePreview(bool clearError = true) {
         if (window) KillTimer(window, kPreviewTimerId);
         previewLive = false;
+        previewPlaying = false;
         scenePreview.reset();
         previewTarget.Reset();
         previewFactory.Reset();
         previewStartedAt = 0;
+        previewElapsedMs = 0;
         if (clearError) previewRenderError.clear();
+        if (previewState != PreviewSandboxState::Error)
+            previewState = PreviewSandboxState::Empty;
+        UpdatePreviewChrome();
     }
 
     bool EnsurePreviewTarget() {
@@ -689,8 +888,10 @@ struct DialogState {
         GetClientRect(previewPane, &rc);
         const float width = static_cast<float>(std::max<LONG>(1, rc.right - rc.left));
         const float height = static_cast<float>(std::max<LONG>(1, rc.bottom - rc.top));
-        const float seconds = previewStartedAt == 0 ? 0.0f
-            : static_cast<float>(GetTickCount64() - previewStartedAt) / 1000.0f;
+        ULONGLONG elapsedMs = previewElapsedMs;
+        if (previewPlaying && previewStartedAt != 0)
+            elapsedMs += GetTickCount64() - previewStartedAt;
+        const float seconds = static_cast<float>(elapsedMs) / 1000.0f;
 
         previewTarget->BeginDraw();
         previewTarget->SetTransform(D2D1::Matrix3x2F::Identity());
@@ -699,28 +900,37 @@ struct DialogState {
         const bool drew = scenePreview->Draw(seconds, D2D1::SizeF(width, height), &error);
         const HRESULT end = previewTarget->EndDraw();
         if (!drew || FAILED(end)) {
-            previewRenderError = !error.empty() ? error : L"实时预览渲染失败。";
+            const std::wstring message = !error.empty() ? error : L"实时预览渲染失败。";
             StopLivePreview(false);
-            if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+            SetPreviewError(message);
         }
     }
 
     bool StartLivePreview(const fs::path& packageRoot) {
         StopLivePreview();
-        if (!EnsurePreviewTarget()) return false;
+        previewState = PreviewSandboxState::Loading;
+        UpdatePreviewChrome();
+        if (!EnsurePreviewTarget()) {
+            SetPreviewError(previewRenderError.empty() ? L"无法创建实时预览 Surface。" : previewRenderError);
+            return false;
+        }
         auto renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
         std::wstring error;
         if (!renderer->Load(packageRoot, previewTarget.Get(), &error)) {
-            previewRenderError = error.empty() ? L"Scene 内容无法由实时预览器加载。" : error;
             scenePreview.reset();
             previewTarget.Reset();
             previewFactory.Reset();
+            SetPreviewError(error.empty() ? L"Scene 内容无法由实时预览器加载。" : error);
             return false;
         }
         scenePreview = std::move(renderer);
+        previewElapsedMs = 0;
         previewStartedAt = GetTickCount64();
         previewLive = true;
+        previewPlaying = true;
+        previewState = PreviewSandboxState::Playing;
         SetTimer(window, kPreviewTimerId, kPreviewFrameMs, nullptr);
+        UpdatePreviewChrome();
         DrawLivePreview();
         return previewLive;
     }
@@ -742,6 +952,19 @@ struct DialogState {
             HBRUSH border = CreateSolidBrush(RGB(70, 130, 210));
             FrameRect(dc, &bounds, border);
             DeleteObject(border);
+            if (!previewPlaying) {
+                RECT badge = bounds;
+                badge.left = std::max(badge.left, badge.right - S(92));
+                badge.bottom = std::min(badge.bottom, badge.top + S(36));
+                HBRUSH fill = CreateSolidBrush(RGB(17, 24, 39));
+                FillRect(dc, &badge, fill);
+                DeleteObject(fill);
+                SetBkMode(dc, TRANSPARENT);
+                SetTextColor(dc, RGB(255, 255, 255));
+                HGDIOBJ old = SelectObject(dc, smallFont);
+                DrawTextW(dc, L"已暂停", -1, &badge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                SelectObject(dc, old);
+            }
             return;
         }
         HBRUSH background = CreateSolidBrush(RGB(248, 250, 253));
@@ -824,6 +1047,8 @@ struct DialogState {
 
         generatedPackage = path;
         StopLivePreview();
+        previewState = PreviewSandboxState::Loading;
+        UpdatePreviewChrome();
         if (previewBitmap) {
             DeleteObject(previewBitmap);
             previewBitmap = nullptr;
@@ -844,6 +1069,13 @@ struct DialogState {
         bool live = false;
         if (package.manifest.runtime == content::ContentRuntimeKind::Scene)
             live = StartLivePreview(package.root);
+        if (!live && previewBitmap && previewState != PreviewSandboxState::Error) {
+            previewState = PreviewSandboxState::StaticPreview;
+            previewPlaying = false;
+            UpdatePreviewChrome();
+        } else if (!live && !previewBitmap && previewState != PreviewSandboxState::Error) {
+            SetPreviewError(L"内容包没有可显示的实时 Scene 或 manifest.preview 预览资源。");
+        }
 
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
 
@@ -855,6 +1087,7 @@ struct DialogState {
         else status += L" · 无预览资源";
         status += L" · 可入库 / 应用";
         SetWindowTextW(resultNote, status.c_str());
+        UpdatePreviewChrome();
         EnableWindow(preview, TRUE);
         EnableWindow(library, TRUE);
         EnableWindow(apply, TRUE);
@@ -1068,8 +1301,10 @@ struct DialogState {
         if (pi && pi->Busy()) pi->Stop();
         if (agent && agent->Busy()) agent->Stop();
         if (pi) pi->ResetSession();
+        if (previewFullscreenActive) SetFullscreenPreview(false);
         generatedPackage.clear();
         lastUserPrompt.clear();
+        previewState = PreviewSandboxState::Empty;
         StopLivePreview();
         previewRenderError.clear();
         if (previewBitmap) {
@@ -1089,8 +1324,12 @@ struct DialogState {
                   L"我会按右侧 Skills 生成 .mdwall，并先让你预览确认。\r\n");
         SetWindowTextW(resultNote, L"尚未生成内容包 · 生成后先预览，再加入库或应用");
         EnableWindow(preview, FALSE);
+        EnableWindow(previewPlayPause, FALSE);
+        EnableWindow(previewReload, FALSE);
+        EnableWindow(previewFullscreen, FALSE);
         EnableWindow(library, FALSE);
         EnableWindow(apply, FALSE);
+        UpdatePreviewChrome();
     }
 
     bool CreateControls() {
@@ -1138,12 +1377,18 @@ struct DialogState {
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
             0, 0, 10, 10, window, ControlId(kSkillTextId), instance, nullptr);
         resultNote = label(L"尚未生成内容包 · 生成后先预览，再加入库或应用");
+        previewPlayPause = button(L"播放", kPreviewPlayPauseId);
+        previewReload = button(L"重载", kPreviewReloadId);
+        previewFullscreen = button(L"全屏", kPreviewFullscreenId);
         preview = button(L"重新生成", kPreviewId);
         library = button(IsWidget() ? L"加入组件库" : L"加入壁纸库", kLibraryId);
         apply = button(
             IsWidget() ? L"添加到桌面" : L"应用到桌面",
             kApplyId, BS_OWNERDRAW);
         EnableWindow(preview, FALSE);
+        EnableWindow(previewPlayPause, FALSE);
+        EnableWindow(previewReload, FALSE);
+        EnableWindow(previewFullscreen, FALSE);
         EnableWindow(library, FALSE);
         EnableWindow(apply, FALSE);
 
@@ -1155,7 +1400,8 @@ struct DialogState {
         LoadSkill();
         Layout();
         return heading && note && transcript && prompt && send && clear &&
-               previewHeading && previewPane && skillList && skillText;
+               previewHeading && previewPane && previewPlayPause && previewReload &&
+               previewFullscreen && skillList && skillText;
     }
 };
 
@@ -1192,7 +1438,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         return 0;
     }
     case WM_SIZE:
-        state->Layout();
+        if (state->previewFullscreenActive) state->LayoutFullscreenPreview();
+        else state->Layout();
         state->ResizeLivePreview();
         return 0;
     case WM_DPICHANGED: {
@@ -1225,6 +1472,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         break;
+    case WM_KEYDOWN:
+        if (state->previewFullscreenActive) {
+            if (wParam == VK_ESCAPE) { state->SetFullscreenPreview(false); return 0; }
+            if (wParam == VK_SPACE) { state->TogglePreviewPlayback(); return 0; }
+            if (wParam == 'R') { state->ReloadPreview(); return 0; }
+        }
+        break;
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         if (id == kSendId && HIWORD(wParam) == BN_CLICKED) { state->SendPrompt(); return 0; }
@@ -1238,9 +1492,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         if (id == kPreviewPaneId && HIWORD(wParam) == STN_CLICKED) {
-            if (!state->generatedPackage.empty()) state->OpenPreview();
+            if (!state->generatedPackage.empty()) state->ToggleFullscreenPreview();
             return 0;
         }
+        if (id == kPreviewPlayPauseId && HIWORD(wParam) == BN_CLICKED) { state->TogglePreviewPlayback(); return 0; }
+        if (id == kPreviewReloadId && HIWORD(wParam) == BN_CLICKED) { state->ReloadPreview(); return 0; }
+        if (id == kPreviewFullscreenId && HIWORD(wParam) == BN_CLICKED) { state->ToggleFullscreenPreview(); return 0; }
         if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->Regenerate(); return 0; }
         if (id == kLibraryId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(false); return 0; }
         if (id == kApplyId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(true); return 0; }
@@ -1273,6 +1530,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        if (state->previewFullscreenActive) state->previewFullscreenActive = false;
         state->StopLivePreview();
         if (state->pi && state->pi->Busy()) state->pi->Stop();
         if (state->agent && state->agent->Busy()) state->agent->Stop();

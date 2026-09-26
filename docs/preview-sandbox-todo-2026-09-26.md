@@ -3,18 +3,18 @@
 Scope: AI wallpaper editor + AI widget editor (shared `ContentCreatorDialog`).
 
 ## P0 — Preview sandbox
-- [ ] Add explicit preview state (empty/loading/playing/paused/static/error).
-- [ ] Add Play/Pause control for Scene preview without destroying renderer state.
-- [ ] Add Reload control that revalidates and reloads the generated package from disk.
-- [ ] Add Fullscreen preview mode with Esc to exit.
-- [ ] Add keyboard shortcuts in fullscreen: Space = Play/Pause, R = Reload.
-- [ ] Surface preview errors inside the preview canvas instead of relying on modal dialogs.
-- [ ] Keep static `manifest.preview` fallback working.
-- [ ] Keep “Regenerate” available alongside preview sandbox controls.
-- [ ] Apply the same sandbox behavior to `.mdwall` and `.mdwidget`.
+- [x] Add explicit preview state (empty/loading/playing/paused/static/error).
+- [x] Add Play/Pause control for Scene preview without destroying renderer state.
+- [x] Add Reload control that revalidates and reloads the generated package from disk.
+- [x] Add Fullscreen preview mode with Esc to exit.
+- [x] Add keyboard shortcuts in fullscreen: Space = Play/Pause, R = Reload.
+- [x] Surface preview errors inside the preview canvas instead of relying on modal dialogs.
+- [x] Keep static `manifest.preview` fallback working.
+- [x] Keep “Regenerate” available alongside preview sandbox controls.
+- [x] Apply the same sandbox behavior to `.mdwall` and `.mdwidget`.
 
 ## P1 — Validation
-- [ ] Extend content creator contract test for sandbox controls/state/fullscreen.
+- [x] Extend content creator contract test for sandbox controls/state/fullscreen.
 - [ ] Run Repo Hygiene.
 - [ ] Run Windows x64 build.
 - [ ] Confirm no regressions in existing Scene D2D renderer tests.

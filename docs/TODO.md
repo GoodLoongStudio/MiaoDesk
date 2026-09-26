@@ -136,6 +136,14 @@
 - **待办**：检查 Tab/Shift+Tab、Enter、Esc、焦点可见性、文本选择和剪贴板；覆盖中文候选框、组合输入、长文本；区分弹窗关闭、全屏退出与取消任务。
 - **交付 / 验收**：键盘可完成搜索、配置、预览和应用；IME 确认文字不会误触发送/应用；光标与显示文字对齐；关闭子窗口后焦点回到合理位置。
 
+- **本轮核验（2026-09-27，未勾选：组合输入与候选框需真机 + 微软拼音）**：
+  - **文档说 Search 用共享 IME anchor，代码没有。** `docs/WINDOWS_CUSTOM_INPUT_IME.md` §4 把 `src/ui/search/SearchWindow.cpp` 列为 `InputImeAnchor`  Search profile；`grep InputImeAnchor src/ui/search/SearchWindow.cpp` 零命中——连 `#include` 都没有，也没有任何 `ImmSet*` / `WM_IME_*` / `SetCaretPos`。全仓 Search surface 的 IME 处理量为 0。
+  - 且 Search 用的是该文档 §2 **明令禁止**的 1×1 proxy：`SearchWindow.cpp:293` 建 EDIT 为 `(kEditLeft, kInputProxyY, 1, 1)`，`:797` 再 `MoveWindow(..., 1, 1, FALSE)` 把它保持住。
+  - **而修好它的代码已经写好了，只是没人接。** `InputImeAnchor.h` 里有整套未使用的 Search profile：`EnsureSearchImeGeometry` / `AnchorSearchImeToVisibleCaret` / `RequestSearchImeAnchor` / `SearchImeAnchorBusyScope` / deferred 消息。对齐关系也全部吻合：`kSearchEditControlId = 100` 就是 SearchWindow 的 `kSearchEditId`；父窗口类 `MiaoDesk.Native.SearchWindow` 一致（所以 `IsMiaoDeskSearchEdit` 判得中）；`kSearchEditLeft = 52` 等于 `kEditLeft`，`kSearchEditRight = 594` 等于 `kEditRight`。
+  - 头文件里 `kSearchEditTop = 13`、`kSearchEditHeight = 30` 与 SearchWindow 的 `kInputProxyY = 27` 冲突 —— 但 56 高的 bar 里居中 30 的输入行正是 `(56-30)/2 = 13`，所以 **13/30 才是真实输入矩形，27+1×1 是 proxy 位**。两者不是都"对"，是后者从未被替换掉。
+  - **为什么本轮没顺手接上**：把 EDIT 从 1×1 撑到 542×30 会盖住自绘输入区，必须先让 EDIT 不绘制（透明/`WM_CTLCOLOR` 一类），再加 `WM_SETFOCUS / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE / WM_SIZE` 的路由与 deferred 消息回填。这些改动本机无法目视与输入验证，赌在产品的**唯一主入口**上不合算。建议下一轮在 Windows 上按这个顺序接：先接 `EnsureSearchImeGeometry` 确认自绘不被遮，再接 anchor 与消息路由。
+  - **顺手要修的文档**：真接上之后，`WINDOWS_CUSTOM_INPUT_IME.md` §4 才算成立；在那之前该节描述的 Search 行为与现状不符，读它的人会以为中文输入已经是好的。
+
 ### PERF-01 建立可比较的全进程性能基线
 
 - [ ] 完成本项；负责人：待领取；证据：待补。

@@ -43,7 +43,7 @@ assert.ok(
   "vertical scrolling must appear only below the adaptive minimum canvas height",
 );
 assert.ok(
-  source.includes("MK_SHIFT"),
+  source.includes("GetKeyState(VK_SHIFT)"),
   "Shift + mouse wheel must route to horizontal scrolling",
 );
 

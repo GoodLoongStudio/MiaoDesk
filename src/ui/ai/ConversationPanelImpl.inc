@@ -1313,7 +1313,14 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     wc.lpszClassName = kConversationClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    wc.style = CS_DROPSHADOW | CS_HREDRAW | CS_VREDRAW;
+    // CS_DBLCLKS matters here. The send button is a hit-test region, and without
+    // this style Windows delivers the second click of a double-click as a fresh
+    // WM_LBUTTONDOWN. Since SetBusyVisual already latched busy inside the first
+    // click's handler, that second WM_LBUTTONDOWN saw busy==true and called
+    // StopTurn -- so a user double-clicking to be sure the message went out
+    // started the turn and killed it ~50 ms later. With CS_DBLCLKS the second
+    // click arrives as WM_LBUTTONDBLCLK, which is not handled here.
+    wc.style = CS_DROPSHADOW | CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
     auto* state = new ConversationState{};

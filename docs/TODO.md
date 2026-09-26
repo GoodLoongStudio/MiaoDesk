@@ -317,6 +317,16 @@
 - **待办**：覆盖生成中取消、工具执行中取消、断网、超时和快速重试；忽略旧请求迟到事件；区分可终止工作与已提交操作，重试不得自动重复提交。
 - **交付 / 验收**：取消有明确反馈且不启动后续步骤；无法立即终止的工具状态真实可见；重试保留上下文，不重复生成实例、导入或应用内容；现有桌面保持稳定。
 
+- **本轮核验（2026-09-27，只修了 D1，其余未动）**：
+  - **已修 D1（"已结束仍执行中"）**：`PiActivityEvent` 不带 turn id，而 `PiRuntime::Stop()` 只 `request_stop()` 不 join worker——所以取消前刚发出的工具事件仍会被 post 出来，把已清掉的活动卡片重新点亮，用户同时看到"在线"和"正在执行"。generation 计数器只挡住了 delta/done，没挡住活动事件。已在对话面与创作面都给活动事件加"本轮仍在进行"的门，取消/完成后迟到的 `ToolStarted/ToolFinished` 不再复活卡片，迟到的 `resultText` 也不会再把已结束那轮的候选换掉。
+  - **审计确认安全的**：重复提交在对话面和创作面都不成立（`busy` 闩在 AskAsync 之前同步置位，Enter 重复和按钮双击都过同一处）；确认卡双击安全；Direct Model 回退通道无工具不可能提交；被取消的 native tool 结果在 `finally { rm(work) }` 里连同 output 一起删掉，宿主不会采纳；preview tool 的 worker allowlist 与实际调用集合一致；`InstallGeneratedPackage` 幂等。
+  - **查出但未动的**（都需要动设计或需真机，逐条记在这里免得丢）：
+    1. `/retry` 把上一条**原始 prompt 原样重发**进同一个 Pi session（session 复用，agent 内存历史里还有上一轮已提交的 tool 记录），且 `lastPrompt` 只在 `/new` 清。提交后遇传输失败 → 提示可 /retry → 重试会再跑一次 `ppt_create` 生成第二个文件。全仓没有任何"这一轮已经提交过哪些工具"的账本。要满足"重试不重复提交"，需要 per-turn 提交账本或重试前重置 session。
+    2. `Stop()` 不终止 Pi 进程；`CleanupProcess()`（唯一 `TerminateProcess`）只在析构和换 provider 时调。 acutely 的是 preview 工具：`CreateWallpaperPreview` 写完沙盒会**阻塞式** `SendMessageTimeoutW` 通知主进程，主进程侧 `SearchPreviewBridgeProc` 无任何 turn 门，会直接建出带"应用/拒绝"按钮的可见沙盒窗。于是取消之后桌面上可能留着一个用户被告知"已停止"的轮次的预览窗，点一下应用就能改桌面。
+    3. 创作面**没有任何取消手段**：生成中只有"新对话"和关窗，两者都会通过共享 `gPiRuntime` 反过来取消对话面正在进行的轮次（D4）；发送按钮也没有 Esc/Enter（prompt EDIT 未子类化）。"取消有明确反馈"在这个面上按构造就做不到。
+    4. `AskAsync` 里 `worker_ = std::jthread(...)` 的移动赋值会 join 旧 worker，而调用线程就是**UI 线程**；旧 worker 若卡在 `ReadLine` 的 1000ms 轮询或 `WaitForSingleObject(2000)`，整个界面会阻塞最多约 2 秒。
+    5. `AskAsync` 对"已在忙"只回一句 `Pi Runtime 正忙`，调用方（创作面）把它当成"本轮生成已完成"提示给用户——请求根本没发出去。
+
 ### CREATE-01 创作流程与上一可用结果保留
 
 - [ ] 完成本项；负责人：待领取；证据：待补。

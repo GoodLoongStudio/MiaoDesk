@@ -519,7 +519,8 @@ struct PageState {
         if (delta == 0) return;
         const int notches = delta / WHEEL_DELTA;
         if (notches == 0) return;
-        const int amount = std::max(S(48), S(72) * std::abs(notches));
+        const int notchCount = notches > 0 ? notches : -notches;
+        const int amount = std::max(S(48), S(72) * notchCount);
         if (horizontal) {
             // WM_MOUSEHWHEEL positive means scroll right. Shift + vertical wheel keeps
             // the familiar positive=left/up convention.

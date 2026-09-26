@@ -193,6 +193,7 @@ struct DialogState {
     std::array<HWND, 4> presets{};
     HFONT bodyFont{};
     HFONT titleFont{};
+    HFONT sectionFont{};
     HFONT smallFont{};
     UINT fontScaleDpi{};
     bool primed{};
@@ -202,6 +203,7 @@ struct DialogState {
     ~DialogState() {
         if (bodyFont) DeleteObject(bodyFont);
         if (titleFont) DeleteObject(titleFont);
+        if (sectionFont) DeleteObject(sectionFont);
         if (smallFont) DeleteObject(smallFont);
     }
 
@@ -223,17 +225,23 @@ struct DialogState {
         fontScaleDpi = ui::EffectiveFontDpi(window);
         if (bodyFont) DeleteObject(bodyFont);
         if (titleFont) DeleteObject(titleFont);
+        if (sectionFont) DeleteObject(sectionFont);
         if (smallFont) DeleteObject(smallFont);
         bodyFont = ui::CreateUiFont(window, 14, FW_NORMAL);
         titleFont = ui::CreateUiFont(window, 18, FW_SEMIBOLD, L"Segoe UI Variable Display");
+        sectionFont = ui::CreateUiFont(window, 14, FW_SEMIBOLD, L"Segoe UI Variable Text");
         smallFont = ui::CreateUiFont(window, 12, FW_NORMAL);
     }
 
     void ApplyFonts() const {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
-        for (HWND child : {note, transcript, prompt, send, clear, skillHeading, skillList, skillText,
-                           resultNote, preview, library, apply}) {
+        if (skillHeading && sectionFont) SendMessageW(skillHeading, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont), TRUE);
+        for (HWND child : {transcript, prompt, send, clear, skillList, skillText,
+                           preview, library, apply}) {
             if (child && bodyFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
+        }
+        for (HWND child : {note, resultNote}) {
+            if (child && smallFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
         }
         for (HWND child : presets)
             if (child && smallFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(smallFont), TRUE);
@@ -263,38 +271,72 @@ struct DialogState {
         const int rightW = std::max(S(250), width - margin * 2 - gap - leftW);
         const int bodyTop = margin + headerH + gap;
         const int footerTop = height - margin - footerH;
-        const int bodyH = std::max(S(220), footerTop - gap - bodyTop);
+        const int bodyH = std::max(S(260), footerTop - gap - bodyTop);
 
         auto place = [](HWND child, int x, int y, int w, int h) {
-            if (child) SetWindowPos(child, nullptr, x, y, std::max(1, w), std::max(1, h), SWP_NOZORDER | SWP_NOACTIVATE);
+            if (child) SetWindowPos(child, nullptr, x, y, std::max(1, w), std::max(1, h),
+                                    SWP_NOZORDER | SWP_NOACTIVATE);
         };
+
+        // Header mirrors the native content/package manager hierarchy: one strong
+        // title followed by a quiet one-line workflow hint.
         place(heading, margin, margin, width - margin * 2, S(30));
-        place(note, margin, margin + S(32), width - margin * 2, S(28));
+        place(note, margin, margin + S(34), width - margin * 2, S(22));
 
-        const int presetH = S(30);
-        const int promptH = S(86);
-        const int actionsH = S(38);
-        const int presetTop = footerTop - gap - presetH;
-        const int promptTop = presetTop - gap - promptH;
-        const int transcriptH = std::max(S(100), promptTop - gap - bodyTop);
+        // Conversation owns the primary visual weight. Keep a real composer under the
+        // transcript, with Generate/New conversation stacked beside the prompt, then
+        // wrap presets into a 2x2 grid so long Chinese prompts remain readable.
+        const int promptH = S(96);
+        const int actionW = S(94);
+        const int actionH = S(42);
+        const int presetH = S(32);
+        const int presetGap = S(8);
+        const int presetRowsH = presetH * 2 + presetGap;
+        const int composerH = promptH + gap + presetRowsH;
+        const int promptTop = bodyTop + std::max(S(120), bodyH - composerH);
+        const int transcriptH = std::max(S(120), promptTop - gap - bodyTop);
+
         place(transcript, margin, bodyTop, leftW, transcriptH);
-        place(prompt, margin, promptTop, leftW - S(186), promptH);
-        place(send, margin + leftW - S(178), promptTop, S(86), actionsH);
-        place(clear, margin + leftW - S(86), promptTop, S(86), actionsH);
-        const int presetW = std::max(S(90), (leftW - gap * 3) / 4);
-        for (int i = 0; i < 4; ++i)
-            place(presets[static_cast<std::size_t>(i)], margin + i * (presetW + gap), presetTop, presetW, presetH);
+        place(prompt, margin, promptTop, leftW - actionW - gap, promptH);
+        const int actionX = margin + leftW - actionW;
+        place(send, actionX, promptTop, actionW, actionH);
+        place(clear, actionX, promptTop + actionH + presetGap, actionW, actionH);
 
+        const int presetTop = promptTop + promptH + gap;
+        const int presetW = std::max(S(150), (leftW - presetGap) / 2);
+        for (int i = 0; i < 4; ++i) {
+            const int row = i / 2;
+            const int col = i % 2;
+            place(presets[static_cast<std::size_t>(i)],
+                  margin + col * (presetW + presetGap),
+                  presetTop + row * (presetH + presetGap),
+                  presetW, presetH);
+        }
+
+        // Skill information is useful reference, not the main task. Give it a compact
+        // chain selector and let the readable Skill source fill the remaining pane.
         const int rightX = margin + leftW + gap;
-        place(skillHeading, rightX, bodyTop, rightW, S(30));
-        place(skillList, rightX, bodyTop + S(34), rightW, S(96));
-        place(skillText, rightX, bodyTop + S(138), rightW, std::max(S(100), bodyH - S(180)));
-        place(resultNote, rightX, bodyTop + bodyH - S(34), rightW, S(30));
+        const int skillHeadingH = S(28);
+        const int skillListH = S(92);
+        place(skillHeading, rightX, bodyTop, rightW, skillHeadingH);
+        place(skillList, rightX, bodyTop + skillHeadingH + S(6), rightW, skillListH);
+        const int skillTextTop = bodyTop + skillHeadingH + S(6) + skillListH + gap;
+        place(skillText, rightX, skillTextTop, rightW,
+              std::max(S(120), bodyTop + bodyH - skillTextTop));
 
-        const int buttonW = S(128);
-        place(preview, margin, footerTop, buttonW, footerH);
-        place(library, margin + buttonW + gap, footerTop, buttonW, footerH);
-        place(apply, margin + (buttonW + gap) * 2, footerTop, S(150), footerH);
+        // Result state and the preview/install/apply progression share one bottom bar:
+        // status consumes flexible space, while the three actions remain aligned right.
+        const int previewW = S(94);
+        const int libraryW = S(126);
+        const int applyW = S(136);
+        const int actionGap = S(8);
+        const int actionTotal = previewW + libraryW + applyW + actionGap * 2;
+        const int actionLeft = width - margin - actionTotal;
+        place(resultNote, margin, footerTop + S(5),
+              std::max(S(160), actionLeft - margin - gap), footerH - S(10));
+        place(preview, actionLeft, footerTop, previewW, footerH);
+        place(library, actionLeft + previewW + actionGap, footerTop, libraryW, footerH);
+        place(apply, actionLeft + previewW + libraryW + actionGap * 2, footerTop, applyW, footerH);
     }
 
     void LoadSkill() const {
@@ -545,8 +587,8 @@ struct DialogState {
         for (int i = 0; i < 4; ++i)
             presets[static_cast<std::size_t>(i)] = button(PresetText()[static_cast<std::size_t>(i)], kPreset1Id + i);
         skillHeading = label(IsWidget()
-            ? L"当前 Skills · 输出 .mdwidget · preview-first"
-            : L"当前 Skills · 输出 .mdwall · preview-first");
+            ? L"生成规则 · 输出 .mdwidget · 先预览后添加"
+            : L"生成规则 · 输出 .mdwall · 先预览后应用");
         skillList = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
             0, 0, 10, 10, window, ControlId(kSkillListId), instance, nullptr);
@@ -654,12 +696,12 @@ ContentCreatorLayout ResolveContentCreatorLayout(int clientWidth, int clientHeig
     clientWidth = std::max(760, clientWidth);
     clientHeight = std::max(560, clientHeight);
     ContentCreatorLayout layout{};
-    layout.margin = 18;
-    layout.gap = 14;
-    layout.headerHeight = 64;
-    layout.footerHeight = 42;
+    layout.margin = 16;
+    layout.gap = 10;
+    layout.headerHeight = 58;
+    layout.footerHeight = 44;
     const int usable = clientWidth - layout.margin * 2 - layout.gap;
-    layout.leftWidth = std::clamp(usable * 58 / 100, 430, 720);
+    layout.leftWidth = std::clamp(usable * 62 / 100, 440, 760);
     layout.rightWidth = std::max(250, usable - layout.leftWidth);
     layout.bodyHeight = std::max(220, clientHeight - layout.margin * 2 - layout.headerHeight - layout.footerHeight - layout.gap * 2);
     return layout;

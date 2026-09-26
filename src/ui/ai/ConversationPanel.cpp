@@ -361,6 +361,10 @@ BOOL MiaoDeskPresentConversationLayered(
 
 namespace miaodesk {
 
+PiRuntime& SharedConversationPiRuntime() noexcept {
+    return gPiRuntime;
+}
+
 bool ShowConversationPanel(
     HINSTANCE instance, HWND owner, L3Agent& agent,
     const std::wstring& initialPrompt, ConversationPanelMode mode) {

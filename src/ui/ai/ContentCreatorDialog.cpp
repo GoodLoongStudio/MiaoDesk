@@ -755,7 +755,7 @@ struct DialogState {
     void SetCreatorControlsVisible(bool visible) const {
         const int show = visible ? SW_SHOW : SW_HIDE;
         for (HWND child : {heading, note, transcript, prompt, send, clear,
-                           previewHeading, skillHeading, skillList, skillDetailHeading,
+                           previewHeading, preview, skillHeading, skillList, skillDetailHeading,
                            skillText, resultNote, library, apply}) {
             if (child) ShowWindow(child, show);
         }
@@ -1032,6 +1032,7 @@ struct DialogState {
         busy = value;
         EnableWindow(send, !value);
         SetWindowTextW(send, value ? L"生成中…" : L"生成");
+        UpdatePreviewChrome();
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
     }
 
@@ -1495,9 +1496,21 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             if (!state->generatedPackage.empty()) state->ToggleFullscreenPreview();
             return 0;
         }
-        if (id == kPreviewPlayPauseId && HIWORD(wParam) == BN_CLICKED) { state->TogglePreviewPlayback(); return 0; }
-        if (id == kPreviewReloadId && HIWORD(wParam) == BN_CLICKED) { state->ReloadPreview(); return 0; }
-        if (id == kPreviewFullscreenId && HIWORD(wParam) == BN_CLICKED) { state->ToggleFullscreenPreview(); return 0; }
+        if (id == kPreviewPlayPauseId && HIWORD(wParam) == BN_CLICKED) {
+            state->TogglePreviewPlayback();
+            if (state->previewFullscreenActive) SetFocus(hwnd);
+            return 0;
+        }
+        if (id == kPreviewReloadId && HIWORD(wParam) == BN_CLICKED) {
+            state->ReloadPreview();
+            if (state->previewFullscreenActive) SetFocus(hwnd);
+            return 0;
+        }
+        if (id == kPreviewFullscreenId && HIWORD(wParam) == BN_CLICKED) {
+            state->ToggleFullscreenPreview();
+            if (state->previewFullscreenActive) SetFocus(hwnd);
+            return 0;
+        }
         if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->Regenerate(); return 0; }
         if (id == kLibraryId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(false); return 0; }
         if (id == kApplyId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(true); return 0; }

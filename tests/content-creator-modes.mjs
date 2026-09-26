@@ -24,7 +24,7 @@ assert.match(creator, /content-package-basics/);
 assert.match(creator, /wallpaper-content/);
 assert.match(creator, /widget-content/);
 assert.match(creator, /content-review/);
-assert.match(creator, /ExecuteNativeToolRaw("content_skill_get"/);
+assert.match(creator, /ExecuteNativeToolRaw\("content_skill_get"/);
 assert.match(creator, /SharedConversationPiRuntime()/);
 assert.match(creator, /pi->AskAsync(/);
 assert.match(creator, /InstallContentPackage(/);

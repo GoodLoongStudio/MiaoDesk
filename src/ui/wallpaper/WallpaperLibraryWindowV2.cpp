@@ -1,7 +1,6 @@
 #include "miaodesk/WallpaperLibraryWindow.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/ContentWidgetPreviewRenderer.h"
-#include "miaodesk/ContentSkillBrowserDialog.h"
 #include "miaodesk/ContentCreatorBridge.h"
 #include "miaodesk/ContentWidgetSettingsDialog.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
@@ -63,8 +62,13 @@ constexpr int kWebCancelId = 6152;
 constexpr int kWallpaperToggleId = 6160;
 constexpr int kOpenLogsId = 6170;
 constexpr int kCreatorId = 6171;
-constexpr int kSkillsId = 6172;
+constexpr int kWallpaperFilterBaseId = 6180;
+constexpr int kWallpaperFilterCount = 8;
 constexpr UINT kDeferredWidgetRefresh = WM_APP + 0x235;
+
+constexpr std::array<const wchar_t*, kWallpaperFilterCount> kWallpaperFilterLabels{{
+    L"全部", L"动态", L"静态", L"猫咪", L"风景", L"科幻", L"治愈", L"简约"
+}};
 
 constexpr UINT kMenuImportFile = 6201;
 constexpr UINT kMenuImportWeb = 6202;
@@ -162,6 +166,49 @@ std::wstring DescriptionFor(const WallpaperLibraryItem& item) {
     return L"桌面资源";
 }
 
+std::wstring LowerCopy(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return value;
+}
+
+bool ContainsAny(std::wstring_view haystack, std::initializer_list<std::wstring_view> needles) {
+    for (const auto needle : needles) {
+        if (!needle.empty() && haystack.find(needle) != std::wstring_view::npos) return true;
+    }
+    return false;
+}
+
+bool MatchesWallpaperFilter(const WallpaperLibraryItem& item, int filterIndex) {
+    if (filterIndex <= 0) return true;
+
+    const std::wstring searchable = LowerCopy(
+        item.title + L" " + DescriptionFor(item) + L" " + item.id + L" " + item.source.wstring());
+
+    switch (filterIndex) {
+    case 1: // 动态
+        return item.kind == LibraryWallpaperKind::Scene ||
+               item.kind == LibraryWallpaperKind::Video ||
+               item.kind == LibraryWallpaperKind::Web;
+    case 2: // 静态
+        return item.kind == LibraryWallpaperKind::Image;
+    case 3: // 猫咪
+        return ContainsAny(searchable, {L"猫", L"喵", L"miao", L"cat"});
+    case 4: // 风景
+        return ContainsAny(searchable, {L"风景", L"自然", L"山", L"湖", L"海", L"月", L"云", L"樱", L"forest", L"lake", L"moon"});
+    case 5: // 科幻
+        return ContainsAny(searchable, {L"科幻", L"未来", L"霓虹", L"赛博", L"neon", L"cyber", L"future"});
+    case 6: // 治愈
+        return ContainsAny(searchable, {L"治愈", L"云", L"猫", L"喵", L"花", L"月", L"樱", L"soft", L"healing"});
+    case 7: // 简约
+        return ContainsAny(searchable, {L"简约", L"极简", L"minimal", L"simple"}) ||
+               item.kind == LibraryWallpaperKind::Image;
+    default:
+        return true;
+    }
+}
+
 bool SourceMissing(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) return false;
     if (item.kind == LibraryWallpaperKind::Web) return !WallpaperLibrary::IsTrustedWebUrl(item.source.wstring());
@@ -220,7 +267,7 @@ struct WallpaperLibraryWindow::Impl {
     HWND wallpaperToggleButton{};
     HWND logsButton{};
     HWND creatorButton{};
-    HWND skillsButton{};
+    std::array<HWND, kWallpaperFilterCount> wallpaperFilters{};
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
@@ -244,6 +291,7 @@ struct WallpaperLibraryWindow::Impl {
     int widgetScroll{};
     int wallpaperHover{-1};
     int widgetHover{-1};
+    int wallpaperFilterIndex{};
 
     HFONT brandFont{};
     HFONT titleFont{};
@@ -299,9 +347,10 @@ struct WallpaperLibraryWindow::Impl {
         set(addButton, bodyFont);
         for (HWND button : nav) set(button, bodyFont);
         for (HWND control : {status, targetCombo, applyButton, favoriteButton, removeButton,
-                             wallpaperToggleButton, logsButton, creatorButton, skillsButton,
+                             wallpaperToggleButton, logsButton, creatorButton,
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
+        for (HWND filter : wallpaperFilters) set(filter, smallFont);
     }
 
     void RefreshFontScaleIfNeeded() {
@@ -430,14 +479,6 @@ struct WallpaperLibraryWindow::Impl {
             : L"已打开 AI 壁纸创作窗口。");
     }
 
-    void OpenSkills() {
-        if (page == Page::AI) return;
-        const auto domain = page == Page::Widgets
-            ? ContentSkillBrowserDomain::Widget
-            : ContentSkillBrowserDomain::Wallpaper;
-        ShowContentSkillBrowserDialog(instance, window, domain);
-    }
-
     void RefreshWallpapers() {
         if (!library) return;
         const std::wstring query = WindowText(search);
@@ -451,6 +492,11 @@ struct WallpaperLibraryWindow::Impl {
 
         const auto previous = selectedWallpaperId;
         visibleWallpapers = library->Search(query);
+        visibleWallpapers.erase(
+            std::remove_if(visibleWallpapers.begin(), visibleWallpapers.end(), [&](const auto& item) {
+                return !MatchesWallpaperFilter(item, wallpaperFilterIndex);
+            }),
+            visibleWallpapers.end());
         if (!previous.empty()) {
             const auto it = std::find_if(visibleWallpapers.begin(), visibleWallpapers.end(), [&](const auto& item) {
                 return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;
@@ -510,19 +556,26 @@ struct WallpaperLibraryWindow::Impl {
     int CardWidth(HWND grid) const {
         const int width = GridClientWidth(grid);
         const int gap = CardGap();
-        const int minCard = S(200);
-        const int columns = std::max(1, (width + gap) / (minCard + gap));
-        return std::max(minCard, (width - gap * (columns + 1)) / columns);
+        const bool widgets = GetDlgCtrlID(grid) == kWidgetGridId;
+        const int minCard = widgets ? S(200) : S(250);
+        const int maxColumns = widgets ? 4 : 3;
+        const int columns = std::clamp((width + gap) / (minCard + gap), 1, maxColumns);
+        return std::max(S(180), (width - gap * (columns + 1)) / columns);
     }
 
-    int CardHeight(HWND grid) const { return MulDiv(CardWidth(grid), 153, 272); }
+    int CardHeight(HWND grid) const {
+        const bool widgets = GetDlgCtrlID(grid) == kWidgetGridId;
+        return MulDiv(CardWidth(grid), widgets ? 66 : 76, 100);
+    }
     int CardGap() const { return S(12); }
 
     int GridColumns(HWND grid) const {
         const int width = GridClientWidth(grid);
         const int gap = CardGap();
-        const int minCard = S(200);
-        return std::max(1, (width + gap) / (minCard + gap));
+        const bool widgets = GetDlgCtrlID(grid) == kWidgetGridId;
+        const int minCard = widgets ? S(200) : S(250);
+        const int maxColumns = widgets ? 4 : 3;
+        return std::clamp((width + gap) / (minCard + gap), 1, maxColumns);
     }
 
     int GridContentHeight(HWND grid, bool widgets) const {

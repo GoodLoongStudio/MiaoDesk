@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <cwctype>
 #include <initializer_list>

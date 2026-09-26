@@ -19,6 +19,7 @@
 #include <windowsx.h>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -334,6 +336,8 @@ struct WallpaperLibraryWindow::Impl {
     HFONT cardSmallFont{};
     UINT fontScaleDpi{};
 
+    Microsoft::WRL::ComPtr<IWICImagingFactory> wallpaperPreviewWic;
+    std::unordered_map<std::wstring, HBITMAP> wallpaperPreviewBitmaps;
     Microsoft::WRL::ComPtr<ID2D1Factory> widgetPreviewFactory;
     Microsoft::WRL::ComPtr<IDWriteFactory> widgetPreviewDWrite;
     Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> widgetPreviewTarget;
@@ -341,6 +345,10 @@ struct WallpaperLibraryWindow::Impl {
 
     ~Impl() {
         if (window && IsWindow(window)) DestroyWindow(window);
+        for (auto& [_, bitmap] : wallpaperPreviewBitmaps) {
+            if (bitmap) DeleteObject(bitmap);
+        }
+        wallpaperPreviewBitmaps.clear();
         for (HFONT* font : {&brandFont, &titleFont, &bodyFont, &smallFont, &cardTitleFont, &cardSmallFont}) {
             if (*font) DeleteObject(*font);
         }
@@ -671,13 +679,147 @@ struct WallpaperLibraryWindow::Impl {
         return -1;
     }
 
-    void DrawWallpaperPreview(HDC dc, const RECT& rect, const WallpaperLibraryItem& item) const {
+    HBITMAP LoadWallpaperPreviewBitmap(const fs::path& path) {
+        if (path.empty()) return nullptr;
+        std::error_code ec;
+        const fs::path normalized = fs::weakly_canonical(path, ec);
+        const fs::path source = ec ? path : normalized;
+        if (!fs::is_regular_file(source, ec)) return nullptr;
+
+        const std::wstring key = LowerCopy(source.wstring());
+        if (const auto it = wallpaperPreviewBitmaps.find(key); it != wallpaperPreviewBitmaps.end())
+            return it->second;
+
+        if (!wallpaperPreviewWic) {
+            if (FAILED(CoCreateInstance(
+                    CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                    IID_PPV_ARGS(wallpaperPreviewWic.GetAddressOf()))))
+                return nullptr;
+        }
+
+        Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(wallpaperPreviewWic->CreateDecoderFromFilename(
+                source.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+                decoder.GetAddressOf())))
+            return nullptr;
+
+        Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return nullptr;
+
+        UINT width = 0;
+        UINT height = 0;
+        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return nullptr;
+
+        constexpr UINT kMaxDimension = 1200;
+        const double scale = std::min(
+            1.0,
+            std::min(static_cast<double>(kMaxDimension) / width,
+                     static_cast<double>(kMaxDimension) / height));
+        const UINT targetW = std::max<UINT>(1, static_cast<UINT>(std::lround(width * scale)));
+        const UINT targetH = std::max<UINT>(1, static_cast<UINT>(std::lround(height * scale)));
+
+        IWICBitmapSource* bitmapSource = frame.Get();
+        Microsoft::WRL::ComPtr<IWICBitmapScaler> scaler;
+        if (targetW != width || targetH != height) {
+            if (FAILED(wallpaperPreviewWic->CreateBitmapScaler(scaler.GetAddressOf())) ||
+                FAILED(scaler->Initialize(
+                    frame.Get(), targetW, targetH, WICBitmapInterpolationModeFant)))
+                return nullptr;
+            bitmapSource = scaler.Get();
+        }
+
+        Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+        if (FAILED(wallpaperPreviewWic->CreateFormatConverter(converter.GetAddressOf())) ||
+            FAILED(converter->Initialize(
+                bitmapSource, GUID_WICPixelFormat32bppBGR,
+                WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom)))
+            return nullptr;
+
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = static_cast<LONG>(targetW);
+        info.bmiHeader.biHeight = -static_cast<LONG>(targetH);
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+
+        void* bits = nullptr;
+        HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (!bitmap || !bits) {
+            if (bitmap) DeleteObject(bitmap);
+            return nullptr;
+        }
+
+        const UINT stride = targetW * 4;
+        const UINT bytes = stride * targetH;
+        if (FAILED(converter->CopyPixels(nullptr, stride, bytes, static_cast<BYTE*>(bits)))) {
+            DeleteObject(bitmap);
+            return nullptr;
+        }
+
+        wallpaperPreviewBitmaps.emplace(key, bitmap);
+        return bitmap;
+    }
+
+    bool DrawWallpaperBitmapCover(HDC dc, const RECT& rect, HBITMAP bitmap) const {
+        if (!dc || !bitmap) return false;
+        BITMAP source{};
+        if (GetObjectW(bitmap, sizeof(source), &source) != sizeof(source) ||
+            source.bmWidth <= 0 || source.bmHeight <= 0)
+            return false;
+
+        const int targetW = RectWidth(rect);
+        const int targetH = RectHeight(rect);
+        const double targetAspect = static_cast<double>(targetW) / targetH;
+        const double sourceAspect = static_cast<double>(source.bmWidth) / source.bmHeight;
+
+        int srcX = 0;
+        int srcY = 0;
+        int srcW = source.bmWidth;
+        int srcH = source.bmHeight;
+        if (sourceAspect > targetAspect) {
+            srcW = std::max(1, static_cast<int>(std::lround(source.bmHeight * targetAspect)));
+            srcX = (source.bmWidth - srcW) / 2;
+        } else if (sourceAspect < targetAspect) {
+            srcH = std::max(1, static_cast<int>(std::lround(source.bmWidth / targetAspect)));
+            srcY = (source.bmHeight - srcH) / 2;
+        }
+
+        HDC memory = CreateCompatibleDC(dc);
+        if (!memory) return false;
+        HGDIOBJ oldBitmap = SelectObject(memory, bitmap);
+        const int oldMode = SetStretchBltMode(dc, HALFTONE);
+        const BOOL copied = StretchBlt(
+            dc, rect.left, rect.top, targetW, targetH,
+            memory, srcX, srcY, srcW, srcH, SRCCOPY);
+        SetStretchBltMode(dc, oldMode);
+        SelectObject(memory, oldBitmap);
+        DeleteDC(memory);
+        return copied != FALSE;
+    }
+
+    void DrawWallpaperPreview(HDC dc, const RECT& rect, const WallpaperLibraryItem& item) {
+        fs::path previewPath = item.thumbnail;
+        if (previewPath.empty() && item.kind == LibraryWallpaperKind::Image)
+            previewPath = item.source;
+        if (!previewPath.empty()) {
+            if (HBITMAP bitmap = LoadWallpaperPreviewBitmap(previewPath)) {
+                if (DrawWallpaperBitmapCover(dc, rect, bitmap)) return;
+            }
+        }
+
+        // Non-image packages without a preview retain a deterministic fallback card.
         COLORREF base = RGB(36, 42, 54);
         COLORREF accent = RGB(92, 135, 255);
         if (item.kind == LibraryWallpaperKind::Scene) {
-            if (item.id.find(L"aurora") != std::wstring::npos) { base = RGB(6, 14, 36); accent = RGB(48, 220, 180); }
-            else if (item.id.find(L"neon") != std::wstring::npos) { base = RGB(18, 6, 32); accent = RGB(255, 96, 48); }
-            else if (item.id.find(L"grid") != std::wstring::npos) { base = RGB(8, 58, 96); accent = RGB(120, 220, 255); }
+            const std::wstring id = LowerCopy(item.id);
+            if (ContainsAny(id, {L"miao-cloud", L"aurora"})) {
+                base = RGB(39, 83, 160); accent = RGB(242, 169, 226);
+            } else if (ContainsAny(id, {L"neon-city", L"neon"})) {
+                base = RGB(18, 6, 32); accent = RGB(255, 96, 180);
+            } else if (ContainsAny(id, {L"mystic-moon", L"moon"})) {
+                base = RGB(25, 46, 90); accent = RGB(177, 196, 255);
+            }
         } else if (item.kind == LibraryWallpaperKind::Web) {
             base = RGB(25, 46, 72); accent = RGB(76, 170, 235);
         } else if (item.kind == LibraryWallpaperKind::Video) {
@@ -688,12 +830,14 @@ struct WallpaperLibraryWindow::Impl {
         FillSolid(dc, rect, base);
         HPEN pen = CreatePen(PS_SOLID, 1, accent);
         HGDIOBJ oldPen = SelectObject(dc, pen);
-        const int step = std::max(S(24), 1);
+        const int step = std::max(S(28), 1);
         for (int x = rect.left; x < rect.right; x += step) {
-            MoveToEx(dc, x, rect.top, nullptr); LineTo(dc, x, rect.bottom);
+            MoveToEx(dc, x, rect.top, nullptr);
+            LineTo(dc, x, rect.bottom);
         }
         for (int y = rect.top; y < rect.bottom; y += step) {
-            MoveToEx(dc, rect.left, y, nullptr); LineTo(dc, rect.right, y);
+            MoveToEx(dc, rect.left, y, nullptr);
+            LineTo(dc, rect.right, y);
         }
         SelectObject(dc, oldPen);
         DeleteObject(pen);

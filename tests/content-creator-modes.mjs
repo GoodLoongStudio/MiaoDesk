@@ -35,6 +35,13 @@ assert.match(creator, /FindGeneratedPackagePath/);
 assert.match(creator, /EnableWindow(preview, TRUE)/);
 assert.match(creator, /EnableWindow(library, TRUE)/);
 assert.match(creator, /EnableWindow(apply, TRUE)/);
+assert.match(creator, /previewPane/);
+assert.match(creator, /LoadPreviewBitmap/);
+assert.match(creator, /DrawPrimaryAction/);
+assert.match(creator, /CreatorPreset/);
+assert.match(creator, /天气组件/);
+assert.match(creator, /治愈猫咪/);
+assert.match(creator, /Regenerate\(\)/);
 
 assert.match(search, /creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)/);
 assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/);

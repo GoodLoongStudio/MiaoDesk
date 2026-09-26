@@ -415,6 +415,12 @@
 - **待办**：在干净 x64 Windows 环境安装、首次运行、重启、升级、退出和卸载；覆盖 Unicode/带空格路径、登录启动设置及既有移动安装流程；按现有策略核对用户数据保留。
 - **交付 / 验收**：不依赖系统 Node/npm、源码目录或开发机配置；三正式 EXE 与所需资源完整；升级不丢配置与内容，卸载无意外残留产品进程。不为测试随意删除用户内容或凭据。
 
+- **本轮核验（2026-09-27，未勾选：需干净 x64 环境实装）**：
+  - **三个正式目标里有一个会永久丢掉文件搜索，且未登记为已知限制。** 文件搜索走 client/server：`goz.exe` 只查询，真正读 NTFS MFT/USN 索引的 `gozd.exe` 必须以**提权的 Windows 服务**运行（`packaging/windows/installer.nsi:42` 的注释就是这条）。EXE 安装器做了：`installer.nsi:106` 调 `gozd.exe install`，`:110` 失败即 `Abort`。**MSIX 工作流完全没有这一动作**——`grep gozd|Goz|service .github/workflows/package-windows-x64-msix.yml` 零命中，而它确实通过 `stage.ps1:42-43` 把 `Goz\goz.exe` 和 `Goz\gozd.exe` 都放进去了。二进制在、服务没装，所以 MSIX 装完后 `GozSearch::Available()` 一路为 false。
+  - **后果不是白屏，是静默少一个主功能**：搜索框的三件事变成两件。UI 侧降级是诚实且做得好的——`SearchWindow.cpp:907` 会给一行"文件搜索未连接 / 当前仍可搜索应用；按 Enter 可交给妙喵 AI"，不会假装有结果。所以问题不在欺骗用户，在于**搜索框 headline 能力在 MSIX 上等于没有，而 `RC_KNOWN_LIMITATIONS.md` 里只字未提**。
+  - **待确认的平台问题（本机无法回答）**：MSIX 在 Win11 上可以带 full-trust service（`desktop6:Service` 一类扩展），所以"MSIX 装不了服务"未必成立。需要分清是**有意不为**（MSIX 定位为受限目标）还是**漏做**。两种结论的下一步完全不同：有意则补进 `RC_KNOWN_LIMITATIONS.md` 并说明不进 RC 范围；漏做则补安装步骤。
+  - 建议：在补之前，MSIX 这一目标不应被视为"三个 headline 能力齐全"来验收。
+
 ### REL-02 候选 SHA 的正式流水线闭环
 
 - [ ] 完成本项；负责人：待领取；证据：待补。

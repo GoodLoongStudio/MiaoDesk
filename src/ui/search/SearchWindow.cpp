@@ -1,4 +1,5 @@
 #include "miaodesk/SearchWindow.h"
+#include "miaodesk/ContentCreatorDialog.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"

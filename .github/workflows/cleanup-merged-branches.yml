@@ -99,7 +99,7 @@ jobs:
             fi
 
             case "$branch" in
-              feat/*|fix/*|ci/*|docs/*|test/*|perf/*|verify/*|chore/*|build/*)
+              feat/*|fix/*|ui/*|rc/*|ci/*|docs/*|test/*|perf/*|verify/*|chore/*|build/*)
                 ;;
               *)
                 continue

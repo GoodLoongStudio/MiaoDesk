@@ -1,15 +1,28 @@
 #include "miaodesk/ContentCreatorDialog.h"
 
+#include "miaodesk/ConversationPanel.h"
+#include "miaodesk/DesktopControlService.h"
+#include "miaodesk/MiaoContentPackage.h"
+#include "miaodesk/MiaoContentPackageManager.h"
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/NativeUiScale.h"
+#include "miaodesk/PiRuntime.h"
+#include "miaodesk/WallpaperLibrary.h"
+#include "miaodesk/WallpaperRuntimeControl.h"
+
+#include <shellapi.h>
 
 #include <algorithm>
 #include <array>
+#include <cwctype>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace miaodesk::creator {
+namespace fs = std::filesystem;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
@@ -28,6 +41,7 @@ constexpr int kLibraryId = 7821;
 constexpr int kApplyId = 7822;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
+constexpr UINT kActivityEvent = WM_APP + 0x313;
 
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
@@ -52,6 +66,79 @@ void AppendText(HWND edit, std::wstring_view text) {
     SendMessageW(edit, EM_SETSEL, length, length);
     SendMessageW(edit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(std::wstring(text).c_str()));
     SendMessageW(edit, EM_SCROLLCARET, 0, 0);
+}
+
+std::wstring Trim(std::wstring value) {
+    const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+    value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+    return value;
+}
+
+std::wstring Lower(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return value;
+}
+
+std::optional<fs::path> FindGeneratedPackagePath(
+    std::wstring_view text, ContentCreatorKind kind) {
+    const std::wstring extension =
+        kind == ContentCreatorKind::Widget ? L".mdwidget" : L".mdwall";
+    const std::wstring raw(text);
+    const std::wstring lower = Lower(raw);
+    std::size_t search = 0;
+
+    while (true) {
+        const std::size_t ext = lower.find(extension, search);
+        if (ext == std::wstring::npos) break;
+        const std::size_t end = ext + extension.size();
+
+        std::size_t lineStart = raw.find_last_of(L"\r\n", ext);
+        lineStart = lineStart == std::wstring::npos ? 0 : lineStart + 1;
+
+        std::size_t start = lineStart;
+        if (ext >= lineStart + 2) {
+            for (std::size_t i = ext; i >= lineStart + 2; --i) {
+                const std::size_t drive = i - 2;
+                if (std::iswalpha(raw[drive]) && raw[drive + 1] == L':' &&
+                    drive + 2 < raw.size() &&
+                    (raw[drive + 2] == L'\\' || raw[drive + 2] == L'/')) {
+                    start = drive;
+                    break;
+                }
+                if (i == lineStart + 2) break;
+            }
+        }
+
+        if (start == lineStart) {
+            const auto quote = raw.find_last_of(L"\"'", ext);
+            if (quote != std::wstring::npos && quote >= lineStart) start = quote + 1;
+        }
+
+        std::wstring candidate = Trim(raw.substr(start, end - start));
+        while (!candidate.empty() &&
+               (candidate.front() == L'-' || candidate.front() == L'*' ||
+                candidate.front() == L':' || candidate.front() == L'：')) {
+            candidate.erase(candidate.begin());
+            candidate = Trim(std::move(candidate));
+        }
+
+        fs::path path(candidate);
+        std::error_code ec;
+        if (!candidate.empty() && fs::is_directory(path, ec) && !ec &&
+            _wcsicmp(path.extension().c_str(), extension.c_str()) == 0) {
+            return path;
+        }
+
+        search = end;
+    }
+    return std::nullopt;
+}
+
+const wchar_t* PackageExtension(ContentCreatorKind kind) noexcept {
+    return kind == ContentCreatorKind::Widget ? L".mdwidget" : L".mdwall";
 }
 
 struct SkillItem {
@@ -88,6 +175,7 @@ struct DialogState {
     HWND owner{};
     HWND window{};
     L3Agent* agent{};
+    PiRuntime* pi{};
     ContentCreatorKind kind{ContentCreatorKind::None};
     HWND heading{};
     HWND note{};
@@ -109,6 +197,7 @@ struct DialogState {
     UINT fontScaleDpi{};
     bool primed{};
     bool busy{};
+    fs::path generatedPackage;
 
     ~DialogState() {
         if (bodyFont) DeleteObject(bodyFont);
@@ -227,31 +316,161 @@ struct DialogState {
         SetWindowTextW(send, value ? L"生成中…" : L"生成");
     }
 
+    content::ContentKind ExpectedKind() const noexcept {
+        return IsWidget() ? content::ContentKind::Widget : content::ContentKind::Wallpaper;
+    }
+
+    void SetGeneratedPackage(const fs::path& path) {
+        desktop::DesktopControlService control;
+        content::ManagedContentPackageInfo info;
+        const auto inspected = control.InspectContentPackage(path, &info);
+        if (!inspected.success || info.kind != ExpectedKind()) return;
+
+        generatedPackage = path;
+        const std::wstring status =
+            std::wstring(L"已生成并校验：") + path.filename().wstring() + L" · 可预览 / 入库 / 应用";
+        SetWindowTextW(resultNote, status.c_str());
+        EnableWindow(preview, TRUE);
+        EnableWindow(library, TRUE);
+        EnableWindow(apply, TRUE);
+    }
+
+    void InspectForGeneratedPackage(std::wstring_view text) {
+        if (auto path = FindGeneratedPackagePath(text, kind)) SetGeneratedPackage(*path);
+    }
+
+    bool OpenPreview() {
+        if (generatedPackage.empty()) return false;
+
+        content::LoadedMiaoContentPackage package;
+        std::wstring error;
+        if (!content::MiaoContentPackage::Load(generatedPackage, &package, &error)) {
+            MessageBoxW(window, error.empty() ? L"内容包预览校验失败。" : error.c_str(),
+                        L"妙喵 AI", MB_OK | MB_ICONERROR);
+            return false;
+        }
+
+        fs::path previewPath;
+        if (!package.manifest.preview.empty() &&
+            content::MiaoContentPackage::ResolvePackagePath(
+                package.root, package.manifest.preview, &previewPath, &error)) {
+            const HINSTANCE opened = ShellExecuteW(
+                window, L"open", previewPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            if (reinterpret_cast<INT_PTR>(opened) > 32) return true;
+        }
+
+        ShellExecuteW(window, L"open", generatedPackage.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        MessageBoxW(window,
+                    L"该内容包没有可直接打开的 manifest.preview，已打开内容包目录。"
+                    L"\n生成内容仍需在应用前由你确认。",
+                    L"妙喵 AI · Preview-first", MB_OK | MB_ICONINFORMATION);
+        return true;
+    }
+
+    bool InstallGeneratedPackage(bool activate) {
+        if (generatedPackage.empty()) return false;
+
+        desktop::DesktopControlService control;
+        content::ManagedContentPackageInfo inspected;
+        auto result = control.InspectContentPackage(generatedPackage, &inspected);
+        if (!result.success || inspected.kind != ExpectedKind()) {
+            MessageBoxW(window,
+                        result.message.empty() ? L"生成内容包校验失败。" : result.message.c_str(),
+                        L"妙喵 AI", MB_OK | MB_ICONERROR);
+            return false;
+        }
+
+        content::ContentPackageInstallOptions options;
+        options.replaceExisting = true;
+        content::ContentPackageInstallResult installed;
+        result = control.InstallContentPackage(generatedPackage, &installed, options);
+        if (!result.success) {
+            MessageBoxW(window,
+                        result.message.empty() ? L"加入内容库失败。" : result.message.c_str(),
+                        L"妙喵 AI", MB_OK | MB_ICONERROR);
+            return false;
+        }
+
+        generatedPackage = installed.package.packageRoot;
+        if (!activate) {
+            SetWindowTextW(resultNote,
+                IsWidget() ? L"已加入组件库 · 可继续添加到桌面"
+                           : L"已加入壁纸库 · 可继续应用到桌面");
+            return true;
+        }
+
+        if (IsWidget()) {
+            desktop::ContentWidgetCreateRequest request;
+            request.definitionId = std::wstring(
+                installed.package.id.begin(), installed.package.id.end());
+            request.title = installed.package.name;
+            wallpaper::DesktopWidget created;
+            result = control.CreateContentWidget(request, &created);
+            if (!result.success) {
+                MessageBoxW(window,
+                            result.message.empty() ? L"组件已入库，但添加到桌面失败。" : result.message.c_str(),
+                            L"妙喵 AI", MB_OK | MB_ICONERROR);
+                return false;
+            }
+            control.EnsureRuntime();
+            SetWindowTextW(resultNote, L"组件已加入组件库并添加到桌面");
+            return true;
+        }
+
+        wallpaper::WallpaperLibraryItem item;
+        item.id = installed.package.source;
+        item.kind = installed.package.runtime == content::ContentRuntimeKind::Web
+            ? wallpaper::LibraryWallpaperKind::Web
+            : wallpaper::LibraryWallpaperKind::Scene;
+        item.title = installed.package.name;
+        item.source = installed.package.packageRoot;
+        item.managedCopy = true;
+        result = control.ApplyLibraryItem(item);
+        if (!result.success) {
+            MessageBoxW(window,
+                        result.message.empty() ? L"壁纸已入库，但应用到桌面失败。" : result.message.c_str(),
+                        L"妙喵 AI", MB_OK | MB_ICONERROR);
+            return false;
+        }
+        control.EnsureRuntime();
+        wallpaper::NotifyWallpaperRuntimeReload();
+
+        wallpaper::WallpaperLibrary index;
+        std::wstring ignored;
+        index.Load(&ignored);
+        SetWindowTextW(resultNote, L"壁纸已加入壁纸库并应用到桌面");
+        return true;
+    }
+
     std::wstring BuildPrompt(std::wstring_view userText) {
         std::wstring request;
         if (!primed) {
             request = InitialPrompt(kind);
-            request += L"\n\n当前这个窗口是独立的轻量创作界面。请保持创作结果 preview-first，并在产出有效内容包后明确告诉我生成路径。\n\n用户需求：";
+            request += L"\n\n当前窗口是独立的轻量创作界面，但模型执行必须走现有 Pi 工具链。"
+                       L"完成后必须先执行 content-review，并在最终回复中单独给出生成内容包的绝对路径（";
+            request += PackageExtension(kind);
+            request += L"）。不要未经用户点击按钮直接安装或应用。\n\n用户需求：";
             primed = true;
         } else {
             request = L"继续当前";
             request += IsWidget() ? L"组件" : L"壁纸";
-            request += L"创作任务。保持 preview-first，不要未经确认直接应用。用户补充：";
+            request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出内容包绝对路径。用户补充：";
         }
         request.append(userText);
         return request;
     }
 
     void SendPrompt() {
-        if (!agent || busy) return;
-        std::wstring text = ReadText(prompt);
+        if (!agent || !pi || busy) return;
+        std::wstring text = Trim(ReadText(prompt));
         if (text.empty()) return;
         AppendText(transcript, L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");
         SetBusy(true);
         agent->ReloadConfig();
         const HWND target = window;
-        agent->AskAsync(
+        pi->AskAsync(
+            *agent,
             BuildPrompt(text),
             [target](std::wstring delta) {
                 auto* heap = new std::wstring(std::move(delta));
@@ -260,17 +479,24 @@ struct DialogState {
             [target](std::wstring done) {
                 auto* heap = new std::wstring(std::move(done));
                 if (!PostMessageW(target, kRequestDone, 0, reinterpret_cast<LPARAM>(heap))) delete heap;
+            },
+            [target](PiActivityEvent event) {
+                auto* heap = new PiActivityEvent(std::move(event));
+                if (!PostMessageW(target, kActivityEvent, 0, reinterpret_cast<LPARAM>(heap))) delete heap;
             });
     }
 
     void ResetSession() {
+        if (pi && pi->Busy()) pi->Stop();
         if (agent && agent->Busy()) agent->Stop();
+        if (pi) pi->ResetSession();
+        generatedPackage.clear();
         primed = false;
         SetBusy(false);
         SetWindowTextW(transcript,
             IsWidget()
-                ? L"妙喵：描述你想制作的桌面组件。我会按右侧 Skills 生成可预览的 .mdwidget。\r\n"
-                : L"妙喵：描述你想制作的壁纸。我会按右侧 Skills 生成可预览的 .mdwall。\r\n");
+                ? L"妙喵：描述你想制作的桌面组件。我会按右侧 Skills 通过 Pi 工具链生成可预览的 .mdwidget。\r\n"
+                : L"妙喵：描述你想制作的壁纸。我会按右侧 Skills 通过 Pi 工具链生成可预览的 .mdwall。\r\n");
         SetWindowTextW(resultNote, L"尚未生成内容包 · 生成后先预览，再加入库或应用");
         EnableWindow(preview, FALSE);
         EnableWindow(library, FALSE);
@@ -367,11 +593,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             SetFocus(state->prompt);
             return 0;
         }
-        if ((id == kPreviewId || id == kLibraryId || id == kApplyId) && HIWORD(wParam) == BN_CLICKED) {
-            MessageBoxW(hwnd, L"生成有效内容包后此操作会自动启用；当前仍保持 preview-first。",
-                        L"妙喵 AI", MB_OK | MB_ICONINFORMATION);
-            return 0;
-        }
+        if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->OpenPreview(); return 0; }
+        if (id == kLibraryId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(false); return 0; }
+        if (id == kApplyId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(true); return 0; }
         break;
     }
     case kAppendDelta: {
@@ -379,20 +603,29 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (delta) AppendText(state->transcript, *delta);
         return 0;
     }
+    case kActivityEvent: {
+        std::unique_ptr<PiActivityEvent> event(reinterpret_cast<PiActivityEvent*>(lParam));
+        if (event && !event->resultText.empty()) state->InspectForGeneratedPackage(event->resultText);
+        return 0;
+    }
     case kRequestDone: {
         std::unique_ptr<std::wstring> done(reinterpret_cast<std::wstring*>(lParam));
         state->SetBusy(false);
+        if (done) state->InspectForGeneratedPackage(*done);
         AppendText(state->transcript, L"\r\n");
-        SetWindowTextW(state->resultNote,
-            done && !done->empty()
-                ? L"本轮生成已完成 · 检查对话中的内容包路径后执行预览"
-                : L"本轮请求结束 · 未检测到可操作的内容包");
+        if (state->generatedPackage.empty()) {
+            SetWindowTextW(state->resultNote,
+                done && !done->empty()
+                    ? L"本轮生成已完成 · 尚未检测到有效内容包路径"
+                    : L"本轮请求结束 · 未检测到可操作的内容包");
+        }
         return 0;
     }
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        if (state->pi && state->pi->Busy()) state->pi->Stop();
         if (state->agent && state->agent->Busy()) state->agent->Stop();
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         delete state;
@@ -434,6 +667,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     state->instance = instance;
     state->owner = owner;
     state->agent = &agent;
+    state->pi = &SharedConversationPiRuntime();
     state->kind = kind;
 
     const wchar_t* title = kind == ContentCreatorKind::Widget ? L"妙喵 · AI 制作组件" : L"妙喵 · AI 制作壁纸";

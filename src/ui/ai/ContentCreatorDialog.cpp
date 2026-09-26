@@ -463,6 +463,9 @@ struct DialogState {
     LONG_PTR previewRestoreExStyle{};
     bool primed{};
     bool busy{};
+    // Set when the user pressed 停止, so the done handler reports the cancel
+    // instead of the generic "本轮请求结束" it would otherwise print.
+    bool stopRequested{};
     fs::path generatedPackage;
     // True only when generatedPackage was resolved from the round that is
     // currently finishing. A failed round leaves the previous candidate loaded
@@ -1041,10 +1044,29 @@ struct DialogState {
 
     void SetBusy(bool value) {
         busy = value;
-        EnableWindow(send, !value);
-        SetWindowTextW(send, value ? L"生成中…" : L"生成");
+        // The send button doubles as the stop button, exactly as the conversation
+        // surface's does. It has to stay ENABLED while a turn runs: disabling it
+        // (which is what "生成中…" used to do) left this surface with no way to
+        // cancel at all -- 新对话 and closing both reach the shared Pi runtime and
+        // stop the *conversation* panel's turn too. Leaving it live and labelled
+        // 停止 is what makes "取消有明确反馈" achievable here.
+        EnableWindow(send, TRUE);
+        SetWindowTextW(send, value ? L"停止" : L"生成");
         UpdatePreviewChrome();
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+    }
+
+    // Stop the in-flight generation. Honest about what it does not do: PiRuntime::Stop
+    // requests a stop but does not terminate the worker, so a tool that already ran
+    // has already run.
+    void StopGenerating() {
+        if (!busy || !pi) return;
+        stopRequested = true;
+        pi->Stop();
+        SetBusy(false);
+        SetWindowTextW(resultNote,
+            L"已停止本轮生成。已经开始执行的操作可能已经完成，不会被撤销。");
+        AppendText(transcript, L"\r\n\r\n妙喵：本轮已停止。\r\n");
     }
 
     content::ContentKind ExpectedKind() const noexcept {
@@ -1298,6 +1320,7 @@ struct DialogState {
         SetWindowTextW(prompt, L"");
         SetBusy(true);
         generatedPackageIsCurrentRound = false;
+        stopRequested = false;
         agent->ReloadConfig();
         const HWND target = window;
         pi->AskAsync(
@@ -1507,7 +1530,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         break;
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
-        if (id == kSendId && HIWORD(wParam) == BN_CLICKED) { state->SendPrompt(); return 0; }
+        if (id == kSendId && HIWORD(wParam) == BN_CLICKED) {
+            if (state->busy) state->StopGenerating(); else state->SendPrompt();
+            return 0;
+        }
         if (id == kClearId && HIWORD(wParam) == BN_CLICKED) { state->ResetSession(); return 0; }
         if (id == kSkillListId && HIWORD(wParam) == LBN_SELCHANGE) { state->LoadSkill(); return 0; }
         if (id >= kPreset1Id && id <= kPreset5Id && HIWORD(wParam) == BN_CLICKED) {
@@ -1560,7 +1586,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         state->SetBusy(false);
         if (done) state->InspectForGeneratedPackage(*done);
         AppendText(state->transcript, L"\r\n");
-        if (state->generatedPackage.empty()) {
+        if (state->stopRequested) {
+            // The user cancelled. Do not overwrite that story with the generic
+            // "本轮请求结束" wording, and do not imply the cancellation produced
+            // nothing when it may have.
+            state->stopRequested = false;
+            SetWindowTextW(state->resultNote,
+                state->generatedPackage.empty()
+                    ? L"本轮已按你的要求停止。已执行的操作不会被撤销。"
+                    : L"本轮已按你的要求停止。当前预览是停止前已生成的内容，可以继续预览、入库或应用。");
+        } else if (state->generatedPackage.empty()) {
             SetWindowTextW(state->resultNote,
                 done && !done->empty()
                     ? L"本轮生成已完成 · 尚未检测到有效内容包路径"

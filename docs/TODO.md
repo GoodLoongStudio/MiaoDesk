@@ -334,7 +334,7 @@
   - **查出但未动的**（都需要动设计或需真机，逐条记在这里免得丢）：
     1. `/retry` 把上一条**原始 prompt 原样重发**进同一个 Pi session（session 复用，agent 内存历史里还有上一轮已提交的 tool 记录），且 `lastPrompt` 只在 `/new` 清。提交后遇传输失败 → 提示可 /retry → 重试会再跑一次 `ppt_create` 生成第二个文件。全仓没有任何"这一轮已经提交过哪些工具"的账本。要满足"重试不重复提交"，需要 per-turn 提交账本或重试前重置 session。
     2. `Stop()` 不终止 Pi 进程；`CleanupProcess()`（唯一 `TerminateProcess`）只在析构和换 provider 时调。 acutely 的是 preview 工具：`CreateWallpaperPreview` 写完沙盒会**阻塞式** `SendMessageTimeoutW` 通知主进程，主进程侧 `SearchPreviewBridgeProc` 无任何 turn 门，会直接建出带"应用/拒绝"按钮的可见沙盒窗。于是取消之后桌面上可能留着一个用户被告知"已停止"的轮次的预览窗，点一下应用就能改桌面。
-    3. 创作面**没有任何取消手段**：生成中只有"新对话"和关窗，两者都会通过共享 `gPiRuntime` 反过来取消对话面正在进行的轮次（D4）；发送按钮也没有 Esc/Enter（prompt EDIT 未子类化）。"取消有明确反馈"在这个面上按构造就做不到。
+    3. ~~创作面**没有任何取消手段**~~：**已修**。原来 `SetBusy` 把发送按钮禁掉并改叫"生成中…"，生成中只剩"新对话"和关窗，两者都会通过共享 `gPiRuntime` 反过来取消对话面正在进行的轮次。现在发送按钮在忙时保持可用并显示"停止"，点击停当前轮，与对话面行为一致；`stopRequested` 让 `kRequestDone` 报"本轮已按你的要求停止"而不是那句会骗人的"本轮请求结束"。提示里明确写了"已经开始执行的操作可能已经完成，不会被撤销"——因为 `PiRuntime::Stop()` 只请求停止不终止 worker，光说"已停止"会让人以为副作用也停了。prompt EDIT 仍未子类化，Esc 在这面上依旧无效。
     4. `AskAsync` 里 `worker_ = std::jthread(...)` 的移动赋值会 join 旧 worker，而调用线程就是**UI 线程**；旧 worker 若卡在 `ReadLine` 的 1000ms 轮询或 `WaitForSingleObject(2000)`，整个界面会阻塞最多约 2 秒。
     5. `AskAsync` 对"已在忙"只回一句 `Pi Runtime 正忙`，调用方（创作面）把它当成"本轮生成已完成"提示给用户——请求根本没发出去。
 

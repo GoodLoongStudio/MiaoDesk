@@ -66,6 +66,28 @@ assert.match(creator, /天气组件/);
 assert.match(creator, /治愈猫咪/);
 assert.match(creator, /Regenerate\(\)/);
 
+// The surface must be cancellable. It used to have no stop at all: SetBusy
+// disabled the send button and relabelled it "生成中…", leaving 新对话 and
+// closing as the only exits -- both of which reach the shared Pi runtime and
+// stop the *conversation* panel's turn too. The send button now doubles as the
+// stop button, matching the conversation surface, and stays enabled while busy.
+assert.match(creator, /EnableWindow\(send, TRUE\);/,
+  "the send button must stay enabled while a turn runs, or there is no way to cancel");
+assert.doesNotMatch(creator, /L"生成中…"/,
+  "the send button must not relabel itself into a dead disabled control");
+assert.doesNotMatch(creator, /EnableWindow\(send, !value\);/,
+  "send must not be disabled by SetBusy");
+assert.match(creator, /void StopGenerating\(\)[\s\S]*?pi->Stop\(\)/,
+  "stopping must actually reach the Pi runtime");
+assert.match(creator, /bool stopRequested\{\}/,
+  "the stop must be recorded so the done handler can report it");
+assert.match(creator, /if \(id == kSendId && HIWORD\(wParam\) == BN_CLICKED\) \{\s*\n\s*if \(state->busy\) state->StopGenerating\(\);/,
+  "clicking send while busy must cancel rather than submit");
+assert.match(creator, /state->stopRequested = false;[\s\S]*?SetWindowTextW\(state->resultNote/,
+  "a cancelled turn must be reported as cancelled, not as 请求结束");
+assert.match(creator, /generatedPackageIsCurrentRound = false;\s*\n\s*stopRequested = false;/,
+  "starting a new turn must clear the stop flag");
+
 // A failed regenerate must not read as "apply the old generation anyway".
 // SetGeneratedPackage returns early on a validation failure without clearing
 // generatedPackage, so the previous candidate stays loaded with live Apply

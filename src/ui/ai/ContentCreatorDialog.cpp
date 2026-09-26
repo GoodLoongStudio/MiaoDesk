@@ -427,6 +427,66 @@ struct DialogState {
               skillW - libraryW - gap, S(48));
     }
 
+    void DrawPrimaryAction(const DRAWITEMSTRUCT* draw) const {
+        if (!draw) return;
+        const bool enabled = IsWindowEnabled(draw->hwndItem) != FALSE;
+        const bool pressed = (draw->itemState & ODS_SELECTED) != 0;
+        const COLORREF fillColor = !enabled
+            ? RGB(184, 201, 224)
+            : pressed ? RGB(25, 93, 205) : RGB(37, 116, 236);
+        HBRUSH fill = CreateSolidBrush(fillColor);
+        HPEN pen = CreatePen(PS_SOLID, 1, enabled ? RGB(31, 101, 214) : RGB(170, 188, 214));
+        HGDIOBJ oldBrush = SelectObject(draw->hDC, fill);
+        HGDIOBJ oldPen = SelectObject(draw->hDC, pen);
+        const int radius = S(12);
+        RoundRect(draw->hDC, draw->rcItem.left, draw->rcItem.top,
+                  draw->rcItem.right, draw->rcItem.bottom, radius, radius);
+        SelectObject(draw->hDC, oldPen);
+        SelectObject(draw->hDC, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(fill);
+
+        wchar_t text[96]{};
+        GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
+        SetBkMode(draw->hDC, TRANSPARENT);
+        SetTextColor(draw->hDC, RGB(255, 255, 255));
+        HGDIOBJ oldFont = SelectObject(draw->hDC, bodyFont);
+        RECT label = draw->rcItem;
+        DrawTextW(draw->hDC, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(draw->hDC, oldFont);
+        if (draw->itemState & ODS_FOCUS) {
+            RECT focus = draw->rcItem;
+            InflateRect(&focus, -S(4), -S(4));
+            DrawFocusRect(draw->hDC, &focus);
+        }
+    }
+
+    void DrawPresetChip(const DRAWITEMSTRUCT* draw) const {
+        if (!draw) return;
+        const bool pressed = (draw->itemState & ODS_SELECTED) != 0;
+        HBRUSH fill = CreateSolidBrush(pressed ? RGB(222, 236, 255) : RGB(239, 246, 255));
+        HPEN pen = CreatePen(PS_SOLID, 1, RGB(220, 232, 248));
+        HGDIOBJ oldBrush = SelectObject(draw->hDC, fill);
+        HGDIOBJ oldPen = SelectObject(draw->hDC, pen);
+        const int radius = S(12);
+        RoundRect(draw->hDC, draw->rcItem.left, draw->rcItem.top,
+                  draw->rcItem.right, draw->rcItem.bottom, radius, radius);
+        SelectObject(draw->hDC, oldPen);
+        SelectObject(draw->hDC, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(fill);
+
+        wchar_t text[96]{};
+        GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
+        SetBkMode(draw->hDC, TRANSPARENT);
+        SetTextColor(draw->hDC, RGB(35, 105, 225));
+        HGDIOBJ oldFont = SelectObject(draw->hDC, smallFont);
+        RECT label = draw->rcItem;
+        DrawTextW(draw->hDC, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SelectObject(draw->hDC, oldFont);
+        if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
+    }
+
     void DrawPreviewPane(const DRAWITEMSTRUCT* draw) const {
         if (!draw) return;
         RECT bounds = draw->rcItem;
@@ -738,9 +798,11 @@ struct DialogState {
             return CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_LEFT,
                                    0, 0, 10, 10, window, nullptr, instance, nullptr);
         };
-        auto button = [&](const wchar_t* text, int id) {
-            return CreateWindowExW(0, L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                   0, 0, 10, 10, window, ControlId(id), instance, nullptr);
+        auto button = [&](const wchar_t* text, int id, DWORD extra = 0) {
+            return CreateWindowExW(
+                0, L"BUTTON", text,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | extra,
+                0, 0, 10, 10, window, ControlId(id), instance, nullptr);
         };
 
         heading = label(IsWidget() ? L"AI 制作组件" : L"AI 制作壁纸");
@@ -755,11 +817,11 @@ struct DialogState {
             0, 0, 10, 10, window, ControlId(kPromptId), instance, nullptr);
         SendMessageW(prompt, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(
             IsWidget() ? L"例如：做一个玻璃天气组件…" : L"例如：做一个治愈系猫咪动态壁纸…"));
-        send = button(L"生成", kSendId);
+        send = button(L"生成", kSendId, BS_OWNERDRAW);
         clear = button(L"新对话", kClearId);
         for (int i = 0; i < 5; ++i)
             presets[static_cast<std::size_t>(i)] =
-                button(PresetText()[static_cast<std::size_t>(i)].label, kPreset1Id + i);
+                button(PresetText()[static_cast<std::size_t>(i)].label, kPreset1Id + i, BS_OWNERDRAW);
         previewHeading = label(L"预览效果");
         previewPane = CreateWindowExW(
             0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | SS_OWNERDRAW | SS_NOTIFY,
@@ -777,7 +839,9 @@ struct DialogState {
         resultNote = label(L"尚未生成内容包 · 生成后先预览，再加入库或应用");
         preview = button(L"重新生成", kPreviewId);
         library = button(IsWidget() ? L"加入组件库" : L"加入壁纸库", kLibraryId);
-        apply = button(IsWidget() ? L"添加到桌面" : L"应用到桌面", kApplyId);
+        apply = button(
+            IsWidget() ? L"添加到桌面" : L"应用到桌面",
+            kApplyId, BS_OWNERDRAW);
         EnableWindow(preview, FALSE);
         EnableWindow(library, FALSE);
         EnableWindow(apply, FALSE);
@@ -832,6 +896,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
         if (draw && draw->CtlID == kPreviewPaneId) {
             state->DrawPreviewPane(draw);
+            return TRUE;
+        }
+        if (draw && draw->CtlType == ODT_BUTTON &&
+            (draw->CtlID == kSendId || draw->CtlID == kApplyId)) {
+            state->DrawPrimaryAction(draw);
+            return TRUE;
+        }
+        if (draw && draw->CtlType == ODT_BUTTON &&
+            draw->CtlID >= kPreset1Id && draw->CtlID <= kPreset5Id) {
+            state->DrawPresetChip(draw);
             return TRUE;
         }
         break;

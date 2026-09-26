@@ -379,17 +379,13 @@ void SearchWindow::ShowAndFocus() {
 }
 
 void SearchWindow::OpenContentCreator(creator::ContentCreatorKind kind) {
-    const std::wstring prompt = creator::InitialPrompt(kind);
-    if (prompt.empty()) return;
+    if (kind == creator::ContentCreatorKind::None) return;
 
     if (l3_.Busy()) l3_.Stop();
     SetExpanded(false);
 
-    const auto mode = kind == creator::ContentCreatorKind::Widget
-        ? ConversationPanelMode::WidgetCreator
-        : ConversationPanelMode::WallpaperCreator;
-    if (!ShowConversationPanel(instance_, hwnd_, l3_, prompt, mode)) {
-        SetStatus(L"妙喵 AI 创作工作台启动失败", L"请检查模型配置后重试。");
+    if (!creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)) {
+        SetStatus(L"妙喵 AI 创作窗口启动失败", L"请检查模型配置后重试。");
         return;
     }
 

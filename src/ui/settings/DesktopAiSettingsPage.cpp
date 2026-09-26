@@ -460,7 +460,7 @@ struct PageState {
             scrollX = std::clamp(scrollX, 0, MaxScrollX());
             scrollY = std::clamp(scrollY, 0, MaxScrollY());
 
-            SCROLLINFOW horizontal{};
+            SCROLLINFO horizontal{};
             horizontal.cbSize = sizeof(horizontal);
             horizontal.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
             horizontal.nMin = 0;
@@ -469,7 +469,7 @@ struct PageState {
             horizontal.nPos = scrollX;
             SetScrollInfo(panel, SB_HORZ, &horizontal, TRUE);
 
-            SCROLLINFOW vertical{};
+            SCROLLINFO vertical{};
             vertical.cbSize = sizeof(vertical);
             vertical.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
             vertical.nMin = 0;
@@ -490,7 +490,7 @@ struct PageState {
     }
 
     void HandleScroll(int bar, int code) {
-        SCROLLINFOW info{};
+        SCROLLINFO info{};
         info.cbSize = sizeof(info);
         info.fMask = SIF_ALL;
         if (!GetScrollInfo(panel, bar, &info)) return;

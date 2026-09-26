@@ -42,6 +42,7 @@ constexpr int kPreset1Id = 7810;
 constexpr int kPreset2Id = 7811;
 constexpr int kPreset3Id = 7812;
 constexpr int kPreset4Id = 7813;
+constexpr int kPreset5Id = 7814;
 constexpr int kPreviewId = 7820;
 constexpr int kLibraryId = 7821;
 constexpr int kApplyId = 7822;
@@ -257,17 +258,24 @@ constexpr std::array<SkillItem, 3> kWidgetSkills{{
     {L"3. 交付检查 · content-review", "content-review"},
 }};
 
-constexpr std::array<const wchar_t*, 4> kWallpaperPresets{{
-    L"治愈天空与云层，轻微动态，不遮挡桌面图标",
-    L"夜间霓虹城市，低干扰动态光效",
-    L"极简深色动态壁纸，适合长期办公",
-    L"猫咪主题壁纸，猫本体、尾巴、眨眼和云层分层动画保持对齐",
+struct CreatorPreset {
+    const wchar_t* label;
+    const wchar_t* prompt;
+};
+
+constexpr std::array<CreatorPreset, 5> kWallpaperPresets{{
+    {L"治愈猫咪", L"制作一张治愈猫咪主题壁纸，云层柔和，轻微动态，不遮挡桌面图标。"},
+    {L"星空夜景", L"制作宁静星空夜景壁纸，层次清晰，动态克制，适合长期使用。"},
+    {L"赛博城市", L"制作夜间赛博霓虹城市壁纸，光效有层次但避免高频闪烁。"},
+    {L"自然风景", L"制作自然风景壁纸，山湖或海岸构图，色彩舒适，桌面可读性优先。"},
+    {L"动漫风格", L"制作清爽动漫风格壁纸，主体构图明确，动态柔和，保留桌面图标可读区域。"},
 }};
-constexpr std::array<const wchar_t*, 4> kWidgetPresets{{
-    L"制作一个玻璃天气组件，信息清楚，适合桌面常驻",
-    L"制作一个极简时钟组件，支持时间和日期",
-    L"制作一个待办事项组件，支持完成状态",
-    L"制作一个桌面宠物信息卡组件，保持轻量和低干扰",
+constexpr std::array<CreatorPreset, 5> kWidgetPresets{{
+    {L"天气组件", L"制作一个简洁的天气组件，显示当前城市、温度、天气状况和未来几小时预报。"},
+    {L"时钟组件", L"制作一个极简时钟组件，显示时间和日期，适合桌面常驻。"},
+    {L"待办清单", L"制作一个待办事项组件，支持完成状态，信息层级清楚。"},
+    {L"桌面宠物", L"制作一个轻量桌面宠物信息卡组件，风格可爱但不遮挡主要桌面内容。"},
+    {L"系统监控", L"制作一个系统监控组件，显示 CPU、内存和 GPU 等关键状态，信息清晰。"},
 }};
 
 struct DialogState {
@@ -287,12 +295,13 @@ struct DialogState {
     HWND previewPane{};
     HWND skillHeading{};
     HWND skillList{};
+    HWND skillDetailHeading{};
     HWND skillText{};
     HWND resultNote{};
     HWND preview{};
     HWND library{};
     HWND apply{};
-    std::array<HWND, 4> presets{};
+    std::array<HWND, 5> presets{};
     HFONT bodyFont{};
     HFONT titleFont{};
     HFONT smallFont{};
@@ -301,6 +310,7 @@ struct DialogState {
     bool primed{};
     bool busy{};
     fs::path generatedPackage;
+    std::wstring lastUserPrompt;
 
     ~DialogState() {
         if (previewBitmap) DeleteObject(previewBitmap);
@@ -319,7 +329,7 @@ struct DialogState {
     const std::array<SkillItem, 3>& Skills() const noexcept {
         return IsWidget() ? kWidgetSkills : kWallpaperSkills;
     }
-    const std::array<const wchar_t*, 4>& PresetText() const noexcept {
+    const std::array<CreatorPreset, 5>& PresetText() const noexcept {
         return IsWidget() ? kWidgetPresets : kWallpaperPresets;
     }
 
@@ -336,7 +346,8 @@ struct DialogState {
     void ApplyFonts() const {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
         for (HWND child : {note, transcript, prompt, send, clear, previewHeading,
-                           skillHeading, skillList, skillText, resultNote, preview, library, apply}) {
+                           skillHeading, skillList, skillDetailHeading, skillText,
+                           resultNote, preview, library, apply}) {
             if (child && bodyFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         for (HWND child : presets)
@@ -389,7 +400,8 @@ struct DialogState {
         // Right: Skill chain and readable Skill detail.
         place(skillHeading, skillX, bodyTop, skillW, S(28));
         place(skillList, skillX, bodyTop + S(34), skillW, S(112));
-        place(skillText, skillX, bodyTop + S(154), skillW, bodyH - S(154));
+        place(skillDetailHeading, skillX, bodyTop + S(154), skillW, S(26));
+        place(skillText, skillX, bodyTop + S(184), skillW, bodyH - S(184));
 
         // Bottom composer spans conversation + preview columns.
         const int composerW = leftW + gap + previewW;
@@ -402,8 +414,8 @@ struct DialogState {
 
         const int presetTop = promptTop + S(56);
         const int presetGap = S(8);
-        const int presetW = std::max(S(120), (composerW - presetGap * 3) / 4);
-        for (int i = 0; i < 4; ++i)
+        const int presetW = std::max(S(100), (composerW - presetGap * 4) / 5);
+        for (int i = 0; i < 5; ++i)
             place(presets[static_cast<std::size_t>(i)],
                   margin + i * (presetW + presetGap), presetTop, presetW, S(32));
 
@@ -664,6 +676,7 @@ struct DialogState {
         if (!agent || !pi || busy) return;
         std::wstring text = Trim(ReadText(prompt));
         if (text.empty()) return;
+        lastUserPrompt = text;
         AppendText(transcript, L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");
         SetBusy(true);
@@ -686,11 +699,18 @@ struct DialogState {
             });
     }
 
+    void Regenerate() {
+        if (busy || lastUserPrompt.empty()) return;
+        SetWindowTextW(prompt, lastUserPrompt.c_str());
+        SendPrompt();
+    }
+
     void ResetSession() {
         if (pi && pi->Busy()) pi->Stop();
         if (agent && agent->Busy()) agent->Stop();
         if (pi) pi->ResetSession();
         generatedPackage.clear();
+        lastUserPrompt.clear();
         if (previewBitmap) {
             DeleteObject(previewBitmap);
             previewBitmap = nullptr;
@@ -737,8 +757,9 @@ struct DialogState {
             IsWidget() ? L"例如：做一个玻璃天气组件…" : L"例如：做一个治愈系猫咪动态壁纸…"));
         send = button(L"生成", kSendId);
         clear = button(L"新对话", kClearId);
-        for (int i = 0; i < 4; ++i)
-            presets[static_cast<std::size_t>(i)] = button(PresetText()[static_cast<std::size_t>(i)], kPreset1Id + i);
+        for (int i = 0; i < 5; ++i)
+            presets[static_cast<std::size_t>(i)] =
+                button(PresetText()[static_cast<std::size_t>(i)].label, kPreset1Id + i);
         previewHeading = label(L"预览效果");
         previewPane = CreateWindowExW(
             0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | SS_OWNERDRAW | SS_NOTIFY,
@@ -749,11 +770,12 @@ struct DialogState {
         skillList = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
             0, 0, 10, 10, window, ControlId(kSkillListId), instance, nullptr);
+        skillDetailHeading = label(L"Skill 详情");
         skillText = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
             0, 0, 10, 10, window, ControlId(kSkillTextId), instance, nullptr);
         resultNote = label(L"尚未生成内容包 · 生成后先预览，再加入库或应用");
-        preview = button(L"打开完整预览", kPreviewId);
+        preview = button(L"重新生成", kPreviewId);
         library = button(IsWidget() ? L"加入组件库" : L"加入壁纸库", kLibraryId);
         apply = button(IsWidget() ? L"添加到桌面" : L"应用到桌面", kApplyId);
         EnableWindow(preview, FALSE);
@@ -819,8 +841,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (id == kSendId && HIWORD(wParam) == BN_CLICKED) { state->SendPrompt(); return 0; }
         if (id == kClearId && HIWORD(wParam) == BN_CLICKED) { state->ResetSession(); return 0; }
         if (id == kSkillListId && HIWORD(wParam) == LBN_SELCHANGE) { state->LoadSkill(); return 0; }
-        if (id >= kPreset1Id && id <= kPreset4Id && HIWORD(wParam) == BN_CLICKED) {
-            SetWindowTextW(state->prompt, state->PresetText()[static_cast<std::size_t>(id - kPreset1Id)]);
+        if (id >= kPreset1Id && id <= kPreset5Id && HIWORD(wParam) == BN_CLICKED) {
+            SetWindowTextW(
+                state->prompt,
+                state->PresetText()[static_cast<std::size_t>(id - kPreset1Id)].prompt);
             SetFocus(state->prompt);
             return 0;
         }
@@ -828,7 +852,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             if (!state->generatedPackage.empty()) state->OpenPreview();
             return 0;
         }
-        if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->OpenPreview(); return 0; }
+        if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->Regenerate(); return 0; }
         if (id == kLibraryId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(false); return 0; }
         if (id == kApplyId && HIWORD(wParam) == BN_CLICKED) { state->InstallGeneratedPackage(true); return 0; }
         break;

@@ -54,7 +54,7 @@ assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/
 
 assert.match(library, /✨ AI 制作壁纸/);
 assert.match(library, /✨ AI 制作组件/);
-assert.ok(library.includes("place(creatorButton, creatorLeft, S(11), creatorW, S(36))"));
+assert.ok(library.includes("place(creatorButton, creatorLeft, S(10), creatorW, S(38))"));
 
 for (const skill of ["content-package-basics", "wallpaper-content", "content-review"]) {
   assert.ok(bridge.includes(skill), `wallpaper creator prompt must require ${skill}`);

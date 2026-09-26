@@ -794,7 +794,15 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
 
     case WM_SIZE:
         ResizeRenderTarget(LOWORD(lParam), HIWORD(lParam));
-        if (edit_) MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE);
+        // Re-anchor through the shared geometry helper instead of forcing a 1x1.
+        // The old MoveWindow(edit, kEditLeft, kInputProxyY, 1, 1, FALSE) is the
+        // proxy scheme WINDOWS_CUSTOM_INPUT_IME.md section 2 forbids, and it was
+        // self-defeating: it posts WM_WINDOWPOSCHANGED, which the WH_CALLWNDPROCRET
+        // hook answers with EnsureSearchImeGeometry -- so the real rect came back
+        // anyway, after a window where the composition and candidate windows
+        // anchored to a 1x1 rect at (52, 27). Calling the helper directly states
+        // the intent, drops the churn, and keeps one source of truth for the rect.
+        if (edit_) input_ime_detail::EnsureSearchImeGeometry(edit_);
         return 0;
 
     case WM_PAINT: {

@@ -144,6 +144,17 @@
   - **为什么本轮没顺手接上**：把 EDIT 从 1×1 撑到 542×30 会盖住自绘输入区，必须先让 EDIT 不绘制（透明/`WM_CTLCOLOR` 一类），再加 `WM_SETFOCUS / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE / WM_SIZE` 的路由与 deferred 消息回填。这些改动本机无法目视与输入验证，赌在产品的**唯一主入口**上不合算。建议下一轮在 Windows 上按这个顺序接：先接 `EnsureSearchImeGeometry` 确认自绘不被遮，再接 anchor 与消息路由。
   - **顺手要修的文档**：真接上之后，`WINDOWS_CUSTOM_INPUT_IME.md` §4 才算成立；在那之前该节描述的 Search 行为与现状不符，读它的人会以为中文输入已经是好的。
 
+- **本轮已修（2026-09-27，两项小的）**：
+  1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。
+  - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
+  2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
+- **仍未修的核心项**：
+  - **LAY-2-2：设置中心（`MiaoDesk.Native.DesktopLibrary` 类）整条消息循环没有 `IsDialogMessageW`。** 该循环只有 `TranslateMessage` 与 `DispatchMessageW`（`WallpaperEngine.cpp:328-331`），`WndProc` 里也没有任何 `VK_TAB` 分支。可是搜索框、全部 nav/filter/action 按钮、`targetCombo` 和整个 API 页都是 `WS_TABSTOP`。结果：纯键盘用户在 AI/API 页和壁纸搜索框里**一个字段都到不了**。
+  - AI 创作窗同理：modeless，消息回到 `SearchWindow::RunMessageLoop`，同样没有 `IsDialogMessageW`。
+  - 附带：壁纸库搜索框（`WallpaperLibraryWindowV2.cpp:1944`）只有 `EN_CHANGE` 一条路径，没有 Enter 提交。
+  - **为什么没顺手加**：`IsDialogMessageW` 会接管 Tab/Enter/Esc 的语义。搜索框那侧风险最直接——它有自己的 `EditProc`，Enter 是去执行选中项的，被 dialog manager 抢先就成了点默认按钮。这一处加错会直接弄坏产品主入口的输入，而本机既看不到也无法键入。建议按"先设置中心、确认 API 页 Tab/Enter 行为、再评估创作窗、最后单独判断搜索框是否该用 `DLGC_WANTALLKEYS` 一类豁免"的顺序上真机做。
+  - **为什么没顺手加**：`IsDialogMessageW` 会接管 Tab/Enter/Esc 的语义。搜索框那侧风险最直接——它有自己的 `EditProc`，Enter 是去执行选中项的，被 dialog manager 抢先就成了点默认按钮。这一处加错会直接弄坏产品主入口的输入，而本机既看不到也无法键入。建议按"先设置中心、确认 API 页 Tab/Enter 行为、再评估创作窗、最后单独判断搜索框是否该用 `DLGC_WANTALLKEYS` 一类豁免"的顺序上真机做。
+
 ### PERF-01 建立可比较的全进程性能基线
 
 - [ ] 完成本项；负责人：待领取；证据：待补。

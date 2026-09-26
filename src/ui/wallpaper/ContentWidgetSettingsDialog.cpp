@@ -387,6 +387,12 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
         case kResetId: ResetDefaults(*state); return 0;
         case kTasksId: EditTodayTasks(*state); return 0;
         case kCloseId: DestroyWindow(hwnd); return 0;
+        // The pump below calls IsDialogMessageW, which routes VK_ESCAPE to a
+        // control whose id is IDCANCEL -- and beeps when there is none. 关闭 was
+        // the only way out (plus Alt+F4), so Esc did nothing here while it closes
+        // every other dialog in the product. Map it onto the same close rather
+        // than renumbering 关闭, whose id is referenced as a button id elsewhere.
+        case IDCANCEL: DestroyWindow(hwnd); return 0;
         default: break;
         }
         break;

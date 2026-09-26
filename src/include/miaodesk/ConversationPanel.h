@@ -5,6 +5,8 @@
 
 namespace miaodesk {
 
+class PiRuntime;
+
 enum class ConversationPanelMode {
     General = 0,
     WallpaperCreator,
@@ -21,6 +23,11 @@ bool ShowConversationPanel(
     L3Agent& agent,
     const std::wstring& initialPrompt,
     ConversationPanelMode mode = ConversationPanelMode::General);
+
+// Single canonical Pi runtime shared by the general conversation panel and the
+// purpose-built Wallpaper / Widget creator surfaces. UI surfaces stay separate,
+// but model/tool session policy has one owner.
+PiRuntime& SharedConversationPiRuntime() noexcept;
 
 // Temporary source/API compatibility only. New UI code must call ShowConversationPanel.
 inline bool ShowL3CliWindow(

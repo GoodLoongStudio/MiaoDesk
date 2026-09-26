@@ -2,7 +2,7 @@ name: Windows ARM64 Package
 
 on:
   push:
-    branches: [main, ui/wallpaper-library-mockup]
+    branches: [main, ui/wallpaper-library-mockup, ui/ai-wallpaper-creator-mockup]
     paths:
       - CMakeLists.txt
       - CMakePresets.json

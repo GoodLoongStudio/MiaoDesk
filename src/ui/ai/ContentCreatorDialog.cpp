@@ -1548,7 +1548,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     case kActivityEvent: {
         std::unique_ptr<PiActivityEvent> event(reinterpret_cast<PiActivityEvent*>(lParam));
-        if (event && !event->resultText.empty()) state->InspectForGeneratedPackage(event->resultText);
+        // Same reasoning as the conversation surface: a result text that arrives
+        // after the turn settled belongs to a turn the user already saw end, and
+        // resolving it here would swap a finished candidate for a straggler.
+        if (event && state->busy && !event->resultText.empty())
+            state->InspectForGeneratedPackage(event->resultText);
         return 0;
     }
     case kRequestDone: {

@@ -5,11 +5,13 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cwchar>
 #include <cwctype>
 #include <iomanip>
 #include <locale>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -67,6 +69,30 @@ std::wstring FriendlyParameterName(std::wstring_view key) {
     if (key == L"showSeconds") return L"显示秒数";
     if (key == L"title") return L"标题";
     return std::wstring(key);
+}
+
+// step is real schema -- documented in MIAO_CONTENT_PACKAGE_V1.md and declared by
+// every shipped package -- and the form advertises it as a constraint ("step N"),
+// but nothing enforced it, so 0.313 was happily committed on a step-0.01 field.
+//
+// Reject rather than snap: silently rounding what the user typed hides the
+// mistake, and the package will then hold a value they never entered.
+// Measured from minimum when one is declared, otherwise from 0, matching how a
+// slider's grid is normally anchored. Tolerance is scaled to the step so a
+// decimal step is not defeated by binary representation.
+std::optional<std::wstring> OffStepMessage(const content::ContentParameterDefinition& parameter, double value) {
+    if (!parameter.step || !(*parameter.step > 0.0) || !std::isfinite(*parameter.step)) return std::nullopt;
+    const double base = parameter.minimum.value_or(0.0);
+    const double offset = value - base;
+    const double steps = offset / *parameter.step;
+    const double tolerance = std::max(1e-6, std::fabs(*parameter.step) * 1e-6);
+    if (std::fabs(offset - std::round(steps) * (*parameter.step)) > tolerance) {
+        std::wostringstream text;
+        text << FriendlyParameterName(parameter.key) << L" 需要是步进 "
+             << std::setprecision(6) << *parameter.step << L" 的倍数。";
+        return text.str();
+    }
+    return std::nullopt;
 }
 
 std::wstring NumericHint(const content::ContentParameterDefinition& parameter) {
@@ -206,8 +232,14 @@ bool ParseFieldValue(const Field& field, content::ContentParameterValue* value, 
     }
     if (parameter.type == content::ContentParameterType::Int) {
         wchar_t* end = nullptr;
+        errno = 0;
         const long long parsed = std::wcstoll(text.c_str(), &end, 10);
-        if (text.empty() || !end || *end != L'\0') {
+        // wcstoll clamps on overflow and returns LLONG_MAX rather than failing, so
+        // without the ERANGE check "99999999999999999999" was committed as
+        // 9223372036854775807 -- a value no schema asks for, persisted silently.
+        // The Float branch below already has its equivalent (!isfinite); the
+        // storage decoder has this exact check.
+        if (text.empty() || !end || *end != L'\0' || errno == ERANGE) {
             if (error) *error = FriendlyParameterName(parameter.key) + L" 需要整数。";
             return false;
         }
@@ -215,6 +247,10 @@ bool ParseFieldValue(const Field& field, content::ContentParameterValue* value, 
         if ((parameter.minimum && number < *parameter.minimum) ||
             (parameter.maximum && number > *parameter.maximum)) {
             if (error) *error = FriendlyParameterName(parameter.key) + L" 超出允许范围。";
+            return false;
+        }
+        if (auto offStep = OffStepMessage(parameter, number)) {
+            if (error) *error = *offStep;
             return false;
         }
         *value = static_cast<std::int64_t>(parsed);
@@ -230,6 +266,10 @@ bool ParseFieldValue(const Field& field, content::ContentParameterValue* value, 
         if ((parameter.minimum && parsed < *parameter.minimum) ||
             (parameter.maximum && parsed > *parameter.maximum)) {
             if (error) *error = FriendlyParameterName(parameter.key) + L" 超出允许范围。";
+            return false;
+        }
+        if (auto offStep = OffStepMessage(parameter, parsed)) {
+            if (error) *error = *offStep;
             return false;
         }
         *value = parsed;

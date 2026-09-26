@@ -414,7 +414,14 @@ LRESULT CALLBACK ConversationOverlayPanelProc(HWND hwnd, UINT message, WPARAM wP
 
     if (message == kConversationPiActivityMessage) {
         std::unique_ptr<ConversationActivityPayload> payload(reinterpret_cast<ConversationActivityPayload*>(lParam));
-        if (payload && state && state->activeRuntime == ActiveRuntime::Pi) {
+        // A Pi activity event must not resurrect the card after the turn ended. The
+        // generation counter guards delta/done, but PiActivityEvent carries no turn
+        // id, and PiRuntime::Stop() does not join its worker -- so a tool event
+        // emitted just before the stop is noticed still gets posted. Without this
+        // gate the card comes back on a finished turn, showing "正在继续 /
+        // 妙喵正在处理下一步" next to a header that says 在线: exactly the
+        // "已结束仍执行中" state AI-02 forbids.
+        if (payload && state && state->busy && state->activeRuntime == ActiveRuntime::Pi) {
             ApplySemanticActivity(*state, payload->event);
             RenderConversationLayerSurface(*state);
         }

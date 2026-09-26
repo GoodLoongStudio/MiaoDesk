@@ -380,15 +380,29 @@ struct DialogState {
             return false;
         }
 
-        content::ContentPackageInstallOptions options;
-        options.replaceExisting = true;
         content::ContentPackageInstallResult installed;
-        result = control.InstallContentPackage(generatedPackage, &installed, options);
-        if (!result.success) {
-            MessageBoxW(window,
-                        result.message.empty() ? L"加入内容库失败。" : result.message.c_str(),
-                        L"妙喵 AI", MB_OK | MB_ICONERROR);
-            return false;
+        content::ManagedContentPackageInfo existing;
+        const auto resolved = control.ResolveContentPackage(ExpectedKind(), inspected.source, &existing);
+        std::error_code equivalentError;
+        const bool alreadyManaged =
+            resolved.success &&
+            fs::exists(existing.packageRoot, equivalentError) && !equivalentError &&
+            fs::exists(generatedPackage, equivalentError) && !equivalentError &&
+            fs::equivalent(existing.packageRoot, generatedPackage, equivalentError) && !equivalentError;
+
+        if (alreadyManaged) {
+            installed.package = existing;
+            installed.replacedExisting = true;
+        } else {
+            content::ContentPackageInstallOptions options;
+            options.replaceExisting = true;
+            result = control.InstallContentPackage(generatedPackage, &installed, options);
+            if (!result.success) {
+                MessageBoxW(window,
+                            result.message.empty() ? L"加入内容库失败。" : result.message.c_str(),
+                            L"妙喵 AI", MB_OK | MB_ICONERROR);
+                return false;
+            }
         }
 
         generatedPackage = installed.package.packageRoot;

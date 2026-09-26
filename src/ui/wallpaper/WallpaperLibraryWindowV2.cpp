@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <cwctype>
+#include <initializer_list>
 #include <iterator>
 #include <memory>
 #include <optional>

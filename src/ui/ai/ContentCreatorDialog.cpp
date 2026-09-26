@@ -628,6 +628,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     switch (message) {
     case WM_CREATE:
         return state->CreateControls() ? 0 : -1;
+    case WM_GETMINMAXINFO: {
+        auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (info) {
+            const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(hwnd));
+            info->ptMinTrackSize.x = MulDiv(900, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+            info->ptMinTrackSize.y = MulDiv(640, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+        }
+        return 0;
+    }
     case WM_SIZE:
         state->Layout();
         return 0;

@@ -1111,7 +1111,7 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_MOUSEWHEEL: {
         const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-        const bool shift = (GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0;
+        const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         state->HandleMouseWheel(delta, shift, false);
         return 0;
     }

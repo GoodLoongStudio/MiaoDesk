@@ -50,6 +50,81 @@ constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
 
+struct CreatorWindowPlacement {
+    int x{};
+    int y{};
+    int width{};
+    int height{};
+};
+
+MONITORINFO MonitorInfoForWindow(HWND reference) noexcept {
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    HMONITOR monitor = nullptr;
+    if (reference && IsWindow(reference))
+        monitor = MonitorFromWindow(reference, MONITOR_DEFAULTTONEAREST);
+    if (!monitor)
+        monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    if (monitor && GetMonitorInfoW(monitor, &info)) return info;
+
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    info.rcMonitor = work;
+    info.rcWork = work;
+    return info;
+}
+
+CreatorWindowPlacement ResolveCreatorWindowPlacement(HWND owner) noexcept {
+    const MONITORINFO monitor = MonitorInfoForWindow(owner);
+    const int workW = std::max(1, static_cast<int>(monitor.rcWork.right - monitor.rcWork.left));
+    const int workH = std::max(1, static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top));
+    const int monitorW = std::max(1, static_cast<int>(monitor.rcMonitor.right - monitor.rcMonitor.left));
+    const int monitorH = std::max(1, static_cast<int>(monitor.rcMonitor.bottom - monitor.rcMonitor.top));
+
+    UINT nativeDpi = owner && IsWindow(owner) ? GetDpiForWindow(owner) : GetDpiForSystem();
+    if (!nativeDpi) nativeDpi = USER_DEFAULT_SCREEN_DPI;
+    const UINT effectiveDpi = std::max(nativeDpi, ui::ResolutionFontDpiForSize(monitorW, monitorH));
+
+    // Size the editor from the current monitor instead of opening a fixed 1320x820 window.
+    // 82% leaves enough desktop context on compact displays, while the effective-DPI
+    // preferred size keeps the editor comfortably readable on 2K/4K monitors.
+    const int preferredW = MulDiv(1120, static_cast<int>(effectiveDpi), USER_DEFAULT_SCREEN_DPI);
+    const int preferredH = MulDiv(720, static_cast<int>(effectiveDpi), USER_DEFAULT_SCREEN_DPI);
+    const int maxW = std::max(1, workW * 82 / 100);
+    const int maxH = std::max(1, workH * 82 / 100);
+    const int width = std::clamp(std::min(preferredW, maxW), std::min(workW, 760), workW);
+    const int height = std::clamp(std::min(preferredH, maxH), std::min(workH, 520), workH);
+
+    CreatorWindowPlacement placement{};
+    placement.width = width;
+    placement.height = height;
+    placement.x = monitor.rcWork.left + (workW - width) / 2;
+    placement.y = monitor.rcWork.top + (workH - height) / 2;
+    return placement;
+}
+
+void ApplySuggestedDpiRect(HWND hwnd, const RECT& suggested) noexcept {
+    HMONITOR monitorHandle = MonitorFromRect(&suggested, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!monitorHandle || !GetMonitorInfoW(monitorHandle, &monitor)) {
+        SetWindowPos(hwnd, nullptr, suggested.left, suggested.top,
+                     suggested.right - suggested.left, suggested.bottom - suggested.top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        return;
+    }
+
+    const int workW = std::max(1, static_cast<int>(monitor.rcWork.right - monitor.rcWork.left));
+    const int workH = std::max(1, static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top));
+    const int width = std::min(workW, std::max(1, static_cast<int>(suggested.right - suggested.left)));
+    const int height = std::min(workH, std::max(1, static_cast<int>(suggested.bottom - suggested.top)));
+    const int x = std::clamp(static_cast<int>(suggested.left), static_cast<int>(monitor.rcWork.left),
+                             static_cast<int>(monitor.rcWork.right) - width);
+    const int y = std::clamp(static_cast<int>(suggested.top), static_cast<int>(monitor.rcWork.top),
+                             static_cast<int>(monitor.rcWork.bottom) - height);
+    SetWindowPos(hwnd, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 HMENU ControlId(int id) {
     return reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
 }
@@ -367,17 +442,28 @@ struct DialogState {
         GetClientRect(window, &rc);
         const int width = std::max(1, static_cast<int>(rc.right - rc.left));
         const int height = std::max(1, static_cast<int>(rc.bottom - rc.top));
-        const int margin = S(16);
-        const int gap = S(12);
-        const int headerH = S(62);
-        const int footerH = S(104);
+
+        const bool compactVertical = height < S(700);
+        const int margin = compactVertical ? S(10) : S(16);
+        const int gap = compactVertical ? S(8) : S(12);
+        const int headerH = compactVertical ? S(48) : S(62);
+        const int footerH = compactVertical ? S(86) : S(104);
         const int bodyTop = margin + headerH + gap;
-        const int footerTop = height - margin - footerH;
-        const int bodyH = std::max(S(300), footerTop - gap - bodyTop);
-        const int usableW = std::max(S(900), width - margin * 2 - gap * 2);
-        const int leftW = std::clamp(usableW * 43 / 100, S(430), S(620));
-        const int previewW = std::clamp(usableW * 29 / 100, S(290), S(430));
-        const int skillW = std::max(S(260), usableW - leftW - previewW);
+        const int footerTop = std::max(bodyTop + S(180), height - margin - footerH);
+        const int bodyH = std::max(S(180), footerTop - gap - bodyTop);
+
+        // Always derive the three columns from the actual client width. The previous
+        // S(900)/430/290/260 floors could make the content wider than the window on
+        // 125%-150% scaling and effectively force the editor to behave fullscreen.
+        const int usableW = std::max(1, width - margin * 2 - gap * 2);
+        const bool compactHorizontal = usableW < S(980);
+        int leftW = compactHorizontal ? usableW * 42 / 100
+                                      : std::clamp(usableW * 43 / 100, S(360), S(600));
+        int previewW = compactHorizontal ? usableW * 28 / 100
+                                         : std::clamp(usableW * 29 / 100, S(240), S(410));
+        leftW = std::max(1, std::min(leftW, usableW));
+        previewW = std::max(1, std::min(previewW, usableW - leftW));
+        const int skillW = std::max(1, usableW - leftW - previewW);
         const int previewX = margin + leftW + gap;
         const int skillX = previewX + previewW + gap;
 
@@ -386,45 +472,60 @@ struct DialogState {
                                     SWP_NOZORDER | SWP_NOACTIVATE);
         };
 
-        place(heading, margin, margin, width - margin * 2, S(30));
-        place(note, margin, margin + S(34), width - margin * 2, S(22));
+        place(heading, margin, margin, width - margin * 2, compactVertical ? S(26) : S(30));
+        place(note, margin, margin + (compactVertical ? S(28) : S(34)),
+              width - margin * 2, compactVertical ? S(18) : S(22));
 
         // Left: focused conversation workspace.
         place(transcript, margin, bodyTop, leftW, bodyH);
 
         // Middle: result preview. Clicking the pane opens the full preview flow.
-        place(previewHeading, previewX, bodyTop, previewW, S(28));
-        place(previewPane, previewX, bodyTop + S(34), previewW, bodyH - S(78));
-        place(preview, previewX, bodyTop + bodyH - S(38), previewW, S(38));
+        const int sectionHeadingH = compactVertical ? S(24) : S(28);
+        const int previewButtonH = compactVertical ? S(34) : S(38);
+        place(previewHeading, previewX, bodyTop, previewW, sectionHeadingH);
+        place(previewPane, previewX, bodyTop + sectionHeadingH + S(6), previewW,
+              bodyH - sectionHeadingH - previewButtonH - S(14));
+        place(preview, previewX, bodyTop + bodyH - previewButtonH, previewW, previewButtonH);
 
         // Right: Skill chain and readable Skill detail.
-        place(skillHeading, skillX, bodyTop, skillW, S(28));
-        place(skillList, skillX, bodyTop + S(34), skillW, S(112));
-        place(skillDetailHeading, skillX, bodyTop + S(154), skillW, S(26));
-        place(skillText, skillX, bodyTop + S(184), skillW, bodyH - S(184));
+        const int skillListH = compactVertical ? S(84) : S(112);
+        const int skillListTop = bodyTop + sectionHeadingH + S(6);
+        const int detailHeadingTop = skillListTop + skillListH + S(8);
+        const int detailHeadingH = compactVertical ? S(22) : S(26);
+        const int detailTop = detailHeadingTop + detailHeadingH + S(4);
+        place(skillHeading, skillX, bodyTop, skillW, sectionHeadingH);
+        place(skillList, skillX, skillListTop, skillW, skillListH);
+        place(skillDetailHeading, skillX, detailHeadingTop, skillW, detailHeadingH);
+        place(skillText, skillX, detailTop, skillW, bodyTop + bodyH - detailTop);
 
         // Bottom composer spans conversation + preview columns.
         const int composerW = leftW + gap + previewW;
-        const int actionW = S(92);
-        const int clearW = S(92);
+        const int actionW = compactHorizontal ? S(78) : S(92);
+        const int clearW = compactHorizontal ? S(78) : S(92);
+        const int promptH = compactVertical ? S(42) : S(48);
         const int promptTop = footerTop;
-        place(prompt, margin, promptTop, composerW - actionW - clearW - gap * 2, S(48));
-        place(send, margin + composerW - actionW - clearW - gap, promptTop, actionW, S(48));
-        place(clear, margin + composerW - clearW, promptTop, clearW, S(48));
+        place(prompt, margin, promptTop,
+              std::max(1, composerW - actionW - clearW - gap * 2), promptH);
+        place(send, margin + composerW - actionW - clearW - gap, promptTop, actionW, promptH);
+        place(clear, margin + composerW - clearW, promptTop, clearW, promptH);
 
-        const int presetTop = promptTop + S(56);
-        const int presetGap = S(8);
-        const int presetW = std::max(S(100), (composerW - presetGap * 4) / 5);
+        const int presetTop = promptTop + promptH + (compactVertical ? S(5) : S(8));
+        const int presetGap = compactHorizontal ? S(5) : S(8);
+        const int presetW = std::max(1, (composerW - presetGap * 4) / 5);
+        const int presetH = compactVertical ? S(28) : S(32);
         for (int i = 0; i < 5; ++i)
             place(presets[static_cast<std::size_t>(i)],
-                  margin + i * (presetW + presetGap), presetTop, presetW, S(32));
+                  margin + i * (presetW + presetGap), presetTop, presetW, presetH);
 
         // Bottom-right: result state + final actions.
-        place(resultNote, skillX, footerTop, skillW, S(28));
-        const int libraryW = std::max(S(108), (skillW - gap) / 2);
-        place(library, skillX, footerTop + S(36), libraryW, S(48));
-        place(apply, skillX + libraryW + gap, footerTop + S(36),
-              skillW - libraryW - gap, S(48));
+        const int resultH = compactVertical ? S(24) : S(28);
+        const int resultButtonH = compactVertical ? S(42) : S(48);
+        place(resultNote, skillX, footerTop, skillW, resultH);
+        const int resultButtonTop = footerTop + resultH + (compactVertical ? S(4) : S(8));
+        const int libraryW = std::max(1, (skillW - gap) / 2);
+        place(library, skillX, resultButtonTop, libraryW, resultButtonH);
+        place(apply, skillX + libraryW + gap, resultButtonTop,
+              std::max(1, skillW - libraryW - gap), resultButtonH);
     }
 
     void DrawPrimaryAction(const DRAWITEMSTRUCT* draw) const {
@@ -875,9 +976,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_GETMINMAXINFO: {
         auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
         if (info) {
-            const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(hwnd));
-            info->ptMinTrackSize.x = MulDiv(1080, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-            info->ptMinTrackSize.y = MulDiv(700, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+            UINT dpi = GetDpiForWindow(hwnd);
+            if (!dpi) dpi = USER_DEFAULT_SCREEN_DPI;
+            const MONITORINFO monitor = MonitorInfoForWindow(hwnd);
+            const int workW = std::max(1, static_cast<int>(monitor.rcWork.right - monitor.rcWork.left));
+            const int workH = std::max(1, static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top));
+            const int edge = MulDiv(16, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+            const int availableW = std::max(640, workW - edge * 2);
+            const int availableH = std::max(460, workH - edge * 2);
+            info->ptMinTrackSize.x = std::min(
+                MulDiv(860, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI), availableW);
+            info->ptMinTrackSize.y = std::min(
+                MulDiv(560, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI), availableH);
         }
         return 0;
     }
@@ -886,9 +996,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_DPICHANGED: {
         const auto* suggested = reinterpret_cast<const RECT*>(lParam);
-        if (suggested) SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
-                                    suggested->right - suggested->left, suggested->bottom - suggested->top,
-                                    SWP_NOZORDER | SWP_NOACTIVATE);
+        if (suggested) ApplySuggestedDpiRect(hwnd, *suggested);
         state->RefreshFontScaleIfNeeded();
         return 0;
     }
@@ -1004,10 +1112,11 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     state->kind = kind;
 
     const wchar_t* title = kind == ContentCreatorKind::Widget ? L"妙喵 · AI 制作组件" : L"妙喵 · AI 制作壁纸";
+    const CreatorWindowPlacement placement = ResolveCreatorWindowPlacement(owner);
     HWND window = CreateWindowExW(
         WS_EX_APPWINDOW, kWindowClass, title,
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1320, 820,
+        placement.x, placement.y, placement.width, placement.height,
         owner, nullptr, instance, state);
     if (!window) {
         delete state;

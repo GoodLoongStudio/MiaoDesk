@@ -338,6 +338,7 @@ endif()
 
 target_link_libraries(MiaoDesk PRIVATE
     MiaoDeskCore
+    MiaoDeskScene2D
     MiaoDeskHarnessCore
     user32
     gdi32

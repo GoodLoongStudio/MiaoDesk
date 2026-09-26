@@ -919,12 +919,12 @@ struct WallpaperLibraryWindow::Impl {
         ShowWindow(addButton, installed ? SW_SHOW : SW_HIDE);
         const bool contentPage = installed || widgets;
         ShowWindow(creatorButton, contentPage ? SW_SHOW : SW_HIDE);
-        ShowWindow(skillsButton, contentPage ? SW_SHOW : SW_HIDE);
         if (contentPage) {
             SetWindowTextW(
                 creatorButton,
                 widgets ? L"✨ AI 制作组件" : L"✨ AI 制作壁纸");
         }
+        for (HWND filter : wallpaperFilters) ShowWindow(filter, installed ? SW_SHOW : SW_HIDE);
         if (!installed && webBarVisible) HideWebBar();
         if (ai) ShowDesktopAiSettingsPage(window);
         else HideDesktopAiSettingsPage(window);
@@ -1195,7 +1195,7 @@ struct WallpaperLibraryWindow::Impl {
         const int height = RectHeight(rc);
         const int sidebarW = S(208);
         const int topH = S(58);
-        const int footerH = S(58);
+        const int footerH = S(76);
         const int margin = std::max(S(12), MulDiv(width - sidebarW, 16, 1000));
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
@@ -1215,8 +1215,7 @@ struct WallpaperLibraryWindow::Impl {
         }
         if (installed || widgets) {
             navY += S(10);
-            place(skillsButton, S(12), navY, sidebarW - S(24), S(38));
-        }
+            }
         place(logsButton, S(12), height - S(46), sidebarW - S(24), S(32));
 
         const int contentLeft = sidebarW;
@@ -1225,18 +1224,26 @@ struct WallpaperLibraryWindow::Impl {
         const int headerRight = width - margin;
         if (installed) {
             const int addW = S(96);
-            const int creatorW = S(138);
+            const int creatorW = S(154);
             const int headerGap = S(8);
-            const int titleW = std::clamp(contentWidth * 21 / 100, S(112), S(190));
+            const int titleW = std::clamp(contentWidth * 20 / 100, S(122), S(190));
             const int titleRight = headerLeft + titleW;
             const int addLeft = headerRight - addW;
             const int creatorLeft = addLeft - headerGap - creatorW;
             const int searchLeft = titleRight + S(12);
-            const int searchW = std::max(S(120), creatorLeft - S(12) - searchLeft);
-            place(sectionTitle, headerLeft, S(17), titleW, S(30));
-            place(search, searchLeft, S(12), searchW, S(34));
-            place(creatorButton, creatorLeft, S(11), creatorW, S(36));
-            place(addButton, addLeft, S(11), addW, S(36));
+            const int searchW = std::max(S(180), creatorLeft - S(12) - searchLeft);
+            place(sectionTitle, headerLeft, S(15), titleW, S(32));
+            place(search, searchLeft, S(11), searchW, S(36));
+            place(creatorButton, creatorLeft, S(10), creatorW, S(38));
+            place(addButton, addLeft, S(10), addW, S(38));
+
+            int chipX = headerLeft;
+            const int chipY = topH + S(9);
+            for (int i = 0; i < kWallpaperFilterCount; ++i) {
+                const int chipW = S(i == 0 ? 58 : 68);
+                place(wallpaperFilters[static_cast<std::size_t>(i)], chipX, chipY, chipW, S(30));
+                chipX += chipW + S(8);
+            }
         } else if (widgets) {
             const int creatorW = S(138);
             const int creatorLeft = headerRight - creatorW;
@@ -1256,7 +1263,8 @@ struct WallpaperLibraryWindow::Impl {
             place(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34));
         }
 
-        const int contentTop = topH + webH;
+        const int categoryH = installed ? S(48) : 0;
+        const int contentTop = topH + categoryH + webH;
         const int contentBottom = std::max(contentTop, height - footerH);
         const int contentH = std::max(1, contentBottom - contentTop);
         place(wallpaperGrid, contentLeft, contentTop, contentWidth, contentH);
@@ -1267,23 +1275,23 @@ struct WallpaperLibraryWindow::Impl {
         const int footerTop = height - footerH;
         if (installed) {
             const int gap = S(6);
-            const int actionW = std::max(S(82), MulDiv(contentWidth, 15, 100));
-            const int smallW = std::max(S(68), MulDiv(contentWidth, 11, 100));
-            const int toggleW = std::max(S(82), MulDiv(contentWidth, 12, 100));
-            const int targetW = std::max(S(118), MulDiv(contentWidth, 23, 100));
-            const int right = width - margin;
-            const int actionTotal = targetW + toggleW + actionW + smallW * 2 + gap * 4;
-            const int actionsLeft = right - actionTotal;
-            const int statusLeft = contentLeft + margin;
-            const int available = actionsLeft - S(10) - statusLeft;
-            const int statusW = std::max(0, std::min(S(90), available));
-            place(status, statusLeft, footerTop + S(18), statusW, S(26));
-            int x = actionsLeft;
-            place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
-            place(wallpaperToggleButton, x, footerTop + S(11), toggleW, S(36)); x += toggleW + gap;
-            place(favoriteButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
-            place(removeButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
-            place(applyButton, x, footerTop + S(11), actionW, S(36));
+            const int innerLeft = contentLeft + margin;
+            const int innerRight = width - margin;
+            place(status, innerLeft, footerTop + S(6), innerRight - innerLeft, S(20));
+
+            const int controlsTop = footerTop + S(32);
+            const int innerW = std::max(S(360), innerRight - innerLeft);
+            const int targetW = std::clamp(MulDiv(innerW, 27, 100), S(122), S(190));
+            const int toggleW = std::clamp(MulDiv(innerW, 16, 100), S(82), S(116));
+            const int smallW = std::clamp(MulDiv(innerW, 13, 100), S(66), S(96));
+            const int applyW = std::clamp(MulDiv(innerW, 18, 100), S(92), S(132));
+            const int controlsW = targetW + toggleW + smallW * 2 + applyW + gap * 4;
+            int x = innerRight - controlsW;
+            place(targetCombo, x, controlsTop, targetW, S(180)); x += targetW + gap;
+            place(wallpaperToggleButton, x, controlsTop, toggleW, S(36)); x += toggleW + gap;
+            place(favoriteButton, x, controlsTop, smallW, S(36)); x += smallW + gap;
+            place(removeButton, x, controlsTop, smallW, S(36)); x += smallW + gap;
+            place(applyButton, x, controlsTop, applyW, S(36));
         } else if (widgets) {
             const int gap = S(6);
             const int buttonW = std::max(S(70), MulDiv(contentWidth, 11, 100));
@@ -1324,6 +1332,35 @@ struct WallpaperLibraryWindow::Impl {
         }
         if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
         SelectObject(draw->hDC, old);
+        return TRUE;
+    }
+
+    LRESULT DrawWallpaperFilterButton(const DRAWITEMSTRUCT* draw) {
+        if (!draw) return FALSE;
+        const int index = static_cast<int>(draw->CtlID) - kWallpaperFilterBaseId;
+        const bool active = index == wallpaperFilterIndex;
+
+        HBRUSH fill = CreateSolidBrush(active ? RGB(37, 116, 236) : RGB(245, 248, 252));
+        HPEN pen = CreatePen(PS_SOLID, 1, active ? RGB(37, 116, 236) : RGB(224, 231, 240));
+        HGDIOBJ oldBrush = SelectObject(draw->hDC, fill);
+        HGDIOBJ oldPen = SelectObject(draw->hDC, pen);
+        const int radius = S(14);
+        RoundRect(draw->hDC, draw->rcItem.left, draw->rcItem.top,
+                  draw->rcItem.right, draw->rcItem.bottom, radius, radius);
+        SelectObject(draw->hDC, oldPen);
+        SelectObject(draw->hDC, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(fill);
+
+        SetBkMode(draw->hDC, TRANSPARENT);
+        SetTextColor(draw->hDC, active ? RGB(255, 255, 255) : RGB(55, 63, 78));
+        HGDIOBJ oldFont = SelectObject(draw->hDC, active ? cardTitleFont : smallFont);
+        wchar_t text[32]{};
+        GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
+        RECT label = draw->rcItem;
+        DrawTextW(draw->hDC, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(draw->hDC, oldFont);
+        if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
         return TRUE;
     }
 
@@ -1443,8 +1480,8 @@ struct WallpaperLibraryWindow::Impl {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(640);
-                info->ptMinTrackSize.y = self->S(440);
+                info->ptMinTrackSize.x = self->S(820);
+                info->ptMinTrackSize.y = self->S(540);
             }
             return 0;
         }
@@ -1484,6 +1521,10 @@ struct WallpaperLibraryWindow::Impl {
             const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
             if (draw && draw->CtlType == ODT_BUTTON && draw->CtlID >= kNavInstalledId && draw->CtlID <= kNavAiId)
                 return self->DrawNavButton(draw);
+            if (draw && draw->CtlType == ODT_BUTTON &&
+                draw->CtlID >= kWallpaperFilterBaseId &&
+                draw->CtlID < kWallpaperFilterBaseId + kWallpaperFilterCount)
+                return self->DrawWallpaperFilterButton(draw);
             break;
         }
         case WM_COMMAND: {
@@ -1502,7 +1543,13 @@ struct WallpaperLibraryWindow::Impl {
             else if (id == kWallpaperToggleId && notification == BN_CLICKED) self->ToggleWallpaper();
             else if (id == kOpenLogsId && notification == BN_CLICKED) self->OpenLogs();
             else if (id == kCreatorId && notification == BN_CLICKED) self->OpenCreator();
-            else if (id == kSkillsId && notification == BN_CLICKED) self->OpenSkills();
+            else if (id >= kWallpaperFilterBaseId &&
+                     id < kWallpaperFilterBaseId + kWallpaperFilterCount &&
+                     notification == BN_CLICKED) {
+                self->wallpaperFilterIndex = id - kWallpaperFilterBaseId;
+                for (HWND filter : self->wallpaperFilters) InvalidateRect(filter, nullptr, TRUE);
+                self->RefreshWallpapers();
+            }
             else if (id == kWebConfirmId && notification == BN_CLICKED) self->ImportWeb();
             else if (id == kWebCancelId && notification == BN_CLICKED) self->HideWebBar();
             else if (id == kMenuImportFile) self->ImportFile();
@@ -1548,7 +1595,7 @@ struct WallpaperLibraryWindow::Impl {
             const int sidebarW = self->S(208);
             const int topH = self->S(58);
             const bool showFooter = self->page != Page::AI;
-            const int footerH = showFooter ? self->S(58) : 0;
+            const int footerH = showFooter ? self->S(76) : 0;
             RECT whole = client;
             FillSolid(dc, whole, RGB(248, 251, 255));
             RECT sidebar{0, 0, sidebarW, client.bottom};
@@ -1634,6 +1681,10 @@ struct WallpaperLibraryWindow::Impl {
         const std::array<int, 3> navIds{kNavInstalledId, kNavWidgetsId, kNavAiId};
         for (std::size_t i = 0; i < nav.size(); ++i)
             nav[i] = button(navLabels[i], navIds[i], BS_OWNERDRAW);
+        for (int i = 0; i < kWallpaperFilterCount; ++i)
+            wallpaperFilters[static_cast<std::size_t>(i)] =
+                button(kWallpaperFilterLabels[static_cast<std::size_t>(i)],
+                       kWallpaperFilterBaseId + i, BS_OWNERDRAW, true);
 
         wallpaperGrid = CreateWindowExW(0, kGridClass, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_CLIPCHILDREN,
                                         0, 0, 10, 10, window, ControlId(kWallpaperGridId), instance, this);
@@ -1659,7 +1710,6 @@ struct WallpaperLibraryWindow::Impl {
         webCancel = button(L"取消", kWebCancelId, 0, false);
         wallpaperToggleButton = button(L"停止壁纸", kWallpaperToggleId, 0, false);
         creatorButton = button(L"✨ AI 制作壁纸", kCreatorId, 0, true);
-        skillsButton = button(L"Skills / 创作规范", kSkillsId, 0, true);
         logsButton = button(L"实时日志面板 ↗", kOpenLogsId, 0, true);
 
         ApplyFonts();

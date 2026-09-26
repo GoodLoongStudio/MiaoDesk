@@ -1408,9 +1408,6 @@ struct WallpaperLibraryWindow::Impl {
             place(button, S(12), navY, sidebarW - S(24), S(38));
             navY += S(42);
         }
-        if (installed || widgets) {
-            navY += S(10);
-            }
         place(logsButton, S(12), height - S(46), sidebarW - S(24), S(32));
 
         const int contentLeft = sidebarW;
@@ -1465,8 +1462,9 @@ struct WallpaperLibraryWindow::Impl {
             place(sectionTitle, headerLeft, S(17), std::max(S(160), contentWidth - margin * 2), S(30));
         }
 
+        const int categoryH = (installed || widgets) ? S(48) : 0;
         if (webBarVisible && installed) {
-            const int webTop = topH;
+            const int webTop = topH + categoryH;
             const int buttonsW = S(202);
             const int urlW = std::max(S(160), contentWidth - margin * 2 - buttonsW - S(12));
             place(webUrl, contentLeft + margin, webTop + S(7), urlW, S(34));
@@ -1474,7 +1472,6 @@ struct WallpaperLibraryWindow::Impl {
             place(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34));
         }
 
-        const int categoryH = (installed || widgets) ? S(48) : 0;
         const int contentTop = topH + categoryH + webH;
         const int contentBottom = std::max(contentTop, height - footerH);
         const int contentH = std::max(1, contentBottom - contentTop);
@@ -1505,20 +1502,19 @@ struct WallpaperLibraryWindow::Impl {
             place(applyButton, x, controlsTop, applyW, S(36));
         } else if (widgets) {
             const int gap = S(6);
-            const int buttonW = std::max(S(70), MulDiv(contentWidth, 11, 100));
-            const int createW = std::max(S(124), MulDiv(contentWidth, 20, 100));
-            const int right = width - margin;
-            const int actionTotal = createW + buttonW * 3 + gap * 3;
-            const int actionsLeft = right - actionTotal;
-            const int statusLeft = contentLeft + margin;
-            const int available = actionsLeft - S(10) - statusLeft;
-            const int statusW = std::max(0, std::min(S(240), available));
-            place(status, statusLeft, footerTop + S(18), statusW, S(26));
-            int x = actionsLeft;
-            place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
-            place(widgetRefreshButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
-            place(widgetToggleButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
-            place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
+            const int innerLeft = contentLeft + margin;
+            const int innerRight = width - margin;
+            place(status, innerLeft, footerTop + S(6), innerRight - innerLeft, S(20));
+
+            const int controlsTop = footerTop + S(32);
+            const int buttonW = S(78);
+            const int createW = S(118);
+            const int controlsW = createW + buttonW * 3 + gap * 3;
+            int x = innerRight - controlsW;
+            place(widgetCreateButton, x, controlsTop, createW, S(36)); x += createW + gap;
+            place(widgetRefreshButton, x, controlsTop, buttonW, S(36)); x += buttonW + gap;
+            place(widgetToggleButton, x, controlsTop, buttonW, S(36)); x += buttonW + gap;
+            place(widgetRemoveButton, x, controlsTop, buttonW, S(36));
         }
 
         RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);

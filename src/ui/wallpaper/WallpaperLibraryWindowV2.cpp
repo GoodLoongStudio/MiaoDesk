@@ -1377,8 +1377,8 @@ struct WallpaperLibraryWindow::Impl {
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
             if (info) {
-                info->ptMinTrackSize.x = self->S(640);
-                info->ptMinTrackSize.y = self->S(440);
+                info->ptMinTrackSize.x = self->S(760);
+                info->ptMinTrackSize.y = self->S(500);
             }
             return 0;
         }

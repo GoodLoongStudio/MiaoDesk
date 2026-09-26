@@ -1524,6 +1524,45 @@ struct WallpaperLibraryWindow::Impl {
         RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
     }
 
+    LRESULT DrawPrimaryButton(const DRAWITEMSTRUCT* draw) const {
+        if (!draw) return FALSE;
+        const bool enabled = IsWindowEnabled(draw->hwndItem) != FALSE;
+        const bool pressed = (draw->itemState & ODS_SELECTED) != 0;
+        const COLORREF fillColor = !enabled
+            ? RGB(184, 201, 224)
+            : pressed ? RGB(25, 93, 205) : RGB(37, 116, 236);
+        const COLORREF borderColor = !enabled
+            ? RGB(170, 188, 214)
+            : pressed ? RGB(20, 78, 176) : RGB(31, 101, 214);
+
+        HBRUSH fill = CreateSolidBrush(fillColor);
+        HPEN pen = CreatePen(PS_SOLID, 1, borderColor);
+        HGDIOBJ oldBrush = SelectObject(draw->hDC, fill);
+        HGDIOBJ oldPen = SelectObject(draw->hDC, pen);
+        const int radius = S(12);
+        RoundRect(draw->hDC, draw->rcItem.left, draw->rcItem.top,
+                  draw->rcItem.right, draw->rcItem.bottom, radius, radius);
+        SelectObject(draw->hDC, oldPen);
+        SelectObject(draw->hDC, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(fill);
+
+        wchar_t text[96]{};
+        GetWindowTextW(draw->hwndItem, text, static_cast<int>(std::size(text)));
+        SetBkMode(draw->hDC, TRANSPARENT);
+        SetTextColor(draw->hDC, RGB(255, 255, 255));
+        HGDIOBJ oldFont = SelectObject(draw->hDC, cardTitleFont ? cardTitleFont : bodyFont);
+        RECT label = draw->rcItem;
+        DrawTextW(draw->hDC, text, -1, &label, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(draw->hDC, oldFont);
+        if (draw->itemState & ODS_FOCUS) {
+            RECT focus = draw->rcItem;
+            InflateRect(&focus, -S(4), -S(4));
+            DrawFocusRect(draw->hDC, &focus);
+        }
+        return TRUE;
+    }
+
     LRESULT DrawNavButton(const DRAWITEMSTRUCT* draw) {
         if (!draw) return FALSE;
         const bool active = static_cast<int>(draw->CtlID) == activeNavId;
@@ -1735,6 +1774,9 @@ struct WallpaperLibraryWindow::Impl {
         }
         case WM_DRAWITEM: {
             const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+            if (draw && draw->CtlType == ODT_BUTTON &&
+                (draw->CtlID == kCreatorId || draw->CtlID == kApplyId))
+                return self->DrawPrimaryButton(draw);
             if (draw && draw->CtlType == ODT_BUTTON && draw->CtlID >= kNavInstalledId && draw->CtlID <= kNavAiId)
                 return self->DrawNavButton(draw);
             if (draw && draw->CtlType == ODT_BUTTON &&
@@ -1929,7 +1971,7 @@ struct WallpaperLibraryWindow::Impl {
         status = label(L"选择一个桌面；双击卡片可直接应用。", smallFont);
         targetCombo = font(CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
                                            0, 0, 10, 10, window, ControlId(kTargetComboId), instance, nullptr), bodyFont);
-        applyButton = button(L"应用到桌面", kApplyId);
+        applyButton = button(L"应用到桌面", kApplyId, BS_OWNERDRAW);
         favoriteButton = button(L"收藏", kFavoriteId);
         removeButton = button(L"移出库", kRemoveId);
 
@@ -1944,7 +1986,7 @@ struct WallpaperLibraryWindow::Impl {
         webConfirm = button(L"添加 Web", kWebConfirmId, 0, false);
         webCancel = button(L"取消", kWebCancelId, 0, false);
         wallpaperToggleButton = button(L"停止壁纸", kWallpaperToggleId, 0, false);
-        creatorButton = button(L"✨ AI 制作壁纸", kCreatorId, 0, true);
+        creatorButton = button(L"✨ AI 制作壁纸", kCreatorId, BS_OWNERDRAW, true);
         logsButton = button(L"实时日志面板 ↗", kOpenLogsId, 0, true);
 
         ApplyFonts();

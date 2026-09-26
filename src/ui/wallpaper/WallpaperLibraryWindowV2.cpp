@@ -1162,8 +1162,6 @@ struct WallpaperLibraryWindow::Impl {
         }
         if (installed || widgets) {
             navY += S(10);
-            place(creatorButton, S(12), navY, sidebarW - S(24), S(38));
-            navY += S(42);
             place(skillsButton, S(12), navY, sidebarW - S(24), S(38));
         }
         place(logsButton, S(12), height - S(46), sidebarW - S(24), S(32));
@@ -1174,14 +1172,24 @@ struct WallpaperLibraryWindow::Impl {
         const int headerRight = width - margin;
         if (installed) {
             const int addW = S(96);
+            const int creatorW = S(138);
+            const int headerGap = S(8);
             const int titleW = std::clamp(contentWidth * 21 / 100, S(112), S(190));
             const int titleRight = headerLeft + titleW;
             const int addLeft = headerRight - addW;
+            const int creatorLeft = addLeft - headerGap - creatorW;
             const int searchLeft = titleRight + S(12);
-            const int searchW = std::max(S(120), addLeft - S(12) - searchLeft);
+            const int searchW = std::max(S(120), creatorLeft - S(12) - searchLeft);
             place(sectionTitle, headerLeft, S(17), titleW, S(30));
             place(search, searchLeft, S(12), searchW, S(34));
+            place(creatorButton, creatorLeft, S(11), creatorW, S(36));
             place(addButton, addLeft, S(11), addW, S(36));
+        } else if (widgets) {
+            const int creatorW = S(138);
+            const int creatorLeft = headerRight - creatorW;
+            place(sectionTitle, headerLeft, S(17),
+                  std::max(S(160), creatorLeft - S(12) - headerLeft), S(30));
+            place(creatorButton, creatorLeft, S(11), creatorW, S(36));
         } else {
             place(sectionTitle, headerLeft, S(17), std::max(S(160), contentWidth - margin * 2), S(30));
         }

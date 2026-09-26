@@ -66,10 +66,15 @@ constexpr int kOpenLogsId = 6170;
 constexpr int kCreatorId = 6171;
 constexpr int kWallpaperFilterBaseId = 6180;
 constexpr int kWallpaperFilterCount = 8;
+constexpr int kWidgetFilterBaseId = 6190;
+constexpr int kWidgetFilterCount = 8;
 constexpr UINT kDeferredWidgetRefresh = WM_APP + 0x235;
 
 constexpr std::array<const wchar_t*, kWallpaperFilterCount> kWallpaperFilterLabels{{
     L"全部", L"动态", L"静态", L"猫咪", L"风景", L"科幻", L"治愈", L"简约"
+}};
+constexpr std::array<const wchar_t*, kWidgetFilterCount> kWidgetFilterLabels{{
+    L"全部", L"时钟", L"天气", L"效率", L"信息", L"系统", L"娱乐", L"桌面宠物"
 }};
 
 constexpr UINT kMenuImportFile = 6201;
@@ -211,6 +216,30 @@ bool MatchesWallpaperFilter(const WallpaperLibraryItem& item, int filterIndex) {
     }
 }
 
+bool MatchesWidgetFilter(const DesktopWidget& widget, int filterIndex) {
+    if (filterIndex <= 0) return true;
+    const std::wstring searchable = LowerCopy(
+        widget.title + L" " + widget.source.wstring() + L" " + widget.id);
+    switch (filterIndex) {
+    case 1:
+        return ContainsAny(searchable, {L"时钟", L"clock", L"time"});
+    case 2:
+        return ContainsAny(searchable, {L"天气", L"weather", L"forecast"});
+    case 3:
+        return ContainsAny(searchable, {L"待办", L"todo", L"task", L"效率", L"productivity"});
+    case 4:
+        return ContainsAny(searchable, {L"信息", L"股票", L"stock", L"行情", L"calendar", L"日历"});
+    case 5:
+        return ContainsAny(searchable, {L"系统", L"cpu", L"gpu", L"memory", L"内存", L"监控"});
+    case 6:
+        return ContainsAny(searchable, {L"音乐", L"music", L"player", L"娱乐", L"media"});
+    case 7:
+        return ContainsAny(searchable, {L"宠物", L"pet", L"猫", L"cat", L"喵"});
+    default:
+        return true;
+    }
+}
+
 bool SourceMissing(const WallpaperLibraryItem& item) {
     if (item.kind == LibraryWallpaperKind::Scene) return false;
     if (item.kind == LibraryWallpaperKind::Web) return !WallpaperLibrary::IsTrustedWebUrl(item.source.wstring());
@@ -270,6 +299,7 @@ struct WallpaperLibraryWindow::Impl {
     HWND logsButton{};
     HWND creatorButton{};
     std::array<HWND, kWallpaperFilterCount> wallpaperFilters{};
+    std::array<HWND, kWidgetFilterCount> widgetFilters{};
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
@@ -294,6 +324,7 @@ struct WallpaperLibraryWindow::Impl {
     int wallpaperHover{-1};
     int widgetHover{-1};
     int wallpaperFilterIndex{};
+    int widgetFilterIndex{};
 
     HFONT brandFont{};
     HFONT titleFont{};
@@ -353,6 +384,7 @@ struct WallpaperLibraryWindow::Impl {
                              widgetCreateButton, widgetToggleButton, widgetRemoveButton, widgetRefreshButton,
                              webUrl, webConfirm, webCancel}) set(control, bodyFont);
         for (HWND filter : wallpaperFilters) set(filter, smallFont);
+        for (HWND filter : widgetFilters) set(filter, smallFont);
     }
 
     void RefreshFontScaleIfNeeded() {
@@ -522,6 +554,16 @@ struct WallpaperLibraryWindow::Impl {
             SetStatus(result.message.empty() ? L"无法读取小组件。" : result.message);
         } else {
             visibleWidgets = std::move(widgets);
+            const std::wstring query = LowerCopy(Trim(WindowText(search)));
+            visibleWidgets.erase(
+                std::remove_if(visibleWidgets.begin(), visibleWidgets.end(), [&](const auto& item) {
+                    if (!MatchesWidgetFilter(item, widgetFilterIndex)) return true;
+                    if (query.empty()) return false;
+                    const std::wstring searchable = LowerCopy(
+                        item.title + L" " + item.source.wstring() + L" " + item.id);
+                    return searchable.find(query) == std::wstring::npos;
+                }),
+                visibleWidgets.end());
             if (!previous.empty()) {
                 const auto it = std::find_if(visibleWidgets.begin(), visibleWidgets.end(), [&](const auto& item) {
                     return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;
@@ -917,9 +959,9 @@ struct WallpaperLibraryWindow::Impl {
         SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置");
         ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
         ShowWindow(widgetGrid, widgets ? SW_SHOW : SW_HIDE);
-        ShowWindow(search, installed ? SW_SHOW : SW_HIDE);
-        ShowWindow(addButton, installed ? SW_SHOW : SW_HIDE);
         const bool contentPage = installed || widgets;
+        ShowWindow(search, contentPage ? SW_SHOW : SW_HIDE);
+        ShowWindow(addButton, contentPage ? SW_SHOW : SW_HIDE);
         ShowWindow(creatorButton, contentPage ? SW_SHOW : SW_HIDE);
         if (contentPage) {
             SetWindowTextW(
@@ -927,6 +969,12 @@ struct WallpaperLibraryWindow::Impl {
                 widgets ? L"✨ AI 制作组件" : L"✨ AI 制作壁纸");
         }
         for (HWND filter : wallpaperFilters) ShowWindow(filter, installed ? SW_SHOW : SW_HIDE);
+        for (HWND filter : widgetFilters) ShowWindow(filter, widgets ? SW_SHOW : SW_HIDE);
+        if (search) {
+            SendMessageW(
+                search, EM_SETCUEBANNER, TRUE,
+                reinterpret_cast<LPARAM>(widgets ? L"搜索组件" : L"搜索壁纸"));
+        }
         if (!installed && webBarVisible) HideWebBar();
         if (ai) ShowDesktopAiSettingsPage(window);
         else HideDesktopAiSettingsPage(window);
@@ -1247,11 +1295,27 @@ struct WallpaperLibraryWindow::Impl {
                 chipX += chipW + S(8);
             }
         } else if (widgets) {
-            const int creatorW = S(138);
-            const int creatorLeft = headerRight - creatorW;
-            place(sectionTitle, headerLeft, S(17),
-                  std::max(S(160), creatorLeft - S(12) - headerLeft), S(30));
-            place(creatorButton, creatorLeft, S(11), creatorW, S(36));
+            const int addW = S(96);
+            const int creatorW = S(154);
+            const int headerGap = S(8);
+            const int titleW = std::clamp(contentWidth * 20 / 100, S(122), S(190));
+            const int titleRight = headerLeft + titleW;
+            const int addLeft = headerRight - addW;
+            const int creatorLeft = addLeft - headerGap - creatorW;
+            const int searchLeft = titleRight + S(12);
+            const int searchW = std::max(S(180), creatorLeft - S(12) - searchLeft);
+            place(sectionTitle, headerLeft, S(15), titleW, S(32));
+            place(search, searchLeft, S(11), searchW, S(36));
+            place(creatorButton, creatorLeft, S(10), creatorW, S(38));
+            place(addButton, addLeft, S(10), addW, S(38));
+
+            int chipX = headerLeft;
+            const int chipY = topH + S(9);
+            for (int i = 0; i < kWidgetFilterCount; ++i) {
+                const int chipW = S(i == 0 ? 58 : (i == 7 ? 88 : 68));
+                place(widgetFilters[static_cast<std::size_t>(i)], chipX, chipY, chipW, S(30));
+                chipX += chipW + S(8);
+            }
         } else {
             place(sectionTitle, headerLeft, S(17), std::max(S(160), contentWidth - margin * 2), S(30));
         }
@@ -1265,7 +1329,7 @@ struct WallpaperLibraryWindow::Impl {
             place(webCancel, width - margin - S(98), webTop + S(7), S(98), S(34));
         }
 
-        const int categoryH = installed ? S(48) : 0;
+        const int categoryH = (installed || widgets) ? S(48) : 0;
         const int contentTop = topH + categoryH + webH;
         const int contentBottom = std::max(contentTop, height - footerH);
         const int contentH = std::max(1, contentBottom - contentTop);
@@ -1337,10 +1401,15 @@ struct WallpaperLibraryWindow::Impl {
         return TRUE;
     }
 
-    LRESULT DrawWallpaperFilterButton(const DRAWITEMSTRUCT* draw) {
+    LRESULT DrawContentFilterButton(const DRAWITEMSTRUCT* draw) {
         if (!draw) return FALSE;
-        const int index = static_cast<int>(draw->CtlID) - kWallpaperFilterBaseId;
-        const bool active = index == wallpaperFilterIndex;
+        const int controlId = static_cast<int>(draw->CtlID);
+        const bool wallpaper = controlId >= kWallpaperFilterBaseId &&
+                               controlId < kWallpaperFilterBaseId + kWallpaperFilterCount;
+        const int index = wallpaper
+            ? controlId - kWallpaperFilterBaseId
+            : controlId - kWidgetFilterBaseId;
+        const bool active = wallpaper ? index == wallpaperFilterIndex : index == widgetFilterIndex;
 
         HBRUSH fill = CreateSolidBrush(active ? RGB(37, 116, 236) : RGB(245, 248, 252));
         HPEN pen = CreatePen(PS_SOLID, 1, active ? RGB(37, 116, 236) : RGB(224, 231, 240));
@@ -1524,16 +1593,24 @@ struct WallpaperLibraryWindow::Impl {
             if (draw && draw->CtlType == ODT_BUTTON && draw->CtlID >= kNavInstalledId && draw->CtlID <= kNavAiId)
                 return self->DrawNavButton(draw);
             if (draw && draw->CtlType == ODT_BUTTON &&
-                draw->CtlID >= kWallpaperFilterBaseId &&
-                draw->CtlID < kWallpaperFilterBaseId + kWallpaperFilterCount)
-                return self->DrawWallpaperFilterButton(draw);
+                ((draw->CtlID >= kWallpaperFilterBaseId &&
+                  draw->CtlID < kWallpaperFilterBaseId + kWallpaperFilterCount) ||
+                 (draw->CtlID >= kWidgetFilterBaseId &&
+                  draw->CtlID < kWidgetFilterBaseId + kWidgetFilterCount)))
+                return self->DrawContentFilterButton(draw);
             break;
         }
         case WM_COMMAND: {
             const int id = LOWORD(wParam);
             const int notification = HIWORD(wParam);
-            if (id == kSearchId && notification == EN_CHANGE) self->RefreshWallpapers();
-            else if (id == kAddId && notification == BN_CLICKED) self->ShowAddMenu();
+            if (id == kSearchId && notification == EN_CHANGE) {
+                if (self->page == Page::Widgets) self->RefreshWidgets();
+                else self->RefreshWallpapers();
+            }
+            else if (id == kAddId && notification == BN_CLICKED) {
+                if (self->page == Page::Widgets) self->ShowWidgetCreateMenu();
+                else self->ShowAddMenu();
+            }
             else if (id >= kNavInstalledId && id <= kNavAiId && notification == BN_CLICKED) self->HandleNav(id);
             else if (id == kApplyId && notification == BN_CLICKED) self->ApplySelected();
             else if (id == kFavoriteId && notification == BN_CLICKED) self->ToggleFavorite();
@@ -1551,6 +1628,13 @@ struct WallpaperLibraryWindow::Impl {
                 self->wallpaperFilterIndex = id - kWallpaperFilterBaseId;
                 for (HWND filter : self->wallpaperFilters) InvalidateRect(filter, nullptr, TRUE);
                 self->RefreshWallpapers();
+            }
+            else if (id >= kWidgetFilterBaseId &&
+                     id < kWidgetFilterBaseId + kWidgetFilterCount &&
+                     notification == BN_CLICKED) {
+                self->widgetFilterIndex = id - kWidgetFilterBaseId;
+                for (HWND filter : self->widgetFilters) InvalidateRect(filter, nullptr, TRUE);
+                self->RefreshWidgets();
             }
             else if (id == kWebConfirmId && notification == BN_CLICKED) self->ImportWeb();
             else if (id == kWebCancelId && notification == BN_CLICKED) self->HideWebBar();
@@ -1687,6 +1771,10 @@ struct WallpaperLibraryWindow::Impl {
             wallpaperFilters[static_cast<std::size_t>(i)] =
                 button(kWallpaperFilterLabels[static_cast<std::size_t>(i)],
                        kWallpaperFilterBaseId + i, BS_OWNERDRAW, true);
+        for (int i = 0; i < kWidgetFilterCount; ++i)
+            widgetFilters[static_cast<std::size_t>(i)] =
+                button(kWidgetFilterLabels[static_cast<std::size_t>(i)],
+                       kWidgetFilterBaseId + i, BS_OWNERDRAW, false);
 
         wallpaperGrid = CreateWindowExW(0, kGridClass, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_CLIPCHILDREN,
                                         0, 0, 10, 10, window, ControlId(kWallpaperGridId), instance, this);
@@ -1700,7 +1788,7 @@ struct WallpaperLibraryWindow::Impl {
         favoriteButton = button(L"收藏", kFavoriteId);
         removeButton = button(L"移出库", kRemoveId);
 
-        widgetCreateButton = button(L"＋ 新建桌面小组件", kWidgetCreateId, 0, false);
+        widgetCreateButton = button(L"＋ 新建小组件", kWidgetCreateId, 0, false);
         widgetToggleButton = button(L"启用 / 停用", kWidgetToggleId, 0, false);
         widgetRemoveButton = button(L"删除", kWidgetRemoveId, 0, false);
         widgetRefreshButton = button(L"刷新", kWidgetRefreshId, 0, false);

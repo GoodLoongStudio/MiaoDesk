@@ -430,8 +430,8 @@ struct DialogState {
             GetObjectW(previewBitmap, sizeof(bitmap), &bitmap);
             const int sourceW = std::max<LONG>(1, bitmap.bmWidth);
             const int sourceH = std::max<LONG>(1, bitmap.bmHeight);
-            const int availableW = std::max(1, inner.right - inner.left);
-            const int availableH = std::max(1, inner.bottom - inner.top);
+            const int availableW = std::max<int>(1, static_cast<int>(inner.right - inner.left));
+            const int availableH = std::max<int>(1, static_cast<int>(inner.bottom - inner.top));
             const double scale = std::min(
                 static_cast<double>(availableW) / sourceW,
                 static_cast<double>(availableH) / sourceH);

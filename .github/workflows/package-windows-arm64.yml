@@ -2,7 +2,7 @@ name: Windows ARM64 Package
 
 on:
   push:
-    branches: [main, fix/arm64-wallpaper-resolution-scaling]
+    branches: [main, fix/arm64-wallpaper-resolution-scaling, feat/p0-6-creator-wiring]
     paths:
       - CMakeLists.txt
       - CMakePresets.json

@@ -380,6 +380,8 @@ std::wstring FriendlyToolName(const std::wstring& raw) {
     if (raw == L"image_generate") return L"生成图片";
     if (raw == L"settings_open") return L"打开妙喵设置";
     if (raw == L"wallpaper_validate_package") return L"检查壁纸包";
+    if (raw == L"desktop_preview_wallpaper") return L"准备壁纸预览";
+    if (raw == L"desktop_preview_examples") return L"查看内置壁纸示例";
     if (raw == L"content_skill_get") return L"查阅内容创作规范";
     if (raw == L"wallpaper_state_get") return L"读取桌面状态";
     if (raw == L"desktop_widget_list") return L"查看桌面组件";

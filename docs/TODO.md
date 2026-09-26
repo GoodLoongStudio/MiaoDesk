@@ -3,7 +3,8 @@
 - 更新：2026-09-27。
 - 定位：主产品优化的唯一任务级执行清单；阶段路线见 [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)。
 - 目标：[PRODUCT_VISION.md](PRODUCT_VISION.md) 定义的漂亮、智能桌面；遵守 [DESIGN_BASELINE.md](DESIGN_BASELINE.md)。
-- 本轮核对基点：`9dc2f288506563ecf8e5f32b111c6388e88593bf`。只核对了仓库文档与实现，未在本轮运行 Windows 产品，也未核实该 SHA 的远端 CI。
+- 本轮核对基点：`631cb0718b184e1e6e1052e0a3568d9b44ef16b7`。本轮核实了该 SHA 的远端 CI（见 BASE-02），并核对了仓库文档与实现；**仍未在本轮运行 Windows 产品**，因此一切真机项保持未勾选。
+- 本机为 macOS，可跑的是：仓库门（含 mingw 交叉 `-fsyntax-only` 全量语法检查、文档引用三道门）与 `node tests/*.mjs` 源契约测试。这些能证明"语法没坏、契约还在"，不能证明链接通过或行为正确。
 - 旧清单完整保存在 [历史快照](history/TODO_SNAPSHOT_2026-09-27.md)，旧 P0/P1/P2/P3/B 编号仅用于追溯。
 
 ## 1. 范围与执行规则

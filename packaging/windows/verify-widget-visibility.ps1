@@ -288,13 +288,25 @@ Enabled=1
     $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {
         Write-Host 'Widget diagnostics:' -ForegroundColor Yellow
-        Get-Content $diagnostics | Out-Host
+        try {
+            Get-Content $diagnostics -ErrorAction Stop | Out-Host
+        } catch {
+            # Diagnostics are best-effort after all assertions have passed. The
+            # running wallpaper process may briefly hold wallpaper.ini while it
+            # updates runtime diagnostics; do not turn that harmless logging race
+            # into a product-verification failure.
+            Write-Warning "Unable to print wallpaper.ini diagnostics: $($_.Exception.Message)"
+        }
     }
 } catch {
     $details = ($_ | Out-String).Trim()
     $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
     if (Test-Path $wallpaperIni -PathType Leaf) {
-        $details += "`n" + ((Get-Content $wallpaperIni | Out-String).Trim())
+        try {
+            $details += "`n" + ((Get-Content $wallpaperIni -ErrorAction Stop | Out-String).Trim())
+        } catch {
+            $details += "`n[wallpaper.ini unavailable while collecting failure diagnostics: $($_.Exception.Message)]"
+        }
     }
     $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
     if (Test-Path $debugLog -PathType Leaf) {

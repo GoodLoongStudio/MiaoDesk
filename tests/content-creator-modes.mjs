@@ -14,7 +14,7 @@ const wallpaperSkill = read("skills/wallpaper-content/SKILL.md");
 const widgetSkill = read("skills/widget-content/SKILL.md");
 
 assert.match(header, /PiRuntime& SharedConversationPiRuntime() noexcept/);
-assert.match(panel, /PiRuntime& SharedConversationPiRuntime() noexcept[sS]*return gPiRuntime/);
+assert.match(panel, /PiRuntime& SharedConversationPiRuntime() noexcept[\s\S]*return gPiRuntime/);
 
 assert.match(creatorHeader, /ShowContentCreatorDialog/);
 assert.match(creator, /MiaoDesk.Native.ContentCreatorDialog/);
@@ -44,7 +44,7 @@ assert.match(creator, /治愈猫咪/);
 assert.match(creator, /Regenerate\(\)/);
 
 assert.match(search, /creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)/);
-assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/);
+assert.doesNotMatch(search, /OpenContentCreator[\s\S]{0,800}ShowConversationPanel/);
 
 assert.match(library, /✨ AI 制作壁纸/);
 assert.match(library, /✨ AI 制作组件/);

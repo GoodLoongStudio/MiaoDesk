@@ -153,6 +153,57 @@ bool HeaderSafeSecret(const std::wstring& value) {
     });
 }
 
+// A Base URL is not a place for a secret.
+//
+// baseUrl is stored verbatim in api-profiles.ini and copied into the plaintext
+// PiAgent\models.json and Harness\DshHome\settings.yaml. The direct-model
+// request path parses the URL with WinHttpCrackUrl and keeps only UrlPath, so a
+// query is dropped from the wire there -- a key pasted into the URL would be
+// written to those two files and used by nothing. (The harness path does keep
+// the query, which is why this refuses rather than silently rewriting it.)
+bool UrlCarriesSecret(const std::wstring& url) {
+    const auto queryAt = url.find(L'?');
+    const std::wstring authority =
+        queryAt == std::wstring::npos ? url : url.substr(0, queryAt);
+
+    // user:password@host -- credentials embedded in the authority. The '@' only
+    // counts if it sits inside the authority component, i.e. before the first
+    // path slash; a '@' further along belongs to the path, query or fragment.
+    const auto schemeAt = authority.find(L"://");
+    const auto hostStart = schemeAt == std::wstring::npos ? 0 : schemeAt + 3;
+    const auto at = authority.find(L'@', hostStart);
+    const auto pathStart = authority.find(L'/', hostStart);
+    if (at != std::wstring::npos &&
+        (pathStart == std::wstring::npos || at < pathStart)) {
+        const auto colon = authority.find(L':', hostStart);
+        if (colon != std::wstring::npos && colon < at) return true;
+    }
+    if (queryAt == std::wstring::npos) return false;
+
+    static constexpr std::wstring_view kSecretNames[] = {
+        L"key", L"api_key", L"apikey", L"token", L"access_token",
+        L"refresh_token", L"secret", L"client_secret", L"auth",
+        L"authorization", L"password", L"pwd", L"credential", L"credentials",
+    };
+
+    const std::wstring query = url.substr(queryAt + 1);
+    std::size_t start = 0;
+    while (start <= query.size()) {
+        const auto amp = query.find(L'&', start);
+        const auto pair = query.substr(
+            start, amp == std::wstring::npos ? std::wstring::npos : amp - start);
+        const auto eq = pair.find(L'=');
+        std::wstring name = eq == std::wstring::npos ? pair : pair.substr(0, eq);
+        std::transform(name.begin(), name.end(), name.begin(), ::towlower);
+        for (const auto candidate : kSecretNames) {
+            if (name == candidate) return true;
+        }
+        if (amp == std::wstring::npos) break;
+        start = amp + 1;
+    }
+    return false;
+}
+
 std::wstring Trim(std::wstring value) {
     const auto visible = [](wchar_t ch) { return !iswspace(ch); };
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), visible));
@@ -661,6 +712,16 @@ struct PageState {
         if (!key.empty() && !HeaderSafeSecret(key)) {
             SetStatus(L"API Key 包含非 HTTP Header 安全字符，请重新粘贴正确的 Key。", false);
             SetFocus(apiKey);
+            return false;
+        }
+        if (UrlCarriesSecret(profile.baseUrl)) {
+            SetStatus(L"Base URL 里含疑似密钥参数；Key 请填到 API Key 字段，不要写在地址里。", false);
+            SetFocus(apiUrl);
+            return false;
+        }
+        if (UrlCarriesSecret(profile.imageBaseUrl)) {
+            SetStatus(L"Image Base URL 里含疑似密钥参数；请填写到 Image API Key 字段。", false);
+            SetFocus(imageBaseUrl);
             return false;
         }
         return true;

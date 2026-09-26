@@ -1130,7 +1130,7 @@ struct WallpaperLibraryWindow::Impl {
         const int height = RectHeight(rc);
         const int sidebarW = S(208);
         const int topH = S(58);
-        const int footerH = S(58);
+        const int footerH = S(76);
         const int margin = std::max(S(12), MulDiv(width - sidebarW, 16, 1000));
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
@@ -1198,39 +1198,42 @@ struct WallpaperLibraryWindow::Impl {
         const int footerTop = height - footerH;
         if (installed) {
             const int gap = S(6);
-            const int actionW = std::max(S(82), MulDiv(contentWidth, 15, 100));
-            const int smallW = std::max(S(68), MulDiv(contentWidth, 11, 100));
-            const int toggleW = std::max(S(82), MulDiv(contentWidth, 12, 100));
-            const int targetW = std::max(S(118), MulDiv(contentWidth, 23, 100));
-            const int right = width - margin;
-            const int actionTotal = targetW + toggleW + actionW + smallW * 2 + gap * 4;
-            const int actionsLeft = right - actionTotal;
-            const int statusLeft = contentLeft + margin;
-            const int available = actionsLeft - S(10) - statusLeft;
-            const int statusW = std::max(0, std::min(S(90), available));
-            place(status, statusLeft, footerTop + S(18), statusW, S(26));
-            int x = actionsLeft;
-            place(targetCombo, x, footerTop + S(11), targetW, S(180)); x += targetW + gap;
-            place(wallpaperToggleButton, x, footerTop + S(11), toggleW, S(36)); x += toggleW + gap;
-            place(favoriteButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
-            place(removeButton, x, footerTop + S(11), smallW, S(36)); x += smallW + gap;
-            place(applyButton, x, footerTop + S(11), actionW, S(36));
+            const int innerLeft = contentLeft + margin;
+            const int innerRight = width - margin;
+
+            // Give status its own row instead of forcing it into the same narrow strip
+            // as five actions. This keeps the selected wallpaper / operation feedback
+            // readable at compact window widths.
+            place(status, innerLeft, footerTop + S(6), innerRight - innerLeft, S(20));
+
+            const int controlsTop = footerTop + S(32);
+            const int innerW = std::max(S(360), innerRight - innerLeft);
+            const int targetW = std::clamp(MulDiv(innerW, 27, 100), S(122), S(190));
+            const int toggleW = std::clamp(MulDiv(innerW, 16, 100), S(82), S(116));
+            const int smallW = std::clamp(MulDiv(innerW, 13, 100), S(66), S(96));
+            const int applyW = std::clamp(MulDiv(innerW, 18, 100), S(92), S(132));
+            const int controlsW = targetW + toggleW + smallW * 2 + applyW + gap * 4;
+            int x = innerRight - controlsW;
+            place(targetCombo, x, controlsTop, targetW, S(180)); x += targetW + gap;
+            place(wallpaperToggleButton, x, controlsTop, toggleW, S(36)); x += toggleW + gap;
+            place(favoriteButton, x, controlsTop, smallW, S(36)); x += smallW + gap;
+            place(removeButton, x, controlsTop, smallW, S(36)); x += smallW + gap;
+            place(applyButton, x, controlsTop, applyW, S(36));
         } else if (widgets) {
             const int gap = S(6);
-            const int buttonW = std::max(S(70), MulDiv(contentWidth, 11, 100));
-            const int createW = std::max(S(124), MulDiv(contentWidth, 20, 100));
-            const int right = width - margin;
-            const int actionTotal = createW + buttonW * 3 + gap * 3;
-            const int actionsLeft = right - actionTotal;
-            const int statusLeft = contentLeft + margin;
-            const int available = actionsLeft - S(10) - statusLeft;
-            const int statusW = std::max(0, std::min(S(240), available));
-            place(status, statusLeft, footerTop + S(18), statusW, S(26));
-            int x = actionsLeft;
-            place(widgetCreateButton, x, footerTop + S(11), createW, S(36)); x += createW + gap;
-            place(widgetRefreshButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
-            place(widgetToggleButton, x, footerTop + S(11), buttonW, S(36)); x += buttonW + gap;
-            place(widgetRemoveButton, x, footerTop + S(11), buttonW, S(36));
+            const int innerLeft = contentLeft + margin;
+            const int innerRight = width - margin;
+            place(status, innerLeft, footerTop + S(6), innerRight - innerLeft, S(20));
+
+            const int controlsTop = footerTop + S(32);
+            const int buttonW = S(78);
+            const int createW = S(118);
+            const int controlsW = createW + buttonW * 3 + gap * 3;
+            int x = innerRight - controlsW;
+            place(widgetCreateButton, x, controlsTop, createW, S(36)); x += createW + gap;
+            place(widgetRefreshButton, x, controlsTop, buttonW, S(36)); x += buttonW + gap;
+            place(widgetToggleButton, x, controlsTop, buttonW, S(36)); x += buttonW + gap;
+            place(widgetRemoveButton, x, controlsTop, buttonW, S(36));
         }
 
         RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
@@ -1478,7 +1481,7 @@ struct WallpaperLibraryWindow::Impl {
             const int sidebarW = self->S(208);
             const int topH = self->S(58);
             const bool showFooter = self->page != Page::AI;
-            const int footerH = showFooter ? self->S(58) : 0;
+            const int footerH = showFooter ? self->S(76) : 0;
             RECT whole = client;
             FillSolid(dc, whole, RGB(248, 251, 255));
             RECT sidebar{0, 0, sidebarW, client.bottom};
@@ -1577,7 +1580,7 @@ struct WallpaperLibraryWindow::Impl {
         favoriteButton = button(L"收藏", kFavoriteId);
         removeButton = button(L"移出库", kRemoveId);
 
-        widgetCreateButton = button(L"＋ 新建桌面小组件", kWidgetCreateId, 0, false);
+        widgetCreateButton = button(L"＋ 新建小组件", kWidgetCreateId, 0, false);
         widgetToggleButton = button(L"启用 / 停用", kWidgetToggleId, 0, false);
         widgetRemoveButton = button(L"删除", kWidgetRemoveId, 0, false);
         widgetRefreshButton = button(L"刷新", kWidgetRefreshId, 0, false);

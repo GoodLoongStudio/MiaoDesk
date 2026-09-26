@@ -332,6 +332,8 @@ struct PageState {
     bool revealingKey{};
     bool statusOk{true};
     std::wstring statusMessage{L"新增一个 API 配置，或从左侧选择已有配置。"};
+    std::vector<std::wstring> probedModels;
+    std::wstring probedModelsProfileId;
     L3Agent agent;
 
     ~PageState() {
@@ -385,6 +387,47 @@ struct PageState {
         InvalidateRect(panel, nullptr, FALSE);
     }
 
+    static bool SameText(std::wstring_view a, std::wstring_view b) {
+        return _wcsicmp(std::wstring(a).c_str(), std::wstring(b).c_str()) == 0;
+    }
+
+    void PopulateModelChoices(const std::vector<std::wstring>& choices,
+                              std::wstring preferred = {}) {
+        if (!model) return;
+        preferred = Trim(std::move(preferred));
+        if (preferred.empty()) preferred = Trim(WindowText(model));
+
+        std::vector<std::wstring> unique;
+        unique.reserve(choices.size() + 1);
+        auto addUnique = [&](std::wstring value) {
+            value = Trim(std::move(value));
+            if (value.empty()) return;
+            if (std::any_of(unique.begin(), unique.end(), [&](const std::wstring& item) {
+                    return SameText(item, value);
+                })) return;
+            unique.push_back(std::move(value));
+        };
+
+        // Keep a manually entered/saved model visible even when the provider did not
+        // include it in the latest /models response.
+        addUnique(preferred);
+        for (const auto& item : choices) addUnique(item);
+
+        SendMessageW(model, CB_RESETCONTENT, 0, 0);
+        for (const auto& item : unique)
+            SendMessageW(model, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
+
+        if (!preferred.empty()) SetWindowTextW(model, preferred.c_str());
+        else if (!unique.empty()) SetWindowTextW(model, unique.front().c_str());
+    }
+
+    void RestoreModelChoices(const ApiProfile& profile) {
+        if (profile.id == probedModelsProfileId && !probedModels.empty())
+            PopulateModelChoices(probedModels, profile.model);
+        else
+            PopulateModelChoices({}, profile.model);
+    }
+
     void EnableForm(bool enabled) {
         for (HWND control : {name, serviceType, apiUrl, apiKey, model, imageBaseUrl, imageModel, imageApiKey,
                              testButton, saveButton, setDefaultButton, deleteButton,
@@ -410,6 +453,8 @@ struct PageState {
         profiles = store.Load();
         if (profiles.empty()) {
             selected = 0;
+            probedModels.clear();
+            probedModelsProfileId.clear();
             RebuildList();
             EnableForm(false);
             SetWindowTextW(name, L"");
@@ -440,7 +485,7 @@ struct PageState {
         const auto& profile = Current();
         SetWindowTextW(name, profile.name.c_str());
         SetWindowTextW(apiUrl, profile.baseUrl.c_str());
-        SetWindowTextW(model, profile.model.c_str());
+        RestoreModelChoices(profile);
         SetWindowTextW(imageBaseUrl, profile.imageBaseUrl.c_str());
         SetWindowTextW(imageModel, profile.imageModel.c_str());
         const std::wstring storedImageKey = store.ImageKey(profile);
@@ -561,7 +606,12 @@ struct PageState {
         if (index == LB_ERR) return;
         const LRESULT data = SendMessageW(profileList, LB_GETITEMDATA, static_cast<WPARAM>(index), 0);
         if (data == LB_ERR || data < 0 || static_cast<std::size_t>(data) >= profiles.size()) return;
-        selected = static_cast<std::size_t>(data);
+        const std::size_t next = static_cast<std::size_t>(data);
+        if (next != selected) {
+            probedModels.clear();
+            probedModelsProfileId.clear();
+        }
+        selected = next;
         LoadForm();
         InvalidateRect(panel, nullptr, FALSE);
     }
@@ -573,6 +623,8 @@ struct PageState {
         profile.lastMessage = L"填写 Base URL、API Key，然后探测或填写 Model。";
         profiles.push_back(std::move(profile));
         selected = profiles.size() - 1;
+        probedModels.clear();
+        probedModelsProfileId.clear();
         RebuildList();
         LoadForm();
         SetFocus(name);
@@ -609,16 +661,24 @@ struct PageState {
             return;
         }
 
-        std::wstring detected = probe.recommendedModel;
-        if (detected.empty() && !probe.models.empty()) detected = probe.models.front();
-        if (detected.empty()) {
+        std::wstring selectedModel = Trim(WindowText(model));
+        if (selectedModel.empty()) selectedModel = Trim(probe.recommendedModel);
+        if (selectedModel.empty() && !probe.models.empty()) selectedModel = Trim(probe.models.front());
+        if (selectedModel.empty() && probe.models.empty()) {
             SetStatus(L"连接成功，但服务没有返回模型列表；Model 可以手动填写。", true);
             return;
         }
 
-        SetWindowTextW(model, detected.c_str());
-        const std::size_t count = probe.models.empty() ? 1 : probe.models.size();
-        SetStatus(L"探测到 " + std::to_wstring(count) + L" 个模型，已填入 " + detected + L"。", true);
+        probedModels = probe.models;
+        if (probedModels.empty() && !probe.recommendedModel.empty())
+            probedModels.push_back(probe.recommendedModel);
+        probedModelsProfileId = Current().id;
+        PopulateModelChoices(probedModels, selectedModel);
+        SendMessageW(model, CB_SHOWDROPDOWN, TRUE, 0);
+        SetFocus(model);
+        const std::size_t count = probedModels.size();
+        SetStatus(L"探测到 " + std::to_wstring(count) +
+                  L" 个模型，请从 Model 下拉框选择；也可以直接输入自定义模型。", true);
     }
 
     void TestConnection() {
@@ -647,10 +707,18 @@ struct PageState {
         profile.lastOk = probe.ok;
         profile.lastMessage = probe.ok ? L"连接正常" :
             (probe.message.empty() ? L"连接测试失败。" : probe.message);
-        if (probe.ok && profile.model.empty()) {
-            profile.model = probe.recommendedModel;
-            if (profile.model.empty() && !probe.models.empty()) profile.model = probe.models.front();
-            SetWindowTextW(model, profile.model.c_str());
+        if (probe.ok) {
+            if (profile.model.empty()) {
+                profile.model = probe.recommendedModel;
+                if (profile.model.empty() && !probe.models.empty()) profile.model = probe.models.front();
+            }
+            if (!probe.models.empty() || !probe.recommendedModel.empty()) {
+                probedModels = probe.models;
+                if (probedModels.empty() && !probe.recommendedModel.empty())
+                    probedModels.push_back(probe.recommendedModel);
+                probedModelsProfileId = Current().id;
+                PopulateModelChoices(probedModels, profile.model);
+            }
         }
         profiles[selected].lastOk = profile.lastOk;
         profiles[selected].lastMessage = profile.lastMessage;
@@ -778,7 +846,9 @@ struct PageState {
         place(copyButton, fieldX + fieldW - S(44), y, S(44), rowH); y += rowH + rowGap;
         const int probeW = S(104);
         const int modelGap = S(8);
-        place(model, fieldX, y, std::max(S(120), fieldW - probeW - modelGap), rowH);
+        // COMBOBOX height also controls the drop-list height. Keep the visible row at
+        // normal height while allowing a useful number of detected models to be shown.
+        place(model, fieldX, y, std::max(S(120), fieldW - probeW - modelGap), S(280));
         place(probeModelsButton, fieldX + fieldW - probeW, y, probeW, rowH); y += rowH + rowGap;
         place(imageBaseUrl, fieldX, y, fieldW, rowH); y += rowH + rowGap;
         place(imageModel, fieldX, y, fieldW, rowH); y += rowH + rowGap;
@@ -931,6 +1001,16 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
         if (id == kProfileListId && code == LBN_SELCHANGE) { state->SelectListItem(); return 0; }
+        if (id == kModelId && code == CBN_SELCHANGE) {
+            const int index = static_cast<int>(SendMessageW(state->model, CB_GETCURSEL, 0, 0));
+            if (index != CB_ERR) {
+                wchar_t value[512]{};
+                SendMessageW(state->model, CB_GETLBTEXT, index, reinterpret_cast<LPARAM>(value));
+                SetWindowTextW(state->model, value);
+                state->SetStatus(std::wstring(L"已选择模型：") + value + L"。点击“保存”后生效。", true);
+            }
+            return 0;
+        }
         if (code == BN_CLICKED) {
             if (id == kNewId) { state->NewProfile(); return 0; }
             if (id == kProbeModelsId) { state->ProbeModels(); return 0; }
@@ -1042,7 +1122,10 @@ bool CreatePage(PageState& state) {
         SendMessageW(state.serviceType, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(type));
     state.apiUrl = edit(kApiUrlId);
     state.apiKey = edit(kApiKeyId, ES_PASSWORD);
-    state.model = edit(kModelId);
+    state.model = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN |
+                                  CBS_AUTOHSCROLL | WS_VSCROLL,
+                                  0, 0, 10, 280, state.panel, ControlId(kModelId), wc.hInstance, nullptr);
     state.imageBaseUrl = edit(kImageBaseUrlId);
     state.imageModel = edit(kImageModelId);
     state.imageApiKey = edit(kImageApiKeyId, ES_PASSWORD);
@@ -1065,7 +1148,7 @@ bool CreatePage(PageState& state) {
     SendMessageW(state.name, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 公司 DeepSeek"));
     SendMessageW(state.apiUrl, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"https://api.example.com/v1"));
     SendMessageW(state.apiKey, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"粘贴 API Key"));
-    SendMessageW(state.model, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"例如 deepseek-chat"));
+    SendMessageW(state.model, CB_SETCUEBANNER, 0, reinterpret_cast<LPARAM>(L"探测后选择，或手动输入模型"));
     SendMessageW(state.imageBaseUrl, EM_SETCUEBANNER, TRUE,
                  reinterpret_cast<LPARAM>(L"可选，例如 http://127.0.0.1:8188/v1"));
     SendMessageW(state.imageModel, EM_SETCUEBANNER, TRUE,

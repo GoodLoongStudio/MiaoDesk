@@ -351,6 +351,7 @@ target_link_libraries(MiaoDesk PRIVATE
     dwmapi
     winhttp
     windowsapp
+    windowscodecs
     "${WEBVIEW2_LOADER_STATIC}"
 )
 

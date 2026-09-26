@@ -11,6 +11,8 @@
 #include "miaodesk/WallpaperRuntimeControl.h"
 
 #include <shellapi.h>
+#include <wincodec.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
@@ -20,9 +22,11 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace miaodesk::creator {
 namespace fs = std::filesystem;
+using Microsoft::WRL::ComPtr;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
@@ -32,6 +36,7 @@ constexpr int kSendId = 7803;
 constexpr int kClearId = 7804;
 constexpr int kSkillListId = 7805;
 constexpr int kSkillTextId = 7806;
+constexpr int kPreviewPaneId = 7807;
 constexpr int kPreset1Id = 7810;
 constexpr int kPreset2Id = 7811;
 constexpr int kPreset3Id = 7812;
@@ -80,6 +85,100 @@ std::wstring Lower(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(ch));
     });
     return value;
+}
+
+std::wstring SkillField(std::wstring_view markdown, std::wstring_view key) {
+    const std::wstring prefix = std::wstring(key) + L":";
+    std::size_t start = 0;
+    while (start < markdown.size()) {
+        std::size_t end = markdown.find_first_of(L"\r\n", start);
+        if (end == std::wstring_view::npos) end = markdown.size();
+        std::wstring line = Trim(std::wstring(markdown.substr(start, end - start)));
+        if (line.rfind(prefix, 0) == 0) return Trim(line.substr(prefix.size()));
+        start = markdown.find_first_not_of(L"\r\n", end);
+        if (start == std::wstring_view::npos) break;
+    }
+    return {};
+}
+
+std::wstring FormatSkillDetails(std::wstring_view markdown) {
+    const std::wstring name = SkillField(markdown, L"name");
+    const std::wstring description = SkillField(markdown, L"description");
+    std::wstring out;
+    if (!name.empty()) out += L"名称\r\n" + name + L"\r\n\r\n";
+    if (!description.empty()) out += L"能力\r\n" + description + L"\r\n\r\n";
+    out += L"完整规范\r\n";
+    out.append(markdown);
+    return out;
+}
+
+HBITMAP LoadPreviewBitmap(const fs::path& path) {
+    std::error_code ec;
+    if (path.empty() || !fs::is_regular_file(path, ec)) return nullptr;
+
+    ComPtr<IWICImagingFactory> factory;
+    if (FAILED(CoCreateInstance(
+            CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(factory.GetAddressOf())))) return nullptr;
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(factory->CreateDecoderFromFilename(
+            path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf()))) return nullptr;
+
+    ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return nullptr;
+
+    UINT width = 0, height = 0;
+    if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return nullptr;
+
+    constexpr UINT kMaxPreviewWidth = 1000;
+    constexpr UINT kMaxPreviewHeight = 800;
+    const double scale = std::min(
+        1.0,
+        std::min(static_cast<double>(kMaxPreviewWidth) / width,
+                 static_cast<double>(kMaxPreviewHeight) / height));
+    const UINT targetW = std::max<UINT>(1, static_cast<UINT>(std::lround(width * scale)));
+    const UINT targetH = std::max<UINT>(1, static_cast<UINT>(std::lround(height * scale)));
+
+    IWICBitmapSource* source = frame.Get();
+    ComPtr<IWICBitmapScaler> scaler;
+    if (targetW != width || targetH != height) {
+        if (FAILED(factory->CreateBitmapScaler(scaler.GetAddressOf())) ||
+            FAILED(scaler->Initialize(frame.Get(), targetW, targetH, WICBitmapInterpolationModeFant)))
+            return nullptr;
+        source = scaler.Get();
+    }
+
+    ComPtr<IWICFormatConverter> converter;
+    if (FAILED(factory->CreateFormatConverter(converter.GetAddressOf())) ||
+        FAILED(converter->Initialize(
+            source, GUID_WICPixelFormat32bppBGRA,
+            WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom)))
+        return nullptr;
+
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = static_cast<LONG>(targetW);
+    info.bmiHeader.biHeight = -static_cast<LONG>(targetH);
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bitmap || !bits) {
+        if (bitmap) DeleteObject(bitmap);
+        return nullptr;
+    }
+
+    const UINT stride = targetW * 4;
+    const UINT bytes = stride * targetH;
+    if (FAILED(converter->CopyPixels(nullptr, stride, bytes, static_cast<BYTE*>(bits)))) {
+        DeleteObject(bitmap);
+        return nullptr;
+    }
+    return bitmap;
 }
 
 std::optional<fs::path> FindGeneratedPackagePath(
@@ -183,6 +282,8 @@ struct DialogState {
     HWND prompt{};
     HWND send{};
     HWND clear{};
+    HWND previewHeading{};
+    HWND previewPane{};
     HWND skillHeading{};
     HWND skillList{};
     HWND skillText{};
@@ -195,11 +296,13 @@ struct DialogState {
     HFONT titleFont{};
     HFONT smallFont{};
     UINT fontScaleDpi{};
+    HBITMAP previewBitmap{};
     bool primed{};
     bool busy{};
     fs::path generatedPackage;
 
     ~DialogState() {
+        if (previewBitmap) DeleteObject(previewBitmap);
         if (bodyFont) DeleteObject(bodyFont);
         if (titleFont) DeleteObject(titleFont);
         if (smallFont) DeleteObject(smallFont);
@@ -231,8 +334,8 @@ struct DialogState {
 
     void ApplyFonts() const {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
-        for (HWND child : {note, transcript, prompt, send, clear, skillHeading, skillList, skillText,
-                           resultNote, preview, library, apply}) {
+        for (HWND child : {note, transcript, prompt, send, clear, previewHeading,
+                           skillHeading, skillList, skillText, resultNote, preview, library, apply}) {
             if (child && bodyFont) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }
         for (HWND child : presets)
@@ -305,7 +408,9 @@ struct DialogState {
         const auto& skill = Skills()[static_cast<std::size_t>(selected)];
         const std::string args = std::string("{\"name\":\"") + skill.name + "\"}";
         const auto result = ExecuteNativeToolRaw("content_skill_get", args);
-        const std::wstring text = result.success ? result.message : L"无法读取 Skill：\r\n" + result.message;
+        const std::wstring text = result.success
+            ? FormatSkillDetails(result.message)
+            : L"无法读取 Skill：\r\n" + result.message;
         SetWindowTextW(skillText, text.c_str());
         SendMessageW(skillText, EM_SETSEL, 0, 0);
     }
@@ -327,6 +432,23 @@ struct DialogState {
         if (!inspected.success || info.kind != ExpectedKind()) return;
 
         generatedPackage = path;
+
+        if (previewBitmap) {
+            DeleteObject(previewBitmap);
+            previewBitmap = nullptr;
+        }
+        content::LoadedMiaoContentPackage package;
+        std::wstring previewError;
+        if (content::MiaoContentPackage::Load(path, &package, &previewError) &&
+            !package.manifest.preview.empty()) {
+            fs::path previewPath;
+            if (content::MiaoContentPackage::ResolvePackagePath(
+                    package.root, package.manifest.preview, &previewPath, &previewError)) {
+                previewBitmap = LoadPreviewBitmap(previewPath);
+            }
+        }
+        if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+
         const std::wstring status =
             std::wstring(L"已生成并校验：") + path.filename().wstring() + L" · 可预览 / 入库 / 应用";
         SetWindowTextW(resultNote, status.c_str());
@@ -505,6 +627,11 @@ struct DialogState {
         if (agent && agent->Busy()) agent->Stop();
         if (pi) pi->ResetSession();
         generatedPackage.clear();
+        if (previewBitmap) {
+            DeleteObject(previewBitmap);
+            previewBitmap = nullptr;
+        }
+        if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
         primed = false;
         SetBusy(false);
         SetWindowTextW(transcript,

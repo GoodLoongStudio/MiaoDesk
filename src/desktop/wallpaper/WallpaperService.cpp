@@ -192,6 +192,30 @@ WallpaperServiceResult ValidateAssignableItem(const wallpaper::WallpaperLibraryI
     return {true, L"壁纸库项目可用于显示器分配。"};
 }
 
+// Records the apply in the library's usage order.
+//
+// WallpaperEngine owns a WallpaperLibrary and calls MarkUsed on its own apply
+// paths, but applies made through WallpaperService -- which is what the AI
+// creator's "应用到桌面", the content manager and the per-monitor assignment
+// go via -- never reached it. lastUsedUnixSeconds therefore stayed frozen at
+// whatever the migration wrote for every wallpaper applied on those paths, so
+// RecentlyUsed() ranks them by a timestamp that ignores most real usage.
+//
+// Bookkeeping only: a failure here must never fail an apply that already
+// succeeded, so every path just logs and returns.
+void MarkLibraryItemUsed(std::wstring_view id) {
+    if (id.empty()) return;
+    wallpaper::WallpaperLibrary library;
+    std::wstring error;
+    if (!library.Load(&error)) {
+        miaodesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新（无法加载库）: " + error);
+        return;
+    }
+    if (!library.MarkUsed(id, &error)) {
+        miaodesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新: " + error);
+    }
+}
+
 } // namespace
 
 WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
@@ -294,6 +318,7 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
     }
 
     miaodesk::log::Info(L"WallpaperService", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
+    WallpaperServiceResult result{false, L"不支持的壁纸库项目类型。"};
     std::error_code ec;
     switch (item.kind) {
     case wallpaper::LibraryWallpaperKind::Scene: {
@@ -304,50 +329,61 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
                 miaodesk::log::Error(L"WallpaperService", L"配置化 Scene 校验失败: " + canonical.message);
                 return canonical;
             }
-            return {false, L"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"};
+            result = {false, L"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"};
+            break;
         }
         const auto persisted = PersistWallpaperSelection(scene, {}, {});
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择 Scene: " + scene);
-        return persisted.success ? WallpaperServiceResult{true, L"已选择 Scene：" + item.title} : persisted;
+        result = persisted.success ? WallpaperServiceResult{true, L"已选择 Scene：" + item.title} : persisted;
+        break;
     }
     case wallpaper::LibraryWallpaperKind::Image: {
         const fs::path source = fs::absolute(item.source, ec).lexically_normal();
         if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec)) {
             miaodesk::log::Error(L"WallpaperService", L"图片壁纸文件不存在: " + source.wstring());
-            return {false, L"图片壁纸文件不存在。"};
+            result = {false, L"图片壁纸文件不存在。"};
+            break;
         }
         const auto persisted = PersistWallpaperSelection(L"image", source, {});
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择图片壁纸: " + source.wstring());
-        return persisted.success ? WallpaperServiceResult{true, L"已选择图片壁纸：" + item.title} : persisted;
+        result = persisted.success ? WallpaperServiceResult{true, L"已选择图片壁纸：" + item.title} : persisted;
+        break;
     }
     case wallpaper::LibraryWallpaperKind::Video: {
         const fs::path source = fs::absolute(item.source, ec).lexically_normal();
         if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec)) {
             miaodesk::log::Error(L"WallpaperService", L"视频壁纸文件不存在: " + source.wstring());
-            return {false, L"视频壁纸文件不存在。"};
+            result = {false, L"视频壁纸文件不存在。"};
+            break;
         }
         const auto persisted = PersistWallpaperSelection(L"video", {}, source);
         if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择视频壁纸: " + source.wstring());
-        return persisted.success ? WallpaperServiceResult{true, L"已选择视频壁纸：" + item.title} : persisted;
+        result = persisted.success ? WallpaperServiceResult{true, L"已选择视频壁纸：" + item.title} : persisted;
+        break;
     }
     case wallpaper::LibraryWallpaperKind::Web: {
-        if (!IsContentId(item.id))
-            return {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+        if (!IsContentId(item.id)) {
+            result = {false, L"Web 库项目必须通过已验证的 .mdwall 包路径应用。"};
+            break;
+        }
         fs::path source;
         const auto valid = ResolveCanonicalWebEntry(item, &source);
         if (!valid.success) {
             miaodesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
-            return valid;
+            result = valid;
+            break;
         }
         const auto persisted = PersistWallpaperSelection(L"web", source, {}, item.id);
         if (persisted.success)
             miaodesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
-        return persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;
+        result = persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;
+        break;
     }
     case wallpaper::LibraryWallpaperKind::Unknown:
         break;
     }
-    return {false, L"不支持的壁纸库项目类型。"};
+    if (result.success) MarkLibraryItemUsed(item.id);
+    return result;
 }
 
 WallpaperServiceResult WallpaperService::AssignLibraryItemToMonitor(
@@ -364,6 +400,8 @@ WallpaperServiceResult WallpaperService::AssignLibraryItemToMonitor(
         return {false, error.empty() ? L"无法读取显示器壁纸分配。" : error};
     if (!assignments.AssignById(std::wstring(monitorId), item.id, std::wstring(friendlyName), &error))
         return {false, error.empty() ? L"无法保存显示器壁纸分配。" : error};
+    // Putting a wallpaper on a monitor is a use of it, same as a global apply.
+    MarkLibraryItemUsed(item.id);
     return {true, L"已将壁纸分配到显示器：" + item.title};
 }
 

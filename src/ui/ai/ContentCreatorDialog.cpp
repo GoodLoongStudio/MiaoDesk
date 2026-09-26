@@ -18,6 +18,7 @@
 #include <array>
 #include <cwctype>
 #include <filesystem>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -355,49 +356,111 @@ struct DialogState {
         GetClientRect(window, &rc);
         const int width = std::max(1, static_cast<int>(rc.right - rc.left));
         const int height = std::max(1, static_cast<int>(rc.bottom - rc.top));
-        const auto logical = ResolveContentCreatorLayout(
-            MulDiv(width, USER_DEFAULT_SCREEN_DPI, static_cast<int>(std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window)))),
-            MulDiv(height, USER_DEFAULT_SCREEN_DPI, static_cast<int>(std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(window)))));
-        const int margin = S(logical.margin);
-        const int gap = S(logical.gap);
-        const int headerH = S(logical.headerHeight);
-        const int footerH = S(logical.footerHeight);
-        const int leftW = S(logical.leftWidth);
-        const int rightW = std::max(S(250), width - margin * 2 - gap - leftW);
+        const int margin = S(16);
+        const int gap = S(12);
+        const int headerH = S(62);
+        const int footerH = S(104);
         const int bodyTop = margin + headerH + gap;
         const int footerTop = height - margin - footerH;
-        const int bodyH = std::max(S(220), footerTop - gap - bodyTop);
+        const int bodyH = std::max(S(300), footerTop - gap - bodyTop);
+        const int usableW = std::max(S(900), width - margin * 2 - gap * 2);
+        const int leftW = std::clamp(usableW * 43 / 100, S(430), S(620));
+        const int previewW = std::clamp(usableW * 29 / 100, S(290), S(430));
+        const int skillW = std::max(S(260), usableW - leftW - previewW);
+        const int previewX = margin + leftW + gap;
+        const int skillX = previewX + previewW + gap;
 
         auto place = [](HWND child, int x, int y, int w, int h) {
-            if (child) SetWindowPos(child, nullptr, x, y, std::max(1, w), std::max(1, h), SWP_NOZORDER | SWP_NOACTIVATE);
+            if (child) SetWindowPos(child, nullptr, x, y, std::max(1, w), std::max(1, h),
+                                    SWP_NOZORDER | SWP_NOACTIVATE);
         };
+
         place(heading, margin, margin, width - margin * 2, S(30));
-        place(note, margin, margin + S(32), width - margin * 2, S(28));
+        place(note, margin, margin + S(34), width - margin * 2, S(22));
 
-        const int presetH = S(30);
-        const int promptH = S(86);
-        const int actionsH = S(38);
-        const int presetTop = footerTop - gap - presetH;
-        const int promptTop = presetTop - gap - promptH;
-        const int transcriptH = std::max(S(100), promptTop - gap - bodyTop);
-        place(transcript, margin, bodyTop, leftW, transcriptH);
-        place(prompt, margin, promptTop, leftW - S(186), promptH);
-        place(send, margin + leftW - S(178), promptTop, S(86), actionsH);
-        place(clear, margin + leftW - S(86), promptTop, S(86), actionsH);
-        const int presetW = std::max(S(90), (leftW - gap * 3) / 4);
+        // Left: focused conversation workspace.
+        place(transcript, margin, bodyTop, leftW, bodyH);
+
+        // Middle: result preview. Clicking the pane opens the full preview flow.
+        place(previewHeading, previewX, bodyTop, previewW, S(28));
+        place(previewPane, previewX, bodyTop + S(34), previewW, bodyH - S(78));
+        place(preview, previewX, bodyTop + bodyH - S(38), previewW, S(38));
+
+        // Right: Skill chain and readable Skill detail.
+        place(skillHeading, skillX, bodyTop, skillW, S(28));
+        place(skillList, skillX, bodyTop + S(34), skillW, S(112));
+        place(skillText, skillX, bodyTop + S(154), skillW, bodyH - S(154));
+
+        // Bottom composer spans conversation + preview columns.
+        const int composerW = leftW + gap + previewW;
+        const int actionW = S(92);
+        const int clearW = S(92);
+        const int promptTop = footerTop;
+        place(prompt, margin, promptTop, composerW - actionW - clearW - gap * 2, S(48));
+        place(send, margin + composerW - actionW - clearW - gap, promptTop, actionW, S(48));
+        place(clear, margin + composerW - clearW, promptTop, clearW, S(48));
+
+        const int presetTop = promptTop + S(56);
+        const int presetGap = S(8);
+        const int presetW = std::max(S(120), (composerW - presetGap * 3) / 4);
         for (int i = 0; i < 4; ++i)
-            place(presets[static_cast<std::size_t>(i)], margin + i * (presetW + gap), presetTop, presetW, presetH);
+            place(presets[static_cast<std::size_t>(i)],
+                  margin + i * (presetW + presetGap), presetTop, presetW, S(32));
 
-        const int rightX = margin + leftW + gap;
-        place(skillHeading, rightX, bodyTop, rightW, S(30));
-        place(skillList, rightX, bodyTop + S(34), rightW, S(96));
-        place(skillText, rightX, bodyTop + S(138), rightW, std::max(S(100), bodyH - S(180)));
-        place(resultNote, rightX, bodyTop + bodyH - S(34), rightW, S(30));
+        // Bottom-right: result state + final actions.
+        place(resultNote, skillX, footerTop, skillW, S(28));
+        const int libraryW = std::max(S(108), (skillW - gap) / 2);
+        place(library, skillX, footerTop + S(36), libraryW, S(48));
+        place(apply, skillX + libraryW + gap, footerTop + S(36),
+              skillW - libraryW - gap, S(48));
+    }
 
-        const int buttonW = S(128);
-        place(preview, margin, footerTop, buttonW, footerH);
-        place(library, margin + buttonW + gap, footerTop, buttonW, footerH);
-        place(apply, margin + (buttonW + gap) * 2, footerTop, S(150), footerH);
+    void DrawPreviewPane(const DRAWITEMSTRUCT* draw) const {
+        if (!draw) return;
+        RECT bounds = draw->rcItem;
+        HDC dc = draw->hDC;
+        HBRUSH background = CreateSolidBrush(RGB(248, 250, 253));
+        FillRect(dc, &bounds, background);
+        DeleteObject(background);
+
+        RECT inner = bounds;
+        InflateRect(&inner, -S(10), -S(10));
+        if (previewBitmap) {
+            BITMAP bitmap{};
+            GetObjectW(previewBitmap, sizeof(bitmap), &bitmap);
+            const int sourceW = std::max<LONG>(1, bitmap.bmWidth);
+            const int sourceH = std::max<LONG>(1, bitmap.bmHeight);
+            const int availableW = std::max(1, inner.right - inner.left);
+            const int availableH = std::max(1, inner.bottom - inner.top);
+            const double scale = std::min(
+                static_cast<double>(availableW) / sourceW,
+                static_cast<double>(availableH) / sourceH);
+            const int drawW = std::max(1, static_cast<int>(std::lround(sourceW * scale)));
+            const int drawH = std::max(1, static_cast<int>(std::lround(sourceH * scale)));
+            const int x = inner.left + (availableW - drawW) / 2;
+            const int y = inner.top + (availableH - drawH) / 2;
+
+            HDC memory = CreateCompatibleDC(dc);
+            HGDIOBJ old = SelectObject(memory, previewBitmap);
+            const int oldMode = SetStretchBltMode(dc, HALFTONE);
+            StretchBlt(dc, x, y, drawW, drawH, memory, 0, 0, sourceW, sourceH, SRCCOPY);
+            SetStretchBltMode(dc, oldMode);
+            SelectObject(memory, old);
+            DeleteDC(memory);
+        } else {
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(115, 124, 140));
+            HGDIOBJ old = SelectObject(dc, bodyFont);
+            const wchar_t* text = busy
+                ? L"AI 正在生成内容包…\n完成后将在这里显示预览"
+                : L"预览效果\n生成内容后将在这里显示";
+            DrawTextW(dc, text, -1, &inner, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
+            SelectObject(dc, old);
+        }
+
+        HBRUSH border = CreateSolidBrush(RGB(222, 230, 240));
+        FrameRect(dc, &bounds, border);
+        DeleteObject(border);
     }
 
     void LoadSkill() const {
@@ -419,6 +482,7 @@ struct DialogState {
         busy = value;
         EnableWindow(send, !value);
         SetWindowTextW(send, value ? L"生成中…" : L"生成");
+        if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
     }
 
     content::ContentKind ExpectedKind() const noexcept {
@@ -636,8 +700,12 @@ struct DialogState {
         SetBusy(false);
         SetWindowTextW(transcript,
             IsWidget()
-                ? L"妙喵：描述你想制作的桌面组件。我会按右侧 Skills 通过 Pi 工具链生成可预览的 .mdwidget。\r\n"
-                : L"妙喵：描述你想制作的壁纸。我会按右侧 Skills 通过 Pi 工具链生成可预览的 .mdwall。\r\n");
+                ? L"妙喵：你好！我是妙喵组件助手。\r\n"
+                  L"你可以描述天气、时钟、待办、桌面宠物等组件需求。\r\n"
+                  L"我会按右侧 Skills 生成 .mdwidget，并先让你预览确认。\r\n"
+                : L"妙喵：你好！我是妙喵壁纸助手。\r\n"
+                  L"你可以描述风格、主题、动态效果和希望保留的桌面可读性。\r\n"
+                  L"我会按右侧 Skills 生成 .mdwall，并先让你预览确认。\r\n");
         SetWindowTextW(resultNote, L"尚未生成内容包 · 生成后先预览，再加入库或应用");
         EnableWindow(preview, FALSE);
         EnableWindow(library, FALSE);
@@ -657,8 +725,8 @@ struct DialogState {
 
         heading = label(IsWidget() ? L"AI 制作组件" : L"AI 制作壁纸");
         note = label(IsWidget()
-            ? L"描述需求 → 按组件 Skills 生成 → 预览 → 加入组件库 → 添加到桌面"
-            : L"描述需求 → 按壁纸 Skills 生成 → 预览 → 加入壁纸库 → 应用到桌面");
+            ? L"描述你想要的组件，AI 会根据 Skills 生成并打包成 .mdwidget"
+            : L"描述你想要的壁纸，AI 会根据 Skills 生成并打包成 .mdwall");
         transcript = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
             0, 0, 10, 10, window, ControlId(kTranscriptId), instance, nullptr);
@@ -671,9 +739,13 @@ struct DialogState {
         clear = button(L"新对话", kClearId);
         for (int i = 0; i < 4; ++i)
             presets[static_cast<std::size_t>(i)] = button(PresetText()[static_cast<std::size_t>(i)], kPreset1Id + i);
+        previewHeading = label(L"预览效果");
+        previewPane = CreateWindowExW(
+            0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | SS_OWNERDRAW | SS_NOTIFY,
+            0, 0, 10, 10, window, ControlId(kPreviewPaneId), instance, nullptr);
         skillHeading = label(IsWidget()
-            ? L"当前 Skills · 输出 .mdwidget · preview-first"
-            : L"当前 Skills · 输出 .mdwall · preview-first");
+            ? L"当前 Skills · 输出 .mdwidget"
+            : L"当前 Skills · 输出 .mdwall");
         skillList = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
             0, 0, 10, 10, window, ControlId(kSkillListId), instance, nullptr);
@@ -681,7 +753,7 @@ struct DialogState {
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
             0, 0, 10, 10, window, ControlId(kSkillTextId), instance, nullptr);
         resultNote = label(L"尚未生成内容包 · 生成后先预览，再加入库或应用");
-        preview = button(L"预览", kPreviewId);
+        preview = button(L"打开完整预览", kPreviewId);
         library = button(IsWidget() ? L"加入组件库" : L"加入壁纸库", kLibraryId);
         apply = button(IsWidget() ? L"添加到桌面" : L"应用到桌面", kApplyId);
         EnableWindow(preview, FALSE);
@@ -695,7 +767,8 @@ struct DialogState {
         ResetSession();
         LoadSkill();
         Layout();
-        return heading && note && transcript && prompt && send && clear && skillList && skillText;
+        return heading && note && transcript && prompt && send && clear &&
+               previewHeading && previewPane && skillList && skillText;
     }
 };
 
@@ -713,6 +786,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     switch (message) {
     case WM_CREATE:
         return state->CreateControls() ? 0 : -1;
+    case WM_GETMINMAXINFO: {
+        auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (info) {
+            const UINT dpi = std::max<UINT>(USER_DEFAULT_SCREEN_DPI, GetDpiForWindow(hwnd));
+            info->ptMinTrackSize.x = MulDiv(1080, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+            info->ptMinTrackSize.y = MulDiv(700, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+        }
+        return 0;
+    }
     case WM_SIZE:
         state->Layout();
         return 0;
@@ -724,6 +806,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         state->RefreshFontScaleIfNeeded();
         return 0;
     }
+    case WM_DRAWITEM: {
+        const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+        if (draw && draw->CtlID == kPreviewPaneId) {
+            state->DrawPreviewPane(draw);
+            return TRUE;
+        }
+        break;
+    }
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         if (id == kSendId && HIWORD(wParam) == BN_CLICKED) { state->SendPrompt(); return 0; }
@@ -732,6 +822,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (id >= kPreset1Id && id <= kPreset4Id && HIWORD(wParam) == BN_CLICKED) {
             SetWindowTextW(state->prompt, state->PresetText()[static_cast<std::size_t>(id - kPreset1Id)]);
             SetFocus(state->prompt);
+            return 0;
+        }
+        if (id == kPreviewPaneId && HIWORD(wParam) == STN_CLICKED) {
+            if (!state->generatedPackage.empty()) state->OpenPreview();
             return 0;
         }
         if (id == kPreviewId && HIWORD(wParam) == BN_CLICKED) { state->OpenPreview(); return 0; }
@@ -815,7 +909,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     HWND window = CreateWindowExW(
         WS_EX_APPWINDOW, kWindowClass, title,
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1080, 760,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1320, 820,
         owner, nullptr, instance, state);
     if (!window) {
         delete state;

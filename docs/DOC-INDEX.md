@@ -8,11 +8,12 @@
 
 ## 开发 Todo
 
-- `TODO.md` — 活清单:下一步具体做什么、什么还没做,每项带依据与验收标准。按 P0(阻塞发布)/ P1(门的验收)/ P2(本地 AI 落地)/ P3(技术债)分级。`DEVELOPMENT_ROADMAP.md` 是阶段级规划,本清单是任务级执行单。
+- [TODO.md](TODO.md) — 当前唯一任务级执行清单：准备 → 桌面稳定/布局/性能 → 搜索/视觉/组件/内容管理 → AI/配置/Harness → 发布收口。每项包含现状、依据、依赖、开发入口和验收标准；本地 AI 作为独立扩展架构，不阻塞主产品优化。阶段级方向仍以 `DEVELOPMENT_ROADMAP.md` 为准。
+- [历史清单快照](history/TODO_SNAPSHOT_2026-09-27.md) — 完整保留旧 P0/P1/P2/P3/B 编号、实施记录与诊断过程；部分状态已过期，不作为当前排期或发布结论。
 
 ## 能力基准
 
-- `WALLPAPER_ENGINE_BENCHMARK.md` — 对标 Wallpaper Engine 的能力差距分析。官方三类创作类型(Scene 2D/3D、Web、Video)与 MiaoDesk 现有能力的逐项对照,含代码证据;给出正确的"载体 × 运行时"分类、差异化定位(组件层 / AI 创作 / 本地 AI),以及 9 条差距 + 5 条明确不做项。`TODO.md` 中 `B-x` 编号项的来源。
+- `WALLPAPER_ENGINE_BENCHMARK.md` — 对标 Wallpaper Engine 的能力差距分析。官方三类创作类型(Scene 2D/3D、Web、Video)与 MiaoDesk 现有能力的逐项对照,含代码证据;给出正确的"载体 × 运行时"分类、差异化定位(组件层 / AI 创作 / 本地 AI),以及 9 条差距 + 5 条明确不做项。历史清单中 `B-x` 编号项的来源；能力差距不会自动成为当前优化任务。
 
 ## 唯一基线
 
@@ -50,11 +51,13 @@
 - `L3-PI-RUNTIME-CONTRACT.md` — Pi-first Agent Runtime 契约
 - `PI_AGENT_ACTIVITY_FEEDBACK.md` — Agent 活动反馈
 - `PI_AGENT_CONVERSATION_UX.md` — 对话体验
-- `AI_GENERATED_DESKTOP_SANDBOX.md` — AI 壁纸预览/沙箱边界
+- `AI_GENERATED_DESKTOP_SANDBOX.md` — AI 壁纸预览/沙箱边界，以及 AI 组件创作边界的更正记录（2026-09-27 撤回“AI 不能生成组件”）。含三张面对照与“工具面无变更路径 ≠ 模型改不动”的精确表述
 
-## 本地 AI
+## 本地 AI（独立扩展架构）
 
-- `LOCAL_AI_ARCHITECTURE.md` — 在 DGX Spark 上用开源模型驱动全部 AI 功能的架构：硬件约束、推理服务器与模型选型、按任务切换模型（模型路由）、安全边界、性能预算。**含一项阻塞级发现：`image_generate` 硬编码 OpenRouter + Gemini，本地模式下必然失效（§7.1）**
+本地推理部署与模型选择独立推进；主产品的通用 Provider、API 配置、对话和创作流程仍由 `TODO.md` 覆盖。
+
+- `LOCAL_AI_ARCHITECTURE.md` — 在 DGX Spark 上用开源模型驱动全部 AI 功能的架构：硬件约束、推理服务器与模型选型、按任务切换模型（模型路由）、安全边界、性能预算。早期硬编码问题已有产品侧修复；真实本地服务部署、模型适配与实测状态需按当前代码和部署记录核对，不能沿用历史发现作为现有缺陷
 - `LOCAL_AI_DEPLOYMENT.md` — 部署手册：vLLM 容器、模型拉取与校验、访问控制、客户端 profile、上线前验收清单、故障排查
 - `../skills/` — AI 内容创作 skill 集（生成壁纸与组件内容包，含正反提示词与安全/性能门禁）。skill 产出的包目录可直接交 `wallpaper_validate_package` 校验
 

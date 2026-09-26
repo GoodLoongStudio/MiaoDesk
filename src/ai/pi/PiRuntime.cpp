@@ -509,7 +509,8 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
         L"Never claim an action succeeded unless the tool result confirms it. "
         L"Desktop wallpaper changes are preview-first: use desktop_preview_wallpaper, and never claim the desktop was applied until the user clicks Apply. "
-        L"Desktop widgets are native-only presets; list them with desktop_widget_list instead of trying to generate one. "
+        L"Inspect installed widgets with the read-only desktop_widget_list; author NEW widgets as JSON "
+        L".mdwidget content packages through the content skills below. You never emit widget HTML/CSS/JavaScript. "
 
         // Content creation is skill-driven. The specs live on disk and are loaded on
         // demand so the session prompt stays small; the unconditional rules below are
@@ -522,8 +523,11 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"Web runtime and Script components are NOT yours to produce. "
         L"Never output HTML, CSS, JavaScript, shell commands, or any executable code for desktop content; "
         L"you write JSON content packages only. "
-        L"After writing the package, validate it with wallpaper_validate_package, then create the sandbox "
-        L"preview with desktop_preview_wallpaper and tell the user it is waiting for their Apply decision.";
+        L"After writing the package: wallpaper_validate_package only understands the legacy Web .mdwall "
+        L"schema, so use it for those alone — scene .mdwall and .mdwidget packages are validated by the "
+        L"host when the user previews and applies them. For a wallpaper, create the sandbox preview with "
+        L"desktop_preview_wallpaper and say it is waiting for their Apply decision; for a widget, give the "
+        L"user the package path so they can preview it and add it with 添加到桌面.";
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
     // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.

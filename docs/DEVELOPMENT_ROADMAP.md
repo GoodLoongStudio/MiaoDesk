@@ -1,11 +1,24 @@
 # MiaoDesk 开发基线与路线
 
 - 状态：当前唯一开发路线
-- 日期：2026-09-05
+- 建立：2026-09-05；当前执行状态校正：2026-09-27
 - 设计基线：`docs/DESIGN_BASELINE.md`
 - 正式开发分支：`main`
 
 本文只描述“当前已经实现什么、哪里与设计有偏差、下一步按什么顺序修”。历史 M3、Wallpaper Engine parity、Editor 路线均不再作为开发依据。
+
+## 当前执行位置（2026-09-27）
+
+任务级执行统一看 [TODO.md](TODO.md)。下文 Phase 0～6 保留架构建设顺序；已有代码不要求从 Phase 0 重做，阶段完成仍以第 6 节的验收定义为准。
+
+- 三款官方 Widget 内容包及三款官方 Wallpaper 的 `scene.json` 正式入口已存在，当前需完成真实桌面使用与视觉验证。
+- 内置 Widget 的尺寸修改保护已实现；壁纸停用/reload 已有回归检查，仍需候选版本和真实 Windows 状态验证。
+- 壁纸/组件库、AI 创作入口、实时 Scene 预览及播放/暂停/重载/全屏、API 模型下拉与滚动均已进入当前代码；不再列为从零建设任务。
+- 性能采集与回归比较工具已具备，缺参考机的可比较数字。ARM64 构建/打包流程已建立，当前 SHA 是否通过仍须单独核实。
+- 当前优化执行顺序：准备证据 → 桌面稳定/布局/性能 → 搜索/视觉/组件/管理 → AI/配置/Harness → 发布收口。发布只受当前发布范围内的阻塞项和既有 RC 证据规则约束。
+- **本地 AI 属于独立扩展架构**。DGX、推理服务、模型选型和路由部署不成为主产品优化或 RC 的前置条件；通用 Provider 兼容与用户配置仍属于主产品。
+
+旧任务编号与当时的结论保留在 [历史快照](history/TODO_SNAPSHOT_2026-09-27.md)，不替代当前验收。
 
 ## 1. 当前工程基线
 
@@ -131,13 +144,13 @@ Enabled=0
   → Widgets 不受影响
 ```
 
-当前已有修复，但还需要正式 smoke，避免以后 Shell repair / reload 再把 Wallpaper 拉回。
+停用/reload 已有自动回归检查。当前任务是核实候选 SHA 的检查结果，并按 `TODO.md` 的 STAB-01 / STAB-02 完成真实 Windows 连续操作与恢复验证，避免把旧构建通过当作当前版本证据。
 
-### P0-3：Content Framework 开始前先收紧旧 Widget mutation 边界
+### P0-3：Widget mutation 边界已收紧，继续保护回归
 
-当前三款内置 Widget 已经有固定 Preset 尺寸，但通用 `WidgetUpdateRequest` / `WidgetService::Update` 仍允许直接修改 `width/height`。
+`WidgetService::Update` 已拒绝通过通用请求改变内置 Preset 的默认宽高；这项不再是尚未实现的 Content Framework 前置阻塞。当前通过 `TODO.md` 的 WIDGET-01 / LIB-03 验证拖动、实例参数与几何策略。
 
-在进入新的 Content Framework 之前，需要先明确：
+继续维持以下归属：
 
 ```text
 Legacy built-in preset
@@ -150,7 +163,7 @@ ContentInstance
   → 只能在 Definition 允许的范围内修改 size
 ```
 
-不能继续让任意 caller 绕过 Definition / Preset 直接写尺寸。
+任何后续修改都不得让 caller 绕过 Definition / Preset 直接写尺寸。
 
 ## 4. 立即开发顺序
 
@@ -189,7 +202,7 @@ ContentInstance
 
 ### Phase 3 — MiaoDesk Content Framework
 
-下一阶段主线正式命名为：
+内容框架主线命名为：
 
 ```text
 MiaoDesk Content Framework
@@ -204,7 +217,7 @@ docs/MIAODESK_CONTENT_FRAMEWORK.md
 
 目标不是先做 Wallpaper Editor / Widget Editor，而是先把 Wallpaper 与 Widget 的“内容”从宿主实现中抽离成可配置、可参数化、可打包的统一 Runtime。
 
-第一阶段按以下顺序实现：
+第一阶段的建设依赖如下（已有实现以当前代码为准，不重复创建）：
 
 1. `ContentDefinition + ContentInstance`；
 2. `ParameterSchema + ParameterValues`；
@@ -258,7 +271,7 @@ AI 不应成为 Wallpaper / Widget 稳定性的前置依赖，也不得绕过 Co
 
 ### Phase 6 — ARM64
 
-x64 产品链稳定后：
+ARM64 构建/打包流程已建立。继续随 x64 维护同等布局、schema 与发布验证；真机视觉验收单独完成：
 
 - 复用同一 staging scripts；
 - 使用 `runtime/arm64` Native base；
@@ -329,8 +342,8 @@ Definition / Instance migration
 5. Wallpaper 停用后 Widget 继续显示
 6. Explorer / DPI / 显示器变化后仍保持以上状态
 7. x64 installer 全绿并真实安装验证
-8. 旧三款 Widget geometry mutation 边界收紧
-9. 进入 MiaoDesk Content Framework Phase 3
+8. Widget geometry mutation 与已实现内容框架的回归保持通过
+9. 参考机性能证据与同一候选 SHA 的发布链齐备
 ```
 
 在桌面 Host / Shell 稳定性没有守住前，不允许 Content Framework 破坏现有层级、拖动、停用、多显示器和低常驻资源基线。

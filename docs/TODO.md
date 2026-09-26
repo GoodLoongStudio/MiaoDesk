@@ -1,1558 +1,449 @@
 # MiaoDesk 开发 Todo
 
-- 状态:活清单,随开发更新
-- 建立:2026-09-20
-- 上游:`DEVELOPMENT_ROADMAP.md`(阶段规划)· `DESIGN_BASELINE.md`(设计绳准) · `LOCAL_AI_ARCHITECTURE.md` · `WALLPAPER_ENGINE_BENCHMARK.md`(能力基准)
-## 怎么用这份清单
+- 更新：2026-09-27。
+- 定位：主产品优化的唯一任务级执行清单；阶段路线见 [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)。
+- 目标：[PRODUCT_VISION.md](PRODUCT_VISION.md) 定义的漂亮、智能桌面；遵守 [DESIGN_BASELINE.md](DESIGN_BASELINE.md)。
+- 本轮核对基点：`9dc2f288506563ecf8e5f32b111c6388e88593bf`。只核对了仓库文档与实现，未在本轮运行 Windows 产品，也未核实该 SHA 的远端 CI。
+- 旧清单完整保存在 [历史快照](history/TODO_SNAPSHOT_2026-09-27.md)，旧 P0/P1/P2/P3/B 编号仅用于追溯。
 
-`DEVELOPMENT_ROADMAP.md` 回答"按什么阶段走",本清单回答"下一步具体做什么、什么还没做"。
-两者不重复:路线是阶段级,这里是可执行、可勾选、带验收标准的任务项。
+## 1. 范围与执行规则
 
-规则:
+本清单覆盖搜索框、动态桌面、普通 AI 对话/内容创作、API 配置和独立 Harness 工作台。**本地 AI 是独立扩展架构**：DGX 部署、模型选型、推理服务器、模型路由和权重分发不阻塞这些任务。AI 流程用现有可用 Provider 验收，同时用可控测试服务覆盖错误分支。
 
-1. 每项必须有**验收标准**。没有验收标准的项不允许进入本清单。
-2. 完成 = 通过该项自己的验收标准,**不是**"代码写了"。
-3. 完成的项移入底部「已完成」区,不删除 —— 这份清单同时是开发记录。
-4. 新增项必须写清**依据**(哪份文档、哪个缺陷、哪次审计),不允许出现无来源的任务。
-5. 阻塞商业发布的项标 `P0`,门的验收项标 `P1`,本地 AI 实施标 `P2`,技术债标 `P3`。
-6. 对标 Wallpaper Engine 的差距项以 `B-x` 编号,依据统一指向 `WALLPAPER_ENGINE_BENCHMARK.md` 的小节号。
+保持现有 Native C++ / Win32 / Direct2D 技术基线；复用内容包、参数和场景运行时。大型 Timeline、Shader Editor、Node Graph、完整 3D 渲染器和 Wallpaper Engine 全功能对齐不进入本轮。
 
-## 全局验证状态(2026-09-22 晚更新,读这份清单前先读它)
+执行约定：
 
-**`Windows x64 Build` 已恢复通过:#367 / `023aa299`,20 个验证步骤全部 success、零 skipped。**
-这是 9/17 的 #353 之后第一次,中间隔了 14 次失败。
+1. 下列任务框初始均为未完成，表示**本次优化/验收尚未闭环**，不表示对应功能不存在。每项的“现状”区分已有实现、待核验和拟新增行为。
+2. 先复现或测量，再决定是否改代码。验收已满足时直接补齐证据并关闭任务，不重复实现。
+3. 每项开工时登记负责人、目标 SHA 和设备；可用状态为待核验、待设计、开发中、待 Windows 验收、已完成、受外部条件阻塞。
+4. 勾选完成必须附实现提交（若有）、适用检查结果、人工验收记录及遗留限制。只完成编码时保持未勾选。
+5. 第一轮保护稳定性与可操作性；第二轮完善搜索、视觉和组件；第三轮完善 AI 与工作台。独立的代码核查、设计和测试准备可以提前做，发布收口仍依赖证据。
+6. 发布阻塞项包括崩溃、数据丢失、错误应用内容、桌面图标无法操作、主要控件不可达，以及现有视觉/RC 契约规定的缺陷。其他美化项不自动升级成发布阻塞。
+7. 使用现有测试与采集工具。只为真实状态转换、竞态、数据边界等补回归，不为单纯文案/间距调整堆叠源码字符串断言。
+8. 优化前后必须使用相同场景、设备、内容与配置比较。测试错误、跳过和未执行不能记为通过；缺硬件时推进独立任务，保留真机项未完成。
 
-同一提交 `023aa299` 上,全部工作流齐绿,无一带病:
-`build` / `scan`(Repo Hygiene)/ `verify`(Path Layout)/ `package-msix` /
-`package`(x64 Package 与 ARM64 Package)/ `installer`(ARM64)。
+## 2. 已有基础：继续验收，不重复建设
 
-修复链路(全部是工程/闸门缺陷,不是产品设计问题):
-
-- **编译错误四处**:`NativeTools.cpp` 对 `std::wstring` 调 `.wstring()`;`constexpr` 非静态
-  数据成员;`std::max(int, LONG)` 推导失败;缺 `<cstring>`。共同根因是那批代码从 9/17 起
-  **没经过任何认 Windows 头文件的编译器** —— 本机只跑过剥离出来的逻辑片段和不含
-  `windows.h` 的纯逻辑测试,两者都看不见 MSVC 才能看见的类型错误。
-- **链接错误**:`content/render/d3d11/MiaoD3D11TextureLoader.cpp` 在磁盘上、语法没问题,但
-  **没进 `MIAODESK_*_SOURCES`,从来没被编译过** → 四个打包工作流挂在
-  `LNK2019: unresolved external MiaoD3D11TextureLoader::LoadImageW`。
-  这个类别落在所有闸门盲区里:语法闸门扫"磁盘上有什么",照样编译它,看不出它未被收录。
-- **三个"永远不可能通过"的闸门**(今天连中三次同一个类别):
-  1. `stage.ps1` 的 SKILL.md frontmatter 检查 —— `$head` 是 `Object[]`,而
-     `$array -notmatch 're'` 是**过滤**不是布尔,6 行里只有一行匹配 → 非空数组 → 恒真必抛。
-  2. `verify-web-audio-bridge.ps1` 那一步 —— 直接调用 `.ps1` **不设置 `$LASTEXITCODE`**,
-     那一步之前没有原生命令,所以它是 `$null`,而 `$null -ne 0` 恒真,一律抛错。
-  3. (同一类)已逐项排查,另几处"整段 run 只有一句直接调用"是没问题的,脚本 throw 会让
-     pwsh 非零退出。
-- **两个 Windows 专属失败**:
-  1. `tests/image-provider.mjs` 的 `await import(绝对路径)` —— ESM 按 URL 规则解析,
-     POSIX 的 `/abs/path.mjs` 碰巧被接受,Windows 的 `D:\…` 被解析成协议 `d:` 而抛
-     `ERR_UNSUPPORTED_ESM_URL_SCHEME`。这个闸门只在 Windows CI 上跑,所以本地永不过。
-  2. `tests/MediaWallpaperPackage.cpp` 的 fixture —— `std::string` 从 `const char*` 构造在
-     **第一个 NUL 处截断**,`clip.mp4` 被写成 0 字节,`CreateVideo` 于是正确地拒绝
-     "源文件为空",正面断言以一种看起来像产品 bug 的方式失败。
-- **`stage.ps1` 里留着未解决的合并冲突标记**(我早前合 `_check/fix/unicode-wallpaper-theme-packages`
-  留下的)。`.ps1` 不进 C++ 编译器,所以它带着三行尖括号一路绿灯。
-
-教训(每条都写进了对应提交):
-
-1. **判断 CI 步骤成败必须区分 `success` / `failure` / `skipped` / `null`。** 我最初的轮询
-   脚本把 `null`(被跳过、根本没跑)也打印成 "ok",于是"Configure 失败、但 Build 和 17 个
-   验证步骤通过"这个结论**完全失实** —— Configure 一失败后面全部 skipped。这个假象让
-   上面所有故障都被掩盖了很久。
-2. **闸门写完必须注入一个已知失效,确认它真的会响。** 我写的闸门里有三个自己试过假绿:
-   过滤器用 `startswith('error:')` 匹配 gcc 输出(而 gcc 的行以路径开头)、comm 的列搞反
-   导致一侧永远漏报、正则把 `was not declared` 写成 `was not been declared`。干净状态下
-   它们和正确版本长得完全一样。
-3. **替身/旗标的缺陷会伪装成产品缺陷。** `-fshort-wchar` 能让 `sizeof(wchar_t)==2` 那条
-   静态断言过,但在 macOS 上宽字符字面量按一字节一字发出却按 2 字节读,
-   `L"视频壁纸…"` 长度 16 变 38 并夹入 `U+0000`,`printf` 在第一个 NUL 截断 —— 给出一个
-   看似是产品 bug 的假消息。判定之前先验工具链本身。
-4. **"只有 Windows 能跑"里裹着的往往是纯逻辑。** `MiaoSceneD2DRenderer::SelfTest`
-   三个阶段连续两轮在 Windows CI 上红着,报的是"返回 false",而带标签的 Step 又因为
-   我自己紧接着推送、被 concurrency cancel 掉,始终没读到原因。停下来在本机按同样的
-   方式把那个包写一遍,根因三分钟就出来了:三个子包一个 `manifest.json` 都没写,
-   `MiaoContentPackage::Load` 在第一行就拒了 —— 一步都没走到绘制。附带还挖出两条
-   (manifest 声明了 parameters.json 就得有这个文件;manifest 的 kind 与 scene 的 kind
-   必须一致,而且目录扩展名还得和 kind 匹配)。三条全是五十行以内的纯逻辑判断,
-   只因为唯一能走到它的测试是 Windows-only 的,就花了三轮 90 秒的 CI。
-   **可迁移的判据:看到"WIC / D2D / 真机才能验",先问一句"这个断言断言的是绘制,
-   还是包的形状 / 数据结构 / 算术?"后者几乎总能在本机验。**
-5. **推送频率会吃掉诊断。** 工作流的 concurrency 组是 `cancel-in-progress`,
-   连着推两个提交,前一个的 build 会被 cancel 成 `cancelled` —— 于是那一轮猩红的
-   Step 注解永远读不到。改了代码要等一轮跑完再改下一轮,尤其是当上一轮正是为了拿诊断。
-6. **本地脚本本身也会报假绿。** 我那个"编译并运行测试"的助手脚本最后一句是 `echo`,
-   把测试自己的退出码吃掉了;而编译失败时它会跑去跑上一个二进制,于是一份
-   `ALL CHECKS PASSED` 是残留产物打印的。Gate 的退出码必须显式 `exit $rc`,
-   失败路径上不能留下上一次的二进制。
-7. **闸门自己也会有"什么都没验到"的模式。** `verify-workflow-paths.sh` 只解析
-   `run: |` 多行块,不认单行的 `run: .\script.ps1`。后果是对某些工作流它一个引用都
-   抽不到,于是**一条都没比对就报绿**。2026-09-22 就是靠这个空洞,三个从来没被任何
-   步骤调用过的闸门脚本(`derived-view-gate` / `derived-views` /
-   `theme-canonical-gate`)一直留在 paths 列表里而没人发现;连带的第二个缺口
-   (`build-windows-arm64-exe.yml` 跑 `generate-miaomiao-icon.ps1` 却没把它列进
-   paths)也同样被藏在里面。修好之后第一个跑出来的就是它自己。
-   **判据:闸门的"通过"要能回答"我刚才比对了多少条"。零条比对不可能是通过。**
-8. **一个探针只能代表它单独在场的那个东西。** `MiaoSceneD2DRenderer` 的 SelfTest 里
-   "纯色 sprite 落在中心、圆角让四角留黑"这条断言,一直读的是**时钟字形的墨**:
-   同一场景还有居中的白色 TextRenderer,而 `"HH:MM 晴"` 在 18px / 64px 盒子里比盒子
-   宽、会 word-wrap 成两行,第一行落在 x∈[9.7,54.3]、y∈[10.4,32] —— 正好盖住断言里
-   那个 `(17,17)` 探针。sprite 一直画得对。教训不是"探针选错了位置",而是
-   **取样几何必须和受测对象单独绑在一起**:要验 sprite 的圆角,就得有一个没有文本的
-   场景。混在一起的场景只能验"有东西画出来了"。
-8. **失败自报比分阶段人工复现更值。** 那条断言第二次红的时候我没有继续猜,而是先
-   在本机把它的**输入**全验了一遍(材质解析、绑定值、transform、以及按渲染器公式
-   反算三个探针应处的明暗)。输入侧全对,就一步把范围缩到"只剩 Windows 上的绘制"。
-   再往下,给断言加了无条件 dump 和 y=32 边缘扫描 —— 于是下一轮的失败自带结论。
-   **"把断言改成会解释自己的"通常比"再猜一个修法"便宜。**
-
-9. **两个后端各写一份规则,等于写了两份规则。** 给 D3D11 补贴图 sprite 时,顺手把
-   仓库里八份 `scene.json` 的 sprite 形态全列出来对了一遍,结果发现 MiaoCloud 的五个
-   图层是 `texture` + 无 `materialId` —— D2D 画得出来,D3D11 连包都加载不了
-   ("does not resolve a material")。同类别的分叉还有三格(materialId 指向不存在的
-   material、可编程材质无 texture、programmable + texture 两边都要 t0)。
-   根因不是某一处写错,而是**同一个判断在两个文件里各有一份**。
-   现在它是一份实现(`MiaoSpriteMaterialPolicy.cpp`),两个后端调用它,唯一允许的差异
-   (`backendHasShaderPath`)是显式传进去的,并且被测试钉住:任何两个后端都接受的形态
-   必须解析到同一个 path。
-   **可迁移的判据:凡是"两个后端/两个平台各判一次"的逻辑,先问它们判的是不是同一件事;
-   是,就合并成一份,并且给合并后的那份写一个 parity 断言。**
-   这次也顺手照见一条:验证合并后的规则时,我把本次要修的 bug 原样注入回去
-   (D3D11 上"texture + 空 materialId"被拒),2 项断言立刻红。**闸门注入已知失效后
-   真的会响,才是闸门。**
-
-10. **行尾差异会让门在本机全绿、Windows 全红,而报的是无关的嫌疑对象。**
-    `c55ef67` 的 `canonical-derived-view-gate` 在 Windows CI 上红,报的是
-    "RecentlyUsed() implementation not found." —— 而那个函数在同一个提交里刚刚修好,
-    515/533/550 三处 `IsLibraryUiVisible(item) continue` 都在。把源文件转成 CRLF
-    就在本机复现出完全相同的消息:那些门按 `\n` 定位"函数结尾 + 一个空行",
-    `\n}\n\n` 在 CRLF 下永远匹配不上(空行是 `\r\n\r\n`)。
-    教训不在正则,而在**仓库存 LF(`.gitattributes` 的 `* text=auto`)、runner 检出 CRLF**,
-    所以这类门只可能在 Windows 上坏。修法是在**读入处归一化**,而不是改十几处正则。
-
-11. **看门脚本自己也要先跑通一次,否则"静默"和"还在跑"完全一样。**
-    我那个轮询 CI 的看门脚本,把 `python3 -c '...'` 嵌在 bash 单引号里,里面写的是
-    `\"html_url\"` —— 单引号不转义,于是 Python 每轮都 SyntaxError,而脚本一句输出都没有。
-    我隔一段时间去看它的输出文件,看到的是空的,判断成"还在跑"。它已经在 md 里写过
-    "覆盖率:只 grep 成功标记的话,崩掉是静默的",结果同一个错以另一种形式又犯一次。
-    现在:看门脚本单独放一个 `.py` 文件(不再嵌套引号),并且每次 poll 失败都打
-    `ERROR  poll failed:` —— **让失败自己留痕**,而不是靠人去猜沉默意味着什么。
-    附带代价:那个坏脚本每小时 60 次的配额被它自己烧光了。
-
-12. **"闸门绿了"最容易被误读成"它证明的那件事成立"。** 写 skill 漂移门时连中三次同类:
-    ①第一版按**全文**搜关键词,把正面提示词里"只有 `builtinName:"solidColor"` 一种能用"
-    整句删掉,门仍然报绿 —— 因为"solidColor"这个词在反面提示词里还活着。
-    ②按小节切分的实现写错了(partition 循环让除最后一节外每节都拿到剩下的全部文本),
-    于是"正面小节必须有 X"永远被"反面小节也有 X"满足。
-    ③切成小节之后同类仍在:同一个小节里换个说法,关键词照样命中。
-    没有去堆一个能覆盖措辞的解析器(那是把工具做成编译器),而是**把上限写进脚本头部
-    和它的输出** —— 成功信息现在逐条列出"只证明了这些",并显式写"这是已知上限,不是通过"。
-    **判据:一个闸门的输出,能不能让外人正确说出它证明了什么、没证明什么?
-    不能,那它的 ✅ 比没有门更坏 —— 它会把"没验"洗成"验过"。**
-    另:这条规则我在教训 2 里已经写过("闸门写完必须注入一个已知失效"),这次仍然
-    三个版本里只有一个真的会响。**要执行,不是记录。**
-
-13. **一个从来没跑过的门,会攒下不止一层 bug,而它报的错指向完全无关的地方。**
-    `1455b4c` 把 CRLF 修掉之后,`canonical-derived-view-gate` 还是红的,但报错从
-    "RecentlyUsed() implementation not found" 变成 "Missing IsLibraryUiVisible() gate."
-    —— 我据此判断"CRLF 修错了",**错了**。两层叠着,修好一层下一层才露出来。
-    真正叠了三层:
-      ① CRLF 未归一化;
-      ② 单引号正则写成双反滑线 —— PowerShell 的转义符是反引号不是反斜杠,
-         单引号里 `\\(` 原样进正则,被 .NET 读成"一个字面反斜杠 + 一个捕获组的开始",
-         于是这条 pattern 在找一个**签名里带反斜杠**的函数;
-      ③ `Get-FunctionBlock` 返回 `$match.Value`(string),四个调用点却都写 `$block.Value` ——
-         PS7 上 `("hello").Value` 不报错,静默返回空串,于是每条断言都拿空文本比,
-         稳定地报 "Search() must use shared canonical gate."
-    最坏的是第 ③ 层:**它把门自己的缺陷伪装成产品缺陷**,而产品那段代码是对的。
-    而这个门从 `61a638f` 到 `c55ef67` 第一次被工作流调用之间,一次都没成功过。
-    **可迁移的判据:一个门的报错在点名别处时,先问"这个门自己跑通过吗?"
-    没跑通过过的门,它说的每一个字都还不能信。**
-    修完之后按教训 2 补了注入验证:分别从 RecentlyUsed / Favorites / Search 里
-    删掉闸门行,四个门各自报错且点名那个函数;CRLF 检出上 5 个步骤全绿。
-
-14. **"从来没跑过的步骤"会一个接一个地藏在最先失败的那一步后面,而且症状指向别处。**
-    `canonical-derived-view-gate` 这一轮连修四次才绿,每一层都是"之前的步骤失败了,
-    所以我一次都没跑过":
-      ① CRLF 未归一化(教训 10);
-      ② 单引号正则双反斜杠(教训 13);
-      ③ `Get-FunctionBlock` 返回 string,调用点 `.Value` 在 PS7 上静默给空串;
-      ④ 第 5 步 `Join-Path $RUNNER_TEMP ...` —— 裸写 `$RUNNER_TEMP` 是未定义的
-         PowerShell 变量,不是环境变量;GitHub 把 RUNNER_TEMP 放在进程**环境**里,
-         PowerShell 要 `$env:RUNNER_TEMP` 才读得到。于是 `Join-Path $null` 抛
-        "Cannot bind argument to parameter 'Path' because it is null."
-    **定位它靠的是一个朴素办法:让每一步自报姓名。** 给四个门加 `::notice::GATE-START /
-    ::notice::GATE-OK`、失败加 `::error::GATE <名> -> <异常>` 之后,annotations 一眼
-    就给出答案:四个门全是 GATE-OK,第 5 步连 GATE-START 都没有 —— 于是范围立刻缩到
-    "它在调用门之前就死了"。此前我只有"整个 gate 跑了 18 秒"这一个信号。
-    **匿名 API 读得到 check-run 的 annotations,读不到 job log。所以诊断信息要主动
-    写进 annotations,不能指望去翻日志。**
-
-15. **"SelfTest 存在"和"SelfTest 在跑"是两件事,而仓库里躺了一片没人调用的。**
-    清点时发现三份:**`MiaoSceneD3D11Renderer::SelfTest`**(Windows 侧聚合器)零调用方,
-    而它内部 `MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() && ...`
-    那七项**纯逻辑**自测因此也跟着从未执行 —— 合计约 290 行断言,讲的是渲染图、
-    后处理编译、shader ABI 契约、GPU 参数打包、粒子运行时;外加
-    `MiaoSceneRuntimeModel::SelfTest`(147 行,构建/参数/输入解析)连那个聚合器都没包含,
-    也是零调用方。加上 `MiaoSceneSerializer::SelfTest`(120 行,粒子发射器)一共三处。
-    同一类此前已犯过:D2D 的 SelfTest 150 行真实像素断言也是零调用方,接进 CI 后
-    第一轮就抓出六个测试自身的缺陷。
-    **判据:每加一个 SelfTest,同时给它一个调用方(测试目标 + runner + CI 步骤),
-    并且注入失效证明它真的会响。** 这次两处都做了:
-    删掉 `ValidateParticleEmitter` 的上限判断 → `SceneSerializerSelfTest` 立刻 FAIL;
-    禁用 `MiaoPostProcessCompiler` 里一行校验 → `ContentSelfTests` 立刻 FAIL。
-    还原后各自复绿。三处接完之后本机纯逻辑测试 11 → 13。
-    顺带记录一个**不是**缺陷的发现:`MiaoParticleSerializer::SelfTest` 是
-    `return true;` 的桩。它旁边真正该被覆盖的(`DeserializeEmitters` 只是转调
-    `MiaoSceneRuntimeModel::Validate`)已经由新测试覆盖,所以桩保持原样。
-
-16. **不要把"逐字节相等"的门,架在由超越函数算出的产物上。**
-    MiaoCloud 的动画迁到关键帧轨之后,`generate-miao-cloud-scene.py --check`
-    在 Linux CI 上连红三轮,而本机(Python 3.14 与 3.9 都试过)全绿。
-    根因:`math.sin` / `math.cos` 的结果**依赖平台的 libm**,glibc 与 macOS 的 sin
-    可能差 1 ulp,而 `json.dumps` 会把这个末位差原样写进 scene.json ——
-    于是"在 macOS 上生成、在 Linux 上校验"必红,差异却是 1e-16 的相对量。
-    **判据:凡是要提交进仓库、又被逐字节门守着的小数,先问它是怎么算出来的。
-    乘加除是 IEEE 精确舍入、与平台无关;sin/cos/sqrt/exp/log 不是。**
-    修法是把采样值按固定小数位 round(这里 6 位,即 1e-6 px,比一个像素还小七个
-    数量级,远小于声明的 0.306px 误差上界),**不是**把门的容差放宽 ——
-    放宽容差会让门再也抓不住真的分叉。
-    顺带:breathe 的误差随后刚好压在解析上界上被判 FAIL,那是**上界算漏了一项**
-    (还有 round 带来的 1e-6),不是迁移变差了。上界也要跟着写全。
-    以及:我一开始连 `time` 也 round 了,结果末键向上进位越过 duration,被
-    `Validate` 整scene 拒掉("Animation keyframe time is outside the track duration")。
-    time 由乘除得来,本来就不需要 round。**"顺手一起 round"不是无害的。**
-
-17. **"多提交了一个文件"是一整类没有任何闸门在看的缺陷 —— 因为现有闸门全都只问
-    "这里的东西对不对",没有一条问"这里有没有不该在的东西"。**
-    2026-09-22,`scripts/__pycache__/generate-miao-cloud-scene.cpython-314.pyc`
-    跟着一个文档闸门的提交进了库。彼时有**十四个**闸门,无一报警:原生源码那条只扫
-    `src/` 的形状(而 pyc 在 `scripts/`),暂存资产那条只管 `assets/*.mdwall`,
-    CMake 那条问"CMake 编了什么"而不是"多出来了什么"。
-    根因是 `.gitignore` 有 .NET / Node / CMake / IDE / OS / logs 各节,
-    **唯独没有 Python** —— 而 `scripts/*.py` 早就在跑了,只是从没人在 `git add -A`
-    之后看过一眼暂存区。
-    **判据:每一步 `git add -A` 之后,暂存区里都可能混进工具链的副产物。
-    加门时问的不是"我要查的那条规则有没有被违反",而是"这一类错误,
-    现有门里有没有任何一条看得见"。**
-    写这道门时我自己先犯了同一个毛病的变体:第一版按"所有二进制扩展名"扫,
-    当场误报三个**故意**提交的二进制 —— vendored 的 `WebView2LoaderStatic.lib`
-    与 `downloads/store/` 下的 Store 分发包。它们的引入提交本来就写明了意图,
-    README 也登记了。所以判据必须区分**工具链顺带产生的副产物**(永远无可辩解,按名字一票否决)
-    与**刻意引入的依赖/分**(正当,但要登记理由)。
-    第三版才落到对的形状:**按区域登记**。由 git 自己判定哪些被跟踪文件是二进制
-    (`git ls-files` 减去 `git grep -I` 的补集,共 24 个),再要求每一个都落在登记过的
-    目录前缀下 —— `assets/`(产品图片)、`runtime/*/{node,goz}/`(锁版本的 vendored 运行时)、
-    `third_party/webview2/lib/`、`downloads/store/` 等 9 个区域,每个都注明引入它的提交号。
-    区域级比逐文件 allowlist 少一层维护,又比扩展名白名单多一层保证:新出现的区域会红,
-    不管里面装的是什么扩展名(实测:一个新 `.zip` 落在未登记目录 → 红)。
-    顺带被注入测试逼出一个真缺陷:第一版把解释器缓存也放在 `binaries` 里查,于是判据
-    依赖了 git 的二进制启发式(靠 NUL/长度)。注入一个**不含 NUL**的假 `.pyc`,连打两轮
-    都是绿的。改成按名字判之后这条路堵上了 —— **「必然成立的规则」不该架在启发式上。**
-
-18. **在拆掉 COM 公寓之前,先释放每一个 COM 对象 —— 顺序错了就是访问违例。
-    2026-09-22 写第一个会在真实设备上跑 D3D11 的测试时踩到:`CoUninitialize()` 照常调用,
-    而 `renderer`(持有设备、交换链、渲染目标)和 `wic` 还在作用域里,它们的析构发生在
-    函数返回时 —— 也就是**公寓已经被拆掉之后**。在一个已卸载的 apartment 上释放 COM
-    对象是未定义行为,表现是一次 0xC0000005,而**日志里它前面什么都没有**,
-    因为到那一点之前每一步都成功了。
-    **判据:凡是看到 `CoInitializeEx` 配 `CoUninitialize` 的函数,把后者之前有没有显式
-    释放该函数创建的 COM 对象数一遍。** `MiaoSceneD2DRenderer` 的自测结尾是五句
-    `Reset()` 然后才 `CoUninitialize()`,那是这份仓库里唯一写对了的地方;照着它写的第二个
-    测试反而漏了 —— 能用的样板就在三百行外,漏看的代价是一轮 CI。
-    一处刻意的分寸:全仓有三十来处 `CoUninitialize`,没有逐个去改。多数是 `TryRun*` 入口,
-    而那些在 `WM_DESTROY` 等处已经把 COM 对象释放掉了(`WebDesktopSurfaceChild` 正是如此);
-    **在不能编译验证的机器上批量改三十处收尾顺序,风险大于收益**。只修了自己那一处,
-    并把判据写下来。
-
-19. **"门读的文件"和"产品读的文件"不是一回事时,门会绿着覆盖 0 个对象。
-    2026-09-22 修 P0-4 美术资产时挖到:`verify-staged-wallpaper-assets.sh` 从每个包的
-    `scene.json` 的 `assets[]` 推出"应有的资产",而 `WallpaperPackage.cpp:409` 是
-    **`legacy_entry` 优先** —— 三个包的 manifest 全都同时写 `"entry": "scene.json"`
-    与 `"legacy_entry": "scene.ini"`,于是产品三个包**全都加载 scene.ini**,
-    `entry` 指向的 scene.json 一个都没被读过。NeonCity 与 MysticMoon 的 scene.json 是
-    空壳(0 资产),门于是推出 0 个应有资产,报"✅ 覆盖了每个资产"。
-    实际有 15 个真实资产文件,门覆盖 5 个 —— **三分之二没有任何兜底**,
-    而它一直在打印成功。MiaoCloud 那 5 个是**蒙对的**:它的 scene.json 恰好和 scene.ini
-    声明一致,不是因为门读对了文件。
-    **可迁移判据:门从某个文件推"应有集合"时,先确认产品也读那个文件。
-    两者不一致时,门不是"覆盖得少",而是"在验一个产品不碰的东西"。**
-    修法不是给 scene.json 补资产(那是迁移工作),而是让门按 manifest 解出**生效入口**
-    再取资产;`stage.ps1` 的断言从 5 条补到 15 条,生效入口连同结果一起打印。
-
-20. **一个正则能同时吞掉"两条路径"和"一条注释 + 一条路径",而且错误会互相抵消。
-    接着上一条:`stage.ps1` 的断言清单一开始用一句
-    `re.findall(r"'([^']*Wallpapers[^']*)'", text)` 抽路径。它匹配的是**任意两个单引号
-    之间含 Wallpapers 的内容**,而资产清单上面那段注释里正好写了
-    `install(DIRECTORY assets/wallpapers/ DESTINATION Wallpapers)` ——
-    于是注释和它后面第一个被引号包起来的路径被**整段吞掉**,那条路径从来没被检查过。
-    它一直没被发现,是因为 `stage.ps1` 恰好把其中一条路径在第二个手写列表里**重复了一遍**;
-    而当我把那个(只列了 15 张图里 4 张的)LFS 检查改成从暂存树推导、删掉重复之后,
-    缺陷当场露出来,门开始报"少 MiaoCloud 的 background.jpg"—— 而那行明明在。
-    **被巧合掩住的缺陷仍然是缺陷,而且删掉那个"多余"的副本时它就会反咬一口。**
-    现在改成按 PowerShell 自己的字符串/注释状态机扫描(`#` 行注释、`<# #>` 块注释、
-    `''` 是转义引号),并用注入测试固定:删掉那第一行 → 门指名道姓报 background.jpg。
-    **可迁移判据:用引号/括号配对抽结构时,问一句"两个边界之间能不能夹别的东西";
-    能,就别用正则,或者先按词法状态把注释剥掉。**
-现在有**二十一个**本机闸门(其中 4 个壁纸库派生视图是 Windows-only),新增 C++ 或改动 CI 脚本后先跑:
-
-> 这个数字 2026-09-22 之前写的是"十八个",而同一张表已经列到 20 行 —— 一个读起来像现状、
-> 其实是快照的计数。改数字不如让它可核对:行数就是闸门数,对不上就是这里过期了。
-> (教训「把读起来像现状的计数标注日期」的同一条。)
-
-| 闸门 | 命令 | 覆盖 | 不覆盖 |
-| --- | --- | --- | --- |
-| 交叉语法 | `scripts/verify-windows-syntax.sh` | 全部独立 TU 的类型/成员是否真存在 | Windows SDK、MSVC 与 mingw 的差异 |
-| 纯逻辑测试 | `scripts/run-pure-logic-tests.sh` | 14 个测试目标真编译并运行通过(另 6 个显式列为 Windows-only;两者相加应等于 `add_executable(*Test)` 的个数,这个等式本身可查) | 任何需要 Windows 的目标;以及"跳过清单是否列全"要靠这个等式 |
-| CMake 收录 | `scripts/verify-cmake-covers-sources.sh` | 磁盘上每个 `.cpp` 是否真的被 CMake 编译 | CMakeLists 的意图是否合理 |
-| CMake 目标结构 | `scripts/verify-cmake-target-hygiene.sh` | 目标顺序 / foreach 一致 / 每个可执行目标都有链接 / MSVC 选项齐全 / 每个 `.cpp` 只有一个 owner | 链的库是否真是它需要的那个 |
-| **文档引用:这一行在不在** | `scripts/verify-doc-code-citations.sh` | `docs/` 里每条 `文件.cpp:行号` 都指向真实存在的行 | **这一行说的是不是那件事**(后者要人读) |
-| **文档引用:这一行讲的东西在不在这一行** | `scripts/verify-doc-citation-symbols.sh` | 取引用**同一行**的符号,验证它出现在被引那一行 ±3 行内 | 没有相邻符号的引用(仍要人读) |
-| **文档引用:那个符号还在不在** | `scripts/verify-doc-symbols-exist.sh` | `docs/` 反引号里的 `A::B` 形态符号仍存在于 `src/` | 裸常量与环境变量/配置键(窄判据,8% 假阳性那条路已量过) |
-| 原生源码形状 | `scripts/verify-native-source-hygiene.sh` | 源码是否依赖 cwd、是否绕过共享 AppPaths、目录形状、CMake 源文件是否都在 | 按反斜杠比对的目录 allowlist(那是 Windows 才成立的) |
-| **本机产物入库** | `scripts/verify-no-build-artifacts.sh` | 版本库里有没有解释器缓存(**按名字判**);git 判为二进制的 24 个文件是否都落在 9 个登记区域;`.gitignore` 是否真的挡住缓存;登记区域是否已空(表过期) | 内容恰好是纯文本的 `.a` 落在 `src/` 下(那是源码形状门的事);未跟踪的产物;登记二进制的内容是否仍最新 |
-| 冲突标记 | `scripts/verify-no-conflict-markers.sh` | 仓库里有没有未解决的冲突标记 | 无 |
-| skill 白名单 | `scripts/verify-skill-allowlist.sh` | `kContentSkills` 与 `skills/` 是否一致 | CI 上真实的注入效果 |
-| 工作流 paths | `scripts/verify-workflow-paths.sh` | 每个工作流的 `paths` 过滤是否覆盖它自己跑的文件 | 过滤模式是否过宽 |
-| 媒体包离线 | `scripts/verify-media-package-offline.sh` | `CreateVideo`/`CreateImage` + `Validate`(CI 测试第 1 节) | 第 5 节;以及测试自己写 fixture 的方式 |
-| 场景 fixture 一致性 | `scripts/verify-scene-fixture-parity.sh` | 贴图 fixture 的 scene / manifest / parameters 两份没有分叉 | Windows 那份是否真能画出来 |
-| 三个包几何一致 | `python3 scripts/generate-miao-cloud-scene.py --check` | 三个包的 scene.json 与各自 scene.ini 逐字节一致 + 每层逆合成 assert | 动画保真(下一行);粒子(刻意未迁移) |
-| 打包资产断言 | `scripts/verify-staged-wallpaper-assets.sh` | `stage.ps1` 的资产断言清单覆盖每个包**生效入口**(legacy_entry 优先)声明的资产 | `stage.ps1` 之外的拷贝路径是否完整 |
-| **壁纸美术资产可复现** | `python3 scripts/generate-builtin-wallpaper-art.py --check` | NeonCity / MysticMoon 的每个资产与重新渲染**逐字节**一致;尺寸与 scene.ini 的 Layer 盒子一致 | 画面好不好看(要人看);PIL/libjpeg 换版本后误报 —— 已改成把编码器身份连同结果一起打出来 |
-| **渲染后端一致性** | `MiaoDeskSpriteMaterialPolicyTest`(在 `run-pure-logic-tests.sh` 与 Windows CI 里) | D2D 与 D3D11 对"哪个 SpriteRenderer 能画"判断一致;10 个形态 × 2 个后端,含必须被拒的那些 | HLSL 与真实绘制(只有 Windows 能编译/跑) |
-| **三个包动画保真** | `python3 scripts/verify-builtin-wallpaper-animation-parity.py` | 三个包的迁移动画逐点复现 scene.ini 的解析式运动,误差 ≤ 解析上界 `A*(1-cos(pi/15))` | 粒子(刻意未迁移);真机观感 |
-| **skill 材质规则** | `scripts/verify-skill-material-rule.sh` | `skills/` 是否说到渲染器真正执行的 sprite 材质规则(名字从代码读出,不手抄) | 措辞改写;同一个词在小节别处仍命中的情况 |
-| 壁纸库派生视图(4 个 .ps1) | `packaging/windows/verify-wallpaper-library-*.ps1` | `WallpaperLibrary.cpp` 的 `RecentlyUsed`/`Favorites` 等派生视图仍是"用户可见"的那一份 | CRLF 之外的形状(已在读入处归一化) |
-
-其中除交叉语法与纯逻辑测试外,都由 `.github/workflows/repo-hygiene.yml` 在 CI 跑 —— 它们不需要 Windows、也不依赖
-构建能否通过,所以不该被构建类工作流挡住。
-
-`MediaWallpaperPackageTest` 明确只能由 CI 覆盖:它链接 `WallpaperLibrary.cpp` →
-`UnicodeProfileFile.h:72` 有 `static_assert(sizeof(wchar_t) == 2)`(Windows 配置持久化
-要求 UTF-16 `wchar_t`),而 macOS 的 `wchar_t` 是 4 字节。这是产品设计约束。
-
-**"待 Windows 编译"与"待真机验收"是两件事,不要互相顶替。** 前者问的是"能不能编过、
-断言跑没跑",后者问的是"用户桌面上看到的是不是对的"。
-`023aa299`(全绿)之后,凡是文件逐字节未变的项,前一个问题已经有答案,
-不再写"未验证"。
-2026-09-22 顺着这条把 B-1 / B-5 / P2-4 / P3-1 / P3-3 五处已经失效的"待 Windows 编译"
-标记按证据改掉了 —— **把已验证的写成未验证,和把未验证的写成已验证同样失真。**
-
-## P0 — 阻塞商业发布
-
-### P0-1 真实 Windows 多 DPI / 多显示器视觉闭环
-
-- **依据**:`DEVELOPMENT_ROADMAP.md` §3 P0-1;`DESIGN_BASELINE.md` §10「真实 Windows 用户流程稳定通过 = 完成」
-- **为什么阻塞**:这是设计目标第一段(门)的核心验收。CI 绿色不算完成,必须真机。门不关闭,后面所有进展都算不上目标达成。
-- **内容**:组件内容完整显示;alpha 正确;不漏错误背景;Widget 位于 Desktop Icons 之上且可交互;跨 DPI 不裁切;Explorer 重建后恢复。
-- **依赖**:需要一台真实多显示器 / 多 DPI Windows 机器
-- **状态**:❌ 未开始 —— **需硬件,无法用 CI 替代**
-
-### P0-2 `image_generate` 本地化 🟡 产品链已闭合，待 DGX 真机服务联调
-
-- **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.1 / §7.5
-- **已完成**:
-  - provider / model 不再硬编码 OpenRouter + Gemini。
-  - Profile 增加 `imageBaseUrl` / `imageProvider` / `imageModel`；图片服务可与聊天服务使用不同端口。
-  - API 配置中心直接展示 Image Base URL + Image Model + Image API Key；图片 Key 独立保存在 Windows Credential Manager，不写明文 INI。
-  - `PiRuntime` 把图片 provider / base URL / model 导出到扩展进程，并全部纳入 session signature。
-  - loopback 图片端点免密钥；非 loopback 仍遵守显式 image key 优先、否则复用主 key。
-  - `local-openai-compatible` / `openai-compatible` 不再交给第三方 `getImageModel` 猜 provider 名；
-    MiaoDesk 自己直接调用 `<imageBaseUrl>/images/generations`。
-  - 请求固定 `response_format=b64_json`，只接受 `data[0].b64_json`，再走现有图片落盘路径。
-  - 具名云 provider 仍走 `@earendil-works/pi-ai/compat`，保持原有兼容性。
-- **自动验证**:
-  - `tests/image-provider.mjs`：参数、密钥与 provider 决策回归。
-  - `tests/image-openai-shim.mjs`：启动真实 loopback HTTP server，验证 URL / body / auth /
-    `b64_json` 响应解析；同时在 Repo Hygiene 与 Windows x64 Build 执行。
-- **仍未完成**:
-  - DGX / 局域网真实图片服务按该协议上线并生成一张真实图片；
-  - 记录模型名、端口、首图延迟、峰值显存/统一内存与错误恢复表现。
-- **状态**:🟡 产品侧硬缺口已解除；剩余是实际图片推理服务部署与真机验收
-
-### P0-3 TodayTasks 组件进入主干 ✅ 已完成(2026-09-22,commit `bca7f9b`)
-
-- **依据**:`DESIGN_BASELINE.md` §5.1 明确三款内置 Widget(GlassClock / **TodayTasks** / WeatherGlass)
-- **此前状态**:主干只有 GlassClock 与 WeatherGlass 两个 `.mdwidget` 内容包,TodayTasks 整套
-  (9 个新文件)在未合入分支 `feat/content-widget-settings`(25 提交)上;而我早前误删了远端分支。
-- **已实施**:该分支内容完整保存在本地 `_check/*` 引用与 bundle 中,已合入 `main`(`bca7f9b`)。
-  三款内置 Widget 现已齐备。
-- **冲突处理**(两条独立历史各自创建同名文件,均非对方祖先):
-  `ContentWidgetPreviewRenderer.cpp` / `ContentWidgetSettingsDialog.cpp` 在 main 与分支上
-  各有版本。逐行比对确认分支版把 `PublishWeather` 泛化成 `PublishHostData`、天气发布语句
-  与 hour 循环逐字节相同(仅缩进)、只新增 tasks 分支,才取分支版 ——
-  按 add/add 常规做法直接取一侧会**静默删掉天气发布**。
-- **验证**(走产品自己的代码,非逻辑复刻):
-  - `TodayTasks.mdwidget` 通过 `MiaoSceneSerializer::Deserialize` +
-    `MiaoSceneRuntimeModel::Validate` + `MiaoSceneRuntime::Initialize`
-    (11 节点 / 4 参数 / 10 绑定,kind=widget,profile=widget,spatial=2d)
-  - `{{tasks.*}}` 模板替换 7 例全部正确:计数、进度文本、空态、三条任务
-    (含 marker 与 detail 两行)、空槽位;`tasks.pending` / `item0.title` /
-    `progressText` 均过 `tasks.read` capability 闸
-  - 既有 `MiaoSceneRuntime::SelfTest` 仍通过
-  - 离线验证需最小 `windows.h` 替身(`GetLocalTime` / `GetTickCount64` /
-    `MultiByteToWideChar` / `swprintf_s` 模板重载 等),因为 `model/` 与 `binding/`
-    子域含 `windows.h` —— 此前"内容框架整层零处包含 `windows.h`"的说法只对
-    `runtime/`、`scene/`、`serialization/` 三个子域成立。
-- **遗留**:真机未验证(需 Windows 桌面置入该 Widget、编辑任务、确认重绘与持久化)。
-- **状态**:✅ 代码已合入并通过包级/替换级验证;真机验收未做
-
-### P0-4 壁纸 `.mdwall` dogfood 补齐 🟡 部分完成(新增一个此前未记录的硬阻塞)
-
-- **依据**:`MIAODESK_CONTENT_FRAMEWORK.md` §17 第一阶段第 10 项;§19 完成标准
-- **原判断被两次推翻**:
-  第一次:我以为合入 `fix/unicode-wallpaper-theme-packages` 就能关上。**错** ——
-  实测该分支加的三份 `scene.json` 是空壳且被 `legacy_entry` 遮蔽(见下)。
-  第二次:我以为"剩余工作就是把 scene.ini 的 5 个 Layer 翻译成 scene.json 节点"。
-  **也错** —— 读完渲染契约后发现根本性的阻塞。
-- **实测证据(一):scene.json 被遮蔽且是空壳**
-  三个包的 `manifest.json` 同时写 `"entry": "scene.json"` 与
-  `"legacy_entry": "scene.ini"`,而 `WallpaperPackage::LoadAndValidate`
-  **优先取 `legacy_entry`**。实测 MiaoCloud / MysticMoon / NeonCity 解析出的
-  entry 全部是 `scene.ini`。即便解除遮蔽,这三份 scene.json 各只有 1 个 root 节点
-  (单个 transform + opacity)、0 资产、0 绑定、0 动画、0 后处理;
-  而 `scene.ini` 描述 5 个 Layer、引用 5 个真实资产。
-- **实测证据(二):渲染契约不支持贴图 sprite —— 这是当时的真阻塞,2026-09-22 已解除**
-  - `spriteRenderer` 的属性只有 `opacity` / `tint` / `cornerRadius` / `materialId`,
-    **没有 asset / texture 属性**;取图只能经由 material。
-  - builtin 材质**当时只有 `solidColor` 一种**;D3D11 明确报错
-    "D3D11 MVP currently supports builtin solidColor or programmable materials"。
-  - 仓库内所有包的 `materials[].textures` **一律为 `[]`**,没有一个贴图样例。
-  - `textures[]` 取图只对**可编程材质**开放,需 `MaterialModel::Programmable` +
-    pixelShaderId + texture slot + `AssetType::Image` 资产 + `MiaoD3D11TextureLoader`。
-  - D2D 渲染器当时完全没有取图路径,sprite 只能出纯色。
-  结论(当时):迁移要么给两个渲染器都加一个带贴图的 builtin 材质,要么为每层写可编程
-  材质 + 像素 shader。两者都是渲染侧改动,需要 D3D11 / DirectWrite / D3DCompiler,
-  本机(macOS)无法编译验证。
-  **解除情况(2026-09-22)**:渲染侧已按第一条路落地 ——
-  `SpriteDrawPath::SpriteTexture` + `MiaoBuiltinTextured` + t0,两个后端共用
-  `ResolveSpriteDrawPath`;唯一保留的后端差异是"非白色 tint 作用于贴图"D2D 仍然拒
-  (D2D 没法在一个 pass 里给位图上色,见 `MiaoSpriteMaterialPolicy.h` 的说明)。
-  上面那两处**行号引用已删**(刻意写成"第 NNN 行"而不是 `文件.cpp:行号`,
-  免得那个形状又被引用门当成一条合法引用计数 —— 我要的正是它**不**被算作证据):
-  它们仍然解析得过去(所以 `verify-doc-code-citations.sh` 是绿的),但指到的已经不是
-  原来那行 —— D2D 渲染器那份现在是一条关于 spatial:3d 的注释,D3D11 那份现在是一句
-  `CreateConstantBuffer`,而那句报错在全文件里已经不存在。
-  这正是那道门自己声明的边界:它查"这一行在不在",不查"这一行说的是不是那件事"。
-  **一条能解析但指错地方的引用,比没有引用更坏。**
-- **所以刻意不做的**:不写一份"能通过校验但渲染不出来"的 scene.json。
-  那会得到三个校验通过、桌面上却什么都没有的官方壁纸 ——
-  正是 `content-review` 与 `wallpaper-content` 反复禁止的那种静默失败。
-- **剩余工作(按依赖顺序)**:
-  1. **渲染侧**(阻塞项):为 D2D 与 D3D11 加带贴图的 builtin 材质
-     (例如 `builtinName: "textured"` + 一个固定 texture slot),或在
-     `AssetType::Image` 与 `SpriteRenderer` 之间开一条直接引用路径。
-     输出需含 Windows 侧编译与真机截图验证。
-  2. 内容迁移:5 个 Layer → 5 个 `node://<name>`,各带 `Transform` +
-     `SpriteRenderer{materialId}`;`design_width/height` 与各层
-     x/y/width/height 映射到 Transform 的 `position` / `scale`;
-     `opacity` 映射到两处;文件引用 → `AssetDefinition{asset://<name>, Image}`。
-  3. ~~动画~~ ✅ **已迁移(2026-09-22)**。六种里五种落到关键帧轨,`background`
-     是 `none`。两个此前没写入记录的发现:
-     - **`blink` 不是间歇触发,是方波。** 原判断它与 `InputRisingEdge` 最接近
-       是错的:legacy 是 `cycle = fmod(t+phase, blinkInterval)`,
-       `cycle > blinkDuration` 时隐藏 —— "可见 duration 秒、隐藏其余"自我循环,
-       与输入无关。它的 `rotation` 也不是动画:`speed=0` 使
-       `wave = sin(phase) = sin(pi/2) = 1`,角度恒为 `rotation_amplitude`,
-       写成一条永不变的轨反而误导,所以那是静态值。
-     - **李萨如的两根轴必须拆到父子两个节点。** drift 的 y 用 `speed*0.77`、
-       sway 用 `speed*0.81`,与 x 频率不同;而一条轨只能动一个完整属性,
-       `position` 是 vec2 且 `PropertyAddress` 没有 `.x/.y` 寻址。
-       节点变换沿 parentId 链连乘,父节点动 y、子节点动 x,合成即原曲线。
-       代价:5 个图层节点变成 9 个(多 3 个 axis-y 父节点)。
-     - 采样数取 16/周期。均匀采样 + 线性插值的最大误差是解析解
-       `A*(1-cos(pi/15))`,在最大幅值 14px 上 0.306px —— 亚像素。
-       这个数由 `scripts/verify-builtin-wallpaper-animation-parity.py` 逐点复核
-       (按引擎自己的 easing 与局部时间代码求值,不是按我的理解),
-       已接进 `repo-hygiene.yml`。把采样数改成 4 复现过它报 6 项超界。
-  4. 粒子:`[Particles]` → `ParticleEmitterDefinition` —— **刻意不做**。
-     legacy 的粒子不是声明式的:`LayeredSceneRenderer.h:273-314` 按索引
-     过程式生成(逐索引正弦抖动、`kPi` 拱形、`i%5` 分频的五类)。
-     `[Particles]` 段里只有三个计数和两个不透明度,**没有每粒子的
-     初速度/寿命/尺寸/颜色来源**。把发射器参数编出来等于替用户编一份视觉 ——
-     正是这个仓库反复拒绝的"校验通过但桌面上不是你想要的东西"。
-     已由 `BuiltinWallpaperPackages` 把 `emitterCount == 0` 连同理由钉住。
-  5. ~~补 `parameters.json`~~ **不适用**。`MiaoContentPackage::Load` 只在
-     `manifest.parameters` 非空时才要求这个文件存在(`MiaoContentPackage.cpp:461`
-     的 `if (!manifest.parameters.empty())`),而 MiaoCloud 的 manifest 没有
-     `parameters` 键 —— 没有参数要暴露,也没有文件要补。动画的振幅/速度/相位
-     已是轨道里的定值,不是用户可调项。若将来想让用户改外观(比如"云飘多快"),
-     那是**新增产品能力**,不属于 P0-4 的迁移范围。
-  6. 从 `manifest.json` 删 `legacy_entry`,删除 `scene.ini`。
-  7. 重跑 `verify-wallpaper-library-derived-views.ps1` 等 6 个脚本 ——
-     需先确认它们的输入源是否仍指向 `scene.ini`。
-  8. 验收:`MiaoSceneSerializer::Deserialize` + `Validate` + `Initialize` 通过,
-     且初始化后 `scene.assets.size() >= 5`、`animations.size() >= 1`
-     —— 这两条**已满足并由 `MiaoDeskBuiltinWallpaperPackagesTest` 每轮钉住**
-     (5 资产 / 8 轨,推导写在测试注释里);
-     最终"壁纸在真机上显示全部 5 层且眨眼动画生效"仍需真机。
-  ## 新增:第三个阻塞 —— 两个包根本没有美术资源(2026-09-22 发现)
-
-  走 `MiaoContentPackage::Load → MiaoSceneSerializer::DeserializePackage →
-  MiaoSceneRuntimeModel::Validate → MiaoSceneRuntime::Initialize →
-  MiaoAssetDatabase::Build` 这条链跑三个真包(新增
-  `MiaoDeskBuiltinWallpaperPackagesTest`,纯逻辑,每轮都跑)时暴露:
-
-  - **NeonCity.mdwall 与 MysticMoon.mdwall 里没有任何资产文件。** 目录下只有
-    `manifest.json` / `scene.ini` / `scene.json` 三个文件。
-  - 它们的 `scene.ini` 各声明 5 个图片图层(`assets/background.jpg`、
-    `assets/city_glow.png` …、`assets/moon_glow.png` …)。
-  - 而 git 历史里从来没有这两个路径下 `assets/*` 的记录(`git log --all` 为空),
-    那些文件名在全仓库也搜不到。
-  - 只有 **MiaoCloud** 真的带着自己的 5 张图(background.jpg / cloud.png /
-    tail.png / cat.png / blink.png)。
-
-  所以对那两个包,P0-4 的"内容迁移"不是写 scene.json 的问题 —— **没有素材可写**。
-  这不属于开发工作能闭合的范围,需要补美术资产。`MiaoCloud.mdwall` 的 scene.json
-  已填成 5 层,那两个仍是空壳,并且这件事被测试钉成了断言,不会被当成一次性发现。
-
-  另注:`LayeredSceneRenderer.h::LoadBitmap` 在文件缺失时返回 false,而
-  `DrawLayer` 是 `if (!layer.bitmap) return;` —— 即**缺图的图层被静默跳过**。
-  这解释了那两个包今天在桌面上为什么"看起来还在跑":它们本来就在静默缺图。
-
-  ## 上面这条"没有素材可写"当天就被推翻了一部分(2026-09-22 晚)
-
-  **素材是有的,只是不在 git 里,而且唯一能验它的门是坏的。**
-
-  - 磁盘上两个包的 `assets/` 各有 5 张真图(共 10 个文件),加起来 ~330 KB。
-    它们**不在版本库里**(`git status` 显示 untracked),所以上面"git 历史里没有记录"
-    那句是对的,但结论"没有素材"过头了 —— 素材存在于工作树,只是没人提交、也没人验。
-  - 生成它们的 `scripts/generate-builtin-wallpaper-art.py` 有一个 `--check`
-    (重新渲染并与磁盘文件比 sha256),**它是坏的,而且从来没跑完过**:
-    at HEAD 它第一行就死(`configparser.read()` 打不开不存在的 `scene.ini` 却静默
-    返回空 → 每个图层都被报成"scene.ini 里没有对应图层",一个字节都没比);
-    修好之后走到下一层,JPEG 路径崩在 `_FakePath` 没有 `write()`
-    (PIL 的 `Image.save` 先试 `fileno()`,失败才把参数当流用)。
-    **PNG 那一半走 `write_bytes()` 是好的,所以唯一坏掉的那半也正好是从没被验证过的那半。**
-  - 已修好并接入 CI(`repo-hygiene.yml`;该脚本此前除自己 docstring 外**全仓零引用**)。
-    修好后跑起来:两个包的 10 个文件**与重新渲染逐字节一致**,包括 JPEG。
-    注入一个已知失效(翻转 JPEG 中间一个字节)确认它会响,退出码 1。
-    另外补了编码器身份输出(PIL 版本 + libjpeg)—— 否则升级 PIL 会让门对着
-    没人动过的图误报,会哭的狼比没有门更糟。
-  - **所以这一项的剩余工作从"补美术资产"变成"提交已有资产 + 写 scene.json"**,
-    后者才是真正的迁移工作。判据也变了:不再是"有没有素材",而是"素材能不能逐字节复现"。
-
-  ## scene.json 迁移已做完(2026-09-23)
-
-  两个包的 `scene.json` 都从 `scene.ini` 生成完毕,不再是空壳:
-
-  | 包 | 节点 | 资产 | 动画轨 | 组成 |
-  | --- | --- | --- | --- | --- |
-  | MiaoCloud(此前已迁) | 9 | 5 | 8 | 1 root + 5 层 + 3 axis-y |
-  | NeonCity | 10 | 5 | 8 | 1 root + 5 层 + 4 axis-y |
-  | MysticMoon | 10 | 5 | 8 | 1 root + 5 层 + 4 axis-y |
-
-  三个包全部通过 `Load → Deserialize → Validate → MiaoAssetDatabase::Build →
-  MiaoSceneRuntime::Initialize`,且 15 个资产全部解析到真实文件
-  (`MiaoDeskBuiltinWallpaperPackagesTest`,纯逻辑,每轮都跑)。
-
-  **没有新增第二种动画形态。** 我一度以为 MysticMoon 的 `float` 是第五种、要另做映射,
-  查了 `LayeredSceneRenderer.h:231-233` 才发现 `float` 和 `drift` **是同一个分支、
-  同一条公式**,行为完全一致。所以两个包用的形态 MiaoCloud 全都覆盖过。
-
-  **保真门也只复核了一个包,已一起补上。** `animation-parity` 此前只覆盖 MiaoCloud
-  (脚本名就叫 `verify-miao-cloud-...`)。两个包的动画迁完之后只复核一个,等于让
-  "保真"对三分之二的迁移不成立,而报告照样全绿 —— 和教训 19 是同一形状。
-  已推广到三个包并改名 `verify-builtin-wallpaper-animation-parity.py`(名字不再骗人),
-  注入一个 40px 的关键帧扰动验证过它会响,退出码 1;干净时 0。
-  实测三个包全部在解析上界内,最大误差 0.5244px(上界 0.5245)。
-
-  **做法上是把生成器推广到三个包,而不是另写一个。** 该脚本原本除包路径和
-  `animation://miao-cloud/` 前缀外已是包无关的,而变换算术与动画频率表
-  (drift 0.77 / sway 0.81 / breathe 1.0)再抄一份就是"两个后端各写一份规则"。
-  推广后**先验 MiaoCloud 逐字节不变**(回归),才生成另外两个。
-  顺带修了同一文件里的 `cp.read()` 静默失败(与美术资产脚本同一个缺陷)。
-
-  ### 但第 6 项"删 legacy_entry、删 scene.ini"做不了,原因不是没人做
-
-  删掉 `legacy_entry` 会让 `WallpaperPackage.cpp:409` 改走 `entry`,即三个包都从
-  scene runtime 渲染。而三个包的 `particleEmitters` 都是 `[]`,`scene.ini` 的
-  `[Particles]` 却声明了真实粒子:
-
-  | 包 | sparkles | petals | flow |
-  | --- | --- | --- | --- |
-  | MiaoCloud | 38 | 14 | 4(带 11 段尾迹) |
-  | NeonCity | 8 | 0 | 0 |
-  | MysticMoon | 16 | 0 | 0 |
-
-  也就是说这一步会**静默丢掉 80 个粒子**(56 + 8 + 16)。正是这个仓库反复拒绝的那种失败:
-  校验全过、桌面上少一层光。
-
-  **而"粒子刻意不做"当初的理由比我记的更深。** 不是"编不出参数",是**模型不匹配**:
-  legacy 的粒子是**无状态解析场**,每帧按索引现算
-  (`LocalHash01(i*79+19)` 定位、`i%5` 分频脉动、彗星沿 `sin(p*pi)` 拱形拖 11 段尾迹);
-  而 `ParticleEmitterDefinition` 建的是一个**有状态发射器**(spawnRate / lifetime /
-  velocity / acceleration)。把前者塞进后者不是"参数填多少",是换一种渲染模型,
-  出来的是另一种视觉。
-
-  所以第 6 项的真实前置是:**给 scene runtime 加一个解析场发射器形态**(把
-  `LayeredSceneRenderer.h:268-317` 的公式原样搬成声明式),而不是填 emitter 参数。
-
-  ### 这个前置 2026-09-23 已经做完了(声明层这一半)
-
-  `ParticleEmitterDefinition` 多了 `mode`(`Simulated` / `Sparkle` / `CometTrail` /
-  `PetalFall`),解析场的公式在 **`MiaoAnalyticParticleField.cpp` 里只存在一份** ——
-  纯函数,按帧从索引现算,输入设计空间尺寸与时间,输出一堆 (x, y, rx, ry, color, cross)。
-  两个渲染后端都将调它,公式不会再分叉。
-
-  - 每帧上限与 legacy 的 clamp 一致(96 / 64 / 12 / 11 段尾迹)。
-  - hash 常量**逐字节照抄** `LocalHash01` —— 那些常数是视觉的一部分,
-    换个 hash 就等于重新设计三个壁纸。
-  - 算术全用 float,和 legacy 那几行一样。用 double 再转型"更准",但**不一样**,
-    而这个模块的全部主张就是"迁完之后落在同一个像素上"。
-  - `SelfTest` 接进了 `MiaoDeskContentSelfTests`,于是**每台机器都跑**,
-    包括"位置是否落在 legacy 那个 hash 上"和"每帧上限是否生效"。
-  - 生成器按 `[Particles]` 声明,clamp 与 legacy 读取时一致
-    (scene.ini 写 0.001 时 legacy 实际用 0.005,照抄 0.001 就已分叉)。
-
-  三个包的粒子现在都在 scene.json 里,数量与 scene.ini 一致:
-
-  | 包 | sparkle | cometTrail | petalFall |
-  | --- | --- | --- | --- |
-  | MiaoCloud | 38 | 4 | 14 |
-  | NeonCity | 8 | — | — |
-  | MysticMoon | 16 | — | — |
-
-  **剩余的前置只剩渲染侧接线**:两个渲染器要在画完节点之后遍历 `particleEmitters`,
-  调 `EvaluateAnalyticParticleField` 并画出来(D2D 画椭圆与十字、D3D11 同理)。
-  那需要 Windows 才能编译验证。在此之前 `legacy_entry` 仍然必须留着 ——
-  它仍是唯一真正在渲染的那条路。
-
-  `scene.json` 的状态因此从"内容缺失"变成"**内容完整、已校验、有门看着,
-  只差渲染器消费**"。
-
-  ## 已落地(2026-09-22)
-
-  上面第三节的 D2D 渲染侧改动(见"实测证据(二)"之后的更新)+ MiaoCloud 内容迁移:
-
-  - `scripts/generate-miao-cloud-scene.py` 从 `scene.ini` 生成 `scene.json`。
-    几何映射由脚本算而非手写,并对每层做一次逆合成 assert 回原矩形;
-    它当场抓到了"先 round 再 verify 会让宽度差 1e-3"。
-    映射:`scale = (w/dw, h/dh)`;
-    `position = (x - dw/2·(1-sx), y - dh/2·(1-sy))`。
-  - `MiaoCloud.mdwall/scene.json`:1 个 root + 5 个图层节点,5 个 Image 资产,
-    5 个 sprite 各带 `texture` 资产引用。
-  - `MiaoDeskBuiltinWallpaperPackagesTest` 把三个包走完整链并断言。
-
-  ## 已在真实 Windows CI 上验证(2026-09-22,`4b19282`)
-
-  **`Windows x64 Build` 全绿:31 个步骤 success、0 失败、0 条 `::error::` 注解。**
-  其中第 21 步 `Render a textured sprite through the real D2D backend` 通过 ——
-  这是 `MiaoSceneD2DRenderer::SelfTest()` **第一次真正被执行**(在那之前它一个调用方
-  都没有),于是贴图路径第一次有了执行级证据。实测值:
-
-      centre       (32,32) BGRA = 204,102,51  覆盖率 1.000   ← solidColor(0.2,0.4,0.8)
-      inner corner (16,16) BGRA =   0,  0, 0  覆盖率 0.000   ← 圆角外
-      outer corner ( 2, 2) BGRA =   0,  0, 0  覆盖率 0.000
-      y=32 扫描: 16..48 亮、其余暗             ← 0.5 缩放的精确范围
-
-  即:sprite 的位置、缩放、颜色、圆角全部正确;贴图 sprite 也在同一个 SelfTest 里
-  画出了包内 PNG 的颜色。另外两条拒绝路径(tint 作用于贴图、spatial:3d)
-  都在 Windows 上验过会拒绝且报错点名组件/场景。
-
-  这一段值得记的是**过程**:SelfTest 跑起来之后连续红了六轮,而六轮的根因全在
-  **测试自己的管道**上,渲染器每次都是对的:
-  1. 子包一个 `manifest.json` 都没写 → `Load` 第一行就拒;
-  2. manifest 的 kind 与 scene 不一致、目录扩展名还得和 kind 匹配;
-  3. 像素探针 `(17,17)` 取在圆角弧的**抗锯齿带**上(弧外 1.07px,覆盖率 9.3%),
-     而判据是「任一通道 > 8」—— 正确的渲染器永远不可能让它通过;
-  4. 断言在 `EndDraw()` **之前**读像素,读到的是上一帧的残留画面;
-  5. 诊断行被 CI 步骤的 `Select-String` 过滤器(`FAIL|rror|...`)整行滤掉,
-     白跑一轮什么也没读到;
-  6. 带标签的 Step 第一次跑之前,报错只有一句"返回 false"。
-  真正起作用的三个动作:把断言拆成会自报名字的 Step、**在本机先验断言输入**
-  (材质/绑定/transform/按渲染器公式反算探针明暗)、以及上一轮那次文本覆盖的算术。
-
-  ## 仍未完成 / 未验证
-
-  - **真机桌面验收未做**:多显示器 / 多 DPI / click-through / 资源占用仍要真机。
-    Windows CI 证明的是"渲染器在离屏位图上画对了",不是"用户桌面上看到对了"。
-  - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件)。
-    原因与三种被否的权宜做法见渲染器注释。
-  - ~~**NeonCity / MysticMoon:缺 10 张美术资产**~~ **已闭环**:两包的 10 张资产已生成、
-    提交并由 `generate-builtin-wallpaper-art.py --check` 做逐字节可复现校验。
-  - ~~**动画与粒子按设计留空**~~ **已闭环**:动画已迁成关键帧轨并由
-    `verify-builtin-wallpaper-animation-parity.py` 与冻结 legacy fixture 逐点比对;
-    Sparkle / CometTrail / PetalFall 已统一进入 `MiaoAnalyticParticleField`,
-    D2D 有像素级证据,D3D11 有最终颜色目标 GPU readback / comet cross / petal 椭圆证据。
-  - ~~**`legacy_entry` 刻意保留**~~ **已闭环(#66 / `d4f7bb5`)**:三个内置包现在只以
-    `entry=scene.json` 运行,`legacy_entry` 与运行时 `scene.ini` 已删除。旧 INI 仅冻结在
-    `tests/fixtures/legacy-wallpaper-scenes/**` 作为迁移回归基准,不会进入 .mdwall 或安装包。
-    `verify-staged-wallpaper-assets.sh` 还会拒绝这些 legacy 字段/文件回流。
-  - ~~D3D11 后端仍没有经 `texture` 属性的贴图路径~~ **这条已过期,2026-09-22 更正**。
-    它在 `0937328` 就落了地:`MiaoBuiltinTextured` 像素着色器、按 sprite 自己的
-    `texture` assetReference 取图(`input.textureAssetId = texture.id`)、绑 t0、
-    经 `ResolveSpriteDrawPath` 与 D2D 共用同一份策略。留着"没有这条路径"的记录
-    比没有记录更糟 —— 它会让人去重写一份已经存在、而且已经被共享策略钉住的代码。
-    真正仍未做的是**执行**:没有任何一步把一个贴图 sprite 真的渲染过 D3D11 路径,
-    HLSL 只在被 `D3DCompile` 编译这个意义上成立过。
-- **状态**:🟡 **D3D11 贴图路径已真执行并通过(`1a826b22`,`build` success);
-  第三个阻塞"没有素材可写"当天被部分推翻 —— 素材在工作树里且已可逐字节复现。**
-  第 26 步「Render a textured sprite through D3D11 and read the pixels back」为
-  `success`(不是 skipped、不是 cancelled);同一轮第 27、28 步(D3D11 自测、两个后端
-  对"哪些 sprite 能画"的判定一致)同为 success;该 job 33 个真实验证步骤只有第 34 步
-  (上传诊断产物)因条件未满足而跳过,与渲染无关。
-  **这验到的是**:贴图被真的采样并写进了帧缓冲(中心品红)、清屏色仍然存在(左上角黑,
-  所以品红是画出来的 sprite,不是整块目标被灌成贴图色)。
-  **这没验到的**:真实 GPU。CI 是虚拟机,D3D11 设备多半由 WARP 软件光栅器支撑;
-  也没有人看过真机截图 —— 后者属于 P0-1。
-  在此之前,"渲染器能画贴图 sprite"只有编译链接层的证据,而 HLSL 是运行时由
-  `D3DCompile` 编译的,所以那道证据**从来不足以支持这个主张**。
-  (这一行先前写的是"尚未在 Windows 上编译或运行过",与同一节下面那段
-  "新代码在 Windows 上编译链接通过"自相矛盾 —— 以后者为准,它有 commit 号。)
-  落在本机证据范围内的(`0937328` 当时的数,不是现在的):材质策略合并为一份 +
-  16 项断言 + 注入已知失效确认闸门会响 + 12 个纯逻辑测试全过 + 交叉语法门 114 个文件
-  零真实错误。现在这两个数分别是 14 个目标与 122 个文件 —— 写下来是为了让
-  "12 / 114"不会被当成当前值读。
-  不在范围内的:**HLSL 由 `D3DCompile` 在运行时编译,只有 Windows CI 能证明它编得过去**;
-  真机截图没有人看过。此前"`4b19282`,31 步全绿"是 D2D 半边的实测证据,D3D11 半边没有对应物。
-  补充(`9a03f26` 与 `6c8321a`,`0937328`):`build` / `installer` / `package` /
-  `package-msix` / `scan` / `verify` 全部 success —— 即**新代码在 Windows 上编译链接通过、
-  新测试目标 `MiaoDeskSpriteMaterialPolicyTest` 被构建**,`Verify the two render backends
-  agree on which sprites are drawable` 这一步走的是 `windows-x64-build.yml`,它在那几轮
-  同为 success。HLSL 仍未被执行(没有真渲染步骤跑到 D3D11 的贴图路径)——
-  **"编过去了"不等于"画出来了"**,后者仍然只有真机能给。
-  契约校验在 `f41903e`,D2D 绘制与 MiaoCloud 内容迁移在 `6b3677b` 之后陆续落地。
-  同一轮还把 `skills/` 的 sprite 材质规则补齐(此前它只写"material 优先引用 builtin",
-  在教作者写渲染器会拒的包),并加了 `verify-skill-material-rule.sh` 让规则不脱钩。
-
-  走的正是上面第 1 条里的第二个选项:"在 `AssetType::Image` 与 `SpriteRenderer`
-  之间开一条直接引用路径",没有新增 builtin 材质 ——
-  `PropertyType::AssetReference` 早就存在,`MiaoAssetDatabase` 也早就在沿组件属性
-  收集资产依赖,所以缺的只是一条校验规则和 D2D 的绘制路径。
-
-  已落地:
-  - `MiaoSceneModel::Validate` 强制 spriteRenderer 的 `texture`(assetReference)
-    非空时必须指向一个真实存在的 `AssetType::Image` 资产,报错点名 asset id。
-    (该校验器是加载链的必经点:`Deserialize` → `MiaoSceneRuntimeModel::Validate`
-     → `MiaoSceneModel::Validate`)
-  - `MiaoD2DTextureLoader`(新)WIC 解码 → `ID2D1Bitmap`,8192/128MiB 上限
-    (比 D3D11 的 16384/512MiB 紧,理由写在该 .cpp 里)。
-  - `MiaoSceneD2DRenderer` 用 **bitmap brush** 走 FillRectangle/FillRoundedRectangle,
-    transform / opacity / cornerRadius 对贴图 sprite 全部继续生效;按 asset id 缓存,
-    `Reset()`(即 D2DERR_RECREATE_TARGET 后的重载路径)清空。
-  - **真机证据补齐了此前最大的一个洞**:`MiaoSceneD2DRenderer::SelfTest()` 有 150 多行
-    真实像素断言,却**从来没有任何地方调用它**。已加 `MiaoDeskSceneD2DRendererTest`
-    把它挂进 CMake 与 CI(Windows)。同时补了贴图 sprite 的 fixture 与断言。
-
-  **仍未完成 / 未验证**:
-  - D2D 侧的贴图绘制**未在真 Windows 上编译运行过**,只有本机 mingw 交叉语法门 +
-    本地 fixture schema 门。真机验证见上面第 8 条。
-  - **非白色 `tint` 作用于贴图 sprite 在 D2D 后端被显式拒绝**(报错点名组件),
-    不是静忽略。原因:\`ID2D1BitmapBrush\` 没有颜色成员,普通
-    \`ID2D1RenderTarget\` 既不能设混合模式也没有 effect API,一条 pass 内无法给位图
-    染色。三种权宜做法都被否(理由写在渲染器注释里)。
-  - ~~D3D11 后端没有经 \`texture\` 属性的贴图路径~~ **已落地(`0937328`,待 Windows 编译)**:
-    新增 \`EngineTexturedPixelShader()\` 采 t0,\`CreateTextures\` 从 sprite 的 texture 资产填 t0,
-    \`CreateShaders\` 按 \`textured\` 选 shader;**故意不预乘 alpha**(混合阶段做,shader 里
-    再做一次会让透明像素周围出黑边,且 \`MiaoD3D11TextureLoader\` 解的是非 PBGRA)。
-    \`tint\` 在两边分叉这一点**依然是分叉,而且是允许的**:D2D 的 \`ID2D1BitmapBrush\`
-    没有颜色成员,非白色 tint 显式拒绝;D3D11 的 tint 是 shader 常量,免费。
-    content-review 把它当差异记录,别当成 bug。
-  - **内容迁移(第 2–7 条)已全部闭环**:几何 / 5 层 Image 资产 / 动画 / 解析粒子
-    均已进入 canonical Scene Runtime;三个内置包也已删除 `legacy_entry` 与运行时
-    `scene.ini`。这里剩下的真机任务属于 P0-1 的视觉/桌面组合验收,不再是 P0-4 内容迁移。
-
-### P0-5 本地 AI 组件许可证 / 分发边界
-
-- **依据**:`THIRD-PARTY-NOTICES.md`「本地 AI 推理栈 / 明确排除的组件」
-- **当前 v1 发布边界**:MiaoDesk 只连接用户自管的本地推理服务，**不随安装包分发模型权重**。
-  `packaging/windows/verify-no-bundled-local-models.ps1` 已接入 `stage.ps1`，对 x64 / ARM64 /
-  MSIX 共用的 staged product 做硬检查：常见模型权重文件，以及当前许可未完成书面确认的
-  DeepSeek-R1-0528-Qwen3-8B / GLM / 本地图像模型名称一旦进入安装包，打包直接失败。
-- **仍待书面确认**:
-  - `DeepSeek-R1-0528-Qwen3-8B` 模型权重条款；
-  - GLM 系列的模型权重分发条款。
-- **状态**:🟡 **当前 v1 分发不再被它阻塞** —— 因为未确认的模型被技术门禁禁止进入发布包；
-  若未来要把这些权重随 MiaoDesk 分发，必须先取得书面确认，再单独修改门禁。
-
-### B-1 skill 接入产品(`src/` 零引用 `skills/`)
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.5 / §7 G9;用户 2026-09-20 明确
-  "让用户使用本工程自带的 skill(这个也是需要开发的内容)快速制作壁纸和桌面组件"
-- **为什么阻塞**:`skills/` 目录下有 4 份 `SKILL.md`(壁纸 / 组件 / 基础 / 评审),但 `src/` 全仓
-  零处引用。**创作链断在最后一环**:AI 生成内容包 🟡 → 产品校验包 ✓ → 沙箱预览 ✓ → 用户 Apply ✓ →
-  **用户在 UI 主动触发 skill ✗**。skill 不进产品,对用户等于不存在。
-- **前置澄清(已解决,2026-09-20)**:
-  Pi 契约(`L3-PI-RUNTIME-CONTRACT.md` §9)里的 "skills" 指 **Node 包 agent skills**
-  (`%LOCALAPPDATA%\MiaoDesk\PiAgent`,与产品 bundled runtime 分离),与 `skills/` 下的
-  Markdown 提示词规范**不是同一个东西**。已确认 Pi 对 agent skills 的装载约定无法在本仓库
-  静态验证(未安装 `node_modules`),因此**不走 agent skills 通道**,改用产品自有注入点。
-- **已实施方案(2026-09-20)**:按需加载,非常驻注入。
-  理由:4 份 SKILL.md 合计 9,307 UTF-16 字符,虽然塞得进 Windows 命令行(32,767 上限,
-  实测模拟总长 1,969,余量 30,798),但常驻注入意味着**每一轮对话都付这份 token**。
-  对 32K 上下文的本地小模型(见 P3-5)这是三分之一的窗口,不可接受。
-  - **Tier 1 常驻**(`PiRuntime.cpp` systemPrompt,1,628 字符):skill 索引 + 无条件安全规则
-    (不产 HTML/JS/CSS/shell/可执行、不产 Script、不产 Web 运行时)+ 创作流程
-    (读 skill → 写 JSON → `wallpaper_validate_package` → `desktop_preview_wallpaper` → 等 Apply)
-  - **Tier 2 按需**:新增 native tool `content_skill_get`,从 `<install>/skills/<name>/SKILL.md`
-    读全文。**不调用就不产生 token。**
-  - **为什么用 native tool 而不是让 AI 自己 `read` 文件**:Pi 的 `read` 工具沙箱边界与 cwd
-    在本仓库无法验证;native tool 走产品自控的 worker 通道,确定性可验证。
-  - **路径安全**:skill 名是**闭集白名单**(`kContentSkills`),不是路径拼接。
-    模型只能从固定四个里选,任何 `../`、大小写变形、前后空白、嵌入 NUL 都在白名单比对处被拒。
-  - **打包**:`CMakeLists.txt` 新增 `install(DIRECTORY skills/ DESTINATION skills)`;
-    `stage.ps1` 断言 5 个文件存在 + 双向一致性守卫(磁盘目录 / C++ 白名单 / stage 期望 三方一致)
-    + frontmatter `name:` 必须等于目录名。
-  - **UI 入口**:`ConversationPanelImpl.inc` 两处问候语加入创作示例;
-    `FriendlyToolName` 加 `content_skill_get` → "查阅内容创作规范"。
-    示例刻意选了今天真能做到的能力(落叶动态壁纸 / 倒数日组件),**没有**选音频响应壁纸 —— 那是 B-2。
-- **安全约束**(已落地,不可协商):skill 只能产出**声明式内容包**。
-  `AI_GENERATED_DESKTOP_SANDBOX.md` 的硬规则 "AI never outputs HTML, JavaScript, CSS, shell commands,
-  or executable code" 已同时写进 systemPrompt(Tier 1)与每份 `SKILL.md` 的反面提示词。
-- **验证情况**:新增 Windows CI 测试 `src/tests/ContentSkillLoading.cpp`
-  (target `MiaoDeskContentSkillLoadingTest`,构建并运行于 `windows-x64-build.yml`),
-  走**真实 dispatch 路径**而非逻辑复刻,覆盖 7 组:四个 skill 逐个加载 / 省略 name 返回索引 /
-  10 种路径穿越 / 未知名报错并列合法集 / 17 种畸形 JSON 不泄漏正文 / 缺失安装报错并指出路径 /
-  未知工具路由。为让它能链接 `NativeTools.cpp`,把该文件从 `MIAODESK_APP_SOURCES` 移入
-  `MIAODESK_CORE_SOURCES` —— **顺带修正一个契约违背**:原先打算用 `target_sources` 复编,
-  那会绕过 `verify-path-layout-contract.ps1` 的正则但违背它"每个实现文件只有一个 CMake owner"
-  的本意。另在 macOS 上复现了同一套逻辑(38 项断言)以离线验证。
-  **测试过程抓到两个真实缺陷**:①`fs::file_size(path, std::error_code{})` 的 error_code 重载
-  要求左值引用,临时对象绑不上,无法编译 —— 已修为命名变量;
-  ②卸载清单漏掉产品自有子树(`skills/` 必然残留,`Widgets/` 是同类既有漏洞)——
-  已补 `RMDir /r` 并把 ARM64 卸载残留检查加宽到 10 项。
-  **已由 Windows CI 验证编译与运行**:`ContentSkillLoading.cpp` 自 `023aa299`(全绿那次)起
-  逐字节未变,而那次构建包含 `Verify content skill loading gate` 这一步并 success,
-  所以"能在 Windows 上编过 + 7 组 dispatch 断言真的跑过"已有证据。此前写的
-  "完整编译未验证"在那之后已失效。
-- **验收**:真实 Windows 上,用户在对话面板说「做一个有飘落落叶的动态壁纸」→ AI 调用
-  `content_skill_get` → 产出 `.mdwall` → `wallpaper_validate_package` 通过 →
-  `desktop_preview_wallpaper` 预览可见 → 用户点 Apply 后桌面出现该壁纸。全程零手写文件。
-- **状态**:🟡 已实施并已通过 Windows 编译与 CI 运行;**仍待真机验收**(验收标准见上一条)
-
-### B-2 音频 + 指针输入总线接通(最高优先的能力差距)
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.3 / §7 G1+G2 / §5.2 第 1、2 条
-- **现状(声明层已就位,只缺数据源)**:
-  - `input://frame/time` / `input://event/pulse` 已在
-    `MiaoSceneFrameScheduler.cpp:113-114` 推入总线
-  - `input://audio/bass` 等仅出现在 `MiaoSceneRuntimeModel.cpp:523` 的**测试桩**里
-  - `BindingSourceKind::Input` 求值链路已接通(`MiaoSceneRuntime.cpp:257`)
-  - `ComponentKind::InputBinding`、`AnimationTriggerMode::InputChange/InputRisingEdge`、
-    `AssetType::Audio` 均已定义,但**没有任何生产者**
-- **已实施方案(2026-09-20)**:按"可验证性"切分。内容框架整层
-  (`src/content/runtime/`、`scene/`、`serialization/`)**零处包含 `windows.h`**,
-  所以 B-2 的核心(契约 + 信号处理 + 写入)可以完全离线交付并测试;
-  只有"从声卡取数据"和"桌面宿主跟踪光标"必须留在 Windows 侧。
-  - **通道契约** `src/include/miaodesk/MiaoInputBus.h`(纯 C++,无 Windows 依赖):
-    每个通道的 id / 类型 / 范围 / 是否需要关闭 click-through,一张表定义完。
-    形状分三种:`Float01`(连续量)、`BoolState`(持续电平)、`BoolEdge`(单帧沿)——
-    这个区分是必需的,`input://audio/beat` 当电平用会让每帧都变成上升沿。
-    另有 `kPositionOnlyChannels` 与 `kInteractivePointerChannels` 两个不相交集合,
-    后者才要求关闭 click-through。
-  - **音频分析** `AudioSpectrumAnalyzer`:radix-2 FFT + Hann 窗 → 5 个命名频段
-    (bass 20-160 / lowmid 160-500 / mid 500-2k / highmid 2k-5k / treble 5k-16k)
-    + 16 个对数间隔频谱桶 + 总电平 + 节拍检测。非对称缓动(快起慢落)、
-    固定分配、可复位。dB 归一化区间可配。
-  - **音频入口** `src/content/input/MiaoAudioCapture.cpp`:多声道交织 PCM → 单声道
-    (**取平均而非取左声道**,否则居中立体声的低音会被砍半)→ 线性重采样 →
-    按窗口喂给分析器。半窗口不补零(静音会被当成真静音)。
-  - **指针归一化** `PointerNormalizer` / `PointerSample`:物理像素 → 所在显示器归一化
-    [0,1](**不用屏幕坐标**,壁纸不得知道桌面布局)、边沿从状态转移推导而非平滑值推导。
-  - **发布器** `src/include/miaodesk/MiaoInputBusPublisher.h`:把分析结果写进
-    `MiaoSceneRuntime::SetInput`,**只写 scene 声明过的通道**;
-    `interactive=false` 时扣留 down/click 而不是假造 false。
-  - **click-through 分层** 已按 WE 模型定清:指针位置 / 区域内 / 进入离开 = 不抢输入,
-    默认允许;按下 / 点击 = 必须 opt-in 且会关掉 click-through。
-  - **skill 已更新**:`skills/wallpaper-content/SKILL.md` 写入全部可用通道与用法,
-    反面提示词加三条(不得用 down/click、不得把 beat 当电平、不得要求零延迟);
-    `skills/content-review/SKILL.md` 壁纸检查项从 8 项增至 14 项。
-- **四个 Windows CI 测试**(`MiaoDeskInputBusCoreTest` / `MiaoDeskInputBusPublisherTest` /
-  `MiaoDeskAudioIngressTest`,构建并运行于 `windows-x64-build.yml`):
-  - `InputBusCore` — 通道契约全覆盖 + 三集合不交且并集完备、FFT 频谱正确性
-    (5 个纯音各自落在对应频段)、静音读作静音、17 种边界输入、配置规范化、
-    节拍不把持续低音误判为节拍、指针归一化与边沿、2000 帧噪声稳定性
-  - `InputBusPublisher` — 只写声明通道、beat 沿语义、interactive=false 扣留按压通道、
-    契约覆盖发布器能写的每个 id。**链接真实 `MiaoSceneRuntime`**,因此 `SetInput`
-    的类型闸是被真正走到的,不是假设的
-  - `AudioIngress` — 下混、重采样(含 44.1k→48k 上采样后仍可分析)、窗口喂给
-  - 测试过程中抓到并修复三个真实缺陷:①`kAudioBeat` 被归为 Float01 但语义是沿;
-    ②`kPointerInside` 归为 Float01 但语义是状态,与发布器写 bool 冲突;
-    ③`kPointerEnter/Leave` 被误列为"需要交互",实际可由位置流推导
-- **尚未完成(必须 Windows 侧,本机无法验证)**:
-  - ~~WASAPI loopback 采集(共享模式环回 + 设备变更处理)~~ ✅ 已实施见下
-  - ~~桌面宿主的光标全局追踪与 `FeedAnalyzer` / `InputBusPublisher` 的实际接线~~ ✅ 已实施见下
-  - `input://pointer/x|y` 的按显示器归属 —— **已实施**(`MonitorFromPoint` +
-    `GetMonitorInfoW` → 该 slot 显示器的像素尺寸),但多显示器下的真机表现未验
-- **已实施(2026-09-22 深夜,commit `667292d`)**:
-  - **`MiaoWallpaperAudioTap`**(`src/desktop/wallpaper/monitor/`):WASAPI 共享模式 +
-    `AUDCLNT_STREAMFLAGS_LOOPBACK`,经 `IMMNotificationClient` 监听默认设备变更。
-    - 分析跑在采集线程,渲染线程只拷一份已算好的 `AudioSpectrumFrame`。16ms 的渲染帧
-      不该等一个音频包。
-    - 设备丢失是常态(拔 USB 耳机、切换默认输出):采集线程自行重建并退避 400ms,
-      不上报壁纸死亡。宿主继续跑。
-    - 混音格式只接受 32 位浮点,其余明确报错 —— 把 int16 当 float 读出来的噪声和真
-      信号完全一样,静默错比报错难查得多。
-    - 等待时长问 `IAudioClient::GetDevicePeriod` 而不是写死:设备周期 10ms 与 1.3ms
-      差 8 倍。
-    - 采集线程独占所有 COM 对象的生命周期(`CoInitializeEx` 的作用域就是这个函数)。
-  - **两个渲染器新增 `Runtime()` 接缝**:`InputBusPublisher` 要的是 `MiaoSceneRuntime&`,
-    没有这个访问器就只能绕过它重写"只写声明通道"的规则 —— 而那正是这个类的全部价值。
-    D3D11 头继续用前向声明,不把 `d3d11.h` 泄给使用方。
-  - **宿主接线**(`IndependentWallpaperHost`):
-    - 输入在**绘制前**发布。绘制后才写,绑定读到的是上一帧的值,所有反应晚一帧。
-    - 光标归属:`MonitorFromPoint` + `GetMonitorInfoW` → 该 slot 显示器的物理像素尺寸,
-      在**那块显示器内**归一化,不用虚拟桌面坐标。
-    - 按 `VK_LBUTTON` 的 `GetAsyncKeyState` 读按压,而不是从窗口消息推 —— 壁纸表层
-      从不获得焦点,因此永远收不到鼠标消息。
-    - 帧间隔用上一帧的真实时间戳(存在 slot 上,不是函数内 static:两个显示器的绘制
-      时刻不同,共享 static 会把一个的 delta 递给另一个)。
-    - `pointerInteractive` 由"场景是否声明了按压通道"推导,读声明而非开关。
-  - **音频 tap 只在至少一个 slot 跑 Scene 壁纸时才启动** —— 打开声卡是用户能察觉的
-    副作用;它的失败进 `DiagnosticsText()`,否则"音频壁纸为什么不响应"要来回一个支持轮次。
-  - **`DeclaresInteractiveInput` 提到 `MiaoInputBus.h`**:宿主向契约提问,新增交互通道
-    只需改一处。`InputBusCore` 加 14 项断言并双向验证(把 `kInteractivePointerChannels`
-    里的 `kPointerDown` 换成 `kPointerInside` → 6 处 FAIL;还原 → 全绿)。
-- **验收**:一份只用声明式绑定的音频响应壁纸,播放音乐时低频通道驱动
-  SpriteRenderer 缩放;鼠标移动时 `input://pointer/x` 驱动 Transform 视差,
-  且桌面图标仍可正常点击(证明确实没有抢走输入)。真机验证,不靠单测。
-- **Windows 编译这半条已经有答案**:`MiaoWallpaperAudioTap.cpp`、`IndependentWallpaperHost.cpp`
-  与 `WebDesktopSurfaceChild.cpp` 自 `667292d` 起逐字节未变,而 `1a826b22` 的 `build`
-  success 里包含 `MiaoDeskWallpaper` 目标 —— 也就是说它们被 MSVC 编过并链过。
-  所以这一项从"待 Windows 编译"降级为"待 Windows 执行 + 真机验收"。
-- **执行这半条 2026-09-22 补上(新增 `MiaoDeskWallpaperAudioTapTest`)**:在此之前,
-  `MiaoWallpaperAudioTap` 全仓只有一个调用方,而那个调用方是 MiaoDeskWallpaper.exe ——
-  它让这段代码有编译链接证据,**没有执行证据**。这与 P0-4 最后那条是同一类:
-  "能编过"不等于"跑得过"。具体到这一处,编译器看不见的东西有四样:采集线程自持的
-  COM 单元、`Stop()` 的 join、无端点机器的退避重试、以及"静音必须读作静音"。
-  新目标跑真的 `MiaoWallpaperAudioTap`(为此把它从 `MIAODESK_WALLPAPER_SOURCES`
-  搬进新的 `MiaoDeskWallpaperAudio` 库 —— 每个实现文件只能有一个 CMake owner,
-  复用的正是 P3-6 那条路),断言按"本机有没有回放端点"分两支并**先打印走了哪支**,
-  所以"没收到帧"永远不能被读成任一支的结果。
-  仍在执行证据之外的:分支只有在真有端点的机器上才覆盖得到。
-- **顺手修掉两个真缺陷**(都是读这个文件时发现的,不是测试跑出来的):
-  1. `MiaoWallpaperAudioTap::Start()` 的头文件承诺"采集客户端建不起来时返回 false",
-     而实现**恒返回 true**。调用方照注释写 `if (!Start()) { show error }`,在一台没有
-     声卡的机器上就什么都不会显示 —— 而那正是"音频壁纸为什么不响应"最常见的原因。
-     宿主实际读的是 `LastErrorText()`,所以这个错今天没有咬人。改成实话:
-     只有线程本身建不出来才返回 false(现在真的会了,`std::thread` 抛异常被接住),
-     设备不可用是异步经 `LastErrorText()` 报告的,并且线程继续退避重试。
-  2. `Impl::Run()` 的 `ownsApartment = SUCCEEDED(apartment) || apartment == RPC_E_CHANGED_MODE`
-     —— `RPC_E_CHANGED_MODE` 表示 `CoInitializeEx` **失败**了(本线程已被别人以另一种
-     单元模型初始化),对它调 `CoUninitialize()` 是在减一个不属于自己的计数。这正是
-     本清单教训 18 的形状。该分支现在是死的(没有别的代码先在这条线程上初始化 COM),
-     死的不等于对的。
-- **状态**:🟡 采集 / 接线 / 按显示器归属 / 音频 tap 执行均已实施;**待真机验收**
-  (播放音乐时低频驱动缩放 + 视差 + 桌面图标仍可点击)
-
-### B-3 表达力上限:响应曲线已落地,通用脚本解释器明确延后
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.1 / §7 G3 / §5.2 第 3 条
-- **原判被修正(2026-09-20 重新评估)**:我把这一项写成"Script 解释器",
-  但查过代码后,真正的缺口不是"没有脚本语言",而是**绑定只有线性**:
-  `MiaoSceneRuntime::ApplyBinding` 只有 `*scale + offset`。
-  没有它,音频频谱条无法"只在鼓点上炸开",视差层无法"过冲再回稳" ——
-  这些是手感问题,不是表达能力问题,用脚本解决是杀鸡用牛刀。
-- **已实施方案(2026-09-20)**:闭集响应曲线,**零代码执行**。
-  - `BindingResponse` 8 个成员:`Linear` / `Square` / `Cube` / `SquareRoot` /
-    `SmoothStep` / `Elastic` / `Threshold` / `Invert`,外加 `deadzone`。
-  - 默认 `Linear` 逐位复现旧行为,既有包零影响(已用测试固定这一点)。
-  - **闭集是刻意的**:每个成员都是单浮点的纯函数,因此绑定永远不可能获得副作用、
-    文件访问或无界运行时,同时"AI 只产声明式内容"的硬规则依然成立。
-  - `response` / `deadzone` 只对 float 源有效,模型校验层拒绝用在 bool/int 上。
-  - 落点:`MiaoSceneRuntimeModel.h`(enum + 字段 + key 函数声明)、
-    `MiaoSceneRuntimeModel.cpp`(校验 + key 往返)、`MiaoSceneRuntime.cpp`(求值)、
-    `MiaoSceneSerializer.cpp`(JSON 读写 + 自测期望同步更新)。
-- **测试过程中抓到两个真实缺陷**:
-  1. **`Elastic` 根本不过冲**。最初的公式 `1 - e^(-kt)(1+cos(wt))/2` 里
-     `(1+cos)` 恒非负,所以该式永不越过 1 —— 那是一个穿着弹性外衣的临界阻尼逼近。
-     已换成真正的欠阻尼单位阶跃响应 `1 - e^(-kt)(cos(wt) + (k/w)sin(wt))`,
-     实测峰值 1.135、过冲后回落穿越 1、端点仍精确。
-  2. **`ReadSchema` 的错误信息不指明是哪个文件**。scene.json 与 parameters.json
-     都有 schema 字段,报"Missing numeric field: schema"时用户无从判断。
-     已改为带文件标签(修完立即在测试里观察到
-     "parameters.json is missing the numeric field: schema")。
-- **验证**:两个 Windows CI 测试
-  (`MiaoDeskBindingResponseTest` / `MiaoDeskSceneRuntimeTest`,构建并运行):
-  曲线数学性质(闭集大小一致、全域有限有界、端点固定、Elastic 真的过冲且回落、
-  Threshold 是阶跃不是斜坡、Linear 是恒等)、key 往返(含未知/空/大写拒绝)、
-  JSON 序列化往返且**再序列化逐字节稳定**、真实运行时求值
-  (sqrt + deadzone = 0.458831 与手算一致)、旧 JSON 无 response 字段仍解析且
-  `scale*value` 行为不变、5 种非法 response/deadzone 全部拒绝、bool 源上拒绝。
-  既有 `MiaoSceneRuntime::SelfTest` 与 `MiaoSceneSerializer::SelfTest` 均仍通过。
-- **通用脚本解释器:明确延后,理由记录在案**。
-  做一个可编程壁纸运行时 = 一个可执行代码面。沙箱化一个解释器是大量且精细的工作,
-  而它只会服务"用户手工放置的脚本"这一小群受众(AI 侧被
-  `AI_GENERATED_DESKTOP_SANDBOX.md` 永久禁止产出代码)。
-  在 B-2 的通道契约与 B-3 的响应曲线就位后,声明式已能覆盖绝大多数效果。
-  **重新评估的触发条件**:出现响应曲线 + 内建积木确实表达不了的用户需求时。
-- **验收**:一份音频壁纸,`response: sqrt` + `deadzone: 0.05` 的绑定让
-  SpriteRenderer 在音乐变响时平滑胀缩、静音时完全静止。
-- **状态**:✅ 响应曲线已完成并测试(2026-09-20);通用解释器延后(已记录触发条件)
-
-### B-4 2D/3D 维度 + 灯光 + 雾(声明层已完成,渲染器未做)
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.1 / §7 G4
-- **现状**:`RuntimeProfile` 只有 `{Wallpaper, Widget}`(承担壁纸/组件语义),
-  `AssetType::Mesh` 枚举存在但无加载器;全仓 `src/content/` 与
-  `src/include/miaodesk/` 对 light / fog 零命中。
-- **已实施(2026-09-20)—— 只做声明层,刻意不碰渲染器**:
-  - **空间维度** `SceneSpatialMode{TwoD, ThreeD}`,放在 `SceneDefinition` 上。
-    **不重用 `RuntimeProfile`**:那个枚举已承担"壁纸语义 vs 组件语义",
-    再塞一个 2D/3D 进去会让两个概念互相遮蔽。默认 `TwoD`,既有包零影响。
-  - **灯光** `LightType{Point, Spot, Tube, Directional}` + `LightDefinition`
-    (id / type / nodeId / color / intensity / range / 锥角余弦)。
-    锥角用**余弦而非角度**,渲染器不必每帧转换。上限 12 盏,与 WE 文档一致。
-  - **雾** `FogMode{Linear, Exponential}` + `FogDefinition`
-    (color / startOrDensity / end)。Linear 模式要求 end > start。
-  - **mesh 资产**扩展名限定 `.obj` / `.fbx`,与"v1 加载器计划接受的格式"一致。
-  - **3D 门禁**:`lights` / `fog` 非空而 `spatial != ThreeD` 直接校验失败。
-    理由:接受后静默丢弃会让作者反复问"为什么灯不亮",拒绝至少给出可诊断的错误。
-  - 落点:`MiaoSceneModel.h`(spatial)、`MiaoSceneRuntimeModel.h`(Light/Fog 定义)、
-    `MiaoSceneModel.cpp`(mesh 扩展名)、`MiaoSceneRuntimeModel.cpp`(校验)、
-    `MiaoSceneSerializer.cpp`(JSON 读写 + SelfTest 期望同步)。
-- **测试过程修正自己一处**:我最初在注释里写"inner == outer 的锥角 shades nothing,
-  几乎不可能是作者本意",据此准备拒绝它。那是错的——零宽度半影是**硬边聚光灯**,
-  是合法创作选择,半影宽度为零不等于没有光。代码本来就允许,改的是我的注释。
-- **验证**:`MiaoDeskSceneSpatial3DTest`(Windows CI)覆盖 9 组:
-  默认 2D 且既有行为不变 / lights 与 fog 在 2D 场景被拒且错误指明需要 3D /
-  合法 3D 场景往返且**再序列化逐字节稳定** / 14 种 light 边界(前缀、悬空 nodeId、
-  负值、NaN、负 range、非 spot 带锥角、内窄于外、余弦越界)/ 12 盏上限 /
-  5 种 fog 边界 / mesh 扩展名(含大小写)/ 非法 spatial 与缺省字段的旧 JSON /
-  非法 light type 与 fog mode。既有 `MiaoSceneModel::SelfTest`、
-  `MiaoSceneRuntime::SelfTest`、`MiaoSceneSerializer::SelfTest` 均仍通过。
-- **刻意不做(以及为什么)**:3D 渲染器、FBX 骨骼动画、PBR 材质集、雾的着色实现。
-  这些是渲染侧工作,本机无法验证;而且**契约先落地是为了让渲染器有明确的靶子**,
-  不是为了让内容包现在就能写 3D。
-- **skill 已同步(重要)**:3D 契约可用 ≠ 3D 可渲染。`wallpaper-content/SKILL.md`
-  已明确禁止生成 `spatial:"3d"` / `lights[]` / `fog[]` / mesh 资产,
-  并要求用户要求 3D 时**明说暂不支持并给 2D 替代方案,不得静默降级**;
-  `content-review` 加对应检查项。不这样做会让 skill 产出"校验通过但预览里什么都没有"
-  的内容,正是我此前反复提醒自己要避免的那类错误。
-- **验收**:真实 Windows 上一份 3D 场景壁纸,含导入的 OBJ 模型 + 一盏点光 + 雾,
-  可被 skill 生成并经沙箱预览。**在渲染器落地前不可验收。**
-- **补上"渲染器要拒绝"这一环(2026-09-22,commit `ed2f381` 之后)—— 一个静默失败**:
-  此前整条链是:`spatial:"3d"` + `lights[]` 是**合法内容**,
-  `MiaoSceneRuntimeModel::Validate` 会接受,两个渲染器也会 Load 成功,
-  然后**按 2D 平着画、把每一盏灯和雾都静默丢掉**。
-  也就是说声明层明明已经有"lights/fog 非空而 spatial != ThreeD 直接校验失败"这条
-  (理由是"接受后静默丢弃会让作者反复问'为什么灯不亮'"),
-  但**反方向**那条没人管:合法的 3D 场景流到一个没有投影、没有深度缓冲、
-  没有网格加载器的后端,是静默降级。
-  两个渲染器现在都在 `Load` 里拒绝 `spatial:3d`,报错点名场景 id。
-  (D3D11 那份报错明说 3D 的"计划归属地"是它、但它的文件里同样没有投影矩阵 ——
-  "打算在这儿做"不等于"已经做了"。)宿主会把 Load 失败降级到内置壁纸,
-  所以它呈现为一次可见的失败,而不是桌面上少一圈辉光。
-  已用产品自己的校验器确认那个 fixture 是合法内容:反序列化 + Validate + Initialize
-  全部接受,所以被拒是渲染器的责任,不是校验的功劳。
-  **仍未做**:3D 渲染器本体、OBJ/FBX 模型加载器、FBX 骨骼动画、PBR 材质集、
-  雾的着色实现。这些仍是渲染侧工作,本机无法验证。
-- **状态**:🟡 声明层 + 校验 + 序列化 + 渲染器显式拒绝已完成并测试;
-  **3D 渲染器 / 模型加载器未做**
-
-### B-5 Video 成为一类可直接生成的轻量产物 ✅
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.2 / §7 G5
-- **原判断被推翻(2026-09-20)**:我写这一项时没有查 manifest 层。
-  `WallpaperPackageType` 一直就有 `{Image, Video, Web, Scene}` 四值,
-  `WallpaperLibrary::DiscoverPackages` 里 `WallpaperPackageType::Video` 到
-  `LibraryWallpaperKind::Video` 的映射在 `WallpaperLibrary.cpp:626-627`,
-  `WallpaperService.cpp:323` 完整播放,`desktop_preview_wallpaper` 也已有 `mode=video`。
-  **"视频壁纸作为一类轻量产物"在产品层本来就通了**,我说的"没通"是错的。
-- **真实缺口(两个,都已修)**:
-  1. `WallpaperPackage::Validate` 只对 Web 类型校验 entry 扩展名,
-     `type: video` + `entry: foo.txt` **能通过校验**,然后在库里才失败且没有可用诊断。
-     已按 Web 的同款规则补上 Image / Video 的扩展名校验
-     (扩展名集合与 `WallpaperLibrary::InferKind` 一致,保证"包允许的 = 库能播的")。
-  2. 没有与 `CreateWeb` 对称的确定性生成路径,AI 只能手写 manifest。
-     已加 `CreateImage` / `CreateVideo`:复制源文件进 `assets/` + 写 manifest + 自校验,
-     含大小上限(图片 25 MiB / 视频 250 MiB,与 skill 公布的上限一致)。
-- **连带修掉一个净化缺陷**:资产名原先只清洗 stem 不清洗 extension。
-  Windows 上 `\` 是分隔符所以 extension 不可能含它,但"只净 stem"这个写法本身不设防。
-  已改为净最终拼装名 + 拒绝 `.` / `..` + 长度封顶。
-- **验证**:`MiaoDeskMediaPackageTest`(Windows CI,构建并运行)覆盖:
-  CreateVideo / CreateImage 产出合法包、entry 落在 `assets/`、
-  **四种 type/entry 不匹配全部被拒**(含新补的 image-mp4、video-txt、video-html,
-  以及既有 web-mp4 回归)、源文件缺 / 空 / 扩展名错 / 越界全部拒绝、
-  恶意源路径产出的包仍校验通过且资产仍在包内、库能把手写 video 包导入为 Video 项。
-  净化逻辑另在 macOS 上离线跑了 33 项断言。
-  **已由 Windows CI 验证编译与运行**:`MediaWallpaperPackage.cpp` 自 `023aa299` 起未变,
-  而 `Verify media wallpaper package gate` 这一步在那次全绿构建里 success。
-- **验收**:skill 产出"一个 manifest + 一个视频资产"的 `.mdwall` →
-  `wallpaper_validate_package` 通过 → 库导入为 Video 项 → 预览循环播放。
-- **状态**:✅ 代码已完成(2026-09-20),已通过 Windows CI 编译与运行;**待真机验收**
-
-### B-6 Web 音频监听 API ✅
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.3 / §7 G6
-- **现状(比预期更空)**:`src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp` **完全没有 JS 桥** ——
-  无 `postMessage`、无 host object、无 `WebMessageReceived` 处理。手工 Web 壁纸拿不到任何宿主数据。
-- **已实施(2026-09-20)**:
-  - **契约** `src/desktop/wallpaper/web/WallpaperWebAudioBridge.js`:
-    `window.wallpaper.registerAudioListener(fn)` → 返回退订函数。
-    帧形状与 B-2 的 `AudioSpectrumAnalyzer` 输出一致(level / bands[5] / spectrum[16] / beat),
-    所以两条路径给内容的数据是同一套,不需要作者记两套。
-  - **单向、闭集**:host → page 只推音频帧;page → host 什么都调不了。
-    这不是 WebView2 的限制,是安全姿态:web surface 本就拒绝导航、DevTools、
-    上下文菜单、新窗口和全部权限请求,开一个可调用的宿主面等于把这些全部作废。
-  - **`window.chrome.webview` 只是传输层**,shim 是它前面的稳定 API,
-    传输层可以换而不破坏已创作内容。
-  - **幂等**:`AddScriptToExecuteOnDocumentCreated` 在每次导航和每个 iframe 都会跑,
-    无守卫的 shim 会把消息监听器注册两次、每帧投递两次。
-  - **宿主侧接线** `WebDesktopSurfaceChild.cpp`:嵌入 shim + `InstallAudioBridge()`,
-    在 `Navigate` **之前**调用(导航后注入 page 脚本可能已跑过)。
-- **防漂移**:shim 存在两份(js 是源真相 + cpp 内逐字节副本,省掉运行时读文件的打包步骤),
-  `scripts/verify-web-audio-bridge.ps1` 强制一致,并额外禁止出现任何 page→host 调用。
-  七种情形(干净 / LF 漂移 / CRLF 漂移 / CRLF 行尾差异 / LF+page→host / CRLF+page→host /
-  副本被删)已逐条验证。
-- **测试**:`tests/WebAudioBridge.mjs`(node,无浏览器)13 组断言,直接读 .js 源文件,
-  因此跑的正是守卫断言与嵌入副本一致的那份字节。CI 中 `node tests/WebAudioBridge.mjs`。
-- **测试抓到两个真实缺陷**:
-  1. **NaN 处理是死代码**。`unit()` 先把非有限值变成 0,后面又有一句
-     `if (!finiteNumber(item)) return null` —— 永远不触发。读起来像校验,实际是强转。
-     已定清职责:**宿主保证有限性**(B-2 有 2000 帧噪声测试),**shim 保证形状**
-     (形状错丢帧,值错强转为静音)。死代码删除,决策写进注释。
-  2. 我在测试里把一条**合法帧**(带未知多余字段)错放进"应丢弃"组。
-     多余字段必须忽略——这是前向兼容,宿主以后加字段不该破坏旧内容。
-- **宿主已真正推送帧(2026-09-22)**:当初的阻碍是"`WebDesktopSurfaceChild` 到分析器之间
-  没有连线,而那需要 WASAPI 先落地"。B-2 的 `MiaoWallpaperAudioTap` 落地之后这个阻碍
-  消失了 —— web 桌面 surface 是**独立进程**,所以它自己持有一个 loopback 客户端,
-  不去等独立壁纸宿主喂它。现在是 `SetTimer` 16ms 一拍,读 `LatestFrame`、
-  `BuildAudioBridgeEnvelope` 造信封、`PostWebMessageAsJson` 发出去。
-  `Pause` 时跳过读帧与投递;tap 起不来不杀 surface ——
-  没有采集设备的机器照样要显示网页内容。
-- **一处刻意没做,记在这里免得它躲在注释里**:`Pause` 时**没有**停掉 loopback 客户端。
-  `MiaoWallpaperAudioTap::Start()` 没有把自己写成可重入,而"暂停/恢复时重启采集线程"
-  这条路径在本机没法测 —— 于是代价是一个暂停中的 surface 仍然占着一个 WASAPI
-  loopback 客户端(可能挡到别的应用)。正确的修法是补上这条,但要用真机验证,
-  不是靠猜。没有写成"暂停即停"那样的注释,因为代码并没有那么做。
-- **信封单独做成纯函数**(`src/include/miaodesk/WallpaperWebAudioEnvelope.h`),
-  因为 B-6 的契约有两份实现而**没有编译器在检查它们之间的关系**:宿主侧这个构造器,
-  页面侧 `normalizeFrame()`。对不上的表现是"页面什么都收不到",而 shim 的丢弃路径是
-  静默 `return`。做成纯函数就能在每台机器上测,而不是只在跑 WebView2 的地方测。
-  三处容易错的地方都写在头注释里,其中两处已经咬过:
-  - **locale**:`ostringstream` 跟全局 locale 走,逗号小数点的机器上会发出 `"level":0,5`,
-    页面 `JSON.parse` 抛 —— 而且**只在那台机器上**。函数内 `imbue(std::locale::classic())`。
-  - **精度**:第一版注释写"四位小数"而代码没写 `setprecision`,实际落在 6 位。
-    注释与代码不符,正是 `verify-doc-code-citations.sh` 那一类问题的人肉版。
-- **契约两头对上的验证**:`tests/WebAudioEnvelopeParity.mjs` 编译并运行
-  `tests/WebAudioEnvelopeDump.cpp` —— 也就是真的调 `BuildAudioBridgeEnvelope` ——
-  把它的真实输出喂给真的 shim,再比对监听者收到的值。4 组样本 × 3 条断言
-  (信封被接受 / 值一致 / 退订后不再收到)。已接入 repo-hygiene。
-  四向注入验证:beat 发 1/0、字段名改名、spectrum 少发一条、精度降到一位,分别按预期的
-  原因变红(`scripts/inject-audio-envelope-failures.sh`)。
-- **验收**:一份手工 Web 壁纸调用 `wallpaper.registerAudioListener`,播放音乐时
-  每帧收到 5 频段 + 16 频谱桶;退订后不再收到;另一个故意抛错的监听者不影响它。
-  前两条已由上面的 node 契约门覆盖;**真机播放音乐仍未验**。
-- **一处已知代价,不是疏漏**:宿主不知道页面有没有注册监听者,而契约**刻意**不让
-  page→host 说话("page → host 什么都调不了",这是 web surface 拒绝导航/DevTools/
-  上下文菜单/新窗口/全部权限请求的那套安全姿态的一部分)。于是没人监听时,
-  `PostWebMessageAsJson` 仍然每 16ms 送一帧,由 WebView2 收下再丢掉。
-  要消掉它只有两条路:开一条 page→host 通道(否掉整个安全姿态),或者把频率降到
-  牺牲 listening 时的平滑度。两条都不划算,所以按现状记在这里 ——
-  而不是让下一个人以为这是漏了一处 `if`。
-- **状态**:✅ 契约 + shim + 测试 + 宿主注入 + 信封 + 宿主推帧均已完成;
-  **仅剩真机验收(播放音乐、听声辨形)**
-
-### B-7 明确不做项(写下来避免反复被提起)
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §4.4 / §5.1 / §7 G7+G8
-- **内容**:以下能力经评估**不做**,理由记录在案:
-  - 木偶形变 / IK 绑定 / 刚体柔体物理 —— 重型编辑器特性,与"用户用 skill 快速创作"的定位冲突
-  - Steam Workshop / 编辑器内发布 / 资产包分享 / Editor Extensions DLC —— 不建社区分发链
-  - 第三方引擎(Godot/Unreal/Unity)官方支持 —— WE 官方同样零支持
-  - 复刻 WE 的重型编辑器本体(粒子编辑器/模型编辑器/时间线编辑器 GUI)——
-    我们的创作入口是 skill,不是编辑器
-- **验收**:本清单与 `WALLPAPER_ENGINE_BENCHMARK.md` 表述一致,不再出现"要不要做编辑器"的反复。
-- **状态**:✅ 已决断(2026-09-20)
-
-### B-8 分类表述全仓校正
-
-- **依据**:`WALLPAPER_ENGINE_BENCHMARK.md` §3.1 / §3.2 / §6
-- **缺陷**:`docs/` 里存在"动态壁纸 —— Image / Video / Web / Scene 四类"的**错误表述**:
-  混用了载体与运行时两个维度,且凭空加了 WE 官方不存在的 "Image" 一类。
-- **内容**:把全仓表述统一为 `WALLPAPER_ENGINE_BENCHMARK.md` §6 的
-  "载体 × 运行时"结构;`RuntimeProfile` 的含义不变(壁纸/组件语义),
-  2D/3D 作为 Scene 内部新维度在 B-4 引入。
-- **验收**:`grep -rn "Image / Video / Web / Scene" docs/ *.md` 零命中;
-  `DESIGN_BASELINE.md` / `MIAODESK_CONTENT_FRAMEWORK.md` / `DOC-INDEX.md` 表述一致。
-- **状态**:✅ 已完成(2026-09-20)—— 全仓残留下方全部为纠错说明本身或反面断言
-  (`skills/README.md:16` 明示"不是平面四分类";`content-review:87` 与
-  `wallpaper-content:84` 是禁止项)。改动:`README.md:21`、
-  `DEVELOPMENT_ROADMAP.md:55,174`、`PRODUCT_VISION.md:35`、
-  `DESKTOP_DOMAIN_ARCHITECTURE.md:106`、`skills/README.md`(新增分类约定节 + 硬底线第 2 条)、
-  `skills/wallpaper-content/SKILL.md`(整节重写 + 反面提示词 + 输入输出)、
-  `skills/content-review/SKILL.md`(领域检查 5 项 → 8 项)。
-- **连带修正(执行中发现)**:`wallpaper-content/SKILL.md` 原文写死"壁纸不接收鼠标输入",
-  与对标目标"鼠标控制壁纸"冲突。已按 WE 的分层模型改为:指针位置类效果(视差/追随/辉亮)
-  默认允许且不抢输入;点击/拖拽需显式 opt-in 且会关 click-through。
-  该张力已回写进 B-2 作为前置条件。
-
-## P1 — 门的其余验收项
-
-### P1-1 停用幂等的 reload 断言 ✅ 已在真实 Windows CI 通过
-
-- **依据**:`DEVELOPMENT_ROADMAP.md` §3 P0-2
-- **现状**:`verify-widget-visibility.ps1:132-137` 已断言 `Enabled 1→0→1` 与壁纸停用下的组件生命周期,
-  但缺一条独立断言:**Shell repair / reload 之后壁纸不得被重新拉起**。
-- **已实施**:
-  - 探针新增 `VisibleWallpaperSurfaceCount()`,数可见的
-    `MiaoDesk.Native.IndependentWallpaperSurface`(类名与 `IndependentWallpaperHost`
-    的 `kSurfaceClass` 逐字一致)。
-  - 新增断言:用"停掉整族再冷启"当 reload 的 CI 等价物,
-    `wallpaper.ini` 全程 `Enabled=0`,要求 `VisibleWallpaperSurfaceCount() == 0` **且**
-    组件重建数与 reload 前一致(1 = Content GlassClock 布局,2 = quick-build 布局)。
-  - 两个断言都要:只断言壁纸数,会把"什么都没起来"也判成通过;只断言组件数,
-    则盖不住"顺便把壁纸也拉起来了"这个回归。
-- **为什么是"冷启"而不是触发一次 `RepairSurfaceStack`**:`RepairSurfaceStack` 只对
-  **已存在**的 MiaoDesk 表层重新排序(`RepairKnownMiaoDeskSurfaces`),不创建表层,
-  所以它不可能凭空造出一个壁纸表层。真正会"重新拉起"的路径是运行时进程整体重启
-  (Coordinator 重新评估 `Enabled`),这恰好就是冷启覆盖的场景。
-- **为什么期望值是 0**(不是"反正测一下"):`WallpaperWebRuntimeCoordinator` 的
-  `DesiredRequests()` 第一行就是 `if (!host || !IsWindow(host) || !state.enabled) return requests;`,
-  返回空列表;`startRequests()` 拿到空列表只调 `surfaces.Stop()` 并写
-  「未启用 Web 壁纸」,**不会 `Start()`**。所以 `Enabled=0` 时
-  `IndependentWallpaperSurface` 压根不创建。这条断言验的是"这个结论在整轮运行时重启
-  之后依然成立",而不是它在这个进程里碰巧成立。
-- **本机能验到什么**:C# 探针块用 macOS pwsh 的 `Add-Type` 真编译通过,两个方法
-  (`PaintReadyWidgetCount(Boolean)` / `VisibleWallpaperSurfaceCount()`)签名确认存在;
-  `if` 赋值、报错插值、`-ne 0` 分支方向逐条跑过。另外对两条可能创建该表层的代码路径都
-  核对过:Web/Content coordinator 在 `enabled=0` 时 `DesiredRequests()` 直接返回空、
-  根本不 `Start()`;遗留 `WallpaperEngine.cpp:318` 的 `ShowWindow` 被 `config_.enabled`
-  闸住,窗口顶多被创建但不可见,而探针第一件事就是查 `IsWindowVisible`。所以 0 是必然
-  结果,不是偶然。
-- **验收**:CI 中新增断言,模拟 reload 后壁纸仍保持停用。
-- **状态**:✅ **已在真实 Windows CI 通过** —— `Windows x64 Build #367`
-  的 `Verify staged GlassClock Content Framework route` 步骤 success。
-
-### P1-2 低常驻资源基线
-
-- **依据**:`DEVELOPMENT_ROADMAP.md` §2 / 设计目标第一段
-- **现状**:`PerformanceService` / `WallpaperPerformancePolicy` 已存在,但缺可跨版本比较的数字。
-- **内容**:常驻内存 / CPU / 句柄数基线,并在 CI 或发布流程中采集。
-- **状态**:❌ 未开始
-
-## P2 — 本地 AI 落地
-
-### P2-0 DGX Spark 节点已连通并跑起第一个本地模型 ✅(2026-09-22)
-
-- **依据**:`LOCAL_AI_DEPLOYMENT.md` §0 / §1;队内节点《登录信息表.xlsx》
-- **已打通**:节点 `gx10-9e57`(妙喵爱美丽),`ssh -p 6017 asus_gx10@61.172.235.130`。
-  DGX OS 7.5.0 / GB10 / 128 GB 统一内存 / 916 GB NVMe(余 769 GB)/ 20 核。
-  **部署零下载** —— 节点上已有 `~/envs/vllm`(vllm 0.28.0 / torch 2.13.0+cu130)与
-  `~/models/Nemotron-3.5-Lightning-30B-A3B-NVFP4`(21 GB,52 shard,NVFP4 混合精度)。
-- **已跑起来**:`nemotron-30b-a3b`,vLLM V1 引擎;`NemotronHForCausalLM` 架构受
-  vLLM 0.28.0 支持,Marlin NVFP4 GEMM + fp8_e4m3 KV cache + Mamba2 hybrid 全部解析成功。
-  **只绑 `127.0.0.1:8000`** —— 8000 没有公网映射,物理上从跳板机进不来;三个转发端口
-  7017/8017/9017 已 curl 验证无服务在听。API key 从 `~/vllm.token` 读,
-  不进命令行、不进启动脚本。凭证只存本地,未进仓库。
-- **必须先量出口,否则照着文档空转**:HF / hf-mirror / PyPI / Docker Hub / NGC /
-  GitHub **全部不可达**,只有 ModelScope 和国内镜像可达。于是
-  `LOCAL_AI_DEPLOYMENT.md` 的 `docker pull nvcr.io/nvidia/vllm` 与
-  `huggingface-cli download` 两条**在这台机器上走不通**,已把实测出口表写回该文档 §0.1。
-  **这一条的形状值得记:占位 TAG / SHA-256 不是障碍,registry 不可达才是 ——
-  核对出一个正确的 TAG 也拉不到。文档开头那句"所有版本号必须当天核对"把注意力
-  放错了地方。**
-- **仍未解决(两条,都不是 bug,但会咬人)**:
-  1. **reasoning 字段名。** OpenAI 兼容响应里叫 `reasoning`,而 chat template 的变量叫
-     `reasoning_content`。照模板的名字读会一直读到 null,进而误判"模型不输出思考过程"。
-     带 `--reasoning-parser nemotron_v3` 后:`content` 干净、`reasoning` 有思考过程、
-     `completion_tokens_details.reasoning_tokens` 正常计数。
-     要更快就加 `chat_template_kwargs: {"enable_thinking": false}`(122 → 3 token)。
-  2. **工具调用没有对口 parser。** 模型模板是一套 XML 形状(function 内嵌 parameter),
-     vLLM 0.28.0 的 48 个 tool parser 没一个吃它。要接 Pi 必须自己写。
-- **一次没有结论的失败,记下来免得重复**:`--reasoning-parser nemotron_v3` 有一次在
-  `Capturing CUDA graphs (mixed prefill-decode, PIECEWISE)` 55% 处抛
-  `CUDA error: an illegal instruction`。**同一条命令重跑就成功了** —— parser 是
-  API server 进程里的纯文本后处理,不跑 CUDA kernel,不该是原因;真因是上一次
-  `tmux kill-session` 之后 EngineCore 残留、仍占 83 GB(`pgrep` 看得见,GPU 96%)。
-  **判据:kill 掉 tmux 会话不等于 kill 掉 vLLM**(多进程结构),重启前先
-  `nvidia-smi --query-compute-apps=pid,used_memory` 确认 GPU 真空。
-- **状态**:✅ 已连通并跑通;待接 Pi、待写 tool parser
-
-### P2-1 主模型 A/B 实测定夺
-
-- **依据**:`LOCAL_AI_ARCHITECTURE.md` §6.2 / §8
-- **内容**:`gpt-oss-120b`(有实测 14.5 tok/s)与 `Qwen3.6-35B-A3B`(纸面占优但**零实测**)并行评估。
-  按"中文对话质量 → 工具调用成功率 → 实测 tok/s → 显存余量"定夺。
-- **注意**:若 v1 要做本地图片生成,候选 B 接近必选(§7.7 内存账)。
-- **验收清单**:`LOCAL_AI_ARCHITECTURE.md` §8 全部项通过。
-- **状态**:❌ 未开始 —— 需 DGX Spark 实机
-
-### P2-2 图像运行时部署与实测
-
-- **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.6 / `LOCAL_AI_DEPLOYMENT.md` §2
-- **内容**:ComfyUI(官方 Spark playbook)+ OpenAI 兼容 shim;模型选 Z-Image-Turbo(主)+ Qwen-Image v1.0(按需)。
-- **已知障碍**:ComfyUI 的 API 不是 OpenAI 兼容,需自写薄 shim;vLLM-Omni 的 API 匹配但硬件支持未记录。
-- **状态**:❌ 未开始
-
-### P2-3 模型路由器 L1 上线 🟡 代码已完成，待 DGX 真机部署
-
-- **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.2 / §7.4
-- **已实施**:
-  - `runtime/router/server.mjs`:零 npm 依赖的 OpenAI-compatible L1 gateway；Windows 客户端只看一个
-    `/v1` endpoint 和一个公共 model `miaodesk`。
-  - 固定顺序分流:`tools/tool_choice` → 主模型；稳定 content-skill 签名 → 主模型；
-    短请求无 tools → 轻量模型；其余 → 主模型。
-  - 请求体除 `model` 外原样转发，SSE 流式响应原样透传。
-  - fast 后端网络失败或 5xx 自动单次回退 primary；4xx 不回退，避免掩盖客户端错误。
-  - 响应增加 `x-miaodesk-route` / `x-miaodesk-upstream-model`，便于真机看分流。
-  - 可选入站 Bearer key、primary/fast 独立 upstream key；路由器不进入 Windows 安装包。
-- **自动验证**:`tests/local-ai-router.mjs` 同时启动 primary / fast 两个真实 loopback HTTP 后端和
-  router，覆盖 tools、skill、短/长请求、model rewrite、SSE 流、fast 故障回退、models/health。
-  已接 Repo Hygiene。
-- **仍未完成**:DGX 上把 primary/fast 端口指向实际 vLLM 服务，记录各路由的 p50/p95、缓存命中率、
-  fallback 次数和显存/统一内存占用。
-- **注意**:skill 签名列表必须保持稳定，否则前缀缓存命中率会崩。
-- **状态**:🟡 产品/路由代码已闭环；待 DGX 真机部署与性能数据
-
-### P2-4 修复 `models.json` 硬编码常量 ✅
-
-- **依据**:本会话审计发现,原 `src/ai/pi/PiRuntime.cpp:438`
-- **缺陷**:`contextWindow: 128000` 与 `maxTokens: 16384` 是硬编码常量,不随用户所选模型变化。
-  用户选一个 32K 上下文的模型,产品会告诉 Pi 它有 128K。
-- **已实施**(2026-09-20):
-  - `ApiRuntimeProfile.h` — 新增 `ParsePositiveUInt()` 与 `RuntimeProfile.contextWindow` / `.maxTokens`,
-    从 profile INI 的可选键读取(0 = 未配置)
-  - `L3Agent.h` — `ModelConfig` 增加同名字段,并**纳入 `ReloadConfig()` 的变更检测**,
-    否则改配置不会重启 Pi 会话,修复会静默失效
-  - `PiRuntime.h` — `ProviderSetup` 增加同名字段
-  - `PiRuntime.cpp` — `BuildProviderSetup` 取值;signature 纳入 `ctx=` / `max=`;
-    `ConfigurePiAgent` 用配置值,未配置时回落到原默认(行为不变)
-- **验证情况**:`ParsePositiveUInt` 逻辑抽出为独立程序,以 C++23 编译并跑 15 个用例全过
-  (空串 / 正常值 / 前后空白 / 零 / 非数字 / 数字后跟垃圾 / 负数 / 小数 / 超上限 / 边界 / 十六进制 / 科学计数法);
-  JSON 拼装产物经 Python `json` 校验为合法且字段为数字类型。
-  **已在 Windows CI 上编译**:`Windows x64 Build` #367 / `023aa299` 全绿,而 `PiRuntime.cpp`
-  与 `ApiRuntimeProfile.h` 自那时到现在**逐字节未变**(`git diff 023aa299 HEAD` 为空),
-  所以那次绿构建覆盖的正是这几行代码。没有独立测试步骤 —— 需要的是"能编过 +
-  `ReloadConfig()` 认得这两个字段",后者至今没有断言。
-- **遗留**:未配置时的默认值仍是 128000 / 16384,这个默认值本身是否合理待评估(见 P3-5)。
-- **状态**:✅ 已实施并通过 Windows 编译;默认值合理性仍开放
-
-### P2-5 L2 多 provider 配置
-
-- **依据**:`LOCAL_AI_ARCHITECTURE.md` §7.2
-- **内容**:让产品往 `models.json` 写多个 provider(`miaodesk` / `miaodesk-fast` / `miaodesk-image`),
-  由 Pi 按任务选择。图片生成必须走这一层。
-- **依赖**:P0-2(图片生成参数化)完成后再做
-- **状态**:❌ 未开始
-
-## P3 — 技术债与已知缺陷
-
-### P3-1 移除不可达的 AI HTML 壁纸生成工具 ✅
-
-- **依据**:本会话审计发现
-- **缺陷(比初判更严重)**:`wallpaper_create_web_package` 在 `src/ai/tools/NativeTools.cpp` 有**完整实现**
-  (41 行 `CreateWebWallpaperPackage` + tool schema + dispatch),其入参含 `html`(完整自包含
-  HTML/CSS/JS),描述主动邀请模型"generate an interactive/procedural HTML wallpaper"。
-  这直接违反 `AI_GENERATED_DESKTOP_SANDBOX.md` 的硬规则"AI never outputs HTML, JavaScript, CSS"。
-  它被三道闸独立阻断(不在 `NativeToolDefinitionsJson()` 广告列表、不在 Pi 的 `TOOL_NAMES`、
-  不在 `main.cpp` allowlist),因此**不可达**;但保留即是一个潜在风险:
-  日后若有人把它加进任一闸,就会静默复活一个产品已刻意移除的能力。
-- **已实施**(2026-09-20):
-  - `NativeTools.cpp` — 删除 `CreateWebWallpaperPackage`(41 行)、其 tool schema、dispatch 行
-  - `ConversationPanelImpl.inc` — 删除 `FriendlyToolName` 中对应的友好名行
-  - helper(`KnownFolder` / `ExtractJsonString` / `ExtractJsonBool` / `SanitizeFileName`)经核实
-    各有 6 / 15 / 3 / 5 个其他调用方,删除不会孤立它们
-- **验证情况**:全仓库零残留引用;括号平衡复查通过。
-  **已在 Windows CI 上编译**:`NativeTools.cpp` 自 `023aa299`(全绿那次)起逐字节未变,
-  所以那次构建已经证明删除之后仍然编译并链接通过。
-- **状态**:✅ 已实施并通过 Windows 编译
-
-### P3-2 三个未合入分支 ✅ 已合入主干并恢复为正式分支(2026-09-22)
-
-- **依据**:本会话审计发现;此前因我验证方法有缺陷而误删远端分支
-- **去向(已定并执行)**:三支全部合入 `main`,不再游离:
-  | 分支 | 提交 | 合入结果 |
-  | --- | --- | --- |
-  | `fix/content-widget-install-runtime-reload` | 16 | `7aceaa8` —— Widget 生命周期前重置壁纸运行时 |
-  | `feat/content-widget-settings` | 25 | `bca7f9b` —— **P0-3 TodayTasks 关闭** |
-  | `fix/unicode-wallpaper-theme-packages` | 78 | `9fa2082` —— canonical manifest + Unicode 主题;P0-4 仍未关闭(见该项) |
-  三支已从 `_check/*` 恢复为正式本地分支,可随时推回远端。
-- **合并中处理的两处要点**:
-  1. 两条独立历史各自创建 `ContentWidgetPreviewRenderer.cpp` / `ContentWidgetSettingsDialog.cpp`
-     (均非对方祖先)。逐行比对确认分支版把 `PublishWeather` 泛化成 `PublishHostData`
-     且天气发布语句逐字节相同、只是新增 tasks 分支,才取分支版 ——
-     按 add/add 常规做法直接取一侧会静默删掉天气发布。
-  2. `WallpaperPackage.cpp` 自动合并通过了三处**编译不过**的损坏
-     (成员定义进了匿名命名空间、调用未加类限定、Image/Video 校验被拼成错误返回形态)。
-     只有真的编译才暴露 —— 已全部修复并用最小 windows.h 替身在 macOS 上编译运行验证。
-- **上游同步**:仍需 `git push`。当前 `gh` 未认证,无法推送。
-- **状态**:✅ 已合入主干、恢复为正式分支、并推回远端(2026-09-22)
-
-### P3-3 本地 AI 文档占位版本号
-
-- **依据**:`LOCAL_AI_DEPLOYMENT.md` §10
-- **内容**:容器 TAG、模型 SHA-256、`--structured-outputs-config.enable_in_reasoning` 参数名均为占位,
-  部署当天需从官方 playbook 与 Hugging Face 核对。
-- **结论:按设计延后,不是漏做(2026-09-22 核实)**。`LOCAL_AI_DEPLOYMENT.md` 已经在
-  §10「本手册未验证的部分」里逐条列明这三项,§1.1 明写"不要使用 `:latest`;部署完成后
-  把实际使用的 TAG 记录到部署台账",§6 清单有"容器 TAG 与模型 SHA-256 已记录到
-  部署台账"这一项。也就是说这份文档**刻意不预先钉版本** —— 把没验证过的版本号
-  填进去,会把准确的"未验证"变成失真的"已验证",比留着占位更坏。
-  真正剩下的是部署当天跑 §6 清单,而那被 DGX Spark 卡住。
-- **顺手补了一道门**:`scripts/verify-doc-code-citations.sh`(已接 repo-hygiene)。
-  文档里的"源文件加行号"式引用会随代码改动静默腐烂,而现在 33 处全部有效且被钉住。
-  它只查"这一行还在不在",不查"这一行说的是不是那件事" —— 这一点写在了脚本头部。
-- **状态**:🟡 按设计延后到部署当天(文档已如实标注);引用腐烂风险已用门挡住
-
-### P3-4 分支恢复的误删修复记录
-
-- **依据**:本会话操作失误
-- **内容**:我曾在验证方法有缺陷(zsh 变量不分词导致路径比对静默失效)的情况下删除了 42 个远程分支,
-  其中 3 个含有未合入工作。已全部救回本地,但**尚未推回远端**。
-- **已完成(2026-09-22)**:三个分支已推回远端。
-  推之前先验了"推回去不引入任何内容":三个分支各自
-  `git rev-list --count main..<branch>` = **0**、且 `git merge-base --is-ancestor <tip> main`
-  全部为真 —— 即 tip 早已在 main 历史里,推回去只是把书签复位,不会带来任何
-  未合入的提交。三个:`feat/content-widget-settings`(a431f58)、
-  `fix/content-widget-install-runtime-reload`(df7d81d)、
-  `fix/unicode-wallpaper-theme-packages`(321c39f)。
-- **状态**:✅ 已推回远端
-### P3-6 D3D11 渲染器的 Windows-only 自测 ✅ 已有调用方并在 Windows CI 执行通过
-
-- **依据**:2026-09-22 清点 SelfTest 调用方时发现(见教训 15)
-- **当时的现状**:`MiaoSceneD3D11Renderer::SelfTest()` 零调用方,而它里面这四项是 Windows-only:
-  - `MiaoD3D11ParticleRenderer::SelfTest`
-  - `MiaoD3D11TextureLoader::SelfTestPathPolicy`
-  - `MiaoD3D11RenderTargetPool::SelfTest`
-  - 文件内的 `TransformMathSelfTest`
-- **第 1 步已完成(2026-09-22):建立 `MiaoDeskSceneD3D11` 库。**
-  四个 `.cpp` 从 `MIAODESK_WALLPAPER_SOURCES` 搬到 `MIAODESK_SCENE_D3D11_SOURCES`,
-  新库加入公共属性 foreach、MSVC 选项段、`source_group`,并由 `MiaoDeskWallpaper` 链它 ——
-  与既有的 `MiaoDeskScene2D` 逐处对称。这一步就是"做法(下一步)"里写的那件事。
-  (当初拦路的正是它:建库要改产品主程序的链接结构,而本机编不了 Windows。)
-- **这一步在本机验到了哪一层(以及没验到哪一层)**:
-  本机跑 CMake Configure 能生成 compile_commands.json,于是把四个 TU 在搬迁**前/后**的
-  编译命令逐 token 比对 —— 归一化掉必然不同的产物名之后,**14 个 token 顺序与取值完全一致**。
-  唯一真正消失的是 `-isystem third_party/webview2/include`:它们原先作为可执行目标的
-  源文件继承了它,搬进库之后不再继承。而这一项的消失是可证明无害的 ——
-  四个文件的传递依赖闭包共 19 个头,没有一个引用 WebView2;且 `MiaoDeskScene2D`
-  这两个渲染器文件本来就在没有该 include 的情况下编译通过。
-  链接侧:`MiaoDeskSceneD3D11Renderer.cpp` 里真的调用了 particle / rendertarget /
-  textureloader(分别出现 3 / 4 / 5 次),而 `IndependentWallpaperHost.cpp`
-  在 `MIAODESK_WALLPAPER_SOURCES` 里引用 renderer,所以对象链会被拉进最终链接。
-  写这一步时被 `verify-cmake-target-hygiene.sh` 当场拦住一次:新库漏了 MSVC 段,
-  缺 `/W4 /permissive- /utf-8 /EHsc`。
-  **没验到的:MSVC 实际编译与最终链接。** 本机没有 MSVC,compile_commands 的
-  toolchain 是 host 默认(那个 `-DCMAKE_VS_PLATFORM_NAME=x64` 在非 Windows 上被忽略),
-  它证明的是"CMake 给这四个 TU 的编译环境没变",不是"MSVC 编得过、链得上"。
-- **第 2 步已完成(2026-09-22):`MiaoDeskSceneD3D11Test`。** 参考
-  `src/tests/SceneD2DRenderer.cpp` 的形状,链 `MiaoDeskSceneD3D11` 而不是再把它的
-  `.cpp` 编一遍。调用的四个:
-  `MiaoD3D11TextureLoader::SelfTestPathPolicy` / `MiaoD3D11ParticleRenderer::SelfTest` /
-  `MiaoD3D11RenderTargetPool::SelfTest` / `MiaoSceneD3D11Renderer::SelfTest`。
-  **逐个报而不聚合成一个布尔** —— "D3D11 自测失败"不告诉你是哪一类,
-  而四个里三个是公开静态成员、本来就分得开。
-  第四个(聚合器)是 `TransformMathSelfTest()` **唯一**的入口:它在
-  `MiaoSceneD3D11Renderer.cpp` 里是文件局部的,没有别的路能进去。调它也会重跑
-  `ContentSelfTests` 已经在每台机器上覆盖的那七个纯逻辑自测 —— 这点冗余是到达
-  `TransformMathSelfTest` 的代价,写进注释了。
-- **一处必须更正的表述:这四个自测本身是纯逻辑,一个都没碰 D3D11 设备。**
-  逐个读过实现之后:`MiaoD3D11ParticleRenderer::SelfTest` 是 `sizeof` 加两个常量比较;
-  `MiaoD3D11TextureLoader::SelfTestPathPolicy` 是三个路径字符串判断;
-  `MiaoD3D11RenderTargetPool::SelfTest` 是尺寸算术;`TransformMathSelfTest` 是矩阵乘法。
-  它们之所以只能在 Windows 上跑,是因为**实现所在的 `.cpp` include 了 `d3d11.h`**,
-  不是因为需要显卡。我先前在 `run-pure-logic-tests.sh` 里写的理由是"要真实 D3D11 设备",
-  那是从 D2D 那条照抄过来的,**错**。理由写错的代价很具体:它让人以为这里需要一个 GPU,
-  而真正的改进方向是把那几个纯逻辑自测搬进一个不含 `d3d11.h` 的文件,
-  让它们回到每台机器都能跑 —— 那才是这一类问题的正解,和教训 15 是同一件事。
-- **已按上面那个方向做了一步,并且它当场抓出一个我没想到的平台依赖(2026-09-22)。**
-  `MiaoD3D11RenderPolicy.cpp`(平台无关,进 `MiaoDeskCore`)现在持有
-  `kMaxRenderTargetDimension` / `ValidateDimensions` / `ResolveDimensions` /
-  `RenderTargetPool::SelfTest`,于是尺寸自测回到每台机器都能跑,已接进 `ContentSelfTests`
-  (第七项 → 第八项)。搬过去之后本机立刻跑出结果:**它是 1(通过)**。
-  但同一个提交里我一开始把 `MiaoD3D11TextureLoader::SelfTestPathPolicy` 也搬了过去,
-  本机一跑返回 **0(失败)** —— 它的三条断言里有一条是
-  `!IsSafeRelativePath(L"C:\outside.png")`,而"盘符 + 反斜杠"**只在 Windows 上构成逃逸**,
-  因为只有在那儿反斜杠才是路径分隔符;POSIX 上那只是一个合法的相对文件名。
-  它在 Windows CI 上一直是绿的,恰恰因为它在 Windows 上跑。
-  **所以那条自测看着平台无关、其实不是**,已搬回 Windows-only 文件并把原因写进注释。
-  这正是"多一台机器跑一跑"的价值:不是跑得更快,是能看见只在一侧成立的东西。
-  剩下的两个**真的**挪不动,而且理由不同、必须分开说:
-  `MiaoD3D11ParticleRenderer::SelfTest` 的**头文件**就 include 了 `d3d11.h` ——
-  这是唯一一处依赖在声明里、而不是在归档位置的情况;`TransformMathSelfTest` 是
-  Windows-only `.cpp` 里的文件局部符号。
-- **顺带把路径安全规则改成按平台拆断言,而不是整条留在 Windows(2026-09-22)。**
-  `SelfTestPathPolicy` 三条断言里有两条(包内资源放行、`../` 逃逸拒绝)在任何平台上
-  语义相同,只有"盘符 + 反斜杠必须拒"那条是 Windows 专属(POSIX 上等价的逃逸是
-  根路径 `/etc/passwd`)。按 `#ifdef _WIN32` 拆开之后,两条跨平台成立的断言
-  从"等一轮 Windows CI"变成"每次提交都在本机跑",而每个平台都不少断言。
-  `ContentSelfTests` 由七项增至**九项**。
-  `SceneD3D11Renderer.cpp` 里那两个显式调用随之删掉 —— 不是为了让代码短,
-  而是因为一个号称 Windows-only 的目标不该再扛着可移植的工作,
-  否则下一个人看跳过清单会以为那些规则需要一块 GPU。
-- **顺序是按记录执行的,而且记录是对的**:第 1 步的库先要证明 MSVC 编得过、链得上,
-  才允许有测试目标依赖它 —— 否则真出链接问题分不清是谁引入的。证据是
-  `7109050` / `a1348b06` 两次 `build` 全绿,**然后**才建这个目标。
-- **顺带补了两处此前不显眼的漏**:
-  1. `MiaoDeskWebAudioEnvelopeTest` **从来没进过 Windows CI 的 `--target` 列表** ——
-     它只在 macOS 本地跑过。现在建了也跑了。
-  2. `run-pure-logic-tests.sh` 的"只能在 Windows 上验证"清单只列了 3 个,
-     而 `SceneD2DRendererTest` 与新的 `SceneD3D11Test` 既不在跑清单也不在跳过清单。
-     于是"14 跑 + 3 跳过"看着像覆盖了全部,实际有 19 个目标。改成 5 个并写明原因。
-- **四个自测已经真的跑过并返回 true(2026-09-22,`65dbc31e` `build` success,0 条失败标注)**。
-  这一步是干净的:两个新步骤都挂在 `windows-x64-build.yml` 的 `build` job 里,
-  任一步失败都会 `throw`,所以 job 绿 = 两个 exe 都被找到、都以 0 退出。
-  也就是说这四个自测自写下以来**第一次执行**,并且通过。
-  一处必须说清的边界:GitHub 的 Windows runner 是虚拟机,D3D11 设备多半由 WARP
-  软件光栅器支撑,不是真实 GPU。所以验到的是"设备能建、四条自测的逻辑在 Windows
-  原生路径上成立",**不是**"在用户显卡上画面正确"。后者属于 P0-1。
-- **状态**:✅ 第 1、2 步均完成并已在 Windows CI 执行通过;**真实 GPU 上的画面仍属 P0-1**
-
-### P3-5 contextWindow / maxTokens 默认值合理性
-
-- **依据**:P2-4 实施时发现
-- **内容**:未在 profile 里配置时,默认仍是 `contextWindow: 128000` / `maxTokens: 16384`。
-  对一个本地小模型(如 32K 上下文),这个默认值依然偏大。是继续用保守默认,还是按 provider
-  推断,需要产品决策。
-- **状态**:❌ 未开始
-
-
----
-
-## 已完成
-
-| 日期 | 项 | 产出 |
+| 领域 | 当前已经存在的基础 | 本轮重点 |
 | --- | --- | --- |
-| 2026-09-20 | 清理远程分支 | 42 个已合入或残留分支删除,远端只留 `main` |
-| 2026-09-20 | ARM64 打包验证 | run 35507624372 两 job 全绿;三个 exe PE machine = `0xAA64` 独立复验 |
-| 2026-09-20 | 确立产品愿景层 | `docs/PRODUCT_VISION.md`;`DOC-INDEX.md` 与 `README.md` 改三层结构 |
-| 2026-09-20 | 建立 CHANGELOG | `CHANGELOG.md`;此前项目无任何变更记录 |
-| 2026-09-20 | 版本号对齐 | `installer.nsi` 0.1.2 → 0.1.3,与两个 MSIX workflow 断言一致 |
-| 2026-09-20 | 技术契约反偏移 | `NATIVE_SOURCE_LAYOUT.md` 补 `content/`+`tests/`;`DESKTOP_DOMAIN_ARCHITECTURE.md` 补 Content Framework 域;`verify-path-layout-contract.ps1` 加反向守卫 |
-| 2026-09-20 | 隐私政策补本地模式 | `docs/privacy-policy.md` 双语,模式 A 云端 / 模式 B 本地局域网 |
-| 2026-09-20 | 第三方声明补本地栈 | `THIRD-PARTY-NOTICES.md` 追加推理栈 + 排除清单 |
-| 2026-09-20 | 本地 AI 架构设计 | `docs/LOCAL_AI_ARCHITECTURE.md` 666 行 |
-| 2026-09-20 | 本地 AI 部署手册 | `docs/LOCAL_AI_DEPLOYMENT.md` 380 行 |
-| 2026-09-20 | 内容创作 skill 集 | `skills/` 5 文件,壁纸 + 组件,含正反提示词与安全/性能门禁 |
-| 2026-09-20 | P2-4 models.json 硬编码常量 | 四个文件;`ParsePositiveUInt` 15 用例通过;JSON 产物校验合法;**待 Windows 编译验证** |
-| 2026-09-20 | P3-1 移除不可达的 AI HTML 壁纸工具 | `NativeTools.cpp` 删 43 行 + UI 友好名;零残留;helper 均已核实有其他调用方;**待 Windows 编译验证** |
-| 2026-09-20 | 设计 vs 实现对照 | `miaodesk-design-progress.html`,68 项逐条带代码证据 |
-| 2026-09-20 | B-8 分类表述全仓校正 | 7 个文件;载体×运行时替换平面四分类;连带修正壁纸交互规则(见 B-2) |
-| 2026-09-20 | 对标 Wallpaper Engine | `docs/WALLPAPER_ENGINE_BENCHMARK.md`;官方三类(Scene 2D/3D、Web、Video)逐能力对标;9 条差距 + 5 条明确不做 |
-| 2026-09-20 | B-1 skill 接入产品 | 新增 native tool `content_skill_get`(按需加载);systemPrompt 加创作指引;`CMakeLists.txt` + `stage.ps1` 打包 skills 并加一致性守卫;问候语加入口;38 项逻辑单测通过;**待 Windows 编译验证** |
-| 2026-09-20 | B-2 输入总线契约与分析内核 | `MiaoInputBus.h` 通道契约(三形状 + click-through 分层);FFT 频谱分析;指针归一化;音频下混重采样;InputBusPublisher;skill 与评审门禁同步;三个 Windows CI 测试 + macOS 离线复现;**WASAPI 采集与宿主接线未做** |
-| 2026-09-20 | B-3 绑定响应曲线 | 闭集 8 条曲线 + deadzone,零代码执行;默认 Linear 逐位兼容;两个 Windows CI 测试;**通用脚本解释器延后并记录触发条件** |
-| 2026-09-20 | B-6 Web 音频监听 API | `WallpaperWebAudioBridge.js`(单向闭集契约 + 幂等 shim);宿主注入在 Navigate 前;防漂移守卫七情形验证 + node 13 组断言;**宿主尚未推送帧** |
-| 2026-09-20 | B-4 3D 场景声明层 | `SceneSpatialMode` + Light/Fog 定义 + mesh 扩展名校验 + 3D 门禁 + JSON 往返;`MiaoDeskSceneSpatial3DTest`(9 组)通过;skill 已禁止生成 3D(渲染器不存在);**渲染器未做** |
-| 2026-09-22 | 五处已失效的"待 Windows 编译"标记 | 按证据改掉:`023aa299` 全绿之后文件逐字节未变的项,"能不能编过"已经有答案(B-1 / B-5 / P2-4 / P3-1 / P3-3)。区别:`待真机验收`仍然保留 |
-| 2026-09-22 | 自报姓名的 gate 包装 | `Invoke-WallpaperGate`(写 `$RUNNER_TEMP` 文件、每步 dot-source):`::notice::GATE-START/OK` + `::error::GATE <名> -> <异常>`。第一次加 `::error::` 仍然什么都看不到,因为失败在 try/catch **之外** |
-| 2026-09-22 | 第 5 步 `$RUNNER_TEMP` → `$env:RUNNER_TEMP` | 裸写环境变量在 pwsh 里是 `$null`,`Join-Path $null` 抛"Path 为 null"。该步自加入起一次都没成功跑过(`9a03f26`) |
-| 2026-09-22 | `canonical-derived-view-gate` 首次在 Windows 上通过 | 五步全绿(`9a03f26`)。此前它自 `61a638f` 起从未成功运行过 |
-| 2026-09-22 | 派生视图门的三层叠bug | `verify-wallpaper-library-derived-view-runtime.ps1`:单引号正则双反斜杠 + `.Value` 作用在 string 上静默返回空串(`34f839e`) |
-| 2026-09-22 | skill 补上 sprite 材质规则 + 漂移门 | `content-package-basics` 正面/反面、`content-review` 清单;`verify-skill-material-rule.sh`(15 条按小节比对,名字从代码读出)。此前 skill 在教作者写渲染器会拒的包 |
-| 2026-09-22 | 七项内容层自测首次执行 | `MiaoRenderGraph` / `MiaoPostProcessCompiler` / `MiaoPostProcessShaderLibrary` / `MiaoShaderContract` / `MiaoGpuParameterPacker` / `MiaoParticleRuntime` / `MiaoSceneRuntimeModel` —— 全部只经由一个无人调用的 D3D11 聚合器可达。纯逻辑,已放进 `run-pure-logic-tests.sh`(`ContentSelfTests`) |
-| 2026-09-22 | 修正 libm 末位差导致的假红 | 采样值 round 到 6 位;`--check` 改为打印差异;time 不 round(进位会越过 duration)。连红三轮的根因是平台 libm,不是分叉 |
-| 2026-09-22 | P3-4 分支推回远端 + P0-4 第 5 条核实关闭 | 三个分支 tip 早已在 main 历史里,`rev-list --count main..b` = 0,推回只是复位书签;`parameters.json` 不适用 —— loader 只在 manifest 声明时才要求它 |
-| 2026-09-22 | `__pycache__` 入库 + 新的产物门 | 一个 `cpython-314.pyc` 跟着文档闸门的提交进了库,而当时的 14 个闸门无一报警(现在 17 个) —— 它们全都只问"这里的东西对不对",没有一条问"这里有没有不该在的东西"。根因是 `.gitignore` 缺 Python 一节。新版闸门两档:缓存按名字一票否决,其余二进制由 git 自己判定后要求落在 9 个登记区域。六向注入验证(干净绿 / 含 NUL 的 pyc 红 / 不含 NUL 的 pyc 红 / src 下 .a 红 / 未登记目录的新 .zip 红 / 删掉 .gitignore 的 Python 节红)|
-| 2026-09-22 | P0-4 动画迁移 + 保真复核 | 4 个动画层 → 8 条关键帧轨;李萨如双轴拆到父子节点靠变换连乘合成;`verify-builtin-wallpaper-animation-parity.py` 按引擎语义逐点比,最大误差 0.306px(上界内)。修正了自己两个错:breathe 的 y 频率与 blink 的相位 |
-| 2026-09-22 | P3-6 第 1 步:`MiaoDeskSceneD3D11` 库 | 四个 D3D11 渲染器 `.cpp` 从 wallpaper EXE 源清单搬进新库(与 `MiaoDeskScene2D` 逐处对称),解除"四个 SelfTest 零调用方"的结构性阻碍。本机把四个 TU 搬迁前后的编译命令逐 token 比对:归一化产物名后 14 个 token 完全一致;唯一消失的 webview2 `-isystem` 已用 19 个头的依赖闭包证明无害。被 `verify-cmake-target-hygiene` 拦住一次(漏 MSVC 段)。**MSVC 实编与最终链接仍未验** |
-| 2026-09-22 | P3-6 第 2 步:`MiaoDeskSceneD3D11Test` | 四个 Windows-only 自测首次有调用方(逐个报,不聚合成一个布尔);`TransformMathSelfTest` 经聚合器进入 —— 它是文件局部的,没有别的入口。按记录的顺序做的:先有两次 `build` 全绿证明库链接不变,才建依赖它的目标。顺带发现 `MiaoDeskWebAudioEnvelopeTest` 从未进过 Windows CI 的 `--target` 列表,以及本地 runner 的跳过清单漏了两个渲染器目标 |
-| 2026-09-22 | **D3D11 贴图路径第一次真的执行并通过** | `MiaoSceneD3D11Renderer::ReadBackPixels` + `MiaoDeskSceneD3D11TexturedSpriteTest`:往真实交换链画一帧品红贴图 sprite,把场景颜色目标读回 CPU,断言中心品红、左上角黑。`1a826b22` `build` success,第 26 步 success。此前这条路径只有编译链接证据 —— 而 HLSL 是运行时编译的,那从来不够。途中修掉两个自己的错:断言自相矛盾(scale 1.0 铺满导致'黑色存在'不可能成立)、`CoUninitialize` 早于 COM 对象释放(0xC0000005,日志全空) |
-| 2026-09-22 | B-6 宿主开始真正推送音频帧 | 阻碍解除:B-2 的 WASAPI 已落地,而 web 桌面 surface 是独立进程、自己持 loopback。信封单独做成纯函数 `WallpaperWebAudioEnvelope.h`(locale 逗号小数点 / 精度两处已在注释里写明),并用 `tests/WebAudioEnvelopeParity.mjs` 把 C++ 真实输出喂给真 shim 比对 —— 契约有两份实现而此前没有任何东西检查它们之间是否一致。四向注入验证过门会响。**真机播放音乐仍未验** |
-| 2026-09-22 | `MiaoSceneSerializer::SelfTest` 首次被调用 | 120 行断言自始至终没有调用方;多在与粒子发射器预算(65536/131072 —— 正是 content-review 要求作者遵守的那两条)。经注入失效验证会响(`SceneSerializerSelfTest`) |
-| 2026-09-22 | C++ 真 bug:`RecentlyUsed`/`Favorites` 漏了"用户可见"闸门 | `WallpaperLibrary.cpp` 三处补 `IsLibraryUiVisible(item) continue`(`c55ef67`)。已在 HEAD 515/533/550 逐行确认 |
-| 2026-09-22 | 四个派生视图门 CRLF 脆弱性 | `packaging/windows/verify-wallpaper-library-*.ps1` 读入处归一化行尾(`1455b4c`)。根因:按 `\n` 定位空行/函数结尾,CRLF 下永远匹配不上。本机转 CRLF 复现过与 CI 完全相同的报错消息 |
-| 2026-09-22 | 两个渲染后端材质规则合并 | `MiaoSpriteMaterialPolicy.h/.cpp`(共享实现)+ `MiaoDeskSpriteMaterialPolicyTest`(16 项断言,含 parity)。发现并修掉:MiaoCloud 在 D3D11 上因"无 materialId"整个包加载失败(`0937328`) |
-| 2026-09-22 | 音频 tap 第一次真的运行 + 一个不可能失败的门 | 新增 `MiaoDeskWallpaperAudioTapTest` 与 `MiaoDeskWallpaperAudio` 库(实现文件只能有一个 CMake owner,复用 P3-6 那条路);断言分"有没有回放端点"两支且先打印走了哪支。途中修掉:①`Start()` 头文件恒假承诺,②`ownsApartment` 把失败调用当成自己有权的单元(教训 18 的形状),③**`run-pure-logic-tests.sh` 从写出起就不可能失败** —— 第 98 行 echo 的引号没闭合,把最后一行 `[ "$FAIL" -eq 0 ]` 吞进字符串;改完之后注入已知失效才第一次看到它退出 1。新增 `verify-shell-scripts-parse.sh`(`bash -n`,注入验证过会响) |
-| 2026-09-22 | 两处过期的"待 Windows 编译" | B-2 与 P0-2 的文件自各自提交起逐字节未变,而 `1a826b22` 的 build 覆盖它们 —— "能不能编过"已经有答案。保留的是"待真机验收" |
-| 2026-09-22 | D3D11 贴图 sprite 绘制路径 | `EngineTexturedPixelShader()` + t0 绑定 + 按 `textured` 选 shader;**待 Windows 编译与真机**,HLSL 只有 `D3DCompile` 能验(`0937328`) |
-| 2026-09-20 | B-5 media 壁纸包校验 | 补齐 Image/Video entry 扩展名校验(关掉 type/entry 不匹配漏洞);新增 `CreateImage`/`CreateVideo`;资产名净化改为净全名 |
+| 桌面宿主 | Shell Host、层级修复、PaintReady、壁纸停用检查、内置组件尺寸约束 | 生命周期、真实视觉与多屏验收 |
+| 官方内容 | 三款 `.mdwidget`；MiaoCloud / NeonCity / MysticMoon 以 `scene.json` 运行 | 效果、数据交互与内容管理 |
+| 性能 | 性能策略、刷新控制、全进程树采集及回归比较工具 | 参考机数字、热点与资源释放 |
+| 内容管理 | 搜索筛选、真实缩略图、主要操作及 AI 创作入口 | 状态语义、操作连续性、包生命周期 |
+| 创作预览 | 实时 Scene 预览、暂停/继续、重载、全屏、错误显示、静态回退 | 与桌面效果一致性、错误恢复与应用边界 |
+| API 配置 | 聊天/图片配置、凭据存储、模型下拉、窗口滚动 | 真机可用性、连接诊断、配置生效 |
+| 发布 | x64 / ARM64 / MSIX 流程、同一 SHA 检查、RC 证据校验 | 当前候选版本与物理设备签收 |
 
-## 维护约定
+## 3. 执行批次与依赖
 
-1. 每完成一项,把状态改为 ✅ 并移入「已完成」,写清产出。
-2. 每新增一项,必须填**依据**与**验收标准**。
-3. P0 项在全部关闭前,不对外做任何发布承诺。
-4. 本清单与 `DEVELOPMENT_ROADMAP.md` 冲突时,以后者为准;但若冲突源于本清单已过期,应更新本清单。
+| 批次 | 任务 | 交付结果 | 退出条件 |
+| --- | --- | --- | --- |
+| 准备 | BASE-01～03 | 参考环境、当前构建状态、文档边界 | 后续任务有可复现起点；无法取得的证据明确标记 |
+| 第一轮：稳定、可操作、可测量 | STAB-01～03、LAY-01～02、PERF-01～03 | 桌面生命周期记录、DPI 矩阵、性能基线 | 已发现的核心阻塞缺陷关闭，基线可重复 |
+| 第二轮：搜索、视觉、组件与内容管理 | SEARCH-01～03、VIS-01～02、WIDGET-01～03、LIB-01～03 | 连贯的日常桌面体验 | 固定查询集、截图/录屏与操作用例通过，无资源回归 |
+| 第三轮：AI、配置与工作台 | AI-01～02、CREATE-01～04、API-01～03、HAR-01～02 | 从配置到生成、预览、应用、恢复的完整路径 | 使用可用 Provider 通过端到端任务及错误分支 |
+| 发布收口 | REL-01～03 | 同一候选版本的安装、视觉、性能与 CI 证据 | 当前发布范围内的阻塞项关闭，RC 证据验证通过 |
+
+第一组建议实际领取：BASE-01、BASE-02、BASE-03；取得 Windows 参考环境后执行 STAB-01、LAY-01、PERF-01。先记录问题，再按影响范围拆修复提交。
+
+## 4. 准备工作
+
+### BASE-01 建立参考环境与固定验收样本
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有视觉与性能采集器；缺本轮参考机证据。依据 `WINDOWS_VISUAL_ACCEPTANCE.md`、`WINDOWS_PERFORMANCE_BASELINE.md`、`RC_KNOWN_LIMITATIONS.md`。
+- **依赖 / 入口**：无；`packaging/windows/collect-visual-acceptance.ps1`、`packaging/windows/collect-performance-baseline.ps1`。
+- **待办**：登记 OS、架构、CPU/GPU/内存、驱动、显示器拓扑和缩放；准备三款官方壁纸、三款组件、图片/视频/Web 样本；使用专用搜索测试文件与测试待办，避免采集个人数据。
+- **交付 / 验收**：记录候选完整 SHA、包来源、配置及复现步骤；Windows x64 混合 DPI 双屏含竖屏作为 RC 参考环境；另列 ARM64 搜索框视觉验收设备。暂缺设备的场景明确留空，不能由 CI 截图替代。
+
+### BASE-02 核实当前构建与最近 UI 改动
+
+- [x] 完成本项；负责人：本轮；证据：`api-settings-scroll-todo-2026-09-26.md`、`preview-sandbox-todo-2026-09-26.md` 的 Build evidence 段（2026-09-27 核实）。
+
+- **现状 / 依据**：9/26 已实现 API 页面滚动和预览控件；两个专项 TODO 的构建验收已勾选。本轮以 `gh`/公开 API 核实了目标 SHA 的远端 CI。
+- **依赖 / 入口**：可独立执行；`.github/workflows/`、`tests/api-settings-scroll.mjs`、`tests/content-creator-modes.mjs`、`src/tests/SceneD2DRenderer.cpp`。
+- **待办**：逐项核实目标 SHA 的 Repo Hygiene、Windows x64 Build 和相关打包；核实预览 D2D 测试实际执行；记录 success/failure/skipped/cancelled，修复真实失败。
+- **交付 / 验收**：形成 SHA→工作流链接→结论表；更新 `api-settings-scroll-todo-2026-09-26.md`、`preview-sandbox-todo-2026-09-26.md` 的证据。构建通过与真机通过分开记录，正式全链收口由 REL-02 负责。
+
+- **本轮结论**：SHA `9dc2f288` 的 7 个工作流全部 `completed`，逐 job、逐 step 核对后**除 1 步外全部 success**。Repo Hygiene #209、Windows x64 Build #515、x64 Package #288、x64 MSIX #389、ARM64 Package #240、Path Layout Contract #548。
+  - 惟一的非 success 是 x64 Build 的 `Upload Content widget lifecycle diagnostics`，条件为 `if: failure()`：被跳过恰好说明前面的生命周期测试通过。已按"skipped ≠ 通过"单独核对条件，未记为失败，也未当成漏跑。
+  - 预览 D2D 测试确认真实执行并通过：`Render a textured sprite through the real D2D backend`、`Verify binding response curves`、`Verify scene runtime binding end to end`。
+- **遗留限制**：以上只是构建与源码契约通过，**不等于真机通过**。滚动、预览、全屏的设备侧表现仍属 REL-02 / REL-03 与相关第二轮、第三轮任务的验收范围，本机为 macOS，无法关闭。
+
+### BASE-03 校正当前技术文档与实现的边界
+
+- [x] 完成本项（文档契约部分）；负责人：本轮；证据：本节的"本轮改动"清单 + `AI_GENERATED_DESKTOP_SANDBOX.md` 顶部 Corrected 段。
+
+- **现状 / 依据**：旧清单存在多次追加形成的过期状态；`AI_GENERATED_DESKTOP_SANDBOX.md` 仍写 AI 不能生成/预览组件，与当前 Content Creator 不一致。
+- **依赖 / 入口**：无；相关契约、`ContentCreatorBridge.cpp`、`ContentCreatorDialog.cpp`、`GeneratedDesktopPreview.cpp`、`DesktopWidgetTools.cpp`。
+- **待办**：区分旧壁纸预览工具、现有组件只读工具与新内容包创作流程；明确各自能力、校验与应用边界；核对尺寸保护、官方包迁移、ARM64 流程和性能采集的当前状态。
+- **交付 / 验收**：当前契约不再出现互相矛盾的支持范围；保留旧记录可追溯。文档明确“可生成候选组件包”不意味着 AI 可绕过正式 API 修改现有组件状态。
+
+- **本轮改动**（三处同一句过期断言的副本，代码与文档都有）：
+  1. `docs/AI_GENERATED_DESKTOP_SANDBOX.md` — 撤回"AI cannot preview, generate, or apply widgets"，改为三张面对照表（Pi 工具面只读 / Content Creator 生成内容包 / 正式 API 才可变现役状态）。
+  2. `src/ai/pi/PiNativeToolsExtension.cpp` — 系统提示改为"工具面对组件只读"，并指向用户主动发起的 `AI 制作组件` 创作流；保留"永远不要输出 widget HTML/CSS/JavaScript"与 PREVIEW-FIRST 两条硬规则。
+  3. `src/ai/pi/PiRuntime.cpp` — 此处原文自相矛盾（同一段里先说“不要去生成组件”，隔四行又要求“必须生成 `.mdwidget`”），已改为一致表述；同时修掉"写完包后用 `wallpaper_validate_package` 校验"——该走 `WallpaperPackage::Validate`，只认旧版 Web `.mdwall` 的 `entry` 必须为 HTML，用它校验 `.mdwidget` 必然误判。
+- **核对结论**：`WidgetService::Update` 对内置 Native preset 的宽高保护真实存在；`desktop_widget_list` / `wallpaper_state_get` 确为只读，且 worker allowlist 以退出码 26 拒绝产品状态变更。
+- **遗留限制**：① 该宽高保护此前无任何回归覆盖，已补 `tests/widget-preset-geometry-guard.mjs`；② 官方包迁移与 ARM64 流程只在 CI/文档层核对，未跑真机；③ 性能采集现状依赖参考机，属 BASE-01，未关闭。
+
+## 5. 第一轮：桌面稳定性、布局与性能
+
+### STAB-01 壁纸与组件状态转换回归
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有停用、reload、层级及健康检查；需端到端验收。依据设计基线的壁纸/组件独立性。
+- **依赖 / 入口**：BASE-01、BASE-02；`WallpaperService.cpp`、`WidgetService.cpp`、`DesktopControlService.cpp`、`verify-widget-visibility.ps1`。
+- **待办**：覆盖首次启动、退出重启、各类壁纸切换、连续启停与 reload；停用壁纸时保留三组件；重复相同操作检查幂等；记录持久化状态与实际窗口是否一致。
+- **交付 / 验收**：至少连续 20 次切换/启停，无重复 Surface、错误复活、孤立窗口或配置丢失；桌面未被组件覆盖处仍能点击、框选、右键。只对失败分支补必要回归。
+
+### STAB-02 系统生命周期与多屏恢复
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有 Shell repair；恢复效果待真实环境确认。依据开发路线与 Windows 视觉验收。
+- **依赖 / 入口**：BASE-01、STAB-01；`src/desktop/shell/`、`src/desktop/wallpaper/monitor/`。
+- **待办**：分别覆盖 Explorer 重启、锁屏解锁、休眠恢复、主屏切换、副屏断开重连、分辨率/方向变化；恢复前后采集视觉证据，记录恢复耗时与每屏分配。
+- **交付 / 验收**：每种场景至少重复 3 次；层级、启停和交互符合原状态；缺失显示器上的组件有可恢复的可见位置；无窗口滞留屏外。设备不支持的场景标记未覆盖。
+
+### STAB-03 内容失败的隔离与恢复
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：具备独立宿主与诊断；具体错误路径需核验。依据设计基线的 Wallpaper/Widget 故障隔离。
+- **依赖 / 入口**：STAB-01；`NativeWidgetHost.cpp`、`ContentWidgetHost.cpp`、`WallpaperService.cpp`、Web/Video 运行时。
+- **待办**：用测试包覆盖缺资产、损坏包、Web 加载失败、视频打不开、渲染失败；验证用户可停用/更换失败内容，诊断能定位包和失败阶段。
+- **交付 / 验收**：单份失败内容不阻断其余组件、壁纸或搜索；无无限重启/错误弹窗循环；失败操作不把上次可用配置替换成坏配置。
+
+### LAY-01 统一 DPI 与窗口可达性
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：创作窗口适配与 API 滚动已实现。依据 Native UI、输入法和设计基线。
+- **依赖 / 入口**：BASE-01、BASE-02；`src/ui/settings/`、`src/ui/wallpaper/`、`ContentCreatorDialog.cpp`、`ConversationPanel.cpp`。
+- **待办**：覆盖 1366×768、1920×1080 和可用高分屏，100%/150%/200% 缩放；测最小窗口、最大化、跨屏与 DPI 改变；统一最小尺寸、滚动范围和弹窗落点规则。
+- **交付 / 验收**：主要操作和可编辑字段均能到达，无文字/按钮重叠或屏外弹窗；扩大窗口后滚动偏移正确收敛；拖动滚动条与滚轮时背景和子控件同步。
+
+### LAY-02 键盘、焦点与中文输入一致性
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有 Native 输入与 IME 契约；跨窗口一致性待验证。依据 `WINDOWS_CUSTOM_INPUT_IME.md`。
+- **依赖 / 入口**：LAY-01；`SearchWindow.cpp`、对话输入实现、设置与创作窗口。
+- **待办**：检查 Tab/Shift+Tab、Enter、Esc、焦点可见性、文本选择和剪贴板；覆盖中文候选框、组合输入、长文本；区分弹窗关闭、全屏退出与取消任务。
+- **交付 / 验收**：键盘可完成搜索、配置、预览和应用；IME 确认文字不会误触发送/应用；光标与显示文字对齐；关闭子窗口后焦点回到合理位置。
+
+### PERF-01 建立可比较的全进程性能基线
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：采集和比较工具已存在，缺本轮参考数字。依据 `WINDOWS_PERFORMANCE_BASELINE.md`。
+- **依赖 / 入口**：BASE-01；`collect-performance-baseline.ps1`、`PerformanceService.cpp`。
+- **待办**：按 desktop-only、wallpaper、widgets-3、ai-idle 四场景，稳定后每场景采样至少 30 秒、重复 3 次；固定壁纸、FPS、组件、分辨率、供电和 Provider；记录完整进程树。
+- **交付 / 验收**：保存 CPU、工作集、私有内存、句柄、线程、进程数及可用 GPU 指标的平均/p95/峰值；GPU 缺测写缺测。根据结果登记本机资源预算，禁止凭空宣称低占用。
+
+### PERF-02 按热点优化刷新与播放调度
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有性能策略和 Scene 调度；只处理测得的无效工作。依据开发路线的按需刷新原则。
+- **依赖 / 入口**：PERF-01；`WallpaperPerformancePolicy.cpp`、`MiaoSceneFrameScheduler.cpp`、`NativeWidgetHost.cpp`、预览定时器。
+- **待办**：测静态内容与未变化组件的重绘次数；检查时钟实际显示粒度、天气/待办数据事件；分开 compositor 重呈现与内容重绘；核实隐藏/暂停预览以及已配置的壁纸节能策略。
+- **交付 / 验收**：展示优化前后数据和适用内容；未改变的数据不触发无意义内容重绘；暂停/恢复时间正确；动画无新跳帧、音画不同步或交互延迟。不把时钟的秒级样式强制降成分钟刷新。
+
+### PERF-03 资源生命周期与长时运行
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：缺反复使用和长时运行的对比记录；这是核验任务，不预先认定存在泄漏。
+- **依赖 / 入口**：PERF-01、STAB-01；窗口、预览、图片缓存、Pi/Node、WebView2 与 Harness 的创建/销毁路径。
+- **待办**：连续 30 次打开关闭管理页/预览/对话/工作台；20 次内容切换；进行至少 2 小时桌面运行；检查退出后的句柄、线程、子进程和临时目录生命周期。
+- **交付 / 验收**：区分有界缓存与持续增长；预热后的多轮曲线无未解释的单调增长；临时资源按策略清理，保留的后台进程有明确用途与释放条件。
+
+## 6. 第二轮：搜索、视觉、组件与管理
+
+### SEARCH-01 固定查询集与排序质量
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：应用搜索、goz 文件搜索已接通，缺命中质量数据。依据产品愿景“更快更准”。
+- **依赖 / 入口**：BASE-01；`AppSearch.cpp`、`GozSearch.cpp`、`SearchWindow.cpp`。
+- **待办**：建立至少 30 条测试查询，覆盖应用全名/简称、中文、大小写、空格、同名文件、文件名与路径；明确现有匹配能力，记录实际前 3 项、遗漏与误命中；据样本调整排序和去重。
+- **交付 / 验收**：必需精确匹配样本全部命中；模糊/简称 Top-3 首轮目标 ≥90%，样本和分母固定。拼音等新能力先记录需求与样本，不默认扩大检索范围。
+
+### SEARCH-02 输入响应、异步结果与索引异常
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有异步文件搜索和状态字段；速度、竞态待量化。依据产品愿景与 Native 性能原则。
+- **依赖 / 入口**：SEARCH-01、PERF-01；`SearchWindow.cpp`、`GozSearch.cpp`。
+- **待办**：区分索引未就绪、搜索中、无结果和查询失败；检查快速输入、清空、旧请求晚返回；测按键到首批结果与最终结果的 p50/p95，冷/热状态分别统计。
+- **交付 / 验收**：旧结果不能覆盖新查询，输入不被阻塞；参考机暖态首轮目标为应用首批结果 p95 ≤100ms、已就绪本地文件索引 p95 ≤300ms；首测后可调整目标，但需记录理由，不能把未就绪样本静默剔除。
+
+### SEARCH-03 搜索到 AI 的连续操作
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：AI 入口已存在；需验证文本、焦点和返回路径。依据三个界面的产品定义与搜索视觉契约。
+- **依赖 / 入口**：LAY-02、SEARCH-02；`SearchWindow.cpp`、`ConversationPanel.cpp`。
+- **待办**：检查 Alt+Space、方向键选中、Enter 打开、Esc 返回；明确进入 AI 时的查询传递与发送时机；退出对话后保留合理的搜索状态；核实语音输入入口。
+- **交付 / 验收**：输入不丢失、不重复发送；应用启动与 AI 发送不混淆；连续搜索→对话→返回流程可用键盘完成，仍符合已批准搜索框外观。
+
+### VIS-01 统一玻璃视觉与交互状态
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有批准的玻璃 UI 与搜索框参考。依据 `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md`、`SEARCH_BAR_VISUAL_SPEC.md`。
+- **依赖 / 入口**：LAY-01、PERF-01；搜索框、对话、组件与管理/创作页面的现有样式定义。
+- **待办**：逐页核对字体层级、间距、圆角、图标、按钮语义及默认/悬停/焦点/禁用状态；复用现有公共样式；修复可见差异，避免为统一样式重写全部 UI。
+- **交付 / 验收**：同类控件含义和状态一致；亮/暗/高细节背景下文字可读；搜索框边缘无白边鼓包、双轮廓或光标错位；按既有契约补 ARM64 实机参考图对照。
+
+### VIS-02 官方壁纸的构图与动效质量
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：三款官方包已走 Scene；需要验证迁移后真实视觉。依据内容框架与产品愿景。
+- **依赖 / 入口**：STAB-02、PERF-01；`assets/wallpapers/`、Scene Runtime/渲染器。
+- **待办**：按 MiaoCloud / NeonCity / MysticMoon 分别录制动效；检查 16:9、16:10、竖屏裁切及图标区可读性；检查循环接缝、速度、透明叠加、音频/指针效果（仅对声明支持的包）。
+- **交付 / 验收**：每包有代表性截图和至少一个完整动效周期的录屏；无资产缺失、突跳或错误拉伸；调整不破坏既有动画保真检查和资源预算。
+
+### WIDGET-01 拖动、位置恢复与交互区域
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有直接拖动与位置持久化、预设尺寸保护。依据设计基线 Widget geometry 与交互契约。
+- **依赖 / 入口**：STAB-02、LAY-02；`WidgetService.cpp`、`DesktopWidgetController.cpp`、组件 Host 与实例存储。
+- **待办**：核查拖动阈值与点击区域，保证按钮/任务点击不会误拖；检查拖动结束写入、取消拖动和应用重启；确认跨屏坐标及屏幕移除后的恢复；内容组件尺寸遵守 Definition。
+- **交付 / 验收**：反复拖动/重启位置正确且可见；内置预设拖动只修改位置，不绕过尺寸规则；不新增移动模式或第二套拖动 Surface。
+
+### WIDGET-02 天气的数据状态与刷新
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：天气服务、数据绑定和组件已有实现；失败状态及刷新体验待核验。
+- **依赖 / 入口**：VIS-01、PERF-01；`NativeWeatherService.cpp`、`WeatherGlass.mdwidget`、组件数据发布路径。
+- **待办**：覆盖首次加载、断网、超时、地点无效、恢复联网及旧数据；明确更新时间和旧数据提示；检查温度、单位、长地点名和多语言文本布局；避免数据不变仍持续重绘。
+- **交付 / 验收**：旧值不会伪装为实时数据，失败不留永久转圈；恢复后自动刷新或提供可用重试；数据/布局更新不影响桌面流畅度。
+
+### WIDGET-03 待办闭环与时钟边界
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：TodayTaskStore、任务编辑器及三个内容包已存在；待真实交互和时间边界验证。
+- **依赖 / 入口**：WIDGET-01、VIS-01；`TodayTaskStore.cpp`、`TodayTaskEditorDialog.cpp`、`TodayTaskContentProvider.cpp`、时钟数据绑定。
+- **待办**：覆盖任务新增、编辑、完成、删除、空态、长文本和重启持久化；核验多个实例数据关系；检查时钟跨分钟/日期、时区变化与休眠恢复。
+- **交付 / 验收**：操作后显示与持久化一致，计数/进度正确；写入失败不显示假成功；时间显示及时且无变化时不过度重绘。
+
+### LIB-01 库页面状态与连续操作
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：筛选、搜索、缩略图和主操作已实现；仍需明确选中/使用中的语义。依据 Settings 管理职责。
+- **依赖 / 入口**：LAY-01、VIS-01；`WallpaperLibraryWindowV2.cpp`、`ContentPackageManagerDialog.cpp`、组件管理页面。
+- **待办**：区分已安装、当前选中、正在使用及加载失败；切换分类/筛选后保留可解释的选择与滚动位置；无结果时可清除筛选；应用时显示目标显示器和状态反馈。
+- **交付 / 验收**：用至少 100 条测试内容核查浏览与缩略图加载；用户能判断“哪张正在用、将改哪块屏幕”；不存在加载造成的明显输入停顿，损坏缩略图有稳定占位。
+
+### LIB-02 包导入、替换与删除的恢复性
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有托管包与生命周期服务。依据 `CONTENT_PACKAGE_LIFECYCLE.md`、`MIAO_CONTENT_PACKAGE_V1.md`。
+- **依赖 / 入口**：STAB-03、LIB-01；`DesktopContentPackageLifecycle.cpp`、`src/content/package/`。
+- **待办**：覆盖导入后删除原文件、同 ID 升级、内置只读保护、Unicode 路径、损坏包、使用中的内容删除；检查运行实例、库状态与磁盘一致性，失败时保留上一可用版本。
+- **交付 / 验收**：包身份来自 manifest ID；原下载路径变化不影响运行；失败不残留半安装状态；删除/替换的后果在操作前清楚，状态最终与实际内容一致。
+
+### LIB-03 参数配置与预览/应用一致性
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有参数模型、组件配置与预览；需检验用户设置真实生效。依据 Content Framework。
+- **依赖 / 入口**：LIB-02、LAY-02；`ContentWidgetSettingsDialog.cpp`、`ContentWidgetPreviewRenderer.cpp`、参数校验与实例存储。
+- **待办**：检查参数名称、默认值、单位、范围和恢复默认；覆盖取消、保存、重新打开、多实例不同值；对后端不支持的参数给出明确原因。
+- **交付 / 验收**：预览和正式实例使用一致的有效参数；取消不改持久状态；非法值无法提交；一个实例的外观修改不意外覆盖其他实例。
+
+## 7. 第三轮：AI、创作、配置与工作台
+
+### AI-01 对话活动状态与结果反馈
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有 Pi 对话与活动契约。依据 `PI_AGENT_ACTIVITY_FEEDBACK.md`、`PI_AGENT_CONVERSATION_UX.md`。
+- **依赖 / 入口**：LAY-02、BASE-03；`ConversationPanel.cpp`、相关 `.inc`、`PiRuntime.cpp`。
+- **待办**：核查发送、等待服务、执行工具、等待用户、完成、失败和取消的事件映射；工具名使用用户可理解的描述；长等待展示真实状态，结果给出可用入口。
+- **交付 / 验收**：可控延迟/失败服务下不出现“已结束仍执行中”或无反馈等待；展示可观察动作，不展示隐藏推理；错误保留输入与已完成结果。
+
+### AI-02 取消、重试与重复操作保护
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：需核验现有取消链和失败恢复；并非断言全部缺失。依据 Pi runtime 与活动反馈契约。
+- **依赖 / 入口**：AI-01；`L3Agent.cpp`、`PiRuntime.cpp`、`NativeToolIsolation.cpp`、对话事件处理。
+- **待办**：覆盖生成中取消、工具执行中取消、断网、超时和快速重试；忽略旧请求迟到事件；区分可终止工作与已提交操作，重试不得自动重复提交。
+- **交付 / 验收**：取消有明确反馈且不启动后续步骤；无法立即终止的工具状态真实可见；重试保留上下文，不重复生成实例、导入或应用内容；现有桌面保持稳定。
+
+### CREATE-01 创作流程与上一可用结果保留
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：壁纸/组件共用创作界面，已有预设、生成、重新生成与应用入口。依据产品愿景与内容框架。
+- **依赖 / 入口**：AI-01、LIB-02；`ContentCreatorDialog.cpp`、`ContentCreatorBridge.cpp`。
+- **待办**：明确描述→生成→校验→预览→应用的界面状态与按钮启用条件；核验重新生成失败时能否回看上一结果，缺失时补单次恢复能力；保留描述与用户参数。
+- **交付 / 验收**：两种模式使用一致操作规则；生成失败不清掉上次可用候选或更改桌面；不会对未通过校验的结果显示可应用。无需引入完整版本历史系统。
+
+### CREATE-02 预览控件与资源释放验收
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：播放/暂停、重载、全屏、错误状态与静态回退已实现。依据 `preview-sandbox-todo-2026-09-26.md`。
+- **依赖 / 入口**：BASE-02、LAY-01、PERF-01；`ContentCreatorDialog.cpp`、`tests/content-creator-modes.mjs`。
+- **待办**：核验暂停后时钟连续性、重载重新读盘、Space/R/Esc、全屏尺寸变化；检查失败后重载可用、静态回退明确标识、隐藏/关闭后的刷新与资源释放。
+- **交付 / 验收**：两种创作模式均通过；暂停不偷偷推进预览时间；全屏退出恢复原窗口；失败可恢复，关闭无残留定时刷新。不把源码契约检查当作真实控件验收。
+
+### CREATE-03 预览能力与桌面实际效果对齐
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：创作实时预览使用 D2D，正式内容可能有不同后端；D2D 贴图 tint 有已知限制。依据 Scene/Package 契约与 RC 限制。
+- **依赖 / 入口**：CREATE-02、VIS-02、LIB-03；D2D/D3D11 渲染器、包校验与预览桥接。
+- **待办**：建立同包/同参数/同时间点的预览与桌面比较样本；覆盖字体、贴图、透明、裁切、动画、数据绑定；无法实时支持的后端效果清楚标记，禁止静默展示不等价结果。
+- **交付 / 验收**：支持的能力视觉一致，必要的宿主尺寸差异有解释；静态预览不会被称为实时效果；不为消除提示而强行在本轮实现 3D 或完整后端对齐。
+
+### CREATE-04 显式应用、失败恢复与生成质量
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有应用入口与包校验；端到端质量和恢复需核验。依据 Content Framework、包生命周期及预览/应用隔离原则。
+- **依赖 / 入口**：CREATE-01～03、AI-02、LIB-02；创作桥接、校验器与 DesktopControlService。
+- **待办**：用固定至少 10 条壁纸、10 条组件描述验证生成→校验→预览→应用；覆盖无效包、用户取消、重复点击、应用失败；设计并补齐必要的“恢复应用前内容”入口，范围限本次应用。
+- **交付 / 验收**：分别报告生成成功率、校验通过率、需求符合度、视觉问题及延迟，保留失败样本；预览不修改桌面，只有显式应用提交；失败保留原状态，成功后能恢复原内容。不得用单次成功宣称普遍质量达标。
+
+### API-01 配置页面分组与滚动可用性
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：独立聊天/图片字段及滚动已实现。依据 Settings 设计基线与专项滚动 TODO。
+- **依赖 / 入口**：LAY-01、LAY-02、BASE-02；`DesktopAiSettingsPage.cpp`、`tests/api-settings-scroll.mjs`。
+- **待办**：核验字段分组、继承关系和简洁帮助文案；检查滚轮、Shift+滚轮、水平滚轮、拖动滚动条和焦点定位；在短窗口确认 Image API Key 与底部动作可达。
+- **交付 / 验收**：小窗口和高 DPI 下可完成两类服务配置；无需滚动时滚动条消失；滚动不造成模型下拉/密钥/状态框与背景错位。
+
+### API-02 模型检测与连接失败诊断
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：模型检测下拉已加入；连通与实际可用需区分。依据 Provider 配置职责。
+- **依赖 / 入口**：API-01；`DesktopAiSettingsPage.cpp`、API profile 与 Provider 请求路径。
+- **待办**：检测结果不覆盖手填模型，刷新保留仍有效选择；区分 DNS/网络、鉴权、接口路径、模型不存在、限流及响应格式错误；轻量探测与实际调用分别给出结论。
+- **交付 / 验收**：用户能判断改哪个字段或稍后重试；检测不到列表时仍可手填；模型列表成功不能被显示成聊天/图片生成必然可用；错误展示不泄露 Key。
+
+### API-03 保存、生效与凭据生命周期
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有 Credential Manager、会话签名及配置重载；需验证完整行为。依据 Pi runtime 契约与本地隐私数据约定。
+- **依赖 / 入口**：API-02、AI-02；`ApiRuntimeProfile.h`、`PiRuntime.cpp`、`L3Agent.cpp`、配置 UI。
+- **待办**：覆盖聊天/图片分别换端点、模型和 Key，清空与恢复继承，取消编辑、保存重启；定义正在生成时切换配置的生效时机；检查错误日志、配置和诊断导出。
+- **交付 / 验收**：后续请求使用用户保存的目标；运行中任务不静默切换服务；取消不生效，保存结果明确；Key 不进入明文配置、日志或测试证据。
+
+### HAR-01 工作台启动、重连与配置
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：独立宿主、随包运行时与配置桥接已存在。依据产品愿景与 Harness 职责。
+- **依赖 / 入口**：API-03；`src/harness/`。
+- **待办**：覆盖首次打开、冷启动、重复打开、服务超时/退出、端口占用与重新连接；给启动过程和失败以可理解反馈；明确与普通 AI 对话的入口用途。
+- **交付 / 验收**：不会重复启动服务或留下永久空白页；失败有可行重试；配置一致，用户未打开时不进入桌面每帧路径。
+
+### HAR-02 工作台关闭与桌面隔离
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有独立进程结构；关闭窗口后的后台行为和资源仍需核实。
+- **依赖 / 入口**：HAR-01、PERF-03；`HarnessHost.cpp`、`HarnessProcessManager.cpp`。
+- **待办**：明确关闭窗口、退出整个产品、任务运行中关闭的不同语义；验证必要会话保留与无用进程释放；覆盖工作台失败时继续搜索、拖动组件、切换壁纸。
+- **交付 / 验收**：后台行为与界面提示一致；重复开关不持续增加资源；工作台故障不拖垮桌面与搜索。
+
+## 8. 发布收口与持续回归
+
+### REL-01 安装、升级与退出卸载
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有 installer 与 moved-install smoke，仍需实际用户环境签收。依据正式打包链和 RC 限制。
+- **依赖 / 入口**：BASE-02、STAB-01；`packaging/windows/`。
+- **待办**：在干净 x64 Windows 环境安装、首次运行、重启、升级、退出和卸载；覆盖 Unicode/带空格路径、登录启动设置及既有移动安装流程；按现有策略核对用户数据保留。
+- **交付 / 验收**：不依赖系统 Node/npm、源码目录或开发机配置；三正式 EXE 与所需资源完整；升级不丢配置与内容，卸载无意外残留产品进程。不为测试随意删除用户内容或凭据。
+
+### REL-02 候选 SHA 的正式流水线闭环
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有同 SHA 发布检查，不代表当前提交已通过。依据 `RC_KNOWN_LIMITATIONS.md`。
+- **依赖 / 入口**：候选范围内修复合入后；`scripts/verify-rc-ci.mjs`、`.github/workflows/rc-same-sha-gate.yml`。
+- **待办**：冻结候选完整 SHA；检查 x64 Build、x64 Package、x64 MSIX、Repo Hygiene、ARM64 Package；保留 run 链接与产物身份，缺失的工作流按正式流程运行。
+- **交付 / 验收**：五项均为该 SHA 的 success；不同提交的通过结果不能拼接，skipped/cancelled 不算通过。先审定发布范围，不把每个非阻塞美化项都强制绑进 RC。
+
+### REL-03 真实视觉、性能与版本签收
+
+- [ ] 完成本项；负责人：待领取；证据：待补。
+
+- **现状 / 依据**：已有证据结构与校验器；尚待物理设备结果。依据视觉/性能契约及 RC 规则。
+- **依赖 / 入口**：REL-01、REL-02，以及发布范围内相关任务；`verify-rc-evidence.ps1`、`rc-manual-signoff.template.json`。
+- **待办**：按同一参考机收集 initial、explorer-restart、sleep-resume 截图/JSON 和四性能场景；人工检查多屏 DPI、竖屏、alpha、层级、交互与图标可操作性；绑定完整候选 SHA。
+- **交付 / 验收**：证据校验通过、人工检查逐项真实签收、已发现阻塞问题关闭；视觉采集器通过不能替代人眼判定。全部满足后才提升版本/标记 RC 完成，已知限制写入发行说明。
+
+## 9. 执行与证据模板
+
+每项任务开始时复制以下记录到对应 Issue/PR 或任务日志，完成后在本清单关联记录。负责人和日期由领取任务时填写，不预填虚假承诺。
+
+```text
+任务 ID / 标题：
+负责人 / 状态：
+依据与目标行为：
+复现步骤 / 输入样本：
+依赖 / 硬件条件：
+候选 SHA / 包来源 / 设备与配置：
+实施改动（无需改代码则说明）：
+自动检查：命令 / 结果 / 链接
+Windows 人工验收：步骤 / 结果 / 截图或录屏位置
+性能前后对比（相关时）：
+尚未覆盖 / 已知限制：
+完成日期 / 实现提交或 PR：
+```
+
+测试证据放在机器本地或受控制品存储；仓库只记录脱敏摘要和可访问的引用。遵守 `LOCAL_PRIVATE_DATA.md`，不要提交凭据、私人桌面截图、个人搜索路径或机器私有配置。
+
+### 已有验证入口
+
+在仓库根目录执行与改动相关的检查；以下命令是可复用入口，不表示每个任务都要跑全部检查。
+
+```sh
+node tests/api-settings-scroll.mjs
+node tests/content-creator-modes.mjs
+bash scripts/verify-doc-code-citations.sh
+bash scripts/verify-doc-symbols-exist.sh
+```
+
+Windows 视觉/性能示例（每次先手动将产品切到对应场景；`-Scenario` 仅给测量命名，不会替你启停功能）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/windows/collect-visual-acceptance.ps1 -OutputDirectory C:/MiaoDesk-RC-Evidence/visual/initial
+powershell -ExecutionPolicy Bypass -File packaging/windows/collect-performance-baseline.ps1 -Scenario desktop-only -DurationSeconds 30 -OutputDirectory C:/MiaoDesk-RC-Evidence/performance
+```
+
+按同一方式补 wallpaper、widgets-3、ai-idle 三场景；多轮开发测量使用不同目录避免覆盖，最终 RC 目录只装选定候选版本的完整结果。Explorer 重启与休眠恢复后的视觉记录分别放入约定目录。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/windows/verify-rc-evidence.ps1 -EvidenceRoot C:/MiaoDesk-RC-Evidence
+```
+
+`manual-signoff.json` 必须在人工操作后填写真实结果。完整结构和同机/SHA 约束见 [RC_KNOWN_LIMITATIONS.md](RC_KNOWN_LIMITATIONS.md)。
+
+## 10. 独立扩展与本轮边界
+
+本地 AI 的架构与部署继续在 [LOCAL_AI_ARCHITECTURE.md](LOCAL_AI_ARCHITECTURE.md)、[LOCAL_AI_DEPLOYMENT.md](LOCAL_AI_DEPLOYMENT.md) 维护，旧任务过程见历史快照。本轮不承诺它们的部署完成时间，也不以模型 A/B、DGX 可用性或本地图像服务作为主产品任务的依赖。
+
+通用 Provider 兼容、API 凭据、对话状态、图片请求、内容生成与应用属于主产品，仍在上述任务验收范围内。若某问题只在特定本地服务实现上出现，先定位接口责任，再登记到对应架构，避免混淆两条工作线。
+
+本轮不新建大型编辑器、通用脚本解释器、内容市场或完整 3D 引擎；已有技术契约保留，不自动转换为当前待开发任务。与本轮体验/可靠性无关的历史技术债继续在历史记录中追溯，实际触及时再建立有验收标准的新任务。

@@ -1,8 +1,54 @@
 # MiaoDesk AI Generated Wallpaper Sandbox
 
-Status: implementation contract for AI-generated desktop wallpapers.
+Status: implementation contract for AI-generated desktop wallpapers, plus the
+corrected boundary for AI-generated widgets.
 
-Desktop widgets are **native-only presets** (GlassClock / TodayTasks / WeatherGlass). AI cannot preview, generate, or apply widgets; Pi inspects them read-only through `desktop_widget_list`. Everything in this document covers wallpapers only.
+**Corrected 2026-09-27.** An earlier revision of this file stated that "Desktop
+widgets are native-only presets… AI cannot preview, generate, or apply widgets."
+That was wrong for widgets *content packages* and is retracted here. The AI
+Content Creator does produce candidate `.mdwidget` packages. What remains true is
+narrower and still absolute: no surface accepts model-authored executable code.
+
+Three surfaces are easy to confuse and must not be merged:
+
+| Surface | What it does | Can the AI create a widget here? |
+| --- | --- | --- |
+| Pi tool surface (§2) | `desktop_preview_wallpaper` sandboxes wallpapers; `desktop_widget_list` lists installed widgets | No — read-only (`DesktopWidgetTools.cpp:107`) |
+| AI Content Creator | user-initiated conversation that produces a previewable `.mdwidget` / `.mdwall` content package | Yes — as a structured package, never raw markup (`ContentCreatorBridge.cpp:52`) |
+| Formal widget APIs | runtime mutation of installed widgets | No tool maps to it (`WidgetService::Update`) |
+
+The invariant across all three: **AI output is data, not code.** No surface
+accepts model-authored HTML/CSS/JavaScript. A `.mdwidget` is a structured
+content package (`ContentKind::Widget`), not markup — so creating one is not the
+"generate widget HTML" that the Pi safety prompt rightly forbids.
+
+How the Content Creator is reached: the wallpaper library shows
+`✨ AI 制作组件` on the widget page and `✨ AI 制作壁纸` on the wallpaper page;
+`SearchWindow::OpenContentCreator` opens the dialog (`SearchWindow.cpp:382`).
+Its prompt asks the user's requirements first and instructs a *previewable*
+package, explicitly not to reach the desktop unconfirmed.
+
+### What "the AI cannot change a widget" does and does not mean
+
+Stated precisely, because the loose version is false:
+
+- **No tool path exists.** `desktop_widget_list` and `wallpaper_state_get` are the
+  only widget-facing tools, both read-only, and the Pi worker allowlist rejects
+  product-state mutation with exit code 26.
+- **But the allowlist is not airtight.** Pi is also granted the generic file tools
+  `read,edit,write,bash,grep,find,ls`, and the widget store is a plain INI file
+  with no checksum or signature on load. So the guarantee is "no *tool* mutates
+  widget state", not "the model can never affect it".
+- **The residual risk is bounded, not eliminated.** `DesktopWidgetStore::Normalize`
+  clamps geometry into `[0.05, 1.0]` and forces `x + width <= 1.0`, so a tampered
+  width cannot push a built-in widget off-screen; it can still change which widget
+  is enabled or its title.
+
+Closing this properly means either removing the generic file tools from the Pi
+allowlist or signing the store. Until then, the boundary above is what actually
+holds — recorded here rather than claimed as stronger.
+
+Everything else in this document describes the **wallpaper** sandbox.
 
 ## 1. Overall architecture
 

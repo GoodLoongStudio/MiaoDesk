@@ -468,6 +468,13 @@ struct DialogState {
     // currently finishing. A failed round leaves the previous candidate loaded
     // and applicable, so the UI has to be able to tell the two apart.
     bool generatedPackageIsCurrentRound{};
+    // The candidate this session already applied to the desktop. Applying a
+    // wallpaper again just re-selects it, but applying a widget mints a NEW
+    // instance (WidgetService::CreateContent takes no duplicate guard), so a
+    // second click on Apply must not be possible against the same package.
+    // Keyed by path rather than a bool so reloading the same package cannot
+    // silently re-arm the button.
+    fs::path appliedPackageRoot;
     std::wstring lastUserPrompt;
 
     ~DialogState() {
@@ -1044,6 +1051,14 @@ struct DialogState {
         return IsWidget() ? content::ContentKind::Widget : content::ContentKind::Wallpaper;
     }
 
+    void UpdateApplyAvailability() {
+        if (!apply) return;
+        EnableWindow(apply,
+                     !generatedPackage.empty() && generatedPackage != appliedPackageRoot
+                         ? TRUE
+                         : FALSE);
+    }
+
     void SetGeneratedPackage(const fs::path& path, std::wstring_view repairNote = {}) {
         desktop::DesktopControlService control;
         content::ManagedContentPackageInfo info;
@@ -1096,7 +1111,7 @@ struct DialogState {
         UpdatePreviewChrome();
         EnableWindow(preview, TRUE);
         EnableWindow(library, TRUE);
-        EnableWindow(apply, TRUE);
+        UpdateApplyAvailability();
     }
 
     void InspectForGeneratedPackage(std::wstring_view text) {
@@ -1223,6 +1238,8 @@ struct DialogState {
                 return false;
             }
             control.EnsureRuntime();
+            appliedPackageRoot = generatedPackage;
+            UpdateApplyAvailability();
             SetWindowTextW(resultNote, L"组件已加入组件库并添加到桌面");
             return true;
         }
@@ -1244,6 +1261,8 @@ struct DialogState {
         }
         control.EnsureRuntime();
         wallpaper::NotifyWallpaperRuntimeReload();
+        appliedPackageRoot = generatedPackage;
+        UpdateApplyAvailability();
 
         wallpaper::WallpaperLibrary index;
         std::wstring ignored;

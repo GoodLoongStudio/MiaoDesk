@@ -362,6 +362,15 @@
 - **待办**：覆盖聊天/图片分别换端点、模型和 Key，清空与恢复继承，取消编辑、保存重启；定义正在生成时切换配置的生效时机；检查错误日志、配置和诊断导出。
 - **交付 / 验收**：后续请求使用用户保存的目标；运行中任务不静默切换服务；取消不生效，保存结果明确；Key 不进入明文配置、日志或测试证据。
 
+- **本轮核验（2026-09-27，未勾选：换端点/模型后的真实生效时机仍需真机）**：
+  - **修掉两个真 bug（同一根因）**：`/key <key>` 永远失败、`/clear-key` 永远假成功。`ModelCredentialGuard.h` 把 `CredWriteW` 重定向为 `CredWriteGuard`，而后者对退役的 `MiaoDesk/ModelApiKey` 目标直接拒绝（`ERROR_ACCESS_DENIED`）——于是写必失败；但读侧同样被重定向，所以 `LoadApiKey` 是好的，呈现"能读不能写"。`CredDeleteW` 根本没有被重定向，删的是一个没人写的名字，拿到 `ERROR_NOT_FOUND`，调用方把它当"已删除"，真实凭据照旧生效。已改为**重定向到 API 配置中心默认 Profile**，与读侧对称（blob 格式不变，仍是裸 wchar_t，所以三个读取方行为一致）。顺带把顺序不变量写进测试：`ApiRuntimeProfile.h` 必须在 Cred 宏之前展开，否则它自己的退役删除会递归。
+  - **核对为安全**：Key 落点只有 Credential Manager；`api-profiles.ini` / `model-settings.json` / Pi `models.json` / Harness `settings.yaml` 全部只存引用与非密元信息；设置页用 `ES_PASSWORD` + 掩码；WinHTTP trace 虽然默认编译进来，但 URL 在 `?`/`#` 处截断、只记 header/body 长度，不含 Key。
+  - **新发现缺口（待决策，未动）**：
+    1. `BaseUrl` 字段若被粘进带 query 的密钥，会被原样写进纯明文 `PiAgent\models.json` 与 `Harness\DshHome\settings.yaml`，并在配置列表回显；而真正发请求时 `WinHttpCrackUrl` 只取 UrlPath，query 在链路上被丢掉——即"落盘了但没用到"。
+    2. 上游错误原文（聊天 300 字节 / 探测 220 字节）会进可见 UI 和 `Desktop\MiaoDesk-Logs\l3-runtime.log`，与 `docs/L3-PI-RUNTIME-CONTRACT.md:128`"禁止记录 API Key/Bearer token"的规定相冲。代码不会把自己的 Key 放进去，但那是第三方文本，未被过滤。
+    3. `tests/image-provider-probe.mjs` 把解析出的 Key 打到 stdout；当前夹具是占位符所以无害，但机制存在。
+    - 另有一个无害发现：`MIAODESK_PI_CREDENTIAL_GUARD` 宏（CMake 与语法门里都有）在 `src/` 中无人引用，属死配置。
+
 ### HAR-01 工作台启动、重连与配置
 
 - [ ] 完成本项；负责人：待领取；证据：待补。

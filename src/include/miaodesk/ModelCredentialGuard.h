@@ -22,6 +22,10 @@ inline BOOL RawCredWrite(PCREDENTIALW credential, DWORD flags) {
     return ::CredWriteW(credential, flags);
 }
 
+inline BOOL RawCredDelete(LPCWSTR target, DWORD type, DWORD flags) {
+    return ::CredDeleteW(target, type, flags);
+}
+
 inline bool SameTarget(LPCWSTR target, const wchar_t* expected) {
     return target && expected && _wcsicmp(target, expected) == 0;
 }
@@ -81,6 +85,26 @@ inline BOOL ReadDefaultProfileCredential(PCREDENTIALW* credential) {
     return TRUE;
 }
 
+// Resolves where a secret addressed to the retired MiaoDesk/ModelApiKey target
+// actually lives. The API Configuration Center default profile is the only
+// owner of runtime secrets, so every legacy-target operation is redirected here
+// rather than rejected: rejecting writes made L3Agent's /key fail permanently,
+// and not redirecting deletes made /clear-key report success while leaving the
+// real credential in place. Declared after AppendCredentialLog, which it logs
+// through.
+inline bool ActiveProfileCredentialTarget(std::wstring* target) {
+    const auto profile = api_runtime_profile::LoadDefault();
+    if (!profile.found || profile.id.empty() || !profile.configured) {
+        AppendCredentialLog(profile.error.empty()
+            ? L"runtime credential redirect unavailable: API Configuration Center default profile is not configured"
+            : L"runtime credential redirect unavailable: " + profile.error);
+        SetLastError(ERROR_NOT_FOUND);
+        return false;
+    }
+    *target = std::wstring(kProfileTargetPrefix) + profile.id;
+    return true;
+}
+
 inline BOOL CredReadGuard(LPCWSTR target, DWORD type, DWORD flags, PCREDENTIALW* credential) {
     if (!credential) {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -103,14 +127,45 @@ inline BOOL CredWriteGuard(PCREDENTIALW credential, DWORD flags) {
         return RawCredWrite(credential, flags);
     }
 
-    // The shadow Active Credential is retired. New secrets are written only to
-    // MiaoDesk/ApiProfile/<id> by the API Configuration Center.
-    AppendCredentialLog(L"legacy MiaoDesk/ModelApiKey write rejected: API profiles are authoritative");
-    SetLastError(ERROR_ACCESS_DENIED);
-    return FALSE;
+    // The shadow Active Credential is retired, but a write addressed to it is
+    // still a request to store the runtime secret -- so redirect it to the
+    // profile that owns it instead of refusing it. Refusing made every legacy
+    // caller fail forever. The blob format is untouched (raw wchar_t, no
+    // terminator), so it stays readable by CredReadGuard, ReadCredential and
+    // L3Agent::LoadApiKey alike.
+    std::wstring target;
+    if (!ActiveProfileCredentialTarget(&target)) return FALSE;
+
+    const wchar_t* const originalTarget = credential->TargetName;
+    credential->TargetName = const_cast<LPWSTR>(target.c_str());
+    const BOOL written = RawCredWrite(credential, flags);
+    credential->TargetName = const_cast<LPWSTR>(originalTarget);
+    if (written) {
+        AppendCredentialLog(
+            L"legacy shadow credential write redirected to API Configuration Center default profile");
+    }
+    return written;
+}
+
+inline BOOL CredDeleteGuard(LPCWSTR target, DWORD type, DWORD flags) {
+    if (!SameTarget(target, kActiveCredentialTarget) || type != CRED_TYPE_GENERIC) {
+        return RawCredDelete(target, type, flags);
+    }
+
+    // Same redirection as the write path. Deleting the retired shadow name used
+    // to hit a target nothing ever writes, so it reported ERROR_NOT_FOUND and
+    // the caller read that as "cleared" while the real secret kept working.
+    std::wstring profileTarget;
+    if (!ActiveProfileCredentialTarget(&profileTarget)) return FALSE;
+    const BOOL deleted = RawCredDelete(profileTarget.c_str(), type, flags);
+    AppendCredentialLog(deleted
+        ? L"legacy shadow credential delete redirected to API Configuration Center default profile"
+        : L"legacy shadow credential delete redirected, but the profile credential was absent");
+    return deleted;
 }
 
 } // namespace miaodesk::model_credential_guard
 
 #define CredReadW(...) ::miaodesk::model_credential_guard::CredReadGuard(__VA_ARGS__)
 #define CredWriteW(...) ::miaodesk::model_credential_guard::CredWriteGuard(__VA_ARGS__)
+#define CredDeleteW(...) ::miaodesk::model_credential_guard::CredDeleteGuard(__VA_ARGS__)

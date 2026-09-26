@@ -34,7 +34,17 @@ assert.ok(creator.includes("MiaoContentPackage::Load("));
 assert.match(creator, /FindGeneratedPackagePath/);
 assert.ok(creator.includes("EnableWindow(preview, TRUE)"));
 assert.ok(creator.includes("EnableWindow(library, TRUE)"));
-assert.ok(creator.includes("EnableWindow(apply, TRUE)"));
+// Applying a widget mints a NEW instance (WidgetService::CreateContent takes no
+// duplicate guard), so Apply must not stay live against an already-applied
+// candidate -- a second click would add a duplicate widget.
+assert.match(creator, /void UpdateApplyAvailability\(\) \{[\s\S]*?EnableWindow\(apply,[\s\S]*?generatedPackage != appliedPackageRoot/,
+  "apply must be gated on the package not already having been applied this session");
+assert.match(creator, /EnableWindow\(library, TRUE\);\s*\n\s*UpdateApplyAvailability\(\);/,
+  "loading a valid package must route apply through the availability guard");
+assert.match(creator, /appliedPackageRoot = generatedPackage;\s*\n\s*UpdateApplyAvailability\(\);/,
+  "a successful apply must mark the package applied and disable apply");
+assert.doesNotMatch(creator, /EnableWindow\(apply, TRUE\)/,
+  "apply must never be enabled unconditionally");
 assert.match(creator, /previewPane/);
 assert.match(creator, /LoadPreviewBitmap/);
 assert.match(creator, /MiaoSceneD2DRenderer/);

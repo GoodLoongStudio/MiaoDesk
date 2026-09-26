@@ -1069,11 +1069,11 @@ struct DialogState {
         bool live = false;
         if (package.manifest.runtime == content::ContentRuntimeKind::Scene)
             live = StartLivePreview(package.root);
-        if (!live && previewBitmap && previewState != PreviewSandboxState::Error) {
+        if (!live && previewBitmap) {
             previewState = PreviewSandboxState::StaticPreview;
             previewPlaying = false;
             UpdatePreviewChrome();
-        } else if (!live && !previewBitmap && previewState != PreviewSandboxState::Error) {
+        } else if (!live && previewState != PreviewSandboxState::Error) {
             SetPreviewError(L"内容包没有可显示的实时 Scene 或 manifest.preview 预览资源。");
         }
 

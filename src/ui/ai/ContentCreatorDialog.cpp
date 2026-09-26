@@ -4,6 +4,7 @@
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
+#include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/NativeUiScale.h"
 #include "miaodesk/PiRuntime.h"
@@ -11,6 +12,7 @@
 #include "miaodesk/WallpaperRuntimeControl.h"
 
 #include <shellapi.h>
+#include <d2d1helper.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -49,6 +51,8 @@ constexpr int kApplyId = 7822;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
+constexpr UINT_PTR kPreviewTimerId = 0x7830;
+constexpr UINT kPreviewFrameMs = 33;
 
 struct CreatorWindowPlacement {
     int x{};
@@ -313,6 +317,53 @@ std::optional<fs::path> FindGeneratedPackagePath(
     return std::nullopt;
 }
 
+// The model can occasionally create a correct manifest/scene directory but forget the
+// .mdwall/.mdwidget suffix in the final path. Find that directory as a repair candidate
+// instead of leaving the UI stuck at "未检测到内容包". The candidate is still fully
+// validated after the suffix is repaired; this helper never makes an invalid package usable.
+std::optional<fs::path> FindGeneratedPackageDirectoryCandidate(std::wstring_view text) {
+    const std::wstring raw(text);
+    std::size_t lineStart = 0;
+    while (lineStart < raw.size()) {
+        std::size_t lineEnd = raw.find_first_of(L"\r\n", lineStart);
+        if (lineEnd == std::wstring::npos) lineEnd = raw.size();
+        const std::wstring_view line(raw.data() + lineStart, lineEnd - lineStart);
+
+        for (std::size_t i = 0; i + 2 < line.size(); ++i) {
+            if (!std::iswalpha(line[i]) || line[i + 1] != L':' ||
+                (line[i + 2] != L'\\' && line[i + 2] != L'/')) continue;
+
+            std::size_t end = line.size();
+            const auto backtick = line.find(L'`', i);
+            if (backtick != std::wstring_view::npos) end = std::min(end, backtick);
+            const auto quote = line.find(L'"', i);
+            if (quote != std::wstring_view::npos) end = std::min(end, quote);
+
+            // Walk backwards until an existing directory containing manifest.json is
+            // found. This tolerates Markdown punctuation or explanatory text after it.
+            while (end > i + 3) {
+                std::wstring candidate = Trim(std::wstring(line.substr(i, end - i)));
+                while (!candidate.empty() &&
+                       (candidate.back() == L'`' || candidate.back() == L'*' ||
+                        candidate.back() == L'_' || candidate.back() == L',' ||
+                        candidate.back() == L'，' || candidate.back() == L'.' ||
+                        candidate.back() == L'。' || candidate.back() == L')' ||
+                        candidate.back() == L'）')) candidate.pop_back();
+                std::error_code ec;
+                const fs::path path(candidate);
+                if (!candidate.empty() && fs::is_directory(path, ec) && !ec &&
+                    fs::is_regular_file(path / L"manifest.json", ec) && !ec) return path;
+                --end;
+            }
+            break;
+        }
+
+        lineStart = raw.find_first_not_of(L"\r\n", lineEnd);
+        if (lineStart == std::wstring::npos) break;
+    }
+    return std::nullopt;
+}
+
 const wchar_t* PackageExtension(ContentCreatorKind kind) noexcept {
     return kind == ContentCreatorKind::Widget ? L".mdwidget" : L".mdwall";
 }
@@ -382,12 +433,19 @@ struct DialogState {
     HFONT smallFont{};
     UINT fontScaleDpi{};
     HBITMAP previewBitmap{};
+    ComPtr<ID2D1Factory> previewFactory;
+    ComPtr<ID2D1HwndRenderTarget> previewTarget;
+    std::unique_ptr<content::MiaoSceneD2DRenderer> scenePreview;
+    ULONGLONG previewStartedAt{};
+    std::wstring previewRenderError;
+    bool previewLive{};
     bool primed{};
     bool busy{};
     fs::path generatedPackage;
     std::wstring lastUserPrompt;
 
     ~DialogState() {
+        if (window) KillTimer(window, kPreviewTimerId);
         if (previewBitmap) DeleteObject(previewBitmap);
         if (bodyFont) DeleteObject(bodyFont);
         if (titleFont) DeleteObject(titleFont);
@@ -588,10 +646,104 @@ struct DialogState {
         if (draw->itemState & ODS_FOCUS) DrawFocusRect(draw->hDC, &draw->rcItem);
     }
 
+    void StopLivePreview(bool clearError = true) {
+        if (window) KillTimer(window, kPreviewTimerId);
+        previewLive = false;
+        scenePreview.reset();
+        previewTarget.Reset();
+        previewFactory.Reset();
+        previewStartedAt = 0;
+        if (clearError) previewRenderError.clear();
+    }
+
+    bool EnsurePreviewTarget() {
+        if (!previewPane) return false;
+        if (!previewFactory && FAILED(D2D1CreateFactory(
+                D2D1_FACTORY_TYPE_SINGLE_THREADED, previewFactory.GetAddressOf()))) {
+            previewRenderError = L"无法创建 Direct2D 预览工厂。";
+            return false;
+        }
+        RECT rc{};
+        GetClientRect(previewPane, &rc);
+        const UINT width = static_cast<UINT>(std::max<LONG>(1, rc.right - rc.left));
+        const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
+        if (!previewTarget) {
+            const auto props = D2D1::HwndRenderTargetProperties(
+                previewPane, D2D1::SizeU(width, height), D2D1_PRESENT_OPTIONS_IMMEDIATELY);
+            const auto renderProps = D2D1::RenderTargetProperties(
+                D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(), 96.0f, 96.0f);
+            if (FAILED(previewFactory->CreateHwndRenderTarget(
+                    renderProps, props, previewTarget.GetAddressOf()))) {
+                previewRenderError = L"无法创建实时预览 Surface。";
+                return false;
+            }
+        } else {
+            previewTarget->Resize(D2D1::SizeU(width, height));
+        }
+        return true;
+    }
+
+    void DrawLivePreview() {
+        if (!previewLive || !scenePreview || !previewTarget || !previewPane) return;
+        RECT rc{};
+        GetClientRect(previewPane, &rc);
+        const float width = static_cast<float>(std::max<LONG>(1, rc.right - rc.left));
+        const float height = static_cast<float>(std::max<LONG>(1, rc.bottom - rc.top));
+        const float seconds = previewStartedAt == 0 ? 0.0f
+            : static_cast<float>(GetTickCount64() - previewStartedAt) / 1000.0f;
+
+        previewTarget->BeginDraw();
+        previewTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+        previewTarget->Clear(D2D1::ColorF(0x111827));
+        std::wstring error;
+        const bool drew = scenePreview->Draw(seconds, D2D1::SizeF(width, height), &error);
+        const HRESULT end = previewTarget->EndDraw();
+        if (!drew || FAILED(end)) {
+            previewRenderError = !error.empty() ? error : L"实时预览渲染失败。";
+            StopLivePreview(false);
+            if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+        }
+    }
+
+    bool StartLivePreview(const fs::path& packageRoot) {
+        StopLivePreview();
+        if (!EnsurePreviewTarget()) return false;
+        auto renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+        std::wstring error;
+        if (!renderer->Load(packageRoot, previewTarget.Get(), &error)) {
+            previewRenderError = error.empty() ? L"Scene 内容无法由实时预览器加载。" : error;
+            scenePreview.reset();
+            previewTarget.Reset();
+            previewFactory.Reset();
+            return false;
+        }
+        scenePreview = std::move(renderer);
+        previewStartedAt = GetTickCount64();
+        previewLive = true;
+        SetTimer(window, kPreviewTimerId, kPreviewFrameMs, nullptr);
+        DrawLivePreview();
+        return previewLive;
+    }
+
+    void ResizeLivePreview() {
+        if (!previewLive || !previewTarget || !previewPane) return;
+        RECT rc{};
+        GetClientRect(previewPane, &rc);
+        const UINT width = static_cast<UINT>(std::max<LONG>(1, rc.right - rc.left));
+        const UINT height = static_cast<UINT>(std::max<LONG>(1, rc.bottom - rc.top));
+        if (SUCCEEDED(previewTarget->Resize(D2D1::SizeU(width, height)))) DrawLivePreview();
+    }
+
     void DrawPreviewPane(const DRAWITEMSTRUCT* draw) const {
         if (!draw) return;
         RECT bounds = draw->rcItem;
         HDC dc = draw->hDC;
+        if (previewLive) {
+            HBRUSH border = CreateSolidBrush(RGB(70, 130, 210));
+            FrameRect(dc, &bounds, border);
+            DeleteObject(border);
+            return;
+        }
         HBRUSH background = CreateSolidBrush(RGB(248, 250, 253));
         FillRect(dc, &bounds, background);
         DeleteObject(background);
@@ -624,10 +776,12 @@ struct DialogState {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(115, 124, 140));
             HGDIOBJ old = SelectObject(dc, bodyFont);
-            const wchar_t* text = busy
-                ? L"AI 正在生成内容包…\n完成后将在这里显示预览"
-                : L"预览效果\n生成内容后将在这里显示";
-            DrawTextW(dc, text, -1, &inner, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
+            const std::wstring text = !previewRenderError.empty()
+                ? L"实时预览不可用\n" + previewRenderError
+                : busy
+                    ? L"AI 正在生成内容包…\n完成后将在这里显示预览"
+                    : L"预览效果\n生成内容后将在这里显示";
+            DrawTextW(dc, text.c_str(), -1, &inner, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
             SelectObject(dc, old);
         }
 
@@ -662,32 +816,44 @@ struct DialogState {
         return IsWidget() ? content::ContentKind::Widget : content::ContentKind::Wallpaper;
     }
 
-    void SetGeneratedPackage(const fs::path& path) {
+    void SetGeneratedPackage(const fs::path& path, std::wstring_view repairNote = {}) {
         desktop::DesktopControlService control;
         content::ManagedContentPackageInfo info;
         const auto inspected = control.InspectContentPackage(path, &info);
         if (!inspected.success || info.kind != ExpectedKind()) return;
 
         generatedPackage = path;
-
+        StopLivePreview();
         if (previewBitmap) {
             DeleteObject(previewBitmap);
             previewBitmap = nullptr;
         }
+
         content::LoadedMiaoContentPackage package;
         std::wstring previewError;
-        if (content::MiaoContentPackage::Load(path, &package, &previewError) &&
-            !package.manifest.preview.empty()) {
+        if (!content::MiaoContentPackage::Load(path, &package, &previewError)) return;
+
+        if (!package.manifest.preview.empty()) {
             fs::path previewPath;
             if (content::MiaoContentPackage::ResolvePackagePath(
                     package.root, package.manifest.preview, &previewPath, &previewError)) {
                 previewBitmap = LoadPreviewBitmap(previewPath);
             }
         }
+
+        bool live = false;
+        if (package.manifest.runtime == content::ContentRuntimeKind::Scene)
+            live = StartLivePreview(package.root);
+
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
 
-        const std::wstring status =
-            std::wstring(L"已生成并校验：") + path.filename().wstring() + L" · 可预览 / 入库 / 应用";
+        std::wstring status = L"已生成并校验：" + path.filename().wstring();
+        if (!repairNote.empty()) status += L" · " + std::wstring(repairNote);
+        if (live) status += L" · 实时预览已加载";
+        else if (previewBitmap) status += L" · 静态预览已加载";
+        else if (!previewRenderError.empty()) status += L" · 预览加载失败";
+        else status += L" · 无预览资源";
+        status += L" · 可入库 / 应用";
         SetWindowTextW(resultNote, status.c_str());
         EnableWindow(preview, TRUE);
         EnableWindow(library, TRUE);
@@ -695,7 +861,39 @@ struct DialogState {
     }
 
     void InspectForGeneratedPackage(std::wstring_view text) {
-        if (auto path = FindGeneratedPackagePath(text, kind)) SetGeneratedPackage(*path);
+        if (auto path = FindGeneratedPackagePath(text, kind)) {
+            SetGeneratedPackage(*path);
+            return;
+        }
+
+        const auto candidate = FindGeneratedPackageDirectoryCandidate(text);
+        if (!candidate) return;
+        const std::wstring expectedExtension = PackageExtension(kind);
+        if (_wcsicmp(candidate->extension().c_str(), expectedExtension.c_str()) == 0) {
+            SetGeneratedPackage(*candidate);
+            return;
+        }
+
+        // Repair only an AI-generated package directory discovered in this response.
+        // Rename transactionally, validate using the product package manager, and roll
+        // back when anything other than the missing suffix is wrong.
+        fs::path repaired = *candidate;
+        repaired += expectedExtension;
+        std::error_code ec;
+        if (fs::exists(repaired, ec) || ec) return;
+        fs::rename(*candidate, repaired, ec);
+        if (ec) return;
+
+        desktop::DesktopControlService control;
+        content::ManagedContentPackageInfo info;
+        const auto checked = control.InspectContentPackage(repaired, &info);
+        if (checked.success && info.kind == ExpectedKind()) {
+            SetGeneratedPackage(repaired, L"已自动补齐内容包扩展名");
+            return;
+        }
+
+        std::error_code rollback;
+        fs::rename(repaired, *candidate, rollback);
     }
 
     bool OpenPreview() {
@@ -822,12 +1020,12 @@ struct DialogState {
             request += L"\n\n当前窗口是独立的轻量创作界面，但模型执行必须走现有 Pi 工具链。"
                        L"完成后必须先执行 content-review，并在最终回复中单独给出生成内容包的绝对路径（";
             request += PackageExtension(kind);
-            request += L"）。不要未经用户点击按钮直接安装或应用。\n\n用户需求：";
+            request += L"）。内容包根目录本身必须以该扩展名结尾；不要只创建一个普通目录。最终给出的路径必须是实际存在且已通过内容包校验的目录。不要未经用户点击按钮直接安装或应用。\n\n用户需求：";
             primed = true;
         } else {
             request = L"继续当前";
             request += IsWidget() ? L"组件" : L"壁纸";
-            request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出内容包绝对路径。用户补充：";
+            request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出实际存在、目录名带正确 .mdwall/.mdwidget 扩展名且已校验通过的内容包绝对路径。用户补充：";
         }
         request.append(userText);
         return request;
@@ -872,6 +1070,8 @@ struct DialogState {
         if (pi) pi->ResetSession();
         generatedPackage.clear();
         lastUserPrompt.clear();
+        StopLivePreview();
+        previewRenderError.clear();
         if (previewBitmap) {
             DeleteObject(previewBitmap);
             previewBitmap = nullptr;
@@ -993,6 +1193,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     case WM_SIZE:
         state->Layout();
+        state->ResizeLivePreview();
         return 0;
     case WM_DPICHANGED: {
         const auto* suggested = reinterpret_cast<const RECT*>(lParam);
@@ -1018,6 +1219,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         }
         break;
     }
+    case WM_TIMER:
+        if (wParam == kPreviewTimerId) {
+            state->DrawLivePreview();
+            return 0;
+        }
+        break;
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         if (id == kSendId && HIWORD(wParam) == BN_CLICKED) { state->SendPrompt(); return 0; }
@@ -1066,6 +1273,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        state->StopLivePreview();
         if (state->pi && state->pi->Busy()) state->pi->Stop();
         if (state->agent && state->agent->Busy()) state->agent->Stop();
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);

@@ -334,6 +334,12 @@ struct PageState {
     std::wstring statusMessage{L"新增一个 API 配置，或从左侧选择已有配置。"};
     std::vector<std::wstring> probedModels;
     std::wstring probedModelsProfileId;
+    int scrollX{};
+    int scrollY{};
+    int contentWidth{};
+    int contentHeight{};
+    int viewportWidth{};
+    int viewportHeight{};
     L3Agent agent;
 
     ~PageState() {
@@ -426,6 +432,102 @@ struct PageState {
             PopulateModelChoices(probedModels, profile.model);
         else
             PopulateModelChoices({}, profile.model);
+    }
+
+    int MaxScrollX() const noexcept {
+        return std::max(0, contentWidth - viewportWidth);
+    }
+
+    int MaxScrollY() const noexcept {
+        return std::max(0, contentHeight - viewportHeight);
+    }
+
+    void UpdateScrollMetrics() {
+        if (!panel) return;
+
+        // Scrollbars change the client rect when they appear/disappear, so run the
+        // calculation twice to let the viewport settle without leaving a stale range.
+        for (int pass = 0; pass < 2; ++pass) {
+            RECT area{};
+            GetClientRect(panel, &area);
+            viewportWidth = std::max(1, static_cast<int>(area.right - area.left));
+            viewportHeight = std::max(1, static_cast<int>(area.bottom - area.top));
+
+            // Prefer responsive layout first. Only expose scrollbars after reaching
+            // the minimum canvas that keeps labels, controls and actions usable.
+            contentWidth = std::max(viewportWidth, S(900));
+            contentHeight = std::max(viewportHeight, S(760));
+            scrollX = std::clamp(scrollX, 0, MaxScrollX());
+            scrollY = std::clamp(scrollY, 0, MaxScrollY());
+
+            SCROLLINFOW horizontal{};
+            horizontal.cbSize = sizeof(horizontal);
+            horizontal.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+            horizontal.nMin = 0;
+            horizontal.nMax = std::max(0, contentWidth - 1);
+            horizontal.nPage = static_cast<UINT>(viewportWidth);
+            horizontal.nPos = scrollX;
+            SetScrollInfo(panel, SB_HORZ, &horizontal, TRUE);
+
+            SCROLLINFOW vertical{};
+            vertical.cbSize = sizeof(vertical);
+            vertical.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+            vertical.nMin = 0;
+            vertical.nMax = std::max(0, contentHeight - 1);
+            vertical.nPage = static_cast<UINT>(viewportHeight);
+            vertical.nPos = scrollY;
+            SetScrollInfo(panel, SB_VERT, &vertical, TRUE);
+        }
+    }
+
+    void SetScrollPosition(int x, int y) {
+        const int nextX = std::clamp(x, 0, MaxScrollX());
+        const int nextY = std::clamp(y, 0, MaxScrollY());
+        if (nextX == scrollX && nextY == scrollY) return;
+        scrollX = nextX;
+        scrollY = nextY;
+        Layout();
+    }
+
+    void HandleScroll(int bar, int code) {
+        SCROLLINFOW info{};
+        info.cbSize = sizeof(info);
+        info.fMask = SIF_ALL;
+        if (!GetScrollInfo(panel, bar, &info)) return;
+
+        int position = bar == SB_VERT ? scrollY : scrollX;
+        const int line = S(48);
+        const int page = std::max(line, static_cast<int>(info.nPage) - line);
+        switch (code) {
+        case SB_LINEUP: position -= line; break;
+        case SB_LINEDOWN: position += line; break;
+        case SB_PAGEUP: position -= page; break;
+        case SB_PAGEDOWN: position += page; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: position = info.nTrackPos; break;
+        case SB_TOP: position = 0; break;
+        case SB_BOTTOM:
+            position = bar == SB_VERT ? MaxScrollY() : MaxScrollX();
+            break;
+        default: return;
+        }
+        if (bar == SB_VERT) SetScrollPosition(scrollX, position);
+        else SetScrollPosition(position, scrollY);
+    }
+
+    void HandleMouseWheel(short delta, bool horizontal, bool naturalHorizontal = false) {
+        if (delta == 0) return;
+        const int notches = delta / WHEEL_DELTA;
+        if (notches == 0) return;
+        const int amount = std::max(S(48), S(72) * std::abs(notches));
+        if (horizontal) {
+            // WM_MOUSEHWHEEL positive means scroll right. Shift + vertical wheel keeps
+            // the familiar positive=left/up convention.
+            const int direction = naturalHorizontal ? notches : -notches;
+            SetScrollPosition(scrollX + (direction > 0 ? amount : -amount), scrollY);
+        } else {
+            SetScrollPosition(scrollX, scrollY + (notches > 0 ? -amount : amount));
+        }
     }
 
     void EnableForm(bool enabled) {
@@ -809,10 +911,9 @@ struct PageState {
                      std::max(1, static_cast<int>(client.bottom) - top),
                      SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
 
-        RECT area{};
-        GetClientRect(panel, &area);
-        const int width = std::max(1, static_cast<int>(area.right));
-        const int height = std::max(1, static_cast<int>(area.bottom));
+        UpdateScrollMetrics();
+        const int width = std::max(1, contentWidth);
+        const int height = std::max(1, contentHeight);
         const int margin = std::max(S(18), width / 40);
         const int contentW = std::max(S(560), width - margin * 2);
         const int headerH = S(82);
@@ -825,7 +926,8 @@ struct PageState {
 
         auto place = [&](HWND hwnd, int x, int y, int w, int h) {
             if (!hwnd) return;
-            SetWindowPos(hwnd, nullptr, x, y, std::max(1, w), std::max(1, h),
+            SetWindowPos(hwnd, nullptr, x - scrollX, y - scrollY,
+                         std::max(1, w), std::max(1, h),
                          SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
         };
 
@@ -846,8 +948,6 @@ struct PageState {
         place(copyButton, fieldX + fieldW - S(44), y, S(44), rowH); y += rowH + rowGap;
         const int probeW = S(104);
         const int modelGap = S(8);
-        // COMBOBOX height also controls the drop-list height. Keep the visible row at
-        // normal height while allowing a useful number of detected models to be shown.
         place(model, fieldX, y, std::max(S(120), fieldW - probeW - modelGap), S(280));
         place(probeModelsButton, fieldX + fieldW - probeW, y, probeW, rowH); y += rowH + rowGap;
         place(imageBaseUrl, fieldX, y, fieldW, rowH); y += rowH + rowGap;
@@ -861,7 +961,8 @@ struct PageState {
         place(setDefaultButton, actionX, actionY, S(126), S(40));
         place(deleteButton, rightX + rightW - S(112), actionY, S(94), S(40));
 
-        RedrawWindow(panel, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+        RedrawWindow(panel, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE);
     }
 
     void DrawActionButton(const DRAWITEMSTRUCT& draw) {
@@ -932,8 +1033,11 @@ struct PageState {
         RECT client{};
         GetClientRect(panel, &client);
         FillSolid(dc, client, RGB(246, 250, 255));
-        const int width = client.right;
-        const int height = client.bottom;
+
+        POINT oldOrigin{};
+        SetViewportOrgEx(dc, -scrollX, -scrollY, &oldOrigin);
+        const int width = std::max(static_cast<int>(client.right), contentWidth);
+        const int height = std::max(static_cast<int>(client.bottom), contentHeight);
         const int margin = std::max(S(18), width / 40);
         const int contentW = std::max(S(560), width - margin * 2);
         const int headerH = S(82);
@@ -980,6 +1084,7 @@ struct PageState {
             DrawTextSimple(dc, bodyFont, RGB(117, 133, 158), L"还没有配置\n点击右上角“新增配置”开始",
                            empty, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
         }
+        SetViewportOrgEx(dc, oldOrigin.x, oldOrigin.y, nullptr);
     }
 };
 
@@ -997,6 +1102,21 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
     if (!state) return DefWindowProcW(window, message, wParam, lParam);
 
     switch (message) {
+    case WM_VSCROLL:
+        state->HandleScroll(SB_VERT, LOWORD(wParam));
+        return 0;
+    case WM_HSCROLL:
+        state->HandleScroll(SB_HORZ, LOWORD(wParam));
+        return 0;
+    case WM_MOUSEWHEEL: {
+        const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        const bool shift = (GET_KEYSTATE_WPARAM(wParam) & MK_SHIFT) != 0;
+        state->HandleMouseWheel(delta, shift, false);
+        return 0;
+    }
+    case WM_MOUSEHWHEEL:
+        state->HandleMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), true, true);
+        return 0;
     case WM_COMMAND: {
         const int id = LOWORD(wParam);
         const int code = HIWORD(wParam);
@@ -1095,7 +1215,8 @@ bool CreatePage(PageState& state) {
 
     state.editBrush = CreateSolidBrush(RGB(253, 254, 255));
     state.panel = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_COMPOSITED, kPageClass, L"",
-                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+                                  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
+                                  WS_VSCROLL | WS_HSCROLL,
                                   0, 0, 10, 10, state.parent, nullptr, wc.hInstance, &state);
     if (!state.panel) return false;
 

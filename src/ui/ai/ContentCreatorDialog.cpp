@@ -464,6 +464,10 @@ struct DialogState {
     bool primed{};
     bool busy{};
     fs::path generatedPackage;
+    // True only when generatedPackage was resolved from the round that is
+    // currently finishing. A failed round leaves the previous candidate loaded
+    // and applicable, so the UI has to be able to tell the two apart.
+    bool generatedPackageIsCurrentRound{};
     std::wstring lastUserPrompt;
 
     ~DialogState() {
@@ -1047,6 +1051,7 @@ struct DialogState {
         if (!inspected.success || info.kind != ExpectedKind()) return;
 
         generatedPackage = path;
+        generatedPackageIsCurrentRound = true;
         StopLivePreview();
         previewState = PreviewSandboxState::Loading;
         UpdatePreviewChrome();
@@ -1273,6 +1278,7 @@ struct DialogState {
         AppendText(transcript, L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");
         SetBusy(true);
+        generatedPackageIsCurrentRound = false;
         agent->ReloadConfig();
         const HWND target = window;
         pi->AskAsync(
@@ -1536,6 +1542,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
                 done && !done->empty()
                     ? L"本轮生成已完成 · 尚未检测到有效内容包路径"
                     : L"本轮请求结束 · 未检测到可操作的内容包");
+        } else if (!state->generatedPackageIsCurrentRound) {
+            // The previous candidate survived this round (SetGeneratedPackage
+            // returns early on a validation failure without clearing it), so the
+            // preview and the Apply buttons are live against a package this round
+            // did NOT produce. Without saying so, applying after a failed
+            // regenerate silently installs the older generation.
+            SetWindowTextW(state->resultNote,
+                (done && !done->empty()
+                     ? L"本轮未产出可用内容包 · 当前预览仍是上一版候选，应用会使用它"
+                     : L"本轮请求结束 · 当前预览仍是上一版候选，应用会使用它"));
         }
         return 0;
     }

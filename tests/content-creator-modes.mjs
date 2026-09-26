@@ -56,6 +56,19 @@ assert.match(creator, /天气组件/);
 assert.match(creator, /治愈猫咪/);
 assert.match(creator, /Regenerate\(\)/);
 
+// A failed regenerate must not read as "apply the old generation anyway".
+// SetGeneratedPackage returns early on a validation failure without clearing
+// generatedPackage, so the previous candidate stays loaded with live Apply
+// buttons. The result note has to say which round the visible package came from.
+assert.match(creator, /bool generatedPackageIsCurrentRound\{\}/,
+  "creator must track whether the loaded package came from the current round");
+assert.match(creator, /generatedPackageIsCurrentRound = false;[\s\S]*?agent->ReloadConfig\(\)/,
+  "a new round must clear the current-round marker before it runs");
+assert.match(creator, /generatedPackage = path;\s*\n\s*generatedPackageIsCurrentRound = true;/,
+  "resolving a package must mark it as belonging to the current round");
+assert.match(creator, /!state->generatedPackageIsCurrentRound[\s\S]*?上一版候选，应用会使用它/,
+  "a finished round that produced no package must disclose that the visible candidate is the previous one");
+
 assert.ok(search.includes("creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)"));
 assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/);
 

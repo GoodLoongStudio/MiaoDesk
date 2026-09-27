@@ -69,4 +69,5 @@ std::string ShortDigest(std::string_view digest, std::size_t length = 12);
 const char* CandidateRoleName(CandidatePartRole role) noexcept;
 bool ParseCandidateRole(std::string_view text, CandidatePartRole* role) noexcept;
 
+
 } // namespace miaodesk::content

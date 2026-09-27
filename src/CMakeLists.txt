@@ -68,6 +68,10 @@ set(MIAODESK_CORE_SOURCES
     # touches the filesystem, so 'reject cross-work / out-of-bounds / reparse
     # point / code artifacts' can be really executed on every round.
     desktop/control/CreatorWorkspacePolicy.cpp
+    # CCA-04: the write transaction. It is the only place that can keep
+    # "an error leaves no half-written file" true, and it is pure logic so that
+    # failure path runs everywhere rather than only on Windows.
+    desktop/control/CreatorPackageTransaction.cpp
     # CCA-03:Pi 的启动配置。Chat 与 Creator 各一份,分开目录/session/cwd/
     # 扩展文件/工具 allowlist。放进 Core 是因为 PiRuntime 在 Core 里。
     desktop/control/PiLaunchProfile.cpp
@@ -286,6 +290,7 @@ add_executable(MiaoDeskContentCandidateDigestTest tests/ContentCandidateDigestTe
 # CCA-04: same reasoning -- a pure-logic policy that is really run.
 add_executable(MiaoDeskCreatorWorkspacePolicyTest tests/CreatorWorkspacePolicyTest.cpp)
 add_executable(MiaoDeskContentCandidateLedgerTest tests/ContentCandidateLedgerTest.cpp)
+add_executable(MiaoDeskCreatorPackageTransactionTest tests/CreatorPackageTransactionTest.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -317,7 +322,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -365,6 +370,7 @@ if (MSVC)
     target_compile_options(MiaoDeskContentCandidateDigestTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorWorkspacePolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentCandidateLedgerTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskCreatorPackageTransactionTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -527,6 +533,9 @@ target_link_libraries(MiaoDeskCreatorWorkspacePolicyTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskContentCandidateLedgerTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskCreatorPackageTransactionTest PRIVATE
     MiaoDeskCore
 )
 

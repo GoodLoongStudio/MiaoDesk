@@ -277,11 +277,18 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - 新增 `src/tests/CreatorWorkspacePolicyTest.cpp`:**359 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorWorkspacePolicyTest`、`run-pure-logic-tests.sh` 和 Windows CI。
 - 变异测试:26 个已知失效注入。其中 4 个让测试变红,剩下一批是**冗余守卫**（UNC 由根斜杠检查兜住、空工作区由第二处空值检查兜住),逐个确认过不影响可观测行为。变异过程查出两个测试自身的空洞,都在上面记了:`MustReject` 收了 `expected` 却从不用；两处断言只测了"assets"这个本身就通不过分类的路径,于是 `isDirectory` 那行短路掉测试依然全绿。
 
-**未做（属于本条剩余部分）**:
+**包写入事务（2026-09-27 增补）**：
 
-- Pi 扩展侧的八个 `creator_*` 工具本体（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具）,以及 `src/app/main.cpp` 的 worker 分发。
-- "错误后无半写文件":写入要原子（临时文件 + 替换 + 回退）,这条只做了策略层,没有写路径。
-- 两种 kind 真正生成合法包的端到端,以及"关闭通用工具后仍可完整制作"的对照验证。
+- 新增 `CreatorPackageTransaction`（`src/include/miaodesk/CreatorPackageTransaction.h` + `src/desktop/control/CreatorPackageTransaction.cpp`）：把 `Planned → Validated → Staged → Committed` 以及每步的失败出口显式建模成阶段机。它只判规则、不碰盘 —— 宿主按顺序执行几个动作,事务判定每一步能不能进。所以**整条失败路径能在任何机器上被执行到**,而不是只留在 Windows 上等真机。
+- 摘要从事先算好:构造时就算出 before 与 after,Commit 阶段拿真实落盘内容再算一次,两者必须逐字节相同。允许"差不多就行"的话,封存与校验都失去锚点 —— 我们以为改了 X,实际改了 Y。
+- 两处语义是这一轮改对的,都不是预想的那类问题:
+  1. **提交失败不是 Rejected**。Commit 校验失败时目标文件已经被换掉了,副作用已发生,所以记成 `Unverified`。记成 Rejected(意味着"什么都没动")会让调用方以为可以若无其事地继续。`Unverified` 的下一步只能是标记候选失效。
+  2. **顺序不对的调用不改阶段**。跳过暂存直接提交、跳过校验直接暂存,这些是 `Refuse` 而不是 `Reject`:阶段保持原样。用 Reject 表达后者会把一个已提交的事务改写成 Rejected,于是"它到底提交了没有"取决于最后一次调用的顺序 —— 那正是要避免的不可判定状态。
+- 新增 `src/tests/CreatorPackageTransactionTest.cpp`:**84 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorPackageTransactionTest`、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红;变异过程中查出并删掉两处**冗余守卫**(暂存处的 reparse point 复查已被 `policy_.Allows` 覆盖;`after` 摘要可用性在 `before` 不可用时必然一起失败),并补了一条原先缺失的覆盖:工作区本身不完整(只有 manifest、没有 scene)时任何写入都要被拒 —— 我的快照一直取完整的,那两道闸短路掉测试全绿。
+- **仍未做（属于本条剩余部分）**:
+  - Pi 扩展侧的八个 `creator_*` 工具本体（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具）,以及 `src/app/main.cpp` 的 worker 分发。
+  - 宿主把 `CreatorPackageTransaction` 接到真实文件系统(临时文件 + `MoveFileExW` 替换 + 回退)与 `ContentCandidateLedger` 的封存动作。
+  - 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证。
 
 ### CCA-05 结构化候选与统一校验
 

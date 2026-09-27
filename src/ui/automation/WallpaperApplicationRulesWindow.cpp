@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperApplicationRulesWindow.h"
 #include "miaodesk/WallpaperApplicationRules.h"
+#include "miaodesk/SurfaceKeyboardFocus.h"
 
 #include <commdlg.h>
 
@@ -79,6 +80,7 @@ struct WallpaperApplicationRulesWindow::Impl {
     HWND priorityEdit{};
     HWND status{};
     HWND lastExternalForeground{};
+    HWND restoreFocus{};
     WallpaperApplicationRules rules;
     std::vector<std::wstring> visibleRuleIds;
     std::wstring selectedRuleId;
@@ -267,7 +269,23 @@ struct WallpaperApplicationRulesWindow::Impl {
             else if (id == kSaveId && notification == BN_CLICKED) self->SaveRule();
             else if (id == kNewId && notification == BN_CLICKED) self->NewRule();
             else if (id == kDeleteId && notification == BN_CLICKED) self->DeleteRule();
-            else if (id == kCloseId && notification == BN_CLICKED) ShowWindow(hwnd, SW_HIDE);
+            else if (id == kCloseId && notification == BN_CLICKED) {
+                surface_focus::HideSurface(hwnd, self->restoreFocus);
+            }
+            else if (id == IDCANCEL) {
+                // Esc 走这里(见 WndProc 的 WM_KEYDOWN),和"关闭"按钮同一条路径。
+                surface_focus::HideSurface(hwnd, self->restoreFocus);
+            }
+            return 0;
+        }
+        if (message == WM_KEYDOWN && wParam == VK_ESCAPE) {
+            // 这个窗口有 EXE / 触发 / 动作 / 优先级等一串 WS_TABSTOP 字段,却没有处理过
+            // 任何按键 —— Esc 什么都做不了,只能靠 Alt+F4。Esc 与"关闭"按钮做同一件事,
+            // 免得用户在两处学到不同的关闭方式。
+            //
+            // 下拉框展开时不会走到这里:那时焦点在组合框自己的列表框里,Esc 先被它吃掉
+            // 用来收起列表,不会冒泡到本窗口。
+            surface_focus::HideSurface(hwnd, self->restoreFocus);
             return 0;
         }
         if (message == WM_TIMER && wParam == kRefreshTimer) {
@@ -275,7 +293,7 @@ struct WallpaperApplicationRulesWindow::Impl {
             return 0;
         }
         if (message == WM_CLOSE) {
-            ShowWindow(hwnd, SW_HIDE);
+            surface_focus::HideSurface(hwnd, self->restoreFocus);
             return 0;
         }
         if (message == WM_DESTROY) {
@@ -378,9 +396,10 @@ struct WallpaperApplicationRulesWindow::Impl {
 WallpaperApplicationRulesWindow::WallpaperApplicationRulesWindow() : impl_(std::make_unique<Impl>()) {}
 WallpaperApplicationRulesWindow::~WallpaperApplicationRulesWindow() = default;
 
-bool WallpaperApplicationRulesWindow::Show(HINSTANCE instance) {
+bool WallpaperApplicationRulesWindow::Show(HINSTANCE instance, HWND restoreFocus) {
     if (!impl_) return false;
     impl_->instance = instance;
+    impl_->restoreFocus = restoreFocus;
     std::wstring error;
     if (!impl_->rules.Load(&error)) return false;
     if (!impl_->window || !IsWindow(impl_->window)) {

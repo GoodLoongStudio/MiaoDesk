@@ -25,11 +25,15 @@ public:
               WallpaperAutomationStore* automation,
               WallpaperLibrary* library,
               CaptureProfileCallback captureProfile,
-              DecisionCallback applyDecision);
+              DecisionCallback applyDecision,
+              // 关闭后键盘该交还给哪个界面(见 WallpaperApplicationRulesWindow::Show)。
+              HWND restoreFocus = nullptr);
     void Close();
     void Refresh();
     bool Visible() const noexcept;
     HWND Window() const noexcept;
+    // 本窗口内嵌的"应用程序规则"窗口:它是独立的顶层窗口,关窗即隐藏。
+    HWND RulesWindow() const noexcept;
 
 private:
     struct Impl;

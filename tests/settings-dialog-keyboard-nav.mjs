@@ -17,9 +17,15 @@ const run = engine.slice(
   engine.indexOf("\n    }\n", engine.indexOf("    int Run() {")) + 6
 );
 
-assert.match(run, /IsDialogMessageW\(dialog, &msg\)/,
+assert.match(run, /IsDialogMessageW\(surface, &msg\)/,
   "the pump must give the library window dialog-manager keyboard navigation");
-assert.match(run, /IsWindow\(dialog\) && IsDialogMessageW/,
+assert.match(run, /const HWND surfaces\[\] = \{/,
+  "the pump must serve its surfaces from one list, so adding a surface later cannot"
+  + " silently skip the keyboard path");
+assert.match(run, /libraryWindow_\.Window\(\)/,
+  "the library / settings window must still be in that list -- it was the first"
+  + " surface that needed the dialog manager");
+assert.match(run, /if \(IsWindow\(surface\) && IsDialogMessageW\(surface, &msg\)\)/,
   "the guard must check the window exists -- WallpaperLibraryWindow::Window() returns a"
   + " raw HWND that is null before creation and after destruction, and a null dialog"
   + " handle must never reach IsDialogMessageW");

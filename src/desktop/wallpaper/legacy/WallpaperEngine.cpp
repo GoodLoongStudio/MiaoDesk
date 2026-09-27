@@ -341,9 +341,24 @@ public:
         //
         // IsDialogMessageW only consumes messages destined for the dialog or its
         // children, so everything else in this process falls through unchanged.
+        //
+        // The three surfaces it serves are not an accident: the automation window and
+        // its application-rules window are built exactly like this one -- plain forms of
+        // WS_TABSTOP combos, edits, checkboxes and buttons -- and until they were added
+        // here a keyboard user could not reach a single field in either of them either.
+        // Each gets an IsWindow guard, because all three return a raw HWND that is null
+        // before creation and after destruction, and a null handle must never reach the
+        // dialog manager.
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-            const HWND dialog = libraryWindow_.Window();
-            const bool handled = IsWindow(dialog) && IsDialogMessageW(dialog, &msg);
+            const HWND surfaces[] = {libraryWindow_.Window(), automationWindow_.Window(),
+                                     automationWindow_.RulesWindow()};
+            bool handled = false;
+            for (const HWND surface : surfaces) {
+                if (IsWindow(surface) && IsDialogMessageW(surface, &msg)) {
+                    handled = true;
+                    break;
+                }
+            }
             if (!handled) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
@@ -638,7 +653,9 @@ private:
         automationWindow_.Show(
             instance_, &automation_, &library_,
             [this](const std::wstring& name) { return CaptureCurrentProfile(name); },
-            [this](const miaodesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); });
+            [this](const miaodesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); },
+            // 从这里打开的:关掉自动化窗时把键盘还给设置中心,而不是 Z 序里的下一个窗口。
+            libraryWindow_.Window());
     }
 
     static bool ApplyWallpaperItemToConfig(Config& next, const miaodesk::wallpaper::WallpaperLibraryItem& item) {

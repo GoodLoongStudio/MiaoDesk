@@ -143,12 +143,16 @@
   - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
   - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
 
-- **本轮已修（2026-09-27，两项小的）**：
+- **本轮已修（2026-09-27，三项小的……后一项其实不小：整套"壁纸自动化"此前键盘上完全不可用）**：
   1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。
   - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
   2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
+  3. **LAY-2-4 已修：自动化窗与规则窗此前一个字段都到不了，Esc 也关不掉。** `WallpaperAutomationWindow`（Profile / Playlist / Schedule 三组 + 7 个"星期"复选）和内嵌的 `WallpaperApplicationRulesWindow`（EXE、触发、动作、优先级）都是 `WS_OVERLAPPED*` + 满窗 `WS_TABSTOP` 控件，但它们不是 `WallpaperEngine::Run()` 服务的那一个窗口——那个泵只把 `IsDialogMessageW` 给了库窗口，所以这两个窗的 Tab 毫无作用，纯键盘用户在**两组设置**里都进不去。而它们连 Esc 都没处理过（无 `WM_KEYDOWN`、无 `IDCANCEL`），关窗只剩"关闭"按钮和 Alt+F4。
+  - 修法：泵改成遍历三个界面（库 + 自动化 + 规则），各自用 `IsWindow` 兜住再交给对话框管理器；给两个窗补 `VK_ESCAPE` 与 `IDCANCEL` 两条命令路径。`WallpaperAutomationWindow` 还加了 `RulesWindow()` 供泵使用。
+  - **为什么两个窗都要补 `IDCANCEL`**：`IsDialogMessageW` 对 Esc 只会投递 `WM_COMMAND / IDCANCEL`（不同于它在没有该控件时什么都不做），所以 Win32 侧的两条入口是 `WM_KEYDOWN` 和 `IDCANCEL`；两条都接才不吃亏——前者不依赖对话框管理器是否派发，后者兼容任何将来改成真对话框的写法。
+  - **顺带修掉的是关窗丢键盘**：这两个窗都是"关窗即隐藏"（要留状态给下次打开），而刚被点过的"关闭"按钮正持有焦点——隐藏持有焦点的窗口会让 Windows 把焦点交给 Z 序里的下一个窗口，经常就是桌面，用户下一次按键直接进了别的应用程序，且毫无提示。新增 `src/include/miaodesk/SurfaceKeyboardFocus.h`：`HideSurface` 先记 `GetFocus() == surface`，隐藏后**仅在原本持有焦点时**把键盘交还打开我们的那个界面，并优先落到它第一个可见可用的 Tab 停靠点（直接给顶层窗口焦点只是让键盘停在框架上，Tab 无处可去）。
+  - 未验证项：这条与本项其他条目一样，Tab 序、下拉框展开时 Esc 只收列表不关窗、以及"关闭后焦点回到设置中心"都需要真机走查。测试 `automation-window-keyboard-conformance.mjs` 已用 13 个变异逐个验红。
 - **仍未修的核心项**：
-  - **LAY-2-2：设置中心的键盘导航已修（这条本身仍未勾，因为要真机走查）。** 原先整条消息循环没有 `IsDialogMessageW`，而该窗口里搜索框、全部 nav/filter/action 按钮、`targetCombo` 和整个 API 页都是 `WS_TABSTOP`——纯键盘用户在 AI/API 页和壁纸搜索框里**一个字段都到不了**。已在 `WallpaperEngine::Run()` 的泵里给库窗口补上 `IsDialogMessageW`（用 `IsWindow` 兜住，因为 `WallpaperLibraryWindow::Window()` 返回的是裸 HWND，未创建/已销毁时为 null，绝不能把 null 传进去）。**能在这里安全加，是因为先核对过这个窗口是键盘中性的**：无 `VK_RETURN`/`VK_TAB`/`WM_GETDLGCODE` 自处理、无 `BS_DEFPUSHBUTTON`，所以 Enter 照旧落到键入的 EDIT 上，Esc 只是 beep。
   - AI 创作窗同理：modeless，消息回到 `SearchWindow::RunMessageLoop`，同样没有 `IsDialogMessageW`。
   - 附带：壁纸库搜索框（`WallpaperLibraryWindowV2.cpp:1944`）只有 `EN_CHANGE` 一条路径，没有 Enter 提交。
   - **为什么搜索框没在同一改动里加**：它有自定义输入处理（Enter 执行选中项），`IsDialogMessageW` 会抢先，所以那一面需单独判断——可能要靠 `DLGC_WANTALLKEYS` 一类豁免，而不是直接加。测试已把这条边界钉住：搜索框那条泵若被顺手加上 `IsDialogMessageW` 会立刻红。

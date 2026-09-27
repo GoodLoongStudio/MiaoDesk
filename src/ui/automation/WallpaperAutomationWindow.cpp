@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperAutomationWindow.h"
 #include "miaodesk/WallpaperApplicationRulesWindow.h"
+#include "miaodesk/SurfaceKeyboardFocus.h"
 
 #include <algorithm>
 #include <array>
@@ -109,6 +110,7 @@ struct WallpaperAutomationWindow::Impl {
     HWND targetCombo{};
     std::array<HWND, 7> dayChecks{};
     HWND status{};
+    HWND restoreFocus{};
     WallpaperApplicationRulesWindow applicationRulesWindow;
 
     WallpaperAutomationStore* automation{};
@@ -547,12 +549,29 @@ struct WallpaperAutomationWindow::Impl {
             else if (id == kScheduleTargetKindId && notification == CBN_SELCHANGE) self->RebuildTargets();
             else if (id == kScheduleSaveId && notification == BN_CLICKED) self->SaveSchedule();
             else if (id == kScheduleDeleteId && notification == BN_CLICKED) self->DeleteSchedule();
-            else if (id == kApplicationRulesId && notification == BN_CLICKED) self->applicationRulesWindow.Show(self->instance);
-            else if (id == kCloseId && notification == BN_CLICKED) ShowWindow(hwnd, SW_HIDE);
+            else if (id == kApplicationRulesId && notification == BN_CLICKED) {
+                self->applicationRulesWindow.Show(self->instance, hwnd);
+            }
+            else if (id == kCloseId && notification == BN_CLICKED) {
+                surface_focus::HideSurface(hwnd, self->restoreFocus);
+            }
+            else if (id == IDCANCEL) {
+                // Esc 走这里(见 WndProc 的 WM_KEYDOWN),和"关闭"按钮同一条路径。
+                surface_focus::HideSurface(hwnd, self->restoreFocus);
+            }
+            return 0;
+        }
+        if (message == WM_KEYDOWN && wParam == VK_ESCAPE) {
+            // 这一整窗(Profile / Playlist / Schedule 三组 + 7 个星期选择项)都是
+            // WS_TABSTOP 字段,但此前一个按键都没处理过 —— Esc 和 Alt+F4 之外没有关闭
+            // 办法。Esc 与"关闭"按钮做同一件事。
+            //
+            // 下拉框展开时不会走到这里:焦点在组合框自己的列表框里,Esc 先被它吃掉。
+            surface_focus::HideSurface(hwnd, self->restoreFocus);
             return 0;
         }
         if (message == WM_CLOSE) {
-            ShowWindow(hwnd, SW_HIDE);
+            surface_focus::HideSurface(hwnd, self->restoreFocus);
             return 0;
         }
         if (message == WM_DESTROY) {
@@ -711,13 +730,15 @@ bool WallpaperAutomationWindow::Show(HINSTANCE instance,
                                      WallpaperAutomationStore* automation,
                                      WallpaperLibrary* library,
                                      CaptureProfileCallback captureProfile,
-                                     DecisionCallback applyDecision) {
+                                     DecisionCallback applyDecision,
+                                     HWND restoreFocus) {
     if (!impl_ || !automation || !library) return false;
     impl_->instance = instance;
     impl_->automation = automation;
     impl_->library = library;
     impl_->captureProfile = std::move(captureProfile);
     impl_->applyDecision = std::move(applyDecision);
+    impl_->restoreFocus = restoreFocus;
     if (!impl_->window || !IsWindow(impl_->window)) {
         if (!impl_->CreateUi()) return false;
     }
@@ -741,6 +762,10 @@ bool WallpaperAutomationWindow::Visible() const noexcept {
 
 HWND WallpaperAutomationWindow::Window() const noexcept {
     return impl_ ? impl_->window : nullptr;
+}
+
+HWND WallpaperAutomationWindow::RulesWindow() const noexcept {
+    return impl_ ? impl_->applicationRulesWindow.Window() : nullptr;
 }
 
 } // namespace miaodesk::wallpaper

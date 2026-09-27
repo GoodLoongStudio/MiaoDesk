@@ -208,7 +208,13 @@ struct WallpaperAutomationWindow::Impl {
 
     void ApplySelectedProfile() {
         const auto id = SelectedId(profileCombo, profileIds);
-        if (!id || !applyDecision) return;
+        if (!id || !applyDecision) {
+            // No EnableWindow anywhere in this window, so a combo with nothing in it is a
+            // live button. Clicking 应用 on an empty Profile list did nothing at all.
+            SetStatus(L"没有选中的 Profile；先保存一个，或从上方列表里选。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         AutomationDecision decision;
         decision.kind = AutomationDecisionKind::ApplyProfile;
         decision.targetId = *id;
@@ -221,7 +227,11 @@ struct WallpaperAutomationWindow::Impl {
     void DeleteSelectedProfile() {
         if (!automation) return;
         const auto id = SelectedId(profileCombo, profileIds);
-        if (!id) return;
+        if (!id) {
+            SetStatus(L"没有选中的 Profile 可删除。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         std::wstring error;
         if (!automation->RemoveProfile(*id, &error)) {
             SetStatus(error.empty() ? L"Profile 删除失败。" : error);
@@ -303,7 +313,14 @@ struct WallpaperAutomationWindow::Impl {
 
     void AddPlaylistEntry() {
         const auto id = SelectedId(libraryCombo, libraryIds);
-        if (!id) return;
+        if (!id) {
+            // This window gates nothing: no EnableWindow anywhere, so every button is live
+            // from the moment it is drawn. An empty 壁纸库 combo is therefore a reachable
+            // state for this button, and it used to fall through without a word.
+            SetStatus(L"先在左侧选择一个壁纸库项目，再点添加。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         playlistEntryIds.push_back(*id);
         RebuildPlaylistEntries();
         SendMessageW(entriesList, LB_SETCURSEL, static_cast<WPARAM>(playlistEntryIds.size() - 1), 0);
@@ -312,7 +329,11 @@ struct WallpaperAutomationWindow::Impl {
     void RemovePlaylistEntry() {
         if (!entriesList) return;
         const LRESULT selected = SendMessageW(entriesList, LB_GETCURSEL, 0, 0);
-        if (selected == LB_ERR || selected < 0 || static_cast<std::size_t>(selected) >= playlistEntryIds.size()) return;
+        if (selected == LB_ERR || selected < 0 || static_cast<std::size_t>(selected) >= playlistEntryIds.size()) {
+            SetStatus(L"先在右侧选中一个要移出的条目，再点移除。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         playlistEntryIds.erase(playlistEntryIds.begin() + static_cast<std::ptrdiff_t>(selected));
         RebuildPlaylistEntries();
     }
@@ -376,7 +397,11 @@ struct WallpaperAutomationWindow::Impl {
     void DeletePlaylist() {
         if (!automation) return;
         const auto id = SelectedId(playlistCombo, playlistIds);
-        if (!id) return;
+        if (!id) {
+            SetStatus(L"没有选中的 Playlist 可删除。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         std::wstring error;
         if (!automation->RemovePlaylist(*id, &error)) {
             SetStatus(error.empty() ? L"Playlist 删除失败。" : error);
@@ -482,7 +507,11 @@ struct WallpaperAutomationWindow::Impl {
     void DeleteSchedule() {
         if (!automation) return;
         const auto id = SelectedId(scheduleCombo, scheduleIds);
-        if (!id) return;
+        if (!id) {
+            SetStatus(L"没有选中的 Schedule 可删除。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         std::wstring error;
         if (!automation->RemoveSchedule(*id, &error)) {
             SetStatus(error.empty() ? L"Schedule 删除失败。" : error);

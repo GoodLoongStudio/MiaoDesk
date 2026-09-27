@@ -24,14 +24,6 @@ The degradation itself is honest: `SearchWindow.cpp` shows a "文件搜索未连
 
 **Consequence for RC:** a MSIX candidate must not be described as having all three search capabilities until this is answered. The two answers have opposite remedies — deliberate means documenting the restriction and excluding file search from MSIX acceptance; omission means adding the registration step.
 
-### The search box has no IME composition or candidate positioning
-
-`WINDOWS_CUSTOM_INPUT_IME.md` §4 lists `src/ui/search/SearchWindow.cpp` as using the shared `InputImeAnchor` Search profile. It does not — the file does not include the header and contains no `ImmSet*`, `WM_IME_*` or `SetCaretPos` at all. It also keeps its `EDIT` at 1×1, which the same document's §2 forbids by name. The runtime consequences for Chinese input (composition window placement, candidate window exclusion) are therefore unverified and, on the evidence, absent.
-
-The infrastructure to fix it is already written and unused: `InputImeAnchor.h` carries a full Search profile whose constants line up with `SearchWindow` (control id, left/right, parent window class). Wiring it needs the `EDIT` to be resized without covering the custom-drawn input area, plus focus and composition message routing — none of which can be verified without a Windows session with a Chinese IME.
-
-**Consequence for RC:** LAY-02's "中文输入一致性" acceptance cannot be met for the search box in this state.
-
 ## Pending physical Windows release evidence
 
 The following are RC sign-off items, not automatic CI claims:

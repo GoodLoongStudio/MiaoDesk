@@ -137,12 +137,11 @@
 - **交付 / 验收**：键盘可完成搜索、配置、预览和应用；IME 确认文字不会误触发送/应用；光标与显示文字对齐；关闭子窗口后焦点回到合理位置。
 
 - **本轮核验（2026-09-27，未勾选：组合输入与候选框需真机 + 微软拼音）**：
-  - **文档说 Search 用共享 IME anchor，代码没有。** `docs/WINDOWS_CUSTOM_INPUT_IME.md` §4 把 `src/ui/search/SearchWindow.cpp` 列为 `InputImeAnchor`  Search profile；`grep InputImeAnchor src/ui/search/SearchWindow.cpp` 零命中——连 `#include` 都没有，也没有任何 `ImmSet*` / `WM_IME_*` / `SetCaretPos`。全仓 Search surface 的 IME 处理量为 0。
-  - 且 Search 用的是该文档 §2 **明令禁止**的 1×1 proxy：`SearchWindow.cpp:293` 建 EDIT 为 `(kEditLeft, kInputProxyY, 1, 1)`，`:797` 再 `MoveWindow(..., 1, 1, FALSE)` 把它保持住。
-  - **而修好它的代码已经写好了，只是没人接。** `InputImeAnchor.h` 里有整套未使用的 Search profile：`EnsureSearchImeGeometry` / `AnchorSearchImeToVisibleCaret` / `RequestSearchImeAnchor` / `SearchImeAnchorBusyScope` / deferred 消息。对齐关系也全部吻合：`kSearchEditControlId = 100` 就是 SearchWindow 的 `kSearchEditId`；父窗口类 `MiaoDesk.Native.SearchWindow` 一致（所以 `IsMiaoDeskSearchEdit` 判得中）；`kSearchEditLeft = 52` 等于 `kEditLeft`，`kSearchEditRight = 594` 等于 `kEditRight`。
-  - 头文件里 `kSearchEditTop = 13`、`kSearchEditHeight = 30` 与 SearchWindow 的 `kInputProxyY = 27` 冲突 —— 但 56 高的 bar 里居中 30 的输入行正是 `(56-30)/2 = 13`，所以 **13/30 才是真实输入矩形，27+1×1 是 proxy 位**。两者不是都"对"，是后者从未被替换掉。
-  - **为什么本轮没顺手接上**：把 EDIT 从 1×1 撑到 542×30 会盖住自绘输入区，必须先让 EDIT 不绘制（透明/`WM_CTLCOLOR` 一类），再加 `WM_SETFOCUS / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE / WM_SIZE` 的路由与 deferred 消息回填。这些改动本机无法目视与输入验证，赌在产品的**唯一主入口**上不合算。建议下一轮在 Windows 上按这个顺序接：先接 `EnsureSearchImeGeometry` 确认自绘不被遮，再接 anchor 与消息路由。
-  - **顺手要修的文档**：真接上之后，`WINDOWS_CUSTOM_INPUT_IME.md` §4 才算成立；在那之前该节描述的 Search 行为与现状不符，读它的人会以为中文输入已经是好的。
+  - **本条结论已于当日自我作废——我曾判错一次，记录在此以免再犯。** 下面是初稿写下的错误判断："Search 用共享 IME anchor 的代码不存在"、"`InputImeAnchor.h` 里整套 Search profile 没人接"、"§4 与现状不符，读它的人会以为中文输入已经是好的"。**这些全是错的。**
+  - **错在哪、真实情况是什么**：机制不在 `SearchWindow.cpp` 里。`InputImeAnchorBridge` 在静态初始化阶段就对本线程装好了 `WH_CALLWNDPROC` + `WH_CALLWNDPROCRET`，而 `SearchWindow.h` include 了 `InputImeAnchor.h`——MiaoDesk.exe 的 UI 线程一直带着它。`HandleSearchEditMessageAfter` 对 `WM_SETFOCUS / WM_KEYUP / WM_CHAR / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE` 一律 `HideCaret` + `RequestSearchImeAnchor`；`WM_WINDOWPOSCHANGED` 还会先 `EnsureSearchImeGeometry` 再按条件锚定。**所以 `WINDOWS_CUSTOM_INPUT_IME.md` §4 是对的，搜索框的中文组合/候选定位本来就接好了，该节不需要改。**
+  - **我犯错的形状（比结论本身重要）**：只在 `SearchWindow.cpp` 里 grep `ImmSet*` / `WM_IME_*` / `SetCaretPos`，零命中就断言"全仓 Search surface 的 IME 处理量为 0"。我甚至**根本没有**跑过"全仓"范围的 grep——被 grep 的文件只有一个。当实现方式是线程钩子、宏或模板基类时，"调用方文件里没有符号"这个推断完全不成立。这也正是同一轮里我在 `WallpaperLibraryWindowV2` / `ModelCredentialGuard` 上躲过的那类坑，却在 Search 上踩了。
+  - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
+  - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
 
 - **本轮已修（2026-09-27，两项小的）**：
   1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。

@@ -143,7 +143,7 @@
   - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
   - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
 
-- **本轮已修（2026-09-27，六项；后四项其实不小：整套"壁纸自动化"、整个 AI 创作窗、待办编辑窗、包管理器与 Skill 浏览窗此前键盘上都用不了（Tab 无效或 Esc 是死的））**：
+- **本轮已修（2026-09-27，七项；后五项其实不小：整套"壁纸自动化"、整个 AI 创作窗、待办编辑窗、包管理器与 Skill 浏览窗此前键盘上都用不了（Tab 无效或 Esc 是死的），而自绘控件则走到了也看不见焦点）**：
   1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。
   - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
   2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
@@ -164,7 +164,13 @@
   6. **LAY-2-7 已修：包管理器与 Skill 浏览器的 Esc 也是死的。** 这两个窗各有自己的嵌套泵、都调 `IsDialogMessageW`，所以 Tab 通，但都没处理 `IDCANCEL`——对话框管理器按 Esc 会去找这个 id，找不到就把按键丢掉。两处都已补上与"关闭"按钮、`WM_CLOSE` 完全相同的 `DestroyWindow(hwnd)`。
   - **本轮把这条从"逐个窗修"升级成一条不变量**：新增 `tests/esc-answers-every-dialog-surface.mjs`，把仓库里所有按键走对话框管理器的界面登记成一张表（PUMPS / OWN_PUMP / SERVED），要求每个界面要么答 `IDCANCEL`、要么在豁免表里给出理由，并校验"实际含 `IsDialogMessageW(` 的文件集合"与登记表一致——以后谁新写一个泵忘了决定 Esc，这里立刻红，不用再靠第六次发现。
   - **两个豁免，理由都写进测试里而不是只写在注释里**：① 设置中心（壁纸库）——它 `WM_CLOSE` 是 `SW_HIDE` 不是销毁，而它托管的 AI/API 页每次显示都 `LoadProfiles()`，未保存的填写会被重载冲掉；Esc 正是在文本字段里最容易被随手按到的那个键，所以它里 Esc 必须保持"什么都不做"（X/Alt+F4 照旧可关）。测试顺带钉住这个前提本身：库窗一旦改成销毁、或 API 页一旦不再重载，豁免当场失效、要求重新决定而不是默认继承。② AI 创作窗——全屏预览下 Esc 已有绑定，且该窗已整体退出对话框管理器；非全屏时 Esc 属于预览交互，不该用一次误按丢掉一整份已生成的包。
-  - 未验证项：真机按 Esc 关包管理器 / Skill 浏览窗，焦点应回到主窗（走的是原本 `EnableWindow(owner, TRUE) + SetActiveWindow(owner)` 的路径）。测试用 6 个变异验红，另手工模拟"新增一个未登记的泵"确认第 1 条不变量会响。
+  7. **LAY-2-8 已修：键盘能走到了，但看不见焦点在哪。** 这一项的前面几条把 Tab 打通了，于是暴露出下一层问题——**owner-draw（自绘）控件不会自己画焦点框**：EDIT 有光标、列表框有选中态、标准按钮有焦点框，自绘的什么都没有，只有 `DRAWITEMSTRUCT.itemState` 里的 `ODS_FOCUS` 一个信号，代码不画就没有。
+  - **API 配置页两条自绘路径全都没画**：`DesktopAiSettingsPage.cpp` 的 `DrawActionButton`（新建/保存/删除/设为默认/显示密钥/复制/探测模型，全部 `WS_TABSTOP`）和 `DrawProfileItem`（Profile 列表框）。也就是说键盘Tab过去一片自绘按钮，只有一个"按下"态，看不出 Enter 会打在谁身上。两处都补上了焦点框。
+  - **创作窗的预览面板也没画，而且漏在更要紧的那条分支上**：`DrawPreviewPane` 有两条绘制路径——实时预览（`previewLive`，画完 `FrameRect` 就 `return`）和占位提示。原先只可能（其实并没有）在尾部画，所以**预览正在显示时焦点提示消失**，而那正是用户围着刚生成的内容转的时候。现在两条分支都画。
+  - 顺带核对：壁纸库的三条自绘路径（`DrawPrimaryButton` / `DrawNavButton` / `DrawContentFilterButton`）和创作窗的 `DrawPrimaryAction` / `DrawPresetChip` **本来就有** `DrawFocusRect`，未改。风格统一沿用它们既有的 `if (itemState & ODS_FOCUS) { RECT focus = rcItem; InflateRect(&focus, -S(n), -S(n)); DrawFocusRect(dc, &focus); }`。
+  - **并把这条也变成不变量**：`tests/owner-drawn-focus-cue.mjs` 登记了 8 条自绘路径，每条都要求"测试 `ODS_FOCUS` + 真的调 `DrawFocusRect`"，且**按绘制路径计数**——`DrawPreviewPane` 登记为 2 条路径，只在末尾画一个框照样红。第一版这个检查写错了（正反向二选一的正则，被另一条分支的内容满足），是变异测试把它揪出来的：删掉尾部那个框时测试仍然是绿的。
+  - 未验证项：真机上看焦点框是否醒目（自绘按钮底色是浅色、`DrawFocusRect` 是系统虚线框）、Tab 序是否与视觉顺序一致。测试用 8 个变异验红。
+
 - **仍未修的核心项**：
   - 附带：壁纸库搜索框（`WallpaperLibraryWindowV2.cpp:1944`）只有 `EN_CHANGE` 一条路径，没有 Enter 提交。
   - **为什么搜索框没在同一改动里加**：它有自定义输入处理（Enter 执行选中项），`IsDialogMessageW` 会抢先，所以那一面需单独判断——可能要靠 `DLGC_WANTALLKEYS` 一类豁免，而不是直接加。测试已把这条边界钉住：搜索框那条泵若被顺手加上 `IsDialogMessageW` 会立刻红。

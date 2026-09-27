@@ -995,6 +995,11 @@ struct DialogState {
                 DrawTextW(dc, L"已暂停", -1, &badge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 SelectObject(dc, old);
             }
+            if (draw->itemState & ODS_FOCUS) {
+                RECT focus = draw->rcItem;
+                InflateRect(&focus, -S(3), -S(3));
+                DrawFocusRect(dc, &focus);
+            }
             return;
         }
         HBRUSH background = CreateSolidBrush(RGB(248, 250, 253));
@@ -1041,6 +1046,16 @@ struct DialogState {
         HBRUSH border = CreateSolidBrush(RGB(222, 230, 240));
         FrameRect(dc, &bounds, border);
         DeleteObject(border);
+
+        // This pane is a WS_TABSTOP owner-drawn static (it is also the click target for
+        // entering fullscreen), so the dialog manager can move focus onto it -- and
+        // nothing else paints a cue. The live-preview branch above returns early, so the
+        // cue is drawn on the path that actually repaints.
+        if (draw->itemState & ODS_FOCUS) {
+            RECT focus = draw->rcItem;
+            InflateRect(&focus, -S(3), -S(3));
+            DrawFocusRect(dc, &focus);
+        }
     }
 
     void LoadSkill() const {

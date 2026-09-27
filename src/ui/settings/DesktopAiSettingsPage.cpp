@@ -1059,6 +1059,16 @@ struct PageState {
         RoundFill(draw.hDC, rect, S(10), background, border);
         DrawTextSimple(draw.hDC, bodyFont, textColor, WindowText(draw.hwndItem), rect,
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        // These buttons are owner-drawn, so nothing paints a focus cue on their behalf.
+        // Everything on this page is WS_TABSTOP and the dialog manager now walks it, so a
+        // keyboard user tabs through a wall of custom-drawn buttons that only react to a
+        // press -- with no way to tell which one is about to be activated by Enter. Same
+        // idiom as the wallpaper library's owner-drawn nav and preset chips.
+        if (draw.itemState & ODS_FOCUS) {
+            RECT focus = rect;
+            InflateRect(&focus, -S(3), -S(3));
+            DrawFocusRect(draw.hDC, &focus);
+        }
     }
 
     void DrawProfileItem(const DRAWITEMSTRUCT& draw) {
@@ -1088,6 +1098,15 @@ struct PageState {
             RoundFill(draw.hDC, badge, S(8), RGB(229, 249, 238));
             DrawTextSimple(draw.hDC, smallFont, RGB(28, 160, 92), L"已配置", badge,
                            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        // The list is a tab stop and the selected row is the item the dialog manager
+        // moves with the arrows, so the cue goes on the row that owns focus -- without
+        // it, keyboard navigation of the profile list is invisible even though the
+        // selection state itself is drawn.
+        if (draw.itemState & ODS_FOCUS) {
+            RECT focus = rect;
+            InflateRect(&focus, -S(1), -S(1));
+            DrawFocusRect(draw.hDC, &focus);
         }
     }
 

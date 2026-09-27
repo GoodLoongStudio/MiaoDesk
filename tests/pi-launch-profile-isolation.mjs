@@ -210,6 +210,70 @@ assert.match(
   "--tools must come from the profile, not a hardcoded literal",
 );
 
+// --- 4. 创作 profile 必须真的被装上 -----------------------------------------
+//
+// 这一节是 2026-09-28 补的,而它当时是**红着写进来的**。
+//
+// 上面三节把两份 profile 的形状钉得很死:字段分开、salt 不同、allowlist 不共用工具、
+// 签名带模式名。它们全绿。但整条创作链在出厂构建里**一个字节都没生效** ——
+// `SetLaunchProfile` 在 PiRuntime.h 里定义,而 `MakeCreatorLaunchProfile` 在
+// PiLaunchProfile.cpp 里定义,**两个都没有任何调用者**(src/ 下 grep 只有定义处自己)。
+//
+// 于是 PiRuntime::launchProfile_ 始终是结构体默认值,而它的 mode 默认是 Chat:
+//   · sessionDir 空 → PI_CODING_AGENT_SESSION_DIR 退回 agentDir,创作会话与聊天同目录;
+//   · workingDirectory 空 → 没有创作 cwd;
+//   · toolAllowlist 空 → `--tools` 根本不传,Pi 用它自己的默认工具集 —— 也就是
+//     CCA-04 要拿掉的 read/bash/edit/write/grep/find/ls **全都在**;
+//   · systemPrompt 空 → 退回聊天那份;
+//   · mode != Creator → MIAODESK_CREATOR_WORKSPACE / MIAODESK_CREATOR_SESSION 不导出,
+//     而 src/app/main.cpp 的 RunCreatorTool 正是从这两个环境变量取工作区与会话 ——
+//     所以 creator_* 八个工具即使注册了,拿到的也是空工作区。
+//
+// 这就是"宿主持有会话 ID、工作区、epoch、台账"那句话真正的根因:不是界面上取不到,
+// 是**导出它们的那个调用从来没发生**。前半句(UI 取不到)是我先前的判断,错了。
+//
+// 为什么用"有调用者"而不是别的形状判据:这个缺口在所有语法门、在所有断言 profile
+// 内部形状的门面前都是绿的 —— 两个函数都存在、都被 CMake 编译、都有人读。
+// 唯一能发现"定义完好却没人调用"的办法就是数调用者。
+import path from "node:path";
+
+function callersOf(symbol) {
+  // 整个 src/ 都扫,包括 .inc:创作面板的实现按片段 include 进 ConversationPanel.cpp,
+  // 只看 .cpp 会漏掉真正的挂载点。
+  const roots = ["src"];
+  const hits = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(cpp|h|inc)$/.test(entry.name)) continue;
+      const text = read(full);
+      const re = new RegExp(`\\b${symbol}\\s*\\(`, "g");
+      for (const m of text.matchAll(re)) {
+        // 定义处自己不算调用者。两者形状不同,分开排。
+        const lineStart = text.lastIndexOf("\n", m.index) + 1;
+        const line = text.slice(lineStart, text.indexOf("\n", m.index));
+        if (/^(inline\s+)?[\w:<>\s*&]+\b\w+\s*\(/.test(line) && !/=/.test(line.slice(0, m.index - lineStart))) {
+          // 声明/定义行
+        }
+        if (/\bvoid\s+SetLaunchProfile\s*\(/.test(line)) continue;         // 头里的声明
+        if (/PiLaunchProfile\s+Make\w+LaunchProfile\s*\(/.test(line)) continue; // 定义
+        hits.push(`${full}:${text.slice(0, m.index).split("\n").length}`);
+      }
+    }
+  };
+  walk(roots[0]);
+  return hits;
+}
+
+for (const symbol of ["SetLaunchProfile", "MakeCreatorLaunchProfile"]) {
+  const hits = callersOf(symbol);
+  assert.ok(hits.length > 0,
+    `${symbol} 在 src/ 下没有任何调用者 —— 它定义完好、被 CMake 编译、也有人读,`
+    + `但创建/安装的那一次调用从未发生,于是整条创作链在出厂构建里不生效。`
+    + `(本轮实测:sessionDir 退回 agentDir、--tools 不传、两个 creator 环境变量不导出)`);
+}
+
 // CMake 必须编译新文件,否则它只存在于磁盘上(2026-09-22 LNK2019 那一课)。
 const cmake = read("src/CMakeLists.txt");
 assert.match(cmake, /desktop\/control\/PiLaunchProfile\.cpp/,

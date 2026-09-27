@@ -410,7 +410,14 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - `ProsePathIsUsable` 五道判据(存在 / 是目录 / 有 manifest / 扩展名对得上 kind / 在工作区内)逐条有一个拒绝原因。少一道,"别的作品目录里的一个 .mdwall"就会被当成本次的产物。
 - 新增 `src/tests/CreatorReplyInterpreterTest.cpp`:**37 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。7 个已知失效注入全红。
 - 顺带撞到一个**既有的命名地雷**:`ContentCreatorKind` 在 `miaodesk::creator` 里有两个定义(`ContentCreatorBridge.h` 与 `CreationWorkflow.h`),此前只是没人同时 include 两者。现在按 bridge 的那一个引用,并在注释里写清为什么 —— 这是会复发的坑。
-- **仍未做,而且是真被挡住而不是没排上**：把 `InterpretCreatorReply` 接到 `ContentCreatorDialog`。接它需要宿主持有会话 ID、工作区路径、epoch 与台账文件 —— 而这四样正是 CCA-03 的按需运行实例还没有落到界面上的东西。没有它们,宿主没有任何可对账的凭据,接上去只会变成"拿空台账核验,于是永远退回扫描"。所以先落地判据,等宿主状态就位再接。
+- **仍未做，而根因与我先前写的不同（2026-09-28 更正）**：把 `InterpretCreatorReply` 接到 `ContentCreatorDialog`。我先前写"界面上取不到会话 ID、工作区、epoch、台账"，**这一句把因果说反了**。真正的原因是一次**从未发生的调用**：`PiLaunchProfile.h` 有 `SetLaunchProfile`，`PiLaunchProfile.cpp` 有 `MakeCreatorLaunchProfile`，两者定义完好、被 CMake 编译、也有人读 —— 但 `src/` 下**没有任何调用者**。于是 `PiRuntime::launchProfile_` 始终是结构体默认值，而它的 `mode` 默认是 `Chat`：
+  · `sessionDir` 空 → `PI_CODING_AGENT_SESSION_DIR` 退回 `agentDir`，创作会话与聊天同目录；
+  · `workingDirectory` 空 → 没有创作 cwd；
+  · `toolAllowlist` 空 → `--tools` **根本不传**，Pi 用它自己的默认工具集，也就是 CCA-04 要拿掉的 `read/bash/edit/write/grep/find/ls` 全都在；
+  · `systemPrompt` 空 → 退回聊天那一份；
+  · `mode != Creator` → `MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` **不导出**，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。
+
+  所以"宿主持有会话 ID、工作区、epoch、台账"不是取不到，是**导出它们的那个调用没发生**。这不是界面缺数据，是运行时不装 profile。`tests/pi-launch-profile-isolation.mjs` 已加第 4 节盯着"必须有调用者"，它现在是**故意红着**的。
 
 - **宿主封存的物理动作已接上**(见 CCA-04 相应小节):封存在工作区之外的 `../revisions/` 下,同一摘要幂等,且封存的就是算过摘要的那一份快照。
 - **仍未做**:`ContentCreatorDialog.cpp` 里那两条猜测本身还在(它们现在只是不再是唯一路径)。要动的是一个 2000 行的 Windows UI 文件,而它的验收(用户看到的界面)在本机给不出证据 —— 所以没有宣称已替换。纯逻辑这一层先落地,是为了让替换时有一个可依赖的判据,而不是又一段正则。
@@ -710,7 +717,9 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 ### 做不了，而且不是没排上
 
 1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
-2. **宿主持久的会话实例（CCA-03 的"按需运行"落到界面）**：`InterpretCreatorReply`、`PlanApplyRecovery`、`PlanRepair` 三者的接线处都缺同一组东西 —— 宿主持有的会话 ID、工作区路径、epoch、台账文件。它们在 `CreationWorkflow` 里都有钩子（`SetDraftPersistHook`、`ApplyLedger()`），但**挂载点只有一个测试在调**。真实挂载点在 `src/ui/ai/ContentCreatorDialog.cpp`（2029 行）与 Pi 运行时的启动/回收路径上，那要动真实窗口与进程生命周期。
+2. **创作 profile 从未被装上（CCA-03，2026-09-28 新查出）**：这是"宿主持有会话 ID、工作区、epoch、台账"那句话的**根因**，而我先前把它归错了。`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 在 `src/` 下都没有调用者，于是创作跑在**聊天的 profile** 上：`--tools` 不传（通用文件/shell 工具全在，正是 CCA-04 要拿掉的那批）、两个 creator 环境变量不导出（`creator_*` 八个工具因此拿到空工作区）、创作系统提示词不生效。`tests/pi-launch-profile-isolation.mjs` 第 4 节现在**故意红着**，装上去的那一行就是唯一的修法。
+   接线前**必须先决定一件事**：工作区根目录放在哪。`CreatorSessionBinding::workspaceRoot` 的注释写着"必须来自宿主的会话记录"，而 `AppPaths.h` 里**没有任何 creator 根**—— 这个产品决定还没做。选错的结果是模型的 cwd 指向一个任意目录。
+   另外，装 profile 会**同时**打开 tool allowlist 与环境变量导出两件事。计划 CCA-04 原文说"两部分必须作为同一个可验证切换交付"，所以这一步是行为切换，不能只在本机看绿灯。
 3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
 4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。
 

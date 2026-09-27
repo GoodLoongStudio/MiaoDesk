@@ -302,6 +302,7 @@
     - 预览与活实例的 DPI/alpha 管线不同：预览硬编码 96 DPI、按主屏推宽高比、`ALPHA_MODE_IGNORE` 且清成不透明底色；活实例用 `GetDpiForWindow` + `ALPHA_MODE_PREMULTIPLIED` + 透明。同参数不同光栅化，150% 多屏下卡片与组件会不一致。
     - ~~预览的缓存失效只看 `manifest.json` 与 entry，活宿主遍历包里每个文件；只改 `parameters.json` 的原地重装会让桌面 1 秒内刷新而库卡片仍显示旧值（库窗口在弹窗返回后调 `Reset()` 挡住了常规路径，挡不住包管理器那条）。~~ **已修**：预览的 `PackageStamp` 改为与活宿主**逐字相同**的递归策略。两个函数同名、不同 TU，名字不会告诉你它们是否一致——所以新增 `tests/preview-host-stamp-parity.mjs`，把两边函数体归一化参数名后直接比对字符串，任何一侧下次漂移都会立刻红。顺带删掉 `EnsureScene` 的 `definition` 参数：它只被旧的两文件签名用到，留着会让人以为预览是按调用方传入的 definition 校验的（实际每次从 catalog 重新解析）。
     - `fields` 只建一次而 `ReloadValues` 会替换 `state.snapshot`（含 definition），弹窗打开期间包变更会让字段提示过期。fail-safe，但用户看到的是过期提示加一句"未知参数"。
+    - **审计报过但核对为正确、不要改**：`ResetDefaults` / `Apply` 的 `state.changed = true; if (ReloadValues(state)) SetStatus(...)` 曾被指"先标成功再刷新，刷新失败也会显示已恢复"。实际不会——`ReloadValues` 自己失败时就 `SetStatus(result.message)` 返回 false，所以用户看到的要么是确认、要么是重载错误，不会看到假的成功。`changed` 也不是"有未保存编辑"，它是**对话框返回值**（`return state.changed;`），调用方据此刷新组件，所以重置后必须为 true。改这里会把对的代码改坏。
 
 ## 7. 第三轮：AI、创作、配置与工作台
 

@@ -1308,7 +1308,16 @@ struct WallpaperLibraryWindow::Impl {
     void ImportWeb() {
         if (!library) return;
         const std::wstring url = Trim(WindowText(webUrl));
-        if (url.empty()) return;
+        if (url.empty()) {
+            // 添加 Web is shown enabled next to a cue-banner-only field, and there is no
+            // text yet to disable it on -- so clicking it with an empty (or whitespace-
+            // only, since this is trimmed) box is the first thing anyone does. It used to
+            // fall straight through: no status, no beep, no idea the click was dropped.
+            SetStatus(L"先输入要添加的 HTTPS 或本地 HTML 地址，再点添加 Web。");
+            MessageBeep(MB_ICONERROR);
+            SetFocus(webUrl);
+            return;
+        }
         std::wstring error;
         auto imported = library->ImportWebUrl(url, {}, &error);
         if (!imported) {

@@ -179,6 +179,17 @@ CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept;
 // 而它早就可实现(宿主有校验、封存、摘要与台账)。那句话从没被走到,所以没人发现;
 // 而它一旦被走到,会告诉模型否认一件**刚刚真实发生过**的事。
 // 一个说反了的默认值比没有默认值危险:它会以"宿主说的"身份出现。
+std::vector<std::string> ExecutableCreatorToolNames() {
+    std::vector<std::string> names;
+    for (const auto& name : CreatorToolNames()) {
+        CreatorToolName tool{};
+        if (!ParseCreatorTool(name, &tool)) continue;
+        if (AvailabilityOf(tool) != CreatorToolAvailability::Executable) continue;
+        names.push_back(name);
+    }
+    return names;
+}
+
 std::string UnavailableReason(CreatorToolName tool) {
     if (AvailabilityOf(tool) == CreatorToolAvailability::Executable) return {};
     switch (tool) {

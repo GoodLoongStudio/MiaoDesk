@@ -151,6 +151,16 @@ const char* ToString(CreatorToolAvailability availability) noexcept;
 // "它现在能不能用",而不是让这个问题一直悬着。
 CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept;
 
+// 名册里**现在能用**的那几个名字。给系统提示词与文档用:它们要告诉模型
+// "你可以用 X",而那句话只能在 X 真的能用时说。
+//
+// 它存在的理由是系统提示词此前写着"用 creator_asset_import 导入已有素材、
+// 用 creator_image_generate 生成你描述的图" —— 而后者是未实现的(需要图片
+// Provider,不在本轮范围)。提示词让模型去调一个调不通的工具,于是它会向用户
+// 承诺一件做不到的事,而 `creator_capabilities_get` 里明明写着它"未实现"。
+// 两张嘴说不同的话,模型会信提示词那一张。
+std::vector<std::string> ExecutableCreatorToolNames();
+
 // 没有实现时给模型的那句话。它必须和"被拒绝"区分开:被拒绝说明调用不合适,
 // 未实现说明这条路还没修好,模型该做的是告诉用户,不是改参数重试。
 std::string UnavailableReason(CreatorToolName tool);

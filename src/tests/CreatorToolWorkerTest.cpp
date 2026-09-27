@@ -17,6 +17,7 @@
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/ContentCandidateLedger.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <optional>
@@ -479,6 +480,18 @@ void TestUnimplementedToolsSaySoExplicitly() {
     // 下一次有人再往默认分支里加一条就会静悄悄长回来。
     Check(UnavailableReason(CreatorToolName::CandidateSubmit).empty(),
           "候选封存已接上:它不再有'不可用'的理由");
+    // 系统提示词只能让模型用**现在真的能用**的工具。它此前写着"用
+    // creator_asset_import 导入已有素材、用 creator_image_generate 生成你描述的图"
+    // —— 而后者是未实现的。提示词让模型去调一个调不通的工具,于是它会向用户承诺
+    // 一件做不到的事,而 creator_capabilities_get 里明明写着它"未实现"。
+    // 两张嘴说不同的话,模型会信提示词那一张。
+    const auto executable = ExecutableCreatorToolNames();
+    Check(std::find(executable.begin(), executable.end(), "creator_image_generate") ==
+              executable.end(),
+          "未生成的图片工具不在'现在能用'的名单里");
+    Check(std::find(executable.begin(), executable.end(), "creator_asset_import") != executable.end(),
+          "导入素材在'现在能用'的名单里");
+    Check(!executable.empty(), "名单不是空的 —— 空了说明这个函数坏了,而不是没有工具");
     // 下面这一小段直接问一次真实的提交路径:它的回复必须是"做成了"或"被拒了",
     // 绝不能是"不可用"。合起来放在 TestCandidateSubmitVerifiesTheHostsDigest 里 —
     // 那里已经有 DigestOf 与 MemoryWorkspace 的全部前置。

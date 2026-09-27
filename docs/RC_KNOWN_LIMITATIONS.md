@@ -16,6 +16,22 @@ The repository contains a reproducible DGX A/B evaluator and L1 fast→primary r
 
 The current D2D textured-sprite path does not support arbitrary non-white texture tint in the same way as the programmable D3D11 path. Content validation treats this as an explicit backend capability difference rather than silently rendering a mismatched result.
 
+### The MSIX target has no file search
+
+File search is client/server: `goz.exe` only queries, while `gozd.exe` must run as an elevated Windows service to read the NTFS MFT/USN index. The x64 installer registers it and aborts if that fails. The MSIX workflow performs no service registration at all — it stages both binaries via `stage.ps1` and stops there — so `GozSearch::Available()` is permanently false in an MSIX install and the search box silently loses one of its three headline functions.
+
+The degradation itself is honest: `SearchWindow.cpp` shows a "文件搜索未连接 · 当前仍可搜索应用" row rather than presenting empty results as a real answer. What is not settled is whether this is deliberate scope for MSIX or an omission — MSIX on Windows 11 can carry a full-trust service, so "services are impossible in MSIX" is not established here.
+
+**Consequence for RC:** a MSIX candidate must not be described as having all three search capabilities until this is answered. The two answers have opposite remedies — deliberate means documenting the restriction and excluding file search from MSIX acceptance; omission means adding the registration step.
+
+### The search box has no IME composition or candidate positioning
+
+`WINDOWS_CUSTOM_INPUT_IME.md` §4 lists `src/ui/search/SearchWindow.cpp` as using the shared `InputImeAnchor` Search profile. It does not — the file does not include the header and contains no `ImmSet*`, `WM_IME_*` or `SetCaretPos` at all. It also keeps its `EDIT` at 1×1, which the same document's §2 forbids by name. The runtime consequences for Chinese input (composition window placement, candidate window exclusion) are therefore unverified and, on the evidence, absent.
+
+The infrastructure to fix it is already written and unused: `InputImeAnchor.h` carries a full Search profile whose constants line up with `SearchWindow` (control id, left/right, parent window class). Wiring it needs the `EDIT` to be resized without covering the custom-drawn input area, plus focus and composition message routing — none of which can be verified without a Windows session with a Chinese IME.
+
+**Consequence for RC:** LAY-02's "中文输入一致性" acceptance cannot be met for the search box in this state.
+
 ## Pending physical Windows release evidence
 
 The following are RC sign-off items, not automatic CI claims:

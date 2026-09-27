@@ -260,11 +260,28 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-04 提供受约束的包制作与素材工具
 
-- [ ] 完成；负责人 / 证据：待填写。
+- [~] 路径与归属策略已实现并有可执行测试；Pi 扩展与 worker 侧工具本体未接。
 - **依赖**：CCA-02、CCA-03。
 - **实施**：提供包读写、素材导入/图片生成和真实能力查询；用创作专属 allowlist 替代通用文件/shell 权限；接入会话绑定和超时。
 - **交付**：实际 Pi 扩展与 native adapter、工具 worker 注册、路径与所有权回归。
 - **验收**：两种 kind 均能真正生成合法包；错误后无半写文件；拒绝跨作品访问、越界路径、reparse point 与未经允许的代码产物；关闭通用工具后仍可完整制作。
+
+**核对结果（2026-09-27，策略层完成，工具本体未接）**：
+
+- 新增 `CreatorWorkspacePolicy`（`src/include/miaodesk/CreatorWorkspacePolicy.h` + `src/desktop/control/CreatorWorkspacePolicy.cpp`）：创作工具的路径与作品归属策略。它**只判定、不碰盘** —— 文件大小、是否 reparse point 这类事实由宿主喂进来,策略只回答"允不允许、为什么"。
+- 归属判断不自己查盘,是有意的:归属的事实来源是宿主自己的会话记录,而工具 worker 是另一个进程,拿到的只有 JSON 参数。工作区根由宿主从自己的状态里取出来传进来,策略按它判定 —— 于是"模型伪造 sessionId 访问另一个作品"在结构上不可能,而不是靠记得校验。
+- 覆盖验收原文的每一条,且每一条都有拒绝码:`NotRelative`(盘符/UNC/根斜杠/反斜杠形式)、`Traversal`(任何一段 `..`,包括后半段会回到工作区里的)、`ForbiddenExtension`(代码与可执行产物)、`UnknownRole`(不在 `manifest.json`/`parameters.json`/`scene/*.json`/`preview.<图片>`/`assets/<受控素材>` 这套布局内,含 `assets` 下再建子目录、尾斜杠)、`TooLarge`(按类型分别设上限)、`WrongWorkspace`(跨作品)、`ReparsePoint`、`EmptySessionId`。
+- 拒绝必须可定位:每条规则一个拒绝码 + 一句给人看的原因。第一版 `Allows()` 只返回 bool,于是"代码产物被拒"和"路径不在布局内被拒"在测试里长得一模一样 —— 实测把 `IsForbiddenExtension` 那一行短路掉,整个测试依然全绿,因为 `Classify` 仍以 `UnknownRole` 拒绝同一个路径。加了 `rejectCode` 输出之后那条改动立刻让 20 个断言变红。
+- 反向断言同样重要:`MustAllow` 覆盖合法的九种路径,**以及它们的等价写法**（`./`、`//`、`/.`、反斜杠）。同一份文件换一种写法就该归到同一个角色,否则模型换个分隔符写法就被判 UnknownRole,而它以为路径是对的。
+- `IsForbiddenExtension` 的措辞是"代码/可执行文件不在创作范围内",不是"不认识":计划 §1 明确本轮内容限定为声明式 Scene 内容与受控素材,所以这不是"暂时没实现"。
+- 新增 `src/tests/CreatorWorkspacePolicyTest.cpp`:**359 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorWorkspacePolicyTest`、`run-pure-logic-tests.sh` 和 Windows CI。
+- 变异测试:26 个已知失效注入。其中 4 个让测试变红,剩下一批是**冗余守卫**（UNC 由根斜杠检查兜住、空工作区由第二处空值检查兜住),逐个确认过不影响可观测行为。变异过程查出两个测试自身的空洞,都在上面记了:`MustReject` 收了 `expected` 却从不用；两处断言只测了"assets"这个本身就通不过分类的路径,于是 `isDirectory` 那行短路掉测试依然全绿。
+
+**未做（属于本条剩余部分）**:
+
+- Pi 扩展侧的八个 `creator_*` 工具本体（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具）,以及 `src/app/main.cpp` 的 worker 分发。
+- "错误后无半写文件":写入要原子（临时文件 + 替换 + 回退）,这条只做了策略层,没有写路径。
+- 两种 kind 真正生成合法包的端到端,以及"关闭通用工具后仍可完整制作"的对照验证。
 
 ### CCA-05 结构化候选与统一校验
 

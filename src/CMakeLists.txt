@@ -60,6 +60,10 @@ set(MIAODESK_CORE_SOURCES
     # Windows 上编,也能被 run-pure-logic-tests.sh 真实编译并运行 —— 否则
     # "状态机有测试"会退化成"状态机有一份只能在真机走查的代码"。
     desktop/control/CreationWorkflow.cpp
+    # CCA-04: creator workspace policy. Pure logic: it only judges, it never
+    # touches the filesystem, so 'reject cross-work / out-of-bounds / reparse
+    # point / code artifacts' can be really executed on every round.
+    desktop/control/CreatorWorkspacePolicy.cpp
     # CCA-03:Pi 的启动配置。Chat 与 Creator 各一份,分开目录/session/cwd/
     # 扩展文件/工具 allowlist。放进 Core 是因为 PiRuntime 在 Core 里。
     desktop/control/PiLaunchProfile.cpp
@@ -275,6 +279,8 @@ add_executable(MiaoDeskWallpaperAudioTapTest tests/WallpaperAudioTap.cpp)
 add_executable(MiaoDeskCreationWorkflowStateTest tests/CreationWorkflowStateTest.cpp)
 # CCA-05:候选摘要。同为纯逻辑:摘要的正确性只取决于内容,不取决于平台。
 add_executable(MiaoDeskContentCandidateDigestTest tests/ContentCandidateDigestTest.cpp)
+# CCA-04: same reasoning -- a pure-logic policy that is really run.
+add_executable(MiaoDeskCreatorWorkspacePolicyTest tests/CreatorWorkspacePolicyTest.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -306,7 +312,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -352,6 +358,7 @@ if (MSVC)
     target_compile_options(MiaoDeskWallpaperAudioTapTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationWorkflowStateTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentCandidateDigestTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskCreatorWorkspacePolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -508,6 +515,9 @@ target_link_libraries(MiaoDeskCreationWorkflowStateTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskContentCandidateDigestTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskCreatorWorkspacePolicyTest PRIVATE
     MiaoDeskCore
 )
 

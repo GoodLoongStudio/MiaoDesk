@@ -1192,10 +1192,14 @@ struct WallpaperLibraryWindow::Impl {
         bool applied = true;
         std::wstring failure;
         if (applyCallback) {
-            // Void callback: the engine owns its own status surface, so there is no
-            // result to check here. The status line below is therefore not evidence
-            // of success on this path -- the engine's own window is.
-            applyCallback(*selected, targetId);
+            // The callback reports its own outcome; an empty return means it happened.
+            // This used to be a void call, which left `applied` pinned true no matter
+            // what the engine did -- so a bail-out still got "已应用到桌面" and a
+            // MarkUsed stamp. The engine's reason went to its own diagnostics text,
+            // which lives in the advanced settings window: a different page the user has
+            // to walk to, and could not see from here.
+            failure = applyCallback(*selected, targetId);
+            applied = failure.empty();
         } else {
             const auto result = targetId.empty()
                 ? desktopControl.ApplyLibraryItem(*selected)

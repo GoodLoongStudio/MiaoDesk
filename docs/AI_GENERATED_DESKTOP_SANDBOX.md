@@ -153,13 +153,39 @@ The fix does not add a global capability. It routes to the mechanism that alread
 3. **It switches `Layout` to `independent`.** Assignments are only consumed by
    `StartIndependent`; in the other modes the engine renders the global selection instead.
    Omitting step 3 would make the writes succeed and the desktop stay unchanged — the
-   "已应用到桌面" false success this repo has already fixed three times. `PersistMonitorWeb`
+   "已应用到桌面" false success this repo has already fixed four times. `PersistMonitorWeb`
    in the Web coordinator has always done both steps for the same reason.
 4. If step 3 fails, the call reports failure rather than the success it was about to claim.
 
 The semantic consequence is deliberate and is the literal meaning of a global apply:
 per-monitor wallpapers that differ are unified, and the layout becomes Independent. That is
 the same trade-off the Web path made, recorded here rather than left implicit.
+
+### A fourth false success, and the shape all four share
+
+The same round found a second one, in the library window rather than in the engine.
+`ApplyCallback` returned `void`, so `ApplySelected` had no result to read and left its
+`applied` flag at its initialiser, `true`. The engine's `ApplyLibraryItem` bailed out
+correctly — it set `libraryError_`, logged, and returned without touching the desktop —
+and the window then stamped `MarkUsed`, refreshed, and told the user "已应用到桌面".
+`libraryError_` had exactly one reader repo-wide: the advanced settings window's
+diagnostics text. Different window, different page, not the one the user was looking at
+when they pressed the button. The comment above the call spelled the problem out and
+then called it a design.
+
+So the pattern is not any particular bug. It is a **verdict that stops travelling**: the
+layer that knows the outcome cannot hand it to the surface that has to speak for it, and
+the gap gets papered over with a default that reads as success.
+
+- A `void` callback is a verdict that stops at the boundary. If the callee can fail, the
+  return type must be able to say so — an empty string for success, a reason otherwise.
+- A diagnostics field with one reader is not user feedback. `libraryError_` was written
+  on four paths and displayed in a window nobody opens from the library.
+- A comment explaining why a status line "is not evidence of success" is not a mitigation.
+  It is the defect, documented in place, where it will be inherited.
+- The fix has to reach **every** exit, including the tail: `ApplyLibraryItem` now ends in
+  an explicit `return {};`, because falling off a `std::wstring` function is undefined
+  behaviour rather than an implicit empty string.
 
 The other half of the same round: when validation refuses a package, the validator's
 message is now recorded, shown to the user in the transcript, and fed back into the next

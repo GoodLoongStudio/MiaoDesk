@@ -102,8 +102,13 @@ const libraryHeader = read("src/include/miaodesk/WallpaperLibraryWindow.h");
 assert.doesNotMatch(libraryHeader, /NavigateCallback/,
   "the library window must not re-introduce a navigation callback: the window owns its own"
   + " page switching, and a callback it never calls reads as an integration point");
-assert.match(libraryHeader, /using ApplyCallback = std::function<void\(const WallpaperLibraryItem&, const std::wstring& targetMonitorId\)>;/,
-  "the apply callback must stay -- it IS invoked");
+// The apply callback must REPORT, not just fire. It returned void until the false success
+// was found: `applied` was pinned true on the engine path, so a bail-out still produced
+// "已应用到桌面" and a MarkUsed stamp. See library-apply-reports-outcome.mjs for the full
+// argument and for the assertions that keep it reporting.
+assert.match(libraryHeader, /using ApplyCallback = std::function<std::wstring\(const WallpaperLibraryItem&, const std::wstring& targetMonitorId\)>;/,
+  "the apply callback must stay -- it IS invoked -- and must return the outcome so the"
+  + " window can tell the user when the apply did not happen");
 const libraryImpl = read("src/ui/wallpaper/WallpaperLibraryWindowV2.cpp");
 assert.doesNotMatch(libraryImpl, /WallpaperSettingsSection/,
   "...and its SectionForNav mapper must not come back");

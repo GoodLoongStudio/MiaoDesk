@@ -634,7 +634,7 @@ private:
         libraryWindow_.Show(
             instance_, &library_, LibraryTargets(),
             [this](const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
-                ApplyLibraryItem(item, targetMonitorId);
+                return ApplyLibraryItem(item, targetMonitorId);
             });
     }
 
@@ -675,11 +675,18 @@ private:
         return false;
     }
 
-    void ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
+    // Returns an empty string when the apply happened, and the reason it did not when it
+    // did not. The library window puts this return straight into its status line, which
+    // is where the user is looking, so every failure path below must return something
+    // they can act on rather than a log phrase. libraryError_ is still set: that is the
+    // engine's own diagnostics text in the advanced settings window, and it is not a
+    // substitute for telling the person who clicked 应用到桌面.
+    std::wstring ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
         using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
         if (item.kind == Kind::Unknown) {
             miaodesk::log::Warn(L"Wallpaper", L"ApplyLibraryItem 失败: 未知壁纸类型");
-            return;
+            libraryError_ = L"壁纸库中存在类型未知的项目";
+            return L"“" + item.title + L"”的类型无法识别，不能应用。";
         }
 
         miaodesk::log::Info(L"Wallpaper", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
@@ -689,7 +696,7 @@ private:
                 libraryError_ = error.empty() ? L"Web 壁纸应用失败" : error;
                 miaodesk::log::Error(L"Wallpaper", L"ActivateWebWallpaperItem 失败: " + libraryError_);
                 RefreshSettings();
-                return;
+                return libraryError_.empty() ? L"Web 壁纸应用失败。" : libraryError_;
             }
             config_ = LoadConfig();
             ApplyConfig(config_, false);
@@ -700,7 +707,7 @@ private:
             automationWindow_.Refresh();
             RefreshSettings();
             miaodesk::log::Info(L"Wallpaper", L"Web 壁纸已成功应用");
-            return;
+            return {};
         }
         if (!targetMonitorId.empty()) {
             const auto* monitor = miaodesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
@@ -711,7 +718,7 @@ private:
                 libraryError_ = error;
                 miaodesk::log::Error(L"Wallpaper", L"显示器分配失败: " + error);
                 RefreshSettings();
-                return;
+                return error.empty() ? L"显示器分配失败。" : error;
             }
             config_.layout = L"independent";
             config_.enabled = true;
@@ -728,12 +735,13 @@ private:
                                        (item.kind == Kind::Image ? L"Image" : L"Unknown"))));
             miaodesk::log::Info(L"Wallpaper", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
-                libraryError_ = item.kind == Kind::Scene
-                    ? L"该 Scene 尚没有可用的运行时 Renderer，未修改当前桌面。"
-                    : L"该壁纸类型当前不可运行。";
-                miaodesk::log::Error(L"Wallpaper", L"ApplyWallpaperItemToConfig 失败: " + libraryError_);
+                const std::wstring why = item.kind == Kind::Scene
+                    ? L"“" + item.title + L"”尚没有可用的运行时，未修改当前桌面。"
+                    : L"“" + item.title + L"”这个类型当前不可运行，未修改当前桌面。";
+                libraryError_ = why;
+                miaodesk::log::Error(L"Wallpaper", L"ApplyWallpaperItemToConfig 失败: " + why);
                 RefreshSettings();
-                return;
+                return why;
             }
             ApplyConfig(next);
             miaodesk::log::Info(L"Wallpaper", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
@@ -744,6 +752,7 @@ private:
         if (!error.empty()) libraryError_ = error;
         libraryWindow_.Refresh();
         automationWindow_.Refresh();
+        return {};
     }
 
     std::optional<std::wstring> CurrentWallpaperId() const {

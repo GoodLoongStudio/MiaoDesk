@@ -20,8 +20,17 @@ struct WallpaperLibraryTarget {
 
 class WallpaperLibraryWindow {
 public:
-    using ApplyCallback = std::function<void(const WallpaperLibraryItem&, const std::wstring& targetMonitorId)>;
-    using GlobalApplyCallback = std::function<void(const WallpaperLibraryItem&)>;
+    // Returns an empty string when the apply happened, and the reason it did not when it
+    // did not. The window owns the status line -- it is the surface the user is looking
+    // at -- so the callback reports rather than messages on its own.
+    //
+    // This used to return void, and that quietly made `applied` unconditionally true on
+    // the engine path: the window said "已应用到桌面", stamped MarkUsed, and moved on,
+    // while the engine had actually bailed out and put the reason in its own diagnostics
+    // text, one window away, in a page the user has to navigate to. A void callback is
+    // not a signal that the action succeeded.
+    using ApplyCallback = std::function<std::wstring(const WallpaperLibraryItem&, const std::wstring& targetMonitorId)>;
+    using GlobalApplyCallback = std::function<std::wstring(const WallpaperLibraryItem&)>;
 
     WallpaperLibraryWindow();
     ~WallpaperLibraryWindow();
@@ -34,8 +43,8 @@ public:
               ApplyCallback applyCallback);
     bool Show(HINSTANCE instance, WallpaperLibrary* library, GlobalApplyCallback applyCallback) {
         return Show(instance, library, {},
-                    [callback = std::move(applyCallback)](const WallpaperLibraryItem& item, const std::wstring&) {
-                        if (callback) callback(item);
+                    [callback = std::move(applyCallback)](const WallpaperLibraryItem& item, const std::wstring& target) {
+                        return callback ? callback(item) : std::wstring();
                     });
     }
     void SetTargets(const std::vector<WallpaperLibraryTarget>& targets);

@@ -170,13 +170,21 @@ CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept {
     return CreatorToolAvailability::NotImplemented;
 }
 
+// AvailabilityOf 定义在本文件后面;这里提前说一句,好让下面那个不变式能真的用它
+// 来判断,而不是再抄一份什么。
+CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept;
+
+// 这条固定的不变式:**可用的工具没有不可用的理由**。实现上来保证而不是靠记性 ——
+// 以前这里留着 CandidateSubmit 的一句"候选封存还没有接上,请不要声称已经提交",
+// 而它早就可实现(宿主有校验、封存、摘要与台账)。那句话从没被走到,所以没人发现;
+// 而它一旦被走到,会告诉模型否认一件**刚刚真实发生过**的事。
+// 一个说反了的默认值比没有默认值危险:它会以"宿主说的"身份出现。
 std::string UnavailableReason(CreatorToolName tool) {
+    if (AvailabilityOf(tool) == CreatorToolAvailability::Executable) return {};
     switch (tool) {
     case CreatorToolName::ImageGenerate:
         return "生成图片的能力在当前构建里还没有接上(图片 Provider 属于创作链路的下一步,"
                "不在这一轮范围)。请先用 creator_asset_import 导入已有素材,或告诉用户这一步还没做好。";
-    case CreatorToolName::CandidateSubmit:
-        return "候选封存在当前构建里还没有接上。请不要声称已经提交或已经可以应用。";
     default:
         break;
     }

@@ -461,7 +461,28 @@ void TestUnimplementedToolsSaySoExplicitly() {
             Check(!UnavailableReason(tool).empty(),
                   std::string(name) + " 未实现时必须说明为什么");
         }
+        // 反过来也一样,而且这一条以前没有:**可实现的不许带着"不可用"的理由**。
+        // 实测到的漏洞:CandidateSubmit 早就接上了(校验、封存、摘要、台账都有),
+        // 而原因表里还留着它一句"候选封存还没有接上,请不要声称已经提交或已经可以
+        // 应用"。那句话从没被走到,所以没人发现;而它一旦被走到,会以"宿主说的"
+        // 身份让模型否认一件刚刚真实发生过的事。
+        // 一个说反了的默认值比没有默认值危险 —— 所以这里把两边钉死:
+        // 可实现 ⇔ 没有不可用的理由。
+        if (availability == CreatorToolAvailability::Executable) {
+            Check(UnavailableReason(tool).empty(),
+                  std::string(name) + " 已可实现,就不许再带一句'不可用'的理由");
+        }
     }
+
+    // 具体到那一条:候选封存已接上,所以那句"请不要声称已经提交"必须消失。
+    // 留在这里是因为它正是这个漏洞长出来的地方 —— 只删字符串的话,
+    // 下一次有人再往默认分支里加一条就会静悄悄长回来。
+    Check(UnavailableReason(CreatorToolName::CandidateSubmit).empty(),
+          "候选封存已接上:它不再有'不可用'的理由");
+    // 下面这一小段直接问一次真实的提交路径:它的回复必须是"做成了"或"被拒了",
+    // 绝不能是"不可用"。合起来放在 TestCandidateSubmitVerifiesTheHostsDigest 里 —
+    // 那里已经有 DigestOf 与 MemoryWorkspace 的全部前置。
+
 
     // 现在只剩一个工具未实现:生成图片。它需要图片 Provider,而后者不在本轮范围。
     // 断言它"未实现"而不是"被拒绝",是因为两者要求模型下一步做的事完全相反。
@@ -759,6 +780,12 @@ void TestCandidateSubmitVerifiesTheHostsDigest() {
     const auto receipt = DispatchCreatorTool("creator_candidate_submit", right, input, workspace);
     Check(receipt.ok, "用宿主算出的摘要可以提交");
     Check(receipt.payload.find("revision=1") != std::string::npos, "拿到第 1 版");
+    // 它走的是真实路径,不是 Unavailable。以前这一格填的是一句"候选封存还没有接上,
+    // 请不要声称已经提交或已经可以应用",而那句话会让模型否认刚刚真实发生过的事 ——
+    // 一个说反了的默认值比没有默认值危险:它会以"宿主说的"身份出现。
+    Check(!receipt.unavailable,
+          "候选封存已经接上,所以不可能是 Unavailable —— 否则模型会说自己没提交");
+    Check(receipt.ok, "而且它真的成功了");
     // 第一行必须是结构化回执。宿主据此确认"有一个可用候选",不再从散文里猜路径 ——
     // 它必须与宿主台账对得上,所以这里顺手用 ContentCandidateReceipt 核验一次。
     {

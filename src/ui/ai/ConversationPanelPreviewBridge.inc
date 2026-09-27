@@ -20,6 +20,22 @@ LRESULT CALLBACK SearchPreviewBridgeProc(HWND hwnd, UINT message, WPARAM wParam,
         const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
         HWND panel = reinterpret_cast<HWND>(GetPropW(hwnd, kSearchPreviewPanelProperty));
         if (!IsWindow(panel)) panel = hwnd;
+        // A sandbox preview is created by a native tool running inside a turn. If the
+        // runtime is idle by the time this arrives, the turn that asked for it has
+        // already ended -- most often because the user cancelled and was told
+        // "已停止。". Letting the window up anyway leaves a live 应用 button on the
+        // desktop for a request the user abandoned, one click from changing their
+        // wallpaper. Swallow it.
+        //
+        // The shared runtime is the signal, not this panel's own busy flag: the
+        // creator drives the same runtime, so a preview it spawns must still be
+        // accepted while either surface has a turn in flight. (A preview belonging
+        // to a turn that already finished normally is dropped too -- a window
+        // appearing after the turn is over is confusing in either case, and the
+        // transcript artifact path still carries the result.)
+        if (gConversationState && gConversationState->pi && !gConversationState->pi->Busy()) {
+            return TRUE;
+        }
         if (preview::HandleGeneratedPreviewCopyData(panel, data)) return TRUE;
     }
 

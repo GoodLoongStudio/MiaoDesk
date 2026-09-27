@@ -248,6 +248,15 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - **实施**：给现有 Pi 实现增加创作启动配置，分开 session/state/cwd/回调与工具配置；限制一项活跃创作；实现排队、空闲释放、重开草稿；读取同一 Provider 来源。
 - **交付**：按需创作运行实例及生命周期测试；相应 runtime/domain 文档更新。
 - **验收**：聊天生成中可独立取消/重置创作且不影响聊天；两作品不串上下文；多次开关后无持续进程增长；Provider 修改有明确生效时机。
+**本轮补记（2026-09-28，创作 profile 第一次真的被装上）**：
+
+- 此前整条创作链在出厂构建里**一个字节都没生效**，而所有形状门都是绿的：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 定义完好、被 CMake 编译、也有人读，但 `src/` 下**没有任何调用者**。`PiRuntime::launchProfile_` 因此始终是结构体默认值，而它的 `mode` 默认是 `Chat`。
+- 三条后果都实测过：`--tools` 用聊天那份，七个 `creator_*` 名字被整体剥掉；`--extension` 落盘的是 Chat 变体，它本身不含创作工具；`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。**创作轮次里模型一条 `creator_*` 都用不了** —— 八个已实现并测过的工具不可达。这不是"两个配置之间的风险切换"，是一个只有服务端、没有客户端的功能。
+- 装的位置是 `ContentCreatorDialog` 而不是 `PiRuntime`：profile 是**宿主的意图**，而"用户主动打开 AI 制作壁纸/组件"这个窗口就是那个事件。放 PiRuntime 里只能猜。
+- **卸与装一样重要**：共享 runtime 是刻意的（§4.2 上下文隔离但进程可复用），所以只装不卸会让聊天拿着创作的 allowlist 跑 —— 那正是本节整节在防的事。`WM_DESTROY` 里恢复聊天 profile，且**必须排在 `Stop()` 之后**：反过来会让一个正在跑的创作轮次在恢复中的 profile 下继续，接着要用的工具突然不在 allowlist 里，表现是"生成到一半工具开始失败"。
+- 工作区根目录按 `AppPaths` 的既有惯例落在 `<StateRoot>/CreatorWorkspaces/<kind>/1`，**一次作品一个子目录**（`main.cpp` 的 `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边）。复用规则由本计划自己的验收决定：CCA-10 要求"关闭与重开恢复草稿"，所以**重开是同一个工作区**。路径带序号是给"用户明确开第二个作品"留位置 —— 真到那天只加一个动作，不需要迁移已有目录。
+- `tests/pi-launch-profile-isolation.mjs` 从"只查 profile 的形状"扩展到"查装上与卸下"：四个新断言各配一个只违反它的注入，全部确认会红（去掉聊天恢复 / 去掉创作安装 / 把恢复挪到 `Stop()` 之前 / 工作区置空）。写它们时顺手修掉自己两个错：没算 `miaodesk::` 限定，以及把相对下标和绝对下标混用（那条断言会变成恒真或恒假）。
+
 
 **核对结果（2026-09-27，配置层已完成，运行实例层未做）**：
 
@@ -717,11 +726,8 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 ### 做不了，而且不是没排上
 
 1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
-2. **创作 profile 从未被装上（CCA-03，2026-09-28 新查出）**：这是"宿主持有会话 ID、工作区、epoch、台账"那句话的**根因**，而我先前把它归错了。`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 在 `src/` 下都没有调用者，于是创作跑在**聊天的 profile** 上：`--tools` 不传（通用文件/shell 工具全在，正是 CCA-04 要拿掉的那批）、两个 creator 环境变量不导出（`creator_*` 八个工具因此拿到空工作区）、创作系统提示词不生效。`tests/pi-launch-profile-isolation.mjs` 第 4 节现在**故意红着**，装上去的那一行就是唯一的修法。
-   接线前必须先决定工作区根目录放在哪。**这一项已于 2026-09-28 补上**：`AppPaths.h` 增加 `CreatorWorkspacesRoot()` / `CreatorWorkspaceRoot(sessionId)`，形状与 `WallpaperLibraryRoot` / `PiAgentRoot` 等完全一致（`<StateRoot>/<名字>`），且按 `main.cpp` 的既有用法让**一次作品占一个子目录** —— `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边。补上它之后，"装 profile 卡在一个未决定的产品问题上"这个理由不再成立。
-
-   **仍未决定的是另一件，而它不该由我在无法运行的情况下替产品决定**：一个"作品"由什么标识。`DeriveCreatorSessionId(workspaceRoot)` 是从工作区反推会话 ID，所以顺序上得先有工作区、再有会话 —— 那么同一个用户同时开两个壁纸作品时，它们各自的工作区叫什么？已有的两种可能都要产品结论：按 kind 一个固定目录（简单，但两个壁纸作品会共用一个工作区，`DeriveCreatorSessionId` 也会给出同一个会话 ID，直接违反 CCA-03 的隔离意图），或者引入一个持久化的作品记录（正确，但要决定旧工作区怎么清理、升级怎么办）。
-   另外，装 profile 会**同时**打开 tool allowlist 与环境变量导出两件事。计划 CCA-04 原文说"两部分必须作为同一个可验证切换交付"，所以这一步是行为切换，不能只在本机看绿灯。
+2. ~~**创作 profile 从未被装上（CCA-03）**~~ **已修（2026-09-28）**：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 此前都无调用者，于是创作跑在**聊天的 profile** 上 —— `--tools` 用聊天那份（七个 `creator_*` 名字被整体剥掉）、`--extension` 落盘的是 Chat 变体（它本身不含创作工具）、`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出（而 `main.cpp` 的 `RunCreatorTool` 正是从这两个变量取工作区与会话）。**八个 `creator_*` 工具此前不可达。** 现在 `ContentCreatorDialog` 打开时装上创作 profile、`WM_DESTROY` 时恢复聊天 profile，工作区落在 `<StateRoot>/CreatorWorkspaces/<kind>/1`。
+   **仍未验**：本机只验到"文件形状对"。它真的让创作轮次拿到受约束工具与工作区，要在 Windows 上开一次 AI 制作壁纸，确认 `creator_package_update` 不被 `--tools` 剥掉、`MIAODESK_CREATOR_WORKSPACE` 真的导出了、以及关窗之后聊天仍能写文件。
 3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
 4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。
 

@@ -1,3 +1,4 @@
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/ContentCreatorDialog.h"
 
 #include "miaodesk/ConversationPanel.h"
@@ -8,6 +9,7 @@
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/NativeUiScale.h"
 #include "miaodesk/PiRuntime.h"
+#include "miaodesk/PiLaunchProfile.h"
 #include "miaodesk/ToolDisplayNames.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperRuntimeControl.h"
@@ -1947,6 +1949,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         state->StopLivePreview();
         if (state->pi && state->pi->Busy()) state->pi->Stop();
         if (state->agent && state->agent->Busy()) state->agent->Stop();
+        // 卸掉创作 profile,把共享 runtime 还给聊天。
+        //
+        // 顺序有意义:先 Stop() 再换 profile —— 反过来会让一个正在跑的创作轮次
+        // 在恢复中的 profile 下继续,而它接着要用的工具突然不在 allowlist 里了,
+        // 表现是"生成到一半工具开始失败"。
+        //
+        // 换 profile 会改变 signature,所以下一次聊天启动时 EnsureSession 会重开子
+        // 进程,而不是复用创作那个。这正是 CCA-01 实测过的行为,也正是它防止
+        // "聊天加载到创作的扩展文件"。
+        if (state->pi) {
+            state->pi->SetLaunchProfile(
+                miaodesk::MakeChatLaunchProfile(miaodesk::paths::PiAgentRoot().wstring()));
+        }
         // Leave the keyboard-navigation list before the state goes away, so the pump
         // can never be pointed at a window whose GWLP_USERDATA is already null.
         if (const auto it = std::find(g_openCreatorWindows.begin(), g_openCreatorWindows.end(), hwnd);
@@ -2008,6 +2023,27 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     state->agent = &agent;
     state->pi = &SharedConversationPiRuntime();
     state->kind = kind;
+
+    // 装上创作 profile。**这一步是整条创作链唯一缺失的那一次调用**:
+    // PiRuntime 从 launchProfile_ 取 sessionDir / workingDirectory / toolAllowlist /
+    // systemPrompt,并且只在 mode == Creator 时导出 MIAODESK_CREATOR_WORKSPACE 与
+    // MIAODESK_CREATOR_SESSION —— 而 src/app/main.cpp 的 RunCreatorTool 正是从这两个
+    // 环境变量取工作区与会话。装之前 PiRuntime 手里是结构体默认值(mode = Chat),
+    // 于是 --tools 用聊天那份:七个 creator_* 名字被整体剥掉,--extension 落盘的也
+    // 是 Chat 变体(它本身不含创作工具),两个环境变量不导出。**创作轮次里模型一条
+    // creator_* 都用不了**,八个已实现并测过的工具不可达。
+    //
+    // 之所以放到界面而不是 PiRuntime 里:profile 是**宿主**的意图,而这个窗口就是
+    // "用户主动打开 AI 制作壁纸/组件"的那个事件。放 PiRuntime 里就只能猜。
+    //
+    // 恢复聊天 profile 见 WM_DESTROY。共享 runtime 是刻意的(计划 §4.2:创作与聊天
+    // 上下文隔离但进程可复用),所以装上去就必须负责卸下来 —— 只装不卸会让聊天
+    // 拿着创作的 allowlist 跑,那是 CCA-03 花整节防的那件事。
+    if (state->pi) {
+        const std::wstring workspace = ResolveCreatorWorkspaceRoot(kind);
+        state->pi->SetLaunchProfile(miaodesk::MakeCreatorLaunchProfile(
+            miaodesk::paths::PiAgentRoot().wstring(), workspace, std::wstring{}));
+    }
 
     const wchar_t* title = kind == ContentCreatorKind::Widget ? L"妙喵 · AI 制作组件" : L"妙喵 · AI 制作壁纸";
     const CreatorWindowPlacement placement = ResolveCreatorWindowPlacement(owner);

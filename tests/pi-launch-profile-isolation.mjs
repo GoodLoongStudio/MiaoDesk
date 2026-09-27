@@ -291,6 +291,44 @@ for (const symbol of ["SetLaunchProfile", "MakeCreatorLaunchProfile"]) {
     + `工作区根目录这一项已在 AppPaths.h 补好,剩下的就是装上 profile 的那一次调用。`);
 }
 
+// 装上之后还要**卸得下来**。共享 runtime 是刻意的(§4.2:上下文隔离但进程可复用),
+// 所以只装不卸会让聊天拿着创作的 allowlist 跑 —— 那正是 CCA-03 整节在防的事。
+// 断言的是形状而不是"我记得加了":必须有 SetLaunchProfile(MakeChatLaunchProfile(...)),
+// 而且它必须在 Stop() 之后(反过来会让一个正在跑的创作轮次在恢复中的 profile 下继续,
+// 接着要用的工具突然不在 allowlist 里,表现是"生成到一半工具开始失败")。
+const dialog = read("src/ui/ai/ContentCreatorDialog.cpp");
+const destroyAt = dialog.indexOf("case WM_DESTROY:");
+assert.notStrictEqual(destroyAt, -1, "the creator dialog must have a WM_DESTROY path");
+const destroyBody = dialog.slice(destroyAt);
+// 两边都带 miaodesk:: 限定。正则里把它设成可选:否则"加个命名空间限定"这种纯写法
+// 改动会让门无故变红,而一个因为写法变化就响的门,几天后就没人看它了。
+const NS = "(?:miaodesk::)?";
+const chatRestore = destroyBody.search(new RegExp(`SetLaunchProfile\\(\\s*${NS}MakeChatLaunchProfile\\(`));
+assert.notStrictEqual(chatRestore, -1,
+  "closing the creator must restore the chat profile, or chat would run with the creator allowlist");
+// 下标全部相对于 destroyBody —— 混用相对/绝对会让这条断言变为恒真或恒假。
+const stopBefore = destroyBody.search(/pi->Stop\(\)/);
+assert.notStrictEqual(stopBefore, -1, "the creator must stop the shared runtime on destroy");
+assert.ok(stopBefore < chatRestore,
+  "Stop() must come before the profile is restored -- see the comment in WM_DESTROY");
+
+// 反方向:创作窗口打开时必须装上创作 profile,而且工作区不能是空的。
+// 空工作区会让每一条工具调用以空根判定于是全被拒,而原因看起来像模型写错了路径。
+const showAt = dialog.indexOf("bool ShowContentCreatorDialog(");
+assert.notStrictEqual(showAt, -1, "ShowContentCreatorDialog must exist");
+const showBody = dialog.slice(showAt);
+assert.match(showBody, new RegExp(`SetLaunchProfile\\(\\s*${NS}MakeCreatorLaunchProfile\\(`),
+  "opening the creator must install the Creator profile");
+assert.match(showBody, /ResolveCreatorWorkspaceRoot\(kind\)/,
+  "the workspace must come from the host, not from a tool argument");
+
+// 工作区根目录的复用规则必须与分析一致:重开是同一个工作区(CCA-10 要求恢复草稿)。
+const bridge = read("src/desktop/control/ContentCreatorBridge.cpp");
+assert.match(bridge, /paths::CreatorWorkspacesRoot\(\)/,
+  "the workspace root must come from AppPaths, following every other feature");
+assert.match(bridge, /const fs::path active = perKind \/ L"1";/,
+  "reopening must resolve to the same directory, so a draft survives the close");
+
 // CMake 必须编译新文件,否则它只存在于磁盘上(2026-09-22 LNK2019 那一课)。
 const cmake = read("src/CMakeLists.txt");
 assert.match(cmake, /desktop\/control\/PiLaunchProfile\.cpp/,

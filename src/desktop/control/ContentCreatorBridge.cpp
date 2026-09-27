@@ -27,6 +27,34 @@ bool Valid(ContentCreatorKind kind) noexcept {
     return kind == ContentCreatorKind::Wallpaper || kind == ContentCreatorKind::Widget;
 }
 
+const wchar_t* KindFolder(ContentCreatorKind kind) noexcept {
+    switch (kind) {
+    case ContentCreatorKind::Wallpaper: return L"wallpaper";
+    case ContentCreatorKind::Widget: return L"widget";
+    case ContentCreatorKind::None: break;
+    }
+    return L"";
+}
+
+} // namespace
+
+std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
+    if (!Valid(kind)) return {};
+    const fs::path root = miaodesk::paths::CreatorWorkspacesRoot();
+    if (root.empty()) return {};
+    const fs::path perKind = root / KindFolder(kind);
+    // 建目录本身失败也返回路径:装 profile 的价值在于 permit 与 env 都就位,
+    // 而目录不存在时工具调用会以"路径不在布局内"被拒 —— 那是一次看得见的失败,
+    // 比静默退回空工作区好。空工作区会让所有工具调用以一个空根去判定,
+    // 于是每一条都被拒,而原因看起来像模型写错了路径。
+    miaodesk::paths::EnsureDirectory(perKind);
+    const fs::path active = perKind / L"1";
+    miaodesk::paths::EnsureDirectory(active);
+    return active.wstring();
+}
+
+namespace {
+
 } // namespace
 
 ContentCreatorKind ParseCommandLine(std::wstring_view commandLine) noexcept {

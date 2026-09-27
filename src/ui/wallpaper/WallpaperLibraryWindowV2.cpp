@@ -2,6 +2,7 @@
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/ContentWidgetPreviewRenderer.h"
 #include "miaodesk/ContentCreatorBridge.h"
+#include "miaodesk/LibraryFilterChipLayout.h"
 #include "miaodesk/ContentWidgetSettingsDialog.h"
 #include "miaodesk/DesktopAiSettingsPage.h"
 #include "miaodesk/DesktopControlService.h"
@@ -1422,6 +1423,41 @@ struct WallpaperLibraryWindow::Impl {
                          SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
         };
 
+        // The chip band grows by one row per wrap, and the content below is pushed down by
+        // exactly that much. It used to be a fixed S(48) and the row never wrapped, which
+        // is why the last chip ran off the right edge at the window's own minimum width.
+        // Each row states its own chip widths, so adding a chip (收藏, 最近使用) is a
+        // change to one array here and nothing else. The geometry itself lives in
+        // LibraryFilterChipLayout.h, which is pure and therefore testable by compiling
+        // and running it -- see tests/library-filter-chip-layout.mjs.
+        // Widths are stated per row: the first chip is narrower (全部), and the widget row's
+        // last chip is wider (小组件). Filling past `count` is harmless because the layout
+        // only reads the first `count` entries.
+        auto chipWidths = [](int count, bool lastChipWide) {
+            std::array<std::int32_t, library_ui::kMaxFilterChips> widths{};
+            for (int i = 0; i < count; ++i) {
+                widths[static_cast<std::size_t>(i)] = i == 0 ? 58 : 68;
+            }
+            if (lastChipWide && count > 1) widths[static_cast<std::size_t>(count - 1)] = 88;
+            return widths;
+        };
+
+        int chipBandH = 0;
+        auto placeChipRow = [&](const HWND* chips, const std::int32_t* widths, int count,
+                                int rowLeft, int rowTop, int rowRight) {
+            const auto layout = library_ui::ResolveFilterChipLayout(
+                widths, count, S(8), std::max(1, rowRight - rowLeft));
+            const int chipH = S(30);
+            for (int i = 0; i < count; ++i) {
+                place(chips[static_cast<std::size_t>(i)],
+                      rowLeft + layout.column[static_cast<std::size_t>(i)],
+                      rowTop + layout.row[static_cast<std::size_t>(i)] * (chipH + S(8)),
+                      static_cast<int>(widths[static_cast<std::size_t>(i)]), chipH);
+            }
+            chipBandH = library_ui::FilterChipBandHeight(layout, chipH, S(8), S(9));
+            return layout.rows;
+        };
+
         place(title, S(18), S(16), sidebarW - S(36), S(28));
         int navY = topH + S(18);
         for (HWND button : nav) {
@@ -1449,13 +1485,9 @@ struct WallpaperLibraryWindow::Impl {
             place(creatorButton, creatorLeft, S(10), creatorW, S(38));
             place(addButton, addLeft, S(10), addW, S(38));
 
-            int chipX = headerLeft;
-            const int chipY = topH + S(9);
-            for (int i = 0; i < kWallpaperFilterCount; ++i) {
-                const int chipW = S(i == 0 ? 58 : 68);
-                place(wallpaperFilters[static_cast<std::size_t>(i)], chipX, chipY, chipW, S(30));
-                chipX += chipW + S(8);
-            }
+            const auto wallpaperChips = chipWidths(kWallpaperFilterCount, false);
+            placeChipRow(wallpaperFilters.data(), wallpaperChips.data(), kWallpaperFilterCount,
+                         headerLeft, topH + S(9), headerRight);
         } else if (widgets) {
             const int addW = S(96);
             const int creatorW = S(154);
@@ -1471,18 +1503,14 @@ struct WallpaperLibraryWindow::Impl {
             place(creatorButton, creatorLeft, S(10), creatorW, S(38));
             place(addButton, addLeft, S(10), addW, S(38));
 
-            int chipX = headerLeft;
-            const int chipY = topH + S(9);
-            for (int i = 0; i < kWidgetFilterCount; ++i) {
-                const int chipW = S(i == 0 ? 58 : (i == 7 ? 88 : 68));
-                place(widgetFilters[static_cast<std::size_t>(i)], chipX, chipY, chipW, S(30));
-                chipX += chipW + S(8);
-            }
+            const auto widgetChips = chipWidths(kWidgetFilterCount, true);
+            placeChipRow(widgetFilters.data(), widgetChips.data(), kWidgetFilterCount,
+                         headerLeft, topH + S(9), headerRight);
         } else {
             place(sectionTitle, headerLeft, S(17), std::max(S(160), contentWidth - margin * 2), S(30));
         }
 
-        const int categoryH = (installed || widgets) ? S(48) : 0;
+        const int categoryH = (installed || widgets) ? std::max(S(48), chipBandH) : 0;
         if (webBarVisible && installed) {
             const int webTop = topH + categoryH;
             const int buttonsW = S(202);

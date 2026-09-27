@@ -519,8 +519,12 @@ std::wstring UserFacingLocalReply(const std::wstring& command, const Conversatio
         text += L" · API Key=" + std::wstring(state.agent->HasStoredApiKey() ? L"已配置" : L"未配置");
         return text;
     }
-    if (command == L"/help")
-        return L"可用命令：/status、/runtime、/time、/apps、/files、/open、/open-file、/new。模型和 API Key 请从系统托盘进入设置。";
+    // /help deliberately falls through to `raw`. The panel used to answer it with its
+    // own shorter list, which drifted from L3Agent's in both directions: it omitted the
+    // credential commands while advertising /runtime, which the agent's list left out.
+    // One authoritative text -- kept complete by tests/slash-command-help-coverage.mjs
+    // -- beats two that each need maintaining.
+    if (command == L"/help") return raw;
     if (command == L"/new" || command == L"/new-chat" || command == L"新对话") return L"已开始新的对话。";
     return raw;
 }
@@ -788,7 +792,7 @@ void SendPrompt(ConversationState& state) {
         }
         AppendCompleted(state, typedPrompt,
                         L"妙喵 AI 尚未配置。演示模式可说「一键体验」「换壁纸」「右上角加个待办小组件」；"
-                        L"完整能力请从系统托盘进入设置 → 妙喵 AI。");
+                        L"完整能力请从系统托盘进入设置 → 左侧「API 配置」。");
         return;
     }
 

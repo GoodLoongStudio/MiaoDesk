@@ -852,13 +852,14 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
         reply =
             L"可用命令：\r\n"
             L"/status 查看当前模型、Provider 与 Key 状态\r\n"
+            L"/runtime 查看当前运行时与路由状态\r\n"
             L"/retry 重试上一请求（本轮未执行过操作时提供）\r\n"
             L"/apps <关键词>、/files <关键词> 搜索应用与文件\r\n"
             L"/open <应用名>、/open-file <文件名> 直接打开目标\r\n"
             L"/key <密钥> 保存 API Key，/clear-key 清除已保存的 Key\r\n"
             L"/endpoint <地址>、/provider <id> 切换服务地址与提供方\r\n"
             L"/new 开始新对话，/time 查看当前时间\r\n"
-            L"更完整的模型、图片与凭据管理，也可以用右上角 AI 设置。";
+            L"更完整的模型、图片与凭据管理：托盘右键 → 设置 → 左侧「API 配置」。";
         return true;
     }
     if (lower == L"/status") {
@@ -1035,11 +1036,11 @@ void L3Agent::AskAsync(std::wstring prompt, DeltaCallback onDelta, DoneCallback 
 void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken) {
     const auto apiKey = LoadApiKey();
     if (apiKey.empty() && !IsLocalUrl(config_.baseUrl)) {
-        onDone(L"未配置 API Key。请打开右上角 AI 设置填写 Key。");
+        onDone(L"未配置 API Key。请从托盘右键 → 设置 → 左侧「API 配置」里填写。");
         return;
     }
     if (config_.baseUrl.empty() || config_.endpoint.empty() || config_.model.empty()) {
-        onDone(L"L3 模型尚未配置。请打开右上角 AI 设置。");
+        onDone(L"模型尚未配置。请从托盘右键 → 设置 → 左侧「API 配置」里选择服务与模型。");
         return;
     }
 

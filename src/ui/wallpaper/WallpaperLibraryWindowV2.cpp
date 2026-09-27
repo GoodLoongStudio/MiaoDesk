@@ -1142,16 +1142,36 @@ struct WallpaperLibraryWindow::Impl {
         }
         const std::wstring targetId = SelectedTargetId();
         miaodesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
-        if (applyCallback) applyCallback(*selected, targetId);
-        else {
+        bool applied = true;
+        std::wstring failure;
+        if (applyCallback) {
+            // Void callback: the engine owns its own status surface, so there is no
+            // result to check here. The status line below is therefore not evidence
+            // of success on this path -- the engine's own window is.
+            applyCallback(*selected, targetId);
+        } else {
             const auto result = targetId.empty()
                 ? desktopControl.ApplyLibraryItem(*selected)
                 : desktopControl.AssignLibraryItemToMonitor(*selected, targetId, FriendlyMonitor(targetId));
             miaodesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
+            applied = result.success;
+            failure = result.message;
         }
+        // Only advance the usage order on an apply that actually happened. The stamp
+        // feeds RecentlyUsed, so recording a wallpaper the user failed to apply would
+        // put it above ones they really did use.
         std::wstring ignored;
-        if (library) library->MarkUsed(selected->id, &ignored);
+        if (applied && library) library->MarkUsed(selected->id, &ignored);
         RefreshWallpapers();
+        if (!applied) {
+            // The result was already being logged and then ignored: a failed apply of
+            // the product's core action told the user "已应用到桌面" and left nothing
+            // in the status line to retry against.
+            miaodesk::log::Error(L"UI.Library", L"应用壁纸失败: " + failure);
+            SetStatus(failure.empty() ? L"应用壁纸失败。" : failure);
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         SetStatus(L"已应用到桌面：" + selected->title);
     }
 

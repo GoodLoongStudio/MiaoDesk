@@ -262,12 +262,6 @@ bool SourceMissing(const WallpaperLibraryItem& item) {
     return !fs::exists(item.source, ec) || !fs::is_regular_file(item.source, ec);
 }
 
-WallpaperSettingsSection SectionForNav(int id) {
-    if (id == kNavWidgetsId) return WallpaperSettingsSection::Widgets;
-    if (id == kNavAiId) return WallpaperSettingsSection::AI;
-    return WallpaperSettingsSection::Installed;
-}
-
 void FillSolid(HDC dc, const RECT& rect, COLORREF color) {
     HBRUSH brush = CreateSolidBrush(color);
     FillRect(dc, &rect, brush);
@@ -317,7 +311,6 @@ struct WallpaperLibraryWindow::Impl {
 
     WallpaperLibrary* library{};
     ApplyCallback applyCallback;
-    NavigateCallback navigateCallback;
     std::vector<WallpaperLibraryTarget> targets;
     std::vector<std::wstring> targetIds;
     std::vector<WallpaperLibraryItem> visibleWallpapers;
@@ -2083,13 +2076,11 @@ WallpaperLibraryWindow::~WallpaperLibraryWindow() = default;
 
 bool WallpaperLibraryWindow::Show(HINSTANCE instance, WallpaperLibrary* library,
                                   const std::vector<WallpaperLibraryTarget>& targets,
-                                  ApplyCallback applyCallback,
-                                  NavigateCallback navigateCallback) {
+                                  ApplyCallback applyCallback) {
     impl_->instance = instance;
     impl_->library = library;
     impl_->targets = targets;
     impl_->applyCallback = std::move(applyCallback);
-    impl_->navigateCallback = std::move(navigateCallback);
     if (!impl_->window && !impl_->CreateWindowUi()) return false;
 
     // First CreateWindowUi() already loaded local wallpaper list. Re-showing must

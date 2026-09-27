@@ -405,8 +405,16 @@ WallpaperServiceResult WallpaperService::AssignLibraryItemToMonitor(
     return {true, L"已将壁纸分配到显示器：" + item.title};
 }
 
-WallpaperServiceResult WallpaperService::ClearMonitorAssignment(std::wstring_view monitorId) const {
-    if (monitorId.empty()) return {false, L"显示器 id 不能为空。"};
+bool WallpaperService::NeedsPerMonitorApply(const wallpaper::WallpaperLibraryItem& item) const {
+    // A Content Scene is the only valid-library item the global entry cannot carry. It is
+    // not "unsupported" in general: the per-monitor assignment path resolves content:<id>
+    // through the same content resolver, so the item is applicable, just not globally.
+    if (item.kind != wallpaper::LibraryWallpaperKind::Scene) return false;
+    if (!IsContentId(item.id)) return false;
+    return RuntimeSceneKey(item).empty();
+}
+
+WallpaperServiceResult WallpaperService::ClearMonitorAssignment(std::wstring_view monitorId) const {    if (monitorId.empty()) return {false, L"显示器 id 不能为空。"};
     wallpaper::WallpaperMonitorAssignments assignments;
     std::wstring error;
     if (!assignments.Load(&error))

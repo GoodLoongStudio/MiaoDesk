@@ -181,7 +181,12 @@
     - **刻意停在"入库"这一步**：`AI_GENERATED_DESKTOP_SANDBOX.md` §1 的硬规则是"只有显式 Apply 能跨越提交边界"，所以"应用到桌面"仍是用户的一次点击。库是应用托管存储，不是桌面状态。
     - 顺手把 `InstallToLibrary` 从 `InstallGeneratedPackage` 里拆出来，让自动路径和按钮走同一个函数——否则"已自动入库"会和按钮做的是两件事。
   - 未验证项：活动行文案在真机上是否够醒目、"已等待 N 秒"节奏、以及自动入库后到"应用"之间的状态是否说得清。测试 `creator-progress-and-retry-loop.mjs` 16 个变异全红（其中 3 个第一版是绿的——单次出现的检查在有 3 处调用点时会漏、`if (false)` 包裹的调用文本还在、库按钮那条只跑了自己的测试而没跑 `content-creator-modes.mjs`）。
-  - **顺带发现、尚未处理（记下来别丢）**：生成的 Scene 壁纸**无法通过"应用到桌面"**——`WallpaperService.cpp:332` 明确拒绝非内置 Scene 走全局/跨屏入口，报"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"入库成功但应用失败。这是产品边界还是缺口需要判断，我没有自行决定。
+  - **上一条挂起的"生成的 Scene 壁纸应用不了"本轮已修（2026-09-27 当日，goal：有问题就修不等催）**。这不是 AI 创作通路独有的问题，而是**整个 Content Scene 类别**：`ApplyLibraryItem` 的全局入口只能写入"内置 scene key / image / video / web 源"，Content Scene 包没有可写的东西，于是报"请在目标显示器上分配该壁纸"——而"全局 / 当前布局"正是库页面默认选中的目标，所以整类壁纸（AI 生成的 + 任何导入的 .mdwall scene 包）在默认路径上必然失败。
+    - 修法：不新增渲染能力，改用**已经支持 Content Scene 的那条机制**——按显示器分配（它通过 content resolver 解析 `content:<id>`）。`DesktopControlService::ApplyLibraryItem` 失败时先问 `WallpaperService::NeedsPerMonitorApply`，是则枚举真实拓扑、逐屏分配。
+    - **关键的一点：必须同时把 `Layout` 切成 `independent`。** 分配表只在 `StartIndependent` 里被消费，Span/Clone/PrimaryOnly 下引擎渲染的是全局选择——不切布局就是"写进去了、桌面没变"却报成功，正是本仓已经修过三次的"假成功"。Web 通路早就这么做（`WallpaperWebRuntimeCoordinator.cpp` 的 `PersistMonitorWeb`），这里是照着它做，不是发明。
+    - **切布局失败必须报失败**，不能把即将声明的成功发出去（`!layoutSwitched` → return {false, ...}）。
+    - `NeedsPerMonitorApply` 的判定刻意收得很窄：只有 Scene 且是 `content:` id 且解析不到内置 runtime key 时才需要逐屏。内置 Scene / 图片 / 视频 / Web 全部仍走原全局路径，原行为不变。
+    - 未验证项：多屏hot-plug、以及"全局应用"把原本各屏不同的壁纸统一掉这一行为是否符合预期（这正是全局应用的字面语义，但它是行为改变，需确认）。测试 `content-scene-global-apply.mjs` 10 个变异全红。
   - 已把 17 个 tab stop 的创建顺序改成与 `Layout()` 的摆放顺序一致：`新增配置 → Profile 列表 → 名称 → 服务类型 → Base URL → API Key → ◉/复制 → 模型/探测模型 → 图片接口三项 → 测试连接/保存/设为默认/删除`。只移动语句位置，不动任何逻辑——创建顺序除了 Tab 序之外不影响别的（各 `state.x = ...` 互相独立，`SendMessageW` 填充在全部建完后）。
   - 顺带核对：**组件设置对话框本来就是对的**（参数按定义顺序在建窗循环里逐行生成，`y` 递增），所以它不在这条里；也正因如此，只有 API 配置页一个页面需要改，不是全局问题。
   - 新测试 `tests/api-page-tab-order.mjs` 把"创建序 == 摆放序"钉住：解析 `CreatePage` 的创建序列与 `Layout()` 的 `place(...)` 序列，深比较，并要求两组集合相同（否则有控件没被摆放、会卡在建窗时的 10×10 尺寸上）；另外要求 `Layout()` 里每一次 `SetWindowPos` 都带 `SWP_NOZORDER`（否则重排一次 Tab 序就变），并要求泵的 surfaces 数组里仍有库窗口（这点必须在 `Run()` 里查，不能在文件里查——`libraryWindow_.Window()` 还作为自动化窗的焦点归还目标出现在 `ShowAutomation`，全文 grep 会在页面已不被泵服务时也放行）。

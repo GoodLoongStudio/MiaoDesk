@@ -136,6 +136,31 @@ So the boundary is now stated as exactly what the rule says:
 `InstallToLibrary` is deliberately the same function the explicit button calls, so the
 automatic path cannot become a second, weaker install.
 
+### A generated Scene wallpaper now applies (corrected 2026-09-27, same day)
+
+Applying one used to fail outright. The global entry persists a builtin scene key, or an
+image / video / web source, so a Content Scene package had nothing to be written into it
+and `WallpaperService::ApplyLibraryItem` returned "该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置
+Scene，请在目标显示器上分配该壁纸"— on the target the library defaults to, for every
+generated wallpaper and every imported `.mdwall` scene package.
+
+The fix does not add a global capability. It routes to the mechanism that already works:
+
+1. `DesktopControlService::ApplyLibraryItem` asks `WallpaperService::NeedsPerMonitorApply`,
+   which is true only for a Scene whose id is `content:<id>` with no builtin runtime key.
+   Builtin scenes, images, videos and Web wallpapers keep taking the global path unchanged.
+2. It then assigns the item to every monitor from the real topology.
+3. **It switches `Layout` to `independent`.** Assignments are only consumed by
+   `StartIndependent`; in the other modes the engine renders the global selection instead.
+   Omitting step 3 would make the writes succeed and the desktop stay unchanged — the
+   "已应用到桌面" false success this repo has already fixed three times. `PersistMonitorWeb`
+   in the Web coordinator has always done both steps for the same reason.
+4. If step 3 fails, the call reports failure rather than the success it was about to claim.
+
+The semantic consequence is deliberate and is the literal meaning of a global apply:
+per-monitor wallpapers that differ are unified, and the layout becomes Independent. That is
+the same trade-off the Web path made, recorded here rather than left implicit.
+
 The other half of the same round: when validation refuses a package, the validator's
 message is now recorded, shown to the user in the transcript, and fed back into the next
 prompt (`BuildPrompt`). Before that the message was discarded — the user got "未检测到有效

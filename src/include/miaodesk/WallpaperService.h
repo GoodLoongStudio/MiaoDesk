@@ -37,6 +37,17 @@ public:
         std::wstring_view monitorId,
         std::wstring_view friendlyName = {}) const;
     WallpaperServiceResult ClearMonitorAssignment(std::wstring_view monitorId) const;
+
+    // True when this item is a valid wallpaper that the global/cross-screen entry cannot
+    // carry, and can only be placed per-monitor.
+    //
+    // The global entry persists a builtin scene key (or an image / video / web source), so
+    // a Content Scene package -- every AI-generated scene wallpaper and every imported
+    // .mdwall scene package -- has no representation there. Without this question the only
+    // way for a caller to learn that is to attempt the apply and read the failure message,
+    // which is how the AI creator and the library both ended up reporting a dead end for
+    // the default "全局 / 当前布局" target.
+    bool NeedsPerMonitorApply(const wallpaper::WallpaperLibraryItem& item) const;
 };
 
 } // namespace miaodesk::desktop

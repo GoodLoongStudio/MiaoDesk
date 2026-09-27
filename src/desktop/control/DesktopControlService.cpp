@@ -1,6 +1,9 @@
 #include "miaodesk/DesktopControlService.h"
 
 #include "miaodesk/WallpaperRuntimeControl.h"
+#include "miaodesk/AppPaths.h"
+#include "miaodesk/UnicodeProfileFile.h"
+#include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/RuntimeLogger.h"
 
 #include <windows.h>
@@ -265,8 +268,67 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
     WallpaperService service;
     const auto result = service.ApplyLibraryItem(item);
     if (!result.success) {
-        miaodesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
-        return FromWallpaper(result);
+        // The global entry persists a builtin scene key or an image / video / web
+        // source, so a Content Scene package has nothing to be written into it. Every
+        // AI-generated scene wallpaper and every imported .mdwall scene package is in
+        // that class, and the target the library defaults to -- "全局 / 当前布局" -- was
+        // therefore a guaranteed dead end for the whole class. The old failure said
+        // "请在目标显示器上分配该壁纸", i.e. it told the user to go do, by hand and one
+        // monitor at a time, exactly what a global apply means.
+        //
+        // Fan out to the per-monitor assignments instead. That is the mechanism that does
+        // support Content Scene (it resolves content:<id> through the content resolver),
+        // so nothing new is being asked of the renderer.
+        if (!service.NeedsPerMonitorApply(item)) {
+            miaodesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
+            return FromWallpaper(result);
+        }
+
+        miaodesk::log::Info(L"DesktopControl",
+            L"Content Scene 无全局入口，改为分配到所有显示器: id=" + item.id);
+        const auto topology = wallpaper::QueryMonitorTopology();
+        if (!topology.Valid() || topology.monitors.empty()) {
+            return {false, L"没有可用于分配的显示器。"};
+        }
+        std::wstring firstFailure{L"分配到显示器失败。"};
+        std::size_t assigned = 0;
+        for (const auto& monitor : topology.monitors) {
+            const auto perMonitor = AssignLibraryItemToMonitor(
+                item, wallpaper::StableMonitorKey(monitor), monitor.friendlyName);
+            if (perMonitor.success) {
+                ++assigned;
+            } else if (assigned == 0) {
+                firstFailure = perMonitor.message;
+            }
+        }
+        // The assignments are inert unless the layout is Independent: the engine consumes
+        // them only from StartIndependent, and in Span/Clone/PrimaryOnly it renders the
+        // global selection instead. Skipping this switch is what would turn this fix into
+        // a false success -- the same failure shape as reporting "已应用到桌面" for an
+        // apply that never happened. The Web path already does exactly this for the same
+        // reason (WallpaperWebRuntimeCoordinator.cpp PersistMonitorWeb).
+        // Same unicode guard every other writer of this file applies, so the file's
+        // encoding is decided by the guard rather than by whichever path wrote last.
+        const fs::path config = paths::EnsureStateRoot() / L"wallpaper.ini";
+        std::wstring unicodeError;
+        const bool unicodeReady = text::EnsureUtf16LeProfileFile(config, &unicodeError);
+        if (!unicodeReady) {
+            miaodesk::log::Error(L"DesktopControl", L"wallpaper.ini Unicode 初始化失败: " + unicodeError);
+        }
+        const bool layoutSwitched = unicodeReady &&
+            WritePrivateProfileStringW(L"Wallpaper", L"Layout", L"independent", config.c_str()) != FALSE;
+        if (layoutSwitched) WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
+
+        const auto runtime = EnsureRuntime();
+        if (assigned == 0) return {false, firstFailure};
+        if (!layoutSwitched) {
+            miaodesk::log::Error(L"DesktopControl", L"Content Scene 已分配但无法切换到 Independent 布局");
+            return {false, L"壁纸已分配到显示器，但无法切换到每屏独立布局，桌面不会变化。"};
+        }
+        if (!runtime.success) return runtime;
+        miaodesk::log::Info(L"DesktopControl",
+            L"Content Scene 已分配到 " + std::to_wstring(assigned) + L" 台显示器");
+        return {true, L"已应用到全部 " + std::to_wstring(assigned) + L" 台显示器：" + item.title};
     }
     const auto runtime = EnsureRuntime();
     if (!runtime.success) {

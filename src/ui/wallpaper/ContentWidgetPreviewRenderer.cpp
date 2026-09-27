@@ -117,8 +117,32 @@ fs::file_time_type FileStamp(const fs::path& path) {
     return ec ? fs::file_time_type{} : stamp;
 }
 
-fs::file_time_type PackageStamp(const fs::path& root, const content::ContentDefinition& definition) {
-    return std::max(FileStamp(root / L"manifest.json"), FileStamp(root / definition.entry));
+// Must match ContentWidgetHost's PackageStamp policy exactly.
+//
+// This used to stamp only manifest.json and the definition's entry, while the live
+// host recursively stamped every file in the package. A change that touches only
+// parameters.json therefore invalidated the desktop widget within kSyncIntervalMs
+// while the preview kept its cached scene -- so the preview showed the previous
+// effective parameters while the instance showed the new ones, which is precisely
+// what "预览和正式实例使用一致的有效参数" forbids. The library window masks the
+// ordinary path by resetting the cache after the settings dialog returns; an
+// in-place reinstall through the package manager is the case it did not cover.
+//
+// Both functions are called PackageStamp in different translation units, so the
+// names will not tell you they have drifted -- the policy has to be kept identical
+// by hand, and tests/library-usage-stamping-style callers rely on that.
+fs::file_time_type PackageStamp(const fs::path& root) {
+    std::error_code ec;
+    fs::file_time_type latest{};
+    if (!fs::exists(root, ec) || ec) return latest;
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
+         it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const auto value = it->last_write_time(ec);
+        if (!ec && value > latest) latest = value;
+        ec.clear();
+    }
+    return latest;
 }
 
 } // namespace
@@ -159,9 +183,12 @@ struct ContentWidgetPreviewRenderer::Impl {
         return found == scenes.end() ? nullptr : &*found;
     }
 
+    // `definition` is deliberately not a parameter: the definition is resolved from
+    // the catalog inside, and the old signature only needed it to build the two-file
+    // stamp that PackageStamp no longer uses. Passing one in invited the caller to
+    // believe the preview validates against *its* definition.
     CachedScene* EnsureScene(
         const DesktopWidget& widget,
-        const content::ContentDefinition& definition,
         std::wstring* error) {
         CachedScene* cached = FindScene(widget.id);
         const std::wstring source = widget.source.wstring();
@@ -182,7 +209,7 @@ struct ContentWidgetPreviewRenderer::Impl {
             }
             cached->source = source;
             cached->packageRoot = resolved.packageRoot;
-            cached->packageStamp = PackageStamp(cached->packageRoot, definition);
+            cached->packageStamp = PackageStamp(cached->packageRoot);
             cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
             if (!cached->renderer->Load(cached->packageRoot, target.Get(), error)) {
                 cached->renderer.reset();
@@ -191,7 +218,7 @@ struct ContentWidgetPreviewRenderer::Impl {
             return cached;
         }
 
-        const auto stamp = PackageStamp(cached->packageRoot, definition);
+        const auto stamp = PackageStamp(cached->packageRoot);
         if (stamp != cached->packageStamp) {
             cached->packageStamp = stamp;
             cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
@@ -223,7 +250,7 @@ struct ContentWidgetPreviewRenderer::Impl {
             settings.definition.runtime != content::ContentRuntimeKind::Scene)
             return Fail(error, L"Content preview 当前只支持 Scene widget。");
 
-        CachedScene* cached = EnsureScene(widget, settings.definition, error);
+        CachedScene* cached = EnsureScene(widget, error);
         if (!cached || !cached->renderer) return false;
 
         const RECT render = FitWidgetAspect(bounds, widget);

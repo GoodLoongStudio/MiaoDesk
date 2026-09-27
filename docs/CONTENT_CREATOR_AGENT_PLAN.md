@@ -268,11 +268,22 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-05 结构化候选与统一校验
 
-- [ ] 完成；负责人 / 证据：待填写。
-- **依赖**：CCA-04。
+- [~] 候选摘要（digest）已实现并有可执行测试；结构化 receipt、宿主封存与移除回复路径猜测未做。
+- **依赖**：CCA-04（工具侧尚未落地，本条先做了摘要这一层）。
 - **实施**：候选提交返回结构化 receipt；宿主通过真正的包校验服务验证、复制封存、生成 digest/revision；逐步移除正常流程的回复路径猜测。
 - **交付**：候选存储/校验服务、错误定位格式、文本路径兼容策略。
 - **验收**：错 kind、缺素材、非法 binding/参数、错误后端等均产生可定位失败；同路径改内容生成新 revision；封存后修改源目录不能改变待应用候选。兼容入口若保留也必须过相同校验。
+
+**核对结果（2026-09-27，只做了摘要层）**：
+
+- 新增 `ContentCandidateDigest`（`src/include/miaodesk/ContentCandidateDigest.h` + `src/content/package/ContentCandidateDigest.cpp`）：候选的内容身份。按「角色 → 包内相对路径」排序后，对 manifest / scene / 参数 / 引用素材 / 其余文件做长度前缀编码再取 SHA-256。
+- 计划的两条原文要求各自对应一种会真实发生的故障，都有断言对着：只 hash manifest 会让改了一层还留着旧校验结论；hash 绝对路径会让同一份内容每次重新校验都变成新候选，幂等永不命中。前者由「每个部分单独改一个字节都必须换摘要」覆盖，后者由「同一份内容两次计算得到同一个摘要」覆盖。
+- 摘要里带一个 `complete` 标志：缺 manifest / 缺 scene / 有空路径分块 / 空快照 / 同一文件列两次,摘要都标记为不可用。理由是这类残缺包仍然算得出一个看起来正常的哈希，不标记就等于给了一个合法身份。
+- SHA-256 是自带的，**先用已发表测试向量验原语再验用法**：空串、`"abc"`、56 字节、100 万个 `a`、以及 55/56/64/65 字节的填充边界。没有拿"自己实现的 hash"自我认证。
+- 编码可逆性用穷举证明：768 个"完整候选 + 两块可变分块"组合，要求摘要两两不同。它挡住的是去掉长度分隔后出现的真实碰撞 —— [Asset p="a"] + [Other q=role+path+"B"] 与 [Asset p="a"+role+path] + [Other q="B"] 裸拼接后是同一条字节流，两个不同的候选共用一个摘要,一个的校验结论就此盖在另一个头上。已用已知失效确认这条会红。
+- 新增 `src/tests/ContentCandidateDigestTest.cpp`：**69 条断言，本机实跑 0 失败**，接进 `MiaoDeskContentCandidateDigestTest`、`run-pure-logic-tests.sh` 和 Windows CI。
+- 变异测试：19 个已知失效注入，全部让测试变红（含 6 个 SHA-256 原语层的：旋转常量、初始向量、Sigma/sigma 位移、填充字节、尾块长度、输出字节序）。
+- **未做（属于本条剩余部分）**：结构化 receipt、宿主封存（复制到只读快照）、`creator_candidate_submit` 工具，以及把 `ContentCreatorDialog.cpp` 里的回复路径猜测（`FindGeneratedPackagePath` / `FindGeneratedPackageDirectoryCandidate`）替换掉。这些要动 UI 与工具链,CCA-04 是前置。
 
 ### CCA-06 升级 Skills、能力说明与制作样例
 

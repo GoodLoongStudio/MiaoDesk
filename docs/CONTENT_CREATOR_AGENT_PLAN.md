@@ -300,7 +300,15 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - 编码可逆性用穷举证明：768 个"完整候选 + 两块可变分块"组合，要求摘要两两不同。它挡住的是去掉长度分隔后出现的真实碰撞 —— [Asset p="a"] + [Other q=role+path+"B"] 与 [Asset p="a"+role+path] + [Other q="B"] 裸拼接后是同一条字节流，两个不同的候选共用一个摘要,一个的校验结论就此盖在另一个头上。已用已知失效确认这条会红。
 - 新增 `src/tests/ContentCandidateDigestTest.cpp`：**69 条断言，本机实跑 0 失败**，接进 `MiaoDeskContentCandidateDigestTest`、`run-pure-logic-tests.sh` 和 Windows CI。
 - 变异测试：19 个已知失效注入，全部让测试变红（含 6 个 SHA-256 原语层的：旋转常量、初始向量、Sigma/sigma 位移、填充字节、尾块长度、输出字节序）。
-- **未做（属于本条剩余部分）**：结构化 receipt、宿主封存（复制到只读快照）、`creator_candidate_submit` 工具，以及把 `ContentCreatorDialog.cpp` 里的回复路径猜测（`FindGeneratedPackagePath` / `FindGeneratedPackageDirectoryCandidate`）替换掉。这些要动 UI 与工具链,CCA-04 是前置。
+- **结构化 receipt 与 revision 台账（2026-09-27 增补）**：
+
+- 新增 `ContentCandidateLedger`（`src/include/miaodesk/ContentCandidateLedger.h` + `src/content/package/ContentCandidateLedger.cpp`）与结构化校验结果（`ContentValidationIssue` 带 `file` + `nodePath` + `repairable`,`ContentValidationFailure` 十二个枚举值）。
+- **摘要只可能来自宿主封存的快照**。`claimedPath` / `claimedId` 一律按输入处理:模型报一个路径、内容却是别的,摘要照样"对得上",封存就白做了。测试用两个不同的 claimedPath 与一个假的 claimedId 交同一批 parts,断言摘要与 revision 都不变。
+- **同路径改内容 = 新 revision；换路径不改内容 = 同一版**。两条都有断言,且都带反例:换路径再交一次必须仍拿第一次封存的那份快照,否则"封存后不可变"会白说。
+- **失败不分配 revision**。给它 revision 等于说"这是某个有效候选的第 N 版",而它并没有通过校验。同一份内容第二次附带失败结论也不会把已通过的记录改成失败,反过来亦然 —— 第一次发生的结论是事实,不能被后来的调用覆盖。
+- **宿主标记失效后不能靠"再交一次同样的内容"复活**:摘要没变说明它仍指向那份已经不可信的封存。这条是变异测试查出来的 —— 第一版 `LastValid` 用 `invalidated_` 与 `accepted` 两处都判一遍,而 `Invalidate` 已经把 `accepted` 清成 false,于是短路掉 `invalidated_` 那一处测试依然全绿。同一件事查两遍没意义,已删掉重复的那处,只留 `accepted`。
+- 新增 `src/tests/ContentCandidateLedgerTest.cpp`:**57 条断言,本机实跑 0 失败**,接进 `MiaoDeskContentCandidateLedgerTest`、`run-pure-logic-tests.sh` 和 Windows CI。7 个已知失效注入全部让测试变红,其中"摘要改用模型报的路径"一条同时红 6 处。
+- **仍未做**：宿主封存的物理动作（复制到只读快照）、`creator_candidate_submit` 工具本体,以及把 `ContentCreatorDialog.cpp` 里的回复路径猜测（`FindGeneratedPackagePath` / `FindGeneratedPackageDirectoryCandidate`）替换掉。这些要动 UI 与工具链。
 
 ### CCA-06 升级 Skills、能力说明与制作样例
 

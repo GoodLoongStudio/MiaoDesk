@@ -300,7 +300,7 @@
   - 两个函数的实际行为都不是靠读源码断言的：`OffStepMessage` 是纯 double/字符串逻辑，把**真实字节**抽出来编译执行了 14 个用例（含负数 minimum、step 为 0、无 step 等边界）；`wcstoll` 的钳位行为也单独跑过。新增 `tests/widget-parameter-validation.mjs`，除存在性与覆盖断言外，还钉住那个"出厂默认值必须在网格上"的安全性质——否则以后某个包发了网格外默认值，用户会无法原样保存。
   - **审计查出但未动（留待真机或单独决定）**：
     - 预览与活实例的 DPI/alpha 管线不同：预览硬编码 96 DPI、按主屏推宽高比、`ALPHA_MODE_IGNORE` 且清成不透明底色；活实例用 `GetDpiForWindow` + `ALPHA_MODE_PREMULTIPLIED` + 透明。同参数不同光栅化，150% 多屏下卡片与组件会不一致。
-    - 预览的缓存失效只看 `manifest.json` 与 entry，活宿主遍历包里每个文件；只改 `parameters.json` 的原地重装会让桌面 1 秒内刷新而库卡片仍显示旧值（库窗口在弹窗返回后调 `Reset()` 挡住了常规路径，挡不住包管理器那条）。
+    - ~~预览的缓存失效只看 `manifest.json` 与 entry，活宿主遍历包里每个文件；只改 `parameters.json` 的原地重装会让桌面 1 秒内刷新而库卡片仍显示旧值（库窗口在弹窗返回后调 `Reset()` 挡住了常规路径，挡不住包管理器那条）。~~ **已修**：预览的 `PackageStamp` 改为与活宿主**逐字相同**的递归策略。两个函数同名、不同 TU，名字不会告诉你它们是否一致——所以新增 `tests/preview-host-stamp-parity.mjs`，把两边函数体归一化参数名后直接比对字符串，任何一侧下次漂移都会立刻红。顺带删掉 `EnsureScene` 的 `definition` 参数：它只被旧的两文件签名用到，留着会让人以为预览是按调用方传入的 definition 校验的（实际每次从 catalog 重新解析）。
     - `fields` 只建一次而 `ReloadValues` 会替换 `state.snapshot`（含 definition），弹窗打开期间包变更会让字段提示过期。fail-safe，但用户看到的是过期提示加一句"未知参数"。
 
 ## 7. 第三轮：AI、创作、配置与工作台

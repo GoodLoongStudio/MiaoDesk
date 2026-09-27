@@ -336,7 +336,7 @@
     2. `Stop()` 不终止 Pi 进程；`CleanupProcess()`（唯一 `TerminateProcess`）只在析构和换 provider 时调。 acutely 的是 preview 工具：`CreateWallpaperPreview` 写完沙盒会**阻塞式** `SendMessageTimeoutW` 通知主进程，主进程侧 `SearchPreviewBridgeProc` 无任何 turn 门，会直接建出带"应用/拒绝"按钮的可见沙盒窗。于是取消之后桌面上可能留着一个用户被告知"已停止"的轮次的预览窗，点一下应用就能改桌面。
     3. ~~创作面**没有任何取消手段**~~：**已修**。原来 `SetBusy` 把发送按钮禁掉并改叫"生成中…"，生成中只剩"新对话"和关窗，两者都会通过共享 `gPiRuntime` 反过来取消对话面正在进行的轮次。现在发送按钮在忙时保持可用并显示"停止"，点击停当前轮，与对话面行为一致；`stopRequested` 让 `kRequestDone` 报"本轮已按你的要求停止"而不是那句会骗人的"本轮请求结束"。提示里明确写了"已经开始执行的操作可能已经完成，不会被撤销"——因为 `PiRuntime::Stop()` 只请求停止不终止 worker，光说"已停止"会让人以为副作用也停了。prompt EDIT 仍未子类化，Esc 在这面上依旧无效。
     4. `AskAsync` 里 `worker_ = std::jthread(...)` 的移动赋值会 join 旧 worker，而调用线程就是**UI 线程**；旧 worker 若卡在 `ReadLine` 的 1000ms 轮询或 `WaitForSingleObject(2000)`，整个界面会阻塞最多约 2 秒。
-    5. `AskAsync` 对"已在忙"只回一句 `Pi Runtime 正忙`，调用方（创作面）把它当成"本轮生成已完成"提示给用户——请求根本没发出去。
+    5. ~~`AskAsync` 对"已在忙"只回一句 `Pi Runtime 正忙`，调用方（创作面）把它当成"本轮生成已完成"提示给用户——请求根本没发出去。~~ **已修**：`kRequestDone` 识别该拒绝并改为"没有发出请求：妙喵正在处理对话窗口里的任务。等那边结束，或先在对话里停止，再试一次。"。这根因是创作面与对话面**共用一个 `PiRuntime` 却各有一个 busy 闩**，所以面板在跑时创作面的闩是空的、请求能进到 `AskAsync` 才被拒。测试把两边的字符串钉在一起（`PiRuntime` 发什么 / 创作面认什么），改名会立刻红，不会静默退化成继续说"已完成"。
 
 ### CREATE-01 创作流程与上一可用结果保留
 

@@ -88,6 +88,27 @@ assert.match(creator, /state->stopRequested = false;[\s\S]*?SetWindowTextW\(stat
 assert.match(creator, /generatedPackageIsCurrentRound = false;\s*\n\s*stopRequested = false;/,
   "starting a new turn must clear the stop flag");
 
+// A refused request must never be reported as a completed generation.
+// The creator and the conversation panel share one PiRuntime but each keeps its
+// own busy latch, so while the panel is mid-turn the creator's latch is clear,
+// SendPrompt reaches AskAsync, and the runtime's refusal arrives here as an
+// ordinary done string. This pins both the handling and the string coupling --
+// if either side renames the message, the match below fails rather than the user
+// quietly being told an unsent request "已完成".
+assert.match(creator, /kBusyRejectionMarker\[\] = L"Pi Runtime 正忙"/,
+  "the busy-rejection marker must be declared");
+assert.match(creator, /if \(done && done->find\(kBusyRejectionMarker\) != std::wstring::npos\)/,
+  "a refused request must be detected in kRequestDone");
+assert.match(creator, /未发送，当前有任务在进行/,
+  "a refused request must say it was not sent");
+
+const runtime = read("src/ai/pi/PiRuntime.cpp");
+const emitted = [...runtime.matchAll(/onDone\(L"([^"]*)"\)/g)].map((m) => m[1]);
+assert.ok(emitted.includes("Pi Runtime 正忙"),
+  "PiRuntime must still emit the busy rejection through onDone");
+assert.ok(emitted.every((text) => text !== "本轮生成已完成"),
+  "PiRuntime must not emit the creator's completion wording");
+
 // A failed regenerate must not read as "apply the old generation anyway".
 // SetGeneratedPackage returns early on a validation failure without clearing
 // generatedPackage, so the previous candidate stays loaded with live Apply

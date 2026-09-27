@@ -54,6 +54,11 @@ constexpr int kPreviewFullscreenId = 7825;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
+
+// What PiRuntime emits when AskAsync is refused because a turn already owns the
+// shared runtime. Matched only so the user is told the truth about a request that
+// never left this process -- see kRequestDone.
+constexpr wchar_t kBusyRejectionMarker[] = L"Pi Runtime 正忙";
 constexpr UINT_PTR kPreviewTimerId = 0x7830;
 constexpr UINT kPreviewFrameMs = 33;
 
@@ -1584,6 +1589,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     case kRequestDone: {
         std::unique_ptr<std::wstring> done(reinterpret_cast<std::wstring*>(lParam));
         state->SetBusy(false);
+
+        // The creator and the conversation panel share one PiRuntime but each
+        // keeps its own busy latch. While the panel is mid-turn the creator's latch
+        // is clear, so SendPrompt reaches AskAsync and the runtime refuses it --
+        // delivering that refusal here as an ordinary done string, which this
+        // handler then reported as "本轮生成已完成". The request never left the
+        // process; claiming it completed is the one outcome that must not happen.
+        if (done && done->find(kBusyRejectionMarker) != std::wstring::npos) {
+            SetWindowTextW(state->resultNote,
+                L"没有发出请求：妙喵正在处理对话窗口里的任务。等那边结束，或先在对话里停止，再试一次。");
+            AppendText(state->transcript, L"\r\n妙喵：未发送，当前有任务在进行。\r\n");
+            return 0;
+        }
+
         if (done) state->InspectForGeneratedPackage(*done);
         AppendText(state->transcript, L"\r\n");
         if (state->stopRequested) {

@@ -38,6 +38,34 @@ const bodyOf = (text, signature) => {
   assert.fail(`unbalanced braces after ${signature}`);
 };
 
+// The body of the branch opened by a matched `if (...)`, as `match[0]` (which ends at the
+// `return;`) plus whatever follows INSIDE that branch.
+//
+// It has to distinguish the two spellings, because searching for the next "{" blindly
+// lands on some later statement's block: for an unbraced `if (!id) return;` the next "{"
+// belongs to the failure path two statements down, which is precisely the feedback this
+// check is asking about. Reading that block says "reports" for a guard that says nothing.
+function guardBranch(body, match) {
+  const afterCondition = match.index + match[0].search(/return;/);
+  let i = match.index + match[0].length;
+  while (i < body.length && /\s/.test(body[i])) ++i;
+  if (body[i] !== "{") {
+    // Unbraced: the branch is the single statement that was matched.
+    return match[0];
+  }
+  let depth = 0;
+  for (let j = i; j < body.length; ++j) {
+    if (body[j] === "{") ++depth;
+    else if (body[j] === "}") {
+      if (--depth === 0) return body.slice(i, j + 1);
+    }
+  }
+  return match[0];
+}
+
+const SAYS_SOMETHING = /SetStatus\(|MessageBoxW\(/;
+const saysSomething = (text) => SAYS_SOMETHING.test(text);
+
 // Handlers reachable from WM_COMMAND, read from the dispatch table so the set cannot drift.
 const dispatched = [...automation.matchAll(/id == (k\w+Id) && notification == BN_CLICKED\) self->(\w+)\(/g)]
   .map((m) => ({ control: m[1], handler: m[2] }));
@@ -73,8 +101,12 @@ for (const { control, handler } of dispatched) {
     .filter((m) => {
       // Internal invariants cannot be produced by a click.
       if (["!automation", "!library", "!entriesList", "!profileCombo", "!applyDecision"].includes(m[1].trim())) return false;
-      const after = body.slice(m.index, m.index + m[0].length + 200);
-      return !/SetStatus\(|MessageBoxW\(/.test(after);
+      // THE BRANCH, not what follows it. The first version of this filter read 200
+      // characters past the guard, which let a `SetStatus` belonging to a *later* branch --
+      // the failure path two statements down -- satisfy a guard that said nothing at all.
+      // That is a false negative in exactly the shape this file exists to catch, and it
+      // hid ActivatePlaylist and NextPlaylist, whose only feedback is below them.
+      return !saysSomething(guardBranch(body, m));
     });
   if (bare.length) {
     silent.push(`${handler} (${control}) drops the click silently:\n      `
@@ -95,6 +127,8 @@ const expected = {
   DeletePlaylist: "没有选中的 Playlist 可删除。",
   DeleteSchedule: "没有选中的 Schedule 可删除。",
   AddPlaylistEntry: "先在左侧选择一个壁纸库项目，再点添加。",
+  ActivatePlaylist: "没有选中的 Playlist；先新建或选中一个播放列表。",
+  NextPlaylist: "没有选中的 Playlist；先新建或选中一个播放列表。",
   RemovePlaylistEntry: "先在右侧选中一个要移出的条目，再点移除。",
 };
 for (const [handler, message] of Object.entries(expected)) {
@@ -104,7 +138,7 @@ for (const [handler, message] of Object.entries(expected)) {
   assert.match(body, /MessageBeep\(MB_ICONERROR\)/,
     `${handler} must be audible -- a status line alone is easy to miss on a click that`);
 }
-assert.equal(Object.keys(expected).length, 6,
-  "the six handlers found above; a seventh silent one in this window means this map is stale");
+assert.equal(Object.keys(expected).length, 8,
+  "the eight handlers found above; a ninth silent one in this window means this map is stale");
 
 console.log(`every automation action reports an empty selection: PASS (${dispatched.length} handlers)`);

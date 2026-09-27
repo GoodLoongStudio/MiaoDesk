@@ -285,7 +285,17 @@ void AddTask(EditorState& state) {
 
 void EditSelected(EditorState& state) {
     const int index = SelectedIndex(state);
-    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) return;
+    // None of this window's action buttons are EnableWindow'd, and the list has no
+    // LVN_ITEMCHANGED handler -- so a row is deselected by clicking blank space, or by
+    // opening the window with zero tasks, and the button stays live. The click used to be
+    // dropped without a word. Save() writes a status for every failure; these three are
+    // the only paths that did not.
+    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) {
+        SetStatus(state, L"先选中一条待办，再点" +
+                            std::wstring(L"编辑") + L"。");
+        MessageBeep(MB_ICONERROR);
+        return;
+    }
     auto items = state.snapshot.items;
     std::wstring title = items[static_cast<std::size_t>(index)].title;
     std::wstring detail = items[static_cast<std::size_t>(index)].detail;
@@ -298,7 +308,17 @@ void EditSelected(EditorState& state) {
 
 void ToggleSelected(EditorState& state) {
     const int index = SelectedIndex(state);
-    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) return;
+    // None of this window's action buttons are EnableWindow'd, and the list has no
+    // LVN_ITEMCHANGED handler -- so a row is deselected by clicking blank space, or by
+    // opening the window with zero tasks, and the button stays live. The click used to be
+    // dropped without a word. Save() writes a status for every failure; these three are
+    // the only paths that did not.
+    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) {
+        SetStatus(state, L"先选中一条待办，再点" +
+                            std::wstring(L"完成 / 恢复") + L"。");
+        MessageBeep(MB_ICONERROR);
+        return;
+    }
     const auto& task = state.snapshot.items[static_cast<std::size_t>(index)];
     const auto result = state.controller->SetTodayTaskCompleted(task.id, !task.completed);
     if (!result.success) {
@@ -313,7 +333,17 @@ void ToggleSelected(EditorState& state) {
 
 void DeleteSelected(EditorState& state) {
     const int index = SelectedIndex(state);
-    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) return;
+    // None of this window's action buttons are EnableWindow'd, and the list has no
+    // LVN_ITEMCHANGED handler -- so a row is deselected by clicking blank space, or by
+    // opening the window with zero tasks, and the button stays live. The click used to be
+    // dropped without a word. Save() writes a status for every failure; these three are
+    // the only paths that did not.
+    if (index < 0 || static_cast<std::size_t>(index) >= state.snapshot.items.size()) {
+        SetStatus(state, L"先选中一条待办，再点" +
+                            std::wstring(L"删除") + L"。");
+        MessageBeep(MB_ICONERROR);
+        return;
+    }
     auto items = state.snapshot.items;
     items.erase(items.begin() + index);
     if (SaveItems(state, std::move(items)) && !state.snapshot.items.empty()) {

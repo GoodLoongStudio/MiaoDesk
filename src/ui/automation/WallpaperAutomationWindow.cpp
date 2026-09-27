@@ -369,7 +369,11 @@ struct WallpaperAutomationWindow::Impl {
     void ActivatePlaylist() {
         if (!automation) return;
         const auto id = SelectedId(playlistCombo, playlistIds);
-        if (!id) return;
+        if (!id) {
+            SetStatus(L"没有选中的 Playlist；先新建或选中一个播放列表。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         std::wstring error;
         if (!automation->SetActivePlaylist(*id, &error)) {
             SetStatus(error.empty() ? L"激活 Playlist 失败。" : error);
@@ -383,7 +387,11 @@ struct WallpaperAutomationWindow::Impl {
     void NextPlaylist() {
         if (!automation || !applyDecision) return;
         const auto id = SelectedId(playlistCombo, playlistIds);
-        if (!id) return;
+        if (!id) {
+            SetStatus(L"没有选中的 Playlist；先新建或选中一个播放列表。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         const auto decision = automation->ForceNextPlaylist(*id, NowUnixSeconds());
         if (decision.kind == AutomationDecisionKind::None) {
             SetStatus(L"Playlist 没有可轮换的项目。");

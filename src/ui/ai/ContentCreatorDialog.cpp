@@ -891,7 +891,19 @@ struct DialogState {
     }
 
     void ToggleFullscreenPreview() {
-        if (!previewLive && !previewBitmap) return;
+        if (!previewLive && !previewBitmap) {
+            // The pane is clickable whenever a package was published, but a package can
+            // publish with · 预览加载失败 or · 无预览资源 -- and then both previewLive and
+            // previewBitmap are false. The 全屏 button is gated on
+            // (previewLive || previewBitmap) and disables itself correctly; the pane is
+            // gated on a different, weaker condition, so the two disagree and clicking the
+            // large empty area did nothing at all.
+            const std::wstring why = previewRenderError.empty()
+                ? std::wstring(L"这一版没有可全屏的预览画面。")
+                : (L"预览没有加载成功，无法全屏：" + previewRenderError);
+            SetWindowTextW(resultNote, why.c_str());
+            return;
+        }
         SetFullscreenPreview(!previewFullscreenActive);
     }
 
@@ -1345,7 +1357,14 @@ struct DialogState {
         status += installedToLibrary ? L" · 可直接应用" : L" · 可入库 / 应用";
         SetWindowTextW(resultNote, status.c_str());
         UpdatePreviewChrome();
-        EnableWindow(preview, TRUE);
+        // NOT `EnableWindow(preview, TRUE)`. That line forced 重新生成 live the moment
+        // UpdatePreviewChrome had just computed and applied its real condition
+        // (!lastUserPrompt.empty() && !busy) -- and this function runs from an activity
+        // event, which can arrive mid-turn. So for the whole window between "an activity
+        // event carried a package path" and "the turn's done message", 重新生成 was live
+        // while busy, and clicking it hit Regenerate()'s `if (busy || ...) return;` and did
+        // nothing. SetBusy(false) calls UpdatePreviewChrome, so the button is enabled again
+        // at the end of the turn without any override.
         EnableWindow(library, installedToLibrary ? FALSE : TRUE);
         UpdateApplyAvailability();
     }
@@ -1565,7 +1584,17 @@ struct DialogState {
     void SendPrompt() {
         if (!agent || !pi || busy) return;
         std::wstring text = Trim(ReadText(prompt));
-        if (text.empty()) return;
+        if (text.empty()) {
+            // The 生成 button is never disabled -- SetBusy keeps it live on both branches
+            // so it can act as 停止 mid-round -- and the prompt edit ships with a cue
+            // banner, so pressing 生成 before typing is the obvious first move. It used to
+            // fall straight through with nothing written anywhere: this window has no
+            // status line at all, so resultNote is the only surface that speaks.
+            const std::wstring what = IsWidget() ? L"组件" : L"壁纸";
+            SetWindowTextW(resultNote, (L"先描述你想做的" + what + L"，再点生成。").c_str());
+            SetFocus(prompt);
+            return;
+        }
         lastUserPrompt = text;
         AppendText(transcript, L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");

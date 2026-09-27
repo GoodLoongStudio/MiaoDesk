@@ -220,7 +220,16 @@ struct WallpaperApplicationRulesWindow::Impl {
     }
 
     void DeleteRule() {
-        if (selectedRuleId.empty()) return;
+        if (selectedRuleId.empty()) {
+            // Nothing in this window is EnableWindow'd, so this is not a guarded corner:
+            // NewRule() clears selectedRuleId as its first statement, and opening the
+            // window on a machine with no rules lands here too. SaveRule handles the same
+            // "nothing selected / nothing filled in" case with a status line two hundred
+            // lines up; this one said nothing.
+            SetStatus(L"先选中一条规则，再点删除。 ");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
         std::wstring error;
         if (!rules.Remove(selectedRuleId, &error)) {
             SetStatus(error.empty() ? L"删除规则失败。" : error);

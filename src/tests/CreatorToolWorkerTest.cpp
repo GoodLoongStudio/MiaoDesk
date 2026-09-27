@@ -13,6 +13,7 @@
 // 摘要不符这些分支不需要 Windows 也能走到。
 #include "miaodesk/CreatorToolWorker.h"
 #include "miaodesk/ContentCandidateReceipt.h"
+#include "miaodesk/RenderEvidence.h"
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/ContentCandidateLedger.h"
 
@@ -181,6 +182,20 @@ struct MemoryWorkspace : CreatorWorkspacePort {
         ledgerText = text;
         return true;
     }
+    bool CollectEvidence(const RenderEvidenceRequirements& requirements,
+                         std::vector<RenderEvidenceSample>* samples,
+                         std::string* detail) override {
+        *samples = evidenceSamples;
+        if (failEvidence) {
+            *detail = evidenceFailure;
+            return false;
+        }
+        return true;
+    }
+    std::vector<RenderEvidenceSample> evidenceSamples;
+    bool failEvidence{false};
+    std::string evidenceFailure = "缺素材 assets/cloud.png";
+
     bool SaveState(const CreatorWorkspaceState& state) override {
         savedState = state;
         stateWasSaved = true;
@@ -448,22 +463,23 @@ void TestUnimplementedToolsSaySoExplicitly() {
         }
     }
 
-    // 真的调用一个未实现的工具:回 unavailable,不是 rejected。
-    CreatorToolArgs args = Args();
-    args.digest = std::string(64, 'b');
-    // 证据采集只在渲染/评审/就绪阶段被允许,所以这里要用那个阶段的输入。
-    const auto evidence = DispatchCreatorTool("creator_preview_evidence", args,
-                                             Input(true, 5 /*Rendering*/, false), workspace);
-    Check(!evidence.ok, "渲染取证现在不可用");
-    Check(evidence.unavailable, "且归类为 unavailable");
-    Check(!evidence.rejected, "不是 rejected —— 它没有被规则拒绝,是这条路还没修好");
-    CheckEq(evidence.code, "Unavailable", "码是 Unavailable");
-    Check(!evidence.retryable, "且不可重试:重试同一个调用不会有变化");
-
+    // 现在只剩一个工具未实现:生成图片。它需要图片 Provider,而后者不在本轮范围。
+    // 断言它"未实现"而不是"被拒绝",是因为两者要求模型下一步做的事完全相反。
     const auto image = DispatchCreatorTool("creator_image_generate", Args("assets/a.png"), input,
                                           workspace);
     Check(image.unavailable, "生成图片现在不可用");
-    Check(!image.rejected, "不是 rejected");
+    Check(!image.rejected, "不是 rejected —— 它没有被规则拒绝,是这条路还没修好");
+    CheckEq(image.code, "Unavailable", "码是 Unavailable");
+    Check(!image.retryable, "且不可重试:重试同一个调用不会有变化");
+    Check(image.message.find("图片 Provider") != std::string::npos, "原因说明缺的是图片 Provider");
+    Check(image.message.find("这一轮范围") != std::string::npos, "并说明它为什么不在这一轮范围");
+
+    // 渲染取证已经接上了(见本文件末尾那一组用例),所以它不再出现在这里。
+    // 每把一个工具从"未实现"移到"可实现",这里就少一项 —— 这个测试因此也记录了
+    // 还差多少个工具没接,而不是变成一条永远绿的废话。
+    Check(AvailabilityOf(CreatorToolName::PreviewEvidence) ==
+              CreatorToolAvailability::Executable,
+          "渲染取证已可实现 —— 它不再是未实现的那一个");
 
     // ToModelText 必须让三种结局可分辨:成功、拒绝、不可用。
     const auto rejected = DispatchCreatorTool("creator_package_read", Args("../escape.json"),
@@ -483,7 +499,7 @@ void TestUnimplementedToolsSaySoExplicitly() {
     Check(okRead.ToModelText().find("layers") != std::string::npos, "给模型的文本里有内容");
     Check(rejected.ToModelText().find("被拒绝") != std::string::npos,
           "拒绝的文本说它是被拒绝");
-    Check(evidence.ToModelText().find("不可用") != std::string::npos, "不可用的文本说它不可用");
+    Check(image.ToModelText().find("不可用") != std::string::npos, "不可用的文本说它不可用");
 }
 
 // ---------------------------------------------------------------------------
@@ -904,6 +920,133 @@ void TestLedgerRoundTrip() {
     Check(after.RevisionOf(digest) == 1, "第一版还是第一版");
     Check(after.RevisionOf(second) == 2, "第二版是第 2 版");
     Check(after.LastValid() != nullptr, "最新有效候选可查");
+}
+
+// ---------------------------------------------------------------------------
+// 10. 渲染取证
+// ---------------------------------------------------------------------------
+
+// 一组绑对了摘要与时间、离屏、尺寸合规的样本。
+std::vector<RenderEvidenceSample> GoodEvidence(const std::string& digest) {
+    std::vector<RenderEvidenceSample> samples;
+    for (std::uint32_t i = 0; i < 2; ++i) {
+        RenderEvidenceSample sample;
+        sample.frameIndex = i;
+        sample.capturedAtMs = 1000 + i * 100;
+        sample.status = RenderEvidenceStatus::Rendered;
+        sample.digest = digest;
+        sample.backend = "d2d";
+        sample.width = 640;
+        sample.height = 360;
+        sample.fixture = "design:1672x941";
+        sample.byteCount = 4096;
+        sample.offscreen = true;
+        samples.push_back(sample);
+    }
+    return samples;
+}
+
+void TestEvidenceCollectionReportsRealOutput() {
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    workspace.evidenceSamples = GoodEvidence(digest);
+
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(reply.ok, "合法取证通过");
+    Check(reply.payload.find("渲染证据已采集") != std::string::npos, "并说明采集到了什么");
+    Check(reply.payload.find("digest=" + digest) != std::string::npos, "回执绑定当前候选摘要");
+    Check(reply.payload.find("frames=2") != std::string::npos, "并说明有几帧真实输出");
+}
+
+void TestEvidenceFailureIsReportedAsFailure() {
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    workspace.failEvidence = true;
+
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(!reply.ok, "采集失败时整体失败");
+    CheckEq(reply.code, "EvidenceFailed", "拒绝码是 EvidenceFailed");
+    Check(reply.message.find("缺素材") != std::string::npos, "原因带上了宿主持有的具体失败");
+}
+
+void TestASubstitutedFrameIsNotASuccess() {
+    // 计划验收的第四条:渲染失败不会用封面图替代成功。
+    // 一个只被封面图顶替的候选,帧数够了、尺寸对了、摘要也对 —— 但它不是渲染出来的。
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    workspace.evidenceSamples = GoodEvidence(digest);
+    workspace.evidenceSamples.back().status = RenderEvidenceStatus::PlaceholderSubstituted;
+
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(!reply.ok, "有占位帧时不算取证成功");
+    CheckEq(reply.code, "EvidenceSubstituted", "拒绝码单独叫 EvidenceSubstituted");
+    Check(reply.message.find("占位") != std::string::npos, "原因说明是占位");
+    Check(reply.message.find("封面图") != std::string::npos, "并点明不能用封面图顶替");
+}
+
+void TestEvidenceFromAnotherCandidateIsRefused() {
+    // 拿上一版的截图冒充这一版,是所有"看起来成功了"里最隐蔽的。
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    workspace.evidenceSamples = GoodEvidence(std::string(64, 'b'));   // 别的候选
+
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(!reply.ok, "摘要不符的样本被拒");
+    Check(reply.message.find("摘要") != std::string::npos, "且说明是摘要不符");
+}
+
+void TestOffscreenCaptureIsRequired() {
+    // 来自用户屏幕的帧既不是候选的真实输出,也会把私人桌面带进 artifact。
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    workspace.evidenceSamples = GoodEvidence(digest);
+    workspace.evidenceSamples.front().offscreen = false;
+
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(!reply.ok, "非离屏采集被拒");
+    Check(reply.message.find("离屏") != std::string::npos, "且说明必须离屏");
+}
+
+void TestEvidenceWithoutAUsableDigestIsRefused() {
+    MemoryWorkspace workspace;
+    workspace.files.erase("manifest.json");
+    workspace.evidenceSamples = GoodEvidence(std::string(64, 'a'));
+    const auto input = Input(true, 5 /*Rendering*/);
+    CreatorToolArgs args = Args();
+    args.backend = "d2d";
+    const auto reply = DispatchCreatorTool("creator_preview_evidence", args, input, workspace);
+    Check(!reply.ok, "工作区算不出摘要时无法取证");
+    CheckEq(reply.code, "DigestUnusable", "拒绝码是 DigestUnusable");
 }
 
 } // namespace

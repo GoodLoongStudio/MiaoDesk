@@ -10,6 +10,7 @@
 #include "miaodesk/CreatorToolWorker.h"
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/JsonStringField.h"
+#include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/RuntimeLogger.h"
@@ -422,6 +423,79 @@ public:
         // 台账写一半比不写更糟:下一次调用会拿着半份记录重新分配 revision。
         return MoveFileExW(temporary.c_str(), path.c_str(),
                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+
+    bool CollectEvidence(const miaodesk::creator::RenderEvidenceRequirements& requirements,
+                         std::vector<miaodesk::creator::RenderEvidenceSample>* samples,
+                         std::string* detail) override {
+        // 离屏采集:自建一个 DC render target,不碰用户屏幕上的任何窗口。
+        // 计划验收的第四条(不需要抓取私人桌面)就是这一行保证的。
+        Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+        if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                                     factory.GetAddressOf()))) {
+            *detail = "无法创建 D2D 工厂,渲染取证失败。";
+            return false;
+        }
+        const D2D1_RENDER_TARGET_PROPERTIES props =
+            D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                                         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                                           D2D1_ALPHA_MODE_PREMULTIPLIED));
+        const float width = 640.0f;
+        const float height = 360.0f;
+        Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target;
+        if (FAILED(factory->CreateDCRenderTarget(&props, target.GetAddressOf()))) {
+            *detail = "无法创建离屏渲染目标,渲染取证失败。";
+            return false;
+        }
+        const RECT rect{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+        if (FAILED(target->BindDC(nullptr, &rect))) {
+            *detail = "离屏渲染目标没有就绪,渲染取证失败。";
+            return false;
+        }
+
+        // 渲染器要的是包根目录。工作区本身就是那个根。
+        miaodesk::content::MiaoSceneD2DRenderer renderer;
+        std::wstring renderError;
+        const bool loaded = renderer.Load(root_, target.Get(), &renderError);
+
+        // 摘要从**当前工作区**算,不是从模型那边取。这是"样本绑定正确摘要"的前提:
+        // 换一个来源的话,拿到的是"某个候选"的证据,不一定是这一版的。
+        std::string digest;
+        const auto computed = miaodesk::content::ComputeCandidateDigest(Snapshot());
+        if (!computed.UsableAsIdentity()) {
+            *detail = "当前工作区算不出可用的候选摘要,无法为它采集渲染证据。";
+            return false;
+        }
+
+        const std::uint32_t frames = requirements.minFrames == 0 ? 1u : requirements.minFrames;
+        for (std::uint32_t index = 0; index < frames; ++index) {
+            target->BeginDraw();
+            target->Clear(D2D1::ColorF(D2D1::ColorF::Black, 0.0f));
+            std::wstring frameError;
+            const bool drew =
+                loaded && renderer.Draw(static_cast<float>(index) * 0.1f,
+                                        D2D1::SizeF(width, height), &frameError);
+            const HRESULT hr = target->EndDraw();
+            if (!drew || FAILED(hr)) {
+                // 失败就是失败。**不用封面图、不用纯色、不用上一版顶替** ——
+                // 那是计划验收点名禁止的一条:一个坏包不能看起来渲染得很好。
+                *detail = WideToUtf8(frameError.empty() ? L"渲染器没有输出这一帧。"
+                                                      : frameError);
+                return false;
+            }
+            miaodesk::creator::RenderEvidenceSample sample;
+            sample.frameIndex = index;
+            sample.capturedAtMs = static_cast<std::uint64_t>(::GetTickCount64());
+            sample.backend = "d2d";
+            sample.width = static_cast<std::uint32_t>(width);
+            sample.height = static_cast<std::uint32_t>(height);
+            sample.fixture = "offscreen:640x360";
+            sample.digest = digest;
+            sample.status = miaodesk::creator::RenderEvidenceStatus::Rendered;
+            sample.offscreen = true;
+            samples->push_back(sample);
+        }
+        return true;
     }
 
     bool SaveState(const miaodesk::creator::CreatorWorkspaceState& state) override {

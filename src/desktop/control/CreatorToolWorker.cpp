@@ -5,6 +5,7 @@
 
 #include "miaodesk/ContentCandidateLedger.h"
 #include "miaodesk/ContentCandidateReceipt.h"
+#include "miaodesk/RenderEvidence.h"
 #include "miaodesk/ContentPackageValidator.h"
 
 namespace miaodesk::creator {
@@ -157,10 +158,13 @@ CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept {
         return CreatorToolAvailability::Executable;
     case CreatorToolName::CandidateSubmit:
         return CreatorToolAvailability::Executable;
-    // 这两个要真实渲染与真实模型调用。渲染与模型路由不在本轮范围内(计划明确排除),
-    // 所以它们现在**不可用**,而这句话必须由宿主显式说出来。
-    case CreatorToolName::ImageGenerate:
+    // 渲染取证已经接上:宿主有离屏渲染器,而判据由 AssessRenderEvidence 承担。
     case CreatorToolName::PreviewEvidence:
+        return CreatorToolAvailability::Executable;
+    // 生成图片需要一个图片 Provider。模型路由不在本轮范围内(计划明确排除),
+    // 所以它现在**不可用**,而这句话必须由宿主显式说出来 ——
+    // 让它落进默认分支的话,失败会长得像一次拒绝。
+    case CreatorToolName::ImageGenerate:
         return CreatorToolAvailability::NotImplemented;
     }
     return CreatorToolAvailability::NotImplemented;
@@ -171,9 +175,6 @@ std::string UnavailableReason(CreatorToolName tool) {
     case CreatorToolName::ImageGenerate:
         return "生成图片的能力在当前构建里还没有接上(图片 Provider 属于创作链路的下一步,"
                "不在这一轮范围)。请先用 creator_asset_import 导入已有素材,或告诉用户这一步还没做好。";
-    case CreatorToolName::PreviewEvidence:
-        return "渲染取证在当前构建里还没有接上(需要真实渲染后端,不在这一轮范围)。"
-               "请照常用 creator_package_read 自查包内容,并告诉用户还没有渲染证据。";
     case CreatorToolName::CandidateSubmit:
         return "候选封存在当前构建里还没有接上。请不要声称已经提交或已经可以应用。";
     default:
@@ -515,8 +516,64 @@ CreatorToolReply DispatchCreatorTool(std::string_view tool, const CreatorToolArg
         return reply;
     }
 
+    case CreatorToolName::PreviewEvidence: {
+        // 计划验收的四条:采集的是渲染器真实输出、样本绑定正确摘要与时间、
+        // 缺素材或渲染失败不会用封面图替代成功、不需要抓取私人桌面。
+        // 前四条由 AssessRenderEvidence 判,最后一条由宿主在 CollectEvidence 里保证
+        // (离屏目标),这里再核一遍 offscreen 标志。
+        auto snapshot = port.Snapshot();
+        const auto digest = content::ComputeCandidateDigest(snapshot);
+        if (!digest.UsableAsIdentity()) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "DigestUnusable";
+            reply.message = "当前工作区算不出可用的候选摘要,无法为它采集渲染证据。";
+            return reply;
+        }
+
+        RenderEvidenceRequirements requirements;
+        std::vector<RenderEvidenceSample> samples;
+        std::string detail;
+        if (!port.CollectEvidence(requirements, &samples, &detail)) {
+            // 采集失败就是失败。回给模型一句具体的失败,而不是一个空白结果 ——
+            // 后者的表现是"它什么都没说",而用户会以为这一步跳过了。
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "EvidenceFailed";
+            reply.message = detail.empty() ? std::string("渲染取证失败。") : detail;
+            return reply;
+        }
+
+        const auto verdict = AssessRenderEvidence(samples, requirements, digest.value);
+        if (!verdict.acceptable) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = verdict.containsSubstitution ? "EvidenceSubstituted" : "EvidenceFailed";
+            reply.message = verdict.reason;
+            // 占位要单独说:它不是"渲染失败",是"拿别的东西冒充了渲染结果"。
+            if (verdict.containsSubstitution) {
+                reply.message += " 渲染证据必须是候选的真实输出,不能用封面图或上一版顶替。";
+            }
+            return reply;
+        }
+
+        std::string payload = "渲染证据已采集。";
+        payload += verdict.reason;
+        payload += " digest=";
+        payload += digest.value;
+        payload += " frames=";
+        payload += std::to_string(verdict.usableFrames);
+        for (const auto& sample : samples) {
+            if (!CountsAsRealOutput(sample.status)) continue;
+            payload += "\n  [第 " + std::to_string(sample.frameIndex) + " 帧] backend=" + sample.backend +
+                       " size=" + std::to_string(sample.width) + "x" + std::to_string(sample.height) +
+                       " fixture=" + sample.fixture + " at=" + std::to_string(sample.capturedAtMs) +
+                       "ms";
+        }
+        return Succeed(payload);
+    }
+
     case CreatorToolName::ImageGenerate:
-    case CreatorToolName::PreviewEvidence:
         return Unavailable(parsed);
     }
     return Unavailable(parsed);

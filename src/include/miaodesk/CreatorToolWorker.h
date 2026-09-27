@@ -31,6 +31,7 @@
 #include "miaodesk/CreatorToolRegistry.h"
 #include "miaodesk/CreatorWorkspacePolicy.h"
 #include "miaodesk/CreatorWorkspaceState.h"
+#include "miaodesk/RenderEvidence.h"
 
 namespace miaodesk::creator {
 
@@ -96,6 +97,13 @@ public:
     // 一直停在旧值,下一次带 expectedDigest 的写入会拿着一个过期的值去比对,
     // 于是每一笔写入都被当成"基于旧视图"而拒绝。
     virtual bool SaveState(const CreatorWorkspaceState& state) = 0;
+
+    // 离屏采集当前候选的若干帧。渲染失败时返回 false,detail 说明原因 ——
+    // 宿主**不得**用封面图或上一版的截图顶替:那会让一个坏包看起来渲染得很好,
+    // 而用户预览到的不是他做出来的东西。缺素材也算失败,不是"少一帧"。
+    virtual bool CollectEvidence(const RenderEvidenceRequirements& requirements,
+                                 std::vector<RenderEvidenceSample>* samples,
+                                 std::string* detail) = 0;
 };
 
 // 一次分发的结论。宿主据此写回 output.txt,并把文本给模型。

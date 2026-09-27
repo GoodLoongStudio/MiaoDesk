@@ -59,6 +59,7 @@ struct CreatorToolArgs {
     std::string source;           // AssetImport 的来源
     std::string digest;           // CandidateSubmit 的候选摘要
     std::string backend;          // PreviewEvidence 的目标后端
+    std::string summary;          // CandidateSubmit 的一句话说明
 };
 
 enum class CreatorToolReject {

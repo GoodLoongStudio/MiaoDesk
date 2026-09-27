@@ -74,6 +74,28 @@ public:
     // 只有宿主承认的来源才允许:模型说的任何路径都只是一个字符串。
     virtual bool ReadManagedSource(const std::string& source, std::string* bytes,
                                    std::string* resolvedName) = 0;
+
+    // 把**同一份快照**复制成只读封存。返回 false 表示封存失败 ——
+    // 封存失败的候选不能被接受:没有封存快照,"封存后修改源目录不能改变待应用
+    // 候选"这条就无处安放,而它正是封存存在的理由。
+    //
+    // parts 必须由调用方传进来,而不是让实现自己再读一遍盘:摘要和封存的字节
+    // 必须来自同一次读取。让实现自己读的话,两次读取之间源目录的任何变动都会
+    // 让"摘要对得上内容"变成假话 —— 而那正是封存要保证的那一件事。
+    virtual bool SealSnapshot(const std::string& digest,
+                              const std::vector<content::CandidatePart>& parts,
+                              std::string* snapshotPath) = 0;
+
+    // 台账的读与写。它必须落盘:worker 每次调用都是新进程,revision 不存在
+    // 任何一个进程的内存里。解析失败时 load 返回 false,调用方必须当成
+    // "没有台账"而不是"空台账"。
+    virtual bool LoadLedger(std::string* text) = 0;
+    virtual bool SaveLedger(const std::string& text) = 0;
+
+    // 把会话状态写回工作区。封存成功之后**必须**调用:否则状态文件里的候选摘要
+    // 一直停在旧值,下一次带 expectedDigest 的写入会拿着一个过期的值去比对,
+    // 于是每一笔写入都被当成"基于旧视图"而拒绝。
+    virtual bool SaveState(const CreatorWorkspaceState& state) = 0;
 };
 
 // 一次分发的结论。宿主据此写回 output.txt,并把文本给模型。

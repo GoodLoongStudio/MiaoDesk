@@ -15,15 +15,26 @@
 // 取不到的键返回空串。**空串同时是"键不存在"和"值是空字符串"的返回值** ——
 // 这个歧义是已知的:调用方要区分这两者时必须自己判断键在不在(JsonHasKey)。
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace miaodesk {
+
+// JSON 字符串的引号。放在这里是因为所有调用方都要用**带引号的键**去取值 ——
+// 用裸字段名去找的话,一个值恰好等于字段名就会造成误命中。
+inline constexpr const char* kJsonQuote = "\"";
+
 
 // 这个键在这段 JSON 里作为一个顶层字符串字段出现了吗。
 bool JsonHasStringKey(std::string_view json, std::string_view key) noexcept;
 
 // 取出 key 的值。找不到、或者不是字符串,返回空串。
 std::string ExtractJsonString(std::string_view json, std::string_view key);
+
+// 取出一个整数字段。找不到、不是整数、或溢出都返回 nullopt ——
+// "以为是 0"和"没有这个字段"必须能分开,否则一个缺 schema 的 manifest
+// 会被当成 schema=0,而 0 恰好是个合法的旧版本号。
+std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key);
 
 } // namespace miaodesk

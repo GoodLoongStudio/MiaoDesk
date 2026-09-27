@@ -152,4 +152,92 @@ ContentValidationResult ContentCandidateLedger::validationOf(const std::string& 
     return result;
 }
 
+// 台账落盘。"receipt=" 一行一条,字段用 '|' 分隔:这个字符不会出现在
+// 摘要、路径、或校验结论里 —— 而如果会,这里就必须转义,否则两边的记录
+// 会悄悄对不上,而那种错法在测试里看不出来。
+std::string ContentCandidateLedger::Serialize() const {
+    std::string out = "sessionId=" + sessionId_ + "\n";
+    out += "nextRevision=" + std::to_string(nextRevision_) + "\n";
+    for (const auto& receipt : receipts_) {
+        out += "receipt=";
+        out += receipt.candidateId + "|" + std::to_string(receipt.revision) + "|" + receipt.digest +
+               "|" + receipt.snapshotPath + "|" + (receipt.accepted ? "1" : "0") + "|" +
+               (receipt.validation.ok ? "1" : "0");
+        out += "\n";
+    }
+    for (const auto& digest : invalidated_) {
+        out += "invalidated=" + digest + "\n";
+    }
+    return out;
+}
+
+bool ContentCandidateLedger::Parse(std::string_view text) {
+    receipts_.clear();
+    invalidated_.clear();
+    nextRevision_ = 1;
+    sessionId_.clear();
+
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        std::size_t end = text.find('\n', start);
+        if (end == std::string_view::npos) end = text.size();
+        const std::string_view line = text.substr(start, end - start);
+        start = end + 1;
+        if (line.empty()) {
+            if (end == text.size()) break;
+            continue;
+        }
+        const std::size_t equal = line.find('=');
+        if (equal == std::string_view::npos) return false;
+        const std::string_view key = line.substr(0, equal);
+        const std::string_view value = line.substr(equal + 1);
+        if (key == "sessionId") {
+            sessionId_ = std::string(value);
+        } else if (key == "nextRevision") {
+            if (value.empty()) return false;
+            std::uint32_t number = 0;
+            for (const char ch : value) {
+                if (ch < '0' || ch > '9') return false;
+                number = number * 10 + static_cast<std::uint32_t>(ch - '0');
+            }
+            nextRevision_ = number;
+        } else if (key == "receipt") {
+            // candidateId|revision|digest|snapshotPath|accepted|validationOk
+            std::vector<std::string> fields;
+            std::size_t from = 0;
+            while (true) {
+                const std::size_t bar = value.find('|', from);
+                if (bar == std::string_view::npos) {
+                    fields.emplace_back(value.substr(from));
+                    break;
+                }
+                fields.emplace_back(value.substr(from, bar - from));
+                from = bar + 1;
+            }
+            if (fields.size() != 6) return false;
+            // revision 必须纯十进制。用 strtoul 的话,"abc" 会静默变成 0,
+            // 而 0 在回执里的含义是"被拒绝、没有分配版本号" —— 于是一条坏行
+            // 会被读成一个"被拒绝的候选",而它其实是根本解析不出来的一行。
+            if (fields[1].empty()) return false;
+            for (const char ch : fields[1]) {
+                if (ch < '0' || ch > '9') return false;
+            }
+            ContentCandidateReceipt receipt;
+            receipt.candidateId = fields[0];
+            receipt.revision = static_cast<std::uint32_t>(std::strtoul(fields[1].c_str(), nullptr, 10));
+            receipt.digest = fields[2];
+            receipt.snapshotPath = fields[3];
+            receipt.accepted = fields[4] == "1";
+            receipt.validation.ok = fields[5] == "1";
+            receipts_.push_back(std::move(receipt));
+        } else if (key == "invalidated") {
+            invalidated_.emplace_back(value);
+        }
+        if (end == text.size()) break;
+    }
+    // sessionId 是归属的锚:没有它,这份台账无法和任何作品对上。
+    if (sessionId_.empty()) return false;
+    return true;
+}
+
 } // namespace miaodesk::content

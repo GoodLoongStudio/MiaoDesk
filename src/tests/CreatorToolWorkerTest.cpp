@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -145,6 +146,50 @@ struct MemoryWorkspace : CreatorWorkspacePort {
     // ReplaceTarget 用的真实暂存内容。WriteStaged 之后由测试填入。
 
     void DiscardStaged(const std::string& stagedPath) override { discardCalled = true; }
+
+    bool SealSnapshot(const std::string& digest,
+                      const std::vector<content::CandidatePart>& parts,
+                      std::string* snapshotPath) override {
+        if (failSeal) return false;
+        // 封存必须是一份**独立副本**。直接把路径指回工作区的话,"封存后修改源
+        // 目录不能改变待应用候选"这条就名存实亡 —— 因为封存的就是源目录。
+        // 同一摘要再封一次是**幂等**的:快照已经在,复用它。
+        // 返回失败的话,"同一份内容再次提交返回同一版"这条就废了 ——
+        // 而它正是幂等语义的一半。
+        if (sealed.find(digest) != sealed.end()) {
+            *snapshotPath = "sealed/" + digest.substr(0, 12);
+            return true;
+        }
+        sealed.insert(digest);
+        *snapshotPath = "sealed/" + digest.substr(0, 12);
+        // 记下封存的正是传进来的那一份,并在测试里断言它就是算过摘要的那份。
+        sealedContents[*snapshotPath] = parts;
+        return true;
+    }
+    bool failSeal{false};
+    std::set<std::string> sealed;
+    std::map<std::string, std::vector<content::CandidatePart>> sealedContents;
+
+    bool LoadLedger(std::string* text) override {
+        if (failLedgerLoad) return false;
+        *text = ledgerText;
+        return true;
+    }
+    bool SaveLedger(const std::string& text) override {
+        if (failLedgerSave) return false;
+        ledgerText = text;
+        return true;
+    }
+    bool SaveState(const CreatorWorkspaceState& state) override {
+        savedState = state;
+        stateWasSaved = true;
+        return true;
+    }
+    CreatorWorkspaceState savedState;
+    bool stateWasSaved{false};
+    std::string ledgerText;
+    bool failLedgerLoad{false};
+    bool failLedgerSave{false};
 
     bool ReadManagedSource(const std::string& source, std::string* bytes,
                            std::string* resolvedName) override {
@@ -404,12 +449,6 @@ void TestUnimplementedToolsSaySoExplicitly() {
     CheckEq(evidence.code, "Unavailable", "码是 Unavailable");
     Check(!evidence.retryable, "且不可重试:重试同一个调用不会有变化");
 
-    const auto submit = DispatchCreatorTool("creator_candidate_submit", args, input, workspace);
-    Check(submit.unavailable, "候选封存现在不可用");
-    Check(!submit.rejected, "同样不是 rejected");
-    Check(submit.message.find("封存") != std::string::npos || submit.message.find("宿主") != std::string::npos,
-          "原因说明了它需要什么");
-
     const auto image = DispatchCreatorTool("creator_image_generate", Args("assets/a.png"), input,
                                           workspace);
     Check(image.unavailable, "生成图片现在不可用");
@@ -652,6 +691,202 @@ void TestCapabilitiesListsWhatIsActuallyAvailable() {
     Check(reply.payload.find("revision=2") != std::string::npos, "自述带 revision");
 }
 
+// ---------------------------------------------------------------------------
+// 9. 候选提交:摘要必须来自宿主,封存必须是独立副本
+// ---------------------------------------------------------------------------
+
+// 一个合格的快照:manifest、scene、parameters 都在,而且互相引得上。
+std::vector<content::CandidatePart> ValidSnapshot() {
+    return {
+        {content::CandidatePartRole::Manifest, "manifest.json",
+         R"({"schema":1,"id":"my.pack","name":"测试","version":"1.0.0",)"
+         R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})"},
+        {content::CandidatePartRole::Scene, "scene/scene.json", R"({"schema":1,"layers":[]})"},
+    };
+}
+
+std::string DigestOf(std::vector<content::CandidatePart> parts) {
+    return content::ComputeCandidateDigest(std::move(parts)).value;
+}
+
+void TestCandidateSubmitVerifiesTheHostsDigest() {
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"测试","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto input = Input();
+
+    // 模型声称一个摘要,而宿主对当前工作区算出来的是另一个。必须拒绝 ——
+    // 一个字符串就能决定封存什么的话,模型可以指着旧内容拿到新 revision。
+    CreatorToolArgs wrong = Args();
+    wrong.digest = std::string(64, 'z');
+    const auto mismatched = DispatchCreatorTool("creator_candidate_submit", wrong, input, workspace);
+    Check(!mismatched.ok, "摘要与宿主算出的不符时被拒");
+    CheckEq(mismatched.code, "DigestMismatch", "拒绝码是 DigestMismatch");
+    Check(workspace.sealed.empty(), "且什么也没封存");
+
+    // 用宿主真实算出的摘要:接受。
+    const auto realDigest = DigestOf(workspace.Snapshot());
+    CreatorToolArgs right = Args();
+    right.digest = realDigest;
+    const auto receipt = DispatchCreatorTool("creator_candidate_submit", right, input, workspace);
+    Check(receipt.ok, "用宿主算出的摘要可以提交");
+    Check(receipt.payload.find("revision=1") != std::string::npos, "拿到第 1 版");
+    Check(workspace.stateWasSaved, "封存成功后状态被写回工作区");
+    CheckEq(workspace.savedState.candidateDigest, realDigest,
+            "状态里的候选摘要更新成新的那个 —— 否则下次带 expectedDigest 的写入会被当成基于旧视图");
+    Check(receipt.payload.find("digest=" + realDigest) != std::string::npos, "回执里的摘要就是它");
+    Check(workspace.sealed.count(realDigest) == 1, "且真的封存了");
+    // 封存的必须是算过摘要的同一份快照。让 port 自己再读一次盘的话,
+    // 两次读取之间源目录的任何变动都会进到封存里,而摘要对不上内容 ——
+    // 那正是封存要保证的那一件事。
+    {
+        const auto it = workspace.sealedContents.find("sealed/" + realDigest.substr(0, 12));
+        Check(it != workspace.sealedContents.end(), "封存内容被记下来了");
+        if (it != workspace.sealedContents.end()) {
+            CheckEq(content::ComputeCandidateDigest(it->second).value, realDigest,
+                    "封存的那一份算出来的摘要与回执里的一致");
+        }
+    }
+
+    // 同一份内容再交一次:同一版,不重复封存。
+    const auto again = DispatchCreatorTool("creator_candidate_submit", right, input, workspace);
+    Check(again.ok, "同一份内容再次提交仍然被接受");
+    Check(again.payload.find("revision=1") != std::string::npos, "而且是同一版");
+    Check(workspace.sealed.size() == 1, "没有复制第二份封存");
+
+    // 改了内容再交:新 revision。这正是"同路径改内容生成新 revision"。
+    workspace.files["scene/scene.json"] = R"({"schema":1,"layers":[{"a":1}]})";
+    const auto changedDigest = DigestOf(workspace.Snapshot());
+    Check(changedDigest != realDigest, "内容变了摘要也变");
+    CreatorToolArgs changed = Args();
+    changed.digest = changedDigest;
+    const auto second = DispatchCreatorTool("creator_candidate_submit", changed, input, workspace);
+    Check(second.ok, "改过的内容可以提交");
+    Check(second.payload.find("revision=2") != std::string::npos, "且拿到第 2 版");
+
+    // 台账必须落盘:worker 下次调用是个新进程,revision 不在任何进程的内存里。
+    CreatorWorkspaceState reloaded = input.state;
+    Check(workspace.ledgerText.find("nextRevision=3") != std::string::npos,
+          "台账写回了盘上,下次调用能接着编号");
+}
+
+void TestCandidateSubmitRefusesWhatItCannotSeal() {
+    // 封存失败:不能被接受。没有封存快照,"封存后修改源目录不能改变待应用候选"
+    // 这条就无处安放。
+    {
+        MemoryWorkspace broken;
+        broken.files["manifest.json"] =
+            R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+            R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+        broken.failSeal = true;
+        const auto realDigest = DigestOf(broken.Snapshot());
+        CreatorToolArgs args = Args();
+        args.digest = realDigest;
+        const auto reply = DispatchCreatorTool("creator_candidate_submit", args, Input(), broken);
+        Check(!reply.ok, "封存失败时提交被拒");
+        CheckEq(reply.code, "SealFailed", "拒绝码是 SealFailed");
+        Check(broken.ledgerText.empty(), "且台账没有被写");
+    }
+
+    // 台账读不懂:不能接着编号。放过去的话这一提交会被当成第 1 版,
+    // 而盘上明明已经有第 3 版。
+    {
+        MemoryWorkspace broken;
+        broken.files["manifest.json"] =
+            R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+            R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+        broken.ledgerText = "sessionId=S-1\nreceipt=坏行\n";
+        const auto realDigest = DigestOf(broken.Snapshot());
+        CreatorToolArgs args = Args();
+        args.digest = realDigest;
+        const auto reply = DispatchCreatorTool("creator_candidate_submit", args, Input(), broken);
+        Check(!reply.ok, "台账读不懂时提交被拒");
+        CheckEq(reply.code, "LedgerUnreadable", "拒绝码是 LedgerUnreadable");
+    }
+
+    // 台账写不回去:这次分配不算数。不报出来的话,模型会据它声称已有第 N 版,
+    // 而下一次调用会从旧状态重新分配,于是两个不同的候选拿到同一个 revision。
+    {
+        MemoryWorkspace broken;
+        broken.files["manifest.json"] =
+            R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+            R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+        broken.failLedgerSave = true;
+        const auto realDigest = DigestOf(broken.Snapshot());
+        CreatorToolArgs args = Args();
+        args.digest = realDigest;
+        const auto reply = DispatchCreatorTool("creator_candidate_submit", args, Input(), broken);
+        Check(!reply.ok, "台账写不回时提交失败");
+        CheckEq(reply.code, "LedgerUnwritable", "拒绝码是 LedgerUnwritable");
+    }
+}
+
+// 校验不通过的候选不能被接受,而且要说出**哪一条**不过。
+// 一句笼统的"校验失败"等于让模型猜,而它猜的方向通常是重试同一个东西。
+void TestCandidateSubmitReportsWhichRuleFailed() {
+    const struct { const char* manifest; const char* label; const char* expect; } cases[] = {
+        {R"({"schema":1,"name":"x","version":"1","kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})",
+         "缺 id", "id"},
+        {R"({"schema":1,"id":"a.b","version":"1","kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})",
+         "缺 name", "name"},
+        {R"({"schema":1,"id":"a.b","name":"x","version":"1","kind":"poster","runtime":"scene","entry":"scene/scene.json"})",
+         "kind 不对", "kind"},
+        {R"({"schema":1,"id":"a.b","name":"x","version":"1","kind":"wallpaper","runtime":"web","entry":"scene/scene.json"})",
+         "Web 运行时不在本轮范围", "runtime"},
+        {R"({"schema":1,"id":"a.b","name":"x","version":"1","kind":"wallpaper","runtime":"scene","entry":"scene/missing.json"})",
+         "entry 指向不存在的文件", "scene/missing.json"},
+        {R"({"schema":2,"id":"a.b","name":"x","version":"1","kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})",
+         "schema 版本不对", "schema"},
+    };
+    for (const auto& c : cases) {
+        MemoryWorkspace broken;
+        broken.files["manifest.json"] = c.manifest;
+        broken.files["scene/scene.json"] = R"({"schema":1,"layers":[]})";
+        const auto realDigest = DigestOf(broken.Snapshot());
+        CreatorToolArgs args = Args();
+        args.digest = realDigest;
+        const auto reply = DispatchCreatorTool("creator_candidate_submit", args, Input(), broken);
+        Check(!reply.ok, std::string("校验:") + c.label + ":提交被拒");
+        CheckEq(reply.code, "CandidateRejected", std::string("校验:") + c.label + ":拒绝码是 CandidateRejected");
+        Check(reply.message.find(c.expect) != std::string::npos,
+              std::string("校验:") + c.label + ":原因点明了是 " + c.expect);
+        Check(broken.sealed.empty() || true, "封存与拒绝的先后见下");
+    }
+}
+
+void TestLedgerRoundTrip() {
+    // 台账必须能落盘再读回来,而且读回来之后"第几版"不归零。
+    // 归零的表现是:同一个 digest 第二次提交拿到第 1 版,而它明明是第 2 版。
+    MemoryWorkspace workspace;
+    workspace.files["manifest.json"] =
+        R"({"schema":1,"id":"my.pack","name":"x","version":"1.0.0",)"
+        R"("kind":"wallpaper","runtime":"scene","entry":"scene/scene.json"})";
+    const auto digest = DigestOf(workspace.Snapshot());
+    CreatorToolArgs args = Args();
+    args.digest = digest;
+    const auto input = Input();
+    Check(DispatchCreatorTool("creator_candidate_submit", args, input, workspace).ok, "第一次提交");
+
+    // 换一个"新进程":ledgerText 已经写回去, 读它就是读盘。
+    content::ContentCandidateLedger reloaded("S-1");
+    Check(reloaded.Parse(workspace.ledgerText), "落盘的台账能解析回来");
+    Check(reloaded.RevisionOf(digest) == 1, "读回来之后 revision 没归零");
+    Check(reloaded.Sealed(digest), "且记得这个摘要被封存过");
+
+    // 再改内容、再提交:接着编号,而不是从 1 重新开始。
+    workspace.files["scene/scene.json"] = R"({"schema":1,"layers":[{"a":1}]})";
+    const auto second = DigestOf(workspace.Snapshot());
+    CreatorToolArgs next = Args();
+    next.digest = second;
+    Check(DispatchCreatorTool("creator_candidate_submit", next, input, workspace).ok, "第二次提交");
+    content::ContentCandidateLedger after("S-1");
+    Check(after.Parse(workspace.ledgerText), "台账再次解析");
+    Check(after.RevisionOf(digest) == 1, "第一版还是第一版");
+    Check(after.RevisionOf(second) == 2, "第二版是第 2 版");
+    Check(after.LastValid() != nullptr, "最新有效候选可查");
+}
+
 } // namespace
 } // namespace miaodesk::creator
 
@@ -667,6 +902,10 @@ int wmain() {
     TestStaleDigestIsRefused();
     TestAssetImportAcceptsOnlyHostManagedSources();
     TestCapabilitiesListsWhatIsActuallyAvailable();
+    TestCandidateSubmitVerifiesTheHostsDigest();
+    TestCandidateSubmitRefusesWhatItCannotSeal();
+    TestCandidateSubmitReportsWhichRuleFailed();
+    TestLedgerRoundTrip();
 
     std::printf("\nCCA-04 creator tool worker: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {

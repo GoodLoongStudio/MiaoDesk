@@ -260,7 +260,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-04 提供受约束的包制作与素材工具
 
-- [~] 路径与归属策略、写入事务、工具名册、工作区状态、worker 分发均已实现并有可执行测试；**端到端生成合法包**与"关闭通用工具后仍可完整制作"的对照验证仍待 Windows 真机。
+- [~] 路径与归属策略、写入事务、工具名册、工作区状态、worker 分发、候选封存与结构校验均已实现并有可执行测试；**端到端生成合法包**与"关闭通用工具后仍可完整制作"的对照验证仍待 Windows 真机。
 - **依赖**：CCA-02、CCA-03。
 - **实施**：提供包读写、素材导入/图片生成和真实能力查询；用创作专属 allowlist 替代通用文件/shell 权限；接入会话绑定和超时。
 - **交付**：实际 Pi 扩展与 native adapter、工具 worker 注册、路径与所有权回归。
@@ -318,9 +318,29 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - `src/app/main.cpp` 接上真实文件系统:`FilesystemCreatorWorkspace` 实现同一个 port —— 路径先 `NormalizeCreatorRelativePath` 再过 `weakly_canonical` 确认仍在工作区内(挡联接点与大小写变体),reparse point **真的去问文件系统**(不问的话 junction 猜不出来),暂存写完**回读**再报事实(不回读就绕过了事务对暂存内容的核对),替换走 `MoveFileExW` + `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`。
 - JSON 字符串字段提取从 `PiRuntime.cpp` 提到 `content/package/ContentJsonStringField.cpp`,两处共用一份。分成两份的后果不是重复代码,是**两处可以不一致** —— 而不一致的地方恰好是 `creator_package_update` 的 content:一个把 `\n` 解错、一个不解,写进包里的就是另一份内容,而两边都以为自己对。
 - 新增 `tests/creator-tool-worker-dispatch.mjs`(已接进 repo-hygiene CI):断言创作工具在 `ExecuteNativeToolRaw` 之前被分派走、归属事实来自宿主环境而非参数、暂存回读、`MoveFileExW` 的原子性、reparse point 真的被问。7 个已知失效注入全红。这个闸门只管**形状**层面;哪一条分支真的会发出哪个拒绝码由 `CreatorToolWorkerTest.cpp` 承担(那里也做过变异验证),文件里写明了这个分工 —— 把 `reply.code = "Unverified"` 改成 `"Rejected"` 时形状闸门是绿的,因为另一处有同样的字符串。
+**候选提交与结构校验（2026-09-27 增补）**：
+
+- `creator_candidate_submit` 已接上,`creator_capabilities_get` 的回执里现在带**当前候选摘要** —— 模型必须能拿到它,否则 `creator_candidate_submit` 的 digest 参数只能猜,而猜错就是一次 DigestMismatch。
+- 新增强制顺序:**摘要来自宿主对当前快照的计算,不是模型给的那个字符串**。模型给的只用来对账。一个字符串就能决定封存什么的话,模型可以指着旧内容拿到新 revision,也可以把两个不同的包说成同一版。
+- `ContentCandidateLedger` 增加 `Serialize()` / `Parse()`。worker 每次调用都是新进程,所以"第几版、封存了哪些摘要、哪些已失效"必须能落盘再读回来 —— 否则每次调用都从第 1 版开始,而"同路径改内容生成新 revision"永远验证不了。解析失败时 `Parse` 返回 false,调用方必须当成"没有台账"而不是"空台账":后者会让这次提交被当成第 1 版,而盘上明明已经有第 3 版。
+- 封存是**工作区之外**的一份独立副本(`../revisions/<摘要前缀>.sealed`)。指向工作区的话,"封存后修改源目录不能改变待应用候选"这条名存实亡 —— 因为封存的就是源目录。同一摘要再封一次是幂等成功:否则"同一份内容再次提交返回同一版"这条就废了。
+- 封存成功后**必须**把新摘要写回工作区状态文件。不做这一步,状态里的候选摘要一直停在旧值,下一次带 `expectedDigest` 的写入会被当成"基于旧视图"而全部拒绝。
+- 新增 `ContentPackageValidator`（`src/include/miaodesk/ContentPackageValidator.h` + `src/content/package/ContentPackageValidator.cpp`）:结构校验,纯逻辑。它检查的是**封存快照的字节**,不是盘上此刻的文件 —— 否则校验通过之后源目录再被改一下,这个结论还挂在上面。
+- 校验的字段取自 `MiaoContentPackage` 的加载器要的那一套(`schema/id/name/version/kind/runtime/entry`),不是这里另定一套:校验器和加载器必须说同一种语言,否则"校验通过"到了加载那一刻还是失败,而那一次失败发生在用户眼前。`runtime: web` 显式拒绝 —— 计划 §1 明确本轮只做声明式 Scene 内容与受控素材。
+- 新增 `src/tests/ContentPackageValidatorTest.cpp`:**119 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红。
+- 变异过程查出两个我自己的测试缺陷:(1) `schema` 用例多删了一个字符,把后面的 `id` 也带走了,于是它因为"缺 id"而失败 —— 测试绿了但绿得不对;(2) 把 `"1st"` 当成非法 id,而我按的是"标识符不能以数字开头"的常识,加载器的规则只要求首字符是 `isalnum`,数字满足它。校验器比加载器更严的后果是拒绝它本来能加载的包。
+- 另外修掉两个实现缺陷:`HasField` 只查键在不在,于是 `"kind":""` 被放过(空串到了加载器那里仍然失败,只不过发生在用户眼前),改为 `HasNonEmptyField`;台账解析的 revision 用 `strtoul`,对 `"abc"` 静默返回 0,而 0 在回执里的含义是"被拒绝、没有分配版本号" —— 于是一条坏行会被读成一个"被拒绝的候选"。
+
+**共享字段读解器与它自己的缺陷（2026-09-27 增补）**：
+
+- `ExtractJsonString` / `ExtractJsonInt` 从 `PiRuntime.cpp` 提到 `content/package/ContentJsonStringField.cpp`,两个调用方(Pi 的 RPC 事件、创作 worker 的参数)共用一份。分成两份的后果不是重复代码,是**两处可以不一致** —— 而不一致的地方恰好是 `creator_package_update` 的 content。
+- 新增 `src/tests/JsonStringFieldTest.cpp`:**24 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。
+- 这里查出本次最值得记的一个缺陷:**"键位置"**。`find` 一个带引号的字段名会命中任何出现的地方,包括**值** —— `{"kind":"id"}` 里含有 `"id"`,于是裸字符串查找把"id 字段缺失"判成"id 在",而同一个文件在两处判据下得出两个不同结论。第一版的 `HasField` 传裸字段名、取值传带引号的键,两边甚至不是同一个键。现在统一为"前面只可能有空白,再往前必须是 `{` 或 `,`"才算键位置。
+- 这个修法对 Pi 的 RPC 解析同样正确:某条事件的值恰好等于另一个字段名时,旧的按子串查找会取错值。它只会让误命中变少,不会改变本来正确的情形。
+- 另一处:`from_chars` 会停在第一个不是数字的字符上,所以 `{"schema":1abc}` 被读成 1。一份写坏的 manifest 该被拒绝,而不是被静默读成一个合法值 —— 现在要求数字之后紧跟 `,` `}` `]` 或空白。
+
 - **仍未做（属于本条剩余部分）**:
-  - `ContentCandidateLedger` 的封存动作仍未接(`creator_candidate_submit` 因此标为未实现 —— 它需要宿主侧封存与校验服务,而 worker 每次调用都是新进程, revision 不能由一个进程分配)。
-  - `creator_image_generate` 需要图片 Provider 落地;`creator_preview_evidence` 需要真实渲染后端。两者都不在本轮范围。
+  - `creator_image_generate` 需要图片 Provider 落地;`creator_preview_evidence` 需要真实渲染后端。两者都不在本轮范围,已由 `AvailabilityOf` 显式标为未实现。
   - 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证 —— 这两条要 Windows 真机,不能在本机或 CI 里宣称通过。
 
 ### CCA-05 结构化候选与统一校验

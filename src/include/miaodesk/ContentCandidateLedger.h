@@ -110,6 +110,11 @@ public:
                                   std::vector<CandidatePart> snapshotParts,
                                   const ContentValidationResult& validation);
 
+    // 下一个会被分配的 revision。序列化/解析要用到它:落盘再读回来之后
+    // 编号必须接着走,而不是从 1 重新开始 —— 归零会让两个不同的候选
+    // 拿到同一个 revision,而 revision 是用户眼里"第几版"的唯一答案。
+    std::uint32_t NextRevisionNumber() const noexcept { return nextRevision_; }
+
     // 第几版。0 表示这份摘要还没提交过。
     std::uint32_t RevisionOf(const std::string& digest) const noexcept;
 
@@ -118,6 +123,18 @@ public:
 
     // 这个摘要是否已经被封存过。用于"应用前再验证"判断候选是否仍然有效。
     bool Sealed(const std::string& digest) const noexcept;
+
+    // 序列化/解析。worker 每次工具调用都是**一个新进程**,所以"第几版、封存了哪些
+    // 摘要、哪些已被标记失效"必须能落盘再读回来 —— 否则每次调用都从第 1 版开始,
+    // 而"同路径改内容生成新 revision"这条就永远验证不了。
+    //
+    // 格式是行式 key=value,和 CreatorWorkspaceState 一致:两侧都是我们自己的代码,
+    // 一个轻量格式比一个只用了几个字段的解析器更好排查。
+    std::string Serialize() const;
+    // 解析。返回 false 时 *this 不被信任(可能已部分填充),调用方必须把它当成
+    // "没有台账",而不是当成一个空台账 —— 后者会让第一次提交被当成第 1 版,
+    // 而盘上明明已经有第 3 版。
+    bool Parse(std::string_view text);
 
     // 宿主改动了已封存的候选时调用:标记它不再可信,后续 Apply 必须重验。
     // 台账自己不会篡改已发生的记录,只是拒绝再把它当有效候选。

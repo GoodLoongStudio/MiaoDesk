@@ -1,9 +1,46 @@
 #include "miaodesk/JsonStringField.h"
 
+#include <charconv>
+#include <cctype>
 #include <cstdint>
+#include <optional>
 
 namespace miaodesk {
 namespace {
+
+// 找一个**键位置**上的 key,而不是任何出现的地方。
+//
+// 为什么必须查这一条:"kind":"id" 里含有子串 "id"(带引号),所以
+// find('"id"') 会命中那个**值**。于是"id 字段缺失"被判成"id 在",
+// 而同一个文件在两处判据下得出两个不同结论 —— 我的校验器第一版就是这个 bug。
+//
+// 键位置的定义:前面只可能有空白,再往前必须是 { 或 , 。
+bool IsKeyPosition(std::string_view json, std::size_t at) {
+    std::size_t before = at;
+    while (before > 0 && std::isspace(static_cast<unsigned char>(json[before - 1]))) --before;
+    return before == 0 || json[before - 1] == '{' || json[before - 1] == ',';
+}
+
+std::size_t FindJsonKey(std::string_view json, std::string_view key) {
+    std::size_t from = 0;
+    while (from <= json.size()) {
+        const std::size_t hit = json.find(key, from);
+        if (hit == std::string_view::npos) return std::string_view::npos;
+        if (IsKeyPosition(json, hit)) return hit;
+        from = hit + 1;
+    }
+    return std::string_view::npos;
+}
+
+std::size_t FindJsonValue(std::string_view json, std::string_view key) {
+    const std::size_t hit = FindJsonKey(json, key);
+    if (hit == std::string_view::npos) return std::string_view::npos;
+    const std::size_t colon = json.find(':', hit + key.size());
+    if (colon == std::string_view::npos) return std::string_view::npos;
+    std::size_t pos = colon + 1;
+    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) ++pos;
+    return pos;
+}
 
 int Hex(char ch) noexcept {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -43,8 +80,27 @@ void AppendCodepoint(std::string& out, unsigned cp) {
 
 } // namespace
 
+std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key) {
+    const std::size_t pos = FindJsonValue(json, key);
+    if (pos == std::string_view::npos) return std::nullopt;
+    int value = 0;
+    const auto begin = json.data() + pos;
+    const auto [ptr, ec] = std::from_chars(begin, json.data() + json.size(), value);
+    if (ec != std::errc{} || ptr == begin) return std::nullopt;
+    // 数字之后必须紧跟一个边界。from_chars 自己会停在第一个不是数字的字符上,
+    // 所以 "1abc" 会被读成 1 —— 而一份写坏的 manifest 应该被拒绝,而不是被
+    // 静默读成一个合法值。这里补上边界检查。
+    if (ptr != json.data() + json.size()) {
+        const char after = *ptr;
+        const bool boundary = after == ',' || after == '}' || after == ']' ||
+                              std::isspace(static_cast<unsigned char>(after));
+        if (!boundary) return std::nullopt;
+    }
+    return value;
+}
+
 bool JsonHasStringKey(std::string_view json, std::string_view key) noexcept {
-    const std::size_t hit = json.find(key);
+    const std::size_t hit = FindJsonKey(json, key);
     if (hit == std::string_view::npos) return false;
     const std::size_t colon = json.find(':', hit + key.size());
     if (colon == std::string_view::npos) return false;
@@ -53,7 +109,7 @@ bool JsonHasStringKey(std::string_view json, std::string_view key) noexcept {
 }
 
 std::string ExtractJsonString(std::string_view json, std::string_view key) {
-    const std::size_t hit = json.find(key);
+    const std::size_t hit = FindJsonKey(json, key);
     if (hit == std::string_view::npos) return {};
     const std::size_t colon = json.find(':', hit + key.size());
     if (colon == std::string_view::npos) return {};

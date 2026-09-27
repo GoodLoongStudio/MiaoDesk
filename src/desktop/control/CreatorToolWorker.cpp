@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <set>
 
+#include "miaodesk/ContentCandidateLedger.h"
+#include "miaodesk/ContentPackageValidator.h"
+
 namespace miaodesk::creator {
 namespace {
 
@@ -121,11 +124,14 @@ std::string CapabilitiesText(const CreatorWorkerInput& input) {
         out += name;
         out += "\n";
     }
+    // 摘要必须给出来。模型要知道当前候选是什么,否则 creator_candidate_submit
+    // 的 digest 参数它只能猜 —— 而猜错的后果是一次 DigestMismatch 拒绝。
     out += "当前阶段=";
     out += std::to_string(input.state.stage);
     out += " revision=";
     out += std::to_string(input.state.revision);
-    out += input.state.HasCandidate() ? " 已有候选\n" : " 还没有候选\n";
+    out += input.state.HasCandidate() ? " 当前候选摘要=" + input.state.candidateDigest + "\n"
+                                      : " 还没有候选\n";
     return out;
 }
 
@@ -148,11 +154,12 @@ CreatorToolAvailability AvailabilityOf(CreatorToolName tool) noexcept {
     case CreatorToolName::PackageUpdate:
     case CreatorToolName::AssetImport:
         return CreatorToolAvailability::Executable;
+    case CreatorToolName::CandidateSubmit:
+        return CreatorToolAvailability::Executable;
     // 这两个要真实渲染与真实模型调用。渲染与模型路由不在本轮范围内(计划明确排除),
     // 所以它们现在**不可用**,而这句话必须由宿主显式说出来。
     case CreatorToolName::ImageGenerate:
     case CreatorToolName::PreviewEvidence:
-    case CreatorToolName::CandidateSubmit:
         return CreatorToolAvailability::NotImplemented;
     }
     return CreatorToolAvailability::NotImplemented;
@@ -167,8 +174,7 @@ std::string UnavailableReason(CreatorToolName tool) {
         return "渲染取证在当前构建里还没有接上(需要真实渲染后端,不在这一轮范围)。"
                "请照常用 creator_package_read 自查包内容,并告诉用户还没有渲染证据。";
     case CreatorToolName::CandidateSubmit:
-        return "候选封存在当前构建里还没有接上(需要宿主侧封存与校验服务)。"
-               "请不要声称已经提交或已经可以应用。";
+        return "候选封存在当前构建里还没有接上。请不要声称已经提交或已经可以应用。";
     default:
         break;
     }
@@ -401,9 +407,113 @@ CreatorToolReply DispatchCreatorTool(std::string_view tool, const CreatorToolArg
                        std::to_string(bytes.size()) + " 字节)");
     }
 
+    case CreatorToolName::CandidateSubmit: {
+        // 计划原话:"候选提交返回结构化 receipt；宿主通过真正的包校验服务验证、
+        // 复制封存、生成 digest/revision";"同路径改内容生成新 revision"；
+        // "封存后修改源目录不能改变待应用候选"。
+        //
+        // 三件事全部由宿主做,而这个函数是它们的调度点。关键的一条是:
+        // **摘要来自宿主对当前快照的计算,不是模型给的那个字符串**。模型给的
+        // 只用来对账 —— 如果一个字符串就能决定封存什么,模型可以指着旧内容
+        // 拿到新 revision,也可以把两个不同的包说成同一版。
+        auto snapshot = port.Snapshot();
+        const auto digest = content::ComputeCandidateDigest(snapshot);
+        if (!digest.UsableAsIdentity()) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "DigestUnusable";
+            reply.message = "当前工作区算不出可用的候选摘要(有声明过的部分读不到),不能提交。";
+            return reply;
+        }
+        if (digest.value != args.digest) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "DigestMismatch";
+            reply.message = "你提交的候选摘要与宿主对当前工作区算出的不一致。摘要不能由你提供"
+                            "字符串代替:请先用 creator_package_read 确认内容,再用宿主上次给出的摘要。";
+            reply.retryable = false;
+            return reply;
+        }
+
+        const auto validation = ValidateCandidatePackage(snapshot);
+
+        std::string snapshotPath;
+        // 封存的是刚算过摘要的同一份快照,不是再读一次盘。
+        if (!port.SealSnapshot(digest.value, snapshot, &snapshotPath)) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "SealFailed";
+            reply.message = "封存失败,这个候选没有被接受。没有封存快照的话,源目录稍后被改动"
+                            "就会改变待应用的候选,而那正是封存要防的事。";
+            return reply;
+        }
+
+        // 台账从盘上读。读不懂就当成没有台账,而不是当成空台账 ——
+        // 后者会让这次提交被当成第 1 版,而盘上明明已经有第 3 版。
+        std::string ledgerText;
+        content::ContentCandidateLedger ledger(input.sessionId);
+        if (port.LoadLedger(&ledgerText) && !ledgerText.empty()) {
+            if (!ledger.Parse(ledgerText)) {
+                CreatorToolReply reply;
+                reply.rejected = true;
+                reply.code = "LedgerUnreadable";
+                reply.message = "候选台账读不懂,已拒绝提交。修好它之前不能再分配 revision。";
+                return reply;
+            }
+        }
+
+        content::ContentCandidateSubmission submission;
+        submission.claimedPath = args.relativePath;
+        submission.summary = args.summary;
+        submission.sourceTurn = input.state.epoch;
+        const auto receipt = ledger.Submit(submission, snapshot, validation);
+
+        if (!port.SaveLedger(ledger.Serialize())) {
+            // 台账写不回去,这次分配就不能算数:下一次调用会从旧状态重新分配,
+            // 于是两个不同的候选拿到同一个 revision。
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "LedgerUnwritable";
+            reply.message = "候选台账写不回去,这次提交没有被记录。请不要据它声称已有第 N 版。";
+            return reply;
+        }
+
+        if (!receipt.accepted) {
+            CreatorToolReply reply;
+            reply.rejected = true;
+            reply.code = "CandidateRejected";
+            reply.message = receipt.rejectionReason;
+            if (!receipt.validation.issues.empty()) {
+                const auto& issue = receipt.validation.issues.front();
+                reply.message += ":";
+                if (!issue.file.empty()) reply.message += issue.file;
+                // 字段名必须带上。只说"manifest.json 有问题"的话,模型要在一个
+                // 十几个字段的文件里猜是哪一个 —— 而它猜的方向通常是重试同一个东西。
+                if (!issue.nodePath.empty()) reply.message += " 的 " + issue.nodePath;
+                reply.message += " " + issue.message;
+            }
+            return reply;
+        }
+
+        // 封存成功之后把新摘要写回状态文件。不做这一步,状态里的候选摘要一直停在
+        // 旧值,下一次带 expectedDigest 的写入会被当成"基于旧视图"而拒绝。
+        CreatorWorkspaceState updated = input.state;
+        updated.candidateDigest = receipt.digest;
+        updated.revision = receipt.revision;
+        port.SaveState(updated);
+
+        CreatorToolReply reply;
+        reply.ok = true;
+        reply.code = "None";
+        reply.message = "ok";
+        reply.payload = "候选已接受。revision=" + std::to_string(receipt.revision) +
+                        " candidateId=" + receipt.candidateId + " digest=" + receipt.digest +
+                        " snapshot=" + receipt.snapshotPath;
+        return reply;
+    }
+
     case CreatorToolName::ImageGenerate:
     case CreatorToolName::PreviewEvidence:
-    case CreatorToolName::CandidateSubmit:
         return Unavailable(parsed);
     }
     return Unavailable(parsed);

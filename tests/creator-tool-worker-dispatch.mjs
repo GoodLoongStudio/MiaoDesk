@@ -158,6 +158,29 @@ assert.match(dispatchImpl, /args\.digest != input\.state\.candidateDigest/,
   "the stale-digest check must compare against the HOST's recorded candidate digest, " +
   "not against anything the model supplied");
 
+// --- 7b. 封存必须是独立副本,且与算摘要的是同一份快照 -------------------------
+
+// 摘要来自宿主对当前快照的计算,不是模型给的那个字符串。一个字符串就能决定
+// 封存什么的话,模型可以指着旧内容拿到新 revision,也可以把两个不同的包说成同一版。
+assert.match(dispatchImpl, /digest\.value != args\.digest/,
+  "candidate_submit must compare the HOST-computed digest against what the model claimed");
+assert.match(dispatchImpl, /const auto digest = content::ComputeCandidateDigest\(snapshot\)/,
+  "the digest must be computed from the host's own snapshot of the workspace");
+
+// 封存绝不能落在工作区里:指向工作区的话,"封存后修改源目录不能改变待应用候选"
+// 名存实亡 —— 因为封存的就是源目录。
+assert.match(worker, /root_\.parent_path\(\) \/ L"revisions"/,
+  "the sealed snapshot must live OUTSIDE the workspace");
+assert.match(dispatchImpl, /port\.SealSnapshot\(digest\.value, snapshot, &snapshotPath\)/,
+  "the same snapshot that was digested must be the one sealed -- letting the port " +
+  "re-read the workspace would let the two disagree");
+
+// 封存成功后必须把新摘要写回状态文件。不做这一步,状态里的摘要停在旧值,
+// 下一次带 expectedDigest 的写入会被全部当成"基于旧视图"而拒绝。
+assert.match(dispatchImpl, /port\.SaveState\(updated\)/,
+  "a sealed candidate must update the workspace state, or every later expectedDigest " +
+  "write is refused as stale");
+
 // --- 7. 拒绝 vs 不可用 vs 成功,三种结局必须可分辨 ------------------------------
 
 // ToModelText 是三条不同的文字,而不是一句通用失败。这一条**可以**在这里断言:

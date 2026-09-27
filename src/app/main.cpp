@@ -359,6 +359,89 @@ public:
         fs::remove(path, ec);
     }
 
+    bool SealSnapshot(const std::string& digest,
+                      const std::vector<miaodesk::content::CandidatePart>& parts,
+                      std::string* snapshotPath) override {
+        // 封存必须是**工作区之外**的一份独立副本。指向工作区的话,"封存后修改源
+        // 目录不能改变待应用候选"这条名存实亡 —— 因为封存的就是源目录。
+        std::error_code ec;
+        const auto revisions = root_.parent_path() / L"revisions";
+        fs::create_directories(revisions, ec);
+        if (ec) return false;
+        const auto target = revisions /
+                            (std::wstring(digest.begin(), digest.end()).substr(0, 16) + L".sealed");
+        // 已经封存过就是幂等成功:同一份内容再次提交不该失败。
+        if (fs::exists(target, ec) && !ec) {
+            *snapshotPath = revisions.filename().string() + "/" +
+                            Narrow(target.filename().wstring());
+            return true;
+        }
+        auto temporary = target;
+        temporary += L".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream) return false;
+            // 写进来的就是调用方算摘要用的那一份。自己再扫一遍盘的话,
+            // 两次读取之间的任何变动都会进到封存里,而封存本来的意义
+            // 就是让已封存的东西不随源目录变。
+            stream << "# candidate " << digest << "\n";
+            for (const auto& part : parts) {
+                stream << "-- " << part.relPath << " " << part.bytes.size() << "\n";
+                stream.write(part.bytes.data(), static_cast<std::streamsize>(part.bytes.size()));
+                stream << "\n";
+            }
+            if (!stream) return false;
+        }
+        if (!MoveFileExW(temporary.c_str(), target.c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            fs::remove(temporary, ec);
+            return false;
+        }
+        *snapshotPath = revisions.filename().string() + "/" + Narrow(target.filename().wstring());
+        return true;
+    }
+
+    bool LoadLedger(std::string* text) override {
+        std::ifstream stream(root_.parent_path() / L"candidate-ledger.state", std::ios::binary);
+        if (!stream) return false;
+        *text = std::string(std::istreambuf_iterator<char>(stream),
+                            std::istreambuf_iterator<char>());
+        return true;
+    }
+
+    bool SaveLedger(const std::string& text) override {
+        const auto path = root_.parent_path() / L"candidate-ledger.state";
+        auto temporary = path;
+        temporary += L".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream) return false;
+            stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+            if (!stream) return false;
+        }
+        // 台账写一半比不写更糟:下一次调用会拿着半份记录重新分配 revision。
+        return MoveFileExW(temporary.c_str(), path.c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+
+    bool SaveState(const miaodesk::creator::CreatorWorkspaceState& state) override {
+        const auto path = fs::path(root_) / fs::path(miaodesk::creator::kCreatorWorkspaceStateFileName);
+        const auto text = miaodesk::creator::SerializeCreatorWorkspaceState(state);
+        auto temporary = path;
+        temporary += L".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream) return false;
+            stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+            if (!stream) return false;
+        }
+        // 状态写一半比不写更糟:worker 下一次调用会拿到一个半填的状态,
+        // 而半填的状态会因为缺 sessionId 被整体拒绝 —— 于是看起来像
+        // "这一轮被取消了",而真实原因是写盘被打断。
+        return MoveFileExW(temporary.c_str(), path.c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+
     bool ReadManagedSource(const std::string& source, std::string* bytes,
                            std::string* resolvedName) override {
         // 只有宿主持有的来源,而"宿主持有"在这里有一个非常窄的含义:**已经在这个
@@ -479,6 +562,7 @@ miaodesk::NativeToolResult RunCreatorTool(const std::string& tool, const std::st
     args.source = miaodesk::ExtractJsonString(arguments, "\"source\"");
     args.digest = miaodesk::ExtractJsonString(arguments, "\"digest\"");
     args.backend = miaodesk::ExtractJsonString(arguments, "\"backend\"");
+    args.summary = miaodesk::ExtractJsonString(arguments, "\"summary\"");
 
     CreatorWorkerInput input;
     input.workspaceRoot = WideToUtf8(workspaceRoot);

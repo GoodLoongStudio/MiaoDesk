@@ -12,6 +12,7 @@
 // 全部断言都在本机真实运行:workspace 是一个 in-memory 实现,所以盘满、暂存被占用、
 // 摘要不符这些分支不需要 Windows 也能走到。
 #include "miaodesk/CreatorToolWorker.h"
+#include "miaodesk/ContentCandidateReceipt.h"
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/ContentCandidateLedger.h"
 
@@ -207,6 +208,16 @@ struct MemoryWorkspace : CreatorWorkspacePort {
         return false;
     }
 };
+
+// 从 port 落盘的台账文本里把台账读回来。这正是宿主(新的那个进程)会做的事 ——
+// worker 每次调用都是一个新进程,所以"可信"必须由盘上的台账说了算,
+// 而不是由这一轮的内存状态。
+content::ContentCandidateLedger LedgerFromPort(const MemoryWorkspace& workspace,
+                                                const char* session = kSession) {
+    content::ContentCandidateLedger ledger(session);
+    if (!workspace.ledgerText.empty()) ledger.Parse(workspace.ledgerText);
+    return ledger;
+}
 
 CreatorWorkerInput Input(bool withState = true, int stage = 3 /*Generating*/,
                          bool cancelled = false, std::uint64_t epoch = 7) {
@@ -732,6 +743,14 @@ void TestCandidateSubmitVerifiesTheHostsDigest() {
     const auto receipt = DispatchCreatorTool("creator_candidate_submit", right, input, workspace);
     Check(receipt.ok, "用宿主算出的摘要可以提交");
     Check(receipt.payload.find("revision=1") != std::string::npos, "拿到第 1 版");
+    // 第一行必须是结构化回执。宿主据此确认"有一个可用候选",不再从散文里猜路径 ——
+    // 它必须与宿主台账对得上,所以这里顺手用 ContentCandidateReceipt 核验一次。
+    {
+        const auto verified = VerifyCandidateReceipt(receipt.payload, LedgerFromPort(workspace),
+                                                    kSession, 7);
+        Check(verified.verdict == ReceiptVerdict::Trusted,
+              "回执 payload 能被宿主核验为可信");
+    }
     Check(workspace.stateWasSaved, "封存成功后状态被写回工作区");
     CheckEq(workspace.savedState.candidateDigest, realDigest,
             "状态里的候选摘要更新成新的那个 —— 否则下次带 expectedDigest 的写入会被当成基于旧视图");

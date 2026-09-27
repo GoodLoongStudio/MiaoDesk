@@ -4,6 +4,7 @@
 #include <set>
 
 #include "miaodesk/ContentCandidateLedger.h"
+#include "miaodesk/ContentCandidateReceipt.h"
 #include "miaodesk/ContentPackageValidator.h"
 
 namespace miaodesk::creator {
@@ -506,9 +507,11 @@ CreatorToolReply DispatchCreatorTool(std::string_view tool, const CreatorToolArg
         reply.ok = true;
         reply.code = "None";
         reply.message = "ok";
-        reply.payload = "候选已接受。revision=" + std::to_string(receipt.revision) +
-                        " candidateId=" + receipt.candidateId + " digest=" + receipt.digest +
-                        " snapshot=" + receipt.snapshotPath;
+        // 先给结构化那一行,再给一句人话。宿主(CCA-05 的 ContentCreatorDialog)
+        // 优先读这一行来确认"有一个可用候选",不再从模型散文里猜路径。
+        reply.payload = FormatCandidateReceiptLine(receipt, input.sessionId, input.state.epoch);
+        reply.payload += "\n候选已接受。revision=" + std::to_string(receipt.revision) +
+                         " candidateId=" + receipt.candidateId;
         return reply;
     }
 

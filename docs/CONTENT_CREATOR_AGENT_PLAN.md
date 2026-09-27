@@ -356,7 +356,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-05 结构化候选与统一校验
 
-- [~] 候选摘要（digest）已实现并有可执行测试；结构化 receipt、宿主封存与移除回复路径猜测未做。
+- [~] 候选摘要、结构化 receipt、宿主封存均已实现并有可执行测试；`ContentCreatorDialog` 里的回复路径猜测仍在，尚未被替换。
 - **依赖**：CCA-04（工具侧尚未落地，本条先做了摘要这一层）。
 - **实施**：候选提交返回结构化 receipt；宿主通过真正的包校验服务验证、复制封存、生成 digest/revision；逐步移除正常流程的回复路径猜测。
 - **交付**：候选存储/校验服务、错误定位格式、文本路径兼容策略。
@@ -379,7 +379,17 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - **失败不分配 revision**。给它 revision 等于说"这是某个有效候选的第 N 版",而它并没有通过校验。同一份内容第二次附带失败结论也不会把已通过的记录改成失败,反过来亦然 —— 第一次发生的结论是事实,不能被后来的调用覆盖。
 - **宿主标记失效后不能靠"再交一次同样的内容"复活**:摘要没变说明它仍指向那份已经不可信的封存。这条是变异测试查出来的 —— 第一版 `LastValid` 用 `invalidated_` 与 `accepted` 两处都判一遍,而 `Invalidate` 已经把 `accepted` 清成 false,于是短路掉 `invalidated_` 那一处测试依然全绿。同一件事查两遍没意义,已删掉重复的那处,只留 `accepted`。
 - 新增 `src/tests/ContentCandidateLedgerTest.cpp`:**57 条断言,本机实跑 0 失败**,接进 `MiaoDeskContentCandidateLedgerTest`、`run-pure-logic-tests.sh` 和 Windows CI。7 个已知失效注入全部让测试变红,其中"摘要改用模型报的路径"一条同时红 6 处。
-- **仍未做**：宿主封存的物理动作（复制到只读快照）、`creator_candidate_submit` 工具本体,以及把 `ContentCreatorDialog.cpp` 里的回复路径猜测（`FindGeneratedPackagePath` / `FindGeneratedPackageDirectoryCandidate`）替换掉。这些要动 UI 与工具链。
+**结构化回执与回复路径猜测（2026-09-28 增补）**：
+
+- 新增 `ContentCandidateReceipt`（`src/include/miaodesk/ContentCandidateReceipt.h` + `src/content/package/ContentCandidateReceipt.cpp`）：解析并**核验**一次候选提交的结构化回执。它要替掉的正是 `ContentCreatorDialog` 里那两条猜测 —— 从模型回复正文里正则扫一个 `.mdwall` 路径、再扫一个"看起来像内容包目录"的候选。猜中的代价不是难看,是**不可判定**:用户在正文里提到任何一个路径都会被当成这次生成的产物,于是"它到底做出来了没有"取决于模型怎么说话。
+- 所以这里做两件事,而第二件才是重点:解析回执行,再拿**宿主自己的台账**对账 —— 摘要、candidateId、revision 三项都必须在台账里且一致,会话与 epoch 也必须与宿主持有的那次创作对得上。模型在正文里写一行格式正确的 `[receipt]` 是不够的。
+- 拒绝的理由必须具体:会话不符、来自另一轮、台账里没有这个摘要、revision 不一致、candidateId 不匹配、已被标记失效,各自一个结论。一句"不可信"等于让排查从零开始。
+- 新增 `src/tests/ContentCandidateReceiptTest.cpp`:**50 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红。
+- 最要紧的三条用例都不是"能解析":① 模型自己写一行 `[receipt]`,字段格式全对但 sessionId 是别的作品;② 摘要与 candidateId 都对,但 epoch 是上一轮的;③ 回执说 accepted,而宿主台账里根本没有这个摘要。另外④ 回执行必须**顶行** —— 半句话里出现的 `[receipt]` 是模型在描述它在做什么,不是工具返回的结构化数据。
+- 查出并修掉一个我自己的顺序错误:**失效判断必须排在 `Sealed()` 之前**。`ContentCandidateLedger::Sealed()` 的判据是 `receipt.accepted`,而 `Invalidate()` 会把 accepted 置回 false —— 于是"封存过但已被标记失效"和"从来没封存过"在 `Sealed()` 看来是同一件事。第一版顺序是反的,于是一个被宿主主动失效的候选拿到的是"台账里没有这个摘要",而它明明在台账里,那条错误信息会把排查引向完全错误的方向。
+- `CreatorToolWorker` 的提交回执现在**第一行就是结构化那一行**,人话跟在后面。宿主据此确认"有一个可用候选",不再需要从散文里猜。`CreatorToolWorkerTest` 里加了一条:把回执 payload 交给 `VerifyCandidateReceipt`,用从 port 落盘台账重建出来的台账核验,结论必须是 `Trusted` —— 这正是宿主(新的那个进程)会做的事。
+- **宿主封存的物理动作已接上**(见 CCA-04 相应小节):封存在工作区之外的 `../revisions/` 下,同一摘要幂等,且封存的就是算过摘要的那一份快照。
+- **仍未做**:`ContentCreatorDialog.cpp` 里那两条猜测本身还在(它们现在只是不再是唯一路径)。要动的是一个 2000 行的 Windows UI 文件,而它的验收(用户看到的界面)在本机给不出证据 —— 所以没有宣称已替换。纯逻辑这一层先落地,是为了让替换时有一个可依赖的判据,而不是又一段正则。
 
 ### CCA-06 升级 Skills、能力说明与制作样例
 

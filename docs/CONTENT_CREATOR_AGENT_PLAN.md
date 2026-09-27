@@ -388,6 +388,17 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - 最要紧的三条用例都不是"能解析":① 模型自己写一行 `[receipt]`,字段格式全对但 sessionId 是别的作品;② 摘要与 candidateId 都对,但 epoch 是上一轮的;③ 回执说 accepted,而宿主台账里根本没有这个摘要。另外④ 回执行必须**顶行** —— 半句话里出现的 `[receipt]` 是模型在描述它在做什么,不是工具返回的结构化数据。
 - 查出并修掉一个我自己的顺序错误:**失效判断必须排在 `Sealed()` 之前**。`ContentCandidateLedger::Sealed()` 的判据是 `receipt.accepted`,而 `Invalidate()` 会把 accepted 置回 false —— 于是"封存过但已被标记失效"和"从来没封存过"在 `Sealed()` 看来是同一件事。第一版顺序是反的,于是一个被宿主主动失效的候选拿到的是"台账里没有这个摘要",而它明明在台账里,那条错误信息会把排查引向完全错误的方向。
 - `CreatorToolWorker` 的提交回执现在**第一行就是结构化那一行**,人话跟在后面。宿主据此确认"有一个可用候选",不再需要从散文里猜。`CreatorToolWorkerTest` 里加了一条:把回执 payload 交给 `VerifyCandidateReceipt`,用从 port 落盘台账重建出来的台账核验,结论必须是 `Trusted` —— 这正是宿主(新的那个进程)会做的事。
+**回复凭据分级（2026-09-28 增补）**：
+
+- 新增 `CreatorReplyInterpreter`（`src/include/miaodesk/CreatorReplyInterpreter.h` + `src/desktop/control/CreatorReplyInterpreter.cpp`）：读一段工具结果,并**说清凭据是哪种**。`Receipt` 是宿主核验过的结构化回执,是唯一能让宿主不猜的那种;`ProseScan` 是正文里扫到的路径,仍然可用,但不能单独驱动"可以应用"。
+- 分成两种不是洁癖:把两者混成"找到了",用户就无法知道现在看到的东西是工具交回来的,还是模型一句话里提到的 —— 而这两者的可信度差得很远。`trustworthyWithoutFurtherChecks` 就是给宿主的那句明示。
+- **回执可信时,包就是工作区本身**。创作工具写的就是它;这一刻宿主不必再从正文里扫路径 —— 扫到的任何路径都不比"宿主持有的工作区"更可信。
+- **一段存在但没通过核验的回执,必须一直带到结论里**。第一版只在"正文也没扫到东西"时才提它,于是一条被拒的回执,只要正文里恰好还提到一个路径,就消失得无影无踪 —— 而那正是最该让人知道的事:有东西被拒绝过,而现在准备采信的是一个更弱的凭据。
+- `ProsePathIsUsable` 五道判据(存在 / 是目录 / 有 manifest / 扩展名对得上 kind / 在工作区内)逐条有一个拒绝原因。少一道,"别的作品目录里的一个 .mdwall"就会被当成本次的产物。
+- 新增 `src/tests/CreatorReplyInterpreterTest.cpp`:**37 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。7 个已知失效注入全红。
+- 顺带撞到一个**既有的命名地雷**:`ContentCreatorKind` 在 `miaodesk::creator` 里有两个定义(`ContentCreatorBridge.h` 与 `CreationWorkflow.h`),此前只是没人同时 include 两者。现在按 bridge 的那一个引用,并在注释里写清为什么 —— 这是会复发的坑。
+- **仍未做,而且是真被挡住而不是没排上**：把 `InterpretCreatorReply` 接到 `ContentCreatorDialog`。接它需要宿主持有会话 ID、工作区路径、epoch 与台账文件 —— 而这四样正是 CCA-03 的按需运行实例还没有落到界面上的东西。没有它们,宿主没有任何可对账的凭据,接上去只会变成"拿空台账核验,于是永远退回扫描"。所以先落地判据,等宿主状态就位再接。
+
 - **宿主封存的物理动作已接上**(见 CCA-04 相应小节):封存在工作区之外的 `../revisions/` 下,同一摘要幂等,且封存的就是算过摘要的那一份快照。
 - **仍未做**:`ContentCreatorDialog.cpp` 里那两条猜测本身还在(它们现在只是不再是唯一路径)。要动的是一个 2000 行的 Windows UI 文件,而它的验收(用户看到的界面)在本机给不出证据 —— 所以没有宣称已替换。纯逻辑这一层先落地,是为了让替换时有一个可依赖的判据,而不是又一段正则。
 

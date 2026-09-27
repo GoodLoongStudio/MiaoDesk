@@ -57,6 +57,9 @@ set(MIAODESK_CORE_SOURCES
     # Windows 上编,也能被 run-pure-logic-tests.sh 真实编译并运行 —— 否则
     # "状态机有测试"会退化成"状态机有一份只能在真机走查的代码"。
     desktop/control/CreationWorkflow.cpp
+    # CCA-03:Pi 的启动配置。Chat 与 Creator 各一份,分开目录/session/cwd/
+    # 扩展文件/工具 allowlist。放进 Core 是因为 PiRuntime 在 Core 里。
+    desktop/control/PiLaunchProfile.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp

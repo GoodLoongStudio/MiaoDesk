@@ -1,5 +1,6 @@
 #pragma once
 #include "miaodesk/L3Agent.h"
+#include "miaodesk/PiLaunchProfile.h"
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -49,6 +50,11 @@ public:
     PiRuntime(const PiRuntime&) = delete;
     PiRuntime& operator=(const PiRuntime&) = delete;
 
+    // Which launch configuration this runtime uses. Set before the first AskAsync;
+    // changing it later restarts the process rather than mutating a live one.
+    void SetLaunchProfile(PiLaunchProfile profile) { launchProfile_ = std::move(profile); }
+    const PiLaunchProfile& LaunchProfile() const noexcept { return launchProfile_; }
+
     PiRuntimeStatus Status(const L3Agent& agent) const;
     bool CanHandle(const L3Agent& agent) const;
     void AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
@@ -82,6 +88,13 @@ private:
         std::wstring imageBaseUrl;
         std::wstring imageApiKey;
         std::wstring imageModel;
+        // From the launch profile. Kept in the setup because EnsureSession decides
+        // whether to restart the process from the signature, and the profile is part
+        // of that decision: two profiles must never share one child process.
+        std::wstring sessionDir;
+        std::wstring workingDirectory;
+        std::wstring toolAllowlist;
+        std::wstring systemPrompt;
     };
 
     ProviderSetup BuildProviderSetup(const L3Agent& agent) const;
@@ -105,6 +118,7 @@ private:
     HANDLE outputRead_{};
     std::string readBuffer_;
     std::wstring sessionSignature_;
+    PiLaunchProfile launchProfile_;
 };
 
 } // namespace miaodesk

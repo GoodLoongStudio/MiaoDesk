@@ -287,7 +287,7 @@ async function resolveOpenRouterApiKey() {
 
 ### 7.3 当前产品配置的实际形态(改动的基准)
 
-`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:429`)写出:
+`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:443`)写出:
 
 ```json
 {

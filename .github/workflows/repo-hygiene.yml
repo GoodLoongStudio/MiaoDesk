@@ -390,3 +390,17 @@ jobs:
             done
             exit 1
           }
+
+      # CCA-03:聊天与创作的 Pi 启动配置必须真的分开。各中一条都会让另一模式静默坏掉,
+      # 而那种坏法没有任何别的门看得见:两份配置共用一个扩展文件时,后写的那份覆盖
+      # 前一份,于是另一个模式*下一次*启动的进程加载到错的工具集 —— 表现为"聊天突然
+      # 不能写文件了",而没有任何一处代码改过聊天的 allowlist。
+      - name: Verify the creator session is isolated from plain chat
+        shell: bash
+        run: |
+          out=$(node tests/pi-launch-profile-isolation.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

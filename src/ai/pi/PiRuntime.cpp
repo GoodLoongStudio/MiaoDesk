@@ -1,6 +1,7 @@
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/PiNativeToolsExtension.h"
+#include "miaodesk/PiLaunchProfile.h"
 #include "miaodesk/RuntimeLogPaths.h"
 #include "miaodesk/ApiRuntimeProfile.h"
 
@@ -367,7 +368,13 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     ProviderSetup setup;
     setup.nodePath = FindNodePath();
     setup.piPath = FindPiPath();
-    setup.agentDir = PiAgentDirectory().wstring();
+    setup.agentDir = launchProfile_.agentDir.empty()
+                         ? PiAgentDirectory().wstring()
+                         : launchProfile_.agentDir;
+    setup.sessionDir = launchProfile_.sessionDir;
+    setup.workingDirectory = launchProfile_.workingDirectory;
+    setup.toolAllowlist = launchProfile_.toolAllowlist;
+    setup.systemPrompt = launchProfile_.systemPrompt;
     setup.baseUrl = NormalizeBaseUrl(agent);
     setup.model = agent.Config().model;
     setup.apiType = DetectApiType(agent);
@@ -398,8 +405,12 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     // capability hints are: changing them must restart the Pi session, or the
     // extension keeps running with the previous image configuration and the change
     // appears to have silently done nothing.
+    // The profile salt is part of the signature on purpose: without it, the chat and
+    // creator runtimes would build the same signature for the same Provider config and
+    // EnsureSession would consider a live child process of the *other* mode reusable.
     setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
                       std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
+                      (launchProfile_.mode == PiLaunchMode::Creator ? L"|creator" : L"|chat") +
                       L"|ctx=" + std::to_wstring(setup.contextWindow) +
                       L"|max=" + std::to_wstring(setup.maxTokens) +
                       L"|img=" + setup.imageProvider + L":" + setup.imageBaseUrl + L":" + setup.imageModel +
@@ -502,8 +513,12 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
                                        &security, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (!childErrWrite || childErrWrite == INVALID_HANDLE_VALUE) childErrWrite = childOutWrite;
 
-    const std::wstring systemPrompt =
-        L"You are MiaoDesk's persistent desktop Agent, not a chat-only assistant. "
+    // The launch profile owns the system prompt, the tool allowlist and the cwd.
+    // When no profile is set (the default), the historical values apply unchanged,
+    // so plain chat keeps today's behaviour byte for byte.
+    const std::wstring systemPrompt = setup.systemPrompt.empty()
+        ? std::wstring(
+            L"You are MiaoDesk's persistent desktop Agent, not a chat-only assistant. "
         L"For any actionable request involving files, folders, shell, settings, wallpaper, widgets, PPT, images, or desktop state, you MUST call tools first instead of only describing steps. "
         L"Pure conversational replies are allowed only for greetings, clarification, or explaining prior tool results. "
         L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
@@ -527,18 +542,21 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         L"schema, so use it for those alone — scene .mdwall and .mdwidget packages are validated by the "
         L"host when the user previews and applies them. For a wallpaper, create the sandbox preview with "
         L"desktop_preview_wallpaper and say it is waiting for their Apply decision; for a widget, give the "
-        L"user the package path so they can preview it and add it with 添加到桌面.";
+        L"user the package path so they can preview it and add it with 添加到桌面.")
+        : setup.systemPrompt;
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
     // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.
-    constexpr wchar_t kAgentToolAllowlist[] =
-        L"read,bash,edit,write,grep,find,ls,"
-        L"settings_open,ppt_create,file_create,folder_list,file_open,image_generate,"
-        L"wallpaper_validate_package,wallpaper_state_get,desktop_widget_list,"
-        L"desktop_preview_wallpaper,desktop_preview_examples,content_skill_get";
+    const std::wstring toolAllowlist = setup.toolAllowlist.empty() ? kPiChatToolAllowlist
+                                                                  : setup.toolAllowlist;
 
     std::wstring extensionPath;
-    if (!EnsurePiNativeToolsExtension(&error, &extensionPath) || extensionPath.empty()) {
+    if (!EnsurePiNativeToolsExtension(&error, &extensionPath,
+                                      launchProfile_.mode == PiLaunchMode::Creator
+                                          ? PiNativeToolsVariant::Creator
+                                          : PiNativeToolsVariant::Chat,
+                                      setup.agentDir) ||
+        extensionPath.empty()) {
         if (error.empty()) error = L"Pi Agent 扩展未就绪";
         CloseHandle(inputWrite);
         CloseHandle(outputRead);
@@ -551,13 +569,16 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     std::wstring command = QuoteArg(setup.nodePath) + L" " + QuoteArg(setup.piPath) +
         L" --mode rpc --no-session --approve --provider miaodesk --model " + QuoteArg(setup.model) +
         L" --no-extensions --extension " + QuoteArg(extensionPath) +
-        L" --tools " + kAgentToolAllowlist +
+        L" --tools " + toolAllowlist +
         L" --append-system-prompt " + QuoteArg(systemPrompt);
     std::vector<wchar_t> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back(L'\0');
 
     auto environment = BuildEnvironmentBlock({
         {L"PI_CODING_AGENT_DIR", setup.agentDir},
+        // Separate Pi session storage so a future --session run cannot mix the two
+        // modes' histories. Today --no-session means Pi writes nothing here anyway.
+        {L"PI_CODING_AGENT_SESSION_DIR", setup.sessionDir.empty() ? setup.agentDir : setup.sessionDir},
         {L"MIAODESK_IMAGE_PROVIDER", setup.imageProvider},
         {L"MIAODESK_IMAGE_BASE_URL", setup.imageBaseUrl},
         {L"MIAODESK_IMAGE_API_KEY", setup.imageApiKey},
@@ -576,7 +597,10 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     startup.hStdError = childErrWrite;
 
     PROCESS_INFORMATION processInfo{};
-    const auto cwd = DesktopDirectory();
+    // Pi's cwd participates in path resolution, so it is part of the isolation.
+    // The Creator profile points it at that work's workspace; everything else keeps
+    // the historical Desktop directory.
+    const auto cwd = setup.workingDirectory.empty() ? DesktopDirectory() : setup.workingDirectory;
     const BOOL created = CreateProcessW(setup.nodePath.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
                                         CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, environment.data(),
                                         cwd.empty() ? nullptr : cwd.c_str(), &startup, &processInfo);

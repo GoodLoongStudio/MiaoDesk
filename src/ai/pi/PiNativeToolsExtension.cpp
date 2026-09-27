@@ -16,6 +16,7 @@ namespace {
 
 constexpr wchar_t kNativeToolHostEnvironment[] = L"MIAODESK_NATIVE_TOOL_HOST";
 
+
 fs::path ModulePath() {
     std::wstring path(32768, L'\0');
     const DWORD count = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
@@ -360,7 +361,9 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
 
 } // namespace
 
-bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPath) {
+bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPath,
+                                 PiNativeToolsVariant variant,
+                                 const std::wstring& targetDirectory) {
     const auto module = ModulePath();
     if (module.empty()) {
         if (error) *error = L"Unable to resolve MiaoDesk native tool host.";
@@ -371,15 +374,24 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
         return false;
     }
 
+    // 扩展文件按 variant 分开命名,并且可以由调用方指定目录。
+    // 共用同一个文件是错的:后写的那份会替换前一份,于是*另一个模式*下一次启动的
+    // 进程加载到的是这一模式的工具集 —— 表现是"聊天突然不能写文件了",
+    // 而没有任何一处代码改过聊天的 allowlist。
+    fs::path root = targetDirectory.empty() ? fs::path(PiAgentDirectory()) : fs::path(targetDirectory);
+    const wchar_t* fileName = variant == PiNativeToolsVariant::Creator
+                                  ? L"miaodesk-creator-tools.ts"
+                                  : L"miaodesk-native-tools.ts";
+
     std::error_code ec;
-    const auto extensions = PiAgentDirectory() / L"extensions";
+    const auto extensions = root / L"extensions";
     fs::create_directories(extensions, ec);
     if (ec) {
         if (error) *error = L"Unable to create Pi extension directory.";
         return false;
     }
 
-    const auto target = extensions / L"miaodesk-native-tools.ts";
+    const auto target = extensions / fileName;
     std::string expected;
     expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
     expected.append(kExtensionSourcePart1);

@@ -243,11 +243,20 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-03 隔离创作会话与资源生命周期
 
-- [ ] 完成；负责人 / 证据：待填写。
+- [~] 启动配置已分开并有契约门；按需运行实例的排队/空闲释放/重开草稿未做。
 - **依赖**：CCA-02。
 - **实施**：给现有 Pi 实现增加创作启动配置，分开 session/state/cwd/回调与工具配置；限制一项活跃创作；实现排队、空闲释放、重开草稿；读取同一 Provider 来源。
 - **交付**：按需创作运行实例及生命周期测试；相应 runtime/domain 文档更新。
 - **验收**：聊天生成中可独立取消/重置创作且不影响聊天；两作品不串上下文；多次开关后无持续进程增长；Provider 修改有明确生效时机。
+
+**核对结果（2026-09-27，配置层已完成，运行实例层未做）**：
+
+- 新增 `PiLaunchProfile`（`src/include/miaodesk/PiLaunchProfile.h` + `src/desktop/control/PiLaunchProfile.cpp`）：把原来写死在 `PiRuntime.cpp` 函数体里的 agent 目录、Pi session 目录、cwd、扩展路径、工具 allowlist、system prompt 提成数据。两份 profile 各一套，`MakeChatLaunchProfile` 的取值与今天逐字相同。
+- `PiRuntime` 改为从 profile 取这些值；profile 未设置时每一项都回落到历史取值，所以普通聊天行为不变。进程 signature 里加入模式名，否则同一份 Provider 配置下两个运行时会互认对方的子进程。
+- **防掉的是一类静默污染**：`EnsurePiNativeToolsExtension` 原来写死往一个固定路径写扩展文件。两份配置共用它时，后写的那份覆盖前一份，于是**另一个模式**下一次启动的进程加载到的是这一模式的工具集 —— 表现为「聊天突然不能写文件了」，而没有任何一处代码改过聊天的 allowlist。现在按 variant 分成两个文件，目标目录也可由调用方指定。
+- 新增 `tests/pi-launch-profile-isolation.mjs`（已接进 repo-hygiene CI）：断言聊天 allowlist 一个字节没变、创作侧每一项都分开、两份 allowlist 只共享计划 §5 标为复用的 `content_skill_get`、`--tools` 与 `PI_CODING_AGENT_SESSION_DIR` 真的来自 profile、新文件进了 CMake。9 个已知失效全部让它变红。
+- 副作用与处理：allowlist 换了名字和文件，`tests/tool-friendly-name-coverage.mjs` 需要跟着读新位置。已改为同时读两份 allowlist，并把创作侧那七个尚未实现的工具登记成**显式例外**——以后往创作 allowlist 里加工具而不给中文名，那条测试会要求下一个作者当场做决定，而不是静默通过。
+- **未做（有意留在 CCA-03 后续）**：按需创作运行实例本身。也就是「同时最多一个创作任务 + 第二个请求排队 + 空闲释放 + 重开草稿」这套调度，以及它对应的生命周期测试（多次开关后无持续进程增长）。这需要动 `PiRuntime` 的进程 owned 者结构，并且它的验收项（进程增长、Provider 修改的生效时机）在 macOS 上给不出证据。
 
 ### CCA-04 提供受约束的包制作与素材工具
 

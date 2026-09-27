@@ -276,7 +276,7 @@ bool TryHandleDemoPrompt(std::wstring_view prompt, std::wstring* reply) {
     }
 
     if (ContainsAny(lower, {L"api", L"key", L"密钥", L"模型", L"配置"})) {
-        *reply = L"请打开设置 →「妙喵 AI」，填写 API 地址和 Key。未配置前，壁纸与小组件演示仍可用。";
+        *reply = L"请从托盘右键 → 设置 → 左侧「API 配置」里填写 API 地址和 Key。未配置前，壁纸与小组件演示仍可用。";
         return true;
     }
 

@@ -259,7 +259,7 @@ std::wstring ClassifyTransportFailure(std::wstring text) {
     if (text.find(L"WinHTTP 错误 12175") != std::wstring::npos)
         return L"HTTPS/TLS 握手失败。请检查证书、系统时间或代理设置。";
     if (ContainsHttpStatus(text, 401) || ContainsHttpStatus(text, 403))
-        return L"模型鉴权失败（HTTP 401/403）。请从系统托盘进入设置，检查 API Key 和权限。";
+        return L"模型鉴权失败（HTTP 401/403）。请从托盘右键 → 设置 → 左侧「API 配置」，检查 API Key 和权限。";
     if (ContainsHttpStatus(text, 429)) return L"模型服务正在限流（HTTP 429）。稍后可以输入 /retry 重试。";
     if (ContainsHttpStatus(text, 500) || ContainsHttpStatus(text, 502) || ContainsHttpStatus(text, 503))
         return L"模型服务暂时不可用（HTTP 5xx）。稍后可以输入 /retry 重试。";
@@ -792,7 +792,7 @@ void SendPrompt(ConversationState& state) {
         }
         AppendCompleted(state, typedPrompt,
                         L"妙喵 AI 尚未配置。演示模式可说「一键体验」「换壁纸」「右上角加个待办小组件」；"
-                        L"完整能力请从系统托盘进入设置 → 左侧「API 配置」。");
+                        L"完整能力请从托盘右键 → 设置 → 左侧「API 配置」进入。");
         return;
     }
 

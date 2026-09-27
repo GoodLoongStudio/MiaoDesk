@@ -108,6 +108,7 @@ set(MIAODESK_CORE_SOURCES
     # CCA-05: reads what a turn produced and says which credential it used,
     # so a verified receipt outranks a path scraped out of prose.
     desktop/control/CreatorReplyInterpreter.cpp
+    desktop/control/ContentApplyRecovery.cpp
     # CCA-03:Pi 的启动配置。Chat 与 Creator 各一份,分开目录/session/cwd/
     # 扩展文件/工具 allowlist。放进 Core 是因为 PiRuntime 在 Core 里。
     desktop/control/PiLaunchProfile.cpp
@@ -336,6 +337,7 @@ add_executable(MiaoDeskContentCandidateReceiptTest tests/ContentCandidateReceipt
 add_executable(MiaoDeskCreationRepairPlannerTest tests/CreationRepairPlannerTest.cpp)
 add_executable(MiaoDeskRenderEvidenceTest tests/RenderEvidenceTest.cpp)
 add_executable(MiaoDeskCreatorReplyInterpreterTest tests/CreatorReplyInterpreterTest.cpp)
+add_executable(MiaoDeskContentApplyRecoveryTest tests/ContentApplyRecoveryTest.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -367,7 +369,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -425,6 +427,7 @@ if (MSVC)
     target_compile_options(MiaoDeskCreationRepairPlannerTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskRenderEvidenceTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorReplyInterpreterTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskContentApplyRecoveryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -617,6 +620,9 @@ target_link_libraries(MiaoDeskRenderEvidenceTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorReplyInterpreterTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskContentApplyRecoveryTest PRIVATE
     MiaoDeskCore
 )
 

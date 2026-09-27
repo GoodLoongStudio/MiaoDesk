@@ -398,8 +398,32 @@ int SearchWindow::RunMessageLoop() {
     MSG msg{};
     BOOL result = 0;
     while ((result = GetMessageW(&msg, nullptr, 0, 0)) > 0) {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        // The AI creator is modeless and dispatches through this same pump, and
+        // every control in it is WS_TABSTOP -- the prompt, the five preset chips,
+        // the transcript, the skill list and the apply buttons. Without handing it
+        // to the dialog manager, Tab does nothing there and a keyboard-only user
+        // cannot reach a single one of them: "键盘可完成搜索、配置、预览和应用"
+        // fails for the authoring surface specifically.
+        //
+        // The search window itself is deliberately NOT in that list. Its edit has
+        // its own Enter handling that executes the selected result, and
+        // IsDialogMessageW would consume that key first; that surface needs its own
+        // decision (recorded in TODO LAY-02), which is not a reason to leave the
+        // creator unreachable too.
+        //
+        // Surfaces in fullscreen preview opt themselves out, because that mode owns
+        // Esc/Space/R and the dialog manager would swallow Esc.
+        bool handled = false;
+        for (const HWND surface : creator::DialogManagedCreatorWindows()) {
+            if (IsWindow(surface) && IsDialogMessageW(surface, &msg)) {
+                handled = true;
+                break;
+            }
+        }
+        if (!handled) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
     }
     if (result == -1) {
         messageLoopError_ = GetLastError();

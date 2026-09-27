@@ -33,6 +33,17 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 constexpr wchar_t kCreatorWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
+
+// Creator surfaces open in this thread, in creation order. DialogState is private to
+// this translation unit and its lifetime ends inside WM_DESTROY, so this list is the
+// only thing the search window's pump can consult -- and until it existed, that pump
+// had no way to know a creator window existed.
+//
+// Thread-local by construction of the problem it solves: the creator, the search
+// window and the pump are all on this one UI thread, and GetWindowLongPtrW /
+// IsDialogMessageW are thread-affine too, so a shared list would be wrong here.
+std::vector<HWND> g_openCreatorWindows;
+
 constexpr int kTranscriptId = 7801;
 constexpr int kPromptId = 7802;
 constexpr int kSendId = 7803;
@@ -1640,6 +1651,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         state->StopLivePreview();
         if (state->pi && state->pi->Busy()) state->pi->Stop();
         if (state->agent && state->agent->Busy()) state->agent->Stop();
+        // Leave the keyboard-navigation list before the state goes away, so the pump
+        // can never be pointed at a window whose GWLP_USERDATA is already null.
+        if (const auto it = std::find(g_openCreatorWindows.begin(), g_openCreatorWindows.end(), hwnd);
+            it != g_openCreatorWindows.end()) {
+            g_openCreatorWindows.erase(it);
+        }
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         delete state;
         return 0;
@@ -1648,6 +1665,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 } // namespace
+
+std::vector<HWND> DialogManagedCreatorWindows() {
+    std::vector<HWND> windows;
+    for (const HWND window : g_openCreatorWindows) {
+        if (!IsWindow(window)) continue;
+        auto* state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (!state) continue;
+        // Fullscreen preview owns its own keys -- see the declaration.
+        if (state->previewFullscreenActive) continue;
+        windows.push_back(window);
+    }
+    return windows;
+}
 
 ContentCreatorLayout ResolveContentCreatorLayout(int clientWidth, int clientHeight) noexcept {
     clientWidth = std::max(760, clientWidth);
@@ -1694,6 +1724,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
         delete state;
         return false;
     }
+    g_openCreatorWindows.push_back(window);
     ShowWindow(window, SW_SHOWNORMAL);
     UpdateWindow(window);
     return true;

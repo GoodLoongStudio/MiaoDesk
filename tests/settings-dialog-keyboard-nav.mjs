@@ -45,16 +45,23 @@ assert.doesNotMatch(library, /BS_DEFPUSHBUTTON/,
 assert.match(library, /WS_TABSTOP/,
   "there must be tab stops for the dialog manager to walk");
 
-// The search box deliberately does NOT get this in the same change. Its EDIT has its
+// The search box itself deliberately does NOT get the dialog manager. Its EDIT has its
 // own Enter handling that executes the selected result, and IsDialogMessageW would
-// take precedence; that surface needs its own decision, recorded in LAY-02.
+// take precedence; that surface needs its own decision, recorded in LAY-02. The pump
+// does hand the dialog manager to the AI creator surface that dispatches through it --
+// see creator-window-keyboard-conformance.mjs -- so the boundary to hold here is
+// "never the search window itself", not "never IsDialogMessageW in this file".
 const searchPump = search.slice(
   search.indexOf("int SearchWindow::RunMessageLoop() {"),
   search.indexOf("\n    }\n", search.indexOf("int SearchWindow::RunMessageLoop() {")) + 6
 );
-assert.doesNotMatch(searchPump, /IsDialogMessageW/,
-  "the search box pump must not gain IsDialogMessageW in the same change -- its Enter"
-  + " executes the selected result and needs a separate decision");
+assert.doesNotMatch(searchPump, /IsDialogMessageW\(hwnd_/,
+  "the search window's own HWND must never be handed to the dialog manager -- its"
+  + " Enter executes the selected result and would be consumed first");
+assert.doesNotMatch(searchPump, /IsDialogMessageW\(edit_/,
+  "nor its search EDIT: the IME anchor and its Enter handling both live there");
+assert.match(searchPump, /creator::DialogManagedCreatorWindows\(\)/,
+  "the creator surface that shares this pump must be served by the dialog manager");
 assert.match(search, /WM_CHAR|VK_RETURN/,
   "the search box does have its own input handling, which is why it is excluded");
 

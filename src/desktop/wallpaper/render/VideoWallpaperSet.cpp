@@ -7,7 +7,7 @@
 namespace miaodesk {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.VideoWallpaperSurface";
+constexpr wchar_t kVideoSurfaceClass[] = L"MiaoDesk.Native.VideoWallpaperSurface";
 
 bool SameRect(const RECT& a, const RECT& b) noexcept {
     return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
@@ -34,7 +34,7 @@ bool VideoWallpaperSet::EnsureSurfaceClass() {
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
     wc.lpfnWndProc = &VideoWallpaperSet::SurfaceProc;
-    wc.lpszClassName = kSurfaceClass;
+    wc.lpszClassName = kVideoSurfaceClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     if (RegisterClassExW(&wc)) return true;
     return GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
@@ -102,7 +102,7 @@ bool VideoWallpaperSet::StartMixed(HWND parentWindow, const std::vector<VideoWal
         } else {
             slot.surface = CreateWindowExW(
                 WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-                kSurfaceClass,
+                kVideoSurfaceClass,
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
                 request.region.left,

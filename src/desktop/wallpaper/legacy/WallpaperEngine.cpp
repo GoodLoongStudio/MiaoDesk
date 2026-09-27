@@ -45,7 +45,7 @@ namespace {
 
 constexpr wchar_t kControlClass[] = L"MiaoDesk.Native.WallpaperControl";
 constexpr wchar_t kHostClass[] = L"MiaoDesk.Native.WallpaperHost";
-constexpr wchar_t kSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
+constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
 constexpr wchar_t kSelfTestClass[] = L"MiaoDesk.Native.WallpaperSelfTest";
 constexpr wchar_t kMutexName[] = L"Local\\MiaoDesk.Native.Wallpaper.Singleton";
 constexpr UINT kShowSettings = WM_APP + 81;
@@ -348,12 +348,12 @@ public:
         wc.cbSize = sizeof(wc);
         wc.hInstance = instance_;
         wc.lpfnWndProc = &WallpaperApp::SettingsProc;
-        wc.lpszClassName = kSettingsClass;
+        wc.lpszClassName = kWallpaperSettingsClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
 
-        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kSettingsClass, L"MiaoDesk 壁纸",
+        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kWallpaperSettingsClass, L"MiaoDesk 壁纸",
                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                                     CW_USEDEFAULT, CW_USEDEFAULT, 780, 820,
                                     nullptr, nullptr, instance_, this);

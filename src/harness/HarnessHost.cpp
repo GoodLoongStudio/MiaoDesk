@@ -18,7 +18,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.HarnessWindow";
+constexpr wchar_t kHarnessWindowClass[] = L"MiaoDesk.Native.HarnessWindow";
 constexpr wchar_t kHarnessPlacementValue[] = L"DeepSeekHarnessWindow";
 constexpr wchar_t kUiMutexName[] = L"Local\\MiaoDesk.Native.Harness.Ui.Singleton";
 constexpr wchar_t kBackgroundMutexName[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
@@ -179,14 +179,14 @@ public:
         wc.cbSize = sizeof(wc);
         wc.hInstance = instance_;
         wc.lpfnWndProc = &HarnessHost::WndProc;
-        wc.lpszClassName = kWindowClass;
+        wc.lpszClassName = kHarnessWindowClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         RECT initialBounds = InitialHarnessWindowRect();
         miaodesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
-        hwnd_ = CreateWindowExW(0, kWindowClass, L"妙喵工作台 · DeepSeek Harness",
+        hwnd_ = CreateWindowExW(0, kHarnessWindowClass, L"妙喵工作台 · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
                                 initialBounds.right - initialBounds.left,
@@ -427,7 +427,7 @@ private:
 };
 
 void ActivateExistingHarnessWindow() {
-    const HWND existing = FindWindowW(kWindowClass, nullptr);
+    const HWND existing = FindWindowW(kHarnessWindowClass, nullptr);
     if (!existing) return;
     SetWindowTextW(existing, L"妙喵工作台 · DeepSeek Harness");
     ShowWindow(existing, SW_SHOWNORMAL);

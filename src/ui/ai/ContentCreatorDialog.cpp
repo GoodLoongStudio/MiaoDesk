@@ -32,7 +32,7 @@ namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
+constexpr wchar_t kCreatorWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
 constexpr int kTranscriptId = 7801;
 constexpr int kPromptId = 7802;
 constexpr int kSendId = 7803;
@@ -1671,7 +1671,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
     wc.lpfnWndProc = WindowProc;
-    wc.lpszClassName = kWindowClass;
+    wc.lpszClassName = kCreatorWindowClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
@@ -1686,7 +1686,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     const wchar_t* title = kind == ContentCreatorKind::Widget ? L"妙喵 · AI 制作组件" : L"妙喵 · AI 制作壁纸";
     const CreatorWindowPlacement placement = ResolveCreatorWindowPlacement(owner);
     HWND window = CreateWindowExW(
-        WS_EX_APPWINDOW, kWindowClass, title,
+        WS_EX_APPWINDOW, kCreatorWindowClass, title,
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         placement.x, placement.y, placement.width, placement.height,
         owner, nullptr, instance, state);

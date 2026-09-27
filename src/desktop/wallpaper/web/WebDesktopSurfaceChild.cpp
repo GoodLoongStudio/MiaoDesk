@@ -31,7 +31,7 @@ namespace fs = std::filesystem;
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.WebWallpaperHost";
+constexpr wchar_t kWebSurfaceChildClass[] = L"MiaoDesk.Native.WebWallpaperHost";
 constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-surface.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
@@ -219,7 +219,7 @@ public:
         wc.cbSize = sizeof(wc);
         wc.hInstance = instance_;
         wc.lpfnWndProc = &WebDesktopSurfaceChild::WndProc;
-        wc.lpszClassName = kSurfaceClass;
+        wc.lpszClassName = kWebSurfaceChildClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -232,7 +232,7 @@ public:
         const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT;
         hwnd_ = CreateWindowExW(
             exStyle,
-            kSurfaceClass,
+            kWebSurfaceChildClass,
             options_.token.c_str(),
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
             options_.region.left, options_.region.top, width, height,

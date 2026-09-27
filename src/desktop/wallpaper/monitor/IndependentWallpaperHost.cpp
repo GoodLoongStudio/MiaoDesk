@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 namespace miaodesk {
 namespace {
 
-constexpr wchar_t kSurfaceClass[] = L"MiaoDesk.Native.IndependentWallpaperSurface";
+constexpr wchar_t kIndependentSurfaceClass[] = L"MiaoDesk.Native.IndependentWallpaperSurface";
 
 D2D1_RENDER_TARGET_PROPERTIES PixelRenderTargetProperties() {
     // Independent wallpaper HWND geometry is expressed in physical desktop pixels.
@@ -140,7 +140,7 @@ struct IndependentWallpaperHost::Impl {
         wc.cbSize = sizeof(wc);
         wc.hInstance = GetModuleHandleW(nullptr);
         wc.lpfnWndProc = &Impl::SurfaceProc;
-        wc.lpszClassName = kSurfaceClass;
+        wc.lpszClassName = kIndependentSurfaceClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
         if (RegisterClassExW(&wc)) return true;
@@ -513,7 +513,7 @@ struct IndependentWallpaperHost::Impl {
             slot->wallpaper.region = clipped;
             slot->window = CreateWindowExW(
                 WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-                kSurfaceClass,
+                kIndependentSurfaceClass,
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
                 clipped.left,

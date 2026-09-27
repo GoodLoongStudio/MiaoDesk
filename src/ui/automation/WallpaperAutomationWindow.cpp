@@ -13,7 +13,7 @@
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.WallpaperAutomation";
+constexpr wchar_t kAutomationWindowClass[] = L"MiaoDesk.Native.WallpaperAutomation";
 constexpr int kEnableId = 6001;
 constexpr int kProfileComboId = 6002;
 constexpr int kProfileNameId = 6003;
@@ -586,12 +586,12 @@ struct WallpaperAutomationWindow::Impl {
         wc.cbSize = sizeof(wc);
         wc.hInstance = instance;
         wc.lpfnWndProc = &Impl::WndProc;
-        wc.lpszClassName = kWindowClass;
+        wc.lpszClassName = kAutomationWindowClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"MiaoDesk 壁纸自动化",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kAutomationWindowClass, L"MiaoDesk 壁纸自动化",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 960, 790,
                                  nullptr, nullptr, instance, this);

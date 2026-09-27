@@ -20,7 +20,7 @@
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kSettingsClass[] = L"MiaoDesk.ContentWidget.Settings";
+constexpr wchar_t kWidgetSettingsDialogClass[] = L"MiaoDesk.ContentWidget.Settings";
 constexpr int kApplyId = 7101;
 constexpr int kResetId = 7102;
 constexpr int kCloseId = 7103;
@@ -544,7 +544,7 @@ bool ShowContentWidgetSettingsDialog(
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
     wc.lpfnWndProc = SettingsProc;
-    wc.lpszClassName = kSettingsClass;
+    wc.lpszClassName = kWidgetSettingsDialogClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -564,7 +564,7 @@ bool ShowContentWidgetSettingsDialog(
     constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     constexpr DWORD exStyle = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
     HWND window = CreateWindowExW(
-        exStyle, kSettingsClass, title.c_str(), style,
+        exStyle, kWidgetSettingsDialogClass, title.c_str(), style,
         CW_USEDEFAULT, CW_USEDEFAULT, windowSize.cx, windowSize.cy,
         owner, nullptr, instance, &state);
     if (!window) {

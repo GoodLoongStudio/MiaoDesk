@@ -43,7 +43,7 @@ namespace fs = std::filesystem;
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.DesktopLibrary";
+constexpr wchar_t kLibraryWindowClass[] = L"MiaoDesk.Native.DesktopLibrary";
 constexpr wchar_t kGridClass[] = L"MiaoDesk.Native.DesktopLibraryGrid";
 
 constexpr int kSearchId = 6101;
@@ -1922,7 +1922,7 @@ struct WallpaperLibraryWindow::Impl {
         wc.cbSize = sizeof(wc);
         wc.hInstance = instance;
         wc.lpfnWndProc = &Impl::WndProc;
-        wc.lpszClassName = kWindowClass;
+        wc.lpszClassName = kLibraryWindowClass;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
@@ -1937,7 +1937,7 @@ struct WallpaperLibraryWindow::Impl {
         gridClass.style = CS_DBLCLKS;
         if (!RegisterClassExW(&gridClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, L"妙喵",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kLibraryWindowClass, L"妙喵",
                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT, S(1160), S(790),
                                  nullptr, nullptr, instance, this);

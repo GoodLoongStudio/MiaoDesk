@@ -11,7 +11,7 @@
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.ContentSkillBrowser";
+constexpr wchar_t kSkillBrowserWindowClass[] = L"MiaoDesk.Native.ContentSkillBrowser";
 constexpr int kListId = 7601;
 constexpr int kAiId = 7602;
 constexpr int kCloseId = 7603;
@@ -279,7 +279,7 @@ bool EnsureWindowClass(HINSTANCE instance) {
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
     wc.lpfnWndProc = WindowProc;
-    wc.lpszClassName = kWindowClass;
+    wc.lpszClassName = kSkillBrowserWindowClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (RegisterClassExW(&wc)) return true;
@@ -313,7 +313,7 @@ bool ShowContentSkillBrowserDialog(
 
     const HWND window = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
-        kWindowClass,
+        kSkillBrowserWindowClass,
         domain == ContentSkillBrowserDomain::Widget
             ? L"妙喵 · 小组件创作 Skills"
             : L"妙喵 · 壁纸创作 Skills",

@@ -14,7 +14,7 @@
 namespace miaodesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"MiaoDesk.Native.ContentPackageManager";
+constexpr wchar_t kPackageManagerWindowClass[] = L"MiaoDesk.Native.ContentPackageManager";
 constexpr int kListId = 7001;
 constexpr int kRefreshId = 7002;
 constexpr int kOpenFolderId = 7003;
@@ -397,7 +397,7 @@ bool EnsureWindowClass(HINSTANCE instance) {
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
     wc.lpfnWndProc = WindowProc;
-    wc.lpszClassName = kWindowClass;
+    wc.lpszClassName = kPackageManagerWindowClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (RegisterClassExW(&wc)) return true;
@@ -431,7 +431,7 @@ bool ShowContentPackageManagerDialog(
 
     const HWND window = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
-        kWindowClass,
+        kPackageManagerWindowClass,
         initialKind == content::ContentKind::Widget ? L"管理小组件内容包" : L"管理壁纸主题包",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
         CW_USEDEFAULT, CW_USEDEFAULT,

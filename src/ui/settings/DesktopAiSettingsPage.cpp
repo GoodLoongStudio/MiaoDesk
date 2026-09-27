@@ -1312,6 +1312,7 @@ bool CreatePage(PageState& state) {
                                0, 0, 10, 10, state.panel, ControlId(id), wc.hInstance, nullptr);
     };
 
+    state.addButton = button(L"＋ 新增配置", kNewId);
     state.profileList = CreateWindowExW(0, L"LISTBOX", L"",
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                                         LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT,
@@ -1324,21 +1325,20 @@ bool CreatePage(PageState& state) {
         SendMessageW(state.serviceType, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(type));
     state.apiUrl = edit(kApiUrlId);
     state.apiKey = edit(kApiKeyId, ES_PASSWORD);
+    state.revealButton = button(L"◉", kRevealId);
+    state.copyButton = button(L"复制", kCopyId);
     state.model = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN |
                                   CBS_AUTOHSCROLL | WS_VSCROLL,
                                   0, 0, 10, 280, state.panel, ControlId(kModelId), wc.hInstance, nullptr);
+    state.probeModelsButton = button(L"探测模型", kProbeModelsId);
     state.imageBaseUrl = edit(kImageBaseUrlId);
     state.imageModel = edit(kImageModelId);
     state.imageApiKey = edit(kImageApiKeyId, ES_PASSWORD);
-    state.addButton = button(L"＋ 新增配置", kNewId);
     state.testButton = button(L"测试连接", kTestId);
     state.saveButton = button(L"保存", kSaveId);
     state.setDefaultButton = button(L"设为默认", kSetDefaultId);
     state.deleteButton = button(L"删除", kDeleteId);
-    state.revealButton = button(L"◉", kRevealId);
-    state.copyButton = button(L"复制", kCopyId);
-    state.probeModelsButton = button(L"探测模型", kProbeModelsId);
 
     if (!state.profileList || !state.name || !state.serviceType || !state.apiUrl || !state.apiKey ||
         !state.model || !state.imageBaseUrl || !state.imageModel || !state.imageApiKey || !state.addButton ||

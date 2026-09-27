@@ -143,7 +143,7 @@
   - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
   - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
 
-- **本轮已修（2026-09-27，七项；后五项其实不小：整套"壁纸自动化"、整个 AI 创作窗、待办编辑窗、包管理器与 Skill 浏览窗此前键盘上都用不了（Tab 无效或 Esc 是死的），而自绘控件则走到了也看不见焦点）**：
+- **本轮已修（2026-09-27，八项；后六项其实不小：整套"壁纸自动化"、整个 AI 创作窗、待办编辑窗、包管理器与 Skill 浏览窗此前键盘上都用不了（Tab 无效或 Esc 是死的）；自绘控件走到了也看不见焦点；而 API 配置页的 Tab 序与版面序是两套，一页来回折返三次）**：
   1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。
   - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
   2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
@@ -169,7 +169,11 @@
   - **创作窗的预览面板也没画，而且漏在更要紧的那条分支上**：`DrawPreviewPane` 有两条绘制路径——实时预览（`previewLive`，画完 `FrameRect` 就 `return`）和占位提示。原先只可能（其实并没有）在尾部画，所以**预览正在显示时焦点提示消失**，而那正是用户围着刚生成的内容转的时候。现在两条分支都画。
   - 顺带核对：壁纸库的三条自绘路径（`DrawPrimaryButton` / `DrawNavButton` / `DrawContentFilterButton`）和创作窗的 `DrawPrimaryAction` / `DrawPresetChip` **本来就有** `DrawFocusRect`，未改。风格统一沿用它们既有的 `if (itemState & ODS_FOCUS) { RECT focus = rcItem; InflateRect(&focus, -S(n), -S(n)); DrawFocusRect(dc, &focus); }`。
   - **并把这条也变成不变量**：`tests/owner-drawn-focus-cue.mjs` 登记了 8 条自绘路径，每条都要求"测试 `ODS_FOCUS` + 真的调 `DrawFocusRect`"，且**按绘制路径计数**——`DrawPreviewPane` 登记为 2 条路径，只在末尾画一个框照样红。第一版这个检查写错了（正反向二选一的正则，被另一条分支的内容满足），是变异测试把它揪出来的：删掉尾部那个框时测试仍然是绿的。
-  - 未验证项：真机上看焦点框是否醒目（自绘按钮底色是浅色、`DrawFocusRect` 是系统虚线框）、Tab 序是否与视觉顺序一致。测试用 8 个变异验红。
+  8. **LAY-2-9 已修：Tab 序和页面阅读序是两套。** 兄弟子窗口的 Tab 顺序 = 创建顺序（= Z 序，`Layout()` 全程 `SWP_NOZORDER` 才能成立）。而 API 配置页当初是**按控件类型**建窗的——先把 8 个编辑框/下拉建完，再把 7 个按钮建完——然后才由 `Layout()` 按版面摆放。结果是键盘用户的走动路线：右列字段从上到下 → 跳回页首的"＋ 新增配置"（第 10 个建、第 1 个摆）→ 跳到底部动作行 → **再跳回页中**的"◉ / 复制 / 探测模型"（最后三个建，却紧挨着它们所属的 API Key 和模型框）。一页里来回折返三次。
+  - 已把 17 个 tab stop 的创建顺序改成与 `Layout()` 的摆放顺序一致：`新增配置 → Profile 列表 → 名称 → 服务类型 → Base URL → API Key → ◉/复制 → 模型/探测模型 → 图片接口三项 → 测试连接/保存/设为默认/删除`。只移动语句位置，不动任何逻辑——创建顺序除了 Tab 序之外不影响别的（各 `state.x = ...` 互相独立，`SendMessageW` 填充在全部建完后）。
+  - 顺带核对：**组件设置对话框本来就是对的**（参数按定义顺序在建窗循环里逐行生成，`y` 递增），所以它不在这条里；也正因如此，只有 API 配置页一个页面需要改，不是全局问题。
+  - 新测试 `tests/api-page-tab-order.mjs` 把"创建序 == 摆放序"钉住：解析 `CreatePage` 的创建序列与 `Layout()` 的 `place(...)` 序列，深比较，并要求两组集合相同（否则有控件没被摆放、会卡在建窗时的 10×10 尺寸上）；另外要求 `Layout()` 里每一次 `SetWindowPos` 都带 `SWP_NOZORDER`（否则重排一次 Tab 序就变），并要求泵的 surfaces 数组里仍有库窗口（这点必须在 `Run()` 里查，不能在文件里查——`libraryWindow_.Window()` 还作为自动化窗的焦点归还目标出现在 `ShowAutomation`，全文 grep 会在页面已不被泵服务时也放行）。
+
 
 - **仍未修的核心项**：
   - 附带：壁纸库搜索框（`WallpaperLibraryWindowV2.cpp:1944`）只有 `EN_CHANGE` 一条路径，没有 Enter 提交。

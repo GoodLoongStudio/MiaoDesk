@@ -1209,10 +1209,16 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
         return;
     }
     if (status < 200 || status >= 300) {
-        std::wstring detail = L"模型请求失败：HTTP " + std::to_wstring(status) + L" · Endpoint=" + path;
+        // Same treatment as the probe path, and for the same reason: this text is third
+        // party's, and it reaches l3-runtime.log as well as the transcript. `path` is
+        // redacted too, because a user who pastes a credential-bearing URL into Base URL
+        // has it echoed back here by name.
+        std::wstring detail = L"模型请求失败：HTTP " + std::to_wstring(status) +
+                              L" · Endpoint=" + miaodesk::secrets::RedactSecrets(path);
         if (!fullBody.empty()) {
             const auto wideBody = Utf8ToWide(fullBody.substr(0, 300));
-            if (!wideBody.empty()) detail += L" · " + wideBody;
+            const auto summarized = miaodesk::secrets::SummarizeRemoteBody(wideBody);
+            if (!summarized.empty()) detail += L" · " + summarized;
         }
         onDone(detail);
         return;

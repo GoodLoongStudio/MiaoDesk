@@ -488,6 +488,12 @@
     - 裸 `sk-` 识别要求**词边界**：不加的话 `risk-assessment` 会从自己第三个字母起匹配到 `sk-`，整个词被脱敏——把普通错误文本改坏，而那个词根本不是密钥。第一版测试没有这条用例，变异到它的时候是绿的；补上之后才红。
     - 测试 `tests/probe-error-body-is-redacted.mjs`：**把真实头文件编译并运行**（31 个用例），再钉住 `L3Agent.cpp` 的接线（先截断后脱敏、`result.message` 不得直接来自 `response.body`），并对全仓 `src/` 扫一遍"响应体进消息且没走脱敏器"的其它位置——现在只有这一处。6 个变异全红。
   - 未验证项：真实故障服务下端到端的分类（DNS / 鉴权 / 路径 / 限流）、以及探测成功但聊天或图片生成实际不可用的区分，需可控故障服务与真机。
+  - **同一条记录的缺口 2，本轮把两半都收了（2026-09-27 当日）**：记录里写的是"上游错误原文（聊天 300 字节 / 探测 220 字节）会进可见 UI 和 `l3-runtime.log`，与 `L3-PI-RUNTIME-CONTRACT.md:128` 相冲。代码不会把自己的 Key 放进去，但那是第三方文本，未被过滤。"现在**探测那半**由上面的 `SummarizeRemoteBody` 兜住；**聊天那半**也修了——`L3Agent.cpp` 的 `模型请求失败：HTTP … · Endpoint=<path>` 同样把 path 和正文都过一遍脱敏（path 也要脱，是因为用户若把凭据粘进 Base URL 的**路径**，这行会按名回显）。
+  - **缺口里还藏着第三处，本轮补掉**：`UrlCarriesSecret` 只拒 userinfo 和**查询串**里的密钥名，**路径里的凭据它看不见**。而 `baseUrl` 会被原样写进 `api-profiles.ini`、明文 `PiAgent\models.json`（`PiRuntime::ConfigurePiAgent` 直接 `EscapeJson(setup.baseUrl)`）和 Harness `settings.yaml`——三个明文文件。已把该函数搬到 `src/include/miaodesk/ApiUrlSecretPolicy.h`（纯字符串逻辑，不依赖 Windows API），新增"路径段像粘进来的凭据"判定（`sk-`/`pk-`/`rk-` 前缀 + 全 opaque 字符，**刻意窄**，否则"高熵且长"这种启发式会把正常部署名和 webhook 路径一起拒掉）。
+  - **为什么搬进头文件**：这个函数原本在 `DesktopAiSettingsPage.cpp` 的匿名 namespace 里。写它那一轮**确实**把真实字节抽出来编译执行了 17 个用例并当场抓到一个自己写错的 bug，但**没留下测试**，记录里也写明了"回归只由 settings-url-secret-guard.mjs 做存在性与覆盖断言，它证明不了解析正确"——于是这段逻辑在裸跑，这次一改就会踩空。现在 `tests/api-url-secret-policy.mjs` 编译并执行 40 个用例（含 12 个**必须放行**的正常 URL，防的是把用户正常输入拒掉），并钉住：头文件必须保持纯净、设置页必须 include、两个字段的守卫必须既存在**又不是死的**（`if (false && UrlCarriesSecret(...))` 这种把文字留下、把行为去掉的形状会红）。
+  - **执行这一步立刻抓到一个真缺口**：查询名表里**从来没有 `api_token`**（有 `api_key`、`apikey`、`access_token`，唯独没有 `api_token`）。原测试只做文本存在性断言，所以十四轮都没人发现。现已补齐 `api_token`/`x-api-key`/`secret_key`/连字符形式。
+  - **删掉 `tests/settings-url-secret-guard.mjs`**：它的每一条断言都被新测试覆盖且更严，而它在函数搬走之后是**错的**（去设置页里找一个已经不在那里的函数）。留着一个会主动误导人的测试比没有更糟。
+  - 未验证项：真实故障服务下端到端的分类（DNS / 鉴权 / 路径 / 限流）、以及探测成功但聊天或图片生成实际不可用的区分，需可控故障服务与真机。
 
 ### API-03 保存、生效与凭据生命周期
 

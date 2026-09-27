@@ -44,12 +44,17 @@ assert.match(header, /using ApplyCallback = std::function<std::wstring\(const Wa
   + " caller has no way to distinguish 'applied' from 'bailed out'.");
 assert.doesNotMatch(header, /using ApplyCallback = std::function<void/,
   "...which is exactly what it used to be, and exactly what produced the false success");
-assert.match(header, /using GlobalApplyCallback = std::function<std::wstring\(const WallpaperLibraryItem&\)>;/,
-  "the global overload must report too -- it forwards to the same callback");
-// The forwarding lambda must RETURN the inner result rather than call and discard it.
-const showOverload = bodyOf(header, "bool Show(HINSTANCE instance, WallpaperLibrary* library, GlobalApplyCallback applyCallback)");
-assert.match(showOverload, /return callback \? callback\(item\) : std::wstring\(\);/,
-  "the global overload's bridge must forward the inner return, not just call it");
+// No target-less overload. One existed with no callers, so it duplicated this contract --
+// and when the contract gained the outcome, the dead copy had to be edited too, which is
+// how a signature change reaches code that never runs.
+assert.doesNotMatch(header, /GlobalApplyCallback/,
+  "the target-less Show overload must not come back: it had no callers, so it only"
+  + " duplicated the apply contract and had to be maintained alongside the live one");
+const showOverloads = [...header.matchAll(/bool Show\(HINSTANCE/g)].length;
+assert.equal(showOverloads, 1,
+  `exactly one Show overload may be declared, found ${showOverloads}. A caller without a`
+  + ` target passes an empty vector; a second overload that no one calls is a second copy`
+  + ` of the apply contract to keep in sync.`);
 
 // --- the library window must actually read it ---------------------------
 const apply = bodyOf(library, "void ApplySelected() {");

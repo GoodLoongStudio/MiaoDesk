@@ -29,8 +29,12 @@ public:
     // while the engine had actually bailed out and put the reason in its own diagnostics
     // text, one window away, in a page the user has to navigate to. A void callback is
     // not a signal that the action succeeded.
+    //
+    // There is deliberately no target-less overload. One existed and had no callers, so it
+    // duplicated this contract -- and when the contract changed to carry the outcome, the
+    // dead copy had to be edited too, which is how a signature change reaches code that
+    // never runs. A caller without a target passes an empty vector.
     using ApplyCallback = std::function<std::wstring(const WallpaperLibraryItem&, const std::wstring& targetMonitorId)>;
-    using GlobalApplyCallback = std::function<std::wstring(const WallpaperLibraryItem&)>;
 
     WallpaperLibraryWindow();
     ~WallpaperLibraryWindow();
@@ -41,12 +45,6 @@ public:
     bool Show(HINSTANCE instance, WallpaperLibrary* library,
               const std::vector<WallpaperLibraryTarget>& targets,
               ApplyCallback applyCallback);
-    bool Show(HINSTANCE instance, WallpaperLibrary* library, GlobalApplyCallback applyCallback) {
-        return Show(instance, library, {},
-                    [callback = std::move(applyCallback)](const WallpaperLibraryItem& item, const std::wstring& target) {
-                        return callback ? callback(item) : std::wstring();
-                    });
-    }
     void SetTargets(const std::vector<WallpaperLibraryTarget>& targets);
     void Close();
     void Refresh();

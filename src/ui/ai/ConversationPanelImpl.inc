@@ -115,6 +115,10 @@ struct ConversationState {
     std::uintmax_t activityLogOffset{};
     ActiveRuntime activeRuntime{ActiveRuntime::Pi};
     bool busy{};
+    // True once this turn ran a native tool. There is no per-turn ledger of what
+    // committed, so retrying such a turn can replay side effects (a second
+    // ppt_create, a second package import). Used to stop *inviting* that.
+    bool turnRanTool{};
     bool pinned{};
     bool scrollToBottom{true};
     int scrollOffset{};
@@ -556,6 +560,9 @@ void ClearActivityCard(ConversationState& state) {
 }
 
 void UpdateToolStart(ConversationState& state, const std::wstring& tool) {
+    // Remember that this turn acted on the machine, so FinishTurn can decline to
+    // invite a /retry that would replay whatever this tool committed.
+    state.turnRanTool = true;
     state.activity.steps = {{tool, FriendlyToolName(tool), StepStatus::Running}};
     state.activity.visible = true;
     state.activity.terminal = false;
@@ -624,8 +631,18 @@ void FinishTurn(ConversationState& state, const std::wstring& rawDone, bool clas
     if (!doneText.empty()) {
         if (state.streaming.empty()) state.streaming = doneText;
         else state.streaming += L"\r\n" + doneText;
-        if (offerRetry && !state.lastPrompt.empty() && doneText.find(L"/retry") == std::wstring::npos)
-            state.streaming += L"\r\n可以输入 /retry 重试上一请求。";
+        if (offerRetry && doneText.find(L"/retry") == std::wstring::npos) {
+            if (state.turnRanTool) {
+                // Nothing records which tools a turn committed, so a /retry re-sends
+                // the same prompt into the same session and the agent may well call the
+                // committing tool again. Stop inviting it rather than risk a second
+                // file or a second imported package.
+                state.streaming +=
+                    L"\r\n本轮已执行过操作，所以没有提供 /retry：重试会把已完成的动作再做一次。需要的话请直接重新描述需求。";
+            } else if (!state.lastPrompt.empty()) {
+                state.streaming += L"\r\n可以输入 /retry 重试上一请求。";
+            }
+        }
     }
     if (state.streaming.empty()) state.streaming = L"已完成。";
     if (state.assistantIndex < state.entries.size()) state.entries[state.assistantIndex].text = state.streaming;
@@ -669,6 +686,14 @@ void StopTurn(ConversationState& state) {
     if (state.assistantIndex < state.entries.size()) state.entries[state.assistantIndex].text = state.streaming;
     state.streaming.clear();
     state.activePrompt.clear();
+    // Drop the retry seed too. `/retry` re-sends this prompt verbatim into the
+    // same Pi session, and nothing records which tools a turn already committed
+    // -- so a cancel followed by /retry re-runs committed work from scratch
+    // (spawning a second ppt_create, importing a second package). Cancelling is
+    // an explicit "stop this work"; offering to replay it contradicts that. The
+    // cost is that the user has to retype rather than /retry, which is the lesser
+    // evil next to duplicating their files.
+    state.lastPrompt.clear();
     state.assistantIndex = kNoIndex;
     ClearActivityCard(state);
     SetBusyVisual(state, false);
@@ -686,6 +711,7 @@ void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
     state.entries.push_back({EntryKind::Assistant, L"", CurrentTimeText()});
     state.assistantIndex = state.entries.size() - 1;
     state.lastPrompt = actualPrompt;
+    state.turnRanTool = false;
     state.activePrompt = actualPrompt;
     state.activeRuntime = ActiveRuntime::Pi;
     state.streaming.clear();

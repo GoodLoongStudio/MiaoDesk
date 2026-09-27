@@ -7,6 +7,9 @@
 #include "miaodesk/GozSearch.h"
 #include "miaodesk/HarnessProcessManager.h"
 #include "miaodesk/L3Agent.h"
+#include "miaodesk/CreatorToolWorker.h"
+#include "miaodesk/CreatorWorkspaceState.h"
+#include "miaodesk/JsonStringField.h"
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/RuntimeLogger.h"
@@ -256,6 +259,253 @@ bool HasBundledRuntimePathIfInstalled() {
     return PathContainsDirectory(ReadEnvironmentValue(L"PATH"), bundledNode);
 }
 
+// CCA-04:把工作区策略接到真实文件系统。
+//
+// 它实现的正是测试里那个 in-memory port:决策逻辑一套,盘上动作一套。之所以要经过
+// 这个接口而不是直接在分发函数里写文件,是因为「错误后无半写文件」这条只能在
+// 决策层被断言 —— 把 <filesystem> 塞进分发函数,那些断言就只剩一句
+// "Windows 真机待验",而它们恰好是最不该只留给真机的那批。
+class FilesystemCreatorWorkspace : public miaodesk::creator::CreatorWorkspacePort {
+public:
+    explicit FilesystemCreatorWorkspace(std::wstring workspaceRoot)
+        : root_(std::move(workspaceRoot)) {}
+
+    bool ReadFile(const std::string& relativePath, std::string* bytes) override {
+        const auto path = Resolve(relativePath);
+        if (path.empty()) return false;
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) return false;
+        *bytes = std::string(std::istreambuf_iterator<char>(stream),
+                             std::istreambuf_iterator<char>());
+        return true;
+    }
+
+    std::vector<miaodesk::content::CandidatePart> Snapshot() override {
+        std::vector<miaodesk::content::CandidatePart> parts;
+        std::error_code ec;
+        if (!fs::exists(root_, ec)) return parts;
+        for (const auto& entry : fs::recursive_directory_iterator(
+                 root_, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file(ec)) continue;
+            const auto relative = RelativeToRoot(entry.path());
+            if (relative.empty()) continue;
+            std::string bytes;
+            if (!ReadFile(relative, &bytes)) continue;   // 读不到就不算进摘要
+            parts.push_back({RoleOf(relative), relative, std::move(bytes)});
+        }
+        return parts;
+    }
+
+    miaodesk::creator::CreatorFileFacts Facts(const std::string& relativePath) override {
+        miaodesk::creator::CreatorFileFacts facts;
+        const auto path = Resolve(relativePath);
+        if (path.empty()) return facts;
+        std::error_code ec;
+        const auto status = fs::symlink_status(path, ec);
+        if (ec || status.type() == fs::file_type::not_found) return facts;
+        facts.exists = true;
+        // reparse point 必须**真的去问文件系统**。模型说自己要写一个普通文件,
+        // 而那个路径可能是联接点;不问的话,"解析后落在工作区之外"这一类
+        // 就只能靠路径字符串猜,而猜不出 junction。
+        facts.isReparsePoint = fs::is_symlink(status);
+        facts.isDirectory = fs::is_directory(status);
+        if (facts.isDirectory) {
+            facts.byteCount = 0;
+        } else {
+            facts.byteCount = static_cast<std::uint64_t>(fs::file_size(path, ec));
+            if (ec) facts.byteCount = 0;
+        }
+        return facts;
+    }
+
+    StagedBytes WriteStaged(const std::string& stagedPath, const std::string& content) override {
+        StagedBytes staged;
+        const auto path = fs::path(std::wstring(stagedPath.begin(), stagedPath.end()));
+        {
+            std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+            if (!stream) return staged;
+            stream.write(content.data(), static_cast<std::streamsize>(content.size()));
+            if (!stream) return staged;
+        }
+        // **读回来**再报事实。写盘之后回读是这道工序的全部意义:
+        // 报"我写了 N 字节"而没有回读,就绕过了事务对暂存内容的核对,
+        // 于是换成另一个文件、或者只写进去一半,都不会被发现。
+        std::ifstream back(path, std::ios::binary);
+        if (!back) return staged;
+        staged.bytes = std::string(std::istreambuf_iterator<char>(back),
+                                   std::istreambuf_iterator<char>());
+        staged.written = true;
+        staged.facts = Facts(std::string(stagedPath.begin(), stagedPath.end()));
+        staged.facts.exists = true;
+        staged.facts.byteCount = staged.bytes.size();
+        staged.facts.isReparsePoint = false;
+        return staged;
+    }
+
+    bool ReplaceTarget(const std::string& stagedPath, const std::string& relativePath) override {
+        const auto target = Resolve(relativePath);
+        if (target.empty()) return false;
+        const auto staged = std::wstring(stagedPath.begin(), stagedPath.end());
+        // MOVEFILE_WRITE_THROUGH:落盘才算完成。去掉它的话,断电时会留下
+        // 一个新旧混合的文件,而两边都以为自己写对了。
+        return MoveFileExW(staged.c_str(), target.c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+
+    void DiscardStaged(const std::string& stagedPath) override {
+        const auto path = std::wstring(stagedPath.begin(), stagedPath.end());
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+
+    bool ReadManagedSource(const std::string& source, std::string* bytes,
+                           std::string* resolvedName) override {
+        // 只有宿主持有的来源,而"宿主持有"在这里有一个非常窄的含义:**已经在这个
+        // 作品自己的工作区里**的文件。宿主验证它的方法是重新解析一次路径、
+        // 确认它仍然落在工作区内,而不是相信模型给的那个字符串。
+        //
+        // 刻意不接受任意盘上路径:一个模型构造的路径字符串不是证据,接受它就等于
+        // 把整个文件系统交出去了。content:cloud 那类托管素材库属于后面的工作,
+        // 所以它在这里被明确拒绝,而不是默默当成一个路径去试。
+        if (source.rfind("content:cloud", 0) == 0) return false;
+        if (source.empty()) return false;
+        const auto path = Resolve(source);
+        if (path.empty()) return false;
+        std::error_code ec;
+        if (!fs::is_regular_file(path, ec) || ec) return false;
+        // 来源还要过一遍扩展名:不能借"导入素材"把一个 .js 弄进包里。
+        const auto extension = path.extension().string();
+        if (miaodesk::creator::CreatorWorkspacePolicy::IsForbiddenExtension(extension)) {
+            return false;
+        }
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) return false;
+        *bytes = std::string(std::istreambuf_iterator<char>(stream),
+                             std::istreambuf_iterator<char>());
+        *resolvedName = RelativeToRoot(path);
+        return true;
+    }
+
+private:
+    static std::string Narrow(const std::wstring& value) {
+        if (value.empty()) return {};
+        const int count = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                                              static_cast<int>(value.size()), nullptr, 0,
+                                              nullptr, nullptr);
+        if (count <= 0) return {};
+        std::string out(static_cast<std::size_t>(count), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                            out.data(), count, nullptr, nullptr);
+        return out;
+    }
+
+    // 相对路径 -> 工作区内的绝对路径。**先规范化再过策略**:
+    // 一个没规范化的路径可以让 ".." 藏在 "scene\..\..\x" 里,而字符串比对看不出来。
+    fs::path Resolve(const std::string& relativePath) const {
+        std::string normalized;
+        if (!miaodesk::creator::NormalizeCreatorRelativePath(relativePath, &normalized)) return {};
+        fs::path candidate = root_;
+        for (const auto& segment : fs::path(normalized)) candidate /= segment;
+        std::error_code ec;
+        const auto weak = fs::weakly_canonical(candidate, ec);
+        if (ec) return candidate;
+        const auto rootWeak = fs::weakly_canonical(root_, ec);
+        if (!ec) {
+            // 规范化之后必须**仍然在工作区内**。这一步挡的是联接点与大小写变体:
+            // 路径字符串看起来在里,解析出来不在。
+            const auto rootText = rootWeak.wstring();
+            const auto candidateText = weak.wstring();
+            const bool sameDrive = rootText.size() > 1 && candidateText.size() > 1 &&
+                                   rootText[1] == L':' && candidateText[1] == L':' &&
+                                   std::towlower(rootText[0]) == std::towlower(candidateText[0]);
+            if (!sameDrive) return {};
+            if (candidateText.size() < rootText.size() ||
+                candidateText.compare(0, rootText.size(), rootText) != 0) {
+                return {};
+            }
+        }
+        return candidate;
+    }
+
+    std::string RelativeToRoot(const fs::path& path) const {
+        std::error_code ec;
+        const auto relative = fs::relative(path, root_, ec);
+        if (ec) return {};
+        auto text = relative.generic_string();
+        if (text.rfind("./", 0) == 0) text.erase(0, 2);
+        return text;
+    }
+
+    static miaodesk::content::CandidatePartRole RoleOf(const std::string& relativePath) {
+        if (relativePath == "manifest.json") return miaodesk::content::CandidatePartRole::Manifest;
+        if (relativePath == "parameters.json") return miaodesk::content::CandidatePartRole::Parameters;
+        if (relativePath.rfind("scene/", 0) == 0) return miaodesk::content::CandidatePartRole::Scene;
+        if (relativePath.rfind("preview.", 0) == 0) return miaodesk::content::CandidatePartRole::Preview;
+        if (relativePath.rfind("assets/", 0) == 0) return miaodesk::content::CandidatePartRole::Asset;
+        return miaodesk::content::CandidatePartRole::Other;
+    }
+
+    fs::path root_;
+};
+
+// 创作工具的真实分发。到这里说明 IsAllowedPiNativeTool 已经放行了它,
+// 但"放行"和"能执行"是两件事:此前这些工具落进 ExecuteNativeToolRaw,
+// 回给模型的是一句"未知工具",而调用看起来是被接受的。
+std::wstring Utf8ToWide(const std::string& value) {
+    if (value.empty()) return {};
+    const int count = MultiByteToWideChar(CP_UTF8, 0, value.data(),
+                                          static_cast<int>(value.size()), nullptr, 0);
+    if (count <= 0) return {};
+    std::wstring out(static_cast<std::size_t>(count), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                        out.data(), count);
+    return out;
+}
+
+miaodesk::NativeToolResult RunCreatorTool(const std::string& tool, const std::string& arguments) {
+    using namespace miaodesk::creator;
+
+    // 会话与工作区从宿主的环境变量取,不从参数里取。参数是模型写的,
+    // 它说什么都不是事实来源;环境变量是宿主这一侧导出的。
+    const auto workspaceRoot = ReadEnvironmentValue(miaodesk::kCreatorWorkspaceEnvironment);
+    const auto sessionId = ReadEnvironmentValue(miaodesk::kCreatorSessionEnvironment);
+
+    CreatorToolArgs args;
+    args.sessionId = miaodesk::ExtractJsonString(arguments, "\"sessionId\"");
+    args.workspaceRoot = miaodesk::ExtractJsonString(arguments, "\"workspaceRoot\"");
+    args.relativePath = miaodesk::ExtractJsonString(arguments, "\"relativePath\"");
+    args.content = miaodesk::ExtractJsonString(arguments, "\"content\"");
+    args.source = miaodesk::ExtractJsonString(arguments, "\"source\"");
+    args.digest = miaodesk::ExtractJsonString(arguments, "\"digest\"");
+    args.backend = miaodesk::ExtractJsonString(arguments, "\"backend\"");
+
+    CreatorWorkerInput input;
+    input.workspaceRoot = WideToUtf8(workspaceRoot);
+    input.sessionId = WideToUtf8(sessionId);
+    // 状态文件读不懂时 hasState 保持 false:分发层会因此拒绝,而不是
+    // 拿一个半填的状态去放行一次写入。
+    {
+        std::ifstream stateStream(fs::path(workspaceRoot) /
+                                  fs::path(kCreatorWorkspaceStateFileName),
+                                  std::ios::binary);
+        if (stateStream) {
+            const std::string text((std::istreambuf_iterator<char>(stateStream)),
+                                   std::istreambuf_iterator<char>());
+            input.hasState = ParseCreatorWorkspaceState(text, &input.state);
+        }
+    }
+
+    FilesystemCreatorWorkspace port(workspaceRoot);
+    std::optional<CreatorPackageTransaction> transaction;
+    const auto reply = DispatchCreatorTool(tool, args, input, port, &transaction);
+
+    miaodesk::NativeToolResult result;
+    result.success = reply.ok;
+    result.message = Utf8ToWide(reply.ToModelText());
+    return result;
+}
+
 int RunNativeToolWorkerIfRequested(bool& handled) {
     handled = false;
     int argc = 0;
@@ -286,7 +536,9 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     if (!input.good() && !input.eof()) return 23;
 
     miaodesk::NativeToolResult result;
-    if (miaodesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
+    if (miaodesk::creator::IsCreatorTool(toolUtf8)) {
+        result = RunCreatorTool(toolUtf8, arguments);
+    } else if (miaodesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
         result = miaodesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
     } else if (toolUtf8 == "wallpaper_state_get" || toolUtf8 == "desktop_widget_list") {
         result = miaodesk::ExecuteDesktopControlTool(toolUtf8, arguments);

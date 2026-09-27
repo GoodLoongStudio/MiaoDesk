@@ -421,6 +421,19 @@ jobs:
             exit 1
           }
 
+      # 这一道拦的是"宿主只放行、不执行"。创作工具进了 worker 却落进
+      # ExecuteNativeToolRaw,回给模型的是一句"未知工具" —— 调用看起来被接受了,
+      # 失败信息却和名字打错一模一样,模型会反复重试,用户看到的是"它一直不成功"。
+      - name: Verify the host really dispatches creator tools
+        shell: bash
+        run: |
+          out=$(node tests/creator-tool-worker-dispatch.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify the creator session is isolated from plain chat
         shell: bash
         run: |

@@ -76,6 +76,19 @@ set(MIAODESK_CORE_SOURCES
     # and the worker's allow table both derive from, so the two cannot drift
     # into a failure nobody can see.
     desktop/control/CreatorToolRegistry.cpp
+    # CCA-04: the worker-side dispatch. It owns the host-side binding (session and
+    # workspace come from the host's own environment and the workspace's state
+    # file, never from the model's arguments) and it states explicitly which tools
+    # can actually execute -- so an unimplemented one reads as "not available"
+    # instead of being mistaken for a rejection.
+    desktop/control/CreatorToolWorker.cpp
+    # CCA-04: the on-disk session state. The tool worker is a fresh process per
+    # call, so stage/epoch/cancel must live in the workspace for it to read.
+    desktop/control/CreatorWorkspaceState.cpp
+    # Shared JSON string-field reader. Extracted from PiRuntime so the creator
+    # worker and the RPC reader cannot disagree about how a package's content
+    # field is decoded.
+    content/package/ContentJsonStringField.cpp
     # CCA-03:Pi 的启动配置。Chat 与 Creator 各一份,分开目录/session/cwd/
     # 扩展文件/工具 allowlist。放进 Core 是因为 PiRuntime 在 Core 里。
     desktop/control/PiLaunchProfile.cpp
@@ -296,6 +309,7 @@ add_executable(MiaoDeskCreatorWorkspacePolicyTest tests/CreatorWorkspacePolicyTe
 add_executable(MiaoDeskContentCandidateLedgerTest tests/ContentCandidateLedgerTest.cpp)
 add_executable(MiaoDeskCreatorPackageTransactionTest tests/CreatorPackageTransactionTest.cpp)
 add_executable(MiaoDeskCreatorToolRegistryTest tests/CreatorToolRegistryTest.cpp)
+add_executable(MiaoDeskCreatorToolWorkerTest tests/CreatorToolWorkerTest.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -327,7 +341,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -377,6 +391,7 @@ if (MSVC)
     target_compile_options(MiaoDeskContentCandidateLedgerTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorPackageTransactionTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorToolRegistryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskCreatorToolWorkerTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -545,6 +560,9 @@ target_link_libraries(MiaoDeskCreatorPackageTransactionTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorToolRegistryTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskCreatorToolWorkerTest PRIVATE
     MiaoDeskCore
 )
 

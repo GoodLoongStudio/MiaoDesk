@@ -1,5 +1,6 @@
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/JsonStringField.h"
 #include "miaodesk/CreatorWorkspacePolicy.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/PiLaunchProfile.h"
@@ -23,6 +24,8 @@ namespace fs = std::filesystem;
 
 namespace miaodesk {
 namespace {
+
+using miaodesk::ExtractJsonString;
 
 constexpr wchar_t kApiKeyEnvironment[] = L"MIAODESK_MODEL_API_KEY";
 constexpr DWORD kTurnTimeoutMs = 600000;
@@ -81,78 +84,6 @@ int Hex(char ch) {
     if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
     if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
     return -1;
-}
-
-void AppendCodepoint(std::string& out, unsigned cp) {
-    if (cp <= 0x7f) out.push_back(static_cast<char>(cp));
-    else if (cp <= 0x7ff) {
-        out.push_back(static_cast<char>(0xc0 | (cp >> 6)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-    } else if (cp <= 0xffff) {
-        out.push_back(static_cast<char>(0xe0 | (cp >> 12)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-    } else {
-        out.push_back(static_cast<char>(0xf0 | (cp >> 18)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3f)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3f)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
-    }
-}
-
-bool ReadHex4(std::string_view text, std::size_t pos, unsigned& cp) {
-    if (pos + 4 > text.size()) return false;
-    cp = 0;
-    for (std::size_t i = 0; i < 4; ++i) {
-        const int value = Hex(text[pos + i]);
-        if (value < 0) return false;
-        cp = (cp << 4) | static_cast<unsigned>(value);
-    }
-    return true;
-}
-
-std::string ExtractJsonString(std::string_view json, std::string_view key) {
-    auto pos = json.find(key);
-    if (pos == std::string_view::npos) return {};
-    pos = json.find(':', pos + key.size());
-    if (pos == std::string_view::npos) return {};
-    pos = json.find('"', pos + 1);
-    if (pos == std::string_view::npos) return {};
-    ++pos;
-    std::string out;
-    while (pos < json.size()) {
-        const char ch = json[pos++];
-        if (ch == '"') break;
-        if (ch != '\\') { out.push_back(ch); continue; }
-        if (pos >= json.size()) break;
-        const char esc = json[pos++];
-        switch (esc) {
-        case '"': out.push_back('"'); break;
-        case '\\': out.push_back('\\'); break;
-        case '/': out.push_back('/'); break;
-        case 'b': out.push_back('\b'); break;
-        case 'f': out.push_back('\f'); break;
-        case 'n': out.push_back('\n'); break;
-        case 'r': out.push_back('\r'); break;
-        case 't': out.push_back('\t'); break;
-        case 'u': {
-            unsigned cp = 0;
-            if (!ReadHex4(json, pos, cp)) return out;
-            pos += 4;
-            if (cp >= 0xd800 && cp <= 0xdbff && pos + 6 <= json.size() && json[pos] == '\\' && json[pos + 1] == 'u') {
-                unsigned low = 0;
-                if (ReadHex4(json, pos + 2, low) && low >= 0xdc00 && low <= 0xdfff) {
-                    cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
-                    pos += 6;
-                }
-            }
-            AppendCodepoint(out, cp);
-            break;
-        }
-        default: out.push_back(esc); break;
-        }
-    }
-    return out;
 }
 
 std::wstring QuoteArg(std::wstring_view value) {

@@ -260,7 +260,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-04 提供受约束的包制作与素材工具
 
-- [~] 路径与归属策略已实现并有可执行测试；Pi 扩展与 worker 侧工具本体未接。
+- [~] 路径与归属策略、写入事务、工具名册、工作区状态、worker 分发均已实现并有可执行测试；**端到端生成合法包**与"关闭通用工具后仍可完整制作"的对照验证仍待 Windows 真机。
 - **依赖**：CCA-02、CCA-03。
 - **实施**：提供包读写、素材导入/图片生成和真实能力查询；用创作专属 allowlist 替代通用文件/shell 权限；接入会话绑定和超时。
 - **交付**：实际 Pi 扩展与 native adapter、工具 worker 注册、路径与所有权回归。
@@ -295,11 +295,33 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - **可重试与不可重试要分开**:缺参数值得让模型重试,归属/阶段/取消不值得 —— 混为一谈的后果是模型反复重试同一个越界调用,而用户看不到任何进展。
 - 变异测试 14 个注入全红。过程中查出三处覆盖空洞:`TestRequiredArgumentsPerTool` 传的是**参齐了的**调用,于是 content / digest / source 三道闸短路掉全绿 —— 已改为每个参数单独一条"缺它就被拒 + 补回来就放行"。
 
-**仍未做（属于本条剩余部分）**:
+**Pi 扩展与 worker 分发已接上（2026-09-27 增补）**：
 
-- Pi 扩展侧把这些工具真正注册给模型（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具)。
-- 宿主把 `CreatorToolRegistry` 的路由接到真实 worker 分发(`src/app/main.cpp` 目前只放行,还没执行),以及把 `CreatorPackageTransaction` 接到真实文件系统与 `ContentCandidateLedger` 的封存动作。
-- 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证。
+- `PiNativeToolsExtension.cpp` 的 Creator variant 现在是一份**独立的源**,不是"少几个工具的聊天那份"。它不含任何通用 shell / 文件 / 图片 / 桌面工具:八个创作工具全部转发给宿主 worker,扩展本身没有任何写盘路径(连 `generateImage` 那套都不在里面 —— 创作的 cwd 就是工作区,把图片写进 `process.cwd()` 会整个绕开 `assets/` 布局)。
+- `TOOL_NAMES` 由 `CreatorToolNames()` 在 C++ 侧生成,不手写第二份。名册加一个工具而这里漏注册的故障是静默的:模型从来没见过它,没有任何东西报错。生成它,这个方向就不可能漂移;`tests/creator-extension-source.mjs` 反向断言注册体覆盖名册,把另一个方向也堵住。
+- 新增 `tests/creator-extension-source.mjs`(已接进 repo-hygiene CI):把生成的源按 `CreatorExtensionSource()` 的做法拼出来,用 Node 自己的解析器做一次真解析,再断言名册里每个名字都注册了、聊天那一套一个都没进来。8 个已知失效注入全红。
+- 这一轮在这里踩过一次,记下来是因为它比失败本身更值得记:第一版的语法检查写的是 `node --experimental-strip-types --check`,而它**对带 import 的 .ts 文件无条件返回 0** —— 用一个故意写错的文件试过才知道它什么都不查。一个永远绿的闸门比没有闸门更糟,因为它会让人觉得这里验证过了。现在改成 `import()` 后按错误种类判断,并且用"故意写坏的文件必须报 SyntaxError"当探针:抓不到就退出 2,不假装通过。
+- 会话与工作区改为宿主提供:新增 `MIAODESK_CREATOR_SESSION` / `MIAODESK_CREATOR_WORKSPACE`,**只对创作进程导出**。聊天进程拿不到,于是即使最坏情况下聊天侧加载到了创作扩展,工具调用也会因为拿不到绑定而被拒,而不是拿到一个指向桌面目录的工作区 —— 空值在这里是安全的那个方向。
+
+**worker 侧分发（2026-09-27 增补）**：
+
+- 新增 `CreatorWorkspaceState`（`src/include/miaodesk/CreatorWorkspaceState.h` + `src/desktop/control/CreatorWorkspaceState.cpp`）：工具 worker 是**每次调用一个新进程**,手里没有任何宿主内存,所以"现在是什么阶段、取消没有、当前候选摘要是什么"必须落在工作区里 —— 宿主写、worker 读。行式 key=value,不引入 JSON 依赖;已知键重复出现即拒绝(两份矛盾的值没有该信的那一份),未知键忽略(将来加字段时旧文件仍读得出来)。
+- 新增 `CreatorToolWorker`（`src/include/miaodesk/CreatorToolWorker.h` + `src/desktop/control/CreatorToolWorker.cpp`）：把路由接到真实分发。归属判定在宿主侧再做一次交叉复核(环境变量 vs 工作区状态文件 vs 路径导出的会话),然后才允许碰盘。
+- `CreatorWorkspacePort` 是宿主对工作区的唯一入口。用抽象而不是直接传 `<filesystem>`,是为了让决策逻辑在 macOS 上真跑:一个 in-memory 实现能让"写坏一个字节之后"的每一条分支都被执行到 —— 这些恰好是最不该只留给 Windows 真机的路径。
+- **"未实现"与"被拒绝"被显式分开**。`AvailabilityOf` 逐个工具列明它现在能不能执行,`creator_image_generate` / `creator_preview_evidence` / `creator_candidate_submit` 明确标为未实现并说明缺什么。此前这三个会落进默认分支,失败长得像一次拒绝 —— 而模型下一步该做的事完全相反:被拒绝该改参数,未实现该告诉用户这一步没做好。
+- 新增 `src/tests/CreatorToolWorkerTest.cpp`:**183 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorToolWorkerTest`、`run-pure-logic-tests.sh` 与 Windows CI。18 个已知失效注入全红。
+- 变异过程查出三处我自己的实现缺陷,都不是预想的那类:
+  1. **回退会把拒绝原因抹掉**。暂存内容与计划不一致之后我调了 `Rollback()`,于是 `Rejected` 被改写成 `RolledBack` —— "因为暂存内容对不上而被拒"这件事再也问不出来。已改为不回退:什么都没发生,`Rejected` 就是实话。
+  2. **替换失败时的三种结局被混成一类**。现在按落盘内容分别处理:与计划一致算落地(但必须点明宿主报过错)、仍是写入前算 `ReplaceFailed`、两者都不是才算 `Unverified`。其中"报告失败但内容其实对上了"这一支原先被悄悄说成"已写入",那次失败报告会从此消失。
+  3. **`DeriveCreatorSessionId` 把 `C:\` 当成会话名 `C:`**。同一个盘上所有作品会共用一个会话,而归属判断正是靠这个字符串区分作品的。根路径没有"最后一个目录",所以它没有会话。
+- 另外查出三处**测试自身**的空洞,都是"两条守卫同时命中,删掉任一条都看不出来":伪造 sessionId 的用例让工作区路径也一起不符、"空工作区"与"只有分隔符的路径"拿到同一个拒绝码、以及第一版 port 的 `ReplaceTarget` 从 `stagedContents` 里找不到内容(于是每一笔本该成功的写入都看起来像失败,而那是 port 的 bug)。逐个隔离后三条注入立刻变红。
+- `src/app/main.cpp` 接上真实文件系统:`FilesystemCreatorWorkspace` 实现同一个 port —— 路径先 `NormalizeCreatorRelativePath` 再过 `weakly_canonical` 确认仍在工作区内(挡联接点与大小写变体),reparse point **真的去问文件系统**(不问的话 junction 猜不出来),暂存写完**回读**再报事实(不回读就绕过了事务对暂存内容的核对),替换走 `MoveFileExW` + `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`。
+- JSON 字符串字段提取从 `PiRuntime.cpp` 提到 `content/package/ContentJsonStringField.cpp`,两处共用一份。分成两份的后果不是重复代码,是**两处可以不一致** —— 而不一致的地方恰好是 `creator_package_update` 的 content:一个把 `\n` 解错、一个不解,写进包里的就是另一份内容,而两边都以为自己对。
+- 新增 `tests/creator-tool-worker-dispatch.mjs`(已接进 repo-hygiene CI):断言创作工具在 `ExecuteNativeToolRaw` 之前被分派走、归属事实来自宿主环境而非参数、暂存回读、`MoveFileExW` 的原子性、reparse point 真的被问。7 个已知失效注入全红。这个闸门只管**形状**层面;哪一条分支真的会发出哪个拒绝码由 `CreatorToolWorkerTest.cpp` 承担(那里也做过变异验证),文件里写明了这个分工 —— 把 `reply.code = "Unverified"` 改成 `"Rejected"` 时形状闸门是绿的,因为另一处有同样的字符串。
+- **仍未做（属于本条剩余部分）**:
+  - `ContentCandidateLedger` 的封存动作仍未接(`creator_candidate_submit` 因此标为未实现 —— 它需要宿主侧封存与校验服务,而 worker 每次调用都是新进程, revision 不能由一个进程分配)。
+  - `creator_image_generate` 需要图片 Provider 落地;`creator_preview_evidence` 需要真实渲染后端。两者都不在本轮范围。
+  - 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证 —— 这两条要 Windows 真机,不能在本机或 CI 里宣称通过。
 
 ### CCA-05 结构化候选与统一校验
 

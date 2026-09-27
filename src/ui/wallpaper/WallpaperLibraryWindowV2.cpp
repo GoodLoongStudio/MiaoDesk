@@ -1166,8 +1166,25 @@ struct WallpaperLibraryWindow::Impl {
 
     void ApplySelected() {
         const auto selected = SelectedWallpaper();
-        if (!selected || SourceMissing(*selected)) {
-            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸或资源不存在");
+        // Two cases, and only one of them is guarded against at the entry points: the
+        // 应用到桌面 button is disabled and the context-menu entry is greyed when the
+        // source is missing, but double-clicking the card is not. So a user who
+        // double-clicks a card stamped 不可用 landed here and got nothing at all -- no
+        // status, no beep, no idea the click had been dropped. The card itself had told
+        // them the resource was gone, so the click was the natural next move.
+        if (!selected) {
+            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸");
+            SetStatus(L"先选择一个桌面，再点应用到桌面。");
+            MessageBeep(MB_ICONERROR);
+            return;
+        }
+        if (SourceMissing(*selected)) {
+            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：资源不存在 (\"" + selected->title + L"\", ID=" + selected->id + L")");
+            // Name the wallpaper and what to do about it: re-importing is the fix, and
+            // "删掉再导入一次" is not something a user can infer from a beep. Pointing at
+            // 移除 is honest -- the stored entry no longer resolves.
+            SetStatus(L"“" + selected->title + L"”的资源已不存在，无法应用；移除后重新导入。");
+            MessageBeep(MB_ICONERROR);
             return;
         }
         const std::wstring targetId = SelectedTargetId();
@@ -1757,6 +1774,12 @@ struct WallpaperLibraryWindow::Impl {
                 self->ConfigureWidget();
             } else {
                 self->selectedWallpaperId = self->visibleWallpapers[static_cast<std::size_t>(hit)].id;
+                // Same as the widget branch right above, and for the same reason: the
+                // second click of a double-click can land on a different card than the
+                // first, and the single-click handler refreshed the footer for THAT one.
+                // Without this, the footer keeps naming the previous wallpaper and keeps
+                // its button states -- and the user is looking at a different row.
+                self->UpdateFooter();
                 self->ApplySelected();
             }
             return 0;

@@ -12,7 +12,18 @@ const read = (path) => fs.readFileSync(path, "utf8");
 // "正在执行：desktop_preview_wallpaper". Nothing failed; it just looked broken.
 
 const runtime = read("src/ai/pi/PiRuntime.cpp");
+const shared = read("src/include/miaodesk/ToolDisplayNames.h");
 const overlay = read("src/ui/ai/ConversationPanelImpl.inc");
+
+// The map has exactly one home. It used to live inside the .inc, which made it
+// unreachable from any other translation unit -- fine while only the conversation panel
+// needed it. The AI creator needs the same names now, and a second private copy is how
+// the two surfaces end up describing the same tool differently.
+assert.doesNotMatch(overlay, /std::wstring FriendlyToolName\(/,
+  "the map must not be re-declared in ConversationPanelImpl.inc -- it lives in"
+  + " ToolDisplayNames.h so the creator can use the same names");
+assert.match(overlay, /using miaodesk::ai::FriendlyToolName;/,
+  "the conversation panel must import the shared map, not keep its own");
 
 // The allowlist is split across adjacent wide-string literals in one array.
 const allowlistBlock = runtime.slice(
@@ -24,9 +35,9 @@ assert.ok(literals.length > 0, "could not read the Pi tool allowlist");
 const tools = literals.join(",").split(",").map((s) => s.trim()).filter(Boolean);
 assert.ok(tools.length > 5, `allowlist looks wrong: ${tools.join(",")}`);
 
-const fn = overlay.slice(
-  overlay.indexOf("std::wstring FriendlyToolName("),
-  overlay.indexOf("\n}", overlay.indexOf("std::wstring FriendlyToolName("))
+const fn = shared.slice(
+  shared.indexOf("inline std::wstring FriendlyToolName("),
+  shared.indexOf("\n}", shared.indexOf("inline std::wstring FriendlyToolName("))
 );
 const mapped = new Set(
   [...fn.matchAll(/raw == L"([^"]+)"/g)].map((m) => m[1])

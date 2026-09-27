@@ -113,6 +113,36 @@ User natural language
 
 Hard rule: preview creation is not an apply operation. The sandbox must not call `ApplyWebPackage`, modify the registry, write system folders, or alter the persisted desktop state. Only the explicit Apply command may cross the commit boundary.
 
+### Library install is not the commit boundary (corrected 2026-09-27)
+
+An earlier reading of the rule above treated "install" and "apply" as one step, and the
+AI Content Creator therefore required an explicit 加入壁纸库 / 加入组件库 click before a
+validated package reached the library. That was wrong twice over:
+
+- it protected nothing the rule was protecting — the library is application-managed
+  storage, not desktop state, and no render or selection changes when a package enters it;
+- it cost the user the artifact. A user who closed the creator after a successful
+  generation but before clicking 加入壁纸库 lost the package entirely: it lived only in the
+  model's sandbox directory.
+
+So the boundary is now stated as exactly what the rule says:
+
+| Step | Who does it | Crosses the commit boundary? |
+| --- | --- | --- |
+| generate + validate | the host, when a package is produced | no |
+| install into the library | **automatic** on validation success (`ContentCreatorDialog.cpp`, `InstallToLibrary`) | no |
+| apply to the desktop | only the explicit `应用到桌面` / `添加到桌面` button | **yes** |
+
+`InstallToLibrary` is deliberately the same function the explicit button calls, so the
+automatic path cannot become a second, weaker install.
+
+The other half of the same round: when validation refuses a package, the validator's
+message is now recorded, shown to the user in the transcript, and fed back into the next
+prompt (`BuildPrompt`). Before that the message was discarded — the user got "未检测到有效
+内容包路径" and the model got nothing, while its own system prompt told it that scene
+`.mdwall` and `.mdwidget` packages are host-validated. A model cannot fix a field it is
+never told about.
+
 MiaoDesk uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
 
 ## 2. Tool surface

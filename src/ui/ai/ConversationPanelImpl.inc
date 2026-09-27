@@ -3,6 +3,7 @@
 #include "miaodesk/GeneratedDesktopPreview.h"
 #include "miaodesk/RuntimeLogPaths.h"
 #include "miaodesk/StoreDemoExperience.h"
+#include "miaodesk/ToolDisplayNames.h"
 
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -376,25 +377,7 @@ void DrawWrapped(HDC dc, HFONT font, COLORREF color, const std::wstring& text, R
     SelectObject(dc, old);
 }
 
-std::wstring FriendlyToolName(const std::wstring& raw) {
-    if (raw == L"ppt_create") return L"制作 PowerPoint";
-    if (raw == L"file_create") return L"创建文件";
-    if (raw == L"folder_list") return L"查看文件夹";
-    if (raw == L"file_open") return L"打开文件";
-    if (raw == L"image_generate") return L"生成图片";
-    if (raw == L"settings_open") return L"打开妙喵设置";
-    if (raw == L"wallpaper_validate_package") return L"检查壁纸包";
-    if (raw == L"desktop_preview_wallpaper") return L"准备壁纸预览";
-    if (raw == L"desktop_preview_examples") return L"查看内置壁纸示例";
-    if (raw == L"content_skill_get") return L"查阅内容创作规范";
-    if (raw == L"wallpaper_state_get") return L"读取桌面状态";
-    if (raw == L"desktop_widget_list") return L"查看桌面组件";
-    if (raw == L"read") return L"读取文件";
-    if (raw == L"write" || raw == L"edit") return L"编辑文件";
-    if (raw == L"find" || raw == L"grep" || raw == L"ls") return L"查找内容";
-    if (raw == L"bash") return L"执行系统操作";
-    return raw.empty() ? L"执行操作" : raw;
-}
+using miaodesk::ai::FriendlyToolName;
 
 std::wstring FileNameOnly(const std::wstring& path) {
     const auto name = fs::path(path).filename().wstring();

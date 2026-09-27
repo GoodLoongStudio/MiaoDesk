@@ -169,7 +169,19 @@
   - **创作窗的预览面板也没画，而且漏在更要紧的那条分支上**：`DrawPreviewPane` 有两条绘制路径——实时预览（`previewLive`，画完 `FrameRect` 就 `return`）和占位提示。原先只可能（其实并没有）在尾部画，所以**预览正在显示时焦点提示消失**，而那正是用户围着刚生成的内容转的时候。现在两条分支都画。
   - 顺带核对：壁纸库的三条自绘路径（`DrawPrimaryButton` / `DrawNavButton` / `DrawContentFilterButton`）和创作窗的 `DrawPrimaryAction` / `DrawPresetChip` **本来就有** `DrawFocusRect`，未改。风格统一沿用它们既有的 `if (itemState & ODS_FOCUS) { RECT focus = rcItem; InflateRect(&focus, -S(n), -S(n)); DrawFocusRect(dc, &focus); }`。
   - **并把这条也变成不变量**：`tests/owner-drawn-focus-cue.mjs` 登记了 8 条自绘路径，每条都要求"测试 `ODS_FOCUS` + 真的调 `DrawFocusRect`"，且**按绘制路径计数**——`DrawPreviewPane` 登记为 2 条路径，只在末尾画一个框照样红。第一版这个检查写错了（正反向二选一的正则，被另一条分支的内容满足），是变异测试把它揪出来的：删掉尾部那个框时测试仍然是绿的。
-  8. **LAY-2-9 已修：Tab 序和页面阅读序是两套。** 兄弟子窗口的 Tab 顺序 = 创建顺序（= Z 序，`Layout()` 全程 `SWP_NOZORDER` 才能成立）。而 API 配置页当初是**按控件类型**建窗的——先把 8 个编辑框/下拉建完，再把 7 个按钮建完——然后才由 `Layout()` 按版面摆放。结果是键盘用户的走动路线：右列字段从上到下 → 跳回页首的"＋ 新增配置"（第 10 个建、第 1 个摆）→ 跳到底部动作行 → **再跳回页中**的"◉ / 复制 / 探测模型"（最后三个建，却紧挨着它们所属的 API Key 和模型框）。一页里来回折返三次。
+- **本轮新增（2026-09-27，按用户提出的四个问题逐条查证后实现，均未勾选：需真机确认）**：
+  - **查证结论先记下**（四个问题分别是什么现状）：① 壁纸列表预览——图片壁纸是真的（WIC 解码 + cover-fit + 路径缓存），视频壁纸只有**一帧**壳缩略图，Web 壁纸没有缩略图，**Scene 壁纸完全没有 shader/粒子渲染**（只有包里声明的 preview 资源，否则是"按 scene-id 染色的纯色 + 斜网格线"占位卡）。② 组件列表预览——Content 组件是**真渲染**（`ContentWidgetPreviewRenderer` 解析同一个包、同一份有效参数、同一份宿主数据），但**每次重绘只画一帧、无动画**；原生预设一次性 D2D 渲染。③ AI 生成时的预览——Scene 包走 `StartLivePreview`，**反而是实时动画**（带播放/暂停/重载/全屏）。所以同一个组件在列表里比在创作窗里更糙。
+  - **CREATE-1-1 已修：创作窗此前完全没有进度反馈。** 它收到了和对话窗同一路 `PiActivityEvent`，但 handler 只做一件事：`InspectForGeneratedPackage(event->resultText)`——把每个活动事件都当"找内容包路径"用，一条都没显示。一个数分钟的回合里用户只看到按钮变成"停止"和一句静态的"AI 正在生成内容包…"，无法区分 Pi 在思考、在改文件、还是卡死了。这直接违反 `PI_AGENT_ACTIVITY_FEEDBACK.md` §1。
+    - 已加 `ShowActivity(PiActivityEvent)`：把标题下的 `note`（原本只在建窗时设一次的静态）当活动行用，覆盖 `PiActivityKind` 全部 8 个语义状态，工具名走 `ToolDisplayNames.h`（与对话窗同一张表，不让两个界面用两套名字）；`SetBusy` 起停一个 1 秒定时器，在行尾追加"· 已等待 N 秒"（≥3 秒才显示）。**不造假进度**：这条流水线不知道一个需求要几次工具调用，活动契约明令禁止编造百分比，唯一诚实的定量只有耗时。空闲时恢复原文案（因此建窗时把 `note` 原文抓下来存着）。
+  - **CREATE-1-2 已修：校验器的判决此前既不给用户、也不给模型。** `SetGeneratedPackage` 的行为是 `if (!inspected.success || info.kind != ExpectedKind()) return;`——`MiaoContentModel` 那些精确消息（`Content parameter is below minimum: <key>` 等 30+ 条，见 `src/content/model/MiaoContentModel.cpp`）被整个丢掉，用户只看到一句"未检测到有效内容包路径"，而**模型什么都没有收到**；
+  - 系统提示（`PiRuntime.cpp:526-528` 的 `systemPrompt` 组装处）还明确告诉它 scene/.mdwidget 包由宿主校验，所以按构造它永远听不到回音；模型唯一的自纠通道是 `content-review` 那份散文清单。
+    - 现在：`lastValidationError` 记下校验器原文 → 写进转写区（`[内容包未通过校验]` 块，含路径和原文）→ `BuildPrompt` 在下一次请求里以"【上轮生成的包未通过校验，必须先修掉这一条】/校验器原文：…/不要改变用户需求"的形式回灌给模型。`ResetSession` 清空（新会话不能继承一个已经不在的包的报错）。
+    - **为什么整段原样引用而不是概括**：概括会丢掉字段名，而字段名恰恰是模型唯一能据此定位修改的东西。
+  - **CREATE-1-3 已修：校验通过的包现在自动入库。** 原先必须手点"加入壁纸库/加入组件库"；同一个已经校验过的包晚一次点击才进库，用户若在此期间关窗，产物只存在于模型的沙箱里、直接丢失。已改为校验成功即入库，并把该按钮置灰（否则是一个点了不干事的按钮）。
+    - **刻意停在"入库"这一步**：`AI_GENERATED_DESKTOP_SANDBOX.md` §1 的硬规则是"只有显式 Apply 能跨越提交边界"，所以"应用到桌面"仍是用户的一次点击。库是应用托管存储，不是桌面状态。
+    - 顺手把 `InstallToLibrary` 从 `InstallGeneratedPackage` 里拆出来，让自动路径和按钮走同一个函数——否则"已自动入库"会和按钮做的是两件事。
+  - 未验证项：活动行文案在真机上是否够醒目、"已等待 N 秒"节奏、以及自动入库后到"应用"之间的状态是否说得清。测试 `creator-progress-and-retry-loop.mjs` 16 个变异全红（其中 3 个第一版是绿的——单次出现的检查在有 3 处调用点时会漏、`if (false)` 包裹的调用文本还在、库按钮那条只跑了自己的测试而没跑 `content-creator-modes.mjs`）。
+  - **顺带发现、尚未处理（记下来别丢）**：生成的 Scene 壁纸**无法通过"应用到桌面"**——`WallpaperService.cpp:332` 明确拒绝非内置 Scene 走全局/跨屏入口，报"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"入库成功但应用失败。这是产品边界还是缺口需要判断，我没有自行决定。
   - 已把 17 个 tab stop 的创建顺序改成与 `Layout()` 的摆放顺序一致：`新增配置 → Profile 列表 → 名称 → 服务类型 → Base URL → API Key → ◉/复制 → 模型/探测模型 → 图片接口三项 → 测试连接/保存/设为默认/删除`。只移动语句位置，不动任何逻辑——创建顺序除了 Tab 序之外不影响别的（各 `state.x = ...` 互相独立，`SendMessageW` 填充在全部建完后）。
   - 顺带核对：**组件设置对话框本来就是对的**（参数按定义顺序在建窗循环里逐行生成，`y` 递增），所以它不在这条里；也正因如此，只有 API 配置页一个页面需要改，不是全局问题。
   - 新测试 `tests/api-page-tab-order.mjs` 把"创建序 == 摆放序"钉住：解析 `CreatePage` 的创建序列与 `Layout()` 的 `place(...)` 序列，深比较，并要求两组集合相同（否则有控件没被摆放、会卡在建窗时的 10×10 尺寸上）；另外要求 `Layout()` 里每一次 `SetWindowPos` 都带 `SWP_NOZORDER`（否则重排一次 Tab 序就变），并要求泵的 surfaces 数组里仍有库窗口（这点必须在 `Run()` 里查，不能在文件里查——`libraryWindow_.Window()` 还作为自动化窗的焦点归还目标出现在 `ShowAutomation`，全文 grep 会在页面已不被泵服务时也放行）。

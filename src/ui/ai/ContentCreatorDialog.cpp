@@ -8,6 +8,7 @@
 #include "miaodesk/NativeTools.h"
 #include "miaodesk/NativeUiScale.h"
 #include "miaodesk/PiRuntime.h"
+#include "miaodesk/ToolDisplayNames.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperRuntimeControl.h"
 
@@ -71,6 +72,11 @@ constexpr UINT kActivityEvent = WM_APP + 0x313;
 // never left this process -- see kRequestDone.
 constexpr wchar_t kBusyRejectionMarker[] = L"Pi Runtime 正忙";
 constexpr UINT_PTR kPreviewTimerId = 0x7830;
+// Drives the elapsed-seconds suffix on the activity line. One tick per second: the
+// activity contract forbids fabricating progress percentages, so the only honest
+// determinate number available is how long the turn has been running.
+constexpr UINT_PTR kActivityTimerId = 0x7831;
+constexpr UINT kActivityTickMs = 1000;
 constexpr UINT kPreviewFrameMs = 33;
 
 enum class PreviewSandboxState {
@@ -495,9 +501,24 @@ struct DialogState {
     // silently re-arm the button.
     fs::path appliedPackageRoot;
     std::wstring lastUserPrompt;
+    // Progress feedback. Until this existed the creator received the same
+    // PiActivityEvent stream the conversation panel does and used it for exactly one
+    // thing: hunting for a content-package path in the result text. So a user watching
+    // a two-minute turn saw only the button read 停止 and a static placeholder in the
+    // preview pane -- no way to tell whether Pi was thinking, editing files, or stuck.
+    //
+    // PI_AGENT_ACTIVITY_FEEDBACK.md §1: "The user should never have to wonder whether Pi
+    // is frozen, thinking, waiting, executing, retrying, or finished." The header note is
+    // where that line lives; it is a static that was set once at creation, so its idle
+    // text is kept to restore.
+    std::wstring idleNoteText;
+    std::wstring activityText;
+    bool activityVisible{};
+    ULONGLONG busyStartedAt{};
 
     ~DialogState() {
         if (window) KillTimer(window, kPreviewTimerId);
+        if (window) KillTimer(window, kActivityTimerId);
         if (previewBitmap) DeleteObject(previewBitmap);
         if (bodyFont) DeleteObject(bodyFont);
         if (titleFont) DeleteObject(titleFont);
@@ -1083,8 +1104,75 @@ struct DialogState {
         // 停止 is what makes "取消有明确反馈" achievable here.
         EnableWindow(send, TRUE);
         SetWindowTextW(send, value ? L"停止" : L"生成");
+        if (value) {
+            activityVisible = true;
+            activityText = L"正在理解你的需求…";
+            busyStartedAt = GetTickCount64();
+            if (window) SetTimer(window, kActivityTimerId, kActivityTickMs, nullptr);
+        } else {
+            activityVisible = false;
+            busyStartedAt = 0;
+            if (window) KillTimer(window, kActivityTimerId);
+        }
+        RefreshActivityLine();
         UpdatePreviewChrome();
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
+    }
+
+    // The elapsed suffix. Seconds only, and only while a turn is running: a percentage
+    // here would be invented -- nothing in this pipeline knows how many tool calls a
+    // description needs, and the activity contract explicitly forbids fake progress.
+    std::wstring ElapsedSuffix() const {
+        if (!activityVisible || busyStartedAt == 0) return {};
+        const ULONGLONG seconds = (GetTickCount64() - busyStartedAt) / 1000;
+        if (seconds < 3) return {};
+        return L" · 已等待 " + std::to_wstring(seconds) + L" 秒";
+    }
+
+    void RefreshActivityLine() const {
+        if (!note) return;
+        const std::wstring text = activityVisible
+            ? activityText + ElapsedSuffix()
+            : idleNoteText;
+        SetWindowTextW(note, text.c_str());
+    }
+
+    // One line, one semantic state at a time. Deliberately NOT a chat bubble per event:
+    // the activity contract asks for a single stateful card, and this header is it.
+    void ShowActivity(const PiActivityEvent& event) {
+        if (!busy) return;
+        switch (event.kind) {
+        case PiActivityKind::Understanding:
+            activityText = L"正在理解你的需求…";
+            break;
+        case PiActivityKind::ToolStarted:
+            // Same display names the conversation panel uses (ToolDisplayNames.h), so a
+            // tool is never named differently on the two surfaces.
+            activityText = L"正在执行：" + ai::FriendlyToolName(event.toolName);
+            break;
+        case PiActivityKind::ToolFinished:
+            activityText = event.error
+                ? L"未完成：" + ai::FriendlyToolName(event.toolName)
+                : L"已完成：" + ai::FriendlyToolName(event.toolName);
+            break;
+        case PiActivityKind::Retrying:
+            activityText = event.message.empty() ? L"正在重试…" : L"正在重试：" + event.message;
+            break;
+        case PiActivityKind::Recovered:
+            activityText = L"连接已恢复，继续执行";
+            break;
+        case PiActivityKind::Succeeded:
+            activityText = L"正在整理结果…";
+            break;
+        case PiActivityKind::Failed:
+            activityText = event.message.empty() ? L"本轮生成失败" : event.message;
+            break;
+        case PiActivityKind::Cancelled:
+            activityText = L"已取消本次生成";
+            break;
+        }
+        activityVisible = true;
+        RefreshActivityLine();
     }
 
     // Stop the in-flight generation. Honest about what it does not do: PiRuntime::Stop
@@ -1112,11 +1200,61 @@ struct DialogState {
                          : FALSE);
     }
 
+    // Why the last generated package was refused. Kept because the reason is the single
+    // most useful thing this surface can give either party:
+    //
+    //   - the user, who otherwise gets the generic "未检测到有效内容包路径" and cannot
+    //     tell a missing manifest.json from a bad parameter range;
+    //   - the model, which currently gets NOTHING. PiRuntime's own system prompt tells it
+    //     that scene .mdwall and .mdwidget packages are validated by the host
+    //     (PiRuntime.cpp:526-528), so by construction the host's verdict never reaches
+    //     it. This field is what closes that loop.
+    //
+    // The message comes straight from the validator (MiaoContentModel's Fail texts, e.g.
+    // "Content parameter is below minimum: <key>"), which is exactly the kind of specific,
+    // machine-checkable statement a model can act on.
+    std::wstring lastValidationError;
+    fs::path lastValidationPath;
+
+    void SetValidationFailure(const fs::path& path, std::wstring message) {
+        lastValidationPath = path;
+        lastValidationError = std::move(message);
+    }
+
+    void ClearValidationFailure() {
+        lastValidationPath.clear();
+        lastValidationError.clear();
+    }
+
+    // Write the refusal into the transcript, where the user reads the round's outcome and
+    // where the conversation (and therefore the model's own context) can see it. Kept as
+    // one block rather than chat-feed floods.
+    void AppendRuntimeFailureNote(const fs::path& path, const std::wstring& message) {
+        std::wstring text = L"\r\n\r\n[内容包未通过校验]\r\n路径：";
+        text += path.wstring();
+        text += L"\r\n校验器：";
+        text += message;
+        text += L"\r\n（这条报错会自动带给下一次生成，用于修正）\r\n";
+        AppendText(transcript, text);
+    }
+
     void SetGeneratedPackage(const fs::path& path, std::wstring_view repairNote = {}) {
         desktop::DesktopControlService control;
         content::ManagedContentPackageInfo info;
         const auto inspected = control.InspectContentPackage(path, &info);
-        if (!inspected.success || info.kind != ExpectedKind()) return;
+        if (!inspected.success || info.kind != ExpectedKind()) {
+            // Do not swallow the reason. It used to be a bare `return`, which left the
+            // round reporting "未检测到有效内容包路径" no matter whether the model forgot
+            // the manifest entirely or set one parameter below its minimum.
+            SetValidationFailure(path, inspected.success
+                ? (info.kind == content::ContentKind::Widget
+                    ? L"生成的内容包不是壁纸包(.mdwall)，与当前模式不符。"
+                    : L"生成的内容包不是组件包(.mdwidget)，与当前模式不符。")
+                : (inspected.message.empty() ? L"内容包校验失败，但校验器没有给出原因。" : inspected.message));
+            if (!inspected.message.empty()) AppendRuntimeFailureNote(path, inspected.message);
+            return;
+        }
+        ClearValidationFailure();
 
         generatedPackage = path;
         generatedPackageIsCurrentRound = true;
@@ -1153,17 +1291,32 @@ struct DialogState {
 
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
 
+        // Install to the library as soon as the package validates. Making the user click
+        // 加入壁纸库 first bought nothing: the same package, already validated, reached
+        // the library one click later, and a user who closed the window in between lost
+        // the artifact entirely (it lived only in the model's sandbox).
+        //
+        // This stops deliberately short of the desktop. AI_GENERATED_DESKTOP_SANDBOX.md
+        // §1 sets the commit boundary at the explicit Apply command, so 应用到桌面 stays
+        // a click; the library is app-managed storage, not desktop state.
+        bool installedToLibrary = false;
+        if (generatedPackageIsCurrentRound) {
+            installedToLibrary = InstallToLibrary();
+            if (installedToLibrary) EnableWindow(library, FALSE);
+        }
+
         std::wstring status = L"已生成并校验：" + path.filename().wstring();
         if (!repairNote.empty()) status += L" · " + std::wstring(repairNote);
+        if (installedToLibrary) status += L" · 已自动入库";
         if (live) status += L" · 实时预览已加载";
         else if (previewBitmap) status += L" · 静态预览已加载";
         else if (!previewRenderError.empty()) status += L" · 预览加载失败";
         else status += L" · 无预览资源";
-        status += L" · 可入库 / 应用";
+        status += installedToLibrary ? L" · 可直接应用" : L" · 可入库 / 应用";
         SetWindowTextW(resultNote, status.c_str());
         UpdatePreviewChrome();
         EnableWindow(preview, TRUE);
-        EnableWindow(library, TRUE);
+        EnableWindow(library, installedToLibrary ? FALSE : TRUE);
         UpdateApplyAvailability();
     }
 
@@ -1231,28 +1384,41 @@ struct DialogState {
         return true;
     }
 
-    bool InstallGeneratedPackage(bool activate) {
+    // Library install only -- no desktop change. Shared by the automatic install after a
+    // successful round and by the explicit 加入库 button, so the two cannot drift: the
+    // automatic path must do exactly what the button used to do, or "已自动入库" would be
+    // a different operation from the one the user can also trigger.
+    bool InstallToLibrary() {
         if (generatedPackage.empty()) return false;
+        return InstallToLibrary(generatedPackage, ExpectedKind(), nullptr);
+    }
+
+    bool InstallToLibrary(fs::path package, content::ContentKind kind,
+                        content::ContentPackageInstallResult* out) {
+        if (package.empty()) return false;
 
         desktop::DesktopControlService control;
         content::ManagedContentPackageInfo inspected;
-        auto result = control.InspectContentPackage(generatedPackage, &inspected);
-        if (!result.success || inspected.kind != ExpectedKind()) {
+        auto result = control.InspectContentPackage(package, &inspected);
+        if (!result.success || inspected.kind != kind) {
             MessageBoxW(window,
                         result.message.empty() ? L"生成内容包校验失败。" : result.message.c_str(),
                         L"妙喵 AI", MB_OK | MB_ICONERROR);
+            SetValidationFailure(package, result.success
+                ? L"生成的内容包类型与当前模式不符。"
+                : (result.message.empty() ? L"内容包校验失败，但校验器没有给出原因。" : result.message));
             return false;
         }
 
         content::ContentPackageInstallResult installed;
         content::ManagedContentPackageInfo existing;
-        const auto resolved = control.ResolveContentPackage(ExpectedKind(), inspected.source, &existing);
+        const auto resolved = control.ResolveContentPackage(kind, inspected.source, &existing);
         std::error_code equivalentError;
         const bool alreadyManaged =
             resolved.success &&
             fs::exists(existing.packageRoot, equivalentError) && !equivalentError &&
-            fs::exists(generatedPackage, equivalentError) && !equivalentError &&
-            fs::equivalent(existing.packageRoot, generatedPackage, equivalentError) && !equivalentError;
+            fs::exists(package, equivalentError) && !equivalentError &&
+            fs::equivalent(existing.packageRoot, package, equivalentError) && !equivalentError;
 
         if (alreadyManaged) {
             installed.package = existing;
@@ -1260,7 +1426,7 @@ struct DialogState {
         } else {
             content::ContentPackageInstallOptions options;
             options.replaceExisting = true;
-            result = control.InstallContentPackage(generatedPackage, &installed, options);
+            result = control.InstallContentPackage(package, &installed, options);
             if (!result.success) {
                 MessageBoxW(window,
                             result.message.empty() ? L"加入内容库失败。" : result.message.c_str(),
@@ -1269,14 +1435,23 @@ struct DialogState {
             }
         }
 
+        // The installed root is what every later step must operate on: the sandbox path
+        // the model produced is not the managed copy's path.
         generatedPackage = installed.package.packageRoot;
-        if (!activate) {
-            SetWindowTextW(resultNote,
-                IsWidget() ? L"已加入组件库 · 可继续添加到桌面"
-                           : L"已加入壁纸库 · 可继续应用到桌面");
-            return true;
-        }
+        SetWindowTextW(resultNote,
+            kind == content::ContentKind::Widget ? L"已加入组件库 · 可继续添加到桌面"
+                                                 : L"已加入壁纸库 · 可继续应用到桌面");
+        if (out) *out = std::move(installed);
+        return true;
+    }
 
+    bool InstallGeneratedPackage(bool activate) {
+        if (generatedPackage.empty()) return false;
+        content::ContentPackageInstallResult installed;
+        if (!InstallToLibrary(generatedPackage, ExpectedKind(), &installed)) return false;
+
+        desktop::DesktopControlService control;
+        desktop::DesktopControlResult result;
         if (IsWidget()) {
             desktop::ContentWidgetCreateRequest request;
             request.definitionId = std::wstring(
@@ -1336,7 +1511,22 @@ struct DialogState {
         } else {
             request = L"继续当前";
             request += IsWidget() ? L"组件" : L"壁纸";
-            request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出实际存在、目录名带正确 .mdwall/.mdwidget 扩展名且已校验通过的内容包绝对路径。用户补充：";
+            request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出实际存在、目录名带正确 .mdwall/.mdwidget 扩展名且已校验通过的内容包绝对路径。";
+            // The whole point of keeping the validation error: a model told only "校验未通过"
+            // can do nothing but guess, and it will usually produce the same package again.
+            // The validator's message names the exact field, so it is actionable.
+            if (!lastValidationError.empty()) {
+                request += L"\n\n【上轮生成的包未通过校验，必须先修掉这一条】\n";
+                if (!lastValidationPath.empty()) {
+                    request += L"被拒路径：";
+                    request += lastValidationPath.wstring();
+                    request += L"\n";
+                }
+                request += L"校验器原文：";
+                request += lastValidationError;
+                request += L"\n请直接修正该问题后重新给出同一个包的绝对路径，不要改变用户需求，也不要另起一个不同的主题。";
+            }
+            request += L"\n\n用户补充：";
         }
         request.append(userText);
         return request;
@@ -1393,6 +1583,10 @@ struct DialogState {
         }
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
         primed = false;
+        // A new session must not inherit the previous session's validation failure: the
+        // package it described is gone, so feeding it to the model would be asking it to
+        // fix a file that no longer exists.
+        ClearValidationFailure();
         SetBusy(false);
         SetWindowTextW(transcript,
             IsWidget()
@@ -1429,6 +1623,15 @@ struct DialogState {
         note = label(IsWidget()
             ? L"描述你想要的组件，AI 会根据 Skills 生成并打包成 .mdwidget"
             : L"描述你想要的壁纸，AI 会根据 Skills 生成并打包成 .mdwall");
+        // The note doubles as the activity line while a turn runs, so its idle text has
+        // to survive being overwritten. Captured here rather than recomputed from the
+        // kind, because the kind is fixed for the window's lifetime and this keeps the
+        // restore path honest if the copy ever changes.
+        {
+            wchar_t initial[256]{};
+            GetWindowTextW(note, initial, static_cast<int>(std::size(initial)));
+            idleNoteText = initial;
+        }
         transcript = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
             0, 0, 10, 10, window, ControlId(kTranscriptId), instance, nullptr);
@@ -1551,6 +1754,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             state->DrawLivePreview();
             return 0;
         }
+        if (wParam == kActivityTimerId) {
+            // The only thing that changes on this tick is the elapsed suffix; when the
+            // turn is no longer running the line has already been restored, so this is a
+            // no-op rather than a second source of truth.
+            state->RefreshActivityLine();
+            return 0;
+        }
         break;
     case WM_KEYDOWN:
         if (state->previewFullscreenActive) {
@@ -1605,6 +1815,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     case kActivityEvent: {
         std::unique_ptr<PiActivityEvent> event(reinterpret_cast<PiActivityEvent*>(lParam));
+        // Show the work state before anything else. This used to be the only thing the
+        // creator did with the event (hunting a package path), which left the user with
+        // no progress signal at all.
+        if (event) state->ShowActivity(*event);
         // Same reasoning as the conversation surface: a result text that arrives
         // after the turn settled belongs to a turn the user already saw end, and
         // resolving it here would swap a finished candidate for a straggler.
@@ -1641,10 +1855,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
                     ? L"本轮已按你的要求停止。已执行的操作不会被撤销。"
                     : L"本轮已按你的要求停止。当前预览是停止前已生成的内容，可以继续预览、入库或应用。");
         } else if (state->generatedPackage.empty()) {
-            SetWindowTextW(state->resultNote,
-                done && !done->empty()
-                    ? L"本轮生成已完成 · 尚未检测到有效内容包路径"
-                    : L"本轮请求结束 · 未检测到可操作的内容包");
+            // Prefer the validator's own reason when we have one. The generic wording below
+            // cannot distinguish "the model never emitted a path" from "the path it emitted
+            // is missing its manifest.json", and those need opposite responses from the user.
+            std::wstring why;
+            if (!state->lastValidationError.empty()) {
+                why = L"校验未通过：" + state->lastValidationError;
+            } else if (done && !done->empty()) {
+                why = L"本轮生成已完成 · 尚未检测到有效内容包路径";
+            } else {
+                why = L"本轮请求结束 · 未检测到可操作的内容包";
+            }
+            SetWindowTextW(state->resultNote, why.c_str());
         } else if (!state->generatedPackageIsCurrentRound) {
             // The previous candidate survived this round (SetGeneratedPackage
             // returns early on a validation failure without clearing it), so the

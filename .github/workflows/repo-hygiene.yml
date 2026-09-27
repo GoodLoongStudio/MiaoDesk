@@ -141,6 +141,24 @@ jobs:
             exit 1
           }
 
+      # CCA-06 的一条验收是"运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding
+      # 伪造"。它此前没有任何执行点:规范、契约文档与代码是三份各自手写的文本,于是
+      # 文档可以宣称一个 broker 根本不提供的能力而两边都不报错。实测到的例子是
+      # skills/ 与 docs/ 把 capabilities 举例成 "clock.read / weather.read /
+      # audio.read",而 RequiredCapability 只认识 time. / weather. / tasks. 三个
+      # 前缀 —— 音频是输入通道,不是能力声明。
+      # 判据从代码读出(MiaoContentDataBinding.cpp 的能力映射、MiaoInputBus.h 的通道
+      # 闭集),不在这里再抄一份。
+      - name: Verify skills and docs claim only capabilities the runtime has
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-skill-capability-contract.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       # 三个内置壁纸运行时现在只携带 scene.json。旧 scene.ini 被移到 tests/fixtures
       # 作为冻结的迁移基准,不再进入 .mdwall 或安装包。这个门仍用那份基准复核几何,
       # 生成器内部还会对每层做一次逆合成 assert。

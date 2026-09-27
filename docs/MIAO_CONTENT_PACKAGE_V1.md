@@ -87,7 +87,7 @@ Aurora.mdwall/
   "entry": "scene.json",
   "parameters": "parameters.json",
   "preview": "preview/thumbnail.jpg",
-  "capabilities": ["clock.read", "audio.read"]
+  "capabilities": ["clock.read"]
 }
 ```
 
@@ -104,6 +104,19 @@ Aurora.mdwall/
 - `parameters`：可选 ParameterSchema；
 - `preview`：可选预览资源；
 - `capabilities`：内容声明需要的数据/系统能力，不直接授予 Win32 权限。
+  加载器只校验 id 的字符与重复，**不校验它是否真实存在** —— 所以这一列写错不会报错，
+  只会静悄悄地不工作。真实闭集由 `MiaoContentCapabilityBroker::RequiredCapability` 决定：
+
+  | capability | 数据路径前缀 | 说明 |
+  | --- | --- | --- |
+  | `clock.read` | `time.` | 时间类数据 |
+  | `weather.read` | `weather.` | 天气类数据 |
+  | `tasks.read` | `tasks.` | 待办类数据 |
+
+  任何 `audio.read` 之类不在表内的名字**不是**能力：音频由 `scene.json` 的
+  `inputs[]` 经 `input://audio/*` 输入通道提供，声明 capability 既无效也不必要。
+  写一个 broker 不认识的数据路径会被明确拒绝（`not supported by the capability broker`），
+  而不是被忽略。
 
 ## 4. Package Root 是安全边界
 

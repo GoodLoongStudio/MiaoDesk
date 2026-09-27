@@ -404,11 +404,25 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-06 升级 Skills、能力说明与制作样例
 
-- [ ] 完成；负责人 / 证据：待填写。
+- [~] "运行时上限优先于文档副本"已变成可执行闸门;样例与版本/摘要在资产侧已有雏形,**样例的渲染验证与评测集分离需 Windows 侧证据**。
 - **依赖**：CCA-04、CCA-05。
 - **实施**：保留四个现有 Skill 的职责，加入受支持工具流程、设计方法、失败修复和少量高质量示例；校正与实际几何、素材、材质、binding、数据能力不符的规则；新增引用资源纳入打包与一致性检查。
 - **交付**：每个领域至少 3 个可渲染样例及对应需求、包、参数和效果说明；skill 版本/摘要记录。
 - **验收**：示例全部经过真实校验与目标后端渲染；运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding 伪造；运行时上限优先于文档副本。样例和评测集分开。
+
+**核对结果（2026-09-28，"虚构能力"这一类首次有了执行点）**：
+
+- 验收第二条"运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding 伪造"此前**没有任何闸门在看**:规范(`skills/`)、契约文档(`docs/MIAO_CONTENT_PACKAGE_V1.md`)与代码是三份各自手写的文本,于是文档可以宣称一个运行时根本没有的能力,而两边都不报错。
+- 实测到的那一处:`skills/content-package-basics/SKILL.md` 把 capabilities 举例成 "clock.read / weather.read / **audio.read**",而 `MiaoContentCapabilityBroker::RequiredCapability` 只认识 `time.` / `weather.` / `tasks.` 三个前缀 —— **没有 `audio.`**。内容能拿到的音频是**输入通道** `input://audio/*`(`MiaoInputBus.h` 的闭集),它不需要也没有对应的 capability。
+- 为什么这一处特别值得修:loader 对 capabilities 只查 id 的字符集(`MiaoContentPackage.cpp:IsCapabilityId`),所以 `audio.read` **不会报错**。后果是更坏的两种:作者声明了就以为音频已授权,接着写 `audio.*` 数据绑定被 broker 拒掉,而他会以为是别的问题;或者声明了、它完全无效,而模型告诉用户"音频已启用"。**一个虚构的能力比一个缺失的能力更难发现:缺失会亮红,虚构只会静悄悄地不工作。**
+- 新增 `scripts/verify-skill-capability-contract.sh`(已接进 `repo-hygiene.yml`)。判据从代码**读出**,不再抄一份清单 —— 抄的那份会在改名那天悄悄说相反的话(2026-09-22 `verify-skill-material-rule.sh` 吃过这个亏):
+  - 数据能力:从 `MiaoContentDataBinding.cpp` 的 `RequiredCapability` 解析 (前缀 → capability);
+  - 输入通道:从 `MiaoInputBus.h` 的常量表解析,并**反查 `ChannelShape` 是否分支到每一个** —— 加进常量表却忘了进形状表,那个通道生产者写不进、场景声明它无效,而只读常量表的门会照样绿。
+  - 检查范围是会教到作者的全部文本:四个 SKILL.md、`MIAO_CONTENT_PACKAGE_V1.md`、六个自带样例的 manifest、以及 `MiaoContentPackage.cpp` 里那个"一个合法包"的自测夹具(它是照做就行的活样本)。
+- 修掉的三处:skill 的举例改成真实闭集并说明音频/指针不走 capability 而走 `inputs[]`;`MIAO_CONTENT_PACKAGE_V1.md` 补上 capability 真表并明写"loader 不校验它是否真实存在,所以写错不会报错,只会静悄悄地不工作";自测夹具的 manifest 改回单能力并断言它就是 `clock.read`。
+- 这个门自测过四处,每处都确认它是红的:把虚构能力塞回 skill、虚构一个 `input://pointer/z`、往 `MiaoInputBus.h` 加一个 `ChannelShape` 分支不到的幽灵通道、以及零比对守卫(一处声明都没比到时 exit 2,绝不静默通过)。
+- **它证不了什么(与另外两个 skill 门相同的上限)**:它只比对 id,抓不到"把真能力说错用途"或"只字不提某个真能力";同一行出现否定词(不是 / 不提供 / 别写 ……)时该行不计入 —— 这是为了不把"audio.read 不是能力"这类说明报成违规,代价是夹在否定句里的真违规也会被跳过。实测确认过这一种,要人工读。
+- **仍未做**:每个领域 3 个样例的"对应需求、参数和效果说明"、样例的真实渲染验证(需目标后端)、评测集与样例的显式分离、skill 版本/摘要记录。这些在本机给不出证据。
 
 ### CCA-07 建立有上限的自动修复
 

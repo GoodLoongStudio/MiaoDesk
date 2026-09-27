@@ -489,7 +489,11 @@ bool MiaoContentPackage::SelfTest() {
   "runtime": "scene",
   "entry": "scene.json",
   "parameters": "parameters.json",
-  "capabilities": ["clock.read", "audio.read"]
+  // 只写真实存在的那一个。这里曾经还带着 "audio.read" —— 它不影响这个自测
+  // (loader 只查 capability id 的字符集),于是这个"一个合法包"的活样本,和
+  // 按它写出来的 skill 与文档一起,教用户声明一个 broker 根本不提供的能力。
+  // 一个虚构的能力不会报错,只会静悄悄地不工作。
+  "capabilities": ["clock.read"]
 })JSON";
     }
     {
@@ -507,7 +511,8 @@ bool MiaoContentPackage::SelfTest() {
         loaded.manifest.id == "com.goodloong.self-test" &&
         loaded.manifest.kind == ContentKind::Wallpaper &&
         loaded.manifest.runtime == ContentRuntimeKind::Scene &&
-        loaded.manifest.capabilities.size() == 2 &&
+        loaded.manifest.capabilities.size() == 1 &&
+        loaded.manifest.capabilities[0] == "clock.read" &&
         !loaded.entrySourceUtf8.empty();
 
     fs::path resolved;

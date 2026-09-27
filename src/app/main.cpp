@@ -1,4 +1,5 @@
 #include "miaodesk/AppSearch.h"
+#include "miaodesk/CreatorToolRegistry.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/DesktopWidgetTools.h"
@@ -114,7 +115,16 @@ bool IsAllowedPiNativeTool(std::string_view tool) {
     // Product-state mutation is intentionally NOT allowed through the worker.
     // Pi may read state and create sandbox previews; only the host-owned Apply
     // button can cross the commit boundary.
-    return tool == "settings_open" ||
+    //
+    // Creator tools go through the shared registry, NOT through another literal list
+    // here. The reason is a silent one-way failure: Pi's --tools lives in
+    // PiLaunchProfile.cpp and this table lives here, and the two never see each other.
+    // When Pi offers a tool this table does not know, the worker exits 26 and the
+    // model retries forever while the user sees "it never succeeds"; when this table
+    // knows a tool Pi does not offer, the capability sits unused and nothing reports
+    // it. One registry with two derivations is the only shape where that cannot happen.
+    return miaodesk::creator::IsCreatorTool(tool) ||
+           tool == "settings_open" ||
            tool == "ppt_create" ||
            tool == "file_create" ||
            tool == "folder_list" ||

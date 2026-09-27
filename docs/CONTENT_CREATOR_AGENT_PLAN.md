@@ -286,9 +286,20 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
   2. **顺序不对的调用不改阶段**。跳过暂存直接提交、跳过校验直接暂存,这些是 `Refuse` 而不是 `Reject`:阶段保持原样。用 Reject 表达后者会把一个已提交的事务改写成 Rejected,于是"它到底提交了没有"取决于最后一次调用的顺序 —— 那正是要避免的不可判定状态。
 - 新增 `src/tests/CreatorPackageTransactionTest.cpp`:**84 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorPackageTransactionTest`、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红;变异过程中查出并删掉两处**冗余守卫**(暂存处的 reparse point 复查已被 `policy_.Allows` 覆盖;`after` 摘要可用性在 `before` 不可用时必然一起失败),并补了一条原先缺失的覆盖:工作区本身不完整(只有 manifest、没有 scene)时任何写入都要被拒 —— 我的快照一直取完整的,那两道闸短路掉测试全绿。
 - **仍未做（属于本条剩余部分）**:
-  - Pi 扩展侧的八个 `creator_*` 工具本体（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具）,以及 `src/app/main.cpp` 的 worker 分发。
-  - 宿主把 `CreatorPackageTransaction` 接到真实文件系统(临时文件 + `MoveFileExW` 替换 + 回退)与 `ContentCandidateLedger` 的封存动作。
-  - 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证。
+**工具名册与两份清单一致（2026-09-27 增补）**：
+
+- 新增 `CreatorToolRegistry`（`src/include/miaodesk/CreatorToolRegistry.h` + `src/desktop/control/CreatorToolRegistry.cpp`）：八个 `creator_*` 工具的名册、mutating 分类,以及一次路由。路由只决定"这个调用能不能进、由谁执行",不碰盘。
+- 这一步直接对应验收里的"按进程/会话配置验证扩展实际拿到的工具清单"。它不是细节:Pi 侧的 `--tools` 写在 `PiLaunchProfile.cpp`,worker 的允许表写在 `src/app/main.cpp`,**两者彼此不知道对方**。而不一致的故障是单向静默的 —— Pi 给了而 worker 不认,则 worker 静默退出 26、模型反复重试、用户看到"它一直不成功";worker 认而 Pi 没给,则能力躺着没人用、没有任何东西报错。
+- 现在 `IsAllowedPiNativeTool` 改为调用 `miaodesk::creator::IsCreatorTool(...)`,名册是唯一事实来源。新增 `tests/creator-tool-surface-contract.mjs`（已接进 repo-hygiene CI）：从名册、Pi 的 allowlist 字面量、worker 的函数体三个源头读,要求两两覆盖一致,并规定两份 allowlist 除 `content_skill_get` 外不得有任何共享项。三个已知失效(把 worker 退回自己的字面量表 / 往 allowlist 加一个名册里没有的工具 / 从名册删一个工具)全部让它变红。
+- 新增 `src/tests/CreatorToolRegistryTest.cpp`:**163 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorToolRegistryTest`、`run-pure-logic-tests.sh` 与 Windows CI。覆盖名册往返、mutating 分类、跨作品(伪造 sessionId / 工作区不符 / 已取消)、未知工具、逐阶段判据、以及每个工具各自的必填参数。
+- **可重试与不可重试要分开**:缺参数值得让模型重试,归属/阶段/取消不值得 —— 混为一谈的后果是模型反复重试同一个越界调用,而用户看不到任何进展。
+- 变异测试 14 个注入全红。过程中查出三处覆盖空洞:`TestRequiredArgumentsPerTool` 传的是**参齐了的**调用,于是 content / digest / source 三道闸短路掉全绿 —— 已改为每个参数单独一条"缺它就被拒 + 补回来就放行"。
+
+**仍未做（属于本条剩余部分）**:
+
+- Pi 扩展侧把这些工具真正注册给模型（`PiNativeToolsExtension.cpp` 的 Creator variant 目前只换了安装路径与 allowlist,注册的仍是现有 native 工具)。
+- 宿主把 `CreatorToolRegistry` 的路由接到真实 worker 分发(`src/app/main.cpp` 目前只放行,还没执行),以及把 `CreatorPackageTransaction` 接到真实文件系统与 `ContentCandidateLedger` 的封存动作。
+- 两种 kind 端到端生成合法包,以及"关闭通用工具后仍可完整制作"的对照验证。
 
 ### CCA-05 结构化候选与统一校验
 

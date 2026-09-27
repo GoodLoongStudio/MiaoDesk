@@ -395,6 +395,19 @@ jobs:
       # 而那种坏法没有任何别的门看得见:两份配置共用一个扩展文件时,后写的那份覆盖
       # 前一份,于是另一个模式*下一次*启动的进程加载到错的工具集 —— 表现为"聊天突然
       # 不能写文件了",而没有任何一处代码改过聊天的 allowlist。
+      # CCA-04: Pi's --tools and the worker's allow table must be the same registry.
+      # Two independent lists drift, and the failure is one-way silent -- see the
+      # header of tests/creator-tool-surface-contract.mjs for the full reasoning.
+      - name: Verify the creator tool surface agrees across Pi and the worker
+        shell: bash
+        run: |
+          out=$(node tests/creator-tool-surface-contract.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify the creator session is isolated from plain chat
         shell: bash
         run: |

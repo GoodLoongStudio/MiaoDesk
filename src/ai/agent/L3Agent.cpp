@@ -2,6 +2,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/AppSearch.h"
 #include "miaodesk/GozSearch.h"
+#include "miaodesk/SecretRedaction.h"
 #include <shellapi.h>
 #include <wincred.h>
 #include <algorithm>
@@ -770,8 +771,14 @@ ModelProbeResult L3Agent::ProbeModels(const std::wstring& apiUrl,
         if (response.status != 404 && response.status != 405) {
             std::wstring detail = L"模型列表请求返回 HTTP " + std::to_wstring(response.status) + L"。";
             if (!response.body.empty()) {
+                // Redacted before it goes anywhere. This text reaches the settings page's
+                // status line AND profile.lastMessage, which WriteIni persists into the
+                // plaintext profile file -- and the body is whatever a remote server chose
+                // to send back, including, from some gateways, the request headers it was
+                // given. See SecretRedaction.h for why that is not a theoretical risk.
                 const auto shortBody = Utf8ToWide(response.body.substr(0, 220));
-                if (!shortBody.empty()) detail += L" " + shortBody;
+                const auto summarized = miaodesk::secrets::SummarizeRemoteBody(shortBody);
+                if (!summarized.empty()) detail += L" " + summarized;
             }
             result.message = std::move(detail);
             return result;

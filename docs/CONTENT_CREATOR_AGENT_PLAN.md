@@ -718,7 +718,9 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
 2. **创作 profile 从未被装上（CCA-03，2026-09-28 新查出）**：这是"宿主持有会话 ID、工作区、epoch、台账"那句话的**根因**，而我先前把它归错了。`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 在 `src/` 下都没有调用者，于是创作跑在**聊天的 profile** 上：`--tools` 不传（通用文件/shell 工具全在，正是 CCA-04 要拿掉的那批）、两个 creator 环境变量不导出（`creator_*` 八个工具因此拿到空工作区）、创作系统提示词不生效。`tests/pi-launch-profile-isolation.mjs` 第 4 节现在**故意红着**，装上去的那一行就是唯一的修法。
-   接线前**必须先决定一件事**：工作区根目录放在哪。`CreatorSessionBinding::workspaceRoot` 的注释写着"必须来自宿主的会话记录"，而 `AppPaths.h` 里**没有任何 creator 根**—— 这个产品决定还没做。选错的结果是模型的 cwd 指向一个任意目录。
+   接线前必须先决定工作区根目录放在哪。**这一项已于 2026-09-28 补上**：`AppPaths.h` 增加 `CreatorWorkspacesRoot()` / `CreatorWorkspaceRoot(sessionId)`，形状与 `WallpaperLibraryRoot` / `PiAgentRoot` 等完全一致（`<StateRoot>/<名字>`），且按 `main.cpp` 的既有用法让**一次作品占一个子目录** —— `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边。补上它之后，"装 profile 卡在一个未决定的产品问题上"这个理由不再成立。
+
+   **仍未决定的是另一件，而它不该由我在无法运行的情况下替产品决定**：一个"作品"由什么标识。`DeriveCreatorSessionId(workspaceRoot)` 是从工作区反推会话 ID，所以顺序上得先有工作区、再有会话 —— 那么同一个用户同时开两个壁纸作品时，它们各自的工作区叫什么？已有的两种可能都要产品结论：按 kind 一个固定目录（简单，但两个壁纸作品会共用一个工作区，`DeriveCreatorSessionId` 也会给出同一个会话 ID，直接违反 CCA-03 的隔离意图），或者引入一个持久化的作品记录（正确，但要决定旧工作区怎么清理、升级怎么办）。
    另外，装 profile 会**同时**打开 tool allowlist 与环境变量导出两件事。计划 CCA-04 原文说"两部分必须作为同一个可验证切换交付"，所以这一步是行为切换，不能只在本机看绿灯。
 3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
 4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。

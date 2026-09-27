@@ -266,12 +266,29 @@ function callersOf(symbol) {
   return hits;
 }
 
+// 先查那一半现在**能**满足的:工作区根目录必须有家。
+// 它以前没有 —— AppPaths.h 里每一项都有 <StateRoot>/<名字>,只有创作没有,于是
+// "装 profile"卡在一个未决定的产品问题上。补上之后这一条转绿;它是按已有惯例补的,
+// 不是发明一个新位置(main.cpp 的 FilesystemCreatorWorkspace 用 root_.parent_path()
+// 放 revisions/ 与 candidate-ledger.state,所以一次作品占一个子目录)。
+const appPaths = read("src/include/miaodesk/AppPaths.h");
+assert.match(appPaths, /inline fs::path CreatorWorkspacesRoot\(\)/,
+  "the creator workspace needs a home under StateRoot(), following every other feature");
+assert.match(appPaths, /inline fs::path CreatorWorkspaceRoot\(std::wstring_view sessionId\)/,
+  "one work must be one subdirectory (main.cpp puts revisions/ beside the package dir)");
+
+// 真正没做的那一半:profile 从未被装上。
 for (const symbol of ["SetLaunchProfile", "MakeCreatorLaunchProfile"]) {
   const hits = callersOf(symbol);
   assert.ok(hits.length > 0,
     `${symbol} 在 src/ 下没有任何调用者 —— 它定义完好、被 CMake 编译、也有人读,`
     + `但创建/安装的那一次调用从未发生,于是整条创作链在出厂构建里不生效。`
-    + `(本轮实测:sessionDir 退回 agentDir、--tools 不传、两个 creator 环境变量不导出)`);
+    + `实测:--tools 用聊天那份,七个 creator_* 名字被整体剥掉;`
+    + `--extension 落盘的是 Chat 变体,它本身不含创作工具;`
+    + `MIAODESK_CREATOR_WORKSPACE / MIAODESK_CREATOR_SESSION 不导出,`
+    + `而 main.cpp 的 RunCreatorTool 正是从这两个环境变量取工作区与会话。`
+    + `所以创作轮次里模型**一条 creator_* 都用不了**,八个已实现并测过的工具不可达。`
+    + `工作区根目录这一项已在 AppPaths.h 补好,剩下的就是装上 profile 的那一次调用。`);
 }
 
 // CMake 必须编译新文件,否则它只存在于磁盘上(2026-09-22 LNK2019 那一课)。

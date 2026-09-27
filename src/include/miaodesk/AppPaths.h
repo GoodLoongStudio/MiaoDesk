@@ -97,6 +97,27 @@ inline fs::path WebView2Root() {
     return root.empty() ? fs::path{} : root / L"WebView2";
 }
 
+// 创作会话的工作区(CCA-03/CCA-04/CCA-05 的落盘点)。
+//
+// 为什么必须有这一项:`PiRuntime` 只在 launchProfile_.mode == Creator 时导出
+// MIAODESK_CREATOR_WORKSPACE,而 src/app/main.cpp 的 RunCreatorTool 正是从那个环境
+// 变量取工作区。于是"工作区根目录放在哪"一直是**未决定**的状态,而只要它未决定,
+// 创作 profile 就装不上(装上了也只能导出一个空路径)。
+//
+// 形状与上面每一项一致:<StateRoot>/<名字>。此外 main.cpp 的 FilesystemCreatorWorkspace
+// 用 root_.parent_path() 放 revisions/ 与 candidate-ledger.state,所以一次作品占
+// **一个子目录**:包目录在里,两份宿主持账在它旁边。
+inline fs::path CreatorWorkspacesRoot() {
+    const fs::path root = StateRoot();
+    return root.empty() ? fs::path{} : root / L"CreatorWorkspaces";
+}
+
+inline fs::path CreatorWorkspaceRoot(std::wstring_view sessionId) {
+    const fs::path root = CreatorWorkspacesRoot();
+    if (root.empty() || sessionId.empty()) return {};
+    return root / fs::path(sessionId);
+}
+
 inline fs::path GeneratedWallpapersRoot() {
     const fs::path root = StateRoot();
     return root.empty() ? fs::path{} : root / L"GeneratedWallpapers";

@@ -49,7 +49,11 @@ Web 运行时是给**用户手工或第三方内容**用的,不属于 skill 的�
 - `docs/MIAO_CONTENT_PACKAGE_V1.md` — manifest v1 与 Package Root 边界
 - `docs/MIAODESK_CONTENT_FRAMEWORK.md` — ContentDefinition / Parameter / Scene Runtime
 - `docs/DESIGN_BASELINE.md` §5 — Widget geometry 与交互模型
-- `assets/widgets/GlassClock.mdwidget/` — 可参照的完整示例
+- 可参照的完整示例:`assets/widgets/GlassClock.mdwidget/`(仓库路径)。
+  **装好的产品里它在 `Widgets/GlassClock.mdwidget`** —— 见根 CMakeLists 的
+  `install(DIRECTORY assets/widgets/ DESTINATION Widgets)`。同理壁纸示例在
+  `Wallpapers/<name>.mdwall`。两处都要写,因为这条是用户唯一会照着读的实物范本:
+  只写仓库路径,在一台装好的机器上照着找会什么都找不到。
 
 ## 硬底线(任何 skill 都不能覆盖)
 

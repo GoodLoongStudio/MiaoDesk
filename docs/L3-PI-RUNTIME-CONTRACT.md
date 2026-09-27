@@ -88,7 +88,19 @@ MiaoDesk Native tools 只暴露依赖内部产品状态的能力，例如 settin
 
 ## 6. Desktop mutation 安全边界
 
-AI 读取状态与生成 wallpaper preview 可以自动执行；真实桌面 mutation 必须经过产品宿主的校验和用户确认边界。Widget 是 Native-only preset，AI 只能读取其状态，不能创建或修改组件。
+AI 读取状态与生成 wallpaper preview 可以自动执行；真实桌面 mutation 必须经过产品宿主的校验和用户确认边界。
+
+关于组件，三张容易混淆的面必须分开说（详见 `AI_GENERATED_DESKTOP_SANDBOX.md` 的三面对照表）：
+
+| 面 | AI 能做什么 |
+| --- | --- |
+| Pi tool surface | 只能读：`desktop_widget_list` / `wallpaper_state_get` 都是只读，worker allowlist 拒绝产品状态变更（exit 26） |
+| AI Content Creator | 能产出一个可预览的 `.mdwidget` **内容包**（`ContentKind::Widget`），是结构化数据，不是 HTML/CSS/JavaScript |
+| 正式组件 API | 只有产品宿主能改现役组件状态（`WidgetService::Update`）；AI 没有任何工具面映射到它 |
+
+**曾经写在这里的那句"Widget 是 Native-only preset，AI 只能读取其状态，不能创建或修改组件"是错的，已于 2026-09-28 撤回**：它把第二面一起否掉了，而用户主动发起的 `✨ AI 制作组件` 正是要产出内容包。撤回理由与残余风险的精确表述在同文件的三面对照表里，那里的结论是"没有**工具**能改组件状态"，而不是"模型碰不到组件"——Pi 还拿着通用文件工具 `read/edit/write/bash`，而 widget store 是没有校验和的纯 INI。
+
+跨三面不变的那条：**AI 输出是数据，不是代码。**任何面都不接受模型编写的 HTML/CSS/JavaScript。
 
 长期规则：
 

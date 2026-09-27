@@ -252,6 +252,36 @@ jobs:
             exit 1
           }
 
+      # CCA-14:"修正仍称 AI 不能生成组件的旧表述"。BASE-03 修过**三处**同一句的
+      # 副本,漏了第四处 —— 而它恰恰是最容易被当成契约读的
+      # docs/L3-PI-RUNTIME-CONTRACT.md。那句错得很讲得通:它说的是"没有**工具**能改
+      # 现役组件状态",听上去是安全承诺,却把 Content Creator 一起否掉了。
+      # 一个撤回过的断言配一个门:它不许再出现在活文档里,而更正记录本身不许被改写
+      # (三面对照表与"AI 输出是数据,不是代码"都还得在)。
+      - name: Verify retracted claims stay retracted
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-stale-claim-retraction.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+      # CCA-06 的"新增引用资源纳入打包与一致性检查"与 CCA-14 的"技能引用资源随包完整"。
+      # 抓到的那一处:skills/README.md 只写 `assets/widgets/GlassClock.mdwidget/`(仓库
+      # 路径),而用户照这句话在装好的机器上找 —— 那儿叫 Widgets/(install(DIRECTORY
+      # assets/widgets/ DESTINATION Widgets))。安装布局从 CMakeLists 读出,不抄一份。
+      - name: Verify paths the skills point at exist and name their installed location
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-skill-referenced-paths.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       # 第三道:文档讲的那个符号还在不在。与上面两道分开 —— 它们管"指对地方",
       # 这道管"讲的东西没被删掉"。第一次跑就抓到 TODO.md 引用了一个已不存在的
       # WallpaperLibrary::ImportPackages(导入路径早变成 ImportFile/ImportWebUrl,

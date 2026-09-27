@@ -75,7 +75,6 @@ struct UiMessage {
 
 struct ActivityCard {
     bool visible{};
-    bool terminal{};
     bool failed{};
     std::wstring title;
     std::wstring detail;
@@ -552,7 +551,6 @@ void UpdateToolStart(ConversationState& state, const std::wstring& tool) {
     state.turnRanTool = true;
     state.activity.steps = {{tool, FriendlyToolName(tool), StepStatus::Running}};
     state.activity.visible = true;
-    state.activity.terminal = false;
     state.activity.failed = false;
     state.activity.title = L"正在执行：" + FriendlyToolName(tool);
     state.activity.detail = L"妙喵正在操作你的电脑";

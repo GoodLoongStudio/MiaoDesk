@@ -164,7 +164,9 @@
   6. **LAY-2-7 已修：包管理器与 Skill 浏览器的 Esc 也是死的。** 这两个窗各有自己的嵌套泵、都调 `IsDialogMessageW`，所以 Tab 通，但都没处理 `IDCANCEL`——对话框管理器按 Esc 会去找这个 id，找不到就把按键丢掉。两处都已补上与"关闭"按钮、`WM_CLOSE` 完全相同的 `DestroyWindow(hwnd)`。
   - **LAY-2-11 已修：整条 NavigateCallback 是死代码，而它看起来是活的。** 我本来要给"库页面 AI 导航是个死路"做跨进程修复，查下去发现**它根本不是死路**：`SetPage(Page::AI)` 当场就在库里显示 API 配置页。真正的问题是那条回调路径从头到尾没有执行过——`WallpaperLibraryWindowV2` 把 `navigateCallback` 存下来就再没用过，`SectionForNav` 定义了也没人调用；而 `WallpaperEngine` 老老实实给它传了一个带 Playlists / Displays / Performance / AI 四个分支的 lambda，其中 AI 分支还是个 MessageBox，告诉用户"AI 模型配置位于 MiaoDesk 设置中心"。
     - **为什么这条比"有个回调没用到"严重**：它从外部完全看不出是死的。我读了引擎那个分支，就据此断定 AI 导航是个"有指针没路径"的缺陷，并设计了一整套跨进程方案去修一个不会发生的行为。已整条删除（回调 typedef、Show 参数、成员与赋值、`SectionForNav`、`WallpaperSettingsSection` 枚举、引擎那个 lambda），并把 `tests/no-dead-ui-callbacks.mjs` 作为不变量留下：扫 UI 实现里每个 `std::function` 成员，要求它在本 TU 内真的被调用过；同时禁止那个 typedef/枚举/Mapper 回来。
-    - 顺带记下但**没有动**的一个设计问题：API 配置页在壁纸进程（`DesktopAiSettingsPage`）和 MiaoDesk 设置中心各有一份。这不是缺陷而是重复，要怎么合需要你定。
+    - 顺手又删一个同族的：`ActivityCard::terminal`——每次工具开始都被写成 false，没有任何代码读它，"卡片是否会结束"这件事实际由 `ClearActivityCard()`（整个卡片重置）负责。留着一个没人读的状态字段，会让读代码的人以为卡片有"终态"这个属性。已删，并在同一测试里禁止它回来。
+  - 那个不变量本身也修了一处：最初按"文件"扫，而对话面板是 6 个 `.inc` 被一个 `.cpp` include 的——`.inc` 里声明的回调在别的 `.inc` 里调用，按文件扫会把活成员报成死的。已改为**按编译单元扫**（把 `.cpp` 和它 include 的 `.inc` 拼起来）。
+  - 顺带记下但**没有动**的一个设计问题：API 配置页在壁纸进程（`DesktopAiSettingsPage`）和 MiaoDesk 设置中心各有一份。这不是缺陷而是重复，要怎么合需要你定。
   - **本轮把这条从"逐个窗修"升级成一条不变量**：新增 `tests/esc-answers-every-dialog-surface.mjs`，把仓库里所有按键走对话框管理器的界面登记成一张表（PUMPS / OWN_PUMP / SERVED），要求每个界面要么答 `IDCANCEL`、要么在豁免表里给出理由，并校验"实际含 `IsDialogMessageW(` 的文件集合"与登记表一致——以后谁新写一个泵忘了决定 Esc，这里立刻红，不用再靠第六次发现。
   - **两个豁免，理由都写进测试里而不是只写在注释里**：① 设置中心（壁纸库）——它 `WM_CLOSE` 是 `SW_HIDE` 不是销毁，而它托管的 AI/API 页每次显示都 `LoadProfiles()`，未保存的填写会被重载冲掉；Esc 正是在文本字段里最容易被随手按到的那个键，所以它里 Esc 必须保持"什么都不做"（X/Alt+F4 照旧可关）。测试顺带钉住这个前提本身：库窗一旦改成销毁、或 API 页一旦不再重载，豁免当场失效、要求重新决定而不是默认继承。② AI 创作窗——全屏预览下 Esc 已有绑定，且该窗已整体退出对话框管理器；非全屏时 Esc 属于预览交互，不该用一次误按丢掉一整份已生成的包。
   7. **LAY-2-8 已修：键盘能走到了，但看不见焦点在哪。** 这一项的前面几条把 Tab 打通了，于是暴露出下一层问题——**owner-draw（自绘）控件不会自己画焦点框**：EDIT 有光标、列表框有选中态、标准按钮有焦点框，自绘的什么都没有，只有 `DRAWITEMSTRUCT.itemState` 里的 `ODS_FOCUS` 一个信号，代码不画就没有。

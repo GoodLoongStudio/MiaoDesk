@@ -143,7 +143,7 @@
   - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
   - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
 
-- **本轮已修（2026-09-27，四项；后两项其实不小：整套"壁纸自动化"和整个 AI 创作窗此前键盘上都完全不可用）**：
+- **本轮已修（2026-09-27，五项；后三项其实不小：整套"壁纸自动化"、整个 AI 创作窗、待办编辑窗此前键盘上都完全不可用）**：
   1. **LAY-2-1 的 WM_SIZE 那条已修**：`SearchWindow` 的 `WM_SIZE` 里 `MoveWindow(edit_, kEditLeft, kInputProxyY, 1, 1, FALSE)` 换成 `input_ime_detail::EnsureSearchImeGeometry(edit_)`。原写法不只是违反 §2——它自己打自己：`MoveWindow` 会发 `WM_WINDOWPOSCHANGED`，而 `WH_CALLWNDPROCRET` 钩子对每个 `WM_WINDOWPOSCHANGED` 都会用同一个 `EnsureSearchImeGeometry` 把真实矩形装回去，于是每次展开/收起和每次按键触发的 resize 都白抖一轮，中间还夹着一个候选框锚在 1×1 上的窗口。
   - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
   2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
@@ -153,6 +153,10 @@
   - **顺带修掉的是关窗丢键盘**：这两个窗都是"关窗即隐藏"（要留状态给下次打开），而刚被点过的"关闭"按钮正持有焦点——隐藏持有焦点的窗口会让 Windows 把焦点交给 Z 序里的下一个窗口，经常就是桌面，用户下一次按键直接进了别的应用程序，且毫无提示。新增 `src/include/miaodesk/SurfaceKeyboardFocus.h`：`HideSurface` 先记 `GetFocus() == surface`，隐藏后**仅在原本持有焦点时**把键盘交还打开我们的那个界面，并优先落到它第一个可见可用的 Tab 停靠点（直接给顶层窗口焦点只是让键盘停在框架上，Tab 无处可去）。
   - 未验证项：这条与本项其他条目一样，Tab 序、下拉框展开时 Esc 只收列表不关窗、以及"关闭后焦点回到设置中心"都需要真机走查。测试 `automation-window-keyboard-conformance.mjs` 已用 13 个变异逐个验红。
   4. **LAY-2-5 已修：AI 创作窗此前键盘上也完全不可用。** 它是 modeless，创建它的 `SearchWindow` 与派发它消息的 `SearchWindow::RunMessageLoop` 在同进程同线程但**不同编译单元**——所以那条泵只有 `TranslateMessage / DispatchMessage`，整个创作窗（prompt、5 个预设、转写、Skill 列表、应用按钮，全 `WS_TABSTOP`）Tab 一概无效。这条此前被记在"仍未修"里，理由只写了"同理，没有 `IsDialogMessageW`"。
+  5. **LAY-2-6 已修：待办编辑窗的 Esc 是死的（同一个文件里下一层却是好的）。** `TodayTaskEditorDialog.cpp` 有两个嵌套泵、都调 `IsDialogMessageW`，所以 Tab 两边都通。但**条目对话框**（新增/编辑待办）的"取消"按钮 id 就是 `IDCANCEL`，Esc 能用；而**承载它的编辑窗**（列表 + 新增/编辑/完成/恢复/删除/关闭）一个 `IDCANCEL` 都没有——对话框管理器按 Esc 时会去找这个 id，找不到就把按键丢掉。同一个文件、只差一层，一层认 Esc、一层不认。
+  - 入口：组件设置对话框的"编辑今日待办"，即调用点 `ContentWidgetSettingsDialog.cpp:365` 上的 `ShowTodayTaskEditorDialog`。
+  - 顺带核对过、结论是**不要动**的两处（每处都记在这里，免得下一轮再重新判断一遍）：两个嵌套泵里的 `if (result == 0) PostQuitMessage(...)` 是对的——嵌套泵若私吞 WM_QUIT，外层循环会在进程已被要求退出后继续跑，所以 quit 必须重新投递；`EnableWindow(owner, FALSE/TRUE)` 在每条退出路径上都配对，包括 quit 路径，所以编辑窗消失后主窗不会被永久禁用。
+  - 未验证项：真机上按 Esc 关闭编辑窗后焦点应落在组件设置窗（那条路径本就存在，`EnableWindow(owner, TRUE) + SetForegroundWindow`）。测试 `today-task-editor-escape.mjs` 用 9 个变异验红。
   - 修法：`ContentCreatorDialog.cpp` 增 `g_openCreatorWindows`（创建后 push，`WM_DESTROY` 里、`delete state` **之前** erase），以 `creator::DialogManagedCreatorWindows()` 暴露给泵；`SearchWindow::RunMessageLoop` 改为遍历这些 HWND、各自 `IsWindow` 兜住后交给对话框管理器。
   - **关键取舍：全屏预览窗被排除在对话管理器之外。** 该模式自己吃掉所有按键（Esc 退出、空格播放/暂停、R 重载）。`IsDialogMessageW` 会把 `VK_ESCAPE` 吞掉并投递 `WM_COMMAND / IDCANCEL`，而创作窗不处理 `IDCANCEL`——顺手接上对话框管理器会让**全屏预览的 Esc 静默失效**。过滤器按 `previewFullscreenActive` 排除，测试钉住这条。
   - **搜索框仍然故意不加**，但这次把边界写准了：不再是"这个文件里不能出现 `IsDialogMessageW`"（创作窗就在同一条泵里），而是"这条泵绝不把 `hwnd_` / `edit_` 交出去"。测试按这个口径改。

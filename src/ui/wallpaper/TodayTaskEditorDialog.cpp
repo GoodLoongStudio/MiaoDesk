@@ -376,6 +376,14 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         case kToggleId: ToggleSelected(*state); return 0;
         case kDeleteId: DeleteSelected(*state); return 0;
         case kCloseId: DestroyWindow(hwnd); return 0;
+        // Esc: this editor's own pump already calls IsDialogMessageW, so the dialog
+        // manager looks for a control with id IDCANCEL and posts WM_COMMAND for it.
+        // The item dialog in this same file has IDCANCEL wired (it is its 取消 button),
+        // but this window did not -- so Esc did nothing here while it worked one level
+        // down. Closing is the same action as 关闭 and the same action the window's
+        // system menu already performs, so nothing is being asked for that the window
+        // does not already support.
+        case IDCANCEL: DestroyWindow(hwnd); return 0;
         default: break;
         }
         break;

@@ -97,7 +97,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest --parallel 2>&1
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
@@ -568,6 +568,28 @@ jobs:
               }
               Write-Host "::error::exit code $gateExit"
               throw 'sprite material policy gate failed.'
+          }
+
+      # CCA-02 的创作工作流状态机。它和别的测试目标不同:不依赖 Windows,所以在
+      # run-pure-logic-tests.sh 里也能跑;但"能在 macOS 上跑"不等于"产品里编得过",
+      # 这一步仍然要 MSVC + /W4 真编一次,并确认真跑出来的退出码是 0。
+      - name: Verify the creation workflow state machine
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskCreationWorkflowStateTest.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $test) { throw 'Creation workflow state test executable was not found.' }
+          $gateOut = & $test.FullName 2>&1
+          $gateExit = $LASTEXITCODE
+          $gateOut | Write-Host
+          if ($gateExit -ne 0) {
+              $gateOut | Select-String -Pattern 'FAIL|rror|xception|not found|missing|rejected|Error' | Select-Object -First 12 | ForEach-Object {
+                  $line = $_.Line.Trim()
+                  if ($line.Length -gt 400) { $line = $line.Substring(0, 400) }
+                  Write-Host "::error::$line"
+              }
+              Write-Host "::error::exit code $gateExit"
+              throw 'Creation workflow state machine gate failed.'
           }
 
       - name: Verify 3D scene spatial mode, lights and fog

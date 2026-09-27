@@ -23,6 +23,21 @@ SRCS=()
 for f in $(find content -name '*.cpp' | sort); do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then SRCS+=("$f"); fi
 done
+
+# content/ 之外还有一类刻意写成纯逻辑的实现:创作工作流状态机
+# (desktop/control/CreationWorkflow.cpp,CCA-02)。它不 include 任何 Windows 头,
+# 所以同样能在本机真实编译并运行 —— 否则"状态机有测试"会只剩一句
+# "Windows 真机待验",而这批断言(取消 epoch、迟到消息、幂等、预算)恰好是最
+# 值得每轮都跑的那批。
+# 判断标准和上面一致:能过 -fsyntax-only(不加替身头)才算纯逻辑。
+for f in desktop/control/CreationWorkflow.cpp; do
+  if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then
+    SRCS+=("$f")
+    echo "额外的纯逻辑实现(CCA-02):$f"
+  else
+    echo "⚠ $f 现在依赖 Windows 头,已从本机链接集合里排除" >&2
+  fi
+done
 echo "可链接的实现源文件:${#SRCS[@]} 个"
 
 # 源码必须用绝对路径喂给编译器:CMake 就是这么做的,于是 __FILE__ 是绝对路径;
@@ -66,7 +81,7 @@ echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # WebAudioEnvelope 是 host->page 音频信封:它把 content/ 的 AudioSpectrumFrame 变成
 # shim 会接受的 JSON。整条链没有一行 Windows 代码,所以能在本机跑;
 # 另一半(页面侧 shim)由 tests/WebAudioEnvelopeParity.mjs 一起对。
-for t in WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests; do
+for t in CreationWorkflowStateTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests; do
   run "$t" "$t.cpp"
 done
 

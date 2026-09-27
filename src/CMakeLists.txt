@@ -53,6 +53,10 @@ set(MIAODESK_CORE_SOURCES
     desktop/control/DesktopControlService.cpp
     desktop/control/DesktopContentPackageLifecycle.cpp
     desktop/control/ContentCreatorBridge.cpp
+    # CCA-02 的创作工作流状态机。它刻意不 include 任何 Windows 头,所以既能在
+    # Windows 上编,也能被 run-pure-logic-tests.sh 真实编译并运行 —— 否则
+    # "状态机有测试"会退化成"状态机有一份只能在真机走查的代码"。
+    desktop/control/CreationWorkflow.cpp
     desktop/demo/StoreDemoExperience.cpp
     desktop/preview/GeneratedDesktopPreview.cpp
     desktop/shell/DesktopSurfaceTelemetry.cpp
@@ -259,6 +263,10 @@ add_executable(MiaoDeskSpriteMaterialPolicyTest tests/SpriteMaterialPolicy.cpp)
 # has a render endpoint and the branch that ran is printed, so "no frame arrived" can
 # never be read as either outcome.
 add_executable(MiaoDeskWallpaperAudioTapTest tests/WallpaperAudioTap.cpp)
+# CCA-02:创作工作流状态机。纯逻辑,不依赖 Windows,所以它同时被
+# run-pure-logic-tests.sh 真实运行 —— 状态转换、预算、取消 epoch、迟到消息、
+# 版本和幂等都不必等一台 Windows 机器才验。
+add_executable(MiaoDeskCreationWorkflowStateTest tests/CreationWorkflowStateTest.cpp)
 
 add_custom_command(TARGET MiaoDesk POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MiaoDesk>/Assets"
@@ -290,7 +298,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -334,6 +342,7 @@ if (MSVC)
     target_compile_options(MiaoDeskSceneD3D11TexturedSpriteTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSpriteMaterialPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaperAudioTapTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskCreationWorkflowStateTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
 target_link_libraries(MiaoDesk PRIVATE
@@ -480,6 +489,13 @@ target_link_libraries(MiaoDeskSceneSerializerSelfTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskContentSelfTests PRIVATE
+    MiaoDeskCore
+)
+
+# CCA-02 的创作工作流状态机走同一条路:把 desktop/control/CreationWorkflow.cpp
+# 编进 MiaoDeskCore,测的是那个真实现,而不是这里再编一份副本。两份拷贝会各自演变,
+# 而测试绿的永远是本地那份。
+target_link_libraries(MiaoDeskCreationWorkflowStateTest PRIVATE
     MiaoDeskCore
 )
 

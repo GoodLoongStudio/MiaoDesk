@@ -48,6 +48,8 @@
 
 ## AI / Agent
 
+- [CONTENT_CREATOR_AGENT_PLAN.md](CONTENT_CREATOR_AGENT_PLAN.md) — 方案 2 的专项实施计划：专用创作会话 + 现有 Skills + 真实校验/渲染反馈 + 有界修复。含 CCA-00～14 任务、协议、验收矩阵和可交给其他 AI 的执行说明；当前为待实施方案，不代表功能已完成。
+- [CREATOR_AGENT_PI_CAPABILITY_PROBE.md](CREATOR_AGENT_PI_CAPABILITY_PROBE.md) — CCA-01 能力探测记录：锁定 Pi 版本的 RPC/图像/会话/工具 allowlist 实测结论（含"input 不含 image 时图片被静默丢弃"这一决定性事实）。可用 `scripts/probe-pi-rpc-capability.mjs` 复现
 - `L3-PI-RUNTIME-CONTRACT.md` — Pi-first Agent Runtime 契约
 - `PI_AGENT_ACTIVITY_FEEDBACK.md` — Agent 活动反馈
 - `PI_AGENT_CONVERSATION_UX.md` — 对话体验

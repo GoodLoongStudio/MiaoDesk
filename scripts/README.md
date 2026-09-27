@@ -28,6 +28,20 @@ bash scripts/verify-scene-fixture-parity.sh  # 两份贴图场景 fixture 是否
 (`run-pure-logic-tests.sh` / `verify-media-package-offline.sh` 用)、`cmake`
 (`verify-cmake-covers-sources.sh` 用)。
 
+## 手动门:Pi RPC 能力探测
+
+```bash
+npm install --prefix /tmp/pi-probe @earendil-works/pi-coding-agent@0.83.0
+PI_PACKAGE=/tmp/pi-probe/node_modules/@earendil-works/pi-coding-agent \
+  node scripts/probe-pi-rpc-capability.mjs
+```
+
+这不是上面那类"读仓库文本"的闸门:它真的启动锁定版本的 Pi,把 Provider 指向本机 stub,
+然后断言 **Provider 实际收到的请求体**。结论写在
+`docs/CREATOR_AGENT_PI_CAPABILITY_PROBE.md`,其中最关键的一条是 `models.json` 的
+`input` 不含 `image` 时图片会被静默换成占位文本,而 RPC 照样回成功——所以它不进 CI,
+但每次动 `PiRuntime.cpp` 的启动参数、models.json 生成或图片链路之前应该手动跑一次。
+
 其中四个(冲突标记 / CMake 收录 / 工作流 paths / skill 白名单)连同样两个 node 闸门一起,
 由 `.github/workflows/repo-hygiene.yml` 在 CI 里跑 —— 它们不需要 Windows,也不依赖构建
 能否通过,所以不该被构建类工作流挡住。

@@ -849,7 +849,16 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
     const auto lower = Lower(input);
 
     if (lower == L"/help") {
-        reply = L"L3 命令：/status、/time、/apps <关键词>、/files <关键词>、/open <应用名>、/open-file <文件名>、/new。模型和 API Key 请使用右上角 AI 设置。";
+        reply =
+            L"可用命令：\r\n"
+            L"/status 查看当前模型、Provider 与 Key 状态\r\n"
+            L"/retry 重试上一请求（本轮未执行过操作时提供）\r\n"
+            L"/apps <关键词>、/files <关键词> 搜索应用与文件\r\n"
+            L"/open <应用名>、/open-file <文件名> 直接打开目标\r\n"
+            L"/key <密钥> 保存 API Key，/clear-key 清除已保存的 Key\r\n"
+            L"/endpoint <地址>、/provider <id> 切换服务地址与提供方\r\n"
+            L"/new 开始新对话，/time 查看当前时间\r\n"
+            L"更完整的模型、图片与凭据管理，也可以用右上角 AI 设置。";
         return true;
     }
     if (lower == L"/status") {

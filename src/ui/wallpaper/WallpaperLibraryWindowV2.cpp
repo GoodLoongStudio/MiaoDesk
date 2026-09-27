@@ -69,13 +69,19 @@ constexpr int kWallpaperToggleId = 6160;
 constexpr int kOpenLogsId = 6170;
 constexpr int kCreatorId = 6171;
 constexpr int kWallpaperFilterBaseId = 6180;
-constexpr int kWallpaperFilterCount = 8;
+constexpr int kWallpaperFilterCount = 10;
 constexpr int kWidgetFilterBaseId = 6190;
 constexpr int kWidgetFilterCount = 8;
 constexpr UINT kDeferredWidgetRefresh = WM_APP + 0x235;
 
 constexpr std::array<const wchar_t*, kWallpaperFilterCount> kWallpaperFilterLabels{{
-    L"全部", L"动态", L"静态", L"猫咪", L"风景", L"科幻", L"治愈", L"简约"
+    L"全部", L"动态", L"静态", L"猫咪", L"风景", L"科幻", L"治愈", L"简约",
+    // Two views whose data already existed and was maintained on every apply, with no
+    // way to read it back: SetFavorite had been callable since the library grew a
+    // star, and lastUsedUnixSeconds is stamped by every apply path. 收藏 is a filter;
+    // 最近使用 additionally sorts, because a recency view in arbitrary order is not a
+    // recency view.
+    L"收藏", L"最近使用"
 }};
 constexpr std::array<const wchar_t*, kWidgetFilterCount> kWidgetFilterLabels{{
     L"全部", L"时钟", L"天气", L"效率", L"信息", L"系统", L"娱乐", L"桌面宠物"
@@ -215,6 +221,10 @@ bool MatchesWallpaperFilter(const WallpaperLibraryItem& item, int filterIndex) {
     case 7: // 简约
         return ContainsAny(searchable, {L"简约", L"极简", L"minimal", L"simple"}) ||
                item.kind == LibraryWallpaperKind::Image;
+    case 8: // 收藏
+        return item.favorite;
+    case 9: // 最近使用
+        return item.lastUsedUnixSeconds > 0;
     default:
         return true;
     }
@@ -541,6 +551,15 @@ struct WallpaperLibraryWindow::Impl {
                 return !MatchesWallpaperFilter(item, wallpaperFilterIndex);
             }),
             visibleWallpapers.end());
+        // Inside the recency view, order by recency. Elsewhere the library's own order is
+        // preserved: changing the default order of 全部 would move every wallpaper's
+        // position under a user who never asked for a recency view.
+        if (wallpaperFilterIndex == 9) {
+            std::stable_sort(visibleWallpapers.begin(), visibleWallpapers.end(),
+                             [](const auto& a, const auto& b) {
+                                 return a.lastUsedUnixSeconds > b.lastUsedUnixSeconds;
+                             });
+        }
         if (!previous.empty()) {
             const auto it = std::find_if(visibleWallpapers.begin(), visibleWallpapers.end(), [&](const auto& item) {
                 return _wcsicmp(item.id.c_str(), previous.c_str()) == 0;
@@ -1023,8 +1042,25 @@ struct WallpaperLibraryWindow::Impl {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(115, 118, 128));
             HGDIOBJ old = SelectObject(dc, bodyFont);
-            const wchar_t* empty = widgets ? L"还没有小组件。点右下角「新建桌面小组件」选择类型。" : L"桌面库为空。使用右上角“添加”导入壁纸。";
-            DrawTextW(dc, empty, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            // An empty grid meant one of two things, and this used to claim the worse one
+            // for both: "桌面库为空" is false whenever the library has wallpapers and only
+            // the search or the chip row matched none of them -- which sends the user off
+            // to import files they already have. With a 收藏 chip the empty case is the
+            // first thing a new user sees (nothing is favorited yet), so the distinction
+            // stopped being pedantic.
+            std::wstring empty;
+            if (widgets) {
+                empty = L"还没有小组件。点右下角「新建桌面小组件」选择类型。";
+            } else if (!library || library->Items().empty()) {
+                empty = L"桌面库为空。使用右上角“添加”导入壁纸。";
+            } else if (WindowText(search).empty()) {
+                empty = wallpaperFilterIndex > 0
+                    ? L"当前筛选下没有壁纸。点「全部」查看库里的所有壁纸。"
+                    : L"没有可显示的壁纸。";
+            } else {
+                empty = L"没有匹配「" + WindowText(search) + L"」的壁纸。换个关键词，或清空搜索。";
+            }
+            DrawTextW(dc, empty.c_str(), -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(dc, old);
         }
         if (bufferBitmap) BitBlt(paintDc, 0, 0, width, height, bufferDc, 0, 0, SRCCOPY);

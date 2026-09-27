@@ -686,6 +686,40 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 >
 > 每轮结束交付：实际修改、相关 CCA 状态、实现提交或差异、运行过的检查和结果、未验证/阻塞项、下一项及依赖。在相应 CCA 附证据链接，更新主 TODO 的关联摘要，但不提前勾选产品级验收。
 
+## 11.5 交给下一位执行者的记录（2026-09-28）
+
+下面这些是**本机（macOS）已经做完并有可执行证据**的部分，以及**做不了、且为什么做不了**的部分。第二半比第一半重要：它写清楚哪一条是真被挡住，哪一条只是没排上 —— 免得下一位把已经探过的路再探一遍。
+
+### 已经做完，且每一条都有本机可跑的门或测试
+
+| CCA | 状态 | 证据（本机可跑） |
+| --- | --- | --- |
+| CCA-04 | 工具名册/worker/事务/封存/校验已有测试；本轮补：可用性表与不可用理由表不再能互相矛盾；系统提示词不再让模型去调未实现的工具 | `CreatorToolWorkerTest` 254 条（真编译真跑） |
+| CCA-05 | 凭据分级（Receipt vs ProseScan）、candidate receipt、包结构校验 | `CreatorReplyInterpreterTest` 37 条、`ContentCandidateReceiptTest` 50 条、`ContentPackageValidatorTest` 121 条 |
+| CCA-06 | "运行时上限优先于文档副本"变成闸门；虚构能力的那一处已修 | `scripts/verify-skill-capability-contract.sh` |
+| CCA-07 | 有上限自动修复的调度逻辑与八种停止理由 | `CreationRepairPlannerTest` 44 条 |
+| CCA-08 | 渲染证据的记录与判定（含"占位不是成功"优先于"帧数够了"） | `RenderEvidenceTest` 42 条、`CreatorToolWorkerTest` 的取证六例 |
+| CCA-09 | 视觉评审的门：硬校验失败不被视觉分覆盖、图像没送达不算看过 | `VisualReviewGateTest` 49 条 |
+| CCA-11 | 幂等账本与应用前重验早已在 CCA-02；本轮补一次恢复的判定（四种真相） | `CreationWorkflowStateTest` 168 条、`ContentApplyRecoveryTest` 49 条 |
+| CCA-13 | "能不能说效果更好"的判定：八个拒绝各对一条"不许自己放水" | `ContentReleaseGateTest` 54 条 |
+| CCA-14 | 撤回过的断言不许回来；skill 引用的路径必须真的在那儿且说得出发名前 | `verify-stale-claim-retraction.sh`、`verify-skill-referenced-paths.sh` |
+| CCA-10 | 关掉再打开的草稿状态与五种恢复结论 | `CreationDraftStoreTest` 59 条 |
+
+全部新模块都刻意**不 import Windows 头**，所以它们在 macOS 上真编译真跑，而不是只过 `-fsyntax-only`。每一轮都用**已知失效注入**验过：往实现里塞一个坏编辑，确认对应测试转红。累计注入约 60 处，全红；其中三处**第一轮是绿的**（`IsAlreadyAppliedOnTarget` 的空摘要前置判断、`CreationDraftStore` 的逗号转义、`ContentReleaseGate` 的函数内 `static` 由入参初始化），都是先补测试再转红 —— 而那三种恰恰是最难靠读代码发现的三类。
+
+### 做不了，而且不是没排上
+
+1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
+2. **宿主持久的会话实例（CCA-03 的"按需运行"落到界面）**：`InterpretCreatorReply`、`PlanApplyRecovery`、`PlanRepair` 三者的接线处都缺同一组东西 —— 宿主持有的会话 ID、工作区路径、epoch、台账文件。它们在 `CreationWorkflow` 里都有钩子（`SetDraftPersistHook`、`ApplyLedger()`），但**挂载点只有一个测试在调**。真实挂载点在 `src/ui/ai/ContentCreatorDialog.cpp`（2029 行）与 Pi 运行时的启动/回收路径上，那要动真实窗口与进程生命周期。
+3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
+4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。
+
+### 已知会误导人的三个地方（下一轮先看这里）
+
+1. `tests/image-provider-installed.mjs` 在这个工作副本上**必然失败**：`runtime/agent/node_modules` 没有安装。它在干净树上失败得一模一样，不是本轮引入的。
+2. `gh` 未登录，所以 `scripts/verify-rc-ci.mjs` 只能跑到一半。需要它给结论时要先登录。
+3. `docs/L3-PI-RUNTIME-CONTRACT.md` 曾有一句"AI 只能读取其状态，不能创建或修改组件"，已于 2026-09-28 撤回。BASE-03 修过三处副本、漏了这一处。现在有 `verify-stale-claim-retraction.sh` 盯着，想再写回去会被挡下。
+
 ## 12. 执行记录模板
 
 ```text

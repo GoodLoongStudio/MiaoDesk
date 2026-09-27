@@ -325,9 +325,29 @@ public:
 
     int Run() {
         MSG msg{};
+        // Let the library / settings window take part in dialog keyboard navigation.
+        // Every control in it is WS_TABSTOP -- the wallpaper search box, the nav and
+        // filter buttons, the target combo, and the whole API page -- but the pump had
+        // no IsDialogMessageW, so a keyboard-only user could not reach a single one of
+        // those fields. That is LAY-02's "键盘可完成搜索、配置、预览和应用" failing
+        // outright rather than partially.
+        //
+        // Adding it here is safe for this window specifically, which is why it is not
+        // also added to the search box's pump in the same change: this window has no
+        // VK_RETURN / VK_TAB / WM_GETDLGCODE handling of its own and no
+        // BS_DEFPUSHBUTTON, so nothing can be hijacked -- Enter still reaches the EDIT
+        // it was typed into, and Esc just beeps. The search box does have its own Enter
+        // handling that executes the selected result, so it needs a separate decision.
+        //
+        // IsDialogMessageW only consumes messages destined for the dialog or its
+        // children, so everything else in this process falls through unchanged.
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            const HWND dialog = libraryWindow_.Window();
+            const bool handled = IsWindow(dialog) && IsDialogMessageW(dialog, &msg);
+            if (!handled) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
         }
         return static_cast<int>(msg.wParam);
     }

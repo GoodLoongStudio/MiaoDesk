@@ -149,11 +149,10 @@
   - **未动创建处**：创建时该 EDIT 仍用 `kInputProxyY` + 1×1 起步（`SearchWindow.cpp:293`，同样被钩子纠正）。那是初始化路径，改它无法验证自绘是否被遮，留到能上真机那轮跟 IME 一起收口。
   2. **LAY-2-3 已修**：组件设置对话框的弹窗循环本来就调 `IsDialogMessageW`，而它按 `VK_ESCAPE` 找 id 为 `IDCANCEL` 的控件、找不到就 beep。原对话框只有 kCloseId，所以 Esc 什么都做不了（另外还得靠 Alt+F4）。已加 `case IDCANCEL:` 复用同一个关闭动作。
 - **仍未修的核心项**：
-  - **LAY-2-2：设置中心（`MiaoDesk.Native.DesktopLibrary` 类）整条消息循环没有 `IsDialogMessageW`。** 该循环只有 `TranslateMessage` 与 `DispatchMessageW`（`WallpaperEngine.cpp:328-331`），`WndProc` 里也没有任何 `VK_TAB` 分支。可是搜索框、全部 nav/filter/action 按钮、`targetCombo` 和整个 API 页都是 `WS_TABSTOP`。结果：纯键盘用户在 AI/API 页和壁纸搜索框里**一个字段都到不了**。
+  - **LAY-2-2：设置中心的键盘导航已修（这条本身仍未勾，因为要真机走查）。** 原先整条消息循环没有 `IsDialogMessageW`，而该窗口里搜索框、全部 nav/filter/action 按钮、`targetCombo` 和整个 API 页都是 `WS_TABSTOP`——纯键盘用户在 AI/API 页和壁纸搜索框里**一个字段都到不了**。已在 `WallpaperEngine::Run()` 的泵里给库窗口补上 `IsDialogMessageW`（用 `IsWindow` 兜住，因为 `WallpaperLibraryWindow::Window()` 返回的是裸 HWND，未创建/已销毁时为 null，绝不能把 null 传进去）。**能在这里安全加，是因为先核对过这个窗口是键盘中性的**：无 `VK_RETURN`/`VK_TAB`/`WM_GETDLGCODE` 自处理、无 `BS_DEFPUSHBUTTON`，所以 Enter 照旧落到键入的 EDIT 上，Esc 只是 beep。
   - AI 创作窗同理：modeless，消息回到 `SearchWindow::RunMessageLoop`，同样没有 `IsDialogMessageW`。
   - 附带：壁纸库搜索框（`WallpaperLibraryWindowV2.cpp:1944`）只有 `EN_CHANGE` 一条路径，没有 Enter 提交。
-  - **为什么没顺手加**：`IsDialogMessageW` 会接管 Tab/Enter/Esc 的语义。搜索框那侧风险最直接——它有自己的 `EditProc`，Enter 是去执行选中项的，被 dialog manager 抢先就成了点默认按钮。这一处加错会直接弄坏产品主入口的输入，而本机既看不到也无法键入。建议按"先设置中心、确认 API 页 Tab/Enter 行为、再评估创作窗、最后单独判断搜索框是否该用 `DLGC_WANTALLKEYS` 一类豁免"的顺序上真机做。
-  - **为什么没顺手加**：`IsDialogMessageW` 会接管 Tab/Enter/Esc 的语义。搜索框那侧风险最直接——它有自己的 `EditProc`，Enter 是去执行选中项的，被 dialog manager 抢先就成了点默认按钮。这一处加错会直接弄坏产品主入口的输入，而本机既看不到也无法键入。建议按"先设置中心、确认 API 页 Tab/Enter 行为、再评估创作窗、最后单独判断搜索框是否该用 `DLGC_WANTALLKEYS` 一类豁免"的顺序上真机做。
+  - **为什么搜索框没在同一改动里加**：它有自定义输入处理（Enter 执行选中项），`IsDialogMessageW` 会抢先，所以那一面需单独判断——可能要靠 `DLGC_WANTALLKEYS` 一类豁免，而不是直接加。测试已把这条边界钉住：搜索框那条泵若被顺手加上 `IsDialogMessageW` 会立刻红。
 
 ### PERF-01 建立可比较的全进程性能基线
 

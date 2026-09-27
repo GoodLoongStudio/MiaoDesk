@@ -1,5 +1,6 @@
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/CreatorWorkspacePolicy.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/PiLaunchProfile.h"
 #include "miaodesk/RuntimeLogPaths.h"
@@ -574,7 +575,13 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     std::vector<wchar_t> mutableCommand(command.begin(), command.end());
     mutableCommand.push_back(L'\0');
 
-    auto environment = BuildEnvironmentBlock({
+    // 会话 ID 与工作区只给创作进程,聊天进程拿不到。
+    //
+    // 为什么只在 Creator 下导出:这两个变量的作用是把"这次创作属于哪个作品"变成
+    // 宿主持有的事实。聊天进程拿不到它们,那么即使在最坏的情况下聊天侧加载到了创作
+    // 扩展(那正是 CCA-03 防的污染),工具调用也会因为拿不到绑定而被拒,而不是拿到
+    // 一个指向桌面目录的工作区。空值在这里是安全的默认方向。
+    std::vector<std::pair<std::wstring, std::wstring>> environmentOverrides = {
         {L"PI_CODING_AGENT_DIR", setup.agentDir},
         // Separate Pi session storage so a future --session run cannot mix the two
         // modes' histories. Today --no-session means Pi writes nothing here anyway.
@@ -587,7 +594,14 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         {L"PI_SKIP_VERSION_CHECK", L"1"},
         {L"PI_TELEMETRY", L"0"},
         {kApiKeyEnvironment, setup.apiKey},
-    });
+    };
+    if (launchProfile_.mode == PiLaunchMode::Creator && !setup.workingDirectory.empty()) {
+        const auto sessionUtf8 = miaodesk::creator::DeriveCreatorSessionId(
+            WideToUtf8(setup.workingDirectory));
+        environmentOverrides.push_back({kCreatorWorkspaceEnvironment, setup.workingDirectory});
+        environmentOverrides.push_back({kCreatorSessionEnvironment, Utf8ToWide(sessionUtf8)});
+    }
+    auto environment = BuildEnvironmentBlock(environmentOverrides);
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);

@@ -346,6 +346,24 @@ void TestNormalize() {
     Check(NormalizeCreatorRelativePath("a/b/c.json", &out) && out == "a/b/c.json", "深层合法(角色另判)");
 }
 
+// 会话 ID 从工作区路径导出。它必须是工作区的函数,而不是又一个要同步的字段:
+// 两个可以互相矛盾的事实来源一旦矛盾,"这个调用属于哪个作品"就没有答案。
+void TestSessionIdDerivesFromTheWorkspace() {
+    CheckEq(DeriveCreatorSessionId(R"(C:\Users\me\AppData\Roaming\MiaoDesk\creator\S-1)"), "S-1",
+            "取最后一段目录名");
+    CheckEq(DeriveCreatorSessionId("C:/ws/S-1"), "S-1", "正斜杠同样取最后一段");
+    // 末尾分隔符要先去掉:不去掉的话 "S-1\" 的最后一段是空串,而空会话会让
+    // 每一次调用都被判成"没有会话 ID"——那看起来像模型忘了带,其实是我们的 bug。
+    CheckEq(DeriveCreatorSessionId(R"(C:\ws\S-1\)"), "S-1", "末尾反斜杠不算新的一段");
+    CheckEq(DeriveCreatorSessionId(R"(C:\ws\S-1\\\)"), "S-1", "连续末尾分隔符也只算一层");
+    CheckEq(DeriveCreatorSessionId("S-1"), "S-1", "裸名字也是它自己");
+    CheckEq(DeriveCreatorSessionId(""), "", "空路径没有会话");
+    CheckEq(DeriveCreatorSessionId("\\\\"), "", "只有分隔符也没有会话");
+    CheckEq(DeriveCreatorSessionId(R"(C:\)"), "", "盘符根没有会话");
+    // 中文目录名要原样回来:工作区是宿主分配的路径,它的形状不该被这里过滤掉。
+    CheckEq(DeriveCreatorSessionId(R"(C:\ws\我的作品)"), "我的作品", "非 ASCII 目录名原样保留");
+}
+
 void TestRoleRoundTrip() {
     const CreatorFileRole roles[] = {
         CreatorFileRole::Manifest, CreatorFileRole::Parameters, CreatorFileRole::Scene,
@@ -405,6 +423,7 @@ int wmain() {
     TestReparsePointRejected();
     TestResolveStaysInsideWorkspace();
     TestNormalize();
+    TestSessionIdDerivesFromTheWorkspace();
     TestRoleRoundTrip();
     TestEveryRejectHasAnExplanation();
 

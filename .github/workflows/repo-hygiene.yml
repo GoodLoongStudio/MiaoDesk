@@ -408,6 +408,19 @@ jobs:
             exit 1
           }
 
+      # 这一道拦的是"名册里有、扩展没注册"这一类静默失效:Pi 不报错,worker 也不报错,
+      # 模型只是从来没见过那个工具。它还顺手把 C++ 里那段 TypeScript 拼出来做一次真
+      # 解析 —— 原始字符串里少一个括号,只在 Windows 上启动 Pi 的那一刻才会炸。
+      - name: Verify the creator extension actually registers the registry's tools
+        shell: bash
+        run: |
+          out=$(node tests/creator-extension-source.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       - name: Verify the creator session is isolated from plain chat
         shell: bash
         run: |

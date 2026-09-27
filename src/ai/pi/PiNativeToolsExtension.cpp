@@ -1,5 +1,6 @@
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/CreatorToolRegistry.h"
 
 #include <windows.h>
 
@@ -359,6 +360,190 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
 }
 )PIEXT";
 
+// ---------------------------------------------------------------------------
+// 创作扩展(CCA-04)
+//
+// 它和上面那份不是"少几个工具的同一份",而是另一套:上面那份能写文件、能生成图片、
+// 能读桌面状态;这一份**一个都不能**。八个创作工具全部转发给宿主 worker 执行,
+// 扩展本身只有"把参数交给宿主"的能力,没有任何写盘路径。
+//
+// 为什么刻意做得这么窄:创作会话要交给模型的是"往包里写 JSON"这一件事。一旦它顺手
+// 带上 bash/read/write,计划 §5 那条"关闭通用工具后仍可完整制作"就永远无法验证 ——
+// 因为没人说得清制作到底依赖了哪些能力,也就说不清关掉它们之后还能不能做。
+// 隔离做在工具面上,才让"关掉之后仍然完整"成为一句可证伪的话。
+//
+// TOOL_NAMES 由 CreatorToolNames() 在 C++ 侧生成,不在这里手写一遍。两份各自的
+// 清单总会漂移,而漂移的方向全是静默的:名册里多一个工具、这里漏注册,模型就只是
+// 从来没见过它,没有任何东西会报错。tests/creator-tool-surface-contract.mjs
+// 反向断言注册体覆盖名册,所以两个方向都堵住了。
+constexpr std::string_view kCreatorExtensionSourceHead = R"PIEXT(import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+
+const HOST = process.env.MIAODESK_NATIVE_TOOL_HOST ?? "";
+// 会话与工作区由宿主通过环境变量给出,不由模型填写。扩展把它们补进参数,是为了让
+// "模型忘了带"不变成一次失败;而 worker 会用**自己的**环境变量复核,所以模型若把
+// 这两个字段改成别的值,在 worker 侧就是一次归属不符的拒绝 —— 参数永远不是事实来源。
+const SESSION = process.env.MIAODESK_CREATOR_SESSION ?? "";
+const WORKSPACE = process.env.MIAODESK_CREATOR_WORKSPACE ?? "";
+
+function textResult(text: string) {
+  return { content: [{ type: "text" as const, text }], details: {} };
+}
+
+async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal): Promise<string> {
+  if (!HOST) throw new Error("MiaoDesk native tool host is unavailable.");
+  const work = await mkdtemp(join(tmpdir(), "miaodesk-pi-creator-"));
+  const input = join(work, "input.json");
+  const output = join(work, "output.txt");
+  try {
+    await writeFile(input, JSON.stringify(params ?? {}), "utf8");
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(HOST, ["--native-tool-worker", tool, input, output], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      let finished = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        error ? reject(error) : resolve();
+      };
+      const abort = () => {
+        try { child.kill(); } catch {}
+        finish(new Error(`MiaoDesk creator tool cancelled: ${tool}`));
+      };
+      timer = setTimeout(() => {
+        try { child.kill(); } catch {}
+        finish(new Error(`MiaoDesk creator tool timed out: ${tool}`));
+      }, 120000);
+      if (signal?.aborted) return abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      child.once("error", error => finish(error));
+      child.once("exit", code => code === 0
+        ? finish()
+        : finish(new Error(`MiaoDesk creator tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
+    });
+    const raw = await readFile(output, "utf8");
+    const newline = raw.indexOf("\n");
+    if (newline < 1) throw new Error(`MiaoDesk creator tool returned an invalid result: ${tool}`);
+    const success = raw.slice(0, newline).trim() === "1";
+    const message = raw.slice(newline + 1).trim() ||
+      (success ? "MiaoDesk creator tool completed." : "MiaoDesk creator tool failed.");
+    if (!success) throw new Error(message);
+    return message;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => {});
+  }
+}
+)PIEXT";
+
+constexpr std::string_view kCreatorExtensionSourceBody = R"PIEXT(function activateNativeTools(pi: ExtensionAPI) {
+  const active = pi.getActiveTools();
+  pi.setActiveTools([...new Set([...active, ...TOOL_NAMES])]);
+}
+
+export default function miaodeskCreatorTools(pi: ExtensionAPI) {
+  // 每个创作工具都只是"把参数转给宿主"。参数的形状在这里声明清楚:
+  // required 的字段和 CreatorToolRegistry 的必填校验一一对应,所以模型漏带时
+  // 先在 typebox 这一层就得到一个明确的错误,而不是走到 worker 才被拒。
+  const creator = (name: string, label: string, description: string, parameters: any) => {
+    pi.registerTool({
+      name, label, description, parameters,
+      executionMode: "sequential",
+      async execute(_toolCallId, params, signal) {
+        return textResult(await runNativeTool(name, { ...params, sessionId: SESSION, workspaceRoot: WORKSPACE }, signal));
+      },
+    });
+  };
+
+  creator("creator_capabilities_get", "Read Creator Capabilities",
+    "List what this creator session can do right now: the tools it may call, the current stage, and the workspace it is confined to. Call this first when you are unsure what is permitted. This is read-only.",
+    Type.Object({}, { additionalProperties: false }));
+
+  creator("content_skill_get", "Load Content Skill",
+    "Load a MiaoDesk content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
+    Type.Object({
+      name: Type.Optional(Type.String({
+        description: "content-package-basics | wallpaper-content | widget-content | content-review",
+      })),
+    }, { additionalProperties: false }));
+
+  creator("creator_package_read", "Read Package File",
+    "Read one file from the current work's content package. Only package-relative paths inside the allowed layout are accepted (manifest.json / parameters.json / scene/*.json / preview.<image> / assets/*). This is read-only.",
+    Type.Object({ relativePath: Type.String() }, { additionalProperties: false }));
+
+  creator("creator_package_update", "Write Package File",
+    "Write one file of the current work's content package. The write is transactional: if anything about it is rejected, the package is left exactly as it was and no revision is created. Pass expectedDigest (from the last read or receipt) to refuse a write that is based on a stale view of the package.",
+    Type.Object({
+      relativePath: Type.String(),
+      content: Type.String(),
+      expectedDigest: Type.Optional(Type.String({ description: "64-hex candidate digest this write assumes; omit if unknown" })),
+    }, { additionalProperties: false }));
+
+  creator("creator_asset_import", "Import Asset",
+    "Import an asset into the package from a host-managed source only (content:cloud, or a path inside the current workspace). Arbitrary filesystem paths are refused. The asset lands under assets/ with a host-chosen flattened name.",
+    Type.Object({
+      source: Type.String({ description: "content:cloud, content:cloud/<id>, or a path already inside this workspace" }),
+      relativePath: Type.String({ description: "assets/<name> destination inside the package" }),
+    }, { additionalProperties: false }));
+
+  creator("creator_image_generate", "Generate Package Image",
+    "Generate an image and place it inside the package under assets/. Use this for the work's own artwork; it is not a way to write files anywhere else.",
+    Type.Object({
+      prompt: Type.String(),
+      relativePath: Type.String({ description: "assets/<name> destination inside the package" }),
+    }, { additionalProperties: false }));
+
+  creator("creator_candidate_submit", "Submit Candidate",
+    "Submit a candidate version of the work for validation and sealing. The digest must be one the host issued; it cannot be guessed. The reply is a structured receipt with the revision the host assigned.",
+    Type.Object({
+      digest: Type.String({ description: "64-hex candidate digest issued by the host for this work" }),
+      summary: Type.Optional(Type.String()),
+    }, { additionalProperties: false }));
+
+  creator("creator_preview_evidence", "Collect Render Evidence",
+    "Ask the host to render the current candidate and return evidence that it actually renders (dimensions, backend, and a preview path). Use this before submitting so you are not sealing a package you have never seen render.",
+    Type.Object({
+      backend: Type.String({ description: "d2d | d3d11 | auto" }),
+    }, { additionalProperties: false }));
+
+  pi.on("session_start", () => activateNativeTools(pi));
+  pi.on("before_agent_start", async (event) => {
+    activateNativeTools(pi);
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Content Creator\n- You are making one declarative content package. You have NO shell, NO general file tools, and NO access outside this work's workspace. That is deliberate: everything you need is one of the creator_* tools.\n- Start with creator_capabilities_get and content_skill_get before writing anything.\n- Read a file with creator_package_read and write it with creator_package_update. Write only manifest.json, parameters.json, scene/*.json, preview.<image>, or assets/*. Never write code, HTML, CSS, JavaScript, or executables: desktop content is JSON only.\n- Every write is checked against the allowed layout, a size limit, and the workspace root. A rejected write leaves the package untouched and tells you why; fix the cause instead of retrying the same call.\n- Use creator_asset_import for existing media and creator_image_generate for artwork you describe. Both land inside assets/.\n- Before submitting, call creator_preview_evidence and read what it reports.\n- creator_candidate_submit returns a structured receipt. Only a candidate you actually received a receipt for can be applied. Never claim the user's desktop changed: only their Apply button commits.\n- Never claim a tool succeeded unless its result says so.`,
+    };
+  });
+}
+)PIEXT";
+
+// 创作扩展的 TOOL_NAMES 在 C++ 侧由名册生成。
+//
+// 为什么不在这里手写一份:名册(CreatorToolNames)是唯一事实来源,Pi 的 --tools 与
+// worker 的允许表都由它派生。这里如果另抄八个名字,就成了第三份 —— 而"多一个工具
+// 但扩展没注册"的故障是静默的:模型从来没见过它,没有任何东西报错。生成它,这个
+// 方向就不可能漂移;tests/creator-tool-surface-contract.mjs 再反向断言注册体覆盖
+// 名册,把另一个方向也堵住。
+std::string CreatorExtensionSource() {
+    std::string source(kCreatorExtensionSourceHead);
+    source += "const TOOL_NAMES = [\n";
+    for (const auto& name : miaodesk::creator::CreatorToolNames()) {
+        source += "  \"";
+        source += name;
+        source += "\",\n";
+    }
+    source += "] as const;\n\n";
+    source += kCreatorExtensionSourceBody;
+    return source;
+}
+
 } // namespace
 
 bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPath,
@@ -392,10 +577,16 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
     }
 
     const auto target = extensions / fileName;
+    // 两个 variant 的内容也必须是两份:Creator 那份连通用工具的影子都不该有。
+    // 判断"要不要重写"按内容逐字节比,所以切换 variant 或名册变化都会自然重装。
     std::string expected;
-    expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
-    expected.append(kExtensionSourcePart1);
-    expected.append(kExtensionSourcePart2);
+    if (variant == PiNativeToolsVariant::Creator) {
+        expected = CreatorExtensionSource();
+    } else {
+        expected.reserve(kExtensionSourcePart1.size() + kExtensionSourcePart2.size());
+        expected.append(kExtensionSourcePart1);
+        expected.append(kExtensionSourcePart2);
+    }
     if (ReadFile(target) != expected) {
         auto temporary = target;
         temporary += L".tmp";

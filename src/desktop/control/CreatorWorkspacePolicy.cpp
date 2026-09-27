@@ -314,4 +314,19 @@ std::string CreatorWorkspacePolicy::Explain(CreatorWorkspaceReject reject,
     return "已拒绝:" + path;
 }
 
+std::string DeriveCreatorSessionId(std::string_view workspaceRoot) noexcept {
+    // 末尾的分隔符要先去掉:"C:\ws\S-1\" 的最后一段是空串,不是 "S-1"。
+    std::size_t end = workspaceRoot.size();
+    while (end > 0 && (workspaceRoot[end - 1] == '\\' || workspaceRoot[end - 1] == '/')) --end;
+    if (end == 0) return {};
+    const std::size_t slash = workspaceRoot.find_last_of("\\/", end - 1);
+    const std::size_t begin = slash == std::string_view::npos ? 0 : slash + 1;
+    if (begin >= end) return {};
+    // 裸盘符不是目录名。"C:\" 与 "D:\" 去掉尾分隔符后分别是 "C:" 和 "D:" ——
+    // 把它们当会话 ID 的话,同一个盘上所有作品共用一个会话,而归属判断正是靠这个
+    // 字符串区分作品的。根路径没有"最后一个目录",所以它没有会话。
+    if (end - begin == 2 && workspaceRoot[begin + 1] == ':') return {};
+    return std::string(workspaceRoot.substr(begin, end - begin));
+}
+
 } // namespace miaodesk::creator

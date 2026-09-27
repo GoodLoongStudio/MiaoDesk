@@ -119,6 +119,17 @@ private:
 // 这一步不碰盘,所以可以在这里反复测。
 bool NormalizeCreatorRelativePath(std::string_view input, std::string* normalized);
 
+// 从工作区路径导出会话 ID:取最后一段目录名。
+//
+// 为什么不让调用方再单独传一个 ID:会话 ID 的唯一作用就是把一次创作和它的工作区
+// 绑在一起,而工作区路径本身就是宿主分配的那个唯一标识。再另给一个字符串,就会
+// 出现两个可以互相矛盾的事实来源 —— 而它们一旦矛盾,"这个调用属于哪个作品"
+// 就没有答案了,只有两个都有权声称自己是答案的东西。
+//
+// 空路径或只有分隔符时返回空串。调用方必须把空串当成"没有会话",而不是当成一个
+// 合法的会话名。
+std::string DeriveCreatorSessionId(std::string_view workspaceRoot) noexcept;
+
 // 用于把"这个文件到底在不在工作区里"的判断题交给宿主:它知道真实的文件系统。
 // 返回 true 表示接受。默认实现只做字符串层级判断,宿主可以再包一层真实检查。
 using WorkspaceContainment = std::function<bool(const std::string& resolved)>;

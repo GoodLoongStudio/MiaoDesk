@@ -378,6 +378,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             DestroyWindow(hwnd);
             return 0;
         }
+        // Esc. This window's own pump calls IsDialogMessageW, which consumes
+        // VK_ESCAPE and posts WM_COMMAND/IDCANCEL. Without this case that key goes
+        // nowhere: Esc was dead here while it worked in the dialogs one level away.
+        // Closing is the same action as 关闭 and as the window's own WM_CLOSE.
+        if (id == IDCANCEL) {
+            DestroyWindow(hwnd);
+            return 0;
+        }
         break;
     }
     case WM_CLOSE:

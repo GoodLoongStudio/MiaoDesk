@@ -180,7 +180,8 @@
   - **CREATE-1-3 已修：校验通过的包现在自动入库。** 原先必须手点"加入壁纸库/加入组件库"；同一个已经校验过的包晚一次点击才进库，用户若在此期间关窗，产物只存在于模型的沙箱里、直接丢失。已改为校验成功即入库，并把该按钮置灰（否则是一个点了不干事的按钮）。
     - **刻意停在"入库"这一步**：`AI_GENERATED_DESKTOP_SANDBOX.md` §1 的硬规则是"只有显式 Apply 能跨越提交边界"，所以"应用到桌面"仍是用户的一次点击。库是应用托管存储，不是桌面状态。
     - 顺手把 `InstallToLibrary` 从 `InstallGeneratedPackage` 里拆出来，让自动路径和按钮走同一个函数——否则"已自动入库"会和按钮做的是两件事。
-  - 未验证项：活动行文案在真机上是否够醒目、"已等待 N 秒"节奏、以及自动入库后到"应用"之间的状态是否说得清。测试 `creator-progress-and-retry-loop.mjs` 16 个变异全红（其中 3 个第一版是绿的——单次出现的检查在有 3 处调用点时会漏、`if (false)` 包裹的调用文本还在、库按钮那条只跑了自己的测试而没跑 `content-creator-modes.mjs`）。
+  - **CREATE-1-4 已修：重新生成时，上一版预览被当成当前预览用。** `SendPrompt` 有意不拆掉预览（拆了就是一整轮空白），但也没说它是不是新的：上一版 Scene 还在动、标签还是原话，等新包落地时和旧的那份**看不出区别**。唯一提示过用户的地方是失败结算那一句"当前预览仍是上一版候选"——一条几分钟前读过的状态行。现在：预览标题在忙时改成"生成中（上一版预览）"，并且**在两条绘制分支上都打角标**（实时 Scene 那一支是会 early return 的，也正是重新生成壁纸时真正走的那支；只在一处打等于没打）。
+  - 未验证项：活动行文案在真机上是否够醒目、"已等待 N 秒"节奏、自动入库后到"应用"之间的状态是否说得清、以及"上一版预览"角标在浅色/深色预览上是否可读。测试 `creator-progress-and-retry-loop.mjs` 16 个变异全红（其中 3 个第一版是绿的——单次出现的检查在有 3 处调用点时会漏、`if (false)` 包裹的调用文本还在、库按钮那条只跑了自己的测试而没跑 `content-creator-modes.mjs`）。
   - **上一条挂起的"生成的 Scene 壁纸应用不了"本轮已修（2026-09-27 当日，goal：有问题就修不等催）**。这不是 AI 创作通路独有的问题，而是**整个 Content Scene 类别**：`ApplyLibraryItem` 的全局入口只能写入"内置 scene key / image / video / web 源"，Content Scene 包没有可写的东西，于是报"请在目标显示器上分配该壁纸"——而"全局 / 当前布局"正是库页面默认选中的目标，所以整类壁纸（AI 生成的 + 任何导入的 .mdwall scene 包）在默认路径上必然失败。
     - 修法：不新增渲染能力，改用**已经支持 Content Scene 的那条机制**——按显示器分配（它通过 content resolver 解析 `content:<id>`）。`DesktopControlService::ApplyLibraryItem` 失败时先问 `WallpaperService::NeedsPerMonitorApply`，是则枚举真实拓扑、逐屏分配。
     - **关键的一点：必须同时把 `Layout` 切成 `independent`。** 分配表只在 `StartIndependent` 里被消费，Span/Clone/PrimaryOnly 下引擎渲染的是全局选择——不切布局就是"写进去了、桌面没变"却报成功，正是本仓已经修过三次的"假成功"。Web 通路早就这么做（`WallpaperWebRuntimeCoordinator.cpp` 的 `PersistMonitorWeb`），这里是照着它做，不是发明。

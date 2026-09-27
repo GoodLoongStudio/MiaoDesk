@@ -731,8 +731,12 @@ struct DialogState {
     }
 
     const wchar_t* PreviewStateLabel() const noexcept {
+        // While a turn is running, whatever the pane shows belongs to the previous round:
+        // SendPrompt deliberately does not tear the old preview down, so without this the
+        // user watches last round's scene animate under a label that says nothing about it
+        // -- and when the new package lands it is indistinguishable from the old one.
         switch (previewState) {
-        case PreviewSandboxState::Loading: return L"加载中";
+        case PreviewSandboxState::Loading: return busy ? L"生成中（上一版预览）" : L"加载中";
         case PreviewSandboxState::Playing: return L"播放中";
         case PreviewSandboxState::Paused: return L"已暂停";
         case PreviewSandboxState::StaticPreview: return L"静态预览";
@@ -1016,6 +1020,20 @@ struct DialogState {
                 DrawTextW(dc, L"已暂停", -1, &badge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 SelectObject(dc, old);
             }
+            // This is the branch that runs during a regeneration of a Scene wallpaper --
+            // the previous package's live render keeps animating -- so the staleness badge
+            // belongs here more than anywhere else.
+            if (busy) {
+                SetBkMode(dc, TRANSPARENT);
+                SetTextColor(dc, RGB(37, 99, 235));
+                HGDIOBJ busyFont = SelectObject(dc, smallFont);
+                RECT badge = bounds;
+                badge.left = std::max(badge.left, badge.right - S(132));
+                badge.bottom = std::min(badge.bottom, badge.top + S(28));
+                DrawTextW(dc, L"上一版预览 · 生成中", -1, &badge,
+                          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                SelectObject(dc, busyFont);
+            }
             if (draw->itemState & ODS_FOCUS) {
                 RECT focus = draw->rcItem;
                 InflateRect(&focus, -S(3), -S(3));
@@ -1067,6 +1085,18 @@ struct DialogState {
         HBRUSH border = CreateSolidBrush(RGB(222, 230, 240));
         FrameRect(dc, &bounds, border);
         DeleteObject(border);
+
+        if (busy) {
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(37, 99, 235));
+            HGDIOBJ busyFont = SelectObject(dc, smallFont);
+            RECT badge = bounds;
+            badge.left = std::max(badge.left, badge.right - S(132));
+            badge.bottom = std::min(badge.bottom, badge.top + S(28));
+            DrawTextW(dc, L"上一版预览 · 生成中", -1, &badge,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            SelectObject(dc, busyFont);
+        }
 
         // This pane is a WS_TABSTOP owner-drawn static (it is also the click target for
         // entering fullscreen), so the dialog manager can move focus onto it -- and

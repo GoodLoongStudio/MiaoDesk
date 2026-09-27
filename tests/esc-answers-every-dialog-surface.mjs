@@ -16,17 +16,22 @@ const root = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 // concrete reason. A seventh surface added without answering it fails here.
 
 // Pumps: files that route keys on behalf of surfaces declared elsewhere, and the surfaces
-// each one serves. A surface must appear here exactly once, so that a new pump cannot
-// silently claim a window that another pump already manages.
+// each one serves. `token` is the distinctive string that must appear in the pump's
+// message loop for that surface, so "registered" cannot drift from "actually served" --
+// the advanced settings window was added as a fourth surface to WallpaperEngine's pump
+// and a later edit could quietly drop it from the array again.
 const PUMPS = {
-  "src/desktop/wallpaper/legacy/WallpaperEngine.cpp": [
-    "src/ui/wallpaper/WallpaperLibraryWindowV2.cpp",
-    "src/ui/automation/WallpaperAutomationWindow.cpp",
-    "src/ui/automation/WallpaperApplicationRulesWindow.cpp",
-  ],
-  "src/ui/search/SearchWindow.cpp": [
-    "src/ui/ai/ContentCreatorDialog.cpp",
-  ],
+  "src/desktop/wallpaper/legacy/WallpaperEngine.cpp": {
+    // The advanced settings window (壁纸/显示器/性能) is declared inside this same
+    // translation unit, so it is a surface without its own file.
+    "src/ui/wallpaper/WallpaperLibraryWindowV2.cpp": "libraryWindow_.Window()",
+    "src/ui/automation/WallpaperAutomationWindow.cpp": "automationWindow_.Window()",
+    "src/ui/automation/WallpaperApplicationRulesWindow.cpp": "automationWindow_.RulesWindow()",
+    "src/desktop/wallpaper/legacy/WallpaperEngine.cpp": "settings_",
+  },
+  "src/ui/search/SearchWindow.cpp": {
+    "src/ui/ai/ContentCreatorDialog.cpp": "creator::DialogManagedCreatorWindows()",
+  },
 };
 
 // Surfaces whose own nested pump routes their own keys.
@@ -37,7 +42,9 @@ const OWN_PUMP = [
   "src/ui/wallpaper/ContentWidgetSettingsDialog.cpp",
 ];
 
-const SERVED = Object.values(PUMPS).flat();
+// (pump, surface, token) triples, and the pump's message loop body.
+const SERVED = Object.entries(PUMPS).flatMap(([pump, surfaces]) =>
+  Object.entries(surfaces).map(([surface, token]) => ({ pump, surface, token })));
 
 // Surfaces that deliberately do not close on Esc. Each entry must state the reason the
 // key is left dead -- an unexplained exemption is the defect this test exists to catch.
@@ -72,13 +79,27 @@ walk(path.join(root, "src"));
 const actualPumps = allSources
   .filter((f) => /IsDialogMessageW\s*\(/.test(fs.readFileSync(path.join(root, f), "utf8")))
   .sort();
-assert.deepStrictEqual(actualPumps, [...Object.keys(PUMPS), ...OWN_PUMP].sort(),
+assert.deepStrictEqual(actualPumps.sort(), [...Object.keys(PUMPS), ...OWN_PUMP].sort(),
   "the set of files routing keys through IsDialogMessageW changed. If a surface was added,"
   + " decide its Esc behaviour and register it here; if one was removed, drop it.\n"
   + "  found:  " + actualPumps.join("\n          "));
 
+// 1a) Every registered pump must actually name every surface it is supposed to serve.
+for (const { pump, surface, token } of SERVED) {
+  const pumpText = fs.readFileSync(path.join(root, pump), "utf8");
+  const run = pumpText.slice(
+    pumpText.indexOf("GetMessageW(&msg"),
+    pumpText.indexOf("DispatchMessageW(&msg")
+  );
+  assert.ok(run.includes(token),
+    `${pump} is registered as serving ${surface} but its message loop never mentions`
+    + ` \`${token}\`. A pump that forgets a surface leaves its keys unrouted -- the`
+    + ` surface becomes unreachable by keyboard again with nothing else failing.`);
+}
+
 // 2. Every registered surface must answer IDCANCEL, or be exempted with a reason.
-for (const surface of [...SERVED, ...OWN_PUMP]) {
+const ALL_SURFACES = [...new Set([...SERVED.map((entry) => entry.surface), ...OWN_PUMP])];
+for (const surface of ALL_SURFACES) {
   const file = path.join(root, surface);
   assert.ok(fs.existsSync(file), `${surface} is registered but does not exist`);
   const text = fs.readFileSync(file, "utf8");
@@ -100,9 +121,9 @@ for (const surface of [...SERVED, ...OWN_PUMP]) {
 // 3. No exemption, and no pump, may name a surface that is not registered: a stale entry
 //    hides a real regression.
 for (const file of Object.keys(EXEMPT)) {
-  assert.ok([...SERVED, ...OWN_PUMP].includes(file), `EXEMPT lists ${file}, which is not registered`);
+  assert.ok(ALL_SURFACES.includes(file), `EXEMPT lists ${file}, which is not registered`);
 }
-const claimed = SERVED.slice();
+const claimed = SERVED.map((entry) => entry.surface);
 assert.deepStrictEqual(claimed.filter((f, i) => claimed.indexOf(f) !== i), [],
   "a surface is served by two pumps -- that would hand the same message to two dialog"
   + " managers and make key routing depend on registration order");

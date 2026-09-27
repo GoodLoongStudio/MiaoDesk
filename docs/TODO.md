@@ -169,6 +169,11 @@
   - **创作窗的预览面板也没画，而且漏在更要紧的那条分支上**：`DrawPreviewPane` 有两条绘制路径——实时预览（`previewLive`，画完 `FrameRect` 就 `return`）和占位提示。原先只可能（其实并没有）在尾部画，所以**预览正在显示时焦点提示消失**，而那正是用户围着刚生成的内容转的时候。现在两条分支都画。
   - 顺带核对：壁纸库的三条自绘路径（`DrawPrimaryButton` / `DrawNavButton` / `DrawContentFilterButton`）和创作窗的 `DrawPrimaryAction` / `DrawPresetChip` **本来就有** `DrawFocusRect`，未改。风格统一沿用它们既有的 `if (itemState & ODS_FOCUS) { RECT focus = rcItem; InflateRect(&focus, -S(n), -S(n)); DrawFocusRect(dc, &focus); }`。
   - **并把这条也变成不变量**：`tests/owner-drawn-focus-cue.mjs` 登记了 8 条自绘路径，每条都要求"测试 `ODS_FOCUS` + 真的调 `DrawFocusRect`"，且**按绘制路径计数**——`DrawPreviewPane` 登记为 2 条路径，只在末尾画一个框照样红。第一版这个检查写错了（正反向二选一的正则，被另一条分支的内容满足），是变异测试把它揪出来的：删掉尾部那个框时测试仍然是绿的。
+  7. **LAY-2-10 已修：壁纸高级设置窗也是同一形态（第四个被漏掉的界面）。** `WallpaperApp::ShowAdvancedSettings()` 内联创建的 `MiaoDesk.Native.WallpaperSettings`（从库页面"显示器/性能"进入）有约 20 个 `WS_TABSTOP`——场景/布局/缩放/焦点 X/Y/帧率/全屏与最大化动作/循环/静音/音量/倍速/三个 seek 按钮——而 `Run()` 的 surfaces 数组里只有另外三个。**它被漏掉恰恰是因为形状**：另外三个都是有 `Window()` 访问器的对象，它是同一个 TU 里的裸 HWND 成员，所以逐行读那个数组时不会想到它。已加入数组，并补 `IDCANCEL`。
+    - **我第一版写错了，测试当场抓住**：让它 `DestroyWindow`，而这个窗的"关闭"按钮和 `WM_CLOSE` 都是 `SW_HIDE`（要留着控件状态给下次打开）——等于给同一个意图加了第二个动作，而且**只在按 Esc 时发生**，用户完全无从得知。现已把三条关闭路径（Esc / 关闭按钮 / WM_CLOSE）全部改走 `SurfaceKeyboardFocus.h` 的 `HideSurface`。
+    - 顺带修掉同一个"关窗丢键盘"：这个窗同样是隐藏持有焦点的窗口，焦点原本会落到 Z 序里的下一个窗口（经常是桌面）。三条路径现在都把键盘交还给库窗（它是唯一打开这个窗的界面）。
+    - 未验证项：真机上从库页面进入该窗、Tab 走完全部字段、Esc 关闭后焦点落点。`tests/advanced-settings-window-keyboard.mjs` 5 个变异全红。
+
 - **本轮新增（2026-09-27，按用户提出的四个问题逐条查证后实现，均未勾选：需真机确认）**：
   - **查证结论先记下**（四个问题分别是什么现状）：① 壁纸列表预览——图片壁纸是真的（WIC 解码 + cover-fit + 路径缓存），视频壁纸只有**一帧**壳缩略图，Web 壁纸没有缩略图，**Scene 壁纸完全没有 shader/粒子渲染**（只有包里声明的 preview 资源，否则是"按 scene-id 染色的纯色 + 斜网格线"占位卡）。② 组件列表预览——Content 组件是**真渲染**（`ContentWidgetPreviewRenderer` 解析同一个包、同一份有效参数、同一份宿主数据），但**每次重绘只画一帧、无动画**；原生预设一次性 D2D 渲染。③ AI 生成时的预览——Scene 包走 `StartLivePreview`，**反而是实时动画**（带播放/暂停/重载/全屏）。所以同一个组件在列表里比在创作窗里更糙。
   - **CREATE-1-1 已修：创作窗此前完全没有进度反馈。** 它收到了和对话窗同一路 `PiActivityEvent`，但 handler 只做一件事：`InspectForGeneratedPackage(event->resultText)`——把每个活动事件都当"找内容包路径"用，一条都没显示。一个数分钟的回合里用户只看到按钮变成"停止"和一句静态的"AI 正在生成内容包…"，无法区分 Pi 在思考、在改文件、还是卡死了。这直接违反 `PI_AGENT_ACTIVITY_FEEDBACK.md` §1。

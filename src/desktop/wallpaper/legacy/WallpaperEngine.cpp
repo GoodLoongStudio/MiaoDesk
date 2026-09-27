@@ -19,6 +19,7 @@
 #include "miaodesk/WallpaperLibraryWindow.h"
 #include "miaodesk/WallpaperRuntimeControl.h"
 #include "miaodesk/WallpaperMonitorAssignments.h"
+#include "miaodesk/SurfaceKeyboardFocus.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WallpaperPerformancePolicy.h"
 #include "miaodesk/WallpaperScaling.h"
@@ -351,7 +352,7 @@ public:
         // dialog manager.
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
             const HWND surfaces[] = {libraryWindow_.Window(), automationWindow_.Window(),
-                                     automationWindow_.RulesWindow()};
+                                     automationWindow_.RulesWindow(), settings_};
             bool handled = false;
             for (const HWND surface : surfaces) {
                 if (IsWindow(surface) && IsDialogMessageW(surface, &msg)) {
@@ -1149,6 +1150,21 @@ private:
 
         if (message == WM_COMMAND) {
             switch (LOWORD(wParam)) {
+            case IDCANCEL:
+                // Esc. This window's ~20 tab stops (scene, layout, scale, focal X/Y, fps,
+                // loop, mute, volume, rate and the seek buttons) became reachable as soon
+                // as Run()'s pump started serving it, and without this case the Esc the
+                // dialog manager consumes went nowhere.
+                //
+                // It hides rather than destroys, because that is what both of this window's
+                // own close paths do (its 关闭 button and WM_CLOSE) and it keeps the control
+                // state for the next open. Hiding is also why the keyboard has to be handed
+                // back explicitly: the window being hidden is the one holding focus, and
+                // Windows would otherwise hand focus to whatever comes next in the Z order,
+                // frequently the desktop. The library window is the only surface that opens
+                // this one (ShowAdvancedSettings, from the library nav).
+                miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
+                return 0;
             case kLibraryButtonId:
                 if (HIWORD(wParam) == BN_CLICKED) self->ShowLibrary();
                 return 0;
@@ -1189,12 +1205,14 @@ private:
                 if (HIWORD(wParam) == BN_CLICKED) self->SetEnabled(!self->config_.enabled);
                 return 0;
             case kCloseButtonId:
-                if (HIWORD(wParam) == BN_CLICKED) ShowWindow(hwnd, SW_HIDE);
+                if (HIWORD(wParam) == BN_CLICKED) {
+                    miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
+                }
                 return 0;
             }
         }
         if (message == WM_CLOSE) {
-            ShowWindow(hwnd, SW_HIDE);
+            miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
             return 0;
         }
         if (message == WM_DESTROY) {

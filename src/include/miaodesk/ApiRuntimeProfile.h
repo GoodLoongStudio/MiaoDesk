@@ -227,22 +227,39 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
     return profile;
 }
 
+inline std::vector<RuntimeProfile> LoadAll() {
+    std::vector<RuntimeProfile> profiles;
+    for (const auto& section : ProfileSections()) {
+        RuntimeProfile profile = ReadSection(section);
+        if (profile.found) profiles.push_back(std::move(profile));
+    }
+    return profiles;
+}
+
+inline RuntimeProfile LoadById(std::wstring_view id) {
+    if (id.empty()) return {};
+    for (const auto& section : ProfileSections()) {
+        if (!section.starts_with(L"profile:")) continue;
+        if (_wcsicmp(section.c_str() + 8, std::wstring(id).c_str()) != 0) continue;
+        return ReadSection(section);
+    }
+    return {};
+}
+
 inline RuntimeProfile LoadDefault() {
-    const auto sections = ProfileSections();
-    RuntimeProfile firstConfigured;
+    // Product policy: the first *configured* profile in API Configuration Center is
+    // the fallback used by a newly opened AI surface. Per-window selectors may choose
+    // another profile without mutating this central list.
+    //
+    // Older builds persisted default=1. Keep reading that field in ReadSection for
+    // backwards compatibility/migrations, but it no longer overrides list order.
     RuntimeProfile firstFound;
-    for (const auto& section : sections) {
+    for (const auto& section : ProfileSections()) {
         RuntimeProfile profile = ReadSection(section);
         if (!profile.found) continue;
         if (!firstFound.found) firstFound = profile;
-        if (profile.configured && !firstConfigured.found) firstConfigured = profile;
-        if (profile.explicitDefault) return profile;
+        if (profile.configured) return profile;
     }
-
-    // Resilience for settings files that lost the default bit: consume the first fully configured
-    // Profile instead of inventing another active-config database. UI remains the owner of which
-    // Profile is default; this is only a read-only fallback.
-    if (firstConfigured.found) return firstConfigured;
     return firstFound;
 }
 

@@ -50,7 +50,6 @@ constexpr int kSaveId = 7314;
 constexpr int kDeleteId = 7315;
 constexpr int kRevealId = 7316;
 constexpr int kCopyId = 7317;
-constexpr int kSetDefaultId = 7318;
 constexpr int kProbeModelsId = 7319;
 constexpr wchar_t kStoredKeyMask[] = L"************************";
 
@@ -317,7 +316,6 @@ struct PageState {
     HWND addButton{};
     HWND testButton{};
     HWND saveButton{};
-    HWND setDefaultButton{};
     HWND deleteButton{};
     HWND revealButton{};
     HWND copyButton{};
@@ -536,7 +534,7 @@ struct PageState {
 
     void EnableForm(bool enabled) {
         for (HWND control : {name, serviceType, apiUrl, apiKey, model, imageBaseUrl, imageModel, imageApiKey,
-                             testButton, saveButton, setDefaultButton, deleteButton,
+                             testButton, saveButton, deleteButton,
                              revealButton, copyButton, probeModelsButton}) {
             if (control) EnableWindow(control, enabled ? TRUE : FALSE);
         }
@@ -615,7 +613,14 @@ struct PageState {
         if (!stored.empty() && !HeaderSafeSecret(stored)) {
             SetStatus(L"这个配置的 API Key 来自旧版本且格式异常，请重新粘贴 API Key 后保存。", false);
         } else {
-            SetStatus(profile.isDefault ? L"当前默认配置" :
+            const auto firstConfigured = std::find_if(
+                profiles.begin(), profiles.end(), [&](const ApiProfile& item) {
+                    return ProfileConfigured(item);
+                });
+            const bool fallbackDefault =
+                firstConfigured != profiles.end() &&
+                static_cast<std::size_t>(std::distance(profiles.begin(), firstConfigured)) == selected;
+            SetStatus(fallbackDefault ? L"默认 API（列表中的第一个已配置项）" :
                       (profile.lastMessage.empty() ? L"配置已加载。" : profile.lastMessage),
                       profile.lastMessage.empty() || profile.lastOk);
         }
@@ -704,16 +709,16 @@ struct PageState {
             store.SaveImageKey(profile, L"");
         }
 
-        const bool hasDefault = std::any_of(profiles.begin(), profiles.end(), [](const ApiProfile& item) {
-            return item.isDefault;
-        });
-        if (!hasDefault) profile.isDefault = true;
+        // default=1 belonged to the previous global-default model. Keep the INI
+        // field only for backward compatibility, but new saves clear it: runtime fallback
+        // is now simply the first configured profile in this list.
+        profile.isDefault = false;
         profiles[selected] = profile;
         store.Save(profile);
         agent.ReloadConfig();
         api_profile_notifications::NotifyRuntimeConsumers();
         LoadForm();
-        if (!quiet) SetStatus(profile.isDefault ? L"配置已保存并设为默认。" : L"配置已保存。", true);
+        if (!quiet) SetStatus(L"配置已保存。新 AI 窗口默认使用列表中的第一个已配置 API。", true);
         return true;
     }
 
@@ -843,28 +848,11 @@ struct PageState {
         InvalidateRect(profileList, nullptr, FALSE);
     }
 
-    void SetDefault() {
-        if (!SaveCurrent(true)) return;
-        for (auto& profile : profiles) profile.isDefault = false;
-        profiles[selected].isDefault = true;
-        profiles[selected].lastMessage = L"当前默认配置";
-        store.SaveAll(profiles);
-        agent.ReloadConfig();
-        api_profile_notifications::NotifyRuntimeConsumers();
-        SetStatus(L"已设为默认配置。Pi Agent、DeepSeek Harness 和 Direct Model 会读取这份配置。", true);
-        InvalidateRect(profileList, nullptr, FALSE);
-    }
-
     void DeleteProfile() {
         if (!HasSelection()) return;
         const ApiProfile removing = Current();
         store.Remove(removing);
         profiles.erase(profiles.begin() + static_cast<std::ptrdiff_t>(selected));
-        if (removing.isDefault && !profiles.empty()) {
-            profiles.front().isDefault = true;
-            profiles.front().lastMessage = L"当前默认配置";
-            store.Save(profiles.front());
-        }
         agent.ReloadConfig();
         api_profile_notifications::NotifyRuntimeConsumers();
         if (profiles.empty()) {
@@ -877,7 +865,7 @@ struct PageState {
         if (selected >= profiles.size()) selected = profiles.size() - 1;
         RebuildList();
         LoadForm();
-        SetStatus(removing.isDefault ? L"默认配置已删除，请选择另一项设为默认。" : L"配置已删除。", true);
+        SetStatus(L"配置已删除。新 AI 窗口会继续使用列表中的第一个已配置 API。", true);
     }
 
     void ToggleReveal() {
@@ -971,8 +959,7 @@ struct PageState {
         const int actionY = bodyTop + bodyH - S(66);
         int actionX = rightX + S(18);
         place(testButton, actionX, actionY, S(112), S(40)); actionX += S(120);
-        place(saveButton, actionX, actionY, S(112), S(40)); actionX += S(120);
-        place(setDefaultButton, actionX, actionY, S(126), S(40));
+        place(saveButton, actionX, actionY, S(126), S(40));
         place(deleteButton, rightX + rightW - S(112), actionY, S(94), S(40));
 
         RedrawWindow(panel, nullptr, nullptr,
@@ -989,7 +976,7 @@ struct PageState {
         COLORREF border = RGB(199, 216, 240);
         COLORREF textColor = RGB(45, 92, 166);
 
-        if (id == kNewId || id == kSaveId || id == kSetDefaultId) {
+        if (id == kNewId || id == kSaveId) {
             background = pressed ? RGB(31, 102, 226) : RGB(43, 118, 246);
             border = background;
             textColor = RGB(255, 255, 255);
@@ -1040,7 +1027,14 @@ struct PageState {
         RECT subRect{rect.left + S(16), rect.top + S(34), rect.right - S(16), rect.bottom - S(7)};
         DrawTextSimple(draw.hDC, smallFont, RGB(92, 112, 145), subtitle, subRect);
 
-        if (profile.isDefault) {
+        const auto firstConfigured = std::find_if(
+            profiles.begin(), profiles.end(), [&](const ApiProfile& item) {
+                return ProfileConfigured(item);
+            });
+        const bool isFallbackDefault =
+            firstConfigured != profiles.end() &&
+            static_cast<std::size_t>(std::distance(profiles.begin(), firstConfigured)) == draw.itemData;
+        if (isFallbackDefault) {
             RECT badge{rect.right - S(78), rect.top + S(16), rect.right - S(14), rect.top + S(42)};
             RoundFill(draw.hDC, badge, S(8), RGB(231, 240, 255));
             DrawTextSimple(draw.hDC, smallFont, RGB(49, 105, 220), L"默认", badge,
@@ -1085,7 +1079,7 @@ struct PageState {
         DrawTextSimple(dc, titleFont, RGB(18, 39, 75), L"API 配置中心", title);
         RECT subtitle{margin, margin + S(34), margin + contentW - S(160), margin + S(60)};
         DrawTextSimple(dc, smallFont, RGB(91, 110, 142),
-                       L"只管理服务地址、密钥和模型；Pi Agent / Harness / Direct Model 共用默认配置", subtitle);
+                       L"集中管理多个 API；各 AI 窗口只选择配置名称，新窗口默认使用第一个已配置 API", subtitle);
 
         RECT leftPanel{margin, bodyTop, margin + leftW, bodyTop + bodyH};
         RECT rightPanel{rightX, bodyTop, rightX + rightW, bodyTop + bodyH};
@@ -1169,7 +1163,6 @@ LRESULT CALLBACK PageProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
             if (id == kProbeModelsId) { state->ProbeModels(); return 0; }
             if (id == kTestId) { state->TestConnection(); return 0; }
             if (id == kSaveId) { state->SaveCurrent(); return 0; }
-            if (id == kSetDefaultId) { state->SetDefault(); return 0; }
             if (id == kDeleteId) { state->DeleteProfile(); return 0; }
             if (id == kRevealId) { state->ToggleReveal(); return 0; }
             if (id == kCopyId) { state->CopyKey(); return 0; }
@@ -1289,13 +1282,12 @@ bool CreatePage(PageState& state) {
     state.imageApiKey = edit(kImageApiKeyId, ES_PASSWORD);
     state.testButton = button(L"测试连接", kTestId);
     state.saveButton = button(L"保存", kSaveId);
-    state.setDefaultButton = button(L"设为默认", kSetDefaultId);
     state.deleteButton = button(L"删除", kDeleteId);
 
     if (!state.profileList || !state.name || !state.serviceType || !state.apiUrl || !state.apiKey ||
         !state.model || !state.imageBaseUrl || !state.imageModel || !state.imageApiKey || !state.addButton ||
         !state.testButton || !state.saveButton ||
-        !state.setDefaultButton || !state.deleteButton || !state.revealButton || !state.copyButton ||
+        !state.deleteButton || !state.revealButton || !state.copyButton ||
         !state.probeModelsButton)
         return false;
 

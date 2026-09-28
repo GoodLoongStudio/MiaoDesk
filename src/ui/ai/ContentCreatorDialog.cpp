@@ -1844,6 +1844,31 @@ struct DialogState {
     }
 };
 
+HWND FindOpenCreatorWindow(ContentCreatorKind kind) noexcept {
+    for (const HWND hwnd : g_openCreatorWindows) {
+        if (!IsWindow(hwnd)) continue;
+        auto* state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (state && state->kind == kind) return hwnd;
+    }
+    return nullptr;
+}
+
+void ActivateCreatorWindow(HWND hwnd) noexcept {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    else ShowWindow(hwnd, SW_SHOWNORMAL);
+
+    // The creator can be opened by another foreground process (Wallpaper Library)
+    // through WM_COPYDATA. Merely creating it does not guarantee Z-order ownership,
+    // so explicitly surface it instead of reporting "opened" while it sits behind
+    // the library window.
+    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    BringWindowToTop(hwnd);
+    SetForegroundWindow(hwnd);
+    SetActiveWindow(hwnd);
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* state = reinterpret_cast<DialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -2108,6 +2133,11 @@ ContentCreatorLayout ResolveContentCreatorLayout(int clientWidth, int clientHeig
 bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, ContentCreatorKind kind) {
     if (!instance || !Valid(kind)) return false;
 
+    if (HWND existing = FindOpenCreatorWindow(kind)) {
+        ActivateCreatorWindow(existing);
+        return true;
+    }
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance;
@@ -2153,13 +2183,17 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
         WS_EX_APPWINDOW, kCreatorWindowClass, title,
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         placement.x, placement.y, placement.width, placement.height,
-        owner, nullptr, instance, state);
+        // Modeless creator surfaces are independent top-level windows. Keeping the
+        // hidden SearchWindow as their Win32 owner made them follow that owner's
+        // Z-order/minimize state and allowed the foreground Wallpaper Library to
+        // cover them completely.
+        nullptr, nullptr, instance, state);
     if (!window) {
         delete state;
         return false;
     }
     g_openCreatorWindows.push_back(window);
-    ShowWindow(window, SW_SHOWNORMAL);
+    ActivateCreatorWindow(window);
     UpdateWindow(window);
     return true;
 }

@@ -138,10 +138,11 @@ void AppendRuntimeLog(const std::wstring& text) {
     CloseHandle(handle);
 }
 
-std::wstring LoadApiKey() {
-    const auto profile = api_runtime_profile::LoadDefault();
-    if (!profile.found || !profile.keyHeaderSafe) return {};
-    return profile.apiKey;
+std::wstring LoadApiKey(const L3Agent& agent) {
+    // Pi must use the same per-window profile that supplied baseUrl/model. Looking
+    // up the global fallback here would mix one profile's model with another
+    // profile's credential when two AI windows choose different APIs.
+    return agent.CurrentApiKey();
 }
 
 std::wstring SearchExecutable(const wchar_t* name) {
@@ -303,7 +304,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.baseUrl = NormalizeBaseUrl(agent);
     setup.model = agent.Config().model;
     setup.apiType = DetectApiType(agent);
-    setup.apiKey = LoadApiKey();
+    setup.apiKey = LoadApiKey(agent);
     setup.contextWindow = agent.Config().contextWindow;
     setup.maxTokens = agent.Config().maxTokens;
     // Image generation can use its own endpoint/provider. Empty image settings

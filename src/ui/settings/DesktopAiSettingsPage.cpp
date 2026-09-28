@@ -379,7 +379,7 @@ struct PageState {
         bodyFont = MakeFont(13, FW_NORMAL);
         smallFont = MakeFont(11, FW_NORMAL);
         for (HWND control : {profileList, name, serviceType, apiUrl, apiKey, model, imageBaseUrl,
-                             imageModel, imageApiKey, addButton, testButton, saveButton, setDefaultButton,
+                             imageModel, imageApiKey, addButton, testButton, saveButton,
                              deleteButton, revealButton, copyButton, probeModelsButton}) {
             if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);
         }

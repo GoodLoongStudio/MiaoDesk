@@ -1170,17 +1170,31 @@ struct DialogState {
         }
 
         int selectedIndex = 0;
+        bool preserved = previousId.empty();
         for (std::size_t i = 0; i < apiProfiles.size(); ++i) {
             const auto& profile = apiProfiles[i];
             const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
             SendMessageW(apiProfileCombo, CB_ADDSTRING, 0,
                          reinterpret_cast<LPARAM>(label.c_str()));
-            if (!previousId.empty() && _wcsicmp(previousId.c_str(), profile.id.c_str()) == 0)
+            if (!previousId.empty() && _wcsicmp(previousId.c_str(), profile.id.c_str()) == 0) {
                 selectedIndex = static_cast<int>(i);
+                preserved = true;
+            }
         }
         SendMessageW(apiProfileCombo, CB_SETCURSEL, selectedIndex, 0);
         EnableWindow(apiProfileCombo, TRUE);
-        if (agent) agent->SetProfileId(apiProfiles[static_cast<std::size_t>(selectedIndex)].id);
+        if (agent) {
+            const auto& selected = apiProfiles[static_cast<std::size_t>(selectedIndex)];
+            const bool profileChanged =
+                _wcsicmp(agent->ProfileId().c_str(), selected.id.c_str()) != 0;
+            agent->SetProfileId(selected.id);
+            if (preserveSelection && profileChanged && !previousId.empty() && !preserved) {
+                ResetSession();
+                SetWindowTextW(resultNote,
+                    (L"之前选择的 API 已被删除，已切换到第一个配置：" +
+                     selected.name + L"。").c_str());
+            }
+        }
     }
 
     void SelectApiProfile() {

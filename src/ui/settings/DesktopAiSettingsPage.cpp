@@ -204,6 +204,16 @@ public:
             profile.lastMessage = ReadIni(path_, cursor, L"lastMessage");
             profile.builtIn = ParseBool(ReadIni(path_, cursor, L"builtIn"));
 
+            // Migrate the retired global-default bit. New runtime policy uses the
+            // first configured profile as the fallback, while each AI window may
+            // select another profile locally.
+            if (profile.isDefault) {
+                profile.isDefault = false;
+                WriteIni(path_, cursor, L"default", L"0");
+                if (profile.lastMessage == L"当前默认配置")
+                    profile.lastMessage = L"配置已加载。";
+            }
+
             const bool hasKey = !ReadCredential(CredentialTarget(profile.id)).empty();
             const bool configured = !profile.baseUrl.empty() && !profile.model.empty() &&
                                     (!profile.NeedsKey() || hasKey);

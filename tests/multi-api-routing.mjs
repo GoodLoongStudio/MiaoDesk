@@ -44,6 +44,8 @@ assert.ok(!settings.includes("kSetDefaultId"),
 assert.ok(settings.includes("firstConfigured"),
   "settings list must mark the first configured profile as the fallback default");
 assert.ok(settings.includes("新 AI 窗口默认使用列表中的第一个已配置 API"));
+assert.ok(settings.includes("配置名称不能重复"),
+  "profile names must be unique because AI windows select by profile name");
 
 for (const [name, source] of [["conversation", conversation], ["creator", creator]]) {
   assert.ok(source.includes("kApiProfileId"), `${name} must own an API profile selector`);

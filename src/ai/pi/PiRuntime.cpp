@@ -334,7 +334,8 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     // The profile salt is part of the signature on purpose: without it, the chat and
     // creator runtimes would build the same signature for the same Provider config and
     // EnsureSession would consider a live child process of the *other* mode reusable.
-    setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model + L"|key=" +
+    setup.signature = setup.apiType + L"|" + setup.baseUrl + L"|" + setup.model +
+                      L"|profile=" + agent.ProfileId() + L"|key=" +
                       std::to_wstring(static_cast<unsigned long long>(credentialHash)) +
                       (launchProfile_.mode == PiLaunchMode::Creator ? L"|creator" : L"|chat") +
                       L"|ctx=" + std::to_wstring(setup.contextWindow) +

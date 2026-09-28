@@ -54,6 +54,8 @@ for (const [name, source] of [["conversation", conversation], ["creator", creato
   assert.ok(source.includes("std::make_unique<L3Agent>()"), `${name} must own local profile selection state`);
   assert.ok(source.includes("CBN_SELCHANGE"), `${name} selector must be interactive`);
   assert.ok(source.includes("CBN_DROPDOWN"), `${name} must refresh central profiles when opened`);
+  assert.ok(source.includes("pi->Busy()") || source.includes("state.pi->Busy()"),
+    `${name} must not switch the shared Pi provider while another AI turn is active`);
   assert.ok(source.includes("apiProfiles.front().id") || source.includes("selectedIndex = 0"),
     `${name} must fall back to the first configured profile`);
 }

@@ -1147,7 +1147,9 @@ struct DialogState {
         SendMessageW(skillText, EM_SETSEL, 0, 0);
     }
 
-    void PopulateApiProfiles() {
+    void PopulateApiProfiles(bool preserveSelection = false) {
+        const std::wstring previousId =
+            preserveSelection && agent ? agent->ProfileId() : std::wstring{};
         apiProfiles.clear();
         if (apiProfileCombo) SendMessageW(apiProfileCombo, CB_RESETCONTENT, 0, 0);
 
@@ -1167,14 +1169,18 @@ struct DialogState {
             return;
         }
 
-        for (const auto& profile : apiProfiles) {
+        int selectedIndex = 0;
+        for (std::size_t i = 0; i < apiProfiles.size(); ++i) {
+            const auto& profile = apiProfiles[i];
             const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
             SendMessageW(apiProfileCombo, CB_ADDSTRING, 0,
                          reinterpret_cast<LPARAM>(label.c_str()));
+            if (!previousId.empty() && _wcsicmp(previousId.c_str(), profile.id.c_str()) == 0)
+                selectedIndex = static_cast<int>(i);
         }
-        SendMessageW(apiProfileCombo, CB_SETCURSEL, 0, 0);
+        SendMessageW(apiProfileCombo, CB_SETCURSEL, selectedIndex, 0);
         EnableWindow(apiProfileCombo, TRUE);
-        if (agent) agent->SetProfileId(apiProfiles.front().id);
+        if (agent) agent->SetProfileId(apiProfiles[static_cast<std::size_t>(selectedIndex)].id);
     }
 
     void SelectApiProfile() {
@@ -1899,6 +1905,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         if (id == kClearId && HIWORD(wParam) == BN_CLICKED) { state->ResetSession(); return 0; }
+        if (id == kApiProfileId && HIWORD(wParam) == CBN_DROPDOWN) {
+            state->PopulateApiProfiles(true);
+            return 0;
+        }
         if (id == kApiProfileId && HIWORD(wParam) == CBN_SELCHANGE) { state->SelectApiProfile(); return 0; }
         if (id == kSkillListId && HIWORD(wParam) == LBN_SELCHANGE) { state->LoadSkill(); return 0; }
         if (id >= kPreset1Id && id <= kPreset5Id && HIWORD(wParam) == BN_CLICKED) {

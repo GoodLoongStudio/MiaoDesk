@@ -1148,6 +1148,9 @@ struct DialogState {
     }
 
     void PopulateApiProfiles(bool preserveSelection = false) {
+        // Another AI window may own the shared Pi turn. Do not rewrite this selector
+        // underneath that turn; profile changes are applied only between turns.
+        if (preserveSelection && pi && pi->Busy() && !busy) return;
         const std::wstring previousId =
             preserveSelection && agent ? agent->ProfileId() : std::wstring{};
         apiProfiles.clear();
@@ -1199,6 +1202,16 @@ struct DialogState {
 
     void SelectApiProfile() {
         if (busy || !apiProfileCombo || !agent || apiProfiles.empty()) return;
+        if (pi && pi->Busy()) {
+            for (std::size_t i = 0; i < apiProfiles.size(); ++i) {
+                if (_wcsicmp(apiProfiles[i].id.c_str(), agent->ProfileId().c_str()) == 0) {
+                    SendMessageW(apiProfileCombo, CB_SETCURSEL, static_cast<WPARAM>(i), 0);
+                    break;
+                }
+            }
+            SetWindowTextW(resultNote, L"另一个 AI 窗口正在执行任务；任务结束后再切换 API。");
+            return;
+        }
         const int index = static_cast<int>(SendMessageW(apiProfileCombo, CB_GETCURSEL, 0, 0));
         if (index < 0 || static_cast<std::size_t>(index) >= apiProfiles.size()) return;
 

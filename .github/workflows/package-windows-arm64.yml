@@ -206,6 +206,10 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "$exe ARM64 self-test failed: $($p.ExitCode)" }
           }
 
+      - name: Verify AI creator windows open visibly
+        shell: pwsh
+        run: .\packaging\windows\verify-creator-window.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
       - name: Verify native Widget visibility
         shell: pwsh
         run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT

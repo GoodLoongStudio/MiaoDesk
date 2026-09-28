@@ -13,6 +13,8 @@
 namespace miaodesk {
 
 struct ModelConfig {
+    std::wstring profileId;
+    std::wstring profileName;
     std::wstring providerId{L"unconfigured"};
     std::wstring baseUrl;
     std::wstring model;
@@ -56,13 +58,33 @@ public:
     void Stop();
     bool Busy() const noexcept { return busy_.load(); }
 
-    // The API Configuration Center is the runtime source of truth. Pi, Direct Model and Harness
-    // all resolve the same default Profile. If no Profile exists, runtime is explicitly
-    // unconfigured rather than falling back to the old model-settings.json shadow database.
+    // The API Configuration Center is the single source of truth. A window may
+    // select one profile by id; an empty selection means "use the first configured
+    // profile", which is the product-wide fallback for newly opened AI surfaces.
+    void SetProfileId(std::wstring profileId) {
+        profileId = api_runtime_profile::Trim(std::move(profileId));
+        if (_wcsicmp(preferredProfileId_.c_str(), profileId.c_str()) == 0 &&
+            (profileId.empty() || _wcsicmp(config_.profileId.c_str(), profileId.c_str()) == 0)) {
+            return;
+        }
+        preferredProfileId_ = std::move(profileId);
+        ReloadConfig();
+    }
+
     void ReloadConfig() {
         ModelConfig refreshed;
-        const auto profile = api_runtime_profile::LoadDefault();
+        auto profile = preferredProfileId_.empty()
+            ? api_runtime_profile::LoadDefault()
+            : api_runtime_profile::LoadById(preferredProfileId_);
+        if (!profile.found && !preferredProfileId_.empty()) {
+            // A centrally managed profile may have been deleted while this window
+            // stayed open. Fall back deterministically to the first configured one.
+            preferredProfileId_.clear();
+            profile = api_runtime_profile::LoadDefault();
+        }
         if (profile.found) {
+            refreshed.profileId = profile.id;
+            refreshed.profileName = profile.name;
             refreshed.providerId = profile.providerId;
             refreshed.baseUrl = profile.baseUrl;
             refreshed.model = profile.model;
@@ -76,7 +98,9 @@ public:
             if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
         }
 
-        if (refreshed.providerId == config_.providerId &&
+        if (refreshed.profileId == config_.profileId &&
+            refreshed.profileName == config_.profileName &&
+            refreshed.providerId == config_.providerId &&
             refreshed.baseUrl == config_.baseUrl &&
             refreshed.model == config_.model &&
             refreshed.endpoint == config_.endpoint &&
@@ -97,9 +121,12 @@ public:
     }
 
     const ModelConfig& Config() const noexcept { return config_; }
+    const std::wstring& ProfileId() const noexcept { return config_.profileId; }
+    const std::wstring& ProfileName() const noexcept { return config_.profileName; }
     bool HasApiKey() const;
     bool HasStoredApiKey() const;
     std::wstring CurrentApiUrl() const;
+    std::wstring CurrentApiKey() const { return LoadApiKey(); }
 
     ModelProbeResult ProbeModels(const std::wstring& apiUrl,
                                  const std::wstring& apiKeyOverride = {},
@@ -131,6 +158,7 @@ private:
     void ClearConversation();
 
     ModelConfig config_;
+    std::wstring preferredProfileId_;
     std::jthread worker_;
     std::atomic_bool busy_{false};
     std::atomic<HINTERNET> activeRequest_{nullptr};

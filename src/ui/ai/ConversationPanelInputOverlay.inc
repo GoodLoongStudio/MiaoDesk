@@ -342,6 +342,15 @@ bool ConversationHeaderDragPoint(const ConversationState& state, POINT point) {
     if (point.y < Px(state, 8) || point.y >= Px(state, 70)) return false;
     if (PointIn(state.closeRect, point) || PointIn(state.pinRect, point) ||
         PointIn(state.historyRect, point) || PointIn(state.moreRect, point)) return false;
+    if (state.apiProfileCombo && IsWindow(state.apiProfileCombo)) {
+        RECT combo{};
+        if (GetWindowRect(state.apiProfileCombo, &combo)) {
+            POINT corners[2]{{combo.left, combo.top}, {combo.right, combo.bottom}};
+            MapWindowPoints(HWND_DESKTOP, state.window, corners, 2);
+            combo = RECT{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
+            if (PtInRect(&combo, point)) return false;
+        }
+    }
     return true;
 }
 

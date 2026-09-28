@@ -28,7 +28,8 @@ namespace {
 
 constexpr wchar_t kConversationClass[] = L"MiaoDesk.Native.ConversationPanel";
 constexpr int kInputId = 3102;
-constexpr int kSendId = 3103; // Contract marker: send is custom drawn but keeps the stable semantic id.
+constexpr int kSendId = 3103;
+constexpr int kApiProfileId = 3104; // Contract marker: send is custom drawn but keeps the stable semantic id.
 constexpr UINT kDeltaMessage = WM_APP + 31;
 constexpr UINT kDirectDoneMessage = WM_APP + 32;
 constexpr UINT kPiDoneMessage = WM_APP + 33;
@@ -86,12 +87,15 @@ struct ConversationState {
     HWND owner{};
     HWND window{};
     HWND input{};
+    HWND apiProfileCombo{};
     WNDPROC oldInputProc{};
+    std::unique_ptr<L3Agent> ownedAgent;
     L3Agent* agent{};
     PiRuntime* pi{};
     ConversationPanelMode mode{ConversationPanelMode::General};
     std::wstring headerTitle{L"妙喵 AI"};
     std::wstring inputCue{L"输入消息…"};
+    std::vector<api_runtime_profile::RuntimeProfile> apiProfiles;
     HBRUSH inputBrush{};
     HFONT titleFont{};
     HFONT bodyFont{};
@@ -523,6 +527,8 @@ bool LooksDestructive(const std::wstring& prompt) {
 void SetBusyVisual(ConversationState& state, bool busy) {
     state.busy = busy;
     EnableWindow(state.input, busy ? FALSE : TRUE);
+    if (state.apiProfileCombo)
+        EnableWindow(state.apiProfileCombo, busy ? FALSE : !state.apiProfiles.empty());
     InvalidateConversation(state, true);
 }
 
@@ -1031,7 +1037,7 @@ void PaintConversation(ConversationState& state, HDC target) {
 
     const int avatarR = Px(state, 17);
     DrawAvatar(dc, Px(state, 34), Px(state, 34), avatarR, false);
-    RECT title{Px(state, 60), Px(state, 15), Px(state, 310), Px(state, 42)};
+    RECT title{Px(state, 60), Px(state, 15), Px(state, 178), Px(state, 42)};
     DrawWrapped(dc, state.titleFont, RGB(36, 43, 55), state.headerTitle, title, DT_SINGLELINE);
     HBRUSH online = CreateSolidBrush(RGB(83, 190, 104));
     HGDIOBJ oldBrush = SelectObject(dc, online);
@@ -1043,7 +1049,7 @@ void PaintConversation(ConversationState& state, HDC target) {
     SelectObject(dc, oldBrush);
     DeleteObject(noPen);
     DeleteObject(online);
-    RECT onlineText{Px(state, 72), Px(state, 39), Px(state, 180), Px(state, 60)};
+    RECT onlineText{Px(state, 72), Px(state, 39), Px(state, 178), Px(state, 60)};
     DrawWrapped(dc, state.smallFont, RGB(99, 112, 130), state.busy ? L"正在工作" : L"在线", onlineText, DT_SINGLELINE);
 
     const int iconW = Px(state, 34);
@@ -1080,6 +1086,49 @@ void PaintConversation(ConversationState& state, HDC target) {
     DeleteDC(dc);
 }
 
+void PopulateConversationApiProfiles(ConversationState& state) {
+    state.apiProfiles.clear();
+    if (!state.apiProfileCombo || !state.agent) return;
+    SendMessageW(state.apiProfileCombo, CB_RESETCONTENT, 0, 0);
+
+    for (auto profile : api_runtime_profile::LoadAll()) {
+        if (!profile.configured) continue;
+        state.apiProfiles.push_back(std::move(profile));
+    }
+
+    if (state.apiProfiles.empty()) {
+        SendMessageW(state.apiProfileCombo, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L"未配置 API"));
+        SendMessageW(state.apiProfileCombo, CB_SETCURSEL, 0, 0);
+        EnableWindow(state.apiProfileCombo, FALSE);
+        state.agent->SetProfileId({});
+        return;
+    }
+
+    for (const auto& profile : state.apiProfiles) {
+        const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
+        SendMessageW(state.apiProfileCombo, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    SendMessageW(state.apiProfileCombo, CB_SETCURSEL, 0, 0);
+    EnableWindow(state.apiProfileCombo, TRUE);
+    state.agent->SetProfileId(state.apiProfiles.front().id);
+}
+
+void SelectConversationApiProfile(ConversationState& state) {
+    if (state.busy || !state.apiProfileCombo || !state.agent || state.apiProfiles.empty()) return;
+    const int index = static_cast<int>(SendMessageW(state.apiProfileCombo, CB_GETCURSEL, 0, 0));
+    if (index < 0 || static_cast<std::size_t>(index) >= state.apiProfiles.size()) return;
+
+    const auto& profile = state.apiProfiles[static_cast<std::size_t>(index)];
+    if (_wcsicmp(state.agent->ProfileId().c_str(), profile.id.c_str()) == 0) return;
+
+    state.agent->SetProfileId(profile.id);
+    ClearConversation(state);
+    AddEntry(state, EntryKind::System,
+             L"已切换 API：" + profile.name + L"。这个窗口已开始新的模型会话。");
+}
+
 void PositionInput(ConversationState& state) {
     RECT client{};
     GetClientRect(state.window, &client);
@@ -1087,6 +1136,10 @@ void PositionInput(ConversationState& state) {
     const int sendArea = Px(state, 62);
     MoveWindow(state.input, Px(state, 38), inputTop + Px(state, 13),
                std::max(Px(state, 120), client.right - Px(state, 76) - sendArea), Px(state, 38), TRUE);
+    if (state.apiProfileCombo) {
+        const int comboW = std::max(Px(state, 126), std::min(Px(state, 176), client.right - Px(state, 360)));
+        MoveWindow(state.apiProfileCombo, Px(state, 184), Px(state, 18), comboW, Px(state, 220), TRUE);
+    }
 }
 
 void ApplyWindowGlass(ConversationState& state) {
@@ -1146,6 +1199,13 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     if (!state) return DefWindowProcW(hwnd, message, wParam, lParam);
 
     switch (message) {
+    case WM_COMMAND:
+        if (LOWORD(wParam) == kApiProfileId && HIWORD(wParam) == CBN_SELCHANGE) {
+            SelectConversationApiProfile(*state);
+            return 0;
+        }
+        break;
+
     case WM_TIMER:
         if (wParam == kActivityTimer) { PollPiActivity(*state); return 0; }
         break;
@@ -1263,8 +1323,8 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     case WM_DESTROY:
         KillTimer(hwnd, kActivityTimer);
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
-        state->agent->Stop();
-        state->pi->Stop();
+        if (state->agent) state->agent->Stop();
+        if (state->pi) state->pi->Stop();
         return 0;
 
     case WM_NCDESTROY:
@@ -1305,7 +1365,7 @@ void CreateFonts(ConversationState& state) {
 bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::wstring& initialPrompt) {
     if (gConversationState && IsWindow(gConversationState->window)) {
         gConversationState->owner = owner;
-        gConversationState->agent = &agent;
+        (void)agent;
         PlacePanel(*gConversationState);
         ShowWindow(gConversationState->window, SW_SHOWNORMAL);
         SetForegroundWindow(gConversationState->window);
@@ -1337,8 +1397,10 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     auto* state = new ConversationState{};
     state->instance = instance;
     state->owner = owner;
-    state->agent = &agent;
+    state->ownedAgent = std::make_unique<L3Agent>();
+    state->agent = state->ownedAgent.get();
     state->pi = &gPiRuntime;
+    (void)agent;
     state->dpi = std::max(96u, GetDpiForWindow(owner));
     state->inputBrush = CreateSolidBrush(RGB(255, 255, 255));
     CreateFonts(*state);
@@ -1372,6 +1434,18 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->input, WM_SETFONT, reinterpret_cast<WPARAM>(state->bodyFont), TRUE);
     SendMessageW(state->input, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(Px(*state, 2), Px(*state, 2)));
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入消息…"));
+
+    state->apiProfileCombo = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+        Px(*state, 184), Px(*state, 18), Px(*state, 176), Px(*state, 220),
+        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApiProfileId)), instance, nullptr);
+    if (!state->apiProfileCombo) {
+        DestroyWindow(window);
+        return false;
+    }
+    SendMessageW(state->apiProfileCombo, WM_SETFONT, reinterpret_cast<WPARAM>(state->smallFont), TRUE);
+    PopulateConversationApiProfiles(*state);
 
     gConversationState = state;
     AddEntry(*state, EntryKind::Assistant,

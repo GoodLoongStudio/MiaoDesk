@@ -1092,6 +1092,7 @@ void PaintConversation(ConversationState& state, HDC target) {
 }
 
 void PopulateConversationApiProfiles(ConversationState& state, bool preserveSelection = false) {
+    if (preserveSelection && state.pi && state.pi->Busy() && !state.busy) return;
     const std::wstring previousId =
         preserveSelection && state.agent ? state.agent->ProfileId() : std::wstring{};
     state.apiProfiles.clear();
@@ -1144,6 +1145,17 @@ void PopulateConversationApiProfiles(ConversationState& state, bool preserveSele
 
 void SelectConversationApiProfile(ConversationState& state) {
     if (state.busy || !state.apiProfileCombo || !state.agent || state.apiProfiles.empty()) return;
+    if (state.pi && state.pi->Busy()) {
+        for (std::size_t i = 0; i < state.apiProfiles.size(); ++i) {
+            if (_wcsicmp(state.apiProfiles[i].id.c_str(), state.agent->ProfileId().c_str()) == 0) {
+                SendMessageW(state.apiProfileCombo, CB_SETCURSEL, static_cast<WPARAM>(i), 0);
+                break;
+            }
+        }
+        AddEntry(state, EntryKind::System,
+                 L"另一个 AI 窗口正在执行任务；任务结束后再切换 API。");
+        return;
+    }
     const int index = static_cast<int>(SendMessageW(state.apiProfileCombo, CB_GETCURSEL, 0, 0));
     if (index < 0 || static_cast<std::size_t>(index) >= state.apiProfiles.size()) return;
 

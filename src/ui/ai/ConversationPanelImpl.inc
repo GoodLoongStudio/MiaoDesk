@@ -699,6 +699,11 @@ void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
         userEntry.attachments = std::move(attachments);
         state.entries.push_back(std::move(userEntry));
     }
+    // Re-read the centrally managed profile before every turn. The window keeps
+    // only a profile id; edits to Base URL/model/key in Settings take effect here
+    // without copying credentials into the conversation UI.
+    state.agent->ReloadConfig();
+
     state.entries.push_back({EntryKind::Assistant, L"", CurrentTimeText()});
     state.assistantIndex = state.entries.size() - 1;
     state.lastPrompt = actualPrompt;

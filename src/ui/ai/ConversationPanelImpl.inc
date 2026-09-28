@@ -1176,7 +1176,9 @@ void PositionInput(ConversationState& state) {
     MoveWindow(state.input, Px(state, 38), inputTop + Px(state, 13),
                std::max(Px(state, 120), client.right - Px(state, 76) - sendArea), Px(state, 38), TRUE);
     if (state.apiProfileCombo) {
-        const int comboW = std::max(Px(state, 126), std::min(Px(state, 176), client.right - Px(state, 360)));
+        const int availableHeaderWidth = static_cast<int>(client.right) - Px(state, 360);
+        const int comboW = std::max(Px(state, 126),
+                                    std::min(Px(state, 176), availableHeaderWidth));
         MoveWindow(state.apiProfileCombo, Px(state, 184), Px(state, 18), comboW, Px(state, 220), TRUE);
     }
 }

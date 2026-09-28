@@ -193,8 +193,8 @@ fs::path SettingsPath() {
 }
 
 std::uint64_t SessionHash(const ModelConfig& config) {
-    const std::wstring key = Lower(config.providerId) + L"\n" + Lower(config.baseUrl) + L"\n" +
-                             config.endpoint + L"\n" + config.model;
+    const std::wstring key = Lower(config.profileId) + L"\n" + Lower(config.providerId) + L"\n" +
+                             Lower(config.baseUrl) + L"\n" + config.endpoint + L"\n" + config.model;
     std::uint64_t hash = 1469598103934665603ull;
     for (wchar_t ch : key) {
         hash ^= static_cast<std::uint16_t>(ch);
@@ -630,7 +630,8 @@ void FillProbeMetadata(ModelProbeResult& result, const ProviderCandidate& candid
 
 } // namespace
 
-L3Agent::L3Agent() : config_(LoadConfig()) {
+L3Agent::L3Agent() {
+    ReloadConfig();
     for (auto& [user, assistant] : LoadPersistedConversation(config_)) {
         conversation_.push_back({std::move(user), std::move(assistant)});
     }
@@ -671,6 +672,13 @@ bool L3Agent::SaveConfig(const ModelConfig& config) const {
 }
 
 std::wstring L3Agent::LoadApiKey() const {
+    if (!config_.profileId.empty()) {
+        const auto profile = api_runtime_profile::LoadById(config_.profileId);
+        if (profile.found && profile.keyHeaderSafe) return profile.apiKey;
+        return {};
+    }
+
+    // Compatibility only for installations that have not created an API profile yet.
     PCREDENTIALW credential = nullptr;
     if (!CredReadW(kCredentialTarget, CRED_TYPE_GENERIC, 0, &credential)) return {};
     std::wstring key;
@@ -683,14 +691,18 @@ std::wstring L3Agent::LoadApiKey() const {
 }
 
 bool L3Agent::SaveApiKey(const std::wstring& key) const {
+    const std::wstring target = config_.profileId.empty()
+        ? std::wstring(kCredentialTarget)
+        : L"MiaoDesk/ApiProfile/" + config_.profileId;
+
     if (key.empty()) {
-        if (CredDeleteW(kCredentialTarget, CRED_TYPE_GENERIC, 0)) return true;
+        if (CredDeleteW(target.c_str(), CRED_TYPE_GENERIC, 0)) return true;
         return GetLastError() == ERROR_NOT_FOUND;
     }
 
     CREDENTIALW credential{};
     credential.Type = CRED_TYPE_GENERIC;
-    credential.TargetName = const_cast<LPWSTR>(kCredentialTarget);
+    credential.TargetName = const_cast<LPWSTR>(target.c_str());
     credential.CredentialBlobSize = static_cast<DWORD>(key.size() * sizeof(wchar_t));
     credential.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(key.data()));
     credential.Persist = CRED_PERSIST_LOCAL_MACHINE;

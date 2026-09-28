@@ -8,6 +8,7 @@
 // 编译并运行,而不是只能留给真机走查。
 #include "miaodesk/CreatorWorkspacePolicy.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -408,6 +409,90 @@ void TestEveryRejectHasAnExplanation() {
     }
 }
 
+// 策略必须真的接受 **ResolveCreatorWorkspaceRoot 会导出的那个根**。
+//
+// 为什么值得单独一节:上面全部用例用的是
+//   C:\Users\me\AppData\Local\MiaoDesk\creator\S-1
+// 深度一样,所以"分类在这条路径上对不对"一直是被覆盖的 —— 但覆盖它的是**另一条**
+// 路径。真实根是
+//   <LOCALAPPDATA>\MiaoDesk\CreatorWorkspaces\<kind>\<sessionId>
+// (paths::CreatorWorkspaceRoot),由 ContentCreatorBridge::ResolveCreatorWorkspaceRoot
+// 交给 PiRuntime,PiRuntime 只在 mode == Creator 时把它导出成 MIAODESK_CREATOR_WORKSPACE。
+// 哪天有人改布局(多一层、换个名字),分类本身仍可能在旧路径上全绿,而**真实**根上
+// 每一条工具调用都被拒 —— 表现是模型写什么路径都失败,而原因看起来像模型写错了。
+// 这一节把"真实根"钉住,改布局会让它立刻红。
+//
+// 而"最后一段必须是会话身份"这一条,最初就是这一节自己撞出来的:第一版按
+// …/<kind>/1 排,于是 DeriveCreatorSessionId 对任何作品都返回 "1",同一 kind 的
+// 所有作品从此共用一个会话 ID —— 归属判断正是靠那个字符串区分作品的。
+void TestTheRealWorkspaceRootTheResolverWillExport() {
+    // 最后一段是会话身份本身,不是序号。DeriveCreatorSessionId 取最后一段当会话 ID,
+    // 而 SessionMatches 拿它和工具参数里的 sessionId 比 —— 写成 "1" 会让同一 kind 的
+    // 所有作品共用一个会话 ID,而归属判断正是靠它区分作品的。
+    const char* kRoot =
+        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\wallpaper\s1755000000000-1-9f3ac1d2)";
+    CheckEq(DeriveCreatorSessionId(kRoot), "s1755000000000-1-9f3ac1d2",
+            "真实工作区根派生出它自己的会话身份");
+
+    CreatorSessionBinding binding;
+    binding.sessionId = DeriveCreatorSessionId(kRoot);
+    binding.workspaceRoot = kRoot;
+    binding.claimedWorkspace = binding.workspaceRoot;
+    const CreatorWorkspacePolicy policy(binding);
+
+    // 布局不变:这些相对路径必须照旧分类,而不是因为根变了就被判成越界。
+    CreatorFileRole ignored{};
+    for (const char* relative : {"manifest.json", "parameters.json", "scene/scene.json",
+                                 "preview.png", "assets/cloud.png"}) {
+        std::string reason;
+        Check(policy.Allows(relative, SmallFile(), &reason),
+              std::string("真实工作区根下 ") + relative + " 仍然获准:" + reason);
+        Check(policy.Classify(relative, &ignored), std::string("且仍能分类:") + relative);
+    }
+
+    // 反向也钉住:这些仍然要被拒。根变了不该让越界变得合法。
+    Check(!policy.Allows("../escape.json", SmallFile()), "真实工作区根下 ../ 仍被拒");
+    Check(!policy.Allows("assets/sub/deep.png", SmallFile()), "真实工作区根下深子目录仍被拒");
+    Check(!policy.Allows("code.py", SmallFile()), "真实工作区根下代码产物仍被拒");
+
+    // Resolve 出来的绝对路径必须仍在这个根下面。分隔符统一成正斜杠(见
+    // TestResolveStaysInsideWorkspace),所以这里比的是归一化之后的形状 ——
+    // 直接拿反斜杠的根去 prefix 比会恒假,那是比法错了,不是代码错了。
+    std::string resolved;
+    Check(policy.Resolve("scene/scene.json", &resolved), "真实工作区根上 Resolve 成功");
+    std::string normalizedRoot = binding.workspaceRoot;
+    std::replace(normalizedRoot.begin(), normalizedRoot.end(), '\\', '/');
+    while (!normalizedRoot.empty() && normalizedRoot.back() == '/') normalizedRoot.pop_back();
+    Check(resolved.rfind(normalizedRoot, 0) == 0,
+          "Resolve 的结果以真实工作区根开头:" + resolved);
+    CheckEq(resolved, normalizedRoot + "/scene/scene.json",
+            "且拼出来的就是那一个路径");
+
+    // 两个 kind 的根必须都能用:组件那条走的是同一个解析器,只是目录名不同。
+    CreatorSessionBinding widget;
+    widget.workspaceRoot =
+        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\widget\s1755000000000-1-9f3ac1d2)";
+    widget.sessionId = DeriveCreatorSessionId(widget.workspaceRoot);
+    widget.claimedWorkspace = widget.workspaceRoot;
+    const CreatorWorkspacePolicy widgetPolicy(widget);
+    std::string widgetReason;
+    Check(widgetPolicy.Allows("manifest.json", SmallFile(), &widgetReason),
+          "组件的工作区根同样获准:" + widgetReason);
+
+    // 第二个作品是另一段会话身份,不是把 1 改成 2 —— 两个作品各有各的目录与 ID。
+    CreatorSessionBinding second;
+    second.workspaceRoot =
+        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\wallpaper\s1755000000009-1-77ab01ef)";
+    second.sessionId = DeriveCreatorSessionId(second.workspaceRoot);
+    second.claimedWorkspace = second.workspaceRoot;
+    const CreatorWorkspacePolicy secondPolicy(second);
+    std::string secondReason;
+    Check(secondPolicy.Allows("manifest.json", SmallFile(), &secondReason),
+          "第二个作品的工作区根(另一段会话身份,同样目录形状)获准:" + secondReason);
+    Check(DeriveCreatorSessionId(second.workspaceRoot) != binding.sessionId,
+          "两件作品的会话身份必须不同,否则归属判断区分不了它们");
+}
+
 } // namespace
 } // namespace miaodesk::creator
 
@@ -426,6 +511,7 @@ int wmain() {
     TestSessionIdDerivesFromTheWorkspace();
     TestRoleRoundTrip();
     TestEveryRejectHasAnExplanation();
+    TestTheRealWorkspaceRootTheResolverWillExport();
 
     std::printf("\nCCA-04 creator workspace policy: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {

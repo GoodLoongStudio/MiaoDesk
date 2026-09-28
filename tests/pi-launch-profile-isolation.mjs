@@ -274,8 +274,11 @@ function callersOf(symbol) {
 const appPaths = read("src/include/miaodesk/AppPaths.h");
 assert.match(appPaths, /inline fs::path CreatorWorkspacesRoot\(\)/,
   "the creator workspace needs a home under StateRoot(), following every other feature");
-assert.match(appPaths, /inline fs::path CreatorWorkspaceRoot\(std::wstring_view sessionId\)/,
-  "one work must be one subdirectory (main.cpp puts revisions/ beside the package dir)");
+// AppPaths **不**该认识 kind 与 session —— kind 是 ContentCreatorKind,把它引进来
+// 会让一个通用路径模块去懂创作域(我的第一版就写过 CreatorWorkspaceRoot(sessionId),
+// 于是它多认识了一个概念)。这两段名字由 ContentCreatorBridge 拼,规则见下面。
+assert.doesNotMatch(appPaths, /CreatorWorkspaceRoot\(std::wstring_view/,
+  "AppPaths must not know ContentCreatorKind; the last two segments belong to the creator domain");
 
 // 真正没做的那一半:profile 从未被装上。
 for (const symbol of ["SetLaunchProfile", "MakeCreatorLaunchProfile"]) {
@@ -323,11 +326,25 @@ assert.match(showBody, /ResolveCreatorWorkspaceRoot\(kind\)/,
   "the workspace must come from the host, not from a tool argument");
 
 // 工作区根目录的复用规则必须与分析一致:重开是同一个工作区(CCA-10 要求恢复草稿)。
+// 派生规则同样有硬约束,而且我是撞过才知道的:DeriveCreatorSessionId(root) 取
+// **最后一段**当会话 ID,CreatorWorkspacePolicy::SessionMatches 拿它和工具参数里的
+// sessionId 比。我第一版按 <kind>/1、<kind>/2 排,于是同一 kind 的每件作品都得到
+// 同一个会话 ID,而归属判断正是靠它区分作品的 —— 那是我自己的测试先发现的。
+// 所以这里断言的不是"目录名好看",是**最后一段必须是身份本身**,并且重开读同一个身份。
 const bridge = read("src/desktop/control/ContentCreatorBridge.cpp");
 assert.match(bridge, /paths::CreatorWorkspacesRoot\(\)/,
   "the workspace root must come from AppPaths, following every other feature");
-assert.match(bridge, /const fs::path active = perKind \/ L"1";/,
-  "reopening must resolve to the same directory, so a draft survives the close");
+assert.match(bridge, /const fs::path activeFile = perKind \/ L"active";/,
+  "the current session must be recorded per kind, so a reopen can find it");
+assert.match(bridge, /std::string session = ReadActiveSession\(activeFile\);/,
+  "reopening must reuse the recorded session, so a draft survives the close");
+assert.match(bridge, /session = miaodesk::creator::NewCreatorSessionId\(now\);/,
+  "only a missing active file may mint a new session id");
+assert.match(bridge, /const fs::path workspace = perKind \/ fs::path\(Utf8ToWideForPath\(session\)\);/,
+  "the last segment must be the session identity itself -- DeriveCreatorSessionId takes the last "
+  + "segment, so a shared counter here would let one work's tool calls touch another's");
+assert.match(bridge, /WriteActiveSession\(activeFile, session\);/,
+  "a freshly minted session must be written back, or the next open starts over");
 
 // CMake 必须编译新文件,否则它只存在于磁盘上(2026-09-22 LNK2019 那一课)。
 const cmake = read("src/CMakeLists.txt");

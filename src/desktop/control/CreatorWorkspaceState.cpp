@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -145,6 +146,58 @@ bool ParseCreatorWorkspaceState(std::string_view text, CreatorWorkspaceState* ou
     if (parsed.sessionId.empty()) return false;
     *out = parsed;
     return true;
+}
+
+bool IsUsableSessionChar(char ch) noexcept {
+    const bool alnum = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                       (ch >= '0' && ch <= '9');
+    return alnum || ch == '-' || ch == '_';
+}
+
+std::string NewCreatorSessionId(std::uint64_t nowMs) {
+    // 三段各管一件事(顺序固定,便于人工扫一眼就知道是什么):
+    //   * 时间 —— 重启之后能和上次打开的旧作品分辨开;
+    //   * 序号 —— **确定性**的一半:同一进程里取一百个也两两不同;
+    //   * 随机尾巴 —— 确定性照看不到的那一半:进程重启后序号会回到 0,而
+    //     GetTickCount64 也可能撞上同一个值。它还顺带让别人的会话 ID 猜不到 ——
+    //     会话 ID 是归属判据,猜得到就相当于能申请替别人写。
+    // 只留前两段或只留最后一段都能跑,而且单看输出分不出差别;两者都得在,这条
+    // 在 CreatorToolWorkerTest 里逐段断言过。
+    static std::uint64_t counter = 0;
+    const std::uint64_t sequence = ++counter;
+
+    std::string id = "s";
+    id += std::to_string(nowMs);
+    id += "-";
+    id += std::to_string(sequence);
+    id += "-";
+    // 8 个十六进制位。std::random_device 在 Windows 上不是密码学强度的,这里靠
+    // 它挡住的是"撞车"和"被顺手猜到",靠它防蓄意伪造是不现实的。
+    std::string entropy;
+    {
+        std::random_device device;
+        const char digits[] = "0123456789abcdef";
+        for (int i = 0; i < 4; ++i) {
+            const unsigned value = device();
+            for (int shift = 12; shift >= 0; shift -= 4) {
+                entropy += digits[(value >> shift) & 0xF];
+            }
+        }
+        entropy.resize(8);
+    }
+    id += entropy;
+    return id;
+}
+
+// 只保留可用的字符:换行、回车、tab、空格、别人手写的一行注释都不算。会话身份要当
+// 目录名,也要当工具参数里的 sessionId 比对 —— 多一个字符就两头都对不上。
+std::string SanitizeCreatorSessionId(const std::string& text) {
+    std::string session;
+    session.reserve(text.size());
+    for (const char ch : text) {
+        if (IsUsableSessionChar(ch)) session += ch;
+    }
+    return session;
 }
 
 } // namespace miaodesk::creator

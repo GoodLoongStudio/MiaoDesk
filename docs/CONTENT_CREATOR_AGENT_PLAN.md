@@ -254,7 +254,8 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - 三条后果都实测过：`--tools` 用聊天那份，七个 `creator_*` 名字被整体剥掉；`--extension` 落盘的是 Chat 变体，它本身不含创作工具；`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。**创作轮次里模型一条 `creator_*` 都用不了** —— 八个已实现并测过的工具不可达。这不是"两个配置之间的风险切换"，是一个只有服务端、没有客户端的功能。
 - 装的位置是 `ContentCreatorDialog` 而不是 `PiRuntime`：profile 是**宿主的意图**，而"用户主动打开 AI 制作壁纸/组件"这个窗口就是那个事件。放 PiRuntime 里只能猜。
 - **卸与装一样重要**：共享 runtime 是刻意的（§4.2 上下文隔离但进程可复用），所以只装不卸会让聊天拿着创作的 allowlist 跑 —— 那正是本节整节在防的事。`WM_DESTROY` 里恢复聊天 profile，且**必须排在 `Stop()` 之后**：反过来会让一个正在跑的创作轮次在恢复中的 profile 下继续，接着要用的工具突然不在 allowlist 里，表现是"生成到一半工具开始失败"。
-- 工作区根目录按 `AppPaths` 的既有惯例落在 `<StateRoot>/CreatorWorkspaces/<kind>/1`，**一次作品一个子目录**（`main.cpp` 的 `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边）。复用规则由本计划自己的验收决定：CCA-10 要求"关闭与重开恢复草稿"，所以**重开是同一个工作区**。路径带序号是给"用户明确开第二个作品"留位置 —— 真到那天只加一个动作，不需要迁移已有目录。
+- 工作区根目录按 `AppPaths` 的既有惯例落在 `<StateRoot>/CreatorWorkspaces/<kind>/<sessionId>`，**一次作品一个子目录**（`main.cpp` 的 `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边）。复用规则由本计划自己的验收决定：CCA-10 要求"关闭与重开恢复草稿"，所以**重开是同一个工作区** —— `<sessionId>` 记在 `<kind>/active` 里，内容就是目录名本身；`active` 不存在才分配新身份并写回。
+- **`<sessionId>` 不能用序号**（2026-09-28 改，此前这里写的是 `…/<kind>/1`）：`DeriveCreatorSessionId` 取路径的**最后一段**当会话 ID，`CreatorWorkspacePolicy::SessionMatches` 拿它和工具参数里的 `sessionId` 比，`ContentCandidateLedger` 又用 `sessionId` 拼 `candidateId`。写成 `1`/`2` 的话，同一 kind 的所有作品共用一个会话 ID —— 而归属判断正是靠这个字符串区分作品的，撞车的表现是"另一个作品的调用被接受了"。这个错误是新加的 `TestTheRealWorkspaceRootTheResolverWillExport()` 撞出来的：它把解析器会导出的那个根喂给策略，而策略对 `…/1` 无法把任何一个 `sessionId` 认成自己的。现在身份由 `NewCreatorSessionId` 生成（时间戳 + 序号 + 8 位随机尾巴），三段各防一件事，逐段由测试断言，八处已知失效注入全红。
 - `tests/pi-launch-profile-isolation.mjs` 从"只查 profile 的形状"扩展到"查装上与卸下"：四个新断言各配一个只违反它的注入，全部确认会红（去掉聊天恢复 / 去掉创作安装 / 把恢复挪到 `Stop()` 之前 / 工作区置空）。写它们时顺手修掉自己两个错：没算 `miaodesk::` 限定，以及把相对下标和绝对下标混用（那条断言会变成恒真或恒假）。
 
 
@@ -280,7 +281,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ### CCA-04 提供受约束的包制作与素材工具
 
-- [~] 路径与归属策略、写入事务、工具名册、工作区状态、worker 分发、候选封存与结构校验均已实现并有可执行测试；**端到端生成合法包**与"关闭通用工具后仍可完整制作"的对照验证仍待 Windows 真机。
+- [~] 路径与归属策略、写入事务、工具名册、工作区状态、worker 分发、候选封存与结构校验均已实现并有可执行测试；**端到端生成合法包**与"关闭通用工具后仍可完整制作"的对照验证仍待 Windows 真机。2026-09-28 补：创作 profile 真的被装上（此前整条创作链在出厂构建里不生效），工作区最后一段改成会话身份本身。
 - **依赖**：CCA-02、CCA-03。
 - **实施**：提供包读写、素材导入/图片生成和真实能力查询；用创作专属 allowlist 替代通用文件/shell 权限；接入会话绑定和超时。
 - **交付**：实际 Pi 扩展与 native adapter、工具 worker 注册、路径与所有权回归。
@@ -376,6 +377,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - 提示词现在改成:图片生成器在当前构建里不存在,不要调用它,也不要承诺画图;请用户导入素材,或者直说这一步还没有。新增 `ExecutableCreatorToolNames()` —— 名册里**现在真能用**的那几个名字,给提示词与文档用,让"你可以用 X"这句话只能在 X 真能用时说。
 - `CreatorToolWorkerTest` 再添一条:未实现的 `creator_image_generate` 不在"现在能用"的名单里,而 `creator_asset_import` 在;且名单不能是空的(空了说明函数坏了,不是没有工具)。该测试随之到 **254 条**。
 - 顺带:`AvailabilityOf` 与 `UnavailableReason` 两张表此前能互相矛盾(CandidateSubmit 早已接上却仍带着"还没有接上"的理由),已改为由可用性表单向推出不可用理由 —— 见上一段记录。
+- **2026-09-28,工作区根目录的会话身份**:上面那条"落在 `…/<kind>/1`"是错的,已改。`DeriveCreatorSessionId` 取最后一段当会话 ID,序号让同一 kind 的所有作品共用一个会话 ID —— 新加的 `TestTheRealWorkspaceRootTheResolverWillExport()` 把它喂给策略才发现。现在 `<sessionId>` 由 `NewCreatorSessionId`(时间戳+序号+随机尾巴)生成,记在 `<kind>/active` 里,重开复用;`CreatorToolWorkerTest` 随之到 **314 条**,其中会话身份那十处已知失效注入全红(删尾巴、尾巴冻成常量、大写十六进制、尾巴缩到 4 位、序号不用、身份写死 `"1"`、字符线整体松掉、多收冒号、读取方丢连字符、读取方不过滤)。生成与读取现在共用 `IsUsableSessionChar` 与 `SanitizeCreatorSessionId` —— 原先两头各写一份,而"身份生成出来却读不回来"这种错只由 JS 门看文件形状,现在它是一条本机真跑的等式(`SanitizeCreatorSessionId(NewCreatorSessionId(t)) == 那个身份`)。装 profile 那条门另注入 5 处,全红。
 ### CCA-05 结构化候选与统一校验
 
 - [~] 候选摘要、结构化 receipt、宿主封存均已实现并有可执行测试；`ContentCreatorDialog` 里的回复路径猜测仍在，尚未被替换。
@@ -710,7 +712,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 | CCA | 状态 | 证据（本机可跑） |
 | --- | --- | --- |
-| CCA-04 | 工具名册/worker/事务/封存/校验已有测试；本轮补：可用性表与不可用理由表不再能互相矛盾；系统提示词不再让模型去调未实现的工具 | `CreatorToolWorkerTest` 254 条（真编译真跑） |
+| CCA-04 | 工具名册/worker/事务/封存/校验已有测试；本轮补：可用性表与不可用理由表不再能互相矛盾；系统提示词不再让模型去调未实现的工具；工作区最后一段必须是会话身份本身（改用 `NewCreatorSessionId`） | `CreatorToolWorkerTest` 314 条（真编译真跑）+ `CreatorWorkspacePolicyTest` 388 条 |
 | CCA-05 | 凭据分级（Receipt vs ProseScan）、candidate receipt、包结构校验 | `CreatorReplyInterpreterTest` 37 条、`ContentCandidateReceiptTest` 50 条、`ContentPackageValidatorTest` 121 条 |
 | CCA-06 | "运行时上限优先于文档副本"变成闸门；虚构能力的那一处已修 | `scripts/verify-skill-capability-contract.sh` |
 | CCA-07 | 有上限自动修复的调度逻辑与八种停止理由 | `CreationRepairPlannerTest` 44 条 |
@@ -721,12 +723,12 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 | CCA-14 | 撤回过的断言不许回来；skill 引用的路径必须真的在那儿且说得出发名前 | `verify-stale-claim-retraction.sh`、`verify-skill-referenced-paths.sh` |
 | CCA-10 | 关掉再打开的草稿状态与五种恢复结论 | `CreationDraftStoreTest` 59 条 |
 
-全部新模块都刻意**不 import Windows 头**，所以它们在 macOS 上真编译真跑，而不是只过 `-fsyntax-only`。每一轮都用**已知失效注入**验过：往实现里塞一个坏编辑，确认对应测试转红。累计注入约 60 处，全红；其中三处**第一轮是绿的**（`IsAlreadyAppliedOnTarget` 的空摘要前置判断、`CreationDraftStore` 的逗号转义、`ContentReleaseGate` 的函数内 `static` 由入参初始化），都是先补测试再转红 —— 而那三种恰恰是最难靠读代码发现的三类。
+全部新模块都刻意**不 import Windows 头**，所以它们在 macOS 上真编译真跑，而不是只过 `-fsyntax-only`。每一轮都用**已知失效注入**验过：往实现里塞一个坏编辑，确认对应测试转红。累计注入约 70 处，全红；其中四处**第一轮是绿的**（`IsAlreadyAppliedOnTarget` 的空摘要前置判断、`CreationDraftStore` 的逗号转义、`ContentReleaseGate` 的函数内 `static` 由入参初始化，以及本轮"会话序号不用了"——唯一性当时被随机尾巴兜住，而测试只断言了"相邻两次不同"，于是唯独它一路绿），都是先补测试再转红 —— 而那四种恰恰是最难靠读代码发现的三类。**读写两头各写一份**也是同一类：生成方和读取方各有一份"哪些字符能进会话 ID"的判定，而当时本机只能从 JS 门看文件形状、看不到那条闭环；把两处合成一个 `SanitizeCreatorSessionId` 之后，它才变成一条等式。
 
 ### 做不了，而且不是没排上
 
 1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
-2. ~~**创作 profile 从未被装上（CCA-03）**~~ **已修（2026-09-28）**：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 此前都无调用者，于是创作跑在**聊天的 profile** 上 —— `--tools` 用聊天那份（七个 `creator_*` 名字被整体剥掉）、`--extension` 落盘的是 Chat 变体（它本身不含创作工具）、`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出（而 `main.cpp` 的 `RunCreatorTool` 正是从这两个变量取工作区与会话）。**八个 `creator_*` 工具此前不可达。** 现在 `ContentCreatorDialog` 打开时装上创作 profile、`WM_DESTROY` 时恢复聊天 profile，工作区落在 `<StateRoot>/CreatorWorkspaces/<kind>/1`。
+2. ~~**创作 profile 从未被装上（CCA-03）**~~ **已修（2026-09-28）**：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 此前都无调用者，于是创作跑在**聊天的 profile** 上 —— `--tools` 用聊天那份（七个 `creator_*` 名字被整体剥掉）、`--extension` 落盘的是 Chat 变体（它本身不含创作工具）、`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出（而 `main.cpp` 的 `RunCreatorTool` 正是从这两个变量取工作区与会话）。**八个 `creator_*` 工具此前不可达。** 现在 `ContentCreatorDialog` 打开时装上创作 profile、`WM_DESTROY` 时恢复聊天 profile，工作区落在 `<StateRoot>/CreatorWorkspaces/<kind>/<sessionId>`（`<sessionId>` 记在 `<kind>/active` 里；2026-09-28 把它从 `…/<kind>/1` 改了过来，理由见上面 CCA-04 那一节）。
    **仍未验**：本机只验到"文件形状对"。它真的让创作轮次拿到受约束工具与工作区，要在 Windows 上开一次 AI 制作壁纸，确认 `creator_package_update` 不被 `--tools` 剥掉、`MIAODESK_CREATOR_WORKSPACE` 真的导出了、以及关窗之后聊天仍能写文件。
 3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
 4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。

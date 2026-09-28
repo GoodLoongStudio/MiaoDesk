@@ -121,6 +121,10 @@ bool NormalizeCreatorRelativePath(std::string_view input, std::string* normalize
 
 // 从工作区路径导出会话 ID:取最后一段目录名。
 //
+// 所以最后一段不能是序号:它由宿主分配,而**它必须唯一** —— 同一个序号给同一 kind
+// 的两件作品用,归属判断(SessionMatches)就再也区分不了它们,表现是"另一个作品的
+// 调用被接受了"。生成规则见 CreatorWorkspaceState::NewCreatorSessionId。
+//
 // 为什么不让调用方再单独传一个 ID:会话 ID 的唯一作用就是把一次创作和它的工作区
 // 绑在一起,而工作区路径本身就是宿主分配的那个唯一标识。再另给一个字符串,就会
 // 出现两个可以互相矛盾的事实来源 —— 而它们一旦矛盾,"这个调用属于哪个作品"

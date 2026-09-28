@@ -39,6 +39,35 @@ struct CreatorWorkspaceState {
     bool HasCandidate() const noexcept { return !candidateDigest.empty(); }
 };
 
+// 会话身份允许出现的字符。
+//
+// 它要同时被三个地方认:当目录名的最后一段(见 AppPaths.h 的说明)、当
+// CreatorSessionBinding::sessionId、当工具参数里的 sessionId 强制比对。而
+// DeriveCreatorSessionId 只取路径的最后一段 —— 出现任何分隔符都会把身份切断。
+//
+// 做成共享的一个函数而不是各写一份,是因为**生成与读取必须严丝合缝**:
+// 生成方(NewCreatorSessionId)只产这些字符,读取方(active 文件)只收这些字符。
+// 两边各写一份的话,哪天一边松了一边紧,产出来的身份读回来会被整段丢掉 ——
+// 表现是每次重开都换一个工作区,草稿永远回不来。
+bool IsUsableSessionChar(char ch) noexcept;
+
+// 一个新的会话身份。它必须唯一:同一 kind 的两个作品共用一个会话 ID,归属判断
+// (CreatorWorkspacePolicy::SessionMatches)就不再能区分它们,而那种撞车看起来
+// 像"另一个作品的调用被接受了"。
+//
+// 单独做成这里的纯函数、而不是在桥里现写,是为了能在 macOS 上真跑:唯一性与可用
+// 字符是这里唯一要断定的事,而那两样都不需要一台 Windows 机器。写在桥里,它们就
+// 只剩一句"Windows 真机待验"。
+std::string NewCreatorSessionId(std::uint64_t nowMs);
+
+// active 文件里的一段文本 → 会话身份。读失败、读到注释或读到空行都返回空串,
+// 调用方必须把空串当成"没有这段会话",而不是当成一个合法的会话名。
+//
+// 它和 IsUsableSessionChar 是同一件事的两头:生成方只产那些字符,这里只收那些
+// 字符。所以"NewCreatorSessionId(...) 过一遍还是它自己"是一条能断言的等式,
+// 而不是两个文件各写一份、靠注释祈祷它们一致的巧合。
+std::string SanitizeCreatorSessionId(const std::string& text);
+
 // 序列化成行式 key=value。顺序固定,便于人工排查;值里的换行与等号会被拒绝,
 // 不让解析出现歧义 —— 一份会被两种写法解析成不同结果的状态文件,比没有更糟。
 std::string SerializeCreatorWorkspaceState(const CreatorWorkspaceState& state);

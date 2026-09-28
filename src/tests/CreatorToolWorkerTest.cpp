@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <optional>
 #include <set>
@@ -770,6 +771,124 @@ std::string DigestOf(std::vector<content::CandidatePart> parts) {
     return content::ComputeCandidateDigest(std::move(parts)).value;
 }
 
+// 按 '-' 切开会话身份。测试里要逐段看,是因为三段各防一件事(见 TestNewCreatorSessionId)。
+std::vector<std::string> SplitSessionId(const std::string& id) {
+    std::vector<std::string> parts;
+    std::string current;
+    for (const char ch : id) {
+        if (ch == '-') {
+            parts.push_back(current);
+            current.clear();
+            continue;
+        }
+        current += ch;
+    }
+    parts.push_back(current);
+    return parts;
+}
+
+// 会话身份是**最后一段目录名**:DeriveCreatorSessionId 取它当会话 ID,
+// CreatorWorkspacePolicy::SessionMatches 拿它和工具参数比,ContentCandidateLedger 用它
+// 拼 candidateId。所以它必须唯一,且只含能当目录名的字符。
+// 写成 "1"/"2" 这种序号的话,同一 kind 的所有作品共用一个会话 ID —— 归属判断正是
+// 靠这个字符串区分作品的,而那种撞车看起来像"另一个作品的调用被接受了"。
+//
+// 三段各管一件事,少一段都少一种保护:
+//   * 时间戳 + 序号 —— 同一进程里取的不会撞,这是**确定性**的那一半;
+//   * 随机尾巴 —— 进程重启后序号会回到 0,而 GetTickCount64 也可能撞上同一个值;
+//     它还顺带让别人的会话 ID 猜不到(会话 ID 是归属判据,猜得到就相当于能申请
+//     替别人写)。
+// 所以三条都要单独断言:只断言唯一性的话,把尾巴删了照样全绿(靠序号),把序号删了
+// 也照样全绿(靠尾巴),两个版本都能跑。那两份余量是叠起来用的,减掉哪一份都看不出来。
+void TestNewCreatorSessionId() {
+    const std::string nowAsString = std::to_string(1755000000000ull);
+    const std::string first = NewCreatorSessionId(1755000000000ull);
+    Check(!first.empty(), "会话身份不是空串");
+    Check(NewCreatorSessionId(1755000000000ull) != first, "同一毫秒再取一个也不是同一个");
+
+    // 每一个字符都要能当目录名、也要能当 sessionId 比对。判定用的就是生成方和读取方
+    // 共享的那一个函数 —— 这里断言的是"产出来的东西处在那条线内",两边分开写各自的
+    // 版本是这条断言也补不上的。
+    for (const char ch : first) {
+        Check(IsUsableSessionChar(ch),
+              std::string("会话身份只含可作目录名的字符,拒绝 '") + ch + "'");
+    }
+    Check(first.find('/') == std::string::npos, "没有正斜杠");
+    Check(first.find('\\') == std::string::npos, "没有反斜杠");
+    Check(first.find(':') == std::string::npos, "没有冒号 —— 它会被当成盘符");
+    Check(first.find(' ') == std::string::npos, "没有空格");
+    Check(first.find('.') == std::string::npos, "没有点");
+    // 那条线本身也在这里:身份里只有 [A-Za-z0-9_-],别的都不行。
+    for (const char ch : {'/', '\\', ':', ' ', '.', ',', '=', '\t', '\n', '\0'}) {
+        Check(!IsUsableSessionChar(ch),
+              std::string("会话身份拒绝 '") + std::to_string(static_cast<int>(ch)) + "'");
+    }
+    for (const char ch : {'a', 'Z', '5', '-', '_'}) {
+        Check(IsUsableSessionChar(ch), std::string("会话身份接受 '") + ch + "'");
+    }
+
+    // 读写闭环:生成出来的身份读回来必须还是它自己。active 文件里存的就是它,
+    // 而过滤规则在 SanitizeCreatorSessionId 里。生成方与读取方各写一份的话,这天会
+    // 来得悄无声息 —— 新生成的身份被读取方整段丢掉,表现是每次重开都换一个工作区,
+    // 草稿永远回不来。
+    const std::string roundTrip = NewCreatorSessionId(1755000000000ull);
+    CheckEq(SanitizeCreatorSessionId(roundTrip), roundTrip,
+            "生成出来的身份读回来还是它自己");
+    CheckEq(SanitizeCreatorSessionId(""), std::string(), "空文件当成没有这段会话");
+    CheckEq(SanitizeCreatorSessionId("  \r\n\t"), std::string(), "只有空白也算没有这段会话");
+    CheckEq(SanitizeCreatorSessionId(roundTrip + "\r\n"), roundTrip,
+            "尾随换行只是格式,不该把身份切断");
+    CheckEq(SanitizeCreatorSessionId("a.b/c:d e"), "abcde",
+            "不能当目录名的字符被丢掉,剩下的是干净身份");
+
+    // 形状;s<时间戳>-<序号>-<随机尾巴>。
+    const auto segments = SplitSessionId(first);
+    Check(segments.size() == 3, "会话身份是三段,现为 " + std::to_string(segments.size()));
+    const auto digitsOnly = [](const std::string& text) {
+        return !text.empty() && text.find_first_not_of("0123456789") == std::string::npos;
+    };
+    if (segments.size() == 3) {
+        Check(segments[0] == "s" + nowAsString,
+              "第一段是带前缀的时间戳,重启后能与上次的身份分辨");
+        Check(digitsOnly(segments[1]), "第二段是序号(纯数字)");
+        Check(segments[2].size() == 8 &&
+                  segments[2].find_first_not_of("0123456789abcdef") == std::string::npos,
+              "第三段是 8 个十六进制位,现为 '" + segments[2] + "'");
+    }
+
+    // 序号这一半是确定性的:每次取必须 +1。少了它,唯一性就只剩 32 位随机尾巴的生日
+    // 碰撞概率 —— 那个版本一样能跑、测试也照样绿,所以我特意按递进写死。
+    // 取两个相邻的身份比,不依赖别处先取过几次。
+    const std::string sequenceA = SplitSessionId(NewCreatorSessionId(1755000000000ull))[1];
+    const std::string sequenceB = SplitSessionId(NewCreatorSessionId(1755000000000ull))[1];
+    if (digitsOnly(sequenceA) && digitsOnly(sequenceB)) {
+        const unsigned long long step =
+            std::strtoull(sequenceB.c_str(), nullptr, 10) - std::strtoull(sequenceA.c_str(), nullptr, 10);
+        Check(step == 1, "序号每取一次递进 1(现为 " + sequenceA + " → " + sequenceB + ")");
+    }
+
+    // 随机尾巴这一半:一百个身份,尾巴必须互不相同。冻成常量时这里只剩一个,
+    // 而那一版一样能跑 —— 尾巴一样的话,重启之后时间戳和序号又恰好都撞上
+    // (序号必定从 0 重来),身份就真的重复了。
+    std::vector<std::string> many;
+    for (int i = 0; i < 100; ++i) many.push_back(NewCreatorSessionId(1755000000000ull));
+    std::sort(many.begin(), many.end());
+    Check(std::adjacent_find(many.begin(), many.end()) == many.end(),
+          "连续一百个会话身份两两不同");
+    std::set<std::string> tails;
+    for (const auto& id : many) {
+        const auto parts = SplitSessionId(id);
+        if (parts.size() == 3) tails.insert(parts[2]);
+    }
+    Check(tails.size() == many.size(),
+          "一百个身份的随机尾巴互不相同 —— 冻成常量时这里只剩一个,而那一版能跑");
+
+    // 它要能原样通过 DeriveCreatorSessionId 的反推:目录名的最后一段就是它自己。
+    const std::string root =
+        "C:/Users/me/AppData/Local/MiaoDesk/CreatorWorkspaces/wallpaper/" + first;
+    CheckEq(DeriveCreatorSessionId(root), first, "工作区根反推回来的就是它自己");
+}
+
 void TestCandidateSubmitVerifiesTheHostsDigest() {
     MemoryWorkspace workspace;
     workspace.files["manifest.json"] =
@@ -1108,6 +1227,7 @@ int wmain() {
     TestCandidateSubmitRefusesWhatItCannotSeal();
     TestCandidateSubmitReportsWhichRuleFailed();
     TestLedgerRoundTrip();
+    TestNewCreatorSessionId();
 
     std::printf("\nCCA-04 creator tool worker: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {

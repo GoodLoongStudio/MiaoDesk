@@ -112,11 +112,14 @@ inline fs::path CreatorWorkspacesRoot() {
     return root.empty() ? fs::path{} : root / L"CreatorWorkspaces";
 }
 
-inline fs::path CreatorWorkspaceRoot(std::wstring_view sessionId) {
-    const fs::path root = CreatorWorkspacesRoot();
-    if (root.empty() || sessionId.empty()) return {};
-    return root / fs::path(sessionId);
-}
+// 注意这里**只到** CreatorWorkspacesRoot():再往下的 <kind>/<sessionId> 属于创作域
+// (kind 是 ContentCreatorKind),不该让 AppPaths 去认识它。见
+// ContentCreatorBridge::ResolveCreatorWorkspaceRoot。
+//
+// 而那两段目录名不是随便起的:`DeriveCreatorSessionId(workspaceRoot)` 取**最后一段**
+// 当会话 ID,而 CreatorWorkspacePolicy::SessionMatches 拿它和工具参数里的 sessionId 比。
+// 所以最后一段必须是会话身份本身 —— 写成 "1"/"2" 这种序号会让同一 kind 的所有作品
+// 共用一个会话 ID,而归属判断正是靠这个字符串区分作品的。
 
 inline fs::path GeneratedWallpapersRoot() {
     const fs::path root = StateRoot();

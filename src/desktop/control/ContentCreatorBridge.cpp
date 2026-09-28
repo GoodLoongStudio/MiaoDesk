@@ -153,6 +153,17 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
     const HWND target = FindWindowW(kSearchWindowClass, nullptr);
     if (!target) return false;
 
+    // OpenConversation is commonly called from the foreground Wallpaper Library
+    // process while the creator itself is constructed by the already-running
+    // MiaoDesk process. Grant that target process foreground activation rights
+    // before the synchronous WM_COPYDATA hand-off, otherwise Windows can legally
+    // create the requested window behind the library and the caller still reports
+    // "opened".
+    DWORD targetProcessId = 0;
+    GetWindowThreadProcessId(target, &targetProcessId);
+    if (targetProcessId && targetProcessId != GetCurrentProcessId())
+        AllowSetForegroundWindow(targetProcessId);
+
     const std::uint32_t raw = static_cast<std::uint32_t>(kind);
     COPYDATASTRUCT data{};
     data.dwData = kContentCreatorCopyDataTag;

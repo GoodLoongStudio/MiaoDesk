@@ -660,6 +660,16 @@ struct PageState {
 
     bool ValidateDraft(ApiProfile& profile, std::wstring& key) {
         if (profile.name.empty()) profile.name = L"API 配置";
+        const bool duplicateName = std::any_of(
+            profiles.begin(), profiles.end(), [&](const ApiProfile& item) {
+                return _wcsicmp(item.id.c_str(), profile.id.c_str()) != 0 &&
+                       _wcsicmp(item.name.c_str(), profile.name.c_str()) == 0;
+            });
+        if (duplicateName) {
+            SetStatus(L"配置名称不能重复；AI 窗口会按这个名称选择 API。", false);
+            SetFocus(name);
+            return false;
+        }
         if (profile.baseUrl.empty()) {
             SetStatus(L"请输入 Base URL。", false);
             SetFocus(apiUrl);
@@ -750,7 +760,15 @@ struct PageState {
     void NewProfile() {
         ApiProfile profile;
         profile.id = L"custom-" + std::to_wstring(GetTickCount64());
-        profile.name = L"新 API 配置";
+        std::wstring baseName = L"新 API 配置";
+        profile.name = baseName;
+        for (int suffix = 2;; ++suffix) {
+            const bool used = std::any_of(profiles.begin(), profiles.end(), [&](const ApiProfile& item) {
+                return _wcsicmp(item.name.c_str(), profile.name.c_str()) == 0;
+            });
+            if (!used) break;
+            profile.name = baseName + L" " + std::to_wstring(suffix);
+        }
         profile.lastMessage = L"填写 Base URL、API Key，然后探测或填写 Model。";
         profiles.push_back(std::move(profile));
         selected = profiles.size() - 1;

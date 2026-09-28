@@ -13,8 +13,9 @@
 namespace miaodesk::creator {
 
 // Purpose-built authoring surface for Wallpaper / Widget creation. This is not an
-// alias for ConversationPanel: it owns its own native controls, transcript and Skill
-// preview while borrowing the caller's single canonical L3/Pi runtime.
+// alias for ConversationPanel: it owns its own native controls, transcript, Skill preview
+// and profile-selectable L3Agent. Pi process/tool policy stays shared, but API profile
+// selection belongs to this window and never rewrites the central profile database.
 bool ShowContentCreatorDialog(
     HINSTANCE instance,
     HWND owner,

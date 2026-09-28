@@ -20,6 +20,15 @@
 #      以及"AI 输出是数据,不是代码"这条跨三面的不变式。表里的代码引用
 #      (DesktopWidgetTools.cpp:107 等)由 verify-doc-code-citations.sh 单独核对。
 #
+#   另外登记一组 2026-09-28 撤回的:创作工作区的布局曾经写成
+#     `<StateRoot>/CreatorWorkspaces/<kind>/1`
+#   而 DeriveCreatorSessionId 取的正是**最后一段**当会话 ID —— 序号让同一 kind 的
+#   所有作品共用一个会话 ID,归属判断(SessionMatches)正好靠这个字符串区分作品。
+#   这个错当时写在三处:计划正文、ContentCreatorBridge.h 的声明注释、以及把它当成
+#   现有实现的 §11.5 记录。它值得进这张表,是因为它**看起来完全无害** ——
+#   "路径带序号,以后开第二个作品只改一个数字"读起来像一处合理的前瞻设计。
+#   而唯一能发现它的是把解析器会导出的那个根喂给策略的那条测试。
+#
 # 两侧都要比到东西,零比对不可能报绿。
 set -u
 
@@ -39,6 +48,10 @@ STALE = (
     'Widget 是 Native-only preset',
     'AI 只能读取其状态',
     'cannot preview, generate, or apply widgets',
+
+    # 创作工作区布局:最后一段是会话 ID,不是序号(2026-09-28 撤回)。
+    'CreatorWorkspaces/<kind>/1',
+    'CreatorWorkspaces\\<kind>\\1',
 )
 
 # 这些文件是**更正记录**,不是活的断言。每一条都得说清为什么允许。

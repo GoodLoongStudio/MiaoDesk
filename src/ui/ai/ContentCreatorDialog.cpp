@@ -65,6 +65,7 @@ constexpr int kApplyId = 7822;
 constexpr int kPreviewPlayPauseId = 7823;
 constexpr int kPreviewReloadId = 7824;
 constexpr int kPreviewFullscreenId = 7825;
+constexpr int kApiProfileId = 7826;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
@@ -444,11 +445,13 @@ struct DialogState {
     HINSTANCE instance{};
     HWND owner{};
     HWND window{};
+    std::unique_ptr<L3Agent> ownedAgent;
     L3Agent* agent{};
     PiRuntime* pi{};
     ContentCreatorKind kind{ContentCreatorKind::None};
     HWND heading{};
     HWND note{};
+    HWND apiProfileCombo{};
     HWND transcript{};
     HWND prompt{};
     HWND send{};
@@ -515,6 +518,7 @@ struct DialogState {
     // text is kept to restore.
     std::wstring idleNoteText;
     std::wstring activityText;
+    std::vector<api_runtime_profile::RuntimeProfile> apiProfiles;
     bool activityVisible{};
     ULONGLONG busyStartedAt{};
 
@@ -553,7 +557,7 @@ struct DialogState {
 
     void ApplyFonts() const {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
-        for (HWND child : {note, transcript, prompt, send, clear, previewHeading,
+        for (HWND child : {note, apiProfileCombo, transcript, prompt, send, clear, previewHeading,
                            skillHeading, skillList, skillDetailHeading, skillText,
                            resultNote, preview, previewPlayPause, previewReload,
                            previewFullscreen, library, apply}) {
@@ -607,8 +611,13 @@ struct DialogState {
         };
 
         place(heading, margin, margin, width - margin * 2, compactVertical ? S(26) : S(30));
-        place(note, margin, margin + (compactVertical ? S(28) : S(34)),
-              width - margin * 2, compactVertical ? S(18) : S(22));
+        const int apiW = compactHorizontal ? S(168) : S(220);
+        const int apiY = margin + (compactVertical ? S(26) : S(31));
+        const int noteY = margin + (compactVertical ? S(28) : S(34));
+        place(note, margin, noteY,
+              std::max(S(180), width - margin * 2 - apiW - gap),
+              compactVertical ? S(18) : S(22));
+        place(apiProfileCombo, width - margin - apiW, apiY, apiW, S(220));
 
         // Left: focused conversation workspace.
         place(transcript, margin, bodyTop, leftW, bodyH);
@@ -811,7 +820,7 @@ struct DialogState {
 
     void SetCreatorControlsVisible(bool visible) const {
         const int show = visible ? SW_SHOW : SW_HIDE;
-        for (HWND child : {heading, note, transcript, prompt, send, clear,
+        for (HWND child : {heading, note, apiProfileCombo, transcript, prompt, send, clear,
                            previewHeading, preview, skillHeading, skillList, skillDetailHeading,
                            skillText, resultNote, library, apply}) {
             if (child) ShowWindow(child, show);
@@ -1138,6 +1147,53 @@ struct DialogState {
         SendMessageW(skillText, EM_SETSEL, 0, 0);
     }
 
+    void PopulateApiProfiles() {
+        apiProfiles.clear();
+        if (apiProfileCombo) SendMessageW(apiProfileCombo, CB_RESETCONTENT, 0, 0);
+
+        for (auto profile : api_runtime_profile::LoadAll()) {
+            if (!profile.configured) continue;
+            apiProfiles.push_back(std::move(profile));
+        }
+
+        if (apiProfiles.empty()) {
+            if (apiProfileCombo) {
+                SendMessageW(apiProfileCombo, CB_ADDSTRING, 0,
+                             reinterpret_cast<LPARAM>(L"未配置 API"));
+                SendMessageW(apiProfileCombo, CB_SETCURSEL, 0, 0);
+                EnableWindow(apiProfileCombo, FALSE);
+            }
+            if (agent) agent->SetProfileId({});
+            return;
+        }
+
+        for (const auto& profile : apiProfiles) {
+            const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
+            SendMessageW(apiProfileCombo, CB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(label.c_str()));
+        }
+        SendMessageW(apiProfileCombo, CB_SETCURSEL, 0, 0);
+        EnableWindow(apiProfileCombo, TRUE);
+        if (agent) agent->SetProfileId(apiProfiles.front().id);
+    }
+
+    void SelectApiProfile() {
+        if (busy || !apiProfileCombo || !agent || apiProfiles.empty()) return;
+        const int index = static_cast<int>(SendMessageW(apiProfileCombo, CB_GETCURSEL, 0, 0));
+        if (index < 0 || static_cast<std::size_t>(index) >= apiProfiles.size()) return;
+
+        const auto& profile = apiProfiles[static_cast<std::size_t>(index)];
+        if (_wcsicmp(agent->ProfileId().c_str(), profile.id.c_str()) == 0) return;
+
+        agent->SetProfileId(profile.id);
+        // Provider/model/tool sessions must not carry context across API profiles.
+        // Resetting here changes only this creator window's local L3 agent plus the
+        // shared Pi child process; it does not rewrite the central API profile list.
+        ResetSession();
+        SetWindowTextW(resultNote,
+            (L"已切换 API：" + profile.name + L" · 已开始新的模型会话").c_str());
+    }
+
     void SetBusy(bool value) {
         busy = value;
         // The send button doubles as the stop button, exactly as the conversation
@@ -1147,6 +1203,7 @@ struct DialogState {
         // stop the *conversation* panel's turn too. Leaving it live and labelled
         // 停止 is what makes "取消有明确反馈" achievable here.
         EnableWindow(send, TRUE);
+        if (apiProfileCombo) EnableWindow(apiProfileCombo, value ? FALSE : !apiProfiles.empty());
         SetWindowTextW(send, value ? L"停止" : L"生成");
         if (value) {
             activityVisible = true;
@@ -1684,6 +1741,10 @@ struct DialogState {
         note = label(IsWidget()
             ? L"描述你想要的组件，AI 会根据 Skills 生成并打包成 .mdwidget"
             : L"描述你想要的壁纸，AI 会根据 Skills 生成并打包成 .mdwall");
+        apiProfileCombo = CreateWindowExW(
+            WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+            0, 0, 10, 220, window, ControlId(kApiProfileId), instance, nullptr);
         // The note doubles as the activity line while a turn runs, so its idle text has
         // to survive being overwritten. Captured here rather than recomputed from the
         // kind, because the kind is fixed for the window's lifetime and this keeps the
@@ -1740,10 +1801,11 @@ struct DialogState {
             SendMessageW(skillList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.label));
         SendMessageW(skillList, LB_SETCURSEL, 0, 0);
         ApplyFonts();
+        PopulateApiProfiles();
         ResetSession();
         LoadSkill();
         Layout();
-        return heading && note && transcript && prompt && send && clear &&
+        return heading && note && apiProfileCombo && transcript && prompt && send && clear &&
                previewHeading && previewPane && previewPlayPause && previewReload &&
                previewFullscreen && skillList && skillText;
     }
@@ -1837,6 +1899,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         if (id == kClearId && HIWORD(wParam) == BN_CLICKED) { state->ResetSession(); return 0; }
+        if (id == kApiProfileId && HIWORD(wParam) == CBN_SELCHANGE) { state->SelectApiProfile(); return 0; }
         if (id == kSkillListId && HIWORD(wParam) == LBN_SELCHANGE) { state->LoadSkill(); return 0; }
         if (id >= kPreset1Id && id <= kPreset5Id && HIWORD(wParam) == BN_CLICKED) {
             SetWindowTextW(
@@ -2020,8 +2083,10 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     auto* state = new DialogState{};
     state->instance = instance;
     state->owner = owner;
-    state->agent = &agent;
+    state->ownedAgent = std::make_unique<L3Agent>();
+    state->agent = state->ownedAgent.get();
     state->pi = &SharedConversationPiRuntime();
+    (void)agent; // caller ownership is retained for source compatibility; each creator has its own profile selection.
     state->kind = kind;
 
     // 装上创作 profile。**这一步是整条创作链唯一缺失的那一次调用**:

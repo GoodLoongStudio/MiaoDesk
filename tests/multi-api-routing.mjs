@@ -34,6 +34,8 @@ assert.ok(agent.includes('L"MiaoDesk/ApiProfile/" + config_.profileId'),
 assert.ok(pi.includes("return agent.CurrentApiKey();"),
   "Pi must use the same selected profile credential as the L3 agent");
 assert.ok(pi.includes("setup.apiKey = LoadApiKey(agent);"));
+assert.ok(pi.includes('L"|profile=" + agent.ProfileId()'),
+  "Pi child/session identity must include the selected profile id");
 
 assert.ok(!settings.includes('button(L"设为默认"'),
   "API Configuration Center should not expose a second global-default mechanism");

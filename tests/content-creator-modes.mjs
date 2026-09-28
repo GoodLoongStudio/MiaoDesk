@@ -26,6 +26,16 @@ assert.match(creator, /widget-content/);
 assert.match(creator, /content-review/);
 assert.ok(creator.includes('ExecuteNativeToolRaw("content_skill_get"'));
 assert.ok(creator.includes("SharedConversationPiRuntime()"));
+assert.match(creator, /HWND FindOpenCreatorWindow\(ContentCreatorKind kind\)/,
+  "reopening the same creator kind must activate the existing surface instead of stacking hidden windows");
+assert.match(creator, /void ActivateCreatorWindow\(HWND hwnd\)[\s\S]*SetWindowPos\(hwnd, HWND_TOP[\s\S]*BringWindowToTop\(hwnd\)[\s\S]*SetForegroundWindow\(hwnd\)/,
+  "a creator opened from another foreground process must be explicitly surfaced");
+assert.match(creator, /if \(HWND existing = FindOpenCreatorWindow\(kind\)\)[\s\S]*ActivateCreatorWindow\(existing\);[\s\S]*return true;/,
+  "clicking AI create again must bring the existing creator to the front");
+assert.match(creator, /WS_EX_APPWINDOW, kCreatorWindowClass, title,[\s\S]*placement\.x, placement\.y, placement\.width, placement\.height,[\s\S]*nullptr, nullptr, instance, state/,
+  "the modeless creator must be an independent top-level window, not owned by the hidden SearchWindow");
+assert.match(bridge, /AllowSetForegroundWindow\(targetProcessId\)/,
+  "the foreground Wallpaper Library must grant the running MiaoDesk process permission to activate the creator");
 assert.ok(creator.includes("pi->AskAsync("));
 assert.ok(creator.includes("InstallContentPackage("));
 assert.ok(creator.includes("CreateContentWidget("));

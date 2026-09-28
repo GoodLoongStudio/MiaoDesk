@@ -30,14 +30,13 @@ bool ShowConversationPanel(
 PiRuntime& SharedConversationPiRuntime() noexcept;
 
 // Temporary source/API compatibility only. New UI code must call ShowConversationPanel.
+// The panel owns its profile-selectable L3Agent; the caller reference remains only to
+// preserve the existing source ABI while that migration settles.
 inline bool ShowL3CliWindow(
     HINSTANCE instance,
     HWND owner,
     L3Agent& agent,
     const std::wstring& initialPrompt) {
-    // API settings are edited by the separate MiaoDeskWallpaper settings process.
-    // Always refresh the shared active provider/model snapshot before entering chat.
-    agent.ReloadConfig();
     return ShowConversationPanel(instance, owner, agent, initialPrompt);
 }
 

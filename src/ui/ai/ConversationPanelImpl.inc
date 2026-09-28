@@ -1091,7 +1091,9 @@ void PaintConversation(ConversationState& state, HDC target) {
     DeleteDC(dc);
 }
 
-void PopulateConversationApiProfiles(ConversationState& state) {
+void PopulateConversationApiProfiles(ConversationState& state, bool preserveSelection = false) {
+    const std::wstring previousId =
+        preserveSelection && state.agent ? state.agent->ProfileId() : std::wstring{};
     state.apiProfiles.clear();
     if (!state.apiProfileCombo || !state.agent) return;
     SendMessageW(state.apiProfileCombo, CB_RESETCONTENT, 0, 0);
@@ -1107,17 +1109,37 @@ void PopulateConversationApiProfiles(ConversationState& state) {
         SendMessageW(state.apiProfileCombo, CB_SETCURSEL, 0, 0);
         EnableWindow(state.apiProfileCombo, FALSE);
         state.agent->SetProfileId({});
+        if (!previousId.empty()) {
+            ClearConversation(state);
+            AddEntry(state, EntryKind::System, L"之前选择的 API 已不存在，当前没有可用 API 配置。");
+        }
         return;
     }
 
-    for (const auto& profile : state.apiProfiles) {
+    int selectedIndex = 0;
+    bool preserved = previousId.empty();
+    for (std::size_t i = 0; i < state.apiProfiles.size(); ++i) {
+        const auto& profile = state.apiProfiles[i];
         const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
         SendMessageW(state.apiProfileCombo, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(label.c_str()));
+        if (!previousId.empty() && _wcsicmp(previousId.c_str(), profile.id.c_str()) == 0) {
+            selectedIndex = static_cast<int>(i);
+            preserved = true;
+        }
     }
-    SendMessageW(state.apiProfileCombo, CB_SETCURSEL, 0, 0);
+    SendMessageW(state.apiProfileCombo, CB_SETCURSEL, selectedIndex, 0);
     EnableWindow(state.apiProfileCombo, TRUE);
-    state.agent->SetProfileId(state.apiProfiles.front().id);
+
+    const auto& selected = state.apiProfiles[static_cast<std::size_t>(selectedIndex)];
+    const bool profileChanged =
+        _wcsicmp(state.agent->ProfileId().c_str(), selected.id.c_str()) != 0;
+    state.agent->SetProfileId(selected.id);
+    if (preserveSelection && profileChanged && !previousId.empty() && !preserved) {
+        ClearConversation(state);
+        AddEntry(state, EntryKind::System,
+                 L"之前选择的 API 已被删除，已切换到第一个配置：" + selected.name + L"。");
+    }
 }
 
 void SelectConversationApiProfile(ConversationState& state) {
@@ -1205,6 +1227,10 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     switch (message) {
     case WM_COMMAND:
+        if (LOWORD(wParam) == kApiProfileId && HIWORD(wParam) == CBN_DROPDOWN) {
+            PopulateConversationApiProfiles(*state, true);
+            return 0;
+        }
         if (LOWORD(wParam) == kApiProfileId && HIWORD(wParam) == CBN_SELCHANGE) {
             SelectConversationApiProfile(*state);
             return 0;

@@ -203,6 +203,10 @@ jobs:
         shell: pwsh
         run: .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
 
+      - name: Verify AI creator windows open visibly
+        shell: pwsh
+        run: .\packaging\windows\verify-creator-window.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+
       - name: Verify native Widget visibility
         shell: pwsh
         run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT

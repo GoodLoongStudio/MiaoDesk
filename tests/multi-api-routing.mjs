@@ -62,6 +62,15 @@ for (const [name, source] of [["conversation", conversation], ["creator", creato
 
 assert.ok(conversation.includes('L"API · " + profileName'),
   "conversation header selector must visibly identify itself as an API selector");
+assert.ok(conversation.includes("ShowConversationApiProfileMenu"),
+  "layered conversation surface must open API selection through its own hit target");
+assert.ok(conversation.includes("ShowWindow(state.apiProfileCombo, SW_HIDE)"),
+  "native ComboBox must stay hidden because UpdateLayeredWindow does not composite child pixels");
+const layeredSurface = read("src/ui/ai/ConversationPanelLayeredSurface.inc");
+assert.ok(layeredSurface.includes("selectedApiLabel") &&
+          layeredSurface.includes("FillRoundedRectangle(selector") &&
+          layeredSurface.includes("UpdateConversationApiProfileRect"),
+  "API selector label/border/arrow must be rendered into the Direct2D layered surface");
 assert.ok(conversation.includes("headerIconsLeft") &&
           conversation.includes("comboRight = headerIconsLeft - Px(state, 10)") &&
           conversation.includes("comboX = comboRight - comboW"),

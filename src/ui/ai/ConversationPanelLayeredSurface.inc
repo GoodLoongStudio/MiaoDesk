@@ -438,7 +438,7 @@ bool RenderConversationLayerSurface(ConversationState& state) {
         target, selectedApiLabel, smallFormat.Get(), selectorText.Get(),
         state.apiProfileRect.left + Px(state, 11.0f),
         state.apiProfileRect.top + Px(state, 8.0f),
-        std::max(Px(state, 24.0f),
+        std::max(static_cast<float>(Px(state, 24)),
                  static_cast<float>(state.apiProfileRect.right - state.apiProfileRect.left - Px(state, 32))),
         Px(state, 20.0f));
 

@@ -31,6 +31,7 @@ private:
 
     static std::wstring FindClientBinary();
     static bool PipeAvailable();
+    static bool EnsurePipeAvailable(DWORD waitMs);
 
     std::shared_ptr<SharedState> state_;
 };

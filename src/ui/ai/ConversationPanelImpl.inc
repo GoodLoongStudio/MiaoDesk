@@ -1121,7 +1121,8 @@ void PopulateConversationApiProfiles(ConversationState& state, bool preserveSele
     bool preserved = previousId.empty();
     for (std::size_t i = 0; i < state.apiProfiles.size(); ++i) {
         const auto& profile = state.apiProfiles[i];
-        const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
+        const std::wstring profileName = profile.name.empty() ? L"API 配置" : profile.name;
+        const std::wstring label = L"API · " + profileName;
         SendMessageW(state.apiProfileCombo, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(label.c_str()));
         if (!previousId.empty() && _wcsicmp(previousId.c_str(), profile.id.c_str()) == 0) {
@@ -1176,10 +1177,16 @@ void PositionInput(ConversationState& state) {
     MoveWindow(state.input, Px(state, 38), inputTop + Px(state, 13),
                std::max(Px(state, 120), client.right - Px(state, 76) - sendArea), Px(state, 38), TRUE);
     if (state.apiProfileCombo) {
-        const int availableHeaderWidth = static_cast<int>(client.right) - Px(state, 360);
-        const int comboW = std::max(Px(state, 126),
-                                    std::min(Px(state, 176), availableHeaderWidth));
-        MoveWindow(state.apiProfileCombo, Px(state, 184), Px(state, 18), comboW, Px(state, 220), TRUE);
+        // Keep the API selector in the free slot immediately before the header
+        // action icons. This is the visually stable place the user expects: the
+        // title/status remain on the left and pin/history/more/close stay on the right.
+        const int headerIconsLeft = static_cast<int>(client.right) - Px(state, 174);
+        const int comboRight = headerIconsLeft - Px(state, 10);
+        const int comboLeftLimit = Px(state, 184);
+        const int available = std::max(Px(state, 72), comboRight - comboLeftLimit);
+        const int comboW = std::min(Px(state, 168), available);
+        const int comboX = comboRight - comboW;
+        MoveWindow(state.apiProfileCombo, comboX, Px(state, 17), comboW, Px(state, 220), TRUE);
     }
 }
 
@@ -1483,7 +1490,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     state->apiProfileCombo = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        Px(*state, 184), Px(*state, 18), Px(*state, 176), Px(*state, 220),
+        Px(*state, 218), Px(*state, 17), Px(*state, 168), Px(*state, 220),
         window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApiProfileId)), instance, nullptr);
     if (!state->apiProfileCombo) {
         DestroyWindow(window);

@@ -17,21 +17,26 @@ try {
   if($LASTEXITCODE -ne 0){throw 'git pull failed'}
   $sha=(git rev-parse HEAD).Trim()
   if(-not $sha){throw 'Cannot resolve current git SHA'}
-  & $gh.Source workflow run fast-dev-arm64.yml --repo GoodLoongStudio/MiaoDesk --ref main
+  $dispatchOut=@(& $gh.Source workflow run fast-dev-arm64.yml --repo GoodLoongStudio/MiaoDesk --ref main 2>&1)
+  $dispatchOut|Out-Host
   if($LASTEXITCODE -ne 0){throw 'Cannot trigger Fast ARM64 workflow'}
+  $runId=$null
+  foreach($line in $dispatchOut){
+    if("$line" -match '/actions/runs/(\d+)'){ $runId=[Int64]$Matches[1]; break }
+  }
+  if(-not $runId){throw 'Workflow triggered but run ID could not be parsed'}
 
-  Step "Wait for cloud build of $sha"
+  Step "Wait for cloud build $runId of $sha"
   $run=$null
   for($i=0;$i -lt 90;$i++){
     Start-Sleep -Seconds 5
-    $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Fast Dev" --branch main --limit 10 --json databaseId,headSha,status,conclusion
+    $json=& $gh.Source run view $runId --repo GoodLoongStudio/MiaoDesk --json databaseId,headSha,status,conclusion
     if($LASTEXITCODE -ne 0){continue}
-    $runs=@($json|ConvertFrom-Json)
-    $run=$runs|Where-Object{$_.headSha -eq $sha}|Sort-Object databaseId -Descending|Select-Object -First 1
-    if(-not $run){continue}
-    Write-Host "Run $($run.databaseId): $($run.status) $($run.conclusion)"
+    $run=$json|ConvertFrom-Json
+    if($run.headSha -ne $sha){throw "Triggered run SHA mismatch: expected $sha actual $($run.headSha)"}
+    Write-Host "Run $runId : $($run.status) $($run.conclusion)"
     if($run.status -eq 'completed'){
-      if($run.conclusion -ne 'success'){throw "Fast ARM64 cloud build failed: $($run.conclusion). Run $($run.databaseId)"}
+      if($run.conclusion -ne 'success'){throw "Fast ARM64 cloud build failed: $($run.conclusion). Run $runId"}
       break
     }
   }

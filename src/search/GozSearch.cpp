@@ -221,20 +221,57 @@ bool GozSearch::PipeAvailable() {
     return error == ERROR_SEM_TIMEOUT || error == ERROR_PIPE_BUSY;
 }
 
+bool GozSearch::EnsurePipeAvailable(DWORD waitMs) {
+    if (PipeAvailable()) return true;
+
+    // The installer registers gozd as the "goz" auto-start service, but Windows
+    // upgrades / resume can leave it stopped briefly. Recover it on demand instead
+    // of silently removing file search from the launcher for the whole session.
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (manager) {
+        SC_HANDLE service = OpenServiceW(
+            manager, L"goz", SERVICE_QUERY_STATUS | SERVICE_START);
+        if (service) {
+            SERVICE_STATUS_PROCESS status{};
+            DWORD bytesNeeded = 0;
+            if (QueryServiceStatusEx(
+                    service, SC_STATUS_PROCESS_INFO,
+                    reinterpret_cast<LPBYTE>(&status), sizeof(status), &bytesNeeded)) {
+                if (status.dwCurrentState == SERVICE_STOPPED) {
+                    StartServiceW(service, 0, nullptr);
+                }
+            }
+            CloseServiceHandle(service);
+        }
+        CloseServiceHandle(manager);
+    }
+
+    const ULONGLONG deadline = GetTickCount64() + waitMs;
+    do {
+        if (PipeAvailable()) return true;
+        Sleep(100);
+    } while (GetTickCount64() < deadline);
+    return PipeAvailable();
+}
+
 bool GozSearch::Available() const {
-    return !FindClientBinary().empty() && PipeAvailable();
+    // "Available" means the file-search client is installed. Service readiness is
+    // recovered asynchronously by Query(), so the UI never disables the feature
+    // merely because the named pipe is late during login/resume.
+    return !FindClientBinary().empty();
 }
 
 bool GozSearch::Query(HWND replyWindow, const std::wstring& query, DWORD maxResults) const {
     if (!replyWindow || !IsWindow(replyWindow) || query.empty() || maxResults == 0) return false;
     const auto binary = FindClientBinary();
-    if (binary.empty() || !PipeAvailable()) return false;
+    if (binary.empty()) return false;
 
     const auto state = state_;
     const std::uint64_t generation = state->generation.fetch_add(1, std::memory_order_relaxed) + 1;
     std::thread([state, generation, binary, replyWindow, query, maxResults]() {
         std::vector<std::wstring> paths;
-        const bool succeeded = RunGozQuery(binary, query, maxResults, paths);
+        const bool pipeReady = GozSearch::EnsurePipeAvailable(2000);
+        const bool succeeded = pipeReady && RunGozQuery(binary, query, maxResults, paths);
         if (state->generation.load(std::memory_order_relaxed) != generation || !IsWindow(replyWindow)) return;
 
         // Always notify the UI. Returning silently on a CLI timeout/error leaves
@@ -255,7 +292,7 @@ std::vector<SearchResult> GozSearch::QuerySync(const std::wstring& query, DWORD 
     std::vector<SearchResult> results;
     if (query.empty() || maxResults == 0) return results;
     const auto binary = FindClientBinary();
-    if (binary.empty() || !PipeAvailable()) return results;
+    if (binary.empty() || !EnsurePipeAvailable(1500)) return results;
 
     std::vector<std::wstring> paths;
     if (!RunGozQuery(binary, query, maxResults, paths, kL3SyncQueryTimeoutMs)) return results;

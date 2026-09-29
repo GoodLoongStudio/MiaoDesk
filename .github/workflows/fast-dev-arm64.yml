@@ -1,0 +1,45 @@
+name: Windows ARM64 Fast Dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: arm64-fast-dev
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B C:\b\MiaoDesk\arm64-fast -A ARM64 -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\arm64-fast
+      - name: Incremental build
+        shell: pwsh
+        run: cmake --build C:\b\MiaoDesk\arm64-fast --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+      - name: Refresh runnable package
+        shell: pwsh
+        run: |
+          Remove-Item C:\pkg\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
+          cmake --install C:\b\MiaoDesk\arm64-fast --config Release --prefix C:\pkg\MiaoDesk\arm64-fast
+          .\packaging\windows\stage.ps1 -Destination C:\pkg\MiaoDesk\arm64-fast -Architecture arm64
+      - name: Fast self-tests
+        shell: pwsh
+        run: |
+          foreach ($exe in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
+            & (Join-Path 'C:\pkg\MiaoDesk\arm64-fast' $exe) --self-test
+            if ($LASTEXITCODE -ne 0) { throw "$exe self-test failed" }
+          }
+      - name: Upload runnable ARM64 dev package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiaoDesk-arm64-fast-${{ github.sha }}
+          path: C:\pkg\MiaoDesk\arm64-fast
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 1

@@ -82,6 +82,8 @@ REGIONS = [
      '产品内容:应用图标、壁纸包内的贴图。图片就是产品本身,每张都由引入提交登记。'),
     ('docs/design/',
      '设计参考图的冻结快照,评审要对着看(7b6516a "Freeze Search Bar visual reference")。'),
+    ('docs/hackathon/',
+     'Hackathon 提交材料包含演示视频,由 4d67ea25 "docs: add MiaoDesk hackathon demo video" 明确引入并需随提交材料归档。'),
     ('packaging/store/assets/',
      'Store 展示素材,由 e20114b 一起生成并登记。'),
     ('downloads/store/',

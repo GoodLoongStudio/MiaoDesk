@@ -132,6 +132,7 @@ struct ConversationState {
     RECT pinRect{};
     RECT historyRect{};
     RECT moreRect{};
+    RECT apiProfileRect{};
     RECT confirmRect{};
     RECT cancelRect{};
     RECT viewport{};
@@ -1169,6 +1170,63 @@ void SelectConversationApiProfile(ConversationState& state) {
              L"已切换 API：" + profile.name + L"。这个窗口已开始新的模型会话。");
 }
 
+void UpdateConversationApiProfileRect(ConversationState& state, int clientRight) {
+    const int headerIconsLeft = clientRight - Px(state, 174);
+    const int comboRight = headerIconsLeft - Px(state, 10);
+    const int comboLeftLimit = Px(state, 184);
+    const int available = std::max(Px(state, 72), comboRight - comboLeftLimit);
+    const int comboW = std::min(Px(state, 168), available);
+    const int comboX = comboRight - comboW;
+    state.apiProfileRect = {
+        comboX, Px(state, 17), comboRight, Px(state, 51)
+    };
+}
+
+void ShowConversationApiProfileMenu(ConversationState& state) {
+    if (!state.window || !state.agent) return;
+    if (state.busy || (state.pi && state.pi->Busy())) {
+        AddEntry(state, EntryKind::System, L"当前有 AI 任务正在执行，任务结束后再切换 API。");
+        return;
+    }
+
+    PopulateConversationApiProfiles(state, true);
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+
+    constexpr UINT kApiMenuBase = 0xA100;
+    if (state.apiProfiles.empty()) {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, kApiMenuBase, L"未配置 API");
+    } else {
+        const std::wstring currentId = state.agent->ProfileId();
+        for (std::size_t i = 0; i < state.apiProfiles.size(); ++i) {
+            const auto& profile = state.apiProfiles[i];
+            UINT flags = MF_STRING;
+            if (!currentId.empty() && _wcsicmp(currentId.c_str(), profile.id.c_str()) == 0)
+                flags |= MF_CHECKED;
+            const std::wstring label = profile.name.empty() ? L"API 配置" : profile.name;
+            AppendMenuW(menu, flags, kApiMenuBase + static_cast<UINT>(i), label.c_str());
+        }
+    }
+
+    POINT anchor{state.apiProfileRect.left, state.apiProfileRect.bottom + Px(state, 4)};
+    ClientToScreen(state.window, &anchor);
+    SetForegroundWindow(state.window);
+    const UINT command = TrackPopupMenu(
+        menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        anchor.x, anchor.y, 0, state.window, nullptr);
+    DestroyMenu(menu);
+
+    if (command >= kApiMenuBase) {
+        const std::size_t index = static_cast<std::size_t>(command - kApiMenuBase);
+        if (index < state.apiProfiles.size()) {
+            SendMessageW(state.apiProfileCombo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
+            SelectConversationApiProfile(state);
+        }
+    }
+    InvalidateConversation(state);
+}
+
 void PositionInput(ConversationState& state) {
     RECT client{};
     GetClientRect(state.window, &client);
@@ -1176,17 +1234,16 @@ void PositionInput(ConversationState& state) {
     const int sendArea = Px(state, 62);
     MoveWindow(state.input, Px(state, 38), inputTop + Px(state, 13),
                std::max(Px(state, 120), client.right - Px(state, 76) - sendArea), Px(state, 38), TRUE);
+    UpdateConversationApiProfileRect(state, static_cast<int>(client.right));
     if (state.apiProfileCombo) {
-        // Keep the API selector in the free slot immediately before the header
-        // action icons. This is the visually stable place the user expects: the
-        // title/status remain on the left and pin/history/more/close stay on the right.
-        const int headerIconsLeft = static_cast<int>(client.right) - Px(state, 174);
-        const int comboRight = headerIconsLeft - Px(state, 10);
-        const int comboLeftLimit = Px(state, 184);
-        const int available = std::max(Px(state, 72), comboRight - comboLeftLimit);
-        const int comboW = std::min(Px(state, 168), available);
-        const int comboX = comboRight - comboW;
-        MoveWindow(state.apiProfileCombo, comboX, Px(state, 17), comboW, Px(state, 220), TRUE);
+        // The conversation panel is presented with UpdateLayeredWindow, so normal
+        // child ComboBox pixels are not part of the premultiplied surface. Keep the
+        // ComboBox as a hidden selection model only; the visible selector is drawn
+        // by the Direct2D layered surface and opens a popup menu on click.
+        MoveWindow(state.apiProfileCombo, state.apiProfileRect.left, state.apiProfileRect.top,
+                   std::max(1L, state.apiProfileRect.right - state.apiProfileRect.left),
+                   Px(state, 220), FALSE);
+        ShowWindow(state.apiProfileCombo, SW_HIDE);
     }
 }
 
@@ -1312,6 +1369,10 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             if (state->busy) StopTurn(*state); else SendPrompt(*state);
             return 0;
         }
+        if (PointIn(state->apiProfileRect, point)) {
+            ShowConversationApiProfileMenu(*state);
+            return 0;
+        }
         if (PointIn(state->closeRect, point)) { ShowWindow(hwnd, SW_HIDE); return 0; }
         if (PointIn(state->pinRect, point)) {
             state->pinned = !state->pinned;
@@ -1335,7 +1396,8 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         POINT point{};
         GetCursorPos(&point);
         ScreenToClient(hwnd, &point);
-        if (PointIn(state->sendRect, point) || PointIn(state->closeRect, point) || PointIn(state->pinRect, point) ||
+        if (PointIn(state->sendRect, point) || PointIn(state->apiProfileRect, point) ||
+            PointIn(state->closeRect, point) || PointIn(state->pinRect, point) ||
             PointIn(state->historyRect, point) || PointIn(state->moreRect, point) ||
             (state->pendingConfirmation && (PointIn(state->confirmRect, point) || PointIn(state->cancelRect, point)))) {
             SetCursor(LoadCursorW(nullptr, IDC_HAND));
@@ -1488,8 +1550,8 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SendMessageW(state->input, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"输入消息…"));
 
     state->apiProfileCombo = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+        0, L"COMBOBOX", L"",
+        WS_CHILD | CBS_DROPDOWNLIST | WS_VSCROLL,
         Px(*state, 218), Px(*state, 17), Px(*state, 168), Px(*state, 220),
         window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApiProfileId)), instance, nullptr);
     if (!state->apiProfileCombo) {

@@ -12,35 +12,41 @@ try {
   $gh=Get-Command gh.exe -ErrorAction SilentlyContinue
   if(-not $gh){throw "GitHub CLI (gh) is required. Install gh once and run: gh auth login"}
 
-  Step 'Find latest successful ARM64 cloud build'
-  $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Package" --branch main --status success --limit 1 --json databaseId,headSha,createdAt
-  if($LASTEXITCODE -ne 0){throw 'Cannot query GitHub Actions'}
-  $runs=@($json|ConvertFrom-Json)
-  $run=$runs|Select-Object -First 1
-  if(-not $run){throw 'No successful ARM64 cloud build found'}
-  Write-Host "Run $($run.databaseId) / $($run.headSha)"
+  Step 'Update main and trigger Fast ARM64 cloud build'
+  git pull --ff-only
+  if($LASTEXITCODE -ne 0){throw 'git pull failed'}
+  $sha=(git rev-parse HEAD).Trim()
+  if(-not $sha){throw 'Cannot resolve current git SHA'}
+  & $gh.Source workflow run fast-dev-arm64.yml --repo GoodLoongStudio/MiaoDesk --ref main
+  if($LASTEXITCODE -ne 0){throw 'Cannot trigger Fast ARM64 workflow'}
 
-  $a=& $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/runs/$($run.databaseId)/artifacts"
-  if($LASTEXITCODE -ne 0){throw 'Cannot query artifacts'}
-  $artifactResponse=$a|ConvertFrom-Json
-  $allArtifacts=@($artifactResponse.artifacts)
-  Write-Host "Artifacts:"
-  $allArtifacts|ForEach-Object{Write-Host "  - $($_.name)"}
-  $artifact=$allArtifacts|Where-Object{
-    -not $_.expired -and
-    $_.name -like 'MiaoDesk-windows-arm64-*' -and
-    $_.name -notlike '*installer*'
-  }|Sort-Object created_at -Descending|Select-Object -First 1
-  if(-not $artifact){throw 'No runnable ARM64 package artifact found in this successful run'}
-  Pass "Selected artifact: $($artifact.name)"
+  Step "Wait for cloud build of $sha"
+  $run=$null
+  for($i=0;$i -lt 90;$i++){
+    Start-Sleep -Seconds 5
+    $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Fast Dev" --branch main --limit 10 --json databaseId,headSha,status,conclusion
+    if($LASTEXITCODE -ne 0){continue}
+    $runs=@($json|ConvertFrom-Json)
+    $run=$runs|Where-Object{$_.headSha -eq $sha}|Sort-Object databaseId -Descending|Select-Object -First 1
+    if(-not $run){continue}
+    Write-Host "Run $($run.databaseId): $($run.status) $($run.conclusion)"
+    if($run.status -eq 'completed'){
+      if($run.conclusion -ne 'success'){throw "Fast ARM64 cloud build failed: $($run.conclusion). Run $($run.databaseId)"}
+      break
+    }
+  }
+  if(-not $run -or $run.status -ne 'completed'){throw 'Timed out waiting for Fast ARM64 cloud build'}
+
+  $artifactName="MiaoDesk-arm64-fast-$sha"
+  Pass "Cloud build ready: $artifactName"
 
   $temp=Join-Path $env:TEMP ("MiaoDeskCloudQuick-"+[Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp|Out-Null
   try {
-    Step "Download cloud-built runnable package: $($artifact.name)"
+    Step "Download cloud-built runnable package: $artifactName"
     $fresh=Join-Path $temp 'fresh'
     New-Item -ItemType Directory -Force -Path $fresh|Out-Null
-    & $gh.Source run download $run.databaseId --repo GoodLoongStudio/MiaoDesk --name $artifact.name --dir $fresh
+    & $gh.Source run download $run.databaseId --repo GoodLoongStudio/MiaoDesk --name $artifactName --dir $fresh
     if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
     $source=$fresh
     $exe=Get-ChildItem $fresh -Filter MiaoDesk.exe -File -Recurse|Select-Object -First 1
@@ -69,7 +75,7 @@ try {
       Pass 'MiaoDesk launched'
     }
     Write-Host "";Write-Host 'QUICK CLOUD TEST READY' -ForegroundColor Green
-    Write-Host "Commit: $($run.headSha)"
+    Write-Host "Commit: $sha"
     Write-Host "Run:    $RunRoot"
   } finally { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
 } catch {

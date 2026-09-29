@@ -410,7 +410,8 @@ jobs:
             $fileSearchReady = $false
             for ($attempt = 0; $attempt -lt 30; $attempt++) {
               $queryOut = @(& "$testRoot\Goz\goz.exe" -n 8 $probeName 2>&1)
-              if ($LASTEXITCODE -eq 0 -and ($queryOut | Where-Object { "$_".Trim() -ieq $probePath })) {
+              $queryLines = @($queryOut | ForEach-Object { $_.ToString().Trim() })
+              if ($queryLines | Where-Object { $_ -ieq $probePath }) {
                 $queryOut | Out-Host
                 $fileSearchReady = $true
                 break

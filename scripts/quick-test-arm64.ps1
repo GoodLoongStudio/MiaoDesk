@@ -4,12 +4,14 @@ param(
   [string]$RunRoot = 'C:\pkg\MiaoDesk\arm64-dev',
   [switch]$NoPull,
   [switch]$SkipSelfTest,
-  [switch]$NoLaunch
+  [switch]$NoLaunch,
+  [switch]$PauseOnError
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 function Step($m){Write-Host "";Write-Host "==> $m" -ForegroundColor Cyan}
 function Pass($m){Write-Host "[PASS] $m" -ForegroundColor Green}
+try {
 $arch=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 if($arch -ne 'Arm64'){throw "quick-test-arm64 requires Windows ARM64; detected $arch"}
 Set-Location $SourceRoot
@@ -63,3 +65,12 @@ Write-Host ""
 Write-Host "QUICK ARM64 TEST READY" -ForegroundColor Green
 Write-Host "Build: $BuildRoot"
 Write-Host "Run:   $RunRoot"
+} catch {
+  Write-Host ""
+  Write-Host "QUICK ARM64 TEST FAILED" -ForegroundColor Red
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Tip: run this script from an existing PowerShell window to keep the full build output visible."
+  if($PauseOnError -or $Host.Name -eq 'ConsoleHost'){ Read-Host 'Press Enter to close' | Out-Null }
+  exit 1
+}

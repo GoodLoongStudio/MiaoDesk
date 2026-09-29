@@ -12,40 +12,54 @@ try {
   $gh=Get-Command gh.exe -ErrorAction SilentlyContinue
   if(-not $gh){throw "GitHub CLI (gh) is required. Install gh once and run: gh auth login"}
 
-  Step 'Update main and trigger Fast ARM64 cloud build'
+  Step 'Update main and resolve current commit'
   git pull --ff-only
   if($LASTEXITCODE -ne 0){throw 'git pull failed'}
   $sha=(git rev-parse HEAD).Trim()
   if(-not $sha){throw 'Cannot resolve current git SHA'}
-  $dispatchOut=@(& $gh.Source workflow run fast-dev-arm64.yml --repo GoodLoongStudio/MiaoDesk --ref main 2>&1)
-  $dispatchOut|Out-Host
-  if($LASTEXITCODE -ne 0){throw 'Cannot trigger Fast ARM64 workflow'}
-  $runId=$null
-  foreach($line in $dispatchOut){
-    if("$line" -match '/actions/runs/(\d+)'){ $runId=[Int64]$Matches[1]; break }
-  }
-  if(-not $runId){throw 'Workflow triggered but run ID could not be parsed'}
+  $artifactName="MiaoDesk-arm64-fast-$sha"
 
-  Step "Wait for cloud build $runId of $sha"
+  Step "Find reusable Fast ARM64 artifact for $sha"
   $run=$null
-  for($i=0;$i -lt 90;$i++){
-    Start-Sleep -Seconds 5
-    $json=& $gh.Source run view $runId --repo GoodLoongStudio/MiaoDesk --json databaseId,headSha,status,conclusion
-    if($LASTEXITCODE -ne 0){continue}
-    $run=$json|ConvertFrom-Json
-    if($run.headSha -ne $sha){throw "Triggered run SHA mismatch: expected $sha actual $($run.headSha)"}
-    Write-Host "Run $runId : $($run.status) $($run.conclusion)"
-    if($run.status -eq 'completed'){
-      if($run.conclusion -ne 'success'){throw "Fast ARM64 cloud build failed: $($run.conclusion). Run $runId"}
-      break
+  $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Fast Dev" --branch main --limit 20 --json databaseId,headSha,status,conclusion
+  if($LASTEXITCODE -eq 0){
+    $runs=@($json|ConvertFrom-Json)
+    $candidates=@($runs|Where-Object{$_.headSha -eq $sha -and $_.status -eq 'completed' -and $_.conclusion -eq 'success'}|Sort-Object databaseId -Descending)
+    foreach($candidate in $candidates){
+      $names=@(& $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/runs/$($candidate.databaseId)/artifacts" --jq '.artifacts[] | select(.expired == false) | .name' 2>$null)
+      if($names -contains $artifactName){$run=$candidate;break}
     }
   }
-  if(-not $run -or $run.status -ne 'completed'){throw 'Timed out waiting for Fast ARM64 cloud build'}
 
-  $artifactName="MiaoDesk-arm64-fast-$sha"
-  Pass "Cloud build ready: $artifactName"
+  if($run){
+    Pass "Reuse cloud artifact from run $($run.databaseId)"
+  } else {
+    Step 'No reusable artifact; trigger Fast ARM64 cloud build'
+    $dispatchOut=@(& $gh.Source workflow run fast-dev-arm64.yml --repo GoodLoongStudio/MiaoDesk --ref main 2>&1)
+    $dispatchOut|Out-Host
+    if($LASTEXITCODE -ne 0){throw 'Cannot trigger Fast ARM64 workflow'}
+    $runId=$null
+    foreach($line in $dispatchOut){if("$line" -match '/actions/runs/(\d+)'){$runId=[Int64]$Matches[1];break}}
+    if(-not $runId){throw 'Workflow triggered but run ID could not be parsed'}
 
-  $temp=Join-Path $env:TEMP ("MiaoDeskCloudQuick-"+[Guid]::NewGuid().ToString('N'))
+    Step "Wait for cloud build $runId"
+    for($i=0;$i -lt 90;$i++){
+      Start-Sleep -Seconds 5
+      $view=& $gh.Source run view $runId --repo GoodLoongStudio/MiaoDesk --json databaseId,headSha,status,conclusion
+      if($LASTEXITCODE -ne 0){continue}
+      $run=$view|ConvertFrom-Json
+      if($run.headSha -ne $sha){throw "Triggered run SHA mismatch: expected $sha actual $($run.headSha)"}
+      if($i % 6 -eq 0){Write-Host "Run $runId : $($run.status) $($run.conclusion)"}
+      if($run.status -eq 'completed'){
+        if($run.conclusion -ne 'success'){throw "Fast ARM64 cloud build failed: $($run.conclusion). Run $runId"}
+        break
+      }
+    }
+    if(-not $run -or $run.status -ne 'completed'){throw 'Timed out waiting for Fast ARM64 cloud build'}
+    Pass "Cloud build ready: $artifactName"
+  }
+
+   $temp=Join-Path $env:TEMP ("MiaoDeskCloudQuick-"+[Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp|Out-Null
   try {
     Step "Download cloud-built runnable package: $artifactName"

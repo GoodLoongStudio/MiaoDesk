@@ -60,6 +60,13 @@ for (const [name, source] of [["conversation", conversation], ["creator", creato
     `${name} must fall back to the first configured profile`);
 }
 
+assert.ok(conversation.includes('L"API · " + profileName'),
+  "conversation header selector must visibly identify itself as an API selector");
+assert.ok(conversation.includes("headerIconsLeft") &&
+          conversation.includes("comboRight = headerIconsLeft - Px(state, 10)") &&
+          conversation.includes("comboX = comboRight - comboW"),
+  "conversation API selector must stay anchored immediately before the header action icons");
+
 assert.ok(conversation.includes("state.agent->ReloadConfig();"),
   "conversation must re-read the selected central profile before a model turn");
 assert.ok(creator.includes("agent->ReloadConfig();"),

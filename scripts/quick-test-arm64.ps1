@@ -21,11 +21,17 @@ try {
 
   $a=& $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/runs/$($run.databaseId)/artifacts"
   if($LASTEXITCODE -ne 0){throw 'Cannot query artifacts'}
-  $artifact=@((($a|ConvertFrom-Json).artifacts)|Where-Object{-not $_.expired -and $_.name -like 'MiaoDesk-windows-arm64-package-*'}|Sort-Object created_at -Descending)[0]
-  if(-not $artifact){
-    $artifact=@((($a|ConvertFrom-Json).artifacts)|Where-Object{-not $_.expired -and $_.name -like 'MiaoDesk-windows-arm64-*' -and $_.name -notlike '*installer*'}|Sort-Object created_at -Descending)[0]
-  }
-  if(-not $artifact){throw 'No runnable ARM64 package artifact found'}
+  $artifactResponse=$a|ConvertFrom-Json
+  $allArtifacts=@($artifactResponse.artifacts)
+  Write-Host "Artifacts:"
+  $allArtifacts|ForEach-Object{Write-Host "  - $($_.name)"}
+  $artifact=$allArtifacts|Where-Object{
+    -not $_.expired -and
+    $_.name -like 'MiaoDesk-windows-arm64-*' -and
+    $_.name -notlike '*installer*'
+  }|Sort-Object created_at -Descending|Select-Object -First 1
+  if(-not $artifact){throw 'No runnable ARM64 package artifact found in this successful run'}
+  Pass "Selected artifact: $($artifact.name)"
 
   $temp=Join-Path $env:TEMP ("MiaoDeskCloudQuick-"+[Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp|Out-Null

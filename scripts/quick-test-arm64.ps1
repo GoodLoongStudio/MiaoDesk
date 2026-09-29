@@ -1,76 +1,75 @@
 param(
-  [string]$SourceRoot = (Split-Path $PSScriptRoot -Parent),
-  [string]$BuildRoot = 'C:\b\MiaoDesk\arm64',
-  [string]$RunRoot = 'C:\pkg\MiaoDesk\arm64-dev',
-  [switch]$NoPull,
-  [switch]$SkipSelfTest,
-  [switch]$NoLaunch,
-  [switch]$PauseOnError
+  [string]$RunRoot = 'C:\MiaoDeskDev',
+  [switch]$NoLaunch
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 function Step($m){Write-Host "";Write-Host "==> $m" -ForegroundColor Cyan}
 function Pass($m){Write-Host "[PASS] $m" -ForegroundColor Green}
 try {
-$arch=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-if($arch -ne 'Arm64'){throw "quick-test-arm64 requires Windows ARM64; detected $arch"}
-Set-Location $SourceRoot
+  $arch=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+  if($arch -ne 'Arm64'){throw "Requires Windows ARM64; detected $arch"}
+  $gh=Get-Command gh.exe -ErrorAction SilentlyContinue
+  if(-not $gh){throw "GitHub CLI (gh) is required. Install gh once and run: gh auth login"}
 
-if(-not $NoPull){
-  Step 'Update main'
-  $branch=(git branch --show-current).Trim()
-  if($branch -ne 'main'){throw "Current branch is '$branch'. Switch to main or use -NoPull intentionally."}
-  git pull --ff-only
-  if($LASTEXITCODE -ne 0){throw 'git pull --ff-only failed'}
-}
+  Step 'Find latest successful ARM64 cloud build'
+  $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Package" --branch main --status success --limit 1 --json databaseId,headSha,createdAt
+  if($LASTEXITCODE -ne 0){throw 'Cannot query GitHub Actions'}
+  $run=@($json|ConvertFrom-Json)[0]
+  if(-not $run){throw 'No successful ARM64 cloud build found'}
+  Write-Host "Run $($run.databaseId) / $($run.headSha)"
 
-if(-not(Test-Path (Join-Path $BuildRoot 'CMakeCache.txt'))){
-  Step 'First-time ARM64 configure'
-  New-Item -ItemType Directory -Force -Path (Split-Path $BuildRoot -Parent)|Out-Null
-  cmake -S $SourceRoot -B $BuildRoot -A ARM64 -DCMAKE_INSTALL_PREFIX="$RunRoot"
-  if($LASTEXITCODE -ne 0){throw 'ARM64 configure failed'}
-}
-
-Step 'Incremental build'
-cmake --build $BuildRoot --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
-if($LASTEXITCODE -ne 0){throw 'Incremental ARM64 build failed'}
-Pass 'Incremental build'
-
-Step 'Refresh local runnable tree'
-New-Item -ItemType Directory -Force -Path $RunRoot|Out-Null
-cmake --install $BuildRoot --config Release --prefix $RunRoot
-if($LASTEXITCODE -ne 0){throw 'cmake --install failed'}
-& (Join-Path $SourceRoot 'packaging\windows\stage.ps1') -Destination $RunRoot -Architecture arm64
-if($LASTEXITCODE -ne 0){throw 'Runtime staging failed'}
-Pass "Runnable tree: $RunRoot"
-
-if(-not $SkipSelfTest){
-  Step 'Fast self-tests'
-  foreach($e in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')){
-    $p=Start-Process (Join-Path $RunRoot $e) -ArgumentList '--self-test' -Wait -PassThru
-    if($p.ExitCode -ne 0){throw "$e --self-test failed: $($p.ExitCode)"}
-    Pass "$e --self-test"
+  $a=& $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/runs/$($run.databaseId)/artifacts"
+  if($LASTEXITCODE -ne 0){throw 'Cannot query artifacts'}
+  $artifact=@((($a|ConvertFrom-Json).artifacts)|Where-Object{-not $_.expired -and $_.name -like 'MiaoDesk-windows-arm64-package-*'}|Sort-Object created_at -Descending)[0]
+  if(-not $artifact){
+    $artifact=@((($a|ConvertFrom-Json).artifacts)|Where-Object{-not $_.expired -and $_.name -like 'MiaoDesk-windows-arm64-*' -and $_.name -notlike '*installer*'}|Sort-Object created_at -Descending)[0]
   }
-}
+  if(-not $artifact){throw 'No runnable ARM64 package artifact found'}
 
-if(-not $NoLaunch){
-  Step 'Restart MiaoDesk from dev tree'
-  foreach($name in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')){
-    Get-Process $name -ErrorAction SilentlyContinue|Stop-Process -Force -ErrorAction SilentlyContinue
-  }
-  Start-Process (Join-Path $RunRoot 'MiaoDesk.exe') -WorkingDirectory $RunRoot
-  Pass 'MiaoDesk launched'
-}
-Write-Host ""
-Write-Host "QUICK ARM64 TEST READY" -ForegroundColor Green
-Write-Host "Build: $BuildRoot"
-Write-Host "Run:   $RunRoot"
+  $temp=Join-Path $env:TEMP ("MiaoDeskCloudQuick-"+[Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $temp|Out-Null
+  try {
+    Step "Download cloud-built runnable package: $($artifact.name)"
+    $zip=Join-Path $temp 'package.zip'
+    & $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/artifacts/$($artifact.id)/zip" > $zip
+    if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
+    $fresh=Join-Path $temp 'fresh'
+    Expand-Archive $zip $fresh -Force
+
+    $source=$fresh
+    $exe=Get-ChildItem $fresh -Filter MiaoDesk.exe -File -Recurse|Select-Object -First 1
+    if(-not $exe){throw 'Cloud artifact has no MiaoDesk.exe'}
+    $source=$exe.Directory.FullName
+
+    Step "Hot refresh local dev runtime: $RunRoot"
+    foreach($n in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')){
+      Get-Process $n -ErrorAction SilentlyContinue|Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force -Path $RunRoot|Out-Null
+    robocopy $source $RunRoot /MIR /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+    if($LASTEXITCODE -ge 8){throw "robocopy failed: $LASTEXITCODE"}
+    Pass 'Cloud build copied locally; no installer used'
+
+    Step 'Fast self-tests'
+    foreach($e in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')){
+      $p=Start-Process (Join-Path $RunRoot $e) -ArgumentList '--self-test' -Wait -PassThru
+      if($p.ExitCode -ne 0){throw "$e --self-test failed: $($p.ExitCode)"}
+      Pass "$e --self-test"
+    }
+
+    if(-not $NoLaunch){
+      Step 'Launch latest cloud build'
+      Start-Process (Join-Path $RunRoot 'MiaoDesk.exe') -WorkingDirectory $RunRoot
+      Pass 'MiaoDesk launched'
+    }
+    Write-Host "";Write-Host 'QUICK CLOUD TEST READY' -ForegroundColor Green
+    Write-Host "Commit: $($run.headSha)"
+    Write-Host "Run:    $RunRoot"
+  } finally { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
 } catch {
-  Write-Host ""
-  Write-Host "QUICK ARM64 TEST FAILED" -ForegroundColor Red
+  Write-Host "";Write-Host 'QUICK CLOUD TEST FAILED' -ForegroundColor Red
   Write-Host $_.Exception.Message -ForegroundColor Red
-  Write-Host ""
-  Write-Host "Tip: run this script from an existing PowerShell window to keep the full build output visible."
-  if($PauseOnError -or $Host.Name -eq 'ConsoleHost'){ Read-Host 'Press Enter to close' | Out-Null }
+  Read-Host 'Press Enter to close'|Out-Null
   exit 1
 }

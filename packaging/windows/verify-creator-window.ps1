@@ -155,7 +155,7 @@ try {
 }
 catch {
     $details = ($_ | Out-String).Trim()
-    $details = $details.Replace('%','%25').Replace([char]13,'%0D').Replace([char]10,'%0A')
+    $details = $details.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
     Write-Host "::error title=AI creator window smoke failed::$details"
     throw
 }

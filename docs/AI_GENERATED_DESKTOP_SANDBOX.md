@@ -24,7 +24,7 @@ content package (`ContentKind::Widget`), not markup — so creating one is not t
 
 How the Content Creator is reached: the wallpaper library shows
 `✨ AI 制作组件` on the widget page and `✨ AI 制作壁纸` on the wallpaper page;
-`SearchWindow::OpenContentCreator` opens the dialog (`SearchWindow.cpp:382`).
+`SearchWindow::OpenContentCreator` opens the dialog (`SearchWindow.cpp:386`).
 Its prompt asks the user's requirements first and instructs a *previewable*
 package, explicitly not to reach the desktop unconfirmed.
 

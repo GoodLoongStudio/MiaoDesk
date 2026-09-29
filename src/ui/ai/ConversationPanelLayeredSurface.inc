@@ -412,6 +412,45 @@ bool RenderConversationLayerSurface(ConversationState& state) {
     state.moreRect = {state.closeRect.left - Px(state, 42), iconTop, state.closeRect.left - Px(state, 8), iconTop + iconW};
     state.historyRect = {state.moreRect.left - Px(state, 42), iconTop, state.moreRect.left - Px(state, 8), iconTop + iconW};
     state.pinRect = {state.historyRect.left - Px(state, 42), iconTop, state.historyRect.left - Px(state, 8), iconTop + iconW};
+
+    // Native child controls do not participate in UpdateLayeredWindow's bitmap.
+    // Draw the API selector directly into the same Direct2D surface so its text,
+    // border and arrow are guaranteed to be visible on ARM64/x64 alike.
+    UpdateConversationApiProfileRect(state, static_cast<int>(width));
+    const auto selector = D2D1::RoundedRect(
+        D2D1::RectF(
+            static_cast<float>(state.apiProfileRect.left),
+            static_cast<float>(state.apiProfileRect.top),
+            static_cast<float>(state.apiProfileRect.right),
+            static_cast<float>(state.apiProfileRect.bottom)),
+        static_cast<float>(Px(state, 9)), static_cast<float>(Px(state, 9)));
+    auto selectorFill = LayerBrush(target, 0xFFFFFF, state.busy ? 0.30f : 0.54f);
+    auto selectorOutline = LayerBrush(target, 0xAFC0D7, state.busy ? 0.34f : 0.72f);
+    auto selectorText = LayerBrush(target, state.busy ? 0x8895A8 : 0x44546C, 0.96f);
+    target->FillRoundedRectangle(selector, selectorFill.Get());
+    target->DrawRoundedRectangle(selector, selectorOutline.Get(), 0.9f);
+
+    std::wstring selectedApiName;
+    if (state.agent) selectedApiName = state.agent->ProfileName();
+    if (selectedApiName.empty()) selectedApiName = state.apiProfiles.empty() ? L"未配置 API" : L"API 配置";
+    const std::wstring selectedApiLabel = L"API · " + selectedApiName;
+    LayerText(
+        target, selectedApiLabel, smallFormat.Get(), selectorText.Get(),
+        state.apiProfileRect.left + Px(state, 11.0f),
+        state.apiProfileRect.top + Px(state, 8.0f),
+        std::max(Px(state, 24.0f),
+                 static_cast<float>(state.apiProfileRect.right - state.apiProfileRect.left - Px(state, 32))),
+        Px(state, 20.0f));
+
+    const float arrowX = state.apiProfileRect.right - Px(state, 13.0f);
+    const float arrowY = (state.apiProfileRect.top + state.apiProfileRect.bottom) * 0.5f;
+    target->DrawLine(
+        D2D1::Point2F(arrowX - Px(state, 4.0f), arrowY - Px(state, 2.0f)),
+        D2D1::Point2F(arrowX, arrowY + Px(state, 2.0f)), selectorText.Get(), 1.3f);
+    target->DrawLine(
+        D2D1::Point2F(arrowX, arrowY + Px(state, 2.0f)),
+        D2D1::Point2F(arrowX + Px(state, 4.0f), arrowY - Px(state, 2.0f)), selectorText.Get(), 1.3f);
+
     LayerHeaderIcon(target, symbolFormat.Get(), secondary.Get(), state.pinRect, L"⌖", state.pinned);
     LayerHeaderIcon(target, symbolFormat.Get(), secondary.Get(), state.historyRect, L"↶");
     LayerHeaderIcon(target, symbolFormat.Get(), secondary.Get(), state.moreRect, L"•••");

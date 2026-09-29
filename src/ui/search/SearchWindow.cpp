@@ -369,6 +369,10 @@ bool SearchWindow::SelfTest() {
 
 void SearchWindow::ShowAndFocus() {
     if (!currentQuery_.empty() || !results_.empty()) SetExpanded(true);
+    // Search is a transient launcher, not a document window. Re-anchor it to the
+    // monitor the user is currently working on every time it opens so stale saved
+    // coordinates / monitor changes cannot leave it stuck off-centre.
+    PositionWindow();
     ShowWindow(hwnd_, SW_SHOWNORMAL);
     SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -487,16 +491,12 @@ void SearchWindow::SavePosition() {
 }
 
 void SearchWindow::PositionWindow() {
+    POINT cursor{};
     HMONITOR monitor = nullptr;
-    if (positionLoaded_) {
-        const POINT center{
-            savedX_ + kWindowWidth / 2, savedY_ + kCollapsedHeight / 2};
-        monitor = MonitorFromPoint(center, MONITOR_DEFAULTTONULL);
-    }
-    if (!monitor) {
-        monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
-        positionLoaded_ = false;
-    }
+    if (GetCursorPos(&cursor))
+        monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    if (!monitor)
+        monitor = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY);
 
     MONITORINFO info{sizeof(info)};
     if (!monitor || !GetMonitorInfoW(monitor, &info)) return;
@@ -505,21 +505,23 @@ void SearchWindow::PositionWindow() {
     const int top = info.rcWork.top;
     const int right = info.rcWork.right;
     const int bottom = info.rcWork.bottom;
+    const int workWidth = std::max(1, right - left);
+    const int workHeight = std::max(1, bottom - top);
 
-    int x = positionLoaded_
-        ? std::clamp(savedX_, left, std::max(left, right - kWindowWidth))
-        : left + (right - left - kWindowWidth) / 2;
-    int y = positionLoaded_
-        ? std::clamp(savedY_, top, std::max(top, bottom - kCollapsedHeight))
-        : top + 22;
+    // Horizontally centered. Vertically keep the launcher close to the top while
+    // scaling the breathing room with the monitor height (laptop -> 4K portrait).
+    const int x = left + std::max(0, (workWidth - kWindowWidth) / 2);
+    const int topInset = std::clamp(workHeight / 16, 18, 64);
+    const int y = top + topInset;
 
-    if (!positionLoaded_) {
-        savedX_ = x;
-        savedY_ = y;
-    }
+    savedX_ = x;
+    savedY_ = y;
+    positionLoaded_ = false;
 
-    SetWindowPos(hwnd_, nullptr, x, y, kWindowWidth,
-                 expanded_ ? kExpandedHeight : kCollapsedHeight,
+    SetWindowPos(hwnd_, nullptr,
+                 std::clamp(x, left, std::max(left, right - kWindowWidth)),
+                 std::clamp(y, top, std::max(top, bottom - kCollapsedHeight)),
+                 kWindowWidth, expanded_ ? kExpandedHeight : kCollapsedHeight,
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -813,7 +815,6 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
 
     case WM_DISPLAYCHANGE:
         PositionWindow();
-        SavePosition();
         Draw();
         return 0;
 
@@ -921,11 +922,23 @@ void SearchWindow::OnQueryChanged() {
 
 void SearchWindow::MergeResults() {
     results_.clear();
+    results_.reserve(appResults_.size() + fileResults_.size());
     for (const auto& result : appResults_) results_.push_back(result);
-    for (const auto& result : fileResults_) {
-        if (results_.size() >= 9) break;
-        results_.push_back(result);
-    }
+    for (const auto& result : fileResults_) results_.push_back(result);
+
+    // File results used to be appended after five application results, which made
+    // real files effectively disappear whenever a fuzzy app match existed. Rank
+    // all local results together so an indexed filename can beat weak Start-menu
+    // fuzzy matches while exact/prefix app matches still naturally stay on top.
+    std::stable_sort(results_.begin(), results_.end(),
+        [](const SearchResult& a, const SearchResult& b) {
+            if (a.score != b.score) return a.score > b.score;
+            const bool aFile = a.kind == ResultKind::File || a.kind == ResultKind::Folder;
+            const bool bFile = b.kind == ResultKind::File || b.kind == ResultKind::Folder;
+            if (aFile != bFile) return aFile;
+            return a.title < b.title;
+        });
+    if (results_.size() > 9) results_.resize(9);
 
     const bool hasLocalResults = !results_.empty();
     if (!hasLocalResults && !currentQuery_.empty()) {

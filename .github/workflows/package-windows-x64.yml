@@ -334,6 +334,30 @@ jobs:
                 throw 'Installed goz index service did not become queryable.'
               }
 
+              # Prove real filename lookup, not merely service status. A healthy --status
+              # with a broken query/index path is exactly how file search can disappear in
+              # the UI while packaging still looks green.
+              $probeDir = Join-Path $env:TEMP 'MiaoDesk-Goz-Search-Probe'
+              New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+              $probeName = "miaodesk-goz-$([Guid]::NewGuid().ToString('N')).txt"
+              $probePath = Join-Path $probeDir $probeName
+              Set-Content -LiteralPath $probePath -Value 'MiaoDesk file-search smoke' -Encoding utf8
+              $fileSearchReady = $false
+              for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                $queryOut = @(& "$testRoot\Goz\goz.exe" -n 8 $probeName 2>&1)
+                if ($LASTEXITCODE -eq 0 -and ($queryOut | Where-Object { "$_".Trim() -ieq $probePath })) {
+                  $queryOut | Out-Host
+                  $fileSearchReady = $true
+                  break
+                }
+                Start-Sleep -Seconds 1
+              }
+              Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+              if (-not $fileSearchReady) {
+                $queryOut | Out-Host
+                throw 'Installed goz service is up, but real file lookup did not return the indexed probe file.'
+              }
+
               $desktopLinks = @(
                 (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk.lnk'),
                 (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'MiaoDesk.lnk')

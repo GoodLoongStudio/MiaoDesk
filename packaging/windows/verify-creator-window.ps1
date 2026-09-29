@@ -109,14 +109,14 @@ try {
     Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
 
-    $host = Start-Process -FilePath $exe -ArgumentList '--startup' -WorkingDirectory $ProductRoot -PassThru
+    $appProcess = Start-Process -FilePath $exe -ArgumentList '--startup' -WorkingDirectory $ProductRoot -PassThru
     Start-Sleep -Milliseconds 800
-    if ($host.HasExited) {
-        throw "MiaoDesk creator host exited during startup: $($host.ExitCode)"
+    if ($appProcess.HasExited) {
+        throw "MiaoDesk creator host exited during startup: $($appProcess.ExitCode)"
     }
 
     Invoke-CreatorRequest -Kind 'wallpaper'
-    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$host.Id) -ExpectedCount 1)
+    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$appProcess.Id) -ExpectedCount 1)
     if ($windows.Count -ne 1) {
         throw "Expected exactly one creator after wallpaper request; found $($windows.Count)."
     }
@@ -133,13 +133,13 @@ try {
 
     $firstHandle = $wallpaper.Handle
     Invoke-CreatorRequest -Kind 'wallpaper'
-    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$host.Id) -ExpectedCount 1)
+    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$appProcess.Id) -ExpectedCount 1)
     if ($windows.Count -ne 1 -or $windows[0].Handle -ne $firstHandle) {
         throw 'Repeated wallpaper creator request did not reuse the existing window.'
     }
 
     Invoke-CreatorRequest -Kind 'widget'
-    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$host.Id) -ExpectedCount 2)
+    $windows = @(Wait-CreatorWindows -ProcessId ([uint32]$appProcess.Id) -ExpectedCount 2)
     if ($windows.Count -ne 2) {
         throw "Expected wallpaper + widget creator windows; found $($windows.Count)."
     }

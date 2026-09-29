@@ -173,6 +173,10 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 
 历史 preview / acceptance / evidence / updater 脚本不属于正式工程结构。
 
+## DGX Spark Hackathon
+
+- `docs/hackathon/README.md` — 比赛提交材料总入口（项目说明、部署、技术栈、Skills、演示视频、十日谈、团队资料）
+
 ## 文档
 
 - `docs/DESIGN_BASELINE.md` — 当前唯一设计基线

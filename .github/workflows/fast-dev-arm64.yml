@@ -9,39 +9,88 @@ concurrency:
   group: arm64-fast-dev
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  SCCACHE_GHA_ENABLED: "on"
+  SCCACHE_GHA_VERSION: "miaodesk-arm64-v1"
+  SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+
 jobs:
   build:
     runs-on: windows-11-arm
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
+
+      - name: Setup ARM64 compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.18.0
+
       - name: Generate MiaoMiao app icon
         shell: pwsh
         run: .\scripts\generate-miaomiao-icon.ps1
 
-      - name: Configure
+      - name: Configure and build ARM64 with sccache
         shell: pwsh
-        run: cmake -S . -B C:\b\MiaoDesk\arm64-fast -A ARM64 -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\arm64-fast
-      - name: Incremental build
-        shell: pwsh
-        run: cmake --build C:\b\MiaoDesk\arm64-fast --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere -PathType Leaf)) { throw "vswhere.exe is missing: $vswhere" }
+
+          $vsRoot = (& $vswhere -latest -products * -property installationPath | Select-Object -First 1).Trim()
+          if ([string]::IsNullOrWhiteSpace($vsRoot)) { throw 'Visual Studio installation was not found.' }
+
+          $vsDevCmd = Join-Path $vsRoot 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path $vsDevCmd -PathType Leaf)) { throw "VsDevCmd.bat is missing: $vsDevCmd" }
+
+          $ninja = Get-Command ninja.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+          if (-not $ninja) {
+            $candidate = Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+            if (Test-Path $candidate -PathType Leaf) { $ninja = $candidate }
+          }
+          if (-not $ninja) { throw 'ninja.exe was not found on the ARM64 runner.' }
+
+          Remove-Item C:\b\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path C:\b\MiaoDesk | Out-Null
+
+          $batch = Join-Path $env:RUNNER_TEMP 'miaodesk-arm64-fast.cmd'
+          @"
+          @echo off
+          call "$vsDevCmd" -no_logo -arch=arm64 -host_arch=arm64
+          if errorlevel 1 exit /b %errorlevel%
+          where cl
+          where rc
+          sccache --zero-stats
+          cmake -S "$env:GITHUB_WORKSPACE" -B C:\b\MiaoDesk\arm64-fast -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM="$ninja" -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\arm64-fast
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --build C:\b\MiaoDesk\arm64-fast --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          if errorlevel 1 exit /b %errorlevel%
+          sccache --show-stats
+          "@ | Set-Content $batch -Encoding ascii
+
+          & cmd.exe /d /c $batch
+          if ($LASTEXITCODE -ne 0) { throw "ARM64 sccache build failed: $LASTEXITCODE" }
+
       - name: Refresh fast runnable package
         shell: pwsh
         run: |
           Remove-Item C:\pkg\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
-          cmake --install C:\b\MiaoDesk\arm64-fast --config Release --prefix C:\pkg\MiaoDesk\arm64-fast
+          cmake --install C:\b\MiaoDesk\arm64-fast --prefix C:\pkg\MiaoDesk\arm64-fast
+
       - name: Verify fast delta
         shell: pwsh
         run: |
-          # This artifact is intentionally an overlay, not a standalone install.
-          # Full product self-tests run on the ARM64 test PC after this delta is
-          # applied over the persistent Runtime/AI/Goz baseline.
           foreach ($exe in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
             $path = Join-Path 'C:\pkg\MiaoDesk\arm64-fast' $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "Fast delta is missing $exe" }
             if ((Get-Item $path).Length -lt 4096) { throw "Fast delta has invalid $exe" }
           }
+
       - name: Upload runnable ARM64 dev package
         uses: actions/upload-artifact@v4
         with:

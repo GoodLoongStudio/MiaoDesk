@@ -15,7 +15,8 @@ try {
   Step 'Find latest successful ARM64 cloud build'
   $json=& $gh.Source run list --repo GoodLoongStudio/MiaoDesk --workflow "Windows ARM64 Package" --branch main --status success --limit 1 --json databaseId,headSha,createdAt
   if($LASTEXITCODE -ne 0){throw 'Cannot query GitHub Actions'}
-  $run=@($json|ConvertFrom-Json)[0]
+  $runs=@($json|ConvertFrom-Json)
+  $run=$runs|Select-Object -First 1
   if(-not $run){throw 'No successful ARM64 cloud build found'}
   Write-Host "Run $($run.databaseId) / $($run.headSha)"
 
@@ -37,12 +38,10 @@ try {
   New-Item -ItemType Directory -Force -Path $temp|Out-Null
   try {
     Step "Download cloud-built runnable package: $($artifact.name)"
-    $zip=Join-Path $temp 'package.zip'
-    & $gh.Source api "repos/GoodLoongStudio/MiaoDesk/actions/artifacts/$($artifact.id)/zip" > $zip
-    if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
     $fresh=Join-Path $temp 'fresh'
-    Expand-Archive $zip $fresh -Force
-
+    New-Item -ItemType Directory -Force -Path $fresh|Out-Null
+    & $gh.Source run download $run.databaseId --repo GoodLoongStudio/MiaoDesk --name $artifact.name --dir $fresh
+    if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
     $source=$fresh
     $exe=Get-ChildItem $fresh -Filter MiaoDesk.exe -File -Recurse|Select-Object -First 1
     if(-not $exe){throw 'Cloud artifact has no MiaoDesk.exe'}

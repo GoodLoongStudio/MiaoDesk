@@ -254,10 +254,26 @@ jobs:
     timeout-minutes: 15
     env:
       MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\arm64
-      MIAODESK_INSTALLER_PATH: C:\pkg\MiaoDesk\MiaoDesk-arm64-Setup.exe
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Set UTC+8 installer name
+        id: package_stamp
+        shell: pwsh
+        run: |
+          $utc8 = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'China Standard Time')
+          $stamp = $utc8.ToString('yyyyMMdd-HHmmss')
+          $name = "MiaoDesk-arm64-Setup-$stamp-UTC8.exe"
+          $path = "C:\pkg\MiaoDesk\$name"
+          "MIAODESK_BUILD_STAMP=$stamp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MIAODESK_INSTALLER_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MIAODESK_INSTALLER_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "stamp=$stamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "installer_name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "installer_path=$path" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "UTC+8 build time: $($utc8.ToString('yyyy-MM-dd HH:mm:ss'))"
+          Write-Host "ARM64 installer: $name"
 
       - name: Download ARM64 package
         uses: actions/download-artifact@v4
@@ -340,6 +356,7 @@ jobs:
             throw "NSIS ARM64 installer build failed, exit=$LASTEXITCODE`n$tail"
           }
           if (-not (Test-Path $env:MIAODESK_INSTALLER_PATH -PathType Leaf)) { throw 'ARM64 NSIS installer was not created.' }
+          Write-Host "ARM64 installer name: $env:MIAODESK_INSTALLER_NAME" -ForegroundColor Cyan
           Write-Host "ARM64 installer bytes: $((Get-Item $env:MIAODESK_INSTALLER_PATH).Length)" -ForegroundColor Cyan
 
       - name: Verify ARM64 installer install and uninstall
@@ -413,8 +430,8 @@ jobs:
       - name: Upload ARM64 installer
         uses: actions/upload-artifact@v4
         with:
-          name: MiaoDesk-windows-arm64-installer-${{ github.sha }}
-          path: C:/pkg/MiaoDesk/MiaoDesk-arm64-Setup.exe
+          name: MiaoDesk-windows-arm64-installer-${{ steps.package_stamp.outputs.stamp }}-UTC8-${{ github.sha }}
+          path: ${{ steps.package_stamp.outputs.installer_path }}
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

@@ -109,7 +109,12 @@ const wchar_t* ConversationInputCue(ConversationPanelMode mode) {
 
 void ConfigureConversationMode(ConversationState& state, ConversationPanelMode mode) {
     const bool modeChanged = state.mode != mode;
-    state.mode = mode;
+    if (modeChanged) {
+        // Each surface owns an independent durable conversation scope. Switching
+        // modes restores that scope's active conversation instead of destroying
+        // the timeline the user was working in.
+        ActivateConversationModeSession(state, mode);
+    }
     state.headerTitle = ConversationTitle(mode);
     state.inputCue = ConversationInputCue(mode);
     if (state.window) SetWindowTextW(state.window, state.headerTitle.c_str());
@@ -117,12 +122,6 @@ void ConfigureConversationMode(ConversationState& state, ConversationPanelMode m
         SendMessageW(
             state.input, EM_SETCUEBANNER, TRUE,
             reinterpret_cast<LPARAM>(ConversationInputCue(mode)));
-    }
-    if (modeChanged) {
-        // The creator surfaces share one Pi/L3 runtime, but not one conversational scope.
-        // Switching between General / Wallpaper / Widget resets the model session and visible
-        // timeline so domain instructions and artifacts cannot leak across authoring modes.
-        ClearConversation(state);
     }
 }
 

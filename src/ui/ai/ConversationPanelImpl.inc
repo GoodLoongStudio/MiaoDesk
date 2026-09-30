@@ -1938,9 +1938,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     PopulateConversationApiProfiles(*state);
 
     gConversationState = state;
-    AddEntry(*state, EntryKind::Assistant,
-             ConversationWelcome(state->mode,
-                                 !state->agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()));
+    RestoreActiveConversation(*state);
     ApplyWindowGlass(*state);
     PlacePanel(*state);
     SetTimer(window, kActivityTimer, 180, nullptr);

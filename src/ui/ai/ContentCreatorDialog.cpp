@@ -564,6 +564,7 @@ struct DialogState {
     HWND prompt{};
     HWND send{};
     HWND clear{};
+    HWND history{};
     HWND previewHeading{};
     HWND previewPane{};
     HWND skillHeading{};
@@ -671,7 +672,7 @@ struct DialogState {
 
     void ApplyFonts() const {
         if (heading && titleFont) SendMessageW(heading, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont), TRUE);
-        for (HWND child : {note, apiProfileCombo, transcript, prompt, send, clear, previewHeading,
+        for (HWND child : {note, apiProfileCombo, transcript, prompt, send, clear, history, previewHeading,
                            skillHeading, skillList, skillDetailHeading, skillText,
                            resultNote, preview, previewPlayPause, previewReload,
                            previewFullscreen, library, apply}) {
@@ -767,13 +768,17 @@ struct DialogState {
 
         // Bottom composer spans conversation + preview columns.
         const int composerW = leftW + gap + previewW;
-        const int actionW = compactHorizontal ? S(78) : S(92);
-        const int clearW = compactHorizontal ? S(78) : S(92);
+        const int actionW = compactHorizontal ? S(72) : S(86);
+        const int clearW = compactHorizontal ? S(72) : S(86);
+        const int historyW = compactHorizontal ? S(72) : S(86);
         const int promptH = compactVertical ? S(42) : S(48);
         const int promptTop = footerTop;
+        const int buttonTotal = actionW + clearW + historyW + gap * 3;
         place(prompt, margin, promptTop,
-              std::max(1, composerW - actionW - clearW - gap * 2), promptH);
-        place(send, margin + composerW - actionW - clearW - gap, promptTop, actionW, promptH);
+              std::max(1, composerW - buttonTotal), promptH);
+        const int sendX = margin + composerW - actionW - clearW - historyW - gap * 2;
+        place(send, sendX, promptTop, actionW, promptH);
+        place(history, sendX + actionW + gap, promptTop, historyW, promptH);
         place(clear, margin + composerW - clearW, promptTop, clearW, promptH);
 
         const int presetTop = promptTop + promptH + (compactVertical ? S(5) : S(8));
@@ -1919,10 +1924,7 @@ struct DialogState {
         SendPrompt();
     }
 
-    void ResetSession() {
-        if (pi && pi->Busy()) pi->Stop();
-        if (agent && agent->Busy()) agent->Stop();
-        if (pi) pi->ResetSession();
+    void ResetWorkspaceUi() {
         if (previewFullscreenActive) SetFullscreenPreview(false);
         generatedPackage.clear();
         appliedPackageRoot.clear();
@@ -1940,10 +1942,6 @@ struct DialogState {
         primed = false;
         ClearValidationFailure();
         SetBusy(false);
-        ClearCreatorConversation(kind);
-        SetWindowTextW(transcript, GreetingText().c_str());
-        SaveTranscript();
-        SetWindowTextW(resultNote, L"已开始新对话");
         EnableWindow(preview, FALSE);
         EnableWindow(previewPlayPause, FALSE);
         EnableWindow(previewReload, FALSE);
@@ -1952,6 +1950,93 @@ struct DialogState {
         EnableWindow(apply, FALSE);
         UpdatePreviewChrome();
     }
+
+    bool UseWorkspace(std::wstring_view workspaceRoot) {
+        if (workspaceRoot.empty() || !ActivateCreatorWorkspace(kind, workspaceRoot)) return false;
+        if (pi && pi->Busy()) pi->Stop();
+        if (agent && agent->Busy()) agent->Stop();
+        if (pi) {
+            pi->ResetSession();
+            pi->SetLaunchProfile(miaodesk::MakeCreatorLaunchProfile(
+                miaodesk::paths::PiAgentRoot().wstring(),
+                std::wstring(workspaceRoot), std::wstring{}));
+        }
+        ResetWorkspaceUi();
+        InitializeConversation();
+        return true;
+    }
+
+    void ResetSession() {
+        if (busy) return;
+        SaveTranscript();
+        const std::wstring workspace = StartNewCreatorWorkspace(kind);
+        if (workspace.empty() || !UseWorkspace(workspace)) {
+            SetWindowTextW(resultNote, L"新对话创建失败，请重试");
+            return;
+        }
+        SetWindowTextW(resultNote, L"已开始新对话 · 旧对话仍保留在历史中");
+        SetFocus(prompt);
+    }
+
+    void ShowHistoryMenu() {
+        if (busy) {
+            SetWindowTextW(resultNote, L"当前正在生成，结束后再切换对话");
+            return;
+        }
+
+        const auto workspaces = ListCreatorWorkspaces(kind);
+        HMENU menu = CreatePopupMenu();
+        if (!menu) return;
+        constexpr UINT kHistoryBase = 0xB200;
+        AppendMenuW(menu, MF_STRING, kHistoryBase - 1, L"＋ 新对话");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+        const std::wstring active = ResolveCreatorWorkspaceRoot(kind);
+        std::vector<std::wstring> visible;
+        for (const auto& workspace : workspaces) {
+            const std::wstring transcriptText = LoadCreatorConversationFromWorkspace(workspace);
+            if (transcriptText.empty() && workspace != active) continue;
+            visible.push_back(workspace);
+            if (visible.size() >= 12) break;
+        }
+
+        if (visible.empty()) {
+            AppendMenuW(menu, MF_STRING | MF_GRAYED, kHistoryBase, L"暂无历史对话");
+        } else {
+            for (std::size_t i = 0; i < visible.size(); ++i) {
+                UINT flags = MF_STRING;
+                if (fs::path(visible[i]) == fs::path(active)) flags |= MF_CHECKED;
+                std::wstring label = CreatorConversationTitle(
+                    LoadCreatorConversationFromWorkspace(visible[i]));
+                AppendMenuW(menu, flags, kHistoryBase + static_cast<UINT>(i), label.c_str());
+            }
+        }
+
+        RECT rect{};
+        GetWindowRect(history, &rect);
+        const UINT command = TrackPopupMenu(
+            menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+            rect.left, rect.top, 0, window, nullptr);
+        DestroyMenu(menu);
+
+        if (command == kHistoryBase - 1) {
+            ResetSession();
+            return;
+        }
+        if (command < kHistoryBase) return;
+        const std::size_t index = static_cast<std::size_t>(command - kHistoryBase);
+        if (index >= visible.size()) return;
+        if (fs::path(visible[index]) == fs::path(active)) return;
+
+        SaveTranscript();
+        if (!UseWorkspace(visible[index])) {
+            SetWindowTextW(resultNote, L"历史对话切换失败，请重试");
+            return;
+        }
+        SetWindowTextW(resultNote, L"已切回历史对话 · 可以直接继续");
+        SetFocus(prompt);
+    }
+
 
     bool CreateControls() {
         RebuildFonts();
@@ -1992,6 +2077,7 @@ struct DialogState {
         SendMessageW(prompt, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(
             IsWidget() ? L"例如：做一个玻璃天气组件…" : L"例如：做一个治愈系猫咪动态壁纸…"));
         send = button(L"生成", kSendId, BS_OWNERDRAW);
+        history = button(L"历史", kHistoryId);
         clear = button(L"新对话", kClearId);
         for (int i = 0; i < 5; ++i)
             presets[static_cast<std::size_t>(i)] =
@@ -2034,7 +2120,7 @@ struct DialogState {
         InitializeConversation();
         LoadSkill();
         Layout();
-        return heading && note && apiProfileCombo && transcript && prompt && send && clear &&
+        return heading && note && apiProfileCombo && transcript && prompt && send && history && clear &&
                previewHeading && previewPane && previewPlayPause && previewReload &&
                previewFullscreen && skillList && skillText;
     }
@@ -2153,6 +2239,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
         if (id == kClearId && HIWORD(wParam) == BN_CLICKED) { state->ResetSession(); return 0; }
+        if (id == kHistoryId && HIWORD(wParam) == BN_CLICKED) { state->ShowHistoryMenu(); return 0; }
         if (id == kApiProfileId && HIWORD(wParam) == CBN_DROPDOWN) {
             state->PopulateApiProfiles(true);
             return 0;

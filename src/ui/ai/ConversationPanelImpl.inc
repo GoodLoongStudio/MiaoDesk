@@ -317,7 +317,9 @@ void WriteActiveConversationId(ConversationPanelMode mode, std::wstring_view id)
 }
 
 std::wstring ReadActiveConversationId(ConversationPanelMode mode) {
-    const fs::path path = ConversationScopeRoot(mode) / L"active";
+    const fs::path root = ConversationScopeRoot(mode);
+    if (root.empty()) return {};
+    const fs::path path = root / L"active";
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     const std::string bytes(
@@ -1157,7 +1159,10 @@ LRESULT CALLBACK InputProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
         }
         if (wParam == VK_ESCAPE) {
             if (state->busy) StopTurn(*state);
-            else ShowWindow(state->window, SW_HIDE);
+            else {
+                SaveConversationArchive(*state);
+                ShowWindow(state->window, SW_HIDE);
+            }
             return 0;
         }
     }
@@ -1664,6 +1669,10 @@ void ShowMoreMenu(ConversationState& state) {
     ClientToScreen(state.window, &point);
     const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, state.window, nullptr);
     DestroyMenu(menu);
+    if ((command == 1 || command == 2) && (state.busy || state.pendingConfirmation)) {
+        AddEntry(state, EntryKind::System, L"当前任务结束后再开始或清空对话。");
+        return;
+    }
     if (command == 1) StartNewConversation(state);
     else if (command == 2) ClearCurrentConversation(state);
     else if (command == 3) AddEntry(state, EntryKind::Assistant, RuntimeStatusText(state));
@@ -1749,7 +1758,11 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             ShowConversationApiProfileMenu(*state);
             return 0;
         }
-        if (PointIn(state->closeRect, point)) { ShowWindow(hwnd, SW_HIDE); return 0; }
+        if (PointIn(state->closeRect, point)) {
+            SaveConversationArchive(*state);
+            ShowWindow(hwnd, SW_HIDE);
+            return 0;
+        }
         if (PointIn(state->pinRect, point)) {
             state->pinned = !state->pinned;
             SetWindowPos(hwnd, state->pinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);

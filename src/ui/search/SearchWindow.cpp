@@ -383,19 +383,20 @@ void SearchWindow::ShowAndFocus() {
     Draw();
 }
 
-void SearchWindow::OpenContentCreator(creator::ContentCreatorKind kind) {
-    if (kind == creator::ContentCreatorKind::None) return;
+bool SearchWindow::OpenContentCreator(creator::ContentCreatorKind kind) {
+    if (kind == creator::ContentCreatorKind::None) return false;
 
     if (l3_.Busy()) l3_.Stop();
     SetExpanded(false);
 
     if (!creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)) {
-        SetStatus(L"妙喵 AI 创作窗口启动失败", L"请检查模型配置后重试。");
-        return;
+        SetStatus(L"妙喵 AI 创作窗口启动失败", L"窗口没有成功创建，请查看实时日志后重试。");
+        return false;
     }
 
     SetWindowTextW(edit_, L"");
     SetExpanded(false);
+    return true;
 }
 
 int SearchWindow::RunMessageLoop() {
@@ -795,8 +796,10 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         creator::ContentCreatorKind creatorKind{};
         if (creator::DecodeCopyData(
                 reinterpret_cast<const COPYDATASTRUCT*>(lParam), &creatorKind)) {
-            OpenContentCreator(creatorKind);
-            return TRUE;
+            // WM_COPYDATA is the acknowledgement observed by WallpaperLibrary.
+            // Returning TRUE merely because the request decoded made the library
+            // report "opened" even when CreateWindowExW/WM_CREATE had failed.
+            return OpenContentCreator(creatorKind) ? TRUE : FALSE;
         }
 
         std::vector<SearchResult> received;

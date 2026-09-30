@@ -254,7 +254,10 @@ std::wstring CreatorConversationTitle(std::wstring_view transcript) {
     start += marker.size();
     std::size_t end = transcript.find_first_of(L"\r\n", start);
     if (end == std::wstring_view::npos) end = transcript.size();
-    std::wstring title = Trim(std::wstring(transcript.substr(start, end - start)));
+    std::wstring title(transcript.substr(start, end - start));
+    const auto notSpace = [](wchar_t ch) { return !std::iswspace(ch); };
+    title.erase(title.begin(), std::find_if(title.begin(), title.end(), notSpace));
+    title.erase(std::find_if(title.rbegin(), title.rend(), notSpace).base(), title.end());
     if (title.empty()) return L"新对话";
     constexpr std::size_t kMaxTitle = 28;
     if (title.size() > kMaxTitle) title = title.substr(0, kMaxTitle) + L"…";

@@ -8,6 +8,7 @@
 #include "miaodesk/HarnessProcessManager.h"
 #include "miaodesk/L3Agent.h"
 #include "miaodesk/CreatorToolWorker.h"
+#include "miaodesk/ContentCreatorDialog.h"
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/JsonStringField.h"
 #include "miaodesk/MiaoSceneD2DRenderer.h"
@@ -806,6 +807,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
+    if (args.find(L"--creator-window-self-test") != std::wstring_view::npos) {
+        const int result = miaodesk::creator::ContentCreatorWindowSelfTest(instance) ? 0 : 8;
+        if (SUCCEEDED(com)) CoUninitialize();
+        return result;
+    }
     if (args.find(L"--self-test") != std::wstring_view::npos) {
         const int result = piExtensionReady && RunNativeSelfTest() &&
                            miaodesk::startup::SelfTest() ? 0 : 5;

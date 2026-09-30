@@ -6,9 +6,11 @@
 #include <shellapi.h>
 
 #include <filesystem>
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -50,6 +52,25 @@ std::wstring Utf8ToWideForPath(const std::string& text) {
     return out;
 }
 
+std::string WideToUtf8ForPath(std::wstring_view text) {
+    if (text.empty()) return {};
+    const int count = WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (count <= 0) return {};
+    std::string out(static_cast<std::size_t>(count), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+        out.data(), count, nullptr, nullptr);
+    return out;
+}
+
+fs::path CreatorKindRoot(ContentCreatorKind kind) {
+    const fs::path root = miaodesk::paths::CreatorWorkspacesRoot();
+    if (root.empty() || !Valid(kind)) return {};
+    return root / KindFolder(kind);
+}
+
 // active 文件读出来的是**这段会话身份本身**,不是别的什么。写成别的形状(JSON、
 // 带前后缀的一行)会让"重开复用的到底是哪个目录"变成一个要解析的问题 —— 而这里要的
 // 只是一个目录名。读失败或内容不可用都当"没有",由调用方新建。
@@ -80,20 +101,10 @@ void WriteActiveSession(const fs::path& file, const std::string& session) {
 
 std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
     if (!Valid(kind)) return {};
-    const fs::path root = miaodesk::paths::CreatorWorkspacesRoot();
-    if (root.empty()) return {};
-    const fs::path perKind = root / KindFolder(kind);
+    const fs::path perKind = CreatorKindRoot(kind);
+    if (perKind.empty()) return {};
     miaodesk::paths::EnsureDirectory(perKind);
 
-    // 当前作品记在 <kind>/active 里,内容是**目录名本身**。
-    //
-    // 为什么最后一段必须是会话身份:DeriveCreatorSessionId(workspaceRoot) 取最后一段
-    // 当会话 ID,而 CreatorWorkspacePolicy::SessionMatches 拿它和工具参数里的 sessionId
-    // 比对,ContentCandidateLedger 又用 sessionId 拼 candidateId。写成 "1"/"2" 这种序号
-    // 的话,同一 kind 的所有作品共用一个会话 ID —— 归属判断正是靠它区分作品的。
-    //
-    // 复用规则由计划自己的验收决定:CCA-10 要求"关闭与重开恢复草稿",所以 active 存在时
-    // **复用它**,重开就是同一个工作区。active 不存在才新建,并把新身份写回去。
     const fs::path activeFile = perKind / L"active";
     std::string session = ReadActiveSession(activeFile);
     if (session.empty()) {
@@ -102,12 +113,81 @@ std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
         WriteActiveSession(activeFile, session);
     }
 
-    // 建目录失败也返回路径:装 profile 的价值在于 allowlist 与两个环境变量就位,而目录
-    // 不存在时工具调用会以"路径不在布局内"被拒 —— 那是一次看得见的失败。空工作区会让
-    // 所有工具调用拿一个空根去判定,于是每一条都被拒,而原因看起来像模型写错了路径。
     const fs::path workspace = perKind / fs::path(Utf8ToWideForPath(session));
     miaodesk::paths::EnsureDirectory(workspace);
     return workspace.wstring();
+}
+
+std::wstring StartNewCreatorWorkspace(ContentCreatorKind kind) {
+    if (!Valid(kind)) return {};
+    const fs::path perKind = CreatorKindRoot(kind);
+    if (perKind.empty()) return {};
+    miaodesk::paths::EnsureDirectory(perKind);
+
+    std::string session;
+    fs::path workspace;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto seed = static_cast<std::uint64_t>(::GetTickCount64()) +
+                          static_cast<std::uint64_t>(attempt);
+        session = miaodesk::creator::NewCreatorSessionId(seed);
+        workspace = perKind / fs::path(Utf8ToWideForPath(session));
+        std::error_code ec;
+        if (!fs::exists(workspace, ec)) break;
+        session.clear();
+    }
+    if (session.empty()) return {};
+
+    if (miaodesk::paths::EnsureDirectory(workspace).empty()) return {};
+    WriteActiveSession(perKind / L"active", session);
+    return workspace.wstring();
+}
+
+bool ActivateCreatorWorkspace(ContentCreatorKind kind, std::wstring_view workspaceRoot) {
+    if (!Valid(kind) || workspaceRoot.empty()) return false;
+    const fs::path perKind = CreatorKindRoot(kind);
+    if (perKind.empty()) return false;
+
+    std::error_code ec;
+    const fs::path requested = fs::weakly_canonical(fs::path(workspaceRoot), ec);
+    if (ec || !fs::is_directory(requested, ec)) return false;
+    const fs::path expectedParent = fs::weakly_canonical(perKind, ec);
+    if (ec || requested.parent_path() != expectedParent) return false;
+
+    const std::string session = miaodesk::creator::SanitizeCreatorSessionId(
+        WideToUtf8ForPath(requested.filename().wstring()));
+    if (session.empty() ||
+        Utf8ToWideForPath(session) != requested.filename().wstring()) return false;
+
+    WriteActiveSession(perKind / L"active", session);
+    return true;
+}
+
+std::vector<std::wstring> ListCreatorWorkspaces(ContentCreatorKind kind) {
+    std::vector<std::pair<fs::file_time_type, std::wstring>> ordered;
+    const fs::path perKind = CreatorKindRoot(kind);
+    std::error_code ec;
+    if (perKind.empty() || !fs::is_directory(perKind, ec)) return {};
+
+    for (const auto& entry : fs::directory_iterator(perKind, ec)) {
+        if (ec) break;
+        if (!entry.is_directory(ec)) continue;
+        const std::string session = miaodesk::creator::SanitizeCreatorSessionId(
+            WideToUtf8ForPath(entry.path().filename().wstring()));
+        if (session.empty()) continue;
+        const auto updated = fs::last_write_time(entry.path(), ec);
+        ordered.emplace_back(ec ? fs::file_time_type::min() : updated,
+                             entry.path().wstring());
+        ec.clear();
+    }
+
+    std::sort(ordered.begin(), ordered.end(),
+              [](const auto& left, const auto& right) {
+                  return left.first > right.first;
+              });
+    std::vector<std::wstring> result;
+    result.reserve(ordered.size());
+    for (auto& item : ordered) result.push_back(std::move(item.second));
+    return result;
 }
 
 ContentCreatorKind ParseCommandLine(std::wstring_view commandLine) noexcept {

@@ -23,6 +23,8 @@
 #include <array>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -189,6 +191,78 @@ void AppendText(HWND edit, std::wstring_view text) {
     SendMessageW(edit, EM_SETSEL, length, length);
     SendMessageW(edit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(std::wstring(text).c_str()));
     SendMessageW(edit, EM_SCROLLCARET, 0, 0);
+}
+
+std::string CreatorWideToUtf8(std::wstring_view value) {
+    if (value.empty()) return {};
+    const int count = WideCharToMultiByte(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (count <= 0) return {};
+    std::string out(static_cast<std::size_t>(count), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        out.data(), count, nullptr, nullptr);
+    return out;
+}
+
+std::wstring CreatorUtf8ToWide(std::string_view value) {
+    if (value.empty()) return {};
+    int count = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()),
+        nullptr, 0);
+    if (count <= 0) {
+        count = MultiByteToWideChar(
+            CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    }
+    if (count <= 0) return {};
+    std::wstring out(static_cast<std::size_t>(count), L'\0');
+    MultiByteToWideChar(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        out.data(), count);
+    return out;
+}
+
+fs::path CreatorConversationPath(ContentCreatorKind kind) {
+    const std::wstring workspace = ResolveCreatorWorkspaceRoot(kind);
+    return workspace.empty()
+        ? fs::path{}
+        : fs::path(workspace) / L"conversation.txt";
+}
+
+std::wstring LoadCreatorConversation(ContentCreatorKind kind) {
+    const fs::path path = CreatorConversationPath(kind);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    const std::string bytes(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    return CreatorUtf8ToWide(bytes);
+}
+
+bool SaveCreatorConversation(ContentCreatorKind kind, std::wstring_view text) {
+    const fs::path path = CreatorConversationPath(kind);
+    if (path.empty()) return false;
+    miaodesk::paths::EnsureDirectory(path.parent_path());
+
+    fs::path temporary = path;
+    temporary += L".tmp";
+    const std::string utf8 = CreatorWideToUtf8(text);
+    {
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        if (!output) return false;
+        output.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
+        if (!output) return false;
+    }
+    return MoveFileExW(
+               temporary.c_str(), path.c_str(),
+               MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+}
+
+void ClearCreatorConversation(ContentCreatorKind kind) {
+    const fs::path path = CreatorConversationPath(kind);
+    std::error_code ec;
+    if (!path.empty()) fs::remove(path, ec);
 }
 
 std::wstring Trim(std::wstring value) {
@@ -506,6 +580,11 @@ struct DialogState {
     // silently re-arm the button.
     fs::path appliedPackageRoot;
     std::wstring lastUserPrompt;
+    // Visible history is durable. Closing the creator, exiting MiaoDesk, or
+    // rebooting Windows must reopen the same conversation. A fresh Pi child
+    // process receives this saved context on the first resumed turn.
+    std::wstring restoredConversationContext;
+    bool restoredContextPending{};
     // Progress feedback. Until this existed the creator received the same
     // PiActivityEvent stream the conversation panel does and used it for exactly one
     // thing: hunting for a content-package path in the result text. So a user watching
@@ -1319,7 +1398,7 @@ struct DialogState {
         SetBusy(false);
         SetWindowTextW(resultNote,
             L"已停止本轮生成。已经开始执行的操作可能已经完成，不会被撤销。");
-        AppendText(transcript, L"\r\n\r\n妙喵：本轮已停止。\r\n");
+        AppendTranscript( L"\r\n\r\n妙喵：本轮已停止。\r\n");
     }
 
     content::ContentKind ExpectedKind() const noexcept {
@@ -1369,7 +1448,7 @@ struct DialogState {
         text += L"\r\n校验器：";
         text += message;
         text += L"\r\n（这条报错会自动带给下一次生成，用于修正）\r\n";
-        AppendText(transcript, text);
+        AppendTranscript( text);
     }
 
     void SetGeneratedPackage(const fs::path& path, std::wstring_view repairNote = {}) {
@@ -1640,6 +1719,75 @@ struct DialogState {
         return true;
     }
 
+    std::wstring GreetingText() const {
+        return IsWidget()
+            ? L"妙喵：你好！我是妙喵组件助手。\r\n"
+              L"你可以描述天气、时钟、待办、桌面宠物等组件需求。\r\n"
+              L"我会按右侧 Skills 生成 .mdwidget，并先让你预览确认。\r\n"
+            : L"妙喵：你好！我是妙喵壁纸助手。\r\n"
+              L"你可以描述风格、主题、动态效果和希望保留的桌面可读性。\r\n"
+              L"我会按右侧 Skills 生成 .mdwall，并先让你预览确认。\r\n";
+    }
+
+    void SaveTranscript() const {
+        if (!transcript) return;
+        (void)SaveCreatorConversation(kind, ReadText(transcript));
+    }
+
+    void AppendTranscript(std::wstring_view text) {
+        AppendTranscript( text);
+        SaveTranscript();
+    }
+
+    std::wstring LastUserPromptFromTranscript(std::wstring_view saved) const {
+        constexpr std::wstring_view marker = L"\r\n你：";
+        std::size_t start = saved.rfind(marker);
+        if (start == std::wstring_view::npos) {
+            if (saved.rfind(L"你：", 0) != 0) return {};
+            start = 0;
+        } else {
+            start += marker.size();
+        }
+        if (start == 0 && saved.rfind(L"你：", 0) == 0) start = 2;
+        std::size_t end = saved.find(L"\r\n\r\n妙喵：", start);
+        if (end == std::wstring_view::npos) end = saved.size();
+        return Trim(std::wstring(saved.substr(start, end - start)));
+    }
+
+    bool RestoreTranscript() {
+        const std::wstring saved = LoadCreatorConversation(kind);
+        if (saved.empty()) return false;
+
+        SetWindowTextW(transcript, saved.c_str());
+        SendMessageW(transcript, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+        SendMessageW(transcript, EM_SCROLLCARET, 0, 0);
+
+        constexpr std::size_t kRestoreContextChars = 12000;
+        restoredConversationContext =
+            saved.size() > kRestoreContextChars
+                ? saved.substr(saved.size() - kRestoreContextChars)
+                : saved;
+        restoredContextPending = true;
+        primed = true;
+        lastUserPrompt = LastUserPromptFromTranscript(saved);
+        SetWindowTextW(resultNote, L"已恢复上次对话 · 直接继续说就可以");
+        UpdatePreviewChrome();
+        return true;
+    }
+
+    void InitializeConversation() {
+        SetBusy(false);
+        if (!RestoreTranscript()) {
+            primed = false;
+            restoredContextPending = false;
+            restoredConversationContext.clear();
+            lastUserPrompt.clear();
+            SetWindowTextW(transcript, GreetingText().c_str());
+            SetWindowTextW(resultNote, L"尚未生成内容包 · 生成后先预览，再加入库或应用");
+            SaveTranscript();
+        }
+    }
+
     std::wstring BuildPrompt(std::wstring_view userText) {
         std::wstring request;
         if (!primed) {
@@ -1653,6 +1801,12 @@ struct DialogState {
             request = L"继续当前";
             request += IsWidget() ? L"组件" : L"壁纸";
             request += L"创作任务。继续使用既定 Skills，保持 preview-first；最终再次给出实际存在、目录名带正确 .mdwall/.mdwidget 扩展名且已校验通过的内容包绝对路径。";
+            if (restoredContextPending && !restoredConversationContext.empty()) {
+                request += L"\n\n这是关窗或重启前保存下来的同一段对话。请把它当作已经发生的上下文继续，不要重新自我介绍，也不要让用户重复已经说过的需求。\n【最近对话记录】\n";
+                request += restoredConversationContext;
+                request += L"\n【记录结束】";
+                restoredContextPending = false;
+            }
             // The whole point of keeping the validation error: a model told only "校验未通过"
             // can do nothing but guess, and it will usually produce the same package again.
             // The validator's message names the exact field, so it is actionable.
@@ -1688,7 +1842,7 @@ struct DialogState {
             return;
         }
         lastUserPrompt = text;
-        AppendText(transcript, L"\r\n你：" + text + L"\r\n\r\n妙喵：");
+        AppendTranscript( L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");
         SetBusy(true);
         generatedPackageIsCurrentRound = false;
@@ -1724,7 +1878,10 @@ struct DialogState {
         if (pi) pi->ResetSession();
         if (previewFullscreenActive) SetFullscreenPreview(false);
         generatedPackage.clear();
+        appliedPackageRoot.clear();
         lastUserPrompt.clear();
+        restoredConversationContext.clear();
+        restoredContextPending = false;
         previewState = PreviewSandboxState::Empty;
         StopLivePreview();
         previewRenderError.clear();
@@ -1734,20 +1891,12 @@ struct DialogState {
         }
         if (previewPane) InvalidateRect(previewPane, nullptr, TRUE);
         primed = false;
-        // A new session must not inherit the previous session's validation failure: the
-        // package it described is gone, so feeding it to the model would be asking it to
-        // fix a file that no longer exists.
         ClearValidationFailure();
         SetBusy(false);
-        SetWindowTextW(transcript,
-            IsWidget()
-                ? L"妙喵：你好！我是妙喵组件助手。\r\n"
-                  L"你可以描述天气、时钟、待办、桌面宠物等组件需求。\r\n"
-                  L"我会按右侧 Skills 生成 .mdwidget，并先让你预览确认。\r\n"
-                : L"妙喵：你好！我是妙喵壁纸助手。\r\n"
-                  L"你可以描述风格、主题、动态效果和希望保留的桌面可读性。\r\n"
-                  L"我会按右侧 Skills 生成 .mdwall，并先让你预览确认。\r\n");
-        SetWindowTextW(resultNote, L"尚未生成内容包 · 生成后先预览，再加入库或应用");
+        ClearCreatorConversation(kind);
+        SetWindowTextW(transcript, GreetingText().c_str());
+        SaveTranscript();
+        SetWindowTextW(resultNote, L"已开始新对话");
         EnableWindow(preview, FALSE);
         EnableWindow(previewPlayPause, FALSE);
         EnableWindow(previewReload, FALSE);
@@ -1835,7 +1984,7 @@ struct DialogState {
         SendMessageW(skillList, LB_SETCURSEL, 0, 0);
         ApplyFonts();
         PopulateApiProfiles();
-        ResetSession();
+        InitializeConversation();
         LoadSkill();
         Layout();
         return heading && note && apiProfileCombo && transcript && prompt && send && clear &&
@@ -1996,7 +2145,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     case kAppendDelta: {
         std::unique_ptr<std::wstring> delta(reinterpret_cast<std::wstring*>(lParam));
-        if (delta) AppendText(state->transcript, *delta);
+        if (delta) state->AppendTranscript( *delta);
         return 0;
     }
     case kActivityEvent: {
@@ -2025,12 +2174,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (done && done->find(kBusyRejectionMarker) != std::wstring::npos) {
             SetWindowTextW(state->resultNote,
                 L"没有发出请求：妙喵正在处理对话窗口里的任务。等那边结束，或先在对话里停止，再试一次。");
-            AppendText(state->transcript, L"\r\n妙喵：未发送，当前有任务在进行。\r\n");
+            state->AppendTranscript( L"\r\n妙喵：未发送，当前有任务在进行。\r\n");
             return 0;
         }
 
         if (done) state->InspectForGeneratedPackage(*done);
-        AppendText(state->transcript, L"\r\n");
+        state->AppendTranscript( L"\r\n");
         if (state->stopRequested) {
             // The user cancelled. Do not overwrite that story with the generic
             // "本轮请求结束" wording, and do not imply the cancellation produced
@@ -2067,9 +2216,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         return 0;
     }
     case WM_CLOSE:
+        state->SaveTranscript();
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        state->SaveTranscript();
         if (state->previewFullscreenActive) state->previewFullscreenActive = false;
         state->StopLivePreview();
         if (state->pi && state->pi->Busy()) state->pi->Stop();

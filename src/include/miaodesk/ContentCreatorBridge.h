@@ -26,8 +26,11 @@ enum class ContentCreatorKind : std::uint32_t {
 // WM_COPYDATA stays as a compatibility fallback for older running hosts.
 inline constexpr ULONG_PTR kContentCreatorCopyDataTag = 0x4D444352u; // "MDCR"
 inline constexpr LRESULT kContentCreatorOpenAck = 0x4D444F4Bu; // "MDOK"
+inline constexpr LRESULT kContentCreatorOpenVisible = 0x4D445649u; // "MDVI"
+inline constexpr LRESULT kContentCreatorOpenReady = 0x4D445244u; // "MDRD"
 
 UINT OpenRequestMessage() noexcept;
+UINT OpenStatusMessage() noexcept;
 
 ContentCreatorKind ParseCommandLine(std::wstring_view commandLine) noexcept;
 std::wstring InitialPrompt(ContentCreatorKind kind);

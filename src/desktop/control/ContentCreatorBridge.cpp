@@ -182,7 +182,15 @@ bool OpenConversation(ContentCreatorKind kind, HWND owner, std::wstring* error) 
         if (error) *error = L"未知的内容创作类型。";
         return false;
     }
-    if (SendToRunningApp(kind)) return true;
+    const HWND running = FindWindowW(kSearchWindowClass, nullptr);
+    if (running) {
+        if (SendToRunningApp(kind)) return true;
+        if (error) {
+            *error = L"已找到正在运行的 MiaoDesk，但 AI 创作窗口没有成功创建。"
+                     L"请先关闭旧版 MiaoDesk 后重试，或使用 ARM64 快速测试入口重新启动当前版本。";
+        }
+        return false;
+    }
 
     const fs::path root = miaodesk::paths::ExecutableDirectory();
     const fs::path exe = root / L"MiaoDesk.exe";

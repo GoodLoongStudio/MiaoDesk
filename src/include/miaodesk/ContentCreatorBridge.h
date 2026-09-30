@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace miaodesk::creator {
 
@@ -45,6 +46,9 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs = 3000) noexcept;
 // 本身),它存在就复用,不存在才分配新身份并写回。用户明确要开第二个作品时,
 // 换一段新身份即可,不需要迁移已有目录。
 std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind);
+std::wstring StartNewCreatorWorkspace(ContentCreatorKind kind);
+bool ActivateCreatorWorkspace(ContentCreatorKind kind, std::wstring_view workspaceRoot);
+std::vector<std::wstring> ListCreatorWorkspaces(ContentCreatorKind kind);
 
 // Product-facing entry point used by wallpaper/widget management UI. If the
 // main app is already running this reuses its ConversationPanel. Otherwise it

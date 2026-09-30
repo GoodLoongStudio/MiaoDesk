@@ -24,7 +24,7 @@ public:
 
     bool Create(bool showOnLaunch = true);
     void ShowAndFocus();
-    void OpenContentCreator(creator::ContentCreatorKind kind);
+    bool OpenContentCreator(creator::ContentCreatorKind kind);
     int RunMessageLoop();
     bool SelfTest();
     const std::wstring& LastCreateError() const noexcept { return lastCreateError_; }

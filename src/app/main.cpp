@@ -829,17 +829,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             2, L"无法创建单实例锁，Win32=" + std::to_wstring(mutexError));
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        int forwardedResult = 0;
         if (creatorKind != miaodesk::creator::ContentCreatorKind::None) {
             // The single running MiaoDesk process owns L3/Pi and the conversation
             // surface. Forward creator mode instead of starting a second AI stack.
-            if (!miaodesk::creator::SendToRunningApp(creatorKind))
+            // A creator request is successful only after the existing host reports
+            // that the requested top-level window really exists.
+            if (!miaodesk::creator::SendToRunningApp(creatorKind)) {
                 ActivateExistingSearchWindow();
+                miaodesk::log::Error(
+                    L"CreatorIPC",
+                    L"单实例创作请求转发失败；返回非零退出码。");
+                forwardedResult = 9;
+            }
         } else if (!startupLaunch) {
             ActivateExistingSearchWindow();
         }
         CloseHandle(mutex);
         if (SUCCEEDED(com)) CoUninitialize();
-        return 0;
+        return forwardedResult;
     }
 
     if (!startupLaunch) miaodesk::startup::PromptForConsentIfNeeded();

@@ -140,9 +140,15 @@ assert.match(creator, /!state->generatedPackageIsCurrentRound[\s\S]*?上一版�
 
 assert.ok(search.includes("creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)"));
 assert.match(searchHeader, /bool OpenContentCreator\(creator::ContentCreatorKind kind\)/,
-  "creator opening must return a real success/failure result to the IPC caller");
-assert.match(search, /return OpenContentCreator\(creatorKind\) \? TRUE : FALSE;/,
-  "WM_COPYDATA must acknowledge only an actually opened creator, not merely a decoded request");
+  "deferred creator opening must retain a real success/failure result inside the host");
+assert.match(search, /case kDeferredOpenCreatorMessage:[\s\S]*OpenContentCreator\(kind\)/,
+  "actual creator construction must happen later in the host message loop");
+assert.match(search, /case WM_COPYDATA:[\s\S]*PostMessageW\([\s\S]*kDeferredOpenCreatorMessage[\s\S]*return TRUE;/,
+  "legacy WM_COPYDATA must queue creator construction and ACK immediately");
+assert.doesNotMatch(
+  search.slice(search.indexOf("case WM_COPYDATA:"), search.indexOf("case WM_DISPLAYCHANGE:")),
+  /OpenContentCreator\(/,
+  "cross-process WM_COPYDATA must never synchronously construct the creator window");
 assert.match(bridge, /const HWND running = FindWindowW\(kSearchWindowClass, nullptr\);[\s\S]*if \(running\) \{[\s\S]*if \(SendToRunningApp\(kind\)\) return true;[\s\S]*return false;/,
   "when the running host rejects creator creation, the library must show failure instead of ShellExecute false-success");
 assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/);

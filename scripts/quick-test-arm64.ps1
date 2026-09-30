@@ -99,7 +99,53 @@ if ($needsExactOverlay) {
   }
 }
 
+function Start-ExactDevHost {
+  $targetExe = [IO.Path]::GetFullPath((Join-Path $RunRoot 'MiaoDesk.exe'))
+
+  # A Store/formal install may already have a startup-resident MiaoDesk.exe.
+  # The product is single-instance, so launching the dev EXE while that process
+  # owns the mutex simply exits and all creator IPC continues going to the old
+  # installation. Kill product UI processes before launch, then prove the host
+  # that survives is the EXE from C:\MiaoDeskDev.
+  foreach ($name in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')) {
+    Get-Process $name -ErrorAction SilentlyContinue |
+      Stop-Process -Force -ErrorAction SilentlyContinue
+  }
+  Start-Sleep -Milliseconds 500
+
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $launched = Start-Process $targetExe -WorkingDirectory $RunRoot -PassThru
+    Start-Sleep -Milliseconds 900
+
+    $matches = @(
+      Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+      Where-Object {
+        $_.ExecutablePath -and
+        ([IO.Path]::GetFullPath([string]$_.ExecutablePath) -ieq $targetExe)
+      }
+    )
+    if ($matches.Count -eq 1) {
+      Write-Host "[PASS] Dev MiaoDesk host is active: $targetExe" -ForegroundColor Green
+      return
+    }
+
+    $other = @(
+      Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.ExecutablePath -and ([IO.Path]::GetFullPath([string]$_.ExecutablePath) -ine $targetExe) }
+    )
+    foreach ($process in $other) {
+      try { Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop } catch {}
+    }
+    Start-Sleep -Milliseconds 400
+  }
+
+  $paths = @(
+    Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+    ForEach-Object { [string]$_.ExecutablePath }
+  )
+  throw "Dev MiaoDesk host did not take the singleton. Expected '$targetExe'; running: $($paths -join '; ')"
+}
+
 if (-not $NoLaunch) {
-  Start-Process (Join-Path $RunRoot 'MiaoDesk.exe') -WorkingDirectory $RunRoot
-  Write-Host "[PASS] MiaoDesk launched" -ForegroundColor Green
+  Start-ExactDevHost
 }

@@ -2181,11 +2181,9 @@ struct DialogState {
         if (created && !PostMessageW(window, kInitializeCreatorMessage, 0, 0)) {
             miaodesk::log::Error(
                 L"CreatorWindow",
-                L"AI 创作窗口已创建，但初始化任务入队失败；Win32=" +
+                L"AI 创作窗口已创建，但初始化任务入队失败；改为同步恢复。Win32=" +
                     std::to_wstring(GetLastError()));
-            SetWindowTextW(
-                note,
-                L"窗口已打开，但创作环境初始化失败。请关闭后重试，并查看实时日志。");
+            InitializeAfterOpen();
         }
         return created;
     }

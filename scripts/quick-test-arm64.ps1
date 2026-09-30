@@ -32,9 +32,10 @@ if ($needsExactOverlay) {
 
   $selectedRun = $null
   for ($i=0; $i -lt 120; $i++) {
-    $json = & $gh.Source run list --repo $repo --workflow fast-dev-arm64.yml --branch main --limit 30 --json databaseId,headSha,status,conclusion
+    $json = @(& $gh.Source run list --repo $repo --workflow fast-dev-arm64.yml --branch main --limit 30 --json databaseId,headSha,status,conclusion)
     if ($LASTEXITCODE -ne 0) { throw 'Unable to list Fast ARM64 workflow runs.' }
-    $runs = @($json | ConvertFrom-Json | Where-Object { $_.headSha -eq $sha } | Sort-Object databaseId -Descending)
+    $parsedRuns = ConvertFrom-Json -InputObject ($json -join "`n")
+    $runs = @($parsedRuns | ForEach-Object { $_ } | Where-Object { $_.headSha -eq $sha } | Sort-Object databaseId -Descending)
 
     foreach ($run in @($runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' })) {
       $names = @(& $gh.Source api "repos/$repo/actions/runs/$($run.databaseId)/artifacts" --jq '.artifacts[] | select(.expired == false) | .name' 2>$null)
@@ -54,7 +55,10 @@ if ($needsExactOverlay) {
   $temp = Join-Path $env:TEMP ("MiaoDeskOverlay-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp | Out-Null
   try {
-    & $gh.Source run download $selectedRun.databaseId --repo $repo --name $artifactName --dir $temp
+    $selectedIds = @($selectedRun.databaseId)
+    if ($selectedIds.Count -ne 1) { throw "Expected exactly one Fast ARM64 run ID, got $($selectedIds.Count): $($selectedIds -join ', ')" }
+    [Int64]$selectedRunId = $selectedIds[0]
+    & $gh.Source run download $selectedRunId --repo $repo --name $artifactName --dir $temp
     if ($LASTEXITCODE -ne 0) { throw "Unable to download $artifactName" }
     $exe = Get-ChildItem $temp -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
     if (-not $exe) { throw 'Downloaded ARM64 overlay has no MiaoDesk.exe.' }
@@ -87,7 +91,7 @@ if ($needsExactOverlay) {
     if ($LASTEXITCODE -ne 0) { throw 'Goz file-search service is not queryable after overlay.' }
 
     $state.mode = 'delta'
-    $state.runId = [Int64]$selectedRun.databaseId
+    $state.runId = $selectedRunId
     $state.updatedUtc = [DateTime]::UtcNow.ToString('o')
     $state | ConvertTo-Json | Set-Content $statePath -Encoding utf8
   } finally {

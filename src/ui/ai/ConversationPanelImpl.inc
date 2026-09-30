@@ -986,6 +986,18 @@ void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
     state.pi->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
 }
 
+void ResetConversationRuntime(ConversationState& state) {
+    if (state.pi) state.pi->ResetSession();
+    if (state.agent) {
+        std::wstring ignored;
+        bool consumedSecret = false;
+        // The Direct Model fallback has its own persisted conversation cache.
+        // Reset it when switching UI conversations so a Pi failure cannot leak
+        // context from a different archived chat into the selected one.
+        (void)state.agent->TryHandleLocal(L"/new", ignored, consumedSecret);
+    }
+}
+
 void ResetConversationTransient(ConversationState& state) {
     state.lastPrompt.clear();
     state.streaming.clear();
@@ -1003,7 +1015,7 @@ void ResetConversationTransient(ConversationState& state) {
 }
 
 void ClearCurrentConversation(ConversationState& state) {
-    if (state.pi) state.pi->ResetSession();
+    ResetConversationRuntime(state);
     ResetConversationTransient(state);
     state.entries.clear();
     state.restoredConversationContext.clear();
@@ -1021,7 +1033,7 @@ bool LoadConversationIntoState(ConversationState& state, std::wstring_view id) {
     std::vector<ChatEntry> loaded;
     if (!LoadConversationArchive(state.mode, id, &loaded)) return false;
 
-    if (state.pi) state.pi->ResetSession();
+    ResetConversationRuntime(state);
     ResetConversationTransient(state);
     state.entries = std::move(loaded);
     state.conversationId = std::wstring(id);
@@ -1037,7 +1049,7 @@ bool LoadConversationIntoState(ConversationState& state, std::wstring_view id) {
 
 void StartNewConversation(ConversationState& state) {
     SaveConversationArchive(state);
-    if (state.pi) state.pi->ResetSession();
+    ResetConversationRuntime(state);
     ResetConversationTransient(state);
     state.entries.clear();
     state.conversationId = NewConversationId();

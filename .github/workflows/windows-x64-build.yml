@@ -109,6 +109,17 @@ jobs:
             throw 'x64 build failed.'
           }
 
+      - name: Smoke-test AI creator windows
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse |
+            Select-Object -First 1
+          if (-not $exe) { throw 'MiaoDesk.exe was not found for creator window smoke test.' }
+          $process = Start-Process $exe.FullName -ArgumentList '--creator-window-self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "AI creator window smoke test failed: $($process.ExitCode)"
+          }
+
       - name: Verify image_generate provider parameterisation
         shell: pwsh
         run: |

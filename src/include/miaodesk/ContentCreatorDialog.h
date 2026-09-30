@@ -27,6 +27,12 @@ bool ShowContentCreatorDialog(
 // that source-shape tests and compilation cannot detect.
 bool ContentCreatorWindowSelfTest(HINSTANCE instance);
 
+// Cheap runtime probes used by the cross-process open handshake. They never
+// perform disk/model/tool I/O and are safe to call from SearchWindow's message
+// handler while another process is waiting for the result.
+bool IsContentCreatorDialogOpen(ContentCreatorKind kind) noexcept;
+bool IsContentCreatorDialogReady(ContentCreatorKind kind) noexcept;
+
 
 // HWNDs of the creator surfaces open in this thread that should take part in dialog
 // keyboard navigation.

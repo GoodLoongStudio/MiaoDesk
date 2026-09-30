@@ -686,6 +686,21 @@ LRESULT CALLBACK SearchWindow::EditProc(
 
 LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     const UINT creatorOpenMessage = creator::OpenRequestMessage();
+    const UINT creatorStatusMessage = creator::OpenStatusMessage();
+
+    if (creatorStatusMessage != 0 && message == creatorStatusMessage) {
+        const auto kind = static_cast<creator::ContentCreatorKind>(
+            static_cast<std::uint32_t>(wParam));
+        if (kind != creator::ContentCreatorKind::Wallpaper &&
+            kind != creator::ContentCreatorKind::Widget) {
+            return 0;
+        }
+        if (creator::IsContentCreatorDialogReady(kind))
+            return creator::kContentCreatorOpenReady;
+        if (creator::IsContentCreatorDialogOpen(kind))
+            return creator::kContentCreatorOpenVisible;
+        return 0;
+    }
     if (creatorOpenMessage != 0 && message == creatorOpenMessage) {
         const auto kind = static_cast<creator::ContentCreatorKind>(
             static_cast<std::uint32_t>(wParam));

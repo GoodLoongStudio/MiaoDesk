@@ -385,6 +385,11 @@ bool LoadConversationArchive(
             std::string_view(line).substr(secondTab + 1));
         entries->push_back(std::move(entry));
     }
+    if (!entries->empty() &&
+        entries->back().kind == EntryKind::Assistant &&
+        entries->back().text.empty()) {
+        entries->back().text = L"上次回复在软件退出前被中断，可以直接继续。";
+    }
     return true;
 }
 

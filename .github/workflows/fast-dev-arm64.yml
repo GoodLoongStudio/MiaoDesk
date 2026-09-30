@@ -91,6 +91,15 @@ jobs:
             if ((Get-Item $path).Length -lt 4096) { throw "Fast delta has invalid $exe" }
           }
 
+      - name: Smoke-test AI creator windows
+        shell: pwsh
+        run: |
+          $exe = 'C:\pkg\MiaoDesk\arm64-fast\MiaoDesk.exe'
+          $process = Start-Process $exe -ArgumentList '--creator-window-self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "AI creator window smoke test failed: $($process.ExitCode)"
+          }
+
       - name: Upload runnable ARM64 dev package
         uses: actions/upload-artifact@v4
         with:

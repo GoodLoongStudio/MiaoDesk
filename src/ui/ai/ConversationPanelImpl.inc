@@ -890,6 +890,7 @@ void FinishTurn(ConversationState& state, const std::wstring& rawDone, bool clas
     state.assistantIndex = kNoIndex;
     ClearActivityCard(state);
     SetBusyVisual(state, false);
+    SaveConversationArchive(state);
     InvalidateConversation(state, true);
     if (IsWindowVisible(state.window)) SetFocus(state.input);
 }
@@ -936,6 +937,7 @@ void StopTurn(ConversationState& state) {
     state.assistantIndex = kNoIndex;
     ClearActivityCard(state);
     SetBusyVisual(state, false);
+    SaveConversationArchive(state);
 }
 
 void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
@@ -1088,6 +1090,16 @@ void SendPrompt(ConversationState& state) {
             AppendCompleted(state, typedPrompt, UserFacingLocalReply(lower, state, localReply));
             return;
         }
+    }
+
+    if (!retry && state.restoredContextPending &&
+        !state.restoredConversationContext.empty()) {
+        actualPrompt =
+            L"这是用户切回或重启后恢复的同一段对话。请延续已有上下文，不要重新自我介绍，"
+            L"也不要让用户重复已经说过的信息。\n【最近对话记录】\n" +
+            state.restoredConversationContext +
+            L"\n【记录结束】\n\n用户当前消息：" + actualPrompt;
+        state.restoredContextPending = false;
     }
 
     if (!state.agent->HasApiKey()) {
@@ -1425,7 +1437,7 @@ void PopulateConversationApiProfiles(ConversationState& state, bool preserveSele
         EnableWindow(state.apiProfileCombo, FALSE);
         state.agent->SetProfileId({});
         if (!previousId.empty()) {
-            ClearConversation(state);
+            StartNewConversation(state);
             AddEntry(state, EntryKind::System, L"之前选择的 API 已不存在，当前没有可用 API 配置。");
         }
         return;
@@ -1452,7 +1464,7 @@ void PopulateConversationApiProfiles(ConversationState& state, bool preserveSele
         _wcsicmp(state.agent->ProfileId().c_str(), selected.id.c_str()) != 0;
     state.agent->SetProfileId(selected.id);
     if (preserveSelection && profileChanged && !previousId.empty() && !preserved) {
-        ClearConversation(state);
+        StartNewConversation(state);
         AddEntry(state, EntryKind::System,
                  L"之前选择的 API 已被删除，已切换到第一个配置：" + selected.name + L"。");
     }
@@ -1478,7 +1490,7 @@ void SelectConversationApiProfile(ConversationState& state) {
     if (_wcsicmp(state.agent->ProfileId().c_str(), profile.id.c_str()) == 0) return;
 
     state.agent->SetProfileId(profile.id);
-    ClearConversation(state);
+    StartNewConversation(state);
     AddEntry(state, EntryKind::System,
              L"已切换 API：" + profile.name + L"。这个窗口已开始新的模型会话。");
 }
@@ -1602,7 +1614,8 @@ void ShowMoreMenu(ConversationState& state) {
     ClientToScreen(state.window, &point);
     const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, state.window, nullptr);
     DestroyMenu(menu);
-    if (command == 1 || command == 2) ClearConversation(state);
+    if (command == 1) StartNewConversation(state);
+    else if (command == 2) ClearCurrentConversation(state);
     else if (command == 3) AddEntry(state, EntryKind::Assistant, RuntimeStatusText(state));
 }
 
@@ -1743,11 +1756,13 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     }
 
     case WM_CLOSE:
+        SaveConversationArchive(*state);
         // Closing the panel only hides the surface. Pi/session state keeps running and can be resumed.
         ShowWindow(hwnd, SW_HIDE);
         return 0;
 
     case WM_DESTROY:
+        SaveConversationArchive(*state);
         KillTimer(hwnd, kActivityTimer);
         gCliGeneration.fetch_add(1, std::memory_order_relaxed);
         if (state->agent) state->agent->Stop();

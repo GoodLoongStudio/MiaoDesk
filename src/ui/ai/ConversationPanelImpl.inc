@@ -297,6 +297,14 @@ EntryKind EntryKindFromCode(char code) {
     return EntryKind::Assistant;
 }
 
+std::wstring PersistableConversationText(const ChatEntry& entry) {
+    if (entry.kind != EntryKind::User) return entry.text;
+    const std::wstring trimmed = Trim(entry.text);
+    const std::wstring lower = Lower(trimmed);
+    if (lower.starts_with(L"/key ")) return L"/key ••••••••";
+    return entry.text;
+}
+
 void WriteActiveConversationId(ConversationPanelMode mode, std::wstring_view id) {
     if (!ValidConversationId(id)) return;
     const fs::path root = miaodesk::paths::EnsureDirectory(ConversationScopeRoot(mode));
@@ -342,7 +350,7 @@ bool SaveConversationArchive(const ConversationState& state) {
     for (const auto& entry : state.entries) {
         output << EntryKindCode(entry.kind) << '\t'
                << EscapeConversationField(entry.time) << '\t'
-               << EscapeConversationField(entry.text) << '\n';
+               << EscapeConversationField(PersistableConversationText(entry)) << '\n';
     }
     if (!output) return false;
     output.close();
@@ -1089,7 +1097,11 @@ void SendPrompt(ConversationState& state) {
                 StartNewConversation(state);
                 return;
             }
-            AppendCompleted(state, typedPrompt, UserFacingLocalReply(lower, state, localReply));
+            const std::wstring visiblePrompt =
+                consumedSecret ? L"/key ••••••••" : typedPrompt;
+            AppendCompleted(
+                state, visiblePrompt,
+                UserFacingLocalReply(lower, state, localReply));
             return;
         }
     }

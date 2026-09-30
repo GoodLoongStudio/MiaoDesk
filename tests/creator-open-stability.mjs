@@ -49,3 +49,31 @@ assert.match(creator, /WM_CREATE 控件初始化失败；缺失=/);
 assert.match(creator, /CreateWindowExW 创建 AI 创作窗口失败/);
 
 console.log("creator open stability contract: PASS");
+
+
+// The sender must distinguish "request queued" from "window really exists".
+assert.match(bridgeHeader, /kContentCreatorOpenVisible/);
+assert.match(bridgeHeader, /kContentCreatorOpenReady/);
+assert.match(bridgeHeader, /UINT OpenStatusMessage\(\) noexcept/);
+assert.match(bridge, /MiaoDesk\.ContentCreator\.OpenStatus\.v2/);
+assert.match(bridge, /等待窗口真实创建/);
+assert.match(bridge, /statusMessage[\s\S]*kContentCreatorOpenReady[\s\S]*kContentCreatorOpenVisible/,
+  "a queued request must not be reported successful until the host reports a real window");
+assert.match(search, /message == creatorStatusMessage[\s\S]*IsContentCreatorDialogReady\(kind\)[\s\S]*IsContentCreatorDialogOpen\(kind\)/,
+  "SearchWindow must expose cheap real-window state to the sender");
+
+// Heavy creator state may fail or stall, but it must never prevent the shell from
+// appearing. WM_CREATE creates controls only, then posts the expensive load.
+assert.match(creator, /kInitializeCreatorMessage/);
+assert.match(creator, /SetWindowTextW\(note, L"正在加载 AI 创作环境…"/);
+assert.match(creator, /PostMessageW\(window, kInitializeCreatorMessage/);
+assert.match(creator, /case kInitializeCreatorMessage:[\s\S]*InitializeAfterOpen\(\)/);
+assert.match(creator, /void InitializeAfterOpen\(\)[\s\S]*PopulateApiProfiles\(\)[\s\S]*InitializeConversation\(\)[\s\S]*LoadSkill\(\)/,
+  "API/history/Skill loading must happen only after top-level creator construction");
+const createControls = creator.slice(
+  creator.indexOf("bool CreateControls()"),
+  creator.indexOf("void InitializeAfterOpen()")
+);
+assert.doesNotMatch(createControls, /PopulateApiProfiles\(\);/);
+assert.doesNotMatch(createControls, /InitializeConversation\(\);/);
+assert.doesNotMatch(createControls, /LoadSkill\(\);/);

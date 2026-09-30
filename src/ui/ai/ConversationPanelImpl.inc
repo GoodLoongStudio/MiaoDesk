@@ -1603,6 +1603,56 @@ void PlacePanel(ConversationState& state) {
     PositionInput(state);
 }
 
+void ShowConversationHistoryMenu(ConversationState& state) {
+    if (state.busy || state.pendingConfirmation) {
+        AddEntry(state, EntryKind::System, L"当前任务结束后再切换对话。");
+        return;
+    }
+
+    const auto summaries = ListConversationArchives(state.mode);
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    constexpr UINT kHistoryBase = 0xB500;
+    AppendMenuW(menu, MF_STRING, kHistoryBase - 1, L"＋ 新对话");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+    if (summaries.empty()) {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, kHistoryBase, L"暂无历史对话");
+    } else {
+        const std::size_t count = std::min<std::size_t>(summaries.size(), 12);
+        for (std::size_t i = 0; i < count; ++i) {
+            UINT flags = MF_STRING;
+            if (summaries[i].id == state.conversationId) flags |= MF_CHECKED;
+            AppendMenuW(
+                menu, flags, kHistoryBase + static_cast<UINT>(i),
+                summaries[i].title.c_str());
+        }
+    }
+
+    POINT point{state.historyRect.left, state.historyRect.bottom};
+    ClientToScreen(state.window, &point);
+    const UINT command = TrackPopupMenu(
+        menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+        point.x, point.y, 0, state.window, nullptr);
+    DestroyMenu(menu);
+
+    if (command == kHistoryBase - 1) {
+        StartNewConversation(state);
+        return;
+    }
+    if (command < kHistoryBase) return;
+    const std::size_t index = static_cast<std::size_t>(command - kHistoryBase);
+    if (index >= summaries.size() || index >= 12) return;
+    if (summaries[index].id == state.conversationId) return;
+
+    SaveConversationArchive(state);
+    if (!LoadConversationIntoState(state, summaries[index].id)) {
+        AddEntry(state, EntryKind::System, L"历史对话加载失败，请重试。");
+        return;
+    }
+    AppendRouteLog(L"route: switched to archived conversation " + summaries[index].id);
+}
+
 void ShowMoreMenu(ConversationState& state) {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
@@ -1707,9 +1757,7 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             return 0;
         }
         if (PointIn(state->historyRect, point)) {
-            state->scrollToBottom = false;
-            state->scrollOffset = 0;
-            InvalidateConversation(*state);
+            ShowConversationHistoryMenu(*state);
             return 0;
         }
         if (PointIn(state->moreRect, point)) { ShowMoreMenu(*state); return 0; }

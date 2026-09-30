@@ -1967,7 +1967,10 @@ struct DialogState {
     }
 
     void ResetSession() {
-        if (busy) return;
+        if (busy || (pi && pi->Busy())) {
+            SetWindowTextW(resultNote, L"当前有 AI 任务正在执行，结束后再开始新对话");
+            return;
+        }
         SaveTranscript();
         const std::wstring workspace = StartNewCreatorWorkspace(kind);
         if (workspace.empty() || !UseWorkspace(workspace)) {
@@ -1979,8 +1982,8 @@ struct DialogState {
     }
 
     void ShowHistoryMenu() {
-        if (busy) {
-            SetWindowTextW(resultNote, L"当前正在生成，结束后再切换对话");
+        if (busy || (pi && pi->Busy())) {
+            SetWindowTextW(resultNote, L"当前有 AI 任务正在执行，结束后再切换对话");
             return;
         }
 

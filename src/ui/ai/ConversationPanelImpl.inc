@@ -1,4 +1,5 @@
 #include "miaodesk/L3CliWindow.h"
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
 #include "miaodesk/RuntimeLogPaths.h"
@@ -113,6 +114,9 @@ struct ConversationState {
     std::wstring activePrompt;
     std::wstring pendingTypedPrompt;
     std::wstring pendingActualPrompt;
+    std::wstring conversationId;
+    std::wstring restoredConversationContext;
+    bool restoredContextPending{};
     bool pendingRetry{};
     bool pendingConfirmation{};
     std::uint64_t generation{};

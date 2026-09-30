@@ -95,7 +95,9 @@ function Wait-FastRun([string]$Sha) {
 }
 
 function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
-  $runs = @(Get-Runs 'package-windows-arm64.yml' 35 | Sort-Object databaseId -Descending)
+  Step 'Find a full ARM64 Runtime baseline'
+  $runs = @(Get-Runs 'package-windows-arm64.yml' 12 | Sort-Object databaseId -Descending)
+  Write-Host "Checking up to $($runs.Count) recent ARM64 package runs..."
   foreach ($run in $runs) {
     if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') { continue }
     try {
@@ -230,6 +232,8 @@ try {
   git pull --ff-only
   if ($LASTEXITCODE -ne 0) { throw 'git pull failed' }
   $sha = (& git rev-parse HEAD).Trim()
+  Write-Host "Current commit: $sha"
+  Step 'Inspect local ARM64 dev runtime'
   $baselineKey = Get-BaselineKey 'HEAD'
 
   $state = $null
@@ -243,22 +247,29 @@ try {
     exit 0
   }
 
-  $needFull = (-not $state) -or
-              (-not (Test-Path (Join-Path $RunRoot 'Runtime\Node\node.exe') -PathType Leaf)) -or
-              (-not (Test-Path (Join-Path $RunRoot 'AI\node_modules\pi\dist\cli.js') -PathType Leaf)) -or
-              ([string]$state.baselineKey -ne $baselineKey)
+  $runtimeReady =
+      (Test-Path (Join-Path $RunRoot 'Runtime\Node\node.exe') -PathType Leaf) -and
+      (Test-Path (Join-Path $RunRoot 'AI\node_modules\pi\dist\cli.js') -PathType Leaf) -and
+      (Test-Path (Join-Path $RunRoot 'Goz\goz.exe') -PathType Leaf)
 
-  if (-not $needFull -and $state.installedSha) {
+  $needFull = -not $runtimeReady
+  if ($runtimeReady) {
+    Pass "Reuse existing Runtime/AI/Goz baseline at $RunRoot"
+  } else {
+    Write-Host "Local Runtime baseline is incomplete; one full ARM64 package is required." -ForegroundColor Yellow
+  }
+
+  if (-not $needFull -and $state -and $state.installedSha) {
     Ensure-Commit ([string]$state.installedSha)
     & git merge-base --is-ancestor $state.installedSha HEAD 2>$null
     if ($LASTEXITCODE -ne 0) {
-      $needFull = $true
+      Write-Host "Previous installed SHA is not an ancestor; keeping the local Runtime baseline and replacing the product overlay." -ForegroundColor Yellow
     } else {
       foreach ($line in @(& git diff --name-status $state.installedSha HEAD)) {
         $p = "$line" -split "`t"
         if ($p.Count -ge 2 -and $p[0] -match '^[DR]' -and
             ($p[-1] -match '^(assets/(app|wallpapers|widgets)/|config/|skills/)')) {
-          $needFull = $true
+          Write-Host "Packaged product files were removed/renamed; the overlay layer will be replaced cleanly." -ForegroundColor Yellow
           break
         }
       }
@@ -269,6 +280,7 @@ try {
   New-Item -ItemType Directory -Force -Path $temp | Out-Null
   try {
     if ($needFull) {
+      Write-Host "No reusable local Runtime baseline found." -ForegroundColor Yellow
       $info = Find-CompatibleFullRun $baselineKey $sha
       $source = Download-Artifact $info (Join-Path $temp 'full')
       Apply-Full $source

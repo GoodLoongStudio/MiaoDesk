@@ -74,6 +74,7 @@ constexpr int kApiProfileId = 7826;
 constexpr UINT kAppendDelta = WM_APP + 0x311;
 constexpr UINT kRequestDone = WM_APP + 0x312;
 constexpr UINT kActivityEvent = WM_APP + 0x313;
+constexpr UINT kInitializeCreatorMessage = WM_APP + 0x314;
 
 // What PiRuntime emits when AskAsync is refused because a turn already owns the
 // shared runtime. Matched only so the user is told the truth about a request that
@@ -643,6 +644,7 @@ struct DialogState {
     // WM_DESTROY before CreateWindowExW returns; deleting there and again in
     // the caller was a double free.
     bool windowOwnsLifetime{};
+    bool creatorInitialized{};
 
     ~DialogState() {
         if (window) KillTimer(window, kPreviewTimerId);
@@ -1887,6 +1889,10 @@ struct DialogState {
     }
 
     void SendPrompt() {
+        if (!creatorInitialized) {
+            SetWindowTextW(resultNote, L"AI 创作环境仍在加载，请稍候。");
+            return;
+        }
         if (!agent || !pi || busy) return;
         std::wstring text = Trim(ReadText(prompt));
         if (text.empty()) {
@@ -1974,6 +1980,7 @@ struct DialogState {
     }
 
     void ResetSession() {
+        if (!creatorInitialized) return;
         if (busy || (pi && pi->Busy())) {
             SetWindowTextW(resultNote, L"当前有 AI 任务正在执行，结束后再开始新对话");
             return;
@@ -1989,6 +1996,7 @@ struct DialogState {
     }
 
     void ShowHistoryMenu() {
+        if (!creatorInitialized) return;
         if (busy || (pi && pi->Busy())) {
             SetWindowTextW(resultNote, L"当前有 AI 任务正在执行，结束后再切换对话");
             return;
@@ -2126,10 +2134,18 @@ struct DialogState {
             SendMessageW(skillList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.label));
         SendMessageW(skillList, LB_SETCURSEL, 0, 0);
         ApplyFonts();
-        PopulateApiProfiles();
-        InitializeConversation();
-        LoadSkill();
         Layout();
+
+        // WM_CREATE owns only cheap Win32 control construction. API profile I/O,
+        // conversation restore, and Skill tool loading are deliberately deferred
+        // until after CreateWindowExW has returned and the top-level surface can
+        // already be shown. A slow/corrupt external dependency must never turn
+        // "loading creator data" into "the creator window did not open".
+        SetWindowTextW(note, L"正在加载 AI 创作环境…");
+        EnableWindow(send, FALSE);
+        EnableWindow(history, FALSE);
+        EnableWindow(clear, FALSE);
+
         const bool created =
             heading && note && apiProfileCombo && transcript && prompt &&
             send && history && clear && previewHeading && previewPane &&
@@ -2162,7 +2178,36 @@ struct DialogState {
                 L"WM_CREATE 控件初始化失败；缺失=" + missing +
                     L"；Win32=" + std::to_wstring(GetLastError()));
         }
+        if (created && !PostMessageW(window, kInitializeCreatorMessage, 0, 0)) {
+            miaodesk::log::Error(
+                L"CreatorWindow",
+                L"AI 创作窗口已创建，但初始化任务入队失败；Win32=" +
+                    std::to_wstring(GetLastError()));
+            SetWindowTextW(
+                note,
+                L"窗口已打开，但创作环境初始化失败。请关闭后重试，并查看实时日志。");
+        }
         return created;
+    }
+
+    void InitializeAfterOpen() {
+        if (creatorInitialized) return;
+        miaodesk::log::Info(
+            L"CreatorWindow",
+            L"窗口已可见，开始加载 API、对话历史与 Skill。");
+        PopulateApiProfiles();
+        InitializeConversation();
+        LoadSkill();
+        creatorInitialized = true;
+        EnableWindow(send, TRUE);
+        EnableWindow(history, TRUE);
+        EnableWindow(clear, TRUE);
+        RefreshActivityLine();
+        Layout();
+        if (window) InvalidateRect(window, nullptr, TRUE);
+        miaodesk::log::Info(
+            L"CreatorWindow",
+            L"AI 创作环境初始化完成。");
     }
 };
 
@@ -2205,6 +2250,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     switch (message) {
     case WM_CREATE:
         return state->CreateControls() ? 0 : -1;
+    case kInitializeCreatorMessage:
+        state->InitializeAfterOpen();
+        return 0;
     case WM_GETMINMAXINFO: {
         auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
         if (info) {

@@ -22,6 +22,12 @@ bool ShowContentCreatorDialog(
     L3Agent& agent,
     ContentCreatorKind kind);
 
+// Real Win32 smoke test used by Windows CI. It creates and destroys both creator
+// surfaces through the production path, catching WM_CREATE/lifetime regressions
+// that source-shape tests and compilation cannot detect.
+bool ContentCreatorWindowSelfTest(HINSTANCE instance);
+
+
 // HWNDs of the creator surfaces open in this thread that should take part in dialog
 // keyboard navigation.
 //

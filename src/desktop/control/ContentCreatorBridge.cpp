@@ -340,8 +340,9 @@ bool OpenConversation(ContentCreatorKind kind, HWND owner, std::wstring* error) 
     if (running) {
         if (SendToRunningApp(kind)) return true;
         if (error) {
-            *error = L"已找到正在运行的 MiaoDesk，但 AI 创作窗口没有成功创建。"
-                     L"请先关闭旧版 MiaoDesk 后重试，或使用 ARM64 快速测试入口重新启动当前版本。";
+            *error = L"已找到正在运行的 MiaoDesk，但 AI 创作窗口没有进入可见状态。"
+                     L"这通常表示运行中的主程序版本过旧，或窗口创建阶段失败。"
+                     L"请用当前版本重新启动妙喵；实时日志中的 CreatorIPC / CreatorWindow 会给出具体失败阶段。";
         }
         return false;
     }

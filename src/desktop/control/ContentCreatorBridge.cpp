@@ -106,6 +106,12 @@ UINT OpenRequestMessage() noexcept {
     return message;
 }
 
+UINT OpenStatusMessage() noexcept {
+    static const UINT message = RegisterWindowMessageW(
+        L"MiaoDesk.ContentCreator.OpenStatus.v2");
+    return message;
+}
+
 std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
     if (!Valid(kind)) return {};
     const fs::path perKind = CreatorKindRoot(kind);
@@ -250,11 +256,10 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
     if (targetProcessId && targetProcessId != GetCurrentProcessId())
         AllowSetForegroundWindow(targetProcessId);
 
-    // v2: the receiver only queues creation and returns the magic ACK. This
-    // keeps API/profile/history/Skill loading completely outside the sender's
-    // synchronous timeout.
     const UINT openMessage = OpenRequestMessage();
-    if (openMessage != 0) {
+    const UINT statusMessage = OpenStatusMessage();
+
+    if (openMessage != 0 && statusMessage != 0) {
         DWORD_PTR result = 0;
         const DWORD quickTimeout = (std::min<DWORD>)(timeoutMs, 1000);
         const LRESULT sent = SendMessageTimeoutW(
@@ -264,19 +269,48 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
             static_cast<LRESULT>(result) == kContentCreatorOpenAck) {
             miaodesk::log::Info(
                 L"CreatorIPC",
-                L"AI 创作请求已由 v2 宿主排队，kind=" +
+                L"AI 创作请求已入队，等待窗口真实创建，kind=" +
                     std::to_wstring(static_cast<std::uint32_t>(kind)));
-            return true;
+
+            // Creation is deliberately deferred out of the IPC callback. Wait only
+            // for the lightweight top-level window to exist; heavy API/history/Skill
+            // loading happens after the window is already visible.
+            const ULONGLONG deadline =
+                GetTickCount64() + (std::max<DWORD>)(timeoutMs, 2500);
+            while (GetTickCount64() < deadline) {
+                DWORD_PTR status = 0;
+                const LRESULT statusSent = SendMessageTimeoutW(
+                    target, statusMessage, static_cast<WPARAM>(kind), 0,
+                    SMTO_ABORTIFHUNG | SMTO_BLOCK, 250, &status);
+                if (statusSent != 0) {
+                    const LRESULT state = static_cast<LRESULT>(status);
+                    if (state == kContentCreatorOpenReady ||
+                        state == kContentCreatorOpenVisible) {
+                        miaodesk::log::Info(
+                            L"CreatorIPC",
+                            state == kContentCreatorOpenReady
+                                ? L"AI 创作窗口已创建且初始化完成。"
+                                : L"AI 创作窗口已创建，后台仍在加载创作环境。");
+                        return true;
+                    }
+                }
+                Sleep(40);
+            }
+
+            miaodesk::log::Error(
+                L"CreatorIPC",
+                L"AI 创作请求已获 ACK，但在等待窗口创建时超时；kind=" +
+                    std::to_wstring(static_cast<std::uint32_t>(kind)));
+            return false;
         }
+
         miaodesk::log::Warn(
             L"CreatorIPC",
             L"v2 创作 IPC 未获 ACK，尝试兼容旧宿主；Win32=" +
                 std::to_wstring(GetLastError()));
     }
 
-    // Compatibility only. Older hosts create the entire window while handling
-    // WM_COPYDATA, so this path can still be slow; current builds never use it
-    // when both processes are the same version.
+    // Compatibility only for an older already-running host.
     const std::uint32_t raw = static_cast<std::uint32_t>(kind);
     COPYDATASTRUCT data{};
     data.dwData = kContentCreatorCopyDataTag;

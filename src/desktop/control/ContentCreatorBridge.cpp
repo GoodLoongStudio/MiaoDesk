@@ -2,6 +2,7 @@
 
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/CreatorWorkspaceState.h"
+#include "miaodesk/RuntimeLogger.h"
 
 #include <shellapi.h>
 
@@ -98,6 +99,12 @@ void WriteActiveSession(const fs::path& file, const std::string& session) {
 }
 
 } // namespace
+
+UINT OpenRequestMessage() noexcept {
+    static const UINT message = RegisterWindowMessageW(
+        L"MiaoDesk.ContentCreator.OpenRequest.v2");
+    return message;
+}
 
 std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
     if (!Valid(kind)) return {};
@@ -238,27 +245,55 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
     const HWND target = FindWindowW(kSearchWindowClass, nullptr);
     if (!target) return false;
 
-    // OpenConversation is commonly called from the foreground Wallpaper Library
-    // process while the creator itself is constructed by the already-running
-    // MiaoDesk process. Grant that target process foreground activation rights
-    // before the synchronous WM_COPYDATA hand-off, otherwise Windows can legally
-    // create the requested window behind the library and the caller still reports
-    // "opened".
     DWORD targetProcessId = 0;
     GetWindowThreadProcessId(target, &targetProcessId);
     if (targetProcessId && targetProcessId != GetCurrentProcessId())
         AllowSetForegroundWindow(targetProcessId);
 
+    // v2: the receiver only queues creation and returns the magic ACK. This
+    // keeps API/profile/history/Skill loading completely outside the sender's
+    // synchronous timeout.
+    const UINT openMessage = OpenRequestMessage();
+    if (openMessage != 0) {
+        DWORD_PTR result = 0;
+        const DWORD quickTimeout = (std::min<DWORD>)(timeoutMs, 1000);
+        const LRESULT sent = SendMessageTimeoutW(
+            target, openMessage, static_cast<WPARAM>(kind), 0,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK, quickTimeout, &result);
+        if (sent != 0 &&
+            static_cast<LRESULT>(result) == kContentCreatorOpenAck) {
+            miaodesk::log::Info(
+                L"CreatorIPC",
+                L"AI 创作请求已由 v2 宿主排队，kind=" +
+                    std::to_wstring(static_cast<std::uint32_t>(kind)));
+            return true;
+        }
+        miaodesk::log::Warn(
+            L"CreatorIPC",
+            L"v2 创作 IPC 未获 ACK，尝试兼容旧宿主；Win32=" +
+                std::to_wstring(GetLastError()));
+    }
+
+    // Compatibility only. Older hosts create the entire window while handling
+    // WM_COPYDATA, so this path can still be slow; current builds never use it
+    // when both processes are the same version.
     const std::uint32_t raw = static_cast<std::uint32_t>(kind);
     COPYDATASTRUCT data{};
     data.dwData = kContentCreatorCopyDataTag;
     data.cbData = sizeof(raw);
     data.lpData = const_cast<std::uint32_t*>(&raw);
     DWORD_PTR result = 0;
-    return SendMessageTimeoutW(
-               target, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&data),
-               SMTO_ABORTIFHUNG | SMTO_BLOCK, timeoutMs, &result) != 0 &&
-           result != 0;
+    const LRESULT sent = SendMessageTimeoutW(
+        target, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&data),
+        SMTO_ABORTIFHUNG | SMTO_BLOCK, timeoutMs, &result);
+    const bool accepted = sent != 0 && result != 0;
+    if (!accepted) {
+        miaodesk::log::Error(
+            L"CreatorIPC",
+            L"AI 创作请求发送失败；宿主可能是旧版本、卡死或未就绪。Win32=" +
+                std::to_wstring(GetLastError()));
+    }
+    return accepted;
 }
 
 bool OpenConversation(ContentCreatorKind kind, HWND owner, std::wstring* error) {

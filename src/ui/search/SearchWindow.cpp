@@ -36,6 +36,7 @@ constexpr int kVoiceCenterX = 628;
 constexpr int kDividerX = 658;
 constexpr int kAiCenterX = 688;
 constexpr UINT kTrayMessage = WM_APP + 91;
+constexpr UINT kDeferredOpenCreatorMessage = WM_APP + 92;
 constexpr UINT kTrayShow = 5101;
 constexpr UINT kTraySettings = 5102;
 constexpr UINT kTrayExit = 5103;
@@ -684,6 +685,30 @@ LRESULT CALLBACK SearchWindow::EditProc(
 }
 
 LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    const UINT creatorOpenMessage = creator::OpenRequestMessage();
+    if (creatorOpenMessage != 0 && message == creatorOpenMessage) {
+        const auto kind = static_cast<creator::ContentCreatorKind>(
+            static_cast<std::uint32_t>(wParam));
+        if (kind != creator::ContentCreatorKind::Wallpaper &&
+            kind != creator::ContentCreatorKind::Widget) {
+            log::Warn(L"CreatorIPC", L"拒绝无效的 v2 AI 创作请求。");
+            return 0;
+        }
+        if (!PostMessageW(
+                hwnd_, kDeferredOpenCreatorMessage,
+                static_cast<WPARAM>(kind), 0)) {
+            log::Error(
+                L"CreatorIPC",
+                L"AI 创作请求入队失败，Win32=" +
+                    std::to_wstring(GetLastError()));
+            return 0;
+        }
+        log::Info(
+            L"CreatorIPC",
+            L"AI 创作请求已入队；实际窗口初始化将在 IPC 返回后执行。");
+        return creator::kContentCreatorOpenAck;
+    }
+
     if (message == api_profile_notifications::ChangedMessage()) {
         l3_.ReloadConfig();
         SetStatus(L"API 配置已更新",
@@ -697,6 +722,22 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
     }
 
     switch (message) {
+    case kDeferredOpenCreatorMessage: {
+        const auto kind = static_cast<creator::ContentCreatorKind>(
+            static_cast<std::uint32_t>(wParam));
+        log::Info(
+            L"CreatorIPC",
+            L"开始异步创建 AI 创作窗口，kind=" +
+                std::to_wstring(static_cast<std::uint32_t>(kind)));
+        if (!OpenContentCreator(kind)) {
+            log::Error(
+                L"CreatorIPC",
+                L"异步创建 AI 创作窗口失败，kind=" +
+                    std::to_wstring(static_cast<std::uint32_t>(kind)));
+        }
+        return 0;
+    }
+
     case WM_HOTKEY:
         if (wParam == kHotkeyId) {
             ShowAndFocus();
@@ -796,10 +837,23 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
         creator::ContentCreatorKind creatorKind{};
         if (creator::DecodeCopyData(
                 reinterpret_cast<const COPYDATASTRUCT*>(lParam), &creatorKind)) {
-            // WM_COPYDATA is the acknowledgement observed by WallpaperLibrary.
-            // Returning TRUE merely because the request decoded made the library
-            // report "opened" even when CreateWindowExW/WM_CREATE had failed.
-            return OpenContentCreator(creatorKind) ? TRUE : FALSE;
+            // Legacy callers still use WM_COPYDATA. Keep compatibility, but do
+            // not run creator initialization inside their synchronous send.
+            // Queue locally, ACK immediately, and let the ordinary message loop
+            // create/activate the surface afterwards.
+            if (!PostMessageW(
+                    hwnd_, kDeferredOpenCreatorMessage,
+                    static_cast<WPARAM>(creatorKind), 0)) {
+                log::Error(
+                    L"CreatorIPC",
+                    L"旧版 AI 创作请求入队失败，Win32=" +
+                        std::to_wstring(GetLastError()));
+                return FALSE;
+            }
+            log::Info(
+                L"CreatorIPC",
+                L"旧版 WM_COPYDATA AI 创作请求已转为异步执行。");
+            return TRUE;
         }
 
         std::vector<SearchResult> received;

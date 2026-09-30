@@ -29,8 +29,13 @@ assert.match(
 
 assert.match(
   creator,
-  /void ResetSession\(\)[\s\S]*ClearCreatorConversation\(kind\)[\s\S]*SaveTranscript\(\)/,
-  "only the explicit new-conversation action clears persisted history",
+  /void ResetSession\(\)[\s\S]*StartNewCreatorWorkspace\(kind\)[\s\S]*UseWorkspace\(workspace\)/,
+  "the explicit new-conversation action must preserve old history and create a fresh workspace",
+);
+assert.match(
+  creator,
+  /void ShowHistoryMenu\(\)[\s\S]*ListCreatorWorkspaces\(kind\)[\s\S]*UseWorkspace\(visible\[index\]\)/,
+  "history must switch back to the selected creator workspace",
 );
 
 assert.match(

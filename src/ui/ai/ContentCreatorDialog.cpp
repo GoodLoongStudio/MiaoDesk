@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <cwctype>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -637,10 +638,10 @@ struct DialogState {
     std::vector<api_runtime_profile::RuntimeProfile> apiProfiles;
     bool activityVisible{};
     ULONGLONG busyStartedAt{};
-    // Lifetime is transferred to WM_NCDESTROY only after CreateWindowExW
-    // returns a real HWND. If WM_CREATE fails, Windows sends WM_NCDESTROY
-    // before CreateWindowExW returns; deleting there and again in the caller
-    // was a double free.
+    // Lifetime is transferred to the window-destroy path only after
+    // CreateWindowExW returns a real HWND. If WM_CREATE fails, Windows sends
+    // WM_DESTROY before CreateWindowExW returns; deleting there and again in
+    // the caller was a double free.
     bool windowOwnsLifetime{};
 
     ~DialogState() {
@@ -2549,7 +2550,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     }
 
     // From this point the HWND owns DialogState. Before this assignment, a
-    // WM_CREATE failure may already have delivered WM_NCDESTROY, in which case
+    // WM_CREATE failure may already have delivered WM_DESTROY, in which case
     // stateHolder remains the sole owner and frees exactly once on return.
     state->windowOwnsLifetime = true;
     stateHolder.release();

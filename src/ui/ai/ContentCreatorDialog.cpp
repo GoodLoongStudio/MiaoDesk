@@ -2505,6 +2505,19 @@ ContentCreatorLayout ResolveContentCreatorLayout(int clientWidth, int clientHeig
     return layout;
 }
 
+bool IsContentCreatorDialogOpen(ContentCreatorKind kind) noexcept {
+    const HWND window = FindOpenCreatorWindow(kind);
+    return window && IsWindow(window);
+}
+
+bool IsContentCreatorDialogReady(ContentCreatorKind kind) noexcept {
+    const HWND window = FindOpenCreatorWindow(kind);
+    if (!window || !IsWindow(window)) return false;
+    auto* state = reinterpret_cast<DialogState*>(
+        GetWindowLongPtrW(window, GWLP_USERDATA));
+    return state && state->creatorInitialized;
+}
+
 bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, ContentCreatorKind kind) {
     if (!instance || !Valid(kind)) {
         miaodesk::log::Error(L"CreatorWindow", L"拒绝无效的 AI 创作窗口创建参数。");

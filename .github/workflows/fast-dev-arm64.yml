@@ -105,11 +105,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = 'C:\\pkg\\MiaoDesk\\arm64-fast\\MiaoDesk.exe'
-          $host = $null
+          $hostProcess = $null
           try {
-            $host = Start-Process $exe -ArgumentList '--startup' -PassThru
+            $hostProcess = Start-Process $exe -ArgumentList '--startup' -PassThru
             Start-Sleep -Milliseconds 700
-            if ($host.HasExited) { throw "MiaoDesk IPC host exited early: $($host.ExitCode)" }
+            if ($hostProcess.HasExited) { throw "MiaoDesk IPC host exited early: $($hostProcess.ExitCode)" }
             foreach ($kind in @('wallpaper','widget')) {
               $client = Start-Process $exe -ArgumentList "--content-creator=$kind" -Wait -PassThru
               if ($client.ExitCode -ne 0) {
@@ -118,9 +118,9 @@ jobs:
             }
           }
           finally {
-            if ($host -and -not $host.HasExited) {
-              Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
-              $host.WaitForExit(5000) | Out-Null
+            if ($hostProcess -and -not $hostProcess.HasExited) {
+              Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
+              $hostProcess.WaitForExit(5000) | Out-Null
             }
           }
 

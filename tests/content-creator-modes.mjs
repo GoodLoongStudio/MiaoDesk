@@ -165,3 +165,17 @@ assert.match(wallpaperSkill, /.mdwall/);
 assert.match(widgetSkill, /.mdwidget/);
 
 console.log("content creator mode contract: PASS");
+
+
+assert.match(creator, /CreatorConversationPath\(ContentCreatorKind kind\)[\s\S]*conversation\.txt/,
+  "creator history must be persisted inside the active creator workspace");
+assert.match(creator, /PopulateApiProfiles\(\);\s*InitializeConversation\(\);\s*LoadSkill\(\);/,
+  "opening the creator must restore history instead of resetting the session");
+assert.match(creator, /void ResetSession\(\)[\s\S]*ClearCreatorConversation\(kind\)[\s\S]*SaveTranscript\(\)/,
+  "only explicit New Conversation clears the durable transcript");
+assert.match(creator, /case WM_CLOSE:[\s\S]*state->SaveTranscript\(\);[\s\S]*DestroyWindow/,
+  "closing the creator must save the conversation before destroying the surface");
+assert.match(creator, /这是关窗或重启前保存下来的同一段对话/,
+  "the first post-restart turn must receive the saved conversation as context");
+assert.doesNotMatch(creator, /void AppendTranscript\(std::wstring_view text\)\s*\{\s*AppendTranscript\(/,
+  "transcript persistence must never recurse during streaming");

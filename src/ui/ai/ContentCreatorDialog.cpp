@@ -10,6 +10,7 @@
 #include "miaodesk/NativeUiScale.h"
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/PiLaunchProfile.h"
+#include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/ToolDisplayNames.h"
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/WallpaperRuntimeControl.h"
@@ -636,6 +637,11 @@ struct DialogState {
     std::vector<api_runtime_profile::RuntimeProfile> apiProfiles;
     bool activityVisible{};
     ULONGLONG busyStartedAt{};
+    // Lifetime is transferred to WM_NCDESTROY only after CreateWindowExW
+    // returns a real HWND. If WM_CREATE fails, Windows sends WM_NCDESTROY
+    // before CreateWindowExW returns; deleting there and again in the caller
+    // was a double free.
+    bool windowOwnsLifetime{};
 
     ~DialogState() {
         if (window) KillTimer(window, kPreviewTimerId);
@@ -2123,9 +2129,39 @@ struct DialogState {
         InitializeConversation();
         LoadSkill();
         Layout();
-        return heading && note && apiProfileCombo && transcript && prompt && send && history && clear &&
-               previewHeading && previewPane && previewPlayPause && previewReload &&
-               previewFullscreen && skillList && skillText;
+        const bool created =
+            heading && note && apiProfileCombo && transcript && prompt &&
+            send && history && clear && previewHeading && previewPane &&
+            previewPlayPause && previewReload && previewFullscreen &&
+            skillList && skillText;
+        if (!created) {
+            std::wstring missing;
+            const auto mark = [&](HWND child, const wchar_t* name) {
+                if (child) return;
+                if (!missing.empty()) missing += L", ";
+                missing += name;
+            };
+            mark(heading, L"heading");
+            mark(note, L"note");
+            mark(apiProfileCombo, L"apiProfileCombo");
+            mark(transcript, L"transcript");
+            mark(prompt, L"prompt");
+            mark(send, L"send");
+            mark(history, L"history");
+            mark(clear, L"newConversation");
+            mark(previewHeading, L"previewHeading");
+            mark(previewPane, L"previewPane");
+            mark(previewPlayPause, L"previewPlayPause");
+            mark(previewReload, L"previewReload");
+            mark(previewFullscreen, L"previewFullscreen");
+            mark(skillList, L"skillList");
+            mark(skillText, L"skillText");
+            miaodesk::log::Error(
+                L"CreatorWindow",
+                L"WM_CREATE 控件初始化失败；缺失=" + missing +
+                    L"；Win32=" + std::to_wstring(GetLastError()));
+        }
+        return created;
     }
 };
 
@@ -2384,7 +2420,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             g_openCreatorWindows.erase(it);
         }
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-        delete state;
+        if (state->windowOwnsLifetime) delete state;
         return 0;
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
@@ -2421,12 +2457,21 @@ ContentCreatorLayout ResolveContentCreatorLayout(int clientWidth, int clientHeig
 }
 
 bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, ContentCreatorKind kind) {
-    if (!instance || !Valid(kind)) return false;
+    if (!instance || !Valid(kind)) {
+        miaodesk::log::Error(L"CreatorWindow", L"拒绝无效的 AI 创作窗口创建参数。");
+        return false;
+    }
 
     if (HWND existing = FindOpenCreatorWindow(kind)) {
+        miaodesk::log::Info(L"CreatorWindow", L"复用并激活已有 AI 创作窗口。");
         ActivateCreatorWindow(existing);
         return true;
     }
+
+    miaodesk::log::Info(
+        L"CreatorWindow",
+        L"开始创建 AI 创作窗口，kind=" +
+            std::to_wstring(static_cast<std::uint32_t>(kind)));
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -2435,9 +2480,16 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     wc.lpszClassName = kCreatorWindowClass;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        const DWORD error = GetLastError();
+        miaodesk::log::Error(
+            L"CreatorWindow",
+            L"注册 AI 创作窗口类失败，Win32=" + std::to_wstring(error));
+        return false;
+    }
 
-    auto* state = new DialogState{};
+    auto stateHolder = std::make_unique<DialogState>();
+    auto* state = stateHolder.get();
     state->instance = instance;
     state->owner = owner;
     state->ownedAgent = std::make_unique<L3Agent>();
@@ -2479,12 +2531,35 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
         // cover them completely.
         nullptr, nullptr, instance, state);
     if (!window) {
-        delete state;
+        const DWORD error = GetLastError();
+        // A failed creator must never leave the shared Pi runtime in Creator
+        // mode. WM_DESTROY normally restores Chat mode, but CreateWindowExW can
+        // fail before WM_NCCREATE/WM_DESTROY ever run.
+        if (state->pi) {
+            state->pi->SetLaunchProfile(
+                miaodesk::MakeChatLaunchProfile(
+                    miaodesk::paths::PiAgentRoot().wstring()));
+        }
+        miaodesk::log::Error(
+            L"CreatorWindow",
+            L"CreateWindowExW 创建 AI 创作窗口失败；kind=" +
+                std::to_wstring(static_cast<std::uint32_t>(kind)) +
+                L"；Win32=" + std::to_wstring(error));
         return false;
     }
+
+    // From this point the HWND owns DialogState. Before this assignment, a
+    // WM_CREATE failure may already have delivered WM_NCDESTROY, in which case
+    // stateHolder remains the sole owner and frees exactly once on return.
+    state->windowOwnsLifetime = true;
+    stateHolder.release();
     g_openCreatorWindows.push_back(window);
     ActivateCreatorWindow(window);
     UpdateWindow(window);
+    miaodesk::log::Info(
+        L"CreatorWindow",
+        L"AI 创作窗口创建成功，HWND=" +
+            std::to_wstring(reinterpret_cast<std::uintptr_t>(window)));
     return true;
 }
 

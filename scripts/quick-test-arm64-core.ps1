@@ -47,9 +47,23 @@ function Ensure-Commit([string]$Sha) {
 }
 
 function Get-Runs([string]$Workflow,[int]$Limit=30) {
-  $json = & $gh.Source run list --repo $Repo --workflow $Workflow --branch main --limit $Limit --json databaseId,headSha,status,conclusion,createdAt
+  $json = @(& $gh.Source run list --repo $Repo --workflow $Workflow --branch main --limit $Limit --json databaseId,headSha,status,conclusion,createdAt)
   if ($LASTEXITCODE -ne 0) { throw "Cannot list workflow runs: $Workflow" }
-  @($json | ConvertFrom-Json)
+
+  # Windows PowerShell 5.1 can preserve a top-level JSON array as one Object[]
+  # pipeline object. Parse first, then enumerate explicitly so every caller gets
+  # one workflow-run object at a time on both Windows PowerShell 5.1 and pwsh 7.
+  $parsed = ConvertFrom-Json -InputObject ($json -join "`n")
+  foreach ($item in $parsed) { Write-Output $item }
+}
+
+function Get-RunId($Run) {
+  $ids = @($Run.databaseId)
+  if ($ids.Count -ne 1) {
+    throw "Expected exactly one workflow run ID, got $($ids.Count): $($ids -join ', ')"
+  }
+  try { return [Int64]$ids[0] }
+  catch { throw "Invalid workflow run ID: $($ids[0])" }
 }
 
 function Get-ArtifactNames([Int64]$RunId) {
@@ -63,7 +77,7 @@ function Wait-FastRun([string]$Sha) {
     $success = @($same | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' })
     foreach ($run in $success) {
       $name = "MiaoDesk-arm64-fast-$Sha"
-      if ((Get-ArtifactNames $run.databaseId) -contains $name) {
+      if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
         return [pscustomobject]@{ run=$run; artifact=$name }
       }
     }
@@ -88,7 +102,7 @@ function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
       Ensure-Commit $run.headSha
       if ((Get-BaselineKey $run.headSha) -ne $WantedKey) { continue }
       $name = "MiaoDesk-windows-arm64-$($run.headSha)"
-      if ((Get-ArtifactNames $run.databaseId) -contains $name) {
+      if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
         return [pscustomobject]@{ run=$run; artifact=$name }
       }
     } catch { continue }
@@ -107,7 +121,7 @@ function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
     foreach ($run in $same) {
       if ($run.status -eq 'completed' -and $run.conclusion -eq 'success') {
         $name = "MiaoDesk-windows-arm64-$CurrentSha"
-        if ((Get-ArtifactNames $run.databaseId) -contains $name) {
+        if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
           return [pscustomobject]@{ run=$run; artifact=$name }
         }
       }
@@ -124,7 +138,8 @@ function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
 
 function Download-Artifact($Info,[string]$Dir) {
   New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-  & $gh.Source run download $Info.run.databaseId --repo $Repo --name $Info.artifact --dir $Dir
+    $downloadRunId = Get-RunId $Info.run
+  & $gh.Source run download $downloadRunId --repo $Repo --name $Info.artifact --dir $Dir
   if ($LASTEXITCODE -ne 0) { throw "Artifact download failed: $($Info.artifact)" }
   $exe = Get-ChildItem $Dir -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
   if (-not $exe) { throw "Artifact has no MiaoDesk.exe: $($Info.artifact)" }
@@ -258,7 +273,7 @@ try {
       $source = Download-Artifact $info (Join-Path $temp 'full')
       Apply-Full $source
       $mode = 'full'
-      $runId = $info.run.databaseId
+      $runId = Get-RunId $info.run
     } else {
       $info = Wait-FastRun $sha
       $source = Download-Artifact $info (Join-Path $temp 'delta')

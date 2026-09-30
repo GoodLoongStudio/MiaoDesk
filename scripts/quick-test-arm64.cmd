@@ -10,6 +10,24 @@ echo   MiaoDesk ARM64 Quick Test
 echo ========================================
 echo.
 
+where git.exe >nul 2>nul
+if errorlevel 1 (
+  echo [FAIL] git.exe not found.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo [1/2] Updating quick-test scripts...
+git pull --ff-only
+if errorlevel 1 (
+  echo.
+  echo [FAIL] git pull failed.
+  echo.
+  pause
+  exit /b 1
+)
+
 where powershell.exe >nul 2>nul
 if errorlevel 1 (
   echo [FAIL] powershell.exe not found.
@@ -18,6 +36,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo.
+echo [2/2] Starting ARM64 quick test...
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0quick-test-arm64.ps1"
 set "RC=%ERRORLEVEL%"
 

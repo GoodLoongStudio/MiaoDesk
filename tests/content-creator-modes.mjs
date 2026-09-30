@@ -8,6 +8,7 @@ const panel = read("src/ui/ai/ConversationPanel.cpp");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
 const creatorHeader = read("src/include/miaodesk/ContentCreatorDialog.h");
 const search = read("src/ui/search/SearchWindow.cpp");
+const searchHeader = read("src/include/miaodesk/SearchWindow.h");
 const bridge = read("src/desktop/control/ContentCreatorBridge.cpp");
 const library = read("src/ui/wallpaper/WallpaperLibraryWindowV2.cpp");
 const wallpaperSkill = read("skills/wallpaper-content/SKILL.md");
@@ -137,6 +138,12 @@ assert.match(creator, /!state->generatedPackageIsCurrentRound[\s\S]*?上一版�
   "a finished round that produced no package must disclose that the visible candidate is the previous one");
 
 assert.ok(search.includes("creator::ShowContentCreatorDialog(instance_, hwnd_, l3_, kind)"));
+assert.match(searchHeader, /bool OpenContentCreator\(creator::ContentCreatorKind kind\)/,
+  "creator opening must return a real success/failure result to the IPC caller");
+assert.match(search, /return OpenContentCreator\(creatorKind\) \? TRUE : FALSE;/,
+  "WM_COPYDATA must acknowledge only an actually opened creator, not merely a decoded request");
+assert.match(bridge, /const HWND running = FindWindowW\(kSearchWindowClass, nullptr\);[\s\S]*if \(running\) \{[\s\S]*if \(SendToRunningApp\(kind\)\) return true;[\s\S]*return false;/,
+  "when the running host rejects creator creation, the library must show failure instead of ShellExecute false-success");
 assert.doesNotMatch(search, /OpenContentCreator[sS]{0,800}ShowConversationPanel/);
 
 assert.match(library, /✨ AI 制作壁纸/);

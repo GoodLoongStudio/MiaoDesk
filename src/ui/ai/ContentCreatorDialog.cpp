@@ -1774,10 +1774,16 @@ struct DialogState {
             saved.size() > kRestoreContextChars
                 ? saved.substr(saved.size() - kRestoreContextChars)
                 : saved;
-        restoredContextPending = true;
-        primed = true;
         lastUserPrompt = LastUserPromptFromTranscript(saved);
-        SetWindowTextW(resultNote, L"已恢复上次对话 · 直接继续说就可以");
+        const bool hasRealConversation = !lastUserPrompt.empty();
+        restoredContextPending = hasRealConversation;
+        primed = hasRealConversation;
+        if (!hasRealConversation) restoredConversationContext.clear();
+        SetWindowTextW(
+            resultNote,
+            hasRealConversation
+                ? L"已恢复上次对话 · 直接继续说就可以"
+                : L"尚未生成内容包 · 生成后先预览，再加入库或应用");
         UpdatePreviewChrome();
         return true;
     }

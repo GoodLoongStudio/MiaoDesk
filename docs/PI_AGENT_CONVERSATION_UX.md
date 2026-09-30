@@ -318,16 +318,25 @@ During streaming:
 
 ## 13. Conversation persistence
 
-The first production version should restore the current conversation after the panel is closed/reopened.
+Conversation is durable product state, not a window lifetime detail.
 
-Recommended later persistence:
+Required behavior:
 
-- current conversation restored across MiaoDesk restart;
-- local conversation history stored under the MiaoDesk application data directory;
-- secrets/API keys must never be serialized into transcript history;
-- tool results should store user-readable summaries, not sensitive raw runtime payloads.
+- closing and reopening a surface restores the active conversation;
+- exiting MiaoDesk or rebooting Windows restores the same active conversation;
+- General AI, Wallpaper Creator, and Widget Creator keep independent histories;
+- **New Conversation** creates a fresh conversation without deleting the old one;
+- **History** lists recent local conversations and can switch back to any retained conversation;
+- switching history restores both visible messages and enough recent context for the model to continue naturally;
+- creator history switches the creator workspace together with the transcript, so an old wallpaper/widget conversation continues against its own files;
+- local conversation archives live under the MiaoDesk application-data directory;
+- API keys and other consumed secrets must never be serialized into transcript history;
+- tool results stored in history must remain user-readable summaries rather than sensitive raw runtime payloads.
 
-A separate “History” UI can be added later. It is not required for the first chat-panel milestone.
+The history UI stays intentionally lightweight: a compact menu from the existing history affordance is preferred over a permanently open sidebar.
+
+Cloud sync is not part of this feature.
+
 
 ## 14. Advanced workbench
 

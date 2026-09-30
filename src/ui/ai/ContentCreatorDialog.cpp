@@ -585,6 +585,7 @@ struct DialogState {
     // process receives this saved context on the first resumed turn.
     std::wstring restoredConversationContext;
     bool restoredContextPending{};
+    ULONGLONG lastTranscriptPersistAt{};
     // Progress feedback. Until this existed the creator received the same
     // PiActivityEvent stream the conversation panel does and used it for exactly one
     // thing: hunting for a content-package path in the result text. So a user watching
@@ -1398,7 +1399,7 @@ struct DialogState {
         SetBusy(false);
         SetWindowTextW(resultNote,
             L"已停止本轮生成。已经开始执行的操作可能已经完成，不会被撤销。");
-        AppendTranscript( L"\r\n\r\n妙喵：本轮已停止。\r\n");
+        AppendTranscript(L"\r\n\r\n妙喵：本轮已停止。\r\n");
     }
 
     content::ContentKind ExpectedKind() const noexcept {
@@ -1729,14 +1730,20 @@ struct DialogState {
               L"我会按右侧 Skills 生成 .mdwall，并先让你预览确认。\r\n";
     }
 
-    void SaveTranscript() const {
+    void SaveTranscript(bool force = true) {
         if (!transcript) return;
-        (void)SaveCreatorConversation(kind, ReadText(transcript));
+        const ULONGLONG now = GetTickCount64();
+        if (!force && lastTranscriptPersistAt &&
+            now - lastTranscriptPersistAt < 750) {
+            return;
+        }
+        if (SaveCreatorConversation(kind, ReadText(transcript)))
+            lastTranscriptPersistAt = now;
     }
 
     void AppendTranscript(std::wstring_view text) {
         AppendText(transcript, text);
-        SaveTranscript();
+        SaveTranscript(false);
     }
 
     std::wstring LastUserPromptFromTranscript(std::wstring_view saved) const {
@@ -1842,7 +1849,7 @@ struct DialogState {
             return;
         }
         lastUserPrompt = text;
-        AppendTranscript( L"\r\n你：" + text + L"\r\n\r\n妙喵：");
+        AppendTranscript(L"\r\n你：" + text + L"\r\n\r\n妙喵：");
         SetWindowTextW(prompt, L"");
         SetBusy(true);
         generatedPackageIsCurrentRound = false;
@@ -2145,7 +2152,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     case kAppendDelta: {
         std::unique_ptr<std::wstring> delta(reinterpret_cast<std::wstring*>(lParam));
-        if (delta) state->AppendTranscript( *delta);
+        if (delta) state->AppendTranscript(*delta);
         return 0;
     }
     case kActivityEvent: {
@@ -2174,12 +2181,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (done && done->find(kBusyRejectionMarker) != std::wstring::npos) {
             SetWindowTextW(state->resultNote,
                 L"没有发出请求：妙喵正在处理对话窗口里的任务。等那边结束，或先在对话里停止，再试一次。");
-            state->AppendTranscript( L"\r\n妙喵：未发送，当前有任务在进行。\r\n");
+            state->AppendTranscript(L"\r\n妙喵：未发送，当前有任务在进行。\r\n");
+            state->SaveTranscript();
             return 0;
         }
 
         if (done) state->InspectForGeneratedPackage(*done);
-        state->AppendTranscript( L"\r\n");
+        state->AppendTranscript(L"\r\n");
+        state->SaveTranscript();
         if (state->stopRequested) {
             // The user cancelled. Do not overwrite that story with the generic
             // "本轮请求结束" wording, and do not imply the cancellation produced

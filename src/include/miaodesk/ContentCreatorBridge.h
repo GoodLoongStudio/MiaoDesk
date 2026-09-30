@@ -15,9 +15,19 @@ enum class ContentCreatorKind : std::uint32_t {
     Widget = 2,
 };
 
-// Cross-process request from MiaoDeskWallpaper.exe to the single MiaoDesk.exe
-// conversation owner. The payload is exactly one uint32_t ContentCreatorKind.
+// Cross-process creator request from MiaoDeskWallpaper.exe to the single
+// MiaoDesk.exe owner.
+//
+// v2 uses a registered message only as a tiny capability/queue handshake. The
+// receiver MUST enqueue actual window creation and return immediately; creator
+// initialization can read API profiles, transcripts and Skills and therefore
+// must never run inside the sender's synchronous IPC timeout.
+//
+// WM_COPYDATA stays as a compatibility fallback for older running hosts.
 inline constexpr ULONG_PTR kContentCreatorCopyDataTag = 0x4D444352u; // "MDCR"
+inline constexpr LRESULT kContentCreatorOpenAck = 0x4D444F4Bu; // "MDOK"
+
+UINT OpenRequestMessage() noexcept;
 
 ContentCreatorKind ParseCommandLine(std::wstring_view commandLine) noexcept;
 std::wstring InitialPrompt(ContentCreatorKind kind);

@@ -82,3 +82,9 @@ assert.match(agent, /托盘右键 → 设置 → 左侧「API 配置」里填写
   "the missing-API-Key error must give the real route");
 
 console.log(`slash command help coverage: PASS (${implemented.length + 1} commands, all listed)`);
+
+
+assert.match(panel, /consumedSecret \? L"\/key ••••••••" : typedPrompt/,
+  "credential commands must be redacted before they become visible/persisted chat entries");
+assert.match(panel, /std::wstring PersistableConversationText\(const ChatEntry& entry\)[\s\S]*lower\.starts_with\(L"\/key "\)[\s\S]*L"\/key ••••••••"/,
+  "durable conversation serialization must defensively redact API keys even if a caller forgets");

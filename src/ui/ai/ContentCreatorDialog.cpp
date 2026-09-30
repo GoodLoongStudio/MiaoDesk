@@ -2564,4 +2564,44 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     return true;
 }
 
+
+bool ContentCreatorWindowSelfTest(HINSTANCE instance) {
+    if (!instance) return false;
+
+    L3Agent agent;
+    for (const auto kind : {
+             ContentCreatorKind::Wallpaper,
+             ContentCreatorKind::Widget}) {
+        if (!ShowContentCreatorDialog(instance, nullptr, agent, kind)) {
+            miaodesk::log::Error(
+                L"CreatorWindowTest",
+                L"AI 创作窗口 smoke test 创建失败，kind=" +
+                    std::to_wstring(static_cast<std::uint32_t>(kind)));
+            return false;
+        }
+
+        HWND window = FindOpenCreatorWindow(kind);
+        if (!window || !IsWindow(window)) {
+            miaodesk::log::Error(
+                L"CreatorWindowTest",
+                L"AI 创作窗口 smoke test 未找到创建后的 HWND。");
+            return false;
+        }
+
+        SendMessageW(window, WM_CLOSE, 0, 0);
+        if (IsWindow(window)) {
+            miaodesk::log::Error(
+                L"CreatorWindowTest",
+                L"AI 创作窗口 smoke test 关闭后 HWND 仍然存在。");
+            DestroyWindow(window);
+            return false;
+        }
+    }
+
+    miaodesk::log::Info(
+        L"CreatorWindowTest",
+        L"壁纸与组件 AI 创作窗口 smoke test 均通过。");
+    return true;
+}
+
 } // namespace miaodesk::creator

@@ -53,6 +53,7 @@ constexpr int kTranscriptId = 7801;
 constexpr int kPromptId = 7802;
 constexpr int kSendId = 7803;
 constexpr int kClearId = 7804;
+constexpr int kHistoryId = 7827;
 constexpr int kSkillListId = 7805;
 constexpr int kSkillTextId = 7806;
 constexpr int kPreviewPaneId = 7807;
@@ -228,6 +229,36 @@ fs::path CreatorConversationPath(ContentCreatorKind kind) {
     return workspace.empty()
         ? fs::path{}
         : fs::path(workspace) / L"conversation.txt";
+}
+
+fs::path CreatorConversationPathForWorkspace(std::wstring_view workspaceRoot) {
+    return workspaceRoot.empty()
+        ? fs::path{}
+        : fs::path(workspaceRoot) / L"conversation.txt";
+}
+
+std::wstring LoadCreatorConversationFromWorkspace(std::wstring_view workspaceRoot) {
+    const fs::path path = CreatorConversationPathForWorkspace(workspaceRoot);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    const std::string bytes(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    return CreatorUtf8ToWide(bytes);
+}
+
+std::wstring CreatorConversationTitle(std::wstring_view transcript) {
+    constexpr std::wstring_view marker = L"你：";
+    std::size_t start = transcript.find(marker);
+    if (start == std::wstring_view::npos) return L"新对话";
+    start += marker.size();
+    std::size_t end = transcript.find_first_of(L"\r\n", start);
+    if (end == std::wstring_view::npos) end = transcript.size();
+    std::wstring title = Trim(std::wstring(transcript.substr(start, end - start)));
+    if (title.empty()) return L"新对话";
+    constexpr std::size_t kMaxTitle = 28;
+    if (title.size() > kMaxTitle) title = title.substr(0, kMaxTitle) + L"…";
+    return title;
 }
 
 std::wstring LoadCreatorConversation(ContentCreatorKind kind) {

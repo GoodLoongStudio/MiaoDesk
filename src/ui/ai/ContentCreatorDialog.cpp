@@ -1735,7 +1735,7 @@ struct DialogState {
     }
 
     void AppendTranscript(std::wstring_view text) {
-        AppendTranscript( text);
+        AppendText(transcript, text);
         SaveTranscript();
     }
 

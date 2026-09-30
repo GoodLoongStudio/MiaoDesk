@@ -174,7 +174,12 @@ std::vector<std::wstring> ListCreatorWorkspaces(ContentCreatorKind kind) {
         const std::string session = miaodesk::creator::SanitizeCreatorSessionId(
             WideToUtf8ForPath(entry.path().filename().wstring()));
         if (session.empty()) continue;
-        const auto updated = fs::last_write_time(entry.path(), ec);
+        fs::path stampTarget = entry.path() / L"conversation.txt";
+        if (!fs::is_regular_file(stampTarget, ec)) {
+            ec.clear();
+            stampTarget = entry.path();
+        }
+        const auto updated = fs::last_write_time(stampTarget, ec);
         ordered.emplace_back(ec ? fs::file_time_type::min() : updated,
                              entry.path().wstring());
         ec.clear();

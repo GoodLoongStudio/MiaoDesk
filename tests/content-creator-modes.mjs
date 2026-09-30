@@ -5,6 +5,7 @@ const read = (path) => fs.readFileSync(path, "utf8");
 
 const header = read("src/include/miaodesk/ConversationPanel.h");
 const panel = read("src/ui/ai/ConversationPanel.cpp");
+const panelImpl = read("src/ui/ai/ConversationPanelImpl.inc");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
 const creatorHeader = read("src/include/miaodesk/ContentCreatorDialog.h");
 const search = read("src/ui/search/SearchWindow.cpp");
@@ -171,11 +172,38 @@ assert.match(creator, /CreatorConversationPath\(ContentCreatorKind kind\)[\s\S]*
   "creator history must be persisted inside the active creator workspace");
 assert.match(creator, /PopulateApiProfiles\(\);\s*InitializeConversation\(\);\s*LoadSkill\(\);/,
   "opening the creator must restore history instead of resetting the session");
-assert.match(creator, /void ResetSession\(\)[\s\S]*ClearCreatorConversation\(kind\)[\s\S]*SaveTranscript\(\)/,
-  "only explicit New Conversation clears the durable transcript");
+assert.match(creator, /void ResetSession\(\)[\s\S]*StartNewCreatorWorkspace\(kind\)[\s\S]*UseWorkspace\(workspace\)/,
+  "New Conversation must create a new durable creator workspace instead of deleting the old transcript");
+assert.match(creator, /history = button\(L"历史", kHistoryId\)/,
+  "creator UI must expose a history switcher beside New Conversation");
+assert.match(creator, /void ShowHistoryMenu\(\)[\s\S]*ListCreatorWorkspaces\(kind\)[\s\S]*UseWorkspace\(visible\[index\]\)/,
+  "creator history must switch the active workspace, not merely repaint old text");
+assert.match(bridge, /std::wstring StartNewCreatorWorkspace\(ContentCreatorKind kind\)/,
+  "creator bridge must mint a new workspace identity for a new conversation");
+assert.match(bridge, /bool ActivateCreatorWorkspace\(ContentCreatorKind kind, std::wstring_view workspaceRoot\)/,
+  "creator bridge must support returning to an older workspace");
+assert.match(bridge, /std::vector<std::wstring> ListCreatorWorkspaces\(ContentCreatorKind kind\)/,
+  "creator bridge must enumerate durable historical workspaces");
 assert.match(creator, /case WM_CLOSE:[\s\S]*state->SaveTranscript\(\);[\s\S]*DestroyWindow/,
   "closing the creator must save the conversation before destroying the surface");
 assert.match(creator, /这是关窗或重启前保存下来的同一段对话/,
   "the first post-restart turn must receive the saved conversation as context");
 assert.doesNotMatch(creator, /void AppendTranscript\(std::wstring_view text\)\s*\{\s*AppendTranscript\(/,
   "transcript persistence must never recurse during streaming");
+
+assert.match(panelImpl, /std::wstring conversationId;/,
+  "main AI state must own a durable conversation identity");
+assert.match(panelImpl, /bool SaveConversationArchive\(const ConversationState& state\)/,
+  "main AI must persist visible conversations across process restarts");
+assert.match(panelImpl, /void StartNewConversation\(ConversationState& state\)[\s\S]*SaveConversationArchive\(state\)[\s\S]*state\.conversationId = NewConversationId\(\)/,
+  "New Conversation must archive the current chat before creating another id");
+assert.match(panelImpl, /void ShowConversationHistoryMenu\(ConversationState& state\)[\s\S]*ListConversationArchives\(state\.mode\)[\s\S]*LoadConversationIntoState/,
+  "the main AI history control must list and switch archived conversations");
+assert.match(panelImpl, /if \(PointIn\(state->historyRect, point\)\) \{\s*ShowConversationHistoryMenu\(\*state\);/,
+  "the existing history icon must open conversation history instead of scrolling to the top");
+assert.match(panelImpl, /RestoreActiveConversation\(\*state\);/,
+  "main AI startup must reopen the active durable conversation");
+assert.match(panelImpl, /这是用户切回或重启后恢复的同一段对话/,
+  "a restored main-AI chat must feed recent context back to the model");
+assert.match(panel, /ActivateConversationModeSession\(state, mode\)/,
+  "switching AI modes must restore that mode's active conversation instead of clearing it");

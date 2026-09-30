@@ -721,6 +721,7 @@ void InvalidateConversation(ConversationState& state, bool bottom = false) {
 
 void AddEntry(ConversationState& state, EntryKind kind, std::wstring text) {
     state.entries.push_back(ChatEntry{kind, std::move(text), CurrentTimeText()});
+    SaveConversationArchive(state);
     InvalidateConversation(state, true);
 }
 
@@ -953,6 +954,7 @@ void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
 
     state.entries.push_back({EntryKind::Assistant, L"", CurrentTimeText()});
     state.assistantIndex = state.entries.size() - 1;
+    SaveConversationArchive(state);
     state.lastPrompt = actualPrompt;
     state.turnRanTool = false;
     state.activePrompt = actualPrompt;
@@ -972,20 +974,85 @@ void StartModelTurn(ConversationState& state, const std::wstring& typedPrompt,
     state.pi->AskAsync(*state.agent, actualPrompt, std::move(onDelta), std::move(onDone));
 }
 
-void ClearConversation(ConversationState& state) {
+void ResetConversationTransient(ConversationState& state) {
     state.lastPrompt.clear();
     state.streaming.clear();
-    state.entries.clear();
     state.activity = {};
     state.pendingAttachments.clear();
     state.artifactHits.clear();
     state.pendingConfirmation = false;
-    state.pi->ResetSession();
+    state.pendingTypedPrompt.clear();
+    state.pendingActualPrompt.clear();
+    state.assistantIndex = kNoIndex;
+    state.activePrompt.clear();
+    state.turnRanTool = false;
+    state.scrollOffset = 0;
+    state.scrollToBottom = true;
+}
+
+void ClearCurrentConversation(ConversationState& state) {
+    if (state.pi) state.pi->ResetSession();
+    ResetConversationTransient(state);
+    state.entries.clear();
+    state.restoredConversationContext.clear();
+    state.restoredContextPending = false;
+    if (state.conversationId.empty()) state.conversationId = NewConversationId();
+    WriteActiveConversationId(state.mode, state.conversationId);
     AddEntry(state, EntryKind::Assistant,
              ConversationWelcome(state.mode,
                                  !state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()));
-    AppendRouteLog(L"route: Pi session reset by user");
+    SaveConversationArchive(state);
+    AppendRouteLog(L"route: current conversation cleared by user");
 }
+
+bool LoadConversationIntoState(ConversationState& state, std::wstring_view id) {
+    std::vector<ChatEntry> loaded;
+    if (!LoadConversationArchive(state.mode, id, &loaded)) return false;
+
+    if (state.pi) state.pi->ResetSession();
+    ResetConversationTransient(state);
+    state.entries = std::move(loaded);
+    state.conversationId = std::wstring(id);
+    WriteActiveConversationId(state.mode, state.conversationId);
+
+    state.restoredConversationContext = ConversationContextText(state.entries);
+    state.restoredContextPending = std::any_of(
+        state.entries.begin(), state.entries.end(),
+        [](const ChatEntry& entry) { return entry.kind == EntryKind::User; });
+    InvalidateConversation(state, true);
+    return true;
+}
+
+void StartNewConversation(ConversationState& state) {
+    SaveConversationArchive(state);
+    if (state.pi) state.pi->ResetSession();
+    ResetConversationTransient(state);
+    state.entries.clear();
+    state.conversationId = NewConversationId();
+    state.restoredConversationContext.clear();
+    state.restoredContextPending = false;
+    WriteActiveConversationId(state.mode, state.conversationId);
+    AddEntry(state, EntryKind::Assistant,
+             ConversationWelcome(state.mode,
+                                 !state.agent->HasApiKey() && demo::IsStoreDemoScopeEnabled()));
+    SaveConversationArchive(state);
+    AppendRouteLog(L"route: new durable conversation created by user");
+}
+
+void RestoreActiveConversation(ConversationState& state) {
+    const std::wstring active = ReadActiveConversationId(state.mode);
+    if (!active.empty() && LoadConversationIntoState(state, active)) return;
+    StartNewConversation(state);
+}
+
+void ActivateConversationModeSession(
+    ConversationState& state, ConversationPanelMode mode) {
+    if (state.mode == mode && !state.conversationId.empty()) return;
+    SaveConversationArchive(state);
+    state.mode = mode;
+    RestoreActiveConversation(state);
+}
+
 
 void SendPrompt(ConversationState& state) {
     if (state.busy || state.pendingConfirmation) return;
@@ -1015,7 +1082,7 @@ void SendPrompt(ConversationState& state) {
         bool consumedSecret = false;
         if (state.agent->TryHandleLocal(actualPrompt, localReply, consumedSecret)) {
             if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {
-                ClearConversation(state);
+                StartNewConversation(state);
                 return;
             }
             AppendCompleted(state, typedPrompt, UserFacingLocalReply(lower, state, localReply));

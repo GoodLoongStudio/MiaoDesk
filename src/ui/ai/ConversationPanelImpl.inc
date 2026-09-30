@@ -199,6 +199,248 @@ std::wstring Utf8ToWide(const std::string& value) {
     return out;
 }
 
+const wchar_t* ConversationScopeFolder(ConversationPanelMode mode) {
+    switch (mode) {
+    case ConversationPanelMode::WallpaperCreator: return L"wallpaper";
+    case ConversationPanelMode::WidgetCreator: return L"widget";
+    case ConversationPanelMode::General: break;
+    }
+    return L"general";
+}
+
+fs::path ConversationScopeRoot(ConversationPanelMode mode) {
+    const fs::path stateRoot = miaodesk::paths::StateRoot();
+    return stateRoot.empty()
+        ? fs::path{}
+        : stateRoot / L"Conversations" / ConversationScopeFolder(mode);
+}
+
+bool ValidConversationId(std::wstring_view id) {
+    if (id.empty() || id.size() > 96) return false;
+    for (const wchar_t ch : id) {
+        if (!(std::iswalnum(ch) || ch == L'-' || ch == L'_')) return false;
+    }
+    return true;
+}
+
+fs::path ConversationArchivePath(ConversationPanelMode mode, std::wstring_view id) {
+    const fs::path root = ConversationScopeRoot(mode);
+    if (root.empty() || !ValidConversationId(id)) return {};
+    return root / (std::wstring(id) + L".chat");
+}
+
+std::wstring NewConversationId() {
+    FILETIME now{};
+    GetSystemTimeAsFileTime(&now);
+    const ULONGLONG ticks =
+        (static_cast<ULONGLONG>(now.dwHighDateTime) << 32) |
+        static_cast<ULONGLONG>(now.dwLowDateTime);
+    static std::atomic_uint32_t sequence{0};
+    wchar_t id[96]{};
+    swprintf_s(
+        id, L"chat-%016llx-%08x-%04x",
+        static_cast<unsigned long long>(ticks),
+        static_cast<unsigned int>(GetCurrentProcessId()),
+        static_cast<unsigned int>(sequence.fetch_add(1, std::memory_order_relaxed) & 0xFFFFu));
+    return id;
+}
+
+std::string EscapeConversationField(std::wstring_view value) {
+    const std::string utf8 = WideToUtf8(std::wstring(value));
+    std::string out;
+    out.reserve(utf8.size() + 16);
+    for (const char ch : utf8) {
+        switch (ch) {
+        case '\\': out += "\\\\"; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out.push_back(ch); break;
+        }
+    }
+    return out;
+}
+
+std::wstring UnescapeConversationField(std::string_view value) {
+    std::string bytes;
+    bytes.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (value[i] != '\\' || i + 1 >= value.size()) {
+            bytes.push_back(value[i]);
+            continue;
+        }
+        const char next = value[++i];
+        if (next == 'n') bytes.push_back('\n');
+        else if (next == 'r') bytes.push_back('\r');
+        else if (next == 't') bytes.push_back('\t');
+        else if (next == '\\') bytes.push_back('\\');
+        else {
+            bytes.push_back('\\');
+            bytes.push_back(next);
+        }
+    }
+    return Utf8ToWide(bytes);
+}
+
+char EntryKindCode(EntryKind kind) {
+    switch (kind) {
+    case EntryKind::User: return 'U';
+    case EntryKind::System: return 'S';
+    case EntryKind::Assistant: break;
+    }
+    return 'A';
+}
+
+EntryKind EntryKindFromCode(char code) {
+    if (code == 'U') return EntryKind::User;
+    if (code == 'S') return EntryKind::System;
+    return EntryKind::Assistant;
+}
+
+void WriteActiveConversationId(ConversationPanelMode mode, std::wstring_view id) {
+    if (!ValidConversationId(id)) return;
+    const fs::path root = miaodesk::paths::EnsureDirectory(ConversationScopeRoot(mode));
+    if (root.empty()) return;
+    const fs::path path = root / L"active";
+    fs::path temporary = path;
+    temporary += L".tmp";
+    const std::string utf8 = WideToUtf8(std::wstring(id));
+    {
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        if (!output) return;
+        output.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
+        if (!output) return;
+    }
+    MoveFileExW(
+        temporary.c_str(), path.c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+}
+
+std::wstring ReadActiveConversationId(ConversationPanelMode mode) {
+    const fs::path path = ConversationScopeRoot(mode) / L"active";
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    const std::string bytes(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    std::wstring id = Trim(Utf8ToWide(bytes));
+    return ValidConversationId(id) ? id : std::wstring{};
+}
+
+bool SaveConversationArchive(const ConversationState& state) {
+    if (state.conversationId.empty()) return false;
+    const fs::path path = ConversationArchivePath(state.mode, state.conversationId);
+    if (path.empty() || miaodesk::paths::EnsureDirectory(path.parent_path()).empty()) return false;
+    fs::path temporary = path;
+    temporary += L".tmp";
+
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    if (!output) return false;
+    output << "MIAODESK_CHAT_V1\n";
+    for (const auto& entry : state.entries) {
+        output << EntryKindCode(entry.kind) << '\t'
+               << EscapeConversationField(entry.time) << '\t'
+               << EscapeConversationField(entry.text) << '\n';
+    }
+    if (!output) return false;
+    output.close();
+    if (!MoveFileExW(
+            temporary.c_str(), path.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return false;
+    WriteActiveConversationId(state.mode, state.conversationId);
+    return true;
+}
+
+bool LoadConversationArchive(
+    ConversationPanelMode mode,
+    std::wstring_view id,
+    std::vector<ChatEntry>* entries) {
+    if (!entries) return false;
+    entries->clear();
+    const fs::path path = ConversationArchivePath(mode, id);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return false;
+
+    std::string line;
+    if (!std::getline(input, line) || line != "MIAODESK_CHAT_V1") return false;
+    while (std::getline(input, line)) {
+        if (line.size() < 3 || line[1] != '\t') continue;
+        const std::size_t secondTab = line.find('\t', 2);
+        if (secondTab == std::string::npos) continue;
+        ChatEntry entry;
+        entry.kind = EntryKindFromCode(line[0]);
+        entry.time = UnescapeConversationField(
+            std::string_view(line).substr(2, secondTab - 2));
+        entry.text = UnescapeConversationField(
+            std::string_view(line).substr(secondTab + 1));
+        entries->push_back(std::move(entry));
+    }
+    return true;
+}
+
+std::wstring ConversationArchiveTitle(const std::vector<ChatEntry>& entries) {
+    for (const auto& entry : entries) {
+        if (entry.kind != EntryKind::User) continue;
+        std::wstring title = Trim(entry.text);
+        if (title.empty()) continue;
+        const auto lineEnd = title.find_first_of(L"\r\n");
+        if (lineEnd != std::wstring::npos) title.resize(lineEnd);
+        constexpr std::size_t kMax = 28;
+        if (title.size() > kMax) title = title.substr(0, kMax) + L"…";
+        return title;
+    }
+    return L"新对话";
+}
+
+std::wstring ConversationContextText(const std::vector<ChatEntry>& entries) {
+    std::wstring context;
+    for (const auto& entry : entries) {
+        if (entry.kind == EntryKind::System || entry.text.empty()) continue;
+        context += entry.kind == EntryKind::User ? L"你：" : L"妙喵：";
+        context += entry.text;
+        context += L"\n";
+    }
+    constexpr std::size_t kMaxContextChars = 12000;
+    if (context.size() > kMaxContextChars)
+        context = context.substr(context.size() - kMaxContextChars);
+    return context;
+}
+
+struct ConversationArchiveSummary {
+    std::wstring id;
+    std::wstring title;
+    fs::file_time_type updated{};
+};
+
+std::vector<ConversationArchiveSummary> ListConversationArchives(
+    ConversationPanelMode mode) {
+    std::vector<ConversationArchiveSummary> summaries;
+    const fs::path root = ConversationScopeRoot(mode);
+    std::error_code ec;
+    if (root.empty() || !fs::is_directory(root, ec)) return summaries;
+
+    for (const auto& entry : fs::directory_iterator(root, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec) || entry.path().extension() != L".chat") continue;
+        const std::wstring id = entry.path().stem().wstring();
+        if (!ValidConversationId(id)) continue;
+        std::vector<ChatEntry> loaded;
+        if (!LoadConversationArchive(mode, id, &loaded)) continue;
+        summaries.push_back({
+            id,
+            ConversationArchiveTitle(loaded),
+            fs::last_write_time(entry.path(), ec)
+        });
+        ec.clear();
+    }
+    std::sort(
+        summaries.begin(), summaries.end(),
+        [](const auto& left, const auto& right) {
+            return left.updated > right.updated;
+        });
+    return summaries;
+}
+
 void AppendRouteLog(const std::wstring& text) {
     const auto path = L3RouteLogPath();
     HANDLE handle = CreateFileW(path.c_str(), FILE_APPEND_DATA,

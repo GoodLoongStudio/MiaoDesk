@@ -1,6 +1,7 @@
 #include "miaodesk/MiaoWidgetGeometry.h"
 
 #include <algorithm>
+#include <cwchar>
 
 namespace miaodesk::desktop {
 namespace {
@@ -85,6 +86,39 @@ WidgetAspectVerdict JudgeWidgetAspect(
     return verdict;
 }
 
+WidgetAspectVerdict JudgeWidgetAspectOfBox(const WidgetPixelBox& box,
+                                           const std::optional<float>& declaredAspect) noexcept {
+    WidgetAspectVerdict verdict;
+    if (!declaredAspect.has_value()) {
+        verdict.declared = false;
+        verdict.declaredAspect = 0.0f;
+        verdict.pixelAspect = 0.0f;
+        verdict.distortion = 1.0f;
+        verdict.exact = true;
+        return verdict;
+    }
+    verdict.declared = true;
+    verdict.declaredAspect = *declaredAspect;
+    // 比例从 width/height 现算,不读 box.aspect。
+    //
+    // box.aspect 是 ResolveWidgetPixelBox 顺手填的展示字段;宿主拿到盒子之后可能改它
+    // (DPI、边界夹紧、信箱化),而它没有义务记得同步那个字段。第一版就是读 box.aspect,
+    // 于是"把 height 调小 24 像素"这种改动拿到的还是旧比例的裁决 —— 而这一条恰好是
+    // 诊断要报的信息。WidgetGeometryTest 里那条"盒子与推算不同时裁决跟着变"逮到的。
+    const float width = box.width;
+    const float height = box.height;
+    verdict.pixelAspect = (width > 0.0f && height > 0.0f) ? width / height : 0.0f;
+    if (verdict.declaredAspect > 0.0f && verdict.pixelAspect > 0.0f) {
+        verdict.distortion = verdict.pixelAspect / verdict.declaredAspect;
+        verdict.exact = std::fabs(verdict.pixelAspect - verdict.declaredAspect) <=
+                        kWidgetAspectTolerance * std::max(1.0f, verdict.declaredAspect);
+    } else {
+        verdict.distortion = 1.0f;
+        verdict.exact = false;
+    }
+    return verdict;
+}
+
 WidgetPixelBox FitAspectInside(const WidgetPixelBox& box, float aspect) noexcept {
     WidgetPixelBox fitted = box;
     if (!(aspect > 0.0f) || !std::isfinite(aspect)) return fitted;
@@ -105,6 +139,13 @@ WidgetPixelBox FitAspectInside(const WidgetPixelBox& box, float aspect) noexcept
     fitted.aspect = SafeAspect(fitted.width, fitted.height);
     fitted.screenFraction = box.screenFraction;
     return fitted;
+}
+
+std::wstring FormatAspect(float value) noexcept {
+    if (!std::isfinite(value)) return L"nan";
+    wchar_t buffer[32];
+    swprintf(buffer, sizeof(buffer) / sizeof(buffer[0]), L"%.3f", static_cast<double>(value));
+    return buffer;
 }
 
 } // namespace miaodesk::desktop

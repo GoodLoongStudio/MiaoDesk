@@ -12,6 +12,7 @@
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/TodayTaskContentProvider.h"
+#include "miaodesk/MiaoWidgetGeometry.h"
 #include "miaodesk/WidgetRefreshPolicy.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
@@ -43,7 +44,10 @@ using Microsoft::WRL::ComPtr;
 using miaodesk::desktop::ApplyRefreshOutcome;
 using miaodesk::desktop::kWidgetDirectSurfaceHeartbeatMs;
 using miaodesk::desktop::kWidgetIdleRefreshMs;
+using miaodesk::desktop::FormatAspect;
+using miaodesk::desktop::JudgeWidgetAspectOfBox;
 using miaodesk::desktop::NextRefreshAt;
+using miaodesk::desktop::WidgetPixelBox;
 using miaodesk::desktop::WidgetRefreshState;
 
 namespace miaodesk::wallpaper {
@@ -371,6 +375,28 @@ struct ContentWidgetHostApp {
     std::wstring lastError;
     std::wstring lastLoggedSummary;
 
+    // 这个组件实际拿到的像素盒,与 manifest 声明的宽高比差多少。
+    //
+    // WPRO-01 量出来的结论此前只活在测试里:三个官方组件全部声明 aspectRatio 1.0,
+    // 而十六比九屏幕上实际是 576×324(1.78),超宽屏上是 3.56。**没有任何渲染器或宿主
+    // 读那个字段**,所以现场看不出任何异常。这一行让它出现在诊断里 —— 不是修它
+    // (修要动渲染,本机看不见效果),而是让它不再安静。
+    std::wstring AspectVerdict(const ContentSlot& slot) const {
+        if (slot.definition.geometry.aspectRatio.has_value() && slot.layerWidth > 0 &&
+            slot.layerHeight > 0) {
+            WidgetPixelBox box;
+            box.width = static_cast<float>(slot.layerWidth);
+            box.height = static_cast<float>(slot.layerHeight);
+            const auto verdict = JudgeWidgetAspectOfBox(box, slot.definition.geometry.aspectRatio);
+            return L" aspectDeclared=" + miaodesk::desktop::FormatAspect(verdict.declaredAspect) +
+                   L" aspectActual=" + miaodesk::desktop::FormatAspect(verdict.pixelAspect) +
+                   L" aspectDistortion=" + miaodesk::desktop::FormatAspect(verdict.distortion) +
+                   L" aspectHonored=" + (verdict.exact ? L"true" : L"false");
+        }
+        // 没声明就不写这一段:写了会让人以为这里有过一个结论。
+        return {};
+    }
+
     std::wstring SurfaceState(const ContentSlot& slot) const {
         RECT screen{};
         const bool screenValid = slot.hwnd && GetWindowRect(slot.hwnd, &screen) != FALSE;
@@ -389,7 +415,8 @@ struct ContentWidgetHostApp {
                L" zOrderValid=" + std::wstring(zOrder.valid ? L"true" : L"false") +
                L" paints=" + std::to_wstring(slot.successfulPaints) +
                L" screen=" + (screenValid ? RectText(screen) : std::wstring(L"<invalid>")) +
-               L" desktop=" + RectText(slot.desktopRegion);
+               L" desktop=" + RectText(slot.desktopRegion) +
+               AspectVerdict(slot);
     }
 
     void LogSlot(miaodesk::log::Level level, std::wstring_view event,

@@ -236,6 +236,59 @@ int wmain() {
         CheckNear(box.height, 324.0f, 0.01f, "高同样用声明值");
     }
 
+    // ---- 7. 给宿主的重载:直接吃真实像素盒 ----
+    {
+        const std::optional<float> square = 1.0f;
+        // 与"从归一化反推"必须给出同一个答案 —— 两条路算的是同一件事,
+        // 分歧只应来自宿主真实的盒子与推算不同(而那本身就是该报的信息)。
+        auto clock = ::miaodesk::desktop::ShippedLike("c", 0.30f, 0.30f, false, &square);
+        const auto box = ResolveWidgetPixelBox(clock.geometry, At(0.0f, 0.0f, 0.30f, 0.30f),
+                                               MonitorPixels{1920.0f, 1080.0f});
+        const auto viaBox = JudgeWidgetAspectOfBox(box, clock.geometry.aspectRatio);
+        const auto viaNormalized =
+            JudgeWidgetAspect(clock.geometry, At(0.0f, 0.0f, 0.30f, 0.30f),
+                              MonitorPixels{1920.0f, 1080.0f});
+        Check(viaBox.pixelAspect == viaNormalized.pixelAspect && viaBox.exact == viaNormalized.exact &&
+                  viaBox.distortion == viaNormalized.distortion,
+              "重载与从归一化反推给出一致结论(同一个算术,两条入口)");
+        Check(!viaBox.exact, "FHD 上重载也报'不成立'(576×324 对 1.0)");
+        CheckNear(viaBox.distortion, 1.7778f, 1e-3f, "重载报同一个 1.78 失真");
+
+        // 宿主要能通过它报出"实际盒子和推算不一样"。
+        WidgetPixelBox clamped = box;
+        clamped.height = 300.0f;  // 宿主要紧一截(DPI、边界夹紧)
+        const auto differ = JudgeWidgetAspectOfBox(clamped, square);
+        Check(!differ.exact && std::fabs(differ.pixelAspect - viaBox.pixelAspect) > 1e-6f,
+              "盒子与推算不同时,裁决跟着变(这正是诊断要的那个信息)");
+
+        // 没声明时同样不许报'不一致'。
+        const std::optional<float> none;
+        const auto undeclared = JudgeWidgetAspectOfBox(box, none);
+        Check(!undeclared.declared && undeclared.exact && undeclared.distortion == 1.0f,
+              "重载在没声明时也不报不一致");
+
+        // 空盒子不许 NaN。
+        WidgetPixelBox empty;
+        const auto onEmpty = JudgeWidgetAspectOfBox(empty, square);
+        Check(onEmpty.declared && !onEmpty.exact,
+              "空盒子上仍给出结论(不成立),而不是 NaN");
+        Check(std::isfinite(onEmpty.pixelAspect) && onEmpty.pixelAspect == 0.0f,
+              "空盒子的实际比例是 0,不是 NaN");
+    }
+
+    // ---- 8. FormatAspect:给人看的一小段 ----
+    {
+        Check(FormatAspect(1.7778f) == L"1.778", "1.7778 印成 1.778");
+        Check(FormatAspect(1.0f) == L"1.000", "1.0 印成 1.000(与 1.778 并排时才对得齐)");
+        Check(FormatAspect(0.0f) == L"0.000", "0 印成 0.000");
+        Check(FormatAspect(-2.5f) == L"-2.500", "负数照印,不取绝对值");
+        Check(FormatAspect(std::numeric_limits<float>::quiet_NaN()) == L"nan", "NaN 印成 nan");
+        Check(FormatAspect(std::numeric_limits<float>::infinity()) == L"nan", "inf 也印成 nan");
+        // 三位小数足够分辨 1.778 与 1.333,也足够分辨 1.000 与 1.001。
+        Check(FormatAspect(1.0004f) == L"1.000" && FormatAspect(1.0006f) == L"1.001",
+              "三位小数能分辨容差边界上的差别");
+    }
+
     if (g_failures != 0) {
         std::printf("\n失败 %d / %d\n", g_failures, g_checks);
         return 1;

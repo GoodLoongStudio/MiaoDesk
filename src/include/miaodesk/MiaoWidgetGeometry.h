@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "miaodesk/MiaoContentModel.h"
@@ -78,6 +79,15 @@ WidgetAspectVerdict JudgeWidgetAspect(
     const content::ContentInstance& instance,
     const MonitorPixels& monitor) noexcept;
 
+// 用**宿主手里那个真实像素盒**判一次。
+//
+// 为什么要有这个重载:`JudgeWidgetAspect` 从归一化几何反推像素盒,那是"照规矩算应该
+// 是这么大";而宿主要的渲染目标尺寸已经是既成事实 —— 分层窗口的 `UpdateLayeredWindow`
+// 与交换链都可能让最终盒子与推算差一两个像素(夹紧、DPI 缩放、桌面边界)。
+// 诊断要的是既成事实,不是推算。两边不一致本身就是一条要报的信息。
+WidgetAspectVerdict JudgeWidgetAspectOfBox(const WidgetPixelBox& box,
+                                           const std::optional<float>& declaredAspect) noexcept;
+
 // 宽高比判定认为"相等"的容差。
 //
 // 固定相对容差而不是绝对容差:比例可以从 0.05(细条)到 20(横幅),一个绝对容差
@@ -115,5 +125,11 @@ inline constexpr std::array<ReferenceMonitor, 8> kReferenceMonitors = {{
 }};
 
 inline constexpr std::size_t kReferenceMonitorCount = kReferenceMonitors.size();
+
+// 把一个比例印成人看的一小段(3 位小数)。给宿主的诊断与日志用。
+//
+// 没有直接用 std::to_wstring:那个会给 "1.777778" 六位,而诊断行已经很长,
+// 而人要看的是"1.778 对 1.000"这个对比,不是第七位小数。
+std::wstring FormatAspect(float value) noexcept;
 
 } // namespace miaodesk::desktop

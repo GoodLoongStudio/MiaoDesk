@@ -825,6 +825,8 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
   自动检查=`WidgetGeometryTest` 61 项、`ShippedWidgetGeometry` 10 项、`JsonStringFieldTest` 51 项全部通过；几何 10 处变异全红、JSON 3 处变异全红。`ExtractJsonDouble` 里原本有一条"挡 NaN"的守卫，变异检测跑出来是仍绿（`from_chars` 不接受 inf/nan，那条换成 `strtod` 才用得上），已删掉并把理由写进注释。
   **一个当场踩到的坑**（值得记）：`ExtractJsonInt` 对 `"0.30"` 解析失败并停在 `'.'` 上，于是第一版门把 `defaultWidth` 读成"取不到"、退回默认值 0.30 —— 而默认值恰好等于真值，于是三个组件全被报成"未声明 aspectRatio"，而 manifest 里明明写着 1.0。**默认值与真值撞车让整道门看起来在工作**。修法是在共享读取器里加 `ExtractJsonDouble`，而不是在门里自己写一个 `strtod`。
   **未做**：尺寸族（small/medium/large）没有定义 —— 那是产品决策（有哪几档、UI 上怎么选），本轮不发明；长文本/溢出策略、切尺寸迁移、`FitAspectInside` 接进宿主都没有；`FitAspectInside` 当前**无调用方**。真机跨 DPI/跨屏签收未取证（本机不是 Windows）。
+    **补充二（同日，接线诊断）**：`ContentWidgetHost::SurfaceState` 现在把宽高比裁决写进诊断行（`aspectDeclared` / `aspectActual` / `aspectDistortion` / `aspectHonored`）。这不出新逻辑，但把上一段"量出来却没人看得见"的结论搬到现场：三个官方组件在 FHD 上会打印 `aspectDeclared=1.000 aspectActual=1.778 aspectDistortion=1.778 aspectHonored=false`。**不是修它** —— 修要动渲染，本机看不见效果。
+  为此加 `JudgeWidgetAspectOfBox` 重载：宿主手里那个渲染目标尺寸是**既成事实**（夹紧、DPI、桌面边界都可能让它与推算差一两个像素），而诊断要的是既成事实。第一版实现读了 `box.aspect` 这个展示字段，于是"把 height 调小 24 像素"拿到的还是旧比例的裁决 —— 而那一条恰好是诊断要报的信息，是 `WidgetGeometryTest` 里"盒子与推算不同时裁决跟着变"逮到的。改成从 width/height 现算。另加 `FormatAspect`（三位小数 + NaN/inf 印成 `nan`）。
   面板状态 🟡。
 
 ### WPRO-02 — Native 组件视觉与控件原语

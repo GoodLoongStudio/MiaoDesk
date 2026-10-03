@@ -91,6 +91,24 @@ int wmain() {
     const auto two = BuildTodayTaskCardModel(Snap(2, 2), 4);
     Check(two.statusText == L"2 项待办", "状态文案与真实数量一致。");
 
+    // ---- 6. 溢出说明必须是真的 ----
+    // 缺陷本体:组件顶部的计数说的是真话("8 项待办"),下面只画 4 行,而没有任何地方
+    // 告诉用户"还有 4 条"。用户以为组件坏了,或者以为自己只加了 4 条。
+    Check(TaskOverflowText(3, kTodayTaskVisibleSlots).empty(), "放得下时没有溢出说明。");
+    Check(TaskOverflowText(kTodayTaskVisibleSlots, kTodayTaskVisibleSlots).empty(),
+          "刚好放满时也没有溢出说明 —— 不是『还有 0 项』。");
+    Check(TaskOverflowText(8, kTodayTaskVisibleSlots) == L"还有 4 项", "8 条待办、4 个槽位:还有 4 项。");
+    Check(TaskOverflowText(5, kTodayTaskVisibleSlots) == L"还有 1 项", "多一条时如实说还有 1 条。");
+    Check(TaskOverflowText(9, 4) == L"还有 5 项", "槽位数由调用方给,不写死。");
+    // 槽位为 0 是退化情形,但说明仍必须是真的:全部待办都放不下。
+    Check(TaskOverflowText(4, 0) == L"还有 4 项", "槽位为 0 时说全部放不下,不说空话。");
+
+    // 卡片模型用的行数上限与这里共用同一个常量:两处各写一个 4 早晚对不上。
+    const auto many2 = BuildTodayTaskCardModel(Snap(9, 0), kTodayTaskVisibleSlots);
+    Check(many2.rows.size() == kTodayTaskVisibleSlots, "卡片按共享槽位数截断。");
+    Check(TaskOverflowText(9, kTodayTaskVisibleSlots) == L"还有 5 项",
+          "同一份待办在组件与卡片上给出同一个溢出数。");
+
     if (g_failures != 0) {
         std::printf("\n失败 %d / %d\n", g_failures, g_checks);
         return 1;

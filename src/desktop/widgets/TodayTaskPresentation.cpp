@@ -46,4 +46,9 @@ TodayTaskCardModel BuildTodayTaskCardModel(const TodayTaskSnapshot& snapshot, st
     return model;
 }
 
+std::wstring TaskOverflowText(std::size_t totalItems, std::size_t visibleSlots) {
+    if (totalItems <= visibleSlots) return {};
+    return L"还有 " + std::to_wstring(totalItems - visibleSlots) + L" 项";
+}
+
 } // namespace miaodesk::desktop

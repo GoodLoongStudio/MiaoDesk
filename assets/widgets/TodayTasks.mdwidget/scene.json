@@ -259,6 +259,30 @@
       ]
     },
     {
+      "id": "node://overflow",
+      "name": "Overflow Hint",
+      "parentId": "node://root",
+      "enabled": true,
+      "components": [
+        {"id": "component://overflow/transform", "kind": "transform", "properties": [
+          {"name": "position", "type": "vec2", "default": [18.0, 406.0]},
+          {"name": "scale", "type": "vec2", "default": [1.0, 1.0]},
+          {"name": "rotation", "type": "float", "default": 0.0},
+          {"name": "opacity", "type": "float", "default": 0.72}
+        ]},
+        {"id": "component://overflow/text", "kind": "textRenderer", "properties": [
+          {"name": "value", "type": "string", "default": "{{tasks.overflowText}}"},
+          {"name": "fontSize", "type": "float", "default": 12.0},
+          {"name": "color", "type": "color", "default": [0.90, 0.96, 1.0, 1.0]},
+          {"name": "opacity", "type": "float", "default": 1.0},
+          {"name": "align", "type": "string", "default": "left"},
+          {"name": "verticalAlign", "type": "string", "default": "top"},
+          {"name": "fontFamily", "type": "string", "default": "Segoe UI Variable Text"},
+          {"name": "fontWeight", "type": "int", "default": 400}
+        ]}
+      ]
+    },
+    {
       "id": "node://empty",
       "name": "Empty Hint",
       "parentId": "node://root",

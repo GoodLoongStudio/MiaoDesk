@@ -130,6 +130,9 @@ D2D 上的 `postProcesses`；彻底关闭它属于 WALL-01/04。
 | D-6 | `ContentPackageValidator` 的 entry 规则只认 `scene/scene.json`，而加载器接受根下 `scene.json`；8 个随产品发行的包全部被它拒掉 | 照发行包的样子写出来的候选被判"校验不通过"，拒绝原因还指向一个合法的包 | 已修：规则改为"包内安全相对 .json，且不是 manifest/parameters 本身"，两种布局都接受；`ShippedPackagesValidate` 作为回归门 |
 | D-7 | 包级校验此前**没有**任何自动检查覆盖随产品发行的包（`BuiltinWallpaperPackages` 走的是另一条链） | 校验规则的任何收紧都可能悄悄把发行包拒掉 | 已关：`src/tests/ShippedPackagesValidate.cpp` 每次校验全部 8 个发行包 |
 
+| D-8 | 待办组件的计数说真话（"8 项待办"）却只画 4 个固定槽位，且没有任何地方提示"还有 4 项" | 用户以为组件坏了，或以为自己只加了 4 条；沉默截断与显示假数据是同一类错 | 已修：`TaskOverflowText` 纯逻辑 + 内容组件新增 `tasks.overflowText` 绑定节点；槽位数改为内容与原生卡片共用一份 |
+| D-9 | 槽位数在内容提供方与原生卡片各写一个 4 | 迟早出现"组件说还有 4 项、原生卡片画到第 5 条" | 已关：`kTodayTaskVisibleSlots` 单一来源 |
+
 漏教(2026-10-03 补)：四份 Skill 此前只提到 3 个场景组件 kind、0 个资产类型、0 个后处理效果，
 而 `textRenderer` 有完整的 D2D 实现并支持 `{{data.*}} 模板。Skill 还把视频教成"单轨
 VideoRenderer 循环"，而**没有任何渲染器实现那个组件** —— 视频壁纸走的是另一条路

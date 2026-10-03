@@ -49,4 +49,15 @@ struct TodayTaskCardModel {
 // statusText 说明原因,rows 为空 —— 调用方不得用别的东西填满它。
 TodayTaskCardModel BuildTodayTaskCardModel(const TodayTaskSnapshot& snapshot, std::size_t maxRows);
 
+// 内容组件与原生卡片都只画固定条数的待办。这个条数是**一份**的:两处各写一个 4,
+// 早晚出现"组件说还有 4 项、原生卡片画到第 5 条"这种对不上的情形。
+inline constexpr std::size_t kTodayTaskVisibleSlots = 4;
+
+// 放不下的那部分的说明。空串表示没有放不下的。
+//
+// 需要这个函数的理由:组件顶部的计数说的是真话("8 项待办"),而下面只画 4 行,
+// 此前没有任何地方告诉用户"还有 4 条"。用户以为组件坏了,或者以为自己只加了 4 条。
+// 沉默地截断和显示假数据是同一类错 —— 组件都在对自己画出来的东西撒谎。
+std::wstring TaskOverflowText(std::size_t totalItems, std::size_t visibleSlots);
+
 } // namespace miaodesk::desktop

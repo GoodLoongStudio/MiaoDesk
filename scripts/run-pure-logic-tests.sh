@@ -31,6 +31,10 @@ done
 # "Windows 真机待验",而它们恰好是最该每轮都跑的那批:取消 epoch、迟到消息、
 # 幂等、预算,以及"拒绝跨作品、越界路径、reparse point、代码产物"。
 # 判断标准和上面一致:能过 -fsyntax-only(不加替身头)才算纯逻辑。
+# TodayTaskContentProvider.cpp **不在**这一列,尽管它是纯逻辑:它调 TodayTaskStore::Load,
+# 而那个实现 import Windows 头(配置持久化要 UTF-16 wchar_t)。所以提供方整体只能在
+# Windows 上链接。可测的那一半已经拆到 TodayTaskPresentation(TaskOverflowText 与卡片模型),
+# 那一半在本机真跑 —— 见 TodayTaskPresentationTest。
 # desktop/widgets/TodayTaskPresentation.cpp 也在这一列(D-2):原生待办卡片的行模型是
 # 纯逻辑,而要修的那个 bug —— 卡片画三条写死的待办、从不读存储 —— 恰好只可能在本机
 # 验证。少了它,这一条只能等 Windows 真机,而它没有理由等。

@@ -144,6 +144,7 @@ set(MIAODESK_CORE_SOURCES
     desktop/wallpaper/monitor/WallpaperMonitorLayout.cpp
     desktop/wallpaper/monitor/WallpaperMonitorAssignments.cpp
     search/AppSearch.cpp
+    search/SearchTextScoring.cpp
     search/GozSearch.cpp
 )
 
@@ -365,6 +366,7 @@ add_executable(MiaoDeskWidgetDataActionContractTest tests/WidgetDataActionContra
 # 正是宣言层(entry 布局、capabilities 是否在目录里、代码产物)。这个门第一次跑就发现
 # 校验器的 entry 规则把 8 个发行包全拒了:它只认 scene/scene.json,而发行包用 scene.json。
 add_executable(MiaoDeskShippedPackagesValidate tests/ShippedPackagesValidate.cpp)
+add_executable(MiaoDeskSearchRankingBaselineTest tests/SearchRankingBaselineTest.cpp)
 add_executable(MiaoDeskCreatorReplyInterpreterTest tests/CreatorReplyInterpreterTest.cpp)
 add_executable(MiaoDeskContentApplyRecoveryTest tests/ContentApplyRecoveryTest.cpp)
 add_executable(MiaoDeskCreationDraftStoreTest tests/CreationDraftStoreTest.cpp)
@@ -401,7 +403,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -463,6 +465,7 @@ if (MSVC)
     target_compile_options(MiaoDeskTodayTaskPresentationTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWidgetDataActionContractTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskShippedPackagesValidate PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskSearchRankingBaselineTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorReplyInterpreterTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentApplyRecoveryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationDraftStoreTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -680,6 +683,11 @@ target_link_libraries(MiaoDeskWidgetDataActionContractTest PRIVATE
 # 正是宣言层(entry 布局、capabilities 是否在目录里、代码产物)。这个门第一次跑就发现
 # 校验器的 entry 规则把 8 个发行包全拒了:它只认 scene/scene.json,而发行包用 scene.json。
 target_link_libraries(MiaoDeskShippedPackagesValidate PRIVATE
+    MiaoDeskCore
+)
+# SEARCH-01/02:固定样本上的排序基线与回归。排序规则原先住在 AppSearch.cpp 的匿名
+# 命名空间里,而那个文件要 windows.h 才编 —— 用户感知最强的一段反而在本机一行都跑不到。
+target_link_libraries(MiaoDeskSearchRankingBaselineTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorReplyInterpreterTest PRIVATE

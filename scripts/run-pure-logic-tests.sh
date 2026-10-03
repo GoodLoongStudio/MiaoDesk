@@ -46,7 +46,8 @@ for f in desktop/control/CreationWorkflow.cpp \
          desktop/control/CreatorToolWorker.cpp \
          desktop/control/CreatorWorkspaceState.cpp \
          desktop/widgets/TodayTaskPresentation.cpp \
-         desktop/widgets/WidgetDataActionContract.cpp; do
+         desktop/widgets/WidgetDataActionContract.cpp \
+         search/SearchTextScoring.cpp; do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then
     SRCS+=("$f")
     echo "额外的纯逻辑实现:$f"
@@ -97,7 +98,7 @@ echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # WebAudioEnvelope 是 host->page 音频信封:它把 content/ 的 AudioSpectrumFrame 变成
 # shim 会接受的 JSON。整条链没有一行 Windows 代码,所以能在本机跑;
 # 另一半(页面侧 shim)由 tests/WebAudioEnvelopeParity.mjs 一起对。
-for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate; do
+for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate SearchRankingBaselineTest; do
   run "$t" "$t.cpp"
 done
 

@@ -1,4 +1,5 @@
 #include "miaodesk/AppSearch.h"
+#include "miaodesk/SearchTextScoring.h"
 #include <windows.h>
 #include <filesystem>
 #include <algorithm>
@@ -17,26 +18,6 @@ std::wstring Lower(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(ch));
     });
     return value;
-}
-
-double ScoreText(const std::wstring& haystackRaw, const std::wstring& needleRaw) {
-    const auto haystack = Lower(haystackRaw);
-    const auto needle = Lower(needleRaw);
-    if (needle.empty()) return 0.0;
-    if (haystack == needle) return 1000.0;
-    if (haystack.starts_with(needle)) return 850.0 - static_cast<double>(haystack.size() - needle.size());
-    if (const auto pos = haystack.find(needle); pos != std::wstring::npos)
-        return 650.0 - static_cast<double>(pos) * 2.0;
-
-    std::size_t h = 0;
-    std::size_t gaps = 0;
-    for (wchar_t n : needle) {
-        const auto found = haystack.find(n, h);
-        if (found == std::wstring::npos) return 0.0;
-        gaps += found - h;
-        h = found + 1;
-    }
-    return 350.0 - static_cast<double>(gaps);
 }
 
 void AddPathEntries(const fs::path& root, std::vector<AppSearch::Entry>& entries) {
@@ -124,19 +105,20 @@ void AppSearch::BuildIndex() {
 }
 
 std::vector<SearchResult> AppSearch::Query(const std::wstring& query, std::size_t maxResults) const {
-    std::vector<SearchResult> results;
-    if (query.empty()) return results;
+    // 排序规则住在 SearchTextScoring(纯逻辑,本机可测)。这里只做一次形态转换:
+    // 索引里一条 entry 就是一条可排序候选,语义上一一对应,不重排、不加权、不过滤。
+    // 分开的理由见那个头的说明:规则原先在本机一行都跑不到,而它是用户感知最强的一段。
+    std::vector<SearchRankEntry> rankable;
+    rankable.reserve(entries_.size());
     for (const auto& entry : entries_) {
-        double score = std::max(ScoreText(entry.name, query), ScoreText(entry.keywords, query) * 0.85);
-        if (score <= 0.0) continue;
-        results.push_back({ResultKind::App, entry.name, entry.target, entry.target, score});
+        SearchRankEntry item;
+        item.name = entry.name;
+        item.keywords = entry.keywords;
+        item.target = entry.target;
+        item.subtitle = entry.target;
+        rankable.push_back(std::move(item));
     }
-    std::sort(results.begin(), results.end(), [](const SearchResult& a, const SearchResult& b) {
-        if (a.score != b.score) return a.score > b.score;
-        return a.title < b.title;
-    });
-    if (results.size() > maxResults) results.resize(maxResults);
-    return results;
+    return RankSearchEntries(rankable, query, maxResults);
 }
 
 } // namespace miaodesk

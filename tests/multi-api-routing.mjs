@@ -26,8 +26,27 @@ assert.ok(agentHeader.includes("std::wstring preferredProfileId_"));
 assert.ok(agentHeader.includes("std::wstring profileId;"));
 assert.ok(agentHeader.includes("std::wstring profileName;"));
 assert.ok(agentHeader.includes("api_runtime_profile::LoadById(preferredProfileId_)"));
-assert.ok(agent.includes("Lower(config.profileId)"),
-  "direct-model history/session identity must include the selected profile");
+// The session identity used to be hashed inline in L3Agent.cpp as
+//   SessionHash(config) { ... Lower(config.profileId) ... }
+// so the check below was a grep for "Lower(config.profileId)". P0-09 moved the
+// hashing into MiaoSessionMigration so the copy that migrates a session across a
+// config-source promotion and the copy that locates it cannot drift apart: two
+// copies means a silent failed migration, which is worse than no migration.
+// Assert the invariant where it now lives, and that it is stronger than the
+// old grep -- SessionMigrationTest actually executes on this machine and pins
+// that changing profileId changes the hash, plus the exact hash values.
+const sessionMigration = read("src/ai/agent/MiaoSessionMigration.cpp");
+assert.match(sessionMigration, /LowerText\(identity\.profileId\)/,
+  "the shared session identity must include the selected profile id");
+assert.match(agent, /session_migration::SessionIdentityHash\(identity\)/,
+  "L3Agent must delegate its session hash to the single shared implementation");
+assert.match(agent, /identity\.profileId = config\.profileId/,
+  "and it must feed the selected profile id into that shared implementation");
+const sessionMigrationTest = read("src/tests/SessionMigrationTest.cpp");
+assert.match(sessionMigrationTest, /other\.profileId = L"main"/,
+  "a pure-logic test must vary profileId to prove it changes the session identity");
+assert.match(sessionMigrationTest, /SessionIdentityHash\(\w+\) == 0x[0-9a-f]+ull/,
+  "and that test must pin the hash values that name the on-disk session files");
 // The per-profile credential slot is derived in one place now. Before P0-07 the
 // prefix lived inline in L3Agent.cpp while ApiRuntimeProfile::ReadSection read the
 // same string from its own copy, so the two could drift and the key would silently

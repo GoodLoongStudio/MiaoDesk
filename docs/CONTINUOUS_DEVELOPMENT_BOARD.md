@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `7fd78112`（本机 37 目标全通过；上一 SHA 的三项 Windows CI 已 success）
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `51d01b07`（本机 38 目标全通过；同 SHA CI 5/8 success，其余在跑）
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -237,8 +237,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - 代码提交：`34a6d55b`（前一代码提交 `d02812d6`）；本轮文档 + 代码，未提升版本号。
 - 本机跑了什么：36 个纯逻辑目标全通过（exit 0）；mingw 交叉语法门 0 真实错误；
   17 道仓库门 + 6 道相关 node 契约门全通过；新增测试全部做了变异检测。
-- CI：`0e906c6c` 已推送，Path Layout Contract / Windows x64 Build / Windows ARM64 Fast Dev
-  三项 success；打包与 MSIX 仍在跑（匿名 API 有速率限制，逐个确认）。
+- CI：`51d01b07`（当前 HEAD）8 项全部完成，**全部 success**（Repo Hygiene / Windows x64 Build /
+  Path Layout Contract / ARM64 Fast Dev / Windows x64 MSIX / Windows x64 Package /
+  Windows ARM64 Package / Cleanup merged branches）。早前 SHA 上有两项显示 cancelled —— 那是
+  推送下一个提交时 GitHub 取消被取代的运行，不是失败。
 - 真机：**未取证**。本机不是 Windows —— 视觉、桌面行为、音频设备、多屏、性能一律给不出证据，
   因此 `P0-03/04/06/07/08`、`WALL-06`、`PRO-03/05` 与 CAP-04 的证据仍然缺着。
 - 已完成（本机可自动部分）：PRO-01 台账、CAP-01/02/03/05 的契约与门、SEARCH-01 的排序基线与

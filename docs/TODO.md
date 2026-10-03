@@ -701,6 +701,10 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **验收**：AI 能解释并正确使用检索能力；更换安装版本不引用不可用字段；样例与保留集分离。
 - **验证环境**：结构/检索自动验证；样例渲染与视觉人工签收。
 - **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；自动检查=`scripts/verify-skill-teaches-executable-capabilities.sh` PASS（45 条可创作且可执行的能力全部被至少一份 Skill 提到；变异检测：往目录加一个没人教的能力即红）、既有四道 skill 门 PASS。补齐内容：`wallpaper-content` 增加 10 个组件 kind 的"画/不画×后端"表、图片资产写法与 25 MiB 上限、8 个后处理效果及其成对规则、时间通道；`widget-content` 改正"resize 为 true 可用"与"尺寸可改"两处说法（resize 是惰性字段，产品内无任何入口改变组件尺寸）。事实校正三处：scene.json 的 `videoRenderer` 无渲染器（视频走媒体文件+宿主的视频播放器另一条路）、`asset.font` 无消费方（textRenderer 用系统字体名）、`builtinName:"gradient"` 无实现。真机/作品证据=无。**未做**：每项能力的最小例+组合例、3+3 个真实渲染样例、AI 检索与解释能力评测 —— 后两项需要真实渲染与真实模型调用，本轮不声称。面板状态 🟡。
+- **补充（同日）**：新增 `src/tests/ExamplePackagesLoad.cpp` —— 作者照抄的两个示例包此前**两头都不覆盖**
+  （`BuiltinWallpaperPackages` 只含三个内置壁纸，`ShippedPackagesValidate` 只走包级校验）。现在示例包也走
+  load → 反序列化 → 运行时校验 → 资产解析 → Initialize，并核对 `param://` 绑定都有定义、示例不含代码产物、
+  示例 HLSL 入口点符合契约。17 项通过；变异检测通过（绑定指向不存在的参数即红）。
 
 ### CAP-03 — 内容包演进与可复用资产
 

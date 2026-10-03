@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `bd23cfe6`（本机 40 目标全通过；同 SHA CI 8/8 success）。WALL-03 的宿主侧时间策略已在 `51d01b07` 之后推进，工作区内含未提交的 `bd23cfe6` + WALL-03 两批。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `7e08e97b`（本机 40 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；26 处变异全红；同 SHA CI 在跑）。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -236,10 +236,15 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 - 代码提交：`bd23cfe6`（前一代码提交 `51d01b07`）；本轮文档 + 代码，未提升版本号。
 - 本机跑了什么：40 个纯逻辑目标全通过（exit 0）—— 新增 `MiaoSceneTimelinePolicyTest`
-  165 项与 `ShippedAnimationContinuity` 43 项，加上 `MiaoSceneRuntimeTest` 新增 5 项共 29 项；
-  mingw 交叉语法门 0 真实错误；15 处变异全部变红（`SceneClock` 暂停、`Seek` 绕过暂停、
-  参数过渡中途给终值、结束帧不报终值、接缝判断恒 0、`Validate` 并发写规则……）。
-- CI：`bd23cfe6` 8 项全部完成，**全部 success**。
+  174 项、`ShippedAnimationContinuity` 48 项，`MiaoSceneRuntimeTest` 新增 6 项共 33 项，
+  `ContentSelfTests` 从 9 项增至 11 项（接上两个此前**在整个仓库里没有调用方**的 SelfTest，
+  其中帧调度器那条第一次执行就红了 —— 红的不是代码是断言）；mingw 交叉语法门 0 真实错误；
+  21 道仓库门全通过；26 处变异全部变红。
+- **本轮修正过自己一次结论**：第一版把"动画与 binding 写同一属性"也一并拒绝，理由写的是
+  "binding 是死的"；跑到三道产品 SelfTest 夹具上才发现理由不成立（binding 只在 Initialize
+  跑一次，它在动画开跑之前是可观测的）。边界改划在"两条动画"，binding 那一侧改为报告 +
+  写进 Skill。四处文档已同步改正。
+- CI：`7e08e97b` 已推送，8 项在跑。
 - 真机：**未取证**。本机不是 Windows —— 动画采样、视觉、桌面行为一律给不出证据。
 - 已完成（本机可自动部分）：WALL-03 的宿主侧时间策略（`SceneClock` 暂停恢复 /
   `ParameterSlew` 平滑过渡 / `AuditAnimationContinuity` 循环接缝与一帧瞬移）、
@@ -248,7 +253,8 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   渲染不出来。登记而不是静默放过，也不是本机改美术后放行。
 - 下一候选（依赖已满足且本机可自动验证）：`CAP-02` 的"每项可创作能力最小例 + 组合例"仍缺示例包；
   `P0-03/P0-04/P0-07/08/09`、`WALL-06`、`PRO-03/05`、CAP-04、WALL-03 的真机动画采样都要 Windows 侧，
-  一律留 `🟠`。
+  一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
+  接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
 
 ### 本轮推进记录（2026-10-03，自动推进会话）

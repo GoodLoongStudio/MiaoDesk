@@ -1,5 +1,6 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoLibraryRowFilter.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
@@ -22,6 +23,7 @@
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
+namespace library_row = miaodesk::library_row;
 
 namespace miaodesk::wallpaper {
 namespace {
@@ -255,6 +257,7 @@ WallpaperLibrary::WallpaperLibrary(fs::path root) : root_(std::move(root)) {}
 bool WallpaperLibrary::Load(std::wstring* error) {
     SetError(error, L"");
     items_.clear();
+    skippedRows_.clear();
     std::error_code ec;
     fs::create_directories(root_, ec);
     fs::create_directories(MediaDirectory(), ec);
@@ -271,7 +274,8 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (section.rfind(kItemPrefix, 0) != 0) continue;
         WallpaperLibraryItem item;
         item.id = section.substr(std::size(kItemPrefix) - 1);
-        item.kind = ParseKind(ReadProfileText(manifest, section, L"Kind", L"unknown"));
+        item.kindText = ReadProfileText(manifest, section, L"Kind", L"");
+        item.kind = ParseKind(item.kindText);
         item.title = ReadProfileText(manifest, section, L"Title", L"");
         item.source = ReadProfileText(manifest, section, L"Source", L"");
         item.thumbnail = ReadProfileText(manifest, section, L"Thumbnail", L"");
@@ -280,7 +284,17 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         item.importedUnixSeconds = ReadProfileU64(manifest, section, L"Imported", 0);
         item.lastUsedUnixSeconds = ReadProfileU64(manifest, section, L"LastUsed", 0);
         if (item.title.empty()) item.title = item.source.empty() ? L"未命名壁纸" : DefaultTitle(item.source);
-        if (!item.id.empty() && item.kind != LibraryWallpaperKind::Unknown) items_.push_back(std::move(item));
+        // 这一行原先 silently 丢掉:ID 空或 Kind 不认识时什么都不说,而 Load 照常
+    // 返回 true。调用方只问成败,于是拿着一个悄悄变短的库继续 —— P0-07 的
+    // "库状态一致恢复"实际变成了"恢复成一个更短的库并报告成功"。
+    // 现在仍然不进库(那是要动 UI 的决定),但把原因记下来,
+    // 让宿主第一次能说出口。判定与那句话在 MiaoLibraryRowFilter(纯逻辑,有门)。
+    const auto skipReason = library_row::ClassifyLibraryRow(item.id, item.kindText);
+    if (skipReason == library_row::RowSkipReason::None) {
+        items_.push_back(std::move(item));
+    } else {
+        skippedRows_.push_back(library_row::DescribeRowSkip(item.id, item.kindText, skipReason));
+    }
     }
 
     const auto loadedItems = items_;

@@ -24,6 +24,9 @@ struct WallpaperLibraryItem {
     std::filesystem::path thumbnail;
     bool favorite{};
     bool managedCopy{};
+    // INI 里读出来的 Kind 原文(未归一化)。留着是为了"为什么跳过这一行"
+    // 能分清"字段缺失"与"写了本版本不认识的词"—— 一个是损坏,一个是版本差异。
+    std::wstring kindText;
     unsigned long long importedUnixSeconds{};
     unsigned long long lastUsedUnixSeconds{};
 };
@@ -40,6 +43,18 @@ public:
 
     bool Load(std::wstring* error = nullptr);
     const std::vector<WallpaperLibraryItem>& Items() const noexcept;
+
+    // 上一轮 Load 中被跳过的行,以及为什么。
+    //
+    // 为什么要有这个:Load 原先在"ID 空"或"Kind 本版本不认识"时**静默丢行**,
+    // 而 Load 照常返回 true —— 于是调用方只问成败,拿着一个悄悄变短的库继续,
+    // 用户导入的壁纸就这么不见了,而没有任何地方说为什么。P0-07 的验收是
+    // "库状态一致恢复",这里的实际行为是"恢复成一个更短的库并报告成功"。
+    //
+    // 它**不改变**哪些行进库:那一行仍然不进(要不要进是要动 UI 的决定),
+    // 只是让丢失第一次说得出口。理由由 MiaoLibraryRowFilter(纯逻辑,本机有门)给。
+    const std::vector<std::wstring>& SkippedRows() const noexcept { return skippedRows_; }
+    std::size_t SkippedRowCount() const noexcept { return skippedRows_.size(); }
 
     std::optional<WallpaperLibraryItem> ImportFile(
         const std::filesystem::path& source,
@@ -81,6 +96,8 @@ private:
 
     std::filesystem::path root_;
     std::vector<WallpaperLibraryItem> items_;
+    // 上一轮 Load 跳过的行及原因。空表示没有跳过。
+    std::vector<std::wstring> skippedRows_;
 };
 
 } // namespace miaodesk::wallpaper

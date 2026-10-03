@@ -28,8 +28,20 @@ assert.ok(agentHeader.includes("std::wstring profileName;"));
 assert.ok(agentHeader.includes("api_runtime_profile::LoadById(preferredProfileId_)"));
 assert.ok(agent.includes("Lower(config.profileId)"),
   "direct-model history/session identity must include the selected profile");
-assert.ok(agent.includes('L"MiaoDesk/ApiProfile/" + config_.profileId'),
+// The per-profile credential slot is derived in one place now. Before P0-07 the
+// prefix lived inline in L3Agent.cpp while ApiRuntimeProfile::ReadSection read the
+// same string from its own copy, so the two could drift and the key would silently
+// land in a different slot on one side only. The contract below pins the intent
+// (the direct model's credential IS the selected profile's), not one spelling.
+assert.ok(agent.includes("agent_config::AgentCredentialTarget(RequestIdentity())"),
   "direct-model credentials must come from the selected central profile");
+const credentialSlots = read("src/ai/agent/MiaoAgentConfigAuthority.cpp");
+assert.ok(credentialSlots.includes("JoinPrefix(kProfileCredentialPrefix, identity.profileId)"),
+  "the shared credential slot must be derived from the selected profile id, not hardcoded");
+assert.ok(agent.includes("static_assert(std::wstring_view(kCredentialTarget) =="),
+  "the legacy credential slot name must stay pinned to the shared copy so it cannot drift");
+assert.ok(!agent.includes('L"MiaoDesk/ApiProfile/" + config_.profileId'),
+  "a second inline copy of the profile credential slot must not come back");
 
 assert.ok(pi.includes("return agent.CurrentApiKey();"),
   "Pi must use the same selected profile credential as the L3 agent");

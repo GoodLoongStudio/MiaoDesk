@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `511a663b`（本机 43 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；共 36 处变异全红；同 SHA CI 在跑）。前三个提交 `7e08e97b`/`beb322e9` 的 CI 均已 success。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `60bf938d`（本机 44 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；同 SHA CI 在跑）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -256,6 +256,23 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续二，把宽高比裁决接进宿主诊断）
+
+- 代码提交：`60bf938d`。
+- **做的是什么**：WPRO-01 上一轮量出"三个官方组件全声明 `aspectRatio: 1.0`，八个参考屏幕上一个也不成立"，但那个结论只活在测试里 —— 现场一个字都不提，因为没有任何渲染器或宿主读那个字段。本轮把它接进 `ContentWidgetHost::SurfaceState`：FHD 上三个组件会打印
+  `aspectDeclared=1.000 aspectActual=1.778 aspectDistortion=1.778 aspectHonored=false`。
+  **不是修它**（修要动渲染，本机看不见效果），是让它不再安静。
+- **为此加 `JudgeWidgetAspectOfBox` 重载**，吃宿主手里那个真实像素盒而不是从归一化反推：
+  宿主要的渲染目标尺寸是既成事实（夹紧、DPI、桌面边界都可能让它与推算差一两个像素），
+  诊断要的是既成事实。
+- **第一版实现读 `box.aspect` 是错的**：宿主拿到盒子后可能改它，而它没有义务记得同步那个
+  展示字段。于是"把 height 调小 24 像素"拿到的还是旧比例的裁决 —— 而那一条恰好是诊断要报的
+  信息，是 `WidgetGeometryTest` 里"盒子与推算不同时裁决跟着变"逮到的。
+- 本机跑了什么：44 个纯逻辑目标全通过（exit 0）；`WidgetGeometryTest` 75 项；
+  4 处变异全红；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。
+- 真机：**未取证**。诊断行的实际输出只在 Windows 宿主里写进配置文件与日志；桌面视觉
+  一个像素都没动。
 
 ### 本轮推进记录（2026-10-04 再续，CAP-03 资产门与 schema 版本矩阵）
 

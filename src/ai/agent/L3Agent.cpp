@@ -200,15 +200,21 @@ fs::path SettingsPath() {
     return directory.empty() ? fs::path{} : directory / L"model-settings.json";
 }
 
+// 会话身份的哈希。**唯一实现在 MiaoSessionMigration(纯逻辑那份)**,这里只转一手。
+//
+// 为什么必须只有一份:P0-09 修的是"旧配置升级后旧会话找不到"。搬运会话要靠
+// 两边算出同一个路径,而两处各写一遍时改一边不改另一边,搬运会静默失败 ——
+// 那时旧 .bin 还在盘上,只是再也没有人找得到它,比不搬更难查。
+// 这也让 SessionMigrationTest 能在本机钉住这套算法(L3Agent.cpp 为了 winhttp.h
+// 只能在 Windows 上编)。
 std::uint64_t SessionHash(const ModelConfig& config) {
-    const std::wstring key = Lower(config.profileId) + L"\n" + Lower(config.providerId) + L"\n" +
-                             Lower(config.baseUrl) + L"\n" + config.endpoint + L"\n" + config.model;
-    std::uint64_t hash = 1469598103934665603ull;
-    for (wchar_t ch : key) {
-        hash ^= static_cast<std::uint16_t>(ch);
-        hash *= 1099511628211ull;
-    }
-    return hash;
+    session_migration::LegacySessionIdentity identity;
+    identity.profileId = config.profileId;
+    identity.providerId = config.providerId;
+    identity.baseUrl = config.baseUrl;
+    identity.endpoint = config.endpoint;
+    identity.model = config.model;
+    return session_migration::SessionIdentityHash(identity);
 }
 
 fs::path ConversationPath(const ModelConfig& config) {
@@ -648,6 +654,63 @@ L3Agent::L3Agent() {
 L3Agent::~L3Agent() {
     Stop();
     if (worker_.joinable()) worker_.join();
+}
+
+// 在旧配置文件退休之前,把它那份会话搬到新身份下。
+//
+// 上一版这里一步都没走:ReloadConfig 直接调 RetireLegacyShadowState(),
+// 删掉 model-settings.json。而那正是记录"用户旧配置是什么"的唯一地方 ——
+// 删掉之后旧会话的路径再也算不出来,旧 .bin 留在盘上但不可达。
+// 用户在 AI 窗口的 API 下拉里选一个 profile(ConversationPanelImpl.inc 的
+// SetProfileId(selected.id))就会走到这里。
+void L3Agent::MigrateSessionFromLegacyState(const ModelConfig& next) {
+    // 旧配置还在才需要搬。已经被退休掉的没有可搬的东西。
+    const fs::path legacy = SettingsPath();
+    std::error_code ec;
+    if (!fs::exists(legacy, ec)) return;
+
+    const ModelConfig before = LoadConfig();
+    if (before.baseUrl.empty() && before.model.empty()) return;   // 旧文件是空的
+
+    session_migration::LegacySessionIdentity beforeId;
+    beforeId.profileId = before.profileId;
+    beforeId.providerId = before.providerId;
+    beforeId.baseUrl = before.baseUrl;
+    beforeId.endpoint = before.endpoint;
+    beforeId.model = before.model;
+
+    session_migration::LegacySessionIdentity afterId;
+    afterId.profileId = next.profileId;
+    afterId.providerId = next.providerId;
+    afterId.baseUrl = next.baseUrl;
+    afterId.endpoint = next.endpoint;
+    afterId.model = next.model;
+
+    const auto plan = session_migration::PlanSessionMigration(beforeId, afterId);
+    if (!plan.carrySession) {
+        // 用户真的换了服务或模型:新会话是对的,旧会话留在原地别动。
+        lastSessionMigration_ = plan.reason;
+        api_runtime_profile::RetireLegacyShadowState();
+        return;
+    }
+
+    // 来源提升:同一个服务、同一个模型,只是从此由 API 配置中心负责。
+    // 把旧会话文件搬到新身份下 —— 用户一个字都不该丢。
+    const fs::path from = ConversationPath(before);
+    const fs::path to = ConversationPath(next);
+    if (from == to) return;
+    if (fs::exists(from, ec) && !fs::exists(to, ec)) {
+        fs::create_directories(to.parent_path(), ec);
+        fs::copy_file(from, to, ec);
+        if (!ec) {
+            lastSessionMigration_ = L"AI 会话已随配置来源升级迁移到新的 API 配置中心身份。" +
+                                    plan.reason;
+        } else {
+            lastSessionMigration_ = L"配置来源升级了,但旧会话搬不过来(error=" +
+                                    std::to_wstring(ec.value()) + L");旧会话仍留在原处。";
+        }
+    }
+    api_runtime_profile::RetireLegacyShadowState();
 }
 
 ModelConfig L3Agent::LoadConfig() const {

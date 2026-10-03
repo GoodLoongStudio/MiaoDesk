@@ -1,6 +1,7 @@
 #pragma once
 #include "miaodesk/ApiRuntimeProfile.h"
 #include "miaodesk/MiaoAgentConfigAuthority.h"
+#include "miaodesk/MiaoSessionMigration.h"
 #include <atomic>
 #include <cstddef>
 #include <functional>
@@ -97,7 +98,7 @@ public:
             refreshed.imageBaseUrl = profile.imageBaseUrl;
             refreshed.imageApiKey = profile.imageApiKey;
             refreshed.imageModel = profile.imageModel;
-            if (profile.configured) api_runtime_profile::RetireLegacyShadowState();
+            if (profile.configured) MigrateSessionFromLegacyState(refreshed);
         }
 
         if (refreshed.profileId == config_.profileId &&
@@ -152,6 +153,25 @@ private:
 
     // Legacy persistence helpers remain private only for compatibility with old local commands;
     // ReloadConfig and the normal runtime path do not consume their state.
+    // 把还活在旧配置文件里的那份会话搬到新身份下,**然后**才让旧文件退休。
+    //
+    // 次序是重点:上一版在这里直接 RetireLegacyShadowState() 删掉
+    // model-settings.json,而那正是记录"用户旧配置是什么"的唯一地方。删了之后
+    // 旧会话的路径再也没法算出来 —— 旧 .bin 还在盘上,只是不可达。P0-09 的验收是
+    // "旧配置升级不丢 … 会话"。
+    //
+    // 判定在 MiaoSessionMigration(纯逻辑,本机有门):只有"服务地址与模型还是同一套"
+    // 才算来源提升,那时才搬。用户真换了配置时不搬 —— 新会话是对的,旧会话留在原地。
+    void MigrateSessionFromLegacyState(const ModelConfig& next);
+
+    // 上一次配置来源升级时对会话做了什么。空表示没搬过。
+    //
+    // 为什么留一份:搬没搬成功必须让宿主能说出口。上一版这里一步都没走,
+    // 用户的旧会话静默地变成不可达字节,而没有任何地方记着这件事。
+    // 与 CreationWorkflow::LastRejectionReason 同一个理由:拒绝/搬运要把原因留下来,
+    // 而不是让它在日志里无声消失。
+    const std::wstring& LastSessionMigration() const noexcept { return lastSessionMigration_; }
+
     ModelConfig LoadConfig() const;
     bool SaveConfig(const ModelConfig& config) const;
     std::wstring LoadApiKey() const;
@@ -165,6 +185,7 @@ private:
     void ClearConversation();
 
     ModelConfig config_;
+    std::wstring lastSessionMigration_;
     std::wstring preferredProfileId_;
     std::jthread worker_;
     std::atomic_bool busy_{false};

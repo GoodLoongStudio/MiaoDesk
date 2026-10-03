@@ -17,6 +17,28 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：P0-09 升级把用户的 AI 会话变成不可达字节
+
+用户在 AI 窗口的 API 下拉里选一个中央 profile,`SetProfileId(selected.id)` →
+`ReloadConfig` 会:(1) 从 `api-profiles.ini` 填 `config_`,`profileId` 从空变成 "main";
+(2) `SessionHash` 里含 `profileId`,于是会话文件哈希随之改变;(3)
+`if (profile.configured) RetireLegacyShadowState();` 把 `model-settings.json` ——
+也就是 `L3Agent` 自己那份配置文件、记录"用户旧配置是什么"的唯一地方 —— 删掉。
+旧 `.bin` 还在盘上,但再也没有人能算出它的路径。`L3PersistenceSelfTest` 没覆盖这条路。
+
+- **修法**:退休旧文件**之前**先把会话搬到新身份下(`MigrateSessionFromLegacyState`)。
+  判定在 `MiaoSessionMigration`(纯逻辑,本机有门):只有"服务地址与模型还是同一套"才算
+  来源提升,那时才搬;用户真换了配置时不搬。搬完把结论写进 `LastSessionMigration()`,
+  宿主能说出口。
+- **顺手把 `SessionHash` 收成一份实现**(L3Agent 转一手调纯逻辑那份):搬运要靠两边算出
+  同一个路径,两处各写一遍时改一边不改另一边会静默失败 —— 那比不搬更难查。
+- **顺手把哈希的具体数值钉住**:`l3-sessions/<hex>.bin` 就是用户的历史对话,
+  改常量或改参与字段 = 全员历史对话不可达,这正是本轮缺陷的反面。第一版只钉
+  "不同/相同"这类关系,改常量它照样全绿 —— 又一处"没钉具体值"的洞。
+- **自动检查**:`SessionMigrationTest` 23 项(含反空洞自检);**8 处变异全红,0 存活**。
+- **未取证**:"选了 profile 之后历史对话还在不在"要 Windows 上真选一次;
+  旧文件不存在/读不出来这两条分支也没有真机证据。
+
 ### 2026-10-04 · 执行记录：CREATE-04 复用 candidateId 会把上一版可预览结果带走
 
 `ValidationFailed` / `EvidenceFailed` / `ReviewCompleted` 都按

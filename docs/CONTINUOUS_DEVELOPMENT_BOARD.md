@@ -85,7 +85,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 已装进连坐 job，且「每个 CreateProcessW 站点都有收尸」已成门**（见下）；强杀后桌面上真的没有孤儿仍要 Windows |
-| P0-09 | ⬜ | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局 |
+| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**AI 会话的迁移已修**（见下）；API profile / 内容库 / 组件布局三项的升级路径仍待查 |
 | P0-10 | ⬜ | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA |
 
 ## 5. P0/P1 — 布局、输入与视觉
@@ -259,6 +259,35 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续八，P0-09：升级把用户的 AI 会话变成不可达字节）
+
+- **修的真实缺陷**（P0-09 的"旧配置升级不丢 … 会话"）：用户在 AI 窗口的 API 下拉里
+  选一个中央 profile,`SetProfileId(selected.id)` → `ReloadConfig` 会:
+  1. 从 `api-profiles.ini` 填 `config_`,`profileId` 从空变成 "main";
+  2. **`SessionHash` 里含 `profileId`**,于是会话文件的哈希随之改变;
+  3. `if (profile.configured) RetireLegacyShadowState();` 把 `model-settings.json`
+     —— 也就是 `L3Agent` 自己那份配置文件、记录"用户旧配置是什么"的唯一地方 —— 删掉。
+  旧 `.bin` 还在盘上,但再也没有人能算出它的路径。用户累积的对话变成不可达字节,而
+  界面上一个字都不提。`L3PersistenceSelfTest` 完全没覆盖这条路(只有 legacy 一轮、
+  profile 一轮,没有"从 legacy 换到中央")。
+- **修法**:退休旧文件**之前**,先把会话搬到新身份下。新增
+  `MigrateSessionFromLegacyState`,判定落在 `MiaoSessionMigration`(纯逻辑,本机有门):
+  只有"服务地址与模型还是同一套"才算来源提升,那时才搬;用户真换了配置时不搬 ——
+  新会话是对的,旧会话留在原地。搬完之后把结论写进 `LastSessionMigration()`,
+  宿主能说出口(与 `CreationWorkflow::LastRejectionReason` 同一个理由)。
+- **顺手把 `SessionHash` 收成一份实现**:L3Agent.cpp 里那份删掉,转一手调
+  `session_migration::SessionIdentityHash`。搬运要靠两边算出同一个路径,两处各写一遍时
+  改一边不改另一边会静默失败 —— 那比不搬更难查。
+- **顺手把哈希的具体数值钉住**:`<StateRoot>/l3-sessions/<hex>.bin` 就是用户的历史对话,
+  改哈希常量或改参与字段 = 把每个老用户的会话全部变成不可达字节。这正是本轮修的缺陷的
+  反面,所以 `SessionMigrationTest` 钉死两组数值。第一版只钉了"不同/相同"这类关系,
+  改常量它照样全绿 —— 又一处"没钉具体值"的洞。
+- **本机跑了什么**：`SessionMigrationTest` 23 项(含反空洞自检);
+  **8 处变异全红,0 存活**:恒判真换配置 / 恒判来源提升 / 没变也说搬 /
+  不归一化末尾斜绳 / 不看模型 / 不看端点 / 哈希少一个字段 / 哈希常量改掉。
+- 真机:**未取证**。"选了 profile 之后历史对话还在不在"要 Windows 上真选一次;
+  旧文件不存在/读不出来这两条分支也没有真机证据。
 
 ### 本轮推进记录（2026-10-04 再续七，CREATE-04：复用 candidateId 带走上一版）
 
@@ -639,10 +668,27 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   - `7758a567` 之后改的三处 —— AI 对话凭据槽(`b5e5403c`)、Pi 的 Node 收尸(`dcf9750a`)、
     Pi 的轮次相位(`20bd7639`)—— **都不在壁纸/组件进程里执行**
     (`ReaperJob()` 只有 `PiRuntime::LaunchProcess` 会调)。
-- **仍然不知道的**:CI VM 那一次为什么超时。15 秒的窗口在共享 runner 上短于产品里的
-  真实场景,所以"偶发一次"这个解释成立,但我没有 runner 侧的计时数据可以证明。
+- **它又红了一次,而这一次拿到了直接证据**(`7cb2978f` 的同一个 Step 45):
+  失败的完整诊断打在 annotation 里 ——
+
+      WidgetRuntime=wallpaper.enabled=false Native Direct2D Widget host
+        configured=1 desired=1 surfaces=1 visible=0 paintReady=1 directHwnd=1 layered=0
+      Expected 1 paint-ready Widget surface(s), observed 0.
+
+  `configured=1`、`desired=1`、`surfaces=1`、`paintReady=1` —— **组件栈是健康的,
+  该建的渲染目标建出来了**;只有 `visible=0`。也就是说探针取样那一刻窗口还没翻成可见。
+  如果本会话改的东西真的把组件创建弄坏了,`configured` 或 `surfaces` 会是 0,而不是 1。
+  这条门查的是"可见性时序",而 `visible` 归窗口堆叠,不归我改过的任何一条路径。
+- **同一次 run 里还有一条自然对照**:同一个 workflow 的第 787 步跑的是**同一条门**,
+  但外面套了 `while` 重试(attempt 1..2),它就过了;第 951 步(Step 45)是**单发、无重试**的那一
+  处,它红了。同一份构建。这个对照不是我设计出来的,是 workflow 本来就有的。
+  (严格说它不是我安排的对照实验:两处的 ProductRoot 不同,一个指构建目录、一个指
+  暂存根。所以它是佐证,不是单因实验证。)
+- **仍然不知道的**:为什么 `visible` 慢到越过 15 秒窗口。CI 上是 Hyper-V 虚拟显示器
+  1024×768(`HyperVMonitor`),窗口堆叠在那上面比真实桌面慢是有道理的,但我没有计时数据。
 - **没有做的事**:匿名身份不能 re-run(401),所以我没有通过重跑取证;
   也没有把这条门调宽容期 —— 那是拿"让门别响"换"门还在查",而这个仓库里已经栽过四次。
+  更该做的是**给这一处加重试**,和第 787 步一致 —— 但那要动 CI 结构,不在本轮自动部分里。
 
 ## 15. 本轮规划变更记录（2026-10-03）
 

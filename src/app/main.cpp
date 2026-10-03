@@ -4,6 +4,7 @@
 #include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/DesktopWidgetTools.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
+#include "miaodesk/MiaoLockOwnershipHost.h"
 #include "miaodesk/GozSearch.h"
 #include "miaodesk/HarnessProcessManager.h"
 #include "miaodesk/L3Agent.h"
@@ -19,6 +20,8 @@
 #include "miaodesk/StartupManager.h"
 
 #include <windows.h>
+
+#include <chrono>
 #include <shellapi.h>
 #include <algorithm>
 #include <cwchar>
@@ -193,7 +196,18 @@ bool NamedMutexExists(const wchar_t* name) {
 }
 
 bool LaunchHarnessBackgroundOwner() {
-    if (NamedMutexExists(kHarnessBackgroundMutex)) return true;
+    if (NamedMutexExists(kHarnessBackgroundMutex)) {
+        // 上一版:锁在就当它在好好干活。锁在不管持有者是死了还是卡住都会在,
+        // 而那两类要分开说。裁决是纯逻辑那份(MiaoLockOwnership),这里只按它改返回值:
+        // 健康的返回 true,卡住/判不了的返回 false —— 我们并没有拿到一个能干活的
+        // 后台 Harness。不起第二个这条不变,变的是不再谎报成功。
+        return miaodesk::lock_host::ExistingOwnerIsHealthy(
+            kHarnessBackgroundMutex,
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+    }
     const fs::path harness = ModuleDirectory() / L"MiaoDeskHarness.exe";
     std::error_code ec;
     if (!fs::is_regular_file(harness, ec)) return false;

@@ -63,6 +63,21 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 - **未取证**:五处启动点还是老的 `if (NamedMutexExists(...)) return true;`,
   接到新裁决是宿主侧改动,要 Windows 上真起一次 helper 才敢签收。
 
+### 2026-10-04 · 执行记录：P0-08 五处启动点接线，其中一处刻意不接
+
+- **先合流**:`MiaoLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。同一个
+  "该不该再起一个"有五处启动点,各写一遍就会分裂。
+- **接上三处**:`main.cpp`、`HarnessHost.cpp` 的后台 Harness 所有者;
+  `WallpaperEngine.cpp` —— 这一处原来在 `ERROR_ALREADY_EXISTS` 时
+  `SendExistingCommand(args)` 然后 `return 0`,而它是 `FindWindowW` + `PostMessageW`:
+  卡住的实例窗口还在,找得到也"发送成功",消息只是进了不再跑消息循环的队列。
+  用户点"设置"什么都没发生,而我们返回 0。现在按裁决改退出码(健康 0 / 卡住 5),
+  **不起第二个、不杀进程,只是不再谎报**。
+- **`DesktopWidgetStore` 刻意不接**:它是存储锁不是进程单例,5 秒超时 +
+  `WAIT_ABANDONED` 已经覆盖了该恢复的情形,而它给出的 busy 提示是如实的。
+  为它接心跳要在热路径上每次多写一次文件,回答一个超时已经回答了的问题。
+- **未取证**:三处都要 Windows 上真起一次才敢签收;退出码 5 有没有上游看也没证据。
+
 ### 2026-10-04 · 执行记录：P0-08 后半句接线 —— owner 终于有身份可判
 
 裁决做完了不等于它能动:`MiaoLockOwnership` 需要"谁持有、多久没心跳",而这两件事此前

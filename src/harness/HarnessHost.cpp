@@ -1,7 +1,9 @@
 #include "miaodesk/HarnessProcessManager.h"
+#include "miaodesk/MiaoLockOwnershipHost.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/WindowPlacementStore.h"
 #include <windows.h>
+#include <chrono>
 #include <objbase.h>
 #include <WebView2.h>
 #include <wrl.h>
@@ -52,7 +54,16 @@ bool NamedMutexExists(const wchar_t* name) {
 }
 
 bool LaunchBackgroundHarnessOwner() {
-    if (NamedMutexExists(kBackgroundMutexName)) return true;
+    if (NamedMutexExists(kBackgroundMutexName)) {
+        // 与 src/app/main.cpp 的 LaunchHarnessBackgroundOwner 同一份契约:
+        // 锁在 ≠ 它在好好干活。裁决在 MiaoLockOwnership(纯逻辑),这里只按它改返回值。
+        return miaodesk::lock_host::ExistingOwnerIsHealthy(
+            kBackgroundMutexName,
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+    }
 
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) return false;

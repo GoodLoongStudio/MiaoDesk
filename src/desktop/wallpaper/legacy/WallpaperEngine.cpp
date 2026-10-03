@@ -7,6 +7,7 @@
 
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoLockOwnershipHost.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/IndependentWallpaperHost.h"
 #include "miaodesk/SceneWallpaperPainter.h"
@@ -1916,7 +1917,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         SendExistingCommand(args);
         CloseHandle(mutex);
-        return 0;
+        // 已经有一个实例在。**别默认它收得到命令**:一个卡住的实例窗口还在,
+        // FindWindowW 找得到它,PostMessageW 也"成功"—— 消息只是进了那个不再
+        // 跑消息循环的队列,用户的点击就此无声消失,而我们返回 0 表示一切顺利。
+        // 裁决是纯逻辑那份(MiaoLockOwnership);这里只按它改退出码,不杀任何进程。
+        const bool healthy = miaodesk::lock_host::ExistingOwnerIsHealthy(
+            kMutexName,
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+        // 5 = 已有实例,但它可能收不到命令(卡住或判不了)。0 = 正常转发。
+        return healthy ? 0 : 5;
     }
 
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);

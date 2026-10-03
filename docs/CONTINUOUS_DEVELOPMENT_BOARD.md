@@ -303,6 +303,34 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
 
+### 本轮推进记录（2026-10-04 再续十，P0-08 五处启动点接线，其中一处刻意不接）
+
+上一轮只接了壁纸那一处,还剩三处老布尔 + 一处不该接。本轮做完。
+
+- **先把 owner 记录那套提到共享模块** `MiaoLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。
+  理由很直接:同一个"该不该再起一个"有五处启动点,各写一遍就会出现"壁纸那边判得出卡住、
+  后台 Harness 那边还是一句 `return true`"这种分裂。合流之后只有一份实现。
+- **接上的三处**:
+  - `src/app/main.cpp` 的 `LaunchHarnessBackgroundOwner`;
+  - `src/harness/HarnessHost.cpp` 的 `LaunchBackgroundHarnessOwner`(与上面那个是两份
+    基本相同的实现,这里也仍然是两份 —— 合并不在本轮,但契约已经统一);
+  - `src/desktop/wallpaper/legacy/WallpaperEngine.cpp`:这里的问题更值得说。
+    它在 `ERROR_ALREADY_EXISTS` 时 `SendExistingCommand(args)` 然后 **`return 0`**。
+    而 `SendExistingCommand` 是 `FindWindowW` + `PostMessageW` —— 一个卡住的实例窗口
+    **还在**,`FindWindowW` 找得到它,`PostMessageW` 也"成功";消息只是进了那个不再跑
+    消息循环的队列。用户点"设置",什么都没有,而我们返回 0 表示一切顺利。
+    现在按裁决改退出码:健康 → 0,卡住或判不了 → 5(含义写进注释)。**不起第二个、不杀进程,
+    只是不再谎报转发成功。**
+- **`DesktopWidgetStore` 刻意不接**:它那个锁是**存储锁**,不是进程单例 ——
+  5 秒 `WaitForSingleObject` 超时,并且已经把 `WAIT_ABANDONED` 当成"拿到了"
+  (进程握着锁死掉时内核会这么通知,这是 Windows 自己给的恢复路径)。
+  也就是说"别人写一半死了"已经能恢复,而"别人真卡住"则由 5 秒超时 +
+  `Desktop widget storage is busy; please retry.` 兜住 —— 那句话是如实的。
+  要为它接心跳,就得在每次组件存储访问的热路径上多写一次文件,去回答一个
+  超时已经回答了的问题。这是过度设计,记下来免得后人以为漏了。
+- 真机:**未取证**。三处接线都要 Windows 上真起一次才敢签收;`WallpaperEngine`
+  那条退出码 5 有没有人看,也还没有上游。
+
 ### 本轮推进记录（2026-10-04 再续九，P0-08 后半句：锁持有权裁决）
 
 - **上一轮我说"剩下那一半需要产品决策",这个判断切错了地方。** 切错在于我把
@@ -343,8 +371,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
     并明确拒绝;
   - 心跳租约是显式常量 `kHelperHeartbeatLeaseSeconds = 30`,不默认 —— 配 0 会让裁决
     变成 Unusable,那是"读到了记录也判不了",比原来那个布尔更糊涂。
-- 真机:**未取证**。另外四处启动点(`WallpaperEngine`、`HarnessHost`、`DesktopWidgetStore`、
-  `main.cpp`)还没接;接上之后要在 Windows 上真起一次 helper 才敢签收。
+- 真机:**未取证**。另外四处启动点还没接;接上之后要在 Windows 上真起一次 helper 才敢签收。
   **接管动作仍然是产品决策** —— 现在诊断会说"它卡住了,请从任务管理器结束它后重试",
   不会自己去杀。
 

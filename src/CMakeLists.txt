@@ -41,6 +41,9 @@ set(MIAODESK_CORE_SOURCES
     # P0-08 后半句:锁持有权记录的编解码。owner 没有地方发身份的话,
     # 上面那个裁决根本没有输入可用。
     ai/agent/MiaoLockRecord.cpp
+    # P0-08 后半句:锁持有权记录在宿主侧的合流点。同一个"该不该再起一个"有
+    # 五处启动点,收成一处才不会出现"壁纸判得出卡住、别的还是一句 return true"。
+    ai/agent/MiaoLockOwnershipHost.cpp
     # Native tools live in the core library, not in the app target, so the
     # content-skill gate can link them without compiling a second copy. Each
     # implementation file must keep exactly one CMake owner.

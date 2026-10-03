@@ -84,7 +84,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-05 | ⬜ | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次 |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
-| P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决(卡住的 owner 第一次能被说出来)**（见下）；接管动作与真机清理仍要 Windows |
+| P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
 | P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**AI 会话的迁移已修**（见下）；API profile / 内容库 / 组件布局三项的升级路径仍待查 |
 | P0-10 | ⬜ | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA |
 
@@ -326,8 +326,27 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   恒判 Running / 失联边界改成 `>=` / 无符号下减 / 时钟倒退判成 Wedged /
   没配租约也裁决 / 锁存在但无记录判 Available / Wedged 允许起第二个 /
   Unusable 允许起 / pid=0 也算有记录。
-- 真机:**未取证**。五处启动点还是老的 `if (NamedMutexExists(...)) return true;`
-  —— 把它们接到新裁决是宿主侧改动,要 Windows 上真起一次 helper 才敢签收。
+- **紧接着把 owner 那一侧也接了**(`WallpaperEntry.cpp`):裁决要有输入才能动,
+  而"谁持有、多久没心跳"此前**没有任何地方记录** —— 命名 mutex 不带身份。
+  新增 `MiaoLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份 `.owner` 文本;
+  `SingletonGuard` 只有**真的拿到锁**时写它(抢锁失败就写 = 两个 owner 都自称持有者),
+  析构时收掉;`LaunchHelper` 里那个 `if (NamedMutexExists(...)) return true;`
+  改成先问 `ExistingHelperIsHealthy`:健康的返回 true(别起第二个),**卡住或判不了的返回
+  false —— 我们并没有拿到一个能干活的 helper**。"不起第二个"这条没变,变的是不再谎报成功。
+- **第一版在这里又犯了一次老毛病,当场删掉**:我先把诊断写进一个
+  `g_lastHelperDiagnosis` 全局,准备"留给界面读"。然后 grep 了一遍 ——
+  **只有写、没有读**。这正是本会话删过五处的那种死代码:提供一个没人读的出口,
+  比不提供更糟(它会让人以为这里接过了)。`WallpaperEntry.cpp` 里根本没有诊断显示面,
+  所以现在只返回 bool,不提供字符串出口。真正给人看的那句话,等接上诊断面那一轮再做。
+- 两条不许含糊的地方:
+  - 锁在但**没有身份记录**时**不判**"没有持有者"(那会让两个 owner 同时上),判 Unusable
+    并明确拒绝;
+  - 心跳租约是显式常量 `kHelperHeartbeatLeaseSeconds = 30`,不默认 —— 配 0 会让裁决
+    变成 Unusable,那是"读到了记录也判不了",比原来那个布尔更糊涂。
+- 真机:**未取证**。另外四处启动点(`WallpaperEngine`、`HarnessHost`、`DesktopWidgetStore`、
+  `main.cpp`)还没接;接上之后要在 Windows 上真起一次 helper 才敢签收。
+  **接管动作仍然是产品决策** —— 现在诊断会说"它卡住了,请从任务管理器结束它后重试",
+  不会自己去杀。
 
 ### 本轮推进记录（2026-10-04 再续八，P0-09：升级把用户的 AI 会话变成不可达字节）
 

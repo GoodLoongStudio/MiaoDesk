@@ -11,7 +11,10 @@
 #include <thread>
 #include <vector>
 
+#include "miaodesk/AppPaths.h"
 #include "miaodesk/ContentWidgetHost.h"
+#include "miaodesk/MiaoLockOwnership.h"
+#include "miaodesk/MiaoLockRecord.h"
 #include "miaodesk/MiaoSceneD2DRenderer.h"
 #include "miaodesk/DesktopShellHost.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
@@ -24,6 +27,8 @@
 #include "miaodesk/NativeWidgetHost.h"
 
 namespace fs = std::filesystem;
+namespace lock_ownership = miaodesk::lock_ownership;
+namespace lock_record = miaodesk::lock_record;
 
 // WallpaperEngine.cpp is compiled with its historical WinMain symbol renamed to
 // MiaoDeskWallpaperMain. The Windows headers declare wWinMain with C linkage,
@@ -100,23 +105,139 @@ bool NamedMutexExists(const wchar_t* name) {
     return true;
 }
 
+// 锁持有权记录的落盘位置:与锁同名、同一目录下的 `.owner` 文本。
+//
+// 为什么单独一份文件而不是塞进 mutex 名:命名 mutex 不带任何载荷,这是它的定义。
+// 而 `MiaoLockOwnership` 判"锁现在是什么状态"必须知道"谁持有、多久没心跳" ——
+// 那只能另存一份。记录丢了/坏了时**不许**把锁判成没有持有者(那会让两个 owner
+// 同时上);那种情形按 Unusable 处理,由 start 侧明确拒绝并说出原因。
+// helper 心跳租约:多久没更新就算它卡住。
+//
+// 这个数字必须是**显式的**,不能默认:配 0 会让裁决变成 Unusable,那就是
+// "读到了记录也判不了",比现在这个布尔更糊涂。取 30 秒是因为 helper 起来后
+// 只做渲染与轮询,没有长耗时操作;真机上如果这个值需要调,那是产品参数。
+constexpr std::uint64_t kHelperHeartbeatLeaseSeconds = 30;
+
+fs::path OwnerRecordPath(const wchar_t* mutexName);
+
+// 写一条"我是持有者"。返回是否写成功 —— 写失败不致命,但那意味着别人判不出
+// 我们是谁,于是会把一次正常的运行报成"锁存在但没有身份记录"。
+bool PublishOwner(const wchar_t* mutexName);
+// 收掉这条记录。析构里调,失败无所谓(下次启动靠 Unusable 兜住)。
+void RetireOwner(const wchar_t* mutexName);
+
+// 起 helper 之前看一眼:锁已经在,那它是什么状态。
+// **只判与报,不接管** —— 接管要 TerminateProcess 一个还活着的进程,那是产品决策。
+// 返回的字符串非空表示"已经有一个在跑,而且它不健康",调用方应当原样告诉用户,
+// 而不是像上一版那样 `return true` 装作一切正常。
 class SingletonGuard {
 public:
-    explicit SingletonGuard(const wchar_t* name) {
+    explicit SingletonGuard(const wchar_t* name) : name_(name) {
         handle_ = CreateMutexW(nullptr, FALSE, name);
         owner_ = handle_ && GetLastError() != ERROR_ALREADY_EXISTS;
+        // 只有真的拿到锁的那一个才写身份记录。抢锁失败就写,等于两个 owner
+        // 都声称自己是持有者 —— 而记录只有一份。
+        if (owner_) PublishOwner(name_);
     }
     ~SingletonGuard() {
+        if (owner_) RetireOwner(nullptr);
         if (handle_) CloseHandle(handle_);
     }
     bool Owner() const noexcept { return owner_; }
 private:
+    const wchar_t* name_{};
     HANDLE handle_{};
     bool owner_{};
 };
 
+fs::path OwnerRecordPath(const wchar_t* mutexName) {
+    // 放在状态根下,与锁同名。锁名形如 "Local\\MiaoDesk...",反斜杠不能进文件名,
+    // 统一换成 '-';两处替换规则一致,路径才可复现。
+    std::wstring safe(mutexName ? mutexName : L"<none>");
+    for (auto& ch : safe) {
+        if (ch == L'\\' || ch == L'/' || ch == L':') ch = L'-';
+    }
+    const fs::path root = miaodesk::paths::StateRoot();
+    return root.empty() ? fs::path{} : root / (safe + L".owner");
+}
+
+void WriteOwnerRecord(const wchar_t* mutexName, std::uint32_t pid, std::uint64_t heartbeat) {
+    const fs::path path = OwnerRecordPath(mutexName);
+    if (path.empty()) return;
+    lock_record::LockOwnership ownership;
+    ownership.pid = pid;
+    ownership.heartbeatSeconds = heartbeat;
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    const std::string text = lock_record::Encode(ownership);
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+}
+
+bool PublishOwner(const wchar_t* mutexName) {
+    const fs::path path = OwnerRecordPath(mutexName);
+    if (path.empty()) return false;
+    WriteOwnerRecord(mutexName, GetCurrentProcessId(),
+                     static_cast<std::uint64_t>(
+                         std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch()).count()));
+    std::error_code ec;
+    return fs::exists(path, ec);
+}
+
+void RetireOwner(const wchar_t* mutexName) {
+    if (!mutexName) return;
+    const fs::path path = OwnerRecordPath(mutexName);
+    if (path.empty()) return;
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
+bool ExistingHelperIsHealthy(const wchar_t* mutexName) {
+    const fs::path path = OwnerRecordPath(mutexName);
+    if (path.empty()) return {};
+    std::error_code ec;
+    if (!fs::exists(path, ec)) {
+        // 锁在,但没有任何身份记录。这**不是**"没有持有者":记录这一侧坏了,
+        // 而锁是真实的。判成没有持有者会让两个 owner 同时上。
+        return false;   // 落到 Unusable:判不了就不算健康
+    }
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    lock_record::LockOwnership ownership;
+    if (!lock_record::Decode(text, &ownership)) {
+        return false;
+    }
+
+    lock_ownership::LockObservation observation;
+    observation.recordPresent = true;
+    observation.record.pid = ownership.pid;
+    observation.record.heartbeatSeconds = ownership.heartbeatSeconds;
+    observation.ownerProcessAlive = ownership.pid != 0;
+    observation.nowSeconds = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    // 租约刻意不配 0:配 0 会让裁决变成 Unusable,那就是"读到了记录也判不了",
+    // 比现在这个布尔更糊涂。这里给一个显式的默认值并说明它是什么。
+    observation.leaseSeconds = kHelperHeartbeatLeaseSeconds;
+
+    const auto verdict = lock_ownership::JudgeLockOwnership(observation);
+    // MayStartNewOwner 恰好是"不需要动任何活着的进程"的那两种;反过来
+    // Running/Wedged 都表示有一个真实占用者在 —— 但只有 Running 是健康的。
+    // 判不了(Unusable)也不算健康:我们并没有确认有一个能干活的 helper。
+    return verdict == lock_ownership::LockVerdict::Running;
+}
+
 bool LaunchHelper(const HelperSpec& helper) {
-    if (NamedMutexExists(helper.mutexName)) return true;
+    if (NamedMutexExists(helper.mutexName)) {
+        // 上一版这里直接 return true —— "锁在就当作它在好好干活"。
+        // 锁在不管持有者是死了还是卡住都会在,而那两类要分开说。
+        // **不起第二个**这条不变,变的是不再谎报成功:健康的返回 true,
+        // 卡住/判不了的返回 false —— 我们并没有拿到一个能干活的 helper。
+        return ExistingHelperIsHealthy(helper.mutexName);
+    }
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) return false;
 

@@ -63,6 +63,24 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 - **未取证**:五处启动点还是老的 `if (NamedMutexExists(...)) return true;`,
   接到新裁决是宿主侧改动,要 Windows 上真起一次 helper 才敢签收。
 
+### 2026-10-04 · 执行记录：P0-08 后半句接线 —— owner 终于有身份可判
+
+裁决做完了不等于它能动:`MiaoLockOwnership` 需要"谁持有、多久没心跳",而这两件事此前
+**没有任何地方记录** —— 命名 mutex 不带身份。
+
+- **补上 owner 那一侧**:`MiaoLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份
+  `.owner` 文本。`SingletonGuard` 只有**真的拿到锁**时写它(抢锁失败就写 = 两个 owner
+  都自称持有者),析构时收掉。`LaunchHelper` 里那个
+  `if (NamedMutexExists(...)) return true;` 改成先诊断,卡住时把结论留给
+  `SetLastHelperDiagnosis`,不再装作一切正常。
+- **反空洞**:那份记录的解析器自己也有自检 —— 记录恰好有效时,"pid 缺失也能解析成功"
+  这种洞永远问不出来。`LockRecordTest` 19 项;mutations 7 处全红(含两个脚本锚点写坏、
+  单独手工验过的)。
+- **自动检查**:`LockOwnershipTest` 27 项、`LockRecordTest` 19 项;mutations 9 + 7 处全红。
+- **未取证**:另四处启动点(`WallpaperEngine`、`HarnessHost`、`DesktopWidgetStore`、
+  `main.cpp`)还没接。**接管动作仍是产品决策** —— 现在诊断说"请从任务管理器结束它后重试",
+  不会自己去杀。
+
 ### 2026-10-04 · 执行记录：P0-09 升级把用户的 AI 会话变成不可达字节
 
 用户在 AI 窗口的 API 下拉里选一个中央 profile,`SetProfileId(selected.id)` →

@@ -861,7 +861,13 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：刷新策略/测量、后台资源回收与恢复回归。
 - **验收**：无变化不重绘；多个实例不重复轮询；锁屏/休眠后无请求风暴；长稳与预算达标。
 - **验证环境**：计数/调度自动+Windows 实机测量。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/WidgetRefreshPolicy.h` + `src/desktop/widgets/WidgetRefreshPolicy.cpp`（纯逻辑）+ `src/tests/WidgetRefreshPolicyTest.cpp`（174 项）+ 宿主接线 `ContentWidgetHost.cpp`（`ScheduleNextRefresh` 走成功路径，五条失败路径调用新增的 `ScheduleNextRefreshAfterFailure`）。
+  **修的是一个会一直烧 CPU 的问题**：`RepaintDue` 按 `nextRefreshAt == 0 || now >= nextRefreshAt` 决定要不要画，而 `nextRefreshAt` 只在**成功**的 `PaintSlot` 末尾赋值。`PaintSlot` 有五条提前返回的路径（渲染目标拿不到、渲染器加载失败、宿主数据应用失败、Draw 返回 false、Present 失败），一条都不赋值 —— 于是它保持 0，而 0 的含义是"随时都该画"。一个画不出来的组件因此每 16 ms 重试一次：一秒 60 次，一天 520 万次，每次都重跑渲染目标/渲染器/宿主数据整条链路。不是假设：`nextRefreshAt` 的赋值点一共四处，失败路径一处都没有。
+  **策略**：失败 → 指数退避 1s/2s/4s/8s/16s，30s 封顶（冷启动第一分钟 6 次、稳态每分钟 2 次，今天是 3750 次）；成功 → 计数立刻归零回到内容要的间隔（恢复后若仍按 30s 爬回 16ms，一次内容变化会晚最多 30 秒才上屏，比多画几帧糟得多）；延迟永不为 0。
+  自动检查=`WidgetRefreshPolicyTest` 174 项通过（含一条专门钉 off-by-one：第一版把 `ApplyRefreshOutcome` 写成"先 ++ 再算"，于是第一次失败退避到 2000ms 而不是起点 1000ms，是"退避起点必须是 1000"这条断言逮住的）；7 处变异全红；43 个纯逻辑目标全通过；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。
+  **另外删掉三处"挡不动任何东西"的守卫**，都是变异检测逮到的：`SceneClock::Pause` 的 `if (!running_) return;`（`running_ = false` 本身幂等）、`ExtractJsonDouble` 的 `!std::isfinite`（`from_chars` 不接受 inf/nan）、`NextRefreshDelayAfterFailure` 的 `if (delay == 0)`（delay 从 1000 起只乘不除）。三次都得到同一个教训：一行挡不住任何事的代码只会让人以为这里曾经有过一个案例。
+  **未取证**：失败循环的实际 CPU/耗电下降**未测量** —— 那是 Windows 实机测量，本机给不出来；宿主接线只过了 mingw 交叉编译。验收项"无变化不重绘 / 多实例不重复轮询 / 锁屏后无请求风暴"仍未做：空闲内容仍按 1000ms 重绘一次（没变），多实例共享缓存与请求风暴都没有实现。
+  面板状态 🟡（缺陷的方向修了，量的结论未取证）。
 
 ### WPRO-06 — 组件键盘、读屏与系统适配
 

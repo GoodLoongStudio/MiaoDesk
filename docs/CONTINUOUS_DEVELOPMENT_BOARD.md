@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；上一轮代码提交 `7e08e97b`（CI 全 success）；本轮 WPRO-01 度量一半已在工作区，本机 42 目标全通过，13 处变异全红。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `beb322e9`（本机 42 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；13 处变异全红；同 SHA CI 在跑）。上一轮 `7e08e97b`（WALL-03）CI 全 success。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -256,6 +256,54 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 续，WPRO-05 组件失败重试的风扇问题）
+
+- 代码提交：见本轮末尾（WPRO-01 `beb322e9` 之后）。
+- **修的是一个会一直烧 CPU 的缺陷**：`RepaintDue` 按 `nextRefreshAt == 0 || 现在 >= nextRefreshAt`
+  决定要不要画，而 `nextRefreshAt` 只在**成功**的 `PaintSlot` 末尾赋值。`PaintSlot` 有
+  五条提前返回的路径，一条都不赋值 —— 于是它保持 0，而 0 的含义正是"随时都该画"。
+  一个画不出来的组件因此每 16ms 重试一次：一秒 60 次，一天 520 万次。
+  `nextRefreshAt` 的赋值点一共四处，失败路径一处都没有。
+- **修法**：新增 `WidgetRefreshPolicy`（纯逻辑）—— 失败指数退避到 30s 封顶
+  （冷启动第一分钟 6 次、稳态每分钟 2 次，今天是 3750 次），成功立刻清零回到
+  内容要的间隔（否则一次内容变化会晚最多 30 秒才上屏），延迟永不为 0。
+  宿主五条失败路径都接上了 `ScheduleNextRefreshAfterFailure`。
+- **顺带删掉三处挡不动任何东西的守卫**（都是变异检测逮到的，同一个教训第三次）：
+  `SceneClock::Pause` 的提前返回、`ExtractJsonDouble` 的有限性检查、
+  `NextRefreshDelayAfterFailure` 的 0 兜底。一行挡不住任何事的代码只会让人以为
+  这里曾经有过一个案例。
+- 本机跑了什么：43 个纯逻辑目标全通过；`WidgetRefreshPolicyTest` 174 项；
+  7 处变异全红；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。
+- 真机：**未测量**。省下多少 CPU 与电要 Windows 实机；本轮修的是缺陷方向，
+  不声称省了百分之几。
+- 下一候选：`CAP-03` 的 schema/capability 版本矩阵与资产依赖快照（纯逻辑）。
+  一律要 Windows 的：`P0-*`、`WALL-06`、`PRO-03/05`、CAP-04、WPRO-06/07、AIP 评测。
+
+### 本轮推进记录（2026-10-04，WPRO-01 组件几何与 aspectRatio 不生效）
+
+- 代码提交：`beb322e9`（WALL-03 两个提交之后）；本轮文档 + 代码，未提升版本号。
+- 做了什么：新增 `MiaoWidgetGeometry.cpp`（纯算术）把"这个组件到底有多大"算出来，
+  加 `WidgetGeometryTest` 61 项与 `ShippedWidgetGeometry` 10 项（每个发行组件在 8 块
+  参考屏幕上的真实像素盒逐行打出来）。
+- **结论**：三个随产品发行的组件全部声明 `aspectRatio: 1.0`，而八个参考屏幕上**没有
+  一个成立** —— FHD 16:9 上实际 1.778、32:9 上 3.556。原因是这个字段没有任何渲染器
+  或宿主读它，而 `ValidateInstance` 比的是归一化比例（0.30/0.30）、不是像素比例。
+  与 `asset.font`、`videoRenderer` 同类，只是这次连校验都是虚的。
+- **顺手修了一个真实的坑**：`ExtractJsonInt` 对 `"0.30"` 解析失败，第一版门把
+  `defaultWidth` 读成"取不到"退回默认值 0.30 —— 而默认值恰好等于真值，于是三个组件
+  全被报成"未声明 aspectRatio"，而 manifest 里明明写着 `1.0`。**默认值与真值撞车让
+  整道门看起来在工作。** 修法是在共享读取器里加 `ExtractJsonDouble`（14 条新断言）。
+- 本机跑了什么：43 个纯逻辑目标全通过（exit 0）；21 道仓库门 + mingw 交叉语法门
+  全通过；几何 10 处、JSON 3 处变异全红。
+- 真机：**未取证**。"真实比例只有 1.778/3.556"是算术结论，"用户在桌面上看到什么"未签收。
+  三个内置组件的外观一个都没动 —— 为让门变绿去改一个看不见效果的东西，正是规划禁止的。
+- 剩余（WPRO-01 未完成部分）：尺寸族（small/medium/large）没有定义 —— 那是产品决策
+  （有哪几档、UI 上怎么选），本轮不发明；长文本/溢出策略、切尺寸迁移、
+  `FitAspectInside` 接进宿主都没有（后者要 Windows 才能验留边效果）。
+- 下一候选（依赖已满足且本机可自动验证）：`WPRO-05` 组件更新调度与能耗；
+  `CAP-03` 的 schema/capability 版本矩阵与资产依赖快照。
+  一律要 Windows 的：`P0-*`、`WALL-06`、`PRO-03/05`、CAP-04、WPRO-06/07、AIP 评测。
 
 ### 本轮推进记录（2026-10-03，自动推进会话）
 

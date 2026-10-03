@@ -12,6 +12,7 @@
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/TodayTaskContentProvider.h"
+#include "miaodesk/WidgetRefreshPolicy.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/WidgetService.h"
@@ -36,6 +37,14 @@
 
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
+// WPRO-05 的刷新间隔常量住在 miaodesk::desktop(与策略实现同一处)。引进来,
+// 免得每个宿主各写一份 1000 / 2000 —— 两处各写一个的代价是"改空闲间隔"要在两个
+// 地方各改一次,而漏掉的那处不会有任何测试红。
+using miaodesk::desktop::ApplyRefreshOutcome;
+using miaodesk::desktop::kWidgetDirectSurfaceHeartbeatMs;
+using miaodesk::desktop::kWidgetIdleRefreshMs;
+using miaodesk::desktop::NextRefreshAt;
+using miaodesk::desktop::WidgetRefreshState;
 
 namespace miaodesk::wallpaper {
 namespace {
@@ -49,8 +58,6 @@ constexpr UINT_PTR kSyncTimerId = 81;
 constexpr UINT_PTR kRefreshTimerId = 82;
 constexpr UINT kSyncIntervalMs = 1000;
 constexpr UINT kRefreshTickMs = 16;
-constexpr std::uint32_t kIdleContentRefreshMs = 1000;
-constexpr std::uint32_t kDirectSurfaceHeartbeatMs = 2000;
 constexpr std::wstring_view kGlassClockContentSource = L"content:com.goodloong.glass-clock";
 
 std::wstring ExecutablePath() {
@@ -314,6 +321,9 @@ struct ContentSlot {
     ULONGLONG geometryGraceUntil{};
     ULONGLONG nextRefreshAt{};
     unsigned long long successfulPaints{};
+    // WPRO-05:失败退避状态。成功一次就归零,于是内容一恢复就按它要的间隔走,
+    // 而不是还按退避间隔慢慢爬回 16ms —— 那会让一次内容变化晚最多 30 秒才上屏。
+    WidgetRefreshState refresh;
 };
 
 void ResetRenderer(ContentSlot& slot) {
@@ -689,7 +699,7 @@ struct ContentWidgetHostApp {
 
     void ScheduleNextRefresh(ContentSlot& slot, double timeSeconds) {
         const ULONGLONG now = GetTickCount64();
-        std::uint32_t interval = kIdleContentRefreshMs;
+        std::uint32_t interval = kWidgetIdleRefreshMs;
         if (slot.renderer && slot.renderer->Loaded()) {
             content::MiaoSceneFrameDemand demand;
             std::wstring ignored;
@@ -699,17 +709,33 @@ struct ContentWidgetHostApp {
                 interval = std::max<std::uint32_t>(kRefreshTickMs, demand.intervalMs);
             }
         }
-        if (slot.directPresentation) interval = std::min(interval, kDirectSurfaceHeartbeatMs);
-        slot.nextRefreshAt = now + interval;
+        // 成功路径:退避计数归零,立刻回到内容要的间隔。
+        slot.nextRefreshAt = NextRefreshAt(
+            now, ApplyRefreshOutcome(&slot.refresh, true, interval, slot.directPresentation));
+    }
+
+    // 失败路径也要排下一次。
+    //
+    // 这一行是 WPRO-05 修的东西:在此之前,PaintSlot 的五条提前返回路径都不排下一次,
+    // 于是 nextRefreshAt 保持 0,而 RepaintDue 里 0 的含义是"随时都该画" ——
+    // 一个画不出来的组件因此每 16ms 重试一次,一秒 60 次,每次都重跑整条渲染链路。
+    // 用户看不见任何变化,只看见风扇转。
+    void ScheduleNextRefreshAfterFailure(ContentSlot& slot) {
+        const ULONGLONG now = GetTickCount64();
+        slot.nextRefreshAt = NextRefreshAt(now, ApplyRefreshOutcome(&slot.refresh, false, 0, false));
     }
 
     void PaintSlot(ContentSlot& slot) {
         const bool wasReady = GetPropW(slot.hwnd, kNativeWidgetPaintReadyProperty) != nullptr;
         if (!EnsureRenderTarget(slot) || !EnsureRenderer(slot)) {
             if (lastError.empty()) ReportFailure(&slot, L"Content render target/renderer unavailable");
+            ScheduleNextRefreshAfterFailure(slot);
             return;
         }
-        if (!ApplyHostData(slot)) return;
+        if (!ApplyHostData(slot)) {
+            ScheduleNextRefreshAfterFailure(slot);
+            return;
+        }
 
         const D2D1_SIZE_F size = slot.activeTarget->GetSize();
         const double timeSeconds = static_cast<double>(GetTickCount64()) / 1000.0;
@@ -723,6 +749,7 @@ struct ContentWidgetHostApp {
 
         if (!rendered) {
             ReportFailure(&slot, L"Content Scene draw failed: " + renderError);
+            ScheduleNextRefreshAfterFailure(slot);
             return;
         }
         if (drawResult == D2DERR_RECREATE_TARGET) {
@@ -733,10 +760,12 @@ struct ContentWidgetHostApp {
         if (FAILED(drawResult)) {
             ReportFailure(&slot, L"Content Direct2D EndDraw failed HRESULT=" +
                                  HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(drawResult))));
+            ScheduleNextRefreshAfterFailure(slot);
             return;
         }
         if (!Present(slot)) {
             ReportFailure(&slot, L"Content surface presentation failed");
+            ScheduleNextRefreshAfterFailure(slot);
             return;
         }
 

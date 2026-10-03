@@ -76,6 +76,10 @@ set(MIAODESK_CORE_SOURCES
     # 不 import Windows 头),所以既进产品,也能被 run-pure-logic-tests.sh 真实编译
     # 并运行。它回答的是写 manifest 时答不上来的那个问题 —— "这个组件到底有多大"。
     desktop/widgets/MiaoWidgetGeometry.cpp
+    # WPRO-05:组件下一次该什么时候重画。失败必须退避 —— 宿主的 nextRefreshAt
+    # 只在成功绘制时被赋值,失败路径一条都不赋,而 0 的含义是"随时都该画",
+    # 于是画不出来的组件每 16ms 重试一次。纯逻辑,本机可验。
+    desktop/widgets/WidgetRefreshPolicy.cpp
     content/shader/MiaoGpuParameterBlock.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
@@ -391,6 +395,8 @@ add_executable(MiaoDeskShippedAnimationContinuity tests/ShippedAnimationContinui
 # 屏幕上实际是什么比例。算术是纯的(不 import Windows 头),所以本机真实运行。
 add_executable(MiaoDeskWidgetGeometryTest tests/WidgetGeometryTest.cpp)
 add_executable(MiaoDeskShippedWidgetGeometry tests/ShippedWidgetGeometry.cpp)
+# WPRO-05:失败退避。它修的是一直烧 CPU 的那个失败循环。
+add_executable(MiaoDeskWidgetRefreshPolicyTest tests/WidgetRefreshPolicyTest.cpp)
 add_executable(MiaoDeskCreatorReplyInterpreterTest tests/CreatorReplyInterpreterTest.cpp)
 add_executable(MiaoDeskContentApplyRecoveryTest tests/ContentApplyRecoveryTest.cpp)
 add_executable(MiaoDeskCreationDraftStoreTest tests/CreationDraftStoreTest.cpp)
@@ -427,7 +433,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskMiaoSceneTimelinePolicyTest MiaoDeskShippedAnimationContinuity MiaoDeskWidgetGeometryTest MiaoDeskShippedWidgetGeometry MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskMiaoSceneTimelinePolicyTest MiaoDeskShippedAnimationContinuity MiaoDeskWidgetGeometryTest MiaoDeskShippedWidgetGeometry MiaoDeskWidgetRefreshPolicyTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -495,6 +501,7 @@ if (MSVC)
     target_compile_options(MiaoDeskShippedAnimationContinuity PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWidgetGeometryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskShippedWidgetGeometry PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskWidgetRefreshPolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorReplyInterpreterTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentApplyRecoveryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationDraftStoreTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -732,6 +739,9 @@ target_link_libraries(MiaoDeskWidgetGeometryTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskShippedWidgetGeometry PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskWidgetRefreshPolicyTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorReplyInterpreterTest PRIVATE

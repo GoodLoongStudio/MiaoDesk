@@ -17,6 +17,37 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：WPRO-05 组件失败重试的风扇问题
+
+本条记录**修复一个会一直烧 CPU 的缺陷**，并新增纯逻辑刷新策略。
+
+- **缺陷**：`ContentWidgetHost::RepaintDue` 按 `nextRefreshAt == 0 || now >= nextRefreshAt`
+  决定要不要画，而 `nextRefreshAt` 只在**成功**的 `PaintSlot` 末尾被赋值。`PaintSlot`
+  有五条提前返回的路径（渲染目标拿不到、渲染器加载失败、宿主数据应用失败、`Draw` 返回
+  false、`Present` 失败），一条都不赋值 —— 于是它保持 0，而 0 的含义正是"随时都该画"。
+  一个画不出来的组件因此每 16 ms 重试一次：一秒 60 次，一天 520 万次，每次都重跑
+  渲染目标/渲染器/宿主数据整条链路。用户看不见任何变化，只看见风扇转。
+  `nextRefreshAt` 的赋值点一共四处，失败路径一处都没有。
+- **修复**：新增 `src/desktop/widgets/WidgetRefreshPolicy.cpp`（纯逻辑）——
+  失败指数退避（1s/2s/4s/8s/16s，30s 封顶；冷启动第一分钟 6 次、稳态每分钟 2 次，
+  今天是 3750 次），成功立刻清零回到内容要的间隔（否则一次内容变化会晚最多 30 秒
+  才上屏），延迟永不为 0。宿主接线：`ScheduleNextRefresh` 走成功路径，五条失败路径
+  调用新增的 `ScheduleNextRefreshAfterFailure`。空闲间隔与直接呈现心跳的常量也并到
+  这里，只写一份（原先宿主各写一个 1000 与 2000，两边都不在纯逻辑集合里，漏改一处
+  不会有任何测试红）。
+- **顺带删掉三处挡不动任何东西的守卫**（都是变异检测逮到的）：
+  `SceneClock::Pause` 的 `if (!running_) return;`（`running_ = false` 本身幂等）、
+  `ExtractJsonDouble` 的 `!std::isfinite`（`from_chars` 不接受 inf/nan）、
+  `NextRefreshDelayAfterFailure` 的 `if (delay == 0)`（delay 从 1000 起只乘不除）。
+- **自动检查**：`WidgetRefreshPolicyTest` 174 项通过（含一条专门钉 off-by-one 的断言：
+  第一版把 `ApplyRefreshOutcome` 写成"先 ++ 再算"，第一次失败就退避到 2000ms 而不是
+  起点 1000ms）；7 处变异全红；43 个纯逻辑目标全通过；21 道仓库门 + mingw 交叉语法门
+  （0 真实错误）全通过。
+- **未取证**：失败循环的实际 CPU/耗电下降**未测量** —— 那要 Windows 实机。宿主接线
+  只过了 mingw 交叉编译。验收里"无变化不重绘 / 多实例不重复轮询 / 锁屏后无请求风暴"
+  仍未做：空闲内容仍按 1000ms 重绘一次（与之前一致），多实例共享缓存与请求风暴
+  都没有实现。
+
 ### 2026-10-04 · 执行记录：WPRO-01 组件几何与 `aspectRatio` 不生效
 
 本条记录**新增纯算术模块与两道门，并改正一处"字段在、校验过、教它有效，而没人读它"的

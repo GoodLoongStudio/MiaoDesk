@@ -180,7 +180,9 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 ## 文档
 
 - `docs/DESIGN_BASELINE.md` — 当前唯一设计基线
-- `docs/DEVELOPMENT_ROADMAP.md` — 当前唯一开发基线与路线
+- `docs/DEVELOPMENT_ROADMAP.md` — 当前唯一阶段级开发路线
+- `docs/CONTINUOUS_DEVELOPMENT_BOARD.md` — 当前唯一执行队列，自动/人工持续开发都从这里领取下一项
+- `docs/FEATURE_CHANGELOG.md` — 用户可感知功能与体验变化
 - `docs/DOC-INDEX.md` — 当前有效技术文档索引
 - `docs/LOCAL_AI_ARCHITECTURE.md` — 本地 AI 架构（DGX Spark + 开源模型，含按任务切换模型）
 - `docs/LOCAL_AI_DEPLOYMENT.md` — 本地 AI 部署手册

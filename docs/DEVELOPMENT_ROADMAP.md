@@ -9,7 +9,7 @@
 
 ## 当前执行位置（2026-09-27）
 
-任务级执行统一看 [TODO.md](TODO.md)。下文 Phase 0～6 保留架构建设顺序；已有代码不要求从 Phase 0 重做，阶段完成仍以第 6 节的验收定义为准。
+当前“下一项做什么、优先级和自动推进资格”统一看 [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md)。[TODO.md](TODO.md) 保留详细验收、诊断和历史证据，不再承担执行排序。下文 Phase 0～6 保留架构建设顺序；已有代码不要求从 Phase 0 重做，阶段完成仍以第 6 节的验收定义为准。
 
 - 三款官方 Widget 内容包及三款官方 Wallpaper 的 `scene.json` 正式入口已存在，当前需完成真实桌面使用与视觉验证。
 - 内置 Widget 的尺寸修改保护已实现；壁纸停用/reload 已有回归检查，仍需候选版本和真实 Windows 状态验证。

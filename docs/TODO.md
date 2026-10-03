@@ -1,4 +1,7 @@
-# MiaoDesk 开发 Todo
+# MiaoDesk 详细验收与问题库
+
+> 当前执行顺序、优先级与自动推进资格统一看 [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md)。本文件继续保留细粒度验收、诊断、真机条件和历史证据，不再作为“下一项做什么”的唯一队列。
+
 
 - 更新：2026-09-27。
 - 定位：主产品优化的唯一任务级执行清单；阶段路线见 [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)。

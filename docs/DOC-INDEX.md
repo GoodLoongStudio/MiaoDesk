@@ -6,10 +6,12 @@
 
 - `PRODUCT_VISION.md` — 产品是什么、用户感受到什么：漂亮的智能桌面，以及用户感知到的三个界面（搜索框 / 动态桌面 / DeepSeek Harness 工作台）。所有功能以此为设计基准。
 
-## 开发 Todo
+## 持续开发
 
-- [TODO.md](TODO.md) — 当前唯一任务级执行清单：准备 → 桌面稳定/布局/性能 → 搜索/视觉/组件/内容管理 → AI/配置/Harness → 发布收口。每项包含现状、依据、依赖、开发入口和验收标准；本地 AI 作为独立扩展架构，不阻塞主产品优化。阶段级方向仍以 `DEVELOPMENT_ROADMAP.md` 为准。
-- [历史清单快照](history/TODO_SNAPSHOT_2026-09-27.md) — 完整保留旧 P0/P1/P2/P3/B 编号、实施记录与诊断过程；部分状态已过期，不作为当前排期或发布结论。
+- [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md) — **当前唯一执行队列**：P0/P1/P2、自动推进资格、依赖、完成标准和当前状态。人工与自动开发都从这里领取下一项。
+- [FEATURE_CHANGELOG.md](FEATURE_CHANGELOG.md) — 用户可感知的功能 Changelog；持续开发每次产生产品变化时同步更新。
+- [TODO.md](TODO.md) — 详细验收、问题分析与历史证据库。保留大量真机条件、诊断过程与专项验收，但不再承担“下一项做什么”的排序职责。
+- [历史清单快照](history/TODO_SNAPSHOT_2026-09-27.md) — 完整保留旧 P0/P1/P2/P3/B 编号与历史过程，不作为当前排期或发布结论。
 
 ## 能力基准
 

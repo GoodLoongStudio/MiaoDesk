@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `beb322e9`（本机 42 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；13 处变异全红；同 SHA CI 在跑）。上一轮 `7e08e97b`（WALL-03）CI 全 success。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `511a663b`（本机 43 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；共 36 处变异全红；同 SHA CI 在跑）。前三个提交 `7e08e97b`/`beb322e9` 的 CI 均已 success。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -257,6 +257,23 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
 
+### 本轮推进记录（2026-10-04 再续，CAP-03 资产门与 schema 版本矩阵）
+
+- **补上两个此前没有任何门的验收项**："资产不重复打包"与"版本可演进/降级路径明确"。
+- 新增 `ShippedPackageAssets`：对全部发行包 + 两个示例包走
+  `MiaoContentPackage::Load`→反序列化→`Validate`→`MiaoAssetDatabase::Build`,逐包核
+  三件事(每个声明的资产都有人引用、没有两份内容哈希相同、合计字节数记录)。
+  本轮基线 **16 条资产、2710 KB、无人引用 0、内容重复 0**。
+- **在这道门上又踩到自己一次**：第一版把判定写在循环里,于是把"无人引用"那一行删掉之后
+  门照样全绿 —— 当前内容没有无人引用的资产,"检查还在不在"根本问不出来。
+  改成抽出 `AuditPackageAssets` + 两个合成坏包的自检之后,两处变异都红了。
+  这与本轮早些时候 `ShippedAnimationContinuity` 是同一个坑,第二次才长记性:
+  **一道永远不失败的门,与一道好门在通过的那一刻长得一模一样。**
+- schema 版本矩阵写成 `MIAO_CONTENT_PACKAGE_V1.md` 附录 A。只有一版时也写下来,
+  理由是"将来加第 2 版时这里必须先改"。
+- 本机跑了什么：`ShippedPackageAssets` 14 项通过；两处变异全红;21 道仓库门全通过。
+- 用户可感知变化：**无**。本批防的是将来,不改当前行为,所以不进 `FEATURE_CHANGELOG.md`。
+
 ### 本轮推进记录（2026-10-04 续，WPRO-05 组件失败重试的风扇问题）
 
 - 代码提交：见本轮末尾（WPRO-01 `beb322e9` 之后）。
@@ -277,7 +294,13 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   7 处变异全红；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。
 - 真机：**未测量**。省下多少 CPU 与电要 Windows 实机；本轮修的是缺陷方向，
   不声称省了百分之几。
-- 下一候选：`CAP-03` 的 schema/capability 版本矩阵与资产依赖快照（纯逻辑）。
+- 本会话已交付四批（都可本机验证）：`bd23cfe6` CAP-02 示例包负载链门；`7e08e97b` WALL-03
+  宿主侧时间策略 + 发行内容动画连续性；`beb322e9` WPRO-01 组件几何测量 + `aspectRatio` 说实话；
+  `511a663b` WPRO-05 失败重试退避。另有 **4 个 node 契约门在 clean HEAD 上就是红的**，
+  与本会话无关（`creator-conversation-continuity`、`creator-window-keyboard-conformance`、
+  `image-provider-installed`、`ungated-action-surfaces-report`）。
+- 下一候选：`CAP-03` 的 schema/capability 版本矩阵与资产依赖快照（纯逻辑）；
+  `WPRO-04` 的三个官方 Provider 接入 `WidgetDataActionContract`（契约已在，接线属宿主侧）。
   一律要 Windows 的：`P0-*`、`WALL-06`、`PRO-03/05`、CAP-04、WPRO-06/07、AIP 评测。
 
 ### 本轮推进记录（2026-10-04，WPRO-01 组件几何与 aspectRatio 不生效）

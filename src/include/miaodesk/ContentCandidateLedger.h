@@ -28,6 +28,9 @@ enum class ContentValidationFailure {
     KindMismatch,        // 包类型与当前模式不符
     MissingManifestField,
     UnsupportedRuntime,  // Web/Script 之类不在本轮范围内
+    // 清单里声明了能力目录中不存在的能力。它不是拼写检查:一个虚构的 capability
+    // 比一个缺失的更难发现 —— 它通过全部校验,然后在运行时什么都不做。
+    UnknownCapability,
     MissingReferencedFile,
     InvalidBinding,
     ParameterOutOfRange,

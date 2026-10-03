@@ -27,14 +27,14 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 
 | 能力 | 声明 | 运行 D2D | 运行 D3D11 | 预览 | AI 教学 | 缺口与下一步 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `transform` | 是 | 是 | 是 | 是 | 部分 | 两后端一致；`cornerRadius` 只有 D2D 一份实现（`MiaoSceneD2DRenderer.cpp` 的 `maxCornerRadius` 计算，:657-661） |
+| `transform` | 是 | 是 | 是 | 是 | 是（本轮补） | 两后端一致；`cornerRadius` 只有 D2D 一份实现（`MiaoSceneD2DRenderer.cpp` 的 `maxCornerRadius` 计算，:657-661） |
 | `spriteRenderer` | 是 | 是（多实例） | **仅第一个**（`MiaoSceneD3D11Renderer.cpp` 的 `FindRenderable` 只返回首个 `ComponentKind::SpriteRenderer`，:92-99） | 是 | 是 | D3D11 多精灵、D3D11 `cornerRadius` 缺失 |
-| `textRenderer` | 是 | 是（`{{data.path}}` 模板） | **否** | 是 | 部分 | D3D11 无文字；长文本/换行/对齐规则未成文 |
-| `videoRenderer` | 是 | **否** | **否** | 否 | 是（被教成"单轨循环"） | 声明即通过校验但零像素；视频只有独立壁纸路径 `VideoWallpaperPlayer.cpp`。WALL-01 前必须给出"拒绝或实现"的明确结论 |
+| `textRenderer` | 是 | 是（`{{data.path}}` 模板） | **否** | 是 | 是（本轮补） | D3D11 无文字；长文本/换行/对齐规则未成文 |
+| `videoRenderer` | 是 | **否** | **否** | 否 | 是（现在教成"不要用"） | 声明即通过校验但零像素；视频壁纸走壁纸库的媒体文件路径。此前 Skill 把它教成"单轨循环"，照那样生成的产物预览与桌面都是空白 |
 | `material` | 是 | 否 | 否 | 否 | 否 | 材质是顶层资源，本 kind 无数据 |
-| `particleSystem` | 是 | 否（分析型粒子除外） | 是（模拟型） | 是 | 部分 | 该 kind 只用于把包路由到 D3D11（`IndependentWallpaperHost.cpp` 的 `CanonicalSceneUsesGpu`，:55-77） |
+| `particleSystem` | 是 | 否（分析型粒子除外） | 是（模拟型） | 是 | 是（本轮补） | 该 kind 只用于把包路由到 D3D11（`IndependentWallpaperHost.cpp` 的 `CanonicalSceneUsesGpu`，:55-77） |
 | `animator` | 是 | 否 | 否 | 否 | 否 | 动画数据在顶层 `animations[]`，该 kind 无数据 |
-| `script` | 是 | 否 | 否 | 否 | 是（被教成"禁止"） | 无加载器/执行器；`userAuthored` 解析后从不参与任何判断 |
+| `script` | 是 | 否 | 否 | 否 | 是（教成"不要写"） | 无加载器/执行器；`userAuthored` 解析后从不参与任何判断 |
 | `inputBinding` | 是 | 否 | 否 | 否 | 否 | 绑定是顶层 `bindings[]` |
 | `custom` | 是 | 否 | 否 | 否 | 否 | 捕获性 kind，无行为 |
 
@@ -66,12 +66,12 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 | 三个内容组件（时钟/天气/待办） | 真实数据 | `assets/widgets/*.mdwidget`、`ContentWidgetHost.cpp:604-648` | 待办仅暴露 4 个槽位（`kPublishedTaskSlots=4`） |
 | 时钟刷新 | 对齐分钟边界 | `NativeWidgetHost.cpp:656-664` | 秒针样式没有单独的刷新档 |
 | 天气 | 真实网络（Open-Meteo + IP 定位）、缓存 + 90s 重试 | `NativeWeatherService.cpp:217-355` | 无显式 loading 态 |
-| **原生 `native:today-tasks` 预设** | **假数据**：硬编码 `L"3"`、`L"1 / 3 完成"` 与三条固定待办，从不读 `TodayTaskStore` | `NativeWidgetPainter.h` 的 `PaintTodayTasks` 内的字面量（:391-418） | 违反"真实数据"硬门；本轮登记为缺陷 D-2 |
+| 原生 `native:today-tasks` 预设 | 真实数据（2026-10-03 修复）：读 `TodayTaskStore` 快照，行数上限 4，读不到时显示"任务数据暂不可用"而不是零项 | `NativeWidgetPainter.h` 的 `PaintTodayTasks`、`TodayTaskPresentation.cpp` | 修复前是硬编码三条待办（D-2）；旧快照与行数规则见 `TodayTaskPresentationTest` |
 | 交互 | 只有拖动；无点击/完成/计时/媒体控制/右键/键盘 | `NativeWidgetHost.cpp:813-858` | WPRO-03 |
 | Provider 抽象 | **部分**：三个互不相同的快照结构，无统一接口/时间戳/loading/取消 | `MiaoContentDataBinding.h:16-19`、`NativeWeatherData.h:14-27`、`TodayTaskStore.h:18-25` | WPRO-04 |
 | 能力 broker | 已实现，闭集 3 个（`time.*/weather.*/tasks.*`） | `MiaoContentDataBinding.cpp:96-117` | 无撤销/取消；无 media/agenda/timer/focus/photos |
 | Action 注册表 | **缺失** | — | WPRO-03 |
-| 无障碍 | **缺失**（窗口 `WS_EX_NOACTIVATE`，无焦点/键盘/UIA） | `NativeWidgetHost.cpp:916-921` | WPRO-06 |
+| 无障碍 | **缺失**（窗口 `WS_EX_NOACTIVATE`，无焦点/键盘/UIA） | `NativeWidgetHost.cpp:937` | WPRO-06 |
 | 多实例 | 内容包支持；原生预设按显示器刻意单例 | `DesktopWidgetStore.cpp:134-141`、`WidgetService.cpp:134-135` | — |
 | 显示器分配 | 已实现 + 健康遥测 | `WidgetService.cpp:167-180,223-352` | 真机未验 |
 | 吸附对齐 | **缺失** | `NativeWidgetHost.cpp:746-762` | 仅新建时有粗粒度避让 |
@@ -106,8 +106,8 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 
 | ID | 缺陷 | 影响 | 处置 |
 | --- | --- | --- | --- |
-| D-1 | 取证样本摘要恒为空，`CreatorToolName::PreviewEvidence` 在真机必然失败，却自述可执行 | 创作者拿不到真实渲染证据；证据链断在最后一环 | 本会话修复并补纯逻辑测试 |
-| D-2 | `native:today-tasks` 预设显示硬编码假待办 | 用户看到不存在的任务；违反"宣称的数据来源真实可用" | 已登记，WPRO-04 前处理 |
+| D-1 | 取证样本摘要恒为空，`CreatorToolName::PreviewEvidence` 在真机必然失败，却自述可执行 | 创作者拿不到真实渲染证据；证据链断在最后一环 | 已修：`MakeRenderedEvidenceSample` 由构造保证摘要绑定；`RenderEvidenceSampleBindingTest` + `tests/creator-evidence-digest-binding.mjs` 双侧覆盖 |
+| D-2 | `native:today-tasks` 预设显示硬编码假待办（`NativeWidgetPainter.h` 的 `PaintTodayTasks` 写死三条） | 用户看到不存在的任务；违反"宣称的数据来源真实可用"；用户编辑的待办从不出现在卡片上 | 本会话修复：`TodayTaskPresentation` 行模型 + 宿主读 `TodayTaskStore` + 预览同源；门禁见 `tests/native-tasks-uses-real-store.mjs` |
 | D-3 | 未知 capability ID 只做字符集校验，`audio.read` 之类能通过并静默无效 | 虚构能力比缺失更难发现 | CAP-01 关闭 |
 | D-4 | 声明了但零像素的组件 kind（`videoRenderer`/`material`/`particleSystem`/`animator`/`script`/`inputBinding`/`custom`）能通过全部校验 | 坏包看起来合法 | CAP-01 显式标注 + 校验器拒绝/告警 |
 | D-5 | D2D 静默忽略 `postProcesses` 与模拟粒子 | 作者以为生效 | CAP-01 后端矩阵 + 明确降级说明 |
@@ -115,5 +115,24 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 ## 7. 交接
 
 - 固定样本、参考机、预算与度量协议：PRO-02/PRO-03，需人工选样与 Windows 实机，未启动。
-- 下一步（按依赖可自动推进）：CAP-01 能力目录，直接关闭 D-3/D-4/D-5，并让 Skill/工具/校验共用同一份目录。
 - 每轮补齐本表时，必须写证据 SHA 与本机跑了哪些门；不得只改结论不改证据。
+
+## 8. 与能力目录的关系（2026-10-03 更新）
+
+CAP-01 落地后，本台账的人工结论有了机器可查的对应物：`src/content/binding/MiaoCapabilityCatalog.cpp`
+是唯一一份表，`creator_capabilities_get`、文档导出和 `scripts/verify-capability-catalog.sh` 都读它。
+本表格继续承担两件目录不做的事：登记**已发现的缺陷**，以及保留"为什么当时是这个状态"的理由。
+
+D-3（未知 capability 静默通过）已关闭：加载器与 `ContentPackageValidator` 现在都拒绝目录外的名字。
+D-4/D-5 只关闭了一半——目录现在能查出来"仅声明"和"后端不支持"，但渲染器本身仍会静默忽略
+D2D 上的 `postProcesses`；彻底关闭它属于 WALL-01/04。
+
+| D-6 | `ContentPackageValidator` 的 entry 规则只认 `scene/scene.json`，而加载器接受根下 `scene.json`；8 个随产品发行的包全部被它拒掉 | 照发行包的样子写出来的候选被判"校验不通过"，拒绝原因还指向一个合法的包 | 已修：规则改为"包内安全相对 .json，且不是 manifest/parameters 本身"，两种布局都接受；`ShippedPackagesValidate` 作为回归门 |
+| D-7 | 包级校验此前**没有**任何自动检查覆盖随产品发行的包（`BuiltinWallpaperPackages` 走的是另一条链） | 校验规则的任何收紧都可能悄悄把发行包拒掉 | 已关：`src/tests/ShippedPackagesValidate.cpp` 每次校验全部 8 个发行包 |
+
+漏教(2026-10-03 补)：四份 Skill 此前只提到 3 个场景组件 kind、0 个资产类型、0 个后处理效果，
+而 `textRenderer` 有完整的 D2D 实现并支持 `{{data.*}} 模板。Skill 还把视频教成"单轨
+VideoRenderer 循环"，而**没有任何渲染器实现那个组件** —— 视频壁纸走的是另一条路
+（媒体文件 + 宿主的视频播放器）。`asset.font` 同样没有消费方：textRenderer 用 `fontFamily`
+指定的系统字体名，导入字体文件不会改变任何字形。这三处已在 wallpaper-content 的能力卡里改正；
+`scripts/verify-skill-teaches-executable-capabilities.sh` 现在钉住"每条可创作能力都至少被提到"。

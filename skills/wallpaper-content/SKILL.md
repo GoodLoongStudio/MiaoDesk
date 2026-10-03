@@ -30,8 +30,16 @@ MiaoDesk 的桌面内容 = 载体 × 运行时两个正交维度。
 Scene 运行时的内部按"表现形态"分,这些是 Scene 的配置档,不是并列的顶层类型:
 - 静态图    单图 + 可选缩放/色彩/视差
 - 动态场景  组件 + 动画 + 绑定 + 粒子 + 后处理
-- 视频      单轨 VideoRenderer 循环
 - 3D 场景   当前未实现,不要生成
+
+**视频不是 Scene 的一种表现形态。** 视频壁纸走的是另一条路:一个视频文件被加进壁纸库,
+宿主直接用视频播放器播(循环/静音/音量/倍速/缩放由库里的设置决定),整条路不经过
+scene.json,也不由 manifest 声明。
+所以:
+- 想要视频壁纸 → 交付视频文件这一条路,不要在 scene.json 里写 videoRenderer。
+- scene.json 的 `videoRenderer` 组件**没有任何渲染器实现**。它写得出来、校验得过,
+  但一个像素都不画 —— 这就是"声明了但不执行"的那一类,产物在预览和桌面上都是空白。
+  完整名单见 creator_capabilities_get 的 [DeclaredOnly] 分级。
 
 【3D:契约已有,渲染器没有 —— 绝对不要生成】
 scene.json 里已经能写 spatial:"3d"、lights[]、fog[],产品也会正常校验通过,
@@ -103,6 +111,67 @@ scene.json 里已经能写 spatial:"3d"、lights[]、fog[],产品也会正常校
 【分辨率与多显示器】
 - 按主流 16:9 与 21:9 考虑,内容不假设单一显示器尺寸。
 - 不假设固定显示器数量;多显示器启停不得让壁纸状态错乱。
+
+【Scene 组件:哪些真的会画出来】
+scene.json 的 components[].kind 有 10 种,但**不是每一种都有渲染器**。选型前先看这一张:
+
+| kind | D2D | D3D11 | 说明 |
+| --- | --- | --- | --- |
+| transform | 画 | 画 | 位置/缩放/旋转/透明度,父链相乘。**每个节点都要有它**,否则位置无定义 |
+| spriteRenderer | 画 | 只画第一个 | D3D11 上多精灵只画可见的第一个;cornerRadius 只有 D2D 有 |
+| textRenderer | 画 | **不画** | D2D/DirectWrite;支持 {{data.*}} 模板。做数字/日期/待办文字用它 |
+| particleSystem | 分析型粒子画 | 模拟型粒子画 | 它本身不画粒子,只把包路由到 GPU 后端;粒子由顶层 particleEmitters[] 描述 |
+| videoRenderer | 不画 | 不画 | 见上面:视频走媒体文件那条路 |
+| material / animator / inputBinding | 不画 | 不画 | 数据分别在顶层 materials / animations / bindings,节点上这个 kind 是空壳 |
+| script / custom | 不画 | 不画 | 没有执行器,写了只会让包带上一个什么都不做的节点 |
+
+规则:
+- 只用上表"画"的 kind。要一个节点有位置,挂 transform;要显示图像,挂 spriteRenderer;
+  要显示文字,挂 textRenderer。
+- 需要文字 → 必须走 D2D。含 textRenderer 的包不会被路由到 D3D11,所以这一类内容
+  同时放弃 D3D11 的粒子与后处理。
+- 精灵要贴图:`texture`(指向 asset:// 图片)与 `materialId` 二选一,不能同时给 ——
+  两者都占同一个贴图槽,后端会直接拒绝。
+- 内置材质只有 `solidColor` 被实现。写 `builtinName:"gradient"` 校验得过,但一个像素都不画。
+
+【图片资产:怎么写、上限多少】
+- shape:`"assets":[{"id":"asset://<name>","type":"image","path":"assets/<file>"}]`,
+  精灵用 `"texture":"asset://<name>"` 引用它。
+- 上限 25 MiB/图。超限的包在加载时就被拒,不是渲染时变模糊。
+- 精灵 `texture` 与 `materialId` 二选一(两者都占同一个贴图槽,后端直接拒绝)。
+- 带 `texture` 的精灵在 D2D 上不接受非白色 tint(会报错);要改颜色用材质,不要用 tint 乘。
+- 视频、音频、字体、mesh、binary 这几类 asset type 都**没有消费方**:它们解析得过、
+  校验得过,但没有任何渲染器读。别把它们写进包 —— 那只是白占包体量。
+
+【后处理:只有 D3D11 有,而且必须成对出现】
+`postProcesses[]` 是顶层数组,每项 `{"id":"postfx://x","effect":"<kind>","enabled":true,
+"amount":1.0,"radius":0.75,"softness":0.25}`。amount/radius/softness 是可选旋钮,默认值即上面三个。
+
+可用的 effect 只有 8 个:
+- `copy` 直通(调试用,正常内容不需要)
+- `vignette` 暗角,吃 amount
+- `noise` 颗粒,吃 amount
+- `colorMatrix` 饱和度插值,吃 amount
+- `blurHorizontal` + `blurVertical` 5 抽头可分离高斯的一半,吃 amount / radius。**两个都要写**
+  才是完整模糊,只写一个会得到一半的模糊
+- `bloomThreshold` + `bloomCombine` 泛光。**两个都要写**,而且必须成对:孤立的
+  bloomThreshold 会被编译拒绝(它快照源图供另一条通读回,没有另一半这个引用就是死的)
+
+硬规则:
+- 后处理**只在 D3D11 上执行**。D2D 上的包完全忽略 `postProcesses` —— 不报错、不降级、
+  就是没有效果。而 D2D 是唯一有文字路径的后端,所以"要文字"和"要后处理"在当前版本不可兼得。
+- 多 Pass 是真的:每启用一个效果分配一张渲染目标并串起来,所以组合数量直接影响开销。
+- 别把 8 个全打开。"能开"不是"该开"。
+
+【时间通道:input://frame/time】
+- `{"id":"input://frame/time","type":"float"}` 声明它,绑定到任何数值属性上就能随时间变化。
+- 只有声明了它的包里,帧调度器才会持续出帧;没有持续动画需求的包不要声明它 ——
+  那会把桌面从"按需重绘"推成"每帧重绘"。
+
+【按需重绘】
+scene.json 的 asset type 里有 font,但**没有任何渲染器读它**:textRenderer 用
+`fontFamily` 属性指定**系统字体名**(如 "Segoe UI Variable Text"),不是字体资源。
+所以导入 .ttf/.otf 不会改变任何字形 —— 那是白占包体量。写系统里有的字体名。
 
 【按需重绘】
 - 静态背景不每帧重绘。

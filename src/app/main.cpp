@@ -461,12 +461,21 @@ public:
 
         // 摘要从**当前工作区**算,不是从模型那边取。这是"样本绑定正确摘要"的前提:
         // 换一个来源的话,拿到的是"某个候选"的证据,不一定是这一版的。
-        std::string digest;
+        //
+        // 每帧的摘要由 MakeRenderedEvidenceSample 绑定,它只接受这一个字符串,
+        // 所以调用点没有第二个变量可以填错 —— 上一版在这里另声明了一个从未赋值的
+        // 局部 digest,结果每一帧都带空摘要,判据层只能整批拒绝。
         const auto computed = miaodesk::content::ComputeCandidateDigest(Snapshot());
         if (!computed.UsableAsIdentity()) {
             *detail = "当前工作区算不出可用的候选摘要,无法为它采集渲染证据。";
             return false;
         }
+
+        miaodesk::creator::OffscreenEvidenceRequest offscreen;
+        offscreen.width = static_cast<std::uint32_t>(width);
+        offscreen.height = static_cast<std::uint32_t>(height);
+        offscreen.backend = "d2d";
+        offscreen.fixture = "offscreen:640x360";
 
         const std::uint32_t frames = requirements.minFrames == 0 ? 1u : requirements.minFrames;
         for (std::uint32_t index = 0; index < frames; ++index) {
@@ -484,17 +493,9 @@ public:
                                                       : frameError);
                 return false;
             }
-            miaodesk::creator::RenderEvidenceSample sample;
-            sample.frameIndex = index;
-            sample.capturedAtMs = static_cast<std::uint64_t>(::GetTickCount64());
-            sample.backend = "d2d";
-            sample.width = static_cast<std::uint32_t>(width);
-            sample.height = static_cast<std::uint32_t>(height);
-            sample.fixture = "offscreen:640x360";
-            sample.digest = digest;
-            sample.status = miaodesk::creator::RenderEvidenceStatus::Rendered;
-            sample.offscreen = true;
-            samples->push_back(sample);
+            samples->push_back(miaodesk::creator::MakeRenderedEvidenceSample(
+                index, static_cast<std::uint64_t>(::GetTickCount64()), offscreen,
+                computed.value));
         }
         return true;
     }

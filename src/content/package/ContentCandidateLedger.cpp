@@ -11,6 +11,7 @@ const char* ToString(ContentValidationFailure failure) noexcept {
     case ContentValidationFailure::KindMismatch: return "KindMismatch";
     case ContentValidationFailure::MissingManifestField: return "MissingManifestField";
     case ContentValidationFailure::UnsupportedRuntime: return "UnsupportedRuntime";
+    case ContentValidationFailure::UnknownCapability: return "UnknownCapability";
     case ContentValidationFailure::MissingReferencedFile: return "MissingReferencedFile";
     case ContentValidationFailure::InvalidBinding: return "InvalidBinding";
     case ContentValidationFailure::ParameterOutOfRange: return "ParameterOutOfRange";

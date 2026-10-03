@@ -32,6 +32,22 @@ WidgetKit 使用时间线和更新策略管理内容刷新；设计指南强调�
 
 代码入口：`src/desktop/widgets/`、`src/content/binding/`、`src/content/model/`、`src/ui/wallpaper/`。拟新增的 Provider/Action 不能仅凭名称对 AI 宣称可用。
 
+### 2.1 本机核对到的措辞校正（2026-10-03）
+
+矩阵里"当前基础"一栏是从代码入口推出来的，容易把**存在字段**读成**存在能力**。逐条核对后更正：
+
+| 矩阵原措辞 | 核对结论 |
+| --- | --- |
+| 尺寸/布局：`ContentGeometryPolicy`、位置持久化、Preset 保护 | 一个包只有**一档固定尺寸**，没有 small/medium/large 尺寸族，也没有"切尺寸"入口。`geometry.resize` 是**惰性字段**：写 `true` 校验得过，但拖动只改 x/y，通用 `WidgetService::Update` 虽能带宽高，却没有任何调用方那么做 —— 所以用户改不了任何组件的尺寸。 |
+| 直接交互：待办编辑/存储、Native Host | 待办只能在**管理界面**编辑并完成。Widget Surface 上只有拖动：无点击动作、无完成待办、无计时、无媒体控制、无右键菜单、无键盘输入。`DesktopControlService` 的完成待办不由组件触发。 |
+| 数据服务：time/weather/tasks 与 Capability Broker | 三个数据源是三个**互不相同**的快照结构，没有统一 Provider 接口、没有时间戳、没有显式 loading 态、没有取消。broker 只认这三个前缀，且不处理权限撤销。 |
+| 信息表现：Scene 文本/图像、三官方组件、D2D | 三个官方内容组件的确用真实数据（时钟走 `GetLocalTime`，天气走 Open-Meteo + 缓存 + 90s 重试，待办走 `TodayTaskStore`）。但 D3D11 上 `textRenderer` **不画**，而 D3D11 是唯一有粒子与后处理的后端。 |
+| 可访问性：Native 窗口与部分输入 | 组件窗口是 `WS_EX_NOACTIVATE`，结构上不能取得焦点；无 UI Automation、无 `WM_GETOBJECT`、无读屏语义。 |
+| 个性化：参数与 ContentWidgetSettingsDialog | 内容包支持多实例且参数按实例存；原生 preset 按显示器刻意单例。城市/时区/来源可配置只对天气成立。 |
+
+完整的五态（可声明/可运行/可预览/AI 可教学/真机已验）见 [能力与证据台账](CAPABILITY_EVIDENCE_LEDGER.md)；
+机器可查的版本见能力目录（`src/content/binding/MiaoCapabilityCatalog.cpp`）。
+
 ## 3. 固定用户任务
 
 1. 添加两个城市的天气，切尺寸/主题，重启后分别保留配置。

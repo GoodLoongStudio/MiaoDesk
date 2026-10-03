@@ -10,9 +10,12 @@
 #include <cmath>
 #include <cwchar>
 #include <string>
+#include <vector>
 
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/NativeWeatherData.h"
+
+#include "miaodesk/TodayTaskPresentation.h"
 
 namespace miaodesk::wallpaper {
 
@@ -24,6 +27,9 @@ struct NativeWidgetPaintContext {
     SYSTEMTIME localTime{};
     bool hasTime{};
     const NativeWeatherSnapshot* weather{};
+    // 原生待办卡片用的真实数据。为空表示调用方没有提供快照 —— 那时卡片显示
+    // "任务数据暂不可用",而不是把三条不存在的待办画上去。见 TodayTaskPresentation.h。
+    const ::miaodesk::desktop::TodayTaskCardModel* tasks{};
     // Desktop surfaces clear to transparent. Management thumbnails render over
     // an existing GDI card and therefore keep the destination background.
     bool clearBackground{true};
@@ -388,8 +394,20 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
          DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
          18.0f * s, 42.0f * s, ctx.width * 0.64f, 34.0f * s);
 
+    // 数字来自真实快照。读不到时给的是说明,不是一个看起来合理的 3 ——
+    // 用户在管理界面编辑的待办必须真的出现在这里,否则这张卡片在说谎。
+    std::wstring countText = L"—";
+    std::wstring progressText = L"任务数据暂不可用";
+    float progressFill = 0.0f;
+    if (ctx.tasks && ctx.tasks->valid) {
+        countText = std::to_wstring(ctx.tasks->total);
+        progressText = std::to_wstring(ctx.tasks->completed) + L" / " +
+                       std::to_wstring(ctx.tasks->total) + L" 完成";
+        progressFill = ctx.tasks->progress;
+    }
+
     const float countSize = 58.0f * s;
-    Text(ctx.target, ctx.dwrite, L"3", countSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
+    Text(ctx.target, ctx.dwrite, countText.c_str(), countSize, DWRITE_FONT_WEIGHT_SEMI_BOLD, white.Get(),
          18.0f * s, 70.0f * s, 66.0f * s, countSize + 8.0f * s);
     Text(ctx.target, ctx.dwrite, L"项待办", NativeWidgetTextSize(16.0f, s, 15.0f, 36.0f),
          DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
@@ -404,18 +422,18 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
     RoundRect(ctx.target, track.Get(), nullptr,
               D2D1::RectF(18.0f * s, progressTop, ctx.width - 18.0f * s, progressTop + 8.0f * s), 4.0f * s);
     RoundRect(ctx.target, teal.Get(), nullptr,
-              D2D1::RectF(18.0f * s, progressTop, 18.0f * s + (ctx.width - 36.0f * s) / 3.0f, progressTop + 8.0f * s), 4.0f * s);
-    Text(ctx.target, ctx.dwrite, L"1 / 3 完成", NativeWidgetTextSize(12.0f, s, 11.0f, 27.0f),
+              D2D1::RectF(18.0f * s, progressTop,
+                          18.0f * s + (ctx.width - 36.0f * s) * progressFill, progressTop + 8.0f * s),
+              4.0f * s);
+    Text(ctx.target, ctx.dwrite, progressText.c_str(), NativeWidgetTextSize(12.0f, s, 11.0f, 27.0f),
          DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
          18.0f * s, progressTop + 12.0f * s, ctx.width - 36.0f * s, 19.0f * s,
          DWRITE_TEXT_ALIGNMENT_TRAILING);
 
-    struct TaskRow { const wchar_t* text; const wchar_t* time; bool done; };
-    const std::array<TaskRow, 3> tasks{{
-        {L"完成产品设计方案", L"今天 10:00", false},
-        {L"与团队同步项目进度", L"今天 14:00", false},
-        {L"回复客户邮件", L"今天 09:30", true},
-    }};
+    // 行来自真实快照;没有快照时一行也不画。原来这里是三条写死的待办,
+    // 于是用户在管理界面编辑的内容从不出现在常驻桌面的卡片上。
+    const std::vector<::miaodesk::desktop::TodayTaskRow> empty;
+    const auto& tasks = (ctx.tasks && ctx.tasks->valid) ? ctx.tasks->rows : empty;
     float y = progressTop + 34.0f * s;
     auto rowFill = Brush(ctx.target, 0.95f, 1.0f, 1.0f, 0.075f);
     auto rowBorder = Brush(ctx.target, 0.95f, 1.0f, 1.0f, 0.11f);
@@ -424,16 +442,16 @@ void PaintTodayTasks(const NativeWidgetPaintContext& ctx) {
         const auto& task = tasks[i];
         const D2D1_RECT_F row{14.0f * s, y, ctx.width - 14.0f * s, y + 44.0f * s};
         RoundRect(ctx.target, rowFill.Get(), rowBorder.Get(), row, 13.0f * s, 0.8f * s);
-        auto status = task.done ? teal : (i == 0 ? amber : muted);
+        auto status = task.completed ? teal : (i == 0 ? amber : muted);
         ctx.target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(row.left + 15.0f * s, row.top + 17.0f * s), 6.0f * s, 6.0f * s), status.Get(), 1.8f * s);
-        if (task.done) {
+        if (task.completed) {
             ctx.target->DrawLine(D2D1::Point2F(row.left + 11.5f * s, row.top + 17.0f * s), D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), status.Get(), 1.5f * s);
             ctx.target->DrawLine(D2D1::Point2F(row.left + 14.0f * s, row.top + 19.5f * s), D2D1::Point2F(row.left + 19.0f * s, row.top + 13.5f * s), status.Get(), 1.5f * s);
         }
-        Text(ctx.target, ctx.dwrite, task.text, NativeWidgetTextSize(14.5f, s, 13.0f, 32.0f),
-             DWRITE_FONT_WEIGHT_SEMI_BOLD, task.done ? muted.Get() : white.Get(),
+        Text(ctx.target, ctx.dwrite, task.title.c_str(), NativeWidgetTextSize(14.5f, s, 13.0f, 32.0f),
+             DWRITE_FONT_WEIGHT_SEMI_BOLD, task.completed ? muted.Get() : white.Get(),
              row.left + 30.0f * s, row.top + 5.0f * s, row.right - row.left - 40.0f * s, 21.0f * s);
-        Text(ctx.target, ctx.dwrite, task.time, NativeWidgetTextSize(11.5f, s, 10.5f, 26.0f),
+        Text(ctx.target, ctx.dwrite, task.detail.c_str(), NativeWidgetTextSize(11.5f, s, 10.5f, 26.0f),
              DWRITE_FONT_WEIGHT_NORMAL, muted.Get(),
              row.left + 30.0f * s, row.top + 25.0f * s, row.right - row.left - 40.0f * s, 16.0f * s);
         y += 49.0f * s;

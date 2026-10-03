@@ -683,7 +683,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：稳定 ID/版本/类型/单位/范围/限制/后端/依赖/资源成本；受控能力查询和文档导出。
 - **验收**：真实、缺失、仅声明、后端不支持四类查询正确；未知能力被拒；Skill/工具/validator 与同一目录一致。
 - **验证环境**：纯逻辑/契约测试可本机；设备能力探测需 Windows。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现提交=本轮 `src/content/binding/MiaoCapabilityCatalog.cpp` 等；自动检查=`MiaoDeskCapabilityCatalogTest` 220 项通过（含四类查询、未知拒绝、目录与代码同名、deviceVerified 恒否、导出与目录同源）、`ExtractJsonStringArray` 37 项、加载器与 validator 两处"未知 capability 拒绝"断言通过、`scripts/verify-capability-catalog.sh` PASS、`scripts/run-pure-logic-tests.sh` 33 目标全通过、mingw 语法门 0 真实错误；新增 `creator_capabilities_get` 自述带能力分级。变更-检测：把 `asset.font` 标成可执行被 CapabilityCatalogTest 拒绝（该条目已改回仅声明），把 `scene.spriteRenderer` 改名被 `verify-capability-catalog.sh` 拒绝，数组取值器吞掉非字符串元素被 `JsonStringFieldTest` 拒绝。真机/作品证据=无。限制：目录描述代码事实，不描述真机效果；CAP-02（能力卡/配方）与设备探测未做。面板状态改为 🟡。
 
 ### CAP-02 — 能力卡、配方与参考知识库
 
@@ -692,7 +692,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：每项可创作能力至少最小例+组合例；首批壁纸/组件各 3 个真实渲染样例；版本/摘要和随包检查。
 - **验收**：AI 能解释并正确使用检索能力；更换安装版本不引用不可用字段；样例与保留集分离。
 - **验证环境**：结构/检索自动验证；样例渲染与视觉人工签收。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；自动检查=`scripts/verify-skill-teaches-executable-capabilities.sh` PASS（45 条可创作且可执行的能力全部被至少一份 Skill 提到；变异检测：往目录加一个没人教的能力即红）、既有四道 skill 门 PASS。补齐内容：`wallpaper-content` 增加 10 个组件 kind 的"画/不画×后端"表、图片资产写法与 25 MiB 上限、8 个后处理效果及其成对规则、时间通道；`widget-content` 改正"resize 为 true 可用"与"尺寸可改"两处说法（resize 是惰性字段，产品内无任何入口改变组件尺寸）。事实校正三处：scene.json 的 `videoRenderer` 无渲染器（视频走媒体文件+宿主的视频播放器另一条路）、`asset.font` 无消费方（textRenderer 用系统字体名）、`builtinName:"gradient"` 无实现。真机/作品证据=无。**未做**：每项能力的最小例+组合例、3+3 个真实渲染样例、AI 检索与解释能力评测 —— 后两项需要真实渲染与真实模型调用，本轮不声称。面板状态 🟡。
 
 ### CAP-03 — 内容包演进与可复用资产
 
@@ -701,7 +701,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：版本矩阵、迁移/回滚、依赖快照、资产去重与预算规则；沿用现有包生命周期。
 - **验收**：旧官方/用户 fixture 可加载或给出明确诊断；迁移失败保留旧包；无缺引用、跨包误覆盖。
 - **验证环境**：逻辑/打包自动；正式安装升级 Windows 验证。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现=`src/tests/ShippedPackagesValidate.cpp`（发行包包级校验回归门）+ `ContentPackageValidator` entry 规则修正；自动检查=`ShippedPackagesValidate` 8/8 通过、`ContentPackageValidatorTest` 131 项通过（两种 entry 布局均通过、五种非法入口均被拒）；变异检测通过（把规则改回只认 `scene/`，门即红）。**发现的缺陷 D-6**：校验器的 entry 规则只认 `scene/scene.json`，而加载器接受根下 `scene.json`，8 个随产品发行的包因此全部过不了包级校验 —— 之所以没被发现，是因为既有 `BuiltinWallpaperPackages` 覆盖的是另一条链，不跑包级校验。真机/作品证据=无。**未做**：schema/capability 版本矩阵与迁移/回滚、资产去重与依赖快照。面板状态 🟡。
 
 ### CAP-04 — 统一预览、桌面与渲染证据
 
@@ -719,7 +719,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：可供官方/用户/AI 共用的契约、模拟 Provider/Action、能力查询与错误码。
 - **验收**：越权/未知/撤销拒绝，错误可诊断；数据线程不阻塞 UI；不以任意脚本实现动作。
 - **验证环境**：纯逻辑/模拟服务可自动；宿主交互在 WPRO 验证。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现=`src/include/miaodesk/WidgetDataActionContract.h` + `src/desktop/widgets/WidgetDataActionContract.cpp`（纯逻辑）；自动检查=`WidgetDataActionContractTest` 41 项通过（六种 ProviderState 各自可辨、无时间戳按过期处理、未知动作/缺 operationId/权限撤销/未实现各自有代码、重复 operationId 回放且不二次执行、失败不记入已执行凭据、跨会话记住凭据）；变异检测通过（去掉回放分支即红 4 项）。真机/作品证据=无。**未接线**：三个官方 Provider 尚未改用这份契约（time/weather/tasks 仍是各自的结构），动作注册表尚无生产调用方；接入属 WPRO-03/04。面板状态 🟡。
 
 ### WALL-01 — 专业构图与基础绘制原语
 

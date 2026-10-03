@@ -31,6 +31,9 @@ done
 # "Windows 真机待验",而它们恰好是最该每轮都跑的那批:取消 epoch、迟到消息、
 # 幂等、预算,以及"拒绝跨作品、越界路径、reparse point、代码产物"。
 # 判断标准和上面一致:能过 -fsyntax-only(不加替身头)才算纯逻辑。
+# desktop/widgets/TodayTaskPresentation.cpp 也在这一列(D-2):原生待办卡片的行模型是
+# 纯逻辑,而要修的那个 bug —— 卡片画三条写死的待办、从不读存储 —— 恰好只可能在本机
+# 验证。少了它,这一条只能等 Windows 真机,而它没有理由等。
 for f in desktop/control/CreationWorkflow.cpp \
          desktop/control/CreatorWorkspacePolicy.cpp \
          desktop/control/CreatorPackageTransaction.cpp \
@@ -41,7 +44,9 @@ for f in desktop/control/CreationWorkflow.cpp \
          desktop/control/ContentApplyRecovery.cpp \
          desktop/control/CreationDraftStore.cpp \
          desktop/control/CreatorToolWorker.cpp \
-         desktop/control/CreatorWorkspaceState.cpp; do
+         desktop/control/CreatorWorkspaceState.cpp \
+         desktop/widgets/TodayTaskPresentation.cpp \
+         desktop/widgets/WidgetDataActionContract.cpp; do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then
     SRCS+=("$f")
     echo "额外的纯逻辑实现:$f"
@@ -92,7 +97,7 @@ echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # WebAudioEnvelope 是 host->page 音频信封:它把 content/ 的 AudioSpectrumFrame 变成
 # shim 会接受的 JSON。整条链没有一行 Windows 代码,所以能在本机跑;
 # 另一半(页面侧 shim)由 tests/WebAudioEnvelopeParity.mjs 一起对。
-for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests; do
+for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate; do
   run "$t" "$t.cpp"
 done
 
@@ -126,6 +131,6 @@ echo "                              D3D11 设备、交换链、WIC 写 PNG 与�
 echo "      这一条我第一版写成了'要真实 D3D11 设备',是**错的**:那只对 D2D 那条成立。"
 echo "      写错理由比不写更麻烦 —— 它会让人以为这里需要一个 GPU,"
 echo "      而真正的改进方向是把那几个纯逻辑自测搬到不含 d3d11.h 的文件里去。"
-SKIP=$((SKIP+7))
+SKIP=$((SKIP+7))  # 上一节列出的 Windows-only 目标
 
 [ "$FAIL" -eq 0 ]

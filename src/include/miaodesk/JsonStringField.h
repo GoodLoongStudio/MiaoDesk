@@ -14,10 +14,17 @@
 //
 // 取不到的键返回空串。**空串同时是"键不存在"和"值是空字符串"的返回值** ——
 // 这个歧义是已知的:调用方要区分这两者时必须自己判断键在不在(JsonHasKey)。
+//
+// ExtractJsonStringArray 是唯一的例外,它只处理一种形状:**顶层键下的一层字符串数组**。
+// 不处理嵌套、数字、对象元素 —— 因为调用方要的就是 `"capabilities":["clock.read"]`
+// 这一种写法,多出来的复杂度只会让"它到底接受什么"更难说清。
+// 返回 nullopt 与返回空 vector 是两件事:键不在、或者不是一个字符串数组,是 nullopt;
+// `[]` 是空 vector。这个区别有实际用处:缺 capabilities 和声明了零个能力不是一回事。
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace miaodesk {
 
@@ -36,5 +43,9 @@ std::string ExtractJsonString(std::string_view json, std::string_view key);
 // "以为是 0"和"没有这个字段"必须能分开,否则一个缺 schema 的 manifest
 // 会被当成 schema=0,而 0 恰好是个合法的旧版本号。
 std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key);
+
+// 取出一个顶层字符串数组(见上面关于形状的说明)。
+std::optional<std::vector<std::string>> ExtractJsonStringArray(std::string_view json,
+                                                              std::string_view key);
 
 } // namespace miaodesk

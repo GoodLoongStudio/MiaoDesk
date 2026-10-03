@@ -8,6 +8,8 @@
 #include "miaodesk/NativeWidgetPreset.h"
 #include "miaodesk/NativeWeatherService.h"
 #include "miaodesk/RuntimeLogger.h"
+#include "miaodesk/TodayTaskPresentation.h"
+#include "miaodesk/TodayTaskStore.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/WidgetService.h"
@@ -255,6 +257,10 @@ void ReleaseLayerSurface(NativeSlot& slot) {
     slot.layerHeight = 0;
 }
 
+// D-2:待办卡片画得下的行数。卡片按 430x520 的设计画布布局,放得下 4 行;
+// 放不下的待办不滚动、不裁字 —— 溢出规则属于 WPRO-02。
+constexpr std::size_t kNativeTaskRows = 4;
+
 struct NativeWidgetHostApp {
     HINSTANCE instance{};
     HWND parent{};
@@ -262,6 +268,9 @@ struct NativeWidgetHostApp {
     bool paused{};
     bool weatherStarted{};
     NativeWeatherService weatherService;
+    // D-2:待办卡片的行模型。放在这里而不是栈上,是因为 PaintSlot 里多处引用它,
+    // 而它只在 TodayTasks preset 下被填。
+    ::miaodesk::desktop::TodayTaskCardModel taskModel;
     ComPtr<ID2D1Factory1> d2dFactory;
     std::vector<std::unique_ptr<NativeSlot>> slots;
     std::wstring lastSurfaceError;
@@ -690,6 +699,17 @@ struct NativeWidgetHostApp {
         } else if (slot.preset == NativeWidgetPreset::WeatherGlass) {
             weather = weatherService.Snapshot();
             context.weather = &weather;
+        } else if (slot.preset == NativeWidgetPreset::TodayTasks) {
+            // D-2:原生待办卡片原来画三条写死的待办,从不读存储。这里读真实快照,
+            // 于是用户在管理界面编辑的待办会出现在常驻桌面的卡片上。
+            // 每帧读一次是刻意的:这个 preset 的刷新间隔是 0(事件驱动),本来就没有
+            // 定时轮询,所以再引入一条缓存失效路径只会多一个出错的地方。
+            ::miaodesk::desktop::TodayTaskSnapshot tasks;
+            std::wstring taskError;
+            const bool loaded = ::miaodesk::desktop::TodayTaskStore::Load(&tasks, &taskError);
+            if (loaded && !tasks.valid) tasks = ::miaodesk::desktop::TodayTaskSnapshot{};
+            taskModel = ::miaodesk::desktop::BuildTodayTaskCardModel(tasks, kNativeTaskRows);
+            context.tasks = &taskModel;
         }
         context.target->BeginDraw();
         PaintNativeWidgetPreset(context, slot.preset);

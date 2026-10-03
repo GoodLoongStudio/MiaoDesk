@@ -226,11 +226,32 @@ void TestEntryMustExistInThePackage() {
 }
 
 void TestEntryMustPointAtScene() {
-    for (const char* entry : {"assets/a.json", "manifest.json", "scene/scene.png", "../x.json"}) {
+    // 两种合法布局都必须通过:
+    //   scene/scene.json —— 创作工作区的布局(CreatorWorkspacePolicy 认这一种);
+    //   scene.json       —— 随产品发行的三个壁纸、三个组件与两个示例包的布局。
+    // 原来这里只认前者,于是校验器比**加载器**还严:照发行包的样子写出来的候选全被拒,
+    // 拒绝原因还是"必须指向 scene/ 下",而作者对着一个能正常加载的合法包看不出那句话错在哪。
+    // ShippedPackagesValidate 第一次跑时就发现了这一条 —— 8 个发行包全部不合格。
+    for (const char* entry : {"scene/scene.json", "scene.json"}) {
+        auto parts = GoodParts();
+        if (std::string(entry) == "scene.json") {
+            // GoodParts 里的场景文件在 scene/ 下;换成根布局时把它一起挪到根,
+            // 否则被拒的原因是"entry 指向的文件不在包里",测的就不是形状规则了。
+            for (auto& part : parts) {
+                if (part.role == content::CandidatePartRole::Scene) part.relPath = "scene.json";
+            }
+        }
+        parts.front().bytes = ReplaceStringField(parts.front().bytes, kEntryKey, entry);
+        Check(ValidateCandidatePackage(std::move(parts)).ok,
+              std::string("entry=") + entry + " 是合法布局,通过");
+    }
+
+    for (const char* entry : {"assets/a.json", "manifest.json", "parameters.json",
+                              "scene/scene.png", "../x.json", "scene..json"}) {
         auto parts = GoodParts();
         parts.front().bytes = ReplaceStringField(parts.front().bytes, kEntryKey, entry);
         Check(!ValidateCandidatePackage(std::move(parts)).ok,
-              std::string("entry=") + entry + " 不是 scene/ 下的 .json,被拒");
+              std::string("entry=") + entry + " 不是合法的 .json 入口,被拒");
     }
 }
 
@@ -378,6 +399,49 @@ void TestLedgerParseRejectsWhatItCannotTrust() {
 }
 
 } // namespace
+// ---------------------------------------------------------------------------
+// 15. 清单能力必须在能力目录里(CAP-01)
+// ---------------------------------------------------------------------------
+
+// 这一条拦的不是拼写。一个虚构的 capability 比一个缺失的更难发现:它通过全部校验,
+// 包里静悄悄地什么都不做,而作者要到桌面上才发现"我绑的数据没出来"。在此之前这里
+// 一层 capability 检查都没有 —— 只有加载器查过字符集。
+void TestUnknownCapabilityIsRejected() {
+    // 只违反这一条:其余字段与合法包逐字节相同。
+    const std::string manifest =
+        std::string(kGoodManifest).substr(0, std::string(kGoodManifest).size() - 1) +
+        R"(,"capabilities":["audio.read"]})";
+    auto parts = GoodParts();
+    parts.front().bytes = manifest;
+    const auto result = ValidateCandidatePackage(std::move(parts));
+    Check(!result.ok, "声明目录里没有的能力时,校验不通过。");
+    bool named = false;
+    bool located = false;
+    bool repairable = false;
+    for (const auto& issue : result.issues) {
+        if (issue.failure != content::ContentValidationFailure::UnknownCapability) continue;
+        named = issue.message.find("audio.read") != std::string::npos;
+        located = issue.nodePath == "capabilities";
+        repairable = issue.repairable;
+    }
+    Check(named, "拒绝原因点明是哪个能力不在目录里(模型要能据此改)。");
+    Check(located, "定位到 manifest.json 的 capabilities 字段。");
+    Check(repairable, "这是可修复的一类:改成目录里存在的能力,或者去掉它。");
+
+    // 已发行的三个官方壁纸在声明 theme.wallpaper,而它并不门禁任何东西。
+    // 它必须仍在目录里 —— 否则"拒绝虚构能力"会让已发行的包一起加载失败,
+    // 而那正是一个为了防止回归而加的门造成的新回归。
+    const std::string known =
+        std::string(kGoodManifest).substr(0, std::string(kGoodManifest).size() - 1) +
+        R"(,"capabilities":["clock.read"]})";
+    auto okParts = GoodParts();
+    okParts.front().bytes = known;
+    Check(ValidateCandidatePackage(std::move(okParts)).ok, "目录里存在的能力照旧通过。");
+
+    // 没有 capabilities 字段是另一件事:不是"声明了零个能力"。
+    Check(ValidateCandidatePackage(GoodParts()).ok, "不声明任何能力的包照旧通过。");
+}
+
 } // namespace miaodesk::creator
 
 int wmain() {
@@ -399,6 +463,7 @@ int wmain() {
     TestCodeArtifactsAreRejected();
     TestLedgerSurvivesARoundTrip();
     TestLedgerParseRejectsWhatItCannotTrust();
+    TestUnknownCapabilityIsRejected();
 
     std::printf("\nCCA-05 package validator + ledger: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {

@@ -104,19 +104,25 @@ Aurora.mdwall/
 - `parameters`：可选 ParameterSchema；
 - `preview`：可选预览资源；
 - `capabilities`：内容声明需要的数据/系统能力，不直接授予 Win32 权限。
-  加载器只校验 id 的字符与重复，**不校验它是否真实存在** —— 所以这一列写错不会报错，
-  只会静悄悄地不工作。真实闭集由 `MiaoContentCapabilityBroker::RequiredCapability` 决定：
+  名字必须在能力目录里（CAP-01，`MiaoCapabilityCatalog.cpp`）。**不在目录里的名字会让包
+  加载失败**：加载器与 `ContentPackageValidator` 都对照同一份目录检查，不再只查字符集。
+  真实闭集由 `MiaoContentCapabilityBroker::RequiredCapability` 决定：
 
   | capability | 数据路径前缀 | 说明 |
   | --- | --- | --- |
   | `clock.read` | `time.` | 时间类数据 |
   | `weather.read` | `weather.` | 天气类数据 |
   | `tasks.read` | `tasks.` | 待办类数据 |
+  | `theme.wallpaper` | — | 官方壁纸在声明的包级标识；在目录里，但不门禁任何东西 |
 
   任何 `audio.read` 之类不在表内的名字**不是**能力：音频由 `scene.json` 的
   `inputs[]` 经 `input://audio/*` 输入通道提供，声明 capability 既无效也不必要。
   写一个 broker 不认识的数据路径会被明确拒绝（`not supported by the capability broker`），
   而不是被忽略。
+
+  目录里还有场景组件 kind、资产类型、输入通道、材质、后处理、响应曲线与创作者工具，
+  每一项都标注它是**可声明**还是**真的会执行**，以及在哪个后端执行。需要完整列表时用
+  `creator_capabilities_get` 查，不要照抄这里的片段。
 
 ## 4. Package Root 是安全边界
 

@@ -26,7 +26,11 @@ description: 生成 MiaoDesk 小组件内容包(.mdwidget)。在 content-package
   defaultWidth / defaultHeight / resize / aspectRatio。
 - 尺寸使用 monitor-relative normalized 坐标,取值 0..1,不用绝对像素。
 - 参考既有内置组件的量级:0.22 ~ 0.30 区间,不要做到接近 1.0 的全屏尺寸。
-- resize 为 false 时表示固定尺寸;为 true 时必须同时给出合理的最小/最大约束意图。
+- **一个包只有一档尺寸**:没有 small/medium/large 尺寸族,也没有"切换尺寸"这一说。
+  需要不同尺寸就交付不同的包。切尺寸保留配置属于后续工作,当前做不到 —— 别承诺。
+- `resize` 现在是**惰性字段**:写 true 校验得过,但产品里没有任何入口能改变一个组件的
+  尺寸(拖动只改 x/y;通用 Update 能带上宽高,却没有任何调用方那么做)。所以把它当 false 处理:
+  预留的最小/最大约束是正确的做法,但不要指望用户在桌面上拖边缘。
 - aspectRatio 声明宽高比;不需要固定比例时留空。
 
 【桌面层级契约】
@@ -40,9 +44,9 @@ description: 生成 MiaoDesk 小组件内容包(.mdwidget)。在 content-package
   组件内容不实现第二套。
 
 【尺寸所有权】
-- 尺寸策略由 ContentDefinition 的 geometry 拥有。
-- 实例只能在 policy 允许范围内修改尺寸,不能绕过 policy 直接写死 width/height。
-- 普通调用方只能修改 x / y / enabled。
+- 尺寸策略由 ContentDefinition 的 geometry 拥有;实例记录的是 x / y / enabled 与所属显示器。
+- 内置(native preset)组件的宽高由 preset 拥有,通用 Update 带不同宽高会被直接拒绝。
+- 用户能改变的是**位置**。所以布局要按"固定尺寸的卡片"来设计,而不是"会被拖大的面板"。
 
 【按需重绘】
 - 时钟类:按分钟边界刷新,不逐帧。

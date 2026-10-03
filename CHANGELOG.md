@@ -17,6 +17,109 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-03 · 执行记录：D-6 校验器拒绝全部随产品发行的包
+
+本条记录**发现并修复一处校验与加载不一致**。它由本轮新加的发行包包级校验门首次跑出。
+
+- **缺陷**：`ContentPackageValidator` 要求 `manifest.json` 的 `entry` 以 `scene/` 开头，
+  而三个官方壁纸、三个官方组件、两个示例包的 entry 都是根下的 `scene.json`
+  （加载器对两种布局都接受）。于是 8 个随产品发行的包全部过不了**包级**校验，
+  拒绝原因是"必须指向 scene/ 下的一个 .json 文件"——而那句话指向的是一个合法包。
+- **为什么此前没人发现**：`BuiltinWallpaperPackages` 覆盖的是另一条链
+  （load → deserialize → runtime validate → initialize → asset database），它不跑
+  `ContentPackageValidator`。包级校验只作用于 AI 候选包，而候选包出自创作工作区，
+  布局恰好就是 `scene/` —— 所以两边各自正确，合起来把发行包漏掉了。
+- **修复**：entry 规则改为"包内的一个安全相对 .json 文件，且不是 manifest / parameters
+  本身，也不越出包根"。两种布局都接受；仍然拒绝 `assets/a.json`（资产目录不放 JSON）、
+  `manifest.json`、`scene/scene.png` 与 `../x.json`。工作区那套更严的布局规则继续由
+  `CreatorWorkspacePolicy` 负责，不在这里重复一遍。
+- **新回归门**：`src/tests/ShippedPackagesValidate.cpp` 每次对全部 8 个发行包跑一遍
+  `ValidateCandidatePackage`。变异检测通过：把 entry 规则改回只认 `scene/`，门即红。
+- **依据**：同一条原则本文件的 id 规则注释里已经写过 —— "校验器比加载器更严的后果是
+  拒绝它本来能加载的包"。
+
+### 2026-10-03 · 执行记录：CAP-05 组件数据与动作契约
+
+本条记录**新增契约与测试**。契约是纯逻辑，尚未接线，因此没有用户可感知变化。
+
+- **数据侧**：`ProviderSnapshot` 把六个状态分开（Loading / Available / Empty / Offline / Failed /
+  Revoked），并要求 `observedAtUnixMs` + `validForMs`。判定规则里最要紧的两条：
+  **没有时间戳的快照按过期处理**（不假设新鲜 —— 组件会把不知道多久以前的数据当"现在"显示），
+  以及**空与离线不是一回事**（把离线显示成空，用户会以为自己的日程真的空了）。
+  现状是三个 Provider 三种结构、谁都没有 loading 态、谁都不处理撤销，所以这一层此前无法表达
+  "组件显示的是 40 分钟前的天气"。
+- **动作侧**：`WidgetActionRegistry` 提供受控派发，固定四条性质 —— 未知动作明确拒绝（不是"什么也没发生"）、
+  缺 `operationId` 拒绝（放行意味着重复点击执行两次）、权限撤销拒绝、以及**同一个 operationId
+  回放同一个结果并标记 replayed**（重复点击不产生第二次副作用，也不让用户以为失败）。
+  失败的执行不记入已执行凭据，否则同一个凭据再也重试不了。
+- **验证**：`WidgetDataActionContractTest` 41 项通过；变异检测通过（去掉回放分支即红 4 项）。
+- **未接线**：time/weather/tasks 三个 Provider 尚未改用这份契约，动作注册表尚无生产调用方 ——
+  接入属 WPRO-03/04。"组件能完成待办"在那之前不成立。
+
+### 2026-10-03 · 执行记录：CAP-02 能力知识补全与"漏教"门
+
+本条记录**作者/AI 所用知识的变化**，附带三处事实校正。没有修改运行时。
+
+- **漏教**：四份 Skill 此前只提到 3 个场景组件 kind、0 个资产类型、0 个后处理效果，
+  而 `textRenderer` 有完整的 D2D 实现、支持 `{{data.*}} 模板，AI 因此不会用它显示日期或待办文字。
+  已为 `wallpaper-content` 补上组件能力表（10 个 kind 逐一标明"画/不画"与后端）、图片资产写法与
+  上限、8 个后处理效果及其成对规则、时间通道。
+- **事实校正一**：Skill 把视频教成"单轨 VideoRenderer 循环"。**没有任何渲染器实现那个组件** ——
+  它校验得过但一个像素都不画。视频壁纸实际走另一条路（媒体文件 + 宿主 `VideoWallpaperPlayer`）。
+  照旧文档生成的内容在预览和桌面上都是空白。
+- **事实校正二**：`asset.font` 没有消费方。textRenderer 用 `fontFamily` 指定**系统字体名**，
+  导入字体文件不改变任何字形，只是白占包体量。
+- **事实校正三**：`builtinName:"gradient"` 之类校验得过但没有实现（唯一实现的是 `solidColor`）。
+- **新门**：`scripts/verify-skill-teaches-executable-capabilities.sh` 钉住"能力目录里每条可创作
+  且可执行的能力都至少被一份 Skill 提到"。它与已有的 capability-contract 门是同一个问题的两个
+  方向（那一份查虚构，这一份查漏教）。已做变异检测：往目录里加一个没人教的能力即红。
+- **未做**："首批壁纸/组件各 3 个真实渲染样例"与"AI 能解释并正确使用"都需要真实渲染与模型评测，
+  本轮不声称。
+
+### 2026-10-03 · 执行记录：D-2 原生待办卡片显示假数据
+
+本条记录**用户可感知缺陷修复**。
+
+- **缺陷**：原生 `native:today-tasks` 组件（管理界面可添加）的 `PaintTodayTasks` 在 painter 里
+  写死三条待办（完成产品设计方案 / 与团队同步项目进度 / 回复客户邮件）、一个 `L"3"` 计数与
+  `L"1 / 3 完成"` 进度，**从不读** `TodayTaskStore`。用户在管理界面编辑的待办因此从不出现在
+  常驻桌面的卡片上，而卡片看起来完全正常 —— 读不到存储时也不例外。
+- **修复**：新增纯逻辑 `TodayTaskPresentation`（`BuildTodayTaskCardModel`）定义行模型与口径：
+  数量/进度/行全部来自快照；空待办进度为 0 而不是 1；读不到快照时 `valid=false`、零行、
+  状态写"任务数据暂不可用"。宿主 `NativeWidgetHost::PaintSlot` 与库预览
+  `WallpaperLibraryWindowV2` 都改为加载真实快照后交给 painter。
+- **验收**：`TodayTaskPresentationTest` 19 项（含"读不到时一行都不给"）；`tests/native-tasks-uses-real-store.mjs`
+  守住宿主与 painter 调用点（painter 需 D2D 头，macOS 上此前无本地门覆盖，与 D-1 同形状）。
+  新增测试均通过变异检测：把"读不到时给三条假行"写回去，测试即红。
+- **限制**：Windows 真机未验证；卡片仍只有一档尺寸、点击不能完成待办（属 WPRO-01/03）。
+
+### 2026-10-03 · 执行记录：CAP-01 能力目录与 D-1/D-3 修复
+
+本条记录**代码与契约变化**。"真机效果"仍全部未取证。
+
+- **能力目录**：新增 `src/content/binding/MiaoCapabilityCatalog.cpp`（68 条，52 条会执行），把
+  "可声明／可执行／可预览／AI 可创作／真机已验"分开登记，并给出四类查询（Real / DeclaredOnly /
+  BackendUnsupported / Unknown）。目录是唯一一份表：`creator_capabilities_get` 的自述、作者文档导出与
+  `scripts/verify-capability-catalog.sh` 都读它，不再有三份手抄能力表。
+- **虚构能力被拒（D-3）**：`MiaoContentPackage` 加载器与 `ContentPackageValidator` 都对照目录检查
+  `capabilities[]`，目录外的名字让包加载失败并定位到 `manifest.json` / `capabilities`。此前只查字符集，
+  `audio.read` 之类能通过并静默无效。
+- **事实校正**：`asset.font` 解析与序列化支持，但**没有任何渲染器读它**（`textRenderer` 用 `fontFamily`
+  指定的系统字体名），目录标为仅声明。目录第一版把它标成可执行，被自身测试拒绝后改回。
+- **共用 JSON 取值器**：`ExtractJsonStringArray` 提进 `JsonStringField.h`，删除 `MiaoContentPackage.cpp`
+  里的本地副本。共用的那份要求带引号的键（避免值恰好等于字段名时误命中）；两个调用点都因此补上引号，
+  并由 `JsonStringFieldTest` 钉住"裸键取不到"与"`[]` 不等于键不在"。
+- **D-1 修复**：取证样本摘要恒为空（宿主另声明了一个从未赋值的局部 `digest`），导致
+  `creator_preview_evidence` 在真机必然失败却自述可执行。改为 `MakeRenderedEvidenceSample` 由构造保证
+  摘要绑定，宿主侧只提供帧序号与时间。补 `RenderEvidenceSampleBindingTest`（32 项）与
+  `tests/creator-evidence-digest-binding.mjs`（宿主调用点闸门，macOS 上此前无任何门覆盖）。
+- **验证**：`scripts/run-pure-logic-tests.sh` 33 个目标全通过；mingw 交叉语法门 0 真实错误；
+  16 道仓库门 + 4 道相关 node 契约门全通过。新增/修改的测试都做了变异检测（把摘要绑回未赋值变量、
+  把仅声明标成可执行、改动组件 kind 名字、数组取值器吞掉非字符串元素 —— 四种都会红）。
+- **文档**：更新 CAPABILITY_EVIDENCE_LEDGER、TODO 第 11 节证据栏、持续开发面板、包契约的 capability 表与
+  `content-package-basics` Skill（此前它说"别的一律无效"而不说它们现在会被拒绝，也未提
+  `theme.wallpaper`）。FEATURE_CHANGELOG 同步记录用户可感知变化。
+
 ### 2026-10-03 · 执行记录：PRO-01 能力与证据台账
 
 本条记录**核对结论与登记缺陷**，不代表相关能力已完成或已修复。

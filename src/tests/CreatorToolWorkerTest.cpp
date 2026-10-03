@@ -751,6 +751,22 @@ void TestCapabilitiesListsWhatIsActuallyAvailable() {
     // 自述必须说清当前阶段与 revision:模型据此判断现在能做什么。
     Check(reply.payload.find("当前阶段=3") != std::string::npos, "自述带当前阶段");
     Check(reply.payload.find("revision=2") != std::string::npos, "自述带 revision");
+
+    // 内容能力必须和工具清单一起自述,而且分级要说清。此前这里只列工具名,模型只能
+    // 靠 Skill 猜引擎支持什么 —— 猜错的一侧没有任何东西纠正它,因为虚构的能力此前
+    // 连校验都过得去(CAP-01 的 D-3)。
+    Check(reply.payload.find("[Real] scene.transform") != std::string::npos,
+          "会执行的场景能力标成 Real,模型才敢用它。");
+    Check(reply.payload.find("[DeclaredOnly] scene.videoRenderer") != std::string::npos,
+          "零像素的组件 kind 标成 DeclaredOnly,并说明为什么不执行。");
+    Check(reply.payload.find("仅声明的能力写进包会通过校验但不产生任何像素") != std::string::npos,
+          "自述讲明仅声明那一档的后果。");
+    Check(reply.payload.find("[Real] input://audio/level") != std::string::npos,
+          "音频通道也在目录里,不需要 capability 声明。");
+    // 读写权限那一组:三个数据能力要能查到,而虚构的不在。
+    Check(reply.payload.find("[Real] clock.read") != std::string::npos, "clock.read 在目录里。");
+    Check(reply.payload.find("audio.read") == std::string::npos,
+          "自述里不出现虚构能力的名字 —— 提到了就等于建议模型去用它。");
 }
 
 // ---------------------------------------------------------------------------

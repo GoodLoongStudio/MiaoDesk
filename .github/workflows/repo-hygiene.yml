@@ -159,6 +159,35 @@ jobs:
             exit 1
           }
 
+      # CAP-01:能力目录是本机唯一守得住"目录与代码同步"的地方。它从代码读出事实
+      # (ComponentKind 枚举、InputBus 通道常量、broker 的前缀↔能力对、真正被支持的
+      # builtin、kBindingResponseCount),再与 MiaoCapabilityCatalog.cpp 比对。
+      # 早期版本只比**数量**:把 scene.spriteRenderer 改名成 scene.sprite 时数量不变,
+      # 门放行了 —— 而"同名"恰恰是它唯一该保证的事。现在比的是名字。
+      - name: Verify the capability catalog names what the code has
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-capability-catalog.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+      # CAP-02 的另一个方向:**存在的能力没被教**。这一种不会让任何东西变红 —— 一个
+      # 实现完好的 capability,Skill 里只字不提,AI 就永远不用它。实测状态:四份 Skill 提到
+      # 3 个场景组件 kind、0 个资产类型、0 个后处理效果,而 textRenderer 有完整的 D2D 实现、
+      # 支持 {{data.*}} 模板。这道门现在钉住"每条可创作能力都至少被提到"。
+      - name: Verify every authorable capability is taught by a skill
+        shell: bash
+        run: |
+          out=$(bash scripts/verify-skill-teaches-executable-capabilities.sh 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       # 三个内置壁纸运行时现在只携带 scene.json。旧 scene.ini 被移到 tests/fixtures
       # 作为冻结的迁移基准,不再进入 .mdwall 或安装包。这个门仍用那份基准复核几何,
       # 生成器内部还会对每层做一次逆合成 assert。
@@ -516,6 +545,35 @@ jobs:
         shell: bash
         run: |
           out=$(node tests/pi-launch-profile-isolation.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+      # 这一道拦的是 D-2:原生待办卡片在 painter 里手写三条待办,从不读存储 ——
+      # 用户在管理界面编辑的待办从不出现在常驻桌面的卡片上,而卡片看起来完全正常。
+      # painter 与宿主都要 D2D 头,macOS 上编译不了,所以这个调用点此前没有本地门覆盖
+      # (与 D-1 同一个形状)。纯逻辑那一半由 TodayTaskPresentationTest 真跑。
+      - name: Verify the native tasks card reads the real store
+        shell: bash
+        run: |
+          out=$(node tests/native-tasks-uses-real-store.mjs 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+      # 这一道拦的是 D-1:宿主侧另声明了一个从未赋值的局部 digest,于是每一帧渲染证据
+      # 都带空摘要,`creator_preview_evidence` 在真机上一次都没成功过 —— 而内存端口自己
+      # 填对了摘要,单元测试六条全绿,工具还自述"可用"。坏事以"宿主说的"身份出现。
+      # MakeRenderedEvidenceSample 让摘要只能由一个参数决定;这道门盯着那个调用点,
+      # 因为它是 macOS 上编译不了、此前没有任何本地门看得见的唯一一环。
+      - name: Verify evidence frames bind the computed candidate summary
+        shell: bash
+        run: |
+          out=$(node tests/creator-evidence-digest-binding.mjs 2>&1) || {
             echo "$out" | tail -20 | while IFS= read -r line; do
               echo "::error::$line"
             done

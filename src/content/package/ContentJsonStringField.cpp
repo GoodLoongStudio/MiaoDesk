@@ -108,14 +108,12 @@ bool JsonHasStringKey(std::string_view json, std::string_view key) noexcept {
     return quote != std::string_view::npos;
 }
 
-std::string ExtractJsonString(std::string_view json, std::string_view key) {
-    const std::size_t hit = FindJsonKey(json, key);
-    if (hit == std::string_view::npos) return {};
-    const std::size_t colon = json.find(':', hit + key.size());
-    if (colon == std::string_view::npos) return {};
-    std::size_t pos = json.find('"', colon + 1);
-    if (pos == std::string_view::npos) return {};
-    ++pos;
+// 从 json[position] 起读一个 JSON 字符串字面量,position 前进到它之后。
+// 提出来是因为 ExtractJsonStringArray 要逐个读数组元素 —— 两份拷贝解转义不一致的
+// 后果不是重复代码,是同一个 \n 在一个调用方下是换行、在另一个调用方下是字母 n。
+std::optional<std::string> ParseJsonStringAt(std::string_view json, std::size_t* position) {
+    if (!position || *position >= json.size() || json[*position] != '"') return std::nullopt;
+    std::size_t pos = *position + 1;
     std::string out;
     while (pos < json.size()) {
         const char ch = json[pos++];
@@ -155,7 +153,44 @@ std::string ExtractJsonString(std::string_view json, std::string_view key) {
         default: out.push_back(esc); break;
         }
     }
+    *position = pos;
     return out;
+}
+
+std::string ExtractJsonString(std::string_view json, std::string_view key) {
+    const std::size_t hit = FindJsonKey(json, key);
+    if (hit == std::string_view::npos) return {};
+    const std::size_t colon = json.find(':', hit + key.size());
+    if (colon == std::string_view::npos) return {};
+    std::size_t pos = json.find('"', colon + 1);
+    if (pos == std::string_view::npos) return {};
+    if (auto value = ParseJsonStringAt(json, &pos)) return *value;
+    return {};
+}
+
+std::optional<std::vector<std::string>> ExtractJsonStringArray(std::string_view json,
+                                                              std::string_view key) {
+    const std::size_t start = FindJsonValue(json, key);
+    if (start == std::string_view::npos) return std::nullopt;
+    if (start >= json.size() || json[start] != '[') return std::nullopt;
+    std::size_t pos = start + 1;
+    std::vector<std::string> values;
+    while (pos < json.size()) {
+        while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos])) != 0) ++pos;
+        if (pos < json.size() && json[pos] == ']') return values;
+        auto value = ParseJsonStringAt(json, &pos);
+        if (!value) return std::nullopt;
+        values.push_back(std::move(*value));
+        while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos])) != 0) ++pos;
+        if (pos >= json.size()) return std::nullopt;
+        if (json[pos] == ',') {
+            ++pos;
+            continue;
+        }
+        if (json[pos] == ']') return values;
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 } // namespace miaodesk

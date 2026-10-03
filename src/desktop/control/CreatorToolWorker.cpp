@@ -7,6 +7,7 @@
 #include "miaodesk/ContentCandidateReceipt.h"
 #include "miaodesk/RenderEvidence.h"
 #include "miaodesk/ContentPackageValidator.h"
+#include "miaodesk/MiaoCapabilityCatalog.h"
 
 namespace miaodesk::creator {
 namespace {
@@ -116,6 +117,35 @@ bool WorkspaceAgreesWithState(const CreatorWorkerInput& input, CreatorToolReject
     return true;
 }
 
+// 内容能力必须和工具清单一起自述。
+//
+// 为什么:此前这里只列工具名,于是模型知道"能调什么",不知道"能写什么"。它要靠 Skill
+// 猜引擎支持哪些组件与通道 —— 猜错的那一侧没有任何东西会纠正它,因为一个虚构的能力
+// 在此前连校验都过得去。现在自述读能力目录(CAP-01)的同一份数据,而那份目录里
+// "仅声明"和"会执行"是分开的,所以模型看到的是分级,不是一个平铺的清单。
+std::string ContentCapabilitiesText() {
+    std::string out = "\n当前可创作的内容能力(同一份目录,按是否真的执行分级):\n";
+    for (const auto& entry : miaodesk::content::CapabilityCatalog()) {
+        if (entry.carrier != miaodesk::content::CapabilityCarrier::SceneComponent &&
+            entry.carrier != miaodesk::content::CapabilityCarrier::InputChannel &&
+            entry.carrier != miaodesk::content::CapabilityCarrier::ManifestCapability)
+            continue;
+        const auto query = miaodesk::content::QueryCapability(
+            entry.id, miaodesk::content::BackendBit(miaodesk::content::ContentBackend::D2D));
+        out += "  [";
+        out += miaodesk::content::ToString(query.klass);
+        out += "] ";
+        out += entry.id;
+        if (!entry.support.executable && !entry.note.empty()) {
+            out += "  —— ";
+            out += entry.note;
+        }
+        out += "\n";
+    }
+    out += "查询时可指定后端(D2D / D3D11);仅声明的能力写进包会通过校验但不产生任何像素。\n";
+    return out;
+}
+
 std::string CapabilitiesText(const CreatorWorkerInput& input) {
     std::string out = "创作会话可用工具:\n";
     for (const auto& name : CreatorToolNames()) {
@@ -126,6 +156,7 @@ std::string CapabilitiesText(const CreatorWorkerInput& input) {
         out += name;
         out += "\n";
     }
+    out += ContentCapabilitiesText();
     // 摘要必须给出来。模型要知道当前候选是什么,否则 creator_candidate_submit
     // 的 digest 参数它只能猜 —— 而猜错的后果是一次 DigestMismatch 拒绝。
     out += "当前阶段=";

@@ -79,4 +79,29 @@ RenderEvidenceVerdict AssessRenderEvidence(const std::vector<RenderEvidenceSampl
                                            const RenderEvidenceRequirements& requirements,
                                            std::string_view candidateDigest);
 
+// 离屏采集那一侧的固定描述:宿主用什么后端、在多大的画布、按什么 fixture 名采的。
+// 它与"哪一帧"无关,所以单独一个结构,免得每帧重复一遍字面量。
+struct OffscreenEvidenceRequest {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::string backend;   // "d2d" | "d3d11"
+    std::string fixture;   // 设计尺寸 / fixture 名,说明这一帧是在什么画布上采的
+};
+
+// 构造一个"渲染器真实输出了这一帧"的样本。
+//
+// 为什么要有这个函数:宿主侧原来各自赋值 `sample.digest = digest;`,而那个 digest
+// 是一个**另外声明**的局部变量。事实是它从来没被赋值过,于是每一帧都带空摘要,
+// 判据层只能整批拒绝,而工具却自述"可以用"—— 坏事以"宿主说的"身份出现。
+//
+// 摘要绑定不住是可以预防的:让它由构造保证。这里只接受一个 candidateDigest,
+// 于是"帧属于哪个候选"不可能在调用点写错;后端、画布、fixture、离屏标记与状态也
+// 一并写死,宿主那边只剩"画完第几帧、几点画的"。
+//
+// 空摘要在这里直接拒绝:宿主应当先算摘要并检查可用性,把空摘要放进来的那一侧是错的。
+RenderEvidenceSample MakeRenderedEvidenceSample(std::uint32_t frameIndex,
+                                                std::uint64_t capturedAtMs,
+                                                const OffscreenEvidenceRequest& request,
+                                                std::string_view candidateDigest);
+
 } // namespace miaodesk::creator

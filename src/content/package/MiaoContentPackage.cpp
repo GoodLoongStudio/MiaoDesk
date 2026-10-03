@@ -1,5 +1,9 @@
 #include "miaodesk/MiaoContentPackage.h"
 
+#include "miaodesk/JsonStringField.h"
+
+#include "miaodesk/MiaoCapabilityCatalog.h"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -191,35 +195,6 @@ std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key) {
     return value;
 }
 
-std::optional<std::vector<std::string>> ExtractJsonStringArray(std::string_view json, std::string_view key) {
-    auto pos = FindJsonValue(json, key);
-    if (!pos) return std::nullopt;
-    if (*pos >= json.size() || json[*pos] != '[') return std::nullopt;
-    ++*pos;
-    std::vector<std::string> values;
-    while (*pos < json.size()) {
-        while (*pos < json.size() && std::isspace(static_cast<unsigned char>(json[*pos])) != 0) ++*pos;
-        if (*pos < json.size() && json[*pos] == ']') {
-            ++*pos;
-            return values;
-        }
-        auto value = ParseJsonStringAt(json, &*pos);
-        if (!value) return std::nullopt;
-        values.push_back(std::move(*value));
-        while (*pos < json.size() && std::isspace(static_cast<unsigned char>(json[*pos])) != 0) ++*pos;
-        if (*pos < json.size() && json[*pos] == ',') {
-            ++*pos;
-            continue;
-        }
-        if (*pos < json.size() && json[*pos] == ']') {
-            ++*pos;
-            return values;
-        }
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
-
 bool ExtensionMatchesKind(const fs::path& root, ContentKind kind) {
     const auto extension = LowerPathText(root.extension().wstring());
     if (kind == ContentKind::Wallpaper) return extension == L".mdwall";
@@ -358,7 +333,11 @@ bool MiaoContentPackage::Validate(
     const auto entryText = ExtractJsonString(json, "entry");
     const auto parametersText = ExtractJsonString(json, "parameters");
     const auto previewText = ExtractJsonString(json, "preview");
-    const auto capabilities = ExtractJsonStringArray(json, "capabilities");
+    // 键要带引号:共用取值器(kJsonQuote 那一套)刻意不补,因为值恰好等于字段名时
+    // 裸名会造成误命中。
+    const std::string capabilitiesKey =
+        std::string(miaodesk::kJsonQuote) + "capabilities" + miaodesk::kJsonQuote;
+    const auto capabilities = ExtractJsonStringArray(json, capabilitiesKey);
 
     if (!schema || *schema != static_cast<int>(kSchemaVersion))
         return Fail(error, L"Unsupported Miao content package schema version.");
@@ -404,6 +383,18 @@ bool MiaoContentPackage::Validate(
             return Fail(error, L"Package capability id contains invalid characters.");
         if (!capabilityIds.emplace(capability).second)
             return Fail(error, L"Package capability list contains duplicates.");
+        // 目录里没有的能力一律拒绝。此前只查字符集,于是 `audio.read` 这类名字能
+        // 通过,包里静悄悄地什么都不做 —— 一个虚构的能力比一个缺失的能力更难发现,
+        // 因为它通过了全部校验。
+        //
+        // id 已被 IsCapabilityId 限定成 ASCII,所以这里的转换是逐字符的,不需要
+        // 为一句错误消息引入一套编解码器。
+        if (!content::IsCatalogCapability(capability)) {
+            const std::wstring ascii(capability.begin(), capability.end());
+            return Fail(error,
+                        L"Package capability is not in the capability catalog: " + ascii +
+                            L". 声明一个没有任何实现的能力会被拒绝,而不是被静默忽略。");
+        }
     }
 
     fs::path entryPath;

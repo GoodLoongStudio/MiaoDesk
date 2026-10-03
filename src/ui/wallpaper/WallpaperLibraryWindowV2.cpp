@@ -11,6 +11,8 @@
 #include "miaodesk/LiveLogWindow.h"
 #include "miaodesk/NativeWidgetPainter.h"
 #include "miaodesk/NativeWidgetPreset.h"
+#include "miaodesk/TodayTaskPresentation.h"
+#include "miaodesk/TodayTaskStore.h"
 #include "miaodesk/NativeWeatherService.h"
 #include "miaodesk/NativeUiScale.h"
 
@@ -94,6 +96,8 @@ constexpr UINT kMenuFavorite = 6211;
 constexpr UINT kMenuRemove = 6212;
 constexpr UINT kMenuWidgetGlassClock = 6220;
 constexpr UINT kMenuWidgetTodayTasks = 6221;
+// D-2:预览缩略图与桌面卡片用同一个行数上限,否则两处会显示不同的待办条数。
+constexpr std::size_t kPreviewTaskRows = 4;
 constexpr UINT kMenuWidgetWeatherGlass = 6222;
 constexpr UINT kMenuWidgetAuto = 6223;
 constexpr UINT kMenuWidgetToggle = 6230;
@@ -319,6 +323,8 @@ struct WallpaperLibraryWindow::Impl {
     desktop::DesktopWidgetController widgetController;
     desktop::DesktopControlService desktopControl;
     NativeWeatherSnapshot widgetWeather;
+    // D-2:原生待办预览的行模型,与 widgetWeather 同一生命周期。
+    desktop::TodayTaskCardModel previewTaskModel;
     std::wstring selectedWallpaperId;
     std::wstring selectedWidgetId;
     std::wstring lastWallpaperQuery;
@@ -950,6 +956,21 @@ struct WallpaperLibraryWindow::Impl {
         if (preset == NativeWidgetPreset::GlassClock) {
             GetLocalTime(&context.localTime);
             context.hasTime = true;
+        }
+        if (preset == NativeWidgetPreset::TodayTasks) {
+            // D-2:预览也用真实快照。这里读不到时 previewTaskModel 保持 invalid,
+            // 卡片于是显示"任务数据暂不可用"—— 不拿三条示例待办冒充用户的待办。
+            desktop::TodayTaskSnapshot previewTasks;
+            std::wstring previewTaskError;
+            if (desktop::TodayTaskStore::Load(&previewTasks, &previewTaskError) &&
+                previewTasks.valid) {
+                previewTaskModel = desktop::BuildTodayTaskCardModel(previewTasks, kPreviewTaskRows);
+            } else {
+                desktop::TodayTaskSnapshot unavailable;
+                previewTaskModel =
+                    desktop::BuildTodayTaskCardModel(unavailable, kPreviewTaskRows);
+            }
+            context.tasks = &previewTaskModel;
         }
         widgetPreviewTarget->BeginDraw();
         widgetPreviewTarget->SetTransform(D2D1::Matrix3x2F::Scale(scale, scale));

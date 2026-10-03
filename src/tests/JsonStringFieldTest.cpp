@@ -78,6 +78,38 @@ int wmain() {
     Check(!ExtractJsonInt("{\"b\":1}", "\"schema\"").has_value(), "缺 schema 不是 0");
     Check(*ExtractJsonInt("{\"schema\":0}", "\"schema\"") == 0, "schema 是 0 就是 0");
 
+    // ---- 字符串数组 ----
+    // 为什么必须有这些用例:共用的 ExtractJsonStringArray 要的是**带引号的键**,
+    // 而它替换掉的那一份本地实现自己补引号。两个调用点都因此一度传了裸键,于是
+    // 一个返回"空 capabilities"(看起来像"没声明任何能力"),另一个返回 nullopt ——
+    // 而这两种在调用方眼里都意味着"没有要检查的能力",虚构能力就此通过校验。
+    const auto caps = ExtractJsonStringArray(R"({"capabilities":["clock.read","tasks.read"]})",
+                                            "\"capabilities\"");
+    Check(caps.has_value(), "带引号的键能取到数组");
+    Check(caps && caps->size() == 2, "两个元素都在");
+    Check(caps && (*caps)[0] == "clock.read", "按顺序读出,不排序不去重");
+    Check(!ExtractJsonStringArray(R"({"capabilities":["clock.read"]})", "capabilities").has_value(),
+          "裸键取不到 —— 这是刻意的:调用方必须带引号,否则值等于字段名时会误命中");
+    const auto none = ExtractJsonStringArray(R"({"schema":1})", "\"capabilities\"");
+    Check(!none.has_value(), "键不在是 nullopt,不是空数组");
+    const auto empty = ExtractJsonStringArray(R"({"capabilities":[]})", "\"capabilities\"");
+    Check(empty.has_value() && empty->empty(), "[] 是空数组 —— 与『键不在』是两件事");
+    Check(!ExtractJsonStringArray(R"({"capabilities":"clock.read"})", "\"capabilities\"")
+               .has_value(),
+          "值是字符串不是数组,返回 nullopt 而不是把字符串当成一个元素");
+    Check(!ExtractJsonStringArray(R"({"capabilities":[1,2]})", "\"capabilities\"").has_value(),
+          "数组里有非字符串元素,返回 nullopt");
+    Check(!ExtractJsonStringArray(R"({"capabilities":["a"})", "\"capabilities\"").has_value(),
+          "没闭合的数组返回 nullopt");
+    const auto escaped = ExtractJsonStringArray(
+        R"({"capabilities":["a\"b","c\nd"]})", "\"capabilities\"");
+    Check(escaped && escaped->size() == 2, "转义不影响元素个数");
+    Check(escaped && (*escaped)[0] == "a\"b", "元素里的引号转义被解开");
+    Check(escaped && (*escaped)[1] == "c\nd", "元素里的 \n 被解开(与 ExtractJsonString 同一套规则)");
+    // 键位置:值恰好等于字段名时不能被当成键。
+    Check(!ExtractJsonStringArray(R"({"x":"capabilities"})", "\"capabilities\"").has_value(),
+          "值等于字段名不算有这个键");
+
     std::printf("\nJSON field reader: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {
         std::printf("ALL CHECKS FAILED\n");

@@ -2,6 +2,8 @@
 
 #include "miaodesk/JsonStringField.h"
 
+#include "miaodesk/MiaoCapabilityCatalog.h"
+
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -146,15 +148,53 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
                  false);
     }
 
+    // 5b. 清单里声明的能力必须在能力目录里。
+    //
+    // 这不是拼写检查。一个虚构的 capability 比一个缺失的更难发现:它通过全部校验,
+    // 包里静悄悄地什么都不做,而作者要到桌面上才发现"我绑的数据没出来"。此前这里
+    // 一层 capability 检查都没有 —— 只有加载器查过字符集。
+    // 键要带引号,与这个文件里其它取值调用一致(见 kRequiredManifestFields 的注释)。
+    const auto capabilities =
+        miaodesk::ExtractJsonStringArray(manifest->bytes, "\"capabilities\"");
+    if (capabilities) {
+        for (const auto& capability : *capabilities) {
+            if (content::IsCatalogCapability(capability)) continue;
+            AddIssue(&result, content::ContentValidationFailure::UnknownCapability, "manifest.json",
+                     "capabilities",
+                     std::string("manifest.json 声明的能力 ") + capability +
+                         " 不在能力目录里。声明一个没有任何实现的能力会被拒绝,不是被忽略。",
+                     true);
+        }
+    }
+
     // 6. entry 指向的文件必须真的在包里。
     const std::string entry = miaodesk::ExtractJsonString(manifest->bytes, "\"entry\"");
     bool missingReferenced = false;
     if (!entry.empty()) {
-        if (entry.rfind("scene/", 0) != 0 || entry.size() < 6) {
+        // entry 有两个都合法的位置,而这里原来只认一个:
+        //   scene/scene.json —— 创作工作区的布局(CreatorWorkspacePolicy 认这一种);
+        //   scene.json       —— 随产品发行的三个壁纸、三个组件与两个示例包的布局。
+        // 只认前者的后果是校验器比**加载器**更严:加载器对两种布局都接受,而这里会把
+        // 照发行包的样子写出来的候选全部拒掉,拒绝原因还是"必须指向 scene/ 下" ——
+        // 作者对着自己的合法包看不出那句话错在哪。同一条原则本文件的 id 规则已经写过了:
+        // "校验器比加载器更严的后果是拒绝它本来能加载的包"。
+        //
+        // 所以判据改成:一个安全的包内相对 .json 路径,且不是 manifest / parameters 本身。
+        // 仍然拒绝 assets/a.json(资产目录不放 JSON)、manifest.json(入口不能是清单)、
+        // scene/scene.png(不是 .json)与 ../x.json(越界)。工作区那套更严的布局规则由
+        // CreatorWorkspacePolicy 继续负责,不在这里重复一遍。
+        const bool looksJson = entry.size() > 5 && entry.compare(entry.size() - 5, 5, ".json") == 0;
+        const bool escapes = entry.find("..") != std::string::npos ||
+                             entry.find('\\') != std::string::npos || !entry.empty() && entry[0] == '/';
+        const bool isMeta = entry == "manifest.json" || entry == "parameters.json";
+        if (!looksJson || escapes || isMeta) {
             AddIssue(&result, content::ContentValidationFailure::InvalidBinding, "manifest.json",
                      "entry",
-                     "manifest.json 的 entry 必须指向 scene/ 下的一个 .json 文件。", true);
-        } else if (!FindPart(parts, content::CandidatePartRole::Scene, entry)) {
+                     "manifest.json 的 entry 必须是包内的一个 .json 文件(例如 scene/scene.json "
+                     "或 scene.json),不能是 manifest / parameters 本身,也不能越出包的根目录。",
+                     true);
+        } else if (!FindPart(parts, content::CandidatePartRole::Scene, entry) &&
+                   !FindPart(parts, content::CandidatePartRole::Other, entry)) {
             AddIssue(&result, content::ContentValidationFailure::MissingReferencedFile, entry, "",
                      std::string("manifest.json 的 entry 指向 ") + entry + ",但包里没有这个文件。",
                      true);

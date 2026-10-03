@@ -28,9 +28,13 @@ description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 
 - parameters:可选,指向 parameters.json。
 - preview:可选,指向包内预览图。
 - author / version / name 如实填写,version 用语义化版本(如 1.0.0)。
-- capabilities:只声明内容真正需要的数据能力。闭集只有三个:clock.read(配 time.* 数据)、
+- capabilities:只声明内容真正需要的数据能力。数据能力闭集是三个:clock.read(配 time.* 数据)、
   weather.read(配 weather.* 数据)、tasks.read(配 tasks.* 数据)。别的一律无效 ——
-  声明一个不存在的名字不会报错,但它什么也不做,而你会以为音频已经授权。
+  而**无效的名字现在会被拒绝**:加载器与校验器都对照能力目录(CAP-01)检查它,不在目录里
+  的 capability 直接让包加载失败,不会静悄悄地什么都不做。
+  另外 theme.wallpaper 是官方壁纸在声明的包级标识,它在目录里但**不门禁任何东西**;
+  新内容不应依赖它做什么。
+  需要完整列表时用 creator_capabilities_get 查目录,这里只讲规则。
   **音频与指针不走这里**:它们由 scene.json 的 inputs[] 声明(input://audio/*、input://pointer/*),
   不需要任何 capability。见 wallpaper-content 的输入通道契约。
 

@@ -16,6 +16,41 @@ bool CountsAsRealOutput(RenderEvidenceStatus status) noexcept {
     return status == RenderEvidenceStatus::Rendered;
 }
 
+RenderEvidenceSample MakeRenderedEvidenceSample(std::uint32_t frameIndex,
+                                                std::uint64_t capturedAtMs,
+                                                const OffscreenEvidenceRequest& request,
+                                                std::string_view candidateDigest) {
+    RenderEvidenceSample sample;
+    // 空摘要不进样本。进来的是空摘要,说明调用方没算摘要,或者算了没检查可用性 ——
+    // 这两种情况下放行一帧,判据层之后只会用一句"摘要不一致"把它退回来,而真正的错
+    // (宿主没算摘要)被那句拒绝盖住了。所以在产出的这一侧就标成失败,原因写在这里。
+    if (candidateDigest.empty()) {
+        sample.frameIndex = frameIndex;
+        sample.capturedAtMs = capturedAtMs;
+        sample.backend = request.backend;
+        sample.width = request.width;
+        sample.height = request.height;
+        sample.fixture = request.fixture;
+        sample.status = RenderEvidenceStatus::Failed;
+        sample.offscreen = request.backend.empty() ? false : true;
+        sample.failureReason = "宿主没有给出候选摘要,这一帧无法绑定到任何候选,不能作为证据。";
+        return sample;
+    }
+
+    sample.frameIndex = frameIndex;
+    sample.capturedAtMs = capturedAtMs;
+    sample.backend = request.backend;
+    sample.width = request.width;
+    sample.height = request.height;
+    sample.fixture = request.fixture;
+    // 摘要只来自这一个参数。调用点没有第二个字符串可以填,所以"帧属于哪个候选"
+    // 不可能在宿主侧写错 —— 这正是上一个版本缺的那一条。
+    sample.digest = std::string(candidateDigest);
+    sample.status = RenderEvidenceStatus::Rendered;
+    sample.offscreen = true;
+    return sample;
+}
+
 RenderEvidenceVerdict AssessRenderEvidence(const std::vector<RenderEvidenceSample>& samples,
                                            const RenderEvidenceRequirements& requirements,
                                            std::string_view candidateDigest) {

@@ -32,6 +32,7 @@ set(MIAODESK_CORE_SOURCES
     content/input/MiaoAudioCapture.cpp
     content/asset/MiaoAssetDatabase.cpp
     content/binding/MiaoContentDataBinding.cpp
+    content/binding/MiaoCapabilityCatalog.cpp
     content/model/ContentWidgetInstanceStore.cpp
     content/model/MiaoContentDefinitionLoader.cpp
     content/model/MiaoContentModel.cpp
@@ -134,6 +135,8 @@ set(MIAODESK_CORE_SOURCES
     desktop/widgets/NativeWidgetPreset.cpp
     desktop/widgets/TodayTaskStore.cpp
     desktop/widgets/TodayTaskContentProvider.cpp
+    desktop/widgets/TodayTaskPresentation.cpp
+    desktop/widgets/WidgetDataActionContract.cpp
     desktop/wallpaper/library/WallpaperPackage.cpp
     desktop/wallpaper/library/WallpaperLibrary.cpp
     desktop/wallpaper/library/WallpaperLibraryWeb.cpp
@@ -348,6 +351,20 @@ add_executable(MiaoDeskJsonStringFieldTest tests/JsonStringFieldTest.cpp)
 add_executable(MiaoDeskContentCandidateReceiptTest tests/ContentCandidateReceiptTest.cpp)
 add_executable(MiaoDeskCreationRepairPlannerTest tests/CreationRepairPlannerTest.cpp)
 add_executable(MiaoDeskRenderEvidenceTest tests/RenderEvidenceTest.cpp)
+# D-1:取证样本的摘要绑定。与上面那份测的是两侧:RenderEvidenceTest 测判据怎么拒绝坏
+# 样本,这份测产出侧怎么保证样本不会坏。宿主侧曾因一个从未赋值的局部 digest 让每帧
+# 带空摘要,而内存端口自己填对了摘要,于是单元测试全绿、真机全败。
+add_executable(MiaoDeskRenderEvidenceSampleBindingTest tests/RenderEvidenceSampleBindingTest.cpp)
+# CAP-01:能力目录。受控查询的四种答案必须可区分,而"仅声明"绝不能报成"支持" ——
+# 把它当成实现是最贵的错:坏包看起来完全合法,作者要到桌面上才发现。
+add_executable(MiaoDeskCapabilityCatalogTest tests/CapabilityCatalogTest.cpp)
+add_executable(MiaoDeskTodayTaskPresentationTest tests/TodayTaskPresentationTest.cpp)
+add_executable(MiaoDeskWidgetDataActionContractTest tests/WidgetDataActionContractTest.cpp)
+# CAP-03:随产品发行的包必须通过包级校验。BuiltinWallpaperPackages 走的是 load →
+# deserialize → runtime validate 那条链,它**不跑 ContentPackageValidator**,而包级校验
+# 正是宣言层(entry 布局、capabilities 是否在目录里、代码产物)。这个门第一次跑就发现
+# 校验器的 entry 规则把 8 个发行包全拒了:它只认 scene/scene.json,而发行包用 scene.json。
+add_executable(MiaoDeskShippedPackagesValidate tests/ShippedPackagesValidate.cpp)
 add_executable(MiaoDeskCreatorReplyInterpreterTest tests/CreatorReplyInterpreterTest.cpp)
 add_executable(MiaoDeskContentApplyRecoveryTest tests/ContentApplyRecoveryTest.cpp)
 add_executable(MiaoDeskCreationDraftStoreTest tests/CreationDraftStoreTest.cpp)
@@ -384,7 +401,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -441,6 +458,11 @@ if (MSVC)
     target_compile_options(MiaoDeskContentCandidateReceiptTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationRepairPlannerTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskRenderEvidenceTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskRenderEvidenceSampleBindingTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskCapabilityCatalogTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskTodayTaskPresentationTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskWidgetDataActionContractTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskShippedPackagesValidate PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorReplyInterpreterTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentApplyRecoveryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationDraftStoreTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -635,6 +657,29 @@ target_link_libraries(MiaoDeskCreationRepairPlannerTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskRenderEvidenceTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskRenderEvidenceSampleBindingTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskCapabilityCatalogTest PRIVATE
+    MiaoDeskCore
+)
+# D-2:原生待办卡片的行模型。它钉的是"没有数据就说没有数据"—— 旧实现在 painter 里
+# 写死三条待办,单元测试不可能失败,因为被测的是一段常量。
+target_link_libraries(MiaoDeskTodayTaskPresentationTest PRIVATE
+    MiaoDeskCore
+)
+# CAP-05:组件数据与动作的公共契约。它钉的是"没有时间戳不算新鲜""空与离线不是一回事"
+# "同一个 operationId 只生效一次"这三条 —— 都是"看起来能用"最容易糊过去的判定。
+target_link_libraries(MiaoDeskWidgetDataActionContractTest PRIVATE
+    MiaoDeskCore
+)
+# CAP-03:随产品发行的包必须通过包级校验。BuiltinWallpaperPackages 走的是 load →
+# deserialize → runtime validate 那条链,它**不跑 ContentPackageValidator**,而包级校验
+# 正是宣言层(entry 布局、capabilities 是否在目录里、代码产物)。这个门第一次跑就发现
+# 校验器的 entry 规则把 8 个发行包全拒了:它只认 scene/scene.json,而发行包用 scene.json。
+target_link_libraries(MiaoDeskShippedPackagesValidate PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorReplyInterpreterTest PRIVATE

@@ -17,6 +17,76 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：P0-07 AI 侧,一把 Key 会被发到另一台服务
+
+修一个会外泄凭据的缺陷,并把"请求 URL 与凭据是否同源"变成本机可测的契约。
+
+- **缺陷**:`L3Agent::ReloadConfig` 从 `api-profiles.ini` 读权威配置,而 `/provider`、
+  `/endpoint`、`/key` 这几个**活着的**本地命令(AI 对话里敲的,`ConversationPanelImpl`
+  直接转发)就地改 `config_`。`config_.profileId` **只有 `ReloadConfig` 会写**,于是:
+
+      /provider https://别的服务/v1 某个模型
+      → URL = https://别的服务/v1/...               ← 用户刚敲的主机
+      → Key = MiaoDesk/ApiProfile/<原 profile 的 id>  ← 原 profile 的 Key
+
+  **一把签给 A 服务的 Key,被发到 B 服务上去。** `/key` 更糟:它按同一个 `profileId`
+  选槽,把用户敲的新 Key **覆盖回那个 profile 自己存的 Key** 上 —— 其它每个用这个
+  profile 的 AI 窗口、以及 Harness,下一轮就都用上这把被换掉的 Key,而设置页里一个字不提。
+- **修法**:`/provider` 换主机时丢掉 profile 身份,凭据回到旧槽(`/key` 写的也是旧槽),
+  地址一个字符不动。`/endpoint` **故意不丢** —— 只换路径时主机没变,同源关系完好,
+  丢了反而让用户莫名失去配好的 Key。
+- **顺带说实话**:`/provider` 原先回"模型配置已保存。",而那个值写进
+  `model-settings.json`,这个文件的读者 `L3Agent::LoadConfig()` **零调用方**
+  (L3Agent.h 自己写着 "ReloadConfig and the normal runtime path do not consume their
+  state.")。已改成如实说明权威来源。
+- **拆出 `MiaoAgentConfigAuthority.{h,cpp}`**(纯逻辑,不 import Windows 头):
+  与 `MiaoD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules` 同一模式 ——
+  `L3Agent.cpp` 为了 `wincred.h`/`winhttp.h` 只能 Windows 上编,于是这条判定本机一行都
+  跑不到。`CurrentApiUrl`/`SaveApiKey` 改成走它;槽名用 `static_assert` 两边焊死,
+  因为那是 `LoadApiKey`/`SaveApiKey`/`ApiRuntimeProfile::ReadSection` 三方共用的契约。
+- **自动检查**:`AgentConfigAuthorityTest` 38 项,含反空洞自检(喂四个明知该被抓的合成输入,
+  恒返回 `bound=true` 的判定函数必须露出来);**16 处变异全红,0 存活**;
+  21 道仓库门 + mingw 交叉语法门(0 真实错误)全通过。
+- **一处必须说清的未取证**:`L3PersistenceSelfTest`(只能 Windows 上跑)**正好走
+  `/provider`**。逐行读过之后判断它不受影响 —— 那个 legacy 块跑在新建的临时
+  LOCALAPPDATA 里,此时没有任何 profile,`config_.profileId` 从构造起就是空串,
+  而空串时 `RebindForLocalCommand` 是恒等的。但这是**推理,不是证据**。
+- **未取证**:P0-07 的 Wallpaper/Widgets/AI 会话/库状态四个恢复面的真机一致性仍要 Windows;
+  "外泄的 Key 打中过哪台服务"也没有线上证据。
+
+### 2026-10-04 · 执行记录：P0-04 的自动部分，与一个自我延续的 NaN
+
+本条记录**修正上一轮的一个错误结论**，并修一个会一直存在的坏值。
+
+- **修正**：上一轮把 `P0-03/04/07/08/09` 整块说成"都要 Windows 侧"，这是错的。
+  持续开发面板自己就写着这几项的"自动部分 = 是"，规划原文是"完成…的**自动部分**
+  并排入真机验收"。本轮做 P0-04 的自动部分。
+- **做完的**（P0-04 四条验收里覆盖两条）：
+  - **位置丢失** → `NormalizeWidgetLayout` 从 `DesktopWidgetStore::Normalize` 提出来。
+    那个 .cpp 为了 UTF-16 配置持久化 include 了 `windows.h`，于是这批不变量本机
+    一行都跑不到。与 `MiaoD3D11RenderPolicy`、`TodayTaskPresentation` 同一模式。
+  - **重复实例** → `NativeSingletonKey` / `SameNativeSingleton` 提到
+    `WidgetIdentityRules.cpp`（纯字符串逻辑）。"同一 preset 同一显示器只允许一个实例"
+    此前是 `DesktopWidgetStore.cpp` 匿名命名空间里的文件局部符号。
+  - 顺带把 `NativeWidgetPreset.cpp` 整个变纯：它只有 `_wcsnicmp` 一个 Windows 调用，
+    换成可移植的宽字符大小写不敏感比较（三个内置 source 全是 ASCII）。
+- **修的真实缺陷**：`std::clamp(NaN, lo, hi)` 对 NaN 是**恒等函数** —— 它的实现是
+  `v < lo ? lo : (hi < v ? hi : v)`，两个比较对 NaN 都为假，于是返回 v。而
+  `DesktopWidgetStore::ReadFloat` 用 `wcstof` 解析配置且不查有限性，`FloatText` 又用
+  `%.6f` 写回：一个 NaN 会写进配置文件、再读回来、再写回去，**自我延续**。带着 NaN
+  坐标的组件在 `UpdateLayeredWindow` 上直接失败或消失。读与归一化两侧都挡了。
+- **又踩到自己两次，同一个模式**：
+  - `WidgetLayout` 的成员默认值重复写了一遍常量，于是改常量不改结构体 ——
+    "新建组件落在哪里"会有两个答案（变异检测：把常量改成 0.0，104 项断言全绿）。
+  - 测试用**同一个常量**做比较，于是"尺寸下限改成 0"也测不出来。修法是把常量本身的
+    值单独钉住。
+  - 另删掉一处不可达的尺寸下限夹紧（位置已夹到 `<= 0.95`，收边后不可能 `< 0.05`）。
+    这是本会话第四次"挡不动任何东西的守卫"，每次都是变异检测逮到的。
+- **自动检查**：`WidgetGeometryTest` 126 项；P0-04 几何 6 处、去重 5 处变异全红；
+  44 个纯逻辑目标全通过；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。
+- **未取证**：P0-04 剩下的"无孤立 HWND、错误背景"与 20 次循环本身都要 Windows。
+  "组件带 NaN 时桌面上会怎样"也没有真机证据 —— 修的是链条，不是现象。
+
 ### 2026-10-04 · 执行记录：WPRO-01 把宽高比裁决接进宿主诊断
 
 本条记录**让上一轮量出来却没人看得见的结论出现在现场**，不改渲染行为。

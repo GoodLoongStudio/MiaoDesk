@@ -2,6 +2,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/AppSearch.h"
 #include "miaodesk/GozSearch.h"
+#include "miaodesk/MiaoAgentConfigAuthority.h"
 #include "miaodesk/SecretRedaction.h"
 #include <shellapi.h>
 #include <wincred.h>
@@ -23,6 +24,13 @@ namespace miaodesk {
 namespace {
 
 constexpr wchar_t kCredentialTarget[] = L"MiaoDesk/ModelApiKey";
+// 旧凭据槽名在纯逻辑那份(MiaoAgentConfigAuthority)里也钉了一个字面量 ——
+// 每处 profile 的 Key 槽名是 `LoadApiKey`/`SaveApiKey`/`ApiRuntimeProfile::ReadSection`
+// 三方共用的契约,两处各写一遍时改一边不改另一边,Key 会静默换槽而不报错。
+// 所以在这里把两边焊死。
+static_assert(std::wstring_view(kCredentialTarget) ==
+                  std::wstring_view(agent_config::kLegacyCredentialTarget),
+              "凭据槽名两处必须一致");
 constexpr std::size_t kMaxConversationTurns = 6;
 constexpr std::uint32_t kSessionMagic = 0x334c4454; // TDL3
 constexpr std::uint32_t kSessionVersion = 1;
@@ -690,10 +698,18 @@ std::wstring L3Agent::LoadApiKey() const {
     return key;
 }
 
+agent_config::AgentRequestIdentity L3Agent::RequestIdentity() const {
+    agent_config::AgentRequestIdentity identity;
+    identity.profileId = config_.profileId;
+    identity.baseUrl = config_.baseUrl;
+    identity.endpoint = config_.endpoint;
+    return identity;
+}
+
 bool L3Agent::SaveApiKey(const std::wstring& key) const {
-    const std::wstring target = config_.profileId.empty()
-        ? std::wstring(kCredentialTarget)
-        : L"MiaoDesk/ApiProfile/" + config_.profileId;
+    // 槽名由纯逻辑那份定。此前这里是内联的三元表达式,和 LoadApiKey 上面那个
+    // 旧槽各写一遍 —— 改一处不改另一处,Key 就静默换槽。
+    const std::wstring target = agent_config::AgentCredentialTarget(RequestIdentity());
 
     if (key.empty()) {
         if (CredDeleteW(target.c_str(), CRED_TYPE_GENERIC, 0)) return true;
@@ -722,18 +738,9 @@ bool L3Agent::HasApiKey() const {
 }
 
 std::wstring L3Agent::CurrentApiUrl() const {
-    if (config_.baseUrl.empty()) return {};
-    std::wstring endpoint = Trim(config_.endpoint);
-    if (endpoint.starts_with(L"/https://") || endpoint.starts_with(L"/http://")) {
-        endpoint.erase(endpoint.begin());
-        return endpoint;
-    }
-    if (endpoint.starts_with(L"https://") || endpoint.starts_with(L"http://")) return endpoint;
-    std::wstring base = Trim(config_.baseUrl);
-    while (base.size() > 1 && base.back() == L'/') base.pop_back();
-    if (endpoint.empty() || endpoint == L"-") return base;
-    if (endpoint.front() != L'/') endpoint.insert(endpoint.begin(), L'/');
-    return base + endpoint;
+    // 拼装规则住在纯逻辑那份。抽出去不是为了少几行:同一份规则也是 P0-07 的
+    // 一致性问题("重启后请求的地址和上次是不是同一个"),而它此前在本机一条都验不了。
+    return agent_config::BuildAgentRequestUrl(RequestIdentity());
 }
 
 ModelProbeResult L3Agent::ProbeModels(const std::wstring& apiUrl,
@@ -983,6 +990,10 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
         return true;
     }
     if (lower.starts_with(L"/endpoint ")) {
+        // 注意这里**不**丢 profile 身份,和下面的 /provider 相反,这是有意的:
+        // 只换端点路径时主机没变,profile 的 Key 仍然是发给同一台主机的,同源关系完好。
+        // 丢了反而会让用户莫名失去已经配好的 Key。判定见 MiaoAgentConfigAuthority
+        // 的 RequestTargetOwner::LocalPath。
         auto endpoint = Trim(input.substr(10));
         if (endpoint == L"-") endpoint.clear();
         if (!endpoint.empty() && endpoint.front() != L'/') endpoint.insert(endpoint.begin(), L'/');
@@ -1020,6 +1031,20 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
             Stop();
             if (worker_.joinable()) worker_.join();
         }
+        // 主机被本机命令换掉了,凭据必须跟着换来源。
+        //
+        // 少了这一步,这条链是活的:`config_.profileId` 只有 ReloadConfig 会写,而
+        // 这里只改 baseUrl —— 于是下一次请求 URL 是用户刚敲的这台主机,而 Key 仍从
+        // `MiaoDesk/ApiProfile/<原 profile>` 读。**一把签给 A 服务的 Key 被发到 B 服务。**
+        // `/key` 更糟:它按同一个 profileId 选槽,会把用户敲的新 Key 覆盖回那个 profile
+        // 自己存的 Key 上,而设置页里一个字都不提。
+        //
+        // 判定与槽名都在 MiaoAgentConfigAuthority(纯逻辑,本机有门)。这里只丢身份、
+        // 不动地址 —— 用户敲的 Base URL 原样生效,凭据回到旧槽(`/key` 写的也是旧槽)。
+        config_.profileId = agent_config::RebindForLocalCommand(
+                                RequestIdentity(), agent_config::RequestTargetOwner::LocalHost)
+                                .profileId;
+        if (config_.profileId.empty()) config_.profileName.clear();
         config_.baseUrl = baseUrl;
         config_.model = model;
         if (lowerBase.find(L"anthropic") != std::wstring::npos) config_.providerId = L"anthropic";
@@ -1031,7 +1056,11 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
             conversation_.clear();
             for (const auto& turn : restored) conversation_.push_back({turn.first, turn.second});
         }
-        reply = SaveConfig(config_) ? L"模型配置已保存。" : L"模型配置保存失败。";
+        // 说实话:这个值写进 model-settings.json,而那个文件的读者(L3Agent::LoadConfig)
+        // 零调用方 —— 下次 ReloadConfig 会用回 API 配置中心的值。
+        reply = SaveConfig(config_)
+                    ? L"已在本次会话生效；API 配置中心仍是权威来源，重启或切换配置后用回它的值。"
+                    : L"模型配置保存失败。";
         return true;
     }
     return false;

@@ -1,5 +1,6 @@
 #pragma once
 #include "miaodesk/ApiRuntimeProfile.h"
+#include "miaodesk/MiaoAgentConfigAuthority.h"
 #include <atomic>
 #include <cstddef>
 #include <functional>
@@ -155,6 +156,11 @@ private:
     bool SaveConfig(const ModelConfig& config) const;
     std::wstring LoadApiKey() const;
     bool SaveApiKey(const std::wstring& key) const;
+    // config_ 里与"请求打到哪、用谁的 Key"有关的三个字段。
+    // 抽成这一个入口,是为了 URL 拼装、凭据槽选择、以及本地命令换主机时的身份处理
+    // 都从同一处取数 —— 三处各读 config_ 时,改一处不改另两处就会重新长出
+    // "Key 发到别的服务上去"那个缺陷。见 MiaoAgentConfigAuthority.h。
+    agent_config::AgentRequestIdentity RequestIdentity() const;
     void RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone, std::stop_token stopToken);
     void ClearConversation();
 

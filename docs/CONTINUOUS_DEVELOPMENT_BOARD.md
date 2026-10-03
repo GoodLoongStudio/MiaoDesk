@@ -80,10 +80,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-01 | ✅ | AI Creator 真实跨进程打开门禁 | 是 | x64/ARM64 均从第二进程请求 Wallpaper/Widget Creator，确认真实窗口 Visible/Ready 后才成功 |
 | P0-02 | ✅ | ARM64 Quick Test 启动准确 Dev Host | 是 | 快测清理旧单实例并确认驻留 EXE 来自 `C:\MiaoDeskDev` |
 | P0-03 | ⬜ | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用 |
-| P0-04 | ⬜ | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景 |
+| P0-04 | 🟡 | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景。**自动部分的几何不变式与去重规则已落地**（见下）；孤立 HWND/错误背景仍要 Windows |
 | P0-05 | ⬜ | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次 |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
-| P0-07 | ⬜ | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复 |
+| P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | ⬜ | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁 |
 | P0-09 | ⬜ | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局 |
 | P0-10 | ⬜ | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA |
@@ -222,13 +222,15 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 当前先领取 PRO-01 做新范围与已有实现的证据核对；随后按依赖准备 PRO-02/03，并继续以下最高优先级稳定性候选。CAP-01/02 可在真机等待期间推进：
 
-1. `P0-03` Wallpaper 状态循环的自动回归部分；
-2. `P0-04` Widget 生命周期循环的自动回归部分；
-3. `P0-07` App 重启状态一致性；
-4. `P0-08` 崩溃/强杀资源清理；
-5. `SEARCH-01` 固定查询集；
-6. `AI-03` Cancel / Retry；
-7. `CREATE-04` 上一可用结果保留。
+1. `P0-07` App 重启状态一致性 —— AI 侧已做一轮（请求 URL 与凭据同源），继续
+   Wallpaper/Widgets/AI 会话/库状态四个恢复面的**自动**部分；
+2. `P0-03` Wallpaper 状态循环的自动回归部分；
+3. `P0-08` 崩溃/强杀资源清理；
+4. `SEARCH-01` 固定查询集；
+5. `AI-03` Cancel / Retry；
+6. `CREATE-04` 上一可用结果保留。
+
+已完成自动部分（真机仍待）：`P0-04`（几何不变式 + 去重规则）、`P0-07`（凭据同源）。
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
@@ -256,6 +258,72 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续四，P0-07 AI 侧：一把 Key 会被发到另一台服务）
+
+- **修的真实缺陷**（P0-07 的"API profile 一致恢复"）：
+  `L3Agent::ReloadConfig` 从 `api-profiles.ini` 读权威配置，而 `/provider`、`/endpoint`、
+  `/key` 这几个**活着的**本地命令（AI 对话里敲的，`ConversationPanelImpl` 直接转发）
+  就地改 `config_`。而 `config_.profileId` **只有 `ReloadConfig` 会写** —— 于是：
+
+      /provider https://别的服务/v1 某个模型
+      → config_.baseUrl 换成别的**主机**,config_.profileId 一个字符都没动
+      → 下一次请求 URL = https://别的服务/v1/...      ← 用户刚敲的
+                   Key = MiaoDesk/ApiProfile/<原 profile>  ← 原来那个 profile 的 Key
+
+  **一把签给 A 服务的 Key，被发到 B 服务上去。** `/key` 那一侧更糟：它按同一个
+  `profileId` 选槽，会把用户敲的新 Key **覆盖回那个 profile 自己存的 Key** 上，
+  而设置页里一个字都不会提，其它每个用这个 profile 的 AI 窗口下一轮就都用上它。
+- **修法**：`/provider` 换主机时丢掉 profile 身份，凭据回到旧槽（`/key` 写的也是旧槽）。
+  地址一个字符都不动。`/endpoint` **故意不丢** —— 只换路径时主机没变，profile 的 Key
+  仍然是发给同一台主机的，丢了反而让用户莫名失去配好的 Key。见下一条。
+- **顺带说实话**：`/provider` 原先回"模型配置已保存。"，而那个值写进
+  `model-settings.json`，这个文件的读者 `L3Agent::LoadConfig()` **零调用方**
+  （L3Agent.h 自己写着 "ReloadConfig and the normal runtime path do not consume their
+  state."）。下次 `ReloadConfig` 会用回 API 配置中心的值。改成了如实说明。
+- **拆出 `MiaoAgentConfigAuthority.{h,cpp}`（纯逻辑，本机有门）**，与这个仓库里另几次
+  拆分同一模式（`MiaoD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules`）：
+  `L3Agent.cpp` 为了 `wincred.h`/`winhttp.h` 只能 Windows 上编，于是"URL 与凭据是否同源"
+  这条在本机一行都跑不到。模块只做判定：URL 拼装、凭据槽选择、同源裁决、以及换主机时
+  该不该丢身份。`L3Agent` 的 `CurrentApiUrl`/`SaveApiKey` 改成走它，槽名用 `static_assert`
+  两边焊死（每处 profile 的 Key 槽名是三方共用的契约，改一边不改另一边会静默换槽）。
+- **本机跑了什么**：`AgentConfigAuthorityTest` 38 项（含反空洞自检：喂四个明知该被抓的
+  合成输入，恒返回 `bound=true` 的函数必须露出来）；**16 处变异全红，0 存活**。
+- 真机:**未取证**。两件事必须分开说:
+  - `L3PersistenceSelfTest`(只能 Windows 上跑)**正好走 `/provider`**,这里跑不了。
+    逐行读过之后判断它不受影响:那个 legacy 块跑在新建的临时 LOCALAPPDATA 里,
+    此时没有任何 profile,`config_.profileId` 从构造起就是空串,而空串时
+    `RebindForLocalCommand` 是恒等的 —— session 路径与轮数期望都不变。
+    **但这是推理,不是证据。**
+  - P0-07 的 Wallpaper/Widgets/AI 会话/库状态四个恢复面的真机一致性仍要 Windows;
+    "外泄的 Key 打中过哪台服务"也没有线上证据。
+
+### 本轮推进记录（2026-10-04 再续三，P0-04 的自动部分）
+
+- 代码提交：见本轮末尾。
+- **上一轮我把 P0-03/04/07/08/09 整块说成"都要 Windows 侧"，这是错的。** 面板自己就写着
+  这几项的"自动部分 = 是"，规划原文是"完成…的**自动部分**并排入真机验收"。
+- 做完的自动部分（P0-04 的四条验收里覆盖两条）:
+  - **位置丢失** → `NormalizeWidgetLayout` 从 `DesktopWidgetStore::Normalize` 提出来。
+    那个 .cpp 为了 UTF-16 配置持久化 import 了 windows.h,于是这批不变量本机一行都跑不到。
+  - **重复实例** → `NativeSingletonKey` / `SameNativeSingleton` 提到
+    `WidgetIdentityRules.cpp`(纯字符串逻辑),P0-04"无重复实例"现在本机可验。
+  - 顺带把 `NativeWidgetPreset.cpp` 变纯:它整个文件只有 `_wcsnicmp` 一个 Windows 调用,
+    换成可移植的宽字符大小写不敏感比较(三个内置 source 全是 ASCII)。
+- **修了一个真实缺陷**:`std::clamp(NaN, lo, hi)` 对 NaN 是**恒等函数**
+  (`v < lo ? lo : (hi < v ? hi : v)`,两个比较对 NaN 都为假)。而
+  `DesktopWidgetStore::ReadFloat` 用 `wcstof` 解析配置且不查有限性,`FloatText` 又用
+  `%.6f` 写回 —— 一个 NaN 会写进配置文件、再读回来、再写回去,**自我延续**。
+  带着 NaN 坐标的组件在 `UpdateLayeredWindow` 上直接失败或消失。读与归一化两侧都挡了。
+- 本机跑了什么:`WidgetGeometryTest` 126 项(几何不变量 + 去重规则 + 常量自钉);
+  P0-04 几何 6 处变异、去重 5 处变异全红;21 道仓库门 + mingw 交叉语法门全通过。
+- **又踩到自己两次,都是同一个模式**:
+  - `WidgetLayout` 的成员默认值重复写了一遍常量,于是改常量不改结构体 ——
+    "新建组件落在哪里"会有两个答案(变异检测:把常量改成 0.0,104 项断言全绿)。
+  - 测试用**同一个常量**做比较,于是"尺寸下限改成 0"也测不出来。
+    修法是把常量本身的值单独钉住。
+  - 另删掉一处不可达的尺寸下限夹紧(位置已夹到 <=0.95,收边后不可能 <0.05)。
+- 真机:**未取证**。P0-04 剩下的"无孤立 HWND、错误背景"与 20 次循环本身都要 Windows。
 
 ### 本轮推进记录（2026-10-04 再续二，把宽高比裁决接进宿主诊断）
 

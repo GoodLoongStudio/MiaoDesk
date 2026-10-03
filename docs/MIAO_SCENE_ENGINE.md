@@ -18,11 +18,13 @@
 
 ```text
 用户的想象力决定内容上限；Runtime 不用“用户不会编程”限制表达能力。
-AI Creator 负责生成/解释/修改 Scene、HLSL、Particle、Animation、Script。
+AI Creator 按实际开放能力生成/解释/修改 Scene、Particle、Animation 与参数；高级 HLSL/行为扩展经 ADV-04 放行后纳入。
 MiaoDesk Runtime 负责安全、性能、资源、生命周期、Preview 与失败恢复。
 ```
 
-因此 **Custom HLSL 从第一阶段就是正式能力**。不要求用户手写，但允许用户和 AI 直接创作 HLSL。
+Custom HLSL 是引擎的正式可编程方向。手工 Shader 运行支持与 AI authoring 权限分开：当前 Creator 仍以声明式内容和受控素材为界，AI Shader 创作按 ADV-04 完成工具、ABI、校验、预算、隔离与评测后开放。
+
+2026-10-03 专业版将 3D、灯光、形变与受限物理纳入后续必达能力，详见 [总体规划](PROFESSIONAL_DESKTOP_PLAN.md)；下文模型包含未来能力，不等于当前运行时全部支持。
 
 ## 2. 能力目标
 
@@ -224,9 +226,9 @@ Material 负责 ShaderProgram、Textures、Parameter block、Blend/Render state�
 
 `ShaderProgram` 第一版对象模型即表示 Vertex / Pixel / Compute。**v1 Runtime 优先执行 Vertex + Pixel，Compute 先进入对象模型，等 dispatch/UAV/资源配额和隔离规则完成后再开放执行。**
 
-### 9.1 Custom HLSL 第一阶段开放
+### 9.1 Custom HLSL 引擎能力与 AI 开放门
 
-MiaoDesk 不把作者限制在官方 Blur / Glow / Ripple 列表。用户或 AI 可以直接提供 HLSL Shader Asset。
+MiaoDesk 的引擎表达力不局限于官方效果列表。下图是可编程创作目标链；手工作品遵守现有 Shader 契约，AI 提交 HLSL 须先通过 ADV-04，不从本文模型直接推导当前 Creator 已接受。
 
 ```text
 Natural Language / User Code
@@ -418,7 +420,8 @@ C++ Runtime Object Model → Serialization Contract → scene/material/shader me
 AI 在 Renderer 外面：
 
 ```text
-User → AI Creator → Scene Patch / HLSL / Particle / Animation / Parameters
+User → AI Creator → Scene Patch / Particle / Animation / Parameters
+                      → HLSL（ADV-04 放行后）
                     ↓
                  Validate
                     ↓
@@ -433,7 +436,7 @@ AI 不参与每帧渲染；生成后的 Scene 必须能够离线持续运行。
 
 ## 21. 实施切片
 
-### Slice A — Object Model + Shader Contract（立即开始）
+### Slice A — Object Model + Shader Contract（原始建设分解）
 
 建立平台无关 C++ 基础：Scene、Node、Component、Property、Asset、ShaderDefinition、stable-id validation、Miao Shader Contract v1，并进入 `MiaoDeskCore` 编译。
 
@@ -465,7 +468,7 @@ AI 不参与每帧渲染；生成后的 Scene 必须能够离线持续运行。
 
 第一阶段不先建设大型 Visual Scene Editor、Shader Graph Editor、Particle Editor、完整 Timeline Editor、完整 3D Editor；**这不等于限制 Runtime**。
 
-第一阶段明确允许：用户直接写 HLSL、AI 生成/修改 HLSL、AI 生成/修改 Scene、Particle、Animation 配置、开发者直接编辑 Package source。
+作者可按现有引擎契约提供 HLSL、编辑 Package source；当前 AI 创作限于实际支持的声明式 Scene、Particle、Animation 和参数。AI 生成/修改 HLSL 的专业目标由 ADV-04 实施并放行，不能沿用早期“第一阶段全部允许”的表述绕过当前 Creator 限制。
 
 Creator UI 后续只是底层能力的一种可视化入口。
 
@@ -480,6 +483,6 @@ Creator UI 后续只是底层能力的一种可视化入口。
 5. GPU/Shader 失败不会破坏桌面核心；
 6. Wallpaper Host 与 Widget Host 能调用同一个 Scene Engine；
 7. 官方内容开始 dogfood；
-8. AI 能通过自然语言生成/修改 Scene 与 HLSL，而不进入每帧 Runtime。
+8. AI 能通过自然语言生成/修改已开放的内容，且不进入每帧 Runtime；HLSL authoring 单独满足 ADV-04。
 
 长期目标不是复刻现有壁纸编辑器，而是建立 **AI-native programmable desktop platform**：底层保持接近游戏引擎的表达自由度，上层让用户主要通过想象和自然语言完成创作。

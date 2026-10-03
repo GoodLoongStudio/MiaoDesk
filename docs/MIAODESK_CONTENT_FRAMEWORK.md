@@ -1,10 +1,16 @@
 # MiaoDesk Content Framework（妙喵内容框架）
 
-- 状态：下一阶段开发契约
+- 状态：内容框架技术契约；阶段性“下一步”描述保留为建设背景，当前排期见开发路线
 - 日期：2026-09-05
 - 适用分支：`main`
 - 上位基线：`DESIGN_BASELINE.md`、`DEVELOPMENT_ROADMAP.md`
 - 目标：把 Wallpaper 与 Widget 从“硬编码内容”升级为“标准底层框架 + 可配置内容”，让官方、用户、AI 与未来 Creator 使用同一套内容模型和运行时。
+
+## 专业版扩展（2026-10-03）
+
+框架服务于 Wallpaper Engine 级壁纸、macOS 级组件与专业 AI Creator，详见 [总体规划](PROFESSIONAL_DESKTOP_PLAN.md)。CAP 任务建立能力目录、包演进、预览与 Provider/Action 契约；WPRO 扩展布局/控件/更新计划；WALL/ADV 扩展表现力。正式字段与 API 在对应任务实施时冻结，本文的长期能力不能当作当前可用功能。
+
+每个能力需让官方、用户、AI 使用相同公开包表达，附实际版本/后端/预览/创作支持、样例、资源预算和验证证据。旧“第一阶段不做”约束 MVP，不排除专业版后续阶段。
 
 ## 1. 命名
 

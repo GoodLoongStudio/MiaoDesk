@@ -2,7 +2,8 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 基线 SHA：`0b0e986cfed979057f8d16e26233b798391a50f0`
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；上一代码提交 `0b0e986c` 的完整 CI 已核对
+- 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
 - 用户可感知功能变化：`FEATURE_CHANGELOG.md`
@@ -17,7 +18,9 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 2. 动态桌面：Wallpaper、Widgets、Content Framework 与 AI 创作内容；
 3. 妙喵 AI / DeepSeek Harness：持续助手与专业工作台。
 
-当前开发策略从“继续加功能”切换为：
+新增必达目标：**Wallpaper Engine 级壁纸、macOS 级组件、专业 AI 创作**。底层能力与 AI 知识/样例/评测同步交付。完整目标与 S0～S7 出口见总体规划；本面板是唯一执行队列。
+
+S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能力依赖推进，不把新能力永久限制在 10%：
 
 ```text
 40% 稳定性 / 防回退
@@ -36,7 +39,8 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 - “代码存在”不等于完成；完成必须满足该任务的验收条件。
 - 需要真实 Windows、多显示器、DPI、休眠/Explorer 等物理环境的任务，不允许用 CI 代签。
 - 修复真实回退时，必须补能覆盖**用户真实路径**的回归门；只测内部函数不算关闭回退。
-- 用户可感知变化必须同一次提交更新 `FEATURE_CHANGELOG.md`。
+- 用户可感知行为变化同一次提交更新 `FEATURE_CHANGELOG.md`；规划/范围/门槛变化写根 `CHANGELOG.md`，同步愿景、基线、路线和任务规格。
+- 新能力必须同时有 AI 能力卡/样例/真实预览与质量证据；不以底层代码存在判定 Creator 已会使用。
 - 每轮推进结束都更新本面板：状态、证据、阻塞原因、下一候选任务。
 - 自动推进遇到需要产品决策、破坏性迁移、凭据、签名、商店提交或人工视觉判断时停止该项，记录阻塞并领取下一项安全任务。
 - 不自动删除用户数据、不自动改变发布渠道、不自动提升版本号或标记 RC。
@@ -48,8 +52,10 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 - 🟠 Needs device：代码/CI 已具备，但必须真机签收
 - ⛔ Blocked：有明确外部依赖或产品决策
 - ⬜ Ready：可直接领取
+- ⏳ Planned：已规划，依赖/阶段门尚未满足；满足后改 Ready
+- 🔎 Verify：实现已有，需核实集成/自动证据，之后按结果转 Needs device 或 Done
 
-## 3. 当前能力快照
+## 3. 旧基础范围能力快照（不可作为专业版完成率）
 
 | 领域 | 当前判断 | 说明 |
 | --- | --- | --- |
@@ -65,7 +71,7 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 | 真机稳定性与长期运行 | 约 55% | 当前最大短板 |
 | 性能基线 | 约 45% | 工具已有，固定参考机数据不足 |
 
-这些百分比是项目管理估计，不是自动测试结果；任务完成仍以本面板的逐项验收为准。
+这些百分比是目标扩展前的管理估计，不是测试结果。专业版不沿用这些分母：按 S0～S7 出口和第 14 节能力任务计量，PRO-01 建立基线后逐项补证据。
 
 ## 4. P0 — 核心稳定性与防回退
 
@@ -135,11 +141,11 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 
 | ID | 状态 | 任务 | 自动推进 | 完成标准 |
 | --- | --- | --- | --- | --- |
-| DESK-01 | ⬜ | 官方 Wallpaper Content Framework dogfood 闭环 | 是+真机 | 至少一份官方 Wallpaper 不走 legacy_entry，完整通过新 Scene Runtime |
+| DESK-01 | 🔎 | 官方 Wallpaper Content Framework dogfood 闭环 | 是+真机 | 三官方包已用 scene.json；补正式运行、视觉、性能与多屏证据 |
 | DESK-02 | ⬜ | 三官方 Widget 数据刷新策略验证 | 是+真机 | Clock/Weather/Tasks 不做无意义内容重绘 |
-| DESK-03 | ⬜ | Scene Pointer Input 主机接线 | 是+真机 | pointer position/inside 与 click-through 契约一致 |
-| DESK-04 | ⬜ | Scene Audio Input / WASAPI 主机接线 | 是+真机 | 音频帧进入 Input Bus，暂停/设备切换可恢复 |
-| DESK-05 | ⬜ | Web Wallpaper 音频桥真实推帧 | 是+真机 | 已有 JS API 真正收到宿主频谱数据 |
+| DESK-03 | 🔎 | Scene Pointer Input 已有接线的归属/运行验收 | 是+真机 | pointer position/inside 与 click-through 契约一致 |
+| DESK-04 | 🔎 | Scene Audio / WASAPI 已有接线的生命周期验收 | 是+真机 | 音频帧进入 Input Bus，暂停/设备切换可恢复 |
+| DESK-05 | 🔎 | Web Wallpaper 已有推帧的页面/资源验收 | 是+真机 | 已有 JS API 真正收到宿主频谱数据 |
 | DESK-06 | ⬜ | Scene 故障隔离与 fallback | 是 | 坏包/坏资源/渲染失败不拖垮桌面其它内容 |
 
 ## 10. P1 — 性能与长期运行
@@ -164,15 +170,15 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 | REL-04 | ⬜ | RC 自动证据汇总 | 是 | 同 SHA CI + artifact + 真机签收汇总成单一报告 |
 | REL-05 | 🟠 | Microsoft Store 最终签收 | 否 | 包、隐私说明、图标、版本、安装行为一致 |
 
-## 12. P2 — 下一阶段差异化
+## 12. 专业版范围迁移与独立扩展
 
-这些任务不应抢占 P0/P1 稳定性：
+下列旧条目保留映射，专业版执行状态以第 14 节为准，避免重复计数：
 
 | ID | 状态 | 任务 | 完成标准 |
 | --- | --- | --- | --- |
-| FUT-01 | ⬜ | Whole Desktop Profile | Wallpaper + Widgets + Layout + Monitor Assignment 一次预览/应用 |
-| FUT-02 | ⬜ | AI 一句话生成完整桌面 | Creator 可生成 Desktop Profile，并继续对话修改 |
-| FUT-03 | ⬜ | 更深 Scene GPU 能力 | 按 `MIAO_SCENE_ENGINE_ROADMAP.md` 继续推进，不复活旧大型 Editor |
+| FUT-01 | → PRO-04 | Whole Desktop Profile | Wallpaper + Widgets + Layout + Monitor Assignment 一次预览/应用 |
+| FUT-02 | → PRO-04 | AI 一句话生成完整桌面 | Creator 可生成 Desktop Profile，并继续对话修改 |
+| FUT-03 | → WALL / ADV | 更深 Scene GPU 能力 | 按 `MIAO_SCENE_ENGINE_ROADMAP.md` 继续推进，不复活旧大型 Editor |
 | FUT-04 | ⬜ | 本地 AI 模型路由 | 独立扩展，不阻塞主产品稳定性与 RC |
 
 ## 13. 自动持续推进协议
@@ -214,7 +220,7 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 
 ### 自动任务优先级
 
-当前第一批自动候选：
+当前先领取 PRO-01 做新范围与已有实现的证据核对；随后按依赖准备 PRO-02/03，并继续以下最高优先级稳定性候选。CAP-01/02 可在真机等待期间推进：
 
 1. `P0-03` Wallpaper 状态循环的自动回归部分；
 2. `P0-04` Widget 生命周期循环的自动回归部分；
@@ -225,3 +231,57 @@ MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每�
 7. `CREATE-04` 上一可用结果保留。
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
+
+## 14. 专业版建设队列（S0～S7）
+
+详细交付与验收见 [TODO 第 11 节](TODO.md#11-专业级桌面建设任务2026-10-03)，阶段出口见 [总体规划](PROFESSIONAL_DESKTOP_PLAN.md)。下表是这些任务的唯一状态表；其依赖有变化时同步 TODO。
+
+首轮仅 PRO-01 可立即领取。其余按依赖解锁；S2 的纯契约/知识工作可在 S1 真机等待期间推进，S3/S4 的高风险运行时扩展须守住 S1 稳定门。
+
+**状态图例补充**：状态只在本表维护；每轮结束写证据 SHA、本机跑了哪些门、剩余阻塞。⬜ 未开始的本机不可验项标注真机缺口，不得提前标 Done。
+
+| ID | 阶段 | 状态 | 任务 | 依赖 |
+| --- | --- | --- | --- | --- |
+| PRO-01 | S0 | 🟡 | 现状、能力与证据台账 | 无 |
+| PRO-02 | S0 | ⏳ | 对标作品与评测集冻结 | PRO-01 |
+| PRO-03 | S0 | ⏳ | 参考环境、预算与度量协议 | PRO-01、PRO-02 |
+| CAP-01 | S2 | ⏳ | 运行时能力目录与查询 | PRO-01 |
+| CAP-02 | S2 | ⏳ | 能力卡、配方与参考知识库 | CAP-01、PRO-02 |
+| CAP-03 | S2 | ⏳ | 内容包演进与可复用资产 | CAP-01、P0-09 |
+| CAP-04 | S2 | ⏳ | 统一预览、桌面与渲染证据 | CAP-01、CAP-03、DESK-01 |
+| CAP-05 | S2 | ⏳ | 组件数据与动作公共契约 | CAP-01 |
+| WALL-01 | S3 | ⏳ | 专业构图与基础绘制原语 | CAP-03、CAP-04；运行时扩展遵守 S1 稳定门 |
+| WALL-02 | S3 | ⏳ | 深度视差与局部动态 | WALL-01 |
+| WALL-03 | S3 | ⏳ | 动画、状态与有界行为 | WALL-01、CAP-01 |
+| WALL-04 | S3 | ⏳ | 粒子、多 Pass 与专业特效库 | WALL-01 |
+| WALL-05 | S3 | ⏳ | 音频、指针与媒体响应质量 | DESK-03、DESK-04、DESK-05、WALL-03 |
+| WALL-06 | S3 | ⏳ | 播放、多屏与电源策略 | P0-03～08、CAP-04、PRO-03 |
+| WALL-07 | S3 | ⏳ | 2D 壁纸参考集与 WE 对照 | WALL-01～06、CAP-02、PRO-02/03 |
+| WPRO-01 | S4 | ⏳ | 组件尺寸族与自适应布局 | CAP-03、CAP-05、P0-04；遵守 S1 稳定门 |
+| WPRO-02 | S4 | ⏳ | Native 组件视觉与控件原语 | WPRO-01 |
+| WPRO-03 | S4 | ⏳ | 动作、命中与拖动交互 | WPRO-01、CAP-05 |
+| WPRO-04 | S4 | ⏳ | 真实 Provider 与数据状态 | CAP-05 |
+| WPRO-05 | S4 | ⏳ | 组件更新调度与能耗 | WPRO-04、PRO-03 |
+| WPRO-06 | S4 | ⏳ | 组件键盘、读屏与系统适配 | WPRO-02、WPRO-03 |
+| WPRO-07 | S4 | ⏳ | 8 类官方组件与 macOS 对照 | WPRO-01～06、CAP-02 |
+| AIP-01 | S5 | ⏳ | 需求设计与能力规划 | CAP-01、CAP-02；复用 CREATE-01/CCA |
+| AIP-02 | S5 | ⏳ | 专业素材准备与复用 | AIP-01、CAP-03 |
+| AIP-03 | S5 | ⏳ | 真实运行观察与多模态证据 | AIP-02、CAP-04；复用 CCA-08/09 |
+| AIP-04 | S5 | ⏳ | 专业评审与有界修复 | AIP-03 |
+| AIP-05 | S5 | ⏳ | 连续创作、版本与应用恢复 | AIP-04；复用 CREATE-04/06/07/08、CCA-10/11 |
+| AIP-06 | S5 | ⏳ | 专业质量、组合与成本放行 | PRO-02/03、AIP-05、WALL-07、WPRO-07 |
+| AIP-07 | S5 | ⏳ | AI 知识与能力发布兼容 | AIP-06、CAP-03 |
+| ADV-01 | S6 | ⏳ | 真实 3D 资源与相机 | WALL-01、WALL-04、CAP-03；S3/S4 稳定后集成 |
+| ADV-02 | S6 | ⏳ | 专业材质、灯光与环境 | ADV-01 |
+| ADV-03 | S6 | ⏳ | 骨骼、形变与受限物理 | ADV-02、WALL-03 |
+| ADV-04 | S6 | ⏳ | 可编程视觉与故障隔离 | WALL-04、CAP-04、AIP-03 |
+| PRO-04 | S7 | ⏳ | 完整桌面组合与一体创作 | S3、S4、S5；高级组合依赖 S6 |
+| PRO-05 | S7 | ⏳ | 专业版兼容、长稳与发布证据 | PRO-04、S6、原 REL 门 |
+| PRO-06 | S7 | ⏳ | 作者资料、交接与专业目标签收 | PRO-05 |
+
+## 15. 本轮规划变更记录（2026-10-03）
+
+- 建立专业版 36 项任务；新增部分均为待执行，未把规划标为功能完成。
+- DESK-01/03/04/05 改为核验已有实现；P0 与真机门保持有效。
+- 旧百分比保留为基础范围快照，专业目标重新建立分母。
+- 本轮仅改文档；详细变更见根 CHANGELOG 的 2026-10-03 规划条目。下一项为 PRO-01。

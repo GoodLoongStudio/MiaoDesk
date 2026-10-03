@@ -1,6 +1,6 @@
 # MiaoDesk 文档索引
 
-当前分三层：产品愿景、一套设计真相、一套开发路线。旧 Wallpaper/Scene/Widget Editor、M3 阶段文档、Wallpaper Engine parity 路线和早期 Lively 对照研究均已退出当前基线。
+当前为产品愿景 → 设计基线 → 开发路线 → 专业版详细规划/技术契约。执行状态只在持续开发面板维护，TODO 保存规格与证据。旧大型 Editor 实现路线退出；2026-10-03 确认的 Wallpaper Engine 级表现力、macOS 级组件与专业 AI 创作正式进入基线。
 
 ## 产品愿景
 
@@ -13,9 +13,17 @@
 - [TODO.md](TODO.md) — 详细验收、问题分析与历史证据库。保留大量真机条件、诊断过程与专项验收，但不再承担“下一项做什么”的排序职责。
 - [历史清单快照](history/TODO_SNAPSHOT_2026-09-27.md) — 完整保留旧 P0/P1/P2/P3/B 编号与历史过程，不作为当前排期或发布结论。
 
+## 专业版总体规划
+
+- [PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md) — 三条专业目标、当前事实校正、壁纸/组件能力、AI 知识和制作闭环、S0～S7 阶段、参考作品/保留集/质量/性能门、实施节奏与交接。
+- [TODO.md](TODO.md) 第 11 节 — 36 项 PRO/CAP/WALL/WPRO/AIP/ADV 任务的依赖、实施、交付、验收、环境与证据栏；状态只在面板。
+- [../CHANGELOG.md](../CHANGELOG.md) — 规划/范围/验收口径变更记录；实际产品行为继续写 FEATURE_CHANGELOG，避免把计划当发布。
+- [CAPABILITY_EVIDENCE_LEDGER.md](CAPABILITY_EVIDENCE_LEDGER.md) — PRO-01 能力与证据台账：每项能力分开登记"可声明 / 可运行 / 可预览 / AI 可教学 / 真机已验"五种状态、代码入口与缺口。台账是 CAP-01 生成目录之前的人工核对结论。
+
 ## 能力基准
 
-- `WALLPAPER_ENGINE_BENCHMARK.md` — 对标 Wallpaper Engine 的能力差距分析。官方三类创作类型(Scene 2D/3D、Web、Video)与 MiaoDesk 现有能力的逐项对照,含代码证据;给出正确的"载体 × 运行时"分类、差异化定位(组件层 / AI 创作 / 本地 AI),以及 9 条差距 + 5 条明确不做项。历史清单中 `B-x` 编号项的来源；能力差距不会自动成为当前优化任务。
+- [WALLPAPER_ENGINE_BENCHMARK.md](WALLPAPER_ENGINE_BENCHMARK.md) — 官方来源、当前能力与缺口、对照方法、G1～G9 旧编号迁移；修正已有接线/推帧/Skill 的过期结论。
+- [MACOS_WIDGET_BENCHMARK.md](MACOS_WIDGET_BENCHMARK.md) — Apple 官方依据、Windows 适配、布局/数据/动作/节能/无障碍能力矩阵、固定用户任务与 WPRO 映射。
 
 ## 唯一基线
 
@@ -37,7 +45,7 @@
 
 - `MIAODESK_CONTENT_FRAMEWORK.md` — 下一阶段“配置化 / 参数化”内容框架：统一 Wallpaper / Widget 的 Package、Parameter、Scene Runtime、Capability 与 Authoring 边界
 - `MIAO_SCENE_ENGINE.md` — `Miao Scene Engine` 场景/GPU 子系统契约：Scene/Node/Component/Property/Asset、Custom HLSL、Material、Particle、Animation、Input Bus、Render Graph 与 Wallpaper/Widget Runtime Profile；其 Scene/GPU 细节优先于 Content Framework 中较早的简化描述
-- `MIAO_SCENE_ENGINE_ROADMAP.md` — Phase 3 Scene/GPU Runtime 执行路线：M0 合同冻结 → M1 Offscreen/Multi-Pass → Post Process → Animation → Particle → Input/Audio → Hot Reload/Preview → Sandbox → Widget 复用 → Dogfood/性能 → AI/Creator
+- `MIAO_SCENE_ENGINE_ROADMAP.md` — Scene/GPU 子系统历史建设分解，当前产品排期见 S0～S7；包括：M0 合同冻结 → M1 Offscreen/Multi-Pass → Post Process → Animation → Particle → Input/Audio → Hot Reload/Preview → Sandbox → Widget 复用 → Dogfood/性能 → AI/Creator
 - `MIAO_CONTENT_PACKAGE_V1.md` — 外部内容包与序列化入口契约：`.mdwall/.mdwidget`、manifest、Package Root 路径沙箱、Scene/Parameter/Asset ingress、Slice B 施工顺序与首个外部内容里程碑
 - `NATIVE_SOURCE_LAYOUT.md` — 当前源码目录与 ownership
 - `DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain/service 边界
@@ -63,7 +71,7 @@
 
 - `LOCAL_AI_ARCHITECTURE.md` — 在 DGX Spark 上用开源模型驱动全部 AI 功能的架构：硬件约束、推理服务器与模型选型、按任务切换模型（模型路由）、安全边界、性能预算。早期硬编码问题已有产品侧修复；真实本地服务部署、模型适配与实测状态需按当前代码和部署记录核对，不能沿用历史发现作为现有缺陷
 - `LOCAL_AI_DEPLOYMENT.md` — 部署手册：vLLM 容器、模型拉取与校验、访问控制、客户端 profile、上线前验收清单、故障排查
-- `../skills/` — AI 内容创作 skill 集（生成壁纸与组件内容包，含正反提示词与安全/性能门禁）。skill 产出的包目录可直接交 `wallpaper_validate_package` 校验
+- `../skills/` — AI 内容创作 skill 集（生成壁纸与组件内容包，含正反提示词与安全/性能门禁）。Scene 壁纸/组件候选必须走当前正式 Content 校验链，不能把旧 Web 壁纸的 `wallpaper_validate_package` 当通用校验器
 
 ## 发布入口
 

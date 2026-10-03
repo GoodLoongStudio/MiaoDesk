@@ -21,6 +21,12 @@
 
 ---
 
+## 专业版规划入口 — 2026-10-03（非功能发布）
+
+项目目标扩展为 Wallpaper Engine 级壁纸、macOS 级组件与专业 AI 创作，详见 [总体规划](PROFESSIONAL_DESKTOP_PLAN.md)。本次变更是文档规划，完整记录在 [根 CHANGELOG](../CHANGELOG.md)；以下 Available 状态仍只描述已有基础功能，不能推导专业目标已达成。
+
+后续用户可感知能力实际交付时，在本文件记任务 ID、实现提交、用户变化与验证级别，并更新持续开发面板。
+
 ## 当前功能基线 — 2026-10-03
 
 基线 SHA：`0b0e986cfed979057f8d16e26233b798391a50f0`
@@ -75,7 +81,8 @@
 - **Available** — Package validator / loader。
 - **Available** — Native Scene Runtime MVP 与数据绑定。
 - **Available** — Preview / reload / apply 基础链。
-- **Incomplete** — 官方 Wallpaper 完整 dogfood、Input/Audio host 接线、进一步 Scene Runtime 能力。
+- **Needs verification** — 官方 Wallpaper 已迁移 scene.json，Input/Audio host 接线与 Web 音频推帧已有；正式运行、恢复、性能和真机质量仍待验证。
+- **Planned** — 专业版能力目录、深层 Scene 表现力、组件平台和 AI 质量门，见总体规划。
 
 ### Harness
 

@@ -1,13 +1,21 @@
 # Miao Scene Engine 开发路线
 
-- 状态：Phase 3 GPU Runtime 执行计划
+- 状态：Scene/GPU 子系统建设分解；当前产品排期以 S0～S7 和持续开发面板为准
 - 日期：2026-09-07
 - 适用分支：`main`
 - 上位基线：`DESIGN_BASELINE.md`、`DEVELOPMENT_ROADMAP.md`、`MIAODESK_CONTENT_FRAMEWORK.md`、`MIAO_SCENE_ENGINE.md`
 
 本文把 MiaoDesk Content Framework 中已经进入代码的 Scene / GPU Runtime 继续拆成可执行里程碑。目标不是复制旧 Wallpaper Editor，而是建立一套可被 Wallpaper 与 Widget 共用、可参数化、可打包、可预览、可恢复的 Miao Scene Engine。
 
-## 1. 当前起点
+## 2026-10-03 目标与状态校正
+
+专业版能力见 [总体规划](PROFESSIONAL_DESKTOP_PLAN.md)：WALL 建设 2D/2.5D，ADV 建设 3D/材质/灯光/形变/受限物理与程序化视觉。AI 随每项能力交付可用知识、真实预览和评测。
+
+下文“当前起点”“立即执行”等原始时序只描述 2026-09-07 建立本分解时的状态。如今已有多 Pass、动画、粒子、指针/WASAPI、Web 推帧等实现；PRO-01 重核集成与证据，不能按旧段落重新建设。M0～M10 用作技术依赖参考，不是第二任务队列。
+
+当前 Creator 不因引擎存在 HLSL 模型而自动获得 Shader/Script 创作能力；ADV-04 同步处理 authoring、隔离与契约。已有手工作品运行能力和未来 AI 开放范围分别验收。
+
+## 1. 历史起点（2026-09-07）
 
 截至本路线建立时，主干已经具备：
 
@@ -37,7 +45,7 @@ Miao Content Package (.mdwall)
 - GPU device removed/reset 错误检测；
 - programmable `.mdwall` 根据内容能力自动进入 D3D11 路径。
 
-当前最大缺口是：Render Graph 已经有“多 Pass”的模型，但 Renderer 仍主要把 Scene 直接画到 Backbuffer。下一步必须先把中间 RenderTarget 做成真实资源，再继续 Post Process、Particle、Animation 等功能。
+当时最大缺口是中间 RenderTarget 与真实多 Pass。此段保留依赖背景，当前实现需按 PRO-01 核实，不作为尚未实现的结论。
 
 ## 2. 总体顺序
 
@@ -107,7 +115,7 @@ Wallpaper stop 幂等
 
 ## 4. M1 — Offscreen RenderTarget + 真 Multi-Pass
 
-这是当前立即执行的里程碑。
+这是原始架构的前置里程碑，当前完成证据按 PRO-01 核实。
 
 ### 目标
 
@@ -320,7 +328,7 @@ package files changed
 
 ## 10. M7 — Renderer Process Sandbox
 
-这是对已经开放的 Custom HLSL/未来 Script 的隔离升级，不是开放 Custom HLSL 的前置条件。
+这是对已有手工 Custom HLSL 运行路径与未来行为扩展的隔离升级；专业 AI Shader authoring 依 ADV-04 的隔离/资源验证放行，不由旧手工入口自动继承。
 
 目标：
 
@@ -402,7 +410,7 @@ reload latency
 
 ## 13. M10 — AI / Creator
 
-Runtime 稳定后再把大规模产品化创作体验接上；但 AI/用户生成 Custom HLSL 的能力本身已经属于 Scene Engine 第一阶段合同。
+Runtime 与大规模创作体验按 S2～S6 同步推进；手工 Custom HLSL 运行能力沿用引擎契约，AI Shader authoring 则按 ADV-04 完成完整放行门，不视为当前 Creator 已开放。
 
 AI 可以生成/修改：
 

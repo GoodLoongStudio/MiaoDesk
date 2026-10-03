@@ -1,7 +1,7 @@
 # MiaoDesk 设计基线
 
 - 状态：当前唯一设计基线
-- 日期：2026-09-05
+- 日期：2026-09-05；专业版修订：2026-10-03
 - 适用分支：`main`
 - 目标：先把 Windows 桌面核心做稳定、做轻、做快，再在稳定 Host 之上扩展可配置、可参数化的内容能力
 
@@ -31,6 +31,14 @@ MiaoDesk Content Framework
 目标不是恢复旧式大型 Editor，而是把 Wallpaper / Widget 的内容从宿主代码中抽离为统一的 Package、Definition、Instance、Parameter、Scene Runtime 与 Capability 模型，让官方内容与用户内容使用同一套底层框架。
 
 详细契约：`docs/MIAODESK_CONTENT_FRAMEWORK.md`。
+
+### 1.1 专业版能力目标
+
+按项目所有者 2026-10-03 要求，Wallpaper Engine 级动态壁纸、macOS 级组件能力和专业 AI 创作是正式目标。细化见 [PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)，阶段顺序仍由开发路线确定。
+
+3D/灯光/形变/受限程序化表达进入后续必达阶段；旧“大型编辑器不做”仅约束编辑器形态，不能排除其背后的内容能力。组件需扩展布局、Native 控件、数据 Provider、受控 Action、更新计划和无障碍。AI 必须基于当前运行时能力目录、真实样例和渲染/交互证据创作。
+
+新增能力的交付包含运行时、内容契约、预览、AI 知识/工具、参考作品、自动与真机证据。文档中的长期模型、当前运行支持和 AI 可创作范围必须分别说明。
 
 ## 2. 最高设计原则：Native C++ 与性能优先
 
@@ -101,7 +109,7 @@ Scene
 
 - Image：WIC + Native rendering；
 - Video：Media Foundation；
-- Scene：Native Direct2D / Content Scene Runtime；只有明确性能收益时才引入更重 GPU 路径；
+- Scene：Native Direct2D / D3D11 Content Scene Runtime；按效果能力与已测资源预算选择后端，专业特效不能因 D2D 子集而静默丢失；
 - Web：独立 WebView2 Host，按需启动。
 
 当前用户侧核心操作：
@@ -229,7 +237,7 @@ Widget Surface（可交互）
 
 Widget Surface 直接接收鼠标输入：
 
-- 按住 Widget 表面拖动即移动组件，结束后持久化归一化位置；
+- 在 Widget 可拖动区域拖动后持久化归一化位置；新增按钮/开关等控件优先处理自身操作，命中与拖动必须区分；
 - 允许 resize 的 ContentDefinition 以后可增加直接 resize，但必须受 geometry policy 约束；
 - 不引入临时移动模式、Move Overlay 或其他额外交互 Surface；
 - Widget 不进入 click-through 状态；click-through 只属于 Wallpaper Surface。
@@ -252,7 +260,9 @@ Widget Host
 
 第一阶段默认 Runtime 是 Native Scene Runtime，不恢复 Web Widget 作为默认路径。
 
-官方 GlassClock 将作为第一份 Widget dogfood，验证官方内容与用户内容共享同一框架。
+官方 GlassClock、TodayTasks、WeatherGlass 已有内容包；继续完成真实使用验收，并在 S4 扩展为 8 类参考套件。
+
+专业组件需支持尺寸族、自适应布局、可组合 Native 原语、异步 Provider、受控动作、计划/事件刷新和无障碍。其参数/geometry 仍由 Definition 约束；数据与动作经宿主能力代理，不能由内容直接访问系统。
 
 ## 6. Settings Center
 
@@ -338,7 +348,7 @@ GlassClock dogfood
 
 - 旧 Wallpaper / Scene / Widget Editor 架构；
 - 旧 Timeline / Keyframe / Inspector-first 编辑器；
-- 以 Wallpaper Engine 全功能 parity 为开发清单；
+- 逐项复制 Wallpaper Engine 的旧大型编辑器和生态；专业动态能力对标按新路线正式推进；
 - Legacy Web Widget（WebView2 承载的默认常驻组件）；
 - 旧 AI 生成/应用组件的 A2UI 预览链；
 - 编辑器和 AI 共用旧 typed property schema 的方案；
@@ -376,5 +386,7 @@ Parameter schema 可以驱动设置 UI / Preview
 Package / capability / schema validation 生效
 新内容不破坏现有 Shell / z-order / multi-monitor / low-resource 基线
 ```
+
+专业版还必须通过总体规划的能力矩阵、壁纸与组件参考集、AI 保留评测、持续修改、资源预算与 S7 签收。稳定基础版完成不代表专业版目标完成。
 
 当前所有正式交付只进入 `main`。

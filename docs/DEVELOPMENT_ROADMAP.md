@@ -1,15 +1,15 @@
 # MiaoDesk 开发基线与路线
 
 - 状态：当前唯一开发路线
-- 建立：2026-09-05；当前执行状态校正：2026-09-27
+- 建立：2026-09-05；当前目标与执行状态校正：2026-10-03
 - 设计基线：`docs/DESIGN_BASELINE.md`
 - 正式开发分支：`main`
 
-本文只描述“当前已经实现什么、哪里与设计有偏差、下一步按什么顺序修”。历史 M3、Wallpaper Engine parity、Editor 路线均不再作为开发依据。
+本文描述当前能力、偏差和阶段顺序。旧 M3 与大型 Editor 实现路线不复活；Wallpaper Engine 级表现力、macOS 级组件和专业 AI 创作按 2026-10-03 新目标正式进入路线。
 
-## 当前执行位置（2026-09-27）
+## 当前执行位置（2026-10-03）
 
-当前“下一项做什么、优先级和自动推进资格”统一看 [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md)。[TODO.md](TODO.md) 保留详细验收、诊断和历史证据，不再承担执行排序。下文 Phase 0～6 保留架构建设顺序；已有代码不要求从 Phase 0 重做，阶段完成仍以第 6 节的验收定义为准。
+当前“下一项做什么、优先级和自动推进资格”统一看 [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md)。[TODO.md](TODO.md) 保留详细验收、诊断和历史证据，不再承担执行排序。下文 Phase 0～6 保留原有架构建设分解；当前交付顺序采用本节 S0～S7，已有实现不重做。详细能力/验收见 [PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)，任务规格见 TODO 第 11 节。
 
 - 三款官方 Widget 内容包及三款官方 Wallpaper 的 `scene.json` 正式入口已存在，当前需完成真实桌面使用与视觉验证。
 - 内置 Widget 的尺寸修改保护已实现；壁纸停用/reload 已有回归检查，仍需候选版本和真实 Windows 状态验证。
@@ -17,6 +17,23 @@
 - 性能采集与回归比较工具已具备，缺参考机的可比较数字。ARM64 构建/打包流程已建立，当前 SHA 是否通过仍须单独核实。
 - 当前优化执行顺序：准备证据 → 桌面稳定/布局/性能 → 搜索/视觉/组件/管理 → AI/配置/Harness → 发布收口。发布只受当前发布范围内的阻塞项和既有 RC 证据规则约束。
 - **本地 AI 属于独立扩展架构**。DGX、推理服务、模型选型和路由部署不成为主产品优化或 RC 的前置条件；通用 Provider 兼容与用户配置仍属于主产品。
+
+### 专业版阶段顺序
+
+| 阶段 | 目标 | 出口与任务 |
+| --- | --- | --- |
+| S0 | 基线、对标样本、设备与度量 | PRO-01～03；范围与证据冻结 |
+| S1 | 可靠基础版 | 原 P0/UX/SEARCH/AI/CREATE/PERF/HAR/REL；真机与同 SHA 发布证据 |
+| S2 | 可创作平台 | CAP-01～05；能力目录、知识、包兼容、预览、数据/动作契约 |
+| S3 | 专业 2D/2.5D 壁纸 | WALL-01～07；12 场景及 WE 同条件对照 |
+| S4 | 专业组件 | WPRO-01～07；8 类组件、尺寸/数据/交互/节能/无障碍 |
+| S5 | 专业 AI 制作 | AIP-01～07；能力规划、素材、真实观察、修复/续改与保留集 |
+| S6 | 高级动态表现力 | ADV-01～04；3D、材质/灯光、形变/物理、程序化视觉与隔离 |
+| S7 | 专业版交付 | PRO-04～06；整桌创作、长稳/迁移/证据、作者资料与签收 |
+
+S2 可在等待 S1 真机期间推进契约/知识工作；S3/S4 高风险运行时扩展需守住 S1 稳定门。S3/S4 可以交替实施，AI 随能力交付；S5 最终放行依赖两者参考集。S6 完成后重跑相关 AI 与兼容评测，再进入 S7。S1 可单独发布基础版，不能据此宣布专业目标完成。
+
+本次核对已确认官方壁纸入口、Scene 指针/音频接线和 Web 音频推帧存在；对应 DESK 项应补真实验证而非从零实现。原能力百分比只适用于旧范围。
 
 旧任务编号与当时的结论保留在 [历史快照](history/TODO_SNAPSHOT_2026-09-27.md)，不替代当前验收。
 
@@ -165,7 +182,7 @@ ContentInstance
 
 任何后续修改都不得让 caller 绕过 Definition / Preset 直接写尺寸。
 
-## 4. 立即开发顺序
+## 4. 既有架构分解（Phase 0～6；当前排期见 S0～S7）
 
 ### Phase 0 — 清理基线
 
@@ -279,7 +296,7 @@ ARM64 构建/打包流程已建立。继续随 x64 维护同等布局、schema �
 - 建立与 x64 等价的 ARM64 build/package smoke；
 - Content Runtime package/schema 保持跨 x64 / ARM64 一致，Native runtime 实现按架构构建。
 
-## 5. 当前不做
+## 5. 编辑器与生态边界
 
 旧式、重型、与底层数据模型耦合的 Editor 路线仍不恢复：
 
@@ -292,10 +309,10 @@ Inspector-first typed-property editor
 Shader Editor
 Particle Editor
 Node Graph
-完整 Wallpaper Engine feature parity
+逐项复制 Wallpaper Engine 编辑器 UI / 专有格式 / 社区生态
 ```
 
-但是“用户创建 Wallpaper / Widget”已经重新进入路线，方式是先建设 `MiaoDesk Content Framework`，再在稳定 Runtime 之上增加 Parameter tooling 和 Visual Creator。
+专业版同时建设 WE 级效果、macOS 级组件与专业 AI Creator，3D/形变属于 S6 必达能力。用户创建 Wallpaper / Widget 的实现方式仍是先建设 `MiaoDesk Content Framework`，再在稳定 Runtime 之上增加 Parameter tooling 和 Visual Creator。
 
 因此：
 

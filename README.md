@@ -2,7 +2,7 @@
 
 MiaoDesk 是一个漂亮的智能桌面。用户感知到三个界面：顶部搜索框（应用搜索 / 文件搜索 / 进入 AI 聊天）、动态桌面（动态壁纸与动态小组件）、以及 DeepSeek Harness 专业工作台。所有功能都对照这三者设计。
 
-产品愿景完整定义见 `docs/PRODUCT_VISION.md`。
+产品愿景完整定义见 `docs/PRODUCT_VISION.md`。2026-10-03 起，专业版目标明确为 **Wallpaper Engine 级动态壁纸、macOS 级组件能力、专业 AI 壁纸/组件创作**；详细能力、S0～S7 和验收见 [专业版总体规划](docs/PROFESSIONAL_DESKTOP_PLAN.md)。
 
 ## 产品进程
 
@@ -21,13 +21,14 @@ Wallpaper、Widgets、Search Bar 属于常驻桌面路径，**Native C++ 与性�
 - Wallpaper：载体取壁纸层，运行时 Scene（内部再分静态图 / 动态场景 / 视频）优先；Web 内容按需启动 WebView2。
 - Widgets：三款内置组件全部 Native C++ / Direct2D；Web Widget（WebView2 承载组件）路径已整体移除。
 - Windows Shell：Progman / WorkerW / Raised Desktop / Explorer recovery 统一由 `DesktopShellHost` 管理。
-- 旧 Wallpaper / Scene / Widget Editor、Inspector、Timeline 和 Wallpaper Engine parity 路线已退出当前设计。
+- 旧大型 Wallpaper / Scene / Widget Editor、Inspector-first UI 已退出；动画运行时与 Wallpaper Engine 级表现力继续建设，3D/形变进入专业版后续阶段。
 
 当前产品愿景与唯一设计/开发基线：
 
 - `docs/PRODUCT_VISION.md` — 产品是什么、用户感受到什么
 - `docs/DESIGN_BASELINE.md` — 唯一设计基线
 - `docs/DEVELOPMENT_ROADMAP.md` — 唯一开发路线
+- `docs/PROFESSIONAL_DESKTOP_PLAN.md` — 专业版能力、阶段出口与量化验收
 
 ## 仓库结构
 
@@ -183,6 +184,9 @@ DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动�
 - `docs/DEVELOPMENT_ROADMAP.md` — 当前唯一阶段级开发路线
 - `docs/CONTINUOUS_DEVELOPMENT_BOARD.md` — 当前唯一执行队列，自动/人工持续开发都从这里领取下一项
 - `docs/FEATURE_CHANGELOG.md` — 用户可感知功能与体验变化
+- `CHANGELOG.md` — 发布历史与规划/范围变更记录
+- `docs/TODO.md` 第 11 节 — 36 项专业建设任务规格；状态统一在持续开发面板
+- `docs/MACOS_WIDGET_BENCHMARK.md` — 组件能力与体验对标
 - `docs/DOC-INDEX.md` — 当前有效技术文档索引
 - `docs/LOCAL_AI_ARCHITECTURE.md` — 本地 AI 架构（DGX Spark + 开源模型，含按任务切换模型）
 - `docs/LOCAL_AI_DEPLOYMENT.md` — 本地 AI 部署手册

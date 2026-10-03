@@ -48,6 +48,10 @@ Closing this properly means either removing the generic file tools from the Pi
 allowlist or signing the store. Until then, the boundary above is what actually
 holds — recorded here rather than claimed as stronger.
 
+### Professional roadmap boundary — 2026-10-03
+
+The professional goals are defined in [PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md). They do not automatically widen the current Creator tool or artifact surface. CAP-01 must distinguish runtime support, preview support and AI authoring support. ADV-04 is a future, separately gated programmable-visual authoring change; before enabling it, update this contract, product enforcement, Skills, compiler/resource limits and isolation evidence together. Existing historical risk observations above must be rechecked by PRO-01 rather than assumed to describe the latest implementation.
+
 Everything else in this document describes the **wallpaper** sandbox.
 
 ## 1. Overall architecture

@@ -112,6 +112,21 @@ jobs:
             exit 1
           }
 
+      # TerminateProcess(父进程) 不跑析构函数,于是"父进程自己会收拾子进程"在强杀
+      # 路径上一条都不成立。这道门把每个 CreateProcessW 站点分成三类:装进
+      # KILL_ON_JOB_CLOSE 的 job、有界同步(当场等并终止)、或已登记的独立生命周期。
+      # 登记只认证据:stop event 的符号必须在文件里,且它定义成的事件真名必须对得上 ——
+      # 只查符号名的话,"改了事件名、留着没改名的常量"会一路绿灯。
+      - name: Verify every spawned child process has a reaper
+        shell: bash
+        run: |
+          out=$(python3 scripts/verify-child-process-reapers.py 2>&1) || {
+            echo "$out" | tail -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
       # paths 过滤覆盖它自己会执行的文件。同一个缺口 2026-09-22 撞了三次:tests/**、
       # scripts/**、runtime/agent/package-lock.json 都不在相应工作流的过滤里,于是
       # 改了那些文件,唯一验证它们的工作流根本不触发 —— 改完等于没验。

@@ -21,6 +21,23 @@
 
 ---
 
+## 强杀 MiaoDesk 之后，AI 的 Node 进程不再永远活着 — 2026-10-04
+
+- **任务**：P0-08（崩溃/强杀后的孤儿进程与窗口清理）。
+- **用户可感知变化**：MiaoDesk 被任务管理器"结束进程"、或被崩溃处理强杀时，正常退出那套
+  清理（`PiRuntime::CleanupProcess` 里的 `TerminateProcess`）**根本不会跑** ——
+  析构函数不执行。于是给 AI 干活的那个 Node 进程会一直活下去，握着一根已经断掉的 stdin
+  管子，关机前它都在。现在它被装进一个 Windows Job：**父进程一死，内核连坐杀掉它**，
+  不管父进程是怎么死的。装不进去时（例如 MiaoDesk 自身正跑在调试器或 CI 的 Job 里）
+  行为和以前一样，但这件事会写进日志，而不是悄无声息。
+  这条性质同时变成了一道门：仓库里每一个 `CreateProcessW` 站点现在都必须说清自己的收尸
+  路径，否则 CI 红。顺带查出后台 Harness 的启动代码有两份、而且函数名都不一样
+  （`main.cpp` 的 `LaunchHarnessBackgroundOwner()` 与 `HarnessHost.cpp` 的
+  `LaunchBackgroundHarnessOwner()`），做的事情几乎一样。
+- **验证级别**：本机自动检查（新增子进程收尸门 + 6 处变异 5 红 0 存活 + mingw 交叉语法门
+  0 真实错误 + 40 道仓库门/契约门全通过）通过；**Windows 真机未验证** ——
+  "强杀之后桌面上真的没有孤儿进程"要在 Windows 上杀一次才知道。
+
 ## AI 对话里的 `/provider` 不再把 Key 发到别的服务 — 2026-10-04
 
 - **任务**：P0-07（App 重启状态一致性，AI 侧）。

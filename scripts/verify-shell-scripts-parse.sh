@@ -15,6 +15,10 @@
 # 只查一件事:能不能解析。不能解析 = 脚本后半段一件事都没发生,而它打印的东西
 # 看起来完全正常。别的地方(退出码、比对条数)由脚本自己和其它门负责 ——
 # 这里不写一个"看起来在查、实际什么都不做"的分支。
+#
+# 2026-10-04 扩到 scripts/*.py:`verify-builtin-wallpaper-animation-parity.py` 这个
+# python 门已经在仓库里跑了一年,而这道门只看 .sh —— 一个 python 门写坏了语法,
+# 这里照样报"全部可以解析",只有 CI 那一轮才发现。同一条理由,换了个扩展名而已。
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -37,7 +41,22 @@ if [ "$count" -eq 0 ]; then
     exit 1
 fi
 
+if [ "$count" -eq 0 ]; then
+    echo "❌ 一个 .sh 都没扫到 —— 零条比对不可能是通过" >&2
+    exit 1
+fi
+
+for script in scripts/*.py; do
+    [ -f "$script" ] || continue
+    count=$((count + 1))
+    if ! python3 -m py_compile "$script" 2>/tmp/parse_err; then
+        echo "❌ $script 语法错误 —— 它一件事都不会跑,而调用方看到的就是一次崩溃:"
+        sed 's/^/      /' /tmp/parse_err
+        status=1
+    fi
+done
+
 if [ "$status" -eq 0 ]; then
-    echo "✅ $count 个 shell 脚本全部可以解析"
+    echo "✅ $count 个闸门脚本(shell + python)全部可以解析"
 fi
 exit "$status"

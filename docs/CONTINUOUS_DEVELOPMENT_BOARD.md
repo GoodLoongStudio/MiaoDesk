@@ -84,7 +84,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-05 | ⬜ | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次 |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
-| P0-08 | ⬜ | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁 |
+| P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 已装进连坐 job，且「每个 CreateProcessW 站点都有收尸」已成门**（见下）；强杀后桌面上真的没有孤儿仍要 Windows |
 | P0-09 | ⬜ | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局 |
 | P0-10 | ⬜ | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA |
 
@@ -222,15 +222,17 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 当前先领取 PRO-01 做新范围与已有实现的证据核对；随后按依赖准备 PRO-02/03，并继续以下最高优先级稳定性候选。CAP-01/02 可在真机等待期间推进：
 
-1. `P0-07` App 重启状态一致性 —— AI 侧已做一轮（请求 URL 与凭据同源），继续
+1. `P0-08` 崩溃/强杀资源清理 —— 收尸门已上线,剩下的**不可恢复单实例锁**还没人查:
+   现在没有任何地方能回答"这个句柄属于谁、它卡住的时候谁来杀";
+2. `P0-07` App 重启状态一致性 —— AI 侧已做一轮（请求 URL 与凭据同源），继续
    Wallpaper/Widgets/AI 会话/库状态四个恢复面的**自动**部分；
-2. `P0-03` Wallpaper 状态循环的自动回归部分；
-3. `P0-08` 崩溃/强杀资源清理；
+3. `P0-03` Wallpaper 状态循环的自动回归部分；
 4. `SEARCH-01` 固定查询集；
 5. `AI-03` Cancel / Retry；
 6. `CREATE-04` 上一可用结果保留。
 
-已完成自动部分（真机仍待）：`P0-04`（几何不变式 + 去重规则）、`P0-07`（凭据同源）。
+已完成自动部分（真机仍待）：`P0-04`（几何不变式 + 去重规则）、`P0-07`（凭据同源）、
+`P0-08`（子进程收尸门 + Node 连坐 job）。
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
@@ -258,6 +260,54 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续五，P0-08：强杀之后 Node 会活下来）
+
+- **做的事**：`TerminateProcess(MiaoDesk)` **不跑析构函数**。于是"父进程自己会收拾
+  子进程"这件事在强杀路径上一条都不成立 —— `PiRuntime::CleanupProcess` 写得再好,
+  也只是给正常退出路径准备的;强杀之后 Node 会一直活下去,握着一根已经断掉的 stdin
+  管子,而没有任何人再去收它。这就是 P0-08 验收原话里的"无永久 Node … 孤儿"。
+- **修法**：新增 `include/miaodesk/MiaoChildProcessReaper.h`,把子进程装进一个带
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 job —— 父进程一死(不管怎么死的),内核连坐
+  杀掉 job 里的全部进程。`PiRuntime::LaunchProcess` 接上它。
+  装不进去(最常见是父进程自身已在调试器/CI 的 job 里且不许嵌套)时行为与今天完全一样,
+  但**必须写进日志** —— 看不见的收尸缺口比没有更糟。
+- **新门 `scripts/verify-child-process-reapers.py`**：把每个 `CreateProcessW` 站点分成三类,
+  每类都要给出证据 —— 装进 job / 有界同步(当场等 HANDLE 并在超时·失败时终止) /
+  已登记的独立生命周期。此前**没有任何门**管这件事:每个站点是不是真的收尸只能靠人肉翻。
+- 扫描结果(10 个真实站点,注释里的提及不算):
+  - 4 个**已经**在收尸:`WebWallpaperHost`、`ContentWidgetHost`、`NativeWidgetHost`、
+    `HarnessProcessManager` 各自 `CreateJobObjectW` + `AssignProcessToJobObject`;
+  - 2 个有界同步(自己等并终止,不需要 job):`GozSearch`、`NativeToolIsolation`;
+  - 3 个**故意分离的生命周期**,登记了它们靠什么停:`app/main.cpp` 与 `HarnessHost.cpp`
+    的后台 Harness 所有者(自带单实例 mutex + stop event),`WallpaperEntry` 的壁纸 helper;
+  - 1 个**真的没有**:`PiRuntime` 的 Node —— 本轮补上。
+- **顺带发现一处重复**:启动后台 Harness 所有者的函数在仓库里有两份,而且**名字都不一样** ——
+  `src/app/main.cpp:195` 是 `LaunchHarnessBackgroundOwner()`,`src/harness/HarnessHost.cpp:54`
+  是 `LaunchBackgroundHarnessOwner()`。做的事几乎一样(同一个 EXE、同一条命令行、同一个轮询),
+  但两份各自维护。门把两处都列了出来,合并属另一轮。
+- **登记为什么查两样**：只查"stop event 的符号在不在文件里"是不够的 ——
+  把事件名改了、留着一个名字没变的常量,门会一路绿灯,而那时父进程死后没有任何人能拦下
+  这个孤儿。所以登记要求符号在,且符号**定义成的事件真名**对得上。第一版写成正则时把
+  不属于反斜杠的点也转义了,于是永远匹配不上,门把三个正确登记的站点全判成"登记已过期" ——
+  改成普通字符串比较。
+- **本机跑了什么**：收尸门 6 处变异 **6 红 0 存活**:拆收尸接线 / 装了就丢返回值 /
+  有界同步不再等 HANDLE / 有界同步不再终止 / stop event 改名(登记过期) /
+  **门自己扫不到任何站点**。最后一条是它自己的反空洞守卫 —— 少了它,扫描路径写错时门会
+  打印"每个站点都有收尸"而实际一条都没查。`verify-shell-scripts-parse.sh`
+  扩到 `scripts/*.py`(此前那个 python 动画门写坏语法,这里照样报"全部可以解析");
+  mingw 单编 `PiRuntime.cpp` / `L3Agent.cpp` 均 0 错误;21 道 shell 门 + 2 道 python 门
+  + 17 道 node 契约门全通过。
+- **顺手修了三处文档引用**:`verify-doc-citation-symbols.sh` 报
+  `LOCAL_AI_ARCHITECTURE.md` 引 `PiRuntime.cpp:368` 讲 `ConfigurePiAgent`。
+  本轮只加了 2 行 include,把那条本来已经偏了 2 行的引用推出了 ±3 窗口。顺带查了
+  PiRuntime.cpp 在文档里的全部引用,改掉能逐字核实的三处(loopback 密钥 374→318、
+  `ConfigurePiAgent` 368→372、命令行 551-555→498-502)。
+  另有三处引用的内容在这个文件里根本找不到(`["text"]` 的"产品当前写法"引 :455、
+  `449-452` 的图片能力注释、`:526-528` 的 systemPrompt)—— 它们**不在**那道门的
+  检查形状里(引用点前没有反引号标识符),所以门放行。**记录在案,没有改。**
+- 真机:**未取证**。"强杀之后桌面上真的没有孤儿进程"要 Windows;`AttachToReaper` 在
+  ERROR_ACCESS_DENIED 那条路上究竟多常见,也要真机才知道。
 
 ### 本轮推进记录（2026-10-04 再续四，P0-07 AI 侧：一把 Key 会被发到另一台服务）
 
@@ -289,6 +339,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   两边焊死（每处 profile 的 Key 槽名是三方共用的契约，改一边不改另一边会静默换槽）。
 - **本机跑了什么**：`AgentConfigAuthorityTest` 38 项（含反空洞自检：喂四个明知该被抓的
   合成输入，恒返回 `bound=true` 的函数必须露出来）；**16 处变异全红，0 存活**。
+- **CI 为难过一次,是门的功劳**:`b5e5403c` 上 `Repo Hygiene` 与 `Windows x64 Build` 两个 job
+  红了(同一根因,不是编译错误)。两道 job 都跑 `tests/multi-api-routing.mjs`,而那道门断的是
+  我把凭据槽构造搬走**之前**的旧写法 —— 断的是拼写,不是契约。修复提交 `49414565`:门改成断
+  契约本身,并比原来更严(槽必须从 profile id 推出来、内联第二份不许回来、static_assert 必须在)。
 - 真机:**未取证**。两件事必须分开说:
   - `L3PersistenceSelfTest`(只能 Windows 上跑)**正好走 `/provider`**,这里跑不了。
     逐行读过之后判断它不受影响:那个 legacy 块跑在新建的临时 LOCALAPPDATA 里,

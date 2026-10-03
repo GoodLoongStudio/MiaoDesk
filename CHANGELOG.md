@@ -17,6 +17,44 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：P0-08 强杀之后 Node 会活下来
+
+`TerminateProcess(MiaoDesk)` **不跑析构函数** —— 于是"父进程自己会收拾子进程"这件
+事在强杀路径上一条都不成立。`PiRuntime::CleanupProcess` 写得再好,也只覆盖正常退出。
+
+- **补的**：新增 `include/miaodesk/MiaoChildProcessReaper.h`,把子进程装进一个带
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 job —— 父进程一死(不管怎么死的),内核连坐
+  杀掉 job 里的全部进程。`PiRuntime::LaunchProcess` 接上它。装不进去时行为与今天一样,
+  但写进日志:看不见的收尸缺口比没有更糟。
+- **新门 `scripts/verify-child-process-reapers.py`**：每个 `CreateProcessW` 站点分三类,
+  每类都要给出证据 —— 装进 job / 有界同步(当场等并在超时·失败时终止) / 已登记的独立
+  生命周期。此前没有任何门管这件事。全仓 10 个真实站点(注释里的提及不算):4 个本来就在
+  收尸,2 个有界同步,3 个是**故意**分离的生命周期(已登记它们靠什么停),1 个真的没有
+  (PiRuntime 的 Node)。
+- **顺手发现一处重复**:启动后台 Harness 所有者的函数有两份,而且**名字都不一样** ——
+  `src/app/main.cpp:195` 的 `LaunchHarnessBackgroundOwner()` 与 `src/harness/HarnessHost.cpp:54`
+  的 `LaunchBackgroundHarnessOwner()`。门把两处都列出来;合并不在本轮。
+- **登记只认证据**:stop event 的符号必须在文件里,且它**定义成的事件真名**对得上。
+  只查符号名的话,"改了事件名、留着没改名的常量"会一路绿灯,而那时父进程死后没有任何人
+  能拦下这个孤儿。第一版写成正则时把不属于反斜杠的点也转义了,于是永远匹配不上,门把三个
+  正确登记的站点全判成"登记已过期" —— 改成普通字符串比较。
+- **另一处门自己的洞**:`verify-shell-scripts-parse.sh` 只查 `scripts/*.sh`,而仓库里那个
+  python 动画门(`verify-builtin-wallpaper-animation-parity.py`)已经跑了一年 —— 它写坏语法
+  时,解析门照样报"全部可以解析"。同一条理由,换了个扩展名而已。已扩到 `scripts/*.py`。
+- **自动检查**：收尸门 6 处变异 **6 红 0 存活**(含它自己的零站点守卫);mingw 单编
+  `PiRuntime.cpp`/`L3Agent.cpp` 均 0 错误;
+  21 道 shell 门 + 2 道 python 门 + 17 道 node 契约门全通过。
+- **顺手修了三处文档引用**:`verify-doc-citation-symbols.sh` 报
+  `LOCAL_AI_ARCHITECTURE.md` 引 `PiRuntime.cpp:368` 讲 `ConfigurePiAgent`。
+  本轮只加了 2 行 include,把那条本来已偏 2 行的引用推出了 ±3 窗口。顺带查了
+  PiRuntime.cpp 在文档里的全部引用,改掉能逐字核实的三处(loopback 密钥 374→318、
+  `ConfigurePiAgent` 368→372、命令行 551-555→498-502)。
+  另有三处引用的内容在这个文件里根本找不到(`["text"]` 的"产品当前写法"引 :455、
+  `449-452` 的图片能力注释、`:526-528` 的 systemPrompt)—— 它们不在那道门的检查形状里
+  (引用点前没有反引号标识符),所以门放行。记录在案,没有改。
+- **未取证**："强杀之后桌面上真的没有孤儿进程"要 Windows;`AttachToReaper` 在
+  ERROR_ACCESS_DENIED 那条路上究竟多常见也要真机才知道。
+
 ### 2026-10-04 · 执行记录：P0-07 AI 侧,一把 Key 会被发到另一台服务
 
 修一个会外泄凭据的缺陷,并把"请求 URL 与凭据是否同源"变成本机可测的契约。
@@ -47,6 +85,10 @@ MiaoDesk 所有显著变更均记录于此文件。
 - **自动检查**:`AgentConfigAuthorityTest` 38 项,含反空洞自检(喂四个明知该被抓的合成输入,
   恒返回 `bound=true` 的判定函数必须露出来);**16 处变异全红,0 存活**;
   21 道仓库门 + mingw 交叉语法门(0 真实错误)全通过。
+- **`b5e5403c` 上两个 CI job 红过**:`Repo Hygiene` 与 `Windows x64 Build`。同一根因,不是
+  编译错误 —— 两道 job 都会跑 `tests/multi-api-routing.mjs`,而那道门断的是我把凭据槽构造
+  搬走之前的**旧写法**。修复提交 `49414565`:门改成断契约本身,并比原来更严
+  (槽必须从 profile id 推出来、内联第二份不许回来、static_assert 必须在),两条都变异验过。
 - **一处必须说清的未取证**:`L3PersistenceSelfTest`(只能 Windows 上跑)**正好走
   `/provider`**。逐行读过之后判断它不受影响 —— 那个 legacy 块跑在新建的临时
   LOCALAPPDATA 里,此时没有任何 profile,`config_.profileId` 从构造起就是空串,

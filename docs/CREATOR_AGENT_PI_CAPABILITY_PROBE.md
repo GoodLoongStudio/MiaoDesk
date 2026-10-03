@@ -78,7 +78,7 @@ PI_PACKAGE=/tmp/pi-probe/node_modules/@earendil-works/pi-coding-agent \
 
 ## 5. CLI 参数逐项核对
 
-宿主拼出的命令行（`src/ai/pi/PiRuntime.cpp:551-555`）当前用的每个 flag 都在锁定版本中存在，没有一个是失效参数：
+宿主拼出的命令行（`src/ai/pi/PiRuntime.cpp:498-502`）当前用的每个 flag 都在锁定版本中存在，没有一个是失效参数：
 
 ```
 --mode rpc  --no-session  --approve  --provider  --model

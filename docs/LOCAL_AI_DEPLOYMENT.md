@@ -349,7 +349,7 @@ baseUrl=http://127.0.0.1:8080/v1
 model=openai/gpt-oss-20b
 ```
 
-loopback 会自动注入占位密钥(`PiRuntime.cpp:374`),**无需填 API Key**。
+loopback 会自动注入占位密钥(`PiRuntime.cpp:318`),**无需填 API Key**。
 
 ## 5. 健康检查
 

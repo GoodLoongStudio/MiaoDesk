@@ -2,6 +2,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/JsonStringField.h"
 #include "miaodesk/CreatorWorkspacePolicy.h"
+#include "miaodesk/MiaoChildProcessReaper.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/PiLaunchProfile.h"
 #include "miaodesk/RuntimeLogPaths.h"
@@ -564,6 +565,20 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         outputRead_ = outputRead;
         readBuffer_.clear();
         sessionSignature_ = setup.signature;
+    }
+
+    // 强杀路径:CleanupProcess 只在正常退出时跑。MiaoDesk 被 TerminateProcess 之后,
+    // 这个 Node 进程会一直活下去,握着一根已经断掉的 stdin 管子,而没有人再去收它 ——
+    // 那正是 P0-08 的“无永久 Node … 孤儿”。所以这里把它装进一个
+    // KILL_ON_JOB_CLOSE 的 job:父进程一死,内核连坐杀掉它。
+    //
+    // 装不进去(最常见是父进程自身已在调试器/CI 的 job 里且不许嵌套)时行为与今天
+    // 完全一样,但这件事必须写进日志 —— 看不见的收尸缺口比没有更糟。
+    std::wstring reaperReason;
+    if (!child_reaper::AttachToReaper(processInfo.hProcess, reaperReason)) {
+        AppendRuntimeLog(L"Pi process NOT attached to kill-on-close job; " + reaperReason);
+    } else {
+        AppendRuntimeLog(L"Pi process attached to kill-on-close job");
     }
 
     AppendRuntimeLog(L"Pi process started; mode=agent; node=" + setup.nodePath + L"; pi=" + setup.piPath +

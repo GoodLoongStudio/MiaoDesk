@@ -66,7 +66,7 @@
 | --- | --- | --- |
 | Provider-neutral 路由 | 已有 | `Conversation Panel → Pi Runtime → Provider` |
 | Provider 注入 | `providerId` + `baseUrl` + `model` + `apiKey` | `PiRuntime::ProviderSetup`(`PiRuntime.h:62-70`) |
-| loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:374` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"miaodesk-local"` |
+| loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:318` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"miaodesk-local"` |
 | 多 Profile + 默认选择 | 已有 | `LoadDefault()`(`ApiRuntimeProfile.h:211`) |
 | 凭据存储 | Windows Credential Manager,按 profile 隔离 | `MiaoDesk/ApiProfile/<id>` |
 | Header 安全校验 | 已有,拒绝控制字符与非 ASCII | `IsHttpHeaderSafe()` |
@@ -287,7 +287,7 @@ async function resolveOpenRouterApiKey() {
 
 ### 7.3 当前产品配置的实际形态(改动的基准)
 
-`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:368`)写出:
+`PiRuntime::ConfigurePiAgent`(`src/ai/pi/PiRuntime.cpp:372`)写出:
 
 ```json
 {

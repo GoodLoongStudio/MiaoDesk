@@ -118,10 +118,24 @@ assert.match(creator, /if \(done && done->find\(kBusyRejectionMarker\) != std::w
 assert.match(creator, /未发送，当前有任务在进行/,
   "a refused request must say it was not sent");
 
+// The refusal string used to be written inline in PiRuntime.cpp as
+// onDone(L"Pi Runtime 正忙"). The AI-03 fix moved the wording into the turn-phase
+// verdict so Running and Stopping can say different things, which broke the old
+// grep below while the three sides were still coupled only by a human promise.
+// So pin the coupling itself: one prefix constant, referenced by the creator's
+// marker and by the verdict text.
+const lifecycle = read("src/include/miaodesk/MiaoTurnLifecycle.h");
+assert.match(lifecycle, /inline constexpr wchar_t kTurnRejectionPrefix\[\] = L"Pi Runtime 正忙"/,
+  "the shared rejection prefix must exist with the creator's marker value");
+const rejectionPrefix = [...lifecycle.matchAll(/kTurnRejectionPrefix\[\] = L"([^"]*)"/g)][0][1];
+assert.match(creator, new RegExp(`kBusyRejectionMarker\\[\\] = L"${rejectionPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+  "the creator's busy-rejection marker must equal the shared prefix");
 const runtime = read("src/ai/pi/PiRuntime.cpp");
 const emitted = [...runtime.matchAll(/onDone\(L"([^"]*)"\)/g)].map((m) => m[1]);
-assert.ok(emitted.includes("Pi Runtime 正忙"),
-  "PiRuntime must still emit the busy rejection through onDone");
+assert.match(runtime, /if \(onDone\) onDone\(verdict\.reason\)/,
+  "PiRuntime must still emit the refusal through onDone (from the phase verdict)");
+assert.match(runtime, /compare_exchange_strong/,
+  "the refusal must come from an atomic phase transition, not a read-then-write race");
 assert.ok(emitted.every((text) => text !== "本轮生成已完成"),
   "PiRuntime must not emit the creator's completion wording");
 

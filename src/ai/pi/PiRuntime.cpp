@@ -3,6 +3,7 @@
 #include "miaodesk/JsonStringField.h"
 #include "miaodesk/CreatorWorkspacePolicy.h"
 #include "miaodesk/MiaoChildProcessReaper.h"
+#include "miaodesk/MiaoTurnLifecycle.h"
 #include "miaodesk/PiNativeToolsExtension.h"
 #include "miaodesk/PiLaunchProfile.h"
 #include "miaodesk/RuntimeLogPaths.h"
@@ -661,7 +662,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         AppendRuntimeLog(L"Pi session failed: " + error);
         EmitActivity(onActivity, PiActivityKind::Failed, {}, error, true);
         if (onDone) onDone(error);
-        busy_.store(false);
+        turnPhase_.store(turn_lifecycle::PhaseAfterWorkerExit(turnPhase_.load()));
         return;
     }
 
@@ -671,7 +672,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         AppendRuntimeLog(error);
         EmitActivity(onActivity, PiActivityKind::Failed, {}, error, true);
         if (onDone) onDone(error);
-        busy_.store(false);
+        turnPhase_.store(turn_lifecycle::PhaseAfterWorkerExit(turnPhase_.load()));
         return;
     }
 
@@ -795,7 +796,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         EmitActivity(onActivity, PiActivityKind::Failed, {}, L"Pi turn 未正常结束", true);
         if (onDone) onDone(L"Pi turn 未正常结束");
     }
-    busy_.store(false);
+    turnPhase_.store(turn_lifecycle::PhaseAfterWorkerExit(turnPhase_.load()));
 }
 
 void PiRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallback onDelta, DoneCallback onDone,
@@ -804,14 +805,21 @@ void PiRuntime::AskAsync(const L3Agent& agent, std::wstring prompt, DeltaCallbac
         std::scoped_lock lock(callbackMutex_);
         onActivity = activityCallback_;
     }
-    if (busy_.exchange(true)) {
-        EmitActivity(onActivity, PiActivityKind::Failed, {}, L"Pi Runtime 正忙", true);
-        if (onDone) onDone(L"Pi Runtime 正忙");
+    // 按相位裁决,而不是 exchange 一个 bool。Stopping 上的拒绝要说"正在取消上一轮"——
+    // 用户取消之后马上重试,界面上该给的是"再等一下",不是"正忙"(那看着像坏了)。
+    // 在此之前 busy_ 是个孤立 bool,而 Stop() 会把它直接清掉,于是这里放行,第二轮与还没
+    // 退完的第一轮共用同一个 Node 进程和同一根 stdin/stdout 管子,第一轮没读完的 delta
+    // 会递进第二轮的 onDelta —— AI-03 的原话就是"串会话、不留错误 Busy 状态"。
+    turn_lifecycle::TurnPhase current = turnPhase_.load();
+    if (!turnPhase_.compare_exchange_strong(current, turn_lifecycle::TurnPhase::Running)) {
+        const auto verdict = turn_lifecycle::JudgeTurnStart(current);
+        EmitActivity(onActivity, PiActivityKind::Failed, {}, verdict.reason, true);
+        if (onDone) onDone(verdict.reason);
         return;
     }
     const auto setup = BuildProviderSetup(agent);
     if (!setup.ok) {
-        busy_.store(false);
+        turnPhase_.store(turn_lifecycle::TurnPhase::Idle);
         EmitActivity(onActivity, PiActivityKind::Failed, {}, setup.message, true);
         if (onDone) onDone(setup.message);
         return;
@@ -831,7 +839,12 @@ void PiRuntime::SetActivityCallback(ActivityCallback callback) {
 void PiRuntime::Stop() {
     if (worker_.joinable()) worker_.request_stop();
     WriteLine("{\"type\":\"abort\"}");
-    busy_.store(false);
+    // 这里**不清忙位**。取消是一次请求,完成要等 worker 自己退出(RunTurn 收尾时)。
+    // 上一版在这一行直接 busy_ = false,于是取消之后 AskAsync 立刻放行,第二轮与还没退完的
+    // 第一轮共用同一个 Node 进程和同一根 stdin/stdout 管子,第一轮的 delta 会递进第二轮的
+    // onDelta —— AI-03 的原话是"串会话、不留错误 Busy 状态"。
+    // 幂等:连点取消收敛到同一个 Stopping,不会多制造状态。
+    turnPhase_.store(turn_lifecycle::PhaseAfterStopRequest(turnPhase_.load()));
 }
 
 void PiRuntime::ResetSession() {

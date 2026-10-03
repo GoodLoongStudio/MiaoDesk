@@ -1,5 +1,6 @@
 #pragma once
 #include "miaodesk/L3Agent.h"
+#include "miaodesk/MiaoTurnLifecycle.h"
 #include "miaodesk/PiLaunchProfile.h"
 #include <atomic>
 #include <functional>
@@ -62,7 +63,10 @@ public:
     void SetActivityCallback(ActivityCallback callback);
     void Stop();
     void ResetSession();
-    bool Busy() const noexcept { return busy_.load(); }
+    // 忙不忙看相位,不看一个孤立的 bool。"已请求取消、worker 还没退"也算忙 ——
+    // AI-03 的缺陷就在这儿:Stop() 曾把那个 bool 直接清掉,于是取消之后能立刻起第二轮,
+    // 与还没退完的第一轮共用同一个 Node 进程和同一根管子。见 MiaoTurnLifecycle.h。
+    bool Busy() const noexcept { return turnPhase_.load() != turn_lifecycle::TurnPhase::Idle; }
 
 private:
     struct ProviderSetup {
@@ -108,7 +112,9 @@ private:
     void CleanupProcess();
 
     std::jthread worker_;
-    std::atomic_bool busy_{false};
+    // 轮次相位取代了原来的 busy_ bool:两态分不出"取消中"与"真的闲"。
+    // 由 UI 线程写(AskAsync/Stop)、worker 线程写(RunTurn 收尾),所以是 atomic。
+    std::atomic<turn_lifecycle::TurnPhase> turnPhase_{turn_lifecycle::TurnPhase::Idle};
     mutable std::mutex processMutex_;
     mutable std::mutex callbackMutex_;
     ActivityCallback activityCallback_;

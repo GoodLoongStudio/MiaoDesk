@@ -1,7 +1,11 @@
 import io, os, re, sys
 
-ROOT = '/Volumes/Ext/Projects/MiaoDesk'
-SRC = ROOT + '/src'
+# 根目录从本脚本的位置推,不写死。
+# 写死的后果 CI 上当场撞见过:第一版是 ROOT = '/Volumes/Ext/Projects/MiaoDesk'
+# (作者的本机路径),本机全绿,而 ubuntu runner 上一个站点都扫不到 —— 好在
+# "一个站点都没扫到"那条守卫当场报了错,而不是打印一句"每个站点都有收尸"就退出 0。
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+SRC = os.path.join(ROOT, 'src')
 
 # 故意分离生命周期的登记:相对 src 的路径 -> 它靠什么停。
 # 值必须是一个真的出现在文件里的符号名:只写"设计如此"不算,必须能指出那个
@@ -129,7 +133,10 @@ def main():
         # 一道什么都没查却打印通过的门,与一道好门在通过时长得一模一样 —— 这个仓库里
         # 已经为此栽过好几次(see verify-shell-scripts-parse.sh 的零条比对守卫)。
         print('❌ 一个 CreateProcessW 站点都没扫到 —— 零条比对不可能是通过')
-        print('   检查 scripts/verify-child-process-reapers.py 的扫描路径与扩展名。')
+        print('   本脚本解析到的仓库根: %s' % ROOT)
+        print('   正在扫描的源码目录: %s' % SRC)
+        print('   如果上面那个根目录看着像某台开发机的路径,就是 ROOT 又被写死了。')
+        print('   它必须从 __file__ 推出来。')
         return 1
 
     print('扫描 src/ 下的 CreateProcessW 站点(注释里的提及不算)…')

@@ -51,7 +51,10 @@ for f in desktop/control/CreationWorkflow.cpp \
          desktop/control/CreatorWorkspaceState.cpp \
          desktop/widgets/TodayTaskPresentation.cpp \
          desktop/widgets/WidgetDataActionContract.cpp \
-         desktop/widgets/MiaoWidgetGeometry.cpp \         desktop/widgets/WidgetRefreshPolicy.cpp \
+         desktop/widgets/MiaoWidgetGeometry.cpp \
+         desktop/widgets/WidgetRefreshPolicy.cpp \
+         desktop/widgets/WidgetIdentityRules.cpp \
+         desktop/widgets/NativeWidgetPreset.cpp \
          search/SearchTextScoring.cpp; do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then
     SRCS+=("$f")

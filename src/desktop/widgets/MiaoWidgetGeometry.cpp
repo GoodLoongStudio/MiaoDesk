@@ -141,6 +141,33 @@ WidgetPixelBox FitAspectInside(const WidgetPixelBox& box, float aspect) noexcept
     return fitted;
 }
 
+WidgetLayout NormalizeWidgetLayout(const WidgetLayout& layout) noexcept {
+    WidgetLayout out;
+    // 非有限输入落到默认值,而不是原样放行。std::clamp 对 NaN 是恒等函数,
+    // 所以"先夹紧"挡不住它,必须先换掉。inf 同理(abs(inf) 夹紧后是本该有的上限,
+    // 但 -inf 会夹成 0、让组件贴到左上角,那也是一个说不通的位置)。
+    auto finiteOr = [](float value, float fallback) {
+        return std::isfinite(value) ? value : fallback;
+    };
+    out.x = finiteOr(layout.x, kWidgetLayoutDefaultX);
+    out.y = finiteOr(layout.y, kWidgetLayoutDefaultY);
+    out.width = finiteOr(layout.width, kWidgetLayoutDefaultWidth);
+    out.height = finiteOr(layout.height, kWidgetLayoutDefaultHeight);
+
+    out.x = std::clamp(out.x, 0.0f, kWidgetLayoutMaxPosition);
+    out.y = std::clamp(out.y, 0.0f, kWidgetLayoutMaxPosition);
+    out.width = std::clamp(out.width, kWidgetLayoutMinSize, 1.0f);
+    out.height = std::clamp(out.height, kWidgetLayoutMinSize, 1.0f);
+    if (out.x + out.width > 1.0f) out.width = 1.0f - out.x;
+    if (out.y + out.height > 1.0f) out.height = 1.0f - out.y;
+    // 这里**没有**"最后再把 width/height 夹一次下限"。
+    // 它是不可达的:位置已被夹到 <= 0.95,于是 1.0f - x >= 0.05000001 > 0.05,
+    // 收边之后本来就不会跌破下限。变异检测证实了这一点 —— 把那行删掉,104 项断言
+    // 全绿。一行挡不住任何事的代码只会让人以为这里曾经出过 0 宽的组件;
+    // 而"收边之后仍 >= 下限"由上面那条随机采样 2000 个样本的循环钉住。
+    return out;
+}
+
 std::wstring FormatAspect(float value) noexcept {
     if (!std::isfinite(value)) return L"nan";
     wchar_t buffer[32];

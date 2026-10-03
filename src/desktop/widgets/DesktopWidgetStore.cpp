@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/MiaoWidgetGeometry.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoWidgetContentCatalog.h"
 #include "miaodesk/NativeWidgetPreset.h"
@@ -15,6 +16,9 @@
 #include <utility>
 
 namespace fs = std::filesystem;
+// 几何规则住在 miaodesk::desktop(纯逻辑那份),这里引进来用。
+using miaodesk::desktop::NormalizeWidgetLayout;
+using miaodesk::desktop::WidgetLayout;
 
 namespace miaodesk::wallpaper {
 namespace {
@@ -57,7 +61,13 @@ float ReadFloat(const fs::path& path, const std::wstring& section, const wchar_t
     const std::wstring raw = ReadText(path, section, key, fallbackText);
     wchar_t* end = nullptr;
     const float value = std::wcstof(raw.c_str(), &end);
-    return end == raw.c_str() ? fallback : value;
+    if (end == raw.c_str()) return fallback;
+    // wcstof 接受 "nan" / "inf" 并把它们原样返回。配置文件是私有 INI,理论上是本程序
+    // 自己写的,但 FloatText 用 %.6f —— NaN 会写成 "nan" 再被读回来,自我延续;
+    // 而手改配置文件的人也可能输入这些。非有限值一律退回 fallback:
+    // NormalizeWidgetLayout 反正也会换掉它,但在**读**这一侧就挡掉,
+    // 免得一个坏值在 Load→Save→Load 之间来回传递。
+    return std::isfinite(value) ? value : fallback;
 }
 
 std::wstring FloatText(float value) {
@@ -131,15 +141,6 @@ bool EnsureStoreLock(const WidgetStoreMutexGuard& guard, std::wstring* error) {
     return false;
 }
 
-std::wstring NativeSingletonKey(const DesktopWidget& widget) {
-    if (widget.kind != DesktopWidgetKind::Native || !IsNativePresetSource(widget.source.wstring())) return {};
-    std::wstring key = widget.source.wstring();
-    key += L"|";
-    key += widget.monitorId.empty() ? L"<primary>" : widget.monitorId;
-    std::transform(key.begin(), key.end(), key.begin(), [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-    return key;
-}
-
 bool IsValidPersistedSource(const DesktopWidget& widget) {
     if (widget.kind == DesktopWidgetKind::Native) {
         return IsNativePresetSource(widget.source.wstring());
@@ -178,12 +179,24 @@ DesktopWidgetKind DesktopWidgetStore::ParseKind(std::wstring_view value) noexcep
 }
 
 DesktopWidget DesktopWidgetStore::Normalize(DesktopWidget widget) {
-    widget.x = std::clamp(widget.x, 0.0f, 0.95f);
-    widget.y = std::clamp(widget.y, 0.0f, 0.95f);
-    widget.width = std::clamp(widget.width, 0.05f, 1.0f);
-    widget.height = std::clamp(widget.height, 0.05f, 1.0f);
-    if (widget.x + widget.width > 1.0f) widget.width = 1.0f - widget.x;
-    if (widget.y + widget.height > 1.0f) widget.height = 1.0f - widget.y;
+    // 几何规则住在 MiaoWidgetGeometry(纯逻辑),那里每轮都在本机真跑。
+    // 原先它写在这个 .cpp 里,而本文件为了 UTF-16 配置持久化 include 了 Windows 头,
+    // 于是 P0-04 "Widget 20 次创建/启停/删除循环"要验的这批不变量一行都跑不到。
+    //
+    // 顺带修了一个真实缺陷:原实现用 std::clamp,而 std::clamp 对 NaN 是恒等函数
+    // (`v < lo ? lo : (hi < v ? hi : v)` 两个比较对 NaN 都为假)。ReadFloat 用 wcstof
+    // 解析配置且不查有限性,FloatText 又用 %.6f 写回 —— 一个 NaN 会自我延续。
+    // 新实现先换掉非有限值再夹紧。
+    WidgetLayout layout;
+    layout.x = widget.x;
+    layout.y = widget.y;
+    layout.width = widget.width;
+    layout.height = widget.height;
+    const WidgetLayout normalized = NormalizeWidgetLayout(layout);
+    widget.x = normalized.x;
+    widget.y = normalized.y;
+    widget.width = normalized.width;
+    widget.height = normalized.height;
     if (widget.title.empty()) widget.title = L"Desktop Widget";
     return widget;
 }
@@ -387,7 +400,7 @@ std::optional<DesktopWidget> DesktopWidgetStore::Upsert(DesktopWidget widget, st
     if (!singletonKey.empty()) {
         const auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
             return _wcsicmp(existing.id.c_str(), widget.id.c_str()) != 0 &&
-                   NativeSingletonKey(existing) == singletonKey;
+                   SameNativeSingleton(existing, widget);
         });
         if (duplicate != items_.end()) {
             if (error) *error = L"This native widget preset already exists on the target monitor.";

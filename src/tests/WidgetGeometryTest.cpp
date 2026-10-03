@@ -5,6 +5,7 @@
 // "manifest 承诺正方形的组件,在 16:9 屏幕上其实是 1.78:1"这件事在本机就能看见。
 //
 // 这里验的是算术,不验渲染:真正把它落到像素要改宿主,那需要 Windows。
+#include "miaodesk/DesktopWidgetStore.h"
 #include "miaodesk/MiaoWidgetGeometry.h"
 #include "miaodesk/MiaoContentModel.h"
 
@@ -38,6 +39,7 @@ void CheckNear(float actual, float expected, float tolerance, const std::string&
 }
 
 using namespace miaodesk::content;
+using namespace miaodesk::wallpaper;
 
 // 随产品发行的那三个官方组件的真实形状(逐个从 manifest.json 抄来)。
 ContentDefinition ShippedLike(const char* id, float w, float h, bool resize,
@@ -288,6 +290,187 @@ int wmain() {
         Check(FormatAspect(1.0004f) == L"1.000" && FormatAspect(1.0006f) == L"1.001",
               "三位小数能分辨容差边界上的差别");
     }
+
+    // ---- 9. 桌面组件实例几何(P0-04 生命周期不变量) ----
+    {
+        // 先把常量本身钉住。少了这一段,"尺寸下限改成 0"这种破坏测不出来 ——
+        // 下面的断言拿同一个常量做比较,常量改断言也跟着改,于是永远成立。
+        CheckNear(kWidgetLayoutMaxPosition, 0.95f, 0.0f, "位置上限是 0.95(不是 1.0)");
+        CheckNear(kWidgetLayoutMinSize, 0.05f, 0.0f, "尺寸下限是 0.05(不是 0)");
+        CheckNear(kWidgetLayoutDefaultX, 0.68f, 0.0f, "默认 x 是 0.68");
+        CheckNear(kWidgetLayoutDefaultY, 0.05f, 0.0f, "默认 y 是 0.05");
+        CheckNear(kWidgetLayoutDefaultWidth, 0.28f, 0.0f, "默认宽是 0.28");
+        CheckNear(kWidgetLayoutDefaultHeight, 0.18f, 0.0f, "默认高是 0.18");
+
+        // 默认值:结构体的成员默认值与常量同源,这样"新建组件落在哪里"有唯一答案。
+        WidgetLayout plain;
+        CheckNear(plain.x, 0.68f, 0.0f, "默认 x 与 DesktopWidget 一致");
+        CheckNear(plain.y, 0.05f, 0.0f, "默认 y 一致");
+        CheckNear(plain.width, 0.28f, 0.0f, "默认 width 一致");
+        CheckNear(plain.height, 0.18f, 0.0f, "默认 height 一致");
+        const auto untouched = NormalizeWidgetLayout(plain);
+        CheckNear(untouched.x, 0.68f, 0.0f, "归一化不动合法值");
+        CheckNear(untouched.width, 0.28f, 0.0f, "合法尺寸不变");
+
+        // 越界被夹回,而且**夹回之后仍满足 x+width<=1**。
+        WidgetLayout bad;
+        bad.x = 1.4f;
+        bad.y = -3.0f;
+        bad.width = 5.0f;
+        bad.height = -1.0f;
+        const auto clamped = NormalizeWidgetLayout(bad);
+        Check(clamped.x >= 0.0f && clamped.x <= kWidgetLayoutMaxPosition, "x 夹进 [0, 0.95]");
+        Check(clamped.y >= 0.0f && clamped.y <= kWidgetLayoutMaxPosition, "y 夹进 [0, 0.95]");
+        Check(clamped.x + clamped.width <= 1.0f, "夹回后 x+width<=1(组件不会整个落桌面外)");
+        Check(clamped.y + clamped.height <= 1.0f, "夹回后 y+height<=1");
+        Check(clamped.width >= kWidgetLayoutMinSize, "宽度不小于下限");
+        Check(clamped.height >= kWidgetLayoutMinSize, "高度不小于下限");
+
+        // 边界恰好贴住 1.0 的情形(0.95 + 0.05):不许因为浮点误差变成 1.0000001。
+        WidgetLayout edge;
+        edge.x = 0.95f;
+        edge.y = 0.95f;
+        edge.width = 0.05f;
+        edge.height = 0.05f;
+        const auto atEdge = NormalizeWidgetLayout(edge);
+        Check(atEdge.x + atEdge.width <= 1.0f + 1e-6f, "贴边时 x+width 不越界");
+        Check(atEdge.width >= kWidgetLayoutMinSize - 1e-6f, "贴边时宽度不跌破下限");
+
+        // 这一批是修的真实缺陷:NaN 会被 std::clamp 原样放行。
+        const float nans[] = {std::numeric_limits<float>::quiet_NaN(),
+                              -std::numeric_limits<float>::quiet_NaN()};
+        const float infs[] = {std::numeric_limits<float>::infinity(),
+                              -std::numeric_limits<float>::infinity()};
+        for (float nan : nans) {
+            for (float inf : infs) {
+                WidgetLayout broken;
+                broken.x = nan;
+                broken.y = inf;
+                broken.width = nan;
+                broken.height = inf;
+                const auto fixed = NormalizeWidgetLayout(broken);
+                Check(std::isfinite(fixed.x) && std::isfinite(fixed.y) &&
+                          std::isfinite(fixed.width) && std::isfinite(fixed.height),
+                      "NaN/inf 一律换成有限数(std::clamp 对 NaN 是恒等函数,挡不住)");
+                Check(fixed.x + fixed.width <= 1.0f, "NaN 尺寸夹回后不越界");
+                Check(fixed.width >= kWidgetLayoutMinSize, "NaN 尺寸夹回后不小于下限");
+            }
+        }
+        // 单独一个 NaN,其余正常:只换那一个。
+        WidgetLayout partial;
+        partial.x = 0.3f;
+        partial.y = 0.3f;
+        partial.width = std::numeric_limits<float>::quiet_NaN();
+        partial.height = 0.2f;
+        const auto oneFixed = NormalizeWidgetLayout(partial);
+        Check(std::isfinite(oneFixed.width) && oneFixed.x == 0.3f && oneFixed.height == 0.2f,
+              "只换坏掉的那一个字段,不牵连正常字段");
+
+        // 恰好 0 与极小尺寸:随机采样几乎产不出**正好** 0(那样破坏尺寸下限也测不出来),
+        // 所以显式走一遍。0 宽的组件点不中,而用户只会以为"桌面卡了"。
+        const float zeros[] = {0.0f, 1e-9f, -0.0f, 1e-30f};
+        for (float zero : zeros) {
+            WidgetLayout collapsed;
+            collapsed.x = 0.0f;
+            collapsed.y = 0.0f;
+            collapsed.width = zero;
+            collapsed.height = zero;
+            const auto revived = NormalizeWidgetLayout(collapsed);
+            Check(revived.width >= kWidgetLayoutMinSize && revived.height >= kWidgetLayoutMinSize,
+                  "0 / 极小尺寸被抬到下限之上(点不中的组件比没有更糟)");
+        }
+
+        // 不变量:对一大批随机输入,输出永远满足全部四条。随机而不是举八个例子,
+        // 是因为"夹紧之后会不会跌破下限"取决于顺序,而顺序只有一个。
+        std::uint32_t seed = 12345;
+        auto next = [&seed]() {
+            seed = seed * 1664525u + 1013904223u;
+            return static_cast<float>(static_cast<std::int32_t>(seed)) / 2147483647.0f;
+        };
+        for (int i = 0; i < 2000; ++i) {
+            WidgetLayout random;
+            random.x = next() * 3.0f - 1.0f;
+            random.y = next() * 3.0f - 1.0f;
+            random.width = next() * 3.0f;
+            random.height = next() * 3.0f;
+            const auto out = NormalizeWidgetLayout(random);
+            if (!(out.x >= 0.0f && out.x <= kWidgetLayoutMaxPosition && out.y >= 0.0f &&
+                  out.y <= kWidgetLayoutMaxPosition && out.width >= kWidgetLayoutMinSize &&
+                  out.height >= kWidgetLayoutMinSize && out.x + out.width <= 1.0f + 1e-6f &&
+                  out.y + out.height <= 1.0f + 1e-6f)) {
+                Check(false, "随机输入下四条不变量全部成立(2000 个样本)");
+                break;
+            }
+        }
+        Check(true, "随机输入下四条不变量全部成立(2000 个样本)");
+
+        // 幂等:归一化两次等于归一化一次。宿主每次 Load/Save 都会过一遍,
+        // 不幂等会让组件每存一次就挪一点。
+        WidgetLayout drift;
+        drift.x = 0.9f;
+        drift.width = 0.4f;
+        const auto once = NormalizeWidgetLayout(drift);
+        const auto twice = NormalizeWidgetLayout(once);
+        Check(once.x == twice.x && once.y == twice.y && once.width == twice.width &&
+                  once.height == twice.height,
+              "归一化幂等(存两次不该让组件挪动)");
+    }
+    // ---- 10. Native 组件去重键(P0-04 "无重复实例") ----
+    {
+        auto widgetOf = [](DesktopWidgetKind kind, const wchar_t* source, const wchar_t* monitor) {
+            DesktopWidget w;
+            w.id = L"w";
+            w.kind = kind;
+            w.source = source;
+            w.monitorId = monitor ? std::wstring(monitor) : std::wstring();
+            return w;
+        };
+
+        // source 从预设表里取,不写字面量 —— 写字面量的测试会在表改名之后悄悄全绿
+        // (它比的根本不是表里的值)。第一版我就写了 native://glass-clock,而表里是
+        // native:glass-clock,于是三条断言全红。
+        const std::wstring clock = NativePresetSource(NativeWidgetPreset::GlassClock);
+        const std::wstring weather = NativePresetSource(NativeWidgetPreset::WeatherGlass);
+        Check(!clock.empty(), "预设表里真的有 GlassClock(否则下面全是空断言)");
+
+        // 同一个 preset、空 monitorId(主显示器):那就是同一个实例。
+        const auto a = widgetOf(DesktopWidgetKind::Native, clock.c_str(), nullptr);
+        const auto b = widgetOf(DesktopWidgetKind::Native, clock.c_str(), nullptr);
+        Check(SameNativeSingleton(a, b), "同 preset 同主显示器判为同一个实例");
+        Check(!NativeSingletonKey(a).empty(), "Native 预设参与去重(键非空)");
+
+        // 同一个 preset、不同显示器:允许各放一个。多显示器用户期望的行为,
+        // 去重键里带上 monitorId 就是为了它。
+        const auto other = widgetOf(DesktopWidgetKind::Native, clock.c_str(), L"monitor-2");
+        Check(!SameNativeSingleton(a, other), "同 preset 不同显示器不算重复(多屏各放一个)");
+
+        // 大小写不敏感:monitorId 的采集路径不同,同一个物理屏可能被拼成两种写法。
+        const auto upper = widgetOf(DesktopWidgetKind::Native, clock.c_str(), L"MONITOR-2");
+        const auto lower = widgetOf(DesktopWidgetKind::Native, clock.c_str(), L"monitor-2");
+        Check(SameNativeSingleton(upper, lower), "monitorId 大小写不敏感(采集路径不一致)");
+
+        // source 本身也大小写不敏感。
+        const auto shouty = widgetOf(DesktopWidgetKind::Native, L"NATIVE:GLASS-CLOCK", nullptr);
+        Check(SameNativeSingleton(a, shouty), "source 大小写不敏感(预设查找本来就不区分)");
+
+        // 不同 preset:永远不重复。
+        const auto otherPreset = widgetOf(DesktopWidgetKind::Native, weather.c_str(), nullptr);
+        Check(!SameNativeSingleton(a, otherPreset), "不同 preset 不重复");
+
+        // Content 组件允许同一定义多开:三块屏幕各放一个天气组件是正常用法。
+        const auto contentA = widgetOf(DesktopWidgetKind::Content, L"content:com.goodloong.weather", nullptr);
+        const auto contentB = widgetOf(DesktopWidgetKind::Content, L"content:com.goodloong.weather", nullptr);
+        Check(NativeSingletonKey(contentA).empty(), "Content 组件键为空(不参与去重)");
+        Check(!SameNativeSingleton(contentA, contentB), "同一定义的 Content 组件可以多开");
+        Check(!SameNativeSingleton(contentA, a), "Content 与 Native 之间不构成重复");
+
+        // Unknown 与空 source:不参与去重,也不许崩。
+        const auto unknown = widgetOf(DesktopWidgetKind::Unknown, L"", nullptr);
+        Check(!SameNativeSingleton(unknown, unknown), "Unknown 类型不参与去重");
+        const auto emptySource = widgetOf(DesktopWidgetKind::Native, L"", nullptr);
+        Check(!SameNativeSingleton(emptySource, emptySource), "空 source 不参与去重");
+    }
+
 
     if (g_failures != 0) {
         std::printf("\n失败 %d / %d\n", g_failures, g_checks);

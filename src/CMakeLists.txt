@@ -76,6 +76,10 @@ set(MIAODESK_CORE_SOURCES
     # 不 import Windows 头),所以既进产品,也能被 run-pure-logic-tests.sh 真实编译
     # 并运行。它回答的是写 manifest 时答不上来的那个问题 —— "这个组件到底有多大"。
     desktop/widgets/MiaoWidgetGeometry.cpp
+    # P0-04:Native 组件"同一 preset 同一显示器只一个实例"的去重规则。
+    # 纯字符串逻辑,所以本机可跑 —— 原先它是 DesktopWidgetStore.cpp 匿名命名空间里的
+    # 文件局部符号,而那个文件为了 UTF-16 配置持久化 import 了 windows.h。
+    desktop/widgets/WidgetIdentityRules.cpp
     # WPRO-05:组件下一次该什么时候重画。失败必须退避 —— 宿主的 nextRefreshAt
     # 只在成功绘制时被赋值,失败路径一条都不赋,而 0 的含义是"随时都该画",
     # 于是画不出来的组件每 16ms 重试一次。纯逻辑,本机可验。

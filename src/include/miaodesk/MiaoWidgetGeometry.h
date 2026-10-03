@@ -126,6 +126,54 @@ inline constexpr std::array<ReferenceMonitor, 8> kReferenceMonitors = {{
 
 inline constexpr std::size_t kReferenceMonitorCount = kReferenceMonitors.size();
 
+// ---------------------------------------------------------------------------
+// 五、桌面组件**实例**的几何(P0-04 生命周期不变量)
+//
+// 与上面的 ContentGeometryPolicy 是两件事,但同一个域:都是"组件在桌面上占多大"。
+// 放进同一个文件是为了"1.0 是桌面宽"这条口径只写一份 —— 两份各写一个,迟早出现
+// "manifest 说 0.30、实例存 0.28"这种对不上的情形。
+//
+// 从 DesktopWidgetStore::Normalize 提出来,理由与这个仓库里另两次拆分相同
+// (MiaoD3D11RenderPolicy、TodayTaskPresentation):那个 .cpp 为了 UTF-16 配置持久化
+// include 了 Windows 头,于是这份纯算术在本机一行都跑不到,而它正是 P0-04
+// "Widget 20 次创建/启停/删除循环"自动部分要验的那批不变量。
+// ---------------------------------------------------------------------------
+
+// 实例默认几何。NaN/缺失时用它。
+inline constexpr float kWidgetLayoutDefaultX = 0.68f;
+inline constexpr float kWidgetLayoutDefaultY = 0.05f;
+inline constexpr float kWidgetLayoutDefaultWidth = 0.28f;
+inline constexpr float kWidgetLayoutDefaultHeight = 0.18f;
+
+// 组件实例的归一化几何。
+//
+// 成员的默认值**引常量而不重写字面量**:第一版写成 `float x{0.68f}`,于是同一个默认值
+// 在结构体和常量里各出现一次 —— 改常量不改结构体,而"新建组件落在哪里"会有两个答案。
+// 变异检测就是这么发现的:把 kWidgetLayoutDefaultX 改成 0.0,104 项断言全绿。
+struct WidgetLayout {
+    float x{kWidgetLayoutDefaultX};
+    float y{kWidgetLayoutDefaultY};
+    float width{kWidgetLayoutDefaultWidth};
+    float height{kWidgetLayoutDefaultHeight};
+};
+// 位置上限:不是 1.0,因为 1.0 会让组件整个落在桌面外。
+inline constexpr float kWidgetLayoutMaxPosition = 0.95f;
+// 尺寸下限:再小就点不中了。
+inline constexpr float kWidgetLayoutMinSize = 0.05f;
+
+// 归一化一份实例几何。返回的几何保证:
+//   · 位置在 [0, kWidgetLayoutMaxPosition];
+//   · 尺寸 >= kWidgetLayoutMinSize;
+//   · **x + width <= 1 且 y + height <= 1**(组件不会整个落在桌面外);
+//   · 每个字段都是有限数。
+//
+// 最后一条是修的一个真实缺陷:`std::clamp(NaN, lo, hi)` 对 NaN 是**恒等函数**
+// (它的实现是 `v < lo ? lo : (hi < v ? hi : v)`,两个比较对 NaN 都为假,于是返回 v)。
+// 而 `DesktopWidgetStore::ReadFloat` 用 `wcstof` 解析配置且不查有限性,
+// `FloatText` 又用 `%.6f` 写回 —— 一个 NaN 会写进配置文件、再读回来、再写回去,
+// 自我延续。带着 NaN 坐标的组件在 UpdateLayeredWindow 上直接失败或消失。
+WidgetLayout NormalizeWidgetLayout(const WidgetLayout& layout) noexcept;
+
 // 把一个比例印成人看的一小段(3 位小数)。给宿主的诊断与日志用。
 //
 // 没有直接用 std::to_wstring:那个会给 "1.777778" 六位,而诊断行已经很长,

@@ -1,10 +1,26 @@
 #include "miaodesk/NativeWidgetPreset.h"
 
 #include <array>
-#include <cwchar>
+#include <cwctype>
 
 namespace miaodesk::wallpaper {
 namespace {
+
+// 宽字符的大小写不敏感比较,与 _wcsnicmp 在本文件的用途上等价。
+//
+// 为什么换掉:_wcsnicmp 是 Windows CRT 专属,于是整个文件(连同它那些纯算术的预设表)
+// 在本机一行都编不过。三个内置 source 全是 ASCII,逐字符 towlower 就够了;
+// 而依赖区域设置的比较反而会让"同一份 source 在不同语言 Windows 上拼法不同"
+// 变成一个新问题 —— 那正是不该有的行为。
+//
+// 调用方已保证两者等长,所以这里不比长度。
+bool WideEqualsIgnoreCase(std::wstring_view left, std::wstring_view right) noexcept {
+    if (left.size() != right.size()) return false;
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        if (std::towlower(left[i]) != std::towlower(right[i])) return false;
+    }
+    return true;
+}
 
 constexpr std::array<NativeWidgetDefinition, 3> kDefinitions{{
     // Fractions are relative to the target monitor. On a 16:9 desktop these
@@ -34,10 +50,7 @@ const NativeWidgetDefinition* NativePresetDefinition(NativeWidgetPreset preset) 
 
 const NativeWidgetDefinition* FindNativePresetDefinition(std::wstring_view source) noexcept {
     for (const auto& definition : kDefinitions) {
-        if (source.size() == definition.source.size() &&
-            _wcsnicmp(source.data(), definition.source.data(), definition.source.size()) == 0) {
-            return &definition;
-        }
+        if (WideEqualsIgnoreCase(source, definition.source)) return &definition;
     }
     return nullptr;
 }

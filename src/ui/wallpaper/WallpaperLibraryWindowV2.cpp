@@ -532,6 +532,31 @@ struct WallpaperLibraryWindow::Impl {
             : L"已打开 AI 壁纸创作窗口。");
     }
 
+    // 上一轮 Load 里被跳过的库行。RefreshWallpapers 每次重新加载都会清空重填,
+    // 所以它描述的是**当前这一份**库,不是历史累计。
+    std::vector<std::wstring> skippedLibraryRows;
+
+    // 把"有 N 行没能读进来"说出口。
+    //
+    // 为什么必须有:Load 在"ID 空"或"Kind 本版本不认识"时丢掉那一行,而 Load 照常
+    // 返回成功 —— 在这次改动之前,这里连一行日志都没有,用户只会看到库莫名其妙少了几张。
+    // 现在把清单拼进状态行与日志,丢失第一次可见。
+    void ReportSkippedLibraryRows() {
+        if (skippedLibraryRows.empty()) return;
+        std::wstring detail;
+        for (const auto& row : skippedLibraryRows) {
+            if (!detail.empty()) detail += L"；";
+            detail += row;
+            // 状态行是给人在窗口底部看的,列太多就读不动了。全量进日志。
+            if (detail.size() > 240) { detail += L"…"; break; }
+        }
+        miaodesk::log::Warn(L"UI.Library",
+                            L"壁纸库有 " + std::to_wstring(skippedLibraryRows.size()) +
+                                L" 条记录本版本读不了,已跳过:" + detail);
+        SetStatus(L"有 " + std::to_wstring(skippedLibraryRows.size()) +
+                  L" 条壁纸记录本版本读不了,已跳过(见日志)。");
+    }
+
     void RefreshWallpapers() {
         if (!library) return;
         const std::wstring query = WindowText(search);
@@ -540,6 +565,12 @@ struct WallpaperLibraryWindow::Impl {
             if (!library->Load(&error) && !error.empty())
                 miaodesk::log::Warn(L"UI.Library", L"重新加载壁纸库失败: " + error);
         }
+        // 跳过了什么,每次刷新都报一次 —— **不只挂在重新加载那条上**。
+        // 第一次进窗口时 Load 是调用方做的(这个分支不 Load),所以把报告放在
+        // 分支外面,首屏也看得见;`SkippedRows()` 描述的是当前这一份库,
+        // 每次 Load 都会清空重填,所以不会累计。
+        skippedLibraryRows = library->SkippedRows();
+        if (!skippedLibraryRows.empty()) ReportSkippedLibraryRows();
         wallpaperQueryInitialized = true;
         lastWallpaperQuery = query;
 

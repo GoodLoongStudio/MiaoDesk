@@ -75,6 +75,12 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 顺带把"字段缺失"与"写了本版本不认识的词"分成两种理由(损坏 vs 版本差异),
 读 Kind 时也改留原文,不再把缺失预先塞成字面量 `"unknown"`。
 
+**已接进界面**(`WallpaperLibraryWindowV2::RefreshWallpapers`):每次刷新读
+`SkippedRows()` —— 全量进 `UI.Library` 的 Warn 日志,摘要进窗口底部状态行
+("有 N 条壁纸记录本版本读不了,已跳过(见日志)")。报告放在重新加载分支**外面**:
+第一次进窗口时 `Load` 是调用方做的,放在里面的话只有第二次刷新才看得见。
+**未取证**:`Load` 只能在 Windows 上跑,"清单真的填上了"要真机签收。
+
 ### 2026-10-04 · 执行记录：P0-08 五处启动点接线，其中一处刻意不接
 
 - **先合流**:`MiaoLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。同一个

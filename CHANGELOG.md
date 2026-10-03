@@ -17,6 +17,42 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：AI-03 取消不是完成
+
+同一个仓库里有两个 AI 运行时,而它们对"取消"的处理**不一样**:
+
+    L3Agent::AskAsync   Stop(); worker_.join(); busy_ = true;      ← 等旧轮次真的结束
+    PiRuntime::Stop()   request_stop(); WriteLine(abort); busy_ = false;  ← worker 还在跑
+
+于是"取消 + 立刻重试"在 Pi 上是活的:`busy_` 已经是 false,`AskAsync` 的
+`busy_.exchange(true)` 放行,第二轮起来了 —— 与还没退完的第一轮共用同一个
+Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递进第二轮的 onDelta。
+这就是 AI-03 原话里的"串会话 / 不留错误 Busy 状态"。`PiRuntime::AskAsync` 里连
+`Stop()` 都不调,只 `request_stop()`,旧 worker 句柄被直接覆盖。
+
+- **修法**:`busy_` 这个孤立 bool 换成轮次**相位**(Idle / Running / Stopping),
+  判定落在 `MiaoTurnLifecycle`。关键一条:`PhaseAfterStopRequest` **不许返回 Idle**
+  —— 取消是请求,完成要等 worker 自己退出。`Busy()` 改成 `phase != Idle`。
+  `AskAsync` 用 `compare_exchange_strong` 按相位裁决,且 Stopping 上的拒绝给
+  "正在取消上一轮,请稍等再发"而不是"正忙" —— 用户取消后马上重试时,界面上该说的是
+  "再等一下","正忙"看着像坏了。
+- **又删掉一个不可达的探测量**:第一版 `TurnTimeline::OverlappingTurns()`("曾经并发过")
+  被变异检测逮到不可达 —— 取消进 Stopping 挡住起轮,只有 WorkerExited 回 Idle,而它在
+  回 Idle 之前已经把 inFlight_ 减掉了。一个永远为 false 的探测量与没有它长得一模一样。
+  换成可达的断言:**被拒的起轮不会多造出一个在飞的轮次**。
+- **拒绝语的前缀是一个跨模块契约,不只是文案**:`AskAsync` 原本内联
+  `onDone(L"Pi Runtime 正忙")`,而 `ContentCreatorDialog` 的 `kBusyRejectionMarker` 就是这
+  一个串 —— 它拿 find() 分辨"这个 done 是一次拒绝"还是"这一轮已完成"。措辞挪进相位裁决后
+  `tests/content-creator-modes.mjs` 当场红了,而它逮的是对的:前缀一改,一个**从未发送**的
+  请求就会被当成"本轮生成已完成"报给用户。修法不是把字面量写回去,而是把契约钉住 ——
+  `MiaoTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,门改成从那个常量推导 marker 应有的值。
+  prefix / marker / 不 emit 三处都变异验过,全红。
+- 顺带:第一版 `JudgeTurnStart` 的 Idle 早退忘了把 `allowed` 置 true(成员默认 false),
+  于是"空闲时也发不出消息" —— 12 项断言当场逮到。
+- **自动检查**:`TurnLifecycleTest` 41 项(含反空洞自检);**11 处变异全红,0 存活**
+  (10 处相位 + 1 处前缀契约)。
+- **未取证**:"取消之后马上重试会不会串话"要在 Windows 上真发一轮才知道。
+
 ### 2026-10-04 · 执行记录：P0-08 强杀之后 Node 会活下来
 
 `TerminateProcess(MiaoDesk)` **不跑析构函数** —— 于是"父进程自己会收拾子进程"这件
@@ -41,17 +77,15 @@ MiaoDesk 所有显著变更均记录于此文件。
 - **另一处门自己的洞**:`verify-shell-scripts-parse.sh` 只查 `scripts/*.sh`,而仓库里那个
   python 动画门(`verify-builtin-wallpaper-animation-parity.py`)已经跑了一年 —— 它写坏语法
   时,解析门照样报"全部可以解析"。同一条理由,换了个扩展名而已。已扩到 `scripts/*.py`。
+- **CI 当头一棒,是我自己的错**:收尸门第一版把仓库根**写死**成
+  `ROOT = '/Volumes/Ext/Projects/MiaoDesk'`。本机全绿,ubuntu runner 上一个站点都扫不到。
+  **是门自己的"零条比对不可能是通过"守卫报出来的** —— 它没有打印一句"每个站点都有收尸
+  路径"就退出 0。修复提交 `9175fb0b`:ROOT 改从 `__file__` 推;守卫现在会打印它解析到的
+  两个路径并直接说"那个根目录看着像某台开发机的路径,就是 ROOT 又被写死了"。
+  复现方式是把 src/scripts/tests/.github 复制到另一个绝对路径再跑。
 - **自动检查**：收尸门 6 处变异 **6 红 0 存活**(含它自己的零站点守卫);mingw 单编
   `PiRuntime.cpp`/`L3Agent.cpp` 均 0 错误;
   21 道 shell 门 + 2 道 python 门 + 17 道 node 契约门全通过。
-- **顺手修了三处文档引用**:`verify-doc-citation-symbols.sh` 报
-  `LOCAL_AI_ARCHITECTURE.md` 引 `PiRuntime.cpp:368` 讲 `ConfigurePiAgent`。
-  本轮只加了 2 行 include,把那条本来已偏 2 行的引用推出了 ±3 窗口。顺带查了
-  PiRuntime.cpp 在文档里的全部引用,改掉能逐字核实的三处(loopback 密钥 374→318、
-  `ConfigurePiAgent` 368→372、命令行 551-555→498-502)。
-  另有三处引用的内容在这个文件里根本找不到(`["text"]` 的"产品当前写法"引 :455、
-  `449-452` 的图片能力注释、`:526-528` 的 systemPrompt)—— 它们不在那道门的检查形状里
-  (引用点前没有反引号标识符),所以门放行。记录在案,没有改。
 - **未取证**："强杀之后桌面上真的没有孤儿进程"要 Windows;`AttachToReaper` 在
   ERROR_ACCESS_DENIED 那条路上究竟多常见也要真机才知道。
 

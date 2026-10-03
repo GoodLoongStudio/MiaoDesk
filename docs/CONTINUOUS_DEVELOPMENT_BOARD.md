@@ -116,7 +116,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | --- | --- | --- | --- | --- |
 | AI-01 | ✅ | 多会话持久化 | 是 | 主 AI / Wallpaper / Widget 默认续聊，可新建、切回，跨重启保存 |
 | AI-02 | ⬜ | 会话标题与历史管理 | 是 | 自动标题、最近排序、重命名/删除规则清晰，不误删当前上下文 |
-| AI-03 | ⬜ | Cancel / Retry 幂等 | 是 | 连续取消/重试不重复提交、不串会话、不留错误 Busy 状态 |
+| AI-03 | 🟡 | Cancel / Retry 幂等 | 是 | 连续取消/重试不重复提交、不串会话、不留错误 Busy 状态。**Pi 侧已修：取消不再直接清忙位，「已请求取消但 worker 还没退」仍然是忙已成相位不变量**（见下）；L3 侧本来是对的，但两边的理由此前没人写下来 |
 | AI-04 | ⬜ | Agent 活动反馈 | 是 | 工具调用、等待模型、生成、校验阶段用户可理解 |
 | AI-05 | ⬜ | API profile 热切换语义 | 是 | 当前任务不静默换 Provider；下一轮明确使用新配置 |
 | AI-06 | ⬜ | 连接/鉴权/限流/模型错误分类 | 是 | 用户能知道改字段还是稍后重试，且任何错误不泄露 Key |
@@ -228,11 +228,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
    Wallpaper/Widgets/AI 会话/库状态四个恢复面的**自动**部分；
 3. `P0-03` Wallpaper 状态循环的自动回归部分；
 4. `SEARCH-01` 固定查询集；
-5. `AI-03` Cancel / Retry；
-6. `CREATE-04` 上一可用结果保留。
+5. `CREATE-04` 上一可用结果保留。
 
 已完成自动部分（真机仍待）：`P0-04`（几何不变式 + 去重规则）、`P0-07`（凭据同源）、
-`P0-08`（子进程收尸门 + Node 连坐 job）。
+`P0-08`（子进程收尸门 + Node 连坐 job）、`AI-03`（Pi 侧轮次相位，取消不再清忙位）。
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
@@ -260,6 +259,59 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续六，AI-03：取消不是完成）
+
+- **修的真实缺陷**（AI-03 的"不留错误 Busy 状态 / 不串会话"）：
+  同一个仓库里有两个 AI 运行时，而它们对"取消"的处理**不一样**：
+
+      L3Agent::AskAsync   Stop(); if (worker_.joinable()) worker_.join();  busy_ = true;
+                          ↑ 等旧轮次真的结束，才起新一轮
+      PiRuntime::Stop()   request_stop(); WriteLine(abort); busy_.store(false);
+                          ↑ worker 还在跑，忙位已经清了
+
+  于是"取消 + 立刻重试"这条路在 Pi 上是活的：`busy_` 已经是 false，
+  `AskAsync` 的 `busy_.exchange(true)` 放行，第二轮起来了 —— 与还没退完的第一轮
+  共用同一个 Node 进程、同一根 stdin/stdout 管子。第一轮没读完的 delta 会递进
+  第二轮的 onDelta 里。这正是"串会话"。而 `PiRuntime::AskAsync` 里连 `Stop()` 都不调，
+  只 `request_stop()`，旧的 worker 句柄被直接覆盖。
+- **修法**：`busy_` 这个孤立 bool 换成轮次**相位**（Idle / Running / Stopping），
+  判定的纯逻辑落在 `MiaoTurnLifecycle`。关键一条：`PhaseAfterStopRequest`
+  **不许返回 Idle** —— 取消是请求，完成要等 worker 自己退出（`RunTurn` 收尾时）。
+  `Busy()` 改成 `phase != Idle`，于是"取消中"仍然是忙。
+  `AskAsync` 用 `compare_exchange_strong` 按相位裁决，并且 Stopping 上的拒绝
+  给的是"正在取消上一轮，请稍俟再发"而不是"正忙" —— 用户取消后马上重试，
+  界面上该说的是"再等一下"，"正忙"看着像坏了。
+- **又删掉一个不可达的探测量**：第一版 `TurnTimeline` 里有个
+  `OverlappingTurns()`（"曾经出现过并发轮次"）。变异检测逮到它不可达：
+  取消进 Stopping 挡住起轮，只有 `WorkerExited` 回 Idle，而它在回 Idle 之前已经把
+  `inFlight_` 减掉了 —— "起轮时 inFlight_ > 0"凭正确的 API 根本走不到。
+  一个永远为 false 的探测量与没有它长得一模一样。换成可达的断言：
+  **被拒的起轮不会多造出一个在飞的轮次**（`InFlightTurns()` / `StartedTurns()` /
+  `RejectedStarts()` 三个计数器）。
+- **门第二次逮到我**：`AskAsync` 原本内联 `onDone(L"Pi Runtime 正忙")`,而
+  `ContentCreatorDialog` 的 `kBusyRejectionMarker` 就是这一个串 —— 它拿 find() 分辨
+  "这个 done 是一次拒绝"还是"这一轮已完成"。我把措辞挪进相位裁决之后,
+  `tests/content-creator-modes.mjs` 当场红了。它逮的是对的:前缀一改,一个**从未发送**的
+  请求就会被当成"本轮生成已完成"报给用户。修法不是把字面量写回去,而是把契约钉住 ——
+  `MiaoTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,两档差异只追加在后头,门改成从那个常量
+  推导 marker 应有的值。三个模块共用一处定义。prefix / marker / 不 emit 三处都变异验过。
+- 顺带：第一版 `JudgeTurnStart` 的 Idle 早退忘了把 `allowed` 置 true
+  （结构体成员默认 false），于是"空闲时也发不出消息" —— 12 项断言当场逮到。
+- **顺手修了三处文档引用**：`verify-doc-citation-symbols.sh` 报
+  `LOCAL_AI_ARCHITECTURE.md` 引 `PiRuntime.cpp:368` 讲 `ConfigurePiAgent`。
+  本轮只加了 2 行 include,把那条本来已偏 2 行的引用推出了 ±3 窗口。顺带查了
+  PiRuntime.cpp 在文档里的全部引用,改掉能逐字核实的三处(loopback 密钥 374→318、
+  `ConfigurePiAgent` 368→372、命令行 551-555→498-502)。
+  另有三处引用的内容在这个文件里根本找不到(`["text"]` 的"产品当前写法"引 :455、
+  `449-452` 的图片能力注释、`:526-528` 的 systemPrompt)—— 它们**不在**那道门的
+  检查形状里(引用点前没有反引号标识符),所以门放行。**记录在案,没有改。**
+- **本机跑了什么**：`TurnLifecycleTest` 41 项（含反空洞自检）；
+  **11 处变异全红，0 存活**（10 处相位 + 1 处前缀契约）：取消直接清成 Idle（缺陷本身）/ 空闲时取消也进 Stopping /
+  worker 退出不回 Idle / Idle 上不许起轮 / Stopping 上放行 / 两种拒绝同一句话 /
+  起轮不记在飞 / 被拒的起轮也算跑起来 / worker 退出不回收 inFlight / 拒绝不计数。
+- 真机:**未取证**。"取消之后马上重试会不会串话"要在 Windows 上真发一轮才知道；
+  连着点取消时用户看到哪句话也没有真机证据。
 
 ### 本轮推进记录（2026-10-04 再续五，P0-08：强杀之后 Node 会活下来）
 
@@ -291,6 +343,14 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   这个孤儿。所以登记要求符号在,且符号**定义成的事件真名**对得上。第一版写成正则时把
   不属于反斜杠的点也转义了,于是永远匹配不上,门把三个正确登记的站点全判成"登记已过期" ——
   改成普通字符串比较。
+- **CI 当头一棒,是我自己的错**:收尸门第一版把仓库根**写死**成
+  `ROOT = '/Volumes/Ext/Projects/MiaoDesk'`(本机路径)。本机全绿,ubuntu runner 上
+  一个站点都扫不到。**是门自己的"零条比对不可能是通过"守卫报出来的** —— 它没有打印
+  一句"每个站点都有收尸路径"就退出 0,而那正是这个仓库反复栽的形状。
+  修复提交 `9175fb0b`:ROOT 改从 `__file__` 推;守卫现在会打印它解析到的两个路径并直接说
+  "那个根目录看着像某台开发机的路径,就是 ROOT 又被写死了"。复现方式是把 src/
+  scripts/tests/.github 复制到另一个绝对路径再跑。顺带 grep 全仓确认新加的文件里
+  没有别的硬编码开发机路径。
 - **本机跑了什么**：收尸门 6 处变异 **6 红 0 存活**:拆收尸接线 / 装了就丢返回值 /
   有界同步不再等 HANDLE / 有界同步不再终止 / stop event 改名(登记过期) /
   **门自己扫不到任何站点**。最后一条是它自己的反空洞守卫 —— 少了它,扫描路径写错时门会
@@ -298,14 +358,6 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   扩到 `scripts/*.py`(此前那个 python 动画门写坏语法,这里照样报"全部可以解析");
   mingw 单编 `PiRuntime.cpp` / `L3Agent.cpp` 均 0 错误;21 道 shell 门 + 2 道 python 门
   + 17 道 node 契约门全通过。
-- **顺手修了三处文档引用**:`verify-doc-citation-symbols.sh` 报
-  `LOCAL_AI_ARCHITECTURE.md` 引 `PiRuntime.cpp:368` 讲 `ConfigurePiAgent`。
-  本轮只加了 2 行 include,把那条本来已经偏了 2 行的引用推出了 ±3 窗口。顺带查了
-  PiRuntime.cpp 在文档里的全部引用,改掉能逐字核实的三处(loopback 密钥 374→318、
-  `ConfigurePiAgent` 368→372、命令行 551-555→498-502)。
-  另有三处引用的内容在这个文件里根本找不到(`["text"]` 的"产品当前写法"引 :455、
-  `449-452` 的图片能力注释、`:526-528` 的 systemPrompt)—— 它们**不在**那道门的
-  检查形状里(引用点前没有反引号标识符),所以门放行。**记录在案,没有改。**
 - 真机:**未取证**。"强杀之后桌面上真的没有孤儿进程"要 Windows;`AttachToReaper` 在
   ERROR_ACCESS_DENIED 那条路上究竟多常见,也要真机才知道。
 

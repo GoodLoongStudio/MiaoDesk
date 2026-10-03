@@ -44,6 +44,15 @@ std::string ExtractJsonString(std::string_view json, std::string_view key);
 // 会被当成 schema=0,而 0 恰好是个合法的旧版本号。
 std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key);
 
+// 取一个**数字**值(整数与小数都算)。manifest 的几何字段(defaultWidth 0.30、
+// aspectRatio 1.0)全是小数,而 ExtractJsonInt 对 "0.30" 会解析失败并停在 '.' 上 ——
+// 于是调用方要么把 0 当成合法值读进去,要么退回自己写一个 strtod。
+//
+// 与 ExtractJsonInt 同一条纪律:数字后面必须紧跟一个边界。from_chars/strtod 停在
+// 第一个不是数字的字符上,所以 "1abc" 会被读成 1;而一份写坏的 manifest 应该被拒绝,
+// 而不是被静默读成一个合法值。
+std::optional<double> ExtractJsonDouble(std::string_view json, std::string_view key) noexcept;
+
 // 取出一个顶层字符串数组(见上面关于形状的说明)。
 std::optional<std::vector<std::string>> ExtractJsonStringArray(std::string_view json,
                                                               std::string_view key);

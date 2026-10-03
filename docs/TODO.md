@@ -818,7 +818,14 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：布局原语与参数、至少两尺寸样例、几何迁移测试、AI 规则。
 - **验收**：多 DPI/比例下不重叠裁切；切尺寸/跨屏/重启保持数据和位置；非法尺寸被拒。
 - **验证环境**：布局逻辑自动+Windows 跨 DPI。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/MiaoWidgetGeometry.h` + `src/desktop/widgets/MiaoWidgetGeometry.cpp`（纯算术，无 Windows 依赖）+ `src/tests/WidgetGeometryTest.cpp`（61 项）+ `src/tests/ShippedWidgetGeometry.cpp`（10 项，走真实加载链逐个审查发行组件）+ `JsonStringField` 新增 `ExtractJsonDouble`（14 条新断言）。
+  **本轮的结论**：geometry 全用归一化数写，于是"这个组件有多大、比例对不对"在写 manifest 时答不上来，而产品此前没有任何地方把它算出来过。算出来之后：三个发行组件全部声明 `aspectRatio: 1.0`，`ValidateInstance` 拿 `defaultWidth/defaultHeight` = 0.30/0.30 = 1.0 去比，一路绿灯；而宿主要的像素盒是"归一化宽 × 屏幕宽"与"归一化高 × 屏幕高" —— FHD 16:9 上 576×324（比例 1.778，失真 1.78×）、32:9 上 1536×432（比例 3.556，失真 3.56×）。**八个参考屏幕上没有一个声明成立**。
+  所以 `aspectRatio` 与 `asset.font`、`videoRenderer` 同类：字段在、校验过、Skill 还教它有效，而没有任何渲染器或宿主读它。差别是这次**连校验都是虚的** —— 它比的是归一化比例，不是用户看见的像素比例。四处文档已改正（Skill、`MIAODESK_CONTENT_FRAMEWORK.md` 的"允许 aspectRatio = 1.0"、本条、能力台账）。
+  真实比例等于 `(归一化宽 / 归一化高) × (屏幕宽 / 屏幕高)`，已作为等式对 8 块屏幕逐个钉住；想要一个接近目标比例的方块，按这个式子反推 `defaultWidth / defaultHeight`。
+  自动检查=`WidgetGeometryTest` 61 项、`ShippedWidgetGeometry` 10 项、`JsonStringFieldTest` 51 项全部通过；几何 10 处变异全红、JSON 3 处变异全红。`ExtractJsonDouble` 里原本有一条"挡 NaN"的守卫，变异检测跑出来是仍绿（`from_chars` 不接受 inf/nan，那条换成 `strtod` 才用得上），已删掉并把理由写进注释。
+  **一个当场踩到的坑**（值得记）：`ExtractJsonInt` 对 `"0.30"` 解析失败并停在 `'.'` 上，于是第一版门把 `defaultWidth` 读成"取不到"、退回默认值 0.30 —— 而默认值恰好等于真值，于是三个组件全被报成"未声明 aspectRatio"，而 manifest 里明明写着 1.0。**默认值与真值撞车让整道门看起来在工作**。修法是在共享读取器里加 `ExtractJsonDouble`，而不是在门里自己写一个 `strtod`。
+  **未做**：尺寸族（small/medium/large）没有定义 —— 那是产品决策（有哪几档、UI 上怎么选），本轮不发明；长文本/溢出策略、切尺寸迁移、`FitAspectInside` 接进宿主都没有；`FitAspectInside` 当前**无调用方**。真机跨 DPI/跨屏签收未取证（本机不是 Windows）。
+  面板状态 🟡。
 
 ### WPRO-02 — Native 组件视觉与控件原语
 

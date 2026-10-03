@@ -17,6 +17,45 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：WPRO-01 组件几何与 `aspectRatio` 不生效
+
+本条记录**新增纯算术模块与两道门，并改正一处"字段在、校验过、教它有效，而没人读它"的
+声明**，不改渲染行为。
+
+- **缺口**：`geometry` 全用归一化写（`defaultWidth: 0.30` 是桌面宽度的 30%），于是
+  "这个组件有多大、比例对不对"在写 manifest 时答不上来，而产品此前没有任何地方把它算出来过。
+- **实测结论**：三个随产品发行的组件全部声明 `aspectRatio: 1.0`。`ValidateInstance`
+  拿 `defaultWidth / defaultHeight`（0.30 / 0.30 = 1.0）去比，一路绿灯；而宿主要的像素盒是
+  "归一化宽 × 屏幕宽"与"归一化高 × 屏幕高"—— FHD 16:9 上 576×324（1.778）、32:9 上
+  1536×432（3.556）。**八个参考屏幕上没有一个声明成立**。真实比例等于
+  `(归一化宽 / 归一化高) × (屏幕宽 / 屏幕高)`。
+- **性质**：这与 `asset.font`、`videoRenderer` 同类 —— 字段在、校验过、Skill 还教它有效，
+  而没有任何渲染器或宿主读它。差别是这次**连校验都是虚的**：它比的是归一化比例，
+  不是用户看见的像素比例。
+- **新增**：`src/desktop/widgets/MiaoWidgetGeometry.cpp`（纯算术）—— `ResolveWidgetPixelBox`
+  （含夹回屏内：一个越界的盒子会让 `UpdateLayeredWindow` 直接失败）、`JudgeWidgetAspect`
+  （"没声明"不等于"比例不对"）、`FitAspectInside`（信箱化，**当前无调用方**；
+  接进宿主需要 Windows 上看得见效果）。8 块参考屏幕含 21:9 与 32:9 —— 失真恰恰随屏幕
+  比例变，只测 16:9 会漏掉最极端的那些。
+- **新回归门**：`src/tests/ShippedWidgetGeometry.cpp` 把每个发行组件在 8 块屏幕上的真实
+  像素盒逐行打出来，登记表与实际不符即红。**不因为比例不符就红** —— 不符是现状，
+  而为让门变绿去改美术正是本规划禁止的动作。
+- **共享读取器**：`ExtractJsonInt` 对 `"0.30"` 解析失败并停在 `'.'` 上，调用方要么把 0
+  当成合法值读进去，要么自己写 `strtod`。第一版门就这么踩了：`defaultWidth` 读成"取不到"
+  退回默认值 0.30，而默认值恰好等于真值 —— 三个组件全被报成"未声明 aspectRatio"，
+  而 manifest 里明明写着 `1.0`。**默认值与真值撞车让整道门看起来在工作**。
+  修法是在 `JsonStringField` 里加 `ExtractJsonDouble`（与整数同一条边界纪律：
+  `"1abc"` 取不到），并在 `JsonStringFieldTest` 补 14 条断言。
+- **自动检查**：`WidgetGeometryTest` 61 项、`ShippedWidgetGeometry` 10 项、
+  `JsonStringFieldTest` 51 项全部通过；几何 10 处变异、JSON 3 处变异全红。
+  `ExtractJsonDouble` 里一条"挡 NaN"的守卫跑出仍绿（`from_chars` 不接受 inf/nan，
+  换成 `strtod` 才用得上），已删掉并把理由写进注释。
+- **文档改正四处**：`skills/widget-content`、`docs/MIAODESK_CONTENT_FRAMEWORK.md` 的
+  "允许 `aspectRatio = 1.0`"、TODO 第 11 节、能力台账。
+- **未取证**：本批无 Windows 侧改动。"组件的真实比例只有 1.778/3.556"是算术结论，
+  "用户在桌面上看到的是什么"仍未签收。尺寸族（small/medium/large）没有定义 ——
+  那是产品决策，本轮不发明。
+
 ### 2026-10-03 · 执行记录：WALL-03 宿主侧时间策略与发行内容动画连续性
 
 本条记录**新增能力与回归门，并给 `Validate` 加一条拒绝规则**。`MiaoSceneRuntime` 的

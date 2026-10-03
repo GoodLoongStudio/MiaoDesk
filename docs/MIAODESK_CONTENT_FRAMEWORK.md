@@ -460,6 +460,15 @@ aspectRatio = free
 
 因此“是否允许 resize”属于内容模板策略，不再由整个 Widget 系统统一写死。
 
+> **`aspectRatio` 当前不生效。** 校验只比较 `defaultWidth / defaultHeight`（归一化之比），
+> 于是 `0.30 / 0.30 = 1.0` 会通过；而宿主要的像素盒是“归一化宽 × 屏幕宽”与
+> “归一化高 × 屏幕高”。在 16:9 屏幕上，声明 `1.0` 的组件实际拿到的是 1.78:1。
+> 也就是说：这个字段既不会报错，也不会给你一个遵循该比例的像素盒。
+> 组件真实拿到的比例是 `(归一化宽 / 归一化高) × (屏幕宽 / 屏幕高)`
+> （`src/desktop/widgets/MiaoWidgetGeometry.cpp`，由 `src/tests/ShippedWidgetGeometry.cpp`
+> 对每个发行组件在 8 块参考屏幕上逐个算出）。要一个接近目标比例的方块，按这个式子反推
+> `defaultWidth / defaultHeight`。把声明真正落到像素上（信箱化留边）属于 WPRO-01 实施轮。
+
 ## 12. Animation
 
 动画优先采用声明式模型。

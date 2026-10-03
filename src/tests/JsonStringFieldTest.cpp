@@ -10,7 +10,9 @@
 // 判成"id 在"。校验器第一版就是这个 bug,而这个用例钉住它。
 #include "miaodesk/JsonStringField.h"
 
+#include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string>
 
 namespace {
@@ -33,6 +35,17 @@ void CheckEq(const std::string& actual, const std::string& expected, const std::
                     what.c_str(), expected.c_str(), actual.c_str());
     }
 }
+
+void CheckEqD(const std::optional<double>& actual, double expected, double tolerance,
+              const std::string& what) {
+    ++g_checks;
+    if (!actual.has_value() || !(std::fabs(*actual - expected) <= tolerance)) {
+        ++g_failures;
+        std::printf("FAIL  %s (期望 %.12g,实际 %s)\n", what.c_str(), expected,
+                    actual.has_value() ? std::to_string(*actual).c_str() : "无值");
+    }
+}
+
 } // namespace
 
 int wmain() {
@@ -109,6 +122,26 @@ int wmain() {
     // 键位置:值恰好等于字段名时不能被当成键。
     Check(!ExtractJsonStringArray(R"({"x":"capabilities"})", "\"capabilities\"").has_value(),
           "值等于字段名不算有这个键");
+
+    // ---- 小数取值:manifest 的几何字段全是小数,ExtractJsonInt 对 "0.30" 会停在 '.' ----
+    std::printf("\n小数取值:\n");
+    CheckEqD(ExtractJsonDouble(R"({"w":0.30})", "\"w\""), 0.30, 1e-12, "小数取到");
+    CheckEqD(ExtractJsonDouble(R"({"w":1.0})", "\"w\""), 1.0, 1e-12, "1.0 这种写法也取到");
+    CheckEqD(ExtractJsonDouble(R"({"w":2})", "\"w\""), 2.0, 1e-12, "整数按小数取");
+    CheckEqD(ExtractJsonDouble(R"({"w":-1.5e2})", "\"w\""), -150.0, 1e-9, "科学计数法取到");
+    CheckEqD(ExtractJsonDouble(R"({"w": 0.25 })", "\"w\""), 0.25, 1e-12, "冒号后有空白也取到");
+    Check(!ExtractJsonDouble(R"({"w":"0.30"})", "\"w\"").has_value(), "字符串值不是小数");
+    Check(!ExtractJsonDouble(R"({"w":abc})", "\"w\"").has_value(), "垃圾值是 nullopt");
+    Check(!ExtractJsonDouble(R"({"w":1abc})", "\"w\"").has_value(),
+          "1abc 取不到:数字后必须紧跟边界(写坏的字段该被拒,而不是被读成 1)");
+    Check(!ExtractJsonDouble(R"({"w":0.30,"v":1})", "\"q\"").has_value(), "没有的键是 nullopt");
+    CheckEqD(ExtractJsonDouble(R"({"w":0.30,"v":1})", "\"v\""), 1.0, 1e-12, "同文件里后一个键也取得到");
+    Check(!ExtractJsonDouble(R"({"w":true})", "\"w\"").has_value(), "布尔值不是小数");
+    Check(!ExtractJsonDouble(R"({"n":null})", "\"n\"").has_value(), "null 不是小数");
+    // 键位置纪律与字符串取值一致:不能把值当成键。
+    Check(!ExtractJsonDouble(R"({"x":"0.30"})", "\"0.30\"").has_value(), "值等于字段名不算有这个键");
+    Check(!ExtractJsonDouble(R"({"kind":"w"})", "\"w\"").has_value(),
+          "值里含字段名不算有这个键(manifest 里 kind 与 width 靠得太近时最要紧)");
 
     std::printf("\nJSON field reader: %d checks, %d failures\n", g_checks, g_failures);
     if (g_failures) {

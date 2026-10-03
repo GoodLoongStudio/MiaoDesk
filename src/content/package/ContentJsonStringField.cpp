@@ -1,6 +1,7 @@
 #include "miaodesk/JsonStringField.h"
 
 #include <charconv>
+#include <cmath>
 #include <cctype>
 #include <cstdint>
 #include <optional>
@@ -90,6 +91,25 @@ std::optional<int> ExtractJsonInt(std::string_view json, std::string_view key) {
     // 数字之后必须紧跟一个边界。from_chars 自己会停在第一个不是数字的字符上,
     // 所以 "1abc" 会被读成 1 —— 而一份写坏的 manifest 应该被拒绝,而不是被
     // 静默读成一个合法值。这里补上边界检查。
+    if (ptr != json.data() + json.size()) {
+        const char after = *ptr;
+        const bool boundary = after == ',' || after == '}' || after == ']' ||
+                              std::isspace(static_cast<unsigned char>(after));
+        if (!boundary) return std::nullopt;
+    }
+    return value;
+}
+
+std::optional<double> ExtractJsonDouble(std::string_view json, std::string_view key) noexcept {
+    const std::size_t pos = FindJsonValue(json, key);
+    if (pos == std::string_view::npos) return std::nullopt;
+    const auto begin = json.data() + pos;
+    double value = 0.0;
+    const auto [ptr, ec] = std::from_chars(begin, json.data() + json.size(), value);
+    if (ec != std::errc{} || ptr == begin) return std::nullopt;
+    // from_chars 对浮点接受 "1e5" / "0.30" / "-2",而它**不接受** "inf" / "nan" ——
+    // 所以这里不需要再守一条有限性检查:换成 strtod 才会需要,而那一天还没来。
+    // 加一条挡不动的守卫,只会得到一段测不出来的死代码(见 SceneClock::Pause 的注释)。
     if (ptr != json.data() + json.size()) {
         const char after = *ptr;
         const bool boundary = after == ',' || after == '}' || after == ']' ||

@@ -130,7 +130,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | CREATE-01 | ✅ | Creator 窗口真实 IPC E2E | 是 | ACK 不等于成功；必须确认 Visible/Ready |
 | CREATE-02 | ⬜ | 10 条 Wallpaper 固定生成集 | 是+真机 | 统计生成成功、校验、预览、需求符合度与延迟 |
 | CREATE-03 | ⬜ | 10 条 Widget 固定生成集 | 是+真机 | 同上 |
-| CREATE-04 | ⬜ | 上一可用结果保留 | 是 | 新一轮生成/修复失败不覆盖上一份可预览结果 |
+| CREATE-04 | 🟡 | 上一可用结果保留 | 是 | 新一轮生成/修复失败不覆盖上一份可预览结果。**自动部分已修：复用 candidateId 不再把上一版带走**（见下）；界面上的实际保留仍等宿主接线 |
 | CREATE-05 | ⬜ | Preview / Apply 一致性 | 是+真机 | 同包同参数下预览与桌面主要视觉一致 |
 | CREATE-06 | ⬜ | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 |
 | CREATE-07 | ⬜ | Creator 重启恢复 | 是 | 聊天、当前 workspace、最近预览、生成状态可恢复 |
@@ -228,10 +228,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
    Wallpaper/Widgets/AI 会话/库状态四个恢复面的**自动**部分；
 3. `P0-03` Wallpaper 状态循环的自动回归部分；
 4. `SEARCH-01` 固定查询集；
-5. `CREATE-04` 上一可用结果保留。
 
 已完成自动部分（真机仍待）：`P0-04`（几何不变式 + 去重规则）、`P0-07`（凭据同源）、
-`P0-08`（子进程收尸门 + Node 连坐 job）、`AI-03`（Pi 侧轮次相位，取消不再清忙位）。
+`P0-08`（子进程收尸门 + Node 连坐 job）、`AI-03`（Pi 侧轮次相位，取消不再清忙位）、
+`CREATE-04`（复用 candidateId 不再带走上一版可预览结果）。
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
@@ -259,6 +259,31 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   一律留 `🟠`。WALL-03 剩"状态机/行为图、确定性随机独立设施、`SceneClock` 与 `ParameterSlew`
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
+### 本轮推进记录（2026-10-04 再续七，CREATE-04：复用 candidateId 带走上一版）
+
+- **修的真实缺陷**：`ValidationFailed` / `EvidenceFailed` / `ReviewCompleted` 都按
+  `FindCandidate(pendingCandidateId_)` —— 找到谁就改谁。而候选 ID 是**原样收下模型给的**
+  （`CandidateSubmitted` 那条注释写着"candidateId 由宿主重新分配"，实际并没有，只有模型
+  留空时才由我们编一个）。于是新一轮复用一个 ID 时，被改的是**上一轮那条已经成功的**记录：
+
+      第 1 轮: cand-1 / digest-1 校验通过        → LastValidCandidate() = digest-1
+      第 2 轮: 模型又交出 cand-1(摘要 digest-2),校验失败
+               → FindCandidate("cand-1") 命中第 1 轮那条,validated = false
+               → LastValidCandidate() = 空
+
+  用户在改需求重新生成之后指着上一版说"就用这个"，而它已经不在了。这就是 CREATE-04 的验收。
+  现有测试 `TestPreviousCandidateSurvivesFailure` 之所以是绿的，只因为它给第二轮用了不同 ID。
+- **修法**：`pendingDigest_` 一起记，内部查找换成 `FindPendingCandidate()` ——
+  **ID 与摘要都对上才认**。新一轮的失败找不到自己要改的那条，什么都不动。
+- **本机跑了什么**：`CreationWorkflowStateTest` 174 项通过（新增正向一条 + 反向一条：
+  ID 与摘要都相同就是同一条记录，它失败时上一版确实失效）；变异检测把两个重载都退回
+  "只按 ID" → **红**，报的就是 CREATE-04 那两条。
+- **一个值得记下的坑**：第一次变异只改了其中一个重载，测试**仍然全绿** —— 因为
+  `Apply` 走的是另一个重载。一个没打到执行路径上的"破坏"看起来和"测试没覆盖"一模一样。
+  变异检测的价值正在于此。
+- 真机:**未取证**。这条链路目前还没有宿主在发 `CandidateSubmitted`,所以"界面上那一版
+  还在不在"要等接线之后才能签收。
 
 ### 本轮推进记录（2026-10-04 再续六，AI-03：取消不是完成）
 
@@ -598,6 +623,26 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | PRO-04 | S7 | ⏳ | 完整桌面组合与一体创作 | S3、S4、S5；高级组合依赖 S6 |
 | PRO-05 | S7 | ⏳ | 专业版兼容、长稳与发布证据 | PRO-04、S6、原 REL 门 |
 | PRO-06 | S7 | ⏳ | 作者资料、交接与专业目标签收 | PRO-05 |
+
+### `20bd7639` 上 Windows x64 Build 的组件可见性冒烟红过一次 —— 同 SHA 另两条链同一条门全绿
+
+- **是哪一道**：`packaging/windows/verify-widget-visibility.ps1` 的 `Wait-WidgetCount`
+  ("Expected N paint-ready Widget surface(s), observed $count")。它起真的
+  `MiaoDeskWallpaper.exe`、用 `EnumWindows` 数真的窗口,**只给 15 秒**准备时间,每 250ms 轮一次;
+  壁纸进程中途退出则直接抛。**它是计时敏感的运行时冒烟,不是编译门。**
+- **结论是 flake,有证据,不是猜的**:
+  - 同一条门在**同一个 SHA `20bd7639`** 上跑过五次:`Windows x64 Build` **红**,
+    `Windows x64 Package` **绿**、`Windows x64 MSIX` **绿**、`Windows ARM64 Package` **绿**。
+    加上 ARM64 Fast Dev / Repo Hygiene / Path Layout Contract / Cleanup 也全绿,
+    **同 SHA 八道里七道 success**。同一个 .ps1,同一份提交。五局四绿,而代码只有一份。
+  - 同一条门在 `7758a567`(P0-04 那个提交)上也绿。
+  - `7758a567` 之后改的三处 —— AI 对话凭据槽(`b5e5403c`)、Pi 的 Node 收尸(`dcf9750a`)、
+    Pi 的轮次相位(`20bd7639`)—— **都不在壁纸/组件进程里执行**
+    (`ReaperJob()` 只有 `PiRuntime::LaunchProcess` 会调)。
+- **仍然不知道的**:CI VM 那一次为什么超时。15 秒的窗口在共享 runner 上短于产品里的
+  真实场景,所以"偶发一次"这个解释成立,但我没有 runner 侧的计时数据可以证明。
+- **没有做的事**:匿名身份不能 re-run(401),所以我没有通过重跑取证;
+  也没有把这条门调宽容期 —— 那是拿"让门别响"换"门还在查",而这个仓库里已经栽过四次。
 
 ## 15. 本轮规划变更记录（2026-10-03）
 

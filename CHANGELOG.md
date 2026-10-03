@@ -17,6 +17,39 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-04 · 执行记录：CREATE-04 复用 candidateId 会把上一版可预览结果带走
+
+`ValidationFailed` / `EvidenceFailed` / `ReviewCompleted` 都按
+`FindCandidate(pendingCandidateId_)` "找到谁就改谁"。而候选 ID 是**原样收下模型给的**
+(`CandidateSubmitted` 的注释写着"candidateId 由宿主重新分配",实际并没有 —— 只有模型
+留空时才由我们编一个)。于是新一轮复用一个 ID 时,被改的是**上一轮那条已经成功的**记录:
+
+    第 1 轮: cand-1 / digest-1 校验通过 → LastValidCandidate() = digest-1
+    第 2 轮: 模型又交出 cand-1(摘要 digest-2),校验失败
+             → FindCandidate("cand-1") 命中第 1 轮那条,validated = false
+             → LastValidCandidate() = 空
+
+用户在改需求重新生成之后指着上一版说"就用这个",而它已经不在了。这正是 CREATE-04 的验收:
+"新一轮生成/修复失败不覆盖上一份可预览结果"。现有测试
+`TestPreviousCandidateSurvivesFailure` 是绿的,只因为它给第二轮用了不同的 ID。
+
+- **修法**:`pendingDigest_` 一起记,内部五处(实际四处)查找换成 `FindPendingCandidate()` ——
+  **ID 与摘要都对上才认**。新一轮的失败找不到自己要改的那条,什么都不动,上一版留在原地。
+- **本机跑了什么**:`CreationWorkflowStateTest` 174 项通过(新增
+  `TestReusedCandidateIdDoesNotTakeAwayTheLastGoodOne`,并补了反向一条:
+  ID 与摘要都相同就是同一条记录,它失败时上一版确实失效);
+  变异检测:把两个重载都退回"只按 ID" → **红**,而且报的就是 CREATE-04 那两条。
+- **一个值得记下的坑**:第一次变异只改了其中一个重载,测试**仍然全绿**。
+  因为 `Apply` 走的是另一个重载。变异检测的意义正在于此 —— 一个没打到执行路径上的
+  "破坏",看起来和"测试没覆盖"一模一样。
+- **顺带**:`Windows x64 Build` 在 `20bd7639` 上红过一次(组件可见性冒烟,15 秒窗口)。
+  同一条门在同一 SHA 的**另外三条链**(`Windows x64 Package`、`Windows x64 MSIX`、
+  `Windows ARM64 Package`)上**全绿**;加上 ARM64 Fast Dev / Repo Hygiene /
+  Path Layout Contract / Cleanup 也全绿 ——**同 SHA 八道里七道 success**。
+  同一个 .ps1,同一份提交,五局四绿而代码只有一份,且我这三处改动都不在壁纸进程里执行
+  (`ReaperJob()` 只有 `PiRuntime::LaunchProcess` 会调)。判为 runner flake。
+  没有改宽容期:那是拿"让门别响"换"门还在查",而这个仓库里已经栽过四次。
+
 ### 2026-10-04 · 执行记录：AI-03 取消不是完成
 
 同一个仓库里有两个 AI 运行时,而它们对"取消"的处理**不一样**:

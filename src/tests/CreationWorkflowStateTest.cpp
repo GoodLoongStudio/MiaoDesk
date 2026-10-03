@@ -302,6 +302,50 @@ void TestPreviousCandidateSurvivesFailure() {
     CheckEq(kept ? kept->digest : std::string(), "digest-1", "留下的是上一版的摘要");
 }
 
+// CREATE-04:新一轮失败不许把上一版可预览的结果带走。
+//
+// 上面那条 TestPreviousCandidateSurvivesFailure 是绿的,只因为它给第二轮用了
+// 不同的 candidateId("cand-2")。一旦**复用**同一个 ID —— 而模型交出的 ID 是原样收下的
+// (CandidateSubmitted 的注释写着"candidateId 由宿主重新分配",实际并没有)——
+// ValidationFailed 的 FindCandidate(pendingCandidateId_) 命中的是上一轮那条**已经成功**
+// 的记录,`validated = false` 落在它身上,LastValidCandidate() 就此空空。
+//
+// 用户在改需求重新生成之后指着上一版说"就用这个",而那正是 CREATE-04 的原话。
+void TestReusedCandidateIdDoesNotTakeAwayTheLastGoodOne() {
+    auto workflow = MakeReady("S-2c");
+    const auto* before = workflow.LastValidCandidate();
+    Check(before != nullptr, "先有一版成功候选");
+    CheckEq(before ? before->digest : std::string(), "digest-1", "摘要就是它");
+
+    // 用户改需求后重新生成,而模型交出的 candidateId 复用了上一轮的 "cand-1"。
+    workflow.Apply({.type = CreationEventType::BriefRevised, .message = Msg(workflow, 1)});
+    workflow.Apply({.type = CreationEventType::BriefSubmitted, .message = Msg(workflow, 1)});
+    workflow.Apply({.type = CreationEventType::PreparationSucceeded, .message = Msg(workflow, 2)});
+    workflow.Apply({.type = CreationEventType::CandidateSubmitted, .message = Msg(workflow, 2),
+                    .candidateId = "cand-1", .digest = "digest-2", .summary = "第二版候选"});
+    workflow.Apply({.type = CreationEventType::ValidationFailed, .message = Msg(workflow, 2),
+                    .candidateId = "cand-1", .digest = "digest-2",
+                    .errorCode = "unrepairable", .detail = "manifest 损坏"});
+
+    Check(workflow.Stage() == CreationStage::Failed, "新版失败");
+    const auto* kept = workflow.LastValidCandidate();
+    Check(kept != nullptr, "★ 上一版候选没有被新一轮的失败带走(CREATE-04)");
+    CheckEq(kept ? kept->digest : std::string(), "digest-1", "留下的仍是上一版的摘要");
+
+    // 同一条 ID 复用,但**摘要相同**时要认 —— 同一份内容的重复提交不是另一轮。
+    auto same = MakeReady("S-2d");
+    same.Apply({.type = CreationEventType::BriefRevised, .message = Msg(same, 1)});
+    same.Apply({.type = CreationEventType::BriefSubmitted, .message = Msg(same, 1)});
+    same.Apply({.type = CreationEventType::PreparationSucceeded, .message = Msg(same, 2)});
+    same.Apply({.type = CreationEventType::CandidateSubmitted, .message = Msg(same, 2),
+                .candidateId = "cand-1", .digest = "digest-1", .summary = "同一份"});
+    same.Apply({.type = CreationEventType::ValidationFailed, .message = Msg(same, 2),
+                .candidateId = "cand-1", .digest = "digest-1",
+                .errorCode = "unrepairable", .detail = "坏了"});
+    Check(same.LastValidCandidate() == nullptr,
+          "ID 与摘要都相同就是同一条记录:它失败时上一版确实失效");
+}
+
 void TestUnrepairableFailureDoesNotConsumeRepairBudget() {
     CreationWorkflow workflow(MakeSession("S-3"), CreationBudget{});
     workflow.Apply({.type = CreationEventType::BriefSubmitted, .message = Msg(workflow, 0)});
@@ -608,6 +652,7 @@ int wmain() {
     TestDuplicateSettleSaysSo();
     TestValidationFailureRetriesThenStops();
     TestPreviousCandidateSurvivesFailure();
+    TestReusedCandidateIdDoesNotTakeAwayTheLastGoodOne();
     TestUnrepairableFailureDoesNotConsumeRepairBudget();
     TestCancelInvalidatesLateCallbacks();
     TestApplyStillSettlesAfterCancel();

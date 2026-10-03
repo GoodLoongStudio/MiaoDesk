@@ -199,9 +199,16 @@ std::vector<CreationEffect> CreationWorkflow::Apply(const CreationEvent& event) 
 
     case CreationEventType::CandidateSubmitted:
         if (session_.stage != CreationStage::Generating && session_.stage != CreationStage::Repairing) break;
-        // 模型交出的路径/ID/成功声明只按输入处理:candidateId 由宿主重新分配,
-        // 摘要由宿主对封存快照计算,所以这里只用它携带的定位信息。
+        // 模型交出的路径/ID/成功声明只按输入处理。摘要由宿主对封存快照计算。
+        //
+        // candidateId **并不是**宿主重新分配的:下面这行原样收下模型给的值,只有模型
+        // 留空时才由 ValidationSucceeded 编一个"cand-N"。这里曾经写着"candidateId 由宿主
+        // 重新分配",那句话是假的,而它正是 CREATE-04 那个缺陷的成因 —— 以为 ID 不会撞,
+        // 于是后面几处都按 ID 单独认候选。现在 ID 与摘要一起认(见 FindPendingCandidate)。
         pendingCandidateId_ = event.candidateId;
+        // 摘要一起记:只记 ID 的话,后面几条按 ID 找到谁就改谁,而复用 ID 的
+        // 新一轮会改到上一轮那个已经成功的候选上。见头文件里 pendingDigest_ 那段。
+        pendingDigest_ = event.digest;
         Enter(CreationStage::Validating);
         effects.push_back({CreationEffectType::SnapshotCandidate, session_.sessionId, session_.epoch,
                            session_.turnId, event.candidateId, event.digest, {}, {},
@@ -231,7 +238,7 @@ std::vector<CreationEffect> CreationWorkflow::Apply(const CreationEvent& event) 
 
     case CreationEventType::ValidationFailed: {
         if (session_.stage != CreationStage::Validating) break;
-        auto* candidate = FindCandidate(pendingCandidateId_);
+        auto* candidate = FindPendingCandidate();
         if (candidate) {
             candidate->validated = false;
             candidate->validationError = event.errorCode.empty() ? event.detail : event.errorCode;
@@ -262,7 +269,7 @@ std::vector<CreationEffect> CreationWorkflow::Apply(const CreationEvent& event) 
 
     case CreationEventType::EvidenceCollected: {
         if (session_.stage != CreationStage::Rendering) break;
-        auto* candidate = FindCandidate(pendingCandidateId_);
+        auto* candidate = FindPendingCandidate();
         if (candidate) candidate->evidenceCollected = true;
         Enter(CreationStage::Reviewing);
         // 视觉评审只在"该 Profile 已确证支持视觉"时才排。否则如实标记未审,
@@ -276,7 +283,7 @@ std::vector<CreationEffect> CreationWorkflow::Apply(const CreationEvent& event) 
 
     case CreationEventType::EvidenceFailed: {
         if (session_.stage != CreationStage::Rendering) break;
-        auto* candidate = FindCandidate(pendingCandidateId_);
+        auto* candidate = FindPendingCandidate();
         if (candidate) candidate->evidenceCollected = false;
         // 缺素材或渲染失败绝不能用封面图替代成功。
         Enter(CreationStage::Failed);
@@ -288,7 +295,7 @@ std::vector<CreationEffect> CreationWorkflow::Apply(const CreationEvent& event) 
 
     case CreationEventType::ReviewCompleted: {
         if (session_.stage != CreationStage::Reviewing) break;
-        auto* candidate = FindCandidate(pendingCandidateId_);
+        auto* candidate = FindPendingCandidate();
         if (candidate) {
             candidate->visualReviewed = event.reviewVerdict != CreationReviewVerdict::VisualNotReviewed;
             candidate->visualReviewSkipped = event.reviewVerdict == CreationReviewVerdict::VisualNotReviewed;
@@ -554,6 +561,33 @@ const CandidateRevision* CreationWorkflow::LastValidCandidate() const noexcept {
         if (candidate.validated) best = &candidate;
     }
     return best;
+}
+
+// 当前这一轮的那一个候选:ID 与摘要**都**要对上。
+//
+// 为什么不能只按 ID:模型交出的 candidateId 是原样收下的(CandidateSubmitted 那条注释
+// 写着"candidateId 由宿主重新分配",实际并没有 —— 只有模型留空时才由我们编一个)。
+// 两轮复用同一个 ID 时,按 ID 找会命中上一轮那条**已经成功**的记录,于是
+// ValidationFailed / EvidenceFailed / ReviewCompleted 全都落在它身上。
+// 加上摘要之后,新一轮的失败找不到自己要改的那条,什么都不动 —— 上一版留在原地。
+CandidateRevision* CreationWorkflow::FindPendingCandidate() {
+    if (pendingCandidateId_.empty() && pendingDigest_.empty()) return nullptr;
+    for (auto& candidate : candidates_) {
+        if (candidate.candidateId == pendingCandidateId_ && candidate.digest == pendingDigest_) {
+            return &candidate;
+        }
+    }
+    return nullptr;
+}
+
+const CandidateRevision* CreationWorkflow::FindPendingCandidate() const {
+    if (pendingCandidateId_.empty() && pendingDigest_.empty()) return nullptr;
+    for (auto& candidate : candidates_) {
+        if (candidate.candidateId == pendingCandidateId_ && candidate.digest == pendingDigest_) {
+            return &candidate;
+        }
+    }
+    return nullptr;
 }
 
 CreatorToolOutcome CreationWorkflow::AuthorizeToolCall(const CreatorToolRequest& request) const {

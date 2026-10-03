@@ -382,6 +382,11 @@ public:
     // 最近一个通过校验的候选。取消/失败后仍然可查,用于"上一有效候选"。
     const CandidateRevision* LastValidCandidate() const noexcept;
 
+    // 当前这一轮正在处理的那一个候选。按 (candidateId, digest) 一起认 ——
+    // 见 pendingCandidateId_ 上面那段。ID 单独一个不够。
+    CandidateRevision* FindPendingCandidate();
+    const CandidateRevision* FindPendingCandidate() const;
+
     // 工具调用是否被允许。模型伪造/复用别的 sessionId 一律拒绝。
     CreatorToolOutcome AuthorizeToolCall(const CreatorToolRequest& request) const;
 
@@ -399,7 +404,16 @@ private:
     CreationBudget budget_;
     std::vector<CandidateRevision> candidates_;
     std::vector<ApplyIdempotencyEntry> applyLedger_;
+    // 正在校验的那一个候选。**ID 和摘要必须一起记。**
+    //
+    // 只记 ID 出过真事:`ValidationFailed`(以及 Evidence/Review 几条)按
+    // `FindCandidate(pendingCandidateId_)` 找到谁就改谁。模型复用一个 candidateId 时,
+    // 找到的是**上一轮那个已经成功的**候选,于是 `validated = false` 落在那条记录上 ——
+    // 新一轮的失败把用户上一版可预览的结果带走了。那正是 CREATE-04 的验收:
+    // "新一轮生成/修复失败不覆盖上一份可预览结果"。
+    // 而现有测试之所以是绿的,只因为它给第二轮用了不同的 ID。
     std::string pendingCandidateId_;
+    std::string pendingDigest_;
     std::string lastRejection_;
     DraftPersist draftPersist_;
 };

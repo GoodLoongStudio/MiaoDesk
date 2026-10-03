@@ -827,6 +827,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
   **未做**：尺寸族（small/medium/large）没有定义 —— 那是产品决策（有哪几档、UI 上怎么选），本轮不发明；长文本/溢出策略、切尺寸迁移、`FitAspectInside` 接进宿主都没有；`FitAspectInside` 当前**无调用方**。真机跨 DPI/跨屏签收未取证（本机不是 Windows）。
     **补充二（同日，接线诊断）**：`ContentWidgetHost::SurfaceState` 现在把宽高比裁决写进诊断行（`aspectDeclared` / `aspectActual` / `aspectDistortion` / `aspectHonored`）。这不出新逻辑，但把上一段"量出来却没人看得见"的结论搬到现场：三个官方组件在 FHD 上会打印 `aspectDeclared=1.000 aspectActual=1.778 aspectDistortion=1.778 aspectHonored=false`。**不是修它** —— 修要动渲染，本机看不见效果。
   为此加 `JudgeWidgetAspectOfBox` 重载：宿主手里那个渲染目标尺寸是**既成事实**（夹紧、DPI、桌面边界都可能让它与推算差一两个像素），而诊断要的是既成事实。第一版实现读了 `box.aspect` 这个展示字段，于是"把 height 调小 24 像素"拿到的还是旧比例的裁决 —— 而那一条恰好是诊断要报的信息，是 `WidgetGeometryTest` 里"盒子与推算不同时裁决跟着变"逮到的。改成从 width/height 现算。另加 `FormatAspect`（三位小数 + NaN/inf 印成 `nan`）。
+    **接线可达性已逐段核对（读代码，未运行）**：`assets/widgets/` 由顶层 `CMakeLists.txt` 装到 exe 旁的 `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`MiaoWidgetContentCatalog::ResolveOneRoot` 对每个 `.mdwidget` 调 `MiaoContentDefinitionLoader::Load`（读 `manifest.json`），于是 `slot.definition.geometry.aspectRatio` 对三个官方组件有值，`SurfaceState` 那段会打印。**打印出来的文本本身未在 Windows 上看过。**
   面板状态 🟡。
 
 ### WPRO-02 — Native 组件视觉与控件原语

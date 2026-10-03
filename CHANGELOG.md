@@ -39,8 +39,14 @@ MiaoDesk 所有显著变更均记录于此文件。
   的六位 —— 诊断行已经很长，而人要看的是"1.778 对 1.000"这个对比，不是第七位小数。
 - **自动检查**：`WidgetGeometryTest` 75 项通过（新增 7 项重载一致性/盒子变更/未声明/
   空盒子、6 项 `FormatAspect`）；4 处变异全红。mingw 交叉语法门 0 真实错误。
+- **接线可达性逐段核对（读代码，未运行）**：`assets/widgets/` 由顶层 CMakeLists 装到 exe 旁的
+  `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`MiaoWidgetContentCatalog::ResolveOneRoot`
+  对每个 `.mdwidget` 调 `MiaoContentDefinitionLoader::Load`（读 `manifest.json`），于是
+  `slot.definition.geometry.aspectRatio` 对三个官方组件有值，`SurfaceState` 那段会打印。
+  **打印出来的文本本身未在 Windows 上看过** —— 这是"接线到得了真内容"与"那句话真的出现了"
+  两件事，前者已证，后者没有。
 - **未取证**：诊断行的实际输出本机看不到 —— 它只在 Windows 宿主里被写进配置文件与日志。
-   壁纸 的视觉表现**一个像素都没动**。
+  壁纸与组件的视觉表现**一个像素都没动**。
 
 ### 2026-10-04 · 执行记录：CAP-03 资产门与 schema 版本矩阵
 

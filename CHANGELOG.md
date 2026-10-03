@@ -17,6 +17,47 @@ MiaoDesk 所有显著变更均记录于此文件。
 
 > 当前内容以 `main` 为准。RC 版本号尚未提升；最终 version bump 只在 Issue #60 的真机验收、参考机性能基线和同一 SHA 发布链验证完成后执行。
 
+### 2026-10-03 · 执行记录：WALL-03 宿主侧时间策略与发行内容动画连续性
+
+本条记录**新增能力与回归门，并给 `Validate` 加一条拒绝规则**。`MiaoSceneRuntime` 的
+求值部分本轮未发现缺陷 —— 缺的全在宿主侧，而那正是规划给 WALL-03 的验收项
+"昼夜切换、事件触发、**循环接缝**与**暂停恢复**"。
+
+- **暂停恢复此前不存在**。`AdvanceTimeline(timeSeconds)` 收的是宿主给的绝对时间，
+  而真实宿主给 `GetTickCount64() / 1000.0`（`ContentWidgetHost.cpp:717`）。于是被挡住 /
+  隐藏 / 锁屏的那段时间照算进动画：昼夜壁纸恢复后天空直接跳到半夜，而用户什么都没做。
+  新增 `SceneClock`：场景时间只由"正在跑的那段时间"累加，暂停任意时长一秒都不多走；
+  `Seek` 在暂停期被忽略，否则暂停可以被绕过。
+- **平滑参数过渡此前不存在**。`SetParameter` 是瞬移的。新增 `ParameterSlew` /
+  `ParameterSlewSet`：曲线与时间轴共用一份 `ApplyAnimationEasing`（原先是
+  `MiaoSceneRuntime.cpp` 里的文件局部符号，宿主调不到），过渡按场景时间推进而不是墙钟，
+  结束时通知宿主，之后不再占帧。
+- **循环接缝与一帧瞬移此前没有任何检查**。`ValidateAnimation` 只查关键帧时间严格递增，
+  于是两种写法都能过：Loop 轨道首尾值不同（每圈整段行程在一帧内被撤回），
+  以及两个关键帧相距 1e-9 秒、值差 0.8（任何帧率下插值一次都采不到样）。
+  新增 `AuditAnimationContinuity` 与 `ShippedAnimationContinuity`：后者走真实加载链
+  审查全部 25 条发行动画轨道，端点与帧步长都记录在案。
+- **两条动画写同一个属性此前不拒绝**。先声明的那条**从来不可观测**：`Initialize`
+  只跑 binding、不跑动画，所以它连起始值都贡献不了；`AdvanceTimeline` 又按声明顺序跑，
+  后一条每帧都把它盖掉。事件触发的那条更糟 —— 它只在触发那一帧赢一帧，下一帧就被
+  时间线动画盖回，看起来是一次一帧的闪。现在 `Validate` 拒绝，并在错误信息里点名是哪两条。
+- **边界是刻意划在"两条动画"，不是"动画与 binding"**。binding 只在 `Initialize` 跑一次，
+  所以它在动画开跑之前**是**可观测的（属性起始值来自参数），"起始值取参数、之后交给动画"
+  是一个自洽的模型 —— 产品的序列化夹具与两处 SelfTest 正是这个形状。那一对的优先级
+  （动画赢）改为报出来并写进 Skill，不禁止。
+- **一处已登记而未修复**：`animation://miao-cloud/blink-blink` 的淡入/淡出各为
+  1/240 秒（产品支持的最高帧率下的一帧），所以那一"淡变"渲染不出来。
+  没有改它：改法是拉长淡变，那是改美术，而本机不是 Windows，拉长之后好看不好看
+  给不出证据。`ShippedAnimationContinuity` 里以登记表的形式盯着这件事 ——
+  多一条、少一条都会红。
+- **自动检查**：`MiaoSceneTimelinePolicyTest` 174 项、`ShippedAnimationContinuity` 48 项、
+  `MiaoSceneRuntimeTest` 33 项（新增 6 项并发写拒绝）全部通过；缓动曲线提为共用实现后
+  `MiaoSceneRuntime`、`MiaoSceneRuntimeModel`、`MiaoSceneFrameScheduler` 与
+  `MiaoSceneSerializer` 的 `SelfTest` 仍通过。共 26 处变异全部变红（含一处占位空操作，不计）。
+- **未取证**：真机动画采样与视觉签收一律未做（本机不是 Windows）。
+  `SceneClock` 与 `ParameterSlew` 也尚未接到生产调用方 —— 接进宿主要同时决定
+  暂停由谁调、参数面板失焦后怎么办，属于播放宿主那一轮。
+
 ### 2026-10-03 · 执行记录：D-6 校验器拒绝全部随产品发行的包
 
 本条记录**发现并修复一处校验与加载不一致**。它由本轮新加的发行包包级校验门首次跑出。

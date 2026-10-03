@@ -1599,7 +1599,8 @@ bool MiaoSceneSerializer::SelfTest() {
       "nodes":[
         {"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[
           {"id":"component://root/transform","kind":"transform","properties":[
-            {"name":"opacity","type":"float","default":1.0}
+            {"name":"opacity","type":"float","default":1.0},
+            {"name":"pulse","type":"float","default":0.0}
           ]}
         ]}
       ],
@@ -1629,7 +1630,7 @@ bool MiaoSceneSerializer::SelfTest() {
         },
         {
           "id":"animation://event-pulse",
-          "target":{"componentId":"component://root/transform","propertyName":"opacity"},
+          "target":{"componentId":"component://root/transform","propertyName":"pulse"},
           "enabled":true,"loop":"once","duration":0.5,
           "trigger":{"mode":"inputRisingEdge","inputId":"input://event/pulse"},
           "keyframes":[

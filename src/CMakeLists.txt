@@ -65,6 +65,13 @@ set(MIAODESK_CORE_SOURCES
     content/runtime/MiaoSceneFrameScheduler.cpp
     content/runtime/MiaoSceneRuntime.cpp
     content/runtime/MiaoSceneRuntimeModel.cpp
+    # WALL-03 的宿主侧时间策略:暂停恢复、平滑参数过渡、动画连续性审查。
+    # 与上面三个同为纯逻辑(不 import Windows 头),所以既进产品,也能被
+    # run-pure-logic-tests.sh 真实编译并运行 —— 而它管的恰好是三件
+    # "只有接了宿主才看得见"的事:被挡住时动画不跳、拖滑块时壁纸跟手、
+    # 循环轨道的接缝不断。不进 MiaoDeskCore 的话,产品里就没有它,
+    # 而测试会变成在一份没人用的实现上跑。
+    content/runtime/MiaoSceneTimelinePolicy.cpp
     content/shader/MiaoGpuParameterBlock.cpp
     content/shader/MiaoShaderContract.cpp
     desktop/control/DesktopControlService.cpp
@@ -371,6 +378,11 @@ add_executable(MiaoDeskSearchRankingBaselineTest tests/SearchRankingBaselineTest
 # 内置壁纸,ShippedPackagesValidate 只走包级校验 —— examples/content/* 两头都不覆盖,
 # 而它坏了比一个用户包坏了更糟(它是教学的入口)。
 add_executable(MiaoDeskExamplePackagesLoad tests/ExamplePackagesLoad.cpp)
+# WALL-03:宿主侧时间策略(暂停恢复/平滑过渡/循环连续性)与发行内容动画连续性。
+# MiaoSceneRuntimeTest 钉"某一刻场景该是什么值",这两个钉"宿主怎么把时间喂进去、
+# 以及喂进去的东西看得见地连续吗"—— 后者此前为零。
+add_executable(MiaoDeskMiaoSceneTimelinePolicyTest tests/MiaoSceneTimelinePolicyTest.cpp)
+add_executable(MiaoDeskShippedAnimationContinuity tests/ShippedAnimationContinuity.cpp)
 add_executable(MiaoDeskCreatorReplyInterpreterTest tests/CreatorReplyInterpreterTest.cpp)
 add_executable(MiaoDeskContentApplyRecoveryTest tests/ContentApplyRecoveryTest.cpp)
 add_executable(MiaoDeskCreationDraftStoreTest tests/CreationDraftStoreTest.cpp)
@@ -407,7 +419,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskMiaoSceneTimelinePolicyTest MiaoDeskShippedAnimationContinuity MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -471,6 +483,8 @@ if (MSVC)
     target_compile_options(MiaoDeskShippedPackagesValidate PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSearchRankingBaselineTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskExamplePackagesLoad PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskMiaoSceneTimelinePolicyTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskShippedAnimationContinuity PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreatorReplyInterpreterTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskContentApplyRecoveryTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskCreationDraftStoreTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -696,6 +710,12 @@ target_link_libraries(MiaoDeskSearchRankingBaselineTest PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskExamplePackagesLoad PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskMiaoSceneTimelinePolicyTest PRIVATE
+    MiaoDeskCore
+)
+target_link_libraries(MiaoDeskShippedAnimationContinuity PRIVATE
     MiaoDeskCore
 )
 target_link_libraries(MiaoDeskCreatorReplyInterpreterTest PRIVATE

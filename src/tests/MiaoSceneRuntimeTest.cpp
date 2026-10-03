@@ -31,7 +31,8 @@ SceneRuntimeDefinition Build() {
     root.id = L"node://root";
     root.components.push_back(SceneComponentDefinition{
         L"component://root/transform", ComponentKind::Transform,
-        {PropertyDefinition{L"opacity", PropertyType::Float, 1.0}}});
+        {PropertyDefinition{L"opacity", PropertyType::Float, 1.0},
+         PropertyDefinition{L"position", PropertyType::Vec2, Vec2{0.0, 0.0}}}});
     d.scene.nodes.push_back(std::move(root));
     d.profile = RuntimeProfile::Wallpaper;
     d.parameters.push_back(ParameterDefinition{L"param://level", PropertyType::Float, 0.0});
@@ -179,6 +180,65 @@ int wmain() {
                 "\"target\":{\"componentId\":\"component://root/transform\",\"propertyName\":\"opacity\"},"
                 "\"scale\":1.0,\"offset\":0.0,\"response\":\"square\"}",
                 "response on a bool source rejected");
+    }
+
+    // 并发写:两条动画写同一个属性时,先声明的那条从来不可观测。
+    //
+    // 为什么值得钉:Initialize 只跑 binding、不跑动画,所以先声明的那条连起始值都贡献不了;
+    // AdvanceTimeline 又按声明顺序跑,后一条每帧都把它盖掉。事件触发的那条更糟 ——
+    // 它只在触发那一帧赢一帧,下一帧就被时间线动画盖回去,看起来是一次一帧的闪。
+    //
+    // 边界刻意划在"两条动画",而不是"动画与 binding":binding 只在 Initialize 跑一次,
+    // 所以它在动画开跑之前**是**可观测的(属性起始值来自参数),而一个没被触发的事件动画
+    // 更让 binding 一直是活的 —— "起始值取参数,之后交给动画"是一个自洽的模型。
+    // MiaoSceneSerializer 与两处 SelfTest 的夹具正是这个形状,所以禁止它会挡掉正常写法。
+    // 那一对的优先级由 MiaoSceneTimelinePolicy 报出来、由 Skill 讲清楚,不禁止。
+    {
+        SceneRuntimeDefinition d = Build();
+        AnimationTrackDefinition pulse;
+        pulse.id = L"animation://opacity-pulse";
+        pulse.target = PropertyAddress{L"component://root/transform", L"opacity"};
+        pulse.loopMode = AnimationLoopMode::Loop;
+        pulse.durationSeconds = 2.0;
+        pulse.keyframes = {AnimationKeyframeDefinition{0.0, 0.2, AnimationEasing::Linear},
+                          AnimationKeyframeDefinition{2.0, 0.9, AnimationEasing::Linear}};
+        d.animations.push_back(pulse);
+
+        // 动画与 binding 写同一属性:合法。binding 提供起始值,动画从第一帧起接管。
+        // 这条必须继续通过,否则上面说的自洽模型被误伤。
+        std::wstring e0;
+        Check(MiaoSceneRuntimeModel::Validate(d, &e0),
+              "动画与 binding 写同一属性照常通过(binding 提供起始值,不是死的)");
+
+        SceneRuntimeDefinition two = d;
+        two.animations.push_back(pulse);
+        two.animations.back().id = L"animation://opacity-second";
+        std::wstring e2;
+        Check(!MiaoSceneRuntimeModel::Validate(two, &e2), "两条动画写同一属性被拒");
+        Check(e2.find(L"animation://opacity-pulse") != std::wstring::npos &&
+                  e2.find(L"animation://opacity-second") != std::wstring::npos,
+              "错误点名两条冲突的动画(只有属性名的话作者得自己数)");
+
+        // 其中一条被禁用也一样:禁用不是"从场景里消失",Validate 照旧拒绝,
+        // 否则"先禁用再改回去"会绕过这条规则。
+        SceneRuntimeDefinition disabled = two;
+        disabled.animations.front().enabled = false;
+        std::wstring e4;
+        Check(!MiaoSceneRuntimeModel::Validate(disabled, &e4),
+              "禁用其中一条也仍然被拒(禁用不是从场景里消失)");
+
+        // 不冲突的同名目标:动画写 position、binding 仍写 opacity,必须照常通过 ——
+        // 否则这条规则会因为"看起来该拒"而把正常场景拒掉。
+        SceneRuntimeDefinition fine = Build();
+        AnimationTrackDefinition moves = pulse;
+        moves.id = L"animation://position-drift";
+        moves.target = PropertyAddress{L"component://root/transform", L"position"};
+        moves.keyframes = {AnimationKeyframeDefinition{0.0, Vec2{0.0, 0.0}, AnimationEasing::Linear},
+                           AnimationKeyframeDefinition{2.0, Vec2{1.0, 1.0}, AnimationEasing::Linear}};
+        fine.animations.push_back(moves);
+        std::wstring e3;
+        Check(MiaoSceneRuntimeModel::Validate(fine, &e3),
+              "动画写的是别的属性时正常通过(规则不滥伤)");
     }
 
     std::printf("\n%s (%d failure(s))\n", failures ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED", failures);

@@ -424,6 +424,31 @@ bool MiaoSceneRuntimeModel::Validate(const SceneRuntimeDefinition& runtime, std:
             return Fail(error, L"Duplicate animation id: " + animation.id);
     }
 
+    // 两条动画不得写同一个属性。
+    //
+    // 先声明的那条**从来不可观测**:Initialize 只跑 binding,不跑动画,所以它连起始值
+    // 都贡献不了;AdvanceTimeline 又按声明顺序跑,后一条每帧都把它盖掉。事件触发的那条
+    // 更糟 —— 它只在触发那一帧赢一帧,下一帧就被时间线动画盖回去,看起来是一次一帧的闪。
+    //
+    // 边界是刻意划在"两条动画",而不是"动画与 binding":binding 只跑一次 Initialize,
+    // 所以它在动画开跑之前**是**可观测的(属性起始值来自参数),而没被触发的事件动画
+    // 更让 binding 一直是活的。MiaoSceneSerializer 与两处 SelfTest 的夹具正是这个形状,
+    // 真实作者也会这么写 —— "起始值取参数,之后交给动画"是一个自洽的模型。
+    // 那一对的优先级(动画赢)由 MiaoSceneTimelinePolicy 报出来、由 Skill 讲清楚,不禁止。
+    for (std::size_t i = 0; i < runtime.animations.size(); ++i) {
+        for (std::size_t j = i + 1; j < runtime.animations.size(); ++j) {
+            const auto& earlier = runtime.animations[i];
+            const auto& later = runtime.animations[j];
+            if (earlier.target.componentId == later.target.componentId &&
+                earlier.target.propertyName == later.target.propertyName) {
+                return Fail(error, L"Two animations write the same property, so the earlier one is "
+                                   L"never observable: " +
+                                   earlier.id + L" and " + later.id + L" both write " +
+                                   earlier.target.componentId + L"/" + earlier.target.propertyName);
+            }
+        }
+    }
+
     std::unordered_set<std::wstring> postProcessIds;
     for (const auto& effect : runtime.postProcesses) {
         if (!ValidatePostProcess(effect, error)) return false;

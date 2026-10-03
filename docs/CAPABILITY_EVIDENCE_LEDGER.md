@@ -42,7 +42,8 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 
 | 能力 | 结论 | 代码入口 | 缺口 |
 | --- | --- | --- | --- |
-| 关键帧动画 | 已实现（轨道/时间线/触发、4 种缓动、3 种循环） | `MiaoSceneRuntime.cpp:269-467`、`MiaoSceneRuntimeModel.h:195-215` | 无状态机/混合；Skill 未教 |
+| 关键帧动画 | 已实现（轨道/时间线/触发、4 种缓动、3 种循环） | `MiaoSceneRuntime.cpp:269-467`、`MiaoSceneRuntimeModel.h:195-215` | 无状态机/混合；暂停与平滑过渡已在 `MiaoSceneTimelinePolicy.cpp` 有实现但未接宿主 |
+| 动画连续性（接缝/跳变/抢占） | 已实现**审查与拒绝**：循环接缝、一帧内大位移、一属性多写者 | `MiaoSceneTimelinePolicy.cpp`、`MiaoSceneRuntimeModel.cpp` 的并发写规则 | 只审 60fps 一档；不审 D3D11 上的实际采样 |
 | 有界响应曲线 | 已实现 8 条 + deadzone | `MiaoSceneRuntimeModel.h:35-48` | Skill 已教，一致 |
 | 分析型粒子 | 已实现（Sparkle / CometTrail / PetalFall，双后端） | `MiaoAnalyticParticleField.cpp` | 无风/力/碰撞 |
 | 模拟型粒子 | 已实现，**仅 D3D11** | `MiaoParticleRuntime.cpp:43-181` | D2D 无此路径；无重力/吸引子/湍流 |

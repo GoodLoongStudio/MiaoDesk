@@ -140,7 +140,13 @@ bool MiaoSceneFrameScheduler::SelfTest() {
 
     if (!runtime.SetInput(L"input://event/pulse", true, &error)) return false;
     if (!AdvanceAndEvaluate(runtime, 0.0, renderedGeneration, &demand, 60, &error)) return false;
-    if (!demand.render || !demand.contentDirty || !demand.continuousAnimation || demand.intervalMs != 17) return false;
+    // 触发帧:这条动画的第一帧值恰好等于属性默认值(0.2),所以内容本身**没有**变化,
+    // 这一帧不是 contentDirty —— 而它仍然必须出画,由 continuousAnimation 撑着。
+    // 原断言写成 `&& demand.contentDirty`,那是在要求一个本设计既不设、也不需要的
+    // 旗标:属性一个都没变却说内容变了,只会让宿主白画一帧完全相同的图。
+    // 这条断言从写下来起就没跑过 —— 这个 SelfTest 在整个仓库里没有调用方。
+    // 现在接进 ContentSelfTests,才第一次真的执行,于是第一次就红了。
+    if (!demand.render || demand.contentDirty || !demand.continuousAnimation || demand.intervalMs != 17) return false;
 
     // Simulate the host presenting the trigger frame.
     runtime.MarkPaintReady();

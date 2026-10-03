@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `51d01b07`（本机 38 目标全通过；同 SHA CI 5/8 success，其余在跑）
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `bd23cfe6`（本机 40 目标全通过；同 SHA CI 8/8 success）。WALL-03 的宿主侧时间策略已在 `51d01b07` 之后推进，工作区内含未提交的 `bd23cfe6` + WALL-03 两批。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -232,9 +232,29 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
+### 本轮推进记录（2026-10-03 续，WALL-03 宿主侧时间策略）
+
+- 代码提交：`bd23cfe6`（前一代码提交 `51d01b07`）；本轮文档 + 代码，未提升版本号。
+- 本机跑了什么：40 个纯逻辑目标全通过（exit 0）—— 新增 `MiaoSceneTimelinePolicyTest`
+  165 项与 `ShippedAnimationContinuity` 43 项，加上 `MiaoSceneRuntimeTest` 新增 5 项共 29 项；
+  mingw 交叉语法门 0 真实错误；15 处变异全部变红（`SceneClock` 暂停、`Seek` 绕过暂停、
+  参数过渡中途给终值、结束帧不报终值、接缝判断恒 0、`Validate` 并发写规则……）。
+- CI：`bd23cfe6` 8 项全部完成，**全部 success**。
+- 真机：**未取证**。本机不是 Windows —— 动画采样、视觉、桌面行为一律给不出证据。
+- 已完成（本机可自动部分）：WALL-03 的宿主侧时间策略（`SceneClock` 暂停恢复 /
+  `ParameterSlew` 平滑过渡 / `AuditAnimationContinuity` 循环接缝与一帧瞬移）、
+  `Validate` 的"两条动画不得写同一属性"拒绝规则、发行内容 25 条动画轨道的连续性审查。
+- **已登记而未修**：`animation://miao-cloud/blink-blink` 的淡变是 1/240 秒，任何帧率下
+  渲染不出来。登记而不是静默放过，也不是本机改美术后放行。
+- 下一候选（依赖已满足且本机可自动验证）：`CAP-02` 的"每项可创作能力最小例 + 组合例"仍缺示例包；
+  `P0-03/P0-04/P0-07/08/09`、`WALL-06`、`PRO-03/05`、CAP-04、WALL-03 的真机动画采样都要 Windows 侧，
+  一律留 `🟠`。
+- 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
+
 ### 本轮推进记录（2026-10-03，自动推进会话）
 
-- 代码提交：`34a6d55b`（前一代码提交 `d02812d6`）；本轮文档 + 代码，未提升版本号。
+- 代码提交：`34a6d55b` → `51d01b07` → `bd23cfe6`（三个提交同属本轮，基线 `d02812d6`）；
+  本轮文档 + 代码，未提升版本号。
 - 本机跑了什么：36 个纯逻辑目标全通过（exit 0）；mingw 交叉语法门 0 真实错误；
   17 道仓库门 + 6 道相关 node 契约门全通过；新增测试全部做了变异检测。
 - CI：`51d01b07`（当前 HEAD）8 项全部完成，**全部 success**（Repo Hygiene / Windows x64 Build /

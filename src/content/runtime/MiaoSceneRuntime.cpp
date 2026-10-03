@@ -1,4 +1,5 @@
 #include "miaodesk/MiaoSceneRuntime.h"
+#include "miaodesk/MiaoSceneTimelinePolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -92,23 +93,9 @@ bool PropertyValuesEqual(const PropertyValue& left, const PropertyValue& right) 
     return false;
 }
 
-double ApplyEasing(AnimationEasing easing, double value) noexcept {
-    const double t = std::clamp(value, 0.0, 1.0);
-    switch (easing) {
-    case AnimationEasing::Linear:
-        return t;
-    case AnimationEasing::EaseIn:
-        return t * t;
-    case AnimationEasing::EaseOut: {
-        const double inverse = 1.0 - t;
-        return 1.0 - inverse * inverse;
-    }
-    case AnimationEasing::EaseInOut:
-        if (t < 0.5) return 2.0 * t * t;
-        return 1.0 - ((-2.0 * t + 2.0) * (-2.0 * t + 2.0)) / 2.0;
-    }
-    return t;
-}
+// 缓动曲线的实现在 MiaoSceneTimelinePolicy(与宿主的参数过渡共用一份);
+// 这里只是它的调用点。两条曲线分开写的代价见那个头文件的说明。
+using miaodesk::content::ApplyAnimationEasing;
 
 double AnimationLocalTime(const AnimationTrackDefinition& animation, double timeSeconds) noexcept {
     const double time = std::max(0.0, timeSeconds);
@@ -423,7 +410,7 @@ bool MiaoSceneRuntime::ApplyAnimation(
             const double span = to.timeSeconds - from.timeSeconds;
             if (span <= 0.0) return Fail(error, L"Animation keyframe span is invalid: " + animation.id);
             const double normalized = (localTime - from.timeSeconds) / span;
-            const double eased = ApplyEasing(from.easing, normalized);
+            const double eased = ApplyAnimationEasing(from.easing, normalized);
             if (!InterpolateValue(from.value, to.value, eased, &value))
                 return Fail(error, L"Animation interpolation type is unsupported: " + animation.id);
             break;

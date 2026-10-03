@@ -758,7 +758,22 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：行为契约、动画样例、触发/循环/时间测试与 AI 组合说明。
 - **验收**：多效果同步、昼夜切换、重复事件、时钟变化和暂停恢复正确；循环无跳变/无界运行。
 - **验证环境**：状态机自动+Windows 动画采样。
-- **证据记录**：待领取；负责人、目标 SHA、实现提交、自动检查、真机/作品证据、限制、下一步均待回填。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/MiaoSceneTimelinePolicy.h` + `src/content/runtime/MiaoSceneTimelinePolicy.cpp`（纯逻辑，无 Windows 依赖）+ `src/tests/MiaoSceneTimelinePolicyTest.cpp`（165 项）+ `src/tests/ShippedAnimationContinuity.cpp`（43 项，走真实加载链）+ `MiaoSceneRuntimeModel::Validate` 新增并发写拒绝规则。
+  **本轮从代码与实测里得到的事实**（先探针、后写实现；`MiaoSceneRuntime` 的求值部分本轮未发现缺陷，缺的全在宿主侧）：
+  ① **暂停恢复此前不存在**。`AdvanceTimeline(timeSeconds)` 收的是宿主给的绝对时间，而真实宿主给 `GetTickCount64()/1000.0`（`ContentWidgetHost.cpp:717`）。于是被挡住/隐藏/锁屏的那段时间照算进动画 —— 昼夜壁纸恢复后天空直接跳到半夜。规划验收项"暂停恢复"指的是这个，不是"暂停后再点继续"。
+  ② **平滑参数过渡此前不存在**。`SetParameter` 是瞬移的，规划的能力清单里列了"平滑参数过渡"，实现为零。
+  ③ **循环接缝与一帧瞬移此前没有任何检查**。`ValidateAnimation` 只查"关键帧时间严格递增"，于是"两个关键帧相距 1e-9 秒、值差 0.8"被放过：1~240fps 的任何一档下插值一次都采不到样。Loop 轨道首尾值不同也放过，每圈硬跳一次。
+  ④ **两条动画写同一个属性此前不拒绝**。先声明的那条**从来不可观测**:`Initialize` 只跑 binding、不跑动画,它连起始值都贡献不了;`AdvanceTimeline` 又按声明顺序跑,后一条每帧都把它盖掉。事件触发的那条更糟 —— 只在触发那一帧赢一帧,下一帧被盖回,看起来是一次一帧的闪。现在 `Validate` 拒绝并点名。
+  自动检查=`MiaoSceneTimelinePolicyTest` 174 项通过、`ShippedAnimationContinuity` 48 项通过（走 `MiaoContentPackage::Load`→反序列化→`Validate`，审查 25 条真实动画轨道）、`MiaoSceneRuntimeTest` 33 项通过（新增 6 项并发写拒绝）、`ContentSelfTests` 与 `SceneSerializerSelfTest` 仍通过（缓动曲线提为共用实现 `ApplyAnimationEasing` 后两条链走同一条曲线）。
+  变异检测 26 处全部变红（去掉 NaN 护栏、EaseIn 退化、SceneClock 暂停期仍推进、Seek 绕过暂停、Pause 变空操作、SceneClock 不再拒绝 NaN/负增量、不要过渡时报 from、过渡中途给终值、结束帧不报终值、过渡不推进时间、接缝判断恒 0、Vec2 距离改求和、不再检测端点悬停、描述漏掉端点悬停与接缝、去掉两条动画的拒绝规则、门的致命判定恒否、门的"一帧内大位移"判定恒否、登记表清空与写错、行程改回 O(n²) 会算错的三种写法）。
+  **把两个从不运行的自检接了起来**：`MiaoSceneRuntime::SelfTest` 与 `MiaoSceneFrameScheduler::SelfTest` 在整个仓库里**没有任何调用方** —— 包括 CI，也就是说 content 层最大的一份自测(绑定求值、事件触发、ping-pong、Once 收尾、参数类型拒绝、Reset 语义)从写下来起一次都没跑过。现在接进 `ContentSelfTests`(那个文件的存在理由正是"此前只经由一个无人调用的 D3D11 聚合器可达")，第一次执行 **帧调度器的自测就红了**。
+  红的不是代码，是断言：原断言要求触发帧 `contentDirty` 为真，而那一条动画的第一帧值恰好等于属性默认值(0.2)，属性一个都没变。内容没变却说内容变了，只会让宿主白画一帧完全相同的图；那一帧仍然要出画，由 `continuousAnimation` 撑着，实测 `render=1`。判定为断言过严，改为钉住"没变化就不声明变化"这条真不变量。没有为了让它变绿去改产品逻辑。
+  **一处实现细节**：行程  第一版是 O(n²)，而 Validate 允许一条轨道 4096 个关键帧 —— 那是 840 万次 variant 比较，而这道审查在加载期就跑了。改成 O(n·d) 的依据是可证的：`AnimationValueDistance` 用"分量差取最大"，于是两两最大距离等于各分量极差的最大值。test 里有一条拿暴力法对照的断言钉住这个等式，并且刻意让最大值与最小值落在不同关键帧上（否则 x 极差碰不到）。
+  **本轮修正过一次自己的结论**：第一版把"动画与 binding 写同一属性"也一并拒绝，理由写的是"binding 是死的"。跑到三道产品 SelfTest 夹具上才发现理由不成立 —— binding 只在 `Initialize` 跑一次，它在动画开跑之前是可观测的（`MiaoSceneRuntime::SelfTest` 里就断言了 `opacity` 起始值 0.75 来自参数），而一个没被触发的事件动画更让 binding 一直是活的。"起始值取参数、之后交给动画"是自洽模型，禁止它会挡掉正常写法（也挡掉产品自己的夹具）。所以边界改划在"两条动画"，binding 那一侧改为报告 + 写进 Skill。TODO 本条、CHANGELOG、FEATURE_CHANGELOG、Skill 已同步改正。
+  **发行内容实测**：三个内置壁纸 24 条 Loop 轨道 + 示例 1 条 PingPong 轨道端点全部逐位相同，60fps 帧步长远低于门槛；**一个例外已登记而不是静默放过** —— `animation://miao-cloud/blink-blink` 的淡入/淡出各为 0.004166666666667 秒（=1/240 秒，恰好是产品支持的最高帧率下的一帧），所以任何帧率下那一"淡变"都渲染不出来。**没有改它**：改法是拉长淡变，那是改美术，而本机不是 Windows、拉长之后好看不好看给不出证据。
+  **未做**：状态机/行为图（规划里的"事件/状态图"）、确定性随机的独立设施（现有 `MiaoAnalyticParticleField.cpp` 里那份 hash 是文件局部符号且带"逐位复刻旧渲染器"的约束，动它等于改三个壁纸的视觉）、动画混合、AI 组合说明；真机动画采样与视觉签收一律未取证（本机不是 Windows）。缓动曲线与 `ParameterSlew` 尚未接到任何生产调用方 —— 接进宿主属于 WPRO/播放宿主那一轮，因为它要同时决定暂停由谁调、参数面板怎么失焦。
+  **发现并修复的隐患**：`Validate` 此前对 `enabled=false` 的轨道仍按全量规则校验（弃用的轨道坏了会让整个场景加载失败）。本轮未改这一条：拒绝是产品既定取舍（与 lights/fog 写在 2D 场景上一律拒绝同源），改它需要单独立项。
+  面板状态 🟡。
 
 ### WALL-04 — 粒子、多 Pass 与专业特效库
 

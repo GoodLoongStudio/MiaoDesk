@@ -40,7 +40,9 @@
 #include "miaodesk/MiaoRenderGraph.h"
 #include "miaodesk/MiaoD3D11RenderTarget.h"
 #include "miaodesk/MiaoD3D11TextureLoader.h"
+#include "miaodesk/MiaoSceneRuntime.h"
 #include "miaodesk/MiaoSceneRuntimeModel.h"
+#include "miaodesk/MiaoSceneFrameScheduler.h"
 #include "miaodesk/MiaoShaderContract.h"
 
 #include <cstdio>
@@ -80,13 +82,22 @@ int wmain() {
     // (包内资源放行、../ 逃逸拒绝)在任何平台上语义相同。按平台拆开之后,
     // 这两条从"等一轮 Windows CI"变成"每次提交都在本机跑"。见 MiaoD3D11RenderPolicy.cpp。
     Run("MiaoD3D11TextureLoader::SelfTestPathPolicy", MiaoD3D11TextureLoader::SelfTestPathPolicy);
+    // 第十项:场景运行时本体。它是 content 层最大的一份自测(绑定求值、事件触发、
+    // ping-pong 循环、Once 收尾、参数类型拒绝、Reset 语义),而它**在整个仓库里
+    // 没有任何调用方** —— 所以它在任何机器上都没有被执行过,包括 CI。
+    // 这一轮加进来:MiaoSceneRuntime 是纯逻辑(不 import Windows 头),
+    // 于是这些断言从"从不运行"变成"每轮都跑"。改动后仍通过。
+    Run("MiaoSceneRuntime::SelfTest", MiaoSceneRuntime::SelfTest);
+    // 第十一项:帧调度器。它定的是"这一帧到底还要不要画"(Once 跨过时长时补最后一帧、
+    // 空闲内容降到 0FPS、fps 夹紧),而它同样没有调用方。
+    Run("MiaoSceneFrameScheduler::SelfTest", MiaoSceneFrameScheduler::SelfTest);
 
     std::printf("\n");
     if (failures != 0) {
         std::printf("FAILED:%d 项自测失败\n", failures);
         return 1;
     }
-    std::printf("九项内容层自测全部通过 —— 它们此前在任何机器上都没有被执行过。\n");
+    std::printf("十一项内容层自测全部通过 —— 其中两项此前在整个仓库里没有任何调用方。\n");
     std::printf("ALL CHECKS PASSED\n");
     return 0;
 }

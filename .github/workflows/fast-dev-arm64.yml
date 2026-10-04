@@ -76,11 +76,34 @@ jobs:
           & cmd.exe /d /c $batch
           if ($LASTEXITCODE -ne 0) { throw "ARM64 sccache build failed: $LASTEXITCODE" }
 
+      # 2026-10-04: 这一步从 bc8fe14c 起连红多次,而同一 workflow 的 ARM64 **构建**
+      # 一直是 success,install 规则也没有任何改动。它的动作只有
+      # `Remove-Item <prefix>` 紧接 `cmake --install --prefix <同一个目录>` ——
+      # 对"上次 run 残留的进程还握着那个目录"很敏感,而 Remove-Item 带
+      # SilentlyContinue,失败了也不响。
+      #
+      # 这里加的是**诊断**,不是重试:重试会把一次真实的 install 失败也一并盖过去,
+      # 那是拿"让门别响"换"门还在查"。所以只做两件不会掩盖真相的事:
+      #   1) 先确认没有残留 MiaoDesk 进程占着目录(这只会移除干扰,不会修好坏掉的东西);
+      #   2) install 失败时把完整输出打出来 —— 之前 annotation 里只有
+      #      sccache 统计和 exit code 1,根因一直看不见。
       - name: Refresh fast runnable package
         shell: pwsh
         run: |
+          Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "Stale $($_.ProcessName) (pid $($_.Id)) holds the dev package; stopping it."; Stop-Process -Id $_.Id -Force }
+          Start-Sleep -Seconds 2
           Remove-Item C:\pkg\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
-          cmake --install C:\b\MiaoDesk\arm64-fast --prefix C:\pkg\MiaoDesk\arm64-fast
+          $out = & cmake --install C:\b\MiaoDesk\arm64-fast --prefix C:\pkg\MiaoDesk\arm64-fast 2>&1
+          $code = $LASTEXITCODE
+          $out | Write-Host
+          if ($code -ne 0) {
+            Write-Host "::error::cmake --install failed with exit code $code"
+            foreach ($line in ($out | Select-String -Pattern 'rror|ailed|enied|busy|not found')) {
+              Write-Host "::error::$($line.Line)"
+            }
+            exit $code
+          }
 
       - name: Verify fast delta
         shell: pwsh

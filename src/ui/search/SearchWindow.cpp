@@ -3,6 +3,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"
+#include "miaodesk/MiaoFileSearchNotice.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SettingsCenterWindow.h"
 #include "miaodesk/StartupManager.h"
@@ -1018,18 +1019,20 @@ void SearchWindow::MergeResults() {
             ResultKind::Answer, L"询问妙喵 AI",
             L"按 Enter 让妙喵处理「" + currentQuery_ + L"」", L"", 0});
 
-        if (fileSearchPending_) {
+        // 文件搜索那一桶的状态诊断。三岔 if/else 与三句文案原先都内联在下面 ——
+        // 和排序、去重、代号算术是同一个病:住在要 `<windows.h>` 的文件里,本机一行
+        // 都跑不到,而这是用户在文件搜索坏掉时唯一能拿到的信息。
+        //
+        // 顺带修掉第三句的措辞:它原来说"文件索引已连接,但本次查询失败",可它键的
+        // `fileSearchAvailable_` 只证明 goz.exe 客户端二进制装着 —— 服务没起来时
+        // 二进制当然还在。那句话把"服务没起来"说成了"查询出错",照它排查的人会往
+        // 完全相反的方向找。判定与文案现在住在 MiaoFileSearchNotice。
+        const FileSearchNotice notice = DecideFileSearchNotice(
+            fileSearchPending_, fileSearchAvailable_, fileSearchQueryFailed_);
+        const std::wstring& title = FileSearchNoticeTitle(notice);
+        if (!title.empty()) {
             results_.push_back({
-                ResultKind::Status, L"正在搜索文件…",
-                L"文件索引查询仍在进行；你也可以直接按 Enter 交给妙喵 AI。", L"", -1000});
-        } else if (!fileSearchAvailable_) {
-            results_.push_back({
-                ResultKind::Status, L"文件搜索未连接",
-                L"当前仍可搜索应用；按 Enter 可交给妙喵 AI。", L"", -1000});
-        } else if (fileSearchQueryFailed_) {
-            results_.push_back({
-                ResultKind::Status, L"文件查询失败",
-                L"文件索引已连接，但本次查询失败；按 Enter 可交给妙喵 AI。", L"", -1000});
+                ResultKind::Status, title, FileSearchNoticeDetail(notice), L"", -1000});
         }
     }
 

@@ -86,12 +86,38 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 是典型的文件锁抖动形状。但**这只是形状像,不是证据**:匿名身份不能 re-run(401),
 annotation 只有 sccache 统计和 exit code 1。
 
+**(后来证明上面这个"文件锁"猜测是错的 —— 已修,见本节末尾。)**
+
 **本轮已做的(只加诊断,不加重试)**:第 6 步现在会
 (1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
 (2) install 失败时把完整输出写进 annotation。之前那里只有 sccache 统计和 exit code 1,
 根因一直看不见。
 
 **刻意没有加重试**:重试会把一次真实的 install 失败也一并盖过去。
+
+**✅ 根因已找到并修掉(本会话引入,不推给环境)。**
+`package-windows-x64.yml` 的 annotation 直接点名:
+
+    HarnessHost.obj : error LNK2019: unresolved external symbol
+      miaodesk::lock_host::ExistingOwnerIsHealthy(...)  [MiaoDeskHarness.vcxproj]
+    MiaoDeskHarness.exe : fatal error LNK1120: 1 unresolved externals
+
+我把三个锁文件放进了 `MIAODESK_CORE_SOURCES`(`MiaoDeskCore`),而
+**`MiaoDeskHarness` 链的是 `MiaoDeskHarnessCore`,不是 `MiaoDeskCore`** ——
+`HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`MiaoDeskHarness.exe` 生不出来,
+`cmake --install` 只能报 `file INSTALL cannot find`,再往上只剩
+`CMake Error at cmake_install.cmake:49 (file):`。**错误信息离根因隔了三层**,
+这就是它六次都没被看出来的原因;而我自己加的那层
+`'rror|ailed|enied|busy|not found'` 过滤器,又把前两次真正的细节行
+(`file INSTALL cannot find`)挡掉了。
+
+修法:按 CMakeLists 自己规定的解法(见 `MIAODESK_SCENE2D_SOURCES` 那段注释),
+把三个 .cpp 提成独立静态库 `MiaoDeskLockOwnership`,由两个 core 双双 PUBLIC 链上。
+
+**教训(已记进面板)**:mingw 语法门与 `verify-cmake-*` 只查"每个 .cpp 都被编译"与
+"目标结构自洽",**没有一个门查"这个 EXE 调用的符号在它的链接 Closure 里"** ——
+这类错误只有真链接才暴露。往 `MIAODESK_CORE_SOURCES` 加文件时,必须先确认所有
+调用方都链 `MiaoDeskCore`。
 
 ### 2026-10-04 · 排查记录：P0-07「库状态恢复」一处静默丢行（定位完毕，未修）
 

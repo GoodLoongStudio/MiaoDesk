@@ -20,6 +20,19 @@ const required = [
 // 这件事本身是确定的,与原因无关。
 const INFRA = 4;
 
+// GitHub Workflow 命令:`::error::` / `::warning::` 会变成**可读的 annotation**。
+//
+// 为什么需要它:这道门在 CI 上红过四次(3ffa2eea 两次、c399cb62 两次),而匿名 API 只能
+// 读到 annotations,job log 下载 403 —— 于是那四次红在证据上只剩下同一句
+// "Process completed with exit code 1"。分不清是"发布链真的失败了"还是"门自己问错了",
+// 就什么都不能改:前者要去看发布链,后者要去看这道门。
+// 本机重放 c399cb62 得到的是 verdict 3(退出码 3),与 CI 上的 1 **不一致** —— 这个不一致
+// 至今没有解释(拿不到日志)。所以先让它下一次能自己说清楚,而不是再攒一个谜。
+// 只在 GitHub Actions 里发:那些行在本机只是噪音。
+const annotate = (level, text) => {
+  if (process.env.GITHUB_ACTIONS) console.log(`::${level}::${text}`);
+};
+
 function evaluate(runs, sha) {
   // 每种工作流取**该 SHA 上最新一次** run —— 不管它是什么状态。
   //
@@ -218,7 +231,7 @@ if (process.argv.includes("--self-test")) {
   //
   // 另外:超时之后必须真的杀掉子进程并报出来。自检不许挂 —— 一次卡死会让后面每一条
   // 断言都跑不到,而"没跑"与"通过"在日志上是一样的。
-  const probe = async (handler, timeoutMs = 25000) => {
+  const probe = async (handler, timeoutMs = 25000, extraEnv = {}) => {
     const { server, port } = await startFakeApi(handler);
     let stdout = "";
     let stderr = "";
@@ -226,7 +239,7 @@ if (process.argv.includes("--self-test")) {
     try {
       const code = await new Promise((resolve, reject) => {
         const child = spawn(nodeExe, [self, "abc"], {
-          env: { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_TOKEN: "" },
+          env: { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_TOKEN: "", ...extraEnv },
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => { stdout += d; });
@@ -310,7 +323,49 @@ if (process.argv.includes("--self-test")) {
   }));
   if (p.code !== 3) throw new Error(`exit 3 expected when the fake API shows in-flight runs, got ${p.code}\n${p.out}`);
 
+  // 4f. GitHub Actions 里必须留下 annotation。
+  //     这道门在 CI 上红过四次,而匿名 API 只读得到 annotations —— 那四次在证据上
+  //     只剩下同一句"Process completed with exit code 1",于是分不清是发布链失败了
+  //     还是门自己问错了。`::error::` 就是让下一次能自己说清楚。
+  p = await probe(jsonReply({ message: "boom" }, 500), 25000, { GITHUB_ACTIONS: "true" });
+  if (p.code !== INFRA) throw new Error(`exit ${INFRA} expected, got ${p.code}\n${p.out}`);
+  if (!p.out.includes("::error::")) throw new Error(`a red run must leave an annotation:\n${p.out}`);
+  if (!/门自己坏/.test(p.out)) throw new Error(`the annotation must say which kind of red it is:\n${p.out}`);
+
+  // 4f-2. annotation 必须点名到**每一条链**,不只是给一句总结论。
+  //        "verdict 3" 单独一句仍然分不清是哪一条没跑完;要能照着它去查那条链。
+  p = await probe(jsonReply({
+    total_count: 5,
+    workflow_runs: [
+      done(required[0], "success", 0),
+      { name: required[1], head_sha: "abc", status: "in_progress", conclusion: null, run_attempt: 1, html_url: at(1) },
+      ...required.slice(2).map((n, i) => done(n, "success", i + 2)),
+    ],
+  }), 25000, { GITHUB_ACTIONS: "true" });
+  if (p.code !== 3) throw new Error(`exit 3 expected, got ${p.code}\n${p.out}`);
+  if (!p.out.includes(`::warning::PENDING ${required[1]}`)) {
+    throw new Error(`a pending chain must be named in its own annotation:\n${p.out}`);
+  }
+
+  p = await probe(jsonReply({
+    total_count: 5,
+    workflow_runs: [
+      done(required[0], "success", 0),
+      done(required[1], "failure", 1),
+      ...required.slice(2).map((n, i) => done(n, "success", i + 2)),
+    ],
+  }), 25000, { GITHUB_ACTIONS: "true" });
+  if (p.code !== 1) throw new Error(`exit 1 expected, got ${p.code}\n${p.out}`);
+  if (!p.out.includes(`::error::FAILED  ${required[1]}: failure`)) {
+    throw new Error(`a failed chain must be named in its own annotation:\n${p.out}`);
+  }
+
+  // 4g. 不在 GitHub Actions 里时不发 workflow 命令:那些行在本机只是噪音。
+  p = await probe(jsonReply({ message: "boom" }, 500));
+  if (p.out.includes("::error::")) throw new Error(`workflow commands must not appear outside Actions:\n${p.out}`);
+
   console.log("verify-rc-ci self-test passed (exit 4: the gate itself broke)");
+  console.log("verify-rc-ci self-test passed (annotations on a red run)");
   process.exit(0);
 }
 
@@ -378,6 +433,7 @@ if (runsFile) {
     break;
   }
   if (lastError) {
+    annotate("error", `同 SHA 门自己坏了(查询失败),不是发布链的结论:${lastError}`);
     console.error(`这道门自己坏了(GitHub Actions 查询失败),不是发布链的结论:${lastError}`);
     console.error("重试三次仍拿不到 run 清单;此时既不能说通过也不能说失败。");
     process.exit(INFRA);
@@ -385,6 +441,7 @@ if (runsFile) {
   if (runs.length === 0) {
     // 一个刚刚有工作流跑完的 SHA,不可能一条 run 都没有。空清单一律当查询坏了,
     // 不当"五条都没触发" —— 后者是一个发布结论,而空清单更可能是问错了。
+    annotate("error", `同 SHA 门自己坏了:${sha} 上一条 run 都没查到,查询很可能坏了`);
     console.error(`这个 SHA 上一条 run 都没查到:${sha}`);
     console.error("查询很可能坏了(HEAD SHA 不完整、或仓库/权限不对);不据此下发布结论。");
     process.exit(INFRA);
@@ -394,6 +451,16 @@ if (runsFile) {
 const results = evaluate(runs, sha);
 const verdict = verdictOf(results);
 console.log(JSON.stringify({ sha, verdict: { code: verdict.code }, required: results }, null, 2));
+
+annotate("error", `同 SHA 门结论:verdict ${verdict.code}（SHA ${sha}）`);
+for (const r of verdict.failed) {
+  annotate("error", `FAILED  ${r.name}: ${r.conclusion}  ${r.url || ""}`);
+}
+for (const r of verdict.pending) {
+  annotate("warning", `PENDING ${r.name}: ${r.conclusion}  ${r.url || ""}`);
+}
+if (verdict.code === 0) annotate("notice", `五条链在 ${sha} 上全 success`);
+
 if (verdict.code !== 0) {
   for (const r of verdict.failed) console.error(`FAILED  ${r.name}: ${r.conclusion}  ${r.url || ""}`);
   for (const r of verdict.pending) console.error(`PENDING ${r.name}: ${r.conclusion}  ${r.url || ""}`);

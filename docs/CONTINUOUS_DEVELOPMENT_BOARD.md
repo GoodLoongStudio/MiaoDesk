@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `5abaebff`（本机 **58 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `8f3ad1a2`（本机 **59 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -85,7 +85,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：① 请求 URL 与凭据必须同源（并修掉一个会外泄 Key 的缺陷）② 库状态的恢复合并策略已提成纯逻辑，两份重复副本合并为一份**（`MiaoLibraryRestoreMerge`，38 项断言 + 9 处变异全红，见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
-| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**AI 会话的迁移已修**（见下）；API profile / 内容库 / 组件布局三项的升级路径仍待查 |
+| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**本机自动部分已落地两项：① AI 会话迁移（P0-09 那个"升级把会话变成不可达字节"的缺陷）② 组件布局的入账判定 —— 三种拒绝 + 两种去重结局原先共用一个 `continue`，`Load` 照常返回 true，于是"升级不丢组件布局"实际是"丢了几条并报告成功"；现已提成 `MiaoWidgetRowAdmission`（37 项断言 + 9 处变异全红）并新增 `SkippedRows()` 让宿主第一次能说出口**（见下）。内容库那一半见 `MiaoLibraryRowFilter`（已修）；**API profile 的升级路径仍未查** |
 | P0-10 | 🟡 | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA。**校验器一直在,缺口在"要有人记得按按钮"**：新增 `workflow_run` 自动那一支（五条里任意一条跑完就按触发它的那个 SHA 核一次，checkout 锁 `workflow_run.head_sha` 以免拿新尺子量旧工件）；`verify-rc-ci.mjs` 新增"还没跑完"这一档（退出码 3，push 后第一条跑完就触发时不误报红），并把 `--runs-file` 离线复核与 9 处变异补上（含两个此前**活着**的"退出码恒 0"）。（见下）；候选 SHA 的五条 success 证据本身仍要 CI 跑完 |
 
 ## 5. P0/P1 — 布局、输入与视觉
@@ -481,6 +481,47 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十二，P0-09 组件布局：五种结局共用一个 continue）
+
+- 代码提交：本次。
+- **为什么这一轮动了 P0-09**：上一轮我说"剩下四项仍可本机推进"，然后停了。
+  Stop hook 指出这一点。P0-09 的三项待查里，**组件布局是纯状态逻辑**，与 P0-07 刚做的
+  库状态合并且同一类。已做掉。
+- **逮到的问题**：`DesktopWidgetStore::Load` 里一行决定一条组件记录进不进库：
+
+      if (widget.kind == Unknown || widget.source.empty() || !IsValidPersistedSource(widget)) continue;
+
+  三种完全不同的原因（版本差异 / 配置损坏 / 安全边界）共用一个 `continue`，
+  而**撞 singleton 键时的两种去重结局也压在同一行**。`Load` 照常返回 true，
+  调用方只问成败 —— 于是拿着一个悄悄变短的布局继续。P0-09 要的
+  "升级不丢组件布局"实际变成"**丢了几条并报告成功**"。
+- **修法**：提成 `MiaoWidgetRowAdmission`，五种结局各自有名有姓：
+  `Admit` / `RejectUnknownKind` / `RejectMissingSource` / `RejectUnsafeSource` /
+  `SupersedeDisabled` / `KeepExisting`（六种，实际）。`Load` 改成按结局分支，
+  三种拒绝写进新增的 `SkippedRows()` —— 与 `WallpaperLibrary::SkippedRows()` 同一个形状、
+  同一个理由。**不改变**"这一行不进库"的行为（那是要动 UI 的决定），先让丢失可见。
+- **顺带把两条没人写下来的规则钉住**：
+  1. 撞键时**启用状态优先** —— 库里那条禁用着而这一行启用着，用新的替换；
+     用户主动启用过，那是最新意图，不该被更早的禁用行盖掉；
+  2. 同状态时**先出现者胜** —— 四种同状态组合全部保留库里那条。
+- **Source 受不受认仍由宿主判**（它要知道内容目录），与 `MiaoDesktopBandOrder` 同一个分法：
+  归属问"这行是谁"，入账问"该不该收"。
+- **一处我自己造出来的坑**：第一版让 `ExplainWidgetRowOutcome` 回传 `const char*`，
+  于是调用处要 `Utf8ToWide` —— 那函数不存在（我顺手编的），mingw 当场报错。
+  改成回传 `std::wstring`，与 `MiaoLibraryRowFilter::DescribeRowSkip` 同一个形状才对:
+  调用方要把它拼进 `skippedRows_`,那里存的是宽串。**两个已存在的同形状模块已经给出了答案**,
+  不该凭想象造第三个形状。
+- **变异**：9 处全红、0 存活。含不看 Kind / 不看 Source 缺失 / **不看 Source 是否受认
+  （安全边界消失）** / 完全不看去重 / 启用状态不再优先 / 撞键也照收 /
+  恒 KeepExisting（新行永远进不去）/ 恒算改变库（每次都重写 INI）/
+  SupersedeDisabled 不算改变库（替换不落盘）。
+- 本机跑了什么：`WidgetRowAdmissionTest` 37 项（含反空洞自检 + 同状态四组合穷举 +
+  Content 不参与去重 + 五种说法互异），`-Wall -Wextra` 0 警告；9 处变异全红；
+  mingw 交叉编译 `DesktopWidgetStore.cpp` 0 错误；22 道仓库门 + 58 道 node 门全通过；
+  `verify-cmake-*` / `verify-native-source-hygiene` 全过，且手写清单里 content/ 条目仍为 0。
+- 真机：**未取证**。"升级之后组件还在不在、禁用一个再启用会不会被旧行盖回去"
+  要 Windows。P0-09 因此仍是 🟡 —— 但四项待查里已经查了两项半。
 
 ### 本轮推进记录（2026-10-04 再续二十一附，我把自己记过的坑又踩了一次：59 个目标全 BUILD FAIL）
 

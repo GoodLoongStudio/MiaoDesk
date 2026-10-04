@@ -49,6 +49,14 @@ public:
     bool Save(std::wstring* error = nullptr) const;
 
     const std::vector<DesktopWidget>& Items() const noexcept;
+
+    // 加载时被跳过/被去重合掉的记录,以及为什么。与 WallpaperLibrary::SkippedRows() 同一个理由:
+    // 此前这一行是
+    //     if (kind == Unknown || source.empty() || !IsValidPersistedSource(widget)) continue;
+    // 三种完全不同的原因共用一个 continue,而 Load 照常返回 true —— 调用方只问成败,
+    // 于是拿着一个悄悄变短的布局继续。P0-09 要的"升级不丢组件布局"实际变成
+    // "丢了几条并报告成功"。判定在 MiaoWidgetRowAdmission(纯逻辑,有门)。
+    const std::vector<std::wstring>& SkippedRows() const noexcept { return skippedRows_; }
     std::optional<DesktopWidget> Find(std::wstring_view id) const;
 
     std::optional<DesktopWidget> Upsert(DesktopWidget widget, std::wstring* error = nullptr);
@@ -79,6 +87,7 @@ private:
 
     std::filesystem::path root_;
     std::vector<DesktopWidget> items_;
+    std::vector<std::wstring> skippedRows_;
 };
 
 } // namespace miaodesk::wallpaper

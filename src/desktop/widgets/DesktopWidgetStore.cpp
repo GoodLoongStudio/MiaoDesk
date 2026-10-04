@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopWidgetStore.h"
+#include "miaodesk/MiaoWidgetRowAdmission.h"
 #include "miaodesk/MiaoWidgetGeometry.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoWidgetContentCatalog.h"
@@ -230,6 +231,9 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
     WidgetStoreMutexGuard storeLock;
     if (!EnsureStoreLock(storeLock, error)) return false;
     items_.clear();
+    // 与 WallpaperLibrary 同一个理由:跳过必须留痕,否则"升级不丢组件布局"
+    // 会静默变成"丢了几条并报告成功"。见 MiaoWidgetRowAdmission.h。
+    skippedRows_.clear();
     std::error_code ec;
     fs::create_directories(PackageDirectory(), ec);
     if (ec) {
@@ -265,20 +269,58 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
             repairedText = true;
         }
         widget = Normalize(std::move(widget));
-        if (widget.kind == DesktopWidgetKind::Unknown || widget.source.empty() || !IsValidPersistedSource(widget)) continue;
 
+        // 入账判定住在 MiaoWidgetRowAdmission(纯逻辑,本机可测 37 项)。
+        // 此前是上面那一行 `if (kind == Unknown || source.empty() || !IsValidPersistedSource(...)) continue;`
+        // —— 三种完全不同的原因共用一个 continue,而撞 singleton 键时的两种去重结局
+        // 也压在同一行里。Load 照常返回 true,调用方只问成败,于是拿着一个悄悄变短的
+        // 布局继续。现在五種結局各自留一句话。"Source 受不受认"仍由宿主判
+        // (它要知道内容目录),与 MiaoDesktopBandOrder 同一个分法。
         const std::wstring singletonKey = NativeSingletonKey(widget);
+        bool singletonClashes = false;
+        const DesktopWidget* existingSingleton = nullptr;
         if (!singletonKey.empty()) {
             auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
                 return NativeSingletonKey(existing) == singletonKey;
             });
             if (duplicate != items_.end()) {
-                if (!duplicate->enabled && widget.enabled) *duplicate = std::move(widget);
-                repairedText = true;
-                continue;
+                singletonClashes = true;
+                existingSingleton = &(*duplicate);
             }
         }
-        items_.push_back(std::move(widget));
+
+        widget_row::WidgetRowFacts facts;
+        facts.kindRecognised = widget.kind != DesktopWidgetKind::Unknown;
+        facts.sourcePresent = !widget.source.empty();
+        facts.sourceValid = IsValidPersistedSource(widget);
+        facts.hasSingletonKey = !singletonKey.empty();
+        facts.singletonClashes = singletonClashes;
+        facts.candidateEnabled = widget.enabled;
+        facts.existingEnabled = existingSingleton != nullptr && existingSingleton->enabled;
+
+        const widget_row::WidgetRowOutcome outcome = widget_row::DecideWidgetRowAdmission(facts);
+        switch (outcome) {
+            case widget_row::WidgetRowOutcome::Admit:
+                items_.push_back(std::move(widget));
+                break;
+            case widget_row::WidgetRowOutcome::SupersedeDisabled: {
+                // 库里那条禁用着而这一行启用着:用户主动启用过,那是最新意图。
+                auto duplicate = std::find_if(items_.begin(), items_.end(), [&](const DesktopWidget& existing) {
+                    return NativeSingletonKey(existing) == singletonKey;
+                });
+                if (duplicate != items_.end()) *duplicate = std::move(widget);
+                repairedText = true;
+                break;
+            }
+            case widget_row::WidgetRowOutcome::KeepExisting:
+                repairedText = true;
+                break;
+            default:
+                // 三种拒绝:记下来,让宿主第一次能说出口。
+                skippedRows_.push_back(L"组件 " + widget.id + L"：" +
+                                       widget_row::ExplainWidgetRowOutcome(outcome));
+                break;
+        }
     }
 
     if (legacyAnsi || repairedText) {

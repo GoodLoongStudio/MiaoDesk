@@ -68,6 +68,12 @@ public:
     // 与还没退完的第一轮共用同一个 Node 进程和同一根管子。见 MiaoTurnLifecycle.h。
     bool Busy() const noexcept { return turnPhase_.load() != turn_lifecycle::TurnPhase::Idle; }
 
+    // 轮次是不是**真的在跑**。与 Busy() 只差 Stopping 那一态,而那一态正是两个问题
+    // 的分界:"还能不能再起一轮"要把取消中算忙(AI-03),"该不该把结果拿给用户看"
+    // 要把取消中算结束 —— 用户按了取消、界面已经写了"已停止。",那之后到达的预览
+    // 不该再把窗口弹起来。两个都问 Busy() 就会有一个答错,所以分开问。
+    bool TurnActive() const noexcept { return turnPhase_.load() == turn_lifecycle::TurnPhase::Running; }
+
 private:
     struct ProviderSetup {
         bool ok{};

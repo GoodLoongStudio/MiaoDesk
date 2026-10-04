@@ -65,7 +65,7 @@
 | 能力 | 现状 | 位置 |
 | --- | --- | --- |
 | Provider-neutral 路由 | 已有 | `Conversation Panel → Pi Runtime → Provider` |
-| Provider 注入 | `providerId` + `baseUrl` + `model` + `apiKey` | `PiRuntime::ProviderSetup`(`PiRuntime.h:62-70`) |
+| Provider 注入 | `providerId` + `baseUrl` + `model` + `apiKey` | `PiRuntime::ProviderSetup`(`PiRuntime.h:78-108`) |
 | loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:318` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"miaodesk-local"` |
 | 多 Profile + 默认选择 | 已有 | `LoadDefault()`(`ApiRuntimeProfile.h:211`) |
 | 凭据存储 | Windows Credential Manager,按 profile 隔离 | `MiaoDesk/ApiProfile/<id>` |

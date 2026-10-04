@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `5f6c98cc`（本机 **57 个纯逻辑目标全通过**，exit 0；全量 mingw 语法门真实错误 0 行；22 道仓库门 + **59 道 node 契约门**全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62`（两个纯文档/CI 提交，五条链里只有 Repo Hygiene 触发）上该门各红过两次，**原因拿不到日志、至今没有解释**，已改成让红自己留下 annotation（见再续十八）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `a841b21a`（本机 **57 个纯逻辑目标全通过**，exit 0；全量 mingw 语法门真实错误 0 行；22 道仓库门 + **59 道 node 契约门**全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`

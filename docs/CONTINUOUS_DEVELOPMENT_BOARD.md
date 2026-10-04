@@ -287,6 +287,9 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   与"目标结构自洽",**没有一个门查"这个 EXE 调用的符号在它的链接 Closure 里"**。
   这类错误只有真链接才暴露。已记为教训:往 `MIAODESK_CORE_SOURCES` 加文件时,
   必须先确认**所有**调用方都链 `MiaoDeskCore`。
+- **✅ 已由 CI 确认修好**:`00eb7eaf` 上 `Windows ARM64 Fast Dev` **success**、
+  `Repo Hygiene` **success**、`Path Layout Contract` **success** —— 连红六次的那条链
+  恢复。该 SHA 上 x64 Package / x64 MSIX / ARM64 Package 三条当时仍在跑,不作结论。
 - **本轮已做的(只加诊断,不加重试)**:把第 6 步改成
   (1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
   (2) install 失败时把完整输出和 matched 行写进 annotation。之前 annotation 里只有

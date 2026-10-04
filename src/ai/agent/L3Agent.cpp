@@ -699,16 +699,29 @@ void L3Agent::MigrateSessionFromLegacyState(const ModelConfig& next) {
     const fs::path from = ConversationPath(before);
     const fs::path to = ConversationPath(next);
     if (from == to) return;
-    if (fs::exists(from, ec) && !fs::exists(to, ec)) {
-        fs::create_directories(to.parent_path(), ec);
-        fs::copy_file(from, to, ec);
-        if (!ec) {
-            lastSessionMigration_ = L"AI 会话已随配置来源升级迁移到新的 API 配置中心身份。" +
-                                    plan.reason;
-        } else {
-            lastSessionMigration_ = L"配置来源升级了,但旧会话搬不过来(error=" +
-                                    std::to_wstring(ec.value()) + L");旧会话仍留在原处。";
-        }
+    if (!fs::exists(from, ec)) {
+        // 旧身份下本来就没有会话,没什么可搬。退休旧文件仍然是对的。
+        api_runtime_profile::RetireLegacyShadowState();
+        return;
+    }
+    if (fs::exists(to, ec)) {
+        // 新身份下**已经有**一份会话。这里第一版是直接跳过拷贝然后退休旧文件 ——
+        // 于是旧会话变成不可达,而 `lastSessionMigration_` 一个字都不写:
+        // 一次无声的丢失,出在我为了防止无声丢失而写的代码里。
+        // 不自动决定谁覆盖谁(那是产品决策),但**必须说出来**。
+        lastSessionMigration_ = L"配置来源升级了,但新的身份下已经有一份会话,所以旧的那份"
+                               L"没有被搬过去(旧会话仍在 " + from.wstring() + L",未使用的"
+                               L"新会话在 " + to.wstring() + L")。哪一份算数需要人工决定。";
+        api_runtime_profile::RetireLegacyShadowState();
+        return;
+    }
+    fs::create_directories(to.parent_path(), ec);
+    fs::copy_file(from, to, ec);
+    if (!ec) {
+        lastSessionMigration_ = L"AI 会话已随配置来源升级迁移到新的 API 配置中心身份。" + plan.reason;
+    } else {
+        lastSessionMigration_ = L"配置来源升级了,但旧会话搬不过来(error=" +
+                                std::to_wstring(ec.value()) + L");旧会话仍留在原处。";
     }
     api_runtime_profile::RetireLegacyShadowState();
 }
@@ -956,6 +969,11 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
                 (config_.model.empty() ? L"未配置" : config_.model) + L" · API Key=" +
                 (HasStoredApiKey() ? L"已配置" : (IsLocalUrl(config_.baseUrl) ? L"本地服务无需 Key" : L"未配置")) +
                 L" · Harness=未参与";
+        // 上一次配置来源升级对会话做了什么。没有这一行,`LastSessionMigration()`
+        // 就是个只写不读的字段 —— 我这一轮已经差点那么交付一次。
+        if (!lastSessionMigration_.empty()) {
+            reply += L"\r\n提示:" + lastSessionMigration_;
+        }
         return true;
     }
     if (lower == L"/new" || lower == L"/new-chat" || lower == L"新对话") {

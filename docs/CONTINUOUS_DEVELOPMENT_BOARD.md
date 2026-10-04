@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `cf1a63f1`（本机 **59 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `HEAD`（本机 **60 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -85,7 +85,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：① 请求 URL 与凭据必须同源（并修掉一个会外泄 Key 的缺陷）② 库状态的恢复合并策略已提成纯逻辑，两份重复副本合并为一份**（`MiaoLibraryRestoreMerge`，38 项断言 + 9 处变异全红，见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
-| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**本机自动部分已落地两项：① AI 会话迁移（P0-09 那个"升级把会话变成不可达字节"的缺陷）② 组件布局的入账判定 —— 三种拒绝 + 两种去重结局原先共用一个 `continue`，`Load` 照常返回 true，于是"升级不丢组件布局"实际是"丢了几条并报告成功"；现已提成 `MiaoWidgetRowAdmission`（37 项断言 + 9 处变异全红）并新增 `SkippedRows()` 让宿主第一次能说出口**（见下）。内容库那一半见 `MiaoLibraryRowFilter`（已修）；**API profile 的升级路径仍未查** |
+| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**本机自动部分已落地四项：① AI 会话迁移（"升级把会话变成不可达字节"）② 组件布局入账判定（三种拒绝 + 两种去重结局原共用一个 `continue`，`Load` 照常返回 true；`MiaoWidgetRowAdmission`，37 项 + 9 处变异全红，新增 `SkippedRows()`）③ 内容库静默丢行（`MiaoLibraryRowFilter`，已修）④ API profile 读取边界（本轮）—— Win32 在缓冲区放不下时**不报错**，而 `ReadIni`/`ProfileSections` 把返回值全丢了：baseUrl 截断 ⇒ 请求带着 Key 打到另一台主机；段名清单截断 ⇒ 整个 profile 从下拉里消失。判据提成 `MiaoIniReadLimit`（17 项 + 6 处变异全红）并接回两个读点，新增 `LastConfigReadTruncated()`**（见下）。**真机升级四类数据仍要 Windows** |
 | P0-10 | 🟡 | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA。**校验器一直在,缺口在"要有人记得按按钮"**：新增 `workflow_run` 自动那一支（五条里任意一条跑完就按触发它的那个 SHA 核一次，checkout 锁 `workflow_run.head_sha` 以免拿新尺子量旧工件）；`verify-rc-ci.mjs` 新增"还没跑完"这一档（退出码 3，push 后第一条跑完就触发时不误报红），并把 `--runs-file` 离线复核与 9 处变异补上（含两个此前**活着**的"退出码恒 0"）。（见下）；候选 SHA 的五条 success 证据本身仍要 CI 跑完 |
 
 ## 5. P0/P1 — 布局、输入与视觉
@@ -481,6 +481,44 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十三，P0-09 最后一项：API profile 的读取边界）
+
+- 代码提交：本次。
+- **为什么这一轮动了它**：上一轮我说"只剩 API profile"，然后又一次停了。
+  Stop hook 点名了这一项。P0-09 四项待查至此全部查过。
+- **逮到的问题**：`ApiRuntimeProfile.h` 里两个读配置的函数都把 Win32 的**返回值丢掉**：
+
+      GetPrivateProfileStringW(..., buffer.data(), 4096, ...)      // 值
+      GetPrivateProfileSectionNamesW(sections.data(), 32768, ...)   // 段名清单
+
+  而这两个函数在缓冲区**放不下时不报错** —— 它们在缓冲区末尾写一个截断的字符串，
+  然后返回 `nSize-2`。上层于是拿到一段看起来完全正常的文本。三种用户可见后果：
+  - **baseUrl 被截断 → 请求打到另一台主机，而 Key 也跟着去了**。
+    这不是"少几个字符"，是把凭据发到错误的端点；
+  - **段名清单被截断 → 整个 profile 从下拉里消失**。用户看不到它，而文件里它明明还在 ——
+    P0-09 的"升级不丢 API profile"于是变成"丢了一整份且不报错"；
+  - model / name 被截断 → 模型名不对，请求直接被服务端拒。
+- **修法**：判据提成 `MiaoIniReadLimit::ReadTruncated(copied, bufferChars)`，
+  两个读点都改成接住返回值并置一个进程内标记；新增 `LastConfigReadTruncated()`
+  让上层能问。**不改变**任何字段的读法（截断的那份仍按读到的内容走），先让它不安静。
+- **判据为什么取保守的一边**：从"要多少位子"算 —— `L` 字符需要 `L+1` 个位子，
+  所以 `B` 个位子最多容 `B-1` 个字符，`copied >= B-1` 就已经顶到天了。
+  Win32 截断时返回 `nSize-2`、写满时返回 `nSize-1`，看着能分清；但两个函数的文档
+  对 `-2` 措辞并不一致，而**结论只有一边是安全的**：误报只是一句提醒，
+  漏报是把凭据送到错误的端点。所以 `copied + 1 >= B` 一律算可疑。
+- **变异逮到我写了一条不可达的冗余分支**：第一版有 `if (bufferChars == 0) return true;`,
+  看着是"0 长度缓冲区的特殊处理"。把整条删掉之后测试**依然全绿** ——
+  因为 `copied + 1 >= 0` 对任何 copied 恒为真,那一档根本不需要特例。
+  与本会话早前删掉的 `OverlappingTurns` 同一个毛病:一个永远为真的守卫,
+  与没有它长得一模一样,留着只会让人以为这里有过一个需要特殊处理的情形。已删。
+- **一处我的测试自己错了**：`Check(ReadTruncated(0, 4096), "...不是截断...")` ——
+  `!` 丢了,断言与说明相反。这类错最坏的地方是它**看起来像代码缺陷**:
+  第一反应会是"判据错了",而我改的就是判据(还把 +2 改成 +1),改了才发现是测试少个 `!`。
+- **变异**：6 处全红、0 存活。含判据收紧成 +2/+3、放宽成 `>` / `>=`、恒不截断、恒截断。
+- 本机跑了什么：`IniReadLimitTest` 17 项（含 MSDN 边界 + 680 组合穷举 +
+  五种说法内容断言）；6 处变异全红；mingw 交叉编译 `L3Agent.cpp` / `SearchWindow.cpp` /
+  `DesktopAiSettingsPage.cpp` 0 错误；22 道仓库门 + 58 道 node 门全通过。
 
 ### 本轮推进记录（2026-10-04 再续二十二，P0-09 组件布局：五种结局共用一个 continue）
 

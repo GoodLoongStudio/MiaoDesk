@@ -4,6 +4,7 @@
 #include <wincred.h>
 
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoIniReadLimit.h"
 
 #include <algorithm>
 #include <array>
@@ -83,6 +84,17 @@ inline fs::path LocalStateRoot() {
     return miaodesk::paths::StateRoot();
 }
 
+// 最近一次读配置时是否撞上了缓冲区边界。用一个进程内的记录点,是因为
+// "值被截断"这件事发生在最底层的 ReadIni/ProfileSections 里,而**该知道的人在最上层**
+// (用户在 API 配置中心看这个 profile)。中间每一层都加一个出参会让签名全变,
+// 而截断本来就是罕见事件 —— 记下来,让上层能问。
+//
+// 线程安全性:配置只在 UI 线程读写。真实情况里Pi/L3 的 worker 线程不碰 ini。
+inline bool& LastReadTruncated() {
+    static bool truncated = false;
+    return truncated;
+}
+
 inline fs::path ProfilesPath() { return LocalStateRoot() / L"api-profiles.ini"; }
 
 inline void RetireLegacyShadowState() {
@@ -97,15 +109,28 @@ inline void RetireLegacyShadowState() {
 inline std::wstring ReadIni(const fs::path& path, const wchar_t* section, const wchar_t* key,
                             const wchar_t* fallback = L"") {
     std::array<wchar_t, 4096> buffer{};
-    GetPrivateProfileStringW(section, key, fallback, buffer.data(),
-                             static_cast<DWORD>(buffer.size()), path.c_str());
+    const DWORD copied = GetPrivateProfileStringW(section, key, fallback, buffer.data(),
+                                                 static_cast<DWORD>(buffer.size()), path.c_str());
+    // 这一行的返回值原来被丢掉了。Win32 在放不下时不报错 —— 它写一个截断的字符串,
+    // 返回 nSize-2,而上层拿到一段看起来完全正常的文本。后果不是"少几个字符":
+    // baseUrl 被截断时请求会打到另一台主机,而 **Key 也跟着去了**。
+    // 判据在 MiaoIniReadLimit(纯逻辑,本机有门)。
+    if (ini_read::ReadTruncated(static_cast<std::size_t>(copied), buffer.size())) {
+        LastReadTruncated() = true;
+    }
     return buffer.data();
 }
 
 inline std::vector<std::wstring> ProfileSections() {
     const auto path = ProfilesPath();
     std::array<wchar_t, 32768> sections{};
-    GetPrivateProfileSectionNamesW(sections.data(), static_cast<DWORD>(sections.size()), path.c_str());
+    const DWORD copied = GetPrivateProfileSectionNamesW(sections.data(), static_cast<DWORD>(sections.size()), path.c_str());
+    // 同 ReadIni:段名清单一样会被静默截断。而这一侧的后果更直接 ——
+    // 截断点之后的整个 profile 从列表里消失,用户在下拉里看不到它,
+    // 而文件里它明明还在。P0-09 的"升级不丢 API profile"于是变成"丢了一整份且不报错"。
+    if (ini_read::ReadTruncated(static_cast<std::size_t>(copied), sections.size())) {
+        LastReadTruncated() = true;
+    }
     std::vector<std::wstring> result;
     for (const wchar_t* cursor = sections.data(); *cursor; cursor += std::wcslen(cursor) + 1) {
         if (wcsncmp(cursor, L"profile:", 8) == 0) result.emplace_back(cursor);
@@ -228,6 +253,7 @@ inline RuntimeProfile ReadSection(const std::wstring& section) {
 }
 
 inline std::vector<RuntimeProfile> LoadAll() {
+    LastReadTruncated() = false;
     std::vector<RuntimeProfile> profiles;
     for (const auto& section : ProfileSections()) {
         RuntimeProfile profile = ReadSection(section);
@@ -236,7 +262,12 @@ inline std::vector<RuntimeProfile> LoadAll() {
     return profiles;
 }
 
+// 最近一次读配置的过程中有没有东西被截断。给宿主/UI 用:它会说"这份配置可能不完整",
+// 而**不会**改任何字段 —— 截断的那一份仍然按读到的内容走,只是不再安静。
+inline bool LastConfigReadTruncated() noexcept { return LastReadTruncated(); }
+
 inline RuntimeProfile LoadById(std::wstring_view id) {
+    LastReadTruncated() = false;   // 每次读都重新判:上一轮的截断不该一直挂着
     if (id.empty()) return {};
     for (const auto& section : ProfileSections()) {
         if (!section.starts_with(L"profile:")) continue;
@@ -253,6 +284,7 @@ inline RuntimeProfile LoadDefault() {
     //
     // Older builds persisted default=1. Keep reading that field in ReadSection for
     // backwards compatibility/migrations, but it no longer overrides list order.
+    LastReadTruncated() = false;
     RuntimeProfile firstFound;
     for (const auto& section : ProfileSections()) {
         RuntimeProfile profile = ReadSection(section);

@@ -1,4 +1,5 @@
 #include "miaodesk/L3CliWindow.h"
+#include "miaodesk/MiaoProfileSwitchGuard.h"
 #include "miaodesk/MiaoTurnReplyScope.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/PiRuntime.h"
@@ -1453,7 +1454,24 @@ void PaintConversation(ConversationState& state, HDC target) {
 }
 
 void PopulateConversationApiProfiles(ConversationState& state, bool preserveSelection = false) {
-    if (preserveSelection && state.pi && state.pi->Busy() && !state.busy) return;
+    // 闸门判定住在 MiaoProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
+    // 这段判定原本散在五处、两种相反结论,完整故事写在那个头文件里 —— 一句话:
+    // 这一行原来带着 `&& !state.busy`,它让"这个窗口自己的轮次正在跑"成为重建的
+    // **理由**,而重建通向 ReloadConfig() 的 Stop() + conversation_.clear()。
+    // 用户在自己这一轮跑到一半时拉开下拉,这一轮被打断、上下文被清空,而界面上
+    // 一个字都不提。
+    if (profile_switch::DecideProfileSelectorAction(
+            preserveSelection, state.pi && state.pi->Busy(), state.busy) ==
+        profile_switch::ProfileSelectorAction::Keep) {
+        // 这里没有 `if (preserveSelection)` 包着:Keep 只可能在 preserveSelection
+        // 为真时出现(判定第一条就是 `if (!preserveSelection) return Rebuild;`)。
+        // 穷举八种组合证明过,ProfileSwitchGuardTest 也把它钉成一条断言 ——
+        // 留着那个内层判断只会让人以为"首填也可能留住",而那是假的。
+        AddEntry(state, EntryKind::System,
+                 profile_switch::ExplainProfileSelectorAction(
+                     profile_switch::ProfileSelectorAction::Keep));
+        return;
+    }
     const std::wstring previousId =
         preserveSelection && state.agent ? state.agent->ProfileId() : std::wstring{};
     state.apiProfiles.clear();
@@ -1506,8 +1524,15 @@ void PopulateConversationApiProfiles(ConversationState& state, bool preserveSele
 }
 
 void SelectConversationApiProfile(ConversationState& state) {
-    if (state.busy || !state.apiProfileCombo || !state.agent || state.apiProfiles.empty()) return;
-    if (state.pi && state.pi->Busy()) {
+    if (!state.apiProfileCombo || !state.agent || state.apiProfiles.empty()) return;
+    // CBN_SELCHANGE 是在下拉**已经 visual 改过之后**才到的。所以这一步只有两种
+    // 收梢:要么把它应用掉,要么把控件改回真正在跑的那一个。半路撂下是最坏的一种 ——
+    // 下拉显示 B、agent 跑的是 A,而界面上一个字都不说。
+    // 原来这里 `if (state.busy || ...) return;` 正是半路撂下:只有 Pi 忙那一支会
+    // 改回控件并说明,这个窗口自己忙的那一支**静默返回**,留下一控件假选择。
+    if (profile_switch::DecideProfileSelectorAction(
+            /*preserveSelection=*/true, state.pi && state.pi->Busy(), state.busy) ==
+        profile_switch::ProfileSelectorAction::Keep) {
         for (std::size_t i = 0; i < state.apiProfiles.size(); ++i) {
             if (_wcsicmp(state.apiProfiles[i].id.c_str(), state.agent->ProfileId().c_str()) == 0) {
                 SendMessageW(state.apiProfileCombo, CB_SETCURSEL, static_cast<WPARAM>(i), 0);
@@ -1515,7 +1540,8 @@ void SelectConversationApiProfile(ConversationState& state) {
             }
         }
         AddEntry(state, EntryKind::System,
-                 L"另一个 AI 窗口正在执行任务；任务结束后再切换 API。");
+                 profile_switch::ExplainProfileSelectorAction(
+                     profile_switch::ProfileSelectorAction::Keep));
         return;
     }
     const int index = static_cast<int>(SendMessageW(state.apiProfileCombo, CB_GETCURSEL, 0, 0));
@@ -1544,8 +1570,17 @@ void UpdateConversationApiProfileRect(ConversationState& state, int clientRight)
 
 void ShowConversationApiProfileMenu(ConversationState& state) {
     if (!state.window || !state.agent) return;
-    if (state.busy || (state.pi && state.pi->Busy())) {
-        AddEntry(state, EntryKind::System, L"当前有 AI 任务正在执行，任务结束后再切换 API。");
+    // 这曾是第三份副本,而且它与下面 `PopulateConversationApiProfiles` 里的那一份
+    // 结论相反:菜单这条拦住(`busy || pi->Busy()`),下拉那条却用 `&& !busy` 放行。
+    // 同一个"我想换个 API",两条路两个结果 —— 而放行那条通向 ReloadConfig() 的
+    // Stop() + conversation_.clear()。现在都走同一道闸门,那句话也只有一个出处。
+    // preserveSelection 传 true:它下一步就是 PopulateConversationApiProfiles(state, true)。
+    if (profile_switch::DecideProfileSelectorAction(
+            /*preserveSelection=*/true, state.pi && state.pi->Busy(), state.busy) ==
+        profile_switch::ProfileSelectorAction::Keep) {
+        AddEntry(state, EntryKind::System,
+                 profile_switch::ExplainProfileSelectorAction(
+                     profile_switch::ProfileSelectorAction::Keep));
         return;
     }
 

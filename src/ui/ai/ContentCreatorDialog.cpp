@@ -1,5 +1,6 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoCreatorPathScope.h"
+#include "miaodesk/MiaoProfileSwitchGuard.h"
 #include "miaodesk/CreatorReplyInterpreter.h"
 #include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/ContentCreatorDialog.h"
@@ -1293,9 +1294,23 @@ struct DialogState {
     }
 
     void PopulateApiProfiles(bool preserveSelection = false) {
-        // Another AI window may own the shared Pi turn. Do not rewrite this selector
-        // underneath that turn; profile changes are applied only between turns.
-        if (preserveSelection && pi && pi->Busy() && !busy) return;
+        // 闸门判定住在 MiaoProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
+        // 这段判定原本散在五处、两种相反结论,完整故事写在那个头文件里。这里只说
+        // 关键的一句:原来 `&& !busy` 让"这个窗口自己的轮次正在跑"成为重建的**理由**,
+        // 而重建通向 ReloadConfig() 的 Stop() + worker_.join() + conversation_.clear()
+        // —— 用户在自己这一轮跑到一半时拉开 API 下拉,这一轮被打断、上下文被清空,
+        // 而界面上一个字都不提。
+        if (profile_switch::DecideProfileSelectorAction(preserveSelection,
+                                                        pi && pi->Busy(), busy) ==
+            profile_switch::ProfileSelectorAction::Keep) {
+            // 同 ConversationPanelImpl.inc:Keep 只可能在 preserveSelection 为真时
+            // 出现,所以这里不套 `if (preserveSelection)`(那条永远为真)。
+            // wstring 不能直接喂 SetWindowTextW,要 .c_str()。
+            SetWindowTextW(resultNote,
+                profile_switch::ExplainProfileSelectorAction(
+                    profile_switch::ProfileSelectorAction::Keep).c_str());
+            return;
+        }
         const std::wstring previousId =
             preserveSelection && agent ? agent->ProfileId() : std::wstring{};
         apiProfiles.clear();
@@ -1346,15 +1361,22 @@ struct DialogState {
     }
 
     void SelectApiProfile() {
-        if (busy || !apiProfileCombo || !agent || apiProfiles.empty()) return;
-        if (pi && pi->Busy()) {
+        if (!apiProfileCombo || !agent || apiProfiles.empty()) return;
+        // 同面板:选择必须有个收梢 —— 要么应用,要么把控件改回真正在跑的那个。
+        // 原来 `if (busy || ...) return;` 在这个窗口自己忙时静默返回,而下拉已经
+        // visual 改过了:显示 B、跑的是 A,界面上一个字都不说。
+        if (profile_switch::DecideProfileSelectorAction(
+                /*preserveSelection=*/true, pi && pi->Busy(), busy) ==
+            profile_switch::ProfileSelectorAction::Keep) {
             for (std::size_t i = 0; i < apiProfiles.size(); ++i) {
                 if (_wcsicmp(apiProfiles[i].id.c_str(), agent->ProfileId().c_str()) == 0) {
                     SendMessageW(apiProfileCombo, CB_SETCURSEL, static_cast<WPARAM>(i), 0);
                     break;
                 }
             }
-            SetWindowTextW(resultNote, L"另一个 AI 窗口正在执行任务；任务结束后再切换 API。");
+            SetWindowTextW(resultNote,
+                profile_switch::ExplainProfileSelectorAction(
+                    profile_switch::ProfileSelectorAction::Keep).c_str());
             return;
         }
         const int index = static_cast<int>(SendMessageW(apiProfileCombo, CB_GETCURSEL, 0, 0));

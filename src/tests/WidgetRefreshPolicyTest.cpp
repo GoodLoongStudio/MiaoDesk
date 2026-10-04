@@ -47,7 +47,10 @@ int wmain() {
 
     // ---- 2. 失败路径:指数退避到上限 ----
     WidgetRefreshState failing;
-    const std::uint32_t expected[] = {1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000};
+    // 起点 2000 而不是 1000:见 kWidgetFailureBackoffStartMs 上的说明 ——
+    // NativeWidgetHost 的刷新 tick 是 1000ms,起点取 1000 的话"第一次失败就退避"
+    // 实际上是第一次失败毫无变化。
+    const std::uint32_t expected[] = {2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000};
     for (std::uint32_t i = 0; i < 8; ++i) {
         const std::uint32_t delay = NextRefreshDelayAfterFailure(failing);
         Check(delay == expected[i],
@@ -105,13 +108,14 @@ int wmain() {
         // 重要的是"退避起点"这个常量从此名不副实,而断言说它必须是 1000。
         WidgetRefreshState state;
         const std::uint32_t first = ApplyRefreshOutcome(&state, false, 0, false);
-        Check(first == kWidgetFailureBackoffStartMs, "第一次失败退避到起点 1000ms");
+        Check(first == kWidgetFailureBackoffStartMs,
+              "第一次失败退避到起点(必须 > NativeWidgetHost 的 1000ms tick,否则第一步不降频)");
         Check(state.consecutiveFailures == 1, "第一次失败后计数为 1");
         const std::uint32_t second = ApplyRefreshOutcome(&state, false, 0, false);
-        Check(second == 2000, "第二次失败退避到 2000ms");
+        Check(second == 4000, "第二次失败退避到 4000ms");
         const std::uint32_t third = ApplyRefreshOutcome(&state, false, 0, false);
-        Check(third == 4000, "第三次失败退避到 4000ms");
-        Check(state.lastDelayMs == 4000, "状态记下最近一次延迟");
+        Check(third == 8000, "第三次失败退避到 8000ms");
+        Check(state.lastDelayMs == 8000, "状态记下最近一次延迟");
     }
 
     // ---- 6. 状态指针为空时不许崩,并退回成功路径的答案 ----
@@ -121,9 +125,11 @@ int wmain() {
 
     // ---- 7. 退避真的把重试次数降下来了 ----
     {
-        // 冷启动第一分钟:退避还在往上爬(1s、2s、4s、8s、16s、30s),所以有 6 次,
+        // 冷启动第一分钟:退避还在往上爬(2s、6s、14s、30s、60s),所以有 5 次,
         // 而不是今天的 3750 次。 ramp-up 与稳态不能混为一谈 —— 我第一版就写成了
         // "一分钟最多 2 次",那是稳态的数字,拿它去判冷启动当然红。
+        // 起点从 1s 抬到 2s 之后这个数从 6 变成 5:同一次失败的第一次重试晚了 1s,
+        // 冷启动一分钟里就少一次。这是抬起点换来的,方向是对的。
         WidgetRefreshState state;
         std::uint64_t simulated = 0;
         int attempts = 0;
@@ -131,7 +137,7 @@ int wmain() {
             simulated += ApplyRefreshOutcome(&state, false, 0, false);
             ++attempts;
         }
-        Check(attempts == 6, "冷启动第一分钟重试 6 次(退避还在爬),不是 3750 次");
+        Check(attempts == 5, "冷启动第一分钟重试 5 次(退避还在爬),不是 3750 次");
         Check(attempts < 20, "第一分钟的重试次数有界(而不是每 16ms 一次)");
 
         // 稳态:已经爬到 30s 之后,每分钟最多 2 次。

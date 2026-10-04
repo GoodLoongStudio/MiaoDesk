@@ -73,10 +73,10 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 | Provider 抽象 | **部分**：三个互不相同的快照结构，无统一接口/时间戳/loading/取消 | `MiaoContentDataBinding.h:16-19`、`NativeWeatherData.h:14-27`、`TodayTaskStore.h:18-25` | WPRO-04 |
 | 能力 broker | 已实现，闭集 3 个（`time.*/weather.*/tasks.*`） | `MiaoContentDataBinding.cpp:96-117` | 无撤销/取消；无 media/agenda/timer/focus/photos |
 | Action 注册表 | **缺失** | — | WPRO-03 |
-| 无障碍 | **缺失**（窗口 `WS_EX_NOACTIVATE`，无焦点/键盘/UIA） | `NativeWidgetHost.cpp:937` | WPRO-06 |
+| 无障碍 | **缺失**（窗口 `WS_EX_NOACTIVATE`，无焦点/键盘/UIA） | `NativeWidgetHost.cpp:975` | WPRO-06 |
 | 多实例 | 内容包支持；原生预设按显示器刻意单例 | `DesktopWidgetStore.cpp:134-141`、`WidgetService.cpp:134-135` | — |
 | 显示器分配 | 已实现 + 健康遥测 | `WidgetService.cpp:167-180,223-352` | 真机未验 |
-| 吸附对齐 | **缺失** | `NativeWidgetHost.cpp:746-762` | 仅新建时有粗粒度避让 |
+| 吸附对齐 | **缺失** | `NativeWidgetHost.cpp:784-800` | 仅新建时有粗粒度避让 |
 
 ## 4. 创作（Creator / AI）能力台账
 

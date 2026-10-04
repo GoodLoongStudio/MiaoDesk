@@ -10,6 +10,7 @@
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/TodayTaskPresentation.h"
 #include "miaodesk/TodayTaskStore.h"
+#include "miaodesk/WidgetRefreshPolicy.h"
 #include "miaodesk/WallpaperMonitorLayout.h"
 #include "miaodesk/WebDesktopSurfaceChild.h"
 #include "miaodesk/WidgetService.h"
@@ -227,7 +228,10 @@ struct NativeSlot {
     float dragMonitorHeightPx_{};
     ULONGLONG geometryGraceUntil{};
     ULONGLONG nextRefreshAt{};
+    // WPRO-05:刷新调度状态。与 ContentWidgetHost 的 slot.refresh 同一个模块
+    // (miaodesk::desktop::WidgetRefreshState),两个宿主因此共用同一套退避曲线。
     unsigned long long successfulPaints{};
+    ::miaodesk::desktop::WidgetRefreshState refresh{};
 };
 
 void ReleaseLayerSurface(NativeSlot& slot) {
@@ -327,7 +331,22 @@ struct NativeWidgetHostApp {
         const bool changed = lastSurfaceError != message;
         lastSurfaceError = message;
         WriteDiagnostics(lastSurfaceError);
-        if (slot) MarkNativeSurfacePaintReady(slot->hwnd, false);
+        if (slot) {
+            MarkNativeSurfacePaintReady(slot->hwnd, false);
+            // WPRO-05:失败也要排下一次,而且要退避。这一行放在 ReportFailure 这个
+            // 唯一的收束点上,是因为"画不出来"的路径有十几条(渲染目标拿不到、
+            // 工厂建失败、DIB/交换链建失败、EndDraw 失败、Present 失败…),每条
+            // 各写一遍就是十几份会漂移的副本。
+            //
+            // 在此之前这些路径都不碰 nextRefreshAt,于是它保持上一次的值;那个值
+            // 一旦过去,`RepaintDueWidgets` 里 `now >= nextRefreshAt` 每个 tick 都
+            // 为真 —— 一个每分钟才画一次的时钟,画不出来之后变成每秒重试,
+            // 频率高 60 倍,而用户看不见任何变化,只看见风扇转。
+            //
+            // D2DERR_RECREATE_TARGET 那条**不**走这里:它自己把 nextRefreshAt 置 0,
+            // 那是"等 SyncFromStore 重建"的信号,不是失败退避。
+            ScheduleRefreshAfterFailure(*slot);
+        }
         if (!changed) return;
         if (slot) LogSlot(miaodesk::log::Level::Error, L"组件 Surface 失败", *slot, message);
         else miaodesk::log::Error(L"WidgetHost", message);
@@ -650,28 +669,47 @@ struct NativeWidgetHostApp {
     void ScheduleNextRefresh(NativeSlot& slot) {
         const bool directSurface = slot.hwnd && IsWindow(slot.hwnd) &&
             (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
+
+        std::uint32_t delay = 0;
         if (directSurface) {
-            slot.nextRefreshAt = GetTickCount64() + kDirectSurfaceRepaintMs;
-            return;
+            // 直接呈现的表面保活周期不在策略里:它与内容要不要帧无关,
+            // 是"不能完全睡着"的心跳。与之前逐字相同。
+            delay = kDirectSurfaceRepaintMs;
+        } else {
+            const std::uint32_t interval = NativePresetRefreshIntervalMs(slot.preset);
+            if (interval == 0) {
+                slot.nextRefreshAt = 0;   // 静态内容:由事件驱动,不轮询。语义不变。
+                return;
+            }
+            if (slot.preset == NativeWidgetPreset::GlassClock && interval >= 60000) {
+                SYSTEMTIME local{};
+                GetLocalTime(&local);
+                const std::uint32_t elapsedInMinute =
+                    static_cast<std::uint32_t>(local.wSecond) * 1000u + local.wMilliseconds;
+                delay = std::max<std::uint32_t>(250u, 60000u - elapsedInMinute);
+            } else {
+                delay = interval;
+            }
         }
 
-        const std::uint32_t interval = NativePresetRefreshIntervalMs(slot.preset);
-        if (interval == 0) {
-            slot.nextRefreshAt = 0;
-            return;
-        }
+        const std::uint32_t effective = ::miaodesk::desktop::ApplyRefreshOutcome(
+            &slot.refresh, /*succeeded=*/true, delay, directSurface);
+        slot.nextRefreshAt = ::miaodesk::desktop::NextRefreshAt(GetTickCount64(), effective);
+    }
 
-        const ULONGLONG now = GetTickCount64();
-        if (slot.preset == NativeWidgetPreset::GlassClock && interval >= 60000) {
-            SYSTEMTIME local{};
-            GetLocalTime(&local);
-            const std::uint32_t elapsedInMinute =
-                static_cast<std::uint32_t>(local.wSecond) * 1000u + local.wMilliseconds;
-            const std::uint32_t delay = std::max<std::uint32_t>(250u, 60000u - elapsedInMinute);
-            slot.nextRefreshAt = now + delay;
-            return;
-        }
-        slot.nextRefreshAt = now + interval;
+    // WPRO-05:画不出来的时候也要排下一次,而且要**退避**。
+    //
+    // 在此之前五条失败路径都不碰 nextRefreshAt,于是它保持上一次的值。那个值一旦
+    // 过去,`RepaintDueWidgets` 的 `now >= nextRefreshAt` 每个 tick 都为真 ——
+    // 一个每分钟才需要画一次的时钟,画不出来之后变成**每秒**重试一次,频率高 60 倍,
+    // 而用户看不见任何变化,只看见风扇转。`ContentWidgetHost` 早就接了这条退避
+    // (`ApplyRefreshOutcome(&slot.refresh, false, ...)`),这个宿主没有。
+    void ScheduleRefreshAfterFailure(NativeSlot& slot) {
+        const bool directSurface = slot.hwnd && IsWindow(slot.hwnd) &&
+            (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
+        const std::uint32_t effective = ::miaodesk::desktop::ApplyRefreshOutcome(
+            &slot.refresh, /*succeeded=*/false, 0, directSurface);
+        slot.nextRefreshAt = ::miaodesk::desktop::NextRefreshAt(GetTickCount64(), effective);
     }
 
     void PaintSlot(NativeSlot& slot) {

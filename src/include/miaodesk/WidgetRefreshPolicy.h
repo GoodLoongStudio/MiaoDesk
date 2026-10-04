@@ -37,7 +37,17 @@ inline constexpr std::uint32_t kWidgetIdleRefreshMs = 1000;
 inline constexpr std::uint32_t kWidgetDirectSurfaceHeartbeatMs = 2000;
 
 // 失败退避的起点与上限。
-inline constexpr std::uint32_t kWidgetFailureBackoffStartMs = 1000;
+//
+// 起点原来是 1000。那对 `ContentWidgetHost` 是对的 —— 它的刷新 tick 是 16ms
+// (60Hz),退到 1s 等于降频 60 倍。但 `NativeWidgetHost` 的 tick 是 **1000ms**,
+// 于是同一条曲线在它上面**第一步是无效的**:连错一次的槽每个 tick 照样重画一次,
+// 频率一点没降,要等连错第二次(2s)才开始有用。一个"降频"在第一次失败时完全不降频,
+// 是最容易被认为是修好了的那种失败。
+//
+// 起点必须高于两个宿主的 tick 并留出余量:2000ms 对 1000ms 的 Native 是 2 倍,
+// 对 16ms 的 Content 仍是 125 倍。代价是偶发失败要多等 1s 才重试 ——
+// 一个每 60s 才画一次的组件,1s 与 2s 没有区别。
+inline constexpr std::uint32_t kWidgetFailureBackoffStartMs = 2000;
 inline constexpr std::uint32_t kWidgetFailureBackoffCeilingMs = 30000;
 
 // 退避倍率。2 → 1s、2s、4s、8s…到 30s 封顶共 5 次翻倍。

@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `321653ca`（本机 **61 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `HEAD`（本机 **62 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -481,6 +481,38 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十五，WPRO-05：退避只接了一个宿主，另一个的第一步还是无效的）
+
+- 代码提交：本次。
+- **两个发现，都出在"同一个策略、两个宿主"上**：
+  1. `WidgetRefreshPolicy`(失败退避)**只被 `ContentWidgetHost` 用**。
+     `NativeWidgetHost` 有自己的一套 `ScheduleNextRefresh`,而它的失败路径
+     **一次都不排下一次** —— `nextRefreshAt` 保持上一次的值,那个值一旦过去,
+     `RepaintDueWidgets` 的 `now >= nextRefreshAt` 每个 tick 都为真。
+     一个每分钟才画一次的时钟,画不出来之后变成**每秒**重试一次,频率高 60 倍,
+     而用户看不见任何变化,只看见风扇转。
+  2. 退避起点 `kWidgetFailureBackoffStartMs = 1000` 对 `ContentWidgetHost`
+     (tick 16ms)是 60 倍降频,但对 `NativeWidgetHost`(tick **1000ms**)
+     **第一步完全无效** —— 连错一次的槽每个 tick 照样重画,要等连错第二次才开始降频。
+     一个"降频"在第一次失败时完全不降频,是最容易被认为是修好了的那种失败。
+     已抬到 2000ms:对 1s tick 是 2 倍,对 16ms tick 仍是 125 倍。
+- **修法**:`ReportFailure` 是全部十几条失败路径(渲染目标拿不到、工厂建失败、
+  DIB/交换链建失败、EndDraw 失败、Present 失败…)唯一的收束点,退避就接在那儿 ——
+  一条改动覆盖全部路径,而不是十几份会漂移的副本。
+  `D2DERR_RECREATE_TARGET` 那条**不**改:它自己把 `nextRefreshAt` 置 0,
+  那是"等 SyncFromStore 重建"的信号,不是失败退避。
+- **一处探针帮我定性了数量级**:写了个 20 行探针把退避曲线打出来,
+  才发现 1000ms 起点在 1s tick 上等于没修。没它我会直接把线接上然后宣布
+  "WPRO-05 已完成" —— 而那正是这个仓库里反复出现的失败形状。
+- **一处我改测试改到第三遍**:抬高点之后原有 9 项断言红(它们把 1000/2000/4000…
+  写死了)。第一次只改期望值却漏了 `lastDelayMs`,第二次漏了冷启动次数
+  (爬坡从 2s 起,一分钟内从 6 次变 5 次)。教训与 harness 那次一样:
+  **改一个被多条断言钉住的常量,要一次找齐全部**,分批改会一直红。
+- **变异**:5 处全红、0 存活 —— 失败路径不走退避 / 失败不累计 /
+  **起点退回 1s(就是本轮修的那个)** / 起点等于上限 / 退避不再翻倍。
+- 本机跑了什么:`WidgetRefreshPolicyTest` 174 项通过;5 处变异全红;
+  mingw 交叉编译 `NativeWidgetHost.cpp` 0 错误;全量 mingw 语法门真实错误 0 行。
 
 ### 本轮推进记录（2026-10-04 再续二十四，CREATE-06：对话框压根不知道自己正在做哪个作品）
 
@@ -1429,7 +1461,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | WPRO-02 | S4 | ⏳ | Native 组件视觉与控件原语 | WPRO-01 |
 | WPRO-03 | S4 | ⏳ | 动作、命中与拖动交互 | WPRO-01、CAP-05 |
 | WPRO-04 | S4 | ⏳ | 真实 Provider 与数据状态 | CAP-05 |
-| WPRO-05 | S4 | ⏳ | 组件更新调度与能耗 | WPRO-04、PRO-03 |
+| WPRO-05 | S4 | 🟡 | 组件更新调度与能耗 | WPRO-04、PRO-03。**失败退避已接到第二个宿主**：`WidgetRefreshPolicy` 原先只被 `ContentWidgetHost` 用，`NativeWidgetHost` 有自己的 `ScheduleNextRefresh` 且**失败路径一次都不排下一次** —— 一个每分钟才画一次的时钟，画不出来之后每个 1s tick 照样重画，频率高 60 倍。已接上共享退避（改在 `ReportFailure` 这一个收束点上，覆盖全部十几条失败路径）。**顺带修了起点常量**：1000ms 对 16ms tick 的 Content 是 60 倍降频，对 1000ms tick 的 Native 却**第一步完全无效**，已抬到 2000ms（5 处变异全红）。真机风扇/能耗未取证 |
 | WPRO-06 | S4 | ⏳ | 组件键盘、读屏与系统适配 | WPRO-02、WPRO-03 |
 | WPRO-07 | S4 | ⏳ | 8 类官方组件与 macOS 对照 | WPRO-01～06、CAP-02 |
 | AIP-01 | S5 | ⏳ | 需求设计与能力规划 | CAP-01、CAP-02；复用 CREATE-01/CCA |

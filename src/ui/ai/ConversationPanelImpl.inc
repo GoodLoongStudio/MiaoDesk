@@ -1901,9 +1901,25 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         PlacePanel(*gConversationState);
         ShowWindow(gConversationState->window, SW_SHOWNORMAL);
         SetForegroundWindow(gConversationState->window);
-        if (!Trim(initialPrompt).empty() && !gConversationState->busy && !gConversationState->pendingConfirmation) {
-            SetWindowTextW(gConversationState->input, initialPrompt.c_str());
-            SendPrompt(*gConversationState);
+        // 搜索框那段词怎么进面板:纯判定住在 MiaoSearchHandoff(本机可测)。
+        // 原来的写法是 `if (有词 && !busy && !pendingConfirmation) { 填进去; 发出去; }` ——
+        // 于是面板正忙或在等确认时,**那段词既不进输入框也不发出去,整段消失**。
+        // 用户看到的是 AI 窗口被带到前台、输入框空空如也、什么也没发生。
+        // SEARCH-05 要的是"原查询自然成为对话上下文",而这里它什么都不是。
+        // 现在:非空的词永不丢下;该自动发的时候发,不该发的时候至少填进去,
+        // 那一轮结束后用户自己按 Enter 就行。
+        switch (DecideSearchHandoff(!Trim(initialPrompt).empty(),
+                                    gConversationState->busy,
+                                    gConversationState->pendingConfirmation)) {
+            case SearchHandoffAction::PrefillAndSend:
+                SetWindowTextW(gConversationState->input, initialPrompt.c_str());
+                SendPrompt(*gConversationState);
+                break;
+            case SearchHandoffAction::PrefillOnly:
+                SetWindowTextW(gConversationState->input, initialPrompt.c_str());
+                break;
+            case SearchHandoffAction::Drop:
+                break;
         }
         SetFocus(gConversationState->input);
         return true;
@@ -1989,9 +2005,20 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     SetForegroundWindow(window);
     SetFocus(state->input);
 
-    if (!Trim(initialPrompt).empty()) {
-        SetWindowTextW(state->input, initialPrompt.c_str());
-        SendPrompt(*state);
+    // 同一条判定,两边都用它。新面板此刻不可能忙也不可能有待确认,所以这里照旧
+    // "填进去并当场发";共用同一个判定的理由是别让两条路对同一个问题给出两个答案。
+    switch (DecideSearchHandoff(!Trim(initialPrompt).empty(),
+                                /*panelBusy=*/false,
+                                /*awaitingConfirmation=*/false)) {
+        case SearchHandoffAction::PrefillAndSend:
+            SetWindowTextW(state->input, initialPrompt.c_str());
+            SendPrompt(*state);
+            break;
+        case SearchHandoffAction::PrefillOnly:
+            SetWindowTextW(state->input, initialPrompt.c_str());
+            break;
+        case SearchHandoffAction::Drop:
+            break;
     }
     return true;
 }

@@ -1,5 +1,6 @@
 #include "miaodesk/ConversationPanel.h"
 #include "miaodesk/InputImeAnchor.h"
+#include "miaodesk/MiaoSearchHandoff.h"
 #include "miaodesk/WindowPlacementStore.h"
 #include "miaodesk/StoreDemoExperience.h"
 #include "miaodesk/GeneratedDesktopPreview.h"

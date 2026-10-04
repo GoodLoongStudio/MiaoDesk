@@ -5,6 +5,7 @@
 #include "miaodesk/L3Agent.h"
 #include "miaodesk/InputImeAnchor.h"
 #include "miaodesk/InputImeSession.h"
+#include "miaodesk/MiaoGozRecovery.h"
 #include "miaodesk/SearchTypes.h"
 #include <windows.h>
 #include <CommCtrl.h>
@@ -74,6 +75,11 @@ private:
     bool fileSearchAvailable_{false};
     bool fileSearchPending_{false};
     bool fileSearchQueryFailed_{false};
+    // 最近一次文件查询时,自动恢复实际发生了什么。`EnsurePipeAvailable` 一路上
+    // 看得见每个环节,此前全丢了,于是提示行只能说"可能服务没起来,也可能查询
+    // 超时" —— 诚实的猜测,不是诊断。判定在 MiaoGozRecovery(纯逻辑,61 项)。
+    ::miaodesk::goz_recovery::GozRecoveryOutcome lastGozRecovery_{
+        ::miaodesk::goz_recovery::GozRecoveryOutcome::NotNeeded};
     bool expanded_{false};
     bool exiting_{false};
     bool positionLoaded_{false};

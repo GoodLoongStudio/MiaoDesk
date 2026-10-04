@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `504a0a82`（本机 **62 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `HEAD`（本机 **63 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -107,7 +107,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | SEARCH-01 | 🟡 | 固定 30+ 查询基准集 | 是 | 全名/简称/中文/大小写/空格/同名文件等样本入仓；排序已在纯逻辑层入仓并有 22 项断言，真机样本待 Windows |
 | SEARCH-02 | 🟡 | 排序与去重质量 | 是 | 固定样本的 Top-3 有可复现基线，主要误命中有回归测试。**排序与去重两半都已提成纯逻辑并在本机有断言（排序 22 项、去重 19 项，含反空洞自检与变异全红）；去重已接回 `AppSearch::BuildIndex`，本机跑的是真正会发布的那一行**。真机样本仍待 Windows：真实索引来自开始菜单与注册表，"看见两个 Chrome"这个失败形态只有真机索引能复现 |
 | SEARCH-03 | 🟡 | 异步搜索取消与输入响应 | 是 | 快速输入不展示过期结果，无明显 UI 卡顿。**"不展示过期结果"那一半的代号算术已提成 `MiaoSearchGeneration` 并在本机有 435 项断言（含反空洞自检 + 11 处变异全红），`GozSearch` 改成调它而非另持一份裸 atomic**（见下）；真机快速连敲时的实际观感仍要 Windows |
-| SEARCH-04 | 🟡 | Goz 服务故障自动恢复 | 是 | 服务未就绪/退出后可诊断并恢复，不丢 App Search。**"可诊断"那一半已落地并修掉一句误导用户的诊断**：三桶状态与三句文案提成 `MiaoFileSearchNotice`（24 项断言 + 反空洞自检 + 文案不变量 + 8 处变异全红）；原来说"文件索引已连接，但本次查询失败"，而它键的状态只证明 goz.exe 客户端二进制装着 —— 服务没起来时照样为真，于是把"服务没起来"说成了"查询出错"，排查方向被引反（见下）。**"可恢复"那一半（`EnsurePipeAvailable` 起服务 + 轮询）仍未提纯**，不丢 App Search 也已由 `MergeResults` 的顺序保证但没回归 |
+| SEARCH-04 | 🟡 | Goz 服务故障自动恢复 | 是 | 服务未就绪/退出后可诊断并恢复，不丢 App Search。**"可诊断"那一半已落地并修掉一句误导用户的诊断**：三桶状态与三句文案提成 `MiaoFileSearchNotice`（24 项断言 + 反空洞自检 + 文案不变量 + 8 处变异全红）；原来说"文件索引已连接，但本次查询失败"，而它键的状态只证明 goz.exe 客户端二进制装着 —— 服务没起来时照样为真，于是把"服务没起来"说成了"查询出错"，排查方向被引反（见下）。**"可恢复"那一半（`EnsurePipeAvailable` 起服务 + 轮询）仍未提纯**，不丢 App Search 也已由 `MergeResults` 的顺序保证但没回归 **"可恢复"那一半也已落地**:`EnsurePipeAvailable` 一路上看得见每个环节(SCM 打不打得开、服务在不在、状态是什么、StartService 成没成、等到没有),但此前**每一步都当场丢掉、只回一个 bool** —— 于是 `MiaoFileSearchNotice` 的第三桶只能说"可能服务没起来,也可能查询超时",一句诚实的猜测而不是诊断。判定提成 `MiaoGozRecovery`(61 项断言 + 8 处变异全红),观测经出参交出来,提示行在失败那一桶追加真正的原因。**顺带修了三处**:① 轮询从 `do{...}while` 改成先判再睡 —— 原来 `waitMs==0` 也会先睡满 100ms;② 不再对 `START_PENDING` 的服务叫 `StartService`(会拿到 `ERROR_SERVICE_ALREADY_RUNNING`,而返回值一律被忽略,于是"其实已经在起"被记成"启动被拒绝",用户看到假的原因);③ `ServiceMissing`(要装 gozd)与 `AccessDenied`(要提权)分开 —— 上一版都报成"没连上",而下一步完全相反。**真机恢复仍未验：Windows 升级/ resume 后 gozd 被留停着，只有真机能造出这个状态** |
 | SEARCH-05 | 🟡 | Search → AI 连续上下文 | 是 | 搜索无结果或主动转 AI 时，原查询自然成为对话上下文。**交接那一一下已修掉一个用户看得见的缺陷并提成可测策略**：面板已开且正忙/等确认时，搜索框那段词以前**整段消失**（不进输入框也不发出），现在非空的词永不丢下 —— 空闲照旧当场发，忙时只填进输入框（见下）。**"搜索无结果时自动转 AI"那半与跨重启的会话延续仍待查** |
 
 ## 7. P1 — 妙喵 AI
@@ -481,6 +481,49 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十七，SEARCH-04 可恢复那一半：每一步观测都被丢掉，只回一个 bool）
+
+- 代码提交：本次。
+- **为什么这一轮动了它**：面板上 SEARCH-04 那一行自己写着
+  "'可恢复'那一半(`EnsurePipeAvailable` 起服务 + 轮询)仍未提纯"。同一个模式,做掉。
+- **逮到的:**`GozSearch::EnsurePipeAvailable` 一路上看得见每个环节 —— SCM 打不打得开、
+  服务在不在、状态是什么、StartService 成没成、等到没有 —— 但**每一个都当场丢掉,
+  只回一个 bool**。于是 `MiaoFileSearchNotice` 的第三桶只能说
+  "可能索引服务没起来,也可能这次查询超时":一句**诚实的猜测,不是诊断**。
+  用户照它排查,第一步仍然是猜。
+- **修法**:判定提成 `MiaoGozRecovery`(九种结局 + Win32 状态数值的映射),
+  `EnsurePipeAvailable` 改成把观测收进出参;提示行在**失败那一桶**追加真正的原因
+  (另两桶要么客户端没装、要么还在飞,都不该拿恢复结论去说)。
+- **顺带修了三处**:
+  1. 轮询从 `do { check; sleep; } while (now < deadline)` 改成先判再睡 ——
+     原来的写法让 `waitMs == 0` 也先睡满 100ms。0 就是 0。
+  2. 不再对 `SERVICE_START_PENDING` 的服务叫 `StartService`。那会拿到
+     `ERROR_SERVICE_ALLOGGED_RUNNING`,而调用方一律忽略返回值 —— 于是
+     "其实已经在起"被记成"启动被拒绝",用户看到一个**假的原因**。
+     现在 START_PENDING 走 AlreadyStarting,只等。
+  3. `ServiceMissing`(要装 gozd)与 `AccessDenied`(要提权)分成两句话。
+     上一版把两者都报成"没连上",而它们的下一步完全相反。
+- **两处我自己的错,都被测试逮到**:
+  1. `AlreadyStarting` 第一版无条件返回,于是"服务一直在起、等到超时"也被记成
+     成功,而 `GozRecoverySucceeded` 说它不是成功 —— 两边矛盾。断言当场红。
+  2. 为"状态查不到"单写了一个 `if (state == Unknown) return StatusUnknown;`,
+     变异检测把整条删掉之后测试**依然全绿** —— 因为函数末尾的 fallback 也是
+     StatusUnknown。那是**不可达的冗余分支**,本会话第四次(早前还有
+     `OverlappingTurns`、`if (bufferChars == 0)`、`StripLeading`)。已删,
+     理由写进注释。
+- **第三处不是测试逮到的,是我复盘链路时逮到的**:`lastGozRecovery_` 三处接好了
+  三处,唯独漏了 `files_.LastRecovery()` 那一次赋值 —— 编译干净、逻辑看着也通,
+  而提示永远读默认值 NotNeeded,那句真话永远追加不上来。**一个只剩一处的链路,
+  靠读代码比靠编译更靠得住。**
+- **变异**:8 处全红、0 存活 —— 不看管道本来通不通 / SCM 或服务打不开不当独立结局 /
+  正在起的服务不再等待(直接判超时)/ 正在起的服务不再单列 / 暂停中的服务不再单独处理 /
+  Succeeded 只剩 NotNeeded / **Win32 数值 1 映射错(停着被读成正在起)** /
+  Win32 数值 4 映射错(在跑被读成停着)。
+- 本机跑了什么:`GozRecoveryTest` 61 项(含 Win32 数值逐个钉、九种结局各自可达、
+  五种 noisy 结局都必须说"应用搜索仍然可用");8 处变异全红;
+  mingw 交叉编译 `GozSearch.cpp` / `SearchWindow.cpp` 0 错误。
+- 真机:**未取证**。Windows 升级 / resume 之后 gozd 被留停着,这个状态只有真机造得出来。
 
 ### 本轮推进记录（2026-10-04 再续二十六，CREATE-06 另一半：那个"写了没人用"的模块接进了真机路径）
 

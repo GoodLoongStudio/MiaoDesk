@@ -1,4 +1,5 @@
 #include "miaodesk/GozSearch.h"
+#include "miaodesk/MiaoGozRecovery.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -221,24 +222,40 @@ bool GozSearch::PipeAvailable() {
     return error == ERROR_SEM_TIMEOUT || error == ERROR_PIPE_BUSY;
 }
 
-bool GozSearch::EnsurePipeAvailable(DWORD waitMs) {
-    if (PipeAvailable()) return true;
+bool GozSearch::EnsurePipeAvailable(DWORD waitMs,
+                                     goz_recovery::GozRecoveryOutcome* outcome) {
+    // 观测值,按执行顺序收集。之后一次性交给 MiaoGozRecovery 判定 ——
+    // 判定是纯逻辑,本机可测 61 项;这里只负责诚实地记录每一步发生了什么。
+    const bool pipeUpAtEntry = PipeAvailable();
+    if (pipeUpAtEntry) {
+        if (outcome) *outcome = goz_recovery::GozRecoveryOutcome::NotNeeded;
+        return true;
+    }
 
     // The installer registers gozd as the "goz" auto-start service, but Windows
     // upgrades / resume can leave it stopped briefly. Recover it on demand instead
     // of silently removing file search from the launcher for the whole session.
     SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    bool scmOpened = manager != nullptr;
+    bool serviceOpened = false;
+    auto state = goz_recovery::GozServiceState::Unknown;
+    bool startIssued = false;
     if (manager) {
         SC_HANDLE service = OpenServiceW(
             manager, L"goz", SERVICE_QUERY_STATUS | SERVICE_START);
         if (service) {
+            serviceOpened = true;
             SERVICE_STATUS_PROCESS status{};
             DWORD bytesNeeded = 0;
             if (QueryServiceStatusEx(
                     service, SC_STATUS_PROCESS_INFO,
                     reinterpret_cast<LPBYTE>(&status), sizeof(status), &bytesNeeded)) {
+                state = goz_recovery::DescribeGozServiceState(status.dwCurrentState);
+                // 只有停着才拉。START_PENDING 上再叫一次会拿到
+                // ERROR_SERVICE_ALREADY_RUNNING,而调用方一律忽略返回值 ——
+                // 于是"其实已经在起"会被记成"启动被拒绝",用户看到一个假的原因。
                 if (status.dwCurrentState == SERVICE_STOPPED) {
-                    StartServiceW(service, 0, nullptr);
+                    startIssued = StartServiceW(service, 0, nullptr) != FALSE;
                 }
             }
             CloseServiceHandle(service);
@@ -246,12 +263,20 @@ bool GozSearch::EnsurePipeAvailable(DWORD waitMs) {
         CloseServiceHandle(manager);
     }
 
+    // 轮询。原来是 `do { ... } while (now < deadline)` —— 那会让 waitMs == 0
+    // 也先睡满 100ms。改成先判再睡,0 就是 0。
+    bool pipeUpAtExit = PipeAvailable();
     const ULONGLONG deadline = GetTickCount64() + waitMs;
-    do {
-        if (PipeAvailable()) return true;
+    while (!pipeUpAtExit && GetTickCount64() < deadline) {
         Sleep(100);
-    } while (GetTickCount64() < deadline);
-    return PipeAvailable();
+        pipeUpAtExit = PipeAvailable();
+    }
+
+    const auto decided = goz_recovery::DecideGozRecovery(pipeUpAtEntry, scmOpened,
+                                                          serviceOpened, state, startIssued,
+                                                          pipeUpAtExit);
+    if (outcome) *outcome = decided;
+    return pipeUpAtExit;
 }
 
 bool GozSearch::Available() const {
@@ -270,9 +295,14 @@ bool GozSearch::Query(HWND replyWindow, const std::wstring& query, DWORD maxResu
     // 起一次查询先占一个代号。用户多敲一个字符就再占一个,而在飞的那次就此作废 ——
     // gozd 是另一个进程,快的那次完全可能后到,不设防就会把新结果盖掉。
     const SearchGeneration claimed = state->generation.Claim();
-    std::thread([state, claimed, binary, replyWindow, query, maxResults]() {
+    std::thread([state, claimed, binary, replyWindow, query, maxResults,
+                 this]() {
         std::vector<std::wstring> paths;
-        const bool pipeReady = GozSearch::EnsurePipeAvailable(2000);
+        // 恢复结论写进成员,让界面那句话能说真话。worker 线程写、UI 线程读,
+        // 与 generation 同一个模式;它是诊断快照,不是状态机输入(见头注释)。
+        goz_recovery::GozRecoveryOutcome recovery{goz_recovery::GozRecoveryOutcome::NotNeeded};
+        const bool pipeReady = EnsurePipeAvailable(2000, &recovery);
+        lastRecovery_ = recovery;
         const bool succeeded = pipeReady && RunGozQuery(binary, query, maxResults, paths);
         if (!state->generation.ShouldDeliver(claimed) || !IsWindow(replyWindow)) return;
 
@@ -294,7 +324,10 @@ std::vector<SearchResult> GozSearch::QuerySync(const std::wstring& query, DWORD 
     std::vector<SearchResult> results;
     if (query.empty() || maxResults == 0) return results;
     const auto binary = FindClientBinary();
-    if (binary.empty() || !EnsurePipeAvailable(1500)) return results;
+    if (binary.empty()) return results;
+    // 同步查询也记恢复结论:同一个对象上,后一次异步查询会覆盖它,
+    // 而那是正确的 —— 最近的才是用户要看的。
+    if (!EnsurePipeAvailable(1500, &lastRecovery_)) return results;
 
     std::vector<std::wstring> paths;
     if (!RunGozQuery(binary, query, maxResults, paths, kL3SyncQueryTimeoutMs)) return results;

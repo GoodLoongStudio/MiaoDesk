@@ -4,6 +4,7 @@
 #include "miaodesk/DesktopControlService.h"
 #include "miaodesk/L3CliWindow.h"
 #include "miaodesk/MiaoFileSearchNotice.h"
+#include "miaodesk/MiaoGozRecovery.h"
 #include "miaodesk/RuntimeLogger.h"
 #include "miaodesk/SettingsCenterWindow.h"
 #include "miaodesk/StartupManager.h"
@@ -879,6 +880,16 @@ LRESULT SearchWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) 
             fileSearchAvailable_ = querySucceeded || files_.Available();
             fileSearchPending_ = false;
             fileSearchQueryFailed_ = !querySucceeded && fileSearchAvailable_;
+            // 这一轮恢复实际发生了什么。`EnsurePipeAvailable` 把它记在 files_ 上,
+            // 这里取过来给下面那句提示用 —— 少了这一步,提示永远读默认值 NotNeeded,
+            // 于是那句"可能服务没起来"永远追加不上来,而链路其余部分全都接好了。
+            // (第一版正是这样:三处都写了,唯独漏了赋值,而且编译干净。)
+            //
+            // 查询成功时不必留着上一次的结论 —— 那会让用户看到一句已经不成立的
+            // 旧诊断,而复现路径只在失败那一桶里。
+            lastGozRecovery_ = querySucceeded
+                                  ? goz_recovery::GozRecoveryOutcome::Recovered
+                                  : files_.LastRecovery();
             fileResults_ = std::move(received);
             MergeResults();
             return TRUE;
@@ -1031,8 +1042,26 @@ void SearchWindow::MergeResults() {
             fileSearchPending_, fileSearchAvailable_, fileSearchQueryFailed_);
         const std::wstring& title = FileSearchNoticeTitle(notice);
         if (!title.empty()) {
-            results_.push_back({
-                ResultKind::Status, title, FileSearchNoticeDetail(notice), L"", -1000});
+            std::wstring detail = FileSearchNoticeDetail(notice);
+            // 第四件事实:自动恢复实际发生了什么。
+            //
+            // 上面那三句只证明"客户端二进制在",所以第三桶只能说"可能服务没起来,
+            // 也可能查询超时" —— 诚实的猜测,不是诊断。`EnsurePipeAvailable`
+            // 一路上看得见每个环节(SCM 打不打得开、服务在不在、状态是什么、
+            // StartService 成没成、等到没有),此前全丢了。现在它经出参交出来,
+            // 判定在 MiaoGozRecovery。
+            //
+            // 只在查询失败那一桶追加:另两桶要么客户端没装(recovery 管不着),
+            // 要么还在飞(recovery 才刚开始)。失败那一桶正是用户最需要知道
+            // "下一步该干什么"的地方。
+            if (notice == FileSearchNotice::QueryFailed) {
+                const std::wstring why = goz_recovery::ExplainGozRecovery(lastGozRecovery_);
+                if (!why.empty()) {
+                    detail += L"\n";
+                    detail += why;
+                }
+            }
+            results_.push_back({ResultKind::Status, title, detail, L"", -1000});
         }
     }
 

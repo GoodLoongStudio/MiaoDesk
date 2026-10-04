@@ -39,8 +39,13 @@ assert.ok(
   goz.includes("StartServiceW(service, 0, nullptr)"),
   "file search must attempt to recover the installed goz service on demand",
 );
+// 钉不变量,不钉拼写:`EnsurePipeAvailable` 现在多一个出参(把这一轮恢复实际
+// 发生了什么交出来给界面说),所以照抄旧的 `EnsurePipeAvailable(2000)` 会在一次
+// 刻意改进上红。这里断言的是那件要紧的事 —— 异步查询**先等恢复再判失败**,
+// 而不是一看见管道不通就回报失败。
 assert.ok(
-  goz.includes("EnsurePipeAvailable(2000)") &&
+  /EnsurePipeAvailable\(2000/.test(goz) &&
+  /const bool pipeReady = EnsurePipeAvailable\(2000/.test(goz) &&
   goz.includes("pipeReady && RunGozQuery"),
   "async file queries must wait briefly for service recovery before failing",
 );

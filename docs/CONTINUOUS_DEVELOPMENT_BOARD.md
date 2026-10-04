@@ -81,7 +81,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-02 | ✅ | ARM64 Quick Test 启动准确 Dev Host | 是 | 快测清理旧单实例并确认驻留 EXE 来自 `C:\MiaoDeskDev` |
 | P0-03 | 🟡 | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用。**自动部分已落地：启停裁决抽成 `MiaoWallpaperCyclePolicy`（37 项断言 + 反空洞自检 + 8 处变异全红），含"挂载坏了要重建而不是当没坏"与重试前先脱离**（见下）；20 次循环本身与真机 Surface 计数仍要 Windows |
 | P0-04 | 🟡 | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景。**自动部分的几何不变式与去重规则已落地**（见下）；孤立 HWND/错误背景仍要 Windows |
-| P0-05 | ⬜ | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次 |
+| P0-05 | 🟡 | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次。**"层级恢复"的判定已提成纯逻辑并接回 `RepairRoleOrder`**：桌面带子的 z-order/样式契约（`MiaoDesktopBandOrder`，28 项断言 + 反空洞自检 + 9 处变异全红），`DesktopShellHost` 改成调它而非另持一份内联副本（见下）。**真机 E2E 仍未取证**：Explorer 实际重启 3 次、层级/启停/交互恢复前后都要 Windows |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
@@ -481,6 +481,42 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十，P0-05/STAB-02：Explorer 重启后"该不该修层级"那个判定）
+
+- 代码提交：本次。
+- **做的是什么**：Explorer 一重启，桌面带子上所有窗口的父子关系与 z-order 都会被打乱。
+  `DesktopShellHost::RepairRoleOrder` 把它修回契约，而它的第一件事是**先判断还要不要修**
+  （代码注释原话：*"re-issuing style/z-order churn makes DWM recomposite the whole band
+  every second and reads as wallpaper flicker. Verify first"*）。那个判定是纯逻辑，
+  却住在 `DesktopShellHost.cpp`（要 `<windows.h>`），本机一行都跑不到。
+- **两个方向的失败都用户看得见**：
+  - 恒说"已经有序" → 修复永远不跑，Explorer 重启后壁纸盖住桌面图标、组件点不动，
+    而且再也不自己好；
+  - 恒说"需要修" → 每一跳都重发一遍 style/z-order，DWM 每秒重组整条带子，
+    用户看到的就是**壁纸闪**。注释里那句 reads as wallpaper flicker 说的正是这个。
+- **提成 `MiaoDesktopBandOrder`**（五条契约：都是 WS_CHILD / 组件的 layered 与模式相反 /
+  组件排在图标层与壁纸层之前 / 图标层排在壁纸层之前 / 壁纸层同时 layered 且 transparent），
+  `RepairRoleOrder` 改成调它。归属判断（这扇窗是不是 DefView）仍然留在宿主里 ——
+  它要知道 `kDefViewClass`，那是 Windows 的事；**顺序契约本身是纯的**。
+  两者分开：归属问"这扇窗是谁"，顺序问"该排第几"。
+- **顺带一条此前没人写下来的规则**：不可见的**壁纸层**不参与判定（收集时就滤掉），
+  但不可见的**组件**仍然参与。这不是省略：隐藏中的壁纸层不该让整条带子被判"需要修"，
+  否则每次隐藏/显示都触发一轮 z-order 重排；而隐藏的组件占着 z-order 上该在的位置，
+  排错了照样点不到。
+- **变异逮到我自己的测试缺口**：第一版 8 处变异里有一条**存活** ——
+  "不看组件先后顺序"整条删掉之后依然全绿。原因是每一个乱序用例都被邻条顺手挡住了：
+  我把 widget 和 wallpaper 换位，可那一同时也违反了"图标层必须在壁纸层之前"。
+  **一个被邻条掩护的规则等于没有规则。** 补了两条只有规则 3 能逮到的用例
+  （raised 下 widget 在 iconLayer 之后；legacy 下 widget 在 wallpaper 之后），
+  它立刻红了。这是本轮唯一一处"测试自己错了"而不是"代码错了"。
+- **变异**：9 处全红、0 存活。含恒说有序（没人修）、恒说需要修（壁纸闪）、
+  永远当 legacy（组件契约反了）、不可见壁纸层也参与。
+- 本机跑了什么：`DesktopBandOrderTest` 28 项（含反空洞自检 + 六个事实逐个换坏的穷举），
+  `-Wall -Wextra` 0 警告；9 处变异全红；mingw 交叉编译 `DesktopShellHost.cpp` 0 错误
+  且没有残留的未用变量；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 59 道 node 门全通过。
+- 真机：**未取证**。P0-05 的 E2E 验收是"Explorer 重启至少 3 次，层级、启停和交互符合原状态"，
+  那要 Windows。这一轮把其中**能本机验的那一半**验了，并且让本机验的就是真机跑的那一行。
 
 ### 本轮推进记录（2026-10-04 再续十九，annotation 加上去的第一次红就自己说清了 —— 然后逮到两个新问题）
 

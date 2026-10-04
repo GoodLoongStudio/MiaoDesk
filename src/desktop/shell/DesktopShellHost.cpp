@@ -1,4 +1,5 @@
 #include "miaodesk/DesktopShellHost.h"
+#include "miaodesk/MiaoDesktopBandOrder.h"
 
 #include <algorithm>
 #include <array>
@@ -256,32 +257,39 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     // already satisfies the contract, re-issuing style/z-order churn makes DWM
     // recomposite the whole band every second and reads as wallpaper flicker.
     // Verify first; touch windows only when something violates the contract.
+    //
+    // 那个"还要不要修"的判定住在 MiaoDesktopBandOrder(纯逻辑,本机可测 28 项)。
+    // 此前它内联在下面 —— 与排序、去重、交接、代号算术是同一个病:住在要
+    // `<windows.h>` 的文件里,本机一行都跑不到。而它两个方向的失败都用户看得见:
+    // 恒说"已经有序"则 Explorer 重启后没人修;恒说"需要修"则每一跳都重发
+    // z-order,壁纸闪。这里只做一次形态转换:把窗口换成它要的那些事实。
     const bool raised = snapshot_.mode == DesktopShellMode::RaisedDesktop ||
                         snapshot_.mode == DesktopShellMode::ProgmanFallback;
-    bool ordered = true;
-    bool seenIconLayer = false;
-    bool seenWallpaper = false;
+    std::vector<DesktopBandSurface> band;
+    band.reserve(known.size());
     for (const auto& surface : known) {
         const LONG_PTR style = GetWindowLongPtrW(surface.window, GWL_STYLE);
         const LONG_PTR exStyle = GetWindowLongPtrW(surface.window, GWL_EXSTYLE);
-        if ((style & WS_CHILD) == 0) { ordered = false; break; }
-        if (surface.role == DesktopSurfaceRole::Widget) {
-            // Raised-desktop widgets are direct unlayered surfaces; legacy
-            // WorkerW generations keep the layered UpdateLayeredWindow contract.
-            const bool isLayered = (exStyle & WS_EX_LAYERED) != 0;
-            if (isLayered == raised) { ordered = false; break; }
-            if (raised ? (seenIconLayer || seenWallpaper) : seenWallpaper) { ordered = false; break; }
-            continue;
+        DesktopBandSurface facts;
+        switch (surface.role) {
+            case DesktopSurfaceRole::Widget:
+                facts.role = DesktopBandRole::Widget;
+                break;
+            default:
+                // 图标层的归属判断仍在这里(它要知道 kDefViewClass,那是 Windows 的事);
+                // 顺序契约本身是纯的。两者分开:归属问"这扇窗是谁",顺序问"该排第几"。
+                facts.role = (raised && IsWindowClass(surface.window, kDefViewClass))
+                                 ? DesktopBandRole::IconLayer
+                                 : DesktopBandRole::Wallpaper;
+                break;
         }
-        if (raised && IsWindowClass(surface.window, kDefViewClass)) {
-            if (seenWallpaper) { ordered = false; break; }
-            seenIconLayer = true;
-            continue;
-        }
-        if ((exStyle & WS_EX_LAYERED) == 0 || (exStyle & WS_EX_TRANSPARENT) == 0) { ordered = false; break; }
-        seenWallpaper = true;
+        facts.isChild = (style & WS_CHILD) != 0;
+        facts.isLayered = (exStyle & WS_EX_LAYERED) != 0;
+        facts.isTransparent = (exStyle & WS_EX_TRANSPARENT) != 0;
+        facts.isVisible = IsWindowVisible(surface.window) != FALSE;
+        band.push_back(std::move(facts));
     }
-    if (ordered) return;
+    if (DesktopBandOrderSatisfied(band, raised ? DesktopBandMode::Raised : DesktopBandMode::Legacy)) return;
 
     std::vector<HWND> wallpapers;
     std::vector<HWND> widgets;

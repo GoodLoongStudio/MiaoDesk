@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `48c6f346`（本机 **63 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `991d10f3`（AI-05 profile 切换闸门；本机 **64 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码；AI-05 起多一个 `ProfileSwitchGuardTest`）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -118,7 +118,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | AI-02 | ⬜ | 会话标题与历史管理 | 是 | 自动标题、最近排序、重命名/删除规则清晰，不误删当前上下文 |
 | AI-03 | 🟡 | Cancel / Retry 幂等 | 是 | 连续取消/重试不重复提交、不串会话、不留错误 Busy 状态。**Pi 侧已修：取消不再直接清忙位，「已请求取消但 worker 还没退」仍然是忙已成相位不变量**（见下）；L3 侧本来是对的，但两边的理由此前没人写下来。**2026-10-04 更正**：该提交信息里"17 道 node 契约门全通过"不准确 —— `preview-handoff-turn-guard.mjs` 当时是红的，它不在工作流跑的那 17 道里，所以没跑到；这道门当场逮到 AI-03 的一个二阶后果（取消中到达的桌面预览被放行、窗口为一个已放弃的请求弹出来），已改成钉不变式并修掉（13 处变异全红）。**真机仍未验：取消后马上重试会不会串话，要 Windows 上真发一轮** |
 | AI-04 | ⬜ | Agent 活动反馈 | 是 | 工具调用、等待模型、生成、校验阶段用户可理解 |
-| AI-05 | ⬜ | API profile 热切换语义 | 是 | 当前任务不静默换 Provider；下一轮明确使用新配置 |
+| AI-05 | 🟡 | API profile 热切换语义 | 是 | 当前任务不静默换 Provider；下一轮明确使用新配置。**"不静默换"那一半已修，而且修的是两个真缺陷**：这段判定原本散在**五处**、四种写法、两种相反结论 —— 菜单那条拦住（`busy \|\| pi->Busy()`），拉开下拉那两条却用 `&& !busy` **放行**，而放行通向 `L3Agent::ReloadConfig()` 的 `Stop()` + `worker_.join()` + **`conversation_.clear()`**：用户在自己这一轮跑到一半时拉开下拉，这一轮被打断、会话上下文被清空，界面上一个字都不提。另一处是选择出口（`Select…ApiProfile`）—— `CBN_SELCHANGE` 在下拉**已经 visual 改过之后**才到，而"这个窗口自己忙"那一支**静默返回**，留下"下拉显示 B、agent 跑的是 A"。两处都已接回同一道闸门（`MiaoProfileSwitchGuard`，**31 项断言** + 反空洞自检 + **12 处变异全红**），三套硬编码文案收成一处。**"下一轮明确使用新配置"由调用链本身保证，且这条链是闭合的**：`SetProfileId` → `preferredProfileId_` → `ReloadConfig()` 写 `config_` → `RequestIdentity()`（L3Agent.cpp:777-782）读它 → `BuildAgentRequestUrl(RequestIdentity())`（:819）拼出真正要拨的 URL，而每轮派发时面板就把 `CurrentApiUrl` 写进 route 日志（ConversationPanelImpl.inc:987）。闸门确保这次刷新不落在轮次中途。**真机仍未验**：两处缺陷的实际观感、"用户选完新 profile 后下一轮真的走新端点"要 Windows 上真选一次 |
 | AI-06 | ⬜ | 连接/鉴权/限流/模型错误分类 | 是 | 用户能知道改字段还是稍后重试，且任何错误不泄露 Key |
 | AI-07 | ⬜ | 附件/文件上下文 | 是 | 文件加入会话有明确范围、大小与隐私边界 |
 | AI-08 | ⬜ | 对话长上下文压缩策略 | 是 | 长会话不会无限增长；摘要后继续问旧信息仍保持关键上下文 |
@@ -898,6 +898,98 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   （那个判定本来就是对的，错的是它不可测）。只记面板。
 - 真机：**未取证**。"取消后立刻重试会不会串话"要 Windows 上真发一轮 ——
   不过现在本机至少能证明：**判定少任何一边都会串**，而真机那一行三边都在比。
+
+### 本轮推进记录（2026-10-05 再续十八，AI-05：五处副本、两种相反结论，以及一次自我更正）
+
+- 代码提交：本次。
+- **为什么挑这一项**：AI-05 的完成标准是"当前任务不静默换 Provider；下一轮明确使用
+  新配置"。前半句听起来像一句产品文案，落下来却是一道闸门 —— 而这道闸门当时
+  **散在五处、四种写法、两种结论相反**。
+- **缺陷一：`&& !busy` 这个豁免，把已经防住的事又放回去了**
+  `PopulateConversationApiProfiles`（面板）与 `ContentCreatorDialog::PopulateApiProfiles`
+  （创作窗口）里各有一份一字不差的副本：
+
+      // Another AI window may own the shared Pi turn. Do not rewrite this selector
+      // underneath that turn; profile changes are applied only between turns.
+      if (preserveSelection && pi && pi->Busy() && !busy) return;   ← 最后那句是反的
+
+  注释说的是"别在别人的轮次下面重写这个选择器"，而 `&& !busy` 让"**这个窗口自己的**
+  轮次正在跑"成为重建的理由。一个窗口自己的轮次也是一次轮次。而重建这条路通向
+  `L3Agent::ReloadConfig()`：
+
+      Stop(); if (worker_.joinable()) worker_.join();
+      config_ = refreshed;
+      conversation_.clear();          // ← 会话上下文在这里被清空
+
+  **于是用户在自己这一轮跑到一半时拉开 API 下拉，这一轮被打断、上下文被清掉，而界面
+  上一个字都不提。** 同一份代码里，点菜单位置（`ShowConversationApiProfileMenu`）
+  用的是 `busy || pi->Busy()` → 拦住并说明。同一个用户意图，两条路两个结果。
+- **缺陷二：选择出口的静默撒谎**
+  `SelectConversationApiProfile` / `SelectApiProfile` 是用户真选了一项之后跑的那一步：
+
+      if (busy || !apiProfileCombo || !agent || apiProfiles.empty()) return;   ← 静默
+      if (pi && pi->Busy()) { 把控件改回真正在跑的那个; 说一句话; return; }
+
+  `CBN_SELCHANGE` 是在下拉**已经 visual 改过之后**才送达的。于是 Pi 忙那一支知道
+  把控件改回去并说明原因，而这个窗口自己忙那一支**直接 return** —— 留下"下拉显示
+  B、agent 跑的是 A"，界面上一个字都不说。这正是闸门要防的那件事本身。
+- **一次自我更正，值得单独记，因为它是同一类错的第二次**
+  第一版闸门只认 `piBusy`，理由写的是"这个窗口自己的轮次在飞时 piBusy 必然也为真，
+  所以 windowBusy 不改变结论"。**那句证不了，而且是错的**：
+  `ConversationPanelImpl.inc` 里 `SetBusyVisual(state, true)`（第 984 行）**发生在
+  `state.pi->AskAsync(...)`（第 991 行）之前**，两者之间有一段"busy 已真、Pi 还不忙"
+  的间隙；`AskAsync` 在共享运行时已被别的窗口占走时也不会把 busy 收回去。只看
+  piBusy，重建就会落进那段间隙里 —— 而那正是 `Stop()` + `conversation_.clear()`
+  最不该出现的时刻。现在两个忙位**取或**：任一为真就不动。代价是不对称的：该动没动，
+  用户只是晚一会儿看到新 profile；不该动却动了，一轮对话没了。
+- **windowBusy 不是纸上谈兵，它真的够得到**：`ShowConversationApiProfileMenu` 的触发点是
+  `WM_LBUTTONDOWN` 里 `PointIn(state->apiProfileRect, point)` 这个**自定义命中区**
+  （ConversationPanelImpl.inc:1843），不是那个 combo 控件。busy 时
+  `SetBusyVisual` 只禁用 `state.input` 与 `state.apiProfileCombo`，**这个命中区照旧
+  能点** —— 轮次跑到一半时点 API 位置，走的就是 windowBusy 这一条，也正是原代码
+  `busy || pi->Busy()` 拦的那一下。（两个 combo 路径 `CBN_DROPDOWN`/`CBN_SELCHANGE`
+  在 busy 时确实发不出来，控件禁用了；那两处仍然如实把 windowBusy 传进去 —— 传真实
+  状态而不是替它断定。）
+- **第二处自我更正：副本数是 grep 出来的，不是猜的**
+  我先按"两份一字不差的副本"写了整段注释，接完才 grep 出第三处（菜单）、再两处
+  （选择出口）。**每接一处就有一处的新事实冒出来，而注释是先写的。** 现在头注释里
+  写的"五处"是 grep 之后的数。同类教训在本会话已不是第一次：写完出口就 grep 它的读者。
+- **三套硬编码文案收成一处**：原有三处，两套措辞（"当前有 AI 任务正在执行…" 与
+  "另一个 AI 窗口正在执行任务…"）。后者还带一个它证明不了的主张 —— 那只在排除了
+  本窗口 busy 之后才成立。现在统一由 `ExplainProfileSelectorAction` 出，四个调用方
+  共用。
+- **本机跑了什么**：`ProfileSwitchGuardTest` **31 项断言**（含反空洞自检：一个恒 Keep
+  的判定让窗口永远填不上 profile、一个恒 Rebuild 的判定让轮次中途被换掉）+ 八种组合
+  穷举 + "Keep 当且仅当 运行期刷新 && 任一忙位为真" + "Keep 只在 preserveSelection
+  为真时出现"（这条是给调用点兜底的：两个 Keep 分支里都不再需要内层
+  `if (preserveSelection)`，删了它死判断就会长回来）。**12 处变异全红，0 存活**，
+  其中第 4 处 `piBusy && !windowBusy` **就是原代码 `&& !busy` 那一句的形状** ——
+  测试当场逮得住原缺陷，不是只会对改善后的代码绿。
+  两个真实调用点用 mingw 交叉编译 **0 错误**；22 道仓库门全通过（21 道 shell 门 +
+  `verify-rc-ci.mjs`：`--self-test` 绿，并对我上一个已推 SHA `e7edf59b` 判 verdict 0、
+  五条发布链全 success；本轮的代码还没推，那道门对它无话可说 —— 这正是它 exit 3/4
+  与 1 分开的原因）；58 道 node 门通过。
+- **node 门有一道红的，但与本轮无关**：`image-provider-installed.mjs` 报
+  `ERR_MODULE_NOT_FOUND: @earendil-works/pi-ai`。本机 `node_modules` 里没有这个包
+  （CI 由 `image-provider-capability.yml` 的 "Restore agent npm cache" 阶段准备），
+  在 HEAD 基线上跑同样红。**已按"No green from a broken env"记下，没有拿它充数。**
+- **顺手排掉自己的一次误报**：中途我手动交叉编译面板，得到 12 条
+  `cannot convert LPSTR to LPCWSTR`，差点写成"HEAD 就有 12 处预存错误"。实际上闸门
+  的 flags 里有 `-DUNICODE` 而我的没有 —— `IDC_HAND` 因此展开成
+  `MAKEINTRESOURCEA`。补上 `-DUNICODE` 后**三个文件 0 错误**。教训：**用自己的 flags
+  得出的"预存错误"，先确认跟闸门的 flags 一致再说那是错误。**
+- **文档门当场逮到我一条错引用，顺带暴露它自己的覆盖有多薄**：我给
+  `ConversationPanelImpl.inc` 的 `AskAsync` 写了"第 991 行"，而那行其实是 `onDelta`
+  lambda —— 我改过这个文件，行号推移了，注释没跟着动。（改成 993。本文件其余引用
+  `:984` SetBusyVisual、`:1843` apiProfileRect 命中区、`:796` combo 禁用、
+  `:987` CurrentApiUrl 都逐条核对过。）
+- **但要说清"门绿了"不代表什么**：`verify-doc-citation-symbols.sh` 只处理"引用点
+  **同一行**、且前面有可解析反引号标识符"的引用。全部 docs 里有 **80 条 `file:line`
+  引用，它能机器核对的只有 9 条** —— 剩下 71 条靠作者自己老实。这次那条错引用也是
+  因为它带括号（`AskAsync(...)`）被过滤掉、压根没进那 9 条，才一路漏过去。所以本轮
+  的引用是**逐条手工核对**的，不是靠门。
+- 真机：**未取证**。"轮次跑到一半时拉开下拉会不会真的把上下文清掉"、"选完新 profile
+  后下一轮是不是真走新端点"都要 Windows 上真选一次。所以这一项仍是 🟡。
 
 ### 本轮推进记录（2026-10-04 再续十六，SEARCH-05：搜索框那段词整段消失）
 

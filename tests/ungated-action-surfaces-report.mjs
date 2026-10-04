@@ -52,7 +52,20 @@ const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
 const creatorSend = bodyOf(creator, "void SendPrompt() {");
 
 // The premise: nothing disables it, and nothing else in this file can speak.
-assert.match(creator, /EnableWindow\(send, TRUE\);\s*\n\s*SetWindowTextW\(send, value \? L"停止" : L"生成"\);/,
+// The send button must stay enabled while busy (it doubles as 停止), and its
+// caption must switch. This used to require the two statements to be adjacent;
+// the source now enables/disables the API-profile combo in between. Pin the two
+// facts by position instead of adjacency.
+{
+  const busy = creator.slice(creator.indexOf("void SetBusy(bool value) {"));
+  const enableAt = busy.indexOf("EnableWindow(send, TRUE);");
+  const captionAt = busy.indexOf('SetWindowTextW(send, value ? L"停止" : L"生成");');
+  assert.ok(enableAt !== -1, "SetBusy must leave the send button enabled -- it doubles as 停止");
+  assert.ok(captionAt !== -1, "SetBusy must switch the send caption between 生成 and 停止");
+  assert.ok(enableAt < captionAt,
+    "keep the existing order: the button is re-enabled before its caption is switched");
+}
+assert.match(creator, /EnableWindow\(send, TRUE\);/,
   "the send button must stay live while busy -- it doubles as 停止, which is exactly why an"
   + " empty prompt reaches the guard instead of hitting a disabled control");
 const creatorStatus = (creator.match(/SetStatus\(/g) || []).length +

@@ -29,8 +29,23 @@ assert.match(creator, /g_openCreatorWindows\.push_back\(window\);/,
   + " registering before would put a null HWND in the list");
 assert.match(creator, /g_openCreatorWindows\.erase\(it\);/,
   "WM_DESTROY must remove the window, or the pump keeps being handed a dead HWND");
-assert.match(creator, /SetWindowLongPtrW\(hwnd, GWLP_USERDATA, 0\);\s*\n\s*delete state;/,
-  "keep the existing order: the state is deleted only after the userdata slot is cleared");
+// The userdata slot must be cleared before the state is deleted, so a reader can
+// never dereference a freed pointer. This used to require the two statements to be
+// adjacent; the source now guards the delete with `if (state->windowOwnsLifetime)`,
+// which is stricter, not looser. The order is what matters, so pin the order by
+// position rather than by adjacency.
+{
+  const clearAt = creator.indexOf("SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);");
+  const deleteAt = creator.indexOf("delete state;");
+  assert.ok(clearAt !== -1 && deleteAt !== -1 && clearAt < deleteAt,
+    "keep the existing order: the state is deleted only after the userdata slot is cleared");
+}
+// The old regex required the two statements to be adjacent, which incidentally
+// also pinned the `windowOwnsLifetime` guard. Pin the guard on its own now,
+// because it is a real invariant: some creator windows do not own their
+// DialogState, and deleting it unconditionally would corrupt them.
+assert.match(creator, /if \(state->windowOwnsLifetime\) delete state;/,
+  "the DialogState must be deleted only when the window owns its lifetime");
 
 // The erase must happen BEFORE the state is deleted, because the reader dereferences
 // GWLP_USERDATA.

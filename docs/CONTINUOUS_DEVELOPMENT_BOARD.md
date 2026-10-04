@@ -235,6 +235,31 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
+### 本会话初就在 clean HEAD 上红的 4 道 node 契约门:2 道已修,2 道确属环境
+
+`creator-conversation-continuity` 与 `creator-window-keyboard-conformance` 是
+**门在断旧写法**,源码才是对的那一方:
+
+- 前者断 `restoredContextPending = true` 这个字面量;源码现在是
+  `restoredContextPending = hasRealConversation`,而 `hasRealConversation`
+  来自"存下来的 transcript 里有没有真实 user prompt"。改成不条件地置 true,
+  应用就会拿一段空的"【最近对话记录】"去问模型,同时告诉用户"已恢复上次对话"。
+- 后者断 `SetWindowLongPtrW(...);\n delete state;` 两句相邻;源码现在中间多了
+  `if (state->windowOwnsLifetime)`。那个守卫是真实不变量(有些创作窗口不拥有自己的
+  DialogState),旧的相邻要求只是**顺带**钉住了它。
+
+两处都改成断不变量本身,并且比原来更严:前者另钉"可见 transcript 无条件恢复",
+后者把守卫单独拎出来钉。`ungated-action-surfaces-report` 同类:
+它断 `EnableWindow(send, TRUE);` 与 `SetWindowTextW(send, …"停止"…)` 两句相邻,
+而源码在中间加了 API profile 下拉的启停。**"发送钮在忙时必须保持可用"这条不变量
+现在按位置钉**(在 `SetBusy` 里、且在换 caption 之前),比原来更严。
+
+**四种破坏各单独验过**:去掉那句 enable / 把 TRUE 改 FALSE / 去掉 caption /
+把两句换序 —— 全红。
+
+仍然未修的只剩 `image-provider-installed`:它 import `@earendil-works/pi-ai`,
+而这个包在本地 `node_modules` 里不存在 —— 是环境问题,不是代码问题。
+
 ### P0-08 剩下的那一半：单实例锁不可恢复 —— 诊断完成，修复需要产品决策
 
 本轮把 P0-08 的"孤儿进程"那一半做完(子进程收尸门 + Node 连坐 job),剩下的是验收原话的

@@ -9,10 +9,24 @@ assert.match(
   "creator transcript must live in the active creator workspace",
 );
 
+// Reopening must (a) put the saved transcript in front of the user, and
+// (b) mark context for resume only when there is a real conversation to
+// resume from. This used to assert the literal `restoredContextPending = true`,
+// which the source no longer does -- and the source is the one that's right.
+// Setting the flag unconditionally makes the app send the model an empty
+// "【最近对话记录】" block while telling the user "已恢复上次对话". So the
+// assertion now pins the invariant instead of the old spelling: the visible
+// transcript is restored unconditionally, and the resume flag is derived from
+// a non-empty user prompt.
 assert.match(
   creator,
-  /bool RestoreTranscript\(\)[\s\S]*LoadCreatorConversation\(kind\)[\s\S]*SetWindowTextW\(transcript,[\s\S]*restoredContextPending = true/,
-  "reopening the creator must restore the visible transcript and mark context for resume",
+  /bool RestoreTranscript\(\)[\s\S]*LoadCreatorConversation\(kind\)[\s\S]*SetWindowTextW\(transcript, saved/,
+  "reopening the creator must restore the visible transcript",
+);
+assert.match(
+  creator,
+  /lastUserPrompt = LastUserPromptFromTranscript\(saved\);\s*const bool hasRealConversation = !lastUserPrompt\.empty\(\);\s*restoredContextPending = hasRealConversation;/,
+  "context for resume must be marked only when the saved transcript has a real user prompt",
 );
 
 assert.match(

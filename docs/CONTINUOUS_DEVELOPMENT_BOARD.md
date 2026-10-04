@@ -255,6 +255,17 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   这个组合对"上一个 run 的进程还握着那个目录"很敏感,而失败从 runner 开始复用
   那一刻起持续,是典型的文件锁抖动形状。但**这只是形状像,我没有证据**:
   匿名身份不能 re-run(401),annotation 只给了 sccache 统计和 exit code 1。
+- **根因已定位到"是哪一条规则"**:第一版诊断把 install 失败时的输出按
+  `'rror|ailed|enied|busy|not found'` 过滤,而 CMake 真正的细节行是
+  `file INSTALL cannot find …` / `error opening … for writing`,**一个都没匹配上** ——
+  于是六次红都只看到 `CMake Error at cmake_install.cmake:49 (file):` 这一行。
+  是自己的过滤器把根因挡了六次。已改成**失败时全量输出**。
+- `cmake_install.cmake:49` 是 7 条 install 规则里的第一条
+  (`install(TARGETS MiaoDesk MiaoDeskWallpaper MiaoDeskHarness RUNTIME DESTINATION ".")`,
+  见 CMakeLists.txt:42),也就是说三个 EXE 里有一个装不上去。
+- **不是文件锁**:那一版同时会打印 "Stale <name> (pid …) … stopping it", annotation 里没有这行。
+- **起止点很确定**:`fast-dev-arm64.yml` 历史上 `c43bf146` ✅(22:34)→ **`bc8fe14c` ❌**(23:01),
+  中间没有别的提交 —— 就是本会话的"P0-08 五处启动点接线"那个提交。
 - **本轮已做的(只加诊断,不加重试)**:把第 6 步改成
   (1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
   (2) install 失败时把完整输出和 matched 行写进 annotation。之前 annotation 里只有

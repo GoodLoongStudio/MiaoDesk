@@ -99,9 +99,12 @@ jobs:
           $out | Write-Host
           if ($code -ne 0) {
             Write-Host "::error::cmake --install failed with exit code $code"
-            foreach ($line in ($out | Select-String -Pattern 'rror|ailed|enied|busy|not found')) {
-              Write-Host "::error::$($line.Line)"
-            }
+            # 全部输出都进 annotation。上一版的过滤器是
+            # 'rror|ailed|enied|busy|not found',而 CMake 真正的细节行是
+            # "file INSTALL cannot find ..." / "error opening ... for writing" ——
+            # 一个都没匹配上,于是六次红都只看到 "CMake Error at ... (file):"
+            # 这一行,根因一直被自己的过滤器挡着。
+            $out | ForEach-Object { Write-Host "::error::$_" }
             exit $code
           }
 

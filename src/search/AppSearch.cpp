@@ -1,11 +1,11 @@
 #include "miaodesk/AppSearch.h"
+#include "miaodesk/SearchDedupPolicy.h"
 #include "miaodesk/SearchTextScoring.h"
 #include <windows.h>
 #include <filesystem>
 #include <algorithm>
 #include <cwctype>
 #include <iterator>
-#include <unordered_set>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -94,12 +94,22 @@ void AppSearch::BuildIndex() {
     };
     for (const auto& [name, target] : builtins) entries_.push_back({name, target, L"Windows"});
 
-    std::unordered_set<std::wstring> seen;
+    // 去重规则住在 SearchDedupPolicy(纯逻辑,本机可测)。这里只做一次形态转换,
+    // 与下面 Query 调 RankSearchEntries 是同一个形状:keywords 原样带着走,
+    // 因为去重只按 name+target 判,而 keywords 是排序的输入,不能在这里丢。
+    // 分开的理由见那个头的说明 —— 这行原先内联在下面,和排序是同一个失败类
+    // (用户看得见),却因为住在一个要 windows.h 的文件里而本机一行都跑不到。
+    std::vector<std::wstring> seen;
+    seen.reserve(entries_.size());
     std::vector<Entry> deduped;
     deduped.reserve(entries_.size());
     for (auto& entry : entries_) {
-        const auto key = Lower(entry.name + L"|" + entry.target);
-        if (seen.insert(key).second) deduped.push_back(std::move(entry));
+        SearchDedupEntry candidate;
+        candidate.name = entry.name;
+        candidate.target = entry.target;
+        if (!IsFirstSearchEntry(candidate, seen)) continue;
+        seen.push_back(SearchDedupKey(candidate));
+        deduped.push_back(std::move(entry));
     }
     entries_ = std::move(deduped);
 }

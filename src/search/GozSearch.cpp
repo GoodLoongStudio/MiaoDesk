@@ -267,12 +267,14 @@ bool GozSearch::Query(HWND replyWindow, const std::wstring& query, DWORD maxResu
     if (binary.empty()) return false;
 
     const auto state = state_;
-    const std::uint64_t generation = state->generation.fetch_add(1, std::memory_order_relaxed) + 1;
-    std::thread([state, generation, binary, replyWindow, query, maxResults]() {
+    // 起一次查询先占一个代号。用户多敲一个字符就再占一个,而在飞的那次就此作废 ——
+    // gozd 是另一个进程,快的那次完全可能后到,不设防就会把新结果盖掉。
+    const SearchGeneration claimed = state->generation.Claim();
+    std::thread([state, claimed, binary, replyWindow, query, maxResults]() {
         std::vector<std::wstring> paths;
         const bool pipeReady = GozSearch::EnsurePipeAvailable(2000);
         const bool succeeded = pipeReady && RunGozQuery(binary, query, maxResults, paths);
-        if (state->generation.load(std::memory_order_relaxed) != generation || !IsWindow(replyWindow)) return;
+        if (!state->generation.ShouldDeliver(claimed) || !IsWindow(replyWindow)) return;
 
         // Always notify the UI. Returning silently on a CLI timeout/error leaves
         // the current query stuck in its pending state indefinitely.
@@ -381,7 +383,11 @@ bool GozSearch::SelfTest() const {
 }
 
 void GozSearch::Shutdown() const {
-    if (state_) state_->generation.fetch_add(1, std::memory_order_relaxed);
+    // 无条件作废在飞的那次查询 —— 界面每收到一次输入都调这里,包括**这次起不来
+    // 新查询**的分支(空输入、`/` 命令、goz 客户端没装)。那些分支都自然会 return,
+    // 于是必须先作废再早退,否则一次在飞的旧回包会在几十毫秒后盖在用户已经看到的
+    // 命令提示或空状态上。见 MiaoSearchGeneration.h。
+    if (state_) state_->generation.Invalidate();
 }
 
 } // namespace miaodesk

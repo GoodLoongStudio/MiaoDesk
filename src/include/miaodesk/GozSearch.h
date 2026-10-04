@@ -1,7 +1,7 @@
 #pragma once
+#include "miaodesk/MiaoSearchGeneration.h"
 #include "miaodesk/SearchTypes.h"
 #include <windows.h>
-#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,8 +25,11 @@ public:
     static constexpr DWORD kReplyId = 0x5444475A; // TDGZ
 
 private:
+    // 代号追踪器是纯逻辑(见 MiaoSearchGeneration.h),本机测得动;原先这里是一个
+    // 裸的 std::atomic_uint64_t,`Claim`/`ShouldDeliver`/`Invalidate` 三件事散在
+    // .cpp 的三行里,而那三行是用户连敲搜索框时唯一在保护结果正确性的东西。
     struct SharedState {
-        std::atomic_uint64_t generation{0};
+        SearchGenerationTracker generation;
     };
 
     static std::wstring FindClientBinary();

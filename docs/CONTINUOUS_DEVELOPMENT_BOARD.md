@@ -266,6 +266,27 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - **不是文件锁**:那一版同时会打印 "Stale <name> (pid …) … stopping it", annotation 里没有这行。
 - **起止点很确定**:`fast-dev-arm64.yml` 历史上 `c43bf146` ✅(22:34)→ **`bc8fe14c` ❌**(23:01),
   中间没有别的提交 —— 就是本会话的"P0-08 五处启动点接线"那个提交。
+- **✅ 根因已找到并修掉(本会话引入,不推给环境)**:
+  `package-windows-x64.yml` 的 annotation 直接点名 ——
+      HarnessHost.obj : error LNK2019: unresolved external symbol
+        miaodesk::lock_host::ExistingOwnerIsHealthy(...)  [MiaoDeskHarness.vcxproj]
+      MiaoDeskHarness.exe : fatal error LNK1120: 1 unresolved externals
+  我把三个锁文件 `MiaoLockOwnership.cpp` / `MiaoLockRecord.cpp` /
+  `MiaoLockOwnershipHost.cpp` 放进了 `MIAODESK_CORE_SOURCES`(= `MiaoDeskCore`),
+  而 **`MiaoDeskHarness` 链的是 `MiaoDeskHarnessCore`,不是 `MiaoDeskCore`** ——
+  于是 `HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`MiaoDeskHarness.exe`
+  生不出来,`cmake --install` 只能报 `file INSTALL cannot find`,再往上就只剩
+  `CMake Error at cmake_install.cmake:49 (file):`。**错误信息离根因隔了三层**,
+  这也是它六次都没被看出来的原因。
+- **修法**:按 CMakeLists 自己规定的解法(见 `MIAODESK_SCENE2D_SOURCES` 那段注释),
+  把这三个 .cpp 提成独立静态库 `MiaoDeskLockOwnership`,再由
+  `MiaoDeskCore` 与 `MiaoDeskHarnessCore` 双双 `PUBLIC` 链上。
+  没有把三个 .cpp 同时写进两个 list —— 那会让一个 .cpp 有两个 CMake owner
+  (path-layout-contract 违规),而 `MiaoDesk` 同时链两个 core,重复定义会直接炸链接期。
+- **为什么本机全绿却 CI 红**:mingw 语法门与 `verify-cmake-*` 只查"每个 .cpp 都被编译"
+  与"目标结构自洽",**没有一个门查"这个 EXE 调用的符号在它的链接 Closure 里"**。
+  这类错误只有真链接才暴露。已记为教训:往 `MIAODESK_CORE_SOURCES` 加文件时,
+  必须先确认**所有**调用方都链 `MiaoDeskCore`。
 - **本轮已做的(只加诊断,不加重试)**:把第 6 步改成
   (1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
   (2) install 失败时把完整输出和 matched 行写进 annotation。之前 annotation 里只有

@@ -37,13 +37,8 @@ set(MIAODESK_CORE_SOURCES
     ai/agent/MiaoSessionMigration.cpp
     # P0-08 后半句:单实例锁的持有权裁决。OpenMutexW 只回答"锁在不在",
     # 不回答"它属于谁、那个进程还活着吗"—— 于是卡住的持有者看不出来。纯逻辑,本机可验。
-    ai/agent/MiaoLockOwnership.cpp
     # P0-08 后半句:锁持有权记录的编解码。owner 没有地方发身份的话,
     # 上面那个裁决根本没有输入可用。
-    ai/agent/MiaoLockRecord.cpp
-    # P0-08 后半句:锁持有权记录在宿主侧的合流点。同一个"该不该再起一个"有
-    # 五处启动点,收成一处才不会出现"壁纸判得出卡住、别的还是一句 return true"。
-    ai/agent/MiaoLockOwnershipHost.cpp
     # Native tools live in the core library, not in the app target, so the
     # content-skill gate can link them without compiling a second copy. Each
     # implementation file must keep exactly one CMake owner.
@@ -211,6 +206,26 @@ set(MIAODESK_HARNESS_CORE_SOURCES
 # that the D2D renderer SelfTest target can link it. Two CMake owners for one .cpp is
 # a path-layout-contract violation (scripts/verify-path-layout-contract.ps1), and the
 # contract's own prescribed remedy is a library target.
+# P0-08 后半句:锁持有权记录、裁决,以及宿主侧那个合流点。**独立成库,不是塞进
+# MIAODESK_CORE_SOURCES** —— 塞错 list 的后果已经真发生过一次:`HarnessHost.cpp`
+# 调 `lock_host::ExistingOwnerIsHealthy`,而 `MiaoDeskHarness` 链的是
+# `MiaoDeskHarnessCore` 而不是 `MiaoDeskCore`,于是
+#   HarnessHost.obj : error LNK2019: unresolved external symbol
+#     miaodesk::lock_host::ExistingOwnerIsHealthy(...)  [MiaoDeskHarness.vcxproj]
+#   MiaoDeskHarness.exe : fatal error LNK1120: 1 unresolved externals
+# `MiaoDeskHarness.exe` 装不出来,`cmake --install` 报 `file INSTALL cannot find`,
+# ARM64 Fast Dev 与 x64 Package 两条 CI 连红六次。
+#
+# 做成库而不是把三个 .cpp 同时写进两个 list:写进两个 list 就是一个 .cpp 两个
+# CMake owner,那是 path-layout-contract 违规;而 `MiaoDesk` 同时链 MiaoDeskCore 与
+# MiaoDeskHarnessCore,重复定义会直接在链接期炸掉。库是这个契约自己规定的解法
+# (见下面 MIAODESK_SCENE2D_SOURCES 的同一段说明)。
+set(MIAODESK_LOCK_OWNERSHIP_SOURCES
+    ai/agent/MiaoLockOwnership.cpp
+    ai/agent/MiaoLockRecord.cpp
+    ai/agent/MiaoLockOwnershipHost.cpp
+)
+
 set(MIAODESK_SCENE2D_SOURCES
     content/render/d2d/MiaoD2DTextureLoader.cpp
     content/render/d2d/MiaoSceneD2DRenderer.cpp
@@ -307,6 +322,7 @@ endif()
 
 add_library(MiaoDeskCore STATIC ${MIAODESK_CORE_SOURCES})
 add_library(MiaoDeskHarnessCore STATIC ${MIAODESK_HARNESS_CORE_SOURCES})
+add_library(MiaoDeskLockOwnership STATIC ${MIAODESK_LOCK_OWNERSHIP_SOURCES})
 add_library(MiaoDeskScene2D STATIC ${MIAODESK_SCENE2D_SOURCES})
 add_library(MiaoDeskSceneD3D11 STATIC ${MIAODESK_SCENE_D3D11_SOURCES})
 add_library(MiaoDeskWallpaperAudio STATIC ${MIAODESK_WALLPAPER_AUDIO_SOURCES})
@@ -472,7 +488,7 @@ set_source_files_properties(desktop/wallpaper/legacy/WallpaperEngineProduction.c
     COMPILE_DEFINITIONS "wWinMain=MiaoDeskWallpaperMain"
 )
 
-foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskMiaoSceneTimelinePolicyTest MiaoDeskShippedAnimationContinuity MiaoDeskWidgetGeometryTest MiaoDeskShippedWidgetGeometry MiaoDeskWidgetRefreshPolicyTest MiaoDeskShippedPackageAssets MiaoDeskAgentConfigAuthorityTest MiaoDeskTurnLifecycleTest MiaoDeskSessionMigrationTest MiaoDeskLockOwnershipTest MiaoDeskLockRecordTest MiaoDeskLibraryRowFilterTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
+foreach(target MiaoDeskCore MiaoDeskHarnessCore MiaoDeskLockOwnership MiaoDeskScene2D MiaoDeskSceneD3D11 MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskCreatorToolWorkerTest MiaoDeskCreatorRuntimeSchedulerTest MiaoDeskContentPackageValidatorTest MiaoDeskJsonStringFieldTest MiaoDeskContentCandidateReceiptTest MiaoDeskCreationRepairPlannerTest MiaoDeskRenderEvidenceTest MiaoDeskRenderEvidenceSampleBindingTest MiaoDeskCapabilityCatalogTest MiaoDeskTodayTaskPresentationTest MiaoDeskWidgetDataActionContractTest MiaoDeskShippedPackagesValidate MiaoDeskSearchRankingBaselineTest MiaoDeskExamplePackagesLoad MiaoDeskMiaoSceneTimelinePolicyTest MiaoDeskShippedAnimationContinuity MiaoDeskWidgetGeometryTest MiaoDeskShippedWidgetGeometry MiaoDeskWidgetRefreshPolicyTest MiaoDeskShippedPackageAssets MiaoDeskAgentConfigAuthorityTest MiaoDeskTurnLifecycleTest MiaoDeskSessionMigrationTest MiaoDeskLockOwnershipTest MiaoDeskLockRecordTest MiaoDeskLibraryRowFilterTest MiaoDeskCreatorReplyInterpreterTest MiaoDeskContentApplyRecoveryTest MiaoDeskCreationDraftStoreTest MiaoDeskVisualReviewGateTest MiaoDeskContentReleaseGateTest MiaoDeskWallpaperAudio)
     target_include_directories(${target} PRIVATE include)
     target_compile_features(${target} PRIVATE cxx_std_23)
     target_compile_definitions(${target} PRIVATE
@@ -489,6 +505,7 @@ target_include_directories(MiaoDeskCore SYSTEM PRIVATE "${WEBVIEW2_INCLUDE_DIR}"
 if (MSVC)
     target_compile_options(MiaoDeskCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskHarnessCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
+    target_compile_options(MiaoDeskLockOwnership PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskScene2D PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskSceneD3D11 PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(MiaoDeskWallpaperAudio PRIVATE /W4 /permissive- /utf-8 /EHsc)
@@ -555,6 +572,10 @@ if (MSVC)
     target_compile_options(MiaoDeskContentReleaseGateTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
 endif()
 
+# 锁持有权链两面都要:MiaoDeskCore 供 app 与 wallpaper,MiaoDeskHarnessCore 供
+# harness EXE —— 后者只链 harness core,这也是上面那个 LNK2019 的来处。
+target_link_libraries(MiaoDeskCore PUBLIC MiaoDeskLockOwnership)
+target_link_libraries(MiaoDeskHarnessCore PUBLIC MiaoDeskLockOwnership)
 target_link_libraries(MiaoDesk PRIVATE
     MiaoDeskCore
     MiaoDeskScene2D

@@ -235,6 +235,30 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 遇到需要物理设备的环节，保留 `🟠 Needs device`，继续领取下一项可自动执行任务。
 
+### 🔴 未决:`Windows ARM64 Fast Dev` 从 `bc8fe14c` 起连红六次 —— 大概率是本会话引入的
+
+- **时间线**(`fast-dev-arm64.yml` 的成功/失败史):`c43bf146` ✅、`566e3ccd` ✅,
+  **`bc8fe14c` ❌**、`5253d9e1` ❌、`14c8ebfa` ❌、`6fe75bec` ❌、`ae0d8a41` ❌、`2cb13923` ❌。
+- `bc8fe14c` 正是本会话的"P0-08 五处启动点接线"提交(动了 `main.cpp`、
+  `HarnessHost.cpp`、`WallpaperEngine.cpp`,并新增 `MiaoLockOwnershipHost.{h,cpp}`。
+  从那以后连着六次全红 —— **在拿到反证之前,按"是我引入的"记账。**
+- **已排除的**:ARM64 **编译**是过的。失败的是第 6 步
+  `Refresh fast runnable package`(`cmake --install`),而第 5 步
+  "Configure and build ARM64" 是 success。本会话没有改过任何 install 规则
+  (`git show --stat` 逐提交核过:`src/CMakeLists.txt` 只往
+  `MIAODESK_CORE_SOURCES` 加过三个 .cpp,不涉及 install)。
+  本机能做的编译检查也做了:把 `WallpaperEngineProduction.cpp`(它 `#include`
+  `WallpaperEngine.cpp`,而后者被 mingw 门当成"被 include 的实现单元"跳过、
+  **从未被独立编译检查过**)用 mingw 单编,0 error。
+- **未取证的**:为什么 `cmake --install` 失败。它的动作只有
+  `Remove-Item C:\pkg\MiaoDesk\arm64-fast` 然后 `cmake --install --prefix` ——
+  这个组合对"上一个 run 的进程还握着那个目录"很敏感,而失败从 runner 开始复用
+  那一刻起持续,是典型的文件锁抖动形状。但**这只是形状像,我没有证据**:
+  匿名身份不能 re-run(401),annotation 只给了 sccache 统计和 exit code 1。
+- **下一步(需要 Windows 侧)**:在真机或能 re-run 的身份上跑一次
+  `cmake --install`,或者把第 6 步拆成"先确保没有残留 MiaoDesk 进程再安装"。
+  **不要**在没弄清之前动 install 规则。
+
 ### 本会话初就在 clean HEAD 上红的 4 道 node 契约门:2 道已修,2 道确属环境
 
 `creator-conversation-continuity` 与 `creator-window-keyboard-conformance` 是

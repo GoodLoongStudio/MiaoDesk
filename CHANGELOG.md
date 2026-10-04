@@ -63,6 +63,32 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 - **未取证**:五处启动点还是老的 `if (NamedMutexExists(...)) return true;`,
   接到新裁决是宿主侧改动,要 Windows 上真起一次 helper 才敢签收。
 
+### 2026-10-04 · 排查记录：🔴 ARM64 Fast Dev 连红六次，大概率是本会话引入的
+
+**先说结论:在拿到反证之前,这记在我头上。**
+
+`fast-dev-arm64.yml` 的成功/失败史:`c43bf146` ✅ → `566e3ccd` ✅ →
+**`bc8fe14c` ❌**(本会话"P0-08 五处启动点接线")→ `5253d9e1` ❌ → `14c8ebfa` ❌ →
+`6fe75bec` ❌ → `ae0d8a41` ❌ → `2cb13923` ❌。连红六次,起点正是我那个提交。
+
+**已排除**:
+- ARM64 编译是过的 —— 失败在第 6 步 `Refresh fast runnable package`
+  (`cmake --install`),第 5 步 "Configure and build ARM64" 是 success;
+- 本会话没有改过任何 install 规则(逐提交核过 `git show --stat`;`CMakeLists.txt`
+  只往 `MIAODESK_CORE_SOURCES` 加过三个 .cpp);
+- 本机能做的检查也做了:`WallpaperEngine.cpp` 是被 `WallpaperEngineProduction.cpp`
+  `#include` 的,mingw 门把它当"被 include 的实现单元"跳过、**从未被独立编译检查过** ——
+  单编那个 TU,0 error。
+
+**未取证(关键)**:为什么 `cmake --install` 失败。它的动作只有
+`Remove-Item C:\pkg\MiaoDesk\arm64-fast` + `cmake --install --prefix`,对
+"上一个 run 的进程还握着那个目录"很敏感,而失败从 runner 开始复用的那一刻持续,
+是典型的文件锁抖动形状。但**这只是形状像,不是证据**:匿名身份不能 re-run(401),
+annotation 只有 sccache 统计和 exit code 1。
+
+**下一步(要 Windows 侧)**:在能 re-run 的身份上跑一次,或把第 6 步拆成
+"先确保没有残留 MiaoDesk 进程再安装"。**不要**在没弄清之前动 install 规则。
+
 ### 2026-10-04 · 排查记录：P0-07「库状态恢复」一处静默丢行（定位完毕，未修）
 
 `WallpaperLibrary.cpp:283` 在 `Kind` 缺失或不在本构建字表里时**静默丢行**,而 `Load`

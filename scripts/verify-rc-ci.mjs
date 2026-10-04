@@ -8,6 +8,18 @@ const required = [
   "Windows ARM64 Package",
 ];
 
+// 4 = 这道门自己坏了(网络/认证/API),**不是**发布链的结论。
+//
+// 上一版在这里 `throw new Error(...)`:一个未捕获的顶层 throw 在 ESM 里退出码是 1,
+// 而 1 已经被用作"五条链里有一条真的失败了"。两者混在一起,一次 API 抖动就会把
+// "我不知道"显示成"发布是坏的" —— 那正是这道门存在的理由的反面。
+// 实测在 3ffa2eea 上,同一道门的五次跑里有两次以 exit 1 结束,而那个 SHA 的
+// 五条链最终**全是 success**(见开发面板 2026-10-04 再续十五)。日志拿不到
+// (匿名 API 只能读 annotations,里面只有"Process completed with exit code 1"),
+// 所以哪一次是 API 抖动无法逐条证实;但"退出码把两种完全不同的情况压成同一个"
+// 这件事本身是确定的,与原因无关。
+const INFRA = 4;
+
 function evaluate(runs, sha) {
   // 每种工作流取**该 SHA 上最新一次** run —— 不管它是什么状态。
   //
@@ -176,7 +188,129 @@ if (process.argv.includes("--self-test")) {
   r = spawnSync(nodeExe, [self, "abc", "--runs-file"], { encoding: "utf8" });
   if (r.status !== 2) throw new Error(`exit 2 expected for a missing --runs-file path, got ${r.status}`);
 
-  console.log("verify-rc-ci self-test passed (exit codes)");
+  // ---- 退出码 4:门自己坏了,不是发布链的结论 ----
+  // 这一条只能在一个**真的 API** 上验,所以本机起一个假 API(GITHUB_API_URL 指过去)。
+  // 上一版这里 `throw new Error(...)`,而未捕获的顶层 throw 退出码是 1 —— 与
+  // "五条链里有一条真的失败了"混在一起。一次 API 抖动于是把"我不知道"显示成
+  // "发布是坏的"。4 就是要把这两种情况分开。
+  const http = await import("node:http");
+  const { spawn } = await import("node:child_process");
+  const goodFixture = required.map((n, i) => done(n, "success", i));
+  const startFakeApi = (handler) =>
+    new Promise((resolve) => {
+      // 不把 handler 传给 createServer:那样它会被调两次。
+      const server = http.createServer();
+      // 响应一律带 Connection: close。undici 的 fetch 默认保持连接,而子进程
+      // 会因为这个 socket 不关而不退出 —— 于是 spawnSync 永久挂住,整道自检卡死
+      // (第一版就是这样挂的:退出码没验到,先把门自己卡成了不动的那一种)。
+      server.on("request", (req, res) => {
+        res.setHeader("connection", "close");
+        handler(req, res);
+      });
+      server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
+    });
+  // 必须用**异步** spawn,不能用 spawnSync。
+  //
+  // 第一版用的是 spawnSync,结果整道自检挂死:spawnSync 会阻塞父进程的事件循环,
+  // 而假 API 就长在这个事件循环上 —— 子进程的 fetch 等一个父进程永远发不出的响应,
+  // 父进程等一个永远不会退出的子进程。这就是一次纯粹的自我死锁,症状是"自检没输出、
+  // 一直不动",与一道被掏空的门在日志上看起来一模一样。
+  //
+  // 另外:超时之后必须真的杀掉子进程并报出来。自检不许挂 —— 一次卡死会让后面每一条
+  // 断言都跑不到,而"没跑"与"通过"在日志上是一样的。
+  const probe = async (handler, timeoutMs = 25000) => {
+    const { server, port } = await startFakeApi(handler);
+    let stdout = "";
+    let stderr = "";
+    let timer;
+    try {
+      const code = await new Promise((resolve, reject) => {
+        const child = spawn(nodeExe, [self, "abc"], {
+          env: { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_TOKEN: "" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (d) => { stdout += d; });
+        child.stderr.on("data", (d) => { stderr += d; });
+        child.on("error", reject);
+        child.on("exit", (c, signal) => resolve(signal ? `signal:${signal}` : c));
+        timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          reject(new Error(`假 API 上的探针 ${timeoutMs}ms 没退出(子进程已杀) —— 自检自己挂了`));
+        }, timeoutMs);
+      });
+      return { code, out: stdout + stderr };
+    } finally {
+      clearTimeout(timer);
+      server.closeAllConnections?.();
+      server.close();
+    }
+  };
+  const jsonReply = (body, status = 200) => (req, res) => {
+    res.writeHead(status, { "content-type": "application/json", connection: "close" });
+    res.end(JSON.stringify(body));
+  };
+
+  // 4-pre. INFRA 必须是独一份的退出码。
+  // 它存在的全部理由就是与 1("五条链里有一条真的失败了")分开;撞车就等于没分开。
+  for (const taken of [0, 1, 2, 3]) {
+    if (INFRA === taken) throw new Error(`INFRA must be distinct from ${taken} -- that is its whole point`);
+  }
+
+  // 4a. API 一路 500 → 4,而且要说明门自己坏
+  let p = await probe(jsonReply({ message: "boom" }, 500));
+  if (p.code !== INFRA) throw new Error(`exit ${INFRA} expected for a broken API, got ${p.code}\n${p.out}`);
+  if (!/门自己坏|不是发布链/.test(p.out)) throw new Error(`a broken API must say so:\n${p.out}`);
+
+  // 4a-2. 第一次失败、第二次成功 → 0,不是 4。
+  //       上一版如果不在成功时清掉 lastError,一次重试后的成功会被报成门自己坏 ——
+  //       "明明拿到了清单,却说不算数"。这一条钉住那次清理。
+  let failures = 0;
+  p = await probe((_req, res) => {
+    res.setHeader("connection", "close");
+    if (failures++ === 0) {
+      res.writeHead(500, { "content-type": "application/json", connection: "close" });
+      res.end(JSON.stringify({ message: "transient" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json", connection: "close" });
+    res.end(JSON.stringify({ total_count: goodFixture.length, workflow_runs: goodFixture }));
+  });
+  if (p.code !== 0) throw new Error(`exit 0 expected when a retry succeeds, got ${p.code}\n${p.out}`);
+
+  // 4a-3. 重试要真的退避:三次零间隔的重试等于没有退避,只会把已经不稳的 API 打得更稳不住。
+  const retryStarted = Date.now();
+  p = await probe(jsonReply({ message: "boom" }, 500));
+  const retryElapsed = Date.now() - retryStarted;
+  if (p.code !== INFRA) throw new Error(`exit ${INFRA} expected for a broken API, got ${p.code}\n${p.out}`);
+  if (retryElapsed < 2500) throw new Error(`retries must back off (took ${retryElapsed}ms)`);
+
+  // 4b. 403(认证问题)→ 4,且不该重试三次(重试认证失败没有意义,只会拖慢每一次红)
+  const authStarted = Date.now();
+  p = await probe(jsonReply({ message: "Must have admin rights to Repository." }, 403));
+  if (p.code !== INFRA) throw new Error(`exit ${INFRA} expected for a 403, got ${p.code}\n${p.out}`);
+  if (Date.now() - authStarted > 4000) throw new Error("a 403 must not be retried three times");
+
+  // 4c. 查到这个 SHA 一条 run 都没有 → 4,不当"五条都没触发"
+  //     (后者是一个发布结论,而空清单更可能是问错了:HEAD SHA 不完整、权限不对…)
+  p = await probe(jsonReply({ total_count: 0, workflow_runs: [] }));
+  if (p.code !== INFRA) throw new Error(`exit ${INFRA} expected for an empty run list, got ${p.code}\n${p.out}`);
+  if (!/一条 run 都没查到|查询很可能坏/.test(p.out)) throw new Error(`an empty run list must say so:\n${p.out}`);
+
+  // 4d. 假 API 上五条全绿 → 0。这一条证明上面几条红的是 API,不是接线。
+  p = await probe(jsonReply({ total_count: goodFixture.length, workflow_runs: goodFixture }));
+  if (p.code !== 0) throw new Error(`exit 0 expected against a healthy fake API, got ${p.code}\n${p.out}`);
+
+  // 4e. 假 API 上五条里一条在飞 → 3(不是 4:能查到东西就不算门坏了)
+  p = await probe(jsonReply({
+    total_count: 5,
+    workflow_runs: [
+      done(required[0], "success", 0),
+      ...required.slice(1).map((n, i) => ({ name: n, head_sha: "abc", status: "in_progress", conclusion: null, run_attempt: 1, html_url: at(i) })),
+    ],
+  }));
+  if (p.code !== 3) throw new Error(`exit 3 expected when the fake API shows in-flight runs, got ${p.code}\n${p.out}`);
+
+  console.log("verify-rc-ci self-test passed (exit 4: the gate itself broke)");
   process.exit(0);
 }
 
@@ -202,6 +336,10 @@ if (runsFileIndex >= 0 && !runsFile) {
 }
 const fs = runsFile ? await import("node:fs/promises") : null;
 
+// GitHub Actions 自己就设这个变量(GHES 上它不是 api.github.com)。尊重它既让这道门
+// 在 GHES 上能跑,也让自检能在本机起一个假 API —— 否则"退出码 4"这条新路只能靠猜。
+const apiBase = process.env.GITHUB_API_URL || "https://api.github.com";
+
 const repo = process.env.GITHUB_REPOSITORY || "GoodLoongStudio/MiaoDesk";
 const token = process.env.GITHUB_TOKEN || "";
 const headers = { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
@@ -211,13 +349,45 @@ if (runsFile) {
   runs.push(...(Array.isArray(saved) ? saved : saved.workflow_runs || []));
   console.log(`run 清单来自文件:${runsFile}(${runs.length} 条) —— 没有访问 GitHub API`);
 } else {
-  for (let page = 1; page <= 10; ++page) {
-    const url = `https://api.github.com/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(sha)}&per_page=100&page=${page}`;
-    const response = await fetch(url, { headers });
-    if (!response.ok) throw new Error(`GitHub Actions query failed: ${response.status} ${await response.text()}`);
-    const json = await response.json();
-    runs.push(...(json.workflow_runs || []));
-    if ((json.workflow_runs || []).length < 100) break;
+  // 瞬时失败重试:5xx / 429 / 网络错误都不该换来一个红。一次抖动让发布看起来是坏的,
+  // 比晚两分钟知道贵得多。
+  let lastError = "";
+  outer: for (let attempt = 1; attempt <= 3; ++attempt) {
+    for (let page = 1; page <= 10; ++page) {
+      const url = `${apiBase}/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(sha)}&per_page=100&page=${page}`;
+      let response;
+      try {
+        response = await fetch(url, { headers });
+      } catch (error) {
+        lastError = `attempt ${attempt}: ${error}`;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        continue outer;
+      }
+      if (!response.ok) {
+        lastError = `attempt ${attempt}: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`;
+        // 403 / 401 是认证问题,重试三次也还是一样;直接当门自己坏。
+        if (response.status === 401 || response.status === 403) break outer;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        continue outer;
+      }
+      const json = await response.json();
+      runs.push(...(json.workflow_runs || []));
+      if ((json.workflow_runs || []).length < 100) break;
+    }
+    lastError = "";
+    break;
+  }
+  if (lastError) {
+    console.error(`这道门自己坏了(GitHub Actions 查询失败),不是发布链的结论:${lastError}`);
+    console.error("重试三次仍拿不到 run 清单;此时既不能说通过也不能说失败。");
+    process.exit(INFRA);
+  }
+  if (runs.length === 0) {
+    // 一个刚刚有工作流跑完的 SHA,不可能一条 run 都没有。空清单一律当查询坏了,
+    // 不当"五条都没触发" —— 后者是一个发布结论,而空清单更可能是问错了。
+    console.error(`这个 SHA 上一条 run 都没查到:${sha}`);
+    console.error("查询很可能坏了(HEAD SHA 不完整、或仓库/权限不对);不据此下发布结论。");
+    process.exit(INFRA);
   }
 }
 

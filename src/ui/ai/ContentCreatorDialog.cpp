@@ -1,5 +1,7 @@
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoCreatorPathScope.h"
+#include "miaodesk/CreatorReplyInterpreter.h"
+#include "miaodesk/CreatorWorkspaceState.h"
 #include "miaodesk/ContentCreatorDialog.h"
 
 #include "miaodesk/ConversationPanel.h"
@@ -614,6 +616,12 @@ struct DialogState {
     // 落到桌面上的是 B。CREATE-06 的验收原话是"修改正确 workspace,不新建错误作品"。
     // 归属判定在 MiaoCreatorPathScope(纯逻辑,本机可测)。
     std::wstring workspaceRoot;
+    // 这一轮属于哪一次创作。从工作区里的 .miaodesk-session.state 读 ——
+    // 它是 CreatorWorkspaceState 里那个 epoch 的唯一来源,而回执核验要拿它比
+    // (`ContentCandidateSubmission::sourceTurn` 写的就是这个值)。
+    // 读不到就留 0:那会让 InterpretCreatorReply 把回执判成不过核验,
+    // 于是按 ProseScan 走正文扫描 —— 一条都不认比认错好。
+    std::uint64_t workspaceEpoch{};
     fs::path generatedPackage;
     // True only when generatedPackage was resolved from the round that is
     // currently finishing. A failed round leaves the previous candidate loaded
@@ -1609,6 +1617,21 @@ struct DialogState {
     // 判定在 MiaoCreatorPathScope(纯逻辑,本机有门);这里只把结论接到三个出口上。
     // 注意**三处都要判**:FindGeneratedPackagePath 与目录候选是两条独立的扫描路径,
     // 漏掉任一条都还能从那儿把别处的包拿进来。
+    // 从工作区状态文件读本轮 epoch。读不到留 0,理由见字段声明。
+    void ReloadWorkspaceEpoch() {
+        workspaceEpoch = 0;
+        if (workspaceRoot.empty()) return;
+        std::error_code ec;
+        const fs::path stateFile = fs::path(workspaceRoot) /
+                                   CreatorUtf8ToWide(creator::kCreatorWorkspaceStateFileName);
+        std::ifstream stream(stateFile, std::ios::binary);
+        if (!stream) return;
+        const std::string text((std::istreambuf_iterator<char>(stream)),
+                               std::istreambuf_iterator<char>());
+        creator::CreatorWorkspaceState state;
+        if (creator::ParseCreatorWorkspaceState(text, &state)) workspaceEpoch = state.epoch;
+    }
+
     bool BelongsToCurrentWorkspace(const fs::path& package) {
         const auto scope = creator_scope::ClassifyCreatorPath(workspaceRoot, package.wstring());
         if (creator_scope::CreatorPathScopeIsUsable(scope)) return true;
@@ -1630,7 +1653,87 @@ struct DialogState {
         return false;
     }
 
+    // 先用 CreatorReplyInterpreter 读一遍这段回复。
+    //
+    // 这是 CREATE-06 的另一半。此前这里只有 `FindGeneratedPackagePath` 一条正则 ——
+    // 而 `CreatorReplyInterpreter` 这个模块**从头到尾没有任何运行时调用方**,
+    // 只有它自己的测试在调。它的头注释把代价写得很清楚:"猜中的代价不是难看,
+    // 是不可判定 —— 用户在正文里提到任何一个路径都会被当成这次生成的产物,
+    // 于是'它到底做出来了没有'取决于模型怎么说话。"
+    //
+    // 两样凭据,结论强度不同:
+    //   Receipt  —— 结构化回执过了宿主台账核验,能单独驱动"可以应用";
+    //   ProseScan —— 正文里的一个路径,不能,还要另过 ProsePathIsUsable。
+    // 把两者混成"找到了",用户就无法知道现在看到的是工具交回来的,还是模型
+    // 一句话里提到的。
+    std::optional<creator::CreatorReplyReading> ReadCreatorReply(std::string_view text) {
+        if (workspaceRoot.empty()) return std::nullopt;
+        const std::string root = CreatorWideToUtf8(workspaceRoot);
+        // 会话 ID 从工作区路径取,与 ContentCreatorBridge 同一个来源:
+        // 最后一段目录名。台账按它索引,拿错就会读到别人的账。
+        const std::string sessionId = creator::SanitizeCreatorSessionId(
+            CreatorWideToUtf8(fs::path(workspaceRoot).filename().wstring()));
+        if (sessionId.empty()) return std::nullopt;
+
+        // 台账从盘上读,与 CreatorToolWorker 读的是同一份(root 的上一级)。
+        // 读不懂就当没有台账 —— 那会让 InterpretCreatorReply 退回 ProseScan,
+        // 而不是把一条本该可信的回执误判成可疑。
+        content::ContentCandidateLedger ledger(sessionId);
+        std::error_code ec;
+        const fs::path ledgerPath =
+            fs::path(workspaceRoot).parent_path() / L"candidate-ledger.state";
+        std::ifstream stream(ledgerPath, std::ios::binary);
+        if (stream) {
+            const std::string ledgerText((std::istreambuf_iterator<char>(stream)),
+                                         std::istreambuf_iterator<char>());
+            if (!ledgerText.empty() && !ledger.Parse(ledgerText)) return std::nullopt;
+        }
+
+        return creator::InterpretCreatorReply(text, CreatorKindNumber(), root, ledger, sessionId,
+                                              workspaceEpoch);
+    }
+
+    std::uint32_t CreatorKindNumber() const noexcept {
+        return kind == ContentCreatorKind::Widget ? creator::kCreatorKindWidget
+                                                  : creator::kCreatorKindWallpaper;
+    }
+
     void InspectForGeneratedPackage(std::wstring_view text) {
+        // 回执优先。过了台账核验的凭据不必再从正文里猜路径 —— 而且那时
+        // 包就是工作区本身(工具是在工作区里直接产出的),扫正文反而可能
+        // 扫到一个过时的中间路径。
+        const std::string utf8 = CreatorWideToUtf8(text);
+        if (const auto reading = ReadCreatorReply(utf8)) {
+            if (reading->source == creator::CreatorReplySource::Receipt &&
+                reading->trustworthyWithoutFurtherChecks && !reading->prosePath.empty()) {
+                const fs::path receiptPath = CreatorUtf8ToWide(reading->prosePath);
+                if (BelongsToCurrentWorkspace(receiptPath)) {
+                    SetGeneratedPackage(receiptPath);
+                    return;
+                }
+            }
+            // ProseScan 也不能直接信:它只是一个字符串,还要过那五项判据。
+            if (reading->source == creator::CreatorReplySource::ProseScan &&
+                !reading->prosePath.empty()) {
+                const fs::path prosePath = CreatorUtf8ToWide(reading->prosePath);
+                creator::ProsePathFacts facts;
+                std::error_code ec;
+                facts.exists = fs::exists(prosePath, ec);
+                facts.isDirectory = fs::is_directory(prosePath, ec);
+                facts.hasManifest =
+                    fs::exists(prosePath / L"manifest.json", ec) ||
+                    fs::exists(prosePath / L"manifest.mdwall", ec);
+                facts.extensionMatchesKind =
+                    _wcsicmp(prosePath.extension().c_str(), PackageExtension(kind)) == 0;
+                facts.insideWorkspace = BelongsToCurrentWorkspace(prosePath);
+                std::string why;
+                if (creator::ProsePathIsUsable(facts, &why)) {
+                    SetGeneratedPackage(prosePath);
+                    return;
+                }
+            }
+        }
+
         if (auto path = FindGeneratedPackagePath(text, kind)) {
             if (BelongsToCurrentWorkspace(*path)) SetGeneratedPackage(*path);
             return;
@@ -2011,6 +2114,7 @@ struct DialogState {
         // 记住当前做的是哪个作品。必须在**成功激活之后**才记:激活失败时这个
         // 对话框还在上一个作品上,提前记会把拿错的路径判成"在自己的 workspace 里"。
         this->workspaceRoot = std::wstring(workspaceRoot);
+        ReloadWorkspaceEpoch();
         if (pi && pi->Busy()) pi->Stop();
         if (agent && agent->Busy()) agent->Stop();
         if (pi) {
@@ -2243,6 +2347,7 @@ struct DialogState {
         // 解析失败就留空 —— 空 workspaceRoot 会让归属判定报 EmptyWorkspace,
         // 那是"不知道在哪",比假装知道更诚实。
         workspaceRoot = ResolveCreatorWorkspaceRoot(kind);
+        ReloadWorkspaceEpoch();
         PopulateApiProfiles();
         InitializeConversation();
         LoadSkill();

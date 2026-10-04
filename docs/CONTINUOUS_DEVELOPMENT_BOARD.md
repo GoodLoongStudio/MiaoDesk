@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `f9909d1a`（本机 **62 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `HEAD`（本机 **62 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -132,7 +132,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | CREATE-03 | ⬜ | 10 条 Widget 固定生成集 | 是+真机 | 同上 |
 | CREATE-04 | 🟡 | 上一可用结果保留 | 是 | 新一轮生成/修复失败不覆盖上一份可预览结果。**自动部分已修：复用 candidateId 不再把上一版带走**（见下）；界面上的实际保留仍等宿主接线 |
 | CREATE-05 | ⬜ | Preview / Apply 一致性 | 是+真机 | 同包同参数下预览与桌面主要视觉一致 |
-| CREATE-06 | 🟡 | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 **"归属"那一半已修**：`InspectForGeneratedPackage` 此前扫到什么就用什么，而 `DialogState` 里**压根没有 workspaceRoot 字段**（UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次、用完就丢）—— 模型在回复里提到别处的路径时，那个包就成了本轮结果并可应用到桌面。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。** 已补上字段（打开时与成功激活时各记一次），并把归属判定接进三个出口（`MiaoCreatorPathScope`，35 项断言 + 8 处变异全红）。**"不新建错误作品"与真机连续修改仍要 Windows** |
+| CREATE-06 | 🟡 | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 **"归属"那一半已修**：`InspectForGeneratedPackage` 此前扫到什么就用什么，而 `DialogState` 里**压根没有 workspaceRoot 字段**（UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次、用完就丢）—— 模型在回复里提到别处的路径时，那个包就成了本轮结果并可应用到桌面。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。** 已补上字段（打开时与成功激活时各记一次），并把归属判定接进三个出口（`MiaoCreatorPathScope`，35 项断言 + 8 处变异全红）。**"不新建错误作品"与真机连续修改仍要 Windows** **另一半也已接上**:`CreatorReplyInterpreter` 此前**没有任何运行时调用方**(只有自己的测试在调),而 `InspectForGeneratedPackage` 仍然只靠一条正则从正文猜路径。现在两样凭据分开了 —— `Receipt`(过了宿主台账核验)能单独驱动"可以应用",且那时包就是工作区本身;`ProseScan`(正文里的一个字符串)不能,还要过 `ProsePathIsUsable` 五项判据。epoch 从 `<workspace>/.miaodesk-session.state` 读,台账从 `<workspace>/candidate-ledger.state` 读 —— 两者与 `CreatorToolWorker` 读的是同一份;读不到就一条都不认、按原路径退化,而不是把可疑回执当可信。**真机连续修改仍未验** |
 | CREATE-07 | ⬜ | Creator 重启恢复 | 是 | 聊天、当前 workspace、最近预览、生成状态可恢复 |
 | CREATE-08 | ⬜ | Apply 失败回滚 | 是 | 应用失败保留原桌面；成功后可恢复应用前内容 |
 | CREATE-09 | ⬜ | 生成质量评分与失败样本库 | 是+人工 | 每次模型/Skill 改动可与固定基线比较 |
@@ -481,6 +481,37 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十六，CREATE-06 另一半：那个"写了没人用"的模块接进了真机路径）
+
+- 代码提交：本次。
+- **为什么这一轮动了它**：Stop hook 连续点名。上一轮我在收尾时写
+  "`CreatorReplyInterpreter` 没有任何运行时调用方,只有自己的测试在调",
+  然后把它列进"剩下的"就停了 —— 那正是我这几轮反复犯的形状:**发现一个缺陷、
+  把它写清楚、然后不修**。
+- **先查卡点,没有猜**:这个模块要 `ContentCandidateLedger` / `sessionId` / `epoch`
+  三样运行时状态,而 `DialogState` 里只有最后一个没有。第一反应是"那要改工具回复的
+  管线",后来查实 epoch 持久化在 `<workspace>/.miaodesk-session.state`
+  (`CreatorWorkspaceState`),有现成的 `ParseCreatorWorkspaceState`;台账在
+  `<workspace>/candidate-ledger.state`,与 `CreatorToolWorker` 读的是**同一份**。
+  三样都拿得到,不需要改管线。
+- **两个凭据现在分开了**:此前 `InspectForGeneratedPackage` 只有一条正则
+  (`FindGeneratedPackagePath`)从正文猜路径。它的头注释把代价写得很清楚:
+  "猜中的代价不是难看,是**不可判定** —— 用户在正文里提到任何一个路径都会被当成
+  这次生成的产物,于是'它到底做出来了没有'取决于模型怎么说话。"
+  现在 `Receipt`(过了宿主台账核验)能单独驱动"可以应用",且那时包就是工作区本身
+  (工具是在工作区里直接产出的,扫正文反而可能扫到过时的中间路径);
+  `ProseScan`(正文里的一个字符串)不能,还要另过 `ProsePathIsUsable` 五项判据。
+- **一条刻意的保守**:epoch 或台账读不到时**一条都不认**,按原路径退化,
+  而不是把可疑回执当可信。认错比不认贵得多 —— 用户会拿到一个不是这一轮做的东西。
+- **这一轮没有新增纯逻辑断言**:接的是运行时接线,那个模块的 38 项断言与变异检测
+  早就在。所以本轮没有配新变异测试 —— 没有新判定可变异。这一点写清楚,
+  免得看起来像"又 extraction 一轮"。
+- 本机跑了什么:纯逻辑套件 **62 个目标全 PASS,exit 0**;全量 mingw 语法门
+  真实错误 0 行(`ContentCreatorDialog.cpp` 交叉编译通过);22 道仓库门 +
+  58 道 node 门全通过。
+- 真机:**未取证**。"用户说'再小一点'之后改的是不是同一个作品"要 Windows。
+  CREATE-06 两半都已落地,仍是 🟡。
 
 ### 本轮推进记录（2026-10-04 再续二十五，WPRO-05：退避只接了一个宿主，另一个的第一步还是无效的）
 

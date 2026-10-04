@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `4b066cfe`（本机 **60 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `HEAD`（本机 **61 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -132,7 +132,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | CREATE-03 | ⬜ | 10 条 Widget 固定生成集 | 是+真机 | 同上 |
 | CREATE-04 | 🟡 | 上一可用结果保留 | 是 | 新一轮生成/修复失败不覆盖上一份可预览结果。**自动部分已修：复用 candidateId 不再把上一版带走**（见下）；界面上的实际保留仍等宿主接线 |
 | CREATE-05 | ⬜ | Preview / Apply 一致性 | 是+真机 | 同包同参数下预览与桌面主要视觉一致 |
-| CREATE-06 | ⬜ | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 |
+| CREATE-06 | 🟡 | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 **"归属"那一半已修**：`InspectForGeneratedPackage` 此前扫到什么就用什么，而 `DialogState` 里**压根没有 workspaceRoot 字段**（UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次、用完就丢）—— 模型在回复里提到别处的路径时，那个包就成了本轮结果并可应用到桌面。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。** 已补上字段（打开时与成功激活时各记一次），并把归属判定接进三个出口（`MiaoCreatorPathScope`，35 项断言 + 8 处变异全红）。**"不新建错误作品"与真机连续修改仍要 Windows** |
 | CREATE-07 | ⬜ | Creator 重启恢复 | 是 | 聊天、当前 workspace、最近预览、生成状态可恢复 |
 | CREATE-08 | ⬜ | Apply 失败回滚 | 是 | 应用失败保留原桌面；成功后可恢复应用前内容 |
 | CREATE-09 | ⬜ | 生成质量评分与失败样本库 | 是+人工 | 每次模型/Skill 改动可与固定基线比较 |
@@ -481,6 +481,52 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十四，CREATE-06：对话框压根不知道自己正在做哪个作品）
+
+- 代码提交：本次。
+- **为什么这一轮动了 CREATE-06**：Stop hook 又点了一次名。我已连续两轮
+  "列出一堆可本机推进的项然后停下"，这一轮直接做，不再列。
+- **逮到的缺陷**：`InspectForGeneratedPackage` 每一轮 delta 和 done 都跑一遍，
+  从模型回复正文里扫一个 `.mdwall` / `.mdwidget` 路径，然后直接
+  `SetGeneratedPackage(path)` + `generatedPackageIsCurrentRound = true`。
+  它**不问这个路径是不是当前 workspace 的** —— 而 `DialogState` 里压根没有
+  `workspaceRoot` 这个字段：它在 `UseWorkspace` / `ResetSession` /
+  `CreatorConversationPath` 里各自临时解析一次，用完就丢。
+  **对话框 structually 问不出"我正在做哪个作品"。**
+- **用户可见的后果**（CREATE-06 的验收原话是"修改正确 workspace，不新建错误作品"）：
+  对话历史是从当前 workspace 读回来的，模型完全可能在回复里提到**另一个**
+  workspace 的路径；用户也可能粘一个进去。那种路径一旦被收下，它就成了本轮结果
+  并可"应用到桌面"。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。**
+- **修法**：补上 `DialogState::workspaceRoot`（`InitializeAfterOpen` 与
+  `UseWorkspace` 成功激活之后各记一次 —— 激活失败时不能记，那时对话框还在上一个
+  作品上），并把归属判定接进**三个**出口：`FindGeneratedPackagePath` 命中、
+  目录候选命中、以及 repair 那条路径。三处都要判：前两条是独立的扫描路径，
+  漏掉任一条都还能从那儿把别处的包拿进来。
+  判定在 `MiaoCreatorPathScope`（纯 containment，不碰盘）。
+- **顺带一个发现**：`CreatorReplyInterpreter` —— 那个专门为回答"这一轮做出了什么、
+  凭据是什么"而写的模块（Receipt / ProseScan、sessionId 与 epoch 都要对上）——
+  **没有任何运行时调用方**，只有自己的测试在调。它的头注释写着"此前从模型的回复
+  正文里正则扫一个 `.mdwall` 路径...猜中的代价不是难看,是不可判定"，
+  而那件事现在还在发生。已登记为下一轮，没有顺手改：
+  接它需要 ContentCandidateLedger / sessionId / epoch 三样运行时状态，
+  而这一轮先把最要紧的"归属"问补上。
+- **两处我自己的错**：
+  1. 写了一个 `StripLeading` 辅助函数然后**从没用它** —— `-Wunused-function` 当场报。
+     与本会话早前的 `OverlappingTurns`、`if (bufferChars == 0)` 同一个毛病
+     （写了不可达/不用的代码还留着）。已删。
+  2. 缺 `#include <cwctype>`：`std::towlower` 在 macOS 的 libc++ 上被别的头顺带
+     拉进来，在 mingw 上不会 —— 全量 mingw 语法门第一次跑就报了。**又一条
+     "本机绿、CI 红"**，而这次的根因是我少写一个 include，不是环境缺口。
+- **变异 harness 我改坏了三次**：引号/反斜杠密集的变异内联进 bash 把引号配平弄坏，
+  之后每次修补都把 harness 弄得更乱。最后整份重写、把密集变异全部挪进 python 文件。
+  教训不是" bash 难写"，是**别对一个已经坏掉的工具反复打补丁**。
+- **变异**：8 处全红、0 存活。含 workspace 未知不当独立结局 / 不看空路径 /
+  不认 workspace 自己 / 恒 EmptyPath / **前缀判断不走完整目录名（ws2 被当成 ws 的
+  子目录）** / 不统一分隔符 / 不折叠大小写 / 可用判据放宽。
+- 本机跑了什么：`CreatorPathScopeTest` 35 项（含同名前缀、分隔符、大小写、
+  workspace 自己、五种说法互异）；8 处变异全红；交叉编译 `ContentCreatorDialog.cpp`
+  0 错误；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 门全通过。
 
 ### 本轮推进记录（2026-10-04 再续二十三，P0-09 最后一项：API profile 的读取边界）
 

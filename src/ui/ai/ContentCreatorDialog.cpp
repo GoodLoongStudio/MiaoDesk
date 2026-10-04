@@ -1,4 +1,5 @@
 #include "miaodesk/AppPaths.h"
+#include "miaodesk/MiaoCreatorPathScope.h"
 #include "miaodesk/ContentCreatorDialog.h"
 
 #include "miaodesk/ConversationPanel.h"
@@ -605,6 +606,14 @@ struct DialogState {
     // Set when the user pressed 停止, so the done handler reports the cancel
     // instead of the generic "本轮请求结束" it would otherwise print.
     bool stopRequested{};
+    // 这个对话框正在做哪个作品。此前 DialogState 里**没有这个字段** ——
+    // UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次 workspace
+    // 根目录,用完就丢。于是 InspectForGeneratedPackage 扫到路径时无从判断它是不是
+    // 当前作品的:模型在回复里提到另一个 workspace 的路径(对话历史就是从当前 workspace
+    // 读回来的),那个包就会成为本轮结果并可应用到桌面。用户在 A 上说"再小一点",
+    // 落到桌面上的是 B。CREATE-06 的验收原话是"修改正确 workspace,不新建错误作品"。
+    // 归属判定在 MiaoCreatorPathScope(纯逻辑,本机可测)。
+    std::wstring workspaceRoot;
     fs::path generatedPackage;
     // True only when generatedPackage was resolved from the round that is
     // currently finishing. A failed round leaves the previous candidate loaded
@@ -1589,9 +1598,41 @@ struct DialogState {
         UpdateApplyAvailability();
     }
 
+    // 这一轮扫到的路径,是不是当前这个作品的。
+    //
+    // 此前不做这个判断:扫到什么就用什么。而对话历史是从当前 workspace 读回来的,
+    // 模型完全可能在回复里提到**另一个** workspace 的路径;用户也可能粘一个进去。
+    // 那种路径一旦被收下,它就成了本轮结果并可应用到桌面 —— 用户在 A 作品上说
+    // "再小一点",落到桌面上的是 B 作品。CREATE-06 的验收原话是
+    // "修改正确 workspace,不新建错误作品"。
+    //
+    // 判定在 MiaoCreatorPathScope(纯逻辑,本机有门);这里只把结论接到三个出口上。
+    // 注意**三处都要判**:FindGeneratedPackagePath 与目录候选是两条独立的扫描路径,
+    // 漏掉任一条都还能从那儿把别处的包拿进来。
+    bool BelongsToCurrentWorkspace(const fs::path& package) {
+        const auto scope = creator_scope::ClassifyCreatorPath(workspaceRoot, package.wstring());
+        if (creator_scope::CreatorPathScopeIsUsable(scope)) return true;
+        // 只说不做:不弹窗、不改任何状态。这一轮照旧按"没检测到有效内容包路径"走,
+        // 但在对话里留一行,让用户知道为什么扫到的东西没被采用。
+        //
+        // 不复用 AppendRuntimeFailureNote:那句的抬头是"[内容包未通过校验]",
+        // 而这里不是校验失败,是**路径不属于这个作品** —— 张冠李戴会让用户去查
+        // 包内容,而该查的是它在哪个 workspace。
+        const char* why = creator_scope::ExplainCreatorPathScope(scope);
+        if (why && *why) {
+            std::wstring text = L"\r\n\r\n[忽略了一个不属于当前作品的内容包]\r\n路径：";
+            text += package.wstring();
+            text += L"\r\n原因：";
+            text += CreatorUtf8ToWide(why);
+            text += L"\r\n";
+            AppendTranscript(text);
+        }
+        return false;
+    }
+
     void InspectForGeneratedPackage(std::wstring_view text) {
         if (auto path = FindGeneratedPackagePath(text, kind)) {
-            SetGeneratedPackage(*path);
+            if (BelongsToCurrentWorkspace(*path)) SetGeneratedPackage(*path);
             return;
         }
 
@@ -1599,9 +1640,10 @@ struct DialogState {
         if (!candidate) return;
         const std::wstring expectedExtension = PackageExtension(kind);
         if (_wcsicmp(candidate->extension().c_str(), expectedExtension.c_str()) == 0) {
-            SetGeneratedPackage(*candidate);
+            if (BelongsToCurrentWorkspace(*candidate)) SetGeneratedPackage(*candidate);
             return;
         }
+        if (!BelongsToCurrentWorkspace(*candidate)) return;
 
         // Repair only an AI-generated package directory discovered in this response.
         // Rename transactionally, validate using the product package manager, and roll
@@ -1966,6 +2008,9 @@ struct DialogState {
 
     bool UseWorkspace(std::wstring_view workspaceRoot) {
         if (workspaceRoot.empty() || !ActivateCreatorWorkspace(kind, workspaceRoot)) return false;
+        // 记住当前做的是哪个作品。必须在**成功激活之后**才记:激活失败时这个
+        // 对话框还在上一个作品上,提前记会把拿错的路径判成"在自己的 workspace 里"。
+        this->workspaceRoot = std::wstring(workspaceRoot);
         if (pi && pi->Busy()) pi->Stop();
         if (agent && agent->Busy()) agent->Stop();
         if (pi) {
@@ -2193,6 +2238,11 @@ struct DialogState {
         miaodesk::log::Info(
             L"CreatorWindow",
             L"窗口已可见，开始加载 API、对话历史与 Skill。");
+        // 打开时就记下当前作品。此前整个生命周期里都不记,所以
+        // InspectForGeneratedPackage 从头到尾没有可比的基准。
+        // 解析失败就留空 —— 空 workspaceRoot 会让归属判定报 EmptyWorkspace,
+        // 那是"不知道在哪",比假装知道更诚实。
+        workspaceRoot = ResolveCreatorWorkspaceRoot(kind);
         PopulateApiProfiles();
         InitializeConversation();
         LoadSkill();

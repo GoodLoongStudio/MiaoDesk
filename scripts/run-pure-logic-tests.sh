@@ -24,6 +24,22 @@ for f in $(find content -name '*.cpp' | sort); do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then SRCS+=("$f"); fi
 done
 
+# ⚠ **跑这个脚本的时候不要编辑它。** bash 是按需读脚本的:跑到一半改文件,
+#    它会从新的字节偏移继续读,于是报出一句和真实问题无关的语法错误
+#    (`line N: \`eMaterialPolicy SceneSerializer...' do')。本次会话踩过一次:
+#    90 个目标已经全部 PASS,末尾却出现这句,而 `bash -n` 单独跑完全通过。
+#    想改脚本,等它跑完。
+#
+# **别再往下面这份清单里加 content/ 下的 .cpp。**
+#
+# 上面第 21 行 `find content -name '*.cpp'` 已经自动发现了 content/ 下每一个能
+# 独立通过 -fsyntax-only 的实现源。在这里再手写一份,同一个 .o 就会在每个目标的
+# 链接清单里出现两次 → `duplicate symbol` → **全部目标 BUILD FAIL**。
+#
+# 这个坑这次会话里踩过两次:第一次 SearchDedupPolicy.cpp,第二次
+# MiaoLibraryRestoreMerge.cpp。两次都是"该自动发现的被我手写登记了"。
+# 知道规则和记住规则是两件事,所以把规则写在会被读到的地方 —— 也就是这里。
+#
 # content/ 之外还有两类刻意写成纯逻辑的实现:创作工作流状态机
 # (desktop/control/CreationWorkflow.cpp,CCA-02)和创作工作区策略
 # (desktop/control/CreatorWorkspacePolicy.cpp,CCA-04)。它们都不 include 任何
@@ -118,7 +134,7 @@ echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # WebAudioEnvelope 是 host->page 音频信封:它把 content/ 的 AudioSpectrumFrame 变成
 # shim 会接受的 JSON。整条链没有一行 Windows 代码,所以能在本机跑;
 # 另一半(页面侧 shim)由 tests/WebAudioEnvelopeParity.mjs 一起对。
-for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate SearchRankingBaselineTest ExamplePackagesLoad MiaoSceneTimelinePolicyTest ShippedAnimationContinuity WidgetGeometryTest ShippedWidgetGeometry WidgetRefreshPolicyTest ShippedPackageAssets AgentConfigAuthorityTest TurnLifecycleTest SessionMigrationTest LockOwnershipTest LockRecordTest LibraryRowFilterTest WallpaperCyclePolicyTest SearchDedupPolicyTest SearchGenerationTest FileSearchNoticeTest SearchHandoffTest TurnReplyScopeTest DesktopBandOrderTest; do
+for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate SearchRankingBaselineTest ExamplePackagesLoad MiaoSceneTimelinePolicyTest ShippedAnimationContinuity WidgetGeometryTest ShippedWidgetGeometry WidgetRefreshPolicyTest ShippedPackageAssets AgentConfigAuthorityTest TurnLifecycleTest SessionMigrationTest LockOwnershipTest LockRecordTest LibraryRowFilterTest WallpaperCyclePolicyTest SearchDedupPolicyTest SearchGenerationTest FileSearchNoticeTest SearchHandoffTest TurnReplyScopeTest DesktopBandOrderTest LibraryRestoreMergeTest; do
   run "$t" "$t.cpp"
 done
 

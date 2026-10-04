@@ -1,6 +1,7 @@
 #include "miaodesk/WallpaperLibrary.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/MiaoLibraryRowFilter.h"
+#include "miaodesk/MiaoLibraryRestoreMerge.h"
 #include "miaodesk/BuiltinWallpaperCatalog.h"
 #include "miaodesk/MiaoContentPackage.h"
 #include "miaodesk/MiaoContentPackageManager.h"
@@ -44,12 +45,6 @@ unsigned long long NowUnixSeconds() {
     return static_cast<unsigned long long>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
-}
-
-unsigned long long EarliestNonZero(unsigned long long a, unsigned long long b) {
-    if (a == 0) return b;
-    if (b == 0) return a;
-    return std::min(a, b);
 }
 
 std::wstring SanitizeText(std::wstring value) {
@@ -316,9 +311,17 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (!legacyIndex) continue;
         const auto stableIndex = FindIndex(stableId);
         WallpaperLibraryItem migrated = stableIndex ? items_[*stableIndex] : items_[*legacyIndex];
-        migrated.favorite = migrated.favorite || legacy.favorite;
-        migrated.importedUnixSeconds = EarliestNonZero(migrated.importedUnixSeconds, legacy.importedUnixSeconds);
-        migrated.lastUsedUnixSeconds = std::max(migrated.lastUsedUnixSeconds, legacy.lastUsedUnixSeconds);
+        // 用户状态的合并策略住在 MiaoLibraryRestoreMerge(纯逻辑,本机可测 38 项)。
+        // 此前这两行在 Load 里有**两份一字不差的副本**(这一段和下面 scene-* 那一段),
+        // 而没有任何一处说明"为什么恰好是这三个字段"。于是往 WallpaperLibraryItem
+        // 加一个字段时,两份副本都会安静地不合并它:恢复之后用户那一项变回默认值,
+        // 而 Load 照常返回 true —— 那正是 P0-07 的失败形态。
+        const library_restore::RestoredUserState restored = library_restore::MergeRestoredUserState(
+            {migrated.favorite, migrated.importedUnixSeconds, migrated.lastUsedUnixSeconds},
+            {legacy.favorite, legacy.importedUnixSeconds, legacy.lastUsedUnixSeconds});
+        migrated.favorite = restored.favorite;
+        migrated.importedUnixSeconds = restored.importedUnixSeconds;
+        migrated.lastUsedUnixSeconds = restored.lastUsedUnixSeconds;
         migrated.id = stableId;
         migrated.kind = LibraryWallpaperKind::Scene;
         migrated.source = NormalizedAbsolute(packageRoot);
@@ -371,9 +374,14 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (!content::MiaoSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
 
         WallpaperLibraryItem merged = canonical;
-        merged.favorite = merged.favorite || legacy.favorite;
-        merged.importedUnixSeconds = EarliestNonZero(merged.importedUnixSeconds, legacy.importedUnixSeconds);
-        merged.lastUsedUnixSeconds = std::max(merged.lastUsedUnixSeconds, legacy.lastUsedUnixSeconds);
+        // 同一份策略,见上面那一段的说明。两份都必须走这里 —— 只换一份等于
+        // 留下一个更旧的副本,而下次加字段漏的正是它。
+        const library_restore::RestoredUserState restored = library_restore::MergeRestoredUserState(
+            {merged.favorite, merged.importedUnixSeconds, merged.lastUsedUnixSeconds},
+            {legacy.favorite, legacy.importedUnixSeconds, legacy.lastUsedUnixSeconds});
+        merged.favorite = restored.favorite;
+        merged.importedUnixSeconds = restored.importedUnixSeconds;
+        merged.lastUsedUnixSeconds = restored.lastUsedUnixSeconds;
         if (!SaveItem(merged, error)) return false;
         const std::wstring oldSection = SectionName(legacy.id);
         if (!WritePrivateProfileStringW(oldSection.c_str(), nullptr, nullptr, manifest.c_str())) {

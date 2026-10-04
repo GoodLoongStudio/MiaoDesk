@@ -83,7 +83,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | P0-04 | 🟡 | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景。**自动部分的几何不变式与去重规则已落地**（见下）；孤立 HWND/错误背景仍要 Windows |
 | P0-05 | 🟡 | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次。**"层级恢复"的判定已提成纯逻辑并接回 `RepairRoleOrder`**：桌面带子的 z-order/样式契约（`MiaoDesktopBandOrder`，28 项断言 + 反空洞自检 + 9 处变异全红），`DesktopShellHost` 改成调它而非另持一份内联副本（见下）。**真机 E2E 仍未取证**：Explorer 实际重启 3 次、层级/启停/交互恢复前后都要 Windows |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
-| P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
+| P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：① 请求 URL 与凭据必须同源（并修掉一个会外泄 Key 的缺陷）② 库状态的恢复合并策略已提成纯逻辑，两份重复副本合并为一份**（`MiaoLibraryRestoreMerge`，38 项断言 + 9 处变异全红，见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
 | P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**AI 会话的迁移已修**（见下）；API profile / 内容库 / 组件布局三项的升级路径仍待查 |
 | P0-10 | 🟡 | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA。**校验器一直在,缺口在"要有人记得按按钮"**：新增 `workflow_run` 自动那一支（五条里任意一条跑完就按触发它的那个 SHA 核一次，checkout 锁 `workflow_run.head_sha` 以免拿新尺子量旧工件）；`verify-rc-ci.mjs` 新增"还没跑完"这一档（退出码 3，push 后第一条跑完就触发时不误报红），并把 `--runs-file` 离线复核与 9 处变异补上（含两个此前**活着**的"退出码恒 0"）。（见下）；候选 SHA 的五条 success 证据本身仍要 CI 跑完 |
@@ -481,6 +481,69 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
   覆盖新工作流与改过的脚本。
 - 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续二十一附，我把自己记过的坑又踩了一次：59 个目标全 BUILD FAIL）
+
+- 代码提交：本次（与再续二十一同一批，但那一条的"门禁全通过"是**说早了**的）。
+- **发生了什么**：`run-pure-logic-tests.sh` 跑出来 **59 个目标全 BUILD FAIL**，
+  `SUITE_RC=1`。原因是把 `content/package/MiaoLibraryRestoreMerge.cpp` 同时放进了两处：
+  - 脚本第 21 行 `find content -name '*.cpp'` **本来就会自动发现它**；
+  - 我又往第 71 行那个"额外的纯逻辑实现"清单里手写了一份。
+
+  于是每个目标的链接清单里同一个 `.o` 出现两次 → `duplicate symbol` → 全挂。
+- **为什么值得单独记一条**：这个坑我在本次会话早前已经踩过一次
+  （`SearchDedupPolicy.cpp`，当时是"5 个目标 BUILD FAIL"），当时得出的结论是
+  "`content/` 下的实现源由脚本自动发现，不要再手写登记"。这一轮我又手写了一遍。
+  **知道一条规则和记住一条规则是两回事** —— 尤其是当规则写在另一条记录的中间段落里。
+- **已把教训写进脚本本身**（下次照脚本办事就会看见，而不是靠回忆）：
+  在两处清单的注释里互相点名，并说明"`content/` 下自动发现，别手写"。
+- **怎么发现的**：不是靠"跑完看 RC"，而是发现日志里所有目标都是 BUILD FAIL
+  之后去看了 `grep -A 4`。第一反应如果是"59 个全红，IMPOSSIBLE，大概是环境问题"，
+  就会漏掉它 —— 而那个错误恰好是"我造成的"。
+- 顺带一件反讽的事：我这一轮写的模块叫 `MiaoLibraryRestoreMerge`，
+  主题是"两份一字不差的副本会在未来某天漏字段"；而我这里的登记也是两份一字不差的副本，
+  当场就让 59 个目标全挂。**同一类错误，一个在 C++ 里，一个在构建脚本里。**
+- 本机跑了什么：单独链接通过；故意重复链接一次以确认复现 `duplicate symbol`（drill 到
+  具体符号）；修掉重复登记后重跑全套件。
+
+### 本轮推进记录（2026-10-04 再续二十一，P0-07 库状态恢复 —— 两份一字不差的副本，与"加字段会安静地漏掉它"）
+
+- 代码提交：本次。
+- **为什么这一轮动了 P0-07**：上一轮我在总结里写"剩下的全部卡在物理设备上"。
+  那句是懒：P0-07 的四个恢复面里，**库状态的恢复合并策略是纯状态逻辑**，和这一轮
+  一直在提的东西是同一类。已改口，也已在面板上改掉那句。
+- **逮到的问题**：`WallpaperLibrary::Load` 要走两遍合并 —— 旧版 Scene 行 → 规范化包 ID，
+  以及旧版内置 `scene-*` 行 → 官方包 ID。两遍各自有一份**一字不差**的副本：
+
+      merged.favorite            = merged.favorite || legacy.favorite;
+      merged.importedUnixSeconds = EarliestNonZero(merged.importedUnixSeconds, legacy.importedUnixSeconds);
+      merged.lastUsedUnixSeconds = std::max(merged.lastUsedUnixSeconds, legacy.lastUsedUnixSeconds);
+
+  策略本身是对的。问题是它有两份，而且**没有任何一处说明"为什么恰好是这三个字段"**。
+  于是有一天往 `WallpaperLibraryItem` 加一个字段（比如"用户自己起的名字"），
+  两份副本都会安静地不合并它：恢复之后用户那一项变回默认值，而 `Load` 照常返回 true。
+  那正是 P0-07 的失败形态 —— "恢复成一个更短的库并报告成功"。
+- **修法**：提成 `MiaoLibraryRestoreMerge`（三条不变式：收藏不丢 or / 导入时间取更早的
+  非零 / 最近使用取更大），两遍都改成调它。顺手删掉文件作用域里那个 `EarliestNonZero` ——
+  它的逻辑搬进新模块之后，留在原处就是**第三份副本**，而"第三份副本"正是要消灭的东西。
+- **头文件里那份字段清单**：`kRestoredUserStateFields` 与结构体配对，测试断言两边一致。
+  C++ 没有反射，所以这是手写清单；它的价值不在准确，而在**漏字段会红** ——
+  而那两份副本，任何一处漏字段都无声。
+- **一处我的测试错了，不是代码错了**：第一版把三条不变式写成统一的
+  "合并结果不劣于任一输入"，结果 48 项断言红。错在方向：`importedUnixSeconds` 取的是
+  **更早**那个，所以它合理地小于其中一个输入。"不劣"只对 favorite（不丢 true）和
+  lastUsed（不丢最近）成立。改成逐条表述（不丢事实 / 不凭空造值 / 取更早的非零 / 不丢最近）
+  之后全绿。**一个笼统的"单调"会把正确的实现判成错的。**
+- **变异**：9 处全红、0 存活。含收藏改成只取 canonical / 收藏恒 false / 收藏改成 and /
+  导入时间只取 canonical / 导入时间改成取更晚 / **EarliestNonZero 退化成 max**
+  （0 被当成 1970，每次"没记导入时间"都赢得"更早"）/ EarliestNonZero 不再特判 0 /
+  最近使用恒 0 / 最近使用只取 canonical。
+- 本机跑了什么：`LibraryRestoreMergeTest` 38 项（含反空洞自检 + 4³ 组合的三条不变式穷举
+  + 交换律 + 字段清单配对）；9 处变异全红；mingw 交叉编译 `WallpaperLibrary.cpp` 0 错误
+  且无未用函数告警（那个 helper 真的死了，不是我以为）；全量 mingw 语法门真实错误 0 行；
+  22 道仓库门 + 59 道 node 门全通过。
+- 真机：**未取证**。"重启之后收藏和时间戳还在不在"要 Windows。这一轮把其中
+  **能本机验的那一半**验了，并且消灭了那份以后加字段一定会漏的副本。
 
 ### 本轮推进记录（2026-10-04 再续二十，P0-05/STAB-02：Explorer 重启后"该不该修层级"那个判定）
 

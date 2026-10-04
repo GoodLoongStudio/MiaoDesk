@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `60bf938d`（本机 44 目标全通过，exit 0；21 道仓库门 + mingw 语法门全通过；同 SHA CI 在跑）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `e08e6ece`（本机 53 个纯逻辑目标全通过，exit 0；全量 mingw 语法门真实错误 0 行；23 道仓库门 + 18 道 node 契约门全通过；同 SHA CI 在跑）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -79,14 +79,14 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | --- | --- | --- | --- | --- |
 | P0-01 | ✅ | AI Creator 真实跨进程打开门禁 | 是 | x64/ARM64 均从第二进程请求 Wallpaper/Widget Creator，确认真实窗口 Visible/Ready 后才成功 |
 | P0-02 | ✅ | ARM64 Quick Test 启动准确 Dev Host | 是 | 快测清理旧单实例并确认驻留 EXE 来自 `C:\MiaoDeskDev` |
-| P0-03 | ⬜ | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用 |
+| P0-03 | 🟡 | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用。**自动部分已落地：启停裁决抽成 `MiaoWallpaperCyclePolicy`（37 项断言 + 反空洞自检 + 8 处变异全红），含"挂载坏了要重建而不是当没坏"与重试前先脱离**（见下）；20 次循环本身与真机 Surface 计数仍要 Windows |
 | P0-04 | 🟡 | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景。**自动部分的几何不变式与去重规则已落地**（见下）；孤立 HWND/错误背景仍要 Windows |
 | P0-05 | ⬜ | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次 |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
 | P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：请求 URL 与凭据必须同源已落地并修掉一个会外泄 Key 的缺陷**（见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
 | P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**AI 会话的迁移已修**（见下）；API profile / 内容库 / 组件布局三项的升级路径仍待查 |
-| P0-10 | ⬜ | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA |
+| P0-10 | 🟡 | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA。**校验器一直在,缺口在"要有人记得按按钮"**：新增 `workflow_run` 自动那一支（五条里任意一条跑完就按触发它的那个 SHA 核一次，checkout 锁 `workflow_run.head_sha` 以免拿新尺子量旧工件）；`verify-rc-ci.mjs` 新增"还没跑完"这一档（退出码 3，push 后第一条跑完就触发时不误报红），并把 `--runs-file` 离线复核与 9 处变异补上（含两个此前**活着**的"退出码恒 0"）。（见下）；候选 SHA 的五条 success 证据本身仍要 CI 跑完 |
 
 ## 5. P0/P1 — 布局、输入与视觉
 
@@ -370,7 +370,78 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 可以接管 / 明确放弃并说出原因。宿主照它的结论走。这一步不含产品决策。
 **真正需要人拍板的是**：接管时是否允许 `TerminateProcess`,以及要不要给用户一个提示。
 
-### 本轮推进记录（2026-10-03 续，WALL-03 宿主侧时间策略）
+### 本轮推进记录（2026-10-04 再续十二，P0-10：同 SHA 门从"要人记得按"变成"会跑"）
+
+- 代码提交：本次。
+- **做的是什么**：P0-10 / REL-02 的验收是"五项均为该 SHA 的 success；不同提交的
+  通过结果不能拼接"，而 `scripts/verify-rc-ci.mjs` **一直是对的**。缺口不在尺子，
+  在入口：`rc-same-sha-gate.yml` 只有 `pull_request`(paths 过滤到它自己)和
+  `workflow_dispatch` 两个触发 —— 也就是这道门要**有人记得去按按钮**。
+  而"记得"这件事我在上一轮刚刚错过一次（`20bd7639` 的提交信息里写着
+  "17 道 node 契约门全通过"，有一道本地门当时就是红的）。所以这一轮不改校验逻辑的
+  语义，只改它什么时候跑。
+- **新增 `workflow_run` 自动那一支**：五条链（x64 Build / x64 Package / x64 MSIX /
+  Repo Hygiene / ARM64 Package）里任意一条跑完，就按**触发它的那个 SHA** 核一次。
+  两个细节值得写下来：
+  - checkout 刻意锁 `github.event.workflow_run.head_sha`。`workflow_run` 用的是
+    **默认分支上的这个文件**，不锁的话等于拿新尺子量旧工件 —— 而那正是这道门要防的
+    "不同提交的结果不能拼接"。
+  - 退出码 3（"一条都没失败，但还有没跑完的"）在这一支里当 notice 放过，不当失败。
+- **为此改了 `verify-rc-ci.mjs`**：上一版的 `evaluate` 看见 `status !== "completed"`
+    就跳过，于是"还在跑"和"没触发过"落进同一个桶、对外一律 missing。手工 dispatch
+    下看不出问题；要跟着 push 自动跑，三种结局就必须分开（success / 真失败 /
+    还没轮到它）。把"还没跑完"读成"失败"的门会在每次推送上红一次，而每次推送都红的
+    门等于没有门。现在：0 = 全过，1 = 有真失败（skipped/cancelled 都算，REL-02 原文），
+    3 = 还不能说。
+- **顺手补上两个此前活着的变异**：`--self-test` 全是进程内断言，碰不到
+  `process.exit`，所以"退出码恒 0"和"pending 与通过混为一谈"这两处变异在本文件里
+  **是活的**。退出码却是这道门的全部语义（CI 就按它判）。修法是加 `--runs-file`：
+  把当时的 run 清单存下来就能离线复核 —— 这本身就是 REL-02"保留 run 链接与产物
+  身份"要的，匿名 API 配额也不够反复打。自检于是能在子进程上看真实退出码。
+  **9 处变异全红、0 存活**（此前 7 红 2 存活）。
+- 本机跑了什么：`verify-rc-ci.mjs --self-test` 两段全过（进程内 + 退出码）；
+  9 处变异全红；23 道仓库门 + 18 道 node 契约门全通过；
+  `verify-workflow-paths.sh` / `verify-shell-scripts-parse.sh` / `verify-no-conflict-markers.sh`
+  覆盖新工作流与改过的脚本。
+- 真机：**不适用**。这一项没有真机成分，缺的是候选 SHA 的五条 success 证据。
+
+### 本轮推进记录（2026-10-04 再续十一，两件事：跑门逮到 AI-03 的二阶缺陷，SEARCH-02 去重那一半）
+
+- 代码提交：`e08e6ece`、`24be2685`（前一代码提交 `60bf938d`）。
+- **先说这一轮真正的教训**：`24be2685` 修的是我自己在 `20bd7639`（AI-03）里引入的
+  二阶缺陷，而它的提交信息里写着"17 道 node 契约门全通过"——**这句话不准确**。
+  `tests/preview-handoff-turn-guard.mjs` 当时就是红的，它不在仓库卫生工作流跑的那
+  17 道里，所以我没跑到它。我在上一轮把"跑过门"写成了结论，而实际上有一个集合
+  我从头到尾没跑。更正记录已写进 FEATURE_CHANGELOG 与本面板，不是把字删掉当没发生。
+- **缺陷本身**：用户在 AI 面板里让工具做桌面预览然后取消，取消之后、Node 子进程
+  还没退完那一小段时间里到达的预览，会被转发给搜索窗口——一个带"应用"按钮的窗口
+  为用户已经放弃的请求弹出来，点一下改掉桌面。AI-03 把"忙"从两态改成三相之后
+  "已请求取消"仍然算忙，而这道闸门问的是 `!pi->Busy()`，于是误以为轮次还在跑。
+  **修好一个不变式，顺手放宽了另一处依赖旧语义的闸门**——这类后果只有把门跑到
+  才看得见。
+- **修法**：`PiRuntime` 多一个 `TurnActive()`（`phase == Running`）。与 `Busy()`
+  只差 Stopping 那一态，而那一态正是两个问题的分界："还能不能再起一轮"要把取消中
+  算忙（AI-03 要的，另 14 处读它），"该不该把结果拿给用户看"要把取消中算结束
+  （这道闸门要的）。两个都问 `Busy()` 就会有一个答错。
+- **那道门本身也错了**：它把 `bool Busy() const noexcept { return busy_.load(); }`
+  整个字面量钉死了——那是旧拼写不是不变式，AI-03 换成相位之后它就红，红在一个
+  刻意的改进上。现在钉不变量，13 处变异全红、0 存活，其中"门退回问 `Busy()`"
+  就是这个缺陷本身，"掏空闸门只留 `return TRUE;`"在上一版是**存活**的
+  （handler 里还有第二个 `return TRUE`，裸的正则照样绿）。
+- **SEARCH-02 去重那一半**：`Lower(entry.name + L"|" + entry.target)` 此前内联在
+  `AppSearch::BuildIndex` 里，而那个文件 include `<windows.h>`，本机一行都跑不到。
+  提成 `SearchDedupPolicy` 并**接回去**（不是另抄一份——抄一份就等于本机测一行、
+  真机跑另一行）。19 项断言 + 反空洞自检 + 8 处变异全红。顺带补上两个此前没人看住的：
+  空记录不再被并成一条（"索引里有几条坏记录"这个线索不再被抹掉）、超长 name 不去重
+  （注册表可以被写成任意长）。
+- 本机跑了什么：纯逻辑套件 **53 个目标全 PASS**（exit 0，新增 `SearchDedupPolicyTest`
+  在册且无重复登记）；**全量 mingw 交叉语法门真实错误 0 行**（仅剩已登记的 mingw
+  缺口）；23 道仓库门 + **18 道 node 契约门**全通过（这一轮把 node 门从头到尾跑了一遍，
+  才发现上一轮漏了的那一道）。
+- 真机：**未取证**。SEARCH-02 的真实索引来自开始菜单与注册表，"看见两个 Chrome"
+  只有真机索引能复现；取消后那一小段窗口里预览到底会不会到也要 Windows。
+
+
 
 - 代码提交：`bd23cfe6`（前一代码提交 `51d01b07`）；本轮文档 + 代码，未提升版本号。
 - 本机跑了什么：40 个纯逻辑目标全通过（exit 0）—— 新增 `MiaoSceneTimelinePolicyTest`

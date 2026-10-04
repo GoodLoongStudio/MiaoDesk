@@ -580,6 +580,12 @@
 - [ ] 完成本项；负责人：待领取；证据：待补。
 
 - **现状 / 依据**：已有同 SHA 发布检查，不代表当前提交已通过。依据 `RC_KNOWN_LIMITATIONS.md`。
+  **2026-10-04 更新**：校验器本身一直是对的，缺口在入口 —— 此前只有 `pull_request`
+  （paths 过滤到它自己）和 `workflow_dispatch` 两个触发，也就是这道门要**有人记得
+  去按按钮**。现已补 `workflow_run` 自动那一支：五条链里任意一条跑完就按触发它的
+  那个 SHA 核一次；`verify-rc-ci.mjs` 也补出"还没跑完"这一档（退出码 3）、
+  `--runs-file` 离线复核与 9 处变异（其中两个"退出码恒 0"此前是活的）。
+  **仍然不代表任何提交已通过** —— 缺的是候选 SHA 的五条 success 证据本身。
 - **依赖 / 入口**：候选范围内修复合入后；`scripts/verify-rc-ci.mjs`、`.github/workflows/rc-same-sha-gate.yml`。
 - **待办**：冻结候选完整 SHA；检查 x64 Build、x64 Package、x64 MSIX、Repo Hygiene、ARM64 Package；保留 run 链接与产物身份，缺失的工作流按正式流程运行。
 - **交付 / 验收**：五项均为该 SHA 的 success；不同提交的通过结果不能拼接，skipped/cancelled 不算通过。先审定发布范围，不把每个非阻塞美化项都强制绑进 RC。

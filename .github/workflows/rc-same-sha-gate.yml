@@ -11,6 +11,29 @@ on:
         description: 'Exact commit SHA whose release workflows must all be green'
         required: true
         type: string
+  # 自动那一支:五条发布链里任意一条跑完,就按**触发它的那个 SHA** 核一次。
+  #
+  # 为什么要有这一支:P0-10 / REL-02 的验收是"五项均为该 SHA 的 success;不同提交的
+  # 通过结果不能拼接",而此前这道门只有 workflow_dispatch 一个入口 —— 也就是说,
+  # 它要**有人记得去按按钮**。记得去按按钮这件事我已经错过一次了(见开发面板
+  # 2026-10-04 再续十一):上一轮我在提交信息里写"17 道 node 契约门全通过",
+  # 而有一道本地门当时就是红的,原因正是没有一个东西替我记得跑。
+  # 把"记得"换成"会跑",是这道门唯一的改进方向 —— 校验器本身一直是对的。
+  #
+  # 注意 workflow_run 用的是**默认分支上的这个文件**,不是触发它的那次提交上的。
+  # 所以 checkout 刻意锁 `github.event.workflow_run.head_sha`:要拿产生这些 run 的
+  # 那份 verify-rc-ci.mjs 去核它们,否则等于用新尺子量旧工件。
+  workflow_run:
+    workflows:
+      - 'Windows x64 Build'
+      - 'Windows x64 Package'
+      - 'Windows x64 MSIX'
+      - 'Repo Hygiene'
+      - 'Windows ARM64 Package'
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   actions: read
@@ -38,3 +61,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/verify-rc-ci.mjs '${{ inputs.target_sha }}'
+
+  verify-push:
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the five RC workflows succeeded on the exact SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        # 退出码 3 是"一条都没失败,但还有没跑完的"—— 那不是没通过,是还不能说。
+        # push 之后第一条发布链跑完就会触发这一支,另外四条还没影,此时按失败算的
+        # 话这道门会在每次推送上红一次,而每次推送都红的门等于没有门。
+        # 所以 3 当 notice 放过去,0 和 1 才是结论。
+        run: |
+          set +e
+          node scripts/verify-rc-ci.mjs "$TARGET_SHA"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then
+            echo "::notice::同 SHA 的五条发布链还没跑完($TARGET_SHA)—— 这一轮不算结论,等最后一条跑完再核"
+            exit 0
+          fi
+          exit "$rc"

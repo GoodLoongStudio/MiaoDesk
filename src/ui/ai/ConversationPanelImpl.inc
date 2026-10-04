@@ -1,4 +1,5 @@
 #include "miaodesk/L3CliWindow.h"
+#include "miaodesk/MiaoTurnReplyScope.h"
 #include "miaodesk/AppPaths.h"
 #include "miaodesk/PiRuntime.h"
 #include "miaodesk/GeneratedDesktopPreview.h"
@@ -1735,7 +1736,14 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kDeltaMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        if (!payload || payload->generation != state->generation || payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
+        // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
+        // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
+        if (!payload || !TurnReplyIsCurrent(payload->generation, state->generation,
+                                            gCliGeneration.load(std::memory_order_relaxed))) {
+            return 0;
+        }
         state->streaming += payload->text;
         if (state->assistantIndex < state->entries.size()) state->entries[state->assistantIndex].text = state->streaming;
         if (state->activity.visible && state->activity.steps.empty()) {
@@ -1748,7 +1756,14 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kPiDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        if (!payload || payload->generation != state->generation || payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
+        // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
+        // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
+        if (!payload || !TurnReplyIsCurrent(payload->generation, state->generation,
+                                            gCliGeneration.load(std::memory_order_relaxed))) {
+            return 0;
+        }
         PollPiActivity(*state);
         if (payload->text.empty()) {
             AppendRouteLog(L"route: primary pi success");
@@ -1762,7 +1777,14 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kDirectDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        if (!payload || payload->generation != state->generation || payload->generation != gCliGeneration.load(std::memory_order_relaxed)) return 0;
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
+        // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
+        // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
+        if (!payload || !TurnReplyIsCurrent(payload->generation, state->generation,
+                                            gCliGeneration.load(std::memory_order_relaxed))) {
+            return 0;
+        }
         if (payload->text.empty()) AppendRouteLog(L"fallback: direct api success");
         else AppendRouteLog(L"fallback: direct api failed; error=" + payload->text);
         FinishTurn(*state, payload->text, true);

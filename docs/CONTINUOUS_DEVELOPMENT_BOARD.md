@@ -2,7 +2,9 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `991d10f3`（AI-05 profile 切换闸门；本机 **64 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码；AI-05 起多一个 `ProfileSwitchGuardTest`）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `991d10f3`（AI-05 profile 切换闸门；本机 **64 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码；AI-05 起多一个 `ProfileSwitchGuardTest`）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。`991d10f3`（AI-05）与它的 docs 提交
+`5f0b9378` 上五条发布链**全 success**、`RC Same-SHA Gate` 判 verdict 0 —— 这是 AI-05
+拿到真 Evidence 的那一条：run 37216824988 / 24981 / 25028 / 24985 / 24990。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -988,8 +990,14 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   引用，它能机器核对的只有 9 条** —— 剩下 71 条靠作者自己老实。这次那条错引用也是
   因为它带括号（`AskAsync(...)`）被过滤掉、压根没进那 9 条，才一路漏过去。所以本轮
   的引用是**逐条手工核对**的，不是靠门。
+- **CI 已取证（同 SHA 门）**：`5f0b9378` 上五条发布链全 success、`RC Same-SHA Gate`
+  判 verdict 0 —— Windows x64 Build `…/runs/37216824988`、x64 Package `…/24981`、
+  MSIX `…/25028`、Repo Hygiene `…/24985`、ARM64 Package `…/24990`。这一条覆盖的是
+  "mingw 与 MSVC 结论分歧"那一类风险和我改过的两个真实 TU。
 - 真机：**未取证**。"轮次跑到一半时拉开下拉会不会真的把上下文清掉"、"选完新 profile
-  后下一轮是不是真走新端点"都要 Windows 上真选一次。所以这一项仍是 🟡。
+  后下一轮是不是真走新端点"都要 Windows 上真选一次 —— **CI 的绿不能替代它**：
+  这两件事的失败形态是用户看得见的行为，而 CI 上没有任何一步会去拉一次下拉。
+  所以这一项仍是 🟡。
 
 ### 本轮推进记录（2026-10-04 再续十六，SEARCH-05：搜索框那段词整段消失）
 

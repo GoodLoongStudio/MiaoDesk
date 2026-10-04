@@ -2,7 +2,7 @@
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
-- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `fa088291`（本机 **58 个纯逻辑目标全通过**，exit 0；全量 mingw 语法门真实错误 0 行；22 道仓库门 + **59 道 node 契约门**全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
+- 代码核对基线 SHA：`d02812d63a2dbf480c4cb00faffb4f69a38b3bc4`；最新代码提交 `5abaebff`（本机 **58 个纯逻辑目标全通过，exit 0**（前台跑，拿到真实退出码）；全量 mingw 语法门真实错误 0 行；22 道仓库门 + 58 道 node 契约门全通过）。同 SHA CI：`e7edf59b` 与 `2826ffa4` 两个 SHA 的五条发布链全 success、`RC Same-SHA Gate` 判 verdict 0；`3ffa2eea` 与 `c399cb62` 上该门各红过两次（已改成让红自己留下 annotation，见再续十八）；`0f10c685` 上红的那一次被新装的 annotation **当场说清** —— 是"连推顶掉了工作流"加"CI 环境漏进自检探针"，两个都已修（见再续十九）。`a85efd5c`（CAP-03）的 CI 已 **8/8 全 success**。
 - 专业版规划：[PROFESSIONAL_DESKTOP_PLAN.md](PROFESSIONAL_DESKTOP_PLAN.md)；更新：2026-10-03
 - 上游：`PRODUCT_VISION.md` → `DESIGN_BASELINE.md` → `DEVELOPMENT_ROADMAP.md`
 - 详细验收与历史证据：`TODO.md`
@@ -806,13 +806,17 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
 
-### P0-07「库状态一致恢复」：一处定位完毕的静默丢行（未修，登记在案）
+### P0-07「库状态一致恢复」：静默丢行（已修，`MiaoLibraryRowFilter`）
 
 排查 `WallpaperLibrary` 的恢复路径时定位到一个真实缺陷,形状与本会话修过的几处相同
 (静默失败 + 调用方只问成败),但本轮**没有动手修** —— 剩下的上下文不足以把改动做完并跑完
 验证,所以先把位置与见证固定下来,而不是留下半截代码。
 
-**位置与见证**:`src/desktop/wallpaper/library/WallpaperLibrary.cpp:283`
+> 状态:**已修**(`5253d9e1` `fix(library)`,判定与那句话在 `MiaoLibraryRowFilter`,
+> 纯逻辑、有门,29 项断言)。下面保留当时的定位与推理过程 —— 它不是历史档案,
+> 是"这一类缺陷长什么样"的样本。
+
+**位置与见证(修复前)**:`src/desktop/wallpaper/library/WallpaperLibrary.cpp:283`
 
     if (!item.id.empty() && item.kind != LibraryWallpaperKind::Unknown) items_.push_back(std::move(item));
 

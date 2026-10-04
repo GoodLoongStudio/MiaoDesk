@@ -63,7 +63,18 @@ jobs:
         run: node scripts/verify-rc-ci.mjs '${{ inputs.target_sha }}'
 
   verify-push:
-    if: github.event_name == 'workflow_run'
+    # 触发它的那条被取消时**不核**。
+    #
+    # 实测(0f10c685 / 37177639787):连着推两个提交,第二个会把第一个在跑的工作流
+    # 顶掉,被顶掉的那条以 cancelled 结束 —— 于是这道门按"五条链里有一条真的失败了"
+    # 报红,而真相只是"我几秒后又推了一次"。那不是发布坏了,是门被自己的节奏骗了。
+    # 取消一条工作流的理由有很多,但"被更新的提交顶掉"这一种必须放过:
+    # 每次连推都红一道的门,等于每次连推都要人来看一眼。
+    #
+    # 另一处仍然算真失败:如果触发这条是 success,而**别的**链被取消了,
+    # 那一条对这个 SHA 确实没过 —— 那种情况照旧红,并且 annotation 会说明
+    # "可能是后续推送顶掉了它,也可能是有人手动取消"。
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -26,8 +26,12 @@ const INFRA = 4;
 // 读到 annotations,job log 下载 403 —— 于是那四次红在证据上只剩下同一句
 // "Process completed with exit code 1"。分不清是"发布链真的失败了"还是"门自己问错了",
 // 就什么都不能改:前者要去看发布链,后者要去看这道门。
-// 本机重放 c399cb62 得到的是 verdict 3(退出码 3),与 CI 上的 1 **不一致** —— 这个不一致
-// 至今没有解释(拿不到日志)。所以先让它下一次能自己说清楚,而不是再攒一个谜。
+//
+// 补上它之后的第一次红(0f10c685 / 37177639787)立刻就说清了:**Repo Hygiene: cancelled**
+// —— 连着推两个提交,第二个把第一个在跑的工作流顶掉了。那不是发布坏了,是门被自己的
+// 节奏骗了;工作流那一支已经加了"触发它的那条被取消就不核"。另一道同一次的红是自检
+// 自己:CI 上的 GITHUB_ACTIONS 漏进探针子进程,让"不在 Actions 里"那条断言假红。
+// 两者都在当轮修掉。
 // 只在 GitHub Actions 里发:那些行在本机只是噪音。
 const annotate = (level, text) => {
   if (process.env.GITHUB_ACTIONS) console.log(`::${level}::${text}`);
@@ -238,10 +242,14 @@ if (process.argv.includes("--self-test")) {
     let timer;
     try {
       const code = await new Promise((resolve, reject) => {
-        const child = spawn(nodeExe, [self, "abc"], {
-          env: { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_TOKEN: "", ...extraEnv },
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        // GITHUB_ACTIONS 显式清掉。CI 上它本来是 "true",会漏进每个探针的子进程 ——
+        // 于是"不在 Actions 里就不发 workflow 命令"这条断言在 CI 上反而红,而本机是绿的。
+        // 第一版就是这样:自检在 CI 上挂了两次(371763510735),本机全过。
+        // 一个只在 CI 上红的自检比没有自检更坏:它会让每次推送都多一道莫名的红。
+        const env = { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_TOKEN: "" };
+        delete env.GITHUB_ACTIONS;
+        Object.assign(env, extraEnv);
+        const child = spawn(nodeExe, [self, "abc"], { env, stdio: ["ignore", "pipe", "pipe"] });
         child.stdout.on("data", (d) => { stdout += d; });
         child.stderr.on("data", (d) => { stderr += d; });
         child.on("error", reject);
@@ -364,8 +372,17 @@ if (process.argv.includes("--self-test")) {
   p = await probe(jsonReply({ message: "boom" }, 500));
   if (p.out.includes("::error::")) throw new Error(`workflow commands must not appear outside Actions:\n${p.out}`);
 
+  // 4h. 探针默认必须是干净的:CI 上的 GITHUB_ACTIONS 不许漏进子进程。
+  //     上面 4g 第一版在 CI 上假红,就是因为漏进来之后"不在 Actions 里"这个前提
+  //     根本不成立,而断言还在拿它当真。
+  p = await probe(jsonReply({ message: "boom" }, 500));
+  if (p.out.includes("::error::")) {
+    throw new Error(`probe 必须默认清掉 GITHUB_ACTIONS(CI 上它会漏进子进程):\n${p.out}`);
+  }
+
   console.log("verify-rc-ci self-test passed (exit 4: the gate itself broke)");
   console.log("verify-rc-ci self-test passed (annotations on a red run)");
+  console.log("verify-rc-ci self-test passed (probe is hermetic)");
   process.exit(0);
 }
 
@@ -454,7 +471,13 @@ console.log(JSON.stringify({ sha, verdict: { code: verdict.code }, required: res
 
 annotate("error", `同 SHA 门结论:verdict ${verdict.code}（SHA ${sha}）`);
 for (const r of verdict.failed) {
-  annotate("error", `FAILED  ${r.name}: ${r.conclusion}  ${r.url || ""}`);
+  // cancelled 有两种来路,而它们的下一步完全相反:可能是后续推送顶掉了这一条
+  // (那种情况该去看更新的 SHA),也可能是有人手动取消(那种情况要重跑)。
+  // 只写 "cancelled" 会让人以为发布坏了,所以把两种都写上。
+  const note = r.conclusion === "cancelled"
+      ? "（可能是后续推送顶掉了它 —— 那种情况看更新的 SHA 就行；也可能有人手动取消 —— 那种情况要重跑）"
+      : "";
+  annotate("error", `FAILED  ${r.name}: ${r.conclusion}  ${r.url || ""}${note}`);
 }
 for (const r of verdict.pending) {
   annotate("warning", `PENDING ${r.name}: ${r.conclusion}  ${r.url || ""}`);

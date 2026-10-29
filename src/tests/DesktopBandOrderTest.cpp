@@ -42,6 +42,14 @@ std::vector<DesktopBandSurface> LegacyHealthy() {
     return v;
 }
 
+// Progman 暂时没有 WorkerW 时，图标和壁纸仍是同一父窗口的兄弟节点；
+// Widget 采用 layered 样式，但同样必须排在图标之前。
+std::vector<DesktopBandSurface> ProgmanFallbackHealthy() {
+    auto v = RaisedHealthy();
+    v[0].isLayered = true;
+    return v;
+}
+
 // 反空洞自检。两个方向各喂一个:一个明知该修(壁纸被改坏了),
 // 一个明知不该修(healthy 的带子)。恒 true 会让修复永远不跑,
 // 恒 false 会让 DWM 每秒重组整条带子。
@@ -71,6 +79,8 @@ int wmain() {
               "raised 下 widget 非 layered + widget 在前 + 壁纸 layered&transparent → 有序");
         Check(DesktopBandOrderSatisfied(LegacyHealthy(), DesktopBandMode::Legacy),
               "legacy 下 widget layered + 壁纸 layered&transparent → 有序");
+        Check(DesktopBandOrderSatisfied(ProgmanFallbackHealthy(), DesktopBandMode::ProgmanFallback),
+              "Progman fallback: layered widget + DefView above wallpaper → 有序");
         Check(DesktopBandOrderSatisfied({}, DesktopBandMode::Raised),
               "空带子算有序(没什么可违反的;修一个空带子只会空转)");
     }
@@ -89,6 +99,14 @@ int wmain() {
         s = RaisedHealthy(); std::swap(s[0], s[2]);
         Check(!DesktopBandOrderSatisfied(s, DesktopBandMode::Raised),
               "组件排在壁纸之后 → 需要修(用户点不到组件)");
+        // Progman fallback 下不能只检查样式：壁纸在 DefView 上面仍然是坏的。
+        s = ProgmanFallbackHealthy(); std::swap(s[1], s[2]);
+        Check(!DesktopBandOrderSatisfied(s, DesktopBandMode::ProgmanFallback),
+              "fallback 下壁纸盖住 Explorer DefView → 必须修复");
+        // Progman fallback 下 widget 也不能藏在图标后面。
+        s = ProgmanFallbackHealthy(); std::swap(s[0], s[1]);
+        Check(!DesktopBandOrderSatisfied(s, DesktopBandMode::ProgmanFallback),
+              "fallback 下 Widget 被 DefView 盖住 → 必须修复");
         // 图标层排在壁纸之后:壁纸盖住桌面图标。
         s = RaisedHealthy(); std::swap(s[1], s[2]);
         Check(!DesktopBandOrderSatisfied(s, DesktopBandMode::Raised),
@@ -157,6 +175,9 @@ int wmain() {
         s[2].isTransparent = false;   // 就算它样式是坏的
         Check(DesktopBandOrderSatisfied(s, DesktopBandMode::Raised),
               "不可见的壁纸层不参与判定(哪怕它样式是坏的)");
+        s = RaisedHealthy(); s[1].isVisible = false; std::swap(s[1], s[2]);
+        Check(!DesktopBandOrderSatisfied(s, DesktopBandMode::Raised),
+              "DefView 暂时隐藏时仍要防止壁纸跑到图标层上面");
         // 不可见的**组件**仍然参与:它占着 z-order 上该在的位置,排错了照样点不到。
         auto t = RaisedHealthy();
         t[0].isVisible = false;

@@ -46,7 +46,8 @@ bool DesktopShellHost::CurrentGenerationValid() const noexcept {
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) return false;
     if (snapshot_.mode == DesktopShellMode::RaisedDesktop) {
-        return WindowStillParented(snapshot_.shellDefView, snapshot_.progman) &&
+        return (GetWindowLongPtrW(currentProgman, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) != 0 &&
+               WindowStillParented(snapshot_.shellDefView, snapshot_.progman) &&
                WindowStillParented(snapshot_.workerW, snapshot_.progman);
     }
     if (snapshot_.mode == DesktopShellMode::LegacyWorkerW) {
@@ -57,10 +58,12 @@ bool DesktopShellHost::CurrentGenerationValid() const noexcept {
         return true;
     }
     if (snapshot_.mode == DesktopShellMode::ProgmanFallback) {
-        if (snapshot_.shellDefView && GetParent(snapshot_.shellDefView) != snapshot_.progman &&
-            snapshot_.legacyDefViewParent != GetParent(snapshot_.shellDefView)) {
-            return false;
-        }
+        // A transient Progman fallback is safe only while Explorer's DefView
+        // remains an actual Progman sibling. Otherwise a wallpaper could cover
+        // newly created icons before the next attachment/repair pass.
+        if (!WindowStillParented(snapshot_.shellDefView, snapshot_.progman)) return false;
+        if ((GetWindowLongPtrW(currentProgman, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) != 0 &&
+            FindWindowExW(currentProgman, nullptr, L"WorkerW", nullptr)) return false;
         return true;
     }
     return false;

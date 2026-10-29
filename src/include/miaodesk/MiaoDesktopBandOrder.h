@@ -47,10 +47,11 @@ struct DesktopBandSurface {
 
 // 上一模式：raised desktop（WorkerW 新代）还是 legacy（Progman fallback）。
 // 它决定组件的分层契约——raised 下组件是**非** layered 的直接表面，
-// legacy 下保留 layered 的 UpdateLayeredWindow 契约。
+// legacy / Progman fallback 下保留 layered 的 UpdateLayeredWindow 契约。
 enum class DesktopBandMode {
-    Legacy,
-    Raised,
+    Legacy,          // WorkerW: DefView lives in a different window
+    Raised,          // Progman with no-redirection: direct native widgets
+    ProgmanFallback, // Progman with icons: widgets remain layered
 };
 
 // 这条带子现在满足契约吗。
@@ -64,6 +65,7 @@ enum class DesktopBandMode {
 //   4. 图标层必须排在壁纸层之前（raised）—— 否则壁纸盖住桌面图标；
 //   5. 壁纸层必须同时 layered 且 transparent —— 否则它要么挡点击，要么不透。
 //
+// 图标层即使暂时隐藏也应参与顺序检查，避免重新显示时被壁纸盖住。
 // 不可见的壁纸层不参与判定：`RepairRoleOrder` 收集时就把它滤掉了
 // （`role != Widget && IsWindowVisible(child) == FALSE` 则跳过）。
 // 这不是省略，是一条规则：隐藏中的壁纸层不该让整条带子被判成"需要修"，

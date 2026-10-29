@@ -97,7 +97,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest --parallel 2>&1
+          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest MiaoDeskDesktopBandOrderTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
@@ -108,6 +108,14 @@ jobs:
               }
             throw 'x64 build failed.'
           }
+
+      - name: Verify Explorer desktop icon/wallpaper z-order contract
+        shell: pwsh
+        run: |
+          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskDesktopBandOrderTest.exe -File -Recurse | Select-Object -First 1
+          if (-not $test) { throw 'Desktop band order regression executable was not built.' }
+          & $test.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Desktop band order regression failed: $LASTEXITCODE" }
 
       - name: Smoke-test AI creator windows
         shell: pwsh

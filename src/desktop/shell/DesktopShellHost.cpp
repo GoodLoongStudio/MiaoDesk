@@ -127,6 +127,7 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
         return false;
     }
 
+    const HWND previousProgman = snapshot_.progman;
     snapshot_.progman = next.progman;
     RequestWallpaperLayer();
 
@@ -156,7 +157,19 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
     else if (next.workerW) next.mode = DesktopShellMode::LegacyWorkerW;
     else next.mode = DesktopShellMode::ProgmanFallback;
 
-    const bool generationChanged = snapshot_.progman != next.progman || snapshot_.workerW != next.workerW ||
+    // RequestWallpaperLayer temporarily updates snapshot_.progman; compare against
+    // the actual previous Explorer generation instead of the just-written HWND.
+    if (next.mode == DesktopShellMode::ProgmanFallback &&
+        (!next.shellDefView || GetParent(next.shellDefView) != next.progman)) {
+        // Explorer may still be creating its desktop icon layer. Never expose a
+        // full-screen wallpaper directly on Progman unless icons are confirmed
+        // to be siblings we can place above it. The next health tick retries.
+        snapshot_ = {};
+        if (error) *error = L"DesktopShellHost: waiting for Explorer icon layer before Progman fallback";
+        return false;
+    }
+
+    const bool generationChanged = previousProgman != next.progman || snapshot_.workerW != next.workerW ||
                                    snapshot_.shellDefView != next.shellDefView || snapshot_.explorerPid != next.explorerPid ||
                                    snapshot_.mode != next.mode;
     if (generationChanged) ++generation_;
@@ -242,54 +255,48 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
         DesktopSurfaceRole role;
     };
     std::vector<KnownSurface> known;
+    // On Progman, DefView is the real desktop-icon sibling. It must participate
+    // in the order verdict, but must never be styled or reparented by MiaoDesk.
+    // Previously the verdict only saw our own surfaces, so a wallpaper above
+    // DefView looked "healthy" and was never moved back below the icons.
+    const bool iconSharesParent = parent == snapshot_.progman && snapshot_.shellDefView &&
+                                  IsWindow(snapshot_.shellDefView) && GetParent(snapshot_.shellDefView) == parent;
+    const DesktopBandMode bandMode = !iconSharesParent
+        ? DesktopBandMode::Legacy
+        : HasExtendedStyle(parent, kRaisedDesktopFlag)
+            ? DesktopBandMode::Raised
+            : DesktopBandMode::ProgmanFallback;
+    std::vector<DesktopBandSurface> band;
     for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (!IsWindow(child)) continue;
+        if (iconSharesParent && child == snapshot_.shellDefView) {
+            band.push_back({DesktopBandRole::IconLayer,
+                            (GetWindowLongPtrW(child, GWL_STYLE) & WS_CHILD) != 0,
+                            false, false, true});
+            continue;
+        }
         const DesktopSurfaceRole role = InferRole(child);
         const bool knownSurface = IsWindowClass(child, kWallpaperHostClass) || IsWindowClass(child, kWebHostClass) ||
                                   role == DesktopSurfaceRole::Widget;
         if (!knownSurface) continue;
         if (role != DesktopSurfaceRole::Widget && IsWindowVisible(child) == FALSE) continue;
         known.push_back({child, role});
-    }
-    if (known.empty()) return;
 
-    // The host runs this repair on every sync tick. When the desktop band
-    // already satisfies the contract, re-issuing style/z-order churn makes DWM
-    // recomposite the whole band every second and reads as wallpaper flicker.
-    // Verify first; touch windows only when something violates the contract.
-    //
-    // 那个"还要不要修"的判定住在 MiaoDesktopBandOrder(纯逻辑,本机可测 28 项)。
-    // 此前它内联在下面 —— 与排序、去重、交接、代号算术是同一个病:住在要
-    // `<windows.h>` 的文件里,本机一行都跑不到。而它两个方向的失败都用户看得见:
-    // 恒说"已经有序"则 Explorer 重启后没人修;恒说"需要修"则每一跳都重发
-    // z-order,壁纸闪。这里只做一次形态转换:把窗口换成它要的那些事实。
-    const bool raised = snapshot_.mode == DesktopShellMode::RaisedDesktop ||
-                        snapshot_.mode == DesktopShellMode::ProgmanFallback;
-    std::vector<DesktopBandSurface> band;
-    band.reserve(known.size());
-    for (const auto& surface : known) {
-        const LONG_PTR style = GetWindowLongPtrW(surface.window, GWL_STYLE);
-        const LONG_PTR exStyle = GetWindowLongPtrW(surface.window, GWL_EXSTYLE);
+        const LONG_PTR style = GetWindowLongPtrW(child, GWL_STYLE);
+        const LONG_PTR exStyle = GetWindowLongPtrW(child, GWL_EXSTYLE);
         DesktopBandSurface facts;
-        switch (surface.role) {
-            case DesktopSurfaceRole::Widget:
-                facts.role = DesktopBandRole::Widget;
-                break;
-            default:
-                // 图标层的归属判断仍在这里(它要知道 kDefViewClass,那是 Windows 的事);
-                // 顺序契约本身是纯的。两者分开:归属问"这扇窗是谁",顺序问"该排第几"。
-                facts.role = (raised && IsWindowClass(surface.window, kDefViewClass))
-                                 ? DesktopBandRole::IconLayer
-                                 : DesktopBandRole::Wallpaper;
-                break;
-        }
+        facts.role = role == DesktopSurfaceRole::Widget ? DesktopBandRole::Widget : DesktopBandRole::Wallpaper;
         facts.isChild = (style & WS_CHILD) != 0;
         facts.isLayered = (exStyle & WS_EX_LAYERED) != 0;
         facts.isTransparent = (exStyle & WS_EX_TRANSPARENT) != 0;
-        facts.isVisible = IsWindowVisible(surface.window) != FALSE;
-        band.push_back(std::move(facts));
+        facts.isVisible = IsWindowVisible(child) != FALSE;
+        band.push_back(facts);
     }
-    if (DesktopBandOrderSatisfied(band, raised ? DesktopBandMode::Raised : DesktopBandMode::Legacy)) return;
+    if (known.empty()) return;
+
+    // Avoid DWM flicker: touch z-order only when the actual icon/widget/
+    // wallpaper sibling sequence violates the contract.
+    if (DesktopBandOrderSatisfied(band, bandMode)) return;
 
     std::vector<HWND> wallpapers;
     std::vector<HWND> widgets;
@@ -298,8 +305,9 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
         (surface.role == DesktopSurfaceRole::Widget ? widgets : wallpapers).push_back(surface.window);
     }
 
-    if (raised) {
-        // Top -> bottom: widgets (interactive) -> desktop icons -> wallpapers -> WorkerW.
+    if (iconSharesParent) {
+        // Top -> bottom: widgets -> Explorer's DefView -> wallpapers -> WorkerW.
+        // HWND_BOTTOM moves our wallpaper below DefView without touching Explorer.
         for (HWND window : wallpapers) {
             SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         }

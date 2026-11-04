@@ -18,7 +18,7 @@
 #
 # 两版判据的演化,记在这里免得再走一遍:
 #   第一版「扫所有二进制扩展名」→ 当场误报三个**故意**提交的二进制
-#     (vendored 的 WebView2LoaderStatic.lib、downloads/store/ 下的 Store 分发包)。
+#     (vendored 的 WebView2LoaderStatic.lib、历史 Store 分发包)。
 #     它们的引入提交本来就写明了意图,README 也登记了。把红灯挂在正确代码上,
 #     比不设门更糟:它会训练人忽略这道门。
 #   第二版「按扩展名判 + 逐文件 allowlist」→ 仍然不对。`git ls-files -I` 判出的
@@ -86,8 +86,6 @@ REGIONS = [
      'Hackathon 提交材料包含演示视频,由 4d67ea25 "docs: add WhaleDesK hackathon demo video" 明确引入并需随提交材料归档。'),
     ('packaging/store/assets/',
      'Store 展示素材,由 e20114b 一起生成并登记。'),
-    ('downloads/store/',
-     'Store 提交通道分发的已签名安装包。它们必须可复现地拿到,a008aaa / b44bf19。'),
     ('runtime/x64/node/',
      'vendored 的 Node 运行时,锁版本,构建时不得联网下载(0c84de5)。'),
     ('runtime/arm64/node/',

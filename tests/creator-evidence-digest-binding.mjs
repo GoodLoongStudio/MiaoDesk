@@ -16,10 +16,10 @@ import assert from "node:assert/strict";
 // 三条同时成立时,摘要不可能在调用点写错;少任何一条,上面那种回退就能悄悄回来。
 
 const read = (path) => fs.readFileSync(path, "utf8");
-const main = read(process.env.MIAODESK_MAIN_CPP ?? "src/app/main.cpp");
+const main = read(process.env.WHALEDESK_MAIN_CPP ?? "src/app/main.cpp");
 
 const signature =
-  "bool CollectEvidence(const miaodesk::creator::RenderEvidenceRequirements& requirements,";
+  "bool CollectEvidence(const whaledesk::creator::RenderEvidenceRequirements& requirements,";
 const start = main.indexOf(signature);
 assert.notStrictEqual(start, -1, "CollectEvidence must exist in src/app/main.cpp");
 

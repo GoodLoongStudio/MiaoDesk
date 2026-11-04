@@ -1,8 +1,8 @@
-#include "miaodesk/CreatorRuntimeScheduler.h"
+#include "whaledesk/CreatorRuntimeScheduler.h"
 
 #include <algorithm>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 CreatorRuntimeEffect MakeEffect(CreatorRuntimeEffectType type, const CreatorRuntimeRequest& request) {
@@ -320,4 +320,4 @@ std::vector<CreatorRuntimeEffect> CreatorRuntimeScheduler::Tick(std::uint64_t no
     return effects;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

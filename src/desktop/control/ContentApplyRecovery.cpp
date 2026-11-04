@@ -1,8 +1,8 @@
-#include "miaodesk/ContentApplyRecovery.h"
+#include "whaledesk/ContentApplyRecovery.h"
 
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 
 const char* ToString(ApplyRecoveryAction action) noexcept {
     switch (action) {
@@ -141,4 +141,4 @@ ApplyRecoveryPlan PlanApplyRecovery(const std::vector<ApplyIdempotencyEntry>& le
     return plan;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

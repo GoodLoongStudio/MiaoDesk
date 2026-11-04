@@ -1,6 +1,6 @@
-#include "miaodesk/NativeWeatherService.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/NativeWeatherService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <winhttp.h>
 
@@ -23,7 +23,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr std::chrono::minutes kWeatherRefreshInterval{15};
@@ -217,7 +217,7 @@ std::wstring WeatherCondition(int code) {
 bool HttpGet(std::wstring_view host, std::wstring_view path, std::string* body, std::wstring* error) {
     if (!body) return false;
     body->clear();
-    HINTERNET session = WinHttpOpen(L"MiaoMiao-NativeWeather/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    HINTERNET session = WinHttpOpen(L"WhaleWhale-NativeWeather/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
         if (error) *error = L"WinHTTP session failed";
@@ -524,7 +524,7 @@ bool NativeWeatherService::SelfTest() noexcept {
               times.size() == 2 && WeatherCondition(2) == L"多云";
 
     const fs::path roundTripPath = fs::temp_directory_path() /
-        (L"MiaoDesk-Weather-Unicode-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-Weather-Unicode-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()) + L".ini");
     std::error_code ec;
     fs::remove(roundTripPath, ec);
@@ -540,4 +540,4 @@ bool NativeWeatherService::SelfTest() noexcept {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

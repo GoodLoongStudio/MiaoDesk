@@ -5,18 +5,18 @@
 损失量必须是个数,不能是注释里的一句"亚像素"。这个脚本把两个源都读进来,
 按引擎的真实语义求值,再逐点比。
 
-覆盖**三个**内置壁纸。2026-09-23 之前只复核 MiaoCloud —— 那时另外两个包的
+覆盖**三个**内置壁纸。2026-09-23 之前只复核 WhaleCloud —— 那时另外两个包的
 scene.json 还是空壳,没有可校验的产物。两个包迁完之后只复核一个,
 等于让"保真"对三分之二的迁移不成立,而报告照样全绿。
 
-引擎语义(摘自 src/content/runtime/MiaoSceneRuntime.cpp,不是推测):
+引擎语义(摘自 src/content/runtime/WhaleSceneRuntime.cpp,不是推测):
   AnimationLocalTime  PingPong: period = duration*2, 折回 [0, duration]
                         Loop:     fmod(time, duration)
   ApplyAnimation       局部时间 <= 首帧 → 停在首帧;>= 末帧 → 停在末帧;
                         否则在相邻两帧间线性插值,并用 from.easing
   ApplyEasing          linear → t;easeInOut → 2t²(t<0.5) 否则 1-(2-2t)²/2
 
-scene.ini 的公式摘自 src/include/miaodesk/LayeredSceneRenderer.h:229-244:
+scene.ini 的公式摘自 src/include/whaledesk/LayeredSceneRenderer.h:229-244:
   wave = sin(t*speed + phase)
   drift/float  x += wave*amplitudeX
                y += cos(t*speed*0.77 + phase)*amplitudeY
@@ -45,7 +45,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WALLPAPERS = ROOT / "assets" / "wallpapers"
 LEGACY_FIXTURES = ROOT / "tests" / "fixtures" / "legacy-wallpaper-scenes"
-PACKAGES = ("MiaoCloud", "NeonCity", "MysticMoon")
+PACKAGES = ("WhaleCloud", "NeonCity", "MysticMoon")
 
 
 def paths(name):
@@ -55,7 +55,7 @@ def paths(name):
 # 均匀采样 + 线性插值的解析上界:A*(1-cos(pi/(N-1)))。
 SAMPLES = 16
 BOUND = 1.0 - math.cos(math.pi / (SAMPLES - 1))
-# 第二项:采样值按 6 位小数写入(见 generate-miao-cloud-scene.py 的 rounded()),
+# 第二项:采样值按 6 位小数写入(见 generate-whale-cloud-scene.py 的 rounded()),
 # 每个值最多引入 0.5e-6 的量化误差,而轨值与解析值各一次,所以是 1e-6。
 # 少了这一项, breathe 的最大误差会刚好压在解析上界上并被判 FAIL ——
 # 那不是迁移变差了,是上界算漏了一项。

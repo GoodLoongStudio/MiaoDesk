@@ -1,17 +1,17 @@
-#include "miaodesk/ContentSkillBrowserDialog.h"
+#include "whaledesk/ContentSkillBrowserDialog.h"
 
-#include "miaodesk/ContentCreatorBridge.h"
-#include "miaodesk/NativeTools.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/ContentCreatorBridge.h"
+#include "whaledesk/NativeTools.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <algorithm>
 #include <array>
 #include <string>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kSkillBrowserWindowClass[] = L"MiaoDesk.Native.ContentSkillBrowser";
+constexpr wchar_t kSkillBrowserWindowClass[] = L"WhaleDesK.Native.ContentSkillBrowser";
 constexpr int kListId = 7601;
 constexpr int kAiId = 7602;
 constexpr int kCloseId = 7603;
@@ -363,4 +363,4 @@ bool ShowContentSkillBrowserDialog(
     return true;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

@@ -9,7 +9,7 @@ $cmakePresets = Join-Path $RepoRoot 'CMakePresets.json'
 $pathContract = Join-Path $RepoRoot 'docs\PATH_LAYOUT_CONTRACT.md'
 $sourceRoot = Join-Path $RepoRoot 'src'
 $sourceCMake = Join-Path $sourceRoot 'CMakeLists.txt'
-$appPathsHeader = Join-Path $sourceRoot 'include\miaodesk\AppPaths.h'
+$appPathsHeader = Join-Path $sourceRoot 'include\whaledesk\AppPaths.h'
 $productConfig = Join-Path $RepoRoot 'config\product.ini'
 $agentRuntimeScript = Join-Path $RepoRoot 'packaging\windows\build-agent-runtime.ps1'
 $webViewRoot = Join-Path $RepoRoot 'third_party\webview2'
@@ -27,7 +27,7 @@ if (-not (Test-Path $appPathsHeader -PathType Leaf)) { Fail 'shared AppPaths.h i
 if (-not (Test-Path $productConfig -PathType Leaf)) { Fail 'config/product.ini is missing.' }
 if (-not (Test-Path $agentRuntimeScript -PathType Leaf)) { Fail 'Agent Runtime staging script is missing.' }
 if (Test-Path (Join-Path $sourceRoot 'native')) { Fail 'obsolete src/native container returned.' }
-$canonicalSourceDomains = @('app','ai','content','desktop','harness','search','tests','ui','include\miaodesk')
+$canonicalSourceDomains = @('app','ai','content','desktop','harness','search','tests','ui','include\whaledesk')
 $canonicalTopLevel = $canonicalSourceDomains | ForEach-Object { ($_ -split '\\')[0] }
 foreach ($relative in $canonicalSourceDomains) {
     if (-not (Test-Path (Join-Path $sourceRoot $relative) -PathType Container)) {
@@ -145,7 +145,7 @@ foreach ($file in $sourceFiles) {
 }
 
 $localStateAllowlist = @(
-    'src\include\miaodesk\AppPaths.h',
+    'src\include\whaledesk\AppPaths.h',
     'src\ai\agent\L3PersistenceSelfTest.cpp',
     'src\desktop\wallpaper\runtime\WallpaperEntry.cpp'
 )
@@ -161,7 +161,7 @@ foreach ($file in $sourceFiles) {
 
 $forbiddenPackagingPatterns = @(
     'set\s+"?DEST=C:\\MD(?:\\|"|$)',
-    'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\MiaoDesk',
+    'InstallDir\s+"?\$LOCALAPPDATA\\Programs\\WhaleDesK',
     '(?i)reg(?:\.exe)?\s+add[^\r\n]*LongPathsEnabled',
     '(?i)Set-ItemProperty[^\r\n]*LongPathsEnabled',
     '(?i)New-ItemProperty[^\r\n]*LongPathsEnabled',

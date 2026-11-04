@@ -1,15 +1,15 @@
 # Third-Party Notices
 
-MiaoDesk includes or redistributes the following third-party components. Runtime versions are pinned by the architecture runtime locks; applicable upstream license files are retained in the vendored payloads or alongside them.
+WhaleDesK includes or redistributes the following third-party components. Runtime versions are pinned by the architecture runtime locks; applicable upstream license files are retained in the vendored payloads or alongside them.
 
 ## Pi
 
 - Project: Pi
 - Package: `@earendil-works/pi-coding-agent`
 - Source: https://github.com/earendil-works/pi
-- Pinned MiaoDesk version: `0.83.0`
+- Pinned WhaleDesK version: `0.83.0`
 - License: MIT
-- MiaoDesk usage: default Agent Runtime for ordinary AI and desktop-agent requests, launched in RPC mode on MiaoDesk's private Node.js runtime.
+- WhaleDesK usage: default Agent Runtime for ordinary AI and desktop-agent requests, launched in RPC mode on WhaleDesK's private Node.js runtime.
 
 ## DeepSeek Harness
 
@@ -17,7 +17,7 @@ MiaoDesk includes or redistributes the following third-party components. Runtime
 - Package: `@deepseek-ai/dsh`
 - Source: https://github.com/deepseek-ai/deepseek-harness
 - License: MIT
-- MiaoDesk usage: official upstream package launched by `MiaoDeskHarness.exe` and rendered inside MiaoDesk WebView2.
+- WhaleDesK usage: official upstream package launched by `WhaleDesKHarness.exe` and rendered inside WhaleDesK WebView2.
 
 The Windows x64 package resolves Pi and DeepSeek Harness together into one production `Runtime/Agent` dependency graph. End-user machines do not install them with npm or npx.
 
@@ -27,15 +27,15 @@ The Windows x64 package resolves Pi and DeepSeek Harness together into one produ
 - Source: https://nodejs.org/ / https://github.com/nodejs/node
 - License: Node.js project license plus licenses for bundled third-party components.
 
-Node is private to MiaoDesk and is not installed system-wide.
+Node is private to WhaleDesK and is not installed system-wide.
 
 ## goz
 
 - Project: goz
 - Source: https://github.com/mustafaahci/goz
-- Pinned MiaoDesk version: `v0.1.1`
+- Pinned WhaleDesK version: `v0.1.1`
 - License: MIT
-- MiaoDesk usage: NTFS filename-search backend through `goz.exe` / `gozd.exe`.
+- WhaleDesK usage: NTFS filename-search backend through `goz.exe` / `gozd.exe`.
 
 ## Microsoft WebView2 SDK
 
@@ -45,7 +45,7 @@ Node is private to MiaoDesk and is not installed system-wide.
 - Source: https://www.nuget.org/packages/Microsoft.Web.WebView2
 - License/notices: retained under `third_party/webview2/`.
 
-MiaoDesk keeps only the headers and x64/ARM64 static loaders required by the native build, plus the upstream license/notice and `manifest.json`. The Microsoft Edge WebView2 Runtime itself is treated as an operating-system component and is not duplicated in the repository.
+WhaleDesK keeps only the headers and x64/ARM64 static loaders required by the native build, plus the upstream license/notice and `manifest.json`. The Microsoft Edge WebView2 Runtime itself is treated as an operating-system component and is not duplicated in the repository.
 
 ## Microsoft PowerToys
 
@@ -53,7 +53,7 @@ MiaoDesk keeps only the headers and x64/ARM64 static loaders required by the nat
 - Source: https://github.com/microsoft/PowerToys
 - License: MIT
 - Copyright: Copyright (c) Microsoft Corporation. All rights reserved.
-- MiaoDesk usage: application discovery follows the mature pattern of combining classic Windows program shortcuts with packaged-app identities/AUMIDs; the implementation is native to MiaoDesk.
+- WhaleDesK usage: application discovery follows the mature pattern of combining classic Windows program shortcuts with packaged-app identities/AUMIDs; the implementation is native to WhaleDesK.
 
 ## Flow Launcher
 
@@ -61,18 +61,18 @@ MiaoDesk keeps only the headers and x64/ARM64 static loaders required by the nat
 - Source: https://github.com/Flow-Launcher/Flow.Launcher
 - License: MIT
 - Copyright: Copyright (c) 2019 Flow-Launcher; Copyright (c) 2015 Wox
-- MiaoDesk usage: the in-memory matcher is an independent compact adaptation of ordered-subsequence matching, contiguous-match bonuses, word-boundary bonuses and early-match weighting.
+- WhaleDesK usage: the in-memory matcher is an independent compact adaptation of ordered-subsequence matching, contiguous-match bonuses, word-boundary bonuses and early-match weighting.
 
 ---
 
 # 本地 AI 推理栈(Local AI Inference Stack)
 
 以下组件用于 `docs/LOCAL_AI_ARCHITECTURE.md` 描述的可选本地 AI 模式。**它们由用户在自己的硬件上
-部署，MiaoDesk 不安装、不分发、不打包这些组件**；此处列出是为满足许可透明度与归属要求。
+部署，WhaleDesK 不安装、不分发、不打包这些组件**；此处列出是为满足许可透明度与归属要求。
 
 Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1` 强制这一边界：常见模型权重
 扩展名以及当前许可未完成书面确认的模型名称一旦出现在 staged package，打包立即失败。该门禁只是
-**分发边界**，不是对上游许可证作法律结论；若未来要把任何本地模型权重随 MiaoDesk 一起分发，必须先
+**分发边界**，不是对上游许可证作法律结论；若未来要把任何本地模型权重随 WhaleDesK 一起分发，必须先
 单独完成许可证审核并显式修改这条门禁。
 
 ## vLLM
@@ -80,7 +80,7 @@ Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1
 - Project: vLLM
 - Source: https://github.com/vllm-project/vllm
 - License: Apache 2.0
-- MiaoDesk usage: 本地推理服务器,对外暴露 OpenAI 兼容 API,供 MiaoDesk 的 Pi Runtime 作为
+- WhaleDesK usage: 本地推理服务器,对外暴露 OpenAI 兼容 API,供 WhaleDesK 的 Pi Runtime 作为
   Provider 接入。部署方式为用户自管的 Docker 容器,不在产品包内。
 
 ## gpt-oss-120b / gpt-oss-20b
@@ -88,45 +88,45 @@ Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1
 - Project: gpt-oss(OpenAI open-weight models)
 - Source: https://huggingface.co/openai/gpt-oss-120b · https://huggingface.co/openai/gpt-oss-20b
 - License: Apache 2.0
-- MiaoDesk usage: 本地 AI 模式的主对话 / Agent 模型候选 A,以及轻量任务模型。模型权重由用户自行下载。
+- WhaleDesK usage: 本地 AI 模式的主对话 / Agent 模型候选 A,以及轻量任务模型。模型权重由用户自行下载。
 
 ## Qwen3.6-35B-A3B
 
 - Project: Qwen3.6-35B-A3B(Alibaba Qwen)
 - Source: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
 - License: Apache 2.0
-- MiaoDesk usage: 本地 AI 模式的主对话 / Agent 模型候选 B。与候选 A 并行评估,以实测数据定夺。
+- WhaleDesK usage: 本地 AI 模式的主对话 / Agent 模型候选 B。与候选 A 并行评估,以实测数据定夺。
 
 ## Qwen3-4B-Instruct-2507
 
 - Project: Qwen3-4B-Instruct-2507(Alibaba Qwen)
 - Source: https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507
 - License: Apache 2.0
-- MiaoDesk usage: 本地 AI 模式的轻量任务模型备选(意图路由 / JSON 抽取 / 摘要)。
+- WhaleDesK usage: 本地 AI 模式的轻量任务模型备选(意图路由 / JSON 抽取 / 摘要)。
 
 ## Qwen3-Embedding
 
 - Project: Qwen3-Embedding(Alibaba Qwen)
 - Source: https://huggingface.co/Qwen/Qwen3-Embedding-4B · https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
 - License: Apache 2.0
-- MiaoDesk usage: 可选的语义检索增强,用于补充(非替代)goz 关键词文件搜索。v1 默认不部署。
+- WhaleDesK usage: 可选的语义检索增强,用于补充(非替代)goz 关键词文件搜索。v1 默认不部署。
 
 ## DeepSeek-R1-0528-Qwen3-8B
 
 - Project: DeepSeek-R1 distilled series
 - Source: https://huggingface.co/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
 - License: ⚠️ **代码 MIT;模型权重条款需向 DeepSeek 书面确认**
-- MiaoDesk usage: 可选的显式推理模型。v1 默认不部署;**许可澄清前不得进入任何分发版本**。
+- WhaleDesK usage: 可选的显式推理模型。v1 默认不部署;**许可澄清前不得进入任何分发版本**。
 
 ## ComfyUI
 
 - Project: ComfyUI
 - Source: https://github.com/comfyanonymous/ComfyUI
 - License: GPL-3.0
-- MiaoDesk usage: 本地图像生成运行时。NVIDIA 为 DGX Spark 提供官方 playbook,Image Gen Quick Start
-  默认模型为 Z-Image-Turbo。由用户自管部署;MiaoDesk 通过一个自有的薄 OpenAI 兼容 shim 调用其
+- WhaleDesK usage: 本地图像生成运行时。NVIDIA 为 DGX Spark 提供官方 playbook,Image Gen Quick Start
+  默认模型为 Z-Image-Turbo。由用户自管部署;WhaleDesK 通过一个自有的薄 OpenAI 兼容 shim 调用其
   `POST /prompt` 接口。
-- 注意:GPL-3.0 的传染性仅作用于 ComfyUI 自身的分发。MiaoDesk 通过 HTTP API 调用它,不链接、
+- 注意:GPL-3.0 的传染性仅作用于 ComfyUI 自身的分发。WhaleDesK 通过 HTTP API 调用它,不链接、
   不分发其代码,因此不受其 copyleft 约束;但用户若自行修改并再分发 ComfyUI,需遵守 GPL-3.0。
 
 ## Z-Image-Turbo
@@ -134,7 +134,7 @@ Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1
 - Project: Z-Image-Turbo(Tongyi-MAI)
 - Source: https://huggingface.co/Tongyi-MAI/Z-Image-Turbo
 - License: Apache 2.0
-- MiaoDesk usage: 本地 AI 模式的默认图像生成模型。6B + 8 GB Qwen3-4B 编码器,约 16–24 GB,
+- WhaleDesK usage: 本地 AI 模式的默认图像生成模型。6B + 8 GB Qwen3-4B 编码器,约 16–24 GB,
   中英文字渲染良好,NVIDIA DGX Spark playbook 默认模型。
 
 ## Qwen-Image(v1.0)
@@ -142,7 +142,7 @@ Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1
 - Project: Qwen-Image(Alibaba Qwen)
 - Source: https://huggingface.co/Qwen/Qwen-Image
 - License: Apache 2.0
-- MiaoDesk usage: 本地 AI 模式的按需加载图像模型,中文文字渲染 SOTA。
+- WhaleDesK usage: 本地 AI 模式的按需加载图像模型,中文文字渲染 SOTA。
 - ⚠️ **不可使用 Qwen-Image-2.1**:其采用 Qwen Research License Agreement(2026-09-20),
   明示 "NON-COMMERCIAL PURPOSES ONLY"。只有 v1.0 是 Apache 2.0。
 
@@ -150,7 +150,7 @@ Windows 发布包还通过 `packaging/windows/verify-no-bundled-local-models.ps1
 
 ## 明确排除的组件(许可与商业分发冲突)
 
-以下组件经评估**不纳入** MiaoDesk 的本地 AI 模式,列此以备忘:
+以下组件经评估**不纳入** WhaleDesK 的本地 AI 模式,列此以备忘:
 
 | 组件 | 排除原因 |
 | --- | --- |

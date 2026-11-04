@@ -19,13 +19,13 @@
 //     但 verdict = Release(它是一次诚实的评测,只是没有收益)。混成拒绝会让人
 //     以为数据有问题,而数据没问题。
 //   * 必需项分母**两头都要堵**:变小是删用户要求,变大是给对手加码。
-#include "miaodesk/ContentReleaseGate.h"
+#include "whaledesk/ContentReleaseGate.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -104,10 +104,10 @@ ReleaseRequest GoodRequest() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 一份诚实的比较可以放行 -------------------------------------------
     {

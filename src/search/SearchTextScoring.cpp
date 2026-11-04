@@ -1,9 +1,9 @@
-#include "miaodesk/SearchTextScoring.h"
+#include "whaledesk/SearchTextScoring.h"
 
 #include <algorithm>
 #include <cwctype>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 std::wstring Lower(std::wstring value) {
@@ -63,4 +63,4 @@ std::vector<SearchResult> RankSearchEntries(const std::vector<SearchRankEntry>& 
     return results;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

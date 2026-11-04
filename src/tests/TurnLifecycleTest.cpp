@@ -21,12 +21,12 @@
 // 只 request_stop(),旧的 worker 句柄被直接覆盖。
 //
 // 判定与 Node/管道/WinHTTP 无关,只取决于相位,所以它在本机真的能跑。
-#include "miaodesk/MiaoTurnLifecycle.h"
+#include "whaledesk/WhaleTurnLifecycle.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::turn_lifecycle {
+namespace whaledesk::turn_lifecycle {
 namespace {
 
 int g_failures = 0;
@@ -60,11 +60,11 @@ bool LifecycleVerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::turn_lifecycle
+} // namespace whaledesk::turn_lifecycle
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::turn_lifecycle;
+    using namespace whaledesk;
+    using namespace whaledesk::turn_lifecycle;
 
     if (!LifecycleVerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:时间线抓不住明知该抓的取消/重试序列\n");

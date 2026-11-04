@@ -9,12 +9,12 @@
 //
 // 反空洞自检恒返回 Available 的函数在下面每组断言上同样全绿,所以开头先喂一个
 // 明知该判 Wedged 的观测、一个明知该判 Running 的观测,确认裁决真的会动。
-#include "miaodesk/MiaoLockOwnership.h"
+#include "whaledesk/WhaleLockOwnership.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::lock_ownership {
+namespace whaledesk::lock_ownership {
 namespace {
 
 int g_failures = 0;
@@ -48,11 +48,11 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::lock_ownership
+} // namespace whaledesk::lock_ownership
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::lock_ownership;
+    using namespace whaledesk;
+    using namespace whaledesk::lock_ownership;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:裁决分不出 healthy 与 wedged\n");

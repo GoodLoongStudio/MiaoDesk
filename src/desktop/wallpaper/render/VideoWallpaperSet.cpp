@@ -1,13 +1,13 @@
-#include "miaodesk/VideoWallpaperSet.h"
-#include "miaodesk/VideoWallpaperPlayer.h"
+#include "whaledesk/VideoWallpaperSet.h"
+#include "whaledesk/VideoWallpaperPlayer.h"
 
 #include <algorithm>
 #include <sstream>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kVideoSurfaceClass[] = L"MiaoDesk.Native.VideoWallpaperSurface";
+constexpr wchar_t kVideoSurfaceClass[] = L"WhaleDesK.Native.VideoWallpaperSurface";
 
 bool SameRect(const RECT& a, const RECT& b) noexcept {
     return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
@@ -250,4 +250,4 @@ std::wstring VideoWallpaperSet::DiagnosticsText() const {
     return text.str();
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

@@ -1,10 +1,10 @@
-# MiaoDesk — DGX Spark Hackathon 提交材料
+# WhaleDesK — DGX Spark Hackathon 提交材料
 
-这里是 MiaoDesk 面向 DGX Spark Hackathon 的简明提交入口。目标不是重复完整工程文档，而是让评委在几分钟内看懂：**MiaoDesk 是什么、为什么需要 DGX Spark、AI Agent 怎么工作、如何部署、用了哪些技术、如何演示。**
+这里是 WhaleDesK 面向 DGX Spark Hackathon 的简明提交入口。目标不是重复完整工程文档，而是让评委在几分钟内看懂：**WhaleDesK 是什么、为什么需要 DGX Spark、AI Agent 怎么工作、如何部署、用了哪些技术、如何演示。**
 
 ## 一句话介绍
 
-**MiaoDesk 是一个 AI 原生的聪明又漂亮Windows 智能桌面：用户可以像使用系统搜索一样调用应用和文件，并且在合适的时机调用妙喵 AI，让 AI管理桌面，并直接生成动态壁纸和桌面小组件；DGX Spark 负责在本地运行大模型和图像模型，让这些能力可以在用户自己的机器或局域网内完成。**
+**WhaleDesK 是一个 AI 原生的聪明又漂亮Windows 智能桌面：用户可以像使用系统搜索一样调用应用和文件，并且在合适的时机调用妙喵 AI，让 AI管理桌面，并直接生成动态壁纸和桌面小组件；DGX Spark 负责在本地运行大模型和图像模型，让这些能力可以在用户自己的机器或局域网内完成。**
 
 ## 提交材料
 
@@ -27,4 +27,4 @@
 
 ## 开源项目地址
 
-https://github.com/GoodLoongStudio/MiaoDesk
+https://github.com/GoodLoongStudio/WhaleDesK

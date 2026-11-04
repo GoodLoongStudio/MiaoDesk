@@ -8,12 +8,12 @@
 //   · 只看 turn  → 取消后立刻重试,旧轮的 delta 追加进新一轮的条目,
 //                  用户看到自己没说过的话从模型嘴里出来;
 //   · 只看 latest → 面板已切到另一轮,delta 仍落到旧那一轮上,表现为"回复串台"。
-#include "miaodesk/MiaoTurnReplyScope.h"
+#include "whaledesk/WhaleTurnReplyScope.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -37,10 +37,10 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:三轮比对不动\n");

@@ -1,8 +1,8 @@
 import { performance } from "node:perf_hooks";
 
-const BASE_URL = (process.env.MIAODESK_ROUTER_BASE_URL || "http://127.0.0.1:8000/v1").replace(/\/+$/, "");
-const API_KEY = process.env.MIAODESK_ROUTER_API_KEY || "";
-const RUNS = Math.max(1, Number(process.env.MIAODESK_ROUTER_SMOKE_RUNS || 3));
+const BASE_URL = (process.env.WHALEDESK_ROUTER_BASE_URL || "http://127.0.0.1:8000/v1").replace(/\/+$/, "");
+const API_KEY = process.env.WHALEDESK_ROUTER_API_KEY || "";
+const RUNS = Math.max(1, Number(process.env.WHALEDESK_ROUTER_SMOKE_RUNS || 3));
 
 const headers = { "content-type": "application/json" };
 if (API_KEY) headers.authorization = `Bearer ${API_KEY}`;
@@ -12,7 +12,7 @@ async function request(label, body) {
   const response = await fetch(BASE_URL + "/chat/completions", {
     method: "POST",
     headers,
-    body: JSON.stringify({ model: "miaodesk", stream: false, ...body }),
+    body: JSON.stringify({ model: "whaledesk", stream: false, ...body }),
     signal: AbortSignal.timeout(120000),
   });
   const elapsedMs = performance.now() - started;
@@ -21,8 +21,8 @@ async function request(label, body) {
   return {
     label,
     elapsedMs,
-    route: response.headers.get("x-miaodesk-route") || "",
-    upstreamModel: response.headers.get("x-miaodesk-upstream-model") || "",
+    route: response.headers.get("x-whaledesk-route") || "",
+    upstreamModel: response.headers.get("x-whaledesk-upstream-model") || "",
   };
 }
 

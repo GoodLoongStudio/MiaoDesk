@@ -22,9 +22,9 @@ Scope: `DesktopAiSettingsPage` on small windows, high DPI, and reduced vertical 
 
 | Workflow | Run | Result | Relevant steps |
 | --- | --- | --- | --- |
-| Repo Hygiene | [#209](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256953987) | success | `Verify API settings scrolling contract` |
-| Windows x64 Build | [#515](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256953990) | success | `Build`, `Verify staged GlassClock Content Framework route` |
-| Windows ARM64 Package | [#240](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256954003) | success | `package` + `installer` jobs |
+| Repo Hygiene | [#209](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256953987) | success | `Verify API settings scrolling contract` |
+| Windows x64 Build | [#515](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256953990) | success | `Build`, `Verify staged GlassClock Content Framework route` |
+| Windows ARM64 Package | [#240](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256954003) | success | `package` + `installer` jobs |
 
 Every job and step in these three workflows reported `success` for this SHA. The
 single non-success step in `Windows x64 Build` — `Upload Content widget lifecycle

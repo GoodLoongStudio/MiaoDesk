@@ -1,4 +1,4 @@
-# MiaoDesk Pi Agent Activity Feedback Contract
+# WhaleDesK Pi Agent Activity Feedback Contract
 
 > Status: Product and interaction baseline
 >
@@ -10,7 +10,7 @@ Every meaningful Pi action that affects waiting time, the computer, a tool, or t
 
 The user should never have to wonder whether Pi is frozen, thinking, waiting, executing, retrying, or finished.
 
-At the same time, MiaoDesk must not expose private chain-of-thought or hidden model reasoning. The UI shows **observable work state and action intent**, not internal reasoning tokens.
+At the same time, WhaleDesK must not expose private chain-of-thought or hidden model reasoning. The UI shows **observable work state and action intent**, not internal reasoning tokens.
 
 The product rule is:
 
@@ -24,7 +24,7 @@ The UI should be able to represent at least these semantic states:
 - `Planning` — preparing the next user-visible task steps when planning is useful.
 - `Searching` — searching apps, files, settings, wallpapers, widgets, or other indexed data.
 - `Inspecting` — reading current desktop/application state.
-- `PreparingTool` — preparing an approved MiaoDesk tool operation.
+- `PreparingTool` — preparing an approved WhaleDesK tool operation.
 - `RunningTool` — an external/native action is executing.
 - `WaitingForSystem` — waiting for Windows, a process, filesystem operation, network request, or runtime response.
 - `WaitingForUser` — blocked on confirmation, choice, missing information, or permission.
@@ -173,7 +173,7 @@ Examples:
 ```text
 正在等待 Windows 完成文件移动…
 正在等待文件索引服务响应…
-正在等待妙喵桌面应用新的壁纸…
+正在等待妙鲸鱼桌面应用新的壁纸…
 需要你的确认才能继续。
 ```
 
@@ -287,7 +287,7 @@ Pi Agent / Harness
 Conversation Controller
       ├─ emits user-visible activity state
       ↓ tool call
-MiaoDesk native tool bridge
+WhaleDesK native tool bridge
       ↓
 DesktopControlService
       ↓

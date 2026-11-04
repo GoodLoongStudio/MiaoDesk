@@ -98,7 +98,7 @@ assert.doesNotMatch(panelText, /activity\.terminal/,
   "...and nothing may read a `terminal` state the card does not have");
 
 // The public API must not grow a callback parameter that nothing invokes either.
-const libraryHeader = read("src/include/miaodesk/WallpaperLibraryWindow.h");
+const libraryHeader = read("src/include/whaledesk/WallpaperLibraryWindow.h");
 assert.doesNotMatch(libraryHeader, /NavigateCallback/,
   "the library window must not re-introduce a navigation callback: the window owns its own"
   + " page switching, and a callback it never calls reads as an integration point");

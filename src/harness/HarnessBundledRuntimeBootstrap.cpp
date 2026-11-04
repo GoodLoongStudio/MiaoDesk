@@ -1,6 +1,6 @@
 #include <windows.h>
 
-#include "miaodesk/AppPaths.h"
+#include "whaledesk/AppPaths.h"
 
 #include <filesystem>
 #include <iterator>
@@ -54,8 +54,8 @@ void PrependBundledHarnessRuntimeToPath() {
     if (!oldPath.empty()) prefix += L";" + oldPath;
     SetEnvironmentVariableW(L"PATH", prefix.c_str());
 
-    const fs::path stateRoot = miaodesk::paths::EnsureDirectory(
-        miaodesk::paths::HarnessStateRoot());
+    const fs::path stateRoot = whaledesk::paths::EnsureDirectory(
+        whaledesk::paths::HarnessStateRoot());
     if (!stateRoot.empty()) {
         const std::wstring dshHome = (stateRoot / L"dsh-home").wstring();
         const std::wstring npmCache = (stateRoot / L"npm-cache").wstring();

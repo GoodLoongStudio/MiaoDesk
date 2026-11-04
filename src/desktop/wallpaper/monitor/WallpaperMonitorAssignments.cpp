@@ -1,6 +1,6 @@
-#include "miaodesk/WallpaperMonitorAssignments.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperMonitorAssignments.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 fs::path DefaultStoragePath() {
@@ -149,7 +149,7 @@ bool WallpaperMonitorAssignments::AssignById(std::wstring monitorId, std::wstrin
         return false;
     }
 
-    // MiaoDesk's current desktop contract is deliberately single-monitor:
+    // WhaleDesK's current desktop contract is deliberately single-monitor:
     // choosing a monitor applies the wallpaper only to that monitor. Keeping
     // stale assignments for other monitors made Independent mode silently draw
     // on multiple displays after a user selected exactly one target. Replace
@@ -225,7 +225,7 @@ std::optional<std::size_t> WallpaperMonitorAssignments::FindIndex(std::wstring_v
 bool WallpaperMonitorAssignments::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-MonitorAssignments-SelfTest-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-MonitorAssignments-SelfTest-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -277,4 +277,4 @@ bool WallpaperMonitorAssignments::SelfTest() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

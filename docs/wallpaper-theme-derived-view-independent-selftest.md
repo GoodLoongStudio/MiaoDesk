@@ -6,7 +6,7 @@ This is an independent acceptance gate for Draft PR #58. It is intentionally sep
 
 Create a temporary UTF-16LE `library.ini` containing:
 
-- canonical scene item: `content:com.goodloong.miaodesk.theme.neon-city`
+- canonical scene item: `content:com.goodloong.whaledesk.theme.neon-city`
 - stale shipped legacy item: `scene-neon`
 - custom item: `scene-user-custom`
 - Chinese title text and a filesystem path containing Chinese characters
@@ -16,7 +16,7 @@ Create a separate UTF-16LE monitor-assignment fixture with the exact persisted v
 ## Assertions
 
 1. `WallpaperLibrary::Find(L"scene-neon")` returns the canonical item after exact lookup misses.
-2. The returned item id is `content:com.goodloong.miaodesk.theme.neon-city`.
+2. The returned item id is `content:com.goodloong.whaledesk.theme.neon-city`.
 3. `Search(L"")`, `Favorites()`, and `RecentlyUsed()` contain no shipped legacy `scene-*` item.
 4. `scene-user-custom` remains visible in `Search(L"")`, `Favorites()`, and `RecentlyUsed()` when its metadata marks it favorite/recent.
 5. Canonical title, author-derived title, Chinese text, and Chinese filesystem paths round-trip exactly; no `????`, replacement glyphs, or mojibake are allowed.

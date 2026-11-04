@@ -1,9 +1,9 @@
-#include "miaodesk/L3Agent.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/AppSearch.h"
-#include "miaodesk/GozSearch.h"
-#include "miaodesk/MiaoAgentConfigAuthority.h"
-#include "miaodesk/SecretRedaction.h"
+#include "whaledesk/L3Agent.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/AppSearch.h"
+#include "whaledesk/GozSearch.h"
+#include "whaledesk/WhaleAgentConfigAuthority.h"
+#include "whaledesk/SecretRedaction.h"
 #include <shellapi.h>
 #include <wincred.h>
 #include <algorithm>
@@ -20,11 +20,11 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kCredentialTarget[] = L"MiaoDesk/ModelApiKey";
-// 旧凭据槽名在纯逻辑那份(MiaoAgentConfigAuthority)里也钉了一个字面量 ——
+constexpr wchar_t kCredentialTarget[] = L"WhaleDesK/ModelApiKey";
+// 旧凭据槽名在纯逻辑那份(WhaleAgentConfigAuthority)里也钉了一个字面量 ——
 // 每处 profile 的 Key 槽名是 `LoadApiKey`/`SaveApiKey`/`ApiRuntimeProfile::ReadSection`
 // 三方共用的契约,两处各写一遍时改一边不改另一边,Key 会静默换槽而不报错。
 // 所以在这里把两边焊死。
@@ -200,7 +200,7 @@ fs::path SettingsPath() {
     return directory.empty() ? fs::path{} : directory / L"model-settings.json";
 }
 
-// 会话身份的哈希。**唯一实现在 MiaoSessionMigration(纯逻辑那份)**,这里只转一手。
+// 会话身份的哈希。**唯一实现在 WhaleSessionMigration(纯逻辑那份)**,这里只转一手。
 //
 // 为什么必须只有一份:P0-09 修的是"旧配置升级后旧会话找不到"。搬运会话要靠
 // 两边算出同一个路径,而两处各写一遍时改一边不改另一边,搬运会静默失败 ——
@@ -519,7 +519,7 @@ HttpResponse HttpGet(const std::wstring& url, const std::wstring& headers) {
     std::wstring path = L"/";
     if (parts.lpszUrlPath && parts.dwUrlPathLength) path.assign(parts.lpszUrlPath, parts.dwUrlPathLength);
 
-    HINTERNET session = WinHttpOpen(L"MiaoDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    HINTERNET session = WinHttpOpen(L"WhaleDesK.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
         response.error = GetLastError();
@@ -872,7 +872,7 @@ ModelProbeResult L3Agent::ProbeModels(const std::wstring& apiUrl,
                 // to send back, including, from some gateways, the request headers it was
                 // given. See SecretRedaction.h for why that is not a theoretical risk.
                 const auto shortBody = Utf8ToWide(response.body.substr(0, 220));
-                const auto summarized = miaodesk::secrets::SummarizeRemoteBody(shortBody);
+                const auto summarized = whaledesk::secrets::SummarizeRemoteBody(shortBody);
                 if (!summarized.empty()) detail += L" " + summarized;
             }
             result.message = std::move(detail);
@@ -1073,7 +1073,7 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
     if (lower.starts_with(L"/endpoint ")) {
         // 注意这里**不**丢 profile 身份,和下面的 /provider 相反,这是有意的:
         // 只换端点路径时主机没变,profile 的 Key 仍然是发给同一台主机的,同源关系完好。
-        // 丢了反而会让用户莫名失去已经配好的 Key。判定见 MiaoAgentConfigAuthority
+        // 丢了反而会让用户莫名失去已经配好的 Key。判定见 WhaleAgentConfigAuthority
         // 的 RequestTargetOwner::LocalPath。
         auto endpoint = Trim(input.substr(10));
         if (endpoint == L"-") endpoint.clear();
@@ -1116,11 +1116,11 @@ bool L3Agent::TryHandleLocal(const std::wstring& raw, std::wstring& reply, bool&
         //
         // 少了这一步,这条链是活的:`config_.profileId` 只有 ReloadConfig 会写,而
         // 这里只改 baseUrl —— 于是下一次请求 URL 是用户刚敲的这台主机,而 Key 仍从
-        // `MiaoDesk/ApiProfile/<原 profile>` 读。**一把签给 A 服务的 Key 被发到 B 服务。**
+        // `WhaleDesK/ApiProfile/<原 profile>` 读。**一把签给 A 服务的 Key 被发到 B 服务。**
         // `/key` 更糟:它按同一个 profileId 选槽,会把用户敲的新 Key 覆盖回那个 profile
         // 自己存的 Key 上,而设置页里一个字都不提。
         //
-        // 判定与槽名都在 MiaoAgentConfigAuthority(纯逻辑,本机有门)。这里只丢身份、
+        // 判定与槽名都在 WhaleAgentConfigAuthority(纯逻辑,本机有门)。这里只丢身份、
         // 不动地址 —— 用户敲的 Base URL 原样生效,凭据回到旧槽(`/key` 写的也是旧槽)。
         config_.profileId = agent_config::RebindForLocalCommand(
                                 RequestIdentity(), agent_config::RequestTargetOwner::LocalHost)
@@ -1188,7 +1188,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     if (parts.lpszUrlPath && parts.dwUrlPathLength) basePath.assign(parts.lpszUrlPath, parts.dwUrlPathLength);
     const std::wstring path = BuildRequestPath(basePath, config_.endpoint);
 
-    HINTERNET session = WinHttpOpen(L"MiaoDesk.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    HINTERNET session = WinHttpOpen(L"WhaleDesK.Native/2.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) { onDone(HttpError(GetLastError())); return; }
     WinHttpSetTimeouts(session, 5000, 5000, 15000, 60000);
@@ -1230,7 +1230,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     std::string body;
     if (anthropic) {
         body = "{\"model\":\"" + EscapeJson(config_.model) +
-               "\",\"max_tokens\":1024,\"stream\":true,\"system\":\"You are MiaoDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\",\"messages\":[";
+               "\",\"max_tokens\":1024,\"stream\":true,\"system\":\"You are WhaleDesK L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\",\"messages\":[";
         bool first = true;
         for (const auto& turn : history) {
             if (!first) body += ',';
@@ -1242,7 +1242,7 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
         body += "{\"role\":\"user\",\"content\":\"" + EscapeJson(prompt) + "\"}]}";
     } else {
         body = "{\"model\":\"" + EscapeJson(config_.model) +
-               "\",\"messages\":[{\"role\":\"system\",\"content\":\"You are MiaoDesk L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\"}";
+               "\",\"messages\":[{\"role\":\"system\",\"content\":\"You are WhaleDesK L3. Be concise. Never claim an OS action ran unless a registered native tool actually ran it.\"}";
         for (const auto& turn : history) {
             body += ",{\"role\":\"user\",\"content\":\"" + EscapeJson(turn.user) + "\"}";
             body += ",{\"role\":\"assistant\",\"content\":\"" + EscapeJson(turn.assistant) + "\"}";
@@ -1336,10 +1336,10 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
         // redacted too, because a user who pastes a credential-bearing URL into Base URL
         // has it echoed back here by name.
         std::wstring detail = L"模型请求失败：HTTP " + std::to_wstring(status) +
-                              L" · Endpoint=" + miaodesk::secrets::RedactSecrets(path);
+                              L" · Endpoint=" + whaledesk::secrets::RedactSecrets(path);
         if (!fullBody.empty()) {
             const auto wideBody = Utf8ToWide(fullBody.substr(0, 300));
-            const auto summarized = miaodesk::secrets::SummarizeRemoteBody(wideBody);
+            const auto summarized = whaledesk::secrets::SummarizeRemoteBody(wideBody);
             if (!summarized.empty()) detail += L" · " + summarized;
         }
         onDone(detail);
@@ -1380,4 +1380,4 @@ void L3Agent::RunRequest(std::wstring prompt, DeltaCallback onDelta, DoneCallbac
     onDone(emitted ? L"" : L"模型返回成功，但没有可显示的文本内容。请检查服务的兼容格式。");
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

@@ -6,12 +6,12 @@
 //   · 快照无效 → valid=false 且不给行,不得用别的东西填满;
 //   · 空待办 → 进度是 0 而不是 1(满格会把空态画成"全部完成");
 //   · 行数受 maxRows 限制,绝不滚动、绝不裁字。
-#include "miaodesk/TodayTaskPresentation.h"
+#include "whaledesk/TodayTaskPresentation.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 int g_failures = 0;
@@ -44,10 +44,10 @@ TodayTaskSnapshot Snap(std::size_t total, std::size_t completed) {
 }
 
 } // namespace
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop
 
 int wmain() {
-    using namespace miaodesk::desktop;
+    using namespace whaledesk::desktop;
 
     // 1. 真实数据:数量、进度、行都来自快照,一个字段都不编。
     const auto three = BuildTodayTaskCardModel(Snap(3, 1), 4);

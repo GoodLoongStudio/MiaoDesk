@@ -1,12 +1,12 @@
 @echo off
 setlocal
-title MiaoDesk ARM64 Quick Test
+title WhaleDesK ARM64 Quick Test
 
 cd /d "%~dp0.."
 
 echo.
 echo ========================================
-echo   MiaoDesk ARM64 Quick Test
+echo   WhaleDesK ARM64 Quick Test
 echo ========================================
 echo.
 

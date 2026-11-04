@@ -1,9 +1,9 @@
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/MiaoWidgetRowAdmission.h"
-#include "miaodesk/MiaoWidgetGeometry.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/NativeWidgetPreset.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/WhaleWidgetRowAdmission.h"
+#include "whaledesk/WhaleWidgetGeometry.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -17,11 +17,11 @@
 #include <utility>
 
 namespace fs = std::filesystem;
-// 几何规则住在 miaodesk::desktop(纯逻辑那份),这里引进来用。
-using miaodesk::desktop::NormalizeWidgetLayout;
-using miaodesk::desktop::WidgetLayout;
+// 几何规则住在 whaledesk::desktop(纯逻辑那份),这里引进来用。
+using whaledesk::desktop::NormalizeWidgetLayout;
+using whaledesk::desktop::WidgetLayout;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 fs::path DefaultRoot() {
@@ -116,7 +116,7 @@ bool IsLostLegacyTitle(std::wstring_view title) {
     return sawQuestion;
 }
 
-constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\MiaoDesk.DesktopWidgetStore.v1";
+constexpr wchar_t kWidgetStoreMutexName[] = L"Local\\WhaleDesK.DesktopWidgetStore.v1";
 
 class WidgetStoreMutexGuard {
 public:
@@ -148,7 +148,7 @@ bool IsValidPersistedSource(const DesktopWidget& widget) {
     }
     if (widget.kind == DesktopWidgetKind::Content) {
         std::wstring definitionId;
-        return content::MiaoWidgetContentCatalog::ParseSource(widget.source.wstring(), &definitionId, nullptr);
+        return content::WhaleWidgetContentCatalog::ParseSource(widget.source.wstring(), &definitionId, nullptr);
     }
     return false;
 }
@@ -180,7 +180,7 @@ DesktopWidgetKind DesktopWidgetStore::ParseKind(std::wstring_view value) noexcep
 }
 
 DesktopWidget DesktopWidgetStore::Normalize(DesktopWidget widget) {
-    // 几何规则住在 MiaoWidgetGeometry(纯逻辑),那里每轮都在本机真跑。
+    // 几何规则住在 WhaleWidgetGeometry(纯逻辑),那里每轮都在本机真跑。
     // 原先它写在这个 .cpp 里,而本文件为了 UTF-16 配置持久化 include 了 Windows 头,
     // 于是 P0-04 "Widget 20 次创建/启停/删除循环"要验的这批不变量一行都跑不到。
     //
@@ -232,7 +232,7 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
     if (!EnsureStoreLock(storeLock, error)) return false;
     items_.clear();
     // 与 WallpaperLibrary 同一个理由:跳过必须留痕,否则"升级不丢组件布局"
-    // 会静默变成"丢了几条并报告成功"。见 MiaoWidgetRowAdmission.h。
+    // 会静默变成"丢了几条并报告成功"。见 WhaleWidgetRowAdmission.h。
     skippedRows_.clear();
     std::error_code ec;
     fs::create_directories(PackageDirectory(), ec);
@@ -270,12 +270,12 @@ bool DesktopWidgetStore::Load(std::wstring* error) {
         }
         widget = Normalize(std::move(widget));
 
-        // 入账判定住在 MiaoWidgetRowAdmission(纯逻辑,本机可测 37 项)。
+        // 入账判定住在 WhaleWidgetRowAdmission(纯逻辑,本机可测 37 项)。
         // 此前是上面那一行 `if (kind == Unknown || source.empty() || !IsValidPersistedSource(...)) continue;`
         // —— 三种完全不同的原因共用一个 continue,而撞 singleton 键时的两种去重结局
         // 也压在同一行里。Load 照常返回 true,调用方只问成败,于是拿着一个悄悄变短的
         // 布局继续。现在五種結局各自留一句话。"Source 受不受认"仍由宿主判
-        // (它要知道内容目录),与 MiaoDesktopBandOrder 同一个分法。
+        // (它要知道内容目录),与 WhaleDesKtopBandOrder 同一个分法。
         const std::wstring singletonKey = NativeSingletonKey(widget);
         bool singletonClashes = false;
         const DesktopWidget* existingSingleton = nullptr;
@@ -493,7 +493,7 @@ bool DesktopWidgetStore::Remove(std::wstring_view id, std::wstring* error) {
 
 bool DesktopWidgetStore::SelfTest() {
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-DesktopWidget-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-DesktopWidget-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
     std::error_code ec;
     fs::create_directories(root, ec);
@@ -520,7 +520,7 @@ bool DesktopWidgetStore::SelfTest() {
         contentWidget.id = DesktopWidgetStore::MakeId();
         contentWidget.kind = DesktopWidgetKind::Content;
         contentWidget.title = L"Content Clock";
-        contentWidget.source = fs::path(content::MiaoWidgetContentCatalog::MakeSource(L"com.goodloong.glass-clock"));
+        contentWidget.source = fs::path(content::WhaleWidgetContentCatalog::MakeSource(L"com.goodloong.glass-clock"));
         contentWidget.monitorId = L"monitor-content";
         contentWidget.enabled = false;
         const auto savedContent = store.Upsert(contentWidget, &error);
@@ -552,4 +552,4 @@ bool DesktopWidgetStore::SelfTest() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

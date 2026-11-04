@@ -1,12 +1,12 @@
-#include "miaodesk/StoreDemoExperience.h"
+#include "whaledesk/StoreDemoExperience.h"
 
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/DesktopWidgetController.h"
-#include "miaodesk/NativeWidgetPreset.h"
-#include "miaodesk/ProductConfig.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WidgetService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/DesktopWidgetController.h"
+#include "whaledesk/NativeWidgetPreset.h"
+#include "whaledesk/ProductConfig.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WidgetService.h"
 
 #include <shlobj.h>
 
@@ -21,7 +21,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::demo {
+namespace whaledesk::demo {
 namespace {
 
 constexpr wchar_t kSection[] = L"StoreDemo";
@@ -327,4 +327,4 @@ void MaybeShowFirstRun(HWND owner) {
     if (choice == IDOK) OfferGoldenPath(owner, false);
 }
 
-} // namespace miaodesk::demo
+} // namespace whaledesk::demo

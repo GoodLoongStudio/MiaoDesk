@@ -11,35 +11,35 @@
 #include <thread>
 #include <vector>
 
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/ContentWidgetHost.h"
-#include "miaodesk/MiaoLockOwnershipHost.h"
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WallpaperPackage.h"
-#include "miaodesk/WallpaperWebRuntimeCoordinator.h"
-#include "miaodesk/WebDesktopSurfaceChild.h"
-#include "miaodesk/WebWallpaperHost.h"
-#include "miaodesk/NativeWidgetHost.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/ContentWidgetHost.h"
+#include "whaledesk/WhaleLockOwnershipHost.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperPackage.h"
+#include "whaledesk/WallpaperWebRuntimeCoordinator.h"
+#include "whaledesk/WebDesktopSurfaceChild.h"
+#include "whaledesk/WebWallpaperHost.h"
+#include "whaledesk/NativeWidgetHost.h"
 
 namespace fs = std::filesystem;
-namespace lock_host = miaodesk::lock_host;
+namespace lock_host = whaledesk::lock_host;
 
 // WallpaperEngine.cpp is compiled with its historical WinMain symbol renamed to
-// MiaoDeskWallpaperMain. The Windows headers declare wWinMain with C linkage,
+// WhaleDesKWallpaperMain. The Windows headers declare wWinMain with C linkage,
 // so the macro-renamed legacy entry keeps that linkage as well.
-extern "C" int WINAPI MiaoDeskWallpaperMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, int showCommand);
+extern "C" int WINAPI WhaleDesKWallpaperMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, int showCommand);
 
 namespace {
 
-constexpr wchar_t kWallpaperControlClass[] = L"MiaoDesk.Native.WallpaperControl";
-constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
-constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
-constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
-constexpr wchar_t kWorkbenchSubclassProperty[] = L"MiaoDesk.Settings.Workbench.OriginalProc";
+constexpr wchar_t kWallpaperControlClass[] = L"WhaleDesK.Native.WallpaperControl";
+constexpr wchar_t kDesktopLibraryClass[] = L"WhaleDesK.Native.DesktopLibrary";
+constexpr wchar_t kWallpaperHostClass[] = L"WhaleDesK.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"WhaleDesK.Native.WebWallpaperHost";
+constexpr wchar_t kWorkbenchSubclassProperty[] = L"WhaleDesK.Settings.Workbench.OriginalProc";
 constexpr int kApiNavId = 6116;
 constexpr int kWorkbenchEntryId = 6180;
 
@@ -47,12 +47,12 @@ constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
 constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
 constexpr wchar_t kWidgetRuntimeMode[] = L"--widget-runtime";
 
-constexpr wchar_t kShellMutex[] = L"Local\\MiaoDesk.DesktopShellSupervisor.v1";
-constexpr wchar_t kWebRuntimeMutex[] = L"Local\\MiaoDesk.WebWallpaperRuntime.v1";
-constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\MiaoDesk.WidgetRuntime.v1";
-constexpr wchar_t kShellStopEvent[] = L"Local\\MiaoDesk.DesktopShellSupervisor.Stop.v1";
-constexpr wchar_t kWebRuntimeStopEvent[] = L"Local\\MiaoDesk.WebWallpaperRuntime.Stop.v1";
-constexpr wchar_t kWidgetRuntimeStopEvent[] = L"Local\\MiaoDesk.WidgetRuntime.Stop.v1";
+constexpr wchar_t kShellMutex[] = L"Local\\WhaleDesK.DesktopShellSupervisor.v1";
+constexpr wchar_t kWebRuntimeMutex[] = L"Local\\WhaleDesK.WebWallpaperRuntime.v1";
+constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\WhaleDesK.WidgetRuntime.v1";
+constexpr wchar_t kShellStopEvent[] = L"Local\\WhaleDesK.DesktopShellSupervisor.Stop.v1";
+constexpr wchar_t kWebRuntimeStopEvent[] = L"Local\\WhaleDesK.WebWallpaperRuntime.Stop.v1";
+constexpr wchar_t kWidgetRuntimeStopEvent[] = L"Local\\WhaleDesK.WidgetRuntime.Stop.v1";
 
 struct HelperSpec {
     const wchar_t* mode;
@@ -225,7 +225,7 @@ fs::path HarnessExecutablePath() {
     if (executable.empty()) return {};
     const fs::path directory = fs::path(executable).parent_path();
     std::error_code ec;
-    for (const wchar_t* name : {L"MiaoDeskHarness.exe", L"MiaoDeskHarness.exe"}) {
+    for (const wchar_t* name : {L"WhaleDesKHarness.exe", L"WhaleDesKHarness.exe"}) {
         const fs::path candidate = directory / name;
         if (fs::is_regular_file(candidate, ec)) return candidate;
         ec.clear();
@@ -234,7 +234,7 @@ fs::path HarnessExecutablePath() {
 }
 
 void LaunchDeepSeekHarness(HWND owner) {
-    for (const wchar_t* className : {L"MiaoDesk.Native.HarnessWindow", L"MiaoDesk.Native.HarnessWindow"}) {
+    for (const wchar_t* className : {L"WhaleDesK.Native.HarnessWindow", L"WhaleDesK.Native.HarnessWindow"}) {
         const HWND existing = FindWindowW(className, nullptr);
         if (!existing) continue;
         SetWindowTextW(existing, L"妙喵工作台 · DeepSeek Harness");
@@ -357,7 +357,7 @@ bool WorkAreaSelfTest() {
 bool WebLibrarySelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-WebLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-WebLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -369,24 +369,24 @@ bool WebLibrarySelfTest() {
     fs::create_directories(isolatedLocalAppData, ec);
     bool ok = !ec && SetEnvironmentVariableW(L"LOCALAPPDATA", isolatedLocalAppData.c_str()) != FALSE;
 
-    miaodesk::wallpaper::WallpaperLibrary library(root / L"Library");
+    whaledesk::wallpaper::WallpaperLibrary library(root / L"Library");
     std::wstring error;
     ok = ok && library.Load(&error);
-    ok = ok && miaodesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"https://example.com/wallpaper");
-    ok = ok && !miaodesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"http://example.com/wallpaper");
-    ok = ok && !miaodesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"https://user:pass@example.com/wallpaper");
+    ok = ok && whaledesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"https://example.com/wallpaper");
+    ok = ok && !whaledesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"http://example.com/wallpaper");
+    ok = ok && !whaledesk::wallpaper::WallpaperLibrary::IsTrustedWebUrl(L"https://user:pass@example.com/wallpaper");
 
     const auto imported = library.ImportWebUrl(L"https://example.com/wallpaper", L"Web Self Test", &error);
-    ok = ok && imported.has_value() && imported->kind == miaodesk::wallpaper::LibraryWallpaperKind::Web;
+    ok = ok && imported.has_value() && imported->kind == whaledesk::wallpaper::LibraryWallpaperKind::Web;
 
-    miaodesk::wallpaper::WallpaperLibrary reloaded(root / L"Library");
+    whaledesk::wallpaper::WallpaperLibrary reloaded(root / L"Library");
     ok = ok && reloaded.Load(&error);
     if (imported) {
         const auto persisted = reloaded.Find(imported->id);
         ok = ok && persisted.has_value() && persisted->source.wstring() == L"https://example.com/wallpaper";
-        ok = ok && miaodesk::wallpaper::ActivateWebWallpaperItem(*imported, L"", &error);
+        ok = ok && whaledesk::wallpaper::ActivateWebWallpaperItem(*imported, L"", &error);
 
-        const fs::path wallpaperConfig = isolatedLocalAppData / L"MiaoDesk" / L"wallpaper.ini";
+        const fs::path wallpaperConfig = isolatedLocalAppData / L"WhaleDesK" / L"wallpaper.ini";
         ok = ok && ReadProfileValue(wallpaperConfig, L"Enabled") == L"1";
         ok = ok && _wcsicmp(ReadProfileValue(wallpaperConfig, L"Scene").c_str(), L"web") == 0;
         ok = ok && ReadProfileValue(wallpaperConfig, L"Image") == L"https://example.com/wallpaper";
@@ -407,9 +407,9 @@ bool IsDesktopSurfaceWindow(HWND window) {
     wchar_t className[160]{};
     if (!GetClassNameW(window, className, static_cast<int>(std::size(className)))) return false;
     if (_wcsicmp(className, kWallpaperHostClass) == 0 || _wcsicmp(className, kWebHostClass) == 0) return true;
-    return _wcsicmp(className, miaodesk::wallpaper::kNativeWidgetSurfaceClass) == 0 &&
-           miaodesk::wallpaper::DesktopShellHost::InferRole(window) ==
-               miaodesk::wallpaper::DesktopSurfaceRole::Widget;
+    return _wcsicmp(className, whaledesk::wallpaper::kNativeWidgetSurfaceClass) == 0 &&
+           whaledesk::wallpaper::DesktopShellHost::InferRole(window) ==
+               whaledesk::wallpaper::DesktopSurfaceRole::Widget;
 }
 
 void CollectDescendantSurfaces(HWND root, std::vector<HWND>& surfaces) {
@@ -439,7 +439,7 @@ int RunDesktopShellSupervisor() {
     HANDLE stopEvent = CreateStopEvent(kShellStopEvent);
     if (!stopEvent) return 45;
 
-    miaodesk::wallpaper::DesktopShellHost shell;
+    whaledesk::wallpaper::DesktopShellHost shell;
     ULONGLONG lastStackRepair = 0;
     while (WaitForSingleObject(stopEvent, 250) == WAIT_TIMEOUT) {
         std::wstring ignored;
@@ -447,14 +447,14 @@ int RunDesktopShellSupervisor() {
         bool stackRepairNeeded = false;
         for (HWND surface : CollectDesktopSurfaceWindows()) {
             if (!surface || !IsWindow(surface)) continue;
-            const auto role = miaodesk::wallpaper::DesktopShellHost::InferRole(surface);
+            const auto role = whaledesk::wallpaper::DesktopShellHost::InferRole(surface);
             auto health = shell.InspectSurface(surface, role);
             RECT screenRect{};
             if (!GetWindowRect(surface, &screenRect) ||
                 screenRect.right <= screenRect.left || screenRect.bottom <= screenRect.top) continue;
 
-            const bool layeredRequired = role != miaodesk::wallpaper::DesktopSurfaceRole::Widget ||
-                !miaodesk::wallpaper::DesktopShellHost::IsWidgetNativeSurface(surface) ||
+            const bool layeredRequired = role != whaledesk::wallpaper::DesktopSurfaceRole::Widget ||
+                !whaledesk::wallpaper::DesktopShellHost::IsWidgetNativeSurface(surface) ||
                 (GetWindowLongPtrW(GetParent(surface), GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) == 0;
             if (!health.parent || !health.childStyle || (layeredRequired && !health.layered) || !health.geometry) {
                 shell.AttachSurface(surface, role, screenRect,
@@ -464,7 +464,7 @@ int RunDesktopShellSupervisor() {
         }
         const ULONGLONG now = GetTickCount64();
         if (stackRepairNeeded || (lastStackRepair != 0 && now - lastStackRepair >= 10000)) {
-            shell.RepairKnownMiaoDeskSurfaces();
+            shell.RepairKnownWhaleDesKSurfaces();
             lastStackRepair = now;
         }
     }
@@ -473,14 +473,14 @@ int RunDesktopShellSupervisor() {
     return 0;
 }
 
-int RunScopedWebCoordinator(miaodesk::wallpaper::WallpaperWebRuntimeScope scope,
+int RunScopedWebCoordinator(whaledesk::wallpaper::WallpaperWebRuntimeScope scope,
                             const wchar_t* mutexName, const wchar_t* stopEventName) {
     SingletonGuard singleton(mutexName);
     if (!singleton.Owner()) return 0;
     HANDLE stopEvent = CreateStopEvent(stopEventName);
     if (!stopEvent) return 46;
 
-    miaodesk::wallpaper::WallpaperWebRuntimeCoordinator coordinator(scope);
+    whaledesk::wallpaper::WallpaperWebRuntimeCoordinator coordinator(scope);
     if (!coordinator.Start()) {
         CloseHandle(stopEvent);
         return 47;
@@ -497,49 +497,49 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR commandLine, i
     // There is one production WebView2 desktop-surface child implementation.
     // The old WebWallpaperChildHost remains compiled only as migration source
     // reference and is no longer routed from the executable entrypoint.
-    const int surfaceWebResult = miaodesk::wallpaper::TryRunWebDesktopSurfaceChild(instance);
+    const int surfaceWebResult = whaledesk::wallpaper::TryRunWebDesktopSurfaceChild(instance);
     if (surfaceWebResult >= 0) return surfaceWebResult;
 
-    const int contentWidgetResult = miaodesk::wallpaper::TryRunContentWidgetHost(instance);
+    const int contentWidgetResult = whaledesk::wallpaper::TryRunContentWidgetHost(instance);
     if (contentWidgetResult >= 0) return contentWidgetResult;
 
-    const int nativeWidgetResult = miaodesk::wallpaper::TryRunNativeWidgetHost(instance);
+    const int nativeWidgetResult = whaledesk::wallpaper::TryRunNativeWidgetHost(instance);
     if (nativeWidgetResult >= 0) return nativeWidgetResult;
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(kShellMode) != std::wstring_view::npos)
         return RunDesktopShellSupervisor();
     if (args.find(kWebRuntimeMode) != std::wstring_view::npos)
-        return RunScopedWebCoordinator(miaodesk::wallpaper::WallpaperWebRuntimeScope::WebWallpaper,
+        return RunScopedWebCoordinator(whaledesk::wallpaper::WallpaperWebRuntimeScope::WebWallpaper,
                                        kWebRuntimeMutex, kWebRuntimeStopEvent);
     if (args.find(kWidgetRuntimeMode) != std::wstring_view::npos)
-        return RunScopedWebCoordinator(miaodesk::wallpaper::WallpaperWebRuntimeScope::Widgets,
+        return RunScopedWebCoordinator(whaledesk::wallpaper::WallpaperWebRuntimeScope::Widgets,
                                        kWidgetRuntimeMutex, kWidgetRuntimeStopEvent);
 
     const bool selfTest = args.find(L"--self-test") != std::wstring_view::npos;
     if (selfTest) {
-        if (!miaodesk::wallpaper::WebWallpaperProcessSet::SelfTest()) return 37;
+        if (!whaledesk::wallpaper::WebWallpaperProcessSet::SelfTest()) return 37;
         if (!WebLibrarySelfTest()) return 38;
-        if (!miaodesk::wallpaper::WallpaperWebRuntimeCoordinator::SelfTest()) return 39;
+        if (!whaledesk::wallpaper::WallpaperWebRuntimeCoordinator::SelfTest()) return 39;
         if (!WorkAreaSelfTest()) return 40;
-        if (!miaodesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
-        if (!miaodesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
-        if (!miaodesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return 43;
-        if (!miaodesk::wallpaper::DesktopShellHost::SelfTest()) return 44;
-        if (!miaodesk::content::MiaoSceneD2DRenderer::SelfTest()) return 45;
-        return MiaoDeskWallpaperMain(instance, previous, commandLine, showCommand);
+        if (!whaledesk::wallpaper::WallpaperPackage::SelfTest()) return 41;
+        if (!whaledesk::wallpaper::DesktopWidgetStore::SelfTest()) return 42;
+        if (!whaledesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return 43;
+        if (!whaledesk::wallpaper::DesktopShellHost::SelfTest()) return 44;
+        if (!whaledesk::content::WhaleSceneD2DRenderer::SelfTest()) return 45;
+        return WhaleDesKWallpaperMain(instance, previous, commandLine, showCommand);
     }
 
-    // A second MiaoDeskWallpaper invocation is only a command sender for the
+    // A second WhaleDesKWallpaper invocation is only a command sender for the
     // already-running native wallpaper singleton. It must not own or stop the
     // shared helper fault domains.
     if (FindWindowW(kWallpaperControlClass, nullptr))
-        return MiaoDeskWallpaperMain(instance, previous, commandLine, showCommand);
+        return WhaleDesKWallpaperMain(instance, previous, commandLine, showCommand);
 
     for (const auto& helper : kHelpers) LaunchHelper(helper);
 
     const HWINEVENTHOOK workAreaHook = InstallWorkAreaGuard();
-    const int result = MiaoDeskWallpaperMain(instance, previous, commandLine, showCommand);
+    const int result = WhaleDesKWallpaperMain(instance, previous, commandLine, showCommand);
 
     // This path is reached on an orderly native wallpaper shutdown. An abnormal
     // crash never sends these events, so Shell/Web/Widget helpers survive long

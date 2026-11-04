@@ -10,15 +10,15 @@
 //   第 2k+1 行 BuildAudioBridgeEnvelope 对该帧的输出
 // 分成两行而不是把信封塞进 JSON 字符串,是为了避免在 C++ 里手写 JSON 转义 ——
 // 那正是这份代码最可能出错的地方,而它本身不该被测。
-#include "miaodesk/WallpaperWebAudioEnvelope.h"
+#include "whaledesk/WallpaperWebAudioEnvelope.h"
 
 #include <cmath>
 #include <cstdio>
 #include <limits>
 #include <string>
 
-using miaodesk::wallpaper::BuildAudioBridgeEnvelope;
-using miaodesk::content::inputbus::AudioSpectrumFrame;
+using whaledesk::wallpaper::BuildAudioBridgeEnvelope;
+using whaledesk::content::inputbus::AudioSpectrumFrame;
 
 static void Emit(const AudioSpectrumFrame& frame) {
     // 非有限值写成 "nan" / "inf" / "-inf" 三个字符串,而不是一律 null。

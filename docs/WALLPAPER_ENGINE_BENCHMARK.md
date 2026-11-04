@@ -1,4 +1,4 @@
-# Wallpaper Engine 能力对标与 MiaoDesk 建设基准
+# Wallpaper Engine 能力对标与 WhaleDesK 建设基准
 
 - 更新：2026-10-03；替代 2026-09-20 的过期差距快照，旧内容由 Git 追溯。
 - 目标：动态壁纸达到 Wallpaper Engine 水平，是专业版完成条件。
@@ -25,7 +25,7 @@ Wallpaper Engine 文档列出粒子、时间线、音频响应、鼠标视差、
 | 深度/视差/形变 | 变换、输入、绑定已有 | 深度图、局部形变、边缘处理、效果配方 | WALL-02 |
 | 动画 | 关键帧、循环、缓动、事件已有 | 状态组合、循环接缝、参数过渡、暂停恢复 | WALL-03 |
 | 粒子/后处理/Shader | Particle、Render Graph、D3D11 模块已有 | 多 Pass/组合效果按后端核验，扩充效果库与预算 | WALL-04、ADV-04 |
-| 音频/鼠标 | IndependentWallpaperHost 已发布；MiaoWallpaperAudioTap 已采集 | 跨屏归属、设备变化、暂停、质量、组合响应 | DESK-03/04、WALL-05 |
+| 音频/鼠标 | IndependentWallpaperHost 已发布；WhaleWallpaperAudioTap 已采集 | 跨屏归属、设备变化、暂停、质量、组合响应 | DESK-03/04、WALL-05 |
 | Web 音频 | WebDesktopSurfaceChild 已推帧 | 真实页面收帧、接口/性能、暂停采集策略 | DESK-05、WALL-05 |
 | 图片/视频/Web | WIC、Media Foundation、WebView2 与包入口已有 | 格式能力、循环/音画同步、恢复、质量档 | WALL-06 |
 | 多屏/电源/自动规则 | Shell、monitor、performance/automation 已有 | 独立/跨屏布局、全屏/省电/锁屏与长期运行 | P0、PERF、WALL-06 |

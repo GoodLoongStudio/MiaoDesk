@@ -1,6 +1,6 @@
-#include "miaodesk/WallpaperAutomation.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperAutomation.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr unsigned kAllDaysMask = 0x7f;
@@ -585,7 +585,7 @@ std::wstring WallpaperAutomationStore::MakeId(std::wstring_view prefix) {
 bool WallpaperAutomationStore::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-Automation-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-Automation-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -671,4 +671,4 @@ bool WallpaperAutomationStore::SelfTest() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

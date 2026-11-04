@@ -1,17 +1,17 @@
-#include "miaodesk/WallpaperWebRuntimeCoordinator.h"
-#include "miaodesk/AppPaths.h"
+#include "whaledesk/WallpaperWebRuntimeCoordinator.h"
+#include "whaledesk/AppPaths.h"
 
-#include "miaodesk/ContentWidgetHost.h"
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/WallpaperIndependentLayout.h"
-#include "miaodesk/WallpaperMonitorAssignments.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WallpaperPerformancePolicy.h"
-#include "miaodesk/WebWallpaperHost.h"
-#include "miaodesk/NativeWidgetHost.h"
-#include "miaodesk/NativeWidgetPreset.h"
+#include "whaledesk/ContentWidgetHost.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/WallpaperIndependentLayout.h"
+#include "whaledesk/WallpaperMonitorAssignments.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WallpaperPerformancePolicy.h"
+#include "whaledesk/WebWallpaperHost.h"
+#include "whaledesk/NativeWidgetHost.h"
+#include "whaledesk/NativeWidgetPreset.h"
 
 #include <windows.h>
 
@@ -28,12 +28,12 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
-constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
-constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
+constexpr wchar_t kWallpaperHostClass[] = L"WhaleDesK.Native.WallpaperHost";
+constexpr wchar_t kWallpaperSettingsClass[] = L"WhaleDesK.Native.WallpaperSettings";
+constexpr wchar_t kDesktopLibraryClass[] = L"WhaleDesK.Native.DesktopLibrary";
 constexpr std::chrono::milliseconds kTickInterval{250};
 constexpr ULONGLONG kStateRefreshMs = 1000;
 constexpr ULONGLONG kRecoveryCooldownMs = 3000;
@@ -152,7 +152,7 @@ bool HasEnabledContentWidgets() {
     for (const auto& raw : store.Items()) {
         const DesktopWidget widget = DesktopWidgetStore::Normalize(raw);
         if (widget.enabled && widget.kind == DesktopWidgetKind::Content &&
-            content::MiaoWidgetContentCatalog::IsContentSource(widget.source.wstring())) return true;
+            content::WhaleWidgetContentCatalog::IsContentSource(widget.source.wstring())) return true;
     }
     return false;
 }
@@ -527,4 +527,4 @@ bool ActivateWebWallpaperItem(const WallpaperLibraryItem& item,
                                    : PersistMonitorWeb(item, targetMonitorId, error);
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

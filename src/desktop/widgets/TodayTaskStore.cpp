@@ -1,6 +1,6 @@
-#include "miaodesk/TodayTaskStore.h"
+#include "whaledesk/TodayTaskStore.h"
 
-#include "miaodesk/AppPaths.h"
+#include "whaledesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 constexpr std::size_t kMaxTasks = 32;
@@ -244,7 +244,7 @@ bool TodayTaskStore::SelfTest() {
     std::array<wchar_t, MAX_PATH> tempRoot{};
     if (GetTempPathW(static_cast<DWORD>(tempRoot.size()), tempRoot.data()) == 0) return false;
     const fs::path testRoot = fs::path(tempRoot.data()) /
-        (L"MiaoDesk-TodayTasks-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-TodayTasks-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     std::error_code ec;
     fs::create_directories(testRoot, ec);
     if (ec) return false;
@@ -278,4 +278,4 @@ bool TodayTaskStore::SelfTest() {
     return true;
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

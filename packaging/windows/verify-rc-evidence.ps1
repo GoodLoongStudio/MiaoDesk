@@ -149,7 +149,7 @@ function Write-SyntheticEvidence([string]$Root) {
 }
 
 if ($SelfTest) {
-    $root=Join-Path ([IO.Path]::GetTempPath()) ("MiaoDesk-RcEvidenceSelfTest-"+[Guid]::NewGuid().ToString('N'))
+    $root=Join-Path ([IO.Path]::GetTempPath()) ("WhaleDesK-RcEvidenceSelfTest-"+[Guid]::NewGuid().ToString('N'))
     try {
         Write-SyntheticEvidence $root
         $errors=@(Test-EvidenceRoot $root); if ($errors.Count -ne 0) { throw ("Expected valid synthetic evidence to pass:"+[Environment]::NewLine+($errors -join [Environment]::NewLine)) }

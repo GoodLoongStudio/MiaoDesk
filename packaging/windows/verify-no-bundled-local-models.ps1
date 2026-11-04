@@ -10,7 +10,7 @@ if (-not (Test-Path $Root -PathType Container)) {
     throw "Package root does not exist: $Root"
 }
 
-# Current MiaoDesk releases may connect to user-managed local inference servers, but
+# Current WhaleDesK releases may connect to user-managed local inference servers, but
 # they do not distribute model weights. This is a packaging invariant, not a license
 # interpretation. If product policy changes, legal/license review must happen before
 # changing this gate.
@@ -58,7 +58,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force -Erro
 }
 
 if ($hits.Count -gt 0) {
-    Write-Host '::error title=Bundled local AI model detected::MiaoDesk release packages must not contain local model weights until distribution terms are explicitly approved.'
+    Write-Host '::error title=Bundled local AI model detected::WhaleDesK release packages must not contain local model weights until distribution terms are explicitly approved.'
     foreach ($hit in $hits) {
         Write-Host "::error::$($hit.path) ($($hit.bytes) bytes)"
     }

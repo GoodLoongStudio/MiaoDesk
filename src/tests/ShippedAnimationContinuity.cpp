@@ -1,24 +1,24 @@
 // WALL-03:所有随产品发行、以及作者能照抄的包,其动画轨道必须"看得见地连续"。
 //
-// 为什么要单独一道门:MiaoSceneTimelinePolicyTest 钉的是**判断**本身对不对,
+// 为什么要单独一道门:WhaleSceneTimelinePolicyTest 钉的是**判断**本身对不对,
 // 而这里钉的是**真的内容**有没有问题。两者不能互相代替 —— 判断对而内容坏,
 // 和内容好而判断坏,是两种失败。
 //
 // 具体防的回归:某天有人改一个内置壁纸,把 Loop 轨道的最后一个关键帧值动了一下
 // (比如调了一次亮度),端点从此不再相同,于是每过一圈天空硬跳一次。那件事不会有任何
-// 测试红:Validate 只查时间递增,MiaoSceneRuntimeTest 不覆盖动画。而它是用户每 8 秒
+// 测试红:Validate 只查时间递增,WhaleSceneRuntimeTest 不覆盖动画。而它是用户每 8 秒
 // 就看一次的东西。
 //
 // 本轮实测:三个内置壁纸 24 条 Loop 轨道 + 一个示例 1 条 PingPong 轨道,端点全部逐位
 // 相同;其中一条有一个 1/240 秒的淡变(见下面 RegisteredSubFrameTracks 的说明)。
 // 这道门把当前状态固定下来,并且**变化就会红**。
 //
-// 走的是真实加载链(MiaoContentPackage::Load → 反序列化 → Validate),
+// 走的是真实加载链(WhaleContentPackage::Load → 反序列化 → Validate),
 // 与 ExamplePackagesLoad 同一套做法:不读 JSON 猜字段,让加载器告诉我们它看到什么。
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/MiaoSceneTimelinePolicy.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/WhaleSceneTimelinePolicy.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -27,7 +27,7 @@
 #include <string>
 #include <vector>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 namespace fs = std::filesystem;
 
 static int failures = 0;
@@ -57,7 +57,7 @@ static fs::path FindRepoRoot() {
 // 已登记的一帧内完成位移的轨道。登记不是"放过",是把已知的悬着的问题写在代码里,
 // 让下一轮能看到它;静悄悄地放过比报错更糟。
 //
-// 现在只有一条:MiaoCloud 的 animation://miao-cloud/blink-blink。
+// 现在只有一条:WhaleCloud 的 animation://whale-cloud/blink-blink。
 // 它的"淡入"是 2.829204 → 2.833370666666667 秒,差 0.004166666666667 = 1/240 秒 ——
 // 恰好是产品支持的最高帧率下的一帧。于是 1~240fps 的任何一档,插值都一次采不到样:
 // 每一帧上 opacity 只能是 0 或 1,作者写的淡变是惰性的。
@@ -70,7 +70,7 @@ static fs::path FindRepoRoot() {
 // 契约是紧的:多一条、少一条都会红。多一条说明有人新写了看不见的位移,
 // 少一条说明登记的问题已经不在了而这张表没跟着更新。
 static std::set<std::wstring> RegisteredSubFrameTracks() {
-    return {L"animation://miao-cloud/blink-blink"};
+    return {L"animation://whale-cloud/blink-blink"};
 }
 
 int wmain() {
@@ -144,19 +144,19 @@ int wmain() {
             const auto label = std::string(where.label) + " " + it->path().filename().string();
 
             std::wstring error;
-            LoadedMiaoContentPackage package;
-            if (!MiaoContentPackage::Load(it->path(), &package, &error)) {
+            LoadedWhaleContentPackage package;
+            if (!WhaleContentPackage::Load(it->path(), &package, &error)) {
                 std::printf("  [FAIL] %s 加载失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;
                 continue;
             }
             SceneRuntimeDefinition runtime;
-            if (!MiaoSceneSerializer::DeserializePackage(package, &runtime, &error)) {
+            if (!WhaleSceneSerializer::DeserializePackage(package, &runtime, &error)) {
                 std::printf("  [FAIL] %s 反序列化失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;
                 continue;
             }
-            if (!MiaoSceneRuntimeModel::Validate(runtime, &error)) {
+            if (!WhaleSceneRuntimeModel::Validate(runtime, &error)) {
                 std::printf("  [FAIL] %s 场景校验失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;
                 continue;

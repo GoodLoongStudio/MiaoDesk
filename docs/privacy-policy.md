@@ -1,8 +1,8 @@
-# 妙喵 MiaoDesk 隐私政策
+# 妙喵 WhaleDesK 隐私政策
 
 *最后更新：2026 年 9 月 20 日*
 
-本政策适用于 Microsoft Windows 上的妙喵 MiaoDesk 桌面应用（"本应用"，产品名：MiaoDesk；发布者：GoodLoongStudio）。
+本政策适用于 Microsoft Windows 上的妙喵 WhaleDesK 桌面应用（"本应用"，产品名：WhaleDesK；发布者：GoodLoongStudio）。
 
 **一句话总结：本应用无账号、无遥测、无广告。你的数据只在你的设备、你自己的局域网、与你自己选择的 AI 服务商之间流动 —— 三者都不经过 GoodLoongStudio。**
 
@@ -74,15 +74,15 @@
 
 发布者：GoodLoongStudio
 - GitHub：https://github.com/GoodLoongStudio
-- 仓库 / 问题反馈：https://github.com/GoodLoongStudio/MiaoDesk/issues
+- 仓库 / 问题反馈：https://github.com/GoodLoongStudio/WhaleDesK/issues
 
 ---
 
-# MiaoDesk Privacy Policy
+# WhaleDesK Privacy Policy
 
 *Last updated: September 20, 2026*
 
-This policy applies to the MiaoDesk desktop application on Microsoft Windows ("the App"), published by GoodLoongStudio.
+This policy applies to the WhaleDesK desktop application on Microsoft Windows ("the App"), published by GoodLoongStudio.
 
 **In one sentence: no account, no telemetry, no ads. Your data flows only between your device, your own local network, and the AI provider you choose yourself — none of it passes through GoodLoongStudio.**
 
@@ -154,4 +154,4 @@ If this policy changes, we will update the "Last updated" date here. Continued u
 
 Publisher: GoodLoongStudio
 - GitHub: https://github.com/GoodLoongStudio
-- Issues: https://github.com/GoodLoongStudio/MiaoDesk/issues
+- Issues: https://github.com/GoodLoongStudio/WhaleDesK/issues

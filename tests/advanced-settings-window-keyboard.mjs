@@ -39,7 +39,7 @@ assert.match(settingsText, /case IDCANCEL:/,
 // first attempt made it DestroyWindow, which would have been a second, different action on
 // the same intent: it throws away the control state the window is kept for, and does it
 // only when the user pressed Esc.
-const hideCalls = [...settingsText.matchAll(/miaodesk::surface_focus::HideSurface\(/g)];
+const hideCalls = [...settingsText.matchAll(/whaledesk::surface_focus::HideSurface\(/g)];
 assert.equal(hideCalls.length, 3,
   `all three close routes (Esc, the 关闭 button and WM_CLOSE) must take the same hide path;`
   + ` found ${hideCalls.length}. Divergence here is exactly how two surfaces in one file end`

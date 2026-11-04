@@ -5,7 +5,7 @@ const read = (path) => fs.readFileSync(path, "utf8");
 // Overridable so the mutations in the doc can be run against copies of the
 // source without ever editing the real file.
 const service = read(process.env.WIDGET_SERVICE_CPP ?? "src/desktop/widgets/WidgetService.cpp");
-const header = read(process.env.WIDGET_SERVICE_H ?? "src/include/miaodesk/WidgetService.h");
+const header = read(process.env.WIDGET_SERVICE_H ?? "src/include/whaledesk/WidgetService.h");
 
 // Regression for the built-in preset geometry guard.
 //

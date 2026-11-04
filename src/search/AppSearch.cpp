@@ -1,6 +1,6 @@
-#include "miaodesk/AppSearch.h"
-#include "miaodesk/SearchDedupPolicy.h"
-#include "miaodesk/SearchTextScoring.h"
+#include "whaledesk/AppSearch.h"
+#include "whaledesk/SearchDedupPolicy.h"
+#include "whaledesk/SearchTextScoring.h"
 #include <windows.h>
 #include <filesystem>
 #include <algorithm>
@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 std::wstring Lower(std::wstring value) {
@@ -131,4 +131,4 @@ std::vector<SearchResult> AppSearch::Query(const std::wstring& query, std::size_
     return RankSearchEntries(rankable, query, maxResults);
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

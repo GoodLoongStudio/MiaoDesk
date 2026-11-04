@@ -7,13 +7,13 @@
 //
 // 第一条(注入一个可修复参数错误可自动修正)也在这里:断言指令**只**针对那一个
 // 问题,而不是把整份校验报告倒给模型 —— 后者会让模型重写整个包,而它只需要改一个字段。
-#include "miaodesk/CreationRepairPlanner.h"
+#include "whaledesk/CreationRepairPlanner.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -257,10 +257,10 @@ void TestThePreviousCandidateIsCarriedAlong() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestARepairableParameterErrorBecomesATargetedInstruction();
     TestTheInstructionCarriesTheUsersBriefVerbatim();
     TestUnrepairableIssuesStopImmediately();

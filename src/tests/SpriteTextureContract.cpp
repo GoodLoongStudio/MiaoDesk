@@ -4,16 +4,16 @@
 // opacity/tint/cornerRadius/materialId,没有任何指向图片的属性,于是非 solidColor
 // 材质被渲染器一律跳过 —— skill 做得出的东西天花板就是"纯色矩形"。
 //
-// 契约本身(props 里一个 assetReference)不需要新机制,MiaoAssetDatabase 也已经在
+// 契约本身(props 里一个 assetReference)不需要新机制,WhaleAssetDatabase 也已经在
 // 跟踪组件属性对资产的依赖。真正的新东西是"MISSING asset 引用名"这条强制:
 // 少了它,一个拼错的 asset id 会通过校验,然后在渲染期变成一块空白矩形 —— 那读起来
 // 像渲染器 bug,不像创作错误。
-#include "miaodesk/MiaoSceneModel.h"
+#include "whaledesk/WhaleSceneModel.h"
 
 #include <cstdio>
 #include <string>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 
 static int failures = 0;
 static void Check(bool ok, const char* what) {
@@ -64,7 +64,7 @@ int wmain() {
     std::printf("\n1. 没有 texture 属性:合法(纯色路径不受影响)\n");
     {
         const SceneDefinition scene = Base();
-        Check(MiaoSceneModel::Validate(scene, &error),
+        Check(WhaleSceneModel::Validate(scene, &error),
               "无 texture 的 SpriteRenderer 仍然通过校验");
     }
 
@@ -77,7 +77,7 @@ int wmain() {
         asset.source = L"assets/photo.png";
         scene.assets.push_back(asset);
         AddTexture(scene, L"asset://photo");
-        Check(MiaoSceneModel::Validate(scene, &error), "指向 Image 资产 -> 通过");
+        Check(WhaleSceneModel::Validate(scene, &error), "指向 Image 资产 -> 通过");
         if (!error.empty()) std::printf("         (error = %ls)\n", error.c_str());
     }
 
@@ -85,14 +85,14 @@ int wmain() {
     {
         SceneDefinition scene = Base();
         AddTexture(scene, L"");
-        Check(MiaoSceneModel::Validate(scene, &error), "空引用 -> 通过");
+        Check(WhaleSceneModel::Validate(scene, &error), "空引用 -> 通过");
     }
 
     std::printf("\n4. texture 指向不存在的资产:必须被拒\n");
     {
         SceneDefinition scene = Base();
         AddTexture(scene, L"asset://typo");
-        const bool ok = MiaoSceneModel::Validate(scene, &error);
+        const bool ok = WhaleSceneModel::Validate(scene, &error);
         Check(!ok, "缺失资产 -> 拒绝");
         // 报错必须点名是哪个 asset id,否则创作者无从下手。
         Check(error.find(L"asset://typo") != std::wstring::npos,
@@ -109,7 +109,7 @@ int wmain() {
         asset.source = L"assets/wrong.bin";
         scene.assets.push_back(asset);
         AddTexture(scene, L"asset://wrong");
-        const bool ok = MiaoSceneModel::Validate(scene, &error);
+        const bool ok = WhaleSceneModel::Validate(scene, &error);
         Check(!ok, "非 Image 资产 -> 拒绝");
         if (ok) std::printf("         (type %d 竟然通过了)\n", static_cast<int>(type));
     }
@@ -120,7 +120,7 @@ int wmain() {
         SceneDefinition scene = Base();
         AddTexture(scene, L"asset://missing");
         Sprite(scene).kind = ComponentKind::TextRenderer;
-        Check(MiaoSceneModel::Validate(scene, &error),
+        Check(WhaleSceneModel::Validate(scene, &error),
               "同一属性在 TextRenderer 上不受 sprite 规则约束");
     }
 

@@ -1,4 +1,4 @@
-# MiaoDesk 专业版能力与证据台账（PRO-01）
+# WhaleDesK 专业版能力与证据台账（PRO-01）
 
 - 状态：PRO-01 交付物；与总体规划第 3/4/5 节同源，不另建目标任务。
 - 建立：2026-10-03；实施：自动推进会话；签收：待产品所有者与 Windows 验收者。
@@ -23,12 +23,12 @@
 
 ## 2. Scene 壁纸能力台账
 
-Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下表"声明/运行(D2D)/运行(D3D11)"分别表示解析接受、D2D 绘制、D3D11 绘制。
+Scene 组件共 10 类（`src/include/whaledesk/WhaleSceneModel.h:33-44`）。下表"声明/运行(D2D)/运行(D3D11)"分别表示解析接受、D2D 绘制、D3D11 绘制。
 
 | 能力 | 声明 | 运行 D2D | 运行 D3D11 | 预览 | AI 教学 | 缺口与下一步 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `transform` | 是 | 是 | 是 | 是 | 是（本轮补） | 两后端一致；`cornerRadius` 只有 D2D 一份实现（`MiaoSceneD2DRenderer.cpp` 的 `maxCornerRadius` 计算，:657-661） |
-| `spriteRenderer` | 是 | 是（多实例） | **仅第一个**（`MiaoSceneD3D11Renderer.cpp` 的 `FindRenderable` 只返回首个 `ComponentKind::SpriteRenderer`，:92-99） | 是 | 是 | D3D11 多精灵、D3D11 `cornerRadius` 缺失 |
+| `transform` | 是 | 是 | 是 | 是 | 是（本轮补） | 两后端一致；`cornerRadius` 只有 D2D 一份实现（`WhaleSceneD2DRenderer.cpp` 的 `maxCornerRadius` 计算，:657-661） |
+| `spriteRenderer` | 是 | 是（多实例） | **仅第一个**（`WhaleSceneD3D11Renderer.cpp` 的 `FindRenderable` 只返回首个 `ComponentKind::SpriteRenderer`，:92-99） | 是 | 是 | D3D11 多精灵、D3D11 `cornerRadius` 缺失 |
 | `textRenderer` | 是 | 是（`{{data.path}}` 模板） | **否** | 是 | 是（本轮补） | D3D11 无文字；长文本/换行/对齐规则未成文 |
 | `videoRenderer` | 是 | **否** | **否** | 否 | 是（现在教成"不要用"） | 声明即通过校验但零像素；视频壁纸走壁纸库的媒体文件路径。此前 Skill 把它教成"单轨循环"，照那样生成的产物预览与桌面都是空白 |
 | `material` | 是 | 否 | 否 | 否 | 否 | 材质是顶层资源，本 kind 无数据 |
@@ -42,36 +42,36 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 
 | 能力 | 结论 | 代码入口 | 缺口 |
 | --- | --- | --- | --- |
-| 关键帧动画 | 已实现（轨道/时间线/触发、4 种缓动、3 种循环） | `MiaoSceneRuntime.cpp:269-467`、`MiaoSceneRuntimeModel.h:195-215` | 无状态机/混合；暂停与平滑过渡已在 `MiaoSceneTimelinePolicy.cpp` 有实现但未接宿主 |
-| 动画连续性（接缝/跳变/抢占） | 已实现**审查与拒绝**：循环接缝、一帧内大位移、一属性多写者 | `MiaoSceneTimelinePolicy.cpp`、`MiaoSceneRuntimeModel.cpp` 的并发写规则 | 只审 60fps 一档；不审 D3D11 上的实际采样 |
-| 组件宽高比 | 已声明、已校验、**不生效**：没有任何渲染器/宿主读 `geometry.aspectRatio` | `MiaoWidgetGeometry.cpp`、`MiaoContentModel.cpp:267` | 校验比的是归一化比例而非像素比例;三个发行组件在 8 块参考屏幕上无一成立 |
-| 有界响应曲线 | 已实现 8 条 + deadzone | `MiaoSceneRuntimeModel.h:35-48` | Skill 已教，一致 |
-| 分析型粒子 | 已实现（Sparkle / CometTrail / PetalFall，双后端） | `MiaoAnalyticParticleField.cpp` | 无风/力/碰撞 |
-| 模拟型粒子 | 已实现，**仅 D3D11** | `MiaoParticleRuntime.cpp:43-181` | D2D 无此路径；无重力/吸引子/湍流 |
-| 后处理 | 已实现 8 效果、真实多 Pass、Bloom 真分支，**仅 D3D11** | `MiaoPostProcessCompiler.cpp:38-178` | 无折射/色调/水体；**D2D 静默忽略** `postProcesses` |
-| 自定义 HLSL | 已实现且**对内容包开放**（D3D11 vs/ps） | `MiaoShaderContract.cpp:8-85`、`MiaoSceneD3D11Renderer.cpp:821-924` | 与 ADV-04"先隔离后开放 AI Shader"冲突；`userAuthored` 不门禁 |
-| 音频输入 | 已实现（WASAPI loopback → 5 频段 + 电平 + 节拍边沿） | `MiaoWallpaperAudioTap.cpp`、`MiaoInputBus.h:207-302` | 16 段频谱算得出但从未发布；HLSL `MiaoAudio*` 常量全为 0 |
+| 关键帧动画 | 已实现（轨道/时间线/触发、4 种缓动、3 种循环） | `WhaleSceneRuntime.cpp:269-467`、`WhaleSceneRuntimeModel.h:195-215` | 无状态机/混合；暂停与平滑过渡已在 `WhaleSceneTimelinePolicy.cpp` 有实现但未接宿主 |
+| 动画连续性（接缝/跳变/抢占） | 已实现**审查与拒绝**：循环接缝、一帧内大位移、一属性多写者 | `WhaleSceneTimelinePolicy.cpp`、`WhaleSceneRuntimeModel.cpp` 的并发写规则 | 只审 60fps 一档；不审 D3D11 上的实际采样 |
+| 组件宽高比 | 已声明、已校验、**不生效**：没有任何渲染器/宿主读 `geometry.aspectRatio` | `WhaleWidgetGeometry.cpp`、`WhaleContentModel.cpp:267` | 校验比的是归一化比例而非像素比例;三个发行组件在 8 块参考屏幕上无一成立 |
+| 有界响应曲线 | 已实现 8 条 + deadzone | `WhaleSceneRuntimeModel.h:35-48` | Skill 已教，一致 |
+| 分析型粒子 | 已实现（Sparkle / CometTrail / PetalFall，双后端） | `WhaleAnalyticParticleField.cpp` | 无风/力/碰撞 |
+| 模拟型粒子 | 已实现，**仅 D3D11** | `WhaleParticleRuntime.cpp:43-181` | D2D 无此路径；无重力/吸引子/湍流 |
+| 后处理 | 已实现 8 效果、真实多 Pass、Bloom 真分支，**仅 D3D11** | `WhalePostProcessCompiler.cpp:38-178` | 无折射/色调/水体；**D2D 静默忽略** `postProcesses` |
+| 自定义 HLSL | 已实现且**对内容包开放**（D3D11 vs/ps） | `WhaleShaderContract.cpp:8-85`、`WhaleSceneD3D11Renderer.cpp:821-924` | 与 ADV-04"先隔离后开放 AI Shader"冲突；`userAuthored` 不门禁 |
+| 音频输入 | 已实现（WASAPI loopback → 5 频段 + 电平 + 节拍边沿） | `WhaleWallpaperAudioTap.cpp`、`WhaleInputBus.h:207-302` | 16 段频谱算得出但从未发布；HLSL `WhaleAudio*` 常量全为 0 |
 | 指针输入 | 已实现（归属、归一化、事件边沿） | `IndependentWallpaperHost.cpp:363-423` | D3D11 走私有直读路径，未经归一化 |
-| 事件/脉冲 | `input://event/pulse` 无生产者 | `MiaoSceneFrameScheduler.cpp:141` | 声明即通过 |
+| 事件/脉冲 | `input://event/pulse` 无生产者 | `WhaleSceneFrameScheduler.cpp:141` | 声明即通过 |
 | 媒体输入 | 无此通道 | — | `input://media/*` 不存在 |
 | 多显示器 | 已实现（每显示器一个 host 槽位） | `IndependentWallpaperHost.cpp:505-536` | 真机未验 |
-| 画幅适配 | D2D 已实现 authored-canvas cover（按背景图尺寸推导） | `MiaoSceneD2DRenderer.cpp:532-587` | D3D11 是另一套坐标模型；`fitMode` 无渲染器读取 |
-| 数据绑定源 | 仅 `Parameter` / `Input` 两种 | `MiaoSceneRuntimeModel.h:19-22` | 无 clock/media 源 kind |
-| 3D 空间 | 声明 + 校验 + 序列化，渲染器明确拒绝 | `MiaoSceneD2DRenderer.cpp:386-392`、`MiaoSceneD3D11Renderer.cpp:940-945` | S6 建设项 |
+| 画幅适配 | D2D 已实现 authored-canvas cover（按背景图尺寸推导） | `WhaleSceneD2DRenderer.cpp:532-587` | D3D11 是另一套坐标模型；`fitMode` 无渲染器读取 |
+| 数据绑定源 | 仅 `Parameter` / `Input` 两种 | `WhaleSceneRuntimeModel.h:19-22` | 无 clock/media 源 kind |
+| 3D 空间 | 声明 + 校验 + 序列化，渲染器明确拒绝 | `WhaleSceneD2DRenderer.cpp:386-392`、`WhaleSceneD3D11Renderer.cpp:940-945` | S6 建设项 |
 
 ## 3. 组件能力台账
 
 | 能力 | 结论 | 代码入口 | 缺口与下一步 |
 | --- | --- | --- | --- |
-| 内容包尺寸 | 每个包**一个固定尺寸**（归一化分数），`resize:false` | `MiaoContentDefinitionLoader.cpp:510-581` | 尺寸族、切尺寸保留配置缺失（WPRO-01） |
-| 布局系统 | **缺失**，节点只带绝对 `position/scale` | `MiaoSceneModel.h` | 无行列/对齐/间距/溢出规则 |
+| 内容包尺寸 | 每个包**一个固定尺寸**（归一化分数），`resize:false` | `WhaleContentDefinitionLoader.cpp:510-581` | 尺寸族、切尺寸保留配置缺失（WPRO-01） |
+| 布局系统 | **缺失**，节点只带绝对 `position/scale` | `WhaleSceneModel.h` | 无行列/对齐/间距/溢出规则 |
 | 三个内容组件（时钟/天气/待办） | 真实数据 | `assets/widgets/*.mdwidget`、`ContentWidgetHost.cpp:604-648` | 待办仅暴露 4 个槽位（`kPublishedTaskSlots=4`） |
 | 时钟刷新 | 对齐分钟边界 | `NativeWidgetHost.cpp:656-664` | 秒针样式没有单独的刷新档 |
 | 天气 | 真实网络（Open-Meteo + IP 定位）、缓存 + 90s 重试 | `NativeWeatherService.cpp:217-355` | 无显式 loading 态 |
 | 原生 `native:today-tasks` 预设 | 真实数据（2026-10-03 修复）：读 `TodayTaskStore` 快照，行数上限 4，读不到时显示"任务数据暂不可用"而不是零项 | `NativeWidgetPainter.h` 的 `PaintTodayTasks`、`TodayTaskPresentation.cpp` | 修复前是硬编码三条待办（D-2）；旧快照与行数规则见 `TodayTaskPresentationTest` |
 | 交互 | 只有拖动；无点击/完成/计时/媒体控制/右键/键盘 | `NativeWidgetHost.cpp:813-858` | WPRO-03 |
-| Provider 抽象 | **部分**：三个互不相同的快照结构，无统一接口/时间戳/loading/取消 | `MiaoContentDataBinding.h:16-19`、`NativeWeatherData.h:14-27`、`TodayTaskStore.h:18-25` | WPRO-04 |
-| 能力 broker | 已实现，闭集 3 个（`time.*/weather.*/tasks.*`） | `MiaoContentDataBinding.cpp:96-117` | 无撤销/取消；无 media/agenda/timer/focus/photos |
+| Provider 抽象 | **部分**：三个互不相同的快照结构，无统一接口/时间戳/loading/取消 | `WhaleContentDataBinding.h:16-19`、`NativeWeatherData.h:14-27`、`TodayTaskStore.h:18-25` | WPRO-04 |
+| 能力 broker | 已实现，闭集 3 个（`time.*/weather.*/tasks.*`） | `WhaleContentDataBinding.cpp:96-117` | 无撤销/取消；无 media/agenda/timer/focus/photos |
 | Action 注册表 | **缺失** | — | WPRO-03 |
 | 无障碍 | **缺失**（窗口 `WS_EX_NOACTIVATE`，无焦点/键盘/UIA） | `NativeWidgetHost.cpp:975` | WPRO-06 |
 | 多实例 | 内容包支持；原生预设按显示器刻意单例 | `DesktopWidgetStore.cpp:134-141`、`WidgetService.cpp:134-135` | — |
@@ -100,7 +100,7 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 | --- | --- | --- |
 | DESK-01 | 三官方壁纸均以 `scene.json` 为入口且能通过 load→deserialize→validate→initialize；正式运行、视觉、多屏与性能仍待真机 | `BuiltinWallpaperPackages.cpp` 测试、`assets/wallpapers/*/manifest.json` |
 | DESK-03 | 指针归属/归一化/事件边沿接线存在，且声明即关闭 click-through | `IndependentWallpaperHost.cpp:363-423`、`PointerAttribution.cpp` 测试 |
-| DESK-04 | WASAPI 采集→FFT→频段→InputBus 接线存在；设备切换/恢复待真机 | `MiaoWallpaperAudioTap.cpp`、`AudioIngress.cpp`/`InputBusPublisher.cpp` 测试 |
+| DESK-04 | WASAPI 采集→FFT→频段→InputBus 接线存在；设备切换/恢复待真机 | `WhaleWallpaperAudioTap.cpp`、`AudioIngress.cpp`/`InputBusPublisher.cpp` 测试 |
 | DESK-05 | Web 音频推帧接线存在（页面侧 shim 与 C++ 信封有对等测试） | `WallpaperWebAudioBridge.js:62-133`、`WebAudioEnvelopeParity.mjs` |
 | CCA 旧状态 | 13/15 项为"部分实现"，`CCA-00/CCA-12` 未完成；文档自述与代码一致 | `docs/CONTENT_CREATOR_AGENT_PLAN.md` 逐条与本轮代码核对 |
 
@@ -121,7 +121,7 @@ Scene 组件共 10 类（`src/include/miaodesk/MiaoSceneModel.h:33-44`）。下�
 
 ## 8. 与能力目录的关系（2026-10-03 更新）
 
-CAP-01 落地后，本台账的人工结论有了机器可查的对应物：`src/content/binding/MiaoCapabilityCatalog.cpp`
+CAP-01 落地后，本台账的人工结论有了机器可查的对应物：`src/content/binding/WhaleCapabilityCatalog.cpp`
 是唯一一份表，`creator_capabilities_get`、文档导出和 `scripts/verify-capability-catalog.sh` 都读它。
 本表格继续承担两件目录不做的事：登记**已发现的缺陷**，以及保留"为什么当时是这个状态"的理由。
 

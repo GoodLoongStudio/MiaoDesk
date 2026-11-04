@@ -1,9 +1,9 @@
-#include "miaodesk/ConversationPanel.h"
-#include "miaodesk/InputImeAnchor.h"
-#include "miaodesk/MiaoSearchHandoff.h"
-#include "miaodesk/WindowPlacementStore.h"
-#include "miaodesk/StoreDemoExperience.h"
-#include "miaodesk/GeneratedDesktopPreview.h"
+#include "whaledesk/ConversationPanel.h"
+#include "whaledesk/InputImeAnchor.h"
+#include "whaledesk/WhaleSearchHandoff.h"
+#include "whaledesk/WindowPlacementStore.h"
+#include "whaledesk/StoreDemoExperience.h"
+#include "whaledesk/GeneratedDesktopPreview.h"
 #include "ConversationPanelCompileCompat.h"
 #include <commctrl.h>
 #include <d2d1.h>
@@ -17,20 +17,20 @@
 
 namespace {
 
-BOOL MiaoDeskSkipLegacyLayerAlpha(HWND, COLORREF, BYTE, DWORD) {
+BOOL WhaleDesKSkipLegacyLayerAlpha(HWND, COLORREF, BYTE, DWORD) {
     // ConversationPanel is presented with UpdateLayeredWindow + premultiplied alpha.
     // Uniform layered alpha would reintroduce the hard/dirty edge fixed in Search Bar.
     return TRUE;
 }
 
-int MiaoDeskSkipLegacyWindowRegion(HWND, HRGN region, BOOL) {
+int WhaleDesKSkipLegacyWindowRegion(HWND, HRGN region, BOOL) {
     // Direct2D is the only owner of the visible rounded edge. The legacy GDI region is
     // intentionally discarded so integer clipping cannot fight per-pixel antialiasing.
     if (region) DeleteObject(region);
     return 1;
 }
 
-HRESULT MiaoDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, DWORD) {
+HRESULT WhaleDesKSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, DWORD) {
     // Layered windows must not also receive a DWM corner/backdrop surface. That second owner
     // leaves opaque corner fragments around the Direct2D alpha edge on real Windows ARM64.
     return S_OK;
@@ -42,9 +42,9 @@ HRESULT MiaoDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, 
 // The second macro keeps the existing runtime-contract marker during the migration.
 #define ShowConversationPanel ShowConversationPanelCore
 #define ShowL3CliWindow ShowConversationPanel
-#define SetLayeredWindowAttributes MiaoDeskSkipLegacyLayerAlpha
-#define SetWindowRgn MiaoDeskSkipLegacyWindowRegion
-#define DwmSetWindowAttribute MiaoDeskSkipLegacyDwmWindowAttribute
+#define SetLayeredWindowAttributes WhaleDesKSkipLegacyLayerAlpha
+#define SetWindowRgn WhaleDesKSkipLegacyWindowRegion
+#define DwmSetWindowAttribute WhaleDesKSkipLegacyDwmWindowAttribute
 #ifdef CS_DROPSHADOW
 #undef CS_DROPSHADOW
 #endif
@@ -63,7 +63,7 @@ HRESULT MiaoDeskSkipLegacyDwmWindowAttribute(HWND, DWMWINDOWATTRIBUTE, LPCVOID, 
 #undef small
 #endif
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 bool gConversationCaretVisible = true;
@@ -126,19 +126,19 @@ void ConfigureConversationMode(ConversationState& state, ConversationPanelMode m
     }
 }
 
-BOOL MiaoDeskPresentConversationLayered(
+BOOL WhaleDesKPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
     HDC hdcSrc, POINT* source, COLORREF colorKey,
     BLENDFUNCTION* blend, DWORD flags);
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
-#define UpdateLayeredWindow MiaoDeskPresentConversationLayered
+#define UpdateLayeredWindow WhaleDesKPresentConversationLayered
 #include "ConversationPanelLayeredSurface.inc"
 #undef UpdateLayeredWindow
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 Microsoft::WRL::ComPtr<IDWriteTextLayout> ConversationRawInputLayout(
@@ -337,7 +337,7 @@ void ApplyConversationRoundedAlphaMask() {
                right - radius, bottom - radius);
 }
 
-BOOL MiaoDeskPresentConversationLayered(
+BOOL WhaleDesKPresentConversationLayered(
     HWND hwnd, HDC hdcDst, POINT* destination, SIZE* size,
     HDC hdcSrc, POINT* source, COLORREF colorKey,
     BLENDFUNCTION* blend, DWORD flags) {
@@ -352,14 +352,14 @@ BOOL MiaoDeskPresentConversationLayered(
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 #include "ConversationPanelInputOverlay.inc"
 #include "ConversationPanelCornerResize.inc"
 #include "ConversationPanelImageIntent.inc"
 #include "ConversationPanelPreviewBridge.inc"
 
-namespace miaodesk {
+namespace whaledesk {
 
 PiRuntime& SharedConversationPiRuntime() noexcept {
     return gPiRuntime;
@@ -401,4 +401,4 @@ bool ShowConversationPanel(
     return true;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

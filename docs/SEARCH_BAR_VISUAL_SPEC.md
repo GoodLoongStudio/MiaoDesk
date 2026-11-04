@@ -1,6 +1,6 @@
-# MiaoDesk Search Bar Visual Contract
+# WhaleDesK Search Bar Visual Contract
 
-This document is the authoritative visual contract for the MiaoDesk Search Bar demo surface.
+This document is the authoritative visual contract for the WhaleDesK Search Bar demo surface.
 
 ## Authoritative reference
 

@@ -8,12 +8,12 @@
 // 而它键的那个输入 `fileSearchAvailable_` 的真实含义只是"goz.exe 客户端二进制
 // 装着"。服务没起来时二进制当然还在,于是这句"已连接"把"服务没起来"说成了
 // "查询出错",照着它排查的人会往完全相反的方向找。
-#include "miaodesk/MiaoFileSearchNotice.h"
+#include "whaledesk/WhaleFileSearchNotice.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -53,10 +53,10 @@ bool TextClaimsConnection() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:判定不动\n");

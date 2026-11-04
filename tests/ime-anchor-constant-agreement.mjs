@@ -6,14 +6,14 @@ const read = (p) => fs.readFileSync(p, "utf8");
 // InputImeAnchor identifies its target EDIT and window by comparing control ids and
 // window class names against constants that are ALSO declared in the surfaces that
 // create those controls. Nothing links the copies: change kSearchEditId in
-// SearchWindow.cpp and IsMiaoDeskSearchEdit starts returning false, the whole IME
+// SearchWindow.cpp and IsWhaleDesKSearchEdit starts returning false, the whole IME
 // anchor silently stops working, and every gate stays green because the constants
 // are all individually valid.
 //
 // The conversation control id has three copies. The conversation window class has
 // two. This test is the missing link.
 
-const anchor = read("src/include/miaodesk/InputImeAnchor.h");
+const anchor = read("src/include/whaledesk/InputImeAnchor.h");
 const search = read("src/ui/search/SearchWindow.cpp");
 const convImpl = read("src/ui/ai/ConversationPanelImpl.inc");
 const overlay = read("src/ui/ai/ConversationPanelInputOverlay.inc");
@@ -53,7 +53,7 @@ assert.strictEqual(intConstant(anchor, "kConversationEditControlId"), intConstan
 assert.strictEqual(intConstant(convImpl, "kInputId"), intConstant(overlay, "kConversationInputControlId"),
   "the panel's input id is declared twice and the copies must agree");
 
-const anchorConvClass = anchor.slice(anchor.indexOf("inline bool IsMiaoDeskConversationWindow"));
+const anchorConvClass = anchor.slice(anchor.indexOf("inline bool IsWhaleDesKConversationWindow"));
 const convClassLiteral = /HasWindowClass\(hwnd, L"([^"]+)"\)/.exec(anchorConvClass);
 assert.ok(convClassLiteral, "the anchor must name the conversation window class");
 assert.strictEqual(convClassLiteral[1], stringConstant(convImpl, "kConversationClass"),

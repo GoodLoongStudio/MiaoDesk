@@ -6,13 +6,13 @@
 //
 // 这个文件刻意不碰文件系统:策略只做判定,事实由调用方喂进来。所以它能在这里真实
 // 编译并运行,而不是只能留给真机走查。
-#include "miaodesk/CreatorWorkspacePolicy.h"
+#include "whaledesk/CreatorWorkspacePolicy.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -36,7 +36,7 @@ void CheckEq(const std::string& actual, const std::string& expected, const std::
 }
 
 CreatorSessionBinding Binding(const char* sessionId = "S-1",
-                             const char* workspace = R"(C:\Users\me\AppData\Local\MiaoDesk\creator\S-1)",
+                             const char* workspace = R"(C:\Users\me\AppData\Local\WhaleDesK\creator\S-1)",
                              const char* claimed = nullptr) {
     CreatorSessionBinding binding;
     binding.sessionId = sessionId;
@@ -350,7 +350,7 @@ void TestNormalize() {
 // 会话 ID 从工作区路径导出。它必须是工作区的函数,而不是又一个要同步的字段:
 // 两个可以互相矛盾的事实来源一旦矛盾,"这个调用属于哪个作品"就没有答案。
 void TestSessionIdDerivesFromTheWorkspace() {
-    CheckEq(DeriveCreatorSessionId(R"(C:\Users\me\AppData\Roaming\MiaoDesk\creator\S-1)"), "S-1",
+    CheckEq(DeriveCreatorSessionId(R"(C:\Users\me\AppData\Roaming\WhaleDesK\creator\S-1)"), "S-1",
             "取最后一段目录名");
     CheckEq(DeriveCreatorSessionId("C:/ws/S-1"), "S-1", "正斜杠同样取最后一段");
     // 末尾分隔符要先去掉:不去掉的话 "S-1\" 的最后一段是空串,而空会话会让
@@ -412,12 +412,12 @@ void TestEveryRejectHasAnExplanation() {
 // 策略必须真的接受 **ResolveCreatorWorkspaceRoot 会导出的那个根**。
 //
 // 为什么值得单独一节:上面全部用例用的是
-//   C:\Users\me\AppData\Local\MiaoDesk\creator\S-1
+//   C:\Users\me\AppData\Local\WhaleDesK\creator\S-1
 // 深度一样,所以"分类在这条路径上对不对"一直是被覆盖的 —— 但覆盖它的是**另一条**
 // 路径。真实根是
-//   <LOCALAPPDATA>\MiaoDesk\CreatorWorkspaces\<kind>\<sessionId>
+//   <LOCALAPPDATA>\WhaleDesK\CreatorWorkspaces\<kind>\<sessionId>
 // (paths::CreatorWorkspaceRoot),由 ContentCreatorBridge::ResolveCreatorWorkspaceRoot
-// 交给 PiRuntime,PiRuntime 只在 mode == Creator 时把它导出成 MIAODESK_CREATOR_WORKSPACE。
+// 交给 PiRuntime,PiRuntime 只在 mode == Creator 时把它导出成 WHALEDESK_CREATOR_WORKSPACE。
 // 哪天有人改布局(多一层、换个名字),分类本身仍可能在旧路径上全绿,而**真实**根上
 // 每一条工具调用都被拒 —— 表现是模型写什么路径都失败,而原因看起来像模型写错了。
 // 这一节把"真实根"钉住,改布局会让它立刻红。
@@ -430,7 +430,7 @@ void TestTheRealWorkspaceRootTheResolverWillExport() {
     // 而 SessionMatches 拿它和工具参数里的 sessionId 比 —— 写成 "1" 会让同一 kind 的
     // 所有作品共用一个会话 ID,而归属判断正是靠它区分作品的。
     const char* kRoot =
-        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\wallpaper\s1755000000000-1-9f3ac1d2)";
+        R"(C:\Users\me\AppData\Local\WhaleDesK\CreatorWorkspaces\wallpaper\s1755000000000-1-9f3ac1d2)";
     CheckEq(DeriveCreatorSessionId(kRoot), "s1755000000000-1-9f3ac1d2",
             "真实工作区根派生出它自己的会话身份");
 
@@ -471,7 +471,7 @@ void TestTheRealWorkspaceRootTheResolverWillExport() {
     // 两个 kind 的根必须都能用:组件那条走的是同一个解析器,只是目录名不同。
     CreatorSessionBinding widget;
     widget.workspaceRoot =
-        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\widget\s1755000000000-1-9f3ac1d2)";
+        R"(C:\Users\me\AppData\Local\WhaleDesK\CreatorWorkspaces\widget\s1755000000000-1-9f3ac1d2)";
     widget.sessionId = DeriveCreatorSessionId(widget.workspaceRoot);
     widget.claimedWorkspace = widget.workspaceRoot;
     const CreatorWorkspacePolicy widgetPolicy(widget);
@@ -482,7 +482,7 @@ void TestTheRealWorkspaceRootTheResolverWillExport() {
     // 第二个作品是另一段会话身份,不是把 1 改成 2 —— 两个作品各有各的目录与 ID。
     CreatorSessionBinding second;
     second.workspaceRoot =
-        R"(C:\Users\me\AppData\Local\MiaoDesk\CreatorWorkspaces\wallpaper\s1755000000009-1-77ab01ef)";
+        R"(C:\Users\me\AppData\Local\WhaleDesK\CreatorWorkspaces\wallpaper\s1755000000009-1-77ab01ef)";
     second.sessionId = DeriveCreatorSessionId(second.workspaceRoot);
     second.claimedWorkspace = second.workspaceRoot;
     const CreatorWorkspacePolicy secondPolicy(second);
@@ -494,10 +494,10 @@ void TestTheRealWorkspaceRootTheResolverWillExport() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestAllowedPackageLayout();
     TestTraversalRejected();
     TestAbsolutePathsRejected();

@@ -5,9 +5,9 @@ This gate is intentionally paired with the canonical-only Library UI gate. It ve
 ## Required fixtures
 
 - Canonical package roots for:
-  - `content:com.goodloong.miaodesk.theme.miao-cloud`
-  - `content:com.goodloong.miaodesk.theme.neon-city`
-  - `content:com.goodloong.miaodesk.theme.mystic-moon`
+  - `content:com.goodloong.whaledesk.theme.whale-cloud`
+  - `content:com.goodloong.whaledesk.theme.neon-city`
+  - `content:com.goodloong.whaledesk.theme.mystic-moon`
 - Legacy persisted assignments:
   - `scene-aurora`
   - `scene-neon`
@@ -50,6 +50,6 @@ The second path is the regression guard against fixing only assignment reads whi
 On ARM64 Windows with a Western locale/code page, repeat the same fixture matrix and verify:
 
 - Chinese/German theme titles, authors, paths, monitor names, and rule names render without `????` or mojibake.
-- The rendered visuals for MiaoCloud, NeonCity, and MysticMoon remain unchanged.
+- The rendered visuals for WhaleCloud, NeonCity, and MysticMoon remain unchanged.
 - Package-manager and Library UI show canonical `.mdwall` identities only.
 - Legacy `scene-*` assignment values remain byte-for-byte unchanged after refresh, apply, restart, install, uninstall, and package validation.

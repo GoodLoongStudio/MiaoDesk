@@ -8,10 +8,10 @@
 // 一个字符都没动 —— `ReloadConfig` 之外没有任何代码写它。下一次请求:
 //
 //     URL      = https://别的服务/v1/...                ← 用户刚敲的
-//     API Key  = MiaoDesk/ApiProfile/<原 profile 的 id>  ← 原来那个 profile 的 Key
+//     API Key  = WhaleDesK/ApiProfile/<原 profile 的 id>  ← 原来那个 profile 的 Key
 //
 // 一把签给 A 服务的 Key,被发到 B 服务上去。`/key` 那一侧更糟:它把用户敲的新 Key
-// 写回 `MiaoDesk/ApiProfile/<原 profile>`,**覆盖了那个 profile 自己存的 Key**,
+// 写回 `WhaleDesK/ApiProfile/<原 profile>`,**覆盖了那个 profile 自己存的 Key**,
 // 而设置页里一个字都不会提,其它每个用这个 profile 的 AI 窗口下一轮就都用上它。
 //
 // 判定之所以能在这里跑,是因为它不碰 Credential Manager、不碰盘:
@@ -20,12 +20,12 @@
 // 判据刻意把 LocalHost 与 LocalPath 分开:换主机才让凭据对不上,只换端点路径
 // (主机没变)时 profile 的 Key 仍然是发给同一台主机的。合成一类会让 `/endpoint`
 // 被误判成危险。
-#include "miaodesk/MiaoAgentConfigAuthority.h"
+#include "whaledesk/WhaleAgentConfigAuthority.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::agent_config {
+namespace whaledesk::agent_config {
 namespace {
 
 int g_failures = 0;
@@ -76,11 +76,11 @@ bool BindingVerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::agent_config
+} // namespace whaledesk::agent_config
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::agent_config;
+    using namespace whaledesk;
+    using namespace whaledesk::agent_config;
 
     if (!BindingVerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:判定抓不住明知该抓的输入\n");
@@ -157,25 +157,25 @@ int wmain() {
     {
         AgentRequestIdentity withProfile;
         withProfile.profileId = L"deepseek-main";
-        Check(AgentCredentialTarget(withProfile) == L"MiaoDesk/ApiProfile/deepseek-main",
+        Check(AgentCredentialTarget(withProfile) == L"WhaleDesK/ApiProfile/deepseek-main",
               "有 profile 时凭据槽是这个 profile 自己的那一个");
 
         AgentRequestIdentity withoutProfile;
         withoutProfile.profileId = L"";
-        Check(AgentCredentialTarget(withoutProfile) == L"MiaoDesk/ModelApiKey",
+        Check(AgentCredentialTarget(withoutProfile) == L"WhaleDesK/ModelApiKey",
               "没有 profile 时用旧槽");
 
         // 槽名分别钉住字面量。上面两条用的是同一套常量,只改常量不改字面量
         // 两条断言会一起变绿 —— 那正是 WPRO-01 上踩过的那个坑
         // (改 kWidgetLayoutDefaultX 让 104 项断言全绿)。
-        Check(std::wstring(kProfileCredentialPrefix) == L"MiaoDesk/ApiProfile/",
+        Check(std::wstring(kProfileCredentialPrefix) == L"WhaleDesK/ApiProfile/",
               "profile 凭据槽前缀就是 ApiRuntimeProfile 读的那一个(换名前缀会让 Key 全部静默换槽)");
-        Check(std::wstring(kLegacyCredentialTarget) == L"MiaoDesk/ModelApiKey",
+        Check(std::wstring(kLegacyCredentialTarget) == L"WhaleDesK/ModelApiKey",
               "旧凭据槽名没变");
 
         AgentRequestIdentity caseProfile;
         caseProfile.profileId = L"DeepSeek-Main";
-        Check(AgentCredentialTarget(caseProfile) == L"MiaoDesk/ApiProfile/DeepSeek-Main",
+        Check(AgentCredentialTarget(caseProfile) == L"WhaleDesK/ApiProfile/DeepSeek-Main",
               "profile id 原样进槽名,不折叠大小写(LoadById 比较时才忽略大小写)");
     }
 
@@ -188,9 +188,9 @@ int wmain() {
 
         const auto binding = BindRequestCredential(stale, RequestTargetOwner::LocalHost);
         Check(!binding.bound, "本地命令换过主机而 profile 身份还挂着 → 判为不同源");
-        Check(binding.credentialTarget == L"MiaoDesk/ApiProfile/deepseek-main",
+        Check(binding.credentialTarget == L"WhaleDesK/ApiProfile/deepseek-main",
               "当前代码确实会去读原 profile 的凭据槽");
-        Check(binding.safeCredentialTarget == L"MiaoDesk/ModelApiKey",
+        Check(binding.safeCredentialTarget == L"WhaleDesK/ModelApiKey",
               "给出的安全槽是旧槽(主机已不是 profile 的那台)");
         Check(binding.url == L"https://other.example/v1/chat/completions",
               "URL 就是用户刚敲的那台主机");
@@ -216,7 +216,7 @@ int wmain() {
         pathOnly.endpoint = L"/chat/completions";
         const auto binding = BindRequestCredential(pathOnly, RequestTargetOwner::LocalPath);
         Check(binding.bound, "只换端点路径(主机没变)时仍算同源 —— profile 的 Key 还是发给同一台主机");
-        Check(binding.credentialTarget == L"MiaoDesk/ApiProfile/deepseek-main",
+        Check(binding.credentialTarget == L"WhaleDesK/ApiProfile/deepseek-main",
               "同源时凭据槽不动,还是 profile 那一个");
     }
 
@@ -236,7 +236,7 @@ int wmain() {
         Check(rebound.baseUrl == stale.baseUrl, "修法只动身份,用户敲的地址原样保留");
         Check(rebound.endpoint == stale.endpoint, "端点也不动");
         Check(after.bound, "修之后同源");
-        Check(after.credentialTarget == L"MiaoDesk/ModelApiKey",
+        Check(after.credentialTarget == L"WhaleDesK/ModelApiKey",
               "修之后凭据落到旧槽 —— /key 写的也是旧槽,两边对得上");
         Check(after.usesProfileCredential == false, "不再从任何 profile 读凭据");
 
@@ -257,7 +257,7 @@ int wmain() {
         noProfile.endpoint = L"/chat/completions";
         const auto binding = BindRequestCredential(noProfile, RequestTargetOwner::LocalHost);
         Check(binding.bound, "压根没有 profile 时不同源这条判不上(没有可错配的凭据)");
-        Check(binding.credentialTarget == L"MiaoDesk/ModelApiKey", "凭据就在旧槽");
+        Check(binding.credentialTarget == L"WhaleDesK/ModelApiKey", "凭据就在旧槽");
     }
 
     if (g_failures != 0) {

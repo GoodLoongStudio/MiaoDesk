@@ -9,13 +9,13 @@
 //
 // 反空洞自检:一个恒返回 true 的 IsFirstSearchEntry 在其余断言上同样全绿,所以先喂
 // 一个明知该判重的(键已在 seen 里)和一个明知该放行的(空记录),确认判定真的会动。
-#include "miaodesk/SearchDedupPolicy.h"
+#include "whaledesk/SearchDedupPolicy.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -40,10 +40,10 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:判重不动\n");

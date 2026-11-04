@@ -1,9 +1,9 @@
-#include "miaodesk/DesktopAiSettingsPage.h"
-#include "miaodesk/ApiProfileNotifications.h"
-#include "miaodesk/ApiUrlSecretPolicy.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/L3Agent.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/DesktopAiSettingsPage.h"
+#include "whaledesk/ApiProfileNotifications.h"
+#include "whaledesk/ApiUrlSecretPolicy.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/L3Agent.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <commctrl.h>
 #include <shlobj.h>
@@ -24,13 +24,13 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-using miaodesk::api_url::UrlCarriesSecret;
+using whaledesk::api_url::UrlCarriesSecret;
 
-constexpr wchar_t kPageClass[] = L"MiaoDesk.Native.ApiConfigurationCenter";
-constexpr wchar_t kStateProperty[] = L"MiaoDesk.ApiConfigurationCenter.State";
+constexpr wchar_t kPageClass[] = L"WhaleDesK.Native.ApiConfigurationCenter";
+constexpr wchar_t kStateProperty[] = L"WhaleDesK.ApiConfigurationCenter.State";
 constexpr UINT_PTR kParentSubclassId = 0x54444150; // TDAP
 constexpr int kFirstNavId = 6110;
 constexpr int kAiNavId = 6116;
@@ -109,11 +109,11 @@ bool ParseBool(const std::wstring& value, bool fallback = false) {
 }
 
 std::wstring CredentialTarget(std::wstring_view id) {
-    return L"MiaoDesk/ApiProfile/" + std::wstring(id);
+    return L"WhaleDesK/ApiProfile/" + std::wstring(id);
 }
 
 std::wstring ImageCredentialTarget(std::wstring_view id) {
-    return L"MiaoDesk/ApiProfile/" + std::wstring(id) + L"/Image";
+    return L"WhaleDesK/ApiProfile/" + std::wstring(id) + L"/Image";
 }
 
 std::wstring ReadCredential(std::wstring_view target) {
@@ -141,7 +141,7 @@ bool WriteCredential(std::wstring_view target, const std::wstring& value) {
     credential.CredentialBlobSize = static_cast<DWORD>(value.size() * sizeof(wchar_t));
     credential.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(value.data()));
     credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
-    credential.UserName = const_cast<wchar_t*>(L"MiaoDesk");
+    credential.UserName = const_cast<wchar_t*>(L"WhaleDesK");
     return CredWriteW(&credential, 0) != FALSE;
 }
 
@@ -1365,4 +1365,4 @@ bool DesktopAiSettingsPageVisible(HWND desktopSettingsWindow) {
     return state && state->panel && IsWindowVisible(state->panel);
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

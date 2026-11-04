@@ -1,8 +1,8 @@
-#include "miaodesk/WallpaperIndependentLayout.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/WebWallpaperHost.h"
+#include "whaledesk/WallpaperIndependentLayout.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/WebWallpaperHost.h"
 
 #include <windows.h>
 
@@ -14,7 +14,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 ResolvedMonitorWallpaper MakeFallback(const MonitorInfo& monitor, const RECT& region,
@@ -38,9 +38,9 @@ std::wstring SceneKeyForLibraryId(std::wstring_view id) {
 }
 
 bool IsContentId(std::wstring_view id) noexcept {
-    return id.size() > content::MiaoContentPackageManager::kSourcePrefix.size() &&
-           id.substr(0, content::MiaoContentPackageManager::kSourcePrefix.size()) ==
-               content::MiaoContentPackageManager::kSourcePrefix;
+    return id.size() > content::WhaleContentPackageManager::kSourcePrefix.size() &&
+           id.substr(0, content::WhaleContentPackageManager::kSourcePrefix.size()) ==
+               content::WhaleContentPackageManager::kSourcePrefix;
 }
 
 struct ResolvedContentWallpaper {
@@ -56,22 +56,22 @@ std::optional<ResolvedContentWallpaper> ResolveContentWallpaper(std::wstring_vie
 
     content::ManagedContentPackageInfo package;
     std::wstring error;
-    if (!content::MiaoContentPackageManager::Resolve(
+    if (!content::WhaleContentPackageManager::Resolve(
             content::ContentKind::Wallpaper, id, &package, &error)) return std::nullopt;
 
     if (package.runtime == content::ContentRuntimeKind::Scene)
         return ResolvedContentWallpaper{ResolvedWallpaperKind::Scene, package.packageRoot};
     if (package.runtime != content::ContentRuntimeKind::Web) return std::nullopt;
 
-    content::LoadedMiaoContentPackage loaded;
-    if (!content::MiaoContentPackage::Load(package.packageRoot, &loaded, &error) ||
+    content::LoadedWhaleContentPackage loaded;
+    if (!content::WhaleContentPackage::Load(package.packageRoot, &loaded, &error) ||
         loaded.manifest.kind != content::ContentKind::Wallpaper ||
         loaded.manifest.runtime != content::ContentRuntimeKind::Web) {
         return std::nullopt;
     }
 
     fs::path entry;
-    if (!content::MiaoContentPackage::ResolvePackagePath(
+    if (!content::WhaleContentPackage::ResolvePackagePath(
             loaded.root, loaded.manifest.entry, &entry, &error) ||
         !WebWallpaperProcessSet::IsSupportedSource(entry.wstring())) {
         return std::nullopt;
@@ -261,7 +261,7 @@ bool IndependentLayoutHasWeb(const std::vector<ResolvedMonitorWallpaper>& resolv
 bool SelfTestIndependentWallpaperResolution() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-IndependentLayout-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-IndependentLayout-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -304,7 +304,7 @@ bool SelfTestIndependentWallpaperResolution() {
     // keeps the old scene-* identity. The exact miss must bridge through the
     // library alias before runtime resolution, without mutating the assignment
     // and without falling back to the global wallpaper.
-    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.miaodesk.theme.neon-city";
+    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.whaledesk.theme.neon-city";
     ok = ok && library.Remove(L"scene-neon", false, &error);
     ok = ok && library.UpsertScene(kNeonCanonical, L"霓虹之城", &error);
     bool canonicalAliasResolverCalled = false;
@@ -469,4 +469,4 @@ bool SelfTestIndependentWallpaperResolution() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

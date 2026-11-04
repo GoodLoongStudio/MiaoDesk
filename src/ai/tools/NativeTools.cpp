@@ -1,6 +1,6 @@
-#include "miaodesk/NativeTools.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/WallpaperPackage.h"
+#include "whaledesk/NativeTools.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WallpaperPackage.h"
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -18,7 +18,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 std::wstring Utf8ToWide(std::string_view value) {
@@ -159,7 +159,7 @@ std::wstring SanitizeFileName(std::wstring name, std::wstring fallback) {
         if (invalid.find(ch) != std::wstring_view::npos || ch < 32) ch = L'_';
     }
     while (!name.empty() && (name.back() == L'.' || name.back() == L' ')) name.pop_back();
-    if (name.empty()) name = L"MiaoDesk";
+    if (name.empty()) name = L"WhaleDesK";
     if (name.size() > 120) name.resize(120);
     return name;
 }
@@ -342,7 +342,7 @@ NativeToolResult CreatePowerPoint(std::string_view arguments) {
 
     auto desktop = KnownFolder(FOLDERID_Desktop);
     if (desktop.empty()) return {false, L"无法定位桌面目录。"};
-    std::wstring fileName = SanitizeFileName(fileNameRaw, title.empty() ? L"MiaoDesk演示.pptx" : title + L".pptx");
+    std::wstring fileName = SanitizeFileName(fileNameRaw, title.empty() ? L"WhaleDesK演示.pptx" : title + L".pptx");
     if (fileName.size() < 5 || _wcsicmp(fileName.c_str() + fileName.size() - 5, L".pptx") != 0) fileName += L".pptx";
     const auto output = desktop / fileName;
 
@@ -412,7 +412,7 @@ NativeToolResult CreatePowerPoint(std::string_view arguments) {
         return local;
     };
 
-    if (SUCCEEDED(hr)) hr = addSlide(1, title.empty() ? L"MiaoDesk 演示" : title, subtitle, true);
+    if (SUCCEEDED(hr)) hr = addSlide(1, title.empty() ? L"WhaleDesK 演示" : title, subtitle, true);
     if (SUCCEEDED(hr)) {
         for (const auto& slide : ParseSlides(outline)) {
             hr = addSlide(2, slide.title, slide.body, false);
@@ -465,7 +465,7 @@ NativeToolResult CreateFile(std::string_view arguments) {
     fs::create_directories(folder, ec);
     if (ec) return {false, L"无法访问目标目录。"};
 
-    auto name = SanitizeFileName(Utf8ToWide(ExtractJsonString(arguments, "file_name")), L"MiaoDesk.txt");
+    auto name = SanitizeFileName(Utf8ToWide(ExtractJsonString(arguments, "file_name")), L"WhaleDesK.txt");
     const auto content = ExtractJsonString(arguments, "content");
     const auto path = folder / name;
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
@@ -509,7 +509,7 @@ NativeToolResult OpenFile(std::string_view arguments) {
 }
 
 NativeToolResult OpenSettingsCenter(std::string_view) {
-    constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
+    constexpr wchar_t kSearchWindowClass[] = L"WhaleDesK.Native.SearchWindow";
     constexpr int kSettingsButtonId = 102;
     const HWND search = FindWindowW(kSearchWindowClass, nullptr);
     if (!search) return {false, L"没有找到正在运行的妙喵主窗口。"};
@@ -537,7 +537,7 @@ constexpr std::size_t kContentSkillMaxBytes = 64 * 1024;
 fs::path ContentSkillPath(std::wstring_view name) {
     for (const auto candidate : kContentSkills) {
         if (candidate != name) continue;
-        const auto root = miaodesk::paths::ExecutableDirectory();
+        const auto root = whaledesk::paths::ExecutableDirectory();
         if (root.empty()) return {};
         return root / L"skills" / std::wstring(name) / L"SKILL.md";
     }
@@ -545,7 +545,7 @@ fs::path ContentSkillPath(std::wstring_view name) {
 }
 
 fs::path ContentSkillIndexPath() {
-    const auto root = miaodesk::paths::ExecutableDirectory();
+    const auto root = whaledesk::paths::ExecutableDirectory();
     if (root.empty()) return {};
     return root / L"skills" / L"README.md";
 }
@@ -624,13 +624,13 @@ NativeToolResult ValidateWallpaperPackage(std::string_view arguments) {
 
 std::string NativeToolDefinitionsJson() {
     return R"JSON([
-{"type":"function","name":"settings_open","description":"Open the native MiaoDesk Settings Center. Use this for requests to open settings, desktop settings, wallpaper settings, configuration, preferences, or the MiaoDesk setting panel. Do not use shell commands for this action.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+{"type":"function","name":"settings_open","description":"Open the native WhaleDesK Settings Center. Use this for requests to open settings, desktop settings, wallpaper settings, configuration, preferences, or the WhaleDesK setting panel. Do not use shell commands for this action.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
 {"type":"function","name":"ppt_create","description":"Create a real .pptx PowerPoint presentation on the Windows desktop. Use this instead of merely writing a presentation outline when the user asks for a PPT or presentation.","inputSchema":{"type":"object","properties":{"file_name":{"type":"string","description":"Output filename, preferably ending in .pptx"},"title":{"type":"string"},"subtitle":{"type":"string"},"slides_markdown":{"type":"string","description":"Content slides. Start each slide with '# Slide title'; following lines are bullet points."},"open_after_create":{"type":"boolean","description":"Open the generated presentation after saving"}},"required":["file_name","title","slides_markdown"],"additionalProperties":false}},
 {"type":"function","name":"file_create","description":"Create a UTF-8 text file in one of the user's safe folders.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"},"content":{"type":"string"}},"required":["location","file_name","content"],"additionalProperties":false}},
 {"type":"function","name":"folder_list","description":"List files and folders from Desktop, Documents, or Downloads.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["location"],"additionalProperties":false}},
 {"type":"function","name":"file_open","description":"Open an existing file from Desktop, Documents, or Downloads with its registered Windows application. No command-line arguments are allowed.","inputSchema":{"type":"object","properties":{"location":{"type":"string","enum":["desktop","documents","downloads"]},"file_name":{"type":"string"}},"required":["location","file_name"],"additionalProperties":false}},
-{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing MiaoDesk .mdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
-{"type":"function","name":"content_skill_get","description":"Load a MiaoDesk content-creation skill specification. Call this BEFORE writing any .mdwall/.mdwidget package so the package follows the project's own authoring rules. Omit name to get the index of available skills.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Skill name. One of: content-package-basics, wallpaper-content, widget-content, content-review. Omit to list them."}},"additionalProperties":false}}
+{"type":"function","name":"wallpaper_validate_package","description":"Validate an existing WhaleDesK .mdwall package directory and report its manifest type and entry point.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
+{"type":"function","name":"content_skill_get","description":"Load a WhaleDesK content-creation skill specification. Call this BEFORE writing any .mdwall/.mdwidget package so the package follows the project's own authoring rules. Omit name to get the index of available skills.","inputSchema":{"type":"object","properties":{"name":{"type":"string","description":"Skill name. One of: content-package-basics, wallpaper-content, widget-content, content-review. Omit to list them."}},"additionalProperties":false}}
 ])JSON";
 }
 
@@ -645,4 +645,4 @@ NativeToolResult ExecuteNativeTool(std::string_view toolName, std::string_view a
     return {false, L"未知 Native Tool：" + Utf8ToWide(toolName)};
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

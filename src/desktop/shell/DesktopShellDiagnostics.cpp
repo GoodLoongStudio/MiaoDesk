@@ -1,9 +1,9 @@
-#include "miaodesk/DesktopShellDiagnostics.h"
+#include "whaledesk/DesktopShellDiagnostics.h"
 
 #include <iterator>
 #include <sstream>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 bool AppearsBelow(HWND surface, HWND anchor) noexcept {
@@ -19,8 +19,8 @@ bool IsKnownWallpaperSurface(HWND window) noexcept {
     if (!window || !IsWindow(window)) return false;
     wchar_t className[160]{};
     if (GetClassNameW(window, className, static_cast<int>(std::size(className))) <= 0) return false;
-    return _wcsicmp(className, L"MiaoDesk.Native.WallpaperHost") == 0 ||
-           _wcsicmp(className, L"MiaoDesk.Native.WebWallpaperHost") == 0;
+    return _wcsicmp(className, L"WhaleDesK.Native.WallpaperHost") == 0 ||
+           _wcsicmp(className, L"WhaleDesK.Native.WebWallpaperHost") == 0;
 }
 
 bool LegacyRoleOrderValid(HWND surface, DesktopSurfaceRole role) noexcept {
@@ -114,4 +114,4 @@ std::wstring DescribeDesktopAttachment(const DesktopAttachmentDiagnostics& diagn
     return text.str();
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

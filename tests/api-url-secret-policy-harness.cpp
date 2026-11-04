@@ -11,13 +11,13 @@
 //   clang++ -std=c++23 -O1 -Wall -Wextra -I src/include \
 //       tests/api-url-secret-policy-harness.cpp -o /tmp/api-url-policy
 //   /tmp/api-url-policy
-#include "miaodesk/ApiUrlSecretPolicy.h"
+#include "whaledesk/ApiUrlSecretPolicy.h"
 
 #include <iostream>
 #include <string>
 #include <vector>
 
-using miaodesk::api_url::UrlCarriesSecret;
+using whaledesk::api_url::UrlCarriesSecret;
 
 namespace {
 
@@ -37,7 +37,7 @@ void Case(const std::string& label, const std::wstring& url, bool want) {
 }  // namespace
 
 int main() {
-  std::cout << "miaodesk::api_url::UrlCarriesSecret\n\n";
+  std::cout << "whaledesk::api_url::UrlCarriesSecret\n\n";
   std::cout << "-- normal URLs must be accepted -----------------------------\n";
   Case("plain https", L"https://api.openai.com/v1", false);
   Case("with path", L"https://api.openai.com/v1/chat/completions", false);

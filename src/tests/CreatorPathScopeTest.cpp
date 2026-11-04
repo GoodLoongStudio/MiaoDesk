@@ -7,12 +7,12 @@
 //
 // 后果:模型回复里提到另一个 workspace 的路径时,那个包会成为本轮结果并可应用到桌面。
 // 用户在 A 作品上说"再小一点",落到桌面上的是 B 作品。
-#include "miaodesk/MiaoCreatorPathScope.h"
+#include "whaledesk/WhaleCreatorPathScope.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace creator_scope {
 namespace {
 
@@ -27,28 +27,28 @@ void Check(bool ok, const std::string& what) {
     }
 }
 
-constexpr std::wstring_view kWorkspace = L"C:\\Users\\u\\AppData\\Local\\MiaoDesk\\CreatorWorkspaces\\wallpaper\\1710000000";
+constexpr std::wstring_view kWorkspace = L"C:\\Users\\u\\AppData\\Local\\WhaleDesK\\CreatorWorkspaces\\wallpaper\\1710000000";
 
 } // namespace
 } // namespace creator_scope
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::creator_scope;
+    using namespace whaledesk::creator_scope;
 
     // ---- 1. 主要失败形态:路径在别的 workspace ----
     {
         Check(ClassifyCreatorPath(kWorkspace,
-                                  L"C:\\Users\\u\\AppData\\Local\\MiaoDesk\\CreatorWorkspaces\\wallpaper\\1799999999\\scene.mdwall") ==
+                                  L"C:\\Users\\u\\AppData\\Local\\WhaleDesK\\CreatorWorkspaces\\wallpaper\\1799999999\\scene.mdwall") ==
                   CreatorPathScope::Outside,
               "同 kind 另一个 session 的路径 → Outside(用户在 A 上说'再小一点',不能落到 B)");
         Check(ClassifyCreatorPath(kWorkspace,
-                                  L"C:\\Users\\u\\AppData\\Local\\MiaoDesk\\CreatorWorkspaces\\widget\\1710000000\\x.mdwidget") ==
+                                  L"C:\\Users\\u\\AppData\\Local\\WhaleDesK\\CreatorWorkspaces\\widget\\1710000000\\x.mdwidget") ==
                   CreatorPathScope::Outside,
               "另一个 kind 的同 session ID → Outside(kind 不同作品也不同)");
         Check(ClassifyCreatorPath(kWorkspace, L"D:\\somewhere\\else\\scene.mdwall") == CreatorPathScope::Outside,
               "完全另一个盘 → Outside");
-        Check(ClassifyCreatorPath(kWorkspace, L"C:\\Users\\u\\AppData\\Local\\MiaoDesk\\CreatorWorkspaces\\wallpaper\\scene.mdwall") ==
+        Check(ClassifyCreatorPath(kWorkspace, L"C:\\Users\\u\\AppData\\Local\\WhaleDesK\\CreatorWorkspaces\\wallpaper\\scene.mdwall") ==
                   CreatorPathScope::Outside,
               "父目录（kind 根）下的路径 → Outside(那不是任何作品的工作区)");
     }
@@ -77,7 +77,7 @@ int wmain() {
     // Windows 上 `/` 与 `\\` 都合法，paths::EnsureDirectory 与模型输出都可能用任一种；
     // NTFS 默认大小写不敏感，而 workspace 名是宿主分配的、路径是模型写的。
     {
-        Check(ClassifyCreatorPath(kWorkspace, L"c:/users/u/appdata/local/miaodesk/creatorworkspaces/wallpaper/1710000000/scene.mdwall") ==
+        Check(ClassifyCreatorPath(kWorkspace, L"c:/users/u/appdata/local/whaledesk/creatorworkspaces/wallpaper/1710000000/scene.mdwall") ==
                   CreatorPathScope::Inside,
               "全小写 + 正斜杠 → Inside(与 workspace 是同一个目录)");
         Check(ClassifyCreatorPath(L"C:\\WS", L"c:\\ws\\scene.mdwall") == CreatorPathScope::Inside,

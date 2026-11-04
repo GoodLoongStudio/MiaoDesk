@@ -1,5 +1,5 @@
 {
-  "name": "miaodesk-agent-runtime",
+  "name": "whaledesk-agent-runtime",
   "private": true,
   "version": "1.0.0",
   "dependencies": {

@@ -1,10 +1,10 @@
 param(
-    [string]$Source = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\app\MiaoMiao.png'),
+    [string]$Source = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\app\WhaleWhale.png'),
     [string]$OutputDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'packaging\store\assets')
 )
 
 # Generates the Microsoft Partner Center listing assets from the canonical
-# MiaoMiao.png. Uses the same crop geometry as scripts/generate-miaomiao-icon.ps1
+# WhaleWhale.png. Uses the same crop geometry as scripts/generate-whalewhale-icon.ps1
 # so the Store artwork matches the in-product icon exactly.
 
 $ErrorActionPreference = 'Stop'

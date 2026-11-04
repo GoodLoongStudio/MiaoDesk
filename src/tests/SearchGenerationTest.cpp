@@ -7,13 +7,13 @@
 //
 // 这段判定此前住在 `GozSearch.cpp`,而那个文件 include `<windows.h>`,本机一行
 // 都跑不到。它保护的是用户输入最快那几毫秒里唯一在管结果正确性的东西。
-#include "miaodesk/MiaoSearchGeneration.h"
+#include "whaledesk/WhaleSearchGeneration.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -40,10 +40,10 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:递送判定不动\n");

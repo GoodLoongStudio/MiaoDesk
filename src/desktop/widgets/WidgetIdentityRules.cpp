@@ -1,10 +1,10 @@
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/NativeWidgetPreset.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/NativeWidgetPreset.h"
 
 #include <algorithm>
 #include <cwctype>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {}
 
 std::wstring NativeSingletonKey(const DesktopWidget& widget) {
@@ -32,4 +32,4 @@ bool SameNativeSingleton(const DesktopWidget& left, const DesktopWidget& right) 
     return leftKey == NativeSingletonKey(right);
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

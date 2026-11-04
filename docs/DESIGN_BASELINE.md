@@ -1,4 +1,4 @@
-# MiaoDesk 设计基线
+# WhaleDesK 设计基线
 
 - 状态：当前唯一设计基线
 - 日期：2026-09-05；专业版修订：2026-10-03
@@ -9,10 +9,10 @@
 
 ## 1. 产品定位
 
-MiaoDesk 是 Windows 原生桌面增强程序，当前核心由四部分组成：
+WhaleDesK 是 Windows 原生桌面增强程序，当前核心由四部分组成：
 
 ```text
-MiaoDesk
+WhaleDesK
 ├─ Wallpaper
 ├─ Widgets
 ├─ Search
@@ -24,13 +24,13 @@ MiaoDesk
 在此基础上，下一阶段正式进入：
 
 ```text
-MiaoDesk Content Framework
+WhaleDesK Content Framework
 妙喵内容框架
 ```
 
 目标不是恢复旧式大型 Editor，而是把 Wallpaper / Widget 的内容从宿主代码中抽离为统一的 Package、Definition、Instance、Parameter、Scene Runtime 与 Capability 模型，让官方内容与用户内容使用同一套底层框架。
 
-详细契约：`docs/MIAODESK_CONTENT_FRAMEWORK.md`。
+详细契约：`docs/WHALEDESK_CONTENT_FRAMEWORK.md`。
 
 ### 1.1 专业版能力目标
 
@@ -131,7 +131,7 @@ Preview
 保存 / 应用 ContentInstance
 ```
 
-`.mdwall` 继续作为 Wallpaper 内容包，并逐步迁移到 `MiaoDesk Content Framework` 的共享 Package / Parameter / Scene 契约。
+`.mdwall` 继续作为 Wallpaper 内容包，并逐步迁移到 `WhaleDesK Content Framework` 的共享 Package / Parameter / Scene 契约。
 
 明确不恢复旧路线：
 
@@ -291,7 +291,7 @@ Search 继续保持 Native C++ UI，本地搜索由 goz/gozd 提供。
 普通 AI 主路径：
 
 ```text
-MiaoDesk
+WhaleDesK
   → Pi Runtime
   → Bundled Node
   → 当前 Provider / Model
@@ -305,7 +305,7 @@ AI 不得进入 Wallpaper / Widget 的每帧渲染路径。
 
 当 Content Framework 的 Definition / Parameter / Preview / commit 边界稳定后，AI 可以在后续阶段通过同一声明式 Content API 修改 ParameterValues 或生成候选 ContentDefinition，但不得绕过 Preview / capability / validation 直接写底层状态。
 
-## 8. MiaoDesk Content Framework 原则
+## 8. WhaleDesK Content Framework 原则
 
 新的用户创作路线必须满足：
 
@@ -354,7 +354,7 @@ GlassClock dogfood
 - 编辑器和 AI 共用旧 typed property schema 的方案；
 - 为旧编辑器保留的 UI、导航和架构层。
 
-这些旧方向的移除不再等于“禁止用户创作”。用户创作现在通过 `MiaoDesk Content Framework` 重新立项，采用 Runtime-first 路线：
+这些旧方向的移除不再等于“禁止用户创作”。用户创作现在通过 `WhaleDesK Content Framework` 重新立项，采用 Runtime-first 路线：
 
 ```text
 Content Runtime

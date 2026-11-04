@@ -1,4 +1,4 @@
-# MiaoDesk 持续开发面板
+# WhaleDesK 持续开发面板
 
 - 状态：**当前唯一执行队列**
 - 建立：2026-10-03
@@ -12,7 +12,7 @@
 
 ## 1. 总目标
 
-MiaoDesk 的目标不是堆出最多功能，而是成为一个用户愿意每天开机后一直运行的**漂亮、稳定、智能的 Windows 桌面**。
+WhaleDesK 的目标不是堆出最多功能，而是成为一个用户愿意每天开机后一直运行的**漂亮、稳定、智能的 Windows 桌面**。
 
 用户主要感知三个界面：
 
@@ -80,14 +80,14 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | ID | 状态 | 任务 | 自动推进 | 完成标准 |
 | --- | --- | --- | --- | --- |
 | P0-01 | ✅ | AI Creator 真实跨进程打开门禁 | 是 | x64/ARM64 均从第二进程请求 Wallpaper/Widget Creator，确认真实窗口 Visible/Ready 后才成功 |
-| P0-02 | ✅ | ARM64 Quick Test 启动准确 Dev Host | 是 | 快测清理旧单实例并确认驻留 EXE 来自 `C:\MiaoDeskDev` |
-| P0-03 | 🟡 | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用。**自动部分已落地：启停裁决抽成 `MiaoWallpaperCyclePolicy`（37 项断言 + 反空洞自检 + 8 处变异全红），含"挂载坏了要重建而不是当没坏"与重试前先脱离**（见下）；20 次循环本身与真机 Surface 计数仍要 Windows |
+| P0-02 | ✅ | ARM64 Quick Test 启动准确 Dev Host | 是 | 快测清理旧单实例并确认驻留 EXE 来自 `C:\WhaleDesKDev` |
+| P0-03 | 🟡 | Wallpaper 20 次启用/停用/reload 循环 | 是+真机 | 无错误复活、重复 Surface、Widget 误停用。**自动部分已落地：启停裁决抽成 `WhaleWallpaperCyclePolicy`（37 项断言 + 反空洞自检 + 8 处变异全红），含"挂载坏了要重建而不是当没坏"与重试前先脱离**（见下）；20 次循环本身与真机 Surface 计数仍要 Windows |
 | P0-04 | 🟡 | Widget 20 次创建/启停/删除循环 | 是+真机 | 无孤立 HWND、位置丢失、重复实例、错误背景。**自动部分的几何不变式与去重规则已落地**（见下）；孤立 HWND/错误背景仍要 Windows |
-| P0-05 | 🟡 | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次。**"层级恢复"的判定已提成纯逻辑并接回 `RepairRoleOrder`**：桌面带子的 z-order/样式契约（`MiaoDesktopBandOrder`，28 项断言 + 反空洞自检 + 9 处变异全红），`DesktopShellHost` 改成调它而非另持一份内联副本（见下）。**真机 E2E 仍未取证**：Explorer 实际重启 3 次、层级/启停/交互恢复前后都要 Windows |
+| P0-05 | 🟡 | Explorer restart 恢复 E2E | 部分 | Wallpaper/Widget/层级/交互恢复，至少重复 3 次。**"层级恢复"的判定已提成纯逻辑并接回 `RepairRoleOrder`**：桌面带子的 z-order/样式契约（`WhaleDesKtopBandOrder`，28 项断言 + 反空洞自检 + 9 处变异全红），`DesktopShellHost` 改成调它而非另持一份内联副本（见下）。**真机 E2E 仍未取证**：Explorer 实际重启 3 次、层级/启停/交互恢复前后都要 Windows |
 | P0-06 | 🟠 | 锁屏/解锁、休眠/恢复 | 否 | 状态、显示器分配与交互恢复，至少各 3 次 |
-| P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：① 请求 URL 与凭据必须同源（并修掉一个会外泄 Key 的缺陷）② 库状态的恢复合并策略已提成纯逻辑，两份重复副本合并为一份**（`MiaoLibraryRestoreMerge`，38 项断言 + 9 处变异全红，见下）；四个恢复面的真机一致性仍要 Windows |
+| P0-07 | 🟡 | App 重启状态一致性 | 是 | Wallpaper、Widgets、AI 当前会话、API profile、库状态一致恢复。**本机自动部分：① 请求 URL 与凭据必须同源（并修掉一个会外泄 Key 的缺陷）② 库状态的恢复合并策略已提成纯逻辑，两份重复副本合并为一份**（`WhaleLibraryRestoreMerge`，38 项断言 + 9 处变异全红，见下）；四个恢复面的真机一致性仍要 Windows |
 | P0-08 | 🟡 | 崩溃/强杀后的孤儿进程与窗口清理 | 是 | 无永久 Node/WebView2/Wallpaper/Harness 孤儿，无不可恢复单实例锁。**本机自动部分：Node 连坐 job + 收尸门 + 锁持有权裁决与 owner 身份记录（WallpaperEntry 已接）**（见下）；另四处启动点、接管动作与真机清理仍要 Windows |
-| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**本机自动部分已落地四项：① AI 会话迁移（"升级把会话变成不可达字节"）② 组件布局入账判定（三种拒绝 + 两种去重结局原共用一个 `continue`，`Load` 照常返回 true；`MiaoWidgetRowAdmission`，37 项 + 9 处变异全红，新增 `SkippedRows()`）③ 内容库静默丢行（`MiaoLibraryRowFilter`，已修）④ API profile 读取边界（本轮）—— Win32 在缓冲区放不下时**不报错**，而 `ReadIni`/`ProfileSections` 把返回值全丢了：baseUrl 截断 ⇒ 请求带着 Key 打到另一台主机；段名清单截断 ⇒ 整个 profile 从下拉里消失。判据提成 `MiaoIniReadLimit`（17 项 + 6 处变异全红）并接回两个读点，新增 `LastConfigReadTruncated()`**（见下）。**真机升级四类数据仍要 Windows** |
+| P0-09 | 🟡 | 用户数据升级/迁移安全 | 是 | 旧配置升级不丢 API profile、内容库、会话、组件布局。**本机自动部分已落地四项：① AI 会话迁移（"升级把会话变成不可达字节"）② 组件布局入账判定（三种拒绝 + 两种去重结局原共用一个 `continue`，`Load` 照常返回 true；`WhaleWidgetRowAdmission`，37 项 + 9 处变异全红，新增 `SkippedRows()`）③ 内容库静默丢行（`WhaleLibraryRowFilter`，已修）④ API profile 读取边界（本轮）—— Win32 在缓冲区放不下时**不报错**，而 `ReadIni`/`ProfileSections` 把返回值全丢了：baseUrl 截断 ⇒ 请求带着 Key 打到另一台主机；段名清单截断 ⇒ 整个 profile 从下拉里消失。判据提成 `WhaleIniReadLimit`（17 项 + 6 处变异全红）并接回两个读点，新增 `LastConfigReadTruncated()`**（见下）。**真机升级四类数据仍要 Windows** |
 | P0-10 | 🟡 | 同 SHA 发布门 | 是 | x64 Build/Package/MSIX、ARM64 Package、Repo Hygiene 必须绑定同一完整 SHA。**校验器一直在,缺口在"要有人记得按按钮"**：新增 `workflow_run` 自动那一支（五条里任意一条跑完就按触发它的那个 SHA 核一次，checkout 锁 `workflow_run.head_sha` 以免拿新尺子量旧工件）；`verify-rc-ci.mjs` 新增"还没跑完"这一档（退出码 3，push 后第一条跑完就触发时不误报红），并把 `--runs-file` 离线复核与 9 处变异补上（含两个此前**活着**的"退出码恒 0"）。（见下）；候选 SHA 的五条 success 证据本身仍要 CI 跑完 |
 
 ## 5. P0/P1 — 布局、输入与视觉
@@ -108,8 +108,8 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | --- | --- | --- | --- | --- |
 | SEARCH-01 | 🟡 | 固定 30+ 查询基准集 | 是 | 全名/简称/中文/大小写/空格/同名文件等样本入仓；排序已在纯逻辑层入仓并有 22 项断言，真机样本待 Windows |
 | SEARCH-02 | 🟡 | 排序与去重质量 | 是 | 固定样本的 Top-3 有可复现基线，主要误命中有回归测试。**排序与去重两半都已提成纯逻辑并在本机有断言（排序 22 项、去重 19 项，含反空洞自检与变异全红）；去重已接回 `AppSearch::BuildIndex`，本机跑的是真正会发布的那一行**。真机样本仍待 Windows：真实索引来自开始菜单与注册表，"看见两个 Chrome"这个失败形态只有真机索引能复现 |
-| SEARCH-03 | 🟡 | 异步搜索取消与输入响应 | 是 | 快速输入不展示过期结果，无明显 UI 卡顿。**"不展示过期结果"那一半的代号算术已提成 `MiaoSearchGeneration` 并在本机有 435 项断言（含反空洞自检 + 11 处变异全红），`GozSearch` 改成调它而非另持一份裸 atomic**（见下）；真机快速连敲时的实际观感仍要 Windows |
-| SEARCH-04 | 🟡 | Goz 服务故障自动恢复 | 是 | 服务未就绪/退出后可诊断并恢复，不丢 App Search。**"可诊断"那一半已落地并修掉一句误导用户的诊断**：三桶状态与三句文案提成 `MiaoFileSearchNotice`（24 项断言 + 反空洞自检 + 文案不变量 + 8 处变异全红）；原来说"文件索引已连接，但本次查询失败"，而它键的状态只证明 goz.exe 客户端二进制装着 —— 服务没起来时照样为真，于是把"服务没起来"说成了"查询出错"，排查方向被引反（见下）。**"可恢复"那一半（`EnsurePipeAvailable` 起服务 + 轮询）仍未提纯**，不丢 App Search 也已由 `MergeResults` 的顺序保证但没回归 **"可恢复"那一半也已落地**:`EnsurePipeAvailable` 一路上看得见每个环节(SCM 打不打得开、服务在不在、状态是什么、StartService 成没成、等到没有),但此前**每一步都当场丢掉、只回一个 bool** —— 于是 `MiaoFileSearchNotice` 的第三桶只能说"可能服务没起来,也可能查询超时",一句诚实的猜测而不是诊断。判定提成 `MiaoGozRecovery`(61 项断言 + 8 处变异全红),观测经出参交出来,提示行在失败那一桶追加真正的原因。**顺带修了三处**:① 轮询从 `do{...}while` 改成先判再睡 —— 原来 `waitMs==0` 也会先睡满 100ms;② 不再对 `START_PENDING` 的服务叫 `StartService`(会拿到 `ERROR_SERVICE_ALREADY_RUNNING`,而返回值一律被忽略,于是"其实已经在起"被记成"启动被拒绝",用户看到假的原因);③ `ServiceMissing`(要装 gozd)与 `AccessDenied`(要提权)分开 —— 上一版都报成"没连上",而下一步完全相反。**真机恢复仍未验：Windows 升级/ resume 后 gozd 被留停着，只有真机能造出这个状态** |
+| SEARCH-03 | 🟡 | 异步搜索取消与输入响应 | 是 | 快速输入不展示过期结果，无明显 UI 卡顿。**"不展示过期结果"那一半的代号算术已提成 `WhaleSearchGeneration` 并在本机有 435 项断言（含反空洞自检 + 11 处变异全红），`GozSearch` 改成调它而非另持一份裸 atomic**（见下）；真机快速连敲时的实际观感仍要 Windows |
+| SEARCH-04 | 🟡 | Goz 服务故障自动恢复 | 是 | 服务未就绪/退出后可诊断并恢复，不丢 App Search。**"可诊断"那一半已落地并修掉一句误导用户的诊断**：三桶状态与三句文案提成 `WhaleFileSearchNotice`（24 项断言 + 反空洞自检 + 文案不变量 + 8 处变异全红）；原来说"文件索引已连接，但本次查询失败"，而它键的状态只证明 goz.exe 客户端二进制装着 —— 服务没起来时照样为真，于是把"服务没起来"说成了"查询出错"，排查方向被引反（见下）。**"可恢复"那一半（`EnsurePipeAvailable` 起服务 + 轮询）仍未提纯**，不丢 App Search 也已由 `MergeResults` 的顺序保证但没回归 **"可恢复"那一半也已落地**:`EnsurePipeAvailable` 一路上看得见每个环节(SCM 打不打得开、服务在不在、状态是什么、StartService 成没成、等到没有),但此前**每一步都当场丢掉、只回一个 bool** —— 于是 `WhaleFileSearchNotice` 的第三桶只能说"可能服务没起来,也可能查询超时",一句诚实的猜测而不是诊断。判定提成 `WhaleGozRecovery`(61 项断言 + 8 处变异全红),观测经出参交出来,提示行在失败那一桶追加真正的原因。**顺带修了三处**:① 轮询从 `do{...}while` 改成先判再睡 —— 原来 `waitMs==0` 也会先睡满 100ms;② 不再对 `START_PENDING` 的服务叫 `StartService`(会拿到 `ERROR_SERVICE_ALREADY_RUNNING`,而返回值一律被忽略,于是"其实已经在起"被记成"启动被拒绝",用户看到假的原因);③ `ServiceMissing`(要装 gozd)与 `AccessDenied`(要提权)分开 —— 上一版都报成"没连上",而下一步完全相反。**真机恢复仍未验：Windows 升级/ resume 后 gozd 被留停着，只有真机能造出这个状态** |
 | SEARCH-05 | 🟡 | Search → AI 连续上下文 | 是 | 搜索无结果或主动转 AI 时，原查询自然成为对话上下文。**交接那一一下已修掉一个用户看得见的缺陷并提成可测策略**：面板已开且正忙/等确认时，搜索框那段词以前**整段消失**（不进输入框也不发出），现在非空的词永不丢下 —— 空闲照旧当场发，忙时只填进输入框（见下）。**"搜索无结果时自动转 AI"那半与跨重启的会话延续仍待查** |
 
 ## 7. P1 — 妙喵 AI
@@ -120,7 +120,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | AI-02 | ⬜ | 会话标题与历史管理 | 是 | 自动标题、最近排序、重命名/删除规则清晰，不误删当前上下文 |
 | AI-03 | 🟡 | Cancel / Retry 幂等 | 是 | 连续取消/重试不重复提交、不串会话、不留错误 Busy 状态。**Pi 侧已修：取消不再直接清忙位，「已请求取消但 worker 还没退」仍然是忙已成相位不变量**（见下）；L3 侧本来是对的，但两边的理由此前没人写下来。**2026-10-04 更正**：该提交信息里"17 道 node 契约门全通过"不准确 —— `preview-handoff-turn-guard.mjs` 当时是红的，它不在工作流跑的那 17 道里，所以没跑到；这道门当场逮到 AI-03 的一个二阶后果（取消中到达的桌面预览被放行、窗口为一个已放弃的请求弹出来），已改成钉不变式并修掉（13 处变异全红）。**真机仍未验：取消后马上重试会不会串话，要 Windows 上真发一轮** |
 | AI-04 | ⬜ | Agent 活动反馈 | 是 | 工具调用、等待模型、生成、校验阶段用户可理解 |
-| AI-05 | 🟡 | API profile 热切换语义 | 是 | 当前任务不静默换 Provider；下一轮明确使用新配置。**"不静默换"那一半已修，而且修的是两个真缺陷**：这段判定原本散在**五处**、四种写法、两种相反结论 —— 菜单那条拦住（`busy \|\| pi->Busy()`），拉开下拉那两条却用 `&& !busy` **放行**，而放行通向 `L3Agent::ReloadConfig()` 的 `Stop()` + `worker_.join()` + **`conversation_.clear()`**：用户在自己这一轮跑到一半时拉开下拉，这一轮被打断、会话上下文被清空，界面上一个字都不提。另一处是选择出口（`Select…ApiProfile`）—— `CBN_SELCHANGE` 在下拉**已经 visual 改过之后**才到，而"这个窗口自己忙"那一支**静默返回**，留下"下拉显示 B、agent 跑的是 A"。两处都已接回同一道闸门（`MiaoProfileSwitchGuard`，**31 项断言** + 反空洞自检 + **12 处变异全红**），三套硬编码文案收成一处。**"下一轮明确使用新配置"由调用链本身保证，且这条链是闭合的**：`SetProfileId` → `preferredProfileId_` → `ReloadConfig()` 写 `config_` → `RequestIdentity()`（L3Agent.cpp:777-782）读它 → `BuildAgentRequestUrl(RequestIdentity())`（:819）拼出真正要拨的 URL，而每轮派发时面板就把 `CurrentApiUrl` 写进 route 日志（ConversationPanelImpl.inc:987）。闸门确保这次刷新不落在轮次中途。**真机仍未验**：两处缺陷的实际观感、"用户选完新 profile 后下一轮真的走新端点"要 Windows 上真选一次 |
+| AI-05 | 🟡 | API profile 热切换语义 | 是 | 当前任务不静默换 Provider；下一轮明确使用新配置。**"不静默换"那一半已修，而且修的是两个真缺陷**：这段判定原本散在**五处**、四种写法、两种相反结论 —— 菜单那条拦住（`busy \|\| pi->Busy()`），拉开下拉那两条却用 `&& !busy` **放行**，而放行通向 `L3Agent::ReloadConfig()` 的 `Stop()` + `worker_.join()` + **`conversation_.clear()`**：用户在自己这一轮跑到一半时拉开下拉，这一轮被打断、会话上下文被清空，界面上一个字都不提。另一处是选择出口（`Select…ApiProfile`）—— `CBN_SELCHANGE` 在下拉**已经 visual 改过之后**才到，而"这个窗口自己忙"那一支**静默返回**，留下"下拉显示 B、agent 跑的是 A"。两处都已接回同一道闸门（`WhaleProfileSwitchGuard`，**31 项断言** + 反空洞自检 + **12 处变异全红**），三套硬编码文案收成一处。**"下一轮明确使用新配置"由调用链本身保证，且这条链是闭合的**：`SetProfileId` → `preferredProfileId_` → `ReloadConfig()` 写 `config_` → `RequestIdentity()`（L3Agent.cpp:777-782）读它 → `BuildAgentRequestUrl(RequestIdentity())`（:819）拼出真正要拨的 URL，而每轮派发时面板就把 `CurrentApiUrl` 写进 route 日志（ConversationPanelImpl.inc:987）。闸门确保这次刷新不落在轮次中途。**真机仍未验**：两处缺陷的实际观感、"用户选完新 profile 后下一轮真的走新端点"要 Windows 上真选一次 |
 | AI-06 | ⬜ | 连接/鉴权/限流/模型错误分类 | 是 | 用户能知道改字段还是稍后重试，且任何错误不泄露 Key |
 | AI-07 | ⬜ | 附件/文件上下文 | 是 | 文件加入会话有明确范围、大小与隐私边界 |
 | AI-08 | ⬜ | 对话长上下文压缩策略 | 是 | 长会话不会无限增长；摘要后继续问旧信息仍保持关键上下文 |
@@ -134,7 +134,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | CREATE-03 | ⬜ | 10 条 Widget 固定生成集 | 是+真机 | 同上 |
 | CREATE-04 | 🟡 | 上一可用结果保留 | 是 | 新一轮生成/修复失败不覆盖上一份可预览结果。**自动部分已修：复用 candidateId 不再把上一版带走**（见下）；界面上的实际保留仍等宿主接线 |
 | CREATE-05 | ⬜ | Preview / Apply 一致性 | 是+真机 | 同包同参数下预览与桌面主要视觉一致 |
-| CREATE-06 | 🟡 | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 **"归属"那一半已修**：`InspectForGeneratedPackage` 此前扫到什么就用什么，而 `DialogState` 里**压根没有 workspaceRoot 字段**（UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次、用完就丢）—— 模型在回复里提到别处的路径时，那个包就成了本轮结果并可应用到桌面。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。** 已补上字段（打开时与成功激活时各记一次），并把归属判定接进三个出口（`MiaoCreatorPathScope`，35 项断言 + 8 处变异全红）。**"不新建错误作品"与真机连续修改仍要 Windows** **另一半也已接上**:`CreatorReplyInterpreter` 此前**没有任何运行时调用方**(只有自己的测试在调),而 `InspectForGeneratedPackage` 仍然只靠一条正则从正文猜路径。现在两样凭据分开了 —— `Receipt`(过了宿主台账核验)能单独驱动"可以应用",且那时包就是工作区本身;`ProseScan`(正文里的一个字符串)不能,还要过 `ProsePathIsUsable` 五项判据。epoch 从 `<workspace>/.miaodesk-session.state` 读,台账从 `<workspace>/candidate-ledger.state` 读 —— 两者与 `CreatorToolWorker` 读的是同一份;读不到就一条都不认、按原路径退化,而不是把可疑回执当可信。**真机连续修改仍未验** |
+| CREATE-06 | 🟡 | 连续修改语义 | 是 | “再小一点/换颜色/沿用上一版”修改正确 workspace，不新建错误作品 **"归属"那一半已修**：`InspectForGeneratedPackage` 此前扫到什么就用什么，而 `DialogState` 里**压根没有 workspaceRoot 字段**（UseWorkspace / ResetSession / CreatorConversationPath 各自临时解析一次、用完就丢）—— 模型在回复里提到别处的路径时，那个包就成了本轮结果并可应用到桌面。**用户在 A 作品上说"再小一点"，落到桌面上的是 B 作品。** 已补上字段（打开时与成功激活时各记一次），并把归属判定接进三个出口（`WhaleCreatorPathScope`，35 项断言 + 8 处变异全红）。**"不新建错误作品"与真机连续修改仍要 Windows** **另一半也已接上**:`CreatorReplyInterpreter` 此前**没有任何运行时调用方**(只有自己的测试在调),而 `InspectForGeneratedPackage` 仍然只靠一条正则从正文猜路径。现在两样凭据分开了 —— `Receipt`(过了宿主台账核验)能单独驱动"可以应用",且那时包就是工作区本身;`ProseScan`(正文里的一个字符串)不能,还要过 `ProsePathIsUsable` 五项判据。epoch 从 `<workspace>/.whaledesk-session.state` 读,台账从 `<workspace>/candidate-ledger.state` 读 —— 两者与 `CreatorToolWorker` 读的是同一份;读不到就一条都不认、按原路径退化,而不是把可疑回执当可信。**真机连续修改仍未验** |
 | CREATE-07 | ⬜ | Creator 重启恢复 | 是 | 聊天、当前 workspace、最近预览、生成状态可恢复 |
 | CREATE-08 | ⬜ | Apply 失败回滚 | 是 | 应用失败保留原桌面；成功后可恢复应用前内容 |
 | CREATE-09 | ⬜ | 生成质量评分与失败样本库 | 是+人工 | 每次模型/Skill 改动可与固定基线比较 |
@@ -180,7 +180,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 | --- | --- | --- | --- |
 | FUT-01 | → PRO-04 | Whole Desktop Profile | Wallpaper + Widgets + Layout + Monitor Assignment 一次预览/应用 |
 | FUT-02 | → PRO-04 | AI 一句话生成完整桌面 | Creator 可生成 Desktop Profile，并继续对话修改 |
-| FUT-03 | → WALL / ADV | 更深 Scene GPU 能力 | 按 `MIAO_SCENE_ENGINE_ROADMAP.md` 继续推进，不复活旧大型 Editor |
+| FUT-03 | → WALL / ADV | 更深 Scene GPU 能力 | 按 `WHALE_SCENE_ENGINE_ROADMAP.md` 继续推进，不复活旧大型 Editor |
 | FUT-04 | ⬜ | 本地 AI 模型路由 | 独立扩展，不阻塞主产品稳定性与 RC |
 
 ## 13. 自动持续推进协议
@@ -242,18 +242,18 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - **时间线**(`fast-dev-arm64.yml` 的成功/失败史):`c43bf146` ✅、`566e3ccd` ✅,
   **`bc8fe14c` ❌**、`5253d9e1` ❌、`14c8ebfa` ❌、`6fe75bec` ❌、`ae0d8a41` ❌、`2cb13923` ❌。
 - `bc8fe14c` 正是本会话的"P0-08 五处启动点接线"提交(动了 `main.cpp`、
-  `HarnessHost.cpp`、`WallpaperEngine.cpp`,并新增 `MiaoLockOwnershipHost.{h,cpp}`。
+  `HarnessHost.cpp`、`WallpaperEngine.cpp`,并新增 `WhaleLockOwnershipHost.{h,cpp}`。
   从那以后连着六次全红 —— **在拿到反证之前,按"是我引入的"记账。**
 - **已排除的**:ARM64 **编译**是过的。失败的是第 6 步
   `Refresh fast runnable package`(`cmake --install`),而第 5 步
   "Configure and build ARM64" 是 success。本会话没有改过任何 install 规则
   (`git show --stat` 逐提交核过:`src/CMakeLists.txt` 只往
-  `MIAODESK_CORE_SOURCES` 加过三个 .cpp,不涉及 install)。
+  `WHALEDESK_CORE_SOURCES` 加过三个 .cpp,不涉及 install)。
   本机能做的编译检查也做了:把 `WallpaperEngineProduction.cpp`(它 `#include`
   `WallpaperEngine.cpp`,而后者被 mingw 门当成"被 include 的实现单元"跳过、
   **从未被独立编译检查过**)用 mingw 单编,0 error。
 - **未取证的**:为什么 `cmake --install` 失败。它的动作只有
-  `Remove-Item C:\pkg\MiaoDesk\arm64-fast` 然后 `cmake --install --prefix` ——
+  `Remove-Item C:\pkg\WhaleDesK\arm64-fast` 然后 `cmake --install --prefix` ——
   这个组合对"上一个 run 的进程还握着那个目录"很敏感,而失败从 runner 开始复用
   那一刻起持续,是典型的文件锁抖动形状。但**这只是形状像,我没有证据**:
   匿名身份不能 re-run(401),annotation 只给了 sccache 统计和 exit code 1。
@@ -263,7 +263,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   于是六次红都只看到 `CMake Error at cmake_install.cmake:49 (file):` 这一行。
   是自己的过滤器把根因挡了六次。已改成**失败时全量输出**。
 - `cmake_install.cmake:49` 是 7 条 install 规则里的第一条
-  (`install(TARGETS MiaoDesk MiaoDeskWallpaper MiaoDeskHarness RUNTIME DESTINATION ".")`,
+  (`install(TARGETS WhaleDesK WhaleDesKWallpaper WhaleDesKHarness RUNTIME DESTINATION ".")`,
   见 CMakeLists.txt:42),也就是说三个 EXE 里有一个装不上去。
 - **不是文件锁**:那一版同时会打印 "Stale <name> (pid …) … stopping it", annotation 里没有这行。
 - **起止点很确定**:`fast-dev-arm64.yml` 历史上 `c43bf146` ✅(22:34)→ **`bc8fe14c` ❌**(23:01),
@@ -271,31 +271,31 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - **✅ 根因已找到并修掉(本会话引入,不推给环境)**:
   `package-windows-x64.yml` 的 annotation 直接点名 ——
       HarnessHost.obj : error LNK2019: unresolved external symbol
-        miaodesk::lock_host::ExistingOwnerIsHealthy(...)  [MiaoDeskHarness.vcxproj]
-      MiaoDeskHarness.exe : fatal error LNK1120: 1 unresolved externals
-  我把三个锁文件 `MiaoLockOwnership.cpp` / `MiaoLockRecord.cpp` /
-  `MiaoLockOwnershipHost.cpp` 放进了 `MIAODESK_CORE_SOURCES`(= `MiaoDeskCore`),
-  而 **`MiaoDeskHarness` 链的是 `MiaoDeskHarnessCore`,不是 `MiaoDeskCore`** ——
-  于是 `HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`MiaoDeskHarness.exe`
+        whaledesk::lock_host::ExistingOwnerIsHealthy(...)  [WhaleDesKHarness.vcxproj]
+      WhaleDesKHarness.exe : fatal error LNK1120: 1 unresolved externals
+  我把三个锁文件 `WhaleLockOwnership.cpp` / `WhaleLockRecord.cpp` /
+  `WhaleLockOwnershipHost.cpp` 放进了 `WHALEDESK_CORE_SOURCES`(= `WhaleDesKCore`),
+  而 **`WhaleDesKHarness` 链的是 `WhaleDesKHarnessCore`,不是 `WhaleDesKCore`** ——
+  于是 `HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`WhaleDesKHarness.exe`
   生不出来,`cmake --install` 只能报 `file INSTALL cannot find`,再往上就只剩
   `CMake Error at cmake_install.cmake:49 (file):`。**错误信息离根因隔了三层**,
   这也是它六次都没被看出来的原因。
-- **修法**:按 CMakeLists 自己规定的解法(见 `MIAODESK_SCENE2D_SOURCES` 那段注释),
-  把这三个 .cpp 提成独立静态库 `MiaoDeskLockOwnership`,再由
-  `MiaoDeskCore` 与 `MiaoDeskHarnessCore` 双双 `PUBLIC` 链上。
+- **修法**:按 CMakeLists 自己规定的解法(见 `WHALEDESK_SCENE2D_SOURCES` 那段注释),
+  把这三个 .cpp 提成独立静态库 `WhaleDesKLockOwnership`,再由
+  `WhaleDesKCore` 与 `WhaleDesKHarnessCore` 双双 `PUBLIC` 链上。
   没有把三个 .cpp 同时写进两个 list —— 那会让一个 .cpp 有两个 CMake owner
-  (path-layout-contract 违规),而 `MiaoDesk` 同时链两个 core,重复定义会直接炸链接期。
+  (path-layout-contract 违规),而 `WhaleDesK` 同时链两个 core,重复定义会直接炸链接期。
 - **为什么本机全绿却 CI 红**:mingw 语法门与 `verify-cmake-*` 只查"每个 .cpp 都被编译"
   与"目标结构自洽",**没有一个门查"这个 EXE 调用的符号在它的链接 Closure 里"**。
-  这类错误只有真链接才暴露。已记为教训:往 `MIAODESK_CORE_SOURCES` 加文件时,
-  必须先确认**所有**调用方都链 `MiaoDeskCore`。
+  这类错误只有真链接才暴露。已记为教训:往 `WHALEDESK_CORE_SOURCES` 加文件时,
+  必须先确认**所有**调用方都链 `WhaleDesKCore`。
 - **✅ 已由 CI 确认修好(全八条)**:`00eb7eaf` 上 **8 个 job 全 success** ——
   `Windows x64 Build`、`Windows x64 Package`、`Windows x64 MSIX`、
   `Windows ARM64 Package`、`Windows ARM64 Fast Dev`、`Repo Hygiene`、
   `Path Layout Contract`、`Cleanup merged branches`。连红六次的那四条链
   (x64 Build / x64 Package / x64 MSIX / ARM64 Package)连同 ARM64 Fast Dev 全部恢复。
 - **本轮已做的(只加诊断,不加重试)**:把第 6 步改成
-  (1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
+  (1) 先列出并停掉残留的 `WhaleDesK*` 进程 —— 只移除干扰,不会修好坏掉的东西;
   (2) install 失败时把完整输出和 matched 行写进 annotation。之前 annotation 里只有
   sccache 统计和 exit code 1,根因一直看不见。
 - **刻意没有加重试**:重试会把一次真实的 install 失败也一并盖过去 —— 那是拿
@@ -362,7 +362,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 **修正上一轮的判断**：我当时说"剩下那一半需要产品决策",这个判断切错了地方 ——
 把**发现卡住**和**接管卡住**当成了一件事。发现卡住不需要任何决策,它只是把
 `OpenMutexW` 的那个布尔换成带理由的裁决;**那一半本轮已经做了**
-(`MiaoLockOwnership`,`Wedged` 裁决 + 五处变异,见下一节记录)。
+(`WhaleLockOwnership`,`Wedged` 裁决 + 五处变异,见下一节记录)。
 真正需要人拍板的仍然只有接管动作:要不要 `TerminateProcess` 一个还活着的进程、
 要不要先试着重启它一次。而它现在被隔在判定之外 —— `MayStartNewOwner(Wedged)`
 为假,选择权整个留给宿主。
@@ -384,7 +384,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `fileSearchAvailable_` 仍然为真 —— 于是用户读到"索引已连接"，再读到"查询失败"。
   **一句错的诊断比没有诊断更坏**：照它排查的人会去看查询参数、去看索引内容，
   而真正该做的是确认 `gozd` 服务跑没跑。方向被引反了。
-- **修法**：三岔 `if/else if/else if` 与三句文案提成 `MiaoFileSearchNotice`
+- **修法**：三岔 `if/else if/else if` 与三句文案提成 `WhaleFileSearchNotice`
   （纯判定 + 文案，不碰管道/窗口/服务），`MergeResults` 改成调它。
   与 SEARCH-02/03 同一个病：内联在 `SearchWindow.cpp` 里时本机一行都跑不到，
   而那是用户在文件搜索坏掉时**唯一**能拿到的信息。
@@ -416,7 +416,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   唯一在管结果正确性的东西：`c` → `ca` → `cat` 起三次查询，gozd 是另一个进程，
   快的那次可能后到，不设防就会把 `cat` 的结果盖掉 —— 用户看见的就是
   "搜索框自己会换位置"。
-- **提成 `MiaoSearchGeneration`**（纯代号算术，不碰管道/窗口/线程），`GozSearch`
+- **提成 `WhaleSearchGeneration`**（纯代号算术，不碰管道/窗口/线程），`GozSearch`
   改成调它而不是另持一份裸 `std::atomic_uint64_t`。线程语义照旧（worker 线程读、
   UI 线程写），所以是 drop-in；"该不该递"的判定在外面那个纯函数里，于是本机测得动。
 - **一条此前没人写下来的不变式**：`Invalidate`（界面侧的 `Shutdown()`）必须
@@ -491,10 +491,10 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   "'可恢复'那一半(`EnsurePipeAvailable` 起服务 + 轮询)仍未提纯"。同一个模式,做掉。
 - **逮到的:**`GozSearch::EnsurePipeAvailable` 一路上看得见每个环节 —— SCM 打不打得开、
   服务在不在、状态是什么、StartService 成没成、等到没有 —— 但**每一个都当场丢掉,
-  只回一个 bool**。于是 `MiaoFileSearchNotice` 的第三桶只能说
+  只回一个 bool**。于是 `WhaleFileSearchNotice` 的第三桶只能说
   "可能索引服务没起来,也可能这次查询超时":一句**诚实的猜测,不是诊断**。
   用户照它排查,第一步仍然是猜。
-- **修法**:判定提成 `MiaoGozRecovery`(九种结局 + Win32 状态数值的映射),
+- **修法**:判定提成 `WhaleGozRecovery`(九种结局 + Win32 状态数值的映射),
   `EnsurePipeAvailable` 改成把观测收进出参;提示行在**失败那一桶**追加真正的原因
   (另两桶要么客户端没装、要么还在飞,都不该拿恢复结论去说)。
 - **顺带修了三处**:
@@ -536,7 +536,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   把它写清楚、然后不修**。
 - **先查卡点,没有猜**:这个模块要 `ContentCandidateLedger` / `sessionId` / `epoch`
   三样运行时状态,而 `DialogState` 里只有最后一个没有。第一反应是"那要改工具回复的
-  管线",后来查实 epoch 持久化在 `<workspace>/.miaodesk-session.state`
+  管线",后来查实 epoch 持久化在 `<workspace>/.whaledesk-session.state`
   (`CreatorWorkspaceState`),有现成的 `ParseCreatorWorkspaceState`;台账在
   `<workspace>/candidate-ledger.state`,与 `CreatorToolWorker` 读的是**同一份**。
   三样都拿得到,不需要改管线。
@@ -611,7 +611,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   作品上），并把归属判定接进**三个**出口：`FindGeneratedPackagePath` 命中、
   目录候选命中、以及 repair 那条路径。三处都要判：前两条是独立的扫描路径，
   漏掉任一条都还能从那儿把别处的包拿进来。
-  判定在 `MiaoCreatorPathScope`（纯 containment，不碰盘）。
+  判定在 `WhaleCreatorPathScope`（纯 containment，不碰盘）。
 - **顺带一个发现**：`CreatorReplyInterpreter` —— 那个专门为回答"这一轮做出了什么、
   凭据是什么"而写的模块（Receipt / ProseScan、sessionId 与 epoch 都要对上）——
   **没有任何运行时调用方**，只有自己的测试在调。它的头注释写着"此前从模型的回复
@@ -653,7 +653,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   - **段名清单被截断 → 整个 profile 从下拉里消失**。用户看不到它，而文件里它明明还在 ——
     P0-09 的"升级不丢 API profile"于是变成"丢了一整份且不报错"；
   - model / name 被截断 → 模型名不对，请求直接被服务端拒。
-- **修法**：判据提成 `MiaoIniReadLimit::ReadTruncated(copied, bufferChars)`，
+- **修法**：判据提成 `WhaleIniReadLimit::ReadTruncated(copied, bufferChars)`，
   两个读点都改成接住返回值并置一个进程内标记；新增 `LastConfigReadTruncated()`
   让上层能问。**不改变**任何字段的读法（截断的那份仍按读到的内容走），先让它不安静。
 - **判据为什么取保守的一边**：从"要多少位子"算 —— `L` 字符需要 `L+1` 个位子，
@@ -688,7 +688,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   而**撞 singleton 键时的两种去重结局也压在同一行**。`Load` 照常返回 true，
   调用方只问成败 —— 于是拿着一个悄悄变短的布局继续。P0-09 要的
   "升级不丢组件布局"实际变成"**丢了几条并报告成功**"。
-- **修法**：提成 `MiaoWidgetRowAdmission`，五种结局各自有名有姓：
+- **修法**：提成 `WhaleWidgetRowAdmission`，五种结局各自有名有姓：
   `Admit` / `RejectUnknownKind` / `RejectMissingSource` / `RejectUnsafeSource` /
   `SupersedeDisabled` / `KeepExisting`（六种，实际）。`Load` 改成按结局分支，
   三种拒绝写进新增的 `SkippedRows()` —— 与 `WallpaperLibrary::SkippedRows()` 同一个形状、
@@ -697,11 +697,11 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   1. 撞键时**启用状态优先** —— 库里那条禁用着而这一行启用着，用新的替换；
      用户主动启用过，那是最新意图，不该被更早的禁用行盖掉；
   2. 同状态时**先出现者胜** —— 四种同状态组合全部保留库里那条。
-- **Source 受不受认仍由宿主判**（它要知道内容目录），与 `MiaoDesktopBandOrder` 同一个分法：
+- **Source 受不受认仍由宿主判**（它要知道内容目录），与 `WhaleDesKtopBandOrder` 同一个分法：
   归属问"这行是谁"，入账问"该不该收"。
 - **一处我自己造出来的坑**：第一版让 `ExplainWidgetRowOutcome` 回传 `const char*`，
   于是调用处要 `Utf8ToWide` —— 那函数不存在（我顺手编的），mingw 当场报错。
-  改成回传 `std::wstring`，与 `MiaoLibraryRowFilter::DescribeRowSkip` 同一个形状才对:
+  改成回传 `std::wstring`，与 `WhaleLibraryRowFilter::DescribeRowSkip` 同一个形状才对:
   调用方要把它拼进 `skippedRows_`,那里存的是宽串。**两个已存在的同形状模块已经给出了答案**,
   不该凭想象造第三个形状。
 - **变异**：9 处全红、0 存活。含不看 Kind / 不看 Source 缺失 / **不看 Source 是否受认
@@ -719,7 +719,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 - 代码提交：本次（与再续二十一同一批，但那一条的"门禁全通过"是**说早了**的）。
 - **发生了什么**：`run-pure-logic-tests.sh` 跑出来 **59 个目标全 BUILD FAIL**，
-  `SUITE_RC=1`。原因是把 `content/package/MiaoLibraryRestoreMerge.cpp` 同时放进了两处：
+  `SUITE_RC=1`。原因是把 `content/package/WhaleLibraryRestoreMerge.cpp` 同时放进了两处：
   - 脚本第 21 行 `find content -name '*.cpp'` **本来就会自动发现它**；
   - 我又往第 71 行那个"额外的纯逻辑实现"清单里手写了一份。
 
@@ -733,7 +733,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - **怎么发现的**：不是靠"跑完看 RC"，而是发现日志里所有目标都是 BUILD FAIL
   之后去看了 `grep -A 4`。第一反应如果是"59 个全红，IMPOSSIBLE，大概是环境问题"，
   就会漏掉它 —— 而那个错误恰好是"我造成的"。
-- 顺带一件反讽的事：我这一轮写的模块叫 `MiaoLibraryRestoreMerge`，
+- 顺带一件反讽的事：我这一轮写的模块叫 `WhaleLibraryRestoreMerge`，
   主题是"两份一字不差的副本会在未来某天漏字段"；而我这里的登记也是两份一字不差的副本，
   当场就让 59 个目标全挂。**同一类错误，一个在 C++ 里，一个在构建脚本里。**
 - 本机跑了什么：单独链接通过；故意重复链接一次以确认复现 `duplicate symbol`（drill 到
@@ -756,7 +756,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   于是有一天往 `WallpaperLibraryItem` 加一个字段（比如"用户自己起的名字"），
   两份副本都会安静地不合并它：恢复之后用户那一项变回默认值，而 `Load` 照常返回 true。
   那正是 P0-07 的失败形态 —— "恢复成一个更短的库并报告成功"。
-- **修法**：提成 `MiaoLibraryRestoreMerge`（三条不变式：收藏不丢 or / 导入时间取更早的
+- **修法**：提成 `WhaleLibraryRestoreMerge`（三条不变式：收藏不丢 or / 导入时间取更早的
   非零 / 最近使用取更大），两遍都改成调它。顺手删掉文件作用域里那个 `EarliestNonZero` ——
   它的逻辑搬进新模块之后，留在原处就是**第三份副本**，而"第三份副本"正是要消灭的东西。
 - **头文件里那份字段清单**：`kRestoredUserStateFields` 与结构体配对，测试断言两边一致。
@@ -791,7 +791,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
     而且再也不自己好；
   - 恒说"需要修" → 每一跳都重发一遍 style/z-order，DWM 每秒重组整条带子，
     用户看到的就是**壁纸闪**。注释里那句 reads as wallpaper flicker 说的正是这个。
-- **提成 `MiaoDesktopBandOrder`**（五条契约：都是 WS_CHILD / 组件的 layered 与模式相反 /
+- **提成 `WhaleDesKtopBandOrder`**（五条契约：都是 WS_CHILD / 组件的 layered 与模式相反 /
   组件排在图标层与壁纸层之前 / 图标层排在壁纸层之前 / 壁纸层同时 layered 且 transparent），
   `RepairRoleOrder` 改成调它。归属判断（这扇窗是不是 DefView）仍然留在宿主里 ——
   它要知道 `kDefViewClass`，那是 Windows 的事；**顺序契约本身是纯的**。
@@ -1012,7 +1012,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   于是面板正忙、或停在一个"要不要这么做"的确认上时，那段词**既不进输入框也不发出去，
   整段消失**。用户看到的是 AI 窗口被带到前台、输入框空空如也、什么也没发生。
   SEARCH-05 的验收原话是"原查询自然成为对话上下文"—— 而这里它什么都不是。
-- **修法**：判定提成 `MiaoSearchHandoff::DecideSearchHandoff(有词, 忙, 待确认)`,
+- **修法**：判定提成 `WhaleSearchHandoff::DecideSearchHandoff(有词, 忙, 待确认)`,
   三条出路 Drop / PrefillOnly / PrefillAndSend。**两条路都用它** —— 新面板此刻不可能
   忙也不可能有待确认,所以照旧"填进去并当场发";共用同一个判定的理由是别让两条路对
   同一个问题给出两个答案(上一轮 SEARCH-04 就是因为同一段逻辑只有一条路在管,
@@ -1115,8 +1115,8 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 
 - 代码提交：`bd23cfe6`（前一代码提交 `51d01b07`）；本轮文档 + 代码，未提升版本号。
-- 本机跑了什么：40 个纯逻辑目标全通过（exit 0）—— 新增 `MiaoSceneTimelinePolicyTest`
-  174 项、`ShippedAnimationContinuity` 48 项，`MiaoSceneRuntimeTest` 新增 6 项共 33 项，
+- 本机跑了什么：40 个纯逻辑目标全通过（exit 0）—— 新增 `WhaleSceneTimelinePolicyTest`
+  174 项、`ShippedAnimationContinuity` 48 项，`WhaleSceneRuntimeTest` 新增 6 项共 33 项，
   `ContentSelfTests` 从 9 项增至 11 项（接上两个此前**在整个仓库里没有调用方**的 SelfTest，
   其中帧调度器那条第一次执行就红了 —— 红的不是代码是断言）；mingw 交叉语法门 0 真实错误；
   21 道仓库门全通过；26 处变异全部变红。
@@ -1129,7 +1129,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 - 已完成（本机可自动部分）：WALL-03 的宿主侧时间策略（`SceneClock` 暂停恢复 /
   `ParameterSlew` 平滑过渡 / `AuditAnimationContinuity` 循环接缝与一帧瞬移）、
   `Validate` 的"两条动画不得写同一属性"拒绝规则、发行内容 25 条动画轨道的连续性审查。
-- **已登记而未修**：`animation://miao-cloud/blink-blink` 的淡变是 1/240 秒，任何帧率下
+- **已登记而未修**：`animation://whale-cloud/blink-blink` 的淡变是 1/240 秒，任何帧率下
   渲染不出来。登记而不是静默放过，也不是本机改美术后放行。
 - 下一候选（依赖已满足且本机可自动验证）：`CAP-02` 的"每项可创作能力最小例 + 组合例"仍缺示例包；
   `P0-03/P0-04/P0-07/08/09`、`WALL-06`、`PRO-03/05`、CAP-04、WALL-03 的真机动画采样都要 Windows 侧，
@@ -1137,13 +1137,13 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   接进宿主"三项，后一项要等播放宿主那一轮（要先决定暂停由谁调）。
 - 阻塞：真机签收需要 Windows x64/ARM64 各一台、显示器/DPI 矩阵、已配置的 Provider 与对标软件。
 
-### P0-07「库状态一致恢复」：静默丢行（已修，`MiaoLibraryRowFilter`）
+### P0-07「库状态一致恢复」：静默丢行（已修，`WhaleLibraryRowFilter`）
 
 排查 `WallpaperLibrary` 的恢复路径时定位到一个真实缺陷,形状与本会话修过的几处相同
 (静默失败 + 调用方只问成败),但本轮**没有动手修** —— 剩下的上下文不足以把改动做完并跑完
 验证,所以先把位置与见证固定下来,而不是留下半截代码。
 
-> 状态:**已修**(`5253d9e1` `fix(library)`,判定与那句话在 `MiaoLibraryRowFilter`,
+> 状态:**已修**(`5253d9e1` `fix(library)`,判定与那句话在 `WhaleLibraryRowFilter`,
 > 纯逻辑、有门,29 项断言)。下面保留当时的定位与推理过程 —— 它不是历史档案,
 > 是"这一类缺陷长什么样"的样本。
 
@@ -1164,7 +1164,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 **为什么它不是"本该如此"**:`InferKind` 那条路(同文件 394 行附近)遇到不认识的类型会
 `SetError` 明说"不支持的壁纸文件类型",而 `Load` 这条路什么都不说。同一个文件里两种口径。
 
-**修法(含,已做)**:`MiaoLibraryRowFilter`(纯逻辑,本机有门)出判定与那句话,
+**修法(含,已做)**:`WhaleLibraryRowFilter`(纯逻辑,本机有门)出判定与那句话,
 `WallpaperLibrary::Load` 在同一个分支里把它记进新增的 `SkippedRows()` /
 `SkippedRowCount()`,宿主第一次能说出"N 个库项目无法识别,已跳过: …"。
 **不改变**"这一行不进库"的行为 —— 那是要动 UI 的决定;先让丢失可见。
@@ -1177,7 +1177,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 上一轮只接了壁纸那一处,还剩三处老布尔 + 一处不该接。本轮做完。
 
-- **先把 owner 记录那套提到共享模块** `MiaoLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。
+- **先把 owner 记录那套提到共享模块** `WhaleLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。
   理由很直接:同一个"该不该再起一个"有五处启动点,各写一遍就会出现"壁纸那边判得出卡住、
   后台 Harness 那边还是一句 `return true`"这种分裂。合流之后只有一份实现。
 - **接上的三处**:
@@ -1207,7 +1207,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   **发现卡住**和**接管卡住**当成了一件事。它们不是:前者只需要把 `OpenMutexW`
   给的那个布尔换成带理由的裁决,不含任何决策;后者才需要决定要不要
   `TerminateProcess` 一个还活着的进程。
-- **本轮做前者**：新增 `MiaoLockOwnership`,把"这把锁现在是什么状态"判成五种 ——
+- **本轮做前者**：新增 `WhaleLockOwnership`,把"这把锁现在是什么状态"判成五种 ——
   `Available` / `Running` / `Wedged`(活着但心跳过期) / `StaleRecord`(记录的进程不在了) /
   `Unusable`(判不了)。`MayStartNewOwner` 只在**不需要动任何活着进程**的两种为真。
 - **为什么这已经是有用的**：`Wedged` 是当前 `OpenMutexW` 结构上判不出来的那一类 ——
@@ -1226,7 +1226,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   Unusable 允许起 / pid=0 也算有记录。
 - **紧接着把 owner 那一侧也接了**(`WallpaperEntry.cpp`):裁决要有输入才能动,
   而"谁持有、多久没心跳"此前**没有任何地方记录** —— 命名 mutex 不带身份。
-  新增 `MiaoLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份 `.owner` 文本;
+  新增 `WhaleLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份 `.owner` 文本;
   `SingletonGuard` 只有**真的拿到锁**时写它(抢锁失败就写 = 两个 owner 都自称持有者),
   析构时收掉;`LaunchHelper` 里那个 `if (NamedMutexExists(...)) return true;`
   改成先问 `ExistingHelperIsHealthy`:健康的返回 true(别起第二个),**卡住或判不了的返回
@@ -1257,7 +1257,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   界面上一个字都不提。`L3PersistenceSelfTest` 完全没覆盖这条路(只有 legacy 一轮、
   profile 一轮,没有"从 legacy 换到中央")。
 - **修法**:退休旧文件**之前**,先把会话搬到新身份下。新增
-  `MigrateSessionFromLegacyState`,判定落在 `MiaoSessionMigration`(纯逻辑,本机有门):
+  `MigrateSessionFromLegacyState`,判定落在 `WhaleSessionMigration`(纯逻辑,本机有门):
   只有"服务地址与模型还是同一套"才算来源提升,那时才搬;用户真换了配置时不搬 ——
   新会话是对的,旧会话留在原地。搬完之后把结论写进 `LastSessionMigration()`,
   宿主能说出口(与 `CreationWorkflow::LastRejectionReason` 同一个理由)。
@@ -1330,7 +1330,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   第二轮的 onDelta 里。这正是"串会话"。而 `PiRuntime::AskAsync` 里连 `Stop()` 都不调，
   只 `request_stop()`，旧的 worker 句柄被直接覆盖。
 - **修法**：`busy_` 这个孤立 bool 换成轮次**相位**（Idle / Running / Stopping），
-  判定的纯逻辑落在 `MiaoTurnLifecycle`。关键一条：`PhaseAfterStopRequest`
+  判定的纯逻辑落在 `WhaleTurnLifecycle`。关键一条：`PhaseAfterStopRequest`
   **不许返回 Idle** —— 取消是请求，完成要等 worker 自己退出（`RunTurn` 收尾时）。
   `Busy()` 改成 `phase != Idle`，于是"取消中"仍然是忙。
   `AskAsync` 用 `compare_exchange_strong` 按相位裁决，并且 Stopping 上的拒绝
@@ -1348,7 +1348,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   "这个 done 是一次拒绝"还是"这一轮已完成"。我把措辞挪进相位裁决之后,
   `tests/content-creator-modes.mjs` 当场红了。它逮的是对的:前缀一改,一个**从未发送**的
   请求就会被当成"本轮生成已完成"报给用户。修法不是把字面量写回去,而是把契约钉住 ——
-  `MiaoTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,两档差异只追加在后头,门改成从那个常量
+  `WhaleTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,两档差异只追加在后头,门改成从那个常量
   推导 marker 应有的值。三个模块共用一处定义。prefix / marker / 不 emit 三处都变异验过。
 - 顺带：第一版 `JudgeTurnStart` 的 Idle 早退忘了把 `allowed` 置 true
   （结构体成员默认 false），于是"空闲时也发不出消息" —— 12 项断言当场逮到。
@@ -1369,11 +1369,11 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 ### 本轮推进记录（2026-10-04 再续五，P0-08：强杀之后 Node 会活下来）
 
-- **做的事**：`TerminateProcess(MiaoDesk)` **不跑析构函数**。于是"父进程自己会收拾
+- **做的事**：`TerminateProcess(WhaleDesK)` **不跑析构函数**。于是"父进程自己会收拾
   子进程"这件事在强杀路径上一条都不成立 —— `PiRuntime::CleanupProcess` 写得再好,
   也只是给正常退出路径准备的;强杀之后 Node 会一直活下去,握着一根已经断掉的 stdin
   管子,而没有任何人再去收它。这就是 P0-08 验收原话里的"无永久 Node … 孤儿"。
-- **修法**：新增 `include/miaodesk/MiaoChildProcessReaper.h`,把子进程装进一个带
+- **修法**：新增 `include/whaledesk/WhaleChildProcessReaper.h`,把子进程装进一个带
   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 job —— 父进程一死(不管怎么死的),内核连坐
   杀掉 job 里的全部进程。`PiRuntime::LaunchProcess` 接上它。
   装不进去(最常见是父进程自身已在调试器/CI 的 job 里且不许嵌套)时行为与今天完全一样,
@@ -1398,7 +1398,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   不属于反斜杠的点也转义了,于是永远匹配不上,门把三个正确登记的站点全判成"登记已过期" ——
   改成普通字符串比较。
 - **CI 当头一棒,是我自己的错**:收尸门第一版把仓库根**写死**成
-  `ROOT = '/Volumes/Ext/Projects/MiaoDesk'`(本机路径)。本机全绿,ubuntu runner 上
+  `ROOT = '/Volumes/Ext/Projects/WhaleDesK'`(本机路径)。本机全绿,ubuntu runner 上
   一个站点都扫不到。**是门自己的"零条比对不可能是通过"守卫报出来的** —— 它没有打印
   一句"每个站点都有收尸路径"就退出 0,而那正是这个仓库反复栽的形状。
   修复提交 `9175fb0b`:ROOT 改从 `__file__` 推;守卫现在会打印它解析到的两个路径并直接说
@@ -1425,7 +1425,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
       /provider https://别的服务/v1 某个模型
       → config_.baseUrl 换成别的**主机**,config_.profileId 一个字符都没动
       → 下一次请求 URL = https://别的服务/v1/...      ← 用户刚敲的
-                   Key = MiaoDesk/ApiProfile/<原 profile>  ← 原来那个 profile 的 Key
+                   Key = WhaleDesK/ApiProfile/<原 profile>  ← 原来那个 profile 的 Key
 
   **一把签给 A 服务的 Key，被发到 B 服务上去。** `/key` 那一侧更糟：它按同一个
   `profileId` 选槽，会把用户敲的新 Key **覆盖回那个 profile 自己存的 Key** 上，
@@ -1437,8 +1437,8 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   `model-settings.json`，这个文件的读者 `L3Agent::LoadConfig()` **零调用方**
   （L3Agent.h 自己写着 "ReloadConfig and the normal runtime path do not consume their
   state."）。下次 `ReloadConfig` 会用回 API 配置中心的值。改成了如实说明。
-- **拆出 `MiaoAgentConfigAuthority.{h,cpp}`（纯逻辑，本机有门）**，与这个仓库里另几次
-  拆分同一模式（`MiaoD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules`）：
+- **拆出 `WhaleAgentConfigAuthority.{h,cpp}`（纯逻辑，本机有门）**，与这个仓库里另几次
+  拆分同一模式（`WhaleD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules`）：
   `L3Agent.cpp` 为了 `wincred.h`/`winhttp.h` 只能 Windows 上编，于是"URL 与凭据是否同源"
   这条在本机一行都跑不到。模块只做判定：URL 拼装、凭据槽选择、同源裁决、以及换主机时
   该不该丢身份。`L3Agent` 的 `CurrentApiUrl`/`SaveApiKey` 改成走它，槽名用 `static_assert`
@@ -1506,7 +1506,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 - **补上两个此前没有任何门的验收项**："资产不重复打包"与"版本可演进/降级路径明确"。
 - 新增 `ShippedPackageAssets`：对全部发行包 + 两个示例包走
-  `MiaoContentPackage::Load`→反序列化→`Validate`→`MiaoAssetDatabase::Build`,逐包核
+  `WhaleContentPackage::Load`→反序列化→`Validate`→`WhaleAssetDatabase::Build`,逐包核
   三件事(每个声明的资产都有人引用、没有两份内容哈希相同、合计字节数记录)。
   本轮基线 **16 条资产、2710 KB、无人引用 0、内容重复 0**。
 - **在这道门上又踩到自己一次**：第一版把判定写在循环里,于是把"无人引用"那一行删掉之后
@@ -1514,7 +1514,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
   改成抽出 `AuditPackageAssets` + 两个合成坏包的自检之后,两处变异都红了。
   这与本轮早些时候 `ShippedAnimationContinuity` 是同一个坑,第二次才长记性:
   **一道永远不失败的门,与一道好门在通过的那一刻长得一模一样。**
-- schema 版本矩阵写成 `MIAO_CONTENT_PACKAGE_V1.md` 附录 A。只有一版时也写下来,
+- schema 版本矩阵写成 `WHALE_CONTENT_PACKAGE_V1.md` 附录 A。只有一版时也写下来,
   理由是"将来加第 2 版时这里必须先改"。
 - 本机跑了什么：`ShippedPackageAssets` 14 项通过；两处变异全红;21 道仓库门全通过。
 - 用户可感知变化：**无**。本批防的是将来,不改当前行为,所以不进 `FEATURE_CHANGELOG.md`。
@@ -1551,7 +1551,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 ### 本轮推进记录（2026-10-04，WPRO-01 组件几何与 aspectRatio 不生效）
 
 - 代码提交：`beb322e9`（WALL-03 两个提交之后）；本轮文档 + 代码，未提升版本号。
-- 做了什么：新增 `MiaoWidgetGeometry.cpp`（纯算术）把"这个组件到底有多大"算出来，
+- 做了什么：新增 `WhaleWidgetGeometry.cpp`（纯算术）把"这个组件到底有多大"算出来，
   加 `WidgetGeometryTest` 61 项与 `ShippedWidgetGeometry` 10 项（每个发行组件在 8 块
   参考屏幕上的真实像素盒逐行打出来）。
 - **结论**：三个随产品发行的组件全部声明 `aspectRatio: 1.0`，而八个参考屏幕上**没有
@@ -1657,7 +1657,7 @@ S1 基础版稳定性收口期间采用以下投入参考；S1 后按专业能�
 
 - **是哪一道**：`packaging/windows/verify-widget-visibility.ps1` 的 `Wait-WidgetCount`
   ("Expected N paint-ready Widget surface(s), observed $count")。它起真的
-  `MiaoDeskWallpaper.exe`、用 `EnumWindows` 数真的窗口,**只给 15 秒**准备时间,每 250ms 轮一次;
+  `WhaleDesKWallpaper.exe`、用 `EnumWindows` 数真的窗口,**只给 15 秒**准备时间,每 250ms 轮一次;
   壁纸进程中途退出则直接抛。**它是计时敏感的运行时冒烟,不是编译门。**
 - **结论是 flake,有证据,不是猜的**:
   - 同一条门在**同一个 SHA `20bd7639`** 上跑过五次:`Windows x64 Build` **红**,

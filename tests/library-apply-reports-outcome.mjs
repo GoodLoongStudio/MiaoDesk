@@ -2,7 +2,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
-const header = read("src/include/miaodesk/WallpaperLibraryWindow.h");
+const header = read("src/include/whaledesk/WallpaperLibraryWindow.h");
 const library = read("src/ui/wallpaper/WallpaperLibraryWindowV2.cpp");
 const engine = read("src/desktop/wallpaper/legacy/WallpaperEngine.cpp");
 
@@ -79,7 +79,7 @@ assert.match(apply, /if \(!applied\) \{[\s\S]*?SetStatus\(failure\.empty\(\) \? 
   "the engine-path failure must land on the status line and beep like every other one");
 
 // --- the engine must return something usable on every path --------------
-const engineApply = bodyOf(engine, "std::wstring ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {");
+const engineApply = bodyOf(engine, "std::wstring ApplyLibraryItem(const whaledesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {");
 // Falling off the end of a non-void function is undefined behaviour, and this function has
 // a fall-through tail (MarkUsed + refreshes).
 assert.match(engineApply, /return \{\};\s*\n\s*\}$/,

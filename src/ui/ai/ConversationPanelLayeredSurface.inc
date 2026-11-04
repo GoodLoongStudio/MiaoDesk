@@ -1,4 +1,4 @@
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 struct ConversationLayerSurface {
@@ -554,4 +554,4 @@ bool ConversationPointInsideRoundedPanel(HWND hwnd, POINT screenPoint, int radiu
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk

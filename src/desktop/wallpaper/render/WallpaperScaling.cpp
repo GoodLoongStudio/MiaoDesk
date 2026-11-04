@@ -1,10 +1,10 @@
-#include "miaodesk/WallpaperScaling.h"
+#include "whaledesk/WallpaperScaling.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cwchar>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 RectF FullSource(float width, float height) noexcept {
@@ -137,4 +137,4 @@ bool SelfTestScalingGeometry() noexcept {
            Near(ClampFocal(-1.0f), 0.0f) && Near(ClampFocal(2.0f), 1.0f);
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

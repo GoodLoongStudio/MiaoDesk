@@ -4,16 +4,16 @@
 //   clang++ -std=c++23 -O1 -Wall -Wextra \
 //       tests/secret-redaction-harness.cpp -o /tmp/secret-redaction-harness
 //   /tmp/secret-redaction-harness
-#include "miaodesk/SecretRedaction.h"
+#include "whaledesk/SecretRedaction.h"
 
 #include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
 
-using miaodesk::secrets::RedactSecrets;
-using miaodesk::secrets::SummarizeRemoteBody;
-using miaodesk::secrets::kRedactedMarker;
+using whaledesk::secrets::RedactSecrets;
+using whaledesk::secrets::SummarizeRemoteBody;
+using whaledesk::secrets::kRedactedMarker;
 
 namespace {
 
@@ -45,7 +45,7 @@ void NoSecret(const std::string& label, const std::wstring& text) {
 }  // namespace
 
 int main() {
-  std::cout << "miaodesk::secrets::RedactSecrets\n";
+  std::cout << "whaledesk::secrets::RedactSecrets\n";
 
   // --- the shapes a reflected request actually takes --------------------
   // An HTTP header echoed back verbatim.
@@ -122,7 +122,7 @@ int main() {
      L"api_key=" + std::wstring(kRedactedMarker) + L" token=" + std::wstring(kRedactedMarker));
 
   // --- SummarizeRemoteBody ----------------------------------------------
-  std::cout << "\nmiaodesk::secrets::SummarizeRemoteBody\n";
+  std::cout << "\nwhaledesk::secrets::SummarizeRemoteBody\n";
   Eq("flattens newlines",
      SummarizeRemoteBody(L"line one\r\nline two\nline three"),
      L"line one line two line three");

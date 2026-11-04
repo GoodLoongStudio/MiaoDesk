@@ -1,5 +1,5 @@
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/MiaoDesktopBandOrder.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/WhaleDesKtopBandOrder.h"
 
 #include <algorithm>
 #include <array>
@@ -7,15 +7,15 @@
 #include <string>
 #include <vector>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr wchar_t kProgmanClass[] = L"Progman";
 constexpr wchar_t kWorkerWClass[] = L"WorkerW";
 constexpr wchar_t kDefViewClass[] = L"SHELLDLL_DefView";
-constexpr wchar_t kWallpaperHostClass[] = L"MiaoDesk.Native.WallpaperHost";
-constexpr wchar_t kWebHostClass[] = L"MiaoDesk.Native.WebWallpaperHost";
-constexpr wchar_t kNativeWidgetSurfaceClass[] = L"MiaoDesk.Native.WidgetSurface";
+constexpr wchar_t kWallpaperHostClass[] = L"WhaleDesK.Native.WallpaperHost";
+constexpr wchar_t kWebHostClass[] = L"WhaleDesK.Native.WebWallpaperHost";
+constexpr wchar_t kNativeWidgetSurfaceClass[] = L"WhaleDesK.Native.WidgetSurface";
 constexpr LONG_PTR kRaisedDesktopFlag = WS_EX_NOREDIRECTIONBITMAP;
 constexpr UINT kSpawnWorkerMessage = 0x052C;
 
@@ -164,7 +164,7 @@ bool DesktopShellHost::Refresh(std::wstring* error) {
     snapshot_ = next;
 
     RepairRaisedDesktopWorkerOrder();
-    RepairKnownMiaoDeskSurfaces();
+    RepairKnownWhaleDesKSurfaces();
     if (error) error->clear();
     return snapshot_.Valid();
 }
@@ -258,7 +258,7 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     // recomposite the whole band every second and reads as wallpaper flicker.
     // Verify first; touch windows only when something violates the contract.
     //
-    // 那个"还要不要修"的判定住在 MiaoDesktopBandOrder(纯逻辑,本机可测 28 项)。
+    // 那个"还要不要修"的判定住在 WhaleDesKtopBandOrder(纯逻辑,本机可测 28 项)。
     // 此前它内联在下面 —— 与排序、去重、交接、代号算术是同一个病:住在要
     // `<windows.h>` 的文件里,本机一行都跑不到。而它两个方向的失败都用户看得见:
     // 恒说"已经有序"则 Explorer 重启后没人修;恒说"需要修"则每一跳都重发
@@ -321,7 +321,7 @@ void DesktopShellHost::RepairRoleOrder(HWND parent) const noexcept {
     }
 }
 
-void DesktopShellHost::RepairKnownMiaoDeskSurfaces() const {
+void DesktopShellHost::RepairKnownWhaleDesKSurfaces() const {
     const HWND parent = SurfaceParent();
     if (!parent || !IsWindow(parent)) return;
     RepairRoleOrder(parent);
@@ -358,11 +358,11 @@ bool DesktopShellHost::AttachSurface(HWND surface, DesktopSurfaceRole role, cons
         if (error) *error = L"DesktopShellHost: SetWindowPos failed, Win32=" + std::to_wstring(GetLastError());
         return false;
     }
-    RepairKnownMiaoDeskSurfaces();
+    RepairKnownWhaleDesKSurfaces();
     if (snapshot_.mode != DesktopShellMode::RaisedDesktop && snapshot_.mode != DesktopShellMode::ProgmanFallback) {
         SetWindowPos(surface, role == DesktopSurfaceRole::Widget ? HWND_TOP : HWND_BOTTOM, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        RepairKnownMiaoDeskSurfaces();
+        RepairKnownWhaleDesKSurfaces();
     }
     const auto health = InspectSurface(surface, role);
     const bool layeredRequired = SurfaceRequiresLayered(surface, role);
@@ -409,4 +409,4 @@ bool DesktopShellHost::SelfTest() noexcept {
            _wcsicmp(RoleKey(DesktopSurfaceRole::Widget), L"widget") == 0;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

@@ -15,7 +15,7 @@ const runtime = read("src/ai/pi/PiRuntime.cpp");
 // CCA-03 moved the allowlists out of PiRuntime.cpp into PiLaunchProfile.cpp, one per
 // mode. Both are still tool sets the agent can call, so both need readable names.
 const launchProfiles = read("src/desktop/control/PiLaunchProfile.cpp");
-const shared = read("src/include/miaodesk/ToolDisplayNames.h");
+const shared = read("src/include/whaledesk/ToolDisplayNames.h");
 const overlay = read("src/ui/ai/ConversationPanelImpl.inc");
 
 // The map has exactly one home. It used to live inside the .inc, which made it
@@ -25,7 +25,7 @@ const overlay = read("src/ui/ai/ConversationPanelImpl.inc");
 assert.doesNotMatch(overlay, /std::wstring FriendlyToolName\(/,
   "the map must not be re-declared in ConversationPanelImpl.inc -- it lives in"
   + " ToolDisplayNames.h so the creator can use the same names");
-assert.match(overlay, /using miaodesk::ai::FriendlyToolName;/,
+assert.match(overlay, /using whaledesk::ai::FriendlyToolName;/,
   "the conversation panel must import the shared map, not keep its own");
 
 // Each allowlist is split across adjacent wide-string literals declared on one array.

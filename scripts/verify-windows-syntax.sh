@@ -51,15 +51,15 @@ trap 'rm -rf "$WORK"' EXIT
 BASE="-std=c++2b -fsyntax-only -fms-extensions -I$SRC/include -I$ROOT/third_party/webview2/include -DUNICODE -D_UNICODE -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 -Wall -Wextra -Werror=return-type -Wno-unknown-pragmas"
 
 # src/CMakeLists.txt 的 set_source_files_properties 给个别文件挂了宏,闸门必须
-# 照抄:漏掉 MIAODESK_NATIVE_TOOLS_IMPL 时,NativeTools.h 的 inline 兜底实现会和
+# 照抄:漏掉 WHALEDESK_NATIVE_TOOLS_IMPL 时,NativeTools.h 的 inline 兜底实现会和
 # NativeTools.cpp 的定义并存,报出假的重定义错误。
 per_file_define() {
   case "$1" in
-    "$SRC/ai/tools/NativeTools.cpp")            echo " -DMIAODESK_NATIVE_TOOLS_IMPL" ;;
-    "$SRC/ai/agent/L3Agent.cpp")                echo " -DMIAODESK_L3_WINHTTP_TRACE" ;;
-    "$SRC/ai/pi/PiRuntime.cpp")                 echo " -DMIAODESK_PI_CREDENTIAL_GUARD" ;;
+    "$SRC/ai/tools/NativeTools.cpp")            echo " -DWHALEDESK_NATIVE_TOOLS_IMPL" ;;
+    "$SRC/ai/agent/L3Agent.cpp")                echo " -DWHALEDESK_L3_WINHTTP_TRACE" ;;
+    "$SRC/ai/pi/PiRuntime.cpp")                 echo " -DWHALEDESK_PI_CREDENTIAL_GUARD" ;;
     "$SRC/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp")
-                                                echo " -DwWinMain=MiaoDeskWallpaperMain" ;;
+                                                echo " -DwWinMain=WhaleDesKWallpaperMain" ;;
     *)                                          echo "" ;;
   esac
 }
@@ -68,8 +68,8 @@ find "$SRC" -name '*.cpp' | sort >"$WORK/all"
 
 # 有些 .cpp 不是独立编译单元,而是被别的 .cpp 在某个命名空间内部 #include 进去的
 # (典型:desktop/wallpaper/legacy/WallpaperEngineProduction.cpp 在
-#  namespace miaodesk::wallpaper 内部 #include "WallpaperEngine.cpp")。把它们当独立
-# TU 编译会得到假错误——匿名命名空间在真实构建里嵌在 miaodesk::wallpaper 内,单独
+#  namespace whaledesk::wallpaper 内部 #include "WallpaperEngine.cpp")。把它们当独立
+# TU 编译会得到假错误——匿名命名空间在真实构建里嵌在 whaledesk::wallpaper 内,单独
 # 编译时却落在全局,于是 wallpaper::scenes:: 这种限定名解析不到。
 # 这里先识别并排除。
 python3 - "$SRC" "$WORK" <<'PY'
@@ -124,11 +124,11 @@ body = open(path).read()
 helper = '''
 per_file_define() {
   case "$1" in
-    "$SRC/ai/tools/NativeTools.cpp")            echo " -DMIAODESK_NATIVE_TOOLS_IMPL" ;;
-    "$SRC/ai/agent/L3Agent.cpp")                echo " -DMIAODESK_L3_WINHTTP_TRACE" ;;
-    "$SRC/ai/pi/PiRuntime.cpp")                 echo " -DMIAODESK_PI_CREDENTIAL_GUARD" ;;
+    "$SRC/ai/tools/NativeTools.cpp")            echo " -DWHALEDESK_NATIVE_TOOLS_IMPL" ;;
+    "$SRC/ai/agent/L3Agent.cpp")                echo " -DWHALEDESK_L3_WINHTTP_TRACE" ;;
+    "$SRC/ai/pi/PiRuntime.cpp")                 echo " -DWHALEDESK_PI_CREDENTIAL_GUARD" ;;
     "$SRC/desktop/wallpaper/legacy/WallpaperEngineProduction.cpp")
-                                                echo " -DwWinMain=MiaoDeskWallpaperMain" ;;
+                                                echo " -DwWinMain=WhaleDesKWallpaperMain" ;;
     *)                                          echo "" ;;
   esac
 }
@@ -169,11 +169,11 @@ KNOWN = [
     # mingw 的 d3d11.h 把 ID3D11View::GetResource 声明成返回 void(真 SDK 返回 HRESULT),
     # 于是 `if (FAILED(view->GetResource(&res)))` 在 mingw 下报 "void value not ignored"。
     # 这一条值得登记而不是顺手绕开:它是**下游头文件的 bug**,写在仓库代码里毫无问题。
-    # 绕开的办法是用 MiaoD3D11RenderTarget::Texture() 直接拿纹理 —— 那个访问器就是为此
+    # 绕开的办法是用 WhaleD3D11RenderTarget::Texture() 直接拿纹理 —— 那个访问器就是为此
     # 存在的,而且比 view->GetResource 这条间接路更直接。
     (r"void value not ignored as it ought to be",
      "mingw 的 d3d11.h 把 ID3D11View::GetResource 声明成 void(真 SDK 返回 HRESULT);"
-     "改用 MiaoD3D11RenderTarget::Texture()"),
+     "改用 WhaleD3D11RenderTarget::Texture()"),
     (r"fatal error:", "mingw 没有整套 Windows SDK,缺头文件属环境噪声"),
 ]
 text = open(sys.argv[1]).read()

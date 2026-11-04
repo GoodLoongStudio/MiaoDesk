@@ -5,9 +5,9 @@ const read = (p) => fs.readFileSync(p, "utf8");
 const engine = read("src/desktop/wallpaper/legacy/WallpaperEngine.cpp");
 const automation = read("src/ui/automation/WallpaperAutomationWindow.cpp");
 const rules = read("src/ui/automation/WallpaperApplicationRulesWindow.cpp");
-const automationHeader = read("src/include/miaodesk/WallpaperAutomationWindow.h");
-const rulesHeader = read("src/include/miaodesk/WallpaperApplicationRulesWindow.h");
-const helper = read("src/include/miaodesk/SurfaceKeyboardFocus.h");
+const automationHeader = read("src/include/whaledesk/WallpaperAutomationWindow.h");
+const rulesHeader = read("src/include/whaledesk/WallpaperApplicationRulesWindow.h");
+const helper = read("src/include/whaledesk/SurfaceKeyboardFocus.h");
 
 // The automation window and its application-rules window are whole settings
 // surfaces -- profiles, playlists, schedules, seven day checkboxes, an EXE field
@@ -65,7 +65,7 @@ for (const [name, text] of [["automation", automation], ["rules", rules]]) {
   assert.match(text, /id == IDCANCEL/,
     `${name}: WM_COMMAND must carry IDCANCEL as well, because the dialog manager posts`);
 
-  assert.match(text, /#include "miaodesk\/SurfaceKeyboardFocus\.h"/,
+  assert.match(text, /#include "whaledesk\/SurfaceKeyboardFocus\.h"/,
     `${name}: must use the shared helper rather than a private copy, so the two surfaces`);
 
   assert.match(text, /HWND restoreFocus\{\};/,

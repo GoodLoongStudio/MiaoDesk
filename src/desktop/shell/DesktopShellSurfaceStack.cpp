@@ -1,9 +1,9 @@
-#include "miaodesk/DesktopShellHost.h"
+#include "whaledesk/DesktopShellHost.h"
 
 #include <algorithm>
 #include <cstdlib>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 bool RectMatchesWithinTolerance(const RECT& actual, const RECT& expected, LONG tolerance = 2) noexcept {
@@ -130,7 +130,7 @@ bool DesktopShellHost::RepairSurfaceStack(HWND expectedSurface, std::wstring* er
         }
     }
 
-    RepairKnownMiaoDeskSurfaces();
+    RepairKnownWhaleDesKSurfaces();
     if (error) error->clear();
     return true;
 }
@@ -174,4 +174,4 @@ bool DesktopShellHost::RecoverSurface(HWND surface, DesktopSurfaceRole role, std
     return false;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

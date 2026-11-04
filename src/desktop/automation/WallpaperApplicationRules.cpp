@@ -1,6 +1,6 @@
-#include "miaodesk/WallpaperApplicationRules.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperApplicationRules.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr ULONGLONG kCacheRefreshMs = 1000;
@@ -349,7 +349,7 @@ std::optional<std::size_t> WallpaperApplicationRules::FindIndex(std::wstring_vie
 bool WallpaperApplicationRules::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-AppRules-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-AppRules-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
 
@@ -405,4 +405,4 @@ void InvalidateApplicationRuleCache() noexcept {
     g_cacheTick = 0;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

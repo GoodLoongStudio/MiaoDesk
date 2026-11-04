@@ -6,14 +6,14 @@
 // 的输入,并要求拒绝原因点明触发了哪一条。
 //
 // 全部在本机实跑:校验不碰盘,于是这些规则不需要 Windows 也能被验证。
-#include "miaodesk/ContentPackageValidator.h"
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentPackageValidator.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -442,10 +442,10 @@ void TestUnknownCapabilityIsRejected() {
     Check(ValidateCandidatePackage(GoodParts()).ok, "不声明任何能力的包照旧通过。");
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestAValidPackagePasses();
     TestParametersAndPreviewAreOptional();
     TestMissingManifestIsRejected();

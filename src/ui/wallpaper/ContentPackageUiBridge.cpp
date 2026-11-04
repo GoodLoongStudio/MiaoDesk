@@ -1,10 +1,10 @@
-#include "miaodesk/ContentPackageManagerDialog.h"
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WallpaperRuntimeControl.h"
+#include "whaledesk/ContentPackageManagerDialog.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WallpaperRuntimeControl.h"
 
 #include <commctrl.h>
 #include <shellapi.h>
@@ -22,12 +22,12 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kDesktopLibraryClass[] = L"MiaoDesk.Native.DesktopLibrary";
-constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
-constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
+constexpr wchar_t kDesktopLibraryClass[] = L"WhaleDesK.Native.DesktopLibrary";
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"WhaleDesK.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"WhaleDesK.WidgetRuntimeReload.v1";
 constexpr UINT_PTR kSubclassId = 0x4D435055; // "MCPU"
 
 constexpr int kAddId = 6102;
@@ -71,9 +71,9 @@ const wchar_t* RuntimeLabel(content::ContentRuntimeKind runtime) noexcept {
 bool HasCanonicalContentIdentity(const content::ManagedContentPackageInfo& package) {
     if (package.id.empty() || package.source.empty()) return false;
     std::string parsedId;
-    if (!content::MiaoContentPackageManager::ParseSource(package.source, &parsedId)) return false;
+    if (!content::WhaleContentPackageManager::ParseSource(package.source, &parsedId)) return false;
     return parsedId == package.id &&
-           package.source == content::MiaoContentPackageManager::MakeSource(package.id);
+           package.source == content::WhaleContentPackageManager::MakeSource(package.id);
 }
 
 bool IsPackageDirectory(const fs::path& path, content::ContentKind* kind = nullptr) {
@@ -131,7 +131,7 @@ std::optional<fs::path> PickPackageDirectory(HWND owner, content::ContentKind ki
                     kind == content::ContentKind::Widget
                         ? L"请选择扩展名为 .mdwidget 的内容包目录。"
                         : L"请选择扩展名为 .mdwall 的壁纸主题包目录。",
-                    L"MiaoDesk 内容包", MB_OK | MB_ICONWARNING);
+                    L"WhaleDesK 内容包", MB_OK | MB_ICONWARNING);
         return std::nullopt;
     }
     return selected;
@@ -187,7 +187,7 @@ bool CreateInstalledWidgetInstance(HWND owner,
     if (!result.success) {
         MessageBoxW(owner,
                     result.message.empty() ? L"内容包已安装，但创建桌面小组件失败。" : result.message.c_str(),
-                    L"MiaoDesk 内容包", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 内容包", MB_OK | MB_ICONERROR);
         return false;
     }
     RefreshVisibleWidgets(owner);
@@ -200,28 +200,28 @@ void IndexInstalledWallpaper() {
     WallpaperLibrary library;
     std::wstring error;
     if (!library.Load(&error) && !error.empty())
-        miaodesk::log::Warn(L"ContentPackageUI", L"壁纸主题包已安装，但库索引刷新失败: " + error);
+        whaledesk::log::Warn(L"ContentPackageUI", L"壁纸主题包已安装，但库索引刷新失败: " + error);
 }
 
 void MaybeAssignWallpaperToPrimary(HWND owner,
                                    const content::ManagedContentPackageInfo& package) {
     if (!HasCanonicalContentIdentity(package)) {
-        miaodesk::log::Warn(L"ContentPackageUI",
+        whaledesk::log::Warn(L"ContentPackageUI",
                             L"拒绝应用非 canonical 壁纸主题包 identity: " + package.source);
         MessageBoxW(owner,
                     L"壁纸主题包身份不是 canonical content:<id>，已拒绝应用到显示器。",
-                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 壁纸主题", MB_OK | MB_ICONERROR);
         return;
     }
     if (package.runtime != content::ContentRuntimeKind::Scene &&
         package.runtime != content::ContentRuntimeKind::Web) return;
     if (MessageBoxW(owner, L"壁纸主题包已安装。是否立即应用到主显示器？",
-                    L"MiaoDesk 壁纸主题", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+                    L"WhaleDesK 壁纸主题", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
 
     const auto topology = QueryMonitorTopology();
     const auto* primary = PrimaryMonitor(topology);
     if (!primary) {
-        MessageBoxW(owner, L"没有检测到可用显示器。", L"MiaoDesk 壁纸主题", MB_OK | MB_ICONWARNING);
+        MessageBoxW(owner, L"没有检测到可用显示器。", L"WhaleDesK 壁纸主题", MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -240,7 +240,7 @@ void MaybeAssignWallpaperToPrimary(HWND owner,
     if (!result.success) {
         MessageBoxW(owner,
                     result.message.empty() ? L"主题包已安装，但应用到主显示器失败。" : result.message.c_str(),
-                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 壁纸主题", MB_OK | MB_ICONERROR);
         return;
     }
     NotifyWallpaperRuntimeReload();
@@ -253,22 +253,22 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
     if (!inspectedResult.success) {
         MessageBoxW(owner,
                     inspectedResult.message.empty() ? L"内容包校验失败。" : inspectedResult.message.c_str(),
-                    L"MiaoDesk 内容包", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 内容包", MB_OK | MB_ICONERROR);
         return;
     }
     if (inspected.kind != expectedKind) {
         const std::wstring message = L"内容包类型不匹配。当前包是“" +
             std::wstring(KindLabel(inspected.kind)) + L"”，这里需要“" +
             KindLabel(expectedKind) + L"”。";
-        MessageBoxW(owner, message.c_str(), L"MiaoDesk 内容包", MB_OK | MB_ICONWARNING);
+        MessageBoxW(owner, message.c_str(), L"WhaleDesK 内容包", MB_OK | MB_ICONWARNING);
         return;
     }
     if (expectedKind == content::ContentKind::Wallpaper && !HasCanonicalContentIdentity(inspected)) {
-        miaodesk::log::Warn(L"ContentPackageUI",
+        whaledesk::log::Warn(L"ContentPackageUI",
                             L"拒绝安装非 canonical 壁纸主题包 identity: " + inspected.source);
         MessageBoxW(owner,
                     L"壁纸主题包必须使用 canonical content:<manifest.id> 身份，当前包已拒绝安装。",
-                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 壁纸主题", MB_OK | MB_ICONERROR);
         return;
     }
 
@@ -276,7 +276,7 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
     const auto existingResult = control.ResolveContentPackage(expectedKind, inspected.source, &existing);
     if (existingResult.success && existing.origin == content::ManagedContentPackageOrigin::BuiltIn) {
         const std::wstring message = L"内置内容已经占用该 ID，不能由用户包覆盖：\n\n" + inspected.source;
-        MessageBoxW(owner, message.c_str(), L"MiaoDesk 内容包", MB_OK | MB_ICONWARNING);
+        MessageBoxW(owner, message.c_str(), L"WhaleDesK 内容包", MB_OK | MB_ICONWARNING);
         return;
     }
     const bool replacing = existingResult.success;
@@ -301,10 +301,10 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
            << L"Runtime：" << RuntimeLabel(inspected.runtime) << L"\n\n"
            << (replacing
                    ? L"同 ID 的桌面引用不会改变，替换后继续使用 content:<id>。"
-                   : L"安装后原下载目录可以移动或删除，MiaoDesk 使用托管副本。")
+                   : L"安装后原下载目录可以移动或删除，WhaleDesK 使用托管副本。")
            << L"\n\n继续吗？";
 
-    if (MessageBoxW(owner, prompt.str().c_str(), L"MiaoDesk 内容包",
+    if (MessageBoxW(owner, prompt.str().c_str(), L"WhaleDesK 内容包",
                     MB_YESNO | MB_ICONQUESTION) != IDYES) return;
 
     content::ContentPackageInstallResult installed;
@@ -314,23 +314,23 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
     if (!result.success) {
         MessageBoxW(owner,
                     result.message.empty() ? L"内容包安装失败。" : result.message.c_str(),
-                    L"MiaoDesk 内容包", MB_OK | MB_ICONERROR);
+                    L"WhaleDesK 内容包", MB_OK | MB_ICONERROR);
         return;
     }
 
     const wchar_t* completedAction = replacing
         ? (sameVersion ? L"重装内容包完成: " : L"替换内容包版本完成: ")
         : L"安装内容包完成: ";
-    miaodesk::log::Info(L"ContentPackageUI", std::wstring(completedAction) + installed.package.source);
+    whaledesk::log::Info(L"ContentPackageUI", std::wstring(completedAction) + installed.package.source);
 
     if (expectedKind == content::ContentKind::Wallpaper) {
         if (installed.package.kind != content::ContentKind::Wallpaper ||
             !HasCanonicalContentIdentity(installed.package)) {
-            miaodesk::log::Warn(L"ContentPackageUI",
+            whaledesk::log::Warn(L"ContentPackageUI",
                                 L"壁纸主题包安装后 canonical identity 校验失败: " + installed.package.source);
             MessageBoxW(owner,
                         L"壁纸主题包安装后的 canonical identity 校验失败，已停止索引和应用。",
-                        L"MiaoDesk 壁纸主题", MB_OK | MB_ICONERROR);
+                        L"WhaleDesK 壁纸主题", MB_OK | MB_ICONERROR);
             return;
         }
         IndexInstalledWallpaper();
@@ -343,17 +343,17 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
             : L"壁纸主题包已安装：";
         MessageBoxW(owner,
                     (std::wstring(action) + installed.package.name + L"\n" + installed.package.source).c_str(),
-                    L"MiaoDesk 壁纸主题", MB_OK | MB_ICONINFORMATION);
+                    L"WhaleDesK 壁纸主题", MB_OK | MB_ICONINFORMATION);
         return;
     }
 
     if (replacing) {
         const auto runtime = control.EnsureRuntime();
         if (!runtime.success) {
-            miaodesk::log::Warn(L"ContentPackageUI",
+            whaledesk::log::Warn(L"ContentPackageUI",
                                 L"小组件内容包已替换，但 Widget runtime 未就绪: " + runtime.message);
         } else if (!NotifyWidgetRuntimeReload()) {
-            miaodesk::log::Warn(L"ContentPackageUI",
+            whaledesk::log::Warn(L"ContentPackageUI",
                                 L"小组件内容包已替换，但即时 runtime reload 通知失败；保留轮询恢复路径。");
         }
         RefreshVisibleWidgets(owner);
@@ -361,16 +361,16 @@ void InstallPackage(HWND owner, const fs::path& path, content::ContentKind expec
         MessageBoxW(owner,
                     (std::wstring(action) + installed.package.name + L"\n" + installed.package.source +
                      L"\n\n现有桌面实例继续使用同一个 content:<id>，不会自动创建重复实例，并会立即刷新运行内容。").c_str(),
-                    L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
+                    L"WhaleDesK 内容包", MB_OK | MB_ICONINFORMATION);
         return;
     }
 
     const int create = MessageBoxW(owner,
         (std::wstring(L"小组件内容包已安装：") + installed.package.name + L"\n" + installed.package.source +
          L"\n\n是否现在创建一个桌面小组件实例？").c_str(),
-        L"MiaoDesk 内容包", MB_YESNO | MB_ICONINFORMATION);
+        L"WhaleDesK 内容包", MB_YESNO | MB_ICONINFORMATION);
     if (create == IDYES && CreateInstalledWidgetInstance(owner, installed.package)) {
-        MessageBoxW(owner, L"桌面小组件实例已创建。", L"MiaoDesk 内容包",
+        MessageBoxW(owner, L"桌面小组件实例已创建。", L"WhaleDesK 内容包",
                     MB_OK | MB_ICONINFORMATION);
     }
 }
@@ -486,4 +486,4 @@ struct ContentPackageUiHook final {
 ContentPackageUiHook g_contentPackageUiHook;
 
 } // namespace
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

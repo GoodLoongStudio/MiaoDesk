@@ -4,12 +4,12 @@
 // 既不进输入框也不发出去。用户看到的是 AI 窗口被带到前台、输入框空空如也、
 // 什么也没发生。SEARCH-05 的验收原话是"原查询自然成为对话上下文"，而这里它
 // 什么都不是。
-#include "miaodesk/MiaoSearchHandoff.h"
+#include "whaledesk/WhaleSearchHandoff.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -32,10 +32,10 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:交接判定不动\n");

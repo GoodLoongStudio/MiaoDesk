@@ -1,9 +1,9 @@
-#include "miaodesk/ContentWidgetPreviewRenderer.h"
+#include "whaledesk/ContentWidgetPreviewRenderer.h"
 
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/NativeWeatherService.h"
-#include "miaodesk/TodayTaskContentProvider.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/NativeWeatherService.h"
+#include "whaledesk/TodayTaskContentProvider.h"
 
 #include <d2d1.h>
 #include <wrl/client.h>
@@ -20,7 +20,7 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 bool Fail(std::wstring* error, std::wstring message) {
@@ -43,7 +43,7 @@ bool HasCapability(const content::ContentDefinition& definition, std::wstring_vi
 }
 
 bool PublishHostData(
-    content::MiaoSceneD2DRenderer& renderer,
+    content::WhaleSceneD2DRenderer& renderer,
     const content::ContentDefinition& definition,
     std::wstring* error) {
     renderer.ClearDataValues();
@@ -153,7 +153,7 @@ struct ContentWidgetPreviewRenderer::Impl {
         std::wstring source;
         fs::path packageRoot;
         fs::file_time_type packageStamp{};
-        std::unique_ptr<content::MiaoSceneD2DRenderer> renderer;
+        std::unique_ptr<content::WhaleSceneD2DRenderer> renderer;
     };
 
     ComPtr<ID2D1Factory> factory;
@@ -196,7 +196,7 @@ struct ContentWidgetPreviewRenderer::Impl {
 
         content::ResolvedWidgetContent resolved;
         if (needsLoad) {
-            if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, error)) return nullptr;
+            if (!content::WhaleWidgetContentCatalog::Resolve(source, &resolved, error)) return nullptr;
             if (resolved.definition.kind != content::ContentKind::Widget ||
                 resolved.definition.runtime != content::ContentRuntimeKind::Scene) {
                 Fail(error, L"Content preview 当前只支持 Scene widget。");
@@ -210,7 +210,7 @@ struct ContentWidgetPreviewRenderer::Impl {
             cached->source = source;
             cached->packageRoot = resolved.packageRoot;
             cached->packageStamp = PackageStamp(cached->packageRoot);
-            cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+            cached->renderer = std::make_unique<content::WhaleSceneD2DRenderer>();
             if (!cached->renderer->Load(cached->packageRoot, target.Get(), error)) {
                 cached->renderer.reset();
                 return nullptr;
@@ -221,7 +221,7 @@ struct ContentWidgetPreviewRenderer::Impl {
         const auto stamp = PackageStamp(cached->packageRoot);
         if (stamp != cached->packageStamp) {
             cached->packageStamp = stamp;
-            cached->renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+            cached->renderer = std::make_unique<content::WhaleSceneD2DRenderer>();
             if (!cached->renderer->Load(cached->packageRoot, target.Get(), error)) {
                 cached->renderer.reset();
                 return nullptr;
@@ -302,4 +302,4 @@ bool ContentWidgetPreviewRenderer::Draw(
 
 void ContentWidgetPreviewRenderer::Reset() noexcept { impl_->Reset(); }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

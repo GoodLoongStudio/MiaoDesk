@@ -1,4 +1,4 @@
-# MiaoDesk 开发基线与路线
+# WhaleDesK 开发基线与路线
 
 - 状态：当前唯一开发路线
 - 建立：2026-09-05；当前目标与执行状态校正：2026-10-03
@@ -42,23 +42,23 @@ S2 可在等待 S1 真机期间推进契约/知识工作；S3/S4 高风险运行
 正式二进制：
 
 ```text
-MiaoDesk.exe
-MiaoDeskWallpaper.exe
-MiaoDeskHarness.exe
+WhaleDesK.exe
+WhaleDesKWallpaper.exe
+WhaleDesKHarness.exe
 ```
 
 职责：
 
 ```text
-MiaoDesk.exe
+WhaleDesK.exe
   Search / AI / Settings
 
-MiaoDeskWallpaper.exe
+WhaleDesKWallpaper.exe
   Wallpaper runtime
   DesktopShellHost
   Native Widget runtime
 
-MiaoDeskHarness.exe
+WhaleDesKHarness.exe
   DeepSeek Harness WebView2 host
 ```
 
@@ -217,19 +217,19 @@ ContentInstance
 8. Direct Surface 的 compositor re-present 与 painter 内容重绘解耦；
 9. 对常驻内存、CPU、句柄数建立基线。
 
-### Phase 3 — MiaoDesk Content Framework
+### Phase 3 — WhaleDesK Content Framework
 
 内容框架主线命名为：
 
 ```text
-MiaoDesk Content Framework
+WhaleDesK Content Framework
 妙喵内容框架
 ```
 
 详细技术契约：
 
 ```text
-docs/MIAODESK_CONTENT_FRAMEWORK.md
+docs/WHALEDESK_CONTENT_FRAMEWORK.md
 ```
 
 目标不是先做 Wallpaper Editor / Widget Editor，而是先把 Wallpaper 与 Widget 的“内容”从宿主实现中抽离成可配置、可参数化、可打包的统一 Runtime。
@@ -312,7 +312,7 @@ Node Graph
 逐项复制 Wallpaper Engine 编辑器 UI / 专有格式 / 社区生态
 ```
 
-专业版同时建设 WE 级效果、macOS 级组件与专业 AI Creator，3D/形变属于 S6 必达能力。用户创建 Wallpaper / Widget 的实现方式仍是先建设 `MiaoDesk Content Framework`，再在稳定 Runtime 之上增加 Parameter tooling 和 Visual Creator。
+专业版同时建设 WE 级效果、macOS 级组件与专业 AI Creator，3D/形变属于 S6 必达能力。用户创建 Wallpaper / Widget 的实现方式仍是先建设 `WhaleDesK Content Framework`，再在稳定 Runtime 之上增加 Parameter tooling 和 Visual Creator。
 
 因此：
 

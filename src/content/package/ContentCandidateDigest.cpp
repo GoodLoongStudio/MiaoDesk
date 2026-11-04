@@ -1,11 +1,11 @@
-#include "miaodesk/ContentCandidateDigest.h"
+#include "whaledesk/ContentCandidateDigest.h"
 
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -233,4 +233,4 @@ std::string ShortDigest(std::string_view digest, std::size_t length) {
     return std::string(digest.substr(0, length));
 }
 
-} // namespace miaodesk::content
+} // namespace whaledesk::content

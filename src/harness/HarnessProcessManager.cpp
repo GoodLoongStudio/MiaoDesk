@@ -1,6 +1,6 @@
-#include "miaodesk/HarnessProcessManager.h"
-#include "miaodesk/HarnessSettingsBridge.h"
-#include "miaodesk/RuntimeLogPaths.h"
+#include "whaledesk/HarnessProcessManager.h"
+#include "whaledesk/HarnessSettingsBridge.h"
+#include "whaledesk/RuntimeLogPaths.h"
 #include <winhttp.h>
 #include <algorithm>
 #include <filesystem>
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 constexpr wchar_t kHarnessHost[] = L"127.0.0.1";
@@ -162,7 +162,7 @@ bool ResponseContainsHarnessBootManifest(HINTERNET request) {
 }
 
 bool ProbeHarnessHttp() {
-    HINTERNET session = WinHttpOpen(L"MiaoDesk/0.1",
+    HINTERNET session = WinHttpOpen(L"WhaleDesK/0.1",
                                     WINHTTP_ACCESS_TYPE_NO_PROXY,
                                     WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
@@ -234,7 +234,7 @@ HarnessProcessManager::~HarnessProcessManager() { Stop(); }
 bool HarnessProcessManager::Start() {
     const HarnessSettingsBridgeState bridge = PrepareHarnessSettingsBridge();
     if (!bridge.error.empty()) {
-        impl_->lastError = L"无法准备 MiaoDesk DeepSeek Harness 运行目录：" + bridge.error;
+        impl_->lastError = L"无法准备 WhaleDesK DeepSeek Harness 运行目录：" + bridge.error;
         return false;
     }
     if (Running() || ServiceReady()) return true;
@@ -243,7 +243,7 @@ bool HarnessProcessManager::Start() {
 
     const LaunchSpec launch = ResolveLaunchSpec();
     if (!launch.Valid()) {
-        impl_->lastError = L"MiaoDesk RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新安装或解压完整 MiaoDesk 包；不会回退到系统 Node/npm。";
+        impl_->lastError = L"WhaleDesK RuntimeBundle 不完整：缺少 Runtime\\Node\\node.exe 或 Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js。请重新安装或解压完整 WhaleDesK 包；不会回退到系统 Node/npm。";
         return false;
     }
 
@@ -287,31 +287,31 @@ bool HarnessProcessManager::Start() {
     if (!workingDirectory.empty()) fs::create_directories(workingDirectory, workEc);
     if (workEc || workingDirectory.empty()) workingDirectory = appDir;
 
-    WriteLogLine(logHandle, L"[MiaoDesk] DeepSeek Harness launch requested");
-    WriteLogLine(logHandle, L"[MiaoDesk] mode: " + launch.mode);
-    WriteLogLine(logHandle, L"[MiaoDesk] application: " + launch.application);
-    WriteLogLine(logHandle, L"[MiaoDesk] command: " + launch.commandLine);
-    WriteLogLine(logHandle, L"[MiaoDesk] working directory: " + workingDirectory.wstring());
-    WriteLogLine(logHandle, L"[MiaoDesk] DSH_HOME: " + bridge.dshHome);
+    WriteLogLine(logHandle, L"[WhaleDesK] DeepSeek Harness launch requested");
+    WriteLogLine(logHandle, L"[WhaleDesK] mode: " + launch.mode);
+    WriteLogLine(logHandle, L"[WhaleDesK] application: " + launch.application);
+    WriteLogLine(logHandle, L"[WhaleDesK] command: " + launch.commandLine);
+    WriteLogLine(logHandle, L"[WhaleDesK] working directory: " + workingDirectory.wstring());
+    WriteLogLine(logHandle, L"[WhaleDesK] DSH_HOME: " + bridge.dshHome);
     if (bridge.configured) {
-        WriteLogLine(logHandle, L"[MiaoDesk] shared model: provider=" + bridge.providerId + L" model=" + bridge.model);
-        WriteLogLine(logHandle, L"[MiaoDesk] shared base URL: " + bridge.baseUrl);
+        WriteLogLine(logHandle, L"[WhaleDesK] shared model: provider=" + bridge.providerId + L" model=" + bridge.model);
+        WriteLogLine(logHandle, L"[WhaleDesK] shared base URL: " + bridge.baseUrl);
         WriteLogLine(logHandle, bridge.hasApiKey
-            ? L"[MiaoDesk] shared API key: injected from Windows Credential Manager"
-            : L"[MiaoDesk] shared API key: none (local/keyless provider expected)");
+            ? L"[WhaleDesK] shared API key: injected from Windows Credential Manager"
+            : L"[WhaleDesK] shared API key: none (local/keyless provider expected)");
     } else {
-        WriteLogLine(logHandle, L"[MiaoDesk] shared model: not configured yet; DSH web service will still start");
+        WriteLogLine(logHandle, L"[WhaleDesK] shared model: not configured yet; DSH web service will still start");
     }
-    WriteLogLine(logHandle, L"[MiaoDesk] browser launch: disabled via dsh --no-open; UI is hosted by MiaoDesk WebView2");
-    WriteLogLine(logHandle, L"[MiaoDesk] network bootstrap: disabled; using repository RuntimeBundle");
-    WriteLogLine(logHandle, L"[MiaoDesk] waiting for upstream stdout/stderr...");
+    WriteLogLine(logHandle, L"[WhaleDesK] browser launch: disabled via dsh --no-open; UI is hosted by WhaleDesK WebView2");
+    WriteLogLine(logHandle, L"[WhaleDesK] network bootstrap: disabled; using repository RuntimeBundle");
+    WriteLogLine(logHandle, L"[WhaleDesK] waiting for upstream stdout/stderr...");
     FlushFileBuffers(logHandle);
 
     HANDLE inputHandle = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
                                      &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (inputHandle == INVALID_HANDLE_VALUE) {
-        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: unable to open NUL stdin: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[WhaleDesK] ERROR: unable to open NUL stdin: " + Win32ErrorText(GetLastError()));
         impl_->lastError = L"无法初始化 Harness 标准输入：" + Win32ErrorText(GetLastError());
         CloseHandle(logHandle);
         CloseHandle(job);
@@ -335,7 +335,7 @@ bool HarnessProcessManager::Start() {
     DWORD createError = ERROR_SUCCESS;
     {
         ScopedEnvironmentOverride dshHome(L"DSH_HOME", bridge.dshHome);
-        ScopedEnvironmentOverride apiKey(L"MIAODESK_API_KEY", bridge.apiKey);
+        ScopedEnvironmentOverride apiKey(L"WHALEDESK_API_KEY", bridge.apiKey);
         created = CreateProcessW(launch.application.c_str(), commandBuffer.data(), nullptr, nullptr, TRUE, flags,
                                  nullptr, workingDirectory.empty() ? nullptr : workingDirectory.c_str(), &startup, &processInfo);
         createError = created ? ERROR_SUCCESS : GetLastError();
@@ -343,7 +343,7 @@ bool HarnessProcessManager::Start() {
     CloseHandle(inputHandle);
 
     if (!created) {
-        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: CreateProcessW failed: " + Win32ErrorText(createError));
+        WriteLogLine(logHandle, L"[WhaleDesK] ERROR: CreateProcessW failed: " + Win32ErrorText(createError));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法启动 DeepSeek Harness：" + Win32ErrorText(createError) + L" · 日志：" + logPath.wstring();
@@ -352,7 +352,7 @@ bool HarnessProcessManager::Start() {
     }
 
     if (!AssignProcessToJobObject(job, processInfo.hProcess)) {
-        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: AssignProcessToJobObject failed: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[WhaleDesK] ERROR: AssignProcessToJobObject failed: " + Win32ErrorText(GetLastError()));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法接管 Harness 进程树：" + Win32ErrorText(GetLastError()) + L" · 日志：" + logPath.wstring();
@@ -364,7 +364,7 @@ bool HarnessProcessManager::Start() {
     }
 
     if (ResumeThread(processInfo.hThread) == static_cast<DWORD>(-1)) {
-        WriteLogLine(logHandle, L"[MiaoDesk] ERROR: ResumeThread failed: " + Win32ErrorText(GetLastError()));
+        WriteLogLine(logHandle, L"[WhaleDesK] ERROR: ResumeThread failed: " + Win32ErrorText(GetLastError()));
         FlushFileBuffers(logHandle);
         CloseHandle(logHandle);
         impl_->lastError = L"无法恢复 Harness 进程：" + Win32ErrorText(GetLastError()) + L" · 日志：" + logPath.wstring();
@@ -375,7 +375,7 @@ bool HarnessProcessManager::Start() {
         return false;
     }
 
-    WriteLogLine(logHandle, L"[MiaoDesk] process started, pid=" + std::to_wstring(processInfo.dwProcessId));
+    WriteLogLine(logHandle, L"[WhaleDesK] process started, pid=" + std::to_wstring(processInfo.dwProcessId));
     FlushFileBuffers(logHandle);
     CloseHandle(logHandle);
     CloseHandle(processInfo.hThread);
@@ -445,12 +445,12 @@ std::wstring HarnessProcessManager::LogPath() {
 std::wstring HarnessProcessManager::BuildLaunchCommand() {
     const LaunchSpec resolved = ResolveLaunchSpec();
     if (resolved.Valid()) return resolved.commandLine;
-    return L"<MiaoDesk>\\Runtime\\Node\\node.exe <MiaoDesk>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
+    return L"<WhaleDesK>\\Runtime\\Node\\node.exe <WhaleDesK>\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js web --host 127.0.0.1 --port 3080 --no-open";
 }
 
 bool HarnessProcessManager::SelfTest() {
-    const std::wstring sampleNode = L"C:\\MiaoDesk\\Runtime\\Node\\node.exe";
-    const std::wstring sampleDsh = L"C:\\MiaoDesk\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js";
+    const std::wstring sampleNode = L"C:\\WhaleDesK\\Runtime\\Node\\node.exe";
+    const std::wstring sampleDsh = L"C:\\WhaleDesK\\Runtime\\Node\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js";
     const std::wstring dshCommand = BuildDirectDshCommand(sampleNode, sampleDsh);
 
     const auto bindsOnlyLoopback = [](const std::wstring& command) {
@@ -474,4 +474,4 @@ bool HarnessProcessManager::SelfTest() {
            !LogPath().empty();
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

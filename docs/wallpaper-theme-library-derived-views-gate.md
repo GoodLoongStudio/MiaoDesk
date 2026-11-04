@@ -6,9 +6,9 @@ This gate applies to every user-facing wallpaper Library projection, not only th
 
 User-facing wallpaper theme views must expose shipped built-in themes only through canonical managed package identities:
 
-- `content:com.goodloong.miaodesk.theme.miao-cloud`
-- `content:com.goodloong.miaodesk.theme.neon-city`
-- `content:com.goodloong.miaodesk.theme.mystic-moon`
+- `content:com.goodloong.whaledesk.theme.whale-cloud`
+- `content:com.goodloong.whaledesk.theme.neon-city`
+- `content:com.goodloong.whaledesk.theme.mystic-moon`
 
 The exact legacy identities `scene-aurora`, `scene-neon`, and `scene-grid` remain compatibility-only storage/runtime identities. They must not reappear in Favorites, Recently Used, search results, selection restoration, package-manager lists, or any other derived Library view.
 

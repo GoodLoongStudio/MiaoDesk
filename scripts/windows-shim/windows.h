@@ -1,4 +1,4 @@
-// 最小 windows.h 替身 —— 只为在 macOS 上编译并运行 MiaoDesk 的真实 C++ 源码做离线验证。
+// 最小 windows.h 替身 —— 只为在 macOS 上编译并运行 WhaleDesK 的真实 C++ 源码做离线验证。
 // 覆盖的符号是逐文件查出来的实际使用面,不多不少。
 //
 // 历史教训(写在这里以免再犯):
@@ -184,8 +184,8 @@ inline DWORD GetTempPathW(DWORD size, wchar_t* buffer) {
 
 inline DWORD GetModuleFileNameW(HMODULE, wchar_t* buffer, DWORD size) {
     if (!buffer || size == 0) return 0;
-    const char* exe = std::getenv("MIAODESK_SHIM_MODULE_PATH");
-    if (!exe) exe = "/tmp/miaodesk-offline/MiaoDeskTest.exe";
+    const char* exe = std::getenv("WHALEDESK_SHIM_MODULE_PATH");
+    if (!exe) exe = "/tmp/whaledesk-offline/WhaleDesKTest.exe";
     const int needed = MultiByteToWideChar(CP_UTF8, 0, exe, -1, nullptr, 0);
     if (needed <= 0) return 0;
     if (static_cast<DWORD>(needed) > size) return static_cast<DWORD>(needed);

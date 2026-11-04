@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 离线验证 MiaoDeskMediaPackageTest 第 1 节(CreateVideo/CreateImage + Validate)。
+# 离线验证 WhaleDesKMediaPackageTest 第 1 节(CreateVideo/CreateImage + Validate)。
 #
 # 为什么单独搞一个:完整测试被标为 CI-only,因为它链接 WallpaperLibrary.cpp,而那条链
 # 需要真正的 Windows SDK(shobjidl + WIC COM)。但第 1 节 —— 也就是 2026-09-22 在

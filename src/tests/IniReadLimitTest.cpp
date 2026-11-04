@@ -8,12 +8,12 @@
 //
 // 三种用户可见后果:baseUrl 截断 → 请求打到另一台主机而 Key 也跟着去;
 // 段名清单截断 → 整个 profile 从下拉里消失;model 截断 → 请求被服务端拒。
-#include "miaodesk/MiaoIniReadLimit.h"
+#include "whaledesk/WhaleIniReadLimit.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace ini_read {
 namespace {
 
@@ -30,10 +30,10 @@ void Check(bool ok, const std::string& what) {
 
 } // namespace
 } // namespace ini_read
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::ini_read;
+    using namespace whaledesk::ini_read;
 
     // ---- 1. 边界:MSDN 的 nSize-2 ----
     // 缓冲区 4096 字符(ReadIni 用的就是这个)。放得下的最长值是 4095。

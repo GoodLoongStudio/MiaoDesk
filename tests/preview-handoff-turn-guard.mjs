@@ -52,7 +52,7 @@ assert.match(creator, /SharedConversationPiRuntime\(\)/,
 //     still swallow the preview, because the user was already told "已停止。".
 // Pinning an old body here would fail for the wrong reason: it went red on a
 // deliberate improvement rather than on a defect.
-const pi = read("src/include/miaodesk/PiRuntime.h");
+const pi = read("src/include/whaledesk/PiRuntime.h");
 const activeDecl = pi.match(/bool TurnActive\(\) const noexcept \{([^}]*)\}/);
 assert.ok(activeDecl, "PiRuntime must expose TurnActive() const noexcept with a body");
 const activeBody = activeDecl[1];

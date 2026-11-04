@@ -54,7 +54,7 @@ Check('1. 安装后暴露闭集 API', () => {
   assert.equal(w.spectrumCount, 16);
   assert.equal(typeof w.registerAudioListener, 'function');
   const keys = Object.keys(w).sort();
-  assert.deepEqual(keys, ['__miaodeskBridge','bandCount','registerAudioListener','spectrumCount','version'].sort(),
+  assert.deepEqual(keys, ['__whaledeskBridge','bandCount','registerAudioListener','spectrumCount','version'].sort(),
     'API surface is exactly the documented set, no extra callable host surface');
 });
 

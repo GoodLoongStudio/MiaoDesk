@@ -1,19 +1,19 @@
-#include "miaodesk/DesktopControlService.h"
+#include "whaledesk/DesktopControlService.h"
 
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WallpaperMonitorAssignments.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperMonitorAssignments.h"
 
 #include <windows.h>
 
 #include <algorithm>
 #include <vector>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
-constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
-constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"WhaleDesK.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"WhaleDesK.WidgetRuntimeReload.v1";
 
 bool SameSource(std::wstring_view left, std::wstring_view right) noexcept {
     return left == right;
@@ -33,7 +33,7 @@ DesktopControlResult DesktopControlService::ReloadWidgetRuntime() const {
     const auto runtime = EnsureRuntime();
     if (!runtime.success) return runtime;
     if (!NotifyWidgetRuntimeReload()) {
-        miaodesk::log::Warn(
+        whaledesk::log::Warn(
             L"DesktopControl",
             L"Widget runtime 已就绪，但即时 reload 通知失败；保留轮询恢复路径。");
     }
@@ -44,8 +44,8 @@ DesktopControlResult DesktopControlService::ListContentPackages(
     std::vector<content::ManagedContentPackageInfo>* packages) const {
     if (!packages) return {false, L"Content package list 输出不能为空。"};
     std::wstring error;
-    if (!content::MiaoContentPackageManager::List(packages, &error)) {
-        miaodesk::log::Error(L"DesktopControl", L"ListContentPackages 失败: " + error);
+    if (!content::WhaleContentPackageManager::List(packages, &error)) {
+        whaledesk::log::Error(L"DesktopControl", L"ListContentPackages 失败: " + error);
         return {false, error.empty() ? L"无法读取已安装内容包。" : error};
     }
     return {true, L"已读取内容包：" + std::to_wstring(packages->size()) + L" 个。"};
@@ -105,8 +105,8 @@ DesktopControlResult DesktopControlService::UninstallContentPackage(
 
     std::wstring error;
     content::ContentPackageUninstallResult removed;
-    if (!content::MiaoContentPackageManager::Uninstall(kind, source, &removed, &error)) {
-        miaodesk::log::Error(L"DesktopControl", L"UninstallContentPackage 失败: " + error);
+    if (!content::WhaleContentPackageManager::Uninstall(kind, source, &removed, &error)) {
+        whaledesk::log::Error(L"DesktopControl", L"UninstallContentPackage 失败: " + error);
         return {false, error.empty() ? L"内容包卸载失败。" : error};
     }
 
@@ -130,11 +130,11 @@ DesktopControlResult DesktopControlService::UninstallContentPackage(
     if (removed.cleanupDeferred)
         message += L"。包已移出运行时目录，物理垃圾将在后续维护时清理。";
     if (!cleanupWarning.empty()) {
-        miaodesk::log::Warn(L"DesktopControl", L"内容包已卸载，但壁纸库索引清理失败: " + cleanupWarning);
+        whaledesk::log::Warn(L"DesktopControl", L"内容包已卸载，但壁纸库索引清理失败: " + cleanupWarning);
         message += L"。壁纸库索引清理需要后续修复。";
     }
-    miaodesk::log::Info(L"DesktopControl", message);
+    whaledesk::log::Info(L"DesktopControl", message);
     return {true, std::move(message)};
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

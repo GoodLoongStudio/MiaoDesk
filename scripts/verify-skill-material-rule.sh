@@ -9,7 +9,7 @@
 # 创作链就断在最后一环。
 #
 # 补上规则之后又有一个新问题:它们是几处手写文本。这个门把"手写"变成可检查的:
-#   * 代码侧唯一真源是 MiaoSpriteMaterialPolicy.cpp —— 从它**读出**支持的 builtin 名,
+#   * 代码侧唯一真源是 WhaleSpriteMaterialPolicy.cpp —— 从它**读出**支持的 builtin 名,
 #     不在这里再抄一份。抄的那份会在改名那天悄悄说相反的话。
 #   * **每条规则都按小节比**,不是全文搜关键词。第一版按全文搜,把正面提示词里的
 #     "只有 builtinName:"solidColor" 一种能用"整条删掉后门仍然报绿 —— 因为
@@ -31,7 +31,7 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-POLICY="$ROOT/src/content/render/MiaoSpriteMaterialPolicy.cpp"
+POLICY="$ROOT/src/content/render/WhaleSpriteMaterialPolicy.cpp"
 BASICS="$ROOT/skills/content-package-basics/SKILL.md"
 REVIEW="$ROOT/skills/content-review/SKILL.md"
 

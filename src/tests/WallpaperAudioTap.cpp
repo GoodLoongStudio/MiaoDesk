@@ -1,8 +1,8 @@
 // Runs the real WASAPI loopback tap. This is the first time it has ever executed.
 //
-// Why this file exists: `MiaoWallpaperAudioTap` is the Windows half of B-2, and until
+// Why this file exists: `WhaleWallpaperAudioTap` is the Windows half of B-2, and until
 // now it had exactly one kind of evidence — it compiles and links, because
-// MiaoDeskWallpaper.exe references it. That is the same class of gap the D3D11
+// WhaleDesKWallpaper.exe references it. That is the same class of gap the D3D11
 // textured-sprite test was written to close: a piece of product code that has never
 // run is not known to work, and the ways it can be wrong are not ways a compiler
 // sees. Here they are, concretely:
@@ -23,7 +23,7 @@
 // The runner decides which of those branches is real, so every assertion says which
 // branch it applies to, and the branch that ran is printed first. A reader must never
 // have to guess whether "no frame arrived" meant "no device" or "the tap is broken".
-#include "miaodesk/MiaoWallpaperAudioTap.h"
+#include "whaledesk/WhaleWallpaperAudioTap.h"
 
 #include <windows.h>
 
@@ -32,7 +32,7 @@
 #include <cstdio>
 #include <thread>
 
-using miaodesk::content::inputbus::AudioSpectrumFrame;
+using whaledesk::content::inputbus::AudioSpectrumFrame;
 
 namespace {
 
@@ -60,7 +60,7 @@ double CpuSeconds() {
 double NowSeconds() { return static_cast<double>(GetTickCount64()) / 1000.0; }
 
 // Waits up to `seconds` for LatestFrame. Returns the frame and true on success.
-bool WaitForFrame(miaodesk::wallpaper::MiaoWallpaperAudioTap* tap, double seconds,
+bool WaitForFrame(whaledesk::wallpaper::WhaleWallpaperAudioTap* tap, double seconds,
                   AudioSpectrumFrame* out) {
     const double deadline = NowSeconds() + seconds;
     while (NowSeconds() < deadline) {
@@ -77,7 +77,7 @@ bool InUnitRange(double value) { return value >= 0.0 && value <= 1.0; }
 // immediately after Start() is therefore a race against the scheduler — it passes
 // usually and fails on a loaded machine, which is the worst kind of failure to
 // reproduce. Poll instead.
-bool WaitForRunning(miaodesk::wallpaper::MiaoWallpaperAudioTap* tap, double seconds) {
+bool WaitForRunning(whaledesk::wallpaper::WhaleWallpaperAudioTap* tap, double seconds) {
     const double deadline = NowSeconds() + seconds;
     while (NowSeconds() < deadline) {
         if (tap->Running()) return true;
@@ -99,7 +99,7 @@ int wmain() {
     // ---------------------------------------------------------------- 前置状态
     Phase("Start 之前的状态");
     {
-        miaodesk::wallpaper::MiaoWallpaperAudioTap tap;
+        whaledesk::wallpaper::WhaleWallpaperAudioTap tap;
         AudioSpectrumFrame frame{};
         Step(!tap.Running(), "未启动时 Running() 为假");
         Step(!tap.LatestFrame(&frame), "未启动时读不到帧");
@@ -112,7 +112,7 @@ int wmain() {
 
     // ---------------------------------------------------------------- 启动与幂等
     Phase("Start()");
-    miaodesk::wallpaper::MiaoWallpaperAudioTap tap;
+    whaledesk::wallpaper::WhaleWallpaperAudioTap tap;
     const bool started = tap.Start();
     Step(started, "Start() 返回真(线程已创建)");
     const bool startedAgain = tap.Start();
@@ -200,7 +200,7 @@ int wmain() {
     // hang the process. This instance is deliberately left running when it dies.
     Phase("不做 Stop() 就让对象离开作用域");
     {
-        miaodesk::wallpaper::MiaoWallpaperAudioTap forgotten;
+        whaledesk::wallpaper::WhaleWallpaperAudioTap forgotten;
         Step(forgotten.Start(), "作用域内的实例启动成功");
         Step(WaitForRunning(&forgotten, 2.0), "作用域内的实例在运行(析构里才有 Stop,这里不能崩也不能挂)");
     }

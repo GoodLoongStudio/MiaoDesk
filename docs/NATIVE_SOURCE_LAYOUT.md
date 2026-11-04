@@ -1,4 +1,4 @@
-# MiaoDesk native source layout
+# WhaleDesK native source layout
 
 Status: normative engineering structure contract.
 Date: 2026-09-01
@@ -51,7 +51,7 @@ src/
 │  ├─ automation/
 │  └─ performance/
 ├─ tests/
-└─ include/miaodesk/
+└─ include/whaledesk/
 ```
 
 Repository-level read-only product defaults live under `config/` and are
@@ -61,7 +61,7 @@ installed as `Config/`. They are not mutable user state.
 
 - `app/` owns executable composition and application startup only.
 - `ai/pi/` owns Pi runtime integration; `ai/tools/` owns product/native tool adapters; `ai/agent/` owns Direct fallback agent implementation.
-- `content/` owns the MiaoDesk Content Framework and nothing else: `model/` (ContentDefinition / ContentInstance / parameter resolution), `package/` (`.mdwidget` / `.mdwall` ingress, catalog, managed lifecycle, uninstall), `scene/` + `serialization/` (scene object model and its JSON form), `render/` (D2D / D3D11 backends, post-process, render graph), `runtime/` (scene runtime and frame scheduler), `binding/` (declarative data binding and the capability broker), `asset/` (asset database), `shader/` (shader contract and GPU parameter blocks), `input/` (Scene input bus channel contract and the platform-independent audio / pointer analysis that feeds it; Windows capture itself lives in `desktop/`). Host-facing glue stays in `desktop/` and `ui/`; `content/` must not own Windows Shell attachment, z-order, or widget persistence.
+- `content/` owns the WhaleDesK Content Framework and nothing else: `model/` (ContentDefinition / ContentInstance / parameter resolution), `package/` (`.mdwidget` / `.mdwall` ingress, catalog, managed lifecycle, uninstall), `scene/` + `serialization/` (scene object model and its JSON form), `render/` (D2D / D3D11 backends, post-process, render graph), `runtime/` (scene runtime and frame scheduler), `binding/` (declarative data binding and the capability broker), `asset/` (asset database), `shader/` (shader contract and GPU parameter blocks), `input/` (Scene input bus channel contract and the platform-independent audio / pointer analysis that feeds it; Windows capture itself lives in `desktop/`). Host-facing glue stays in `desktop/` and `ui/`; `content/` must not own Windows Shell attachment, z-order, or widget persistence.
 - `desktop/control/` owns the shared Desktop Control facade.
 - `desktop/shell/` is the only Windows desktop attachment owner: Progman, WorkerW, raised desktop, Explorer recovery, surface parent/z-order.
 - `desktop/wallpaper/` owns wallpaper state and runtime. Renderer-specific code lives below `render/`, `web/`, `monitor/`, `library/` or `runtime/`.
@@ -80,14 +80,14 @@ This document is normative, not historical. When a change adds, removes, or rena
 
 ## Headers
 
-Existing shared headers remain under `include/miaodesk/` so `#include <miaodesk/...>` stays stable. This avoids a mass include rewrite that would add risk without improving runtime behavior. New target-local headers should live beside their implementation; move a header into `include/miaodesk/` only when it is genuinely shared across domains or process targets.
+Existing shared headers remain under `include/whaledesk/` so `#include <whaledesk/...>` stays stable. This avoids a mass include rewrite that would add risk without improving runtime behavior. New target-local headers should live beside their implementation; move a header into `include/whaledesk/` only when it is genuinely shared across domains or process targets.
 
 ## Build graph rule
 
 `src/CMakeLists.txt` mirrors the physical tree. It is forbidden to reintroduce `src/native/`, a second nested source root, or implementation `.cpp` files directly under `src/`.
 
 Sources shared by the product executables are compiled through the typed static
-library targets `MiaoDeskCore` and `MiaoDeskHarnessCore`. A `.cpp` file must have
+library targets `WhaleDesKCore` and `WhaleDesKHarnessCore`. A `.cpp` file must have
 one build owner rather than being repeated in multiple executable source lists.
 
 The path-layout contract enforces the canonical source domains and rejects the obsolete `src/native` container.

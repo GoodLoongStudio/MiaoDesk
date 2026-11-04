@@ -1,4 +1,4 @@
-# MiaoDesk AI Generated Wallpaper Sandbox
+# WhaleDesK AI Generated Wallpaper Sandbox
 
 Status: implementation contract for AI-generated desktop wallpapers, plus the
 corrected boundary for AI-generated widgets.
@@ -82,7 +82,7 @@ User natural language
               v
 +---------------------------+
 | GeneratedContentSandbox   |
-| %TEMP%/MiaoDesk/          |
+| %TEMP%/WhaleDesK/          |
 | AI_Generated/<previewId>  |
 | - ephemeral files only    |
 | - no registry writes      |
@@ -198,7 +198,7 @@ prompt (`BuildPrompt`). Before that the message was discarded — the user got "
 `.mdwall` and `.mdwidget` packages are host-validated. A model cannot fix a field it is
 never told about.
 
-MiaoDesk uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
+WhaleDesK uses a native Win32 shell built with C++23. **WinUI 3 / C++/WinRT is not a target architecture** and was explicitly rejected by the product baseline performance principle; the always-on desktop render layer stays Native C++ / Win32.
 
 ## 2. Tool surface
 
@@ -247,7 +247,7 @@ Equivalent background value is `0x00FFFFFF`: alpha 0, RGB white.
 The native host builds a fixed, application-owned renderer page (`TrustedWallpaperRendererHtml`) that embeds the validated preset/image/video payload as base64 data and loads it with `NavigateToString`. The trusted renderer contains fixed application-owned JavaScript; AI output never reaches the WebView2 as code:
 
 ```javascript
-// Shipped by MiaoDesk inside TrustedWallpaperRendererHtml, never model-generated.
+// Shipped by WhaleDesK inside TrustedWallpaperRendererHtml, never model-generated.
 const raw = Uint8Array.from(atob('<base64 payload>'), c => c.charCodeAt(0));
 const p = JSON.parse(new TextDecoder().decode(raw));
 // renders preset / image / video
@@ -260,7 +260,7 @@ Apply/Reject are native Win32 buttons owned by the host, outside the WebView2 co
 Temporary assets live only under:
 
 ```text
-%TEMP%/MiaoDesk/AI_Generated/<previewId>/
+%TEMP%/WhaleDesK/AI_Generated/<previewId>/
 ```
 
 Preview lifecycle:
@@ -272,7 +272,7 @@ Preview lifecycle:
 5. On Apply, build a managed `.mdwall` package (`WallpaperPackage::CreateWeb`), copy the validated asset into it, then call the `DesktopControlService::ApplyWebPackage` commit path. A failed commit deletes the candidate package.
 6. On Reject/close, recursively delete the preview directory.
 
-For normal Windows static wallpaper, `SystemParametersInfo(SPI_SETDESKWALLPAPER, ...)` is the relevant shell API. `DwmSetWindowAttribute` does not set the Windows wallpaper; it controls window/DWM attributes. MiaoDesk should prefer its own WallpaperService because dynamic wallpapers, multi-monitor assignment and package lifecycle are product state, not a raw Windows wallpaper mutation.
+For normal Windows static wallpaper, `SystemParametersInfo(SPI_SETDESKWALLPAPER, ...)` is the relevant shell API. `DwmSetWindowAttribute` does not set the Windows wallpaper; it controls window/DWM attributes. WhaleDesK should prefer its own WallpaperService because dynamic wallpapers, multi-monitor assignment and package lifecycle are product state, not a raw Windows wallpaper mutation.
 
 Raw AI-generated GLSL conflicts with the hard rule that AI must not output executable code. Production-safe policy is application-owned presets only; if raw GLSL is ever enabled experimentally, it must be a separately gated, out-of-process GPU sandbox and must never be part of the default path.
 
@@ -323,7 +323,7 @@ Dependency direction:
 
 ```text
 Pi Agent      -> native tool host (read + preview only)
-Preview tool  -> sandbox dir + COPYDATA to the running MiaoDesk UI
+Preview tool  -> sandbox dir + COPYDATA to the running WhaleDesK UI
 Sandbox window-> TrustedWallpaperRendererHtml (data only)
 Apply button  -> DesktopControlService commit (the only mutation path)
 Pi Agent      -X-> desktop mutation APIs

@@ -1,6 +1,6 @@
-#include "miaodesk/RenderEvidence.h"
+#include "whaledesk/RenderEvidence.h"
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 
 const char* ToString(RenderEvidenceStatus status) noexcept {
     switch (status) {
@@ -158,4 +158,4 @@ RenderEvidenceVerdict AssessRenderEvidence(const std::vector<RenderEvidenceSampl
     return verdict;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 校验两处贴图场景 fixture 是逐字节一致的。
 #
-# 为什么需要它:MiaoSceneD2DRenderer.cpp 的 SelfTest(Windows-only,真实渲染、读回像素)
+# 为什么需要它:WhaleSceneD2DRenderer.cpp 的 SelfTest(Windows-only,真实渲染、读回像素)
 # 和 tests/SceneTextureFixture.cpp(纯逻辑,每一轮都跑)各带一份同一个场景 JSON。分成
 # 两份是故意的 —— 前者要真画出来,后者要在本机就能验 fixture 的 schema 是否写对 ——
 # 但两份这就要求它们永不分叉。
@@ -16,7 +16,7 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-RENDERER="$ROOT/src/content/render/d2d/MiaoSceneD2DRenderer.cpp"
+RENDERER="$ROOT/src/content/render/d2d/WhaleSceneD2DRenderer.cpp"
 FIXTURE="$ROOT/src/tests/SceneTextureFixture.cpp"
 
 python3 - "$RENDERER" "$FIXTURE" <<'PY'
@@ -46,14 +46,14 @@ def extract_any(path, *variables):
 
 
 # 清单部分。为什么单独比:phase B/C 的包第一次是缺 manifest.json 的,
-# MiaoContentPackage::Load 直接以 "requires manifest.json" 拒绝 —— 一个
+# WhaleContentPackage::Load 直接以 "requires manifest.json" 拒绝 —— 一个
 # 纯粹的包形状错误,却要花一轮 90 秒的 Windows CI 才发现,因为 D2D 绘制
 # 只有 Windows 能跑。清单与参数文件的形状却是纯逻辑,本机就能验。
 renderer_manifest = extract_any(renderer, 'wallpaperManifest')
 fixture_manifest = extract_any(fixture, 'kWallpaperManifest')
 if renderer_manifest is None or fixture_manifest is None:
     sys.exit("❌ 两侧任一一侧缺少 wallpaperManifest 字面量。包清单是 fixture 的一半;"
-             "把它同时写进两边,本机那份才会走 MiaoContentPackage::Load。")
+             "把它同时写进两边,本机那份才会走 WhaleContentPackage::Load。")
 
 renderer_params = extract_any(renderer, 'emptyParameters')
 if renderer_params is None:
@@ -85,14 +85,14 @@ if a != b:
         y = lb[i] if i < len(lb) else '(缺行)'
         if x != y:
             print(f"  第 {i + 1} 行不同:")
-            print(f"    MiaoSceneD2DRenderer.cpp: {x}")
+            print(f"    WhaleSceneD2DRenderer.cpp: {x}")
             print(f"    SceneTextureFixture.cpp: {y}")
             shown += 1
             if shown >= 12:
                 print("    ...")
                 break
     print()
-    print("  MiaoSceneD2DRenderer.cpp 那份是唯一会被真渲染跑到的;")
+    print("  WhaleSceneD2DRenderer.cpp 那份是唯一会被真渲染跑到的;")
     print("  SceneTextureFixture.cpp 那份负责在本机验 fixture 的 schema 是否写对。")
     print("  两边改任何一处,另一处必须同步 —— 只改一边的后果是:本机那份永远绿着,")
     print("  Windows 那份跑真渲染时才因为一个字段名写错而失败,报的却是'绘制失败'。")
@@ -101,20 +101,20 @@ if a != b:
 if not (normalise(renderer_manifest) == normalise(fixture_manifest)
         and normalise(renderer_params) == normalise(fixture_params)):
     print("❌ 包清单或参数文件在两边不一致。")
-    print("  MiaoSceneD2DRenderer.cpp 那份会被真渲染加载;")
-    print("  SceneTextureFixture.cpp 那份本机走 MiaoContentPackage::Load 验证。")
+    print("  WhaleSceneD2DRenderer.cpp 那份会被真渲染加载;")
+    print("  SceneTextureFixture.cpp 那份本机走 WhaleContentPackage::Load 验证。")
     print("  只改一边的后果就是 2026-09-22 那次:渲染器那份缺 manifest.json,")
     print("  每一轮 SelfTest 都在 Load 上失败,而要等 90 秒的 Windows CI 才知道。")
     sys.exit(1)
 
 print(f"✅ 两份贴图场景 fixture 一致({len(b)} 字符,{len(b.splitlines())} 行 JSON)")
-print("✅ 包清单与参数文件也一致(本机那份会真正走一遍 MiaoContentPackage::Load)")
+print("✅ 包清单与参数文件也一致(本机那份会真正走一遍 WhaleContentPackage::Load)")
 
 # 顺带确认被拒绝的那份也在:它是"非白色 tint 必须被拒"这条约束的 fixture。
 # 少了的后果是那条断言在本机和 CI 都不再跑,而没人会发现。
 renderer_text = open(renderer, encoding='utf-8').read()
 if 'constexpr std::string_view tintedScene' not in renderer_text:
-    sys.exit("❌ MiaoSceneD2DRenderer.cpp 里没有了 tintedScene fixture。"
+    sys.exit("❌ WhaleSceneD2DRenderer.cpp 里没有了 tintedScene fixture。"
              "'非白色 tint 作用于贴图 sprite 必须被拒'这条断言已经没有 fixture 了。")
 print("✅ tintedScene(非白色 tint 拒绝 fixture)仍在")
 

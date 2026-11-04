@@ -3,7 +3,7 @@
 // 不用 -fshort-wchar 读中文错误信息:那会让宽字符字面量损坏(一字节一字却按 2 字节
 // wchar_t 读),printf 在第一个 NUL 截断,得到的是假消息。改为把 CreateMediaPackage 的
 // 每一步前置条件在自己的 driver 里复刻一遍,只输出 ASCII。
-#include "miaodesk/WallpaperPackage.h"
+#include "whaledesk/WallpaperPackage.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -11,9 +11,9 @@
 #include <system_error>
 
 namespace fs = std::filesystem;
-using miaodesk::wallpaper::WallpaperPackage;
-using miaodesk::wallpaper::WallpaperPackageManifest;
-using miaodesk::wallpaper::WallpaperPackageType;
+using whaledesk::wallpaper::WallpaperPackage;
+using whaledesk::wallpaper::WallpaperPackageManifest;
+using whaledesk::wallpaper::WallpaperPackageType;
 
 static bool WriteBytes(const fs::path& path, const std::string& bytes) {
     std::error_code ec;
@@ -26,7 +26,7 @@ static bool WriteBytes(const fs::path& path, const std::string& bytes) {
 
 int main() {
     std::error_code ec;
-    const fs::path root = fs::temp_directory_path(ec) / "miaodesk-offline-locate";
+    const fs::path root = fs::temp_directory_path(ec) / "whaledesk-offline-locate";
     fs::remove_all(root, ec);
     const fs::path sourceDir = root / "src";
     fs::create_directories(sourceDir, ec);
@@ -52,7 +52,7 @@ int main() {
 
     std::wstring error;
     const bool created = WallpaperPackage::CreateVideo(package, L"Built Video", source,
-                                                       L"self-test", L"MiaoDesk", &error);
+                                                       L"self-test", L"WhaleDesK", &error);
     std::printf("[8] CreateVideo      = %d, error 长度 = %zu\n",
                 created ? 1 : 0, error.size());
     // 只打印错误串的长度和前几个码元,避免宽字面量损坏干扰判断

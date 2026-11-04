@@ -1,13 +1,13 @@
-#include "miaodesk/IndependentWallpaperHost.h"
-#include "miaodesk/LayeredSceneRenderer.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoInputBusPublisher.h"
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/MiaoSceneD3D11Renderer.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/MiaoWallpaperAudioTap.h"
-#include "miaodesk/VideoWallpaperPlayer.h"
+#include "whaledesk/IndependentWallpaperHost.h"
+#include "whaledesk/LayeredSceneRenderer.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleInputBusPublisher.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/WhaleSceneD3D11Renderer.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/WhaleWallpaperAudioTap.h"
+#include "whaledesk/VideoWallpaperPlayer.h"
 
 #include <d2d1.h>
 #include <wincodec.h>
@@ -23,10 +23,10 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kIndependentSurfaceClass[] = L"MiaoDesk.Native.IndependentWallpaperSurface";
+constexpr wchar_t kIndependentSurfaceClass[] = L"WhaleDesK.Native.IndependentWallpaperSurface";
 
 D2D1_RENDER_TARGET_PROPERTIES PixelRenderTargetProperties() {
     // Independent wallpaper HWND geometry is expressed in physical desktop pixels.
@@ -55,10 +55,10 @@ fs::path CanonicalScenePackageRoot(const fs::path& source) {
 bool CanonicalSceneUsesGpu(const fs::path& packageRoot, bool* usesGpu, std::wstring* error) {
     if (!usesGpu) return false;
     *usesGpu = false;
-    content::LoadedMiaoContentPackage package;
-    if (!content::MiaoContentPackage::Load(packageRoot, &package, error)) return false;
+    content::LoadedWhaleContentPackage package;
+    if (!content::WhaleContentPackage::Load(packageRoot, &package, error)) return false;
     content::SceneRuntimeDefinition definition;
-    if (!content::MiaoSceneSerializer::DeserializePackage(package, &definition, error)) return false;
+    if (!content::WhaleSceneSerializer::DeserializePackage(package, &definition, error)) return false;
     for (const auto& material : definition.materials) {
         if (material.model == content::MaterialModel::Programmable) {
             *usesGpu = true;
@@ -87,8 +87,8 @@ struct IndependentWallpaperHost::Impl {
         ComPtr<ID2D1SolidColorBrush> brush;
         ComPtr<ID2D1Bitmap> bitmap;
         std::unique_ptr<VideoWallpaperPlayer> video;
-        std::unique_ptr<content::MiaoSceneD2DRenderer> canonicalScene;
-        std::unique_ptr<content::MiaoSceneD3D11Renderer> gpuScene;
+        std::unique_ptr<content::WhaleSceneD2DRenderer> canonicalScene;
+        std::unique_ptr<content::WhaleSceneD3D11Renderer> gpuScene;
         // Per slot, not per host: pointer coordinates are normalised against the
         // monitor the slot lives on, so the state that depends on that mapping must
         // be too. Reusing one normaliser across monitors would carry the previous
@@ -108,7 +108,7 @@ struct IndependentWallpaperHost::Impl {
 
     // Audio is captured once per process, not per monitor: every slot shows the same
     // desktop session's sound, and one loopback client is all a device gives us.
-    wallpaper::MiaoWallpaperAudioTap audioTap;
+    wallpaper::WhaleWallpaperAudioTap audioTap;
 
     HWND parent{};
     wallpaper::ScaleMode scaleMode{wallpaper::ScaleMode::Cover};
@@ -223,7 +223,7 @@ struct IndependentWallpaperHost::Impl {
         return SUCCEEDED(slot.renderTarget->CreateBitmapFromWicBitmap(converter.Get(), nullptr, slot.bitmap.GetAddressOf()));
     }
 
-    void FallbackSlotToMiaoCloud(Slot& slot, const std::wstring& reason) {
+    void FallbackSlotToWhaleCloud(Slot& slot, const std::wstring& reason) {
         if (slot.video) {
             slot.video->Stop();
             slot.video.reset();
@@ -254,14 +254,14 @@ struct IndependentWallpaperHost::Impl {
             ApplyVideoSettings(*slot.video);
             if (!slot.video->Start(slot.window, slot.wallpaper.source.wstring())) {
                 const auto mediaError = slot.video->LastErrorText();
-                FallbackSlotToMiaoCloud(slot, mediaError.empty() ? L"独立视频无法启动，已回退妙喵云境" : mediaError);
+                FallbackSlotToWhaleCloud(slot, mediaError.empty() ? L"独立视频无法启动，已回退妙喵云境" : mediaError);
             } else {
                 slot.video->SetPaused(paused);
             }
             return true;
         }
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) {
-            if (!LoadImage(slot)) FallbackSlotToMiaoCloud(slot, L"独立图片无法解码，已回退妙喵云境");
+            if (!LoadImage(slot)) FallbackSlotToWhaleCloud(slot, L"独立图片无法解码，已回退妙喵云境");
             return true;
         }
         if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Scene) {
@@ -270,14 +270,14 @@ struct IndependentWallpaperHost::Impl {
                 bool useGpu = false;
                 std::wstring backendError;
                 if (!CanonicalSceneUsesGpu(packageRoot, &useGpu, &backendError)) {
-                    FallbackSlotToMiaoCloud(slot, backendError.empty() ? L"外部 Scene 校验失败，已回退妙喵云境" : backendError);
+                    FallbackSlotToWhaleCloud(slot, backendError.empty() ? L"外部 Scene 校验失败，已回退妙喵云境" : backendError);
                     return true;
                 }
                 if (useGpu) {
-                    slot.gpuScene = std::make_unique<content::MiaoSceneD3D11Renderer>();
+                    slot.gpuScene = std::make_unique<content::WhaleSceneD3D11Renderer>();
                     std::wstring error;
                     if (!slot.gpuScene->Load(packageRoot, slot.window, &error)) {
-                        FallbackSlotToMiaoCloud(slot, error.empty() ? L"GPU Scene 加载失败，已回退妙喵云境" : error);
+                        FallbackSlotToWhaleCloud(slot, error.empty() ? L"GPU Scene 加载失败，已回退妙喵云境" : error);
                     }
                     return true;
                 }
@@ -285,10 +285,10 @@ struct IndependentWallpaperHost::Impl {
 
             if (!EnsureRenderTarget(slot)) return false;
             if (!packageRoot.empty()) {
-                slot.canonicalScene = std::make_unique<content::MiaoSceneD2DRenderer>();
+                slot.canonicalScene = std::make_unique<content::WhaleSceneD2DRenderer>();
                 std::wstring error;
                 if (!slot.canonicalScene->Load(packageRoot, slot.renderTarget.Get(), &error)) {
-                    FallbackSlotToMiaoCloud(slot, error.empty() ? L"外部 Scene 加载失败，已回退妙喵云境" : error);
+                    FallbackSlotToWhaleCloud(slot, error.empty() ? L"外部 Scene 加载失败，已回退妙喵云境" : error);
                 }
             }
             return true;
@@ -329,10 +329,10 @@ struct IndependentWallpaperHost::Impl {
             1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &source);
     }
 
-    void DrawMiaoCloud(Slot& slot, const D2D1_SIZE_F& size) {
+    void DrawWhaleCloud(Slot& slot, const D2D1_SIZE_F& size) {
         const wallpaper::scenes::ScenePaintContext context{slot.renderTarget.Get(), slot.brush.Get(), time};
-        if (wallpaper::scenes::PaintPackagedScene(L"MiaoCloud.mdwall", context, size)) return;
-        wallpaper::scenes::PaintMiaoCloud(context, size);
+        if (wallpaper::scenes::PaintPackagedScene(L"WhaleCloud.mdwall", context, size)) return;
+        wallpaper::scenes::PaintWhaleCloud(context, size);
     }
 
     void DrawNeonCity(Slot& slot, const D2D1_SIZE_F& size) {
@@ -360,7 +360,7 @@ struct IndependentWallpaperHost::Impl {
     // Reading the declaration rather than a setting means a scene that never asks for
     // press input can never accidentally turn click-through off, and the question is
     // answered by the channel contract itself rather than by a list kept here.
-    bool SceneWantsPointerPress(const content::MiaoSceneRuntime& runtime) const {
+    bool SceneWantsPointerPress(const content::WhaleSceneRuntime& runtime) const {
         const content::SceneRuntimeDefinition* definition = runtime.Definition();
         if (!definition) return false;
         std::vector<std::wstring_view> ids;
@@ -370,7 +370,7 @@ struct IndependentWallpaperHost::Impl {
     }
 
     void PublishInputs(Slot& slot, double timeSeconds) {
-        content::MiaoSceneRuntime* runtime = nullptr;
+        content::WhaleSceneRuntime* runtime = nullptr;
         if (slot.canonicalScene) runtime = slot.canonicalScene->Runtime();
         else if (slot.gpuScene) runtime = slot.gpuScene->Runtime();
         if (!runtime) return;
@@ -431,7 +431,7 @@ struct IndependentWallpaperHost::Impl {
         if (slot.gpuScene) {
             std::wstring error;
             if (!slot.gpuScene->Draw(time, &error)) {
-                FallbackSlotToMiaoCloud(slot, error.empty() ? L"GPU Scene 绘制失败，已回退妙喵云境" : error);
+                FallbackSlotToWhaleCloud(slot, error.empty() ? L"GPU Scene 绘制失败，已回退妙喵云境" : error);
             }
             return;
         }
@@ -449,15 +449,15 @@ struct IndependentWallpaperHost::Impl {
         } else if (slot.canonicalScene) {
             std::wstring error;
             if (!slot.canonicalScene->Draw(time, size, &error)) {
-                FallbackSlotToMiaoCloud(slot, error.empty() ? L"外部 Scene 绘制失败，已回退妙喵云境" : error);
-                DrawMiaoCloud(slot, size);
+                FallbackSlotToWhaleCloud(slot, error.empty() ? L"外部 Scene 绘制失败，已回退妙喵云境" : error);
+                DrawWhaleCloud(slot, size);
             }
         } else if (slot.wallpaper.sceneKey == L"neon") {
             DrawNeonCity(slot, size);
         } else if (slot.wallpaper.sceneKey == L"grid") {
             DrawMysticMoon(slot, size);
         } else {
-            DrawMiaoCloud(slot, size);
+            DrawWhaleCloud(slot, size);
         }
         const HRESULT hr = slot.renderTarget->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
@@ -466,7 +466,7 @@ struct IndependentWallpaperHost::Impl {
             slot.brush.Reset();
             slot.renderTarget.Reset();
             if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Image) {
-                if (!LoadImage(slot)) FallbackSlotToMiaoCloud(slot, L"Direct2D 设备恢复后图片重载失败，已回退妙喵云境");
+                if (!LoadImage(slot)) FallbackSlotToWhaleCloud(slot, L"Direct2D 设备恢复后图片重载失败，已回退妙喵云境");
             } else if (slot.wallpaper.kind == wallpaper::ResolvedWallpaperKind::Scene) {
                 PrepareSlot(slot);
             }
@@ -676,4 +676,4 @@ std::wstring IndependentWallpaperHost::DiagnosticsText() const {
     return text.str();
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

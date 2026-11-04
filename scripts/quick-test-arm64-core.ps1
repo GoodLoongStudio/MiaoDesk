@@ -1,12 +1,12 @@
 param(
-  [string]$RunRoot = 'C:\MiaoDeskDev',
+  [string]$RunRoot = 'C:\WhaleDesKDev',
   [switch]$NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$Repo = 'GoodLoongStudio/MiaoDesk'
-$StatePath = Join-Path $RunRoot '.miaodesk-dev-state.json'
+$Repo = 'GoodLoongStudio/WhaleDesK'
+$StatePath = Join-Path $RunRoot '.whaledesk-dev-state.json'
 
 function Step([string]$m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Pass([string]$m) { Write-Host "[PASS] $m" -ForegroundColor Green }
@@ -76,7 +76,7 @@ function Wait-FastRun([string]$Sha) {
     $same = @(Get-Runs 'fast-dev-arm64.yml' 30 | Where-Object { $_.headSha -eq $Sha } | Sort-Object databaseId -Descending)
     $success = @($same | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' })
     foreach ($run in $success) {
-      $name = "MiaoDesk-arm64-fast-$Sha"
+      $name = "WhaleDesK-arm64-fast-$Sha"
       if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
         return [pscustomobject]@{ run=$run; artifact=$name }
       }
@@ -103,7 +103,7 @@ function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
     try {
       Ensure-Commit $run.headSha
       if ((Get-BaselineKey $run.headSha) -ne $WantedKey) { continue }
-      $name = "MiaoDesk-windows-arm64-$($run.headSha)"
+      $name = "WhaleDesK-windows-arm64-$($run.headSha)"
       if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
         return [pscustomobject]@{ run=$run; artifact=$name }
       }
@@ -122,7 +122,7 @@ function Find-CompatibleFullRun([string]$WantedKey,[string]$CurrentSha) {
     $same = @(Get-Runs 'package-windows-arm64.yml' 20 | Where-Object { $_.headSha -eq $CurrentSha } | Sort-Object databaseId -Descending)
     foreach ($run in $same) {
       if ($run.status -eq 'completed' -and $run.conclusion -eq 'success') {
-        $name = "MiaoDesk-windows-arm64-$CurrentSha"
+        $name = "WhaleDesK-windows-arm64-$CurrentSha"
         if ((Get-ArtifactNames (Get-RunId $run)) -contains $name) {
           return [pscustomobject]@{ run=$run; artifact=$name }
         }
@@ -143,13 +143,13 @@ function Download-Artifact($Info,[string]$Dir) {
     $downloadRunId = Get-RunId $Info.run
   & $gh.Source run download $downloadRunId --repo $Repo --name $Info.artifact --dir $Dir
   if ($LASTEXITCODE -ne 0) { throw "Artifact download failed: $($Info.artifact)" }
-  $exe = Get-ChildItem $Dir -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
-  if (-not $exe) { throw "Artifact has no MiaoDesk.exe: $($Info.artifact)" }
+  $exe = Get-ChildItem $Dir -Filter WhaleDesK.exe -File -Recurse | Select-Object -First 1
+  if (-not $exe) { throw "Artifact has no WhaleDesK.exe: $($Info.artifact)" }
   $exe.Directory.FullName
 }
 
 function Stop-Product {
-  foreach ($n in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')) {
+  foreach ($n in @('WhaleDesK','WhaleDesKWallpaper','WhaleDesKHarness')) {
     Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   }
 }
@@ -188,7 +188,7 @@ function Apply-Full([string]$SourceRoot) {
   foreach ($d in @('Runtime','AI','Assets','Config','Wallpapers','Widgets','skills')) {
     Remove-Item (Join-Path $RunRoot $d) -Recurse -Force -ErrorAction SilentlyContinue
   }
-  foreach ($f in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe','LICENSE','THIRD-PARTY-NOTICES.md')) {
+  foreach ($f in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe','LICENSE','THIRD-PARTY-NOTICES.md')) {
     Remove-Item (Join-Path $RunRoot $f) -Force -ErrorAction SilentlyContinue
   }
   robocopy $SourceRoot $RunRoot /E /XD (Join-Path $SourceRoot 'Goz') /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -206,7 +206,7 @@ function Apply-Delta([string]$SourceRoot) {
 
 function Verify-And-Launch {
   Step 'Fast self-tests'
-  foreach ($e in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
+  foreach ($e in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe')) {
     $p = Start-Process (Join-Path $RunRoot $e) -ArgumentList '--self-test' -Wait -PassThru
     if ($p.ExitCode -ne 0) { throw "$e --self-test failed: $($p.ExitCode)" }
     Pass "$e --self-test"
@@ -217,8 +217,8 @@ function Verify-And-Launch {
   if ($LASTEXITCODE -ne 0) { throw 'Goz file-search service is not queryable.' }
   Pass 'Goz file search service'
   if (-not $NoLaunch) {
-    Start-Process (Join-Path $RunRoot 'MiaoDesk.exe') -WorkingDirectory $RunRoot
-    Pass 'MiaoDesk launched'
+    Start-Process (Join-Path $RunRoot 'WhaleDesK.exe') -WorkingDirectory $RunRoot
+    Pass 'WhaleDesK launched'
   }
 }
 
@@ -241,7 +241,7 @@ try {
     try { $state = Get-Content $StatePath -Raw | ConvertFrom-Json } catch {}
   }
 
-  if ($state -and $state.installedSha -eq $sha -and (Test-Path (Join-Path $RunRoot 'MiaoDesk.exe') -PathType Leaf)) {
+  if ($state -and $state.installedSha -eq $sha -and (Test-Path (Join-Path $RunRoot 'WhaleDesK.exe') -PathType Leaf)) {
     Pass "Already on current commit: $sha"
     Verify-And-Launch
     exit 0
@@ -276,7 +276,7 @@ try {
     }
   }
 
-  $temp = Join-Path $env:TEMP ("MiaoDeskQuick-" + [Guid]::NewGuid().ToString('N'))
+  $temp = Join-Path $env:TEMP ("WhaleDesKQuick-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp | Out-Null
   try {
     if ($needFull) {

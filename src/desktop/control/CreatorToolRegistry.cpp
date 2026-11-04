@@ -1,9 +1,9 @@
-#include "miaodesk/CreatorToolRegistry.h"
+#include "whaledesk/CreatorToolRegistry.h"
 
 #include <algorithm>
 #include <array>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 名字表。顺序固定:CreationStage 与文本都对它做了断言,改变顺序要先改那边。
@@ -217,4 +217,4 @@ CreatorToolRoute RouteCreatorTool(std::string_view tool, const CreatorToolArgs& 
     return route;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

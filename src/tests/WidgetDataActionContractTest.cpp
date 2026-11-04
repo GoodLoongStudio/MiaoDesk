@@ -9,12 +9,12 @@
 //     重复点击不得产生第二次副作用,也不得让用户以为失败了。
 //
 // 全部在本机实跑:契约是纯逻辑,不需要 Windows。
-#include "miaodesk/WidgetDataActionContract.h"
+#include "whaledesk/WidgetDataActionContract.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 int g_failures = 0;
@@ -58,10 +58,10 @@ WidgetActionRequest Complete(std::wstring operationId) {
 }
 
 } // namespace
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop
 
 int wmain() {
-    using namespace miaodesk::desktop;
+    using namespace whaledesk::desktop;
 
     // ---- 1. 快照判定 ----
     const auto fresh = Fresh();

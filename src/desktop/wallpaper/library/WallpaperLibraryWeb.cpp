@@ -1,4 +1,4 @@
-#include "miaodesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperLibrary.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cwctype>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 std::wstring Trim(std::wstring value) {
@@ -136,4 +136,4 @@ std::optional<WallpaperLibraryItem> WallpaperLibrary::ImportWebUrl(
     return item;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

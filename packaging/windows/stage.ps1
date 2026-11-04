@@ -12,12 +12,12 @@ function Assert-File([string]$Relative) {
 }
 
 foreach ($relative in @(
-    'MiaoDesk.exe',
-    'MiaoDeskWallpaper.exe',
-    'MiaoDeskHarness.exe',
-    'Assets\MiaoMiao.ico',
-    'Wallpapers\MiaoCloud.mdwall\manifest.json',
-    'Wallpapers\MiaoCloud.mdwall\scene.json',
+    'WhaleDesK.exe',
+    'WhaleDesKWallpaper.exe',
+    'WhaleDesKHarness.exe',
+    'Assets\WhaleWhale.ico',
+    'Wallpapers\WhaleCloud.mdwall\manifest.json',
+    'Wallpapers\WhaleCloud.mdwall\scene.json',
     'Wallpapers\NeonCity.mdwall\manifest.json',
     'Wallpapers\NeonCity.mdwall\scene.json',
     'Wallpapers\MysticMoon.mdwall\manifest.json',
@@ -46,16 +46,16 @@ foreach ($relative in @(
     # scripts/verify-staged-wallpaper-assets.sh 从每个包 manifest 的 canonical entry
     # 推出应有的集合与这里
     # 比对:少列一项,该文件是否真的进了打包产物就没有检查兜底。cloud.png 就是在
-    # MiaoCloud scene.json 从空壳填成 5 层的同一天补上的 —— 前面四项一直在,
+    # WhaleCloud scene.json 从空壳填成 5 层的同一天补上的 —— 前面四项一直在,
     # 第五项被漏掉了整整一天。
     # 2026-09-22:NeonCity 与 MysticMoon 的 10 个资产此前一条都没列。原因不是谁忘了
     # 写,而是那个门此前读错了运行时入口。现在三个内置包只保留 scene.json,
     # stage 清单与产品入口都从同一个 canonical manifest entry 推导。
-    'Wallpapers\MiaoCloud.mdwall\assets\background.jpg',
-    'Wallpapers\MiaoCloud.mdwall\assets\cat.png',
-    'Wallpapers\MiaoCloud.mdwall\assets\cloud.png',
-    'Wallpapers\MiaoCloud.mdwall\assets\tail.png',
-    'Wallpapers\MiaoCloud.mdwall\assets\blink.png',
+    'Wallpapers\WhaleCloud.mdwall\assets\background.jpg',
+    'Wallpapers\WhaleCloud.mdwall\assets\cat.png',
+    'Wallpapers\WhaleCloud.mdwall\assets\cloud.png',
+    'Wallpapers\WhaleCloud.mdwall\assets\tail.png',
+    'Wallpapers\WhaleCloud.mdwall\assets\blink.png',
     'Wallpapers\NeonCity.mdwall\assets\background.jpg',
     'Wallpapers\NeonCity.mdwall\assets\city_glow.png',
     'Wallpapers\NeonCity.mdwall\assets\haze.png',

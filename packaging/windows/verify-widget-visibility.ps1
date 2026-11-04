@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$wallpaperExe = Join-Path $ProductRoot 'MiaoDeskWallpaper.exe'
+$wallpaperExe = Join-Path $ProductRoot 'WhaleDesKWallpaper.exe'
 if (-not (Test-Path $wallpaperExe -PathType Leaf)) {
     throw "Widget visibility smoke test cannot find $wallpaperExe"
 }
@@ -16,7 +16,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class MiaoDeskWidgetProbe {
+public static class WhaleDesKWidgetProbe {
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
 
     [DllImport("user32.dll")]
@@ -42,11 +42,11 @@ public static class MiaoDeskWidgetProbe {
     private static bool IsPaintReadyWidget(IntPtr window) {
         var name = new StringBuilder(160);
         if (GetClassName(window, name, name.Capacity) <= 0 ||
-            !String.Equals(name.ToString(), "MiaoDesk.Native.WidgetSurface", StringComparison.OrdinalIgnoreCase) ||
+            !String.Equals(name.ToString(), "WhaleDesK.Native.WidgetSurface", StringComparison.OrdinalIgnoreCase) ||
             !IsWindowVisible(window)) return false;
         Rect rect;
         if (!GetClientRect(window, out rect) || rect.Right <= rect.Left || rect.Bottom <= rect.Top) return false;
-        return GetProp(window, "MiaoDesk.Native.WidgetPaintReady") != IntPtr.Zero;
+        return GetProp(window, "WhaleDesK.Native.WidgetPaintReady") != IntPtr.Zero;
     }
 
     private static bool AboveDesktopIcons(IntPtr widget) {
@@ -78,7 +78,7 @@ public static class MiaoDeskWidgetProbe {
     private static bool IsVisibleWallpaperSurface(IntPtr window) {
         var name = new StringBuilder(160);
         if (GetClassName(window, name, name.Capacity) <= 0 ||
-            !String.Equals(name.ToString(), "MiaoDesk.Native.IndependentWallpaperSurface", StringComparison.OrdinalIgnoreCase) ||
+            !String.Equals(name.ToString(), "WhaleDesK.Native.IndependentWallpaperSurface", StringComparison.OrdinalIgnoreCase) ||
             !IsWindowVisible(window)) return false;
         Rect rect;
         if (!GetClientRect(window, out rect) || rect.Right <= rect.Left || rect.Bottom <= rect.Top) return false;
@@ -101,11 +101,11 @@ public static class MiaoDeskWidgetProbe {
 '@
 
 $previousLocalAppData = $env:LOCALAPPDATA
-$stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-widget-visibility-smoke'
+$stateBase = Join-Path $env:RUNNER_TEMP 'WhaleDesK-widget-visibility-smoke'
 $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
-$widgetRoot = Join-Path $env:LOCALAPPDATA 'MiaoDesk\DesktopWidgets'
+$widgetRoot = Join-Path $env:LOCALAPPDATA 'WhaleDesK\DesktopWidgets'
 $manifest = Join-Path $widgetRoot 'widgets.ini'
-$wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+$wallpaperIni = Join-Path $env:LOCALAPPDATA 'WhaleDesK\wallpaper.ini'
 
 Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $widgetRoot 'Packages') | Out-Null
@@ -145,26 +145,26 @@ function Wait-WidgetCount([int]$Expected, [bool]$RequireAboveIcons, [int]$Second
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     do {
         Start-Sleep -Milliseconds 250
-        $count = [MiaoDeskWidgetProbe]::PaintReadyWidgetCount($RequireAboveIcons)
+        $count = [WhaleDesKWidgetProbe]::PaintReadyWidgetCount($RequireAboveIcons)
         if ($count -eq $Expected) { return }
-        if ($main.HasExited) { throw "MiaoDeskWallpaper exited during Widget lifecycle probe: $($main.ExitCode)" }
+        if ($main.HasExited) { throw "WhaleDesKWallpaper exited during Widget lifecycle probe: $($main.ExitCode)" }
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "Expected $Expected paint-ready Widget surface(s), observed $count."
 }
 
-function Stop-MiaoDeskWallpaperFamily {
-    Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+function Stop-WhaleDesKWallpaperFamily {
+    Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
         Start-Sleep -Milliseconds 100
-        $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+        $alive = @(Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue).Count
         if ($alive -eq 0) { return }
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'MiaoDeskWallpaper process family did not stop before cold-start probe.'
+    throw 'WhaleDesKWallpaper process family did not stop before cold-start probe.'
 }
 
-$debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
-Stop-MiaoDeskWallpaperFamily
+$debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'WhaleDesK-Logs\desktop-debug.log'
+Stop-WhaleDesKWallpaperFamily
 Remove-Item $debugLog -Force -ErrorAction SilentlyContinue
 
 try {
@@ -200,7 +200,7 @@ Enabled=1
         # cold-start the product. The coordinator must decide to start WidgetHost,
         # WidgetHost must route content:<definitionId>, and the Surface must paint
         # above Explorer icons without any native:* record acting as a bootstrap.
-        Stop-MiaoDeskWallpaperFamily
+        Stop-WhaleDesKWallpaperFamily
         $contentOnlyManifest = @"
 [Widgets]
 Ids=ci-content-widget
@@ -273,11 +273,11 @@ Enabled=1
     # 组件重建出来,壁纸没有跟着回来。只证后一件会把"什么都没起来"也算通过,只证前一件
     # 则盖不住"顺便把壁纸也拉起来了"这个回归,所以两个断言都要。
     $expectedAfterReload = if ($expectContentGlassClock) { 1 } else { 2 }
-    Stop-MiaoDeskWallpaperFamily
+    Stop-WhaleDesKWallpaperFamily
     Set-WallpaperDisabledFixture
     $main = Start-Process -FilePath $wallpaperExe -WorkingDirectory $ProductRoot -PassThru
     Wait-WidgetCount $expectedAfterReload $true
-    $resurrected = [MiaoDeskWidgetProbe]::VisibleWallpaperSurfaceCount()
+    $resurrected = [WhaleDesKWidgetProbe]::VisibleWallpaperSurfaceCount()
     if ($resurrected -ne 0) {
         throw "Shell reload 后壁纸被重新拉起:wallpaper.ini 是 Enabled=0,却观察到 $resurrected 个可见的 IndependentWallpaperSurface。停用不是幂等的。"
     }
@@ -285,7 +285,7 @@ Enabled=1
     Write-Host 'Native Widget create/disable/enable and icon-overlay lifecycle verified with wallpaper disabled.' -ForegroundColor Green
     Write-Host 'Widget direct-swapchain diagnostics and UTF-8 log markers verified.' -ForegroundColor Green
 
-    $diagnostics = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+    $diagnostics = Join-Path $env:LOCALAPPDATA 'WhaleDesK\wallpaper.ini'
     if (Test-Path $diagnostics -PathType Leaf) {
         Write-Host 'Widget diagnostics:' -ForegroundColor Yellow
         try {
@@ -300,7 +300,7 @@ Enabled=1
     }
 } catch {
     $details = ($_ | Out-String).Trim()
-    $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+    $wallpaperIni = Join-Path $env:LOCALAPPDATA 'WhaleDesK\wallpaper.ini'
     if (Test-Path $wallpaperIni -PathType Leaf) {
         try {
             $details += "`n" + ((Get-Content $wallpaperIni -ErrorAction Stop | Out-String).Trim())
@@ -308,7 +308,7 @@ Enabled=1
             $details += "`n[wallpaper.ini unavailable while collecting failure diagnostics: $($_.Exception.Message)]"
         }
     }
-    $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+    $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'WhaleDesK-Logs\desktop-debug.log'
     if (Test-Path $debugLog -PathType Leaf) {
         $details += "`n[desktop-debug.log tail]`n" +
             ((Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 60 | Out-String).Trim())
@@ -317,7 +317,7 @@ Enabled=1
     Write-Host "::error title=Widget paint readiness failed::$details"
     throw
 } finally {
-    Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA = $previousLocalAppData
     Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
 }

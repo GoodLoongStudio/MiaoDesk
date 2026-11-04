@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const library = read("src/ui/wallpaper/WallpaperLibraryWindowV2.cpp");
-const store = read("src/include/miaodesk/WallpaperLibrary.h");
+const store = read("src/include/whaledesk/WallpaperLibrary.h");
 
 // Two library views had their data maintained on every apply and no way to read it:
 //

@@ -75,18 +75,18 @@ Copy-Item $AgentPackage (Join-Path $agentRoot 'package.json') -Force
 Copy-Item $AgentLock (Join-Path $agentRoot 'package-lock.json') -Force
 
 $cacheBase = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { $env:TEMP } else { $env:RUNNER_TEMP }
-$externalCache = -not [string]::IsNullOrWhiteSpace($env:MIAODESK_NPM_CACHE)
+$externalCache = -not [string]::IsNullOrWhiteSpace($env:WHALEDESK_NPM_CACHE)
 $cacheRoot = if ($externalCache) {
-    [string]$env:MIAODESK_NPM_CACHE
+    [string]$env:WHALEDESK_NPM_CACHE
 } else {
-    Join-Path $cacheBase ("MiaoDesk-AgentNpm-{0}-{1}" -f $Architecture, [guid]::NewGuid().ToString('N'))
+    Join-Path $cacheBase ("WhaleDesK-AgentNpm-{0}-{1}" -f $Architecture, [guid]::NewGuid().ToString('N'))
 }
 New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 $oldCache = $env:npm_config_cache
 try {
     $env:npm_config_cache = $cacheRoot
     & $npmCmd ci --prefix $agentRoot --omit=dev --no-audit --no-fund --install-strategy=hoisted
-    if ($LASTEXITCODE -ne 0) { throw 'MiaoDesk Agent npm ci failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'WhaleDesK Agent npm ci failed.' }
 } finally {
     $env:npm_config_cache = $oldCache
     if (-not $externalCache) {

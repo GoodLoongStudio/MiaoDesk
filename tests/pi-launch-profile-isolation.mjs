@@ -15,10 +15,10 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const profile = read("src/desktop/control/PiLaunchProfile.cpp");
-const profileHeader = read("src/include/miaodesk/PiLaunchProfile.h");
+const profileHeader = read("src/include/whaledesk/PiLaunchProfile.h");
 const runtime = read("src/ai/pi/PiRuntime.cpp");
-const runtimeHeader = read("src/include/miaodesk/PiRuntime.h");
-const extHeader = read("src/include/miaodesk/PiNativeToolsExtension.h");
+const runtimeHeader = read("src/include/whaledesk/PiRuntime.h");
+const extHeader = read("src/include/whaledesk/PiNativeToolsExtension.h");
 const extCpp = read("src/ai/pi/PiNativeToolsExtension.cpp");
 
 // --- 1. 聊天侧必须一个字节都没变 -------------------------------------------
@@ -67,7 +67,7 @@ assert.match(
 );
 assert.match(
   runtime,
-  /setup\.systemPrompt\.empty\(\)\s*\n?\s*\? std::wstring\(\s*\n?\s*L"You are MiaoDesk's persistent desktop Agent/,
+  /setup\.systemPrompt\.empty\(\)\s*\n?\s*\? std::wstring\(\s*\n?\s*L"You are WhaleDesK's persistent desktop Agent/,
   "an empty profile system prompt must fall back to the historical one",
 );
 assert.match(
@@ -114,7 +114,7 @@ assert.match(
 );
 assert.match(
   extCpp,
-  /variant == PiNativeToolsVariant::Creator\s*\n?\s*\? L"miaodesk-creator-tools\.ts"\s*\n?\s*: L"miaodesk-native-tools\.ts"/,
+  /variant == PiNativeToolsVariant::Creator\s*\n?\s*\? L"whaledesk-creator-tools\.ts"\s*\n?\s*: L"whaledesk-native-tools\.ts"/,
   "the two variants must materialise two different files, not one shared path",
 );
 assert.match(
@@ -225,7 +225,7 @@ assert.match(
 //   · toolAllowlist 空 → `--tools` 根本不传,Pi 用它自己的默认工具集 —— 也就是
 //     CCA-04 要拿掉的 read/bash/edit/write/grep/find/ls **全都在**;
 //   · systemPrompt 空 → 退回聊天那份;
-//   · mode != Creator → MIAODESK_CREATOR_WORKSPACE / MIAODESK_CREATOR_SESSION 不导出,
+//   · mode != Creator → WHALEDESK_CREATOR_WORKSPACE / WHALEDESK_CREATOR_SESSION 不导出,
 //     而 src/app/main.cpp 的 RunCreatorTool 正是从这两个环境变量取工作区与会话 ——
 //     所以 creator_* 八个工具即使注册了,拿到的也是空工作区。
 //
@@ -271,7 +271,7 @@ function callersOf(symbol) {
 // "装 profile"卡在一个未决定的产品问题上。补上之后这一条转绿;它是按已有惯例补的,
 // 不是发明一个新位置(main.cpp 的 FilesystemCreatorWorkspace 用 root_.parent_path()
 // 放 revisions/ 与 candidate-ledger.state,所以一次作品占一个子目录)。
-const appPaths = read("src/include/miaodesk/AppPaths.h");
+const appPaths = read("src/include/whaledesk/AppPaths.h");
 assert.match(appPaths, /inline fs::path CreatorWorkspacesRoot\(\)/,
   "the creator workspace needs a home under StateRoot(), following every other feature");
 // AppPaths **不**该认识 kind 与 session —— kind 是 ContentCreatorKind,把它引进来
@@ -288,7 +288,7 @@ for (const symbol of ["SetLaunchProfile", "MakeCreatorLaunchProfile"]) {
     + `但创建/安装的那一次调用从未发生,于是整条创作链在出厂构建里不生效。`
     + `实测:--tools 用聊天那份,七个 creator_* 名字被整体剥掉;`
     + `--extension 落盘的是 Chat 变体,它本身不含创作工具;`
-    + `MIAODESK_CREATOR_WORKSPACE / MIAODESK_CREATOR_SESSION 不导出,`
+    + `WHALEDESK_CREATOR_WORKSPACE / WHALEDESK_CREATOR_SESSION 不导出,`
     + `而 main.cpp 的 RunCreatorTool 正是从这两个环境变量取工作区与会话。`
     + `所以创作轮次里模型**一条 creator_* 都用不了**,八个已实现并测过的工具不可达。`
     + `工作区根目录这一项已在 AppPaths.h 补好,剩下的就是装上 profile 的那一次调用。`);
@@ -303,9 +303,9 @@ const dialog = read("src/ui/ai/ContentCreatorDialog.cpp");
 const destroyAt = dialog.indexOf("case WM_DESTROY:");
 assert.notStrictEqual(destroyAt, -1, "the creator dialog must have a WM_DESTROY path");
 const destroyBody = dialog.slice(destroyAt);
-// 两边都带 miaodesk:: 限定。正则里把它设成可选:否则"加个命名空间限定"这种纯写法
+// 两边都带 whaledesk:: 限定。正则里把它设成可选:否则"加个命名空间限定"这种纯写法
 // 改动会让门无故变红,而一个因为写法变化就响的门,几天后就没人看它了。
-const NS = "(?:miaodesk::)?";
+const NS = "(?:whaledesk::)?";
 const chatRestore = destroyBody.search(new RegExp(`SetLaunchProfile\\(\\s*${NS}MakeChatLaunchProfile\\(`));
 assert.notStrictEqual(chatRestore, -1,
   "closing the creator must restore the chat profile, or chat would run with the creator allowlist");
@@ -338,7 +338,7 @@ assert.match(bridge, /const fs::path activeFile = perKind \/ L"active";/,
   "the current session must be recorded per kind, so a reopen can find it");
 assert.match(bridge, /std::string session = ReadActiveSession\(activeFile\);/,
   "reopening must reuse the recorded session, so a draft survives the close");
-assert.match(bridge, /session = miaodesk::creator::NewCreatorSessionId\(now\);/,
+assert.match(bridge, /session = whaledesk::creator::NewCreatorSessionId\(now\);/,
   "only a missing active file may mint a new session id");
 assert.match(bridge, /const fs::path workspace = perKind \/ fs::path\(Utf8ToWideForPath\(session\)\);/,
   "the last segment must be the session identity itself -- DeriveCreatorSessionId takes the last "

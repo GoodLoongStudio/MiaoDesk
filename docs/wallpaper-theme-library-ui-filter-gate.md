@@ -64,9 +64,9 @@ paired with the UI gate and proves all of the following:
 
 ## Canonical built-in pairs
 
-- `scene-aurora` -> `content:com.goodloong.miaodesk.theme.miao-cloud`
-- `scene-neon` -> `content:com.goodloong.miaodesk.theme.neon-city`
-- `scene-grid` -> `content:com.goodloong.miaodesk.theme.mystic-moon`
+- `scene-aurora` -> `content:com.goodloong.whaledesk.theme.whale-cloud`
+- `scene-neon` -> `content:com.goodloong.whaledesk.theme.neon-city`
+- `scene-grid` -> `content:com.goodloong.whaledesk.theme.mystic-moon`
 
 ## ARM64/manual gate
 
@@ -82,7 +82,7 @@ configurations:
 - existing `scene-*` monitor assignments must survive Library refresh, search,
   selection restoration, package management, apply, restart, and stale-snapshot
   runtime resolution without being rewritten;
-- MiaoCloud, NeonCity, and MysticMoon must keep their existing layered `scene.ini`
+- WhaleCloud, NeonCity, and MysticMoon must keep their existing layered `scene.ini`
   visual result while canonical package identity is exposed to UI.
 
 Persisted `scene-*` -> `content:<id>` migration remains intentionally disabled until

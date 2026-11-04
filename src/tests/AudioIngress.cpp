@@ -1,7 +1,7 @@
 // Audio ingress for the Scene input bus: downmix, resample and window feeding.
 // Pure arithmetic on PCM, so the whole path from a WASAPI-shaped buffer to an
 // analysis frame is verified without an audio device.
-#include "miaodesk/MiaoAudioCapture.h"
+#include "whaledesk/WhaleAudioCapture.h"
 
 #include <cmath>
 #include <cstdio>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace ib = miaodesk::content::inputbus;
+namespace ib = whaledesk::content::inputbus;
 
 int failures = 0;
 void Check(bool c, const std::string& w) {

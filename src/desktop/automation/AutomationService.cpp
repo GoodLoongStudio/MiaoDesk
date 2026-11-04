@@ -1,8 +1,8 @@
-#include "miaodesk/AutomationService.h"
+#include "whaledesk/AutomationService.h"
 
 #include <utility>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 AutomationServiceResult LoadStore(wallpaper::WallpaperAutomationStore* store) {
@@ -144,4 +144,4 @@ std::wstring AutomationService::MakeId(std::wstring_view prefix) {
     return wallpaper::WallpaperAutomationStore::MakeId(prefix);
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

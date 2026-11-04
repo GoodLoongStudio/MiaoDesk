@@ -1,8 +1,8 @@
-#include "miaodesk/WidgetDataActionContract.h"
+#include "whaledesk/WidgetDataActionContract.h"
 
 #include <utility>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 // 一份"有效但过期"的快照:内容在,时间戳老。这是最容易骗到用户的一类 ——
@@ -155,4 +155,4 @@ void WidgetActionRegistry::Forget(std::wstring_view operationId) {
     }
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

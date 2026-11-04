@@ -33,7 +33,7 @@
   </Capabilities>
 
   <Applications>
-    <Application Id="MiaoDesk" Executable="MiaoDesk.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="WhaleDesK" Executable="WhaleDesK.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="{{PACKAGE_NAME}}"
         Description="{{DESCRIPTION}}"
@@ -43,10 +43,10 @@
       <Extensions>
         <desktop:Extension
           Category="windows.startupTask"
-          Executable="MiaoDesk.exe"
+          Executable="WhaleDesK.exe"
           EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask
-            TaskId="MiaoDeskStartup"
+            TaskId="WhaleDesKStartup"
             Enabled="true"
             DisplayName="妙喵" />
         </desktop:Extension>

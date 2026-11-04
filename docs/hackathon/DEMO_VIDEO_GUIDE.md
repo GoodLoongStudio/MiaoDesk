@@ -7,13 +7,13 @@
 画面：
 
 - Windows 桌面；
-- MiaoDesk 搜索框；
+- WhaleDesK 搜索框；
 - 动态壁纸；
 - 桌面 Widget。
 
 旁白：
 
-> 这是 MiaoDesk，一个 AI 原生 Windows 智能桌面。我们希望用户不需要先学习复杂软件，只需要告诉 AI 自己想做什么。
+> 这是 WhaleDesK，一个 AI 原生 Windows 智能桌面。我们希望用户不需要先学习复杂软件，只需要告诉 AI 自己想做什么。
 
 ## 0:10–0:35 搜索
 
@@ -41,7 +41,7 @@
 
 旁白：
 
-> MiaoDesk 使用统一 API Profile，可以同时保存本地 DGX Spark 和云端 Provider。每个 AI 窗口可以单独选择模型。这里的 Agent 推理运行在 DGX Spark 上。
+> WhaleDesK 使用统一 API Profile，可以同时保存本地 DGX Spark 和云端 Provider。每个 AI 窗口可以单独选择模型。这里的 Agent 推理运行在 DGX Spark 上。
 
 ## 1:00–1:45 AI 制作壁纸
 
@@ -59,7 +59,7 @@
 
 旁白：
 
-> AI 不是直接执行任意代码。它会读取 MiaoDesk 的 Wallpaper Skill，生成声明式内容包，再经过安全和性能检查。用户确认后，才真正应用到桌面。
+> AI 不是直接执行任意代码。它会读取 WhaleDesK 的 Wallpaper Skill，生成声明式内容包，再经过安全和性能检查。用户确认后，才真正应用到桌面。
 
 ## 1:45–2:15 AI 制作 Widget
 
@@ -96,14 +96,14 @@
 
 旁白：
 
-> 我们认为 AI PC 不应该只是本地运行一个聊天框。真正有价值的是让本地模型安全地连接到用户每天都在使用的桌面。这就是 MiaoDesk。
+> 我们认为 AI PC 不应该只是本地运行一个聊天框。真正有价值的是让本地模型安全地连接到用户每天都在使用的桌面。这就是 WhaleDesK。
 
 画面最后显示：
 
 ```text
-MiaoDesk
+WhaleDesK
 AI Native Desktop for Windows
-github.com/GoodLoongStudio/MiaoDesk
+github.com/GoodLoongStudio/WhaleDesK
 ```
 
 ## 上传后需要提交的链接
@@ -112,4 +112,4 @@ github.com/GoodLoongStudio/MiaoDesk
 
 建议标题：
 
-> MiaoDesk：运行在 DGX Spark 上的 AI 原生 Windows 智能桌面
+> WhaleDesK：运行在 DGX Spark 上的 AI 原生 Windows 智能桌面

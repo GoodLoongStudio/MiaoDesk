@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 
 const read = (path) => fs.readFileSync(path, "utf8");
 
-const profiles = read("src/include/miaodesk/ApiRuntimeProfile.h");
-const agentHeader = read("src/include/miaodesk/L3Agent.h");
+const profiles = read("src/include/whaledesk/ApiRuntimeProfile.h");
+const agentHeader = read("src/include/whaledesk/L3Agent.h");
 const agent = read("src/ai/agent/L3Agent.cpp");
 const pi = read("src/ai/pi/PiRuntime.cpp");
 const settings = read("src/ui/settings/DesktopAiSettingsPage.cpp");
@@ -29,13 +29,13 @@ assert.ok(agentHeader.includes("api_runtime_profile::LoadById(preferredProfileId
 // The session identity used to be hashed inline in L3Agent.cpp as
 //   SessionHash(config) { ... Lower(config.profileId) ... }
 // so the check below was a grep for "Lower(config.profileId)". P0-09 moved the
-// hashing into MiaoSessionMigration so the copy that migrates a session across a
+// hashing into WhaleSessionMigration so the copy that migrates a session across a
 // config-source promotion and the copy that locates it cannot drift apart: two
 // copies means a silent failed migration, which is worse than no migration.
 // Assert the invariant where it now lives, and that it is stronger than the
 // old grep -- SessionMigrationTest actually executes on this machine and pins
 // that changing profileId changes the hash, plus the exact hash values.
-const sessionMigration = read("src/ai/agent/MiaoSessionMigration.cpp");
+const sessionMigration = read("src/ai/agent/WhaleSessionMigration.cpp");
 assert.match(sessionMigration, /LowerText\(identity\.profileId\)/,
   "the shared session identity must include the selected profile id");
 assert.match(agent, /session_migration::SessionIdentityHash\(identity\)/,
@@ -54,12 +54,12 @@ assert.match(sessionMigrationTest, /SessionIdentityHash\(\w+\) == 0x[0-9a-f]+ull
 // (the direct model's credential IS the selected profile's), not one spelling.
 assert.ok(agent.includes("agent_config::AgentCredentialTarget(RequestIdentity())"),
   "direct-model credentials must come from the selected central profile");
-const credentialSlots = read("src/ai/agent/MiaoAgentConfigAuthority.cpp");
+const credentialSlots = read("src/ai/agent/WhaleAgentConfigAuthority.cpp");
 assert.ok(credentialSlots.includes("JoinPrefix(kProfileCredentialPrefix, identity.profileId)"),
   "the shared credential slot must be derived from the selected profile id, not hardcoded");
 assert.ok(agent.includes("static_assert(std::wstring_view(kCredentialTarget) =="),
   "the legacy credential slot name must stay pinned to the shared copy so it cannot drift");
-assert.ok(!agent.includes('L"MiaoDesk/ApiProfile/" + config_.profileId'),
+assert.ok(!agent.includes('L"WhaleDesK/ApiProfile/" + config_.profileId'),
   "a second inline copy of the profile credential slot must not come back");
 
 assert.ok(pi.includes("return agent.CurrentApiKey();"),

@@ -1,19 +1,19 @@
-#include "miaodesk/NativeWidgetHost.h"
-#include "miaodesk/AppPaths.h"
+#include "whaledesk/NativeWidgetHost.h"
+#include "whaledesk/AppPaths.h"
 
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/DesktopSurfaceTelemetry.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/NativeWidgetPainter.h"
-#include "miaodesk/NativeWidgetPreset.h"
-#include "miaodesk/NativeWeatherService.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/TodayTaskPresentation.h"
-#include "miaodesk/TodayTaskStore.h"
-#include "miaodesk/WidgetRefreshPolicy.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WebDesktopSurfaceChild.h"
-#include "miaodesk/WidgetService.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/DesktopSurfaceTelemetry.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/NativeWidgetPainter.h"
+#include "whaledesk/NativeWidgetPreset.h"
+#include "whaledesk/NativeWeatherService.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/TodayTaskPresentation.h"
+#include "whaledesk/TodayTaskStore.h"
+#include "whaledesk/WidgetRefreshPolicy.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WebDesktopSurfaceChild.h"
+#include "whaledesk/WidgetService.h"
 
 #include <d2d1.h>
 #include <d2d1_1.h>
@@ -38,7 +38,7 @@
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr wchar_t kNativeHostMode[] = L"--native-widget-host";
@@ -55,8 +55,8 @@ constexpr UINT kRefreshSchedulerTickMs = 1000;
 // static presets never repaint on their own, so the last presented frame
 // would otherwise stay stale or turn into uninitialized bits forever.
 constexpr std::uint32_t kDirectSurfaceRepaintMs = 2000;
-constexpr wchar_t kNativeHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
-constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
+constexpr wchar_t kNativeHostMessageClass[] = L"WhaleDesK.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"WhaleDesK.WidgetRuntimeReload.v1";
 
 std::wstring ExecutablePath() {
     std::wstring path(32768, L'\0');
@@ -229,9 +229,9 @@ struct NativeSlot {
     ULONGLONG geometryGraceUntil{};
     ULONGLONG nextRefreshAt{};
     // WPRO-05:刷新调度状态。与 ContentWidgetHost 的 slot.refresh 同一个模块
-    // (miaodesk::desktop::WidgetRefreshState),两个宿主因此共用同一套退避曲线。
+    // (whaledesk::desktop::WidgetRefreshState),两个宿主因此共用同一套退避曲线。
     unsigned long long successfulPaints{};
-    ::miaodesk::desktop::WidgetRefreshState refresh{};
+    ::whaledesk::desktop::WidgetRefreshState refresh{};
 };
 
 void ReleaseLayerSurface(NativeSlot& slot) {
@@ -274,7 +274,7 @@ struct NativeWidgetHostApp {
     NativeWeatherService weatherService;
     // D-2:待办卡片的行模型。放在这里而不是栈上,是因为 PaintSlot 里多处引用它,
     // 而它只在 TodayTasks preset 下被填。
-    ::miaodesk::desktop::TodayTaskCardModel taskModel;
+    ::whaledesk::desktop::TodayTaskCardModel taskModel;
     ComPtr<ID2D1Factory1> d2dFactory;
     std::vector<std::unique_ptr<NativeSlot>> slots;
     std::wstring lastSurfaceError;
@@ -315,7 +315,7 @@ struct NativeWidgetHostApp {
                L" mapped=" + RectText(slot.region);
     }
 
-    void LogSlot(miaodesk::log::Level level, std::wstring_view event,
+    void LogSlot(whaledesk::log::Level level, std::wstring_view event,
                  const NativeSlot& slot, std::wstring_view detail = {}) const {
         std::wstring message(event);
         message += L": ";
@@ -324,7 +324,7 @@ struct NativeWidgetHostApp {
             message += L" ";
             message.append(detail);
         }
-        miaodesk::log::Write(level, L"WidgetHost", message);
+        whaledesk::log::Write(level, L"WidgetHost", message);
     }
 
     void ReportFailure(NativeSlot* slot, const std::wstring& message) {
@@ -348,8 +348,8 @@ struct NativeWidgetHostApp {
             ScheduleRefreshAfterFailure(*slot);
         }
         if (!changed) return;
-        if (slot) LogSlot(miaodesk::log::Level::Error, L"组件 Surface 失败", *slot, message);
-        else miaodesk::log::Error(L"WidgetHost", message);
+        if (slot) LogSlot(whaledesk::log::Level::Error, L"组件 Surface 失败", *slot, message);
+        else whaledesk::log::Error(L"WidgetHost", message);
     }
 
     bool EnsureFactories() {
@@ -506,7 +506,7 @@ struct NativeWidgetHostApp {
         slot.layerWidth = width;
         slot.layerHeight = height;
         SetWindowRgn(slot.hwnd, nullptr, FALSE);
-        LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
+        LogSlot(whaledesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
                 L"target=layered-dc size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
         return true;
@@ -608,7 +608,7 @@ struct NativeWidgetHostApp {
         slot.layerWidth = width;
         slot.layerHeight = height;
         ApplyCardWindowRegion(slot);
-        LogSlot(miaodesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
+        LogSlot(whaledesk::log::Level::Info, L"Direct2D 渲染目标已创建", slot,
                 L"target=direct-swapchain size=" + std::to_wstring(width) + L"x" +
                 std::to_wstring(height) + L" dpi=" + std::to_wstring(dpi));
         return true;
@@ -692,9 +692,9 @@ struct NativeWidgetHostApp {
             }
         }
 
-        const std::uint32_t effective = ::miaodesk::desktop::ApplyRefreshOutcome(
+        const std::uint32_t effective = ::whaledesk::desktop::ApplyRefreshOutcome(
             &slot.refresh, /*succeeded=*/true, delay, directSurface);
-        slot.nextRefreshAt = ::miaodesk::desktop::NextRefreshAt(GetTickCount64(), effective);
+        slot.nextRefreshAt = ::whaledesk::desktop::NextRefreshAt(GetTickCount64(), effective);
     }
 
     // WPRO-05:画不出来的时候也要排下一次,而且要**退避**。
@@ -707,9 +707,9 @@ struct NativeWidgetHostApp {
     void ScheduleRefreshAfterFailure(NativeSlot& slot) {
         const bool directSurface = slot.hwnd && IsWindow(slot.hwnd) &&
             (GetWindowLongPtrW(slot.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) == 0;
-        const std::uint32_t effective = ::miaodesk::desktop::ApplyRefreshOutcome(
+        const std::uint32_t effective = ::whaledesk::desktop::ApplyRefreshOutcome(
             &slot.refresh, /*succeeded=*/false, 0, directSurface);
-        slot.nextRefreshAt = ::miaodesk::desktop::NextRefreshAt(GetTickCount64(), effective);
+        slot.nextRefreshAt = ::whaledesk::desktop::NextRefreshAt(GetTickCount64(), effective);
     }
 
     void PaintSlot(NativeSlot& slot) {
@@ -742,11 +742,11 @@ struct NativeWidgetHostApp {
             // 于是用户在管理界面编辑的待办会出现在常驻桌面的卡片上。
             // 每帧读一次是刻意的:这个 preset 的刷新间隔是 0(事件驱动),本来就没有
             // 定时轮询,所以再引入一条缓存失效路径只会多一个出错的地方。
-            ::miaodesk::desktop::TodayTaskSnapshot tasks;
+            ::whaledesk::desktop::TodayTaskSnapshot tasks;
             std::wstring taskError;
-            const bool loaded = ::miaodesk::desktop::TodayTaskStore::Load(&tasks, &taskError);
-            if (loaded && !tasks.valid) tasks = ::miaodesk::desktop::TodayTaskSnapshot{};
-            taskModel = ::miaodesk::desktop::BuildTodayTaskCardModel(tasks, kNativeTaskRows);
+            const bool loaded = ::whaledesk::desktop::TodayTaskStore::Load(&tasks, &taskError);
+            if (loaded && !tasks.valid) tasks = ::whaledesk::desktop::TodayTaskSnapshot{};
+            taskModel = ::whaledesk::desktop::BuildTodayTaskCardModel(tasks, kNativeTaskRows);
             context.tasks = &taskModel;
         }
         context.target->BeginDraw();
@@ -759,12 +759,12 @@ struct NativeWidgetHostApp {
             lastSurfaceError.clear();
             ScheduleNextRefresh(slot);
             if (firstPaint || recovered) {
-                LogSlot(miaodesk::log::Level::Info,
+                LogSlot(whaledesk::log::Level::Info,
                         firstPaint ? L"组件首次绘制成功" : L"组件绘制恢复成功", slot,
                         L"EndDraw=" + HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(drawResult))));
             }
         } else if (drawResult == D2DERR_RECREATE_TARGET) {
-            LogSlot(miaodesk::log::Level::Warn, L"Direct2D 请求重建渲染目标", slot,
+            LogSlot(whaledesk::log::Level::Warn, L"Direct2D 请求重建渲染目标", slot,
                     L"EndDraw=" + HexValue(static_cast<unsigned long long>(static_cast<std::uint32_t>(drawResult))));
             ReleaseLayerSurface(slot);
             slot.nextRefreshAt = 0;
@@ -927,7 +927,7 @@ struct NativeWidgetHostApp {
     }
 
     void DestroySlot(NativeSlot& slot) {
-        if (slot.hwnd && IsWindow(slot.hwnd)) LogSlot(miaodesk::log::Level::Info, L"销毁组件 Surface", slot);
+        if (slot.hwnd && IsWindow(slot.hwnd)) LogSlot(whaledesk::log::Level::Info, L"销毁组件 Surface", slot);
         ReleaseLayerSurface(slot);
         if (slot.hwnd && IsWindow(slot.hwnd)) DestroyWindow(slot.hwnd);
         slot.hwnd = nullptr;
@@ -955,7 +955,7 @@ struct NativeWidgetHostApp {
             return false;
         }
         const auto& snapshot = shell.Snapshot();
-        LogSlot(miaodesk::log::Level::Info, L"组件挂载桌面成功", slot,
+        LogSlot(whaledesk::log::Level::Info, L"组件挂载桌面成功", slot,
                 L"shellMode=" + std::wstring(DesktopShellHost::ModeKey(snapshot.mode)) +
                 L" progman=" + HandleText(snapshot.progman) +
                 L" defView=" + HandleText(snapshot.shellDefView) +
@@ -985,7 +985,7 @@ struct NativeWidgetHostApp {
         slot.region = mappedRegion;
         slot.desktopRegion = desktopRegion;
         MarkNativeSurfaceRole(hwnd);
-        LogSlot(miaodesk::log::Level::Info, L"组件 Surface 已创建", slot,
+        LogSlot(whaledesk::log::Level::Info, L"组件 Surface 已创建", slot,
                 L"requestedDesktop=" + RectText(desktopRegion));
         if (!AttachSlotSurface(slot, desktopRegion)) {
             DestroyWindow(hwnd);
@@ -998,7 +998,7 @@ struct NativeWidgetHostApp {
         if (!paused) ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, nullptr, FALSE);
         UpdateWindow(hwnd);
-        LogSlot(miaodesk::log::Level::Info, L"组件 Surface 初始化完成", slot);
+        LogSlot(whaledesk::log::Level::Info, L"组件 Surface 初始化完成", slot);
         // Surface creation and first paint are separate recovery domains. Keep
         // the attached HWND alive when the first layered presentation is not
         // ready yet; SyncFromStore will retry instead of freeing the NativeSlot
@@ -1123,9 +1123,9 @@ struct NativeWidgetHostApp {
         if (!lastSurfaceError.empty()) summary += L" error=" + lastSurfaceError;
         WriteDiagnostics(summary);
         if (summary != lastLoggedSummary) {
-            miaodesk::log::Info(L"WidgetHost", L"组件运行时状态变化: " + summary);
+            whaledesk::log::Info(L"WidgetHost", L"组件运行时状态变化: " + summary);
             for (const auto& slot : slots) {
-                if (slot) LogSlot(miaodesk::log::Level::Info, L"组件 Surface 状态", *slot);
+                if (slot) LogSlot(whaledesk::log::Level::Info, L"组件 Surface 状态", *slot);
             }
             lastLoggedSummary = summary;
         }
@@ -1134,7 +1134,7 @@ struct NativeWidgetHostApp {
         // product contract after every state sync: wallpaper < icons < widgets.
         DesktopShellHost shell;
         std::wstring shellError;
-        if (shell.EnsureCurrent(&shellError)) shell.RepairKnownMiaoDeskSurfaces();
+        if (shell.EnsureCurrent(&shellError)) shell.RepairKnownWhaleDesKSurfaces();
         else if (!shellError.empty()) {
             ReportFailure(nullptr, L"NativeWidgetHost z-order repair failed: " + shellError);
         }
@@ -1143,7 +1143,7 @@ struct NativeWidgetHostApp {
     void SetPaused(bool value) {
         if (paused == value) return;
         paused = value;
-        miaodesk::log::Info(L"WidgetHost", value ? L"组件刷新已暂停，Surface 保持显示"
+        whaledesk::log::Info(L"WidgetHost", value ? L"组件刷新已暂停，Surface 保持显示"
                                                   : L"组件刷新已恢复");
         if (!value) {
             for (const auto& slot : slots) {
@@ -1203,7 +1203,7 @@ struct NativeWidgetHostApp {
         }
         WriteDiagnostics(L"Native Direct2D Widget host started parent=" +
                          std::to_wstring(reinterpret_cast<std::uintptr_t>(parent)));
-        miaodesk::log::Info(L"WidgetHost", L"原生组件宿主启动: parent=" + HandleText(parent) +
+        whaledesk::log::Info(L"WidgetHost", L"原生组件宿主启动: parent=" + HandleText(parent) +
                             L" parentClass=" + WindowClassText(parent) +
                             L" parentExStyle=" + HexValue(static_cast<unsigned long long>(GetWindowLongPtrW(parent, GWL_EXSTYLE))));
         SetTimer(messageWindow, kSyncTimerId, 1000, nullptr);
@@ -1231,7 +1231,7 @@ struct NativeWidgetHostApp {
             if (slot) DestroySlot(*slot);
         }
         slots.clear();
-        miaodesk::log::Info(L"WidgetHost", L"原生组件宿主已退出");
+        whaledesk::log::Info(L"WidgetHost", L"原生组件宿主已退出");
         return 0;
     }
 };
@@ -1308,7 +1308,7 @@ bool NativeWidgetProcessSet::Start(HWND parentWindow) {
 
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) {
-        lastError_ = L"Cannot locate MiaoDeskWallpaper.exe";
+        lastError_ = L"Cannot locate WhaleDesKWallpaper.exe";
         return false;
     }
     std::wstring command = QuoteArg(executable);
@@ -1424,4 +1424,4 @@ int TryRunNativeWidgetHost(HINSTANCE instance) {
     return result;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

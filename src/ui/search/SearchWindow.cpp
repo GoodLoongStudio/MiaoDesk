@@ -1,15 +1,15 @@
-#include "miaodesk/SearchWindow.h"
-#include "miaodesk/ContentCreatorDialog.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/L3CliWindow.h"
-#include "miaodesk/MiaoFileSearchNotice.h"
-#include "miaodesk/MiaoGozRecovery.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/SettingsCenterWindow.h"
-#include "miaodesk/StartupManager.h"
-#include "miaodesk/ApiProfileNotifications.h"
-#include "miaodesk/StoreDemoExperience.h"
+#include "whaledesk/SearchWindow.h"
+#include "whaledesk/ContentCreatorDialog.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/L3CliWindow.h"
+#include "whaledesk/WhaleFileSearchNotice.h"
+#include "whaledesk/WhaleGozRecovery.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/SettingsCenterWindow.h"
+#include "whaledesk/StartupManager.h"
+#include "whaledesk/ApiProfileNotifications.h"
+#include "whaledesk/StoreDemoExperience.h"
 #include <shellapi.h>
 #include <windowsx.h>
 #include <algorithm>
@@ -20,7 +20,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 constexpr int kHotkeyId = 1;
@@ -77,7 +77,7 @@ HICON ResolveShellIcon(const SearchResult& result) {
 
 bool ShellIconSelfTest() {
     SearchResult synthetic{
-        ResultKind::File, L"Shell icon self-test", L"", L"miaodesk-self-test.txt", 0};
+        ResultKind::File, L"Shell icon self-test", L"", L"whaledesk-self-test.txt", 0};
     HICON icon = ResolveShellIcon(synthetic);
     if (!icon) return false;
     DestroyIcon(icon);
@@ -97,13 +97,13 @@ fs::path SearchIniPath() {
     return directory.empty() ? fs::path{} : directory / L"search.ini";
 }
 
-HICON LoadMiaoMiaoTrayIcon() {
+HICON LoadWhaleWhaleTrayIcon() {
     wchar_t exePath[32768]{};
     const DWORD length = GetModuleFileNameW(
         nullptr, exePath, static_cast<DWORD>(std::size(exePath)));
     if (length == 0 || length >= std::size(exePath)) return nullptr;
 
-    const fs::path iconPath = fs::path(exePath).parent_path() / L"Assets" / L"MiaoMiao.ico";
+    const fs::path iconPath = fs::path(exePath).parent_path() / L"Assets" / L"WhaleWhale.ico";
     std::error_code ec;
     if (!fs::is_regular_file(iconPath, ec)) return nullptr;
 
@@ -202,7 +202,7 @@ bool SearchWindow::Create(bool showOnLaunch) {
     wc.cbSize = sizeof(wc);
     wc.hInstance = instance_;
     wc.lpfnWndProc = &SearchWindow::WndProc;
-    wc.lpszClassName = L"MiaoDesk.Native.SearchWindow";
+    wc.lpszClassName = L"WhaleDesK.Native.SearchWindow";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -538,7 +538,7 @@ void SearchWindow::AddTray() {
     tray_.uID = 1;
     tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray_.uCallbackMessage = kTrayMessage;
-    HICON packagedIcon = LoadMiaoMiaoTrayIcon();
+    HICON packagedIcon = LoadWhaleWhaleTrayIcon();
     tray_.hIcon = packagedIcon ? packagedIcon : LoadIconW(nullptr, IDI_APPLICATION);
     wcscpy_s(tray_.szTip, L"妙喵");
     trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
@@ -618,7 +618,7 @@ bool SearchWindow::HitAiButton(POINT point) const {
 void SearchWindow::ExitApplication() {
     if (exiting_) return;
     exiting_ = true;
-    if (const HWND wallpaper = FindWindowW(L"MiaoDesk.Native.WallpaperControl", nullptr))
+    if (const HWND wallpaper = FindWindowW(L"WhaleDesK.Native.WallpaperControl", nullptr))
         PostMessageW(wallpaper, WM_CLOSE, 0, 0);
     if (hwnd_ && IsWindow(hwnd_)) DestroyWindow(hwnd_);
 }
@@ -1037,7 +1037,7 @@ void SearchWindow::MergeResults() {
         // 顺带修掉第三句的措辞:它原来说"文件索引已连接,但本次查询失败",可它键的
         // `fileSearchAvailable_` 只证明 goz.exe 客户端二进制装着 —— 服务没起来时
         // 二进制当然还在。那句话把"服务没起来"说成了"查询出错",照它排查的人会往
-        // 完全相反的方向找。判定与文案现在住在 MiaoFileSearchNotice。
+        // 完全相反的方向找。判定与文案现在住在 WhaleFileSearchNotice。
         const FileSearchNotice notice = DecideFileSearchNotice(
             fileSearchPending_, fileSearchAvailable_, fileSearchQueryFailed_);
         const std::wstring& title = FileSearchNoticeTitle(notice);
@@ -1049,7 +1049,7 @@ void SearchWindow::MergeResults() {
             // 也可能查询超时" —— 诚实的猜测,不是诊断。`EnsurePipeAvailable`
             // 一路上看得见每个环节(SCM 打不打得开、服务在不在、状态是什么、
             // StartService 成没成、等到没有),此前全丢了。现在它经出参交出来,
-            // 判定在 MiaoGozRecovery。
+            // 判定在 WhaleGozRecovery。
             //
             // 只在查询失败那一桶追加:另两桶要么客户端没装(recovery 管不着),
             // 要么还在飞(recovery 才刚开始)。失败那一桶正是用户最需要知道
@@ -1517,4 +1517,4 @@ void SearchWindow::Draw() {
     PresentLayerSurface(widthPx, heightPx);
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

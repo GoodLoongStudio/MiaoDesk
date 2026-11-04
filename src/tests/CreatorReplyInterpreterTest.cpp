@@ -9,14 +9,14 @@
 //     回执看起来一模一样,而前者说明有东西被拒绝过;
 //   * 回执可信时,包就是工作区本身,不需要再扫路径;
 //   * 扫到的路径必须过五道(存在/目录/manifest/扩展名/在工作区内),一道都不能少。
-#include "miaodesk/CreatorReplyInterpreter.h"
-#include "miaodesk/ContentCandidateLedger.h"
-#include "miaodesk/ContentCandidateReceipt.h"
+#include "whaledesk/CreatorReplyInterpreter.h"
+#include "whaledesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentCandidateReceipt.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -75,10 +75,10 @@ CreatorReplyReading Read(std::string_view text, const content::ContentCandidateL
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 一段可信回执:宿主不必再猜 ---------------------------------------
     {

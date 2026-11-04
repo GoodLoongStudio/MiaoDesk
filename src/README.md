@@ -1,6 +1,6 @@
 # Source map
 
-MiaoDesk product C++ lives directly under `src/` by process/domain. Do not add unrelated `.cpp` files to the `src/` root.
+WhaleDesK product C++ lives directly under `src/` by process/domain. Do not add unrelated `.cpp` files to the `src/` root.
 
 - `app/` — executable composition/startup
 - `ai/` — Pi, native tool adapters, Direct fallback agent
@@ -14,13 +14,13 @@ MiaoDesk product C++ lives directly under `src/` by process/domain. Do not add u
 - `desktop/performance/` — performance policy
 - `ui/` — presentation/adapters only
 
-Shared headers remain under `include/miaodesk/` so existing `#include <miaodesk/...>` statements stay stable. New target-local headers should live beside their implementation unless they are genuinely shared across domains or processes.
+Shared headers remain under `include/whaledesk/` so existing `#include <whaledesk/...>` statements stay stable. New target-local headers should live beside their implementation unless they are genuinely shared across domains or processes.
 
 ## Executables
 
-- `MiaoDesk.exe` — user-facing application entry
-- `MiaoDeskWallpaper.exe` — isolated desktop/wallpaper process
-- `MiaoDeskHarness.exe` — isolated DeepSeek Harness host
+- `WhaleDesK.exe` — user-facing application entry
+- `WhaleDesKWallpaper.exe` — isolated desktop/wallpaper process
+- `WhaleDesKHarness.exe` — isolated DeepSeek Harness host
 
 Diagnostic acceptance executables are not part of the production build graph. Non-trivial runtime behavior is checked through the production binaries' `--self-test` paths and package smoke checks.
 

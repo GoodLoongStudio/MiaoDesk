@@ -7,7 +7,7 @@
 //      单个 JSON",以及"同路径改内容生成新 revision"。
 //      这两条各自对应一类真实故障:只 hash manifest 会让改了一层还留着旧校验结论;
 //      只 hash 绝对路径会让同一份内容每次重新校验都变成"新候选",于是幂等永远不命中。
-#include "miaodesk/ContentCandidateDigest.h"
+#include "whaledesk/ContentCandidateDigest.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 namespace {
 
 int g_failures = 0;
@@ -396,10 +396,10 @@ void TestSameRolePathOrderDoesNotMatter() {
 }
 
 } // namespace
-} // namespace miaodesk::content
+} // namespace whaledesk::content
 
 int wmain() {
-    using namespace miaodesk::content;
+    using namespace whaledesk::content;
     TestSha256KnownAnswers();
     TestDigestCoversEveryDeclaredPart();
     TestSamePathNewContentIsANewRevision();

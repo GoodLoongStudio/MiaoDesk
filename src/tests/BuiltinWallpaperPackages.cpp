@@ -8,7 +8,7 @@
 // line for: NeonCity and MysticMoon declare five image layers each in scene.ini, and
 // **neither package contained any asset file**. They never had: git had no record of
 // `assets/wallpapers/NeonCity.mdwall/assets/*` or the MysticMoon equivalent, and the
-// filenames appeared nowhere else in the tree. Only MiaoCloud actually shipped its five
+// filenames appeared nowhere else in the tree. Only WhaleCloud actually shipped its five
 // images.
 //
 // Both halves were then closed, and in the opposite order to the one assumed:
@@ -21,13 +21,13 @@
 // So this test now pins the *migrated* state — all three packages with a populated
 // scene.json whose asset references resolve — rather than the empty shells it started
 // from. The node counts below are derived, not rounded.
-#include "miaodesk/MiaoAnalyticParticleField.h"
-#include "miaodesk/MiaoAssetDatabase.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/MiaoSceneRuntime.h"
+#include "whaledesk/WhaleAnalyticParticleField.h"
+#include "whaledesk/WhaleAssetDatabase.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/WhaleSceneRuntime.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -35,7 +35,7 @@
 #include <system_error>
 #include <vector>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 namespace fs = std::filesystem;
 
 static int failures = 0;
@@ -62,21 +62,21 @@ struct PackageOutcome {
     std::wstring error;
 };
 
-// Everything here is the same chain MiaoSceneD2DRenderer::Load runs, minus the parts
+// Everything here is the same chain WhaleSceneD2DRenderer::Load runs, minus the parts
 // that need a render target. That is the point: this is the half of the renderer that
 // can be verified on every commit rather than on one Windows machine.
 static PackageOutcome Walk(const fs::path& root) {
     PackageOutcome out;
-    LoadedMiaoContentPackage package;
-    if (!MiaoContentPackage::Load(root, &package, &out.error)) return out;
+    LoadedWhaleContentPackage package;
+    if (!WhaleContentPackage::Load(root, &package, &out.error)) return out;
     out.loaded = true;
     out.entry = package.manifest.entry;
 
     SceneRuntimeDefinition definition;
-    if (!MiaoSceneSerializer::DeserializePackage(package, &definition, &out.error)) return out;
+    if (!WhaleSceneSerializer::DeserializePackage(package, &definition, &out.error)) return out;
     out.deserialized = true;
 
-    if (!MiaoSceneRuntimeModel::Validate(definition, &out.error)) return out;
+    if (!WhaleSceneRuntimeModel::Validate(definition, &out.error)) return out;
     out.runtimeValid = true;
     out.nodeCount = definition.scene.nodes.size();
     out.assetCount = definition.scene.assets.size();
@@ -99,7 +99,7 @@ static PackageOutcome Walk(const fs::path& root) {
         }
     }
 
-    MiaoAssetDatabase assets;
+    WhaleAssetDatabase assets;
     if (!assets.Build(root, definition, &out.error)) return out;
     out.assetsResolve = true;
     out.resolvedCount = assets.Size();
@@ -110,7 +110,7 @@ static PackageOutcome Walk(const fs::path& root) {
     // The last link of the chain the D2D renderer runs. If Initialize fails, the
     // renderer's Load fails, and the host falls back to a built-in wallpaper — so this
     // is the step that decides whether any of the above is reachable at run time.
-    MiaoSceneRuntime runtime;
+    WhaleSceneRuntime runtime;
     if (!runtime.Initialize(definition, &out.error)) return out;
     out.initialized = true;
     return out;
@@ -165,9 +165,9 @@ int wmain() {
         // The frequency multipliers are the renderer's own: drift 0.77, sway 0.81,
         // breathe 1.0 (LayeredSceneRenderer.h:229-244).
         //
-        // So: 9 = 1 root + 5 layers + 3 parents. Three of MiaoCloud's five layers
+        // So: 9 = 1 root + 5 layers + 3 parents. Three of WhaleCloud's five layers
         // (cloud_pedestal / tail / cat) animate y; `background` animates nothing.
-        {"MiaoCloud", 9, true, 3},
+        {"WhaleCloud", 9, true, 3},
         // 10 = 1 root + 5 layers + 4 parents. city_glow is `breathe` (y + scale), and
         // haze / rain_far / rain_near are `drift`; `background` animates nothing.
         // Four animated layers, four parents.
@@ -190,24 +190,24 @@ int wmain() {
 
         const PackageOutcome out = Walk(root);
 
-        Check(out.loaded, "manifest.json 与入口文件通过 MiaoContentPackage::Load");
+        Check(out.loaded, "manifest.json 与入口文件通过 WhaleContentPackage::Load");
         if (!out.loaded) {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
         }
         Check(out.entry == fs::path("scene.json"),
               "manifest canonical runtime entry 是 scene.json");
-        Check(out.deserialized, "scene.json 通过 MiaoSceneSerializer::DeserializePackage");
-        Check(out.runtimeValid, "反序列化结果通过 MiaoSceneRuntimeModel::Validate");
+        Check(out.deserialized, "scene.json 通过 WhaleSceneSerializer::DeserializePackage");
+        Check(out.runtimeValid, "反序列化结果通过 WhaleSceneRuntimeModel::Validate");
         if (!out.runtimeValid) {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
         }
-        Check(out.assetsResolve, "MiaoAssetDatabase::Build 解析出全部资产(文件都在磁盘上)");
+        Check(out.assetsResolve, "WhaleAssetDatabase::Build 解析出全部资产(文件都在磁盘上)");
         if (!out.assetsResolve) {
             std::printf("         (error = %ls)\n", out.error.c_str());
         }
-        Check(out.initialized, "MiaoSceneRuntime::Initialize 通过");
+        Check(out.initialized, "WhaleSceneRuntime::Initialize 通过");
         if (!out.initialized) {
             std::printf("         (error = %ls)\n", out.error.c_str());
         }
@@ -232,7 +232,7 @@ int wmain() {
             //
             // 8 tracks each, but reached by different arithmetic per package — this is
             // pinned as a count precisely so that arithmetic cannot drift silently:
-            //   MiaoCloud : drift(cloud_pedestal)=2, sway(tail)=3, breathe(cat)=2,
+            //   WhaleCloud : drift(cloud_pedestal)=2, sway(tail)=3, breathe(cat)=2,
             //               blink(blink)=1                     -> 8
             //   NeonCity  : breathe(city_glow)=2, drift(haze/rain_far/rain_near)=2*3 -> 8
             //   MysticMoon: breathe(moon_glow)=2, drift(water_glow/fog)=2*2,
@@ -244,7 +244,7 @@ int wmain() {
             // Fidelity is not asserted here — it is asserted, in pixels, by
             // scripts/verify-builtin-wallpaper-animation-parity.py, which samples the engine's
             // own easing/local-time code against the legacy analytic formulas (and today
-            // only covers MiaoCloud). This assertion only pins that the migration exists
+            // only covers WhaleCloud). This assertion only pins that the migration exists
             // and did not silently lose a layer: 0 would mean "never migrated", and a
             // count that stops matching the arithmetic above means scene.ini and the
             // generator drifted apart.
@@ -256,7 +256,7 @@ int wmain() {
             // right about *simulated* emitters and wrong about these particles:
             // the legacy sparkles / comet trail / petals are a **stateless analytic
             // field**, evaluated from the index every frame, which needs a different
-            // emitter *model*, not more fields. MiaoAnalyticParticleField.cpp holds
+            // emitter *model*, not more fields. WhaleAnalyticParticleField.cpp holds
             // that model once for both render backends, and the generator declares
             // only what scene.ini exposed (counts, opacities, comet speed).
             //

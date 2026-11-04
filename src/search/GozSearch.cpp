@@ -1,5 +1,5 @@
-#include "miaodesk/GozSearch.h"
-#include "miaodesk/MiaoGozRecovery.h"
+#include "whaledesk/GozSearch.h"
+#include "whaledesk/WhaleGozRecovery.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\goz-v1";
@@ -202,7 +202,7 @@ GozSearch::GozSearch() : state_(std::make_shared<SharedState>()) {}
 
 std::wstring GozSearch::FindClientBinary() {
     wchar_t explicitPath[32768]{};
-    const DWORD explicitCount = GetEnvironmentVariableW(L"MIAODESK_GOZ_CLI", explicitPath,
+    const DWORD explicitCount = GetEnvironmentVariableW(L"WHALEDESK_GOZ_CLI", explicitPath,
                                                          static_cast<DWORD>(std::size(explicitPath)));
     if (explicitCount > 0 && explicitCount < std::size(explicitPath)) {
         std::error_code ec;
@@ -224,7 +224,7 @@ bool GozSearch::PipeAvailable() {
 
 bool GozSearch::EnsurePipeAvailable(DWORD waitMs,
                                      goz_recovery::GozRecoveryOutcome* outcome) {
-    // 观测值,按执行顺序收集。之后一次性交给 MiaoGozRecovery 判定 ——
+    // 观测值,按执行顺序收集。之后一次性交给 WhaleGozRecovery 判定 ——
     // 判定是纯逻辑,本机可测 61 项;这里只负责诚实地记录每一步发生了什么。
     const bool pipeUpAtEntry = PipeAvailable();
     if (pipeUpAtEntry) {
@@ -389,7 +389,7 @@ bool GozSearch::HandleCopyData(const COPYDATASTRUCT* copyData, std::vector<Searc
 }
 
 bool GozSearch::SelfTest() const {
-    const std::vector<std::wstring> expected{L"C:\\MiaoDesk\\verify.txt", L"C:\\MiaoDesk\\Folder"};
+    const std::vector<std::wstring> expected{L"C:\\WhaleDesK\\verify.txt", L"C:\\WhaleDesK\\Folder"};
     auto payload = EncodeReply(expected);
     auto* second = reinterpret_cast<GozReplyItem*>(payload.data() + sizeof(GozReplyHeader) +
         sizeof(GozReplyItem) + expected[0].size() * sizeof(wchar_t));
@@ -419,8 +419,8 @@ void GozSearch::Shutdown() const {
     // 无条件作废在飞的那次查询 —— 界面每收到一次输入都调这里,包括**这次起不来
     // 新查询**的分支(空输入、`/` 命令、goz 客户端没装)。那些分支都自然会 return,
     // 于是必须先作废再早退,否则一次在飞的旧回包会在几十毫秒后盖在用户已经看到的
-    // 命令提示或空状态上。见 MiaoSearchGeneration.h。
+    // 命令提示或空状态上。见 WhaleSearchGeneration.h。
     if (state_) state_->generation.Invalidate();
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

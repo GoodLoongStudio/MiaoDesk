@@ -20,7 +20,7 @@
 # scene.ini,`entry` 指向的 scene.json 一个都没被读过。
 #
 # 后果:这个门按 scene.json 的 assets[] 推集合,于是
-#   · MiaoCloud 的 scene.json 恰好好填了 5 个资产 → 被覆盖(而且是因为两份恰好一致,
+#   · WhaleCloud 的 scene.json 恰好好填了 5 个资产 → 被覆盖(而且是因为两份恰好一致,
 #     不是因为门读对了文件);
 #   · NeonCity 与 MysticMoon 的 scene.json 是空壳、0 个资产 → 门对它们的 10 个真实
 #     资产**一无所知**。少任何一个文件,这门照样全绿。
@@ -49,7 +49,7 @@ root = sys.argv[1]
 stage_ps1 = os.path.join(root, 'packaging', 'windows', 'stage.ps1')
 wallpapers = os.path.join(root, 'assets', 'wallpapers')
 BUILTIN_SCENE_PACKAGES = {
-    'MiaoCloud.mdwall',
+    'WhaleCloud.mdwall',
     'NeonCity.mdwall',
     'MysticMoon.mdwall',
 }

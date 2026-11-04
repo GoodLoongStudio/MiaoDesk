@@ -1,15 +1,15 @@
-#include "miaodesk/CreatorToolWorker.h"
+#include "whaledesk/CreatorToolWorker.h"
 
 #include <algorithm>
 #include <set>
 
-#include "miaodesk/ContentCandidateLedger.h"
-#include "miaodesk/ContentCandidateReceipt.h"
-#include "miaodesk/RenderEvidence.h"
-#include "miaodesk/ContentPackageValidator.h"
-#include "miaodesk/MiaoCapabilityCatalog.h"
+#include "whaledesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentCandidateReceipt.h"
+#include "whaledesk/RenderEvidence.h"
+#include "whaledesk/ContentPackageValidator.h"
+#include "whaledesk/WhaleCapabilityCatalog.h"
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // CreationStage 的整数值,与 CreatorToolRegistry.cpp 的那份一致。
@@ -125,15 +125,15 @@ bool WorkspaceAgreesWithState(const CreatorWorkerInput& input, CreatorToolReject
 // "仅声明"和"会执行"是分开的,所以模型看到的是分级,不是一个平铺的清单。
 std::string ContentCapabilitiesText() {
     std::string out = "\n当前可创作的内容能力(同一份目录,按是否真的执行分级):\n";
-    for (const auto& entry : miaodesk::content::CapabilityCatalog()) {
-        if (entry.carrier != miaodesk::content::CapabilityCarrier::SceneComponent &&
-            entry.carrier != miaodesk::content::CapabilityCarrier::InputChannel &&
-            entry.carrier != miaodesk::content::CapabilityCarrier::ManifestCapability)
+    for (const auto& entry : whaledesk::content::CapabilityCatalog()) {
+        if (entry.carrier != whaledesk::content::CapabilityCarrier::SceneComponent &&
+            entry.carrier != whaledesk::content::CapabilityCarrier::InputChannel &&
+            entry.carrier != whaledesk::content::CapabilityCarrier::ManifestCapability)
             continue;
-        const auto query = miaodesk::content::QueryCapability(
-            entry.id, miaodesk::content::BackendBit(miaodesk::content::ContentBackend::D2D));
+        const auto query = whaledesk::content::QueryCapability(
+            entry.id, whaledesk::content::BackendBit(whaledesk::content::ContentBackend::D2D));
         out += "  [";
-        out += miaodesk::content::ToString(query.klass);
+        out += whaledesk::content::ToString(query.klass);
         out += "] ";
         out += entry.id;
         if (!entry.support.executable && !entry.note.empty()) {
@@ -629,4 +629,4 @@ CreatorToolReply DispatchCreatorTool(std::string_view tool, const CreatorToolArg
     return Unavailable(parsed);
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

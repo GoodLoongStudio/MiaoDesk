@@ -1,7 +1,7 @@
-#include "miaodesk/HarnessProcessManager.h"
-#include "miaodesk/MiaoLockOwnershipHost.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/WindowPlacementStore.h"
+#include "whaledesk/HarnessProcessManager.h"
+#include "whaledesk/WhaleLockOwnershipHost.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WindowPlacementStore.h"
 #include <windows.h>
 #include <chrono>
 #include <objbase.h>
@@ -20,18 +20,18 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kHarnessWindowClass[] = L"MiaoDesk.Native.HarnessWindow";
+constexpr wchar_t kHarnessWindowClass[] = L"WhaleDesK.Native.HarnessWindow";
 constexpr wchar_t kHarnessPlacementValue[] = L"DeepSeekHarnessWindow";
-constexpr wchar_t kUiMutexName[] = L"Local\\MiaoDesk.Native.Harness.Ui.Singleton";
-constexpr wchar_t kBackgroundMutexName[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
-constexpr wchar_t kBackgroundStopEventName[] = L"Local\\MiaoDesk.Native.Harness.Background.Stop";
+constexpr wchar_t kUiMutexName[] = L"Local\\WhaleDesK.Native.Harness.Ui.Singleton";
+constexpr wchar_t kBackgroundMutexName[] = L"Local\\WhaleDesK.Native.Harness.Background.Singleton";
+constexpr wchar_t kBackgroundStopEventName[] = L"Local\\WhaleDesK.Native.Harness.Background.Stop";
 constexpr UINT_PTR kReadyTimerId = 1;
 constexpr UINT kReadyPollMs = 250;
 constexpr DWORD kSmokeTimeoutMs = 120000;
 
 fs::path UserDataDirectory() {
-    const fs::path root = miaodesk::paths::WebView2Root();
-    return miaodesk::paths::EnsureDirectory(
+    const fs::path root = whaledesk::paths::WebView2Root();
+    return whaledesk::paths::EnsureDirectory(
         root.empty() ? fs::path{} : root / L"Harness");
 }
 
@@ -56,13 +56,13 @@ bool NamedMutexExists(const wchar_t* name) {
 bool LaunchBackgroundHarnessOwner() {
     if (NamedMutexExists(kBackgroundMutexName)) {
         // 与 src/app/main.cpp 的 LaunchHarnessBackgroundOwner 同一份契约:
-        // 锁在 ≠ 它在好好干活。裁决在 MiaoLockOwnership(纯逻辑),这里只按它改返回值。
-        return miaodesk::lock_host::ExistingOwnerIsHealthy(
+        // 锁在 ≠ 它在好好干活。裁决在 WhaleLockOwnership(纯逻辑),这里只按它改返回值。
+        return whaledesk::lock_host::ExistingOwnerIsHealthy(
             kBackgroundMutexName,
             static_cast<std::uint64_t>(
                 std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+            whaledesk::lock_host::kDefaultOwnershipLeaseSeconds);
     }
 
     const std::wstring executable = ExecutablePath();
@@ -97,7 +97,7 @@ std::wstring HrText(HRESULT hr) {
 }
 
 std::wstring HarnessLogHint() {
-    const std::wstring logPath = miaodesk::HarnessProcessManager::LogPath();
+    const std::wstring logPath = whaledesk::HarnessProcessManager::LogPath();
     return logPath.empty() ? std::wstring{} : L"\r\n日志：" + logPath;
 }
 
@@ -174,7 +174,7 @@ bool HarnessWindowLayoutSelfTest() {
 }
 
 int RunHarnessSmokeTest() {
-    miaodesk::HarnessProcessManager harness;
+    whaledesk::HarnessProcessManager harness;
     if (!harness.Start()) return 6;
     const bool ready = harness.WaitUntilReady(kSmokeTimeoutMs);
     harness.Stop();
@@ -196,7 +196,7 @@ public:
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         RECT initialBounds = InitialHarnessWindowRect();
-        miaodesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
+        whaledesk::window_placement::Load(kHarnessPlacementValue, initialBounds, 640, 480);
         hwnd_ = CreateWindowExW(0, kHarnessWindowClass, L"妙喵工作台 · DeepSeek Harness",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                 initialBounds.left, initialBounds.top,
@@ -280,23 +280,23 @@ private:
             ResizeStatus();
             return 0;
         case WM_EXITSIZEMOVE:
-            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            whaledesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             return 0;
         case WM_SETFOCUS:
             if (webviewController_) webviewController_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
             return 0;
         case WM_CLOSE:
-            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            whaledesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             DestroyWindow(hwnd_);
             return 0;
         case WM_DESTROY:
-            miaodesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
+            whaledesk::window_placement::Save(hwnd_, kHarnessPlacementValue);
             KillTimer(hwnd_, kReadyTimerId);
             webview_.Reset();
             if (webviewController_) webviewController_->Close();
             webviewController_.Reset();
             // The UI never owns the DSH service process. Closing the workbench only closes UI;
-            // the background owner stays warm until the MiaoDesk host asks it to stop.
+            // the background owner stays warm until the WhaleDesK host asks it to stop.
             if (statusFont_) {
                 DeleteObject(statusFont_);
                 statusFont_ = nullptr;
@@ -389,7 +389,7 @@ private:
 
     void NavigateIfReady() {
         if (!harnessReady_ || !webViewReady_ || !webview_ || navigated_) return;
-        const std::wstring url = miaodesk::HarnessProcessManager::DefaultUrl();
+        const std::wstring url = whaledesk::HarnessProcessManager::DefaultUrl();
         const HRESULT hr = webview_->Navigate(url.c_str());
         if (FAILED(hr)) {
             SetStatus(L"打开妙喵工作台 Web UI 失败：" + HrText(hr));
@@ -432,7 +432,7 @@ private:
     bool webViewReady_{};
     bool harnessReady_{};
     bool navigated_{};
-    miaodesk::HarnessProcessManager harness_;
+    whaledesk::HarnessProcessManager harness_;
     ComPtr<ICoreWebView2Controller> webviewController_;
     ComPtr<ICoreWebView2> webview_;
 };
@@ -458,7 +458,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return result;
     }
     if (args.find(L"--self-test") != std::wstring_view::npos) {
-        const bool healthy = miaodesk::HarnessProcessManager::SelfTest() && HarnessWindowLayoutSelfTest();
+        const bool healthy = whaledesk::HarnessProcessManager::SelfTest() && HarnessWindowLayoutSelfTest();
         const int result = healthy ? 0 : 5;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
@@ -485,7 +485,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             return 8;
         }
 
-        miaodesk::HarnessProcessManager harness;
+        whaledesk::HarnessProcessManager harness;
         if (!harness.Start()) {
             CloseHandle(stopEvent);
             CloseHandle(mutex);

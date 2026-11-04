@@ -2,9 +2,9 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const read = (path) => fs.readFileSync(path, "utf8");
-const guard = read("src/include/miaodesk/ModelCredentialGuard.h");
+const guard = read("src/include/whaledesk/ModelCredentialGuard.h");
 
-// The retired shadow credential MiaoDesk/ModelApiKey is redirected, not refused.
+// The retired shadow credential WhaleDesK/ModelApiKey is redirected, not refused.
 //
 // Two bugs lived here and both were silent:
 //   1. CredWriteGuard rejected writes to the legacy target outright, so
@@ -35,7 +35,7 @@ for (const fn of ["CredWriteGuard", "CredDeleteGuard"]) {
   const text = body(fn);
 
   // Non-legacy targets must still pass straight through: the settings page
-  // legitimately writes MiaoDesk/ApiProfile/<id> through this same macro.
+  // legitimately writes WhaleDesK/ApiProfile/<id> through this same macro.
   assert.match(text, /SameTarget\(.+?kActiveCredentialTarget\)/,
     `${fn} must only intercept the retired target`);
 
@@ -46,20 +46,20 @@ for (const fn of ["CredWriteGuard", "CredDeleteGuard"]) {
     `${fn} must resolve the profile that owns the secret`);
 }
 
-assert.doesNotMatch(guard, /legacy MiaoDesk\/ModelApiKey write rejected/,
+assert.doesNotMatch(guard, /legacy WhaleDesK\/ModelApiKey write rejected/,
   "the old rejection path must be gone");
 
 // Both macros must exist alongside the read one.
-assert.match(guard, /#define CredReadW\(\.\.\.\)\s+::miaodesk::model_credential_guard::CredReadGuard\(__VA_ARGS__\)/);
-assert.match(guard, /#define CredWriteW\(\.\.\.\)\s+::miaodesk::model_credential_guard::CredWriteGuard\(__VA_ARGS__\)/);
-assert.match(guard, /#define CredDeleteW\(\.\.\.\)\s+::miaodesk::model_credential_guard::CredDeleteGuard\(__VA_ARGS__\)/);
+assert.match(guard, /#define CredReadW\(\.\.\.\)\s+::whaledesk::model_credential_guard::CredReadGuard\(__VA_ARGS__\)/);
+assert.match(guard, /#define CredWriteW\(\.\.\.\)\s+::whaledesk::model_credential_guard::CredWriteGuard\(__VA_ARGS__\)/);
+assert.match(guard, /#define CredDeleteW\(\.\.\.\)\s+::whaledesk::model_credential_guard::CredDeleteGuard\(__VA_ARGS__\)/);
 
 // Ordering invariant. ApiRuntimeProfile.h retires the shadow secret itself with
 // a CredDeleteW call, and RawCredDelete/RawCredWrite/RawCredRead reach the real
 // Win32 API. If the macros were defined before that include, both would expand
 // into the guard and re-enter LoadDefault. #pragma once alone does not save
 // this: the first expansion has to happen before the macros exist.
-const includeAt = guard.indexOf('#include "miaodesk/ApiRuntimeProfile.h"');
+const includeAt = guard.indexOf('#include "whaledesk/ApiRuntimeProfile.h"');
 const firstMacroAt = Math.min(
   ...[...guard.matchAll(/#define Cred(?:Read|Write|Delete)W\(/g)].map((m) => m.index)
 );

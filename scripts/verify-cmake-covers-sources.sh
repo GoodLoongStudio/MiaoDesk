@@ -2,10 +2,10 @@
 # 校验 src/ 下每个"该被编译"的 .cpp 真的会被 CMake 编译。
 #
 # 为什么需要它:2026-09-22 四个打包工作流挂在
-#   MiaoSceneD3D11Renderer.obj : error LNK2019: unresolved external symbol
-#     MiaoD3D11TextureLoader::LoadImageW / ::SelfTestPathPolicy
-# 根因不是签名不匹配,而是 content/render/d3d11/MiaoD3D11TextureLoader.cpp 没进
-# MIAODESK_*_SOURCES:文件在磁盘上、语法没问题、只是从来没人编译它,于是那两个符号
+#   WhaleSceneD3D11Renderer.obj : error LNK2019: unresolved external symbol
+#     WhaleD3D11TextureLoader::LoadImageW / ::SelfTestPathPolicy
+# 根因不是签名不匹配,而是 content/render/d3d11/WhaleD3D11TextureLoader.cpp 没进
+# WHALEDESK_*_SOURCES:文件在磁盘上、语法没问题、只是从来没人编译它,于是那两个符号
 # 在链接期不存在。
 #
 # 这个类别落在所有现有闸门的盲区:语法闸门扫"磁盘上有什么",照样编译它,看不出它
@@ -96,7 +96,7 @@ if missing:
             print(f"        但要小心:再把它也加进 CMake 会让每个定义出现两次,"
                   f"链接期报 LNK2005。")
     print()
-    print("修法:把它加进对应的 MIAODESK_*_SOURCES 清单,或用 add_executable 建目标。")
+    print("修法:把它加进对应的 WHALEDESK_*_SOURCES 清单,或用 add_executable 建目标。")
     sys.exit(1)
 
 # 目标声明顺序:CMake 顺序执行。foreach(...) 里对尚不存在的目标调用

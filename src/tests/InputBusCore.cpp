@@ -2,7 +2,7 @@
 // This gate deliberately has no Windows dependency: the channel table, the FFT
 // banding and the pointer normalisation are all pure logic, so they can be
 // verified on every build instead of only on a machine with audio hardware.
-#include "miaodesk/MiaoInputBus.h"
+#include "whaledesk/WhaleInputBus.h"
 
 #include <cmath>
 #include <cstdio>
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-using namespace miaodesk::content::inputbus;
+using namespace whaledesk::content::inputbus;
 
 int failures = 0;
 void Check(bool c, const std::string& what) {

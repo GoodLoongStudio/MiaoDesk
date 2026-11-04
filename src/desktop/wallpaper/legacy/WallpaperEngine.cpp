@@ -5,27 +5,27 @@
 #include <wrl/client.h>
 #include <wtsapi32.h>
 
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/MiaoLockOwnershipHost.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/IndependentWallpaperHost.h"
-#include "miaodesk/SceneWallpaperPainter.h"
-#include "miaodesk/VideoWallpaperPlayer.h"
-#include "miaodesk/VideoWallpaperSet.h"
-#include "miaodesk/WallpaperAutomation.h"
-#include "miaodesk/WallpaperAutomationWindow.h"
-#include "miaodesk/WallpaperIndependentLayout.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WallpaperLibraryWindow.h"
-#include "miaodesk/WallpaperRuntimeControl.h"
-#include "miaodesk/WallpaperMonitorAssignments.h"
-#include "miaodesk/SurfaceKeyboardFocus.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WallpaperPerformancePolicy.h"
-#include "miaodesk/WallpaperScaling.h"
-#include "miaodesk/WallpaperWebRuntimeCoordinator.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WhaleLockOwnershipHost.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/IndependentWallpaperHost.h"
+#include "whaledesk/SceneWallpaperPainter.h"
+#include "whaledesk/VideoWallpaperPlayer.h"
+#include "whaledesk/VideoWallpaperSet.h"
+#include "whaledesk/WallpaperAutomation.h"
+#include "whaledesk/WallpaperAutomationWindow.h"
+#include "whaledesk/WallpaperIndependentLayout.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperLibraryWindow.h"
+#include "whaledesk/WallpaperRuntimeControl.h"
+#include "whaledesk/WallpaperMonitorAssignments.h"
+#include "whaledesk/SurfaceKeyboardFocus.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WallpaperPerformancePolicy.h"
+#include "whaledesk/WallpaperScaling.h"
+#include "whaledesk/WallpaperWebRuntimeCoordinator.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <algorithm>
 #include <array>
@@ -45,15 +45,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t kControlClass[] = L"MiaoDesk.Native.WallpaperControl";
-constexpr wchar_t kHostClass[] = L"MiaoDesk.Native.WallpaperHost";
-constexpr wchar_t kWallpaperSettingsClass[] = L"MiaoDesk.Native.WallpaperSettings";
-constexpr wchar_t kSelfTestClass[] = L"MiaoDesk.Native.WallpaperSelfTest";
-constexpr wchar_t kMutexName[] = L"Local\\MiaoDesk.Native.Wallpaper.Singleton";
+constexpr wchar_t kControlClass[] = L"WhaleDesK.Native.WallpaperControl";
+constexpr wchar_t kHostClass[] = L"WhaleDesK.Native.WallpaperHost";
+constexpr wchar_t kWallpaperSettingsClass[] = L"WhaleDesK.Native.WallpaperSettings";
+constexpr wchar_t kSelfTestClass[] = L"WhaleDesK.Native.WallpaperSelfTest";
+constexpr wchar_t kMutexName[] = L"Local\\WhaleDesK.Native.Wallpaper.Singleton";
 constexpr UINT kShowSettings = WM_APP + 81;
 constexpr UINT kTrayMessage = WM_APP + 82;
-constexpr UINT kSetEnabled = miaodesk::wallpaper::kWallpaperSetEnabledMessage;
-constexpr UINT kReloadConfig = miaodesk::wallpaper::kWallpaperReloadMessage;
+constexpr UINT kSetEnabled = whaledesk::wallpaper::kWallpaperSetEnabledMessage;
+constexpr UINT kReloadConfig = whaledesk::wallpaper::kWallpaperReloadMessage;
 constexpr UINT_PTR kRenderTimer = 1;
 constexpr UINT kTrayId = 1;
 constexpr int kSceneComboId = 4101;
@@ -108,12 +108,12 @@ struct Config {
     float focalY{0.5f};
     int fpsCap{30};
     int throttleFps{15};
-    miaodesk::wallpaper::PerformanceAction fullscreenAction{miaodesk::wallpaper::PerformanceAction::Pause};
-    miaodesk::wallpaper::PerformanceAction maximizedAction{miaodesk::wallpaper::PerformanceAction::Throttle};
-    miaodesk::wallpaper::PerformanceAction remoteSessionAction{miaodesk::wallpaper::PerformanceAction::Throttle};
-    miaodesk::wallpaper::PerformanceAction batterySaverAction{miaodesk::wallpaper::PerformanceAction::Throttle};
-    miaodesk::wallpaper::PerformanceAction lockedSessionAction{miaodesk::wallpaper::PerformanceAction::Stop};
-    miaodesk::wallpaper::PerformanceAction idleAction{miaodesk::wallpaper::PerformanceAction::Throttle};
+    whaledesk::wallpaper::PerformanceAction fullscreenAction{whaledesk::wallpaper::PerformanceAction::Pause};
+    whaledesk::wallpaper::PerformanceAction maximizedAction{whaledesk::wallpaper::PerformanceAction::Throttle};
+    whaledesk::wallpaper::PerformanceAction remoteSessionAction{whaledesk::wallpaper::PerformanceAction::Throttle};
+    whaledesk::wallpaper::PerformanceAction batterySaverAction{whaledesk::wallpaper::PerformanceAction::Throttle};
+    whaledesk::wallpaper::PerformanceAction lockedSessionAction{whaledesk::wallpaper::PerformanceAction::Stop};
+    whaledesk::wallpaper::PerformanceAction idleAction{whaledesk::wallpaper::PerformanceAction::Throttle};
     DWORD idleThresholdSeconds{120};
     bool videoLoop{true};
     bool videoMuted{true};
@@ -122,7 +122,7 @@ struct Config {
 };
 
 fs::path ConfigPath() {
-    const fs::path directory = miaodesk::paths::EnsureStateRoot();
+    const fs::path directory = whaledesk::paths::EnsureStateRoot();
     return directory.empty() ? fs::path{} : directory / L"wallpaper.ini";
 }
 
@@ -147,7 +147,7 @@ float ReadProfileNumber(const std::wstring& path, const wchar_t* key, float fall
 }
 
 float ReadProfileFloat(const std::wstring& path, const wchar_t* key, float fallback) {
-    return miaodesk::wallpaper::ClampFocal(ReadProfileNumber(path, key, fallback));
+    return whaledesk::wallpaper::ClampFocal(ReadProfileNumber(path, key, fallback));
 }
 
 std::wstring ReadProfileText(const std::wstring& path, const wchar_t* key, const wchar_t* fallback) {
@@ -162,7 +162,7 @@ void SaveConfig(const Config& config) {
     WritePrivateProfileStringW(L"Wallpaper", L"Version", version.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Enabled", config.enabled ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"PauseFullscreen",
-                               config.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0", path.c_str());
+                               config.fullscreenAction == whaledesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Scene", config.scene.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Image", config.image.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"Video", config.video.c_str(), path.c_str());
@@ -173,17 +173,17 @@ void SaveConfig(const Config& config) {
     WritePrivateProfileStringW(L"Wallpaper", L"FocalX", focalX.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"FocalY", focalY.c_str(), path.c_str());
 
-    const auto fps = std::to_wstring(miaodesk::wallpaper::NormalizeFpsCap(config.fpsCap));
-    const auto throttleFps = std::to_wstring(miaodesk::wallpaper::NormalizeFpsCap(config.throttleFps));
+    const auto fps = std::to_wstring(whaledesk::wallpaper::NormalizeFpsCap(config.fpsCap));
+    const auto throttleFps = std::to_wstring(whaledesk::wallpaper::NormalizeFpsCap(config.throttleFps));
     const auto idleSeconds = std::to_wstring(config.idleThresholdSeconds);
     WritePrivateProfileStringW(L"Wallpaper", L"FpsCap", fps.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"ThrottleFps", throttleFps.c_str(), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"FullscreenAction", miaodesk::wallpaper::PerformanceActionKey(config.fullscreenAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"MaximizedAction", miaodesk::wallpaper::PerformanceActionKey(config.maximizedAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"RemoteSessionAction", miaodesk::wallpaper::PerformanceActionKey(config.remoteSessionAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"BatterySaverAction", miaodesk::wallpaper::PerformanceActionKey(config.batterySaverAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"LockedSessionAction", miaodesk::wallpaper::PerformanceActionKey(config.lockedSessionAction), path.c_str());
-    WritePrivateProfileStringW(L"Wallpaper", L"IdleAction", miaodesk::wallpaper::PerformanceActionKey(config.idleAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"FullscreenAction", whaledesk::wallpaper::PerformanceActionKey(config.fullscreenAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"MaximizedAction", whaledesk::wallpaper::PerformanceActionKey(config.maximizedAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"RemoteSessionAction", whaledesk::wallpaper::PerformanceActionKey(config.remoteSessionAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"BatterySaverAction", whaledesk::wallpaper::PerformanceActionKey(config.batterySaverAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"LockedSessionAction", whaledesk::wallpaper::PerformanceActionKey(config.lockedSessionAction), path.c_str());
+    WritePrivateProfileStringW(L"Wallpaper", L"IdleAction", whaledesk::wallpaper::PerformanceActionKey(config.idleAction), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"IdleThresholdSeconds", idleSeconds.c_str(), path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"VideoLoop", config.videoLoop ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(L"Wallpaper", L"VideoMuted", config.videoMuted ? L"1" : L"0", path.c_str());
@@ -204,30 +204,30 @@ Config LoadConfig() {
     config.scene = ReadProfileText(path, L"Scene", L"aurora");
     config.image = ReadProfileText(path, L"Image", L"");
     config.video = ReadProfileText(path, L"Video", L"");
-    config.layout = miaodesk::wallpaper::LayoutModeKey(
-        miaodesk::wallpaper::ParseLayoutMode(ReadProfileText(path, L"Layout", L"span")));
-    config.scale = miaodesk::wallpaper::ScaleModeKey(
-        miaodesk::wallpaper::ParseScaleMode(ReadProfileText(path, L"Scale", L"cover")));
+    config.layout = whaledesk::wallpaper::LayoutModeKey(
+        whaledesk::wallpaper::ParseLayoutMode(ReadProfileText(path, L"Layout", L"span")));
+    config.scale = whaledesk::wallpaper::ScaleModeKey(
+        whaledesk::wallpaper::ParseScaleMode(ReadProfileText(path, L"Scale", L"cover")));
     config.focalX = ReadProfileFloat(path, L"FocalX", 0.5f);
     config.focalY = ReadProfileFloat(path, L"FocalY", 0.5f);
-    config.fpsCap = miaodesk::wallpaper::NormalizeFpsCap(
+    config.fpsCap = whaledesk::wallpaper::NormalizeFpsCap(
         static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"FpsCap", 30, path.c_str())));
-    config.throttleFps = miaodesk::wallpaper::NormalizeFpsCap(
+    config.throttleFps = whaledesk::wallpaper::NormalizeFpsCap(
         static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"ThrottleFps", 15, path.c_str())));
     const int idleSeconds = static_cast<int>(GetPrivateProfileIntW(L"Wallpaper", L"IdleThresholdSeconds", 120, path.c_str()));
     config.idleThresholdSeconds = static_cast<DWORD>(std::clamp(idleSeconds, 30, 3600));
 
     if (version >= 7) {
-        config.fullscreenAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"FullscreenAction", L"pause"));
-        config.maximizedAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"MaximizedAction", L"throttle"));
-        config.remoteSessionAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"RemoteSessionAction", L"throttle"));
-        config.batterySaverAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"BatterySaverAction", L"throttle"));
-        config.lockedSessionAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"LockedSessionAction", L"stop"));
-        config.idleAction = miaodesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"IdleAction", L"throttle"));
+        config.fullscreenAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"FullscreenAction", L"pause"));
+        config.maximizedAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"MaximizedAction", L"throttle"));
+        config.remoteSessionAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"RemoteSessionAction", L"throttle"));
+        config.batterySaverAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"BatterySaverAction", L"throttle"));
+        config.lockedSessionAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"LockedSessionAction", L"stop"));
+        config.idleAction = whaledesk::wallpaper::ParsePerformanceAction(ReadProfileText(path, L"IdleAction", L"throttle"));
     } else {
         config.fullscreenAction = config.pauseFullscreen
-            ? miaodesk::wallpaper::PerformanceAction::Pause
-            : miaodesk::wallpaper::PerformanceAction::Normal;
+            ? whaledesk::wallpaper::PerformanceAction::Pause
+            : whaledesk::wallpaper::PerformanceAction::Normal;
     }
 
     if (version >= 8) {
@@ -244,17 +244,17 @@ Config LoadConfig() {
     return config;
 }
 
-void SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode mode, const std::wstring& error,
-                          const miaodesk::wallpaper::MonitorTopology* topology = nullptr,
-                          miaodesk::wallpaper::LayoutMode layout = miaodesk::wallpaper::LayoutMode::Span) {
+void SaveMountDiagnostics(whaledesk::wallpaper::DesktopShellMode mode, const std::wstring& error,
+                          const whaledesk::wallpaper::MonitorTopology* topology = nullptr,
+                          whaledesk::wallpaper::LayoutMode layout = whaledesk::wallpaper::LayoutMode::Span) {
     const auto path = ConfigPath().wstring();
     WritePrivateProfileStringW(L"Diagnostics", L"MountMode",
-                               miaodesk::wallpaper::DesktopShellHost::ModeKey(mode), path.c_str());
+                               whaledesk::wallpaper::DesktopShellHost::ModeKey(mode), path.c_str());
     WritePrivateProfileStringW(L"Diagnostics", L"LastMountError", error.c_str(), path.c_str());
-    WritePrivateProfileStringW(L"Diagnostics", L"LayoutMode", miaodesk::wallpaper::LayoutModeKey(layout), path.c_str());
+    WritePrivateProfileStringW(L"Diagnostics", L"LayoutMode", whaledesk::wallpaper::LayoutModeKey(layout), path.c_str());
     if (topology) {
         const auto monitorCount = std::to_wstring(topology->monitors.size());
-        const auto description = miaodesk::wallpaper::DescribeMonitorTopology(*topology);
+        const auto description = whaledesk::wallpaper::DescribeMonitorTopology(*topology);
         WritePrivateProfileStringW(L"Diagnostics", L"MonitorCount", monitorCount.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Diagnostics", L"MonitorTopology", description.c_str(), path.c_str());
     }
@@ -283,7 +283,7 @@ public:
 
         InitializeLibraryAssignmentsAndAutomation();
         taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
-        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
+        topology_ = whaledesk::wallpaper::QueryMonitorTopology();
         TouchAssignments();
 
         WNDCLASSEXW controlClass{};
@@ -303,13 +303,13 @@ public:
         if (!RegisterClassExW(&hostClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
         control_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kControlClass,
-                                   L"MiaoDesk Wallpaper Control", WS_POPUP,
+                                   L"WhaleDesK Wallpaper Control", WS_POPUP,
                                    0, 0, 1, 1, nullptr, nullptr, instance_, this);
         if (!control_) return false;
         WTSRegisterSessionNotification(control_, NOTIFY_FOR_THIS_SESSION);
 
         host_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
-                                kHostClass, L"MiaoDesk Wallpaper Host", WS_POPUP,
+                                kHostClass, L"WhaleDesK Wallpaper Host", WS_POPUP,
                                 0, 0, 1, 1, nullptr, nullptr, instance_, this);
         if (!host_) return false;
         if (!SetLayeredWindowAttributes(host_, 0, 255, LWA_ALPHA)) return false;
@@ -390,7 +390,7 @@ public:
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
 
-        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kWallpaperSettingsClass, L"MiaoDesk 壁纸",
+        settings_ = CreateWindowExW(WS_EX_TOOLWINDOW, kWallpaperSettingsClass, L"WhaleDesK 壁纸",
                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                                     CW_USEDEFAULT, CW_USEDEFAULT, 780, 820,
                                     nullptr, nullptr, instance_, this);
@@ -404,11 +404,11 @@ public:
             return control;
         };
 
-        label(L"MiaoDesk 壁纸", 20, 18, 240, 26);
+        label(L"WhaleDesK 壁纸", 20, 18, 240, 26);
         label(L"场景", 20, 62, 72, 24);
         sceneCombo_ = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
                                       116, 58, 350, 180, settings_, ControlId(kSceneComboId), instance_, nullptr);
-        for (const auto& scene : miaodesk::wallpaper::BuiltinWallpapers()) {
+        for (const auto& scene : whaledesk::wallpaper::BuiltinWallpapers()) {
             const std::wstring label = std::wstring(scene.title) + L" · " +
                                        std::wstring(scene.description);
             SendMessageW(sceneCombo_, CB_ADDSTRING, 0,
@@ -508,9 +508,9 @@ public:
     }
 
     void SetEnabled(bool enabled) {
-        miaodesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+        whaledesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
         if (config_.enabled == enabled) {
-            miaodesk::log::Info(L"Wallpaper", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
+            whaledesk::log::Info(L"Wallpaper", L"当前状态已与目标一致 (enabled=" + std::wstring(enabled ? L"1" : L"0") + L")，忽略重复请求");
             libraryWindow_.SetWallpaperEnabledState(config_.enabled);
             return;
         }
@@ -521,7 +521,7 @@ public:
 
         bool applied = false;
         if (enabled) {
-            miaodesk::log::Info(L"Wallpaper", L"正在启动壁纸运行时，挂载桌面图层...");
+            whaledesk::log::Info(L"Wallpaper", L"正在启动壁纸运行时，挂载桌面图层...");
             performanceStopped_ = false;
             videoSet_.SetPaused(false);
             independentHost_.SetPaused(false);
@@ -538,10 +538,10 @@ public:
                 applied = mountOk_;
             }
             if (applied) {
-                miaodesk::log::Info(L"Wallpaper", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
+                whaledesk::log::Info(L"Wallpaper", L"壁纸已成功挂载并显示在桌面 (Scene=" + config_.scene + L", Layout=" + config_.layout + L")");
             }
         } else {
-            miaodesk::log::Info(L"Wallpaper", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
+            whaledesk::log::Info(L"Wallpaper", L"正在停止壁纸运行时 (暂停视频、销毁独立显示器渲染器、隐藏 host HWND)...");
             videoSet_.SetPaused(true);
             independentHost_.SetPaused(true);
             StopRuntime();
@@ -560,18 +560,18 @@ public:
             }
             SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
 
-            miaodesk::log::Info(L"Wallpaper", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
+            whaledesk::log::Info(L"Wallpaper", L"已隐藏壁纸图层并向桌面发送重绘信号，成功恢复原生桌面背景");
             applied = true;
         }
 
         if (!applied) {
-            miaodesk::log::Error(L"Wallpaper", L"SetEnabled 挂载失败，回滚状态为 disabled");
+            whaledesk::log::Error(L"Wallpaper", L"SetEnabled 挂载失败，回滚状态为 disabled");
             config_.enabled = !targetEnabled;
             SaveConfig(config_);
             StopRuntime();
             if (host_ && IsWindow(host_)) ShowWindow(host_, SW_HIDE);
         } else {
-            miaodesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
+            whaledesk::log::Info(L"Wallpaper", L"SetEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 成功生效");
         }
 
         RefreshSettings();
@@ -580,7 +580,7 @@ public:
 
 private:
     bool IsIndependent() const noexcept {
-        return miaodesk::wallpaper::ParseLayoutMode(config_.layout) == miaodesk::wallpaper::LayoutMode::Independent;
+        return whaledesk::wallpaper::ParseLayoutMode(config_.layout) == whaledesk::wallpaper::LayoutMode::Independent;
     }
 
     void InitializeLibraryAssignmentsAndAutomation() {
@@ -593,7 +593,7 @@ private:
         error.clear();
         if (!automation_.Load(&error)) automationError_ = error;
 
-        for (const auto& scene : miaodesk::wallpaper::BuiltinWallpapers()) {
+        for (const auto& scene : whaledesk::wallpaper::BuiltinWallpapers()) {
             error.clear();
             library_.UpsertScene(std::wstring(scene.id), std::wstring(scene.title), &error);
             if (libraryError_.empty() && !error.empty()) libraryError_ = error;
@@ -616,12 +616,12 @@ private:
         if (!assignments_.Save(&error) && libraryError_.empty()) libraryError_ = error;
     }
 
-    std::vector<miaodesk::wallpaper::WallpaperLibraryTarget> LibraryTargets() const {
-        std::vector<miaodesk::wallpaper::WallpaperLibraryTarget> targets;
+    std::vector<whaledesk::wallpaper::WallpaperLibraryTarget> LibraryTargets() const {
+        std::vector<whaledesk::wallpaper::WallpaperLibraryTarget> targets;
         targets.reserve(topology_.monitors.size());
         for (const auto& monitor : topology_.monitors) {
-            miaodesk::wallpaper::WallpaperLibraryTarget target;
-            target.monitorId = miaodesk::wallpaper::StableMonitorKey(monitor);
+            whaledesk::wallpaper::WallpaperLibraryTarget target;
+            target.monitorId = whaledesk::wallpaper::StableMonitorKey(monitor);
             target.displayName = !monitor.friendlyName.empty() ? monitor.friendlyName :
                                  (!monitor.deviceName.empty() ? monitor.deviceName : L"显示器");
             target.primary = monitor.primary;
@@ -634,7 +634,7 @@ private:
         libraryWindow_.SetWallpaperEnabledState(config_.enabled);
         libraryWindow_.Show(
             instance_, &library_, LibraryTargets(),
-            [this](const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
+            [this](const whaledesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
                 return ApplyLibraryItem(item, targetMonitorId);
             });
     }
@@ -643,17 +643,17 @@ private:
         automationWindow_.Show(
             instance_, &automation_, &library_,
             [this](const std::wstring& name) { return CaptureCurrentProfile(name); },
-            [this](const miaodesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); },
+            [this](const whaledesk::wallpaper::AutomationDecision& decision) { ApplyAutomationDecision(decision); },
             // 从这里打开的:关掉自动化窗时把键盘还给设置中心,而不是 Z 序里的下一个窗口。
             libraryWindow_.Window());
     }
 
-    static bool ApplyWallpaperItemToConfig(Config& next, const miaodesk::wallpaper::WallpaperLibraryItem& item) {
-        using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
+    static bool ApplyWallpaperItemToConfig(Config& next, const whaledesk::wallpaper::WallpaperLibraryItem& item) {
+        using Kind = whaledesk::wallpaper::LibraryWallpaperKind;
         next.image.clear();
         next.video.clear();
         if (item.kind == Kind::Scene) {
-            const auto* definition = miaodesk::wallpaper::FindBuiltinWallpaper(item.id);
+            const auto* definition = whaledesk::wallpaper::FindBuiltinWallpaper(item.id);
             if (!definition) return false;
             next.scene = definition->runtimeKey;
             return true;
@@ -682,20 +682,20 @@ private:
     // they can act on rather than a log phrase. libraryError_ is still set: that is the
     // engine's own diagnostics text in the advanced settings window, and it is not a
     // substitute for telling the person who clicked 应用到桌面.
-    std::wstring ApplyLibraryItem(const miaodesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
-        using Kind = miaodesk::wallpaper::LibraryWallpaperKind;
+    std::wstring ApplyLibraryItem(const whaledesk::wallpaper::WallpaperLibraryItem& item, const std::wstring& targetMonitorId) {
+        using Kind = whaledesk::wallpaper::LibraryWallpaperKind;
         if (item.kind == Kind::Unknown) {
-            miaodesk::log::Warn(L"Wallpaper", L"ApplyLibraryItem 失败: 未知壁纸类型");
+            whaledesk::log::Warn(L"Wallpaper", L"ApplyLibraryItem 失败: 未知壁纸类型");
             libraryError_ = L"壁纸库中存在类型未知的项目";
             return L"“" + item.title + L"”的类型无法识别，不能应用。";
         }
 
-        miaodesk::log::Info(L"Wallpaper", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
+        whaledesk::log::Info(L"Wallpaper", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\", target=" + (targetMonitorId.empty() ? L"全局" : targetMonitorId));
         std::wstring error;
         if (item.kind == Kind::Web) {
-            if (!miaodesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
+            if (!whaledesk::wallpaper::ActivateWebWallpaperItem(item, targetMonitorId, &error)) {
                 libraryError_ = error.empty() ? L"Web 壁纸应用失败" : error;
-                miaodesk::log::Error(L"Wallpaper", L"ActivateWebWallpaperItem 失败: " + libraryError_);
+                whaledesk::log::Error(L"Wallpaper", L"ActivateWebWallpaperItem 失败: " + libraryError_);
                 RefreshSettings();
                 return libraryError_.empty() ? L"Web 壁纸应用失败。" : libraryError_;
             }
@@ -707,17 +707,17 @@ private:
             libraryWindow_.Refresh();
             automationWindow_.Refresh();
             RefreshSettings();
-            miaodesk::log::Info(L"Wallpaper", L"Web 壁纸已成功应用");
+            whaledesk::log::Info(L"Wallpaper", L"Web 壁纸已成功应用");
             return {};
         }
         if (!targetMonitorId.empty()) {
-            const auto* monitor = miaodesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
+            const auto* monitor = whaledesk::wallpaper::FindMonitorByStableId(topology_, targetMonitorId);
             const std::wstring friendly = monitor ?
                 (!monitor->friendlyName.empty() ? monitor->friendlyName : monitor->deviceName) : L"";
-            miaodesk::log::Info(L"Wallpaper", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
+            whaledesk::log::Info(L"Wallpaper", L"[指定屏幕分配] 屏幕 ID=" + targetMonitorId + L" (设备名=" + (monitor ? monitor->deviceName : L"未知") + L", 名称=" + friendly + L") -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L")");
             if (!assignments_.AssignById(targetMonitorId, item.id, friendly, &error)) {
                 libraryError_ = error;
-                miaodesk::log::Error(L"Wallpaper", L"显示器分配失败: " + error);
+                whaledesk::log::Error(L"Wallpaper", L"显示器分配失败: " + error);
                 RefreshSettings();
                 return error.empty() ? L"显示器分配失败。" : error;
             }
@@ -725,7 +725,7 @@ private:
             config_.enabled = true;
             SaveConfig(config_);
             ApplyConfig(config_, false);
-            miaodesk::log::Info(L"Wallpaper", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
+            whaledesk::log::Info(L"Wallpaper", L"成功将壁纸 \"" + item.title + L"\" 分配至显示器 ID=" + targetMonitorId);
         } else {
             Config next = config_;
             next.enabled = true;
@@ -734,18 +734,18 @@ private:
                                        (item.kind == Kind::Video ? L"Video" :
                                        (item.kind == Kind::Web ? L"Web" :
                                        (item.kind == Kind::Image ? L"Image" : L"Unknown"))));
-            miaodesk::log::Info(L"Wallpaper", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
+            whaledesk::log::Info(L"Wallpaper", L"[全局应用壁纸] 覆盖所有屏幕 (Span 模式) -> 壁纸: \"" + item.title + L"\" (id=" + item.id + L", kind=" + std::wstring(kindText) + L")");
             if (!ApplyWallpaperItemToConfig(next, item)) {
                 const std::wstring why = item.kind == Kind::Scene
                     ? L"“" + item.title + L"”尚没有可用的运行时，未修改当前桌面。"
                     : L"“" + item.title + L"”这个类型当前不可运行，未修改当前桌面。";
                 libraryError_ = why;
-                miaodesk::log::Error(L"Wallpaper", L"ApplyWallpaperItemToConfig 失败: " + why);
+                whaledesk::log::Error(L"Wallpaper", L"ApplyWallpaperItemToConfig 失败: " + why);
                 RefreshSettings();
                 return why;
             }
             ApplyConfig(next);
-            miaodesk::log::Info(L"Wallpaper", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
+            whaledesk::log::Info(L"Wallpaper", L"已成功全局应用壁纸 \"" + item.title + L"\" (scene=" + next.scene + L")");
         }
 
         error.clear();
@@ -758,16 +758,16 @@ private:
 
     std::optional<std::wstring> CurrentWallpaperId() const {
         if (const auto* definition =
-                miaodesk::wallpaper::FindBuiltinWallpaper(config_.scene))
+                whaledesk::wallpaper::FindBuiltinWallpaper(config_.scene))
             return std::wstring(definition->id);
         const std::wstring source = (config_.scene == L"image" || config_.scene == L"web") ? config_.image :
                                     config_.scene == L"video" ? config_.video : L"";
         if (source.empty()) return std::nullopt;
         for (const auto& item : library_.Items()) {
             if (item.source.empty()) continue;
-            const bool kindMatches = (config_.scene == L"image" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Image) ||
-                                     (config_.scene == L"video" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Video) ||
-                                     (config_.scene == L"web" && item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Web);
+            const bool kindMatches = (config_.scene == L"image" && item.kind == whaledesk::wallpaper::LibraryWallpaperKind::Image) ||
+                                     (config_.scene == L"video" && item.kind == whaledesk::wallpaper::LibraryWallpaperKind::Video) ||
+                                     (config_.scene == L"web" && item.kind == whaledesk::wallpaper::LibraryWallpaperKind::Web);
             if (!kindMatches) continue;
             const std::wstring itemPath = item.source.wstring();
             if (_wcsicmp(itemPath.c_str(), source.c_str()) == 0) return item.id;
@@ -775,10 +775,10 @@ private:
         return std::nullopt;
     }
 
-    std::optional<miaodesk::wallpaper::WallpaperProfile> CaptureCurrentProfile(const std::wstring& name) const {
+    std::optional<whaledesk::wallpaper::WallpaperProfile> CaptureCurrentProfile(const std::wstring& name) const {
         const auto wallpaperId = CurrentWallpaperId();
         if (!wallpaperId) return std::nullopt;
-        miaodesk::wallpaper::WallpaperProfile profile;
+        whaledesk::wallpaper::WallpaperProfile profile;
         profile.name = name;
         profile.wallpaperId = *wallpaperId;
         profile.layout = config_.layout;
@@ -801,8 +801,8 @@ private:
         return profile;
     }
 
-    void ApplyAutomationDecision(const miaodesk::wallpaper::AutomationDecision& decision) {
-        using DecisionKind = miaodesk::wallpaper::AutomationDecisionKind;
+    void ApplyAutomationDecision(const whaledesk::wallpaper::AutomationDecision& decision) {
+        using DecisionKind = whaledesk::wallpaper::AutomationDecisionKind;
         if (decision.kind == DecisionKind::None) return;
 
         if (decision.kind == DecisionKind::ApplyWallpaper) {
@@ -850,7 +850,7 @@ private:
             next.videoMuted = profile->videoMuted;
             next.videoVolume = profile->videoVolume;
             next.videoRate = profile->videoRate;
-            next.pauseFullscreen = next.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause;
+            next.pauseFullscreen = next.fullscreenAction == whaledesk::wallpaper::PerformanceAction::Pause;
             if (!ApplyWallpaperItemToConfig(next, *item)) {
                 automationError_ = L"Profile 当前引用的壁纸类型尚不可运行。";
                 RefreshSettings();
@@ -876,7 +876,7 @@ private:
         SYSTEMTIME local{};
         GetLocalTime(&local);
         const auto decision = automation_.Evaluate(local, NowUnixSeconds());
-        if (decision.kind != miaodesk::wallpaper::AutomationDecisionKind::None) ApplyAutomationDecision(decision);
+        if (decision.kind != whaledesk::wallpaper::AutomationDecisionKind::None) ApplyAutomationDecision(decision);
     }
 
     HWND CreateActionCombo(int x, int y, int id) {
@@ -889,20 +889,20 @@ private:
         return combo;
     }
 
-    static int ActionIndex(miaodesk::wallpaper::PerformanceAction action) {
+    static int ActionIndex(whaledesk::wallpaper::PerformanceAction action) {
         return static_cast<int>(action);
     }
 
-    static miaodesk::wallpaper::PerformanceAction ActionFromCombo(HWND combo) {
+    static whaledesk::wallpaper::PerformanceAction ActionFromCombo(HWND combo) {
         const int selected = combo ? static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0)) : 0;
-        if (selected == 3) return miaodesk::wallpaper::PerformanceAction::Stop;
-        if (selected == 2) return miaodesk::wallpaper::PerformanceAction::Pause;
-        if (selected == 1) return miaodesk::wallpaper::PerformanceAction::Throttle;
-        return miaodesk::wallpaper::PerformanceAction::Normal;
+        if (selected == 3) return whaledesk::wallpaper::PerformanceAction::Stop;
+        if (selected == 2) return whaledesk::wallpaper::PerformanceAction::Pause;
+        if (selected == 1) return whaledesk::wallpaper::PerformanceAction::Throttle;
+        return whaledesk::wallpaper::PerformanceAction::Normal;
     }
 
-    miaodesk::wallpaper::PerformanceConfig CurrentPerformanceConfig() const {
-        miaodesk::wallpaper::PerformanceConfig result;
+    whaledesk::wallpaper::PerformanceConfig CurrentPerformanceConfig() const {
+        whaledesk::wallpaper::PerformanceConfig result;
         result.fpsCap = config_.fpsCap;
         result.throttleFps = config_.throttleFps;
         result.fullscreenAction = config_.fullscreenAction;
@@ -915,8 +915,8 @@ private:
         return result;
     }
 
-    miaodesk::IndependentVideoSettings CurrentIndependentVideoSettings() const {
-        miaodesk::IndependentVideoSettings settings;
+    whaledesk::IndependentVideoSettings CurrentIndependentVideoSettings() const {
+        whaledesk::IndependentVideoSettings settings;
         settings.looping = config_.videoLoop;
         settings.muted = config_.videoMuted;
         settings.volume = config_.videoVolume;
@@ -924,19 +924,19 @@ private:
         return settings;
     }
 
-    miaodesk::wallpaper::GlobalWallpaperDescriptor GlobalFallbackDescriptor() const {
-        miaodesk::wallpaper::GlobalWallpaperDescriptor descriptor;
+    whaledesk::wallpaper::GlobalWallpaperDescriptor GlobalFallbackDescriptor() const {
+        whaledesk::wallpaper::GlobalWallpaperDescriptor descriptor;
         if (config_.scene == L"image" && !config_.image.empty()) {
-            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Image;
+            descriptor.kind = whaledesk::wallpaper::ResolvedWallpaperKind::Image;
             descriptor.source = config_.image;
         } else if (config_.scene == L"video" && !config_.video.empty()) {
-            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Video;
+            descriptor.kind = whaledesk::wallpaper::ResolvedWallpaperKind::Video;
             descriptor.source = config_.video;
         } else if (config_.scene == L"web" && !config_.image.empty()) {
-            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Web;
+            descriptor.kind = whaledesk::wallpaper::ResolvedWallpaperKind::Web;
             descriptor.source = config_.image;
         } else {
-            descriptor.kind = miaodesk::wallpaper::ResolvedWallpaperKind::Scene;
+            descriptor.kind = whaledesk::wallpaper::ResolvedWallpaperKind::Scene;
             descriptor.sceneKey = config_.scene == L"neon" ? L"neon" : config_.scene == L"grid" ? L"grid" : L"aurora";
         }
         return descriptor;
@@ -945,7 +945,7 @@ private:
     void SetRenderTimerFps(int fps) {
         if (!control_) return;
         const UINT interval = fps > 0
-            ? static_cast<UINT>(std::max(8, 1000 / miaodesk::wallpaper::NormalizeFpsCap(fps)))
+            ? static_cast<UINT>(std::max(8, 1000 / whaledesk::wallpaper::NormalizeFpsCap(fps)))
             : 250U;
         if (renderTimerIntervalMs_ == interval) return;
         KillTimer(control_, kRenderTimer);
@@ -964,14 +964,14 @@ private:
     bool StartIndependent(bool recovery = false) {
         if (!recovery) ResetRecoveryState();
         independentHost_.Stop();
-        const auto resolved = miaodesk::wallpaper::ResolveIndependentWallpapers(
+        const auto resolved = whaledesk::wallpaper::ResolveIndependentWallpapers(
             topology_, assignments_, library_, GlobalFallbackDescriptor());
         if (resolved.empty()) {
             lastMediaError_ = L"Independent 模式没有可用显示器";
             return false;
         }
         if (!independentHost_.Start(host_, resolved,
-                                    miaodesk::wallpaper::ParseScaleMode(config_.scale),
+                                    whaledesk::wallpaper::ParseScaleMode(config_.scale),
                                     config_.focalX, config_.focalY,
                                     CurrentIndependentVideoSettings())) {
             lastMediaError_ = independentHost_.LastErrorText();
@@ -993,10 +993,10 @@ private:
         videoSet_.SetMuted(config_.videoMuted);
         videoSet_.SetVolume(config_.videoVolume);
         videoSet_.SetPlaybackRate(config_.videoRate);
-        const auto regions = miaodesk::wallpaper::DrawRegionsInHost(
-            topology_, miaodesk::wallpaper::ParseLayoutMode(config_.layout));
+        const auto regions = whaledesk::wallpaper::DrawRegionsInHost(
+            topology_, whaledesk::wallpaper::ParseLayoutMode(config_.layout));
         if (!videoSet_.Start(host_, config_.video, regions,
-                             miaodesk::wallpaper::ParseScaleMode(config_.scale),
+                             whaledesk::wallpaper::ParseScaleMode(config_.scale),
                              config_.focalX, config_.focalY)) {
             lastMediaError_ = videoSet_.LastErrorText();
             if (lastMediaError_.empty()) lastMediaError_ = L"Media Foundation 无法启动该视频";
@@ -1032,12 +1032,12 @@ private:
         UpdateWindow(host_);
     }
 
-    void ApplyPerformanceSnapshot(const miaodesk::wallpaper::PerformanceSnapshot& snapshot) {
+    void ApplyPerformanceSnapshot(const whaledesk::wallpaper::PerformanceSnapshot& snapshot) {
         if (snapshot.action != lastLoggedAction_) {
-            const wchar_t* actionName = snapshot.action == miaodesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
-                                        (snapshot.action == miaodesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
-                                        (snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
-            miaodesk::log::Info(L"Wallpaper", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
+            const wchar_t* actionName = snapshot.action == whaledesk::wallpaper::PerformanceAction::Normal ? L"正常渲染" :
+                                        (snapshot.action == whaledesk::wallpaper::PerformanceAction::Throttle ? L"降帧节能" :
+                                        (snapshot.action == whaledesk::wallpaper::PerformanceAction::Pause ? L"暂停渲染" : L"停止/隐藏图层"));
+            whaledesk::log::Info(L"Wallpaper", L"性能策略动态调整: 动作=" + std::wstring(actionName) +
                 L", 目标FPS=" + std::to_wstring(snapshot.targetFps) +
                 (snapshot.reason.empty() ? L"" : (L", 原因=" + snapshot.reason)));
             lastLoggedAction_ = snapshot.action;
@@ -1045,8 +1045,8 @@ private:
 
         currentPerformance_ = snapshot;
         SetRenderTimerFps(snapshot.targetFps);
-        const bool stop = snapshot.action == miaodesk::wallpaper::PerformanceAction::Stop;
-        const bool pause = snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause || stop;
+        const bool stop = snapshot.action == whaledesk::wallpaper::PerformanceAction::Stop;
+        const bool pause = snapshot.action == whaledesk::wallpaper::PerformanceAction::Pause || stop;
         videoSet_.SetPaused(pause);
         independentHost_.SetPaused(pause);
 
@@ -1063,7 +1063,7 @@ private:
             AttachToDesktop();
             EnsureRuntimeActive();
         }
-        if (snapshot.action == miaodesk::wallpaper::PerformanceAction::Pause) return;
+        if (snapshot.action == whaledesk::wallpaper::PerformanceAction::Pause) return;
 
         if (IsIndependent()) {
             independentHost_.Tick(std::max(1, snapshot.targetFps));
@@ -1161,7 +1161,7 @@ private:
                 // Windows would otherwise hand focus to whatever comes next in the Z order,
                 // frequently the desktop. The library window is the only surface that opens
                 // this one (ShowAdvancedSettings, from the library nav).
-                miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
+                whaledesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
                 return 0;
             case kLibraryButtonId:
                 if (HIWORD(wParam) == BN_CLICKED) self->ShowLibrary();
@@ -1204,13 +1204,13 @@ private:
                 return 0;
             case kCloseButtonId:
                 if (HIWORD(wParam) == BN_CLICKED) {
-                    miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
+                    whaledesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
                 }
                 return 0;
             }
         }
         if (message == WM_CLOSE) {
-            miaodesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
+            whaledesk::surface_focus::HideSurface(hwnd, self->libraryWindow_.Window());
             return 0;
         }
         if (message == WM_DESTROY) {
@@ -1251,15 +1251,15 @@ private:
 
         switch (message) {
         case kShowSettings:
-            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kShowSettings，显示设置中心");
+            whaledesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kShowSettings，显示设置中心");
             ShowSettings();
             return 0;
         case kSetEnabled:
-            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
+            whaledesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kSetEnabled: " + std::wstring(wParam != 0 ? L"启用" : L"停用"));
             SetEnabled(wParam != 0);
             return 0;
         case kReloadConfig:
-            miaodesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
+            whaledesk::log::Info(L"Wallpaper", L"收到 IPC 消息 kReloadConfig，重载配置并刷新渲染");
             config_ = LoadConfig();
             config_.enabled = true;
             ApplyConfig(config_, false);
@@ -1289,8 +1289,8 @@ private:
                     EvaluateAutomationIfDue();
                     const auto snapshot = performancePolicy_.Evaluate(host_, settings_, CurrentPerformanceConfig());
                     ApplyPerformanceSnapshot(snapshot);
-                    if (snapshot.action != miaodesk::wallpaper::PerformanceAction::Pause &&
-                        snapshot.action != miaodesk::wallpaper::PerformanceAction::Stop) {
+                    if (snapshot.action != whaledesk::wallpaper::PerformanceAction::Pause &&
+                        snapshot.action != whaledesk::wallpaper::PerformanceAction::Stop) {
                         HandleMediaHealth();
                     }
                 }
@@ -1345,7 +1345,7 @@ private:
     }
 
     void HandleTopologyChanged() {
-        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
+        topology_ = whaledesk::wallpaper::QueryMonitorTopology();
         TouchAssignments();
         libraryWindow_.SetTargets(LibraryTargets());
         if (config_.enabled) {
@@ -1364,18 +1364,18 @@ private:
     bool AttachToDesktop() {
         mountOk_ = false;
         lastMountError_.clear();
-        const auto layoutMode = miaodesk::wallpaper::ParseLayoutMode(config_.layout);
+        const auto layoutMode = whaledesk::wallpaper::ParseLayoutMode(config_.layout);
         if (!host_ || !IsWindow(host_)) {
             lastMountError_ = L"Wallpaper host window 不存在";
-            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(whaledesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
-        topology_ = miaodesk::wallpaper::QueryMonitorTopology();
+        topology_ = whaledesk::wallpaper::QueryMonitorTopology();
         if (!topology_.Valid()) {
             attachedParent_ = nullptr;
             lastMountError_ = L"没有检测到有效的 Windows 显示器拓扑";
-            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(whaledesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
@@ -1385,13 +1385,13 @@ private:
         if (!shellHost_.EnsureCurrent(&shellError)) {
             attachedParent_ = nullptr;
             lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法解析 Windows 桌面层" : shellError;
-            SaveMountDiagnostics(miaodesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
+            SaveMountDiagnostics(whaledesk::wallpaper::DesktopShellMode::None, lastMountError_, &topology_, layoutMode);
             return false;
         }
 
-        const RECT desktopBounds = miaodesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
+        const RECT desktopBounds = whaledesk::wallpaper::HostDesktopBounds(topology_, layoutMode);
         const bool visible = config_.enabled && !performanceStopped_;
-        if (!shellHost_.EnsureSurface(host_, miaodesk::wallpaper::DesktopSurfaceRole::Wallpaper,
+        if (!shellHost_.EnsureSurface(host_, whaledesk::wallpaper::DesktopSurfaceRole::Wallpaper,
                                       desktopBounds, visible, &shellError)) {
             attachedParent_ = shellHost_.SurfaceParent();
             lastMountError_ = shellError.empty() ? L"DesktopShellHost 无法挂载 Wallpaper surface" : shellError;
@@ -1402,7 +1402,7 @@ private:
         attachedParent_ = shellHost_.SurfaceParent();
         if (oldParent != attachedParent_ || oldMode != shellHost_.Snapshot().mode) ResetGraphics();
 
-        const auto health = shellHost_.InspectSurface(host_, miaodesk::wallpaper::DesktopSurfaceRole::Wallpaper);
+        const auto health = shellHost_.InspectSurface(host_, whaledesk::wallpaper::DesktopSurfaceRole::Wallpaper);
         if (!health.parent || !health.childStyle || !health.layered || !health.geometry) {
             lastMountError_ = health.detail.empty() ? L"DesktopShellHost surface health 校验失败" : health.detail;
             SaveMountDiagnostics(shellHost_.Snapshot().mode, lastMountError_, &topology_, layoutMode);
@@ -1418,10 +1418,10 @@ private:
 
         mountOk_ = true;
         SaveMountDiagnostics(shellHost_.Snapshot().mode, L"", &topology_, layoutMode);
-        miaodesk::log::Info(L"Wallpaper", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(miaodesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
+        whaledesk::log::Info(L"Wallpaper", L"AttachToDesktop 成功挂载! 挂载模式=" + std::wstring(whaledesk::wallpaper::DesktopShellHost::ModeKey(shellHost_.Snapshot().mode)) +
             L", 桌面父窗口 HWND(decimal)=" + std::to_wstring(reinterpret_cast<std::uintptr_t>(attachedParent_)) +
             L", 壁纸 Host HWND(decimal)=" + std::to_wstring(reinterpret_cast<std::uintptr_t>(host_)) +
-            L"\r\n[检测到的系统显示器拓扑]\r\n" + miaodesk::wallpaper::DescribeMonitorTopology(topology_));
+            L"\r\n[检测到的系统显示器拓扑]\r\n" + whaledesk::wallpaper::DescribeMonitorTopology(topology_));
         return true;
     }
 
@@ -1434,7 +1434,7 @@ private:
         tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         tray_.uCallbackMessage = kTrayMessage;
         tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-        wcscpy_s(tray_.szTip, L"MiaoDesk Wallpaper");
+        wcscpy_s(tray_.szTip, L"WhaleDesK Wallpaper");
         trayAdded_ = Shell_NotifyIconW(NIM_ADD, &tray_) != FALSE;
     }
 
@@ -1506,7 +1506,7 @@ private:
         renderTarget_->BeginDraw();
         renderTarget_->SetTransform(D2D1::Matrix3x2F::Identity());
         renderTarget_->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f));
-        auto regions = miaodesk::wallpaper::DrawRegionsInHost(topology_, miaodesk::wallpaper::ParseLayoutMode(config_.layout));
+        auto regions = whaledesk::wallpaper::DrawRegionsInHost(topology_, whaledesk::wallpaper::ParseLayoutMode(config_.layout));
         if (regions.empty()) {
             const auto size = renderTarget_->GetSize();
             regions.push_back(RECT{0, 0, static_cast<LONG>(size.width), static_cast<LONG>(size.height)});
@@ -1522,7 +1522,7 @@ private:
             if (!config_.image.empty() && imageBitmap_) DrawImage(size);
             else if (config_.scene == L"neon") DrawNeonCity(size);
             else if (config_.scene == L"grid") DrawMysticMoon(size);
-            else DrawMiaoCloud(size);
+            else DrawWhaleCloud(size);
             renderTarget_->SetTransform(D2D1::Matrix3x2F::Identity());
             renderTarget_->PopAxisAlignedClip();
         }
@@ -1538,9 +1538,9 @@ private:
     void DrawImage(const D2D1_SIZE_F& target) {
         FillRegionBackground(target, D2D1::ColorF(0.0f, 0.0f, 0.0f));
         const auto sourceSize = imageBitmap_->GetSize();
-        const auto placement = miaodesk::wallpaper::ComputePlacement(
+        const auto placement = whaledesk::wallpaper::ComputePlacement(
             sourceSize.width, sourceSize.height, target.width, target.height,
-            miaodesk::wallpaper::ParseScaleMode(config_.scale), config_.focalX, config_.focalY);
+            whaledesk::wallpaper::ParseScaleMode(config_.scale), config_.focalX, config_.focalY);
         const D2D1_RECT_F source = D2D1::RectF(placement.source.left, placement.source.top,
                                                placement.source.right, placement.source.bottom);
         if (placement.tiled) {
@@ -1563,8 +1563,8 @@ private:
             1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &source);
     }
 
-    void DrawMiaoCloud(const D2D1_SIZE_F& size) {
-        wallpaper::scenes::PaintMiaoCloud({renderTarget_.Get(), brush_.Get(), time_}, size);
+    void DrawWhaleCloud(const D2D1_SIZE_F& size) {
+        wallpaper::scenes::PaintWhaleCloud({renderTarget_.Get(), brush_.Get(), time_}, size);
     }
 
     void DrawNeonCity(const D2D1_SIZE_F& size) {
@@ -1579,12 +1579,12 @@ private:
         StopRuntime();
         ResetRecoveryState();
         config_ = next;
-        config_.layout = miaodesk::wallpaper::LayoutModeKey(miaodesk::wallpaper::ParseLayoutMode(config_.layout));
-        config_.scale = miaodesk::wallpaper::ScaleModeKey(miaodesk::wallpaper::ParseScaleMode(config_.scale));
-        config_.focalX = miaodesk::wallpaper::ClampFocal(config_.focalX);
-        config_.focalY = miaodesk::wallpaper::ClampFocal(config_.focalY);
-        config_.fpsCap = miaodesk::wallpaper::NormalizeFpsCap(config_.fpsCap);
-        config_.throttleFps = miaodesk::wallpaper::NormalizeFpsCap(config_.throttleFps);
+        config_.layout = whaledesk::wallpaper::LayoutModeKey(whaledesk::wallpaper::ParseLayoutMode(config_.layout));
+        config_.scale = whaledesk::wallpaper::ScaleModeKey(whaledesk::wallpaper::ParseScaleMode(config_.scale));
+        config_.focalX = whaledesk::wallpaper::ClampFocal(config_.focalX);
+        config_.focalY = whaledesk::wallpaper::ClampFocal(config_.focalY);
+        config_.fpsCap = whaledesk::wallpaper::NormalizeFpsCap(config_.fpsCap);
+        config_.throttleFps = whaledesk::wallpaper::NormalizeFpsCap(config_.throttleFps);
         config_.videoVolume = std::clamp(config_.videoVolume, 0.0f, 1.0f);
         config_.videoRate = std::clamp(config_.videoRate, 0.25f, 4.0f);
         if (persist) SaveConfig(config_);
@@ -1632,7 +1632,7 @@ private:
         if (selectedFps >= 0 && selectedFps < static_cast<int>(std::size(fpsValues))) next.fpsCap = fpsValues[selectedFps];
         next.fullscreenAction = ActionFromCombo(fullscreenActionCombo_);
         next.maximizedAction = ActionFromCombo(maximizedActionCombo_);
-        next.pauseFullscreen = next.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause;
+        next.pauseFullscreen = next.fullscreenAction == whaledesk::wallpaper::PerformanceAction::Pause;
         next.videoLoop = SendMessageW(videoLoopCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         next.videoMuted = SendMessageW(videoMuteCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         if (selectedVolume >= 0 && selectedVolume < static_cast<int>(std::size(volumeValues))) next.videoVolume = volumeValues[selectedVolume];
@@ -1678,17 +1678,17 @@ private:
         else if (config_.scene == L"grid") selectedScene = 2;
         SendMessageW(sceneCombo_, CB_SETCURSEL, selectedScene, 0);
 
-        const auto layoutMode = miaodesk::wallpaper::ParseLayoutMode(config_.layout);
-        const int layoutSelected = layoutMode == miaodesk::wallpaper::LayoutMode::Clone ? 1 :
-                                   layoutMode == miaodesk::wallpaper::LayoutMode::PrimaryOnly ? 2 :
-                                   layoutMode == miaodesk::wallpaper::LayoutMode::Independent ? 3 : 0;
+        const auto layoutMode = whaledesk::wallpaper::ParseLayoutMode(config_.layout);
+        const int layoutSelected = layoutMode == whaledesk::wallpaper::LayoutMode::Clone ? 1 :
+                                   layoutMode == whaledesk::wallpaper::LayoutMode::PrimaryOnly ? 2 :
+                                   layoutMode == whaledesk::wallpaper::LayoutMode::Independent ? 3 : 0;
         if (layoutCombo_) SendMessageW(layoutCombo_, CB_SETCURSEL, layoutSelected, 0);
 
-        const auto scaleMode = miaodesk::wallpaper::ParseScaleMode(config_.scale);
-        const int scaleSelected = scaleMode == miaodesk::wallpaper::ScaleMode::Contain ? 1 :
-                                  scaleMode == miaodesk::wallpaper::ScaleMode::Stretch ? 2 :
-                                  scaleMode == miaodesk::wallpaper::ScaleMode::Center ? 3 :
-                                  scaleMode == miaodesk::wallpaper::ScaleMode::Tile ? 4 : 0;
+        const auto scaleMode = whaledesk::wallpaper::ParseScaleMode(config_.scale);
+        const int scaleSelected = scaleMode == whaledesk::wallpaper::ScaleMode::Contain ? 1 :
+                                  scaleMode == whaledesk::wallpaper::ScaleMode::Stretch ? 2 :
+                                  scaleMode == whaledesk::wallpaper::ScaleMode::Center ? 3 :
+                                  scaleMode == whaledesk::wallpaper::ScaleMode::Tile ? 4 : 0;
         if (scaleCombo_) SendMessageW(scaleCombo_, CB_SETCURSEL, scaleSelected, 0);
         if (horizontalCombo_) SendMessageW(horizontalCombo_, CB_SETCURSEL, config_.focalX < 0.25f ? 0 : config_.focalX > 0.75f ? 2 : 1, 0);
         if (verticalCombo_) SendMessageW(verticalCombo_, CB_SETCURSEL, config_.focalY < 0.25f ? 0 : config_.focalY > 0.75f ? 2 : 1, 0);
@@ -1721,25 +1721,25 @@ private:
             status = L"应用失败：" + (lastMountError_.empty() ? L"没有挂载到 Windows 桌面层" : lastMountError_);
         } else {
             std::wstring scene;
-            const auto builtins = miaodesk::wallpaper::BuiltinWallpapers();
+            const auto builtins = whaledesk::wallpaper::BuiltinWallpapers();
             if (selectedScene >= 0 && static_cast<std::size_t>(selectedScene) < builtins.size())
                 scene = builtins[static_cast<std::size_t>(selectedScene)].title;
             else
                 scene = selectedScene == 3 ? L"图片壁纸" : L"视频壁纸";
-            status = scene + L" · " + miaodesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
-                     miaodesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
-            status += L"\r\n性能：" + std::wstring(miaodesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));
+            status = scene + L" · " + whaledesk::wallpaper::LayoutModeDisplayName(layoutMode) + L" · " +
+                     whaledesk::wallpaper::ScaleModeDisplayName(scaleMode) + L" · " + std::to_wstring(topology_.monitors.size()) + L" 屏";
+            status += L"\r\n性能：" + std::wstring(whaledesk::wallpaper::PerformanceActionDisplayName(currentPerformance_.action));
             if (currentPerformance_.targetFps > 0) status += L" · " + std::to_wstring(currentPerformance_.targetFps) + L" FPS";
             if (!currentPerformance_.reason.empty()) status += L" · 原因：" + currentPerformance_.reason;
 
-            if (layoutMode == miaodesk::wallpaper::LayoutMode::Independent) {
+            if (layoutMode == whaledesk::wallpaper::LayoutMode::Independent) {
                 status += L"\r\nIndependent：" + independentHost_.DiagnosticsText();
                 const auto missing = assignments_.MissingFrom(topology_);
                 status += L" · 已保存分配 " + std::to_wstring(assignments_.Items().size()) + L" 项";
                 if (!missing.empty()) status += L" · 离线显示器 " + std::to_wstring(missing.size()) + L" 项（保留配置）";
             } else if (selectedScene == 4) {
                 status += L"\r\n" + videoSet_.DiagnosticsText();
-                if (scaleMode == miaodesk::wallpaper::ScaleMode::Tile) status += L" · 视频 Tile 当前安全降级为 Center";
+                if (scaleMode == whaledesk::wallpaper::ScaleMode::Tile) status += L" · 视频 Tile 当前安全降级为 Center";
             }
             if (!lastMediaError_.empty()) status += L"\r\n媒体诊断：" + lastMediaError_;
             if (!recoveryNote_.empty()) status += L"\r\n恢复：" + recoveryNote_;
@@ -1756,7 +1756,7 @@ private:
 
             status += L"\r\n库：" + std::to_wstring(library_.Items().size()) + L" 项";
             if (!libraryError_.empty()) status += L" · 库诊断：" + libraryError_;
-            status += L"\r\n" + miaodesk::wallpaper::DescribeMonitorTopology(topology_);
+            status += L"\r\n" + whaledesk::wallpaper::DescribeMonitorTopology(topology_);
         }
         if (status_) SetWindowTextW(status_, status.c_str());
     }
@@ -1805,18 +1805,18 @@ private:
     std::wstring automationError_;
     std::wstring lastAutomationNote_;
     Config config_;
-    miaodesk::wallpaper::MonitorTopology topology_;
-    miaodesk::wallpaper::DesktopShellHost shellHost_;
-    miaodesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
-    miaodesk::wallpaper::PerformanceSnapshot currentPerformance_;
-    miaodesk::wallpaper::PerformanceAction lastLoggedAction_{miaodesk::wallpaper::PerformanceAction::Normal};
-    miaodesk::wallpaper::WallpaperLibrary library_;
-    miaodesk::wallpaper::WallpaperLibraryWindow libraryWindow_;
-    miaodesk::wallpaper::WallpaperMonitorAssignments assignments_;
-    miaodesk::wallpaper::WallpaperAutomationStore automation_;
-    miaodesk::wallpaper::WallpaperAutomationWindow automationWindow_;
-    miaodesk::VideoWallpaperSet videoSet_;
-    miaodesk::IndependentWallpaperHost independentHost_;
+    whaledesk::wallpaper::MonitorTopology topology_;
+    whaledesk::wallpaper::DesktopShellHost shellHost_;
+    whaledesk::wallpaper::WallpaperPerformancePolicy performancePolicy_;
+    whaledesk::wallpaper::PerformanceSnapshot currentPerformance_;
+    whaledesk::wallpaper::PerformanceAction lastLoggedAction_{whaledesk::wallpaper::PerformanceAction::Normal};
+    whaledesk::wallpaper::WallpaperLibrary library_;
+    whaledesk::wallpaper::WallpaperLibraryWindow libraryWindow_;
+    whaledesk::wallpaper::WallpaperMonitorAssignments assignments_;
+    whaledesk::wallpaper::WallpaperAutomationStore automation_;
+    whaledesk::wallpaper::WallpaperAutomationWindow automationWindow_;
+    whaledesk::VideoWallpaperSet videoSet_;
+    whaledesk::IndependentWallpaperHost independentHost_;
     float time_{};
     ComPtr<ID2D1Factory> d2dFactory_;
     ComPtr<ID2D1HwndRenderTarget> renderTarget_;
@@ -1867,17 +1867,17 @@ int RunSelfTest(HINSTANCE instance) {
     DestroyWindow(test);
 
     const bool pathOk = !ConfigPath().empty();
-    const bool layoutGeometryOk = miaodesk::wallpaper::SelfTestMonitorLayoutGeometry();
-    const bool scalingGeometryOk = miaodesk::wallpaper::SelfTestScalingGeometry();
-    const bool performancePolicyOk = miaodesk::wallpaper::WallpaperPerformancePolicy::SelfTest();
-    const bool libraryOk = miaodesk::wallpaper::WallpaperLibrary::SelfTest();
-    const bool assignmentsOk = miaodesk::wallpaper::WallpaperMonitorAssignments::SelfTest();
-    const bool independentResolutionOk = miaodesk::wallpaper::SelfTestIndependentWallpaperResolution();
-    const bool automationOk = miaodesk::wallpaper::WallpaperAutomationStore::SelfTest();
-    const bool shellContractOk = miaodesk::wallpaper::DesktopShellHost::SelfTest();
-    const auto topology = miaodesk::wallpaper::QueryMonitorTopology();
+    const bool layoutGeometryOk = whaledesk::wallpaper::SelfTestMonitorLayoutGeometry();
+    const bool scalingGeometryOk = whaledesk::wallpaper::SelfTestScalingGeometry();
+    const bool performancePolicyOk = whaledesk::wallpaper::WallpaperPerformancePolicy::SelfTest();
+    const bool libraryOk = whaledesk::wallpaper::WallpaperLibrary::SelfTest();
+    const bool assignmentsOk = whaledesk::wallpaper::WallpaperMonitorAssignments::SelfTest();
+    const bool independentResolutionOk = whaledesk::wallpaper::SelfTestIndependentWallpaperResolution();
+    const bool automationOk = whaledesk::wallpaper::WallpaperAutomationStore::SelfTest();
+    const bool shellContractOk = whaledesk::wallpaper::DesktopShellHost::SelfTest();
+    const auto topology = whaledesk::wallpaper::QueryMonitorTopology();
     const bool topologyOk = topology.Valid();
-    const bool mediaFoundationOk = miaodesk::VideoWallpaperPlayer::MediaFoundationAvailable();
+    const bool mediaFoundationOk = whaledesk::VideoWallpaperPlayer::MediaFoundationAvailable();
     wic.Reset();
     d2d.Reset();
     if (SUCCEEDED(com)) CoUninitialize();
@@ -1920,13 +1920,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         // 已经有一个实例在。**别默认它收得到命令**:一个卡住的实例窗口还在,
         // FindWindowW 找得到它,PostMessageW 也"成功"—— 消息只是进了那个不再
         // 跑消息循环的队列,用户的点击就此无声消失,而我们返回 0 表示一切顺利。
-        // 裁决是纯逻辑那份(MiaoLockOwnership);这里只按它改退出码,不杀任何进程。
-        const bool healthy = miaodesk::lock_host::ExistingOwnerIsHealthy(
+        // 裁决是纯逻辑那份(WhaleLockOwnership);这里只按它改退出码,不杀任何进程。
+        const bool healthy = whaledesk::lock_host::ExistingOwnerIsHealthy(
             kMutexName,
             static_cast<std::uint64_t>(
                 std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+            whaledesk::lock_host::kDefaultOwnershipLeaseSeconds);
         // 5 = 已有实例,但它可能收不到命令(卡住或判不了)。0 = 正常转发。
         return healthy ? 0 : 5;
     }

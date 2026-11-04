@@ -1,14 +1,14 @@
-#include "miaodesk/TodayTaskContentProvider.h"
+#include "whaledesk/TodayTaskContentProvider.h"
 
-#include "miaodesk/TodayTaskStore.h"
-#include "miaodesk/TodayTaskPresentation.h"
+#include "whaledesk/TodayTaskStore.h"
+#include "whaledesk/TodayTaskPresentation.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 // 槽位数与原生卡片共用一份(kTodayTaskVisibleSlots)。这里曾经是一个局部的 4 ——
@@ -80,4 +80,4 @@ bool TodayTaskContentProvider::SelfTest() {
            marker != values.end() && std::holds_alternative<std::wstring>(marker->second);
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

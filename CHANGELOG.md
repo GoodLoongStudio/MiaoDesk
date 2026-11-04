@@ -1,6 +1,6 @@
 # Changelog
 
-MiaoDesk 所有显著变更均记录于此文件。
+WhaleDesK 所有显著变更均记录于此文件。
 
 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
@@ -50,7 +50,7 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 当成了一件事。发现卡住不需要任何决策,它只是把 `OpenMutexW` 给的那个布尔换成带理由的裁决;
 接管才需要决定要不要 `TerminateProcess` 一个还活着的进程。
 
-- **本轮做发现那一半**:`MiaoLockOwnership` 把"这把锁现在是什么状态"判成五种 ——
+- **本轮做发现那一半**:`WhaleLockOwnership` 把"这把锁现在是什么状态"判成五种 ——
   `Available` / `Running` / `Wedged`(活着但心跳过期) / `StaleRecord` / `Unusable`。
   `Wedged` 是当前结构上判不出来的那一类:`OpenMutexW` 只回答"锁在不在",不回答
   "它属于谁、那个进程还活着吗"。有了它,宿主第一次能说出
@@ -75,13 +75,13 @@ P0-08 验收原话是"无永久 Node/WebView2/Wallpaper/Harness 孤儿，**无�
 - ARM64 编译是过的 —— 失败在第 6 步 `Refresh fast runnable package`
   (`cmake --install`),第 5 步 "Configure and build ARM64" 是 success;
 - 本会话没有改过任何 install 规则(逐提交核过 `git show --stat`;`CMakeLists.txt`
-  只往 `MIAODESK_CORE_SOURCES` 加过三个 .cpp);
+  只往 `WHALEDESK_CORE_SOURCES` 加过三个 .cpp);
 - 本机能做的检查也做了:`WallpaperEngine.cpp` 是被 `WallpaperEngineProduction.cpp`
   `#include` 的,mingw 门把它当"被 include 的实现单元"跳过、**从未被独立编译检查过** ——
   单编那个 TU,0 error。
 
 **未取证(关键)**:为什么 `cmake --install` 失败。它的动作只有
-`Remove-Item C:\pkg\MiaoDesk\arm64-fast` + `cmake --install --prefix`,对
+`Remove-Item C:\pkg\WhaleDesK\arm64-fast` + `cmake --install --prefix`,对
 "上一个 run 的进程还握着那个目录"很敏感,而失败从 runner 开始复用的那一刻持续,
 是典型的文件锁抖动形状。但**这只是形状像,不是证据**:匿名身份不能 re-run(401),
 annotation 只有 sccache 统计和 exit code 1。
@@ -89,7 +89,7 @@ annotation 只有 sccache 统计和 exit code 1。
 **(后来证明上面这个"文件锁"猜测是错的 —— 已修,见本节末尾。)**
 
 **本轮已做的(只加诊断,不加重试)**:第 6 步现在会
-(1) 先列出并停掉残留的 `MiaoDesk*` 进程 —— 只移除干扰,不会修好坏掉的东西;
+(1) 先列出并停掉残留的 `WhaleDesK*` 进程 —— 只移除干扰,不会修好坏掉的东西;
 (2) install 失败时把完整输出写进 annotation。之前那里只有 sccache 统计和 exit code 1,
 根因一直看不见。
 
@@ -99,25 +99,25 @@ annotation 只有 sccache 统计和 exit code 1。
 `package-windows-x64.yml` 的 annotation 直接点名:
 
     HarnessHost.obj : error LNK2019: unresolved external symbol
-      miaodesk::lock_host::ExistingOwnerIsHealthy(...)  [MiaoDeskHarness.vcxproj]
-    MiaoDeskHarness.exe : fatal error LNK1120: 1 unresolved externals
+      whaledesk::lock_host::ExistingOwnerIsHealthy(...)  [WhaleDesKHarness.vcxproj]
+    WhaleDesKHarness.exe : fatal error LNK1120: 1 unresolved externals
 
-我把三个锁文件放进了 `MIAODESK_CORE_SOURCES`(`MiaoDeskCore`),而
-**`MiaoDeskHarness` 链的是 `MiaoDeskHarnessCore`,不是 `MiaoDeskCore`** ——
-`HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`MiaoDeskHarness.exe` 生不出来,
+我把三个锁文件放进了 `WHALEDESK_CORE_SOURCES`(`WhaleDesKCore`),而
+**`WhaleDesKHarness` 链的是 `WhaleDesKHarnessCore`,不是 `WhaleDesKCore`** ——
+`HarnessHost.cpp` 里那个调用在 harness 侧没有定义。`WhaleDesKHarness.exe` 生不出来,
 `cmake --install` 只能报 `file INSTALL cannot find`,再往上只剩
 `CMake Error at cmake_install.cmake:49 (file):`。**错误信息离根因隔了三层**,
 这就是它六次都没被看出来的原因;而我自己加的那层
 `'rror|ailed|enied|busy|not found'` 过滤器,又把前两次真正的细节行
 (`file INSTALL cannot find`)挡掉了。
 
-修法:按 CMakeLists 自己规定的解法(见 `MIAODESK_SCENE2D_SOURCES` 那段注释),
-把三个 .cpp 提成独立静态库 `MiaoDeskLockOwnership`,由两个 core 双双 PUBLIC 链上。
+修法:按 CMakeLists 自己规定的解法(见 `WHALEDESK_SCENE2D_SOURCES` 那段注释),
+把三个 .cpp 提成独立静态库 `WhaleDesKLockOwnership`,由两个 core 双双 PUBLIC 链上。
 
 **教训(已记进面板)**:mingw 语法门与 `verify-cmake-*` 只查"每个 .cpp 都被编译"与
 "目标结构自洽",**没有一个门查"这个 EXE 调用的符号在它的链接 Closure 里"** ——
-这类错误只有真链接才暴露。往 `MIAODESK_CORE_SOURCES` 加文件时,必须先确认所有
-调用方都链 `MiaoDeskCore`。
+这类错误只有真链接才暴露。往 `WHALEDESK_CORE_SOURCES` 加文件时,必须先确认所有
+调用方都链 `WhaleDesKCore`。
 
 ### 2026-10-04 · 排查记录：P0-07「库状态恢复」一处静默丢行（定位完毕，未修）
 
@@ -125,7 +125,7 @@ annotation 只有 sccache 统计和 exit code 1。
 照常返回 true;`WallpaperLibrary.h` 上没有任何"跳过几行"的出口,`WallpaperService.cpp:210`
 只问成败。同一个文件里 `InferKind` 那条路会明说"不支持的壁纸文件类型",两种口径。
 
-**已修**:`MiaoLibraryRowFilter`(纯逻辑,本机有门)出判定与那句话,`Load` 在同一个分支里
+**已修**:`WhaleLibraryRowFilter`(纯逻辑,本机有门)出判定与那句话,`Load` 在同一个分支里
 记进新增的 `SkippedRows()` / `SkippedRowCount()`,宿主第一次能说出被跳过了什么。
 **不改变**"这一行不进库"的行为 —— 那是要动 UI 的决定;先让丢失可见。
 顺带把"字段缺失"与"写了本版本不认识的词"分成两种理由(损坏 vs 版本差异),
@@ -139,7 +139,7 @@ annotation 只有 sccache 统计和 exit code 1。
 
 ### 2026-10-04 · 执行记录：P0-08 五处启动点接线，其中一处刻意不接
 
-- **先合流**:`MiaoLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。同一个
+- **先合流**:`WhaleLockOwnershipHost`(路径 / 发布 / 退休 / 判健康)。同一个
   "该不该再起一个"有五处启动点,各写一遍就会分裂。
 - **接上三处**:`main.cpp`、`HarnessHost.cpp` 的后台 Harness 所有者;
   `WallpaperEngine.cpp` —— 这一处原来在 `ERROR_ALREADY_EXISTS` 时
@@ -154,10 +154,10 @@ annotation 只有 sccache 统计和 exit code 1。
 
 ### 2026-10-04 · 执行记录：P0-08 后半句接线 —— owner 终于有身份可判
 
-裁决做完了不等于它能动:`MiaoLockOwnership` 需要"谁持有、多久没心跳",而这两件事此前
+裁决做完了不等于它能动:`WhaleLockOwnership` 需要"谁持有、多久没心跳",而这两件事此前
 **没有任何地方记录** —— 命名 mutex 不带身份。
 
-- **补上 owner 那一侧**:`MiaoLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份
+- **补上 owner 那一侧**:`WhaleLockRecord`(纯编解码,本机有门)把 PID + 心跳落成一份
   `.owner` 文本。`SingletonGuard` 只有**真的拿到锁**时写它(抢锁失败就写 = 两个 owner
   都自称持有者),析构时收掉。`LaunchHelper` 里那个
   `if (NamedMutexExists(...)) return true;` 改成先诊断,卡住时把结论留给
@@ -180,7 +180,7 @@ annotation 只有 sccache 统计和 exit code 1。
 旧 `.bin` 还在盘上,但再也没有人能算出它的路径。`L3PersistenceSelfTest` 没覆盖这条路。
 
 - **修法**:退休旧文件**之前**先把会话搬到新身份下(`MigrateSessionFromLegacyState`)。
-  判定在 `MiaoSessionMigration`(纯逻辑,本机有门):只有"服务地址与模型还是同一套"才算
+  判定在 `WhaleSessionMigration`(纯逻辑,本机有门):只有"服务地址与模型还是同一套"才算
   来源提升,那时才搬;用户真换了配置时不搬。搬完把结论写进 `LastSessionMigration()`,
   宿主能说出口。
 - **顺手把 `SessionHash` 收成一份实现**(L3Agent 转一手调纯逻辑那份):搬运要靠两边算出
@@ -247,7 +247,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 `Stop()` 都不调,只 `request_stop()`,旧 worker 句柄被直接覆盖。
 
 - **修法**:`busy_` 这个孤立 bool 换成轮次**相位**(Idle / Running / Stopping),
-  判定落在 `MiaoTurnLifecycle`。关键一条:`PhaseAfterStopRequest` **不许返回 Idle**
+  判定落在 `WhaleTurnLifecycle`。关键一条:`PhaseAfterStopRequest` **不许返回 Idle**
   —— 取消是请求,完成要等 worker 自己退出。`Busy()` 改成 `phase != Idle`。
   `AskAsync` 用 `compare_exchange_strong` 按相位裁决,且 Stopping 上的拒绝给
   "正在取消上一轮,请稍等再发"而不是"正忙" —— 用户取消后马上重试时,界面上该说的是
@@ -261,7 +261,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   一个串 —— 它拿 find() 分辨"这个 done 是一次拒绝"还是"这一轮已完成"。措辞挪进相位裁决后
   `tests/content-creator-modes.mjs` 当场红了,而它逮的是对的:前缀一改,一个**从未发送**的
   请求就会被当成"本轮生成已完成"报给用户。修法不是把字面量写回去,而是把契约钉住 ——
-  `MiaoTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,门改成从那个常量推导 marker 应有的值。
+  `WhaleTurnLifecycle.h` 新增 `kTurnRejectionPrefix`,门改成从那个常量推导 marker 应有的值。
   prefix / marker / 不 emit 三处都变异验过,全红。
 - 顺带:第一版 `JudgeTurnStart` 的 Idle 早退忘了把 `allowed` 置 true(成员默认 false),
   于是"空闲时也发不出消息" —— 12 项断言当场逮到。
@@ -271,10 +271,10 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
 ### 2026-10-04 · 执行记录：P0-08 强杀之后 Node 会活下来
 
-`TerminateProcess(MiaoDesk)` **不跑析构函数** —— 于是"父进程自己会收拾子进程"这件
+`TerminateProcess(WhaleDesK)` **不跑析构函数** —— 于是"父进程自己会收拾子进程"这件
 事在强杀路径上一条都不成立。`PiRuntime::CleanupProcess` 写得再好,也只覆盖正常退出。
 
-- **补的**：新增 `include/miaodesk/MiaoChildProcessReaper.h`,把子进程装进一个带
+- **补的**：新增 `include/whaledesk/WhaleChildProcessReaper.h`,把子进程装进一个带
   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 job —— 父进程一死(不管怎么死的),内核连坐
   杀掉 job 里的全部进程。`PiRuntime::LaunchProcess` 接上它。装不进去时行为与今天一样,
   但写进日志:看不见的收尸缺口比没有更糟。
@@ -294,7 +294,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   python 动画门(`verify-builtin-wallpaper-animation-parity.py`)已经跑了一年 —— 它写坏语法
   时,解析门照样报"全部可以解析"。同一条理由,换了个扩展名而已。已扩到 `scripts/*.py`。
 - **CI 当头一棒,是我自己的错**:收尸门第一版把仓库根**写死**成
-  `ROOT = '/Volumes/Ext/Projects/MiaoDesk'`。本机全绿,ubuntu runner 上一个站点都扫不到。
+  `ROOT = '/Volumes/Ext/Projects/WhaleDesK'`。本机全绿,ubuntu runner 上一个站点都扫不到。
   **是门自己的"零条比对不可能是通过"守卫报出来的** —— 它没有打印一句"每个站点都有收尸
   路径"就退出 0。修复提交 `9175fb0b`:ROOT 改从 `__file__` 推;守卫现在会打印它解析到的
   两个路径并直接说"那个根目录看着像某台开发机的路径,就是 ROOT 又被写死了"。
@@ -315,7 +315,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
       /provider https://别的服务/v1 某个模型
       → URL = https://别的服务/v1/...               ← 用户刚敲的主机
-      → Key = MiaoDesk/ApiProfile/<原 profile 的 id>  ← 原 profile 的 Key
+      → Key = WhaleDesK/ApiProfile/<原 profile 的 id>  ← 原 profile 的 Key
 
   **一把签给 A 服务的 Key,被发到 B 服务上去。** `/key` 更糟:它按同一个 `profileId`
   选槽,把用户敲的新 Key **覆盖回那个 profile 自己存的 Key** 上 —— 其它每个用这个
@@ -327,8 +327,8 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   `model-settings.json`,这个文件的读者 `L3Agent::LoadConfig()` **零调用方**
   (L3Agent.h 自己写着 "ReloadConfig and the normal runtime path do not consume their
   state.")。已改成如实说明权威来源。
-- **拆出 `MiaoAgentConfigAuthority.{h,cpp}`**(纯逻辑,不 import Windows 头):
-  与 `MiaoD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules` 同一模式 ——
+- **拆出 `WhaleAgentConfigAuthority.{h,cpp}`**(纯逻辑,不 import Windows 头):
+  与 `WhaleD3D11RenderPolicy`、`TodayTaskPresentation`、`WidgetIdentityRules` 同一模式 ——
   `L3Agent.cpp` 为了 `wincred.h`/`winhttp.h` 只能 Windows 上编,于是这条判定本机一行都
   跑不到。`CurrentApiUrl`/`SaveApiKey` 改成走它;槽名用 `static_assert` 两边焊死,
   因为那是 `LoadApiKey`/`SaveApiKey`/`ApiRuntimeProfile::ReadSection` 三方共用的契约。
@@ -356,7 +356,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 - **做完的**（P0-04 四条验收里覆盖两条）：
   - **位置丢失** → `NormalizeWidgetLayout` 从 `DesktopWidgetStore::Normalize` 提出来。
     那个 .cpp 为了 UTF-16 配置持久化 include 了 `windows.h`，于是这批不变量本机
-    一行都跑不到。与 `MiaoD3D11RenderPolicy`、`TodayTaskPresentation` 同一模式。
+    一行都跑不到。与 `WhaleD3D11RenderPolicy`、`TodayTaskPresentation` 同一模式。
   - **重复实例** → `NativeSingletonKey` / `SameNativeSingleton` 提到
     `WidgetIdentityRules.cpp`（纯字符串逻辑）。"同一 preset 同一显示器只允许一个实例"
     此前是 `DesktopWidgetStore.cpp` 匿名命名空间里的文件局部符号。
@@ -402,8 +402,8 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 - **自动检查**：`WidgetGeometryTest` 75 项通过（新增 7 项重载一致性/盒子变更/未声明/
   空盒子、6 项 `FormatAspect`）；4 处变异全红。mingw 交叉语法门 0 真实错误。
 - **接线可达性逐段核对（读代码，未运行）**：`assets/widgets/` 由顶层 CMakeLists 装到 exe 旁的
-  `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`MiaoWidgetContentCatalog::ResolveOneRoot`
-  对每个 `.mdwidget` 调 `MiaoContentDefinitionLoader::Load`（读 `manifest.json`），于是
+  `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`WhaleWidgetContentCatalog::ResolveOneRoot`
+  对每个 `.mdwidget` 调 `WhaleContentDefinitionLoader::Load`（读 `manifest.json`），于是
   `slot.definition.geometry.aspectRatio` 对三个官方组件有值，`SurfaceState` 那段会打印。
   **打印出来的文本本身未在 Windows 上看过** —— 这是"接线到得了真内容"与"那句话真的出现了"
   两件事，前者已证，后者没有。
@@ -416,7 +416,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
 - **资产门**：验收项"资产不重复打包"此前只能靠人眼翻 manifest。新增
   `src/tests/ShippedPackageAssets.cpp`，对全部发行包与两个示例包走
-  `MiaoAssetDatabase::Build`，逐包核三件事：每个声明的资产都有人引用、没有两份资产
+  `WhaleAssetDatabase::Build`，逐包核三件事：每个声明的资产都有人引用、没有两份资产
   内容哈希相同、合计字节数被记录。本轮基线 **16 条资产记录、2710 KB、无人引用 0 条、
   内容重复 0 处**。
 - **在这道门上踩到自己一次**：第一版把判定写在循环里，于是把"无人引用"那一行删掉之后
@@ -424,9 +424,9 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   改成抽出 `AuditPackageAssets` + 两个合成坏包的反空洞自检之后，两处变异都红了。
   **一道永远不失败的门与一道好门，在通过的那一刻长得一模一样。**
 - **版本矩阵**：CAP-03 的"旧包可加载、版本可演进；升级与降级路径明确"落成
-  `MIAO_CONTENT_PACKAGE_V1.md` 附录 A。只有一版时也写下来，理由是"将来加第 2 版时
+  `WHALE_CONTENT_PACKAGE_V1.md` 附录 A。只有一版时也写下来，理由是"将来加第 2 版时
   这里必须先改"，而不是等到第 2 版出现时才发现没人说过旧版还算不算数。
-  `schema` 与 `kSchemaVersion` 不等即失败（`MiaoContentPackage::Load`）：第 2 版出现
+  `schema` 与 `kSchemaVersion` 不等即失败（`WhaleContentPackage::Load`）：第 2 版出现
   之前写 `schema: 2` 的包加载失败，而不是被当成第 1 版的近似 —— 一个被静默当成旧版的
   新版比一个加载失败的新版难查得多。capability 名字走另一条路（目录，不由包 schema
   约束），但**不能为了让某个包通过而往目录里加名字**。
@@ -479,7 +479,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 - **性质**：这与 `asset.font`、`videoRenderer` 同类 —— 字段在、校验过、Skill 还教它有效，
   而没有任何渲染器或宿主读它。差别是这次**连校验都是虚的**：它比的是归一化比例，
   不是用户看见的像素比例。
-- **新增**：`src/desktop/widgets/MiaoWidgetGeometry.cpp`（纯算术）—— `ResolveWidgetPixelBox`
+- **新增**：`src/desktop/widgets/WhaleWidgetGeometry.cpp`（纯算术）—— `ResolveWidgetPixelBox`
   （含夹回屏内：一个越界的盒子会让 `UpdateLayeredWindow` 直接失败）、`JudgeWidgetAspect`
   （"没声明"不等于"比例不对"）、`FitAspectInside`（信箱化，**当前无调用方**；
   接进宿主需要 Windows 上看得见效果）。8 块参考屏幕含 21:9 与 32:9 —— 失真恰恰随屏幕
@@ -497,7 +497,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   `JsonStringFieldTest` 51 项全部通过；几何 10 处变异、JSON 3 处变异全红。
   `ExtractJsonDouble` 里一条"挡 NaN"的守卫跑出仍绿（`from_chars` 不接受 inf/nan，
   换成 `strtod` 才用得上），已删掉并把理由写进注释。
-- **文档改正四处**：`skills/widget-content`、`docs/MIAODESK_CONTENT_FRAMEWORK.md` 的
+- **文档改正四处**：`skills/widget-content`、`docs/WHALEDESK_CONTENT_FRAMEWORK.md` 的
   "允许 `aspectRatio = 1.0`"、TODO 第 11 节、能力台账。
 - **未取证**：本批无 Windows 侧改动。"组件的真实比例只有 1.778/3.556"是算术结论，
   "用户在桌面上看到的是什么"仍未签收。尺寸族（small/medium/large）没有定义 ——
@@ -505,7 +505,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
 ### 2026-10-03 · 执行记录：WALL-03 宿主侧时间策略与发行内容动画连续性
 
-本条记录**新增能力与回归门，并给 `Validate` 加一条拒绝规则**。`MiaoSceneRuntime` 的
+本条记录**新增能力与回归门，并给 `Validate` 加一条拒绝规则**。`WhaleSceneRuntime` 的
 求值部分本轮未发现缺陷 —— 缺的全在宿主侧，而那正是规划给 WALL-03 的验收项
 "昼夜切换、事件触发、**循环接缝**与**暂停恢复**"。
 
@@ -516,7 +516,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   `Seek` 在暂停期被忽略，否则暂停可以被绕过。
 - **平滑参数过渡此前不存在**。`SetParameter` 是瞬移的。新增 `ParameterSlew` /
   `ParameterSlewSet`：曲线与时间轴共用一份 `ApplyAnimationEasing`（原先是
-  `MiaoSceneRuntime.cpp` 里的文件局部符号，宿主调不到），过渡按场景时间推进而不是墙钟，
+  `WhaleSceneRuntime.cpp` 里的文件局部符号，宿主调不到），过渡按场景时间推进而不是墙钟，
   结束时通知宿主，之后不再占帧。
 - **循环接缝与一帧瞬移此前没有任何检查**。`ValidateAnimation` 只查关键帧时间严格递增，
   于是两种写法都能过：Loop 轨道首尾值不同（每圈整段行程在一帧内被撤回），
@@ -531,15 +531,15 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   所以它在动画开跑之前**是**可观测的（属性起始值来自参数），"起始值取参数、之后交给动画"
   是一个自洽的模型 —— 产品的序列化夹具与两处 SelfTest 正是这个形状。那一对的优先级
   （动画赢）改为报出来并写进 Skill，不禁止。
-- **一处已登记而未修复**：`animation://miao-cloud/blink-blink` 的淡入/淡出各为
+- **一处已登记而未修复**：`animation://whale-cloud/blink-blink` 的淡入/淡出各为
   1/240 秒（产品支持的最高帧率下的一帧），所以那一"淡变"渲染不出来。
   没有改它：改法是拉长淡变，那是改美术，而本机不是 Windows，拉长之后好看不好看
   给不出证据。`ShippedAnimationContinuity` 里以登记表的形式盯着这件事 ——
   多一条、少一条都会红。
-- **自动检查**：`MiaoSceneTimelinePolicyTest` 174 项、`ShippedAnimationContinuity` 48 项、
-  `MiaoSceneRuntimeTest` 33 项（新增 6 项并发写拒绝）全部通过；缓动曲线提为共用实现后
-  `MiaoSceneRuntime`、`MiaoSceneRuntimeModel`、`MiaoSceneFrameScheduler` 与
-  `MiaoSceneSerializer` 的 `SelfTest` 仍通过。共 26 处变异全部变红（含一处占位空操作，不计）。
+- **自动检查**：`WhaleSceneTimelinePolicyTest` 174 项、`ShippedAnimationContinuity` 48 项、
+  `WhaleSceneRuntimeTest` 33 项（新增 6 项并发写拒绝）全部通过；缓动曲线提为共用实现后
+  `WhaleSceneRuntime`、`WhaleSceneRuntimeModel`、`WhaleSceneFrameScheduler` 与
+  `WhaleSceneSerializer` 的 `SelfTest` 仍通过。共 26 处变异全部变红（含一处占位空操作，不计）。
 - **未取证**：真机动画采样与视觉签收一律未做（本机不是 Windows）。
   `SceneClock` 与 `ParameterSlew` 也尚未接到生产调用方 —— 接进宿主要同时决定
   暂停由谁调、参数面板失焦后怎么办，属于播放宿主那一轮。
@@ -674,16 +674,16 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
 本条记录**代码与契约变化**。"真机效果"仍全部未取证。
 
-- **能力目录**：新增 `src/content/binding/MiaoCapabilityCatalog.cpp`（68 条，52 条会执行），把
+- **能力目录**：新增 `src/content/binding/WhaleCapabilityCatalog.cpp`（68 条，52 条会执行），把
   "可声明／可执行／可预览／AI 可创作／真机已验"分开登记，并给出四类查询（Real / DeclaredOnly /
   BackendUnsupported / Unknown）。目录是唯一一份表：`creator_capabilities_get` 的自述、作者文档导出与
   `scripts/verify-capability-catalog.sh` 都读它，不再有三份手抄能力表。
-- **虚构能力被拒（D-3）**：`MiaoContentPackage` 加载器与 `ContentPackageValidator` 都对照目录检查
+- **虚构能力被拒（D-3）**：`WhaleContentPackage` 加载器与 `ContentPackageValidator` 都对照目录检查
   `capabilities[]`，目录外的名字让包加载失败并定位到 `manifest.json` / `capabilities`。此前只查字符集，
   `audio.read` 之类能通过并静默无效。
 - **事实校正**：`asset.font` 解析与序列化支持，但**没有任何渲染器读它**（`textRenderer` 用 `fontFamily`
   指定的系统字体名），目录标为仅声明。目录第一版把它标成可执行，被自身测试拒绝后改回。
-- **共用 JSON 取值器**：`ExtractJsonStringArray` 提进 `JsonStringField.h`，删除 `MiaoContentPackage.cpp`
+- **共用 JSON 取值器**：`ExtractJsonStringArray` 提进 `JsonStringField.h`，删除 `WhaleContentPackage.cpp`
   里的本地副本。共用的那份要求带引号的键（避免值恰好等于字段名时误命中）；两个调用点都因此补上引号，
   并由 `JsonStringFieldTest` 钉住"裸键取不到"与"`[]` 不等于键不在"。
 - **D-1 修复**：取证样本摘要恒为空（宿主另声明了一个从未赋值的局部 `digest`），导致
@@ -702,7 +702,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 本条记录**核对结论与登记缺陷**，不代表相关能力已完成或已修复。
 
 - **PRO-01 台账**：新增 `docs/CAPABILITY_EVIDENCE_LEDGER.md`，把"可声明 / 可运行(D2D、D3D11) / 可预览 / AI 可教学 / 真机已验"分开登记。核对基点 `d02812d6`；本机跑了 mingw 交叉语法门（0 真实错误）与 31 个纯逻辑目标（全部通过）；Windows 效果全部未取证。
-- **事实校正**：Scene 10 类组件 kind 中 7 类"声明即通过校验但零像素"；D2D 静默忽略 `postProcesses` 与模拟粒子；D3D11 只画第一个 sprite 且无文字；`MiaoAudio*` HLSL 常量无赋值方；16 段频谱算得出但从未发布。`native:today-tasks` 预设是硬编码假待办。创作者会话没有专用 systemPrompt。
+- **事实校正**：Scene 10 类组件 kind 中 7 类"声明即通过校验但零像素"；D2D 静默忽略 `postProcesses` 与模拟粒子；D3D11 只画第一个 sprite 且无文字；`WhaleAudio*` HLSL 常量无赋值方；16 段频谱算得出但从未发布。`native:today-tasks` 预设是硬编码假待办。创作者会话没有专用 systemPrompt。
 - **已登记缺陷（D-1～D-5）**：D-1 取证样本摘要恒空（宿主侧，已在本轮修复前登记）；D-2 原生待办假数据；D-3 未知 capability ID 只做字符集校验；D-4/D-5 声明与运行不一致且无门禁。关闭归属 CAP-01 / WPRO-04。
 - **状态**：PRO-01 在面板改为 🟡（自动检查完成，真机签收缺失，不得 Done）；PRO-02/03 需人工选样与实机，未启动。
 
@@ -726,7 +726,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
 
 ### RC 准备状态
 
-- 内置 MiaoCloud / NeonCity / MysticMoon 已全部以 `scene.json` 为正式运行入口，运行包不再包含 `legacy_entry` / `scene.ini`。
+- 内置 WhaleCloud / NeonCity / MysticMoon 已全部以 `scene.json` 为正式运行入口，运行包不再包含 `legacy_entry` / `scene.ini`。
 - D2D / D3D11 已共享解析粒子字段实现，并分别有像素级 / GPU readback 回归证据。
 - Wallpaper / Widget 管理页已接入 Skill 浏览器与 AI 内容创作入口；Skill 与 AI 共用 `content_skill_get` 源。
 - Windows 视觉验收采集器已覆盖截图、surface readiness、mixed-DPI / 横竖屏拓扑与 off-monitor 警告。
@@ -744,7 +744,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   来源：`feat/content-widget-settings`（25 个提交，9 个新文件）
 - **壁纸主题 Unicode / 规范化身份体系** — Content Framework 第一阶段第 10 项缺失的壁纸 dogfood。
   新增 `UnicodeProfileFile` 统一 Unicode 配置文件读写；内置主题规范 ID 与安全别名解析；
-  MiaoCloud / MysticMoon / NeonCity 三份官方壁纸的 `scene.json`；
+  WhaleCloud / MysticMoon / NeonCity 三份官方壁纸的 `scene.json`；
   5 个 canonical derived-view 校验脚本及对应 CI 门禁。
   来源：`fix/unicode-wallpaper-theme-packages`（78 个提交，21 个新文件）
 
@@ -761,7 +761,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   主模型并行评估 gpt-oss-120b 与 Qwen3.6-35B-A3B 两个候选（前者有实测吞吐，后者纸面占优但无实测），
   以 §8 验收清单定夺；按任务切换模型的模型路由设计（L1 网关分流 + L2 多 provider）。图像模型选型(商用许可是硬过滤器,主选 Z-Image-Turbo)。
 - **`image_generate` 本地化（P0-2，方案 A 已实施）** — provider 与 model 从硬编码改为环境变量
-  `MIAODESK_IMAGE_PROVIDER` / `MIAODESK_IMAGE_MODEL`，provider 取 profile 已推导的 `providerId`，
+  `WHALEDESK_IMAGE_PROVIDER` / `WHALEDESK_IMAGE_MODEL`，provider 取 profile 已推导的 `providerId`，
   不另造名称表。**未配置 provider 时明确报错，不静默回落到用户没选过的云端**；key 解析重写为
   "专用 image key 优先 → loopback 免密钥 → 复用主 key"，其中 loopback 免密钥与 profile 自身
   对 loopback 的处理一致，这是全本地跑起来的关键。`ApiRuntimeProfile` 增读 `imageModel`，
@@ -769,7 +769,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   否则改配置不会重启 Pi 会话，修复会静默失效。原"必须先确认 `getImageModel` 支持哪些 provider
   字符串"这个前置条件随之消失：provider 由用户 profile 决定，产品只透传，不维护白名单。
   验证：`tests/image-provider.mjs` 从 `.cpp` 原始字符串抽取真实逻辑（非手抄副本）跑 28 项断言，
-  覆盖 loopback 这条原先必然失效的路径。抽取器最初漏了 import，使 `currentMiaoDeskBaseUrl`
+  覆盖 loopback 这条原先必然失效的路径。抽取器最初漏了 import，使 `currentWhaleDesKBaseUrl`
   的 catch 吞掉 ReferenceError 并返回空串，表现与"未配置 profile"完全一致，已修复并注明。
 
 - **阻塞级发现：图片生成在本地模式下必然失效** — `src/ai/pi/PiNativeToolsExtension.cpp` 把
@@ -788,7 +788,7 @@ Node 进程、同一根 stdin/stdout 管子,第一轮没读完的 delta 会递�
   模式 A 云端服务商（原有行为不变），模式 B 本地 / 局域网推理（Base URL 指向用户自己的
   DGX Spark / 工作站，对话不离开用户自己的网络）。中英文双语同步修订，
   Microsoft Store 数据声明同步覆盖本地终点这一类别。
-- **确立产品愿景层** — 新增 `docs/PRODUCT_VISION.md`：MiaoDesk 是一个漂亮的智能桌面，用户感知到三个界面
+- **确立产品愿景层** — 新增 `docs/PRODUCT_VISION.md`：WhaleDesK 是一个漂亮的智能桌面，用户感知到三个界面
   （搜索框 / 动态桌面 / DeepSeek Harness 工作台），所有功能以此为设计基准。
   `docs/DOC-INDEX.md` 与 `README.md` 同步改为三层结构（愿景 → 设计基线 → 开发路线）。
 - **技术契约反偏移机制** — 修复 `src/content/`（23 个文件、9 个子域）与 `src/tests/` 未登记进
@@ -819,16 +819,16 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
   接受后静默丢弃会让作者反复问"为什么灯不亮"。**刻意不碰渲染器**;契约先落地是为了让渲染器
   有明确靶子。skill 同步禁止生成 3D 内容并要求"用户要 3D 时明说暂不支持、给 2D 替代方案,
   不得静默降级"。
-- **Scene 输入总线契约与分析内核（B-2 核心）** — 新增 `src/include/miaodesk/MiaoInputBus.h`(纯 C++,
+- **Scene 输入总线契约与分析内核（B-2 核心）** — 新增 `src/include/whaledesk/WhaleInputBus.h`(纯 C++,
   无 Windows 依赖):定义全部输入通道的 id / 类型 / 范围 / 是否要求关闭 click-through,
   形状分 `Float01` / `BoolState` / `BoolEdge` 三种(这个区分是必需的——把
   `input://audio/beat` 当电平用会让每帧都变成上升沿);`AudioSpectrumAnalyzer`
   (radix-2 FFT + Hann 窗 → 5 个命名频段 + 16 个对数频谱桶 + 总电平 + 节拍检测,
   非对称缓动、固定分配);`PointerNormalizer`(物理像素 → 所在显示器归一化 [0,1],
-  **不用屏幕坐标**,壁纸不得知道桌面布局);`src/content/input/MiaoAudioCapture.cpp`
+  **不用屏幕坐标**,壁纸不得知道桌面布局);`src/content/input/WhaleAudioCapture.cpp`
   多声道交织 PCM 下混(**取平均而非取左声道**,否则居中立体声的低音被砍半)+ 线性重采样 +
   按窗口喂给,半窗口不补零(静音会被当成真静音);
-  `MiaoInputBusPublisher.h` 只写 scene 声明过的通道,`interactive=false` 时扣留
+  `WhaleInputBusPublisher.h` 只写 scene 声明过的通道,`interactive=false` 时扣留
   按压通道而非假造 false。click-through 分层定清:指针位置 / 区域内 / 进入离开
   不抢输入、默认允许;按下 / 点击必须 opt-in。**WASAPI 采集与宿主接线未做**。
 - **绑定响应曲线(B-3 安全子集)** — 绑定原先只有线性 `*scale + offset`,这会让音频和
@@ -873,7 +873,7 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
 - **对标 Wallpaper Engine 能力基准（B-8 + 差距清单）** — 新增
   `docs/WALLPAPER_ENGINE_BENCHMARK.md`:官方三类创作类型(Scene 含 2D/3D 子类、Web、Video;
   Application 已因恶意软件风险从 Workshop 移除)逐能力对标,每项带代码证据。
-  纠正了此前"Image / Video / Web / Scene 四类"的错误分类——MiaoDesk 实际是
+  纠正了此前"Image / Video / Web / Scene 四类"的错误分类——WhaleDesK 实际是
   **载体 × 运行时**两个正交维度,静态图是 Scene 的特例而非独立类型。全仓 7 个文件表述已校正。
 - **壁纸交互规则修正（B-2 前置）** — `skills/wallpaper-content/SKILL.md` 原文写死
   "壁纸不接收鼠标输入",与对标目标"鼠标控制壁纸"直接冲突。按 Wallpaper Engine 的
@@ -888,7 +888,7 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
   逼近,已换成真正的欠阻尼单位阶跃响应;⑤`kPointerInside` 原被归为 Float01 但与发布器
   写 bool 冲突;⑥资产名净化只清 stem 不清 extension。另修正一处契约违背:为让测试链接
   `NativeTools.cpp` 而用 `target_sources` 复编会绕过 path layout 契约的正则,
-  已改为把该文件移入 `MIAODESK_CORE_SOURCES`(单一 owner)。
+  已改为把该文件移入 `WHALEDESK_CORE_SOURCES`(单一 owner)。
 - **内容创作 skill 接入产品（B-1）** — `skills/` 下有 4 份 `SKILL.md` 但 `src/` 零引用，
   创作链断在最后一环。本轮接通：新增 native tool `content_skill_get` 从 `<install>/skills/<name>/SKILL.md`
   按需读取规范（**不调用不产生 token**）；`PiRuntime` 的 systemPrompt 增加 skill 索引、无条件安全规则
@@ -903,12 +903,12 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
   同时修复两个由测试暴露的缺陷:`fs::file_size` 的 error_code 重载被传入临时对象(无法编译);
   卸载清单漏掉产品自有子树 —— `skills/` 必然残留,`Widgets/` 是同类既有漏洞,
   已补 `RMDir /r` 并把 ARM64 卸载残留检查加宽到 10 项。
-  为让 CI 测试能链接 `NativeTools.cpp`,该文件从 `MIAODESK_APP_SOURCES` 移入
-  `MIAODESK_CORE_SOURCES`,顺带修正一处契约违背(避免用 `target_sources` 复编成第二个 owner)。
+  为让 CI 测试能链接 `NativeTools.cpp`,该文件从 `WHALEDESK_APP_SOURCES` 移入
+  `WHALEDESK_CORE_SOURCES`,顺带修正一处契约违背(避免用 `target_sources` 复编成第二个 owner)。
 - **对标 Wallpaper Engine 能力基准（B-8 + 差距清单）** — 新增 `docs/WALLPAPER_ENGINE_BENCHMARK.md`：
   官方三类创作类型（Scene 含 2D/3D 子类、Web、Video；Application 已因恶意软件风险从 Workshop 移除）
   逐能力对标，每项带代码证据。纠正了此前"Image / Video / Web / Scene 四类"的错误分类 ——
-  MiaoDesk 实际是**载体 × 运行时**两个正交维度（`ContentKind` × `ContentRuntimeKind`），
+  WhaleDesK 实际是**载体 × 运行时**两个正交维度（`ContentKind` × `ContentRuntimeKind`），
   静态图是 Scene 的特例而非独立类型。全仓 7 个文件的分类表述已校正。
   给出 9 条差距（G1 音频总线 / G2 输入总线 / G3 Script 解释器 / G4 2D-3D 与灯光 / G5 Video 一类 /
   G6 Web 音频 / G7 编辑器特性 / G8 分发链 / G9 skill 接入）与 5 条明确不做项。
@@ -933,7 +933,7 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
 
 ### 新增
 
-#### MiaoDesk Content Framework — 模型与包契约
+#### WhaleDesK Content Framework — 模型与包契约
 
 - 内容框架模型落地：`ContentDefinition` / `ContentInstance` / `ParameterSchema` / `ParameterValues`
 - 包参数 schema 加载进 `ContentDefinition`
@@ -1035,7 +1035,7 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
 
 - **P0-1** 真实 Windows 多 DPI / 多显示器视觉闭环 — 未关闭，需真机验证
 - **P0-2** 停用回归门禁 — 已有 smoke（`verify-widget-visibility.ps1` 断言 Enabled 1→0→1 与壁纸停用下的组件生命周期）；仍缺"reload 不得重新拉起壁纸"的独立断言
-- **P0-3** geometry mutation 边界 — **已收紧**。Create 与 Update 双路径均经 `MiaoContentModel::ValidateInstance` 按 Definition 的 geometry policy 校验（固定尺寸 / min-max / 宽高比 / 归一化边界）；Native preset 由 `WidgetService.cpp:394-397` 直接拒绝越界尺寸
+- **P0-3** geometry mutation 边界 — **已收紧**。Create 与 Update 双路径均经 `WhaleContentModel::ValidateInstance` 按 Definition 的 geometry policy 校验（固定尺寸 / min-max / 宽高比 / 归一化边界）；Native preset 由 `WidgetService.cpp:394-397` 直接拒绝越界尺寸
 
 ### 验证
 
@@ -1051,8 +1051,8 @@ shim 存在两份(js 源真相 + cpp 逐字节副本),`scripts/verify-web-audio-
 
 ### 新增
 
-- MiaoDesk 桌面底座：Search / AI / Settings 主程序、Wallpaper 运行时、DeepSeek Harness 独立 WebView2 宿主
-- 妙喵（MiaoMiao）应用图标，x64 与 ARM64 双架构构建
+- WhaleDesK 桌面底座：Search / AI / Settings 主程序、Wallpaper 运行时、DeepSeek Harness 独立 WebView2 宿主
+- 妙喵（WhaleWhale）应用图标，x64 与 ARM64 双架构构建
 - Windows ARM64 打包流水线
 - 路径安全的构建 / 安装契约：外部短路径 staging，源码树内构建目录一律拒绝
 - Runtime V3 统一 DSH 与 Pi Agent workspace，浅层 CMake install staging

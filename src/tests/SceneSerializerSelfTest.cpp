@@ -1,4 +1,4 @@
-// Runs MiaoSceneSerializer::SelfTest(), which had no caller anywhere in the
+// Runs WhaleSceneSerializer::SelfTest(), which had no caller anywhere in the
 // repository.
 //
 // Why this is worth a file of its own: the D3D11 and D2D renderers each had the same
@@ -10,21 +10,21 @@
 // material resolution), and it is pure logic, so it runs on every machine.
 //
 // What it does not cover, so nobody has to guess: it does not touch the Windows-only
-// renderers, and `MiaoParticleSerializer::SelfTest` is a stub that returns true without
+// renderers, and `WhaleParticleSerializer::SelfTest` is a stub that returns true without
 // asserting anything — the particle *emitter validation* it sits next to is covered
 // here, not there. The stub is left alone rather than filled in, because
-// `MiaoParticleSerializer::DeserializeEmitters` only forwards to
-// `MiaoSceneRuntimeModel::Validate`, which this file already exercises.
-#include "miaodesk/MiaoSceneSerializer.h"
+// `WhaleParticleSerializer::DeserializeEmitters` only forwards to
+// `WhaleSceneRuntimeModel::Validate`, which this file already exercises.
+#include "whaledesk/WhaleSceneSerializer.h"
 
 #include <cstdio>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 
 int wmain() {
-    std::printf("\n1. MiaoSceneSerializer::SelfTest(此前无任何调用方)\n");
-    if (!MiaoSceneSerializer::SelfTest()) {
-        std::printf("  [FAIL] MiaoSceneSerializer::SelfTest 返回 false\n");
+    std::printf("\n1. WhaleSceneSerializer::SelfTest(此前无任何调用方)\n");
+    if (!WhaleSceneSerializer::SelfTest()) {
+        std::printf("  [FAIL] WhaleSceneSerializer::SelfTest 返回 false\n");
         std::printf("\nFAILED:1 项断言失败\n");
         return 1;
     }

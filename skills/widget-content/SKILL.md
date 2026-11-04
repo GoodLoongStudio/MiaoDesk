@@ -1,6 +1,6 @@
 ---
 name: widget-content
-description: 生成 MiaoDesk 小组件内容包(.mdwidget)。在 content-package-basics 之上叠加组件领域规则:widget profile、geometry policy(归一化尺寸/宽高比/是否可缩放)、桌面层级契约、按需重绘策略。生成组件或修改组件内容时使用。
+description: 生成 WhaleDesK 小组件内容包(.mdwidget)。在 content-package-basics 之上叠加组件领域规则:widget profile、geometry policy(归一化尺寸/宽高比/是否可缩放)、桌面层级契约、按需重绘策略。生成组件或修改组件内容时使用。
 ---
 
 # 小组件内容生成

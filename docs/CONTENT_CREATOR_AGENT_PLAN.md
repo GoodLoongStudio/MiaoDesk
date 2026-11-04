@@ -76,7 +76,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 | 创作控制器、作品记录、预算 | `src/desktop/control/` | DesktopControlService 与内容生命周期服务 |
 | Pi 创作启动配置与会话隔离 | `src/ai/pi/` | PiRuntime、扩展生成与 Provider 配置 |
 | 创作工具适配 | `src/ai/tools/` | NativeTools、NativeToolIsolation |
-| 包快照和候选版本 | `src/content/package/` + 宿主侧状态管理 | MiaoContentPackage、manager/catalog |
+| 包快照和候选版本 | `src/content/package/` + 宿主侧状态管理 | WhaleContentPackage、manager/catalog |
 | 预览证据采集 | `src/desktop/preview/` | D2D/D3D11 renderer、现有 preview renderer |
 | 界面适配 | `src/ui/ai/` | ContentCreatorDialog |
 | 回归与评测 | `src/tests/`、`tests/` | 当前 CMake / Node / Windows CI 入口 |
@@ -143,7 +143,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 | creator_package_read / creator_package_update | 读写当前候选的声明式文件 | 仅当前工作区内获准的包文件；大小/类型/路径限制；失败写入原子回退 |
 | creator_asset_import | 导入用户选定素材，返回托管 asset ID | 只消费用户选定资源句柄或既有受控产物；核对格式、大小和解码，不接受任意系统路径 |
 | creator_image_generate | 复用现有图片服务生成素材并纳入当前包 | 返回真正存在的托管素材；服务未配置时提供可用替代/请求素材，不伪造图片 |
-| creator_candidate_submit | 提交候选并取得结构化校验结果 | 使用 MiaoContentPackage 与宿主校验路径；返回字段/节点/文件定位和后端能力结论 |
+| creator_candidate_submit | 提交候选并取得结构化校验结果 | 使用 WhaleContentPackage 与宿主校验路径；返回字段/节点/文件定位和后端能力结论 |
 | creator_preview_evidence | 为封存候选生成真实帧与诊断 | 限定候选快照、尺寸、帧数、超时；不截取用户整个桌面 |
 
 设计要求：
@@ -232,9 +232,9 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-27）**：
 
-- 新增 `src/include/miaodesk/CreationWorkflow.h` + `src/desktop/control/CreationWorkflow.cpp`：第 4～5 节四类记录、`CreationMessage`（sessionId / epoch / turnId / operationId）、`ApplyIdempotencyKey`、预算（2 轮修复 / 3 次评审 / 6 帧 / 1280px / 8 MiB / 10 分钟墙钟）、八个创作工具的类型与会话绑定上下文。
+- 新增 `src/include/whaledesk/CreationWorkflow.h` + `src/desktop/control/CreationWorkflow.cpp`：第 4～5 节四类记录、`CreationMessage`（sessionId / epoch / turnId / operationId）、`ApplyIdempotencyKey`、预算（2 轮修复 / 3 次评审 / 6 帧 / 1280px / 8 MiB / 10 分钟墙钟）、八个创作工具的类型与会话绑定上下文。
 - 形态是 **reducer + effects**：控制器不调服务、不依赖 HWND、不 import 任何 Windows 头；宿主执行 effect 再把结果作为事件喂回来。因此全部状态转换都能在 macOS 上真实编译并运行。
-- 新增 `src/tests/CreationWorkflowStateTest.cpp`：**168 条断言，本机实跑 0 失败**，并接进 `MiaoDeskCreationWorkflowStateTest`（CMake target、链 `MiaoDeskCore`、`/W4`、`run-pure-logic-tests.sh`、Windows CI 的 build 清单与单独一步运行）。
+- 新增 `src/tests/CreationWorkflowStateTest.cpp`：**168 条断言，本机实跑 0 失败**，并接进 `WhaleDesKCreationWorkflowStateTest`（CMake target、链 `WhaleDesKCore`、`/W4`、`run-pure-logic-tests.sh`、Windows CI 的 build 清单与单独一步运行）。
 - 覆盖计划 §8「纯逻辑」一行：成功路径、校验失败与有上限自动修复、取消后 epoch 迟到回调、旧轮次回调、brief revision、幂等应用、失败保持原状态、墙钟上限、伪造 sessionId 的工具调用、按阶段区分读写工具。
 - **变异测试**：15 个已知失效注入，13 个让测试变红。剩下 2 个是**可证明冗余**的守卫——`ApplyRequested` 的空值检查与 `firstSettle` 强制 true 分别被 `ApplyPreconditionHolds` 和 `IsApplyInFlight` 提前覆盖，不影响任何可观测行为。不为它们补测试，因为那会变成「为了覆盖率假装在测某个分支」。
 - 变异过程中查出并修掉四个真缺陷：① `RecordApplyOutcome` 把「新建条目」和「给出结论」混为一谈，一次 `ApplyFailed` 因此不算结算、状态卡在 Applying；② 双击的第二次点击不在账本上，两道 BeginApply 都发得出去（幂等只保护了回调，没保护用户的手）；③ 已经在飞的结算被「阶段不是 Applying」挡掉，取消后正式 API 的真实结果会被丢掉；④ `ApplyRequested` 的阶段守卫 `break` 时不留原因，用户点了按钮却查不到为什么。
@@ -251,24 +251,24 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 **本轮补记（2026-09-28，创作 profile 第一次真的被装上）**：
 
 - 此前整条创作链在出厂构建里**一个字节都没生效**，而所有形状门都是绿的：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 定义完好、被 CMake 编译、也有人读，但 `src/` 下**没有任何调用者**。`PiRuntime::launchProfile_` 因此始终是结构体默认值，而它的 `mode` 默认是 `Chat`。
-- 三条后果都实测过：`--tools` 用聊天那份，七个 `creator_*` 名字被整体剥掉；`--extension` 落盘的是 Chat 变体，它本身不含创作工具；`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。**创作轮次里模型一条 `creator_*` 都用不了** —— 八个已实现并测过的工具不可达。这不是"两个配置之间的风险切换"，是一个只有服务端、没有客户端的功能。
+- 三条后果都实测过：`--tools` 用聊天那份，七个 `creator_*` 名字被整体剥掉；`--extension` 落盘的是 Chat 变体，它本身不含创作工具；`WHALEDESK_CREATOR_WORKSPACE` / `WHALEDESK_CREATOR_SESSION` 不导出，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。**创作轮次里模型一条 `creator_*` 都用不了** —— 八个已实现并测过的工具不可达。这不是"两个配置之间的风险切换"，是一个只有服务端、没有客户端的功能。
 - 装的位置是 `ContentCreatorDialog` 而不是 `PiRuntime`：profile 是**宿主的意图**，而"用户主动打开 AI 制作壁纸/组件"这个窗口就是那个事件。放 PiRuntime 里只能猜。
 - **卸与装一样重要**：共享 runtime 是刻意的（§4.2 上下文隔离但进程可复用），所以只装不卸会让聊天拿着创作的 allowlist 跑 —— 那正是本节整节在防的事。`WM_DESTROY` 里恢复聊天 profile，且**必须排在 `Stop()` 之后**：反过来会让一个正在跑的创作轮次在恢复中的 profile 下继续，接着要用的工具突然不在 allowlist 里，表现是"生成到一半工具开始失败"。
 - 工作区根目录按 `AppPaths` 的既有惯例落在 `<StateRoot>/CreatorWorkspaces/<kind>/<sessionId>`，**一次作品一个子目录**（`main.cpp` 的 `FilesystemCreatorWorkspace` 用 `root_.parent_path()` 放 `revisions/` 与 `candidate-ledger.state`，所以包目录在里、两份宿主持账在它旁边）。复用规则由本计划自己的验收决定：CCA-10 要求"关闭与重开恢复草稿"，所以**重开是同一个工作区** —— `<sessionId>` 记在 `<kind>/active` 里，内容就是目录名本身；`active` 不存在才分配新身份并写回。
 - **`<sessionId>` 不能用序号**（2026-09-28 改，此前这里写的是 `…/<kind>/1`）：`DeriveCreatorSessionId` 取路径的**最后一段**当会话 ID，`CreatorWorkspacePolicy::SessionMatches` 拿它和工具参数里的 `sessionId` 比，`ContentCandidateLedger` 又用 `sessionId` 拼 `candidateId`。写成 `1`/`2` 的话，同一 kind 的所有作品共用一个会话 ID —— 而归属判断正是靠这个字符串区分作品的，撞车的表现是"另一个作品的调用被接受了"。这个错误是新加的 `TestTheRealWorkspaceRootTheResolverWillExport()` 撞出来的：它把解析器会导出的那个根喂给策略，而策略对 `…/1` 无法把任何一个 `sessionId` 认成自己的。现在身份由 `NewCreatorSessionId` 生成（时间戳 + 序号 + 8 位随机尾巴），三段各防一件事，逐段由测试断言，八处已知失效注入全红。
-- `tests/pi-launch-profile-isolation.mjs` 从"只查 profile 的形状"扩展到"查装上与卸下"：四个新断言各配一个只违反它的注入，全部确认会红（去掉聊天恢复 / 去掉创作安装 / 把恢复挪到 `Stop()` 之前 / 工作区置空）。写它们时顺手修掉自己两个错：没算 `miaodesk::` 限定，以及把相对下标和绝对下标混用（那条断言会变成恒真或恒假）。
+- `tests/pi-launch-profile-isolation.mjs` 从"只查 profile 的形状"扩展到"查装上与卸下"：四个新断言各配一个只违反它的注入，全部确认会红（去掉聊天恢复 / 去掉创作安装 / 把恢复挪到 `Stop()` 之前 / 工作区置空）。写它们时顺手修掉自己两个错：没算 `whaledesk::` 限定，以及把相对下标和绝对下标混用（那条断言会变成恒真或恒假）。
 
 
 **核对结果（2026-09-27，配置层已完成，运行实例层未做）**：
 
-- 新增 `PiLaunchProfile`（`src/include/miaodesk/PiLaunchProfile.h` + `src/desktop/control/PiLaunchProfile.cpp`）：把原来写死在 `PiRuntime.cpp` 函数体里的 agent 目录、Pi session 目录、cwd、扩展路径、工具 allowlist、system prompt 提成数据。两份 profile 各一套，`MakeChatLaunchProfile` 的取值与今天逐字相同。
+- 新增 `PiLaunchProfile`（`src/include/whaledesk/PiLaunchProfile.h` + `src/desktop/control/PiLaunchProfile.cpp`）：把原来写死在 `PiRuntime.cpp` 函数体里的 agent 目录、Pi session 目录、cwd、扩展路径、工具 allowlist、system prompt 提成数据。两份 profile 各一套，`MakeChatLaunchProfile` 的取值与今天逐字相同。
 - `PiRuntime` 改为从 profile 取这些值；profile 未设置时每一项都回落到历史取值，所以普通聊天行为不变。进程 signature 里加入模式名，否则同一份 Provider 配置下两个运行时会互认对方的子进程。
 - **防掉的是一类静默污染**：`EnsurePiNativeToolsExtension` 原来写死往一个固定路径写扩展文件。两份配置共用它时，后写的那份覆盖前一份，于是**另一个模式**下一次启动的进程加载到的是这一模式的工具集 —— 表现为「聊天突然不能写文件了」，而没有任何一处代码改过聊天的 allowlist。现在按 variant 分成两个文件，目标目录也可由调用方指定。
 - 新增 `tests/pi-launch-profile-isolation.mjs`（已接进 repo-hygiene CI）：断言聊天 allowlist 一个字节没变、创作侧每一项都分开、两份 allowlist 只共享计划 §5 标为复用的 `content_skill_get`、`--tools` 与 `PI_CODING_AGENT_SESSION_DIR` 真的来自 profile、新文件进了 CMake。9 个已知失效全部让它变红。
 - 副作用与处理：allowlist 换了名字和文件，`tests/tool-friendly-name-coverage.mjs` 需要跟着读新位置。已改为同时读两份 allowlist，并把创作侧那七个尚未实现的工具登记成**显式例外**——以后往创作 allowlist 里加工具而不给中文名，那条测试会要求下一个作者当场做决定，而不是静默通过。
 **按需运行实例的调度（2026-09-28 增补）**：
 
-- 新增 `CreatorRuntimeScheduler`（`src/include/miaodesk/CreatorRuntimeScheduler.h` + `src/desktop/control/CreatorRuntimeScheduler.cpp`）：`Idle → Starting → Active → Releasing` 四个状态，加一条 FIFO 队列。它只做**决策**，不认识 `PiRuntime`、不 import 任何 Windows 头：宿主拿着 `StartProcess` / `StopProcess` 这类 effect 自己去执行，结果再作为事件喂回来。
+- 新增 `CreatorRuntimeScheduler`（`src/include/whaledesk/CreatorRuntimeScheduler.h` + `src/desktop/control/CreatorRuntimeScheduler.cpp`）：`Idle → Starting → Active → Releasing` 四个状态，加一条 FIFO 队列。它只做**决策**，不认识 `PiRuntime`、不 import 任何 Windows 头：宿主拿着 `StartProcess` / `StopProcess` 这类 effect 自己去执行，结果再作为事件喂回来。
 - 为什么不在 `PiRuntime` 里直接写：那里持有真实句柄与 `CreateProcessW`，于是「第二个创作请求进来时会发生什么」只能在 Windows 上试。而判错的代价在本机就该看得见，而不是留到用户第二次打开创作时才炸。
 - 计划原文说这一条的验收需要 Windows 真机，那指的是「进程真的没有泄漏」。而**谁在什么时候拿到名额**是纯逻辑，而且它恰好是泄漏的成因：真正让进程堆起来的是「发起了一次启动，而当时已经有一个活着」。所以这里把后者钉死，前者才有一个不会发生的理由。真机那一半仍然待验，没有在本机宣称通过。
 - 新增 `src/tests/CreatorRuntimeSchedulerTest.cpp`：**158 条断言，本机实跑 0 失败**，接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。10 个已知失效注入全红。
@@ -289,30 +289,30 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-27，策略层完成，工具本体未接）**：
 
-- 新增 `CreatorWorkspacePolicy`（`src/include/miaodesk/CreatorWorkspacePolicy.h` + `src/desktop/control/CreatorWorkspacePolicy.cpp`）：创作工具的路径与作品归属策略。它**只判定、不碰盘** —— 文件大小、是否 reparse point 这类事实由宿主喂进来,策略只回答"允不允许、为什么"。
+- 新增 `CreatorWorkspacePolicy`（`src/include/whaledesk/CreatorWorkspacePolicy.h` + `src/desktop/control/CreatorWorkspacePolicy.cpp`）：创作工具的路径与作品归属策略。它**只判定、不碰盘** —— 文件大小、是否 reparse point 这类事实由宿主喂进来,策略只回答"允不允许、为什么"。
 - 归属判断不自己查盘,是有意的:归属的事实来源是宿主自己的会话记录,而工具 worker 是另一个进程,拿到的只有 JSON 参数。工作区根由宿主从自己的状态里取出来传进来,策略按它判定 —— 于是"模型伪造 sessionId 访问另一个作品"在结构上不可能,而不是靠记得校验。
 - 覆盖验收原文的每一条,且每一条都有拒绝码:`NotRelative`(盘符/UNC/根斜杠/反斜杠形式)、`Traversal`(任何一段 `..`,包括后半段会回到工作区里的)、`ForbiddenExtension`(代码与可执行产物)、`UnknownRole`(不在 `manifest.json`/`parameters.json`/`scene/*.json`/`preview.<图片>`/`assets/<受控素材>` 这套布局内,含 `assets` 下再建子目录、尾斜杠)、`TooLarge`(按类型分别设上限)、`WrongWorkspace`(跨作品)、`ReparsePoint`、`EmptySessionId`。
 - 拒绝必须可定位:每条规则一个拒绝码 + 一句给人看的原因。第一版 `Allows()` 只返回 bool,于是"代码产物被拒"和"路径不在布局内被拒"在测试里长得一模一样 —— 实测把 `IsForbiddenExtension` 那一行短路掉,整个测试依然全绿,因为 `Classify` 仍以 `UnknownRole` 拒绝同一个路径。加了 `rejectCode` 输出之后那条改动立刻让 20 个断言变红。
 - 反向断言同样重要:`MustAllow` 覆盖合法的九种路径,**以及它们的等价写法**（`./`、`//`、`/.`、反斜杠）。同一份文件换一种写法就该归到同一个角色,否则模型换个分隔符写法就被判 UnknownRole,而它以为路径是对的。
 - `IsForbiddenExtension` 的措辞是"代码/可执行文件不在创作范围内",不是"不认识":计划 §1 明确本轮内容限定为声明式 Scene 内容与受控素材,所以这不是"暂时没实现"。
-- 新增 `src/tests/CreatorWorkspacePolicyTest.cpp`:**359 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorWorkspacePolicyTest`、`run-pure-logic-tests.sh` 和 Windows CI。
+- 新增 `src/tests/CreatorWorkspacePolicyTest.cpp`:**359 条断言,本机实跑 0 失败**,接进 `WhaleDesKCreatorWorkspacePolicyTest`、`run-pure-logic-tests.sh` 和 Windows CI。
 - 变异测试:26 个已知失效注入。其中 4 个让测试变红,剩下一批是**冗余守卫**（UNC 由根斜杠检查兜住、空工作区由第二处空值检查兜住),逐个确认过不影响可观测行为。变异过程查出两个测试自身的空洞,都在上面记了:`MustReject` 收了 `expected` 却从不用；两处断言只测了"assets"这个本身就通不过分类的路径,于是 `isDirectory` 那行短路掉测试依然全绿。
 
 **包写入事务（2026-09-27 增补）**：
 
-- 新增 `CreatorPackageTransaction`（`src/include/miaodesk/CreatorPackageTransaction.h` + `src/desktop/control/CreatorPackageTransaction.cpp`）：把 `Planned → Validated → Staged → Committed` 以及每步的失败出口显式建模成阶段机。它只判规则、不碰盘 —— 宿主按顺序执行几个动作,事务判定每一步能不能进。所以**整条失败路径能在任何机器上被执行到**,而不是只留在 Windows 上等真机。
+- 新增 `CreatorPackageTransaction`（`src/include/whaledesk/CreatorPackageTransaction.h` + `src/desktop/control/CreatorPackageTransaction.cpp`）：把 `Planned → Validated → Staged → Committed` 以及每步的失败出口显式建模成阶段机。它只判规则、不碰盘 —— 宿主按顺序执行几个动作,事务判定每一步能不能进。所以**整条失败路径能在任何机器上被执行到**,而不是只留在 Windows 上等真机。
 - 摘要从事先算好:构造时就算出 before 与 after,Commit 阶段拿真实落盘内容再算一次,两者必须逐字节相同。允许"差不多就行"的话,封存与校验都失去锚点 —— 我们以为改了 X,实际改了 Y。
 - 两处语义是这一轮改对的,都不是预想的那类问题:
   1. **提交失败不是 Rejected**。Commit 校验失败时目标文件已经被换掉了,副作用已发生,所以记成 `Unverified`。记成 Rejected(意味着"什么都没动")会让调用方以为可以若无其事地继续。`Unverified` 的下一步只能是标记候选失效。
   2. **顺序不对的调用不改阶段**。跳过暂存直接提交、跳过校验直接暂存,这些是 `Refuse` 而不是 `Reject`:阶段保持原样。用 Reject 表达后者会把一个已提交的事务改写成 Rejected,于是"它到底提交了没有"取决于最后一次调用的顺序 —— 那正是要避免的不可判定状态。
-- 新增 `src/tests/CreatorPackageTransactionTest.cpp`:**84 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorPackageTransactionTest`、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红;变异过程中查出并删掉两处**冗余守卫**(暂存处的 reparse point 复查已被 `policy_.Allows` 覆盖;`after` 摘要可用性在 `before` 不可用时必然一起失败),并补了一条原先缺失的覆盖:工作区本身不完整(只有 manifest、没有 scene)时任何写入都要被拒 —— 我的快照一直取完整的,那两道闸短路掉测试全绿。
+- 新增 `src/tests/CreatorPackageTransactionTest.cpp`:**84 条断言,本机实跑 0 失败**,接进 `WhaleDesKCreatorPackageTransactionTest`、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红;变异过程中查出并删掉两处**冗余守卫**(暂存处的 reparse point 复查已被 `policy_.Allows` 覆盖;`after` 摘要可用性在 `before` 不可用时必然一起失败),并补了一条原先缺失的覆盖:工作区本身不完整(只有 manifest、没有 scene)时任何写入都要被拒 —— 我的快照一直取完整的,那两道闸短路掉测试全绿。
 - **仍未做（属于本条剩余部分）**:
 **工具名册与两份清单一致（2026-09-27 增补）**：
 
-- 新增 `CreatorToolRegistry`（`src/include/miaodesk/CreatorToolRegistry.h` + `src/desktop/control/CreatorToolRegistry.cpp`）：八个 `creator_*` 工具的名册、mutating 分类,以及一次路由。路由只决定"这个调用能不能进、由谁执行",不碰盘。
+- 新增 `CreatorToolRegistry`（`src/include/whaledesk/CreatorToolRegistry.h` + `src/desktop/control/CreatorToolRegistry.cpp`）：八个 `creator_*` 工具的名册、mutating 分类,以及一次路由。路由只决定"这个调用能不能进、由谁执行",不碰盘。
 - 这一步直接对应验收里的"按进程/会话配置验证扩展实际拿到的工具清单"。它不是细节:Pi 侧的 `--tools` 写在 `PiLaunchProfile.cpp`,worker 的允许表写在 `src/app/main.cpp`,**两者彼此不知道对方**。而不一致的故障是单向静默的 —— Pi 给了而 worker 不认,则 worker 静默退出 26、模型反复重试、用户看到"它一直不成功";worker 认而 Pi 没给,则能力躺着没人用、没有任何东西报错。
-- 现在 `IsAllowedPiNativeTool` 改为调用 `miaodesk::creator::IsCreatorTool(...)`,名册是唯一事实来源。新增 `tests/creator-tool-surface-contract.mjs`（已接进 repo-hygiene CI）：从名册、Pi 的 allowlist 字面量、worker 的函数体三个源头读,要求两两覆盖一致,并规定两份 allowlist 除 `content_skill_get` 外不得有任何共享项。三个已知失效(把 worker 退回自己的字面量表 / 往 allowlist 加一个名册里没有的工具 / 从名册删一个工具)全部让它变红。
-- 新增 `src/tests/CreatorToolRegistryTest.cpp`:**163 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorToolRegistryTest`、`run-pure-logic-tests.sh` 与 Windows CI。覆盖名册往返、mutating 分类、跨作品(伪造 sessionId / 工作区不符 / 已取消)、未知工具、逐阶段判据、以及每个工具各自的必填参数。
+- 现在 `IsAllowedPiNativeTool` 改为调用 `whaledesk::creator::IsCreatorTool(...)`,名册是唯一事实来源。新增 `tests/creator-tool-surface-contract.mjs`（已接进 repo-hygiene CI）：从名册、Pi 的 allowlist 字面量、worker 的函数体三个源头读,要求两两覆盖一致,并规定两份 allowlist 除 `content_skill_get` 外不得有任何共享项。三个已知失效(把 worker 退回自己的字面量表 / 往 allowlist 加一个名册里没有的工具 / 从名册删一个工具)全部让它变红。
+- 新增 `src/tests/CreatorToolRegistryTest.cpp`:**163 条断言,本机实跑 0 失败**,接进 `WhaleDesKCreatorToolRegistryTest`、`run-pure-logic-tests.sh` 与 Windows CI。覆盖名册往返、mutating 分类、跨作品(伪造 sessionId / 工作区不符 / 已取消)、未知工具、逐阶段判据、以及每个工具各自的必填参数。
 - **可重试与不可重试要分开**:缺参数值得让模型重试,归属/阶段/取消不值得 —— 混为一谈的后果是模型反复重试同一个越界调用,而用户看不到任何进展。
 - 变异测试 14 个注入全红。过程中查出三处覆盖空洞:`TestRequiredArgumentsPerTool` 传的是**参齐了的**调用,于是 content / digest / source 三道闸短路掉全绿 —— 已改为每个参数单独一条"缺它就被拒 + 补回来就放行"。
 
@@ -322,15 +322,15 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - `TOOL_NAMES` 由 `CreatorToolNames()` 在 C++ 侧生成,不手写第二份。名册加一个工具而这里漏注册的故障是静默的:模型从来没见过它,没有任何东西报错。生成它,这个方向就不可能漂移;`tests/creator-extension-source.mjs` 反向断言注册体覆盖名册,把另一个方向也堵住。
 - 新增 `tests/creator-extension-source.mjs`(已接进 repo-hygiene CI):把生成的源按 `CreatorExtensionSource()` 的做法拼出来,用 Node 自己的解析器做一次真解析,再断言名册里每个名字都注册了、聊天那一套一个都没进来。8 个已知失效注入全红。
 - 这一轮在这里踩过一次,记下来是因为它比失败本身更值得记:第一版的语法检查写的是 `node --experimental-strip-types --check`,而它**对带 import 的 .ts 文件无条件返回 0** —— 用一个故意写错的文件试过才知道它什么都不查。一个永远绿的闸门比没有闸门更糟,因为它会让人觉得这里验证过了。现在改成 `import()` 后按错误种类判断,并且用"故意写坏的文件必须报 SyntaxError"当探针:抓不到就退出 2,不假装通过。
-- 会话与工作区改为宿主提供:新增 `MIAODESK_CREATOR_SESSION` / `MIAODESK_CREATOR_WORKSPACE`,**只对创作进程导出**。聊天进程拿不到,于是即使最坏情况下聊天侧加载到了创作扩展,工具调用也会因为拿不到绑定而被拒,而不是拿到一个指向桌面目录的工作区 —— 空值在这里是安全的那个方向。
+- 会话与工作区改为宿主提供:新增 `WHALEDESK_CREATOR_SESSION` / `WHALEDESK_CREATOR_WORKSPACE`,**只对创作进程导出**。聊天进程拿不到,于是即使最坏情况下聊天侧加载到了创作扩展,工具调用也会因为拿不到绑定而被拒,而不是拿到一个指向桌面目录的工作区 —— 空值在这里是安全的那个方向。
 
 **worker 侧分发（2026-09-27 增补）**：
 
-- 新增 `CreatorWorkspaceState`（`src/include/miaodesk/CreatorWorkspaceState.h` + `src/desktop/control/CreatorWorkspaceState.cpp`）：工具 worker 是**每次调用一个新进程**,手里没有任何宿主内存,所以"现在是什么阶段、取消没有、当前候选摘要是什么"必须落在工作区里 —— 宿主写、worker 读。行式 key=value,不引入 JSON 依赖;已知键重复出现即拒绝(两份矛盾的值没有该信的那一份),未知键忽略(将来加字段时旧文件仍读得出来)。
-- 新增 `CreatorToolWorker`（`src/include/miaodesk/CreatorToolWorker.h` + `src/desktop/control/CreatorToolWorker.cpp`）：把路由接到真实分发。归属判定在宿主侧再做一次交叉复核(环境变量 vs 工作区状态文件 vs 路径导出的会话),然后才允许碰盘。
+- 新增 `CreatorWorkspaceState`（`src/include/whaledesk/CreatorWorkspaceState.h` + `src/desktop/control/CreatorWorkspaceState.cpp`）：工具 worker 是**每次调用一个新进程**,手里没有任何宿主内存,所以"现在是什么阶段、取消没有、当前候选摘要是什么"必须落在工作区里 —— 宿主写、worker 读。行式 key=value,不引入 JSON 依赖;已知键重复出现即拒绝(两份矛盾的值没有该信的那一份),未知键忽略(将来加字段时旧文件仍读得出来)。
+- 新增 `CreatorToolWorker`（`src/include/whaledesk/CreatorToolWorker.h` + `src/desktop/control/CreatorToolWorker.cpp`）：把路由接到真实分发。归属判定在宿主侧再做一次交叉复核(环境变量 vs 工作区状态文件 vs 路径导出的会话),然后才允许碰盘。
 - `CreatorWorkspacePort` 是宿主对工作区的唯一入口。用抽象而不是直接传 `<filesystem>`,是为了让决策逻辑在 macOS 上真跑:一个 in-memory 实现能让"写坏一个字节之后"的每一条分支都被执行到 —— 这些恰好是最不该只留给 Windows 真机的路径。
 - **"未实现"与"被拒绝"被显式分开**。`AvailabilityOf` 逐个工具列明它现在能不能执行,`creator_image_generate` / `creator_preview_evidence` / `creator_candidate_submit` 明确标为未实现并说明缺什么。此前这三个会落进默认分支,失败长得像一次拒绝 —— 而模型下一步该做的事完全相反:被拒绝该改参数,未实现该告诉用户这一步没做好。
-- 新增 `src/tests/CreatorToolWorkerTest.cpp`:**183 条断言,本机实跑 0 失败**,接进 `MiaoDeskCreatorToolWorkerTest`、`run-pure-logic-tests.sh` 与 Windows CI。18 个已知失效注入全红。
+- 新增 `src/tests/CreatorToolWorkerTest.cpp`:**183 条断言,本机实跑 0 失败**,接进 `WhaleDesKCreatorToolWorkerTest`、`run-pure-logic-tests.sh` 与 Windows CI。18 个已知失效注入全红。
 - 变异过程查出三处我自己的实现缺陷,都不是预想的那类:
   1. **回退会把拒绝原因抹掉**。暂存内容与计划不一致之后我调了 `Rollback()`,于是 `Rejected` 被改写成 `RolledBack` —— "因为暂存内容对不上而被拒"这件事再也问不出来。已改为不回退:什么都没发生,`Rejected` 就是实话。
   2. **替换失败时的三种结局被混成一类**。现在按落盘内容分别处理:与计划一致算落地(但必须点明宿主报过错)、仍是写入前算 `ReplaceFailed`、两者都不是才算 `Unverified`。其中"报告失败但内容其实对上了"这一支原先被悄悄说成"已写入",那次失败报告会从此消失。
@@ -346,8 +346,8 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - `ContentCandidateLedger` 增加 `Serialize()` / `Parse()`。worker 每次调用都是新进程,所以"第几版、封存了哪些摘要、哪些已失效"必须能落盘再读回来 —— 否则每次调用都从第 1 版开始,而"同路径改内容生成新 revision"永远验证不了。解析失败时 `Parse` 返回 false,调用方必须当成"没有台账"而不是"空台账":后者会让这次提交被当成第 1 版,而盘上明明已经有第 3 版。
 - 封存是**工作区之外**的一份独立副本(`../revisions/<摘要前缀>.sealed`)。指向工作区的话,"封存后修改源目录不能改变待应用候选"这条名存实亡 —— 因为封存的就是源目录。同一摘要再封一次是幂等成功:否则"同一份内容再次提交返回同一版"这条就废了。
 - 封存成功后**必须**把新摘要写回工作区状态文件。不做这一步,状态里的候选摘要一直停在旧值,下一次带 `expectedDigest` 的写入会被当成"基于旧视图"而全部拒绝。
-- 新增 `ContentPackageValidator`（`src/include/miaodesk/ContentPackageValidator.h` + `src/content/package/ContentPackageValidator.cpp`）:结构校验,纯逻辑。它检查的是**封存快照的字节**,不是盘上此刻的文件 —— 否则校验通过之后源目录再被改一下,这个结论还挂在上面。
-- 校验的字段取自 `MiaoContentPackage` 的加载器要的那一套(`schema/id/name/version/kind/runtime/entry`),不是这里另定一套:校验器和加载器必须说同一种语言,否则"校验通过"到了加载那一刻还是失败,而那一次失败发生在用户眼前。`runtime: web` 显式拒绝 —— 计划 §1 明确本轮只做声明式 Scene 内容与受控素材。
+- 新增 `ContentPackageValidator`（`src/include/whaledesk/ContentPackageValidator.h` + `src/content/package/ContentPackageValidator.cpp`）:结构校验,纯逻辑。它检查的是**封存快照的字节**,不是盘上此刻的文件 —— 否则校验通过之后源目录再被改一下,这个结论还挂在上面。
+- 校验的字段取自 `WhaleContentPackage` 的加载器要的那一套(`schema/id/name/version/kind/runtime/entry`),不是这里另定一套:校验器和加载器必须说同一种语言,否则"校验通过"到了加载那一刻还是失败,而那一次失败发生在用户眼前。`runtime: web` 显式拒绝 —— 计划 §1 明确本轮只做声明式 Scene 内容与受控素材。
 - 新增 `src/tests/ContentPackageValidatorTest.cpp`:**119 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红。
 - 变异过程查出两个我自己的测试缺陷:(1) `schema` 用例多删了一个字符,把后面的 `id` 也带走了,于是它因为"缺 id"而失败 —— 测试绿了但绿得不对;(2) 把 `"1st"` 当成非法 id,而我按的是"标识符不能以数字开头"的常识,加载器的规则只要求首字符是 `isalnum`,数字满足它。校验器比加载器更严的后果是拒绝它本来能加载的包。
 - 另外修掉两个实现缺陷:`HasField` 只查键在不在,于是 `"kind":""` 被放过(空串到了加载器那里仍然失败,只不过发生在用户眼前),改为 `HasNonEmptyField`;台账解析的 revision 用 `strtoul`,对 `"abc"` 静默返回 0,而 0 在回执里的含义是"被拒绝、没有分配版本号" —— 于是一条坏行会被读成一个"被拒绝的候选"。
@@ -388,24 +388,24 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-27，只做了摘要层）**：
 
-- 新增 `ContentCandidateDigest`（`src/include/miaodesk/ContentCandidateDigest.h` + `src/content/package/ContentCandidateDigest.cpp`）：候选的内容身份。按「角色 → 包内相对路径」排序后，对 manifest / scene / 参数 / 引用素材 / 其余文件做长度前缀编码再取 SHA-256。
+- 新增 `ContentCandidateDigest`（`src/include/whaledesk/ContentCandidateDigest.h` + `src/content/package/ContentCandidateDigest.cpp`）：候选的内容身份。按「角色 → 包内相对路径」排序后，对 manifest / scene / 参数 / 引用素材 / 其余文件做长度前缀编码再取 SHA-256。
 - 计划的两条原文要求各自对应一种会真实发生的故障，都有断言对着：只 hash manifest 会让改了一层还留着旧校验结论；hash 绝对路径会让同一份内容每次重新校验都变成新候选，幂等永不命中。前者由「每个部分单独改一个字节都必须换摘要」覆盖，后者由「同一份内容两次计算得到同一个摘要」覆盖。
 - 摘要里带一个 `complete` 标志：缺 manifest / 缺 scene / 有空路径分块 / 空快照 / 同一文件列两次,摘要都标记为不可用。理由是这类残缺包仍然算得出一个看起来正常的哈希，不标记就等于给了一个合法身份。
 - SHA-256 是自带的，**先用已发表测试向量验原语再验用法**：空串、`"abc"`、56 字节、100 万个 `a`、以及 55/56/64/65 字节的填充边界。没有拿"自己实现的 hash"自我认证。
 - 编码可逆性用穷举证明：768 个"完整候选 + 两块可变分块"组合，要求摘要两两不同。它挡住的是去掉长度分隔后出现的真实碰撞 —— [Asset p="a"] + [Other q=role+path+"B"] 与 [Asset p="a"+role+path] + [Other q="B"] 裸拼接后是同一条字节流，两个不同的候选共用一个摘要,一个的校验结论就此盖在另一个头上。已用已知失效确认这条会红。
-- 新增 `src/tests/ContentCandidateDigestTest.cpp`：**69 条断言，本机实跑 0 失败**，接进 `MiaoDeskContentCandidateDigestTest`、`run-pure-logic-tests.sh` 和 Windows CI。
+- 新增 `src/tests/ContentCandidateDigestTest.cpp`：**69 条断言，本机实跑 0 失败**，接进 `WhaleDesKContentCandidateDigestTest`、`run-pure-logic-tests.sh` 和 Windows CI。
 - 变异测试：19 个已知失效注入，全部让测试变红（含 6 个 SHA-256 原语层的：旋转常量、初始向量、Sigma/sigma 位移、填充字节、尾块长度、输出字节序）。
 - **结构化 receipt 与 revision 台账（2026-09-27 增补）**：
 
-- 新增 `ContentCandidateLedger`（`src/include/miaodesk/ContentCandidateLedger.h` + `src/content/package/ContentCandidateLedger.cpp`）与结构化校验结果（`ContentValidationIssue` 带 `file` + `nodePath` + `repairable`,`ContentValidationFailure` 十二个枚举值）。
+- 新增 `ContentCandidateLedger`（`src/include/whaledesk/ContentCandidateLedger.h` + `src/content/package/ContentCandidateLedger.cpp`）与结构化校验结果（`ContentValidationIssue` 带 `file` + `nodePath` + `repairable`,`ContentValidationFailure` 十二个枚举值）。
 - **摘要只可能来自宿主封存的快照**。`claimedPath` / `claimedId` 一律按输入处理:模型报一个路径、内容却是别的,摘要照样"对得上",封存就白做了。测试用两个不同的 claimedPath 与一个假的 claimedId 交同一批 parts,断言摘要与 revision 都不变。
 - **同路径改内容 = 新 revision；换路径不改内容 = 同一版**。两条都有断言,且都带反例:换路径再交一次必须仍拿第一次封存的那份快照,否则"封存后不可变"会白说。
 - **失败不分配 revision**。给它 revision 等于说"这是某个有效候选的第 N 版",而它并没有通过校验。同一份内容第二次附带失败结论也不会把已通过的记录改成失败,反过来亦然 —— 第一次发生的结论是事实,不能被后来的调用覆盖。
 - **宿主标记失效后不能靠"再交一次同样的内容"复活**:摘要没变说明它仍指向那份已经不可信的封存。这条是变异测试查出来的 —— 第一版 `LastValid` 用 `invalidated_` 与 `accepted` 两处都判一遍,而 `Invalidate` 已经把 `accepted` 清成 false,于是短路掉 `invalidated_` 那一处测试依然全绿。同一件事查两遍没意义,已删掉重复的那处,只留 `accepted`。
-- 新增 `src/tests/ContentCandidateLedgerTest.cpp`:**57 条断言,本机实跑 0 失败**,接进 `MiaoDeskContentCandidateLedgerTest`、`run-pure-logic-tests.sh` 和 Windows CI。7 个已知失效注入全部让测试变红,其中"摘要改用模型报的路径"一条同时红 6 处。
+- 新增 `src/tests/ContentCandidateLedgerTest.cpp`:**57 条断言,本机实跑 0 失败**,接进 `WhaleDesKContentCandidateLedgerTest`、`run-pure-logic-tests.sh` 和 Windows CI。7 个已知失效注入全部让测试变红,其中"摘要改用模型报的路径"一条同时红 6 处。
 **结构化回执与回复路径猜测（2026-09-28 增补）**：
 
-- 新增 `ContentCandidateReceipt`（`src/include/miaodesk/ContentCandidateReceipt.h` + `src/content/package/ContentCandidateReceipt.cpp`）：解析并**核验**一次候选提交的结构化回执。它要替掉的正是 `ContentCreatorDialog` 里那两条猜测 —— 从模型回复正文里正则扫一个 `.mdwall` 路径、再扫一个"看起来像内容包目录"的候选。猜中的代价不是难看,是**不可判定**:用户在正文里提到任何一个路径都会被当成这次生成的产物,于是"它到底做出来了没有"取决于模型怎么说话。
+- 新增 `ContentCandidateReceipt`（`src/include/whaledesk/ContentCandidateReceipt.h` + `src/content/package/ContentCandidateReceipt.cpp`）：解析并**核验**一次候选提交的结构化回执。它要替掉的正是 `ContentCreatorDialog` 里那两条猜测 —— 从模型回复正文里正则扫一个 `.mdwall` 路径、再扫一个"看起来像内容包目录"的候选。猜中的代价不是难看,是**不可判定**:用户在正文里提到任何一个路径都会被当成这次生成的产物,于是"它到底做出来了没有"取决于模型怎么说话。
 - 所以这里做两件事,而第二件才是重点:解析回执行,再拿**宿主自己的台账**对账 —— 摘要、candidateId、revision 三项都必须在台账里且一致,会话与 epoch 也必须与宿主持有的那次创作对得上。模型在正文里写一行格式正确的 `[receipt]` 是不够的。
 - 拒绝的理由必须具体:会话不符、来自另一轮、台账里没有这个摘要、revision 不一致、candidateId 不匹配、已被标记失效,各自一个结论。一句"不可信"等于让排查从零开始。
 - 新增 `src/tests/ContentCandidateReceiptTest.cpp`:**50 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。9 个已知失效注入全红。
@@ -414,19 +414,19 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 - `CreatorToolWorker` 的提交回执现在**第一行就是结构化那一行**,人话跟在后面。宿主据此确认"有一个可用候选",不再需要从散文里猜。`CreatorToolWorkerTest` 里加了一条:把回执 payload 交给 `VerifyCandidateReceipt`,用从 port 落盘台账重建出来的台账核验,结论必须是 `Trusted` —— 这正是宿主(新的那个进程)会做的事。
 **回复凭据分级（2026-09-28 增补）**：
 
-- 新增 `CreatorReplyInterpreter`（`src/include/miaodesk/CreatorReplyInterpreter.h` + `src/desktop/control/CreatorReplyInterpreter.cpp`）：读一段工具结果,并**说清凭据是哪种**。`Receipt` 是宿主核验过的结构化回执,是唯一能让宿主不猜的那种;`ProseScan` 是正文里扫到的路径,仍然可用,但不能单独驱动"可以应用"。
+- 新增 `CreatorReplyInterpreter`（`src/include/whaledesk/CreatorReplyInterpreter.h` + `src/desktop/control/CreatorReplyInterpreter.cpp`）：读一段工具结果,并**说清凭据是哪种**。`Receipt` 是宿主核验过的结构化回执,是唯一能让宿主不猜的那种;`ProseScan` 是正文里扫到的路径,仍然可用,但不能单独驱动"可以应用"。
 - 分成两种不是洁癖:把两者混成"找到了",用户就无法知道现在看到的东西是工具交回来的,还是模型一句话里提到的 —— 而这两者的可信度差得很远。`trustworthyWithoutFurtherChecks` 就是给宿主的那句明示。
 - **回执可信时,包就是工作区本身**。创作工具写的就是它;这一刻宿主不必再从正文里扫路径 —— 扫到的任何路径都不比"宿主持有的工作区"更可信。
 - **一段存在但没通过核验的回执,必须一直带到结论里**。第一版只在"正文也没扫到东西"时才提它,于是一条被拒的回执,只要正文里恰好还提到一个路径,就消失得无影无踪 —— 而那正是最该让人知道的事:有东西被拒绝过,而现在准备采信的是一个更弱的凭据。
 - `ProsePathIsUsable` 五道判据(存在 / 是目录 / 有 manifest / 扩展名对得上 kind / 在工作区内)逐条有一个拒绝原因。少一道,"别的作品目录里的一个 .mdwall"就会被当成本次的产物。
 - 新增 `src/tests/CreatorReplyInterpreterTest.cpp`:**37 条断言,本机实跑 0 失败**,接进 CMake、`run-pure-logic-tests.sh` 与 Windows CI。7 个已知失效注入全红。
-- 顺带撞到一个**既有的命名地雷**:`ContentCreatorKind` 在 `miaodesk::creator` 里有两个定义(`ContentCreatorBridge.h` 与 `CreationWorkflow.h`),此前只是没人同时 include 两者。现在按 bridge 的那一个引用,并在注释里写清为什么 —— 这是会复发的坑。
+- 顺带撞到一个**既有的命名地雷**:`ContentCreatorKind` 在 `whaledesk::creator` 里有两个定义(`ContentCreatorBridge.h` 与 `CreationWorkflow.h`),此前只是没人同时 include 两者。现在按 bridge 的那一个引用,并在注释里写清为什么 —— 这是会复发的坑。
 - **仍未做，而根因与我先前写的不同（2026-09-28 更正）**：把 `InterpretCreatorReply` 接到 `ContentCreatorDialog`。我先前写"界面上取不到会话 ID、工作区、epoch、台账"，**这一句把因果说反了**。真正的原因是一次**从未发生的调用**：`PiLaunchProfile.h` 有 `SetLaunchProfile`，`PiLaunchProfile.cpp` 有 `MakeCreatorLaunchProfile`，两者定义完好、被 CMake 编译、也有人读 —— 但 `src/` 下**没有任何调用者**。于是 `PiRuntime::launchProfile_` 始终是结构体默认值，而它的 `mode` 默认是 `Chat`：
   · `sessionDir` 空 → `PI_CODING_AGENT_SESSION_DIR` 退回 `agentDir`，创作会话与聊天同目录；
   · `workingDirectory` 空 → 没有创作 cwd；
   · `toolAllowlist` 空 → `--tools` **根本不传**，Pi 用它自己的默认工具集，也就是 CCA-04 要拿掉的 `read/bash/edit/write/grep/find/ls` 全都在；
   · `systemPrompt` 空 → 退回聊天那一份；
-  · `mode != Creator` → `MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` **不导出**，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。
+  · `mode != Creator` → `WHALEDESK_CREATOR_WORKSPACE` / `WHALEDESK_CREATOR_SESSION` **不导出**，而 `src/app/main.cpp` 的 `RunCreatorTool` 正是从这两个环境变量取工作区与会话。
 
   所以"宿主持有会话 ID、工作区、epoch、台账"不是取不到，是**导出它们的那个调用没发生**。这不是界面缺数据，是运行时不装 profile。`tests/pi-launch-profile-isolation.mjs` 已加第 4 节盯着"必须有调用者"，它现在是**故意红着**的。
 
@@ -443,15 +443,15 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-28，"虚构能力"这一类首次有了执行点）**：
 
-- 验收第二条"运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding 伪造"此前**没有任何闸门在看**:规范(`skills/`)、契约文档(`docs/MIAO_CONTENT_PACKAGE_V1.md`)与代码是三份各自手写的文本,于是文档可以宣称一个运行时根本没有的能力,而两边都不报错。
-- 实测到的那一处:`skills/content-package-basics/SKILL.md` 把 capabilities 举例成 "clock.read / weather.read / **audio.read**",而 `MiaoContentCapabilityBroker::RequiredCapability` 只认识 `time.` / `weather.` / `tasks.` 三个前缀 —— **没有 `audio.`**。内容能拿到的音频是**输入通道** `input://audio/*`(`MiaoInputBus.h` 的闭集),它不需要也没有对应的 capability。
-- 为什么这一处特别值得修:loader 对 capabilities 只查 id 的字符集(`MiaoContentPackage.cpp:IsCapabilityId`),所以 `audio.read` **不会报错**。后果是更坏的两种:作者声明了就以为音频已授权,接着写 `audio.*` 数据绑定被 broker 拒掉,而他会以为是别的问题;或者声明了、它完全无效,而模型告诉用户"音频已启用"。**一个虚构的能力比一个缺失的能力更难发现:缺失会亮红,虚构只会静悄悄地不工作。**
+- 验收第二条"运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding 伪造"此前**没有任何闸门在看**:规范(`skills/`)、契约文档(`docs/WHALE_CONTENT_PACKAGE_V1.md`)与代码是三份各自手写的文本,于是文档可以宣称一个运行时根本没有的能力,而两边都不报错。
+- 实测到的那一处:`skills/content-package-basics/SKILL.md` 把 capabilities 举例成 "clock.read / weather.read / **audio.read**",而 `WhaleContentCapabilityBroker::RequiredCapability` 只认识 `time.` / `weather.` / `tasks.` 三个前缀 —— **没有 `audio.`**。内容能拿到的音频是**输入通道** `input://audio/*`(`WhaleInputBus.h` 的闭集),它不需要也没有对应的 capability。
+- 为什么这一处特别值得修:loader 对 capabilities 只查 id 的字符集(`WhaleContentPackage.cpp:IsCapabilityId`),所以 `audio.read` **不会报错**。后果是更坏的两种:作者声明了就以为音频已授权,接着写 `audio.*` 数据绑定被 broker 拒掉,而他会以为是别的问题;或者声明了、它完全无效,而模型告诉用户"音频已启用"。**一个虚构的能力比一个缺失的能力更难发现:缺失会亮红,虚构只会静悄悄地不工作。**
 - 新增 `scripts/verify-skill-capability-contract.sh`(已接进 `repo-hygiene.yml`)。判据从代码**读出**,不再抄一份清单 —— 抄的那份会在改名那天悄悄说相反的话(2026-09-22 `verify-skill-material-rule.sh` 吃过这个亏):
-  - 数据能力:从 `MiaoContentDataBinding.cpp` 的 `RequiredCapability` 解析 (前缀 → capability);
-  - 输入通道:从 `MiaoInputBus.h` 的常量表解析,并**反查 `ChannelShape` 是否分支到每一个** —— 加进常量表却忘了进形状表,那个通道生产者写不进、场景声明它无效,而只读常量表的门会照样绿。
-  - 检查范围是会教到作者的全部文本:四个 SKILL.md、`MIAO_CONTENT_PACKAGE_V1.md`、六个自带样例的 manifest、以及 `MiaoContentPackage.cpp` 里那个"一个合法包"的自测夹具(它是照做就行的活样本)。
-- 修掉的三处:skill 的举例改成真实闭集并说明音频/指针不走 capability 而走 `inputs[]`;`MIAO_CONTENT_PACKAGE_V1.md` 补上 capability 真表并明写"loader 不校验它是否真实存在,所以写错不会报错,只会静悄悄地不工作";自测夹具的 manifest 改回单能力并断言它就是 `clock.read`。
-- 这个门自测过四处,每处都确认它是红的:把虚构能力塞回 skill、虚构一个 `input://pointer/z`、往 `MiaoInputBus.h` 加一个 `ChannelShape` 分支不到的幽灵通道、以及零比对守卫(一处声明都没比到时 exit 2,绝不静默通过)。
+  - 数据能力:从 `WhaleContentDataBinding.cpp` 的 `RequiredCapability` 解析 (前缀 → capability);
+  - 输入通道:从 `WhaleInputBus.h` 的常量表解析,并**反查 `ChannelShape` 是否分支到每一个** —— 加进常量表却忘了进形状表,那个通道生产者写不进、场景声明它无效,而只读常量表的门会照样绿。
+  - 检查范围是会教到作者的全部文本:四个 SKILL.md、`WHALE_CONTENT_PACKAGE_V1.md`、六个自带样例的 manifest、以及 `WhaleContentPackage.cpp` 里那个"一个合法包"的自测夹具(它是照做就行的活样本)。
+- 修掉的三处:skill 的举例改成真实闭集并说明音频/指针不走 capability 而走 `inputs[]`;`WHALE_CONTENT_PACKAGE_V1.md` 补上 capability 真表并明写"loader 不校验它是否真实存在,所以写错不会报错,只会静悄悄地不工作";自测夹具的 manifest 改回单能力并断言它就是 `clock.read`。
+- 这个门自测过四处,每处都确认它是红的:把虚构能力塞回 skill、虚构一个 `input://pointer/z`、往 `WhaleInputBus.h` 加一个 `ChannelShape` 分支不到的幽灵通道、以及零比对守卫(一处声明都没比到时 exit 2,绝不静默通过)。
 - **它证不了什么(与另外两个 skill 门相同的上限)**:它只比对 id,抓不到"把真能力说错用途"或"只字不提某个真能力";同一行出现否定词(不是 / 不提供 / 别写 ……)时该行不计入 —— 这是为了不把"audio.read 不是能力"这类说明报成违规,代价是夹在否定句里的真违规也会被跳过。实测确认过这一种,要人工读。
 - **仍未做**:每个领域 3 个样例的"对应需求、参数和效果说明"、样例的真实渲染验证(需目标后端)、评测集与样例的显式分离、skill 版本/摘要记录。这些在本机给不出证据。
 
@@ -465,7 +465,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-28，调度层完成，宿主续行未接）**：
 
-- 新增 `CreationRepairPlanner`（`src/include/miaodesk/CreationRepairPlanner.h` + `src/desktop/control/CreationRepairPlanner.cpp`）：把一份校验结论变成"一次可执行的修复指令"或者"停下来并说明停在哪"。它不 import Windows 头,所以这些边界在本机就能真验。
+- 新增 `CreationRepairPlanner`（`src/include/whaledesk/CreationRepairPlanner.h` + `src/desktop/control/CreationRepairPlanner.cpp`）：把一份校验结论变成"一次可执行的修复指令"或者"停下来并说明停在哪"。它不 import Windows 头,所以这些边界在本机就能真验。
 - 计划验收的后三条各自对应一种真实失控,都各配一个只违反它的输入:
   - **取消优先于一切**。哪怕有可修的问题、预算还多、需求也在,也不启动。取消之后启动一轮修复,是在替一个已经不存在的决定花时间,而且它会把"已取消"拖回生成中 —— 用户看到的是取消没生效。
   - **墙钟优先于轮数**。轮数是经验值,墙钟是用户已经等掉的时间。墙钟为 0 表示不设限,不能把"没配上限"读成"已经超时"。
@@ -485,7 +485,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-28，判据层完成，宿主离屏采集已接）**：
 
-- 新增 `RenderEvidence`（`src/include/miaodesk/RenderEvidence.h` + `src/content/package/RenderEvidence.cpp`）：渲染证据的记录与判定。它不碰盘、不 import Windows 头,所以这些规则不需要一个 GPU 就能真验。
+- 新增 `RenderEvidence`（`src/include/whaledesk/RenderEvidence.h` + `src/content/package/RenderEvidence.cpp`）：渲染证据的记录与判定。它不碰盘、不 import Windows 头,所以这些规则不需要一个 GPU 就能真验。
 - **四条验收里最容易被绕过去的是"缺素材或渲染失败不会用封面图替代成功"**,所以它在这里是一个**独立的状态**而不是一个布尔。把失败帧退回一张内置封面图是最省事的"让用户看到点什么"的做法,而它的后果是一个坏包看起来渲染得很好。`PlaceholderSubstituted` 与 `Rendered` 分开,且前者永远不计入可用帧。
 - 占位还**优先于"帧数够了"被报出来**:几帧真的、几帧是占位时,悄悄只报成功的那几帧,等于替候选挑了一份好看的成绩单。
 - 另外三条各自对应一种会真实发生的错:
@@ -509,7 +509,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 **核对结果（2026-09-28，判定层完成，图像链路未接）**：
 
-- 新增 `VisualReviewGate`(`src/include/miaodesk/VisualReviewGate.h` + `src/content/package/VisualReviewGate.cpp`)。它收的**全部是宿主持有的事实** —— 图像链路到底通没通、送出去的那一帧绑在哪个候选上、同一份候选的硬校验过没过 —— 模型给的分数与问题清单只是输入,推不倒这三件。
+- 新增 `VisualReviewGate`(`src/include/whaledesk/VisualReviewGate.h` + `src/content/package/VisualReviewGate.cpp`)。它收的**全部是宿主持有的事实** —— 图像链路到底通没通、送出去的那一帧绑在哪个候选上、同一份候选的硬校验过没过 —— 模型给的分数与问题清单只是输入,推不倒这三件。
 - **验收第三条"同包硬校验失败不能被高视觉分覆盖"从此有了执行点**。此前宿主机把模型一段评审原样当成 `ReviewCompleted` 喂进状态机,于是"包没装上"和"包不好看"是同一笔账:视觉分一高,一份 manifest 都不合格的候选也能走到 Ready。现在硬校验没过时结论是 `RefusedHardFailure`,**视觉分一分都不顶用**,并且它不算"看过图" —— 它是被硬校验挡下的,和视觉无关。
 - 硬校验没过与链路没通**同时**发生时,两件都要在 note 里说清。第一版按"先报更根本的那一关"把"没看图"咽了回去,而排障时最需要的恰恰是两件事同时摆在眼前:一条只会让人先去看 manifest,看完还是不知道为什么没有图。
 - 验收第二条"图像传输失败不能记为'已看图'":`imageDelivered == false` 时结论只能是 `NotReviewed`,`sawTheImage = false`,即使模型那段评审读起来完全正常、即使它还报了几个问题。**那几条问题也不会交给修复轮** —— 它们来自一张没到过模型眼前的图,照它们去改等于让用户为一次没发生的评审付费。
@@ -531,7 +531,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 - 画面上 `CreationWorkflow` 有两个钩子:`SetDraftPersistHook` 与 `CreatorWorkspaceState`。**前者全仓库只有测试在调**;后者只存 sessionId / turnId / epoch / cancelRequested / candidateDigest —— 没有需求正文。于是"关闭与重开"要么什么都不恢复(用户重新输入一遍,正好违反"需求足够时不再强制重复提问"),要么恢复一个不完整的草稿:窗口打开着、看起来有内容,而里面那句话不是用户说过的。用户会以为是自己记错了,然后照着错的做下去。
 - 这就是为什么"恢复一半"是这一轮的重点,而不是"能不能序列化":序列化本身不解决问题,恢复一半才致命。
-- 新增 `CreationDraftStore`(`src/include/miaodesk/CreationDraftStore.h` + `src/desktop/control/CreationDraftStore.cpp`):定义重开真正需要的字段(需求正文每一项 + 上一有效候选的摘要/摘要说明/版本号 + 取消标记 + epoch/turnId),以及**五种互不相同**的恢复结论:
+- 新增 `CreationDraftStore`(`src/include/whaledesk/CreationDraftStore.h` + `src/desktop/control/CreationDraftStore.cpp`):定义重开真正需要的字段(需求正文每一项 + 上一有效候选的摘要/摘要说明/版本号 + 取消标记 + epoch/turnId),以及**五种互不相同**的恢复结论:
   - `RestoreAndResume` —— 草稿完整、没取消,可以接上继续,不必再问用户;
   - `RestoreAsDraft` —— 草稿在但用户取消过,**只显示,不自动继续**。取消之后自己动起来,是他取消没生效;
   - `AskUserAgain` —— 需求不足必须再问,而且**必须说清缺哪一项**。"需求不足"四个字等于让用户猜自己上次漏了什么;
@@ -554,7 +554,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 **核对结果（2026-09-28，幂等账本早已在 CCA-02 落地，本轮补"一次恢复"的判定）**：
 
 - 先把已经做到的部分写清楚,免得它们被这轮的进展盖住:`ApplyIdempotencyKey = 候选摘要 + 目标 + operationId`,`RecordApplyOutcome` 只让**第一次给出结论**(`resolved` 从 false 翻 true,成败都算),`ApplyPreconditionHolds` 在进入正式 API 前再验候选与目标,`beforeState` 记的是**精确前态**。这四条已有 `CreationWorkflowStateTest` 覆盖(双击只发一次 `BeginApply`、结算后重复回调被重复确认挡住、新的 operationId 允许再次执行、摘要变化必须重走、应用失败回 Ready 而不是 Applied)。
-- 新增 `ContentApplyRecovery`(`src/include/miaodesk/ContentApplyRecovery.h` + `src/desktop/control/ContentApplyRecovery.cpp`):把一笔"已发出、没有结论"的在途应用变成一个可执行的恢复动作。它不 import Windows 头、不碰盘,只比较账本与宿主持有的那一句现状。
+- 新增 `ContentApplyRecovery`(`src/include/whaledesk/ContentApplyRecovery.h` + `src/desktop/control/ContentApplyRecovery.cpp`):把一笔"已发出、没有结论"的在途应用变成一个可执行的恢复动作。它不 import Windows 头、不碰盘,只比较账本与宿主持有的那一句现状。
 - **"恢复不会覆盖用户后来的无关改动"是最容易做反的一条**,因为在四种真相里,**撤销看起来总是最稳妥的那一个**:一笔没结论的应用摆在面前,当作没落地、写回前态,读起来很谨慎;可一旦用户后来又应用了另一份,写回前态就把人家后来那份抹掉了 —— 而用户看到的是自己的设置莫名倒退,他不知道为什么。所以四种真相是四个**不同的结果**,不是一个布尔:
   - `FinishApply` —— 目标上挂的就是这一笔的候选。此时**撤销才是错的**:它把一个已经生效的东西退回旧值。而补结算之前必须先重验候选(崩溃这段时间里它可能已被宿主标记失效),所以 `revalidateCandidateFirst = true`。
   - `RollBack` —— 目标上还是账本记下的前态。写回那一份**精确前态原文**;`beforeState` 为空时**不**撤销(取"最近用过的一项"会把用户一个无关的设置写回去),改成 `GiveUpUnrecognized`。
@@ -585,7 +585,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 **核对结果（2026-09-28，判定层完成，评测本身未跑）**：
 
 - §9 写了几条"不许",它们共同的特点是**要靠执行者自己约束自己**:相同预算比架构、更高质量预算看上限不能混一组;不能把更多的调用预算带来的提升归因于架构;不把评测示例直接加入 Skill 后在原样本上自证;不得用删除要求提高成功率;关键可靠性失败为 0;20 题的小样本只支持本样本结论;配置字段全部记录。
-- 一次自己给自己的评测天然有动机松一点 —— 多给新流程一点预算、把评测样例顺手加进 skill、把需求表里的两行删掉再统计。**每一种都让数字变好,每一种都看不出来**。所以这里把"不许"变成可判定的:新增 `ContentReleaseGate`(`src/include/miaodesk/ContentReleaseGate.h` + `src/content/package/ContentReleaseGate.cpp`),读入两臂的配置与逐样本指标,给一个"能不能对外说"的结论以及为什么不能。它不产生数字、不访问任何服务 —— 数字是评测跑出来的,而"这组数字能不能支撑那句话"必须能判。
+- 一次自己给自己的评测天然有动机松一点 —— 多给新流程一点预算、把评测样例顺手加进 skill、把需求表里的两行删掉再统计。**每一种都让数字变好,每一种都看不出来**。所以这里把"不许"变成可判定的:新增 `ContentReleaseGate`(`src/include/whaledesk/ContentReleaseGate.h` + `src/content/package/ContentReleaseGate.cpp`),读入两臂的配置与逐样本指标,给一个"能不能对外说"的结论以及为什么不能。它不产生数字、不访问任何服务 —— 数字是评测跑出来的,而"这组数字能不能支撑那句话"必须能判。
 - 八个拒绝各对应一条:配置没记全(少一项,差异就归不到任何原因上,而报告里会写成"新架构更好");两种预算口径混成一组;靠多花调用拿到的更好;关键可靠性失败非 0;必需项分母被改动;评测样本与 skill 示例重叠;样本不够;结论比样本大。
 - 其中两处值得单说:
   - **必需项两头都要堵**。分母变小是删用户要求,分母变大是给对手加码。第一版把"候选方分母更严"那条解释写成了"会让本来更好的基线看起来更差" —— 那正好说反了:更严的分母让**候选方**看起来更差。**一条解释错了的拒绝比没有拒绝更容易让人改错地方**,所以它现在按方向分开写。
@@ -692,7 +692,7 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 
 ## 11. 可直接发给执行 AI 的任务说明
 
-> 在 MiaoDesk 仓库实施 `docs/CONTENT_CREATOR_AGENT_PLAN.md` 的方案 2：复用现有 Pi 实现，建立专用内容创作会话与有界工作流，结合已有 Skills、真实包校验、渲染反馈、自动修复和用户显式应用。
+> 在 WhaleDesK 仓库实施 `docs/CONTENT_CREATOR_AGENT_PLAN.md` 的方案 2：复用现有 Pi 实现，建立专用内容创作会话与有界工作流，结合已有 Skills、真实包校验、渲染反馈、自动修复和用户显式应用。
 >
 > 先读项目指导、产品/设计/开发基线、当前 TODO 和本计划，检查 HEAD 与工作区。仓库仍在持续开发；不要覆盖其他改动，不要重复实现已有候选保留、错误回传、自动入库、预览或按钮修复。优先完成 CCA-00，再按依赖推进。
 >
@@ -728,8 +728,8 @@ Pi 继续负责单轮工具循环；控制器只负责作品生命周期和阶�
 ### 做不了，而且不是没排上
 
 1. **CCA-04 / CCA-08 / CCA-10 / CCA-12 的真机验收**：需要一台 Windows 机器跑真 D2D/D3D11 后端、真 Pi 进程与真实画面。本机只有 `verify-windows-syntax.sh`（mingw `-fsyntax-only`，0 处真实错误）与 `run-pure-logic-tests.sh`（真编译真跑）。**这两个都不是真机通过**，别把它们写成真机通过。
-2. ~~**创作 profile 从未被装上（CCA-03）**~~ **已修（2026-09-28）**：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 此前都无调用者，于是创作跑在**聊天的 profile** 上 —— `--tools` 用聊天那份（七个 `creator_*` 名字被整体剥掉）、`--extension` 落盘的是 Chat 变体（它本身不含创作工具）、`MIAODESK_CREATOR_WORKSPACE` / `MIAODESK_CREATOR_SESSION` 不导出（而 `main.cpp` 的 `RunCreatorTool` 正是从这两个变量取工作区与会话）。**八个 `creator_*` 工具此前不可达。** 现在 `ContentCreatorDialog` 打开时装上创作 profile、`WM_DESTROY` 时恢复聊天 profile，工作区落在 `<StateRoot>/CreatorWorkspaces/<kind>/<sessionId>`（`<sessionId>` 记在 `<kind>/active` 里；2026-09-28 把它从 `…/<kind>/1` 改了过来，理由见上面 CCA-04 那一节）。
-   **仍未验**：本机只验到"文件形状对"。它真的让创作轮次拿到受约束工具与工作区，要在 Windows 上开一次 AI 制作壁纸，确认 `creator_package_update` 不被 `--tools` 剥掉、`MIAODESK_CREATOR_WORKSPACE` 真的导出了、以及关窗之后聊天仍能写文件。
+2. ~~**创作 profile 从未被装上（CCA-03）**~~ **已修（2026-09-28）**：`SetLaunchProfile` 与 `MakeCreatorLaunchProfile` 此前都无调用者，于是创作跑在**聊天的 profile** 上 —— `--tools` 用聊天那份（七个 `creator_*` 名字被整体剥掉）、`--extension` 落盘的是 Chat 变体（它本身不含创作工具）、`WHALEDESK_CREATOR_WORKSPACE` / `WHALEDESK_CREATOR_SESSION` 不导出（而 `main.cpp` 的 `RunCreatorTool` 正是从这两个变量取工作区与会话）。**八个 `creator_*` 工具此前不可达。** 现在 `ContentCreatorDialog` 打开时装上创作 profile、`WM_DESTROY` 时恢复聊天 profile，工作区落在 `<StateRoot>/CreatorWorkspaces/<kind>/<sessionId>`（`<sessionId>` 记在 `<kind>/active` 里；2026-09-28 把它从 `…/<kind>/1` 改了过来，理由见上面 CCA-04 那一节）。
+   **仍未验**：本机只验到"文件形状对"。它真的让创作轮次拿到受约束工具与工作区，要在 Windows 上开一次 AI 制作壁纸，确认 `creator_package_update` 不被 `--tools` 剥掉、`WHALEDESK_CREATOR_WORKSPACE` 真的导出了、以及关窗之后聊天仍能写文件。
 3. **`creator_image_generate`**：需要一个图片 Provider，而"本地 AI、DGX、模型路由与推理服务部署"被本计划明确排除。它现在**按不可用上报**（`NotImplemented` + 一句能给人看的原因），并且系统提示词已改成不承诺画图。不要把它标成"已实现"。
 4. **CCA-13 的实测**：要授权与预算（§9 自己写了"未经预算允许不要自行发起大规模在线评测"）。判定层已完成，测量层一行没跑 —— 也不要假装跑过。
 

@@ -5,7 +5,7 @@
 # 测试同样以非零退出,但那时它证明的是"编译器在工作",不是"契约门在工作"。
 # 上一版就是这么跑的,三条里两条显示"报了别的错",等于没有证据。
 set -u
-H=src/include/miaodesk/WallpaperWebAudioEnvelope.h
+H=src/include/whaledesk/WallpaperWebAudioEnvelope.h
 cp "$H" /tmp/env.h.bak
 restore() { cp /tmp/env.h.bak "$H"; }
 trap restore EXIT
@@ -33,7 +33,7 @@ run() {  # label, expect-substring, mutation-file
 }
 
 cat > /tmp/m1.py <<'PY'
-p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+p = 'src/include/whaledesk/WallpaperWebAudioEnvelope.h'
 s = open(p, encoding='utf-8').read()
 old = '<< (frame.beat ? "true" : "false") << "}}";'
 new = '<< (frame.beat ? 1 : 0) << "}}";'
@@ -42,7 +42,7 @@ open(p, 'w', encoding='utf-8').write(s.replace(old, new))
 PY
 
 cat > /tmp/m2.py <<'PY'
-p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+p = 'src/include/whaledesk/WallpaperWebAudioEnvelope.h'
 s = open(p, encoding='utf-8').read()
 old = '",\\"bands\\":['
 new = '",\\"band\\":['
@@ -51,7 +51,7 @@ open(p, 'w', encoding='utf-8').write(s.replace(old, new))
 PY
 
 cat > /tmp/m3.py <<'PY'
-p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+p = 'src/include/whaledesk/WallpaperWebAudioEnvelope.h'
 s = open(p, encoding='utf-8').read()
 old = 'for (std::size_t i = 0; i < frame.spectrum.size(); ++i) {'
 new = 'for (std::size_t i = 0; i + 1 < frame.spectrum.size(); ++i) {'
@@ -60,7 +60,7 @@ open(p, 'w', encoding='utf-8').write(s.replace(old, new))
 PY
 
 cat > /tmp/m4.py <<'PY'
-p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+p = 'src/include/whaledesk/WallpaperWebAudioEnvelope.h'
 s = open(p, encoding='utf-8').read()
 old = 'text << std::fixed << std::setprecision(4) << unit(value);'
 new = 'text << std::fixed << std::setprecision(1) << unit(value);'
@@ -69,7 +69,7 @@ open(p, 'w', encoding='utf-8').write(s.replace(old, new))
 PY
 
 cat > /tmp/m5.py <<'PY5'
-p = 'src/include/miaodesk/WallpaperWebAudioEnvelope.h'
+p = 'src/include/whaledesk/WallpaperWebAudioEnvelope.h'
 s = open(p, encoding='utf-8').read()
 old = '        if (!(value > 0.0)) return 0.0;'
 new = '        if (value < 0.0) return 0.0;'

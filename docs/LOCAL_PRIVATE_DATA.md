@@ -1,6 +1,6 @@
 # Local private data policy
 
-MiaoDesk treats privacy-sensitive developer data as **local-only**. The Git repository contains source code, public build configuration, sanitized examples and reproducible third-party/runtime inputs; it must not contain real credentials, signing material, personal test data or machine-specific private configuration.
+WhaleDesK treats privacy-sensitive developer data as **local-only**. The Git repository contains source code, public build configuration, sanitized examples and reproducible third-party/runtime inputs; it must not contain real credentials, signing material, personal test data or machine-specific private configuration.
 
 ## Where private data belongs
 
@@ -17,7 +17,7 @@ user-data/       local personal/test user data
 
 All of these paths are ignored by Git.
 
-For API keys used by the MiaoDesk product itself, continue using **Windows Credential Manager**. Do not copy API keys into `.env`, INI/JSON/YAML files, prompts, logs, test fixtures, GitHub Actions workflow files, issues or documentation.
+For API keys used by the WhaleDesK product itself, continue using **Windows Credential Manager**. Do not copy API keys into `.env`, INI/JSON/YAML files, prompts, logs, test fixtures, GitHub Actions workflow files, issues or documentation.
 
 ## Local configuration files
 

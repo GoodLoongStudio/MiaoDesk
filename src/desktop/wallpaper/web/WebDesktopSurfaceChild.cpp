@@ -1,7 +1,7 @@
-#include "miaodesk/WebDesktopSurfaceChild.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/MiaoWallpaperAudioTap.h"
-#include "miaodesk/WallpaperWebAudioEnvelope.h"
+#include "whaledesk/WebDesktopSurfaceChild.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WhaleWallpaperAudioTap.h"
+#include "whaledesk/WallpaperWebAudioEnvelope.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -28,11 +28,11 @@ using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWebSurfaceChildClass[] = L"MiaoDesk.Native.WebWallpaperHost";
-constexpr wchar_t kLocalVirtualHost[] = L"miaodesk-surface.local";
+constexpr wchar_t kWebSurfaceChildClass[] = L"WhaleDesK.Native.WebWallpaperHost";
+constexpr wchar_t kLocalVirtualHost[] = L"whaledesk-surface.local";
 constexpr UINT kPauseMessage = WM_APP + 901;
 constexpr UINT kResumeMessage = WM_APP + 902;
 constexpr UINT kShutdownMessage = WM_APP + 903;
@@ -372,7 +372,7 @@ private:
     // static is required, not decoration: a non-static constexpr data member is
     // ill-formed C++, and this bridge script is the same for every instance.
     static constexpr std::string_view kWebAudioBridgeScript = R"MDWBRIDGE(
-// MiaoDesk web wallpaper audio bridge.
+// WhaleDesK web wallpaper audio bridge.
 //
 // Injected into every web wallpaper by WebDesktopSurfaceChild. Hand-authored web
 // content is the only consumer: the AI/skill authoring path never produces web
@@ -397,7 +397,7 @@ private:
   // every navigation and every iframe, so a naive shim would register the message
   // listener twice and deliver every frame twice.
   if (typeof window === "undefined" || !window) return;
-  if (window.wallpaper && window.wallpaper.__miaodeskBridge) return;
+  if (window.wallpaper && window.wallpaper.__whaledeskBridge) return;
 
   var BRIDGE_VERSION = 1;
   var BAND_COUNT = 5;
@@ -499,7 +499,7 @@ private:
   }
 
   window.wallpaper = {
-    __miaodeskBridge: true,
+    __whaledeskBridge: true,
     version: BRIDGE_VERSION,
     bandCount: BAND_COUNT,
     spectrumCount: SPECTRUM_COUNT,
@@ -682,7 +682,7 @@ private:
 
     // The last piece of B-6: until now the shim was installed and nothing was ever sent
     // through it, because the desktop web surface is its own process and had no audio
-    // source of its own. MiaoWallpaperAudioTap is the same WASAPI loopback capture the
+    // source of its own. WhaleWallpaperAudioTap is the same WASAPI loopback capture the
     // independent wallpaper host uses, so both hosts feed the page the same frame shape.
     void StartAudioBridge() {
         if (!hwnd_ || !IsWindow(hwnd_)) return;
@@ -704,7 +704,7 @@ private:
     void PumpAudioFrame() {
         // While paused the host has asked this surface to stop doing work, so the frame
         // read and the post are both skipped. What is *not* done here is stopping the
-        // loopback client: MiaoWallpaperAudioTap::Start() does not document itself as
+        // loopback client: WhaleWallpaperAudioTap::Start() does not document itself as
         // re-entrant, and a pause/resume that restarts a capture thread is not something
         // that can be tested on this machine. So the cost is a WASAPI loopback client that
         // stays open on a paused surface — worth closing, but not by guessing.
@@ -755,7 +755,7 @@ private:
     ComPtr<ICoreWebView2> webview_;
     // This surface is its own process, so it owns its own loopback client rather than
     // expecting a frame to arrive from the independent wallpaper host.
-    MiaoWallpaperAudioTap audioTap_;
+    WhaleWallpaperAudioTap audioTap_;
     UINT_PTR audioTimer_{};
 };
 
@@ -777,4 +777,4 @@ int TryRunWebDesktopSurfaceChild(HINSTANCE instance) {
     return result;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

@@ -23,7 +23,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 // the wiring at the one place a body reaches a message.
 
 // --- the redaction itself, executed ---------------------------------------
-const work = fs.mkdtempSync("/tmp/miaodesk-secrets-");
+const work = fs.mkdtempSync("/tmp/whaledesk-secrets-");
 try {
   const src = path.join(root, "tests/secret-redaction-harness.cpp");
   const bin = path.join(work, "redaction");
@@ -55,11 +55,11 @@ const probe = agent.slice(
   agent.indexOf("bool L3Agent::ApplyModelConfig("));
 assert.ok(probe.length > 200, "cannot locate ProbeModels");
 
-assert.match(agent, /#include "miaodesk\/SecretRedaction\.h"/,
+assert.match(agent, /#include "whaledesk\/SecretRedaction\.h"/,
   "L3Agent must include the redaction header");
 
 // The body must pass through SummarizeRemoteBody before it reaches a message.
-assert.match(probe, /const auto shortBody = Utf8ToWide\(response\.body\.substr\(0, 220\)\);\n\s+const auto summarized = miaodesk::secrets::SummarizeRemoteBody\(shortBody\);\n\s+if \(!summarized\.empty\(\)\) detail \+= L" " \+ summarized;/,
+assert.match(probe, /const auto shortBody = Utf8ToWide\(response\.body\.substr\(0, 220\)\);\n\s+const auto summarized = whaledesk::secrets::SummarizeRemoteBody\(shortBody\);\n\s+if \(!summarized\.empty\(\)\) detail \+= L" " \+ summarized;/,
   "the response body must be truncated FIRST and redacted SECOND, and only the redacted"
   + " form may be appended. Redacting a 2 MB body to then throw it away would be work for"
   + " nothing, and appending before redacting is the defect.");

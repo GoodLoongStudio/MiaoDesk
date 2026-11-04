@@ -50,7 +50,7 @@ assert.doesNotMatch(preview, /manifest\.json/,
 
 // And the preview must actually re-load when the stamp moves, not just record it.
 const renderer = read("src/ui/wallpaper/ContentWidgetPreviewRenderer.cpp");
-assert.match(renderer, /const auto stamp = PackageStamp\(cached->packageRoot\);\s*\n\s*if \(stamp != cached->packageStamp\) \{[\s\S]*?renderer = std::make_unique<content::MiaoSceneD2DRenderer>\(\)/,
+assert.match(renderer, /const auto stamp = PackageStamp\(cached->packageRoot\);\s*\n\s*if \(stamp != cached->packageStamp\) \{[\s\S]*?renderer = std::make_unique<content::WhaleSceneD2DRenderer>\(\)/,
   "a changed stamp must rebuild the scene renderer");
 
 console.log("preview/host cache invalidation parity: PASS");

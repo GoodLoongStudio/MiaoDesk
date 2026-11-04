@@ -2,15 +2,15 @@
 
 This is the repeatable resource baseline for RC plan issue #60 / P1-2.
 
-The collector follows the full MiaoDesk process tree, not only `MiaoDesk.exe`.
+The collector follows the full WhaleDesK process tree, not only `WhaleDesK.exe`.
 That means wallpaper, Harness, Node and WebView2 descendants are included when
-they are launched under a MiaoDesk root process.
+they are launched under a WhaleDesK root process.
 
 ## Scenarios
 
 Collect the same four scenarios on the same reference Windows machine:
 
-1. `desktop-only` — MiaoDesk running, wallpaper disabled, no widgets.
+1. `desktop-only` — WhaleDesK running, wallpaper disabled, no widgets.
 2. `wallpaper` — one built-in Scene wallpaper active.
 3. `widgets-3` — wallpaper state unchanged, three representative widgets enabled.
 4. `ai-idle` — AI/Harness runtime started and idle, with no active generation.
@@ -35,7 +35,7 @@ Each run writes JSON samples plus a compact text summary.
 
 ## Metrics
 
-The report records total MiaoDesk process-tree:
+The report records total WhaleDesK process-tree:
 
 - CPU average / p95 / peak;
 - working set average / p95 / peak;
@@ -57,7 +57,7 @@ A later build can compare against a saved JSON baseline:
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\collect-performance-baseline.ps1 \
   -Scenario wallpaper -DurationSeconds 30 \
-  -CompareTo C:\MiaoDeskBaselines\performance-wallpaper.json
+  -CompareTo C:\WhaleDesKBaselines\performance-wallpaper.json
 ```
 
 The command exits with code 2 when a comparable metric crosses both:

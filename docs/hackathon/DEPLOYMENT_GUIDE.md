@@ -1,4 +1,4 @@
-# 部署说明：MiaoDesk + DGX Spark
+# 部署说明：WhaleDesK + DGX Spark
 
 这份文档只保留比赛提交时最需要说明的部署流程。完整细节见：
 
@@ -6,11 +6,11 @@
 
 ## 一、部署结构
 
-MiaoDesk 分成两部分：
+WhaleDesK 分成两部分：
 
 ```text
 Windows PC
-  └─ MiaoDesk
+  └─ WhaleDesK
       ├─ 搜索
       ├─ 妙喵 AI
       ├─ 动态壁纸
@@ -61,12 +61,12 @@ vllm serve /path/to/model \
 
 ### 3. 可选：本地图像生成
 
-MiaoDesk 可以把图片生成配置成独立 API。
+WhaleDesK 可以把图片生成配置成独立 API。
 
 推荐结构：
 
 ```text
-MiaoDesk
+WhaleDesK
   → OpenAI Images Compatible Shim
   → ComfyUI
   → Z-Image-Turbo
@@ -76,7 +76,7 @@ MiaoDesk
 
 ## 三、Windows 端
 
-### 1. 安装 MiaoDesk
+### 1. 安装 WhaleDesK
 
 下载对应架构安装包：
 
@@ -90,7 +90,7 @@ MiaoDesk
 打开：
 
 ```text
-MiaoDesk → API 配置
+WhaleDesK → API 配置
 ```
 
 新增配置，例如：
@@ -103,7 +103,7 @@ Model：local-model
 API Key：按服务端设置填写
 ```
 
-MiaoDesk 支持保存多套 API。
+WhaleDesK 支持保存多套 API。
 
 不同 AI 窗口可以选择不同配置；没有单独选择时，默认使用第一套配置。
 
@@ -158,4 +158,4 @@ API Key：用户自己的 StepFun Key
 
 项目地址：
 
-https://github.com/GoodLoongStudio/MiaoDesk
+https://github.com/GoodLoongStudio/WhaleDesK

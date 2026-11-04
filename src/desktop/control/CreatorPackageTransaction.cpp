@@ -1,9 +1,9 @@
-#include "miaodesk/CreatorPackageTransaction.h"
+#include "whaledesk/CreatorPackageTransaction.h"
 
 #include <algorithm>
 #include <utility>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 两处都要表达"这个文件在包里扮演什么",而摘要按 CandidatePartRole 归类。
@@ -195,4 +195,4 @@ bool CreatorPackageTransaction::ChangesContent() const noexcept {
     return plan_.before.value != plan_.after.value;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

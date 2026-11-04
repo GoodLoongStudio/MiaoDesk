@@ -2,10 +2,10 @@
 // and 3D-gated — a 2D scene that declares a light is an authoring error, not a light
 // that silently does nothing. The renderer side is deliberately out of scope here;
 // this pins the contract the renderer will have to honour.
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntime.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntime.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -13,8 +13,8 @@
 #include <string>
 #include <vector>
 
-using namespace miaodesk;
-using namespace miaodesk::content;
+using namespace whaledesk;
+using namespace whaledesk::content;
 
 int failures = 0;
 void Check(bool c, const std::string& w) {
@@ -40,12 +40,12 @@ SceneRuntimeDefinition Base() {
 
 std::string Ser(const SceneRuntimeDefinition& d, bool* ok) {
     std::string out; std::wstring e;
-    *ok = MiaoSceneSerializer::SerializeScene(d, &out, &e);
+    *ok = WhaleSceneSerializer::SerializeScene(d, &out, &e);
     return out;
 }
 bool Deser(const std::string& j, SceneRuntimeDefinition* d) {
     std::wstring e;
-    return MiaoSceneSerializer::Deserialize(j, "", d, &e);
+    return WhaleSceneSerializer::Deserialize(j, "", d, &e);
 }
 
 int wmain() {
@@ -62,7 +62,7 @@ int wmain() {
         SceneRuntimeDefinition back;
         Check(Deser(j, &back), "round trips");
         Check(back.scene.spatial == SceneSpatialMode::TwoD, "parsed back as 2d");
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "plain 2D scene still validates");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "plain 2D scene still validates");
     }
 
     std::printf("\n2. lights / fog 在 2D 场景上被拒(而非静默丢弃)\n");
@@ -70,11 +70,11 @@ int wmain() {
         auto d = Base();
         d.lights.push_back(LightDefinition{L"light://key", LightType::Point, L"node://root"});
         std::wstring e;
-        Check(!MiaoSceneRuntimeModel::Validate(d, &e), "2D scene with a light is rejected");
+        Check(!WhaleSceneRuntimeModel::Validate(d, &e), "2D scene with a light is rejected");
         Check(e.find(L"3D") != std::wstring::npos, "error says 3D is required");
         d.lights.clear();
         d.fog.push_back(FogDefinition{L"fog://depth", FogMode::Linear});
-        Check(!MiaoSceneRuntimeModel::Validate(d, &e), "2D scene with fog is rejected");
+        Check(!WhaleSceneRuntimeModel::Validate(d, &e), "2D scene with fog is rejected");
     }
 
     std::printf("\n3. 合法 3D 场景\n");
@@ -84,7 +84,7 @@ int wmain() {
         d.lights.push_back(LightDefinition{L"light://key", LightType::Directional, L"node://root"});
         d.lights.push_back(LightDefinition{L"light://fill", LightType::Point, L"node://root"});
         d.fog.push_back(FogDefinition{L"fog://depth", FogMode::Linear});
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "3D scene with lights + fog validates");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "3D scene with lights + fog validates");
         bool ok = false;
         const auto j = Ser(d, &ok);
         Check(ok && j.find("\"spatial\":\"3d\"") != std::string::npos, "serializes spatial 3d");
@@ -108,7 +108,7 @@ int wmain() {
         auto bad = [&](LightDefinition light, const char* what) {
             d.lights.clear();
             d.lights.push_back(light);
-            Check(!MiaoSceneRuntimeModel::Validate(d, &e), what);
+            Check(!WhaleSceneRuntimeModel::Validate(d, &e), what);
         };
         bad(LightDefinition{L"lamp://x", LightType::Point, L"node://root"}, "wrong id prefix rejected");
         bad(LightDefinition{L"light://x", LightType::Point, L"node://missing"}, "dangling nodeId rejected");
@@ -133,11 +133,11 @@ int wmain() {
         LightDefinition hard; hard.id = L"light://s"; hard.nodeId = L"node://root";
         hard.type = LightType::Spot; hard.spotInnerCos = 0.9; hard.spotOuterCos = 0.9;
         d.lights.clear(); d.lights.push_back(hard);
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "hard-edged cone (inner == outer) is allowed");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "hard-edged cone (inner == outer) is allowed");
         LightDefinition okSpot; okSpot.id = L"light://s"; okSpot.nodeId = L"node://root";
         okSpot.type = LightType::Spot; okSpot.spotInnerCos = 0.9; okSpot.spotOuterCos = 0.5;
         d.lights.clear(); d.lights.push_back(okSpot);
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "valid spot cone accepted");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "valid spot cone accepted");
     }
 
     std::printf("\n5. 12 盏灯上限\n");
@@ -147,9 +147,9 @@ int wmain() {
         std::wstring e;
         for (std::uint32_t i = 0; i < 12; ++i)
             d.lights.push_back(LightDefinition{L"light://l" + std::to_wstring(i), LightType::Point, L"node://root"});
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "12 lights accepted");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "12 lights accepted");
         d.lights.push_back(LightDefinition{L"light://over", LightType::Point, L"node://root"});
-        Check(!MiaoSceneRuntimeModel::Validate(d, &e), "13th light rejected");
+        Check(!WhaleSceneRuntimeModel::Validate(d, &e), "13th light rejected");
         Check(e.find(L"12") != std::wstring::npos, "error names the limit");
     }
 
@@ -160,7 +160,7 @@ int wmain() {
         std::wstring e;
         auto bad = [&](FogDefinition fog, const char* what) {
             d.fog.clear(); d.fog.push_back(fog);
-            Check(!MiaoSceneRuntimeModel::Validate(d, &e), what);
+            Check(!WhaleSceneRuntimeModel::Validate(d, &e), what);
         };
         bad(FogDefinition{L"mist://x", FogMode::Linear}, "wrong fog id prefix rejected");
         FogDefinition inv; inv.id = L"fog://x"; inv.mode = FogMode::Linear; inv.startOrDensity = 10.0; inv.end = 2.0;
@@ -171,7 +171,7 @@ int wmain() {
         bad(nanf, "NaN fog end rejected");
         FogDefinition okExp; okExp.id = L"fog://e"; okExp.mode = FogMode::Exponential; okExp.startOrDensity = 0.02;
         d.fog.clear(); d.fog.push_back(okExp);
-        Check(MiaoSceneRuntimeModel::Validate(d, nullptr), "exponential fog accepts density without end");
+        Check(WhaleSceneRuntimeModel::Validate(d, nullptr), "exponential fog accepts density without end");
     }
 
     std::printf("\n7. mesh 资产扩展名\n");
@@ -181,15 +181,15 @@ int wmain() {
         two.scene.spatial = SceneSpatialMode::TwoD;
         std::wstring e;
         // mesh 资产本身与 spatial 无关:2D 场景也可以引用(只是没有灯光照它)
-        Check(MiaoSceneRuntimeModel::Validate(two, &e) || e.find(L"Lights") != std::wstring::npos
+        Check(WhaleSceneRuntimeModel::Validate(two, &e) || e.find(L"Lights") != std::wstring::npos
               || true, "mesh asset alone does not require 3D");
         d.scene.assets[0].source = L"assets/ship.ply";
-        Check(!MiaoSceneModel::Validate(d.scene, &e), "unsupported mesh extension rejected");
+        Check(!WhaleSceneModel::Validate(d.scene, &e), "unsupported mesh extension rejected");
         Check(e.find(L".obj") != std::wstring::npos, "error names the supported extensions");
         d.scene.assets[0].source = L"assets/SHIP.OBJ";
-        Check(MiaoSceneModel::Validate(d.scene, &e), "uppercase .OBJ accepted");
+        Check(WhaleSceneModel::Validate(d.scene, &e), "uppercase .OBJ accepted");
         d.scene.assets[0].source = L"assets/ship.fbx";
-        Check(MiaoSceneModel::Validate(d.scene, &e), ".fbx accepted");
+        Check(WhaleSceneModel::Validate(d.scene, &e), ".fbx accepted");
     }
 
     std::printf("\n8. 非法 spatial / 缺省字段的旧 JSON\n");

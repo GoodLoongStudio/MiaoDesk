@@ -6,13 +6,13 @@
 //
 // 整条失败路径都在这里被执行到,因为事务只判规则、不碰盘 —— 宿主按顺序执行几个动作,
 // 事务负责判定每一步能不能进。这让"半写"这件事在本机也能真验,而不是只留给 Windows。
-#include "miaodesk/CreatorPackageTransaction.h"
+#include "whaledesk/CreatorPackageTransaction.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -354,10 +354,10 @@ void TestEveryRoleChangesTheDigest() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestHappyPathWriteChangesTheDigest();
     TestRejectedWriteLeavesNothingBehind();
     TestOversizedWriteIsRejectedBeforeTouchingAnything();

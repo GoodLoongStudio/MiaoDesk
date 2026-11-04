@@ -8,17 +8,17 @@
 //   * 目录必须和代码说同一组名字(组件 kind、输入通道、数据前缀、内置材质),否则
 //     "避免三份手抄表"就白说了;
 //   * deviceVerified 一律为 false:没有真机证据,不许在这里预先勾上。
-#include "miaodesk/MiaoCapabilityCatalog.h"
+#include "whaledesk/WhaleCapabilityCatalog.h"
 
-#include "miaodesk/MiaoInputBus.h"
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
+#include "whaledesk/WhaleInputBus.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 namespace {
 
 int g_failures = 0;
@@ -43,11 +43,11 @@ std::size_t CountWithCarrier(CapabilityCarrier carrier) {
 bool HasId(std::string_view id) { return FindCapability(id) != nullptr; }
 
 } // namespace
-} // namespace miaodesk::content
+} // namespace whaledesk::content
 
 int wmain() {
-    using namespace miaodesk::content;
-    using namespace miaodesk::content::inputbus;
+    using namespace whaledesk::content;
+    using namespace whaledesk::content::inputbus;
 
     // ---- 1. 四类答案各得其所 ----
     const auto real = QueryCapability("scene.transform");

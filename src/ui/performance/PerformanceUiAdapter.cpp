@@ -1,6 +1,6 @@
-#include "miaodesk/PerformanceUiAdapter.h"
+#include "whaledesk/PerformanceUiAdapter.h"
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 
 bool PerformanceUiAdapter::AssignError(const desktop::PerformanceServiceResult& result, std::wstring* error) {
     if (result.success) return true;
@@ -16,4 +16,4 @@ bool PerformanceUiAdapter::Save(const PerformanceConfig& config, std::wstring* e
     return AssignError(service_.SaveConfig(config), error);
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

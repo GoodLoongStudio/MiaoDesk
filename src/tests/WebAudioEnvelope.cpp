@@ -11,7 +11,7 @@
 //   · 数组长度:shim 用 numericArray() 按长度拒绝,长度错 = 全丢
 //   · beat 必须是 JSON 布尔:shim 用 === true 判沿,发 1 会每帧都成节拍
 //   · 小数点:ostringstream 跟全局 locale 走,逗号小数点的机器上 JSON.parse 会抛
-#include "miaodesk/WallpaperWebAudioEnvelope.h"
+#include "whaledesk/WallpaperWebAudioEnvelope.h"
 
 #include <cmath>
 #include <cstdio>
@@ -19,8 +19,8 @@
 #include <locale>
 #include <string>
 
-using miaodesk::wallpaper::BuildAudioBridgeEnvelope;
-using miaodesk::content::inputbus::AudioSpectrumFrame;
+using whaledesk::wallpaper::BuildAudioBridgeEnvelope;
+using whaledesk::content::inputbus::AudioSpectrumFrame;
 
 static int failures = 0;
 static void Check(bool ok, const char* what) {

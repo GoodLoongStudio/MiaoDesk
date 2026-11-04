@@ -38,7 +38,7 @@ function loadShim() {
 }
 
 // --- 1. 编出 C++ 侧那个打印器 -------------------------------------------------
-console.log('编译 src/include/miaodesk/WallpaperWebAudioEnvelope.h 的真实产出…');
+console.log('编译 src/include/whaledesk/WallpaperWebAudioEnvelope.h 的真实产出…');
 // 自己建缓存目录:一次全新的 clone 上没有 node_modules/,而把它杵在那儿等失败,
 // 报出来的会是 ENOENT 而不是"缺目录"。
 const cacheDir = join(repo, 'node_modules', '.cache');

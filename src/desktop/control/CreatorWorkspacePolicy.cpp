@@ -1,11 +1,11 @@
-#include "miaodesk/CreatorWorkspacePolicy.h"
+#include "whaledesk/CreatorWorkspacePolicy.h"
 
 #include <algorithm>
 #include <cctype>
 #include <set>
 #include <utility>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 std::string LowerAscii(std::string value) {
@@ -329,4 +329,4 @@ std::string DeriveCreatorSessionId(std::string_view workspaceRoot) noexcept {
     return std::string(workspaceRoot.substr(begin, end - begin));
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

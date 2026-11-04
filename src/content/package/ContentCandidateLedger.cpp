@@ -1,9 +1,9 @@
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <algorithm>
 #include <utility>
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 
 const char* ToString(ContentValidationFailure failure) noexcept {
     switch (failure) {
@@ -241,4 +241,4 @@ bool ContentCandidateLedger::Parse(std::string_view text) {
     return true;
 }
 
-} // namespace miaodesk::content
+} // namespace whaledesk::content

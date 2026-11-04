@@ -2,15 +2,15 @@
 
 ## 项目名称
 
-MiaoDesk
+WhaleDesK
 
 ## 开源仓库
 
-https://github.com/GoodLoongStudio/MiaoDesk
+https://github.com/GoodLoongStudio/WhaleDesK
 
 ## 一句话介绍
 
-MiaoDesk 是一个 AI 原生 Windows 智能桌面：用户可以通过搜索框和妙喵 AI 搜索应用与文件、管理桌面，并让 Agent 直接生成动态壁纸和桌面组件；DGX Spark 用于在本地运行大模型和图像模型。
+WhaleDesK 是一个 AI 原生 Windows 智能桌面：用户可以通过搜索框和妙喵 AI 搜索应用与文件、管理桌面，并让 Agent 直接生成动态壁纸和桌面组件；DGX Spark 用于在本地运行大模型和图像模型。
 
 ## 项目特点
 
@@ -25,7 +25,7 @@ MiaoDesk 是一个 AI 原生 Windows 智能桌面：用户可以通过搜索框�
 
 ## DGX Spark 用法
 
-DGX Spark 运行 vLLM 和本地模型，MiaoDesk 通过 OpenAI Compatible API 连接。
+DGX Spark 运行 vLLM 和本地模型，WhaleDesK 通过 OpenAI Compatible API 连接。
 
 主要承担：
 
@@ -45,7 +45,7 @@ DGX Spark 运行 vLLM 和本地模型，MiaoDesk 通过 OpenAI Compatible API �
 
 ## StepFun
 
-MiaoDesk 支持通过统一 OpenAI Compatible API Profile 接入 StepFun。
+WhaleDesK 支持通过统一 OpenAI Compatible API Profile 接入 StepFun。
 
 测试配置示例：
 
@@ -53,7 +53,7 @@ MiaoDesk 支持通过统一 OpenAI Compatible API Profile 接入 StepFun。
 
 ## Agent Skills
 
-https://github.com/GoodLoongStudio/MiaoDesk/tree/main/skills
+https://github.com/GoodLoongStudio/WhaleDesK/tree/main/skills
 
 主要包括：
 
@@ -64,15 +64,15 @@ https://github.com/GoodLoongStudio/MiaoDesk/tree/main/skills
 
 ## 详细项目说明
 
-https://github.com/GoodLoongStudio/MiaoDesk/blob/main/docs/hackathon/PROJECT_DESCRIPTION.md
+https://github.com/GoodLoongStudio/WhaleDesK/blob/main/docs/hackathon/PROJECT_DESCRIPTION.md
 
 ## 部署说明
 
-https://github.com/GoodLoongStudio/MiaoDesk/blob/main/docs/hackathon/DEPLOYMENT_GUIDE.md
+https://github.com/GoodLoongStudio/WhaleDesK/blob/main/docs/hackathon/DEPLOYMENT_GUIDE.md
 
 ## 技术栈
 
-https://github.com/GoodLoongStudio/MiaoDesk/blob/main/docs/hackathon/TECH_STACK.md
+https://github.com/GoodLoongStudio/WhaleDesK/blob/main/docs/hackathon/TECH_STACK.md
 
 ## 视频
 
@@ -80,13 +80,13 @@ https://github.com/GoodLoongStudio/MiaoDesk/blob/main/docs/hackathon/TECH_STACK.
 
 建议标题：
 
-MiaoDesk：运行在 DGX Spark 上的 AI 原生 Windows 智能桌面
+WhaleDesK：运行在 DGX Spark 上的 AI 原生 Windows 智能桌面
 
 ## 黑客松十日谈
 
 文章草稿：
 
-https://github.com/GoodLoongStudio/MiaoDesk/blob/main/docs/hackathon/HACKATHON_TEN_DAYS.md
+https://github.com/GoodLoongStudio/WhaleDesK/blob/main/docs/hackathon/HACKATHON_TEN_DAYS.md
 
 发布到 CSDN / 知乎后，把公开文章 URL 替换到最终提交表单。
 

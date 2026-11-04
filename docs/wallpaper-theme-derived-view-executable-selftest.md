@@ -5,7 +5,7 @@ This is the executable acceptance contract for the canonical wallpaper identity 
 ## Required setup
 
 - Create a temporary UTF-16LE `library.ini` containing:
-  - canonical managed rows for `content:com.goodloong.miaodesk.theme.miao-cloud`, `content:com.goodloong.miaodesk.theme.neon-city`, and `content:com.goodloong.miaodesk.theme.mystic-moon`
+  - canonical managed rows for `content:com.goodloong.whaledesk.theme.whale-cloud`, `content:com.goodloong.whaledesk.theme.neon-city`, and `content:com.goodloong.whaledesk.theme.mystic-moon`
   - stale shipped legacy rows `scene-aurora`, `scene-neon`, and `scene-grid`
   - one user-authored row `scene-user-custom`
   - one unknown row with a Unicode title and a Chinese filesystem path

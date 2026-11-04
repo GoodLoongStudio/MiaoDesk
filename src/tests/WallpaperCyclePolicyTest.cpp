@@ -7,12 +7,12 @@
 //
 // 反空洞自检:一个恒返回 Rebuild 的裁决在每个断言上同样全绿,所以先喂一个
 // 明知该 NoOp 的状态、一个明知该 Rebuild 的状态,确认裁决真的会动。
-#include "miaodesk/MiaoWallpaperCyclePolicy.h"
+#include "whaledesk/WhaleWallpaperCyclePolicy.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::wallpaper_cycle {
+namespace whaledesk::wallpaper_cycle {
 namespace {
 
 int g_failures = 0;
@@ -39,11 +39,11 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::wallpaper_cycle
+} // namespace whaledesk::wallpaper_cycle
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::wallpaper_cycle;
+    using namespace whaledesk;
+    using namespace whaledesk::wallpaper_cycle;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:裁决恒返回同一个动作\n");

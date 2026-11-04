@@ -1,4 +1,4 @@
-# macOS 组件能力对标与 MiaoDesk 建设基准
+# macOS 组件能力对标与 WhaleDesK 建设基准
 
 - 更新：2026-10-03；外部事实来自 Apple 官方文档，本次未做两平台实机对照。
 - 目标与阶段：[专业桌面总体规划](PROFESSIONAL_DESKTOP_PLAN.md) S4。
@@ -6,13 +6,13 @@
 
 ## 1. 官方依据
 
-Apple 用户文档描述桌面/通知中心组件的浏览、搜索、添加、拖动、配置、切换尺寸和移除。MiaoDesk 对标这些日常能力，入口与布局按 Windows 适配。[添加和自定义组件](https://support.apple.com/en-gb/guide/mac-help/mchl52be5da5/mac)
+Apple 用户文档描述桌面/通知中心组件的浏览、搜索、添加、拖动、配置、切换尺寸和移除。WhaleDesK 对标这些日常能力，入口与布局按 Windows 适配。[添加和自定义组件](https://support.apple.com/en-gb/guide/mac-help/mchl52be5da5/mac)
 
-WidgetKit 支持交互组件，按钮与开关可通过 App Intents 执行动作。MiaoDesk 对应建设 Native 控件和受控动作服务。[组件交互](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)
+WidgetKit 支持交互组件，按钮与开关可通过 App Intents 执行动作。WhaleDesK 对应建设 Native 控件和受控动作服务。[组件交互](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)
 
-WidgetKit 使用时间线和更新策略管理内容刷新；设计指南强调尺寸、信息密度与环境适配。MiaoDesk 对应建设更新计划、事件/缓存、尺寸族和视觉状态。[更新机制](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)、[组件设计指南](https://developer.apple.com/design/human-interface-guidelines/widgets)
+WidgetKit 使用时间线和更新策略管理内容刷新；设计指南强调尺寸、信息密度与环境适配。WhaleDesK 对应建设更新计划、事件/缓存、尺寸族和视觉状态。[更新机制](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)、[组件设计指南](https://developer.apple.com/design/human-interface-guidelines/widgets)
 
-以下是 MiaoDesk 自身要求，不表示逐项复制 Apple API。iPhone 接力和 Apple 私有服务不纳入本轮；外观可以有自己的风格，信息可读性、直接操作、个性化与节能必须达到同等成熟度。
+以下是 WhaleDesK 自身要求，不表示逐项复制 Apple API。iPhone 接力和 Apple 私有服务不纳入本轮；外观可以有自己的风格，信息可读性、直接操作、个性化与节能必须达到同等成熟度。
 
 ## 2. 能力矩阵
 
@@ -46,7 +46,7 @@ WidgetKit 使用时间线和更新策略管理内容刷新；设计指南强调�
 | 个性化：参数与 ContentWidgetSettingsDialog | 内容包支持多实例且参数按实例存；原生 preset 按显示器刻意单例。城市/时区/来源可配置只对天气成立。 |
 
 完整的五态（可声明/可运行/可预览/AI 可教学/真机已验）见 [能力与证据台账](CAPABILITY_EVIDENCE_LEDGER.md)；
-机器可查的版本见能力目录（`src/content/binding/MiaoCapabilityCatalog.cpp`）。
+机器可查的版本见能力目录（`src/content/binding/WhaleCapabilityCatalog.cpp`）。
 
 ## 3. 固定用户任务
 

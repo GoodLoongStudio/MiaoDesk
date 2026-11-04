@@ -43,7 +43,7 @@ jobs:
           if ([string]$runtimeLock.architecture -ne 'x64') { throw 'runtime lock is not x64' }
           if (-not (Test-Path $agentPackage -PathType Leaf)) { throw 'runtime/agent/package.json is missing' }
 
-          $temp = Join-Path $env:RUNNER_TEMP ('MiaoDesk-Vendor-x64-' + [guid]::NewGuid().ToString('N'))
+          $temp = Join-Path $env:RUNNER_TEMP ('WhaleDesK-Vendor-x64-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Force -Path $temp | Out-Null
 
           function Sha256([string]$Path) {

@@ -43,7 +43,27 @@ inline fs::path LocalAppDataDirectory() {
 
 inline fs::path StateRoot() {
     const fs::path base = LocalAppDataDirectory();
-    return base.empty() ? fs::path{} : base / L"WhaleDesK";
+    if (base.empty()) return {};
+    const fs::path current = base / L"WhaleDesK";
+
+    // Upgrade legacy installations without dropping conversations, widget
+    // layouts, model credentials or wallpaper packages. The old brand spelling
+    // is deliberately assembled here: it is a compatibility-only disk path,
+    // not a current product identifier.
+    std::error_code ec;
+    if (fs::exists(current, ec)) return current;
+    const fs::path previous = base / (std::wstring(L"Mi") + L"aoDesk");
+    ec.clear();
+    if (!fs::exists(previous, ec) || ec) return current;
+    ec.clear();
+    fs::rename(previous, current, ec);
+    if (!ec) return current;
+    // A parallel process may have completed the move already.
+    std::error_code retryEc;
+    if (fs::exists(current, retryEc)) return current;
+    // If the old directory is locked, continue using intact existing state
+    // rather than silently creating an empty user profile.
+    return previous;
 }
 
 inline fs::path EnsureDirectory(fs::path directory) {

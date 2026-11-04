@@ -23,7 +23,7 @@ PAIRS = [
 # Stored runtime data needs explicit backward-compatibility code in a separate
 # migration; do not confuse a source-code rename with migrated installations.
 NON_REBRANDABLE = {".exe", ".zip", ".mp4", ".lib", ".dll", ".jpg", ".jpeg", ".png", ".ico", ".webp", ".gif", ".pdf"}
-SKIP_PREFIXES = ("third_party/", "runtime/x64/node/", "runtime/arm64/node/")
+SKIP_PREFIXES = (".github/workflows/", "third_party/", "runtime/x64/node/", "runtime/arm64/node/")
 SKIP_PATHS = {"scripts/rename-to-whaledesk.py"}
 def replace(value: str) -> str:
     for old, new in PAIRS:

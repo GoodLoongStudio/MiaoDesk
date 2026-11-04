@@ -8,10 +8,10 @@
       "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree.",
       "generator": "Visual Studio 17 2022",
       "architecture": { "value": "x64", "strategy": "set" },
-      "binaryDir": "$env{SystemDrive}/b/MiaoDesk/x64",
+      "binaryDir": "$env{SystemDrive}/b/WhaleDesK/x64",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Release",
-        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/MiaoDesk/x64"
+        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/WhaleDesK/x64"
       },
       "condition": {
         "type": "equals",
@@ -25,10 +25,10 @@
       "description": "Stock Windows path-safe build. Build and install staging stay outside the source tree; this preset is used by full ARM64 packaging CI.",
       "generator": "Visual Studio 17 2022",
       "architecture": { "value": "ARM64", "strategy": "set" },
-      "binaryDir": "$env{SystemDrive}/b/MiaoDesk/arm64",
+      "binaryDir": "$env{SystemDrive}/b/WhaleDesK/arm64",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Release",
-        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/MiaoDesk/arm64"
+        "CMAKE_INSTALL_PREFIX": "$env{SystemDrive}/pkg/WhaleDesK/arm64"
       },
       "condition": {
         "type": "equals",

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(MiaoDesk LANGUAGES CXX)
+project(WhaleDesK LANGUAGES CXX)
 
 # Ship the MSVC runtime inside each native executable. Both the standalone
 # Store installer and the MSIX payload must start on a clean Windows machine
@@ -8,46 +8,46 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# MiaoDesk must remain buildable on stock Windows 10/11 without asking users to
+# WhaleDesK must remain buildable on stock Windows 10/11 without asking users to
 # enable the Win32 long-path policy. Keep generated object paths conservative;
 # this is a build-time safeguard, not a runtime dependency on long-path support.
 set(CMAKE_OBJECT_PATH_MAX 180)
 
 # Reject every build directory located inside the repository, not only a literal
 # in-source build. Developer/CI presets use short external roots such as
-# C:/b/MiaoDesk/x64 so compiler-generated paths never inherit source nesting.
-file(REAL_PATH "${CMAKE_SOURCE_DIR}" MIAODESK_SOURCE_REAL)
-file(REAL_PATH "${CMAKE_BINARY_DIR}" MIAODESK_BINARY_REAL)
-cmake_path(IS_PREFIX MIAODESK_SOURCE_REAL "${MIAODESK_BINARY_REAL}" NORMALIZE MIAODESK_BINARY_IN_SOURCE)
-if(MIAODESK_BINARY_IN_SOURCE)
+# C:/b/WhaleDesK/x64 so compiler-generated paths never inherit source nesting.
+file(REAL_PATH "${CMAKE_SOURCE_DIR}" WHALEDESK_SOURCE_REAL)
+file(REAL_PATH "${CMAKE_BINARY_DIR}" WHALEDESK_BINARY_REAL)
+cmake_path(IS_PREFIX WHALEDESK_SOURCE_REAL "${WHALEDESK_BINARY_REAL}" NORMALIZE WHALEDESK_BINARY_IN_SOURCE)
+if(WHALEDESK_BINARY_IN_SOURCE)
     message(FATAL_ERROR
-        "Build directories inside the MiaoDesk source tree are not supported. "
-        "Use an external short build path, e.g. cmake -S . -B C:/b/MiaoDesk/x64 -A x64")
+        "Build directories inside the WhaleDesK source tree are not supported. "
+        "Use an external short build path, e.g. cmake -S . -B C:/b/WhaleDesK/x64 -A x64")
 endif()
 
 include(GNUInstallDirs)
 add_subdirectory(src)
 
-# P0-6's creator surface belongs to the main MiaoDesk process because it borrows the
+# P0-6's creator surface belongs to the main WhaleDesK process because it borrows the
 # canonical L3/Pi runtime. Keep the translation unit owned by that target so Repo
 # Hygiene can prove it is compiled and so no second AI stack appears in Wallpaper.
-target_sources(MiaoDesk PRIVATE
+target_sources(WhaleDesK PRIVATE
     "${CMAKE_SOURCE_DIR}/src/ui/ai/ContentCreatorDialog.cpp"
 )
 
-# End-user staging is deliberately shallow. Runtime discovery in MiaoDesk is
+# End-user staging is deliberately shallow. Runtime discovery in WhaleDesK is
 # relative to the executable directory, so the three production executables
 # stay at the install root. Do not install repository runtime SDK trees,
 # FetchContent sources, vcpkg buildtrees, or compiler intermediates.
 install(TARGETS
-    MiaoDesk
-    MiaoDeskWallpaper
-    MiaoDeskHarness
+    WhaleDesK
+    WhaleDesKWallpaper
+    WhaleDesKHarness
     RUNTIME DESTINATION "."
 )
 
 install(FILES
-    "${CMAKE_SOURCE_DIR}/assets/app/MiaoMiao.ico"
+    "${CMAKE_SOURCE_DIR}/assets/app/WhaleWhale.ico"
     DESTINATION "Assets"
 )
 
@@ -71,7 +71,7 @@ install(DIRECTORY
     PATTERN "README.md" EXCLUDE
 )
 
-# Built-in widgets use the same external Miao Content Package contract as user
+# Built-in widgets use the same external Whale Content Package contract as user
 # content. Keep them as real .mdwidget directories in the staged product so the
 # host can dogfood package discovery instead of embedding a second private
 # format in native code.

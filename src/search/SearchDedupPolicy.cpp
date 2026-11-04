@@ -1,9 +1,9 @@
-#include "miaodesk/SearchDedupPolicy.h"
+#include "whaledesk/SearchDedupPolicy.h"
 
 #include <algorithm>
 #include <cwctype>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 std::wstring Lower(std::wstring value) {
@@ -49,4 +49,4 @@ std::vector<SearchDedupEntry> DedupSearchEntries(const std::vector<SearchDedupEn
     return result;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

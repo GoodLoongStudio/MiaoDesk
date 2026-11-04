@@ -1,4 +1,4 @@
-// Runtime capability probe for the exact @earendil-works/pi-ai bytes staged into MiaoDesk.
+// Runtime capability probe for the exact @earendil-works/pi-ai bytes staged into WhaleDesK.
 // This intentionally performs no network request. It asks the installed compat registry
 // which image providers/models it knows, so product provider IDs are never assumed compatible.
 const label = process.argv[2] || "unknown-runtime";
@@ -85,4 +85,4 @@ const report = {
   candidates,
   details,
 };
-console.log("MIAODESK_IMAGE_PROVIDER_CAPABILITIES " + JSON.stringify(report));
+console.log("WHALEDESK_IMAGE_PROVIDER_CAPABILITIES " + JSON.stringify(report));

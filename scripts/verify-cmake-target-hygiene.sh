@@ -9,7 +9,7 @@
 #   2. add_executable 有声明但没有 target_link_libraries
 #      → 编译通过、**链接才失败**(LNK2019 / LNK1120)。本机交叉语法门只做
 #        -fsyntax-only,link 阶段根本不存在于本机,所以这一类错只能等一轮 90 秒
-#        的 Windows CI。而它报的是 "unresolved external symbol MiaoSceneModel::Validate",
+#        的 Windows CI。而它报的是 "unresolved external symbol WhaleSceneModel::Validate",
 #        没有人会从那儿反推到"少写了一行链接"。
 #   3. 同一个 .cpp 在两处源清单里出现
 #      → scripts/verify-path-layout-contract.ps1 的 "one CMake owner" 规则。
@@ -86,11 +86,11 @@ for i, line in enumerate(lines, 1):
 # 一模一样。登记时必须说明它为什么敢不链 —— 两者共同的判据是"只 include 不产生
 # 外部符号的头"。
 LINKS_NOTHING = {
-    # MiaoInputBus.h 是纯 C++,既不需要 Windows 也不需要任何库 —— 这正是它能在
+    # WhaleInputBus.h 是纯 C++,既不需要 Windows 也不需要任何库 —— 这正是它能在
     # 每一轮构建里跑的原因。
-    'MiaoDeskInputBusCoreTest',
-    # 同 MiaoDeskInputBusCoreTest:只 include MiaoInputBus.h,复刻宿主的归属算术。
-    'MiaoDeskPointerAttributionTest',
+    'WhaleDesKInputBusCoreTest',
+    # 同 WhaleDesKInputBusCoreTest:只 include WhaleInputBus.h,复刻宿主的归属算术。
+    'WhaleDesKPointerAttributionTest',
 }
 
 # --- 规则 ------------------------------------------------------------------
@@ -114,7 +114,7 @@ else:
     for name in sorted(foreach_targets - set(targets)):
         problems.append(f"foreach 里的 {name} 不是本文件声明的目标(拼写错误或已删除)。")
     for name in sorted(set(targets) - foreach_targets):
-        problems.append(f"{name} 没有出现在 foreach(target ...) 里 —— 它拿不到 include/miaodesk 与"
+        problems.append(f"{name} 没有出现在 foreach(target ...) 里 —— 它拿不到 include/whaledesk 与"
                         f" WIN32_LEAN_AND_MEAN 等宏,正确性完全靠巧合。")
 
 # 静态库不链接:它自己的符号由最终的可执行目标解析。只有可执行目标需要这一条。

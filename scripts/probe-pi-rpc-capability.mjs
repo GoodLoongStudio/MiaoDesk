@@ -33,7 +33,7 @@ const PORT = 45871;
 // 否则扩展加载失败,而失败在 RPC 层同样是静默的 —— stderr 空、session_start 不上报。
 // dirname(PI_PACKAGE) 是 node_modules 树的根;再往上一层才是 npm 项目根。
 const PI_PROJECT_ROOT = dirname(dirname(PI_PACKAGE));
-const WORK = process.env.PI_PROBE_WORK ?? join(PI_PROJECT_ROOT, ".miaodesk-pi-rpc-probe");
+const WORK = process.env.PI_PROBE_WORK ?? join(PI_PROJECT_ROOT, ".whaledesk-pi-rpc-probe");
 const PNG_1PX =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==";
 
@@ -98,16 +98,16 @@ function agentDir(name, input) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "models.json"), JSON.stringify({
     providers: {
-      miaodesk: {
+      whaledesk: {
         name: "Probe", baseUrl: `http://127.0.0.1:${PORT}`, api: "openai-completions",
-        apiKey: "$MIAODESK_MODEL_API_KEY",
+        apiKey: "$WHALEDESK_MODEL_API_KEY",
         models: [{ id: "probe-model", name: "probe-model", input,
                    contextWindow: 128000, maxTokens: 16384 }],
       },
     },
   }, null, 2));
   writeFileSync(join(dir, "settings.json"), JSON.stringify({
-    defaultProjectTrust: "always", defaultProvider: "miaodesk",
+    defaultProjectTrust: "always", defaultProvider: "whaledesk",
     defaultModel: "probe-model", quietStartup: true,
   }, null, 2));
   return dir;
@@ -116,16 +116,16 @@ function agentDir(name, input) {
 function launch(agentDir, tools, extensionPath) {
   const child = spawn(process.execPath, [PI_CLI,
     "--mode", "rpc", "--no-session", "--approve",
-    "--provider", "miaodesk", "--model", "probe-model",
+    "--provider", "whaledesk", "--model", "probe-model",
     "--no-extensions", ...(extensionPath ? ["--extension", extensionPath] : []),
     ...(tools ? ["--tools", tools] : []),
-    "--append-system-prompt", "MiaoDesk Pi RPC capability probe."], {
+    "--append-system-prompt", "WhaleDesK Pi RPC capability probe."], {
     cwd: WORK,
     env: {
       ...process.env,
       PI_CODING_AGENT_DIR: agentDir,
       PI_CODING_AGENT_SESSION_DIR: join(agentDir, "sessions"),
-      MIAODESK_MODEL_API_KEY: "probe-key-not-a-real-credential",
+      WHALEDESK_MODEL_API_KEY: "probe-key-not-a-real-credential",
       PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
     },
     stdio: ["pipe", "pipe", "pipe"],
@@ -206,15 +206,15 @@ console.log("\n3) --tools 是否约束扩展注册的工具");
 const extDir = join(WORK, "ext-probe");
 mkdirSync(join(extDir, "extensions"), { recursive: true });
 writeFileSync(join(extDir, "models.json"), JSON.stringify({
-  providers: { miaodesk: {
+  providers: { whaledesk: {
     name: "Probe", baseUrl: `http://127.0.0.1:${PORT}`, api: "openai-completions",
-    apiKey: "$MIAODESK_MODEL_API_KEY",
+    apiKey: "$WHALEDESK_MODEL_API_KEY",
     models: [{ id: "probe-model", name: "probe-model", input: ["text", "image"],
                contextWindow: 128000, maxTokens: 16384 }],
   } },
 }, null, 2));
 writeFileSync(join(extDir, "settings.json"), JSON.stringify({
-  defaultProjectTrust: "always", defaultProvider: "miaodesk",
+  defaultProjectTrust: "always", defaultProvider: "whaledesk",
   defaultModel: "probe-model", quietStartup: true,
 }, null, 2));
 writeFileSync(join(extDir, "extensions", "probe-tools.ts"), `import { Type } from "typebox";

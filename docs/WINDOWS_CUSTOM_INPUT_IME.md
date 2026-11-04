@@ -1,6 +1,6 @@
 # Windows 自绘输入框 IME / TSF 实现规范
 
-Status: current implementation note for MiaoDesk native Windows UI.
+Status: current implementation note for WhaleDesK native Windows UI.
 
 ## 1. 职责边界
 
@@ -9,7 +9,7 @@ Status: current implementation note for MiaoDesk native Windows UI.
 当前共享实现：
 
 ```text
-src/include/miaodesk/InputImeAnchor.h
+src/include/whaledesk/InputImeAnchor.h
 ```
 
 不要为每个 surface 复制一套 IME anchor。`Input` 是基础设施，`Search` / `Conversation` 是使用它的业务 surface。
@@ -62,8 +62,8 @@ SetCaretPos
 当前参考实现：
 
 ```text
-src/include/miaodesk/InputImeAnchor.h
-src/include/miaodesk/SearchWindow.h
+src/include/whaledesk/InputImeAnchor.h
+src/include/whaledesk/SearchWindow.h
 src/ui/search/SearchWindow.cpp
 ```
 
@@ -74,7 +74,7 @@ Search 保留自己的业务命名与布局。Native `EDIT` 只承担输入语�
 当前实现：
 
 ```text
-src/include/miaodesk/InputImeAnchor.h
+src/include/whaledesk/InputImeAnchor.h
 src/ui/ai/ConversationPanel.cpp
 src/ui/ai/ConversationPanelInputOverlay.inc
 ```

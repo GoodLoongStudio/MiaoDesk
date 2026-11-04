@@ -1,4 +1,4 @@
-# MiaoDesk 详细验收与问题库
+# WhaleDesK 详细验收与问题库
 
 > 当前执行顺序、优先级与自动推进资格统一看 [CONTINUOUS_DEVELOPMENT_BOARD.md](CONTINUOUS_DEVELOPMENT_BOARD.md)。本文件继续保留细粒度验收、诊断、真机条件和历史证据，不再作为“下一项做什么”的唯一队列。
 
@@ -32,7 +32,7 @@
 | 领域 | 当前已经存在的基础 | 本轮重点 |
 | --- | --- | --- |
 | 桌面宿主 | Shell Host、层级修复、PaintReady、壁纸停用检查、内置组件尺寸约束 | 生命周期、真实视觉与多屏验收 |
-| 官方内容 | 三款 `.mdwidget`；MiaoCloud / NeonCity / MysticMoon 以 `scene.json` 运行 | 效果、数据交互与内容管理 |
+| 官方内容 | 三款 `.mdwidget`；WhaleCloud / NeonCity / MysticMoon 以 `scene.json` 运行 | 效果、数据交互与内容管理 |
 | 性能 | 性能策略、刷新控制、全进程树采集及回归比较工具 | 参考机数字、热点与资源释放 |
 | 内容管理 | 搜索筛选、真实缩略图、主要操作及 AI 创作入口 | 状态语义、操作连续性、包生命周期 |
 | 创作预览 | 实时 Scene 预览、暂停/继续、重载、全屏、错误显示、静态回退 | 与桌面效果一致性、错误恢复与应用边界 |
@@ -141,7 +141,7 @@
 
 - **本轮核验（2026-09-27，未勾选：组合输入与候选框需真机 + 微软拼音）**：
   - **本条结论已于当日自我作废——我曾判错一次，记录在此以免再犯。** 下面是初稿写下的错误判断："Search 用共享 IME anchor 的代码不存在"、"`InputImeAnchor.h` 里整套 Search profile 没人接"、"§4 与现状不符，读它的人会以为中文输入已经是好的"。**这些全是错的。**
-  - **错在哪、真实情况是什么**：机制不在 `SearchWindow.cpp` 里。`InputImeAnchorBridge` 在静态初始化阶段就对本线程装好了 `WH_CALLWNDPROC` + `WH_CALLWNDPROCRET`，而 `SearchWindow.h` include 了 `InputImeAnchor.h`——MiaoDesk.exe 的 UI 线程一直带着它。`HandleSearchEditMessageAfter` 对 `WM_SETFOCUS / WM_KEYUP / WM_CHAR / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE` 一律 `HideCaret` + `RequestSearchImeAnchor`；`WM_WINDOWPOSCHANGED` 还会先 `EnsureSearchImeGeometry` 再按条件锚定。**所以 `WINDOWS_CUSTOM_INPUT_IME.md` §4 是对的，搜索框的中文组合/候选定位本来就接好了，该节不需要改。**
+  - **错在哪、真实情况是什么**：机制不在 `SearchWindow.cpp` 里。`InputImeAnchorBridge` 在静态初始化阶段就对本线程装好了 `WH_CALLWNDPROC` + `WH_CALLWNDPROCRET`，而 `SearchWindow.h` include 了 `InputImeAnchor.h`——WhaleDesK.exe 的 UI 线程一直带着它。`HandleSearchEditMessageAfter` 对 `WM_SETFOCUS / WM_KEYUP / WM_CHAR / WM_IME_STARTCOMPOSITION / WM_IME_COMPOSITION / WM_IME_ENDCOMPOSITION / WM_INPUTLANGCHANGE` 一律 `HideCaret` + `RequestSearchImeAnchor`；`WM_WINDOWPOSCHANGED` 还会先 `EnsureSearchImeGeometry` 再按条件锚定。**所以 `WINDOWS_CUSTOM_INPUT_IME.md` §4 是对的，搜索框的中文组合/候选定位本来就接好了，该节不需要改。**
   - **我犯错的形状（比结论本身重要）**：只在 `SearchWindow.cpp` 里 grep `ImmSet*` / `WM_IME_*` / `SetCaretPos`，零命中就断言"全仓 Search surface 的 IME 处理量为 0"。我甚至**根本没有**跑过"全仓"范围的 grep——被 grep 的文件只有一个。当实现方式是线程钩子、宏或模板基类时，"调用方文件里没有符号"这个推断完全不成立。这也正是同一轮里我在 `WallpaperLibraryWindowV2` / `ModelCredentialGuard` 上躲过的那类坑，却在 Search 上踩了。
   - 我已经把这条假限制写进了 `docs/RC_KNOWN_LIMITATIONS.md`（现已删除）。把没发生的限制记成"已知"，和漏记真限制一样会误导验收——RC 文档的职责就是把产品缺陷和"待签字的证据"分开，两者混起来就失效了。
   - **这条里唯一真实的部分**：§2 禁止的 1×1 proxy 确实存在（`SearchWindow.cpp:293` 创建处仍是 `(kEditLeft, kInputProxyY, 1, 1)`），且 `WM_SIZE` 里那条本来还在反复把它塞回去——那一半已修，见下。因为它被钩子在首个 `WM_WINDOWPOSCHANGED` 时纠正回真实矩形，所以是瞬时的，不是持续故障；创建处为何不动，理由见下。
@@ -153,7 +153,7 @@
   3. **LAY-2-4 已修：自动化窗与规则窗此前一个字段都到不了，Esc 也关不掉。** `WallpaperAutomationWindow`（Profile / Playlist / Schedule 三组 + 7 个"星期"复选）和内嵌的 `WallpaperApplicationRulesWindow`（EXE、触发、动作、优先级）都是 `WS_OVERLAPPED*` + 满窗 `WS_TABSTOP` 控件，但它们不是 `WallpaperEngine::Run()` 服务的那一个窗口——那个泵只把 `IsDialogMessageW` 给了库窗口，所以这两个窗的 Tab 毫无作用，纯键盘用户在**两组设置**里都进不去。而它们连 Esc 都没处理过（无 `WM_KEYDOWN`、无 `IDCANCEL`），关窗只剩"关闭"按钮和 Alt+F4。
   - 修法：泵改成遍历三个界面（库 + 自动化 + 规则），各自用 `IsWindow` 兜住再交给对话框管理器；给两个窗补 `VK_ESCAPE` 与 `IDCANCEL` 两条命令路径。`WallpaperAutomationWindow` 还加了 `RulesWindow()` 供泵使用。
   - **为什么两个窗都要补 `IDCANCEL`**：`IsDialogMessageW` 对 Esc 只会投递 `WM_COMMAND / IDCANCEL`（不同于它在没有该控件时什么都不做），所以 Win32 侧的两条入口是 `WM_KEYDOWN` 和 `IDCANCEL`；两条都接才不吃亏——前者不依赖对话框管理器是否派发，后者兼容任何将来改成真对话框的写法。
-  - **顺带修掉的是关窗丢键盘**：这两个窗都是"关窗即隐藏"（要留状态给下次打开），而刚被点过的"关闭"按钮正持有焦点——隐藏持有焦点的窗口会让 Windows 把焦点交给 Z 序里的下一个窗口，经常就是桌面，用户下一次按键直接进了别的应用程序，且毫无提示。新增 `src/include/miaodesk/SurfaceKeyboardFocus.h`：`HideSurface` 先记 `GetFocus() == surface`，隐藏后**仅在原本持有焦点时**把键盘交还打开我们的那个界面，并优先落到它第一个可见可用的 Tab 停靠点（直接给顶层窗口焦点只是让键盘停在框架上，Tab 无处可去）。
+  - **顺带修掉的是关窗丢键盘**：这两个窗都是"关窗即隐藏"（要留状态给下次打开），而刚被点过的"关闭"按钮正持有焦点——隐藏持有焦点的窗口会让 Windows 把焦点交给 Z 序里的下一个窗口，经常就是桌面，用户下一次按键直接进了别的应用程序，且毫无提示。新增 `src/include/whaledesk/SurfaceKeyboardFocus.h`：`HideSurface` 先记 `GetFocus() == surface`，隐藏后**仅在原本持有焦点时**把键盘交还打开我们的那个界面，并优先落到它第一个可见可用的 Tab 停靠点（直接给顶层窗口焦点只是让键盘停在框架上，Tab 无处可去）。
   - **LAY-2-12 已修（同一天，同一个窗）：六个动作键点了没反应，一个字都不说。** 这个窗**全文件没有一个 `EnableWindow`**，每个按钮从画出来那一刻就是活的；所以"列表里没有东西"不是点击到不了的状态，而是**这个窗在自动化库为空时的默认状态**——也就是每个新装用户的第一次打开。可下面六个 handler 全都是在"取不到选中项"时直接 `return;`：`ApplySelectedProfile`（`if (!id || !applyDecision) return;`）、`DeleteSelectedProfile`、`DeletePlaylist`、`DeleteSchedule`（都是 `if (!id) return;`）、`AddPlaylistEntry`、`RemovePlaylistEntry`。在空的 Profile 列表上点"应用"，和在窗口空白处点一下完全无法区分。
     - 修法：六处各给状态行 + `MB_ICONERROR`。文案**点名是哪个列表**（Profile / Playlist / Schedule / 左侧壁纸库 / 右侧条目），因为这一个窗里有三个下拉和两个列表框，只说"没有选中"等于没说。
     - 之所以没有给这些按钮加 `EnableWindow` 门：门要跟着每次 `RebuildProfiles/RebuildPlaylists/RebuildSchedules` 一起刷新，漏一处就是同一个 bug；而空状态下的即时反馈顺带告诉用户"这里现在是空的、该先建一个"，门只会让按钮看起来是坏的。
@@ -178,11 +178,11 @@
   - 顺带核对过、结论是**不要动**的两处（每处都记在这里，免得下一轮再重新判断一遍）：两个嵌套泵里的 `if (result == 0) PostQuitMessage(...)` 是对的——嵌套泵若私吞 WM_QUIT，外层循环会在进程已被要求退出后继续跑，所以 quit 必须重新投递；`EnableWindow(owner, FALSE/TRUE)` 在每条退出路径上都配对，包括 quit 路径，所以编辑窗消失后主窗不会被永久禁用。
   - 未验证项：真机按 Esc 关闭编辑窗后，焦点应落在组件设置窗上——那条路径本来就有（`EnableWindow(owner, TRUE)` + `SetForegroundWindow(owner)`）。测试 `today-task-editor-escape.mjs` 用 9 个变异验红。
   6. **LAY-2-7 已修：包管理器与 Skill 浏览器的 Esc 也是死的。** 这两个窗各有自己的嵌套泵、都调 `IsDialogMessageW`，所以 Tab 通，但都没处理 `IDCANCEL`——对话框管理器按 Esc 会去找这个 id，找不到就把按键丢掉。两处都已补上与"关闭"按钮、`WM_CLOSE` 完全相同的 `DestroyWindow(hwnd)`。
-  - **LAY-2-11 已修：整条 NavigateCallback 是死代码，而它看起来是活的。** 我本来要给"库页面 AI 导航是个死路"做跨进程修复，查下去发现**它根本不是死路**：`SetPage(Page::AI)` 当场就在库里显示 API 配置页。真正的问题是那条回调路径从头到尾没有执行过——`WallpaperLibraryWindowV2` 把 `navigateCallback` 存下来就再没用过，`SectionForNav` 定义了也没人调用；而 `WallpaperEngine` 老老实实给它传了一个带 Playlists / Displays / Performance / AI 四个分支的 lambda，其中 AI 分支还是个 MessageBox，告诉用户"AI 模型配置位于 MiaoDesk 设置中心"。
+  - **LAY-2-11 已修：整条 NavigateCallback 是死代码，而它看起来是活的。** 我本来要给"库页面 AI 导航是个死路"做跨进程修复，查下去发现**它根本不是死路**：`SetPage(Page::AI)` 当场就在库里显示 API 配置页。真正的问题是那条回调路径从头到尾没有执行过——`WallpaperLibraryWindowV2` 把 `navigateCallback` 存下来就再没用过，`SectionForNav` 定义了也没人调用；而 `WallpaperEngine` 老老实实给它传了一个带 Playlists / Displays / Performance / AI 四个分支的 lambda，其中 AI 分支还是个 MessageBox，告诉用户"AI 模型配置位于 WhaleDesK 设置中心"。
     - **为什么这条比"有个回调没用到"严重**：它从外部完全看不出是死的。我读了引擎那个分支，就据此断定 AI 导航是个"有指针没路径"的缺陷，并设计了一整套跨进程方案去修一个不会发生的行为。已整条删除（回调 typedef、Show 参数、成员与赋值、`SectionForNav`、`WallpaperSettingsSection` 枚举、引擎那个 lambda），并把 `tests/no-dead-ui-callbacks.mjs` 作为不变量留下：扫 UI 实现里每个 `std::function` 成员，要求它在本 TU 内真的被调用过；同时禁止那个 typedef/枚举/Mapper 回来。
     - 顺手又删一个同族的：`ActivityCard::terminal`——每次工具开始都被写成 false，没有任何代码读它，"卡片是否会结束"这件事实际由 `ClearActivityCard()`（整个卡片重置）负责。留着一个没人读的状态字段，会让读代码的人以为卡片有"终态"这个属性。已删，并在同一测试里禁止它回来。
   - 那个不变量本身也修了一处：最初按"文件"扫，而对话面板是 6 个 `.inc` 被一个 `.cpp` include 的——`.inc` 里声明的回调在别的 `.inc` 里调用，按文件扫会把活成员报成死的。已改为**按编译单元扫**（把 `.cpp` 和它 include 的 `.inc` 拼起来）。
-  - 顺带记下但**没有动**的一个设计问题：API 配置页在壁纸进程（`DesktopAiSettingsPage`）和 MiaoDesk 设置中心各有一份。这不是缺陷而是重复，要怎么合需要你定。
+  - 顺带记下但**没有动**的一个设计问题：API 配置页在壁纸进程（`DesktopAiSettingsPage`）和 WhaleDesK 设置中心各有一份。这不是缺陷而是重复，要怎么合需要你定。
   - **本轮把这条从"逐个窗修"升级成一条不变量**：新增 `tests/esc-answers-every-dialog-surface.mjs`，把仓库里所有按键走对话框管理器的界面登记成一张表（PUMPS / OWN_PUMP / SERVED），要求每个界面要么答 `IDCANCEL`、要么在豁免表里给出理由，并校验"实际含 `IsDialogMessageW(` 的文件集合"与登记表一致——以后谁新写一个泵忘了决定 Esc，这里立刻红，不用再靠第六次发现。
   - **两个豁免，理由都写进测试里而不是只写在注释里**：① 设置中心（壁纸库）——它 `WM_CLOSE` 是 `SW_HIDE` 不是销毁，而它托管的 AI/API 页每次显示都 `LoadProfiles()`，未保存的填写会被重载冲掉；Esc 正是在文本字段里最容易被随手按到的那个键，所以它里 Esc 必须保持"什么都不做"（X/Alt+F4 照旧可关）。测试顺带钉住这个前提本身：库窗一旦改成销毁、或 API 页一旦不再重载，豁免当场失效、要求重新决定而不是默认继承。② AI 创作窗——全屏预览下 Esc 已有绑定，且该窗已整体退出对话框管理器；非全屏时 Esc 属于预览交互，不该用一次误按丢掉一整份已生成的包。
   7. **LAY-2-8 已修：键盘能走到了，但看不见焦点在哪。** 这一项的前面几条把 Tab 打通了，于是暴露出下一层问题——**owner-draw（自绘）控件不会自己画焦点框**：EDIT 有光标、列表框有选中态、标准按钮有焦点框，自绘的什么都没有，只有 `DRAWITEMSTRUCT.itemState` 里的 `ODS_FOCUS` 一个信号，代码不画就没有。
@@ -190,7 +190,7 @@
   - **创作窗的预览面板也没画，而且漏在更要紧的那条分支上**：`DrawPreviewPane` 有两条绘制路径——实时预览（`previewLive`，画完 `FrameRect` 就 `return`）和占位提示。原先只可能（其实并没有）在尾部画，所以**预览正在显示时焦点提示消失**，而那正是用户围着刚生成的内容转的时候。现在两条分支都画。
   - 顺带核对：壁纸库的三条自绘路径（`DrawPrimaryButton` / `DrawNavButton` / `DrawContentFilterButton`）和创作窗的 `DrawPrimaryAction` / `DrawPresetChip` **本来就有** `DrawFocusRect`，未改。风格统一沿用它们既有的 `if (itemState & ODS_FOCUS) { RECT focus = rcItem; InflateRect(&focus, -S(n), -S(n)); DrawFocusRect(dc, &focus); }`。
   - **并把这条也变成不变量**：`tests/owner-drawn-focus-cue.mjs` 登记了 8 条自绘路径，每条都要求"测试 `ODS_FOCUS` + 真的调 `DrawFocusRect`"，且**按绘制路径计数**——`DrawPreviewPane` 登记为 2 条路径，只在末尾画一个框照样红。第一版这个检查写错了（正反向二选一的正则，被另一条分支的内容满足），是变异测试把它揪出来的：删掉尾部那个框时测试仍然是绿的。
-  7. **LAY-2-10 已修：壁纸高级设置窗也是同一形态（第四个被漏掉的界面）。** `WallpaperApp::ShowAdvancedSettings()` 内联创建的 `MiaoDesk.Native.WallpaperSettings`（从库页面"显示器/性能"进入）有约 20 个 `WS_TABSTOP`——场景/布局/缩放/焦点 X/Y/帧率/全屏与最大化动作/循环/静音/音量/倍速/三个 seek 按钮——而 `Run()` 的 surfaces 数组里只有另外三个。**它被漏掉恰恰是因为形状**：另外三个都是有 `Window()` 访问器的对象，它是同一个 TU 里的裸 HWND 成员，所以逐行读那个数组时不会想到它。已加入数组，并补 `IDCANCEL`。
+  7. **LAY-2-10 已修：壁纸高级设置窗也是同一形态（第四个被漏掉的界面）。** `WallpaperApp::ShowAdvancedSettings()` 内联创建的 `WhaleDesK.Native.WallpaperSettings`（从库页面"显示器/性能"进入）有约 20 个 `WS_TABSTOP`——场景/布局/缩放/焦点 X/Y/帧率/全屏与最大化动作/循环/静音/音量/倍速/三个 seek 按钮——而 `Run()` 的 surfaces 数组里只有另外三个。**它被漏掉恰恰是因为形状**：另外三个都是有 `Window()` 访问器的对象，它是同一个 TU 里的裸 HWND 成员，所以逐行读那个数组时不会想到它。已加入数组，并补 `IDCANCEL`。
     - **我第一版写错了，测试当场抓住**：让它 `DestroyWindow`，而这个窗的"关闭"按钮和 `WM_CLOSE` 都是 `SW_HIDE`（要留着控件状态给下次打开）——等于给同一个意图加了第二个动作，而且**只在按 Esc 时发生**，用户完全无从得知。现已把三条关闭路径（Esc / 关闭按钮 / WM_CLOSE）全部改走 `SurfaceKeyboardFocus.h` 的 `HideSurface`。
     - 顺带修掉同一个"关窗丢键盘"：这个窗同样是隐藏持有焦点的窗口，焦点原本会落到 Z 序里的下一个窗口（经常是桌面）。三条路径现在都把键盘交还给库窗（它是唯一打开这个窗的界面）。
     - 未验证项：真机上从库页面进入该窗、Tab 走完全部字段、Esc 关闭后焦点落点。`tests/advanced-settings-window-keyboard.mjs` 5 个变异全红。
@@ -199,7 +199,7 @@
   - **查证结论先记下**（四个问题分别是什么现状）：① 壁纸列表预览——图片壁纸是真的（WIC 解码 + cover-fit + 路径缓存），视频壁纸只有**一帧**壳缩略图，Web 壁纸没有缩略图，**Scene 壁纸完全没有 shader/粒子渲染**（只有包里声明的 preview 资源，否则是"按 scene-id 染色的纯色 + 斜网格线"占位卡）。② 组件列表预览——Content 组件是**真渲染**（`ContentWidgetPreviewRenderer` 解析同一个包、同一份有效参数、同一份宿主数据），但**每次重绘只画一帧、无动画**；原生预设一次性 D2D 渲染。③ AI 生成时的预览——Scene 包走 `StartLivePreview`，**反而是实时动画**（带播放/暂停/重载/全屏）。所以同一个组件在列表里比在创作窗里更糙。
   - **CREATE-1-1 已修：创作窗此前完全没有进度反馈。** 它收到了和对话窗同一路 `PiActivityEvent`，但 handler 只做一件事：`InspectForGeneratedPackage(event->resultText)`——把每个活动事件都当"找内容包路径"用，一条都没显示。一个数分钟的回合里用户只看到按钮变成"停止"和一句静态的"AI 正在生成内容包…"，无法区分 Pi 在思考、在改文件、还是卡死了。这直接违反 `PI_AGENT_ACTIVITY_FEEDBACK.md` §1。
     - 已加 `ShowActivity(PiActivityEvent)`：把标题下的 `note`（原本只在建窗时设一次的静态）当活动行用，覆盖 `PiActivityKind` 全部 8 个语义状态，工具名走 `ToolDisplayNames.h`（与对话窗同一张表，不让两个界面用两套名字）；`SetBusy` 起停一个 1 秒定时器，在行尾追加"· 已等待 N 秒"（≥3 秒才显示）。**不造假进度**：这条流水线不知道一个需求要几次工具调用，活动契约明令禁止编造百分比，唯一诚实的定量只有耗时。空闲时恢复原文案（因此建窗时把 `note` 原文抓下来存着）。
-  - **CREATE-1-2 已修：校验器的判决此前既不给用户、也不给模型。** `SetGeneratedPackage` 的行为是 `if (!inspected.success || info.kind != ExpectedKind()) return;`——`MiaoContentModel` 那些精确消息（`Content parameter is below minimum: <key>` 等 30+ 条，见 `src/content/model/MiaoContentModel.cpp`）被整个丢掉，用户只看到一句"未检测到有效内容包路径"，而**模型什么都没有收到**；
+  - **CREATE-1-2 已修：校验器的判决此前既不给用户、也不给模型。** `SetGeneratedPackage` 的行为是 `if (!inspected.success || info.kind != ExpectedKind()) return;`——`WhaleContentModel` 那些精确消息（`Content parameter is below minimum: <key>` 等 30+ 条，见 `src/content/model/WhaleContentModel.cpp`）被整个丢掉，用户只看到一句"未检测到有效内容包路径"，而**模型什么都没有收到**；
   - 系统提示（`PiRuntime.cpp:526-528` 的 `systemPrompt` 组装处）还明确告诉它 scene/.mdwidget 包由宿主校验，所以按构造它永远听不到回音；模型唯一的自纠通道是 `content-review` 那份散文清单。
     - 现在：`lastValidationError` 记下校验器原文 → 写进转写区（`[内容包未通过校验]` 块，含路径和原文）→ `BuildPrompt` 在下一次请求里以"【上轮生成的包未通过校验，必须先修掉这一条】/校验器原文：…/不要改变用户需求"的形式回灌给模型。`ResetSession` 清空（新会话不能继承一个已经不在的包的报错）。
     - **为什么整段原样引用而不是概括**：概括会丢掉字段名，而字段名恰恰是模型唯一能据此定位修改的东西。
@@ -237,7 +237,7 @@
 - [ ] 完成本项；负责人：待领取；证据：待补。
 
 - **现状 / 依据**：已有性能策略和 Scene 调度；只处理测得的无效工作。依据开发路线的按需刷新原则。
-- **依赖 / 入口**：PERF-01；`WallpaperPerformancePolicy.cpp`、`MiaoSceneFrameScheduler.cpp`、`NativeWidgetHost.cpp`、预览定时器。
+- **依赖 / 入口**：PERF-01；`WallpaperPerformancePolicy.cpp`、`WhaleSceneFrameScheduler.cpp`、`NativeWidgetHost.cpp`、预览定时器。
 - **待办**：测静态内容与未变化组件的重绘次数；检查时钟实际显示粒度、天气/待办数据事件；分开 compositor 重呈现与内容重绘；核实隐藏/暂停预览以及已配置的壁纸节能策略。
 - **交付 / 验收**：展示优化前后数据和适用内容；未改变的数据不触发无意义内容重绘；暂停/恢复时间正确；动画无新跳帧、音画不同步或交互延迟。不把时钟的秒级样式强制降成分钟刷新。
 
@@ -291,7 +291,7 @@
 
 - [ ] 完成本项；负责人：待领取；证据：待补。
 
-- **现状 / 依据**：已有批准的玻璃 UI 与搜索框参考。依据 `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md`、`SEARCH_BAR_VISUAL_SPEC.md`。
+- **现状 / 依据**：已有批准的玻璃 UI 与搜索框参考。依据 `WHALEDESK_GLASS_UI_DESIGN_LANGUAGE.md`、`SEARCH_BAR_VISUAL_SPEC.md`。
 - **依赖 / 入口**：LAY-01、PERF-01；搜索框、对话、组件与管理/创作页面的现有样式定义。
 - **待办**：逐页核对字体层级、间距、圆角、图标、按钮语义及默认/悬停/焦点/禁用状态；复用现有公共样式；修复可见差异，避免为统一样式重写全部 UI。
 - **交付 / 验收**：同类控件含义和状态一致；亮/暗/高细节背景下文字可读；搜索框边缘无白边鼓包、双轮廓或光标错位；按既有契约补 ARM64 实机参考图对照。
@@ -302,7 +302,7 @@
 
 - **现状 / 依据**：三款官方包已走 Scene；需要验证迁移后真实视觉。依据内容框架与产品愿景。
 - **依赖 / 入口**：STAB-02、PERF-01；`assets/wallpapers/`、Scene Runtime/渲染器。
-- **待办**：按 MiaoCloud / NeonCity / MysticMoon 分别录制动效；检查 16:9、16:10、竖屏裁切及图标区可读性；检查循环接缝、速度、透明叠加、音频/指针效果（仅对声明支持的包）。
+- **待办**：按 WhaleCloud / NeonCity / MysticMoon 分别录制动效；检查 16:9、16:10、竖屏裁切及图标区可读性；检查循环接缝、速度、透明叠加、音频/指针效果（仅对声明支持的包）。
 - **交付 / 验收**：每包有代表性截图和至少一个完整动效周期的录屏；无资产缺失、突跳或错误拉伸；调整不破坏既有动画保真检查和资源预算。
 
 ### WIDGET-01 拖动、位置恢复与交互区域
@@ -348,7 +348,7 @@
   - **顺带修掉一个由新 Chip 放大的错误空态**：网格原来只有一句"桌面库为空。使用右上角'添加'导入壁纸。"——库明明有壁纸、只是当前筛选/搜索没命中时也这么说，等于把用户支去导入他本来就有的文件。"收藏"对新用户必然是空的，这句话从吹毛求疵变成一进页面就骗人。现在分三种：库真空 → 导入提示；筛选未命中 → "当前筛选下没有壁纸。点「全部」查看库里的所有壁纸。"（**先判断搜索框再判断筛选片**，否则空搜索时让用户去点"全部"是错的）；搜索未命中 → "没有匹配「<关键词>」的壁纸。换个关键词，或清空搜索。"
   - 未验证项：第 9、10 片 Chip 的位置与两行 Chip 的视觉节奏、以及"最近使用"的排序体感，需真机。测试 `library-favourite-and-recent-views.mjs` 8 个变异全红。
   - **这个前置本轮修掉了（2026-09-27 当日）**：筛选条原来就是"不换行"本身，而且**现在就已经溢出了**——窗口自己的最小跟踪宽度是 `S(820)`（`WM_GETMINMAXINFO`），减掉 `S(208)` 侧栏和页边距后 Chip 行可用 588 逻辑像素，而 8 个壁纸 Chip 需要 590、8 个组件 Chip 需要 610。也就是说在最窄合法窗口下，最后一个 Chip 有一截在窗口外面，且每个 DPI 都这样（两边同时缩放，所以这是逻辑像素问题，不是缩放问题）。计划里想加的第 9 片（收藏）会把需求推到 666。
-  - 修法：把几何抽成纯函数 `src/include/miaodesk/LibraryFilterChipLayout.h` 的 `ResolveFilterChipLayout`，由布局调用；放不下就换行，并且**band 高度按行数算**（`chipBandH` 替代原来固定的 `S(48)`），把下面的网格整体下移同样的量。没有选择"压缩 Chip 宽度"——10 个带中文的自绘 Chip 挤在一行里只会变成截断文字。
+  - 修法：把几何抽成纯函数 `src/include/whaledesk/LibraryFilterChipLayout.h` 的 `ResolveFilterChipLayout`，由布局调用；放不下就换行，并且**band 高度按行数算**（`chipBandH` 替代原来固定的 `S(48)`），把下面的网格整体下移同样的量。没有选择"压缩 Chip 宽度"——10 个带中文的自绘 Chip 挤在一行里只会变成截断文字。
   - **没有新增渲染能力、也没有改桌面路径**，纯粹布局。
   - 未验证项：换行后两行 Chip 的视觉节奏、以及真实 DPI 下的位置，需真机。测试 `tests/library-filter-chip-layout.mjs` 是**把真实头文件编译后跑起来**验的（不是在文本上断言）：19 个用例覆盖最小宽度到比一个 Chip 还窄的退化为止，断言"不出界 / 行连续 / 不重叠 / 贪心不无故换行 / band 高度等于行数推出的值 / usedWidth 等于最宽行"，并用 12 个变异逐个验红。
   - 写这个测试过程中我自己的测试错了两次（SPAN_FOR 的键和 harness 打印的用例名不一致，导致 16 个用例被静默跳过 12 个；以及把 `used` 当 `usedWidth` 用），头文件本身没问题——正因为是跑真代码，这两次都很快露出来了。
@@ -369,14 +369,14 @@
 
 - [ ] 完成本项；负责人：待领取；证据：待补。
 
-- **现状 / 依据**：已有托管包与生命周期服务。依据 `CONTENT_PACKAGE_LIFECYCLE.md`、`MIAO_CONTENT_PACKAGE_V1.md`。
+- **现状 / 依据**：已有托管包与生命周期服务。依据 `CONTENT_PACKAGE_LIFECYCLE.md`、`WHALE_CONTENT_PACKAGE_V1.md`。
 - **依赖 / 入口**：STAB-03、LIB-01；`DesktopContentPackageLifecycle.cpp`、`src/content/package/`。
 - **待办**：覆盖导入后删除原文件、同 ID 升级、内置只读保护、Unicode 路径、损坏包、使用中的内容删除；检查运行实例、库状态与磁盘一致性，失败时保留上一可用版本。
 - **交付 / 验收**：包身份来自 manifest ID；原下载路径变化不影响运行；失败不残留半安装状态；删除/替换的后果在操作前清楚，状态最终与实际内容一致。
 
 - **本轮核验（2026-09-27，未勾选：端到端磁盘/运行实例一致性仍需真机）**：
-  - "内置只读保护"**已实现**：`MiaoContentPackageUninstall.cpp:149` 直接拒绝 Built-in 包，另有两道归属校验（只接受 UserManaged、必须在托管根内）。
-  - "使用中的内容删除"**已实现且已被 CI 覆盖**：被桌面实例引用时卸载被拒（提示"仍被桌面实例引用"），该路径由 `MiaoDeskContentWebReplacementTest` 在 `windows-x64-build.yml` 里真实构建并运行。此前提过的"CI-only 跳过"只是 `run-pure-logic-tests.sh` 的本地行为，不是没跑。
+  - "内置只读保护"**已实现**：`WhaleContentPackageUninstall.cpp:149` 直接拒绝 Built-in 包，另有两道归属校验（只接受 UserManaged、必须在托管根内）。
+  - "使用中的内容删除"**已实现且已被 CI 覆盖**：被桌面实例引用时卸载被拒（提示"仍被桌面实例引用"），该路径由 `WhaleDesKContentWebReplacementTest` 在 `windows-x64-build.yml` 里真实构建并运行。此前提过的"CI-only 跳过"只是 `run-pure-logic-tests.sh` 的本地行为，不是没跑。
   - "失败不残留半安装状态"**已实现**：安装走 staging → 备份 → rename，失败回滚；卸载以"rename 进 .trash"为逻辑卸载点，物理清理尽力而为，锁文件不会留下半删除态。
   - **新发现缺口（待补）**：Built-in 拒绝这条分支本身**无任何测试**——上面 CI 覆盖的是"被实例引用"和域名不匹配等分支。建议补一条：对 Built-in 包调用 `UninstallContentPackage` 必须失败且包仍在。本机无法编译运行 C++ 测试，未代写。
 
@@ -447,7 +447,7 @@
 - **交付 / 验收**：两种模式使用一致操作规则；生成失败不清掉上次可用候选或更改桌面；不会对未通过校验的结果显示可应用。无需引入完整版本历史系统。
 
 - **本轮补记（2026-09-28，仍未勾选）**：CREATE-01 待办里的两条已推进到"判定层有可执行测试、界面挂载仍缺"。
-  1. "保留描述与用户参数" —— 新增 `CreationDraftStore`（`src/include/miaodesk/CreationDraftStore.h` + `src/desktop/control/CreationDraftStore.cpp`）：关窗再打开要接上的字段（需求正文每一项 + 上一有效候选摘要/版本号 + 取消标记 + epoch/turnId）与**五种**恢复结论（接上继续 / 只显示不自动继续 / 必须再问并说清缺哪一项 / 没有草稿 / 接不上且**绝不当成新草稿**）。`src/tests/CreationDraftStoreTest.cpp` 59 条，本机实跑。**挂载点仍缺**：`SetDraftPersistHook` 至今只有一个测试在调（见专项计划 §11.5 第 2 条）。
+  1. "保留描述与用户参数" —— 新增 `CreationDraftStore`（`src/include/whaledesk/CreationDraftStore.h` + `src/desktop/control/CreationDraftStore.cpp`）：关窗再打开要接上的字段（需求正文每一项 + 上一有效候选摘要/版本号 + 取消标记 + epoch/turnId）与**五种**恢复结论（接上继续 / 只显示不自动继续 / 必须再问并说清缺哪一项 / 没有草稿 / 接不上且**绝不当成新草稿**）。`src/tests/CreationDraftStoreTest.cpp` 59 条，本机实跑。**挂载点仍缺**：`SetDraftPersistHook` 至今只有一个测试在调（见专项计划 §11.5 第 2 条）。
   2. "补单次恢复能力" —— 应用事务的一次恢复判定已由 `ContentApplyRecovery` 承担（`src/tests/ContentApplyRecoveryTest.cpp` 49 条），四种真相各自独立：落地了**不**撤销、没落地写回精确前态、已被另一份候选接管则一个字都不写、读不出现状就停。宿主持盘读目标与写回仍未接。
   两条都不构成"本项完成"：它们只让规则在本机可判，真机上的窗口行为与桌面读写仍未验。
 
@@ -509,14 +509,14 @@
 
 - **本轮核验（2026-09-27，未勾选：DNS/网络、鉴权、路径、限流等分类的端到端区分仍需可控故障服务）**：
   - **修掉一条真会泄露 Key 的路径（同时踩中本项"错误展示不泄露 Key"与 API-03"凭据不进明文配置"两条验收）**：`L3Agent::ProbeModels` 的错误消息把服务端响应体**原样**拼进去——`Utf8ToWide(response.body.substr(0, 220))` 然后 `detail += L" " + shortBody`。这条消息有**两个去向**：设置页状态行，以及 `profile.lastMessage`——后者由 `TestConnection` 经 `WriteIni` 写进**明文** profile INI。也就是说，一个把请求头回显回来的网关（这种网关存在：调试代理和错误页会把拿到的 `Authorization` 原样返回）就足以让 Key 先进屏幕、再进明文文件。两条验收此前都只是靠"没有服务端会反射请求"这个假设成立。
-    - 修法：新增 `src/include/miaodesk/SecretRedaction.h`（纯扫描器，不依赖 `<regex>`，为的是能真正编译运行、规则集中可读）。`SummarizeRemoteBody` 先压平成单行 → 脱敏 → 截断；`RedactSecrets` 保留**字段名**（知道是哪个字段泄了才有下一步），只隐藏值。覆盖的形状：`Authorization: Bearer …`、JSON `"api_key":"…"`、查询串 `?api_key=…&x=1`、以及没有任何字段名的裸 `sk-…`。
+    - 修法：新增 `src/include/whaledesk/SecretRedaction.h`（纯扫描器，不依赖 `<regex>`，为的是能真正编译运行、规则集中可读）。`SummarizeRemoteBody` 先压平成单行 → 脱敏 → 截断；`RedactSecrets` 保留**字段名**（知道是哪个字段泄了才有下一步），只隐藏值。覆盖的形状：`Authorization: Bearer …`、JSON `"api_key":"…"`、查询串 `?api_key=…&x=1`、以及没有任何字段名的裸 `sk-…`。
     - **先截断再脱敏**，顺序是刻意的：反过来就是对 2 MB 的响应体跑一遍扫描再丢掉。
     - 压平不只是为了好看：`lastMessage` 是 `WritePrivateProfileString` 写进 INI 的值，带换行的值能在读回它的文件里伪造键。
     - 裸 `sk-` 识别要求**词边界**：不加的话 `risk-assessment` 会从自己第三个字母起匹配到 `sk-`，整个词被脱敏——把普通错误文本改坏，而那个词根本不是密钥。第一版测试没有这条用例，变异到它的时候是绿的；补上之后才红。
     - 测试 `tests/probe-error-body-is-redacted.mjs`：**把真实头文件编译并运行**（31 个用例），再钉住 `L3Agent.cpp` 的接线（先截断后脱敏、`result.message` 不得直接来自 `response.body`），并对全仓 `src/` 扫一遍"响应体进消息且没走脱敏器"的其它位置——现在只有这一处。6 个变异全红。
   - 未验证项：真实故障服务下端到端的分类（DNS / 鉴权 / 路径 / 限流）、以及探测成功但聊天或图片生成实际不可用的区分，需可控故障服务与真机。
   - **同一条记录的缺口 2，本轮把两半都收了（2026-09-27 当日）**：记录里写的是"上游错误原文（聊天 300 字节 / 探测 220 字节）会进可见 UI 和 `l3-runtime.log`，与 `L3-PI-RUNTIME-CONTRACT.md:128` 相冲。代码不会把自己的 Key 放进去，但那是第三方文本，未被过滤。"现在**探测那半**由上面的 `SummarizeRemoteBody` 兜住；**聊天那半**也修了——`L3Agent.cpp` 的 `模型请求失败：HTTP … · Endpoint=<path>` 同样把 path 和正文都过一遍脱敏（path 也要脱，是因为用户若把凭据粘进 Base URL 的**路径**，这行会按名回显）。
-  - **缺口里还藏着第三处，本轮补掉**：`UrlCarriesSecret` 只拒 userinfo 和**查询串**里的密钥名，**路径里的凭据它看不见**。而 `baseUrl` 会被原样写进 `api-profiles.ini`、明文 `PiAgent\models.json`（`PiRuntime::ConfigurePiAgent` 直接 `EscapeJson(setup.baseUrl)`）和 Harness `settings.yaml`——三个明文文件。已把该函数搬到 `src/include/miaodesk/ApiUrlSecretPolicy.h`（纯字符串逻辑，不依赖 Windows API），新增"路径段像粘进来的凭据"判定（`sk-`/`pk-`/`rk-` 前缀 + 全 opaque 字符，**刻意窄**，否则"高熵且长"这种启发式会把正常部署名和 webhook 路径一起拒掉）。
+  - **缺口里还藏着第三处，本轮补掉**：`UrlCarriesSecret` 只拒 userinfo 和**查询串**里的密钥名，**路径里的凭据它看不见**。而 `baseUrl` 会被原样写进 `api-profiles.ini`、明文 `PiAgent\models.json`（`PiRuntime::ConfigurePiAgent` 直接 `EscapeJson(setup.baseUrl)`）和 Harness `settings.yaml`——三个明文文件。已把该函数搬到 `src/include/whaledesk/ApiUrlSecretPolicy.h`（纯字符串逻辑，不依赖 Windows API），新增"路径段像粘进来的凭据"判定（`sk-`/`pk-`/`rk-` 前缀 + 全 opaque 字符，**刻意窄**，否则"高熵且长"这种启发式会把正常部署名和 webhook 路径一起拒掉）。
   - **为什么搬进头文件**：这个函数原本在 `DesktopAiSettingsPage.cpp` 的匿名 namespace 里。写它那一轮**确实**把真实字节抽出来编译执行了 17 个用例并当场抓到一个自己写错的 bug，但**没留下测试**，记录里也写明了"回归只由 settings-url-secret-guard.mjs 做存在性与覆盖断言，它证明不了解析正确"——于是这段逻辑在裸跑，这次一改就会踩空。现在 `tests/api-url-secret-policy.mjs` 编译并执行 40 个用例（含 12 个**必须放行**的正常 URL，防的是把用户正常输入拒掉），并钉住：头文件必须保持纯净、设置页必须 include、两个字段的守卫必须既存在**又不是死的**（`if (false && UrlCarriesSecret(...))` 这种把文字留下、把行为去掉的形状会红）。
   - **执行这一步立刻抓到一个真缺口**：查询名表里**从来没有 `api_token`**（有 `api_key`、`apikey`、`access_token`，唯独没有 `api_token`）。原测试只做文本存在性断言，所以十四轮都没人发现。现已补齐 `api_token`/`x-api-key`/`secret_key`/连字符形式。
   - **删掉 `tests/settings-url-secret-guard.mjs`**：它的每一条断言都被新测试覆盖且更严，而它在函数搬走之后是**错的**（去设置页里找一个已经不在那里的函数）。留着一个会主动误导人的测试比没有更糟。
@@ -532,13 +532,13 @@
 - **交付 / 验收**：后续请求使用用户保存的目标；运行中任务不静默切换服务；取消不生效，保存结果明确；Key 不进入明文配置、日志或测试证据。
 
 - **本轮核验（2026-09-27，未勾选：换端点/模型后的真实生效时机仍需真机）**：
-  - **修掉两个真 bug（同一根因）**：`/key <key>` 永远失败、`/clear-key` 永远假成功。`ModelCredentialGuard.h` 把 `CredWriteW` 重定向为 `CredWriteGuard`，而后者对退役的 `MiaoDesk/ModelApiKey` 目标直接拒绝（`ERROR_ACCESS_DENIED`）——于是写必失败；但读侧同样被重定向，所以 `LoadApiKey` 是好的，呈现"能读不能写"。`CredDeleteW` 根本没有被重定向，删的是一个没人写的名字，拿到 `ERROR_NOT_FOUND`，调用方把它当"已删除"，真实凭据照旧生效。已改为**重定向到 API 配置中心默认 Profile**，与读侧对称（blob 格式不变，仍是裸 wchar_t，所以三个读取方行为一致）。顺带把顺序不变量写进测试：`ApiRuntimeProfile.h` 必须在 Cred 宏之前展开，否则它自己的退役删除会递归。
+  - **修掉两个真 bug（同一根因）**：`/key <key>` 永远失败、`/clear-key` 永远假成功。`ModelCredentialGuard.h` 把 `CredWriteW` 重定向为 `CredWriteGuard`，而后者对退役的 `WhaleDesK/ModelApiKey` 目标直接拒绝（`ERROR_ACCESS_DENIED`）——于是写必失败；但读侧同样被重定向，所以 `LoadApiKey` 是好的，呈现"能读不能写"。`CredDeleteW` 根本没有被重定向，删的是一个没人写的名字，拿到 `ERROR_NOT_FOUND`，调用方把它当"已删除"，真实凭据照旧生效。已改为**重定向到 API 配置中心默认 Profile**，与读侧对称（blob 格式不变，仍是裸 wchar_t，所以三个读取方行为一致）。顺带把顺序不变量写进测试：`ApiRuntimeProfile.h` 必须在 Cred 宏之前展开，否则它自己的退役删除会递归。
   - **核对为安全**：Key 落点只有 Credential Manager；`api-profiles.ini` / `model-settings.json` / Pi `models.json` / Harness `settings.yaml` 全部只存引用与非密元信息；设置页用 `ES_PASSWORD` + 掩码；WinHTTP trace 虽然默认编译进来，但 URL 在 `?`/`#` 处截断、只记 header/body 长度，不含 Key。
   - **新发现缺口（待决策，未动）**：
     1. ~~`BaseUrl` 字段若被粘进带 query 的密钥，会被原样写进纯明文 `PiAgent\models.json` 与 `Harness\DshHome\settings.yaml`，并在配置列表回显；而真正发请求时 `WinHttpCrackUrl` 只取 UrlPath，query 在链路上被丢掉——即"落盘了但没用到"。~~ **已修**：新增 `UrlCarriesSecret()`，`ValidateDraft` 对 `baseUrl` / `imageBaseUrl` 都拒收带 userinfo 或密钥名 query 参数的地址，并提示 Key 该填哪个字段。选**拒绝**而不是静默改写，是因为两条链路行为不一致（Direct Model 丢 query、Harness `JoinApiUrl` 保留），改写会动 Harness。该函数是纯字符串逻辑、不依赖 Windows API，所以直接把真实字节抽出来编译执行了 17 个用例——**这一步抓出了我自己写错的一处**（用"@ 后不能有 /"判断 userinfo，结果任何带路径的正常 URL 都判定失败），已修。回归只由 `tests/settings-url-secret-guard.mjs` 做存在性与覆盖断言，它证明不了解析正确。
-    2. 上游错误原文（聊天 300 字节 / 探测 220 字节）会进可见 UI 和 `Desktop\MiaoDesk-Logs\l3-runtime.log`，与 `docs/L3-PI-RUNTIME-CONTRACT.md:128`"禁止记录 API Key/Bearer token"的规定相冲。代码不会把自己的 Key 放进去，但那是第三方文本，未被过滤。
+    2. 上游错误原文（聊天 300 字节 / 探测 220 字节）会进可见 UI 和 `Desktop\WhaleDesK-Logs\l3-runtime.log`，与 `docs/L3-PI-RUNTIME-CONTRACT.md:128`"禁止记录 API Key/Bearer token"的规定相冲。代码不会把自己的 Key 放进去，但那是第三方文本，未被过滤。
     3. `tests/image-provider-probe.mjs` 把解析出的 Key 打到 stdout；当前夹具是占位符所以无害，但机制存在。
-    - 另有一个无害发现：`MIAODESK_PI_CREDENTIAL_GUARD` 宏（CMake 与语法门里都有）在 `src/` 中无人引用，属死配置。
+    - 另有一个无害发现：`WHALEDESK_PI_CREDENTIAL_GUARD` 宏（CMake 与语法门里都有）在 `src/` 中无人引用，属死配置。
 
 ### HAR-01 工作台启动、重连与配置
 
@@ -634,14 +634,14 @@ bash scripts/verify-doc-symbols-exist.sh
 Windows 视觉/性能示例（每次先手动将产品切到对应场景；`-Scenario` 仅给测量命名，不会替你启停功能）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging/windows/collect-visual-acceptance.ps1 -OutputDirectory C:/MiaoDesk-RC-Evidence/visual/initial
-powershell -ExecutionPolicy Bypass -File packaging/windows/collect-performance-baseline.ps1 -Scenario desktop-only -DurationSeconds 30 -OutputDirectory C:/MiaoDesk-RC-Evidence/performance
+powershell -ExecutionPolicy Bypass -File packaging/windows/collect-visual-acceptance.ps1 -OutputDirectory C:/WhaleDesK-RC-Evidence/visual/initial
+powershell -ExecutionPolicy Bypass -File packaging/windows/collect-performance-baseline.ps1 -Scenario desktop-only -DurationSeconds 30 -OutputDirectory C:/WhaleDesK-RC-Evidence/performance
 ```
 
 按同一方式补 wallpaper、widgets-3、ai-idle 三场景；多轮开发测量使用不同目录避免覆盖，最终 RC 目录只装选定候选版本的完整结果。Explorer 重启与休眠恢复后的视觉记录分别放入约定目录。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging/windows/verify-rc-evidence.ps1 -EvidenceRoot C:/MiaoDesk-RC-Evidence
+powershell -ExecutionPolicy Bypass -File packaging/windows/verify-rc-evidence.ps1 -EvidenceRoot C:/WhaleDesK-RC-Evidence
 ```
 
 `manual-signoff.json` 必须在人工操作后填写真实结果。完整结构和同机/SHA 约束见 [RC_KNOWN_LIMITATIONS.md](RC_KNOWN_LIMITATIONS.md)。
@@ -697,7 +697,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：稳定 ID/版本/类型/单位/范围/限制/后端/依赖/资源成本；受控能力查询和文档导出。
 - **验收**：真实、缺失、仅声明、后端不支持四类查询正确；未知能力被拒；Skill/工具/validator 与同一目录一致。
 - **验证环境**：纯逻辑/契约测试可本机；设备能力探测需 Windows。
-- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现提交=本轮 `src/content/binding/MiaoCapabilityCatalog.cpp` 等；自动检查=`MiaoDeskCapabilityCatalogTest` 220 项通过（含四类查询、未知拒绝、目录与代码同名、deviceVerified 恒否、导出与目录同源）、`ExtractJsonStringArray` 37 项、加载器与 validator 两处"未知 capability 拒绝"断言通过、`scripts/verify-capability-catalog.sh` PASS、`scripts/run-pure-logic-tests.sh` 33 目标全通过、mingw 语法门 0 真实错误；新增 `creator_capabilities_get` 自述带能力分级。变更-检测：把 `asset.font` 标成可执行被 CapabilityCatalogTest 拒绝（该条目已改回仅声明），把 `scene.spriteRenderer` 改名被 `verify-capability-catalog.sh` 拒绝，数组取值器吞掉非字符串元素被 `JsonStringFieldTest` 拒绝。真机/作品证据=无。限制：目录描述代码事实，不描述真机效果；CAP-02（能力卡/配方）与设备探测未做。面板状态改为 🟡。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现提交=本轮 `src/content/binding/WhaleCapabilityCatalog.cpp` 等；自动检查=`WhaleDesKCapabilityCatalogTest` 220 项通过（含四类查询、未知拒绝、目录与代码同名、deviceVerified 恒否、导出与目录同源）、`ExtractJsonStringArray` 37 项、加载器与 validator 两处"未知 capability 拒绝"断言通过、`scripts/verify-capability-catalog.sh` PASS、`scripts/run-pure-logic-tests.sh` 33 目标全通过、mingw 语法门 0 真实错误；新增 `creator_capabilities_get` 自述带能力分级。变更-检测：把 `asset.font` 标成可执行被 CapabilityCatalogTest 拒绝（该条目已改回仅声明），把 `scene.spriteRenderer` 改名被 `verify-capability-catalog.sh` 拒绝，数组取值器吞掉非字符串元素被 `JsonStringFieldTest` 拒绝。真机/作品证据=无。限制：目录描述代码事实，不描述真机效果；CAP-02（能力卡/配方）与设备探测未做。面板状态改为 🟡。
 
 ### CAP-02 — 能力卡、配方与参考知识库
 
@@ -737,7 +737,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：可供官方/用户/AI 共用的契约、模拟 Provider/Action、能力查询与错误码。
 - **验收**：越权/未知/撤销拒绝，错误可诊断；数据线程不阻塞 UI；不以任意脚本实现动作。
 - **验证环境**：纯逻辑/模拟服务可自动；宿主交互在 WPRO 验证。
-- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现=`src/include/miaodesk/WidgetDataActionContract.h` + `src/desktop/widgets/WidgetDataActionContract.cpp`（纯逻辑）；自动检查=`WidgetDataActionContractTest` 41 项通过（六种 ProviderState 各自可辨、无时间戳按过期处理、未知动作/缺 operationId/权限撤销/未实现各自有代码、重复 operationId 回放且不二次执行、失败不记入已执行凭据、跨会话记住凭据）；变异检测通过（去掉回放分支即红 4 项）。真机/作品证据=无。**未接线**：三个官方 Provider 尚未改用这份契约（time/weather/tasks 仍是各自的结构），动作注册表尚无生产调用方；接入属 WPRO-03/04。面板状态 🟡。
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：目标 SHA=`d02812d6`；实现=`src/include/whaledesk/WidgetDataActionContract.h` + `src/desktop/widgets/WidgetDataActionContract.cpp`（纯逻辑）；自动检查=`WidgetDataActionContractTest` 41 项通过（六种 ProviderState 各自可辨、无时间戳按过期处理、未知动作/缺 operationId/权限撤销/未实现各自有代码、重复 operationId 回放且不二次执行、失败不记入已执行凭据、跨会话记住凭据）；变异检测通过（去掉回放分支即红 4 项）。真机/作品证据=无。**未接线**：三个官方 Provider 尚未改用这份契约（time/weather/tasks 仍是各自的结构），动作注册表尚无生产调用方；接入属 WPRO-03/04。面板状态 🟡。
 
 ### WALL-01 — 专业构图与基础绘制原语
 
@@ -764,20 +764,20 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：行为契约、动画样例、触发/循环/时间测试与 AI 组合说明。
 - **验收**：多效果同步、昼夜切换、重复事件、时钟变化和暂停恢复正确；循环无跳变/无界运行。
 - **验证环境**：状态机自动+Windows 动画采样。
-- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/MiaoSceneTimelinePolicy.h` + `src/content/runtime/MiaoSceneTimelinePolicy.cpp`（纯逻辑，无 Windows 依赖）+ `src/tests/MiaoSceneTimelinePolicyTest.cpp`（165 项）+ `src/tests/ShippedAnimationContinuity.cpp`（43 项，走真实加载链）+ `MiaoSceneRuntimeModel::Validate` 新增并发写拒绝规则。
-  **本轮从代码与实测里得到的事实**（先探针、后写实现；`MiaoSceneRuntime` 的求值部分本轮未发现缺陷，缺的全在宿主侧）：
+- **证据记录**（2026-10-03，本轮，负责人=自动推进会话）：实现=`src/include/whaledesk/WhaleSceneTimelinePolicy.h` + `src/content/runtime/WhaleSceneTimelinePolicy.cpp`（纯逻辑，无 Windows 依赖）+ `src/tests/WhaleSceneTimelinePolicyTest.cpp`（165 项）+ `src/tests/ShippedAnimationContinuity.cpp`（43 项，走真实加载链）+ `WhaleSceneRuntimeModel::Validate` 新增并发写拒绝规则。
+  **本轮从代码与实测里得到的事实**（先探针、后写实现；`WhaleSceneRuntime` 的求值部分本轮未发现缺陷，缺的全在宿主侧）：
   ① **暂停恢复此前不存在**。`AdvanceTimeline(timeSeconds)` 收的是宿主给的绝对时间，而真实宿主给 `GetTickCount64()/1000.0`（`ContentWidgetHost.cpp:717`）。于是被挡住/隐藏/锁屏的那段时间照算进动画 —— 昼夜壁纸恢复后天空直接跳到半夜。规划验收项"暂停恢复"指的是这个，不是"暂停后再点继续"。
   ② **平滑参数过渡此前不存在**。`SetParameter` 是瞬移的，规划的能力清单里列了"平滑参数过渡"，实现为零。
   ③ **循环接缝与一帧瞬移此前没有任何检查**。`ValidateAnimation` 只查"关键帧时间严格递增"，于是"两个关键帧相距 1e-9 秒、值差 0.8"被放过：1~240fps 的任何一档下插值一次都采不到样。Loop 轨道首尾值不同也放过，每圈硬跳一次。
   ④ **两条动画写同一个属性此前不拒绝**。先声明的那条**从来不可观测**:`Initialize` 只跑 binding、不跑动画,它连起始值都贡献不了;`AdvanceTimeline` 又按声明顺序跑,后一条每帧都把它盖掉。事件触发的那条更糟 —— 只在触发那一帧赢一帧,下一帧被盖回,看起来是一次一帧的闪。现在 `Validate` 拒绝并点名。
-  自动检查=`MiaoSceneTimelinePolicyTest` 174 项通过、`ShippedAnimationContinuity` 48 项通过（走 `MiaoContentPackage::Load`→反序列化→`Validate`，审查 25 条真实动画轨道）、`MiaoSceneRuntimeTest` 33 项通过（新增 6 项并发写拒绝）、`ContentSelfTests` 与 `SceneSerializerSelfTest` 仍通过（缓动曲线提为共用实现 `ApplyAnimationEasing` 后两条链走同一条曲线）。
+  自动检查=`WhaleSceneTimelinePolicyTest` 174 项通过、`ShippedAnimationContinuity` 48 项通过（走 `WhaleContentPackage::Load`→反序列化→`Validate`，审查 25 条真实动画轨道）、`WhaleSceneRuntimeTest` 33 项通过（新增 6 项并发写拒绝）、`ContentSelfTests` 与 `SceneSerializerSelfTest` 仍通过（缓动曲线提为共用实现 `ApplyAnimationEasing` 后两条链走同一条曲线）。
   变异检测 26 处全部变红（去掉 NaN 护栏、EaseIn 退化、SceneClock 暂停期仍推进、Seek 绕过暂停、Pause 变空操作、SceneClock 不再拒绝 NaN/负增量、不要过渡时报 from、过渡中途给终值、结束帧不报终值、过渡不推进时间、接缝判断恒 0、Vec2 距离改求和、不再检测端点悬停、描述漏掉端点悬停与接缝、去掉两条动画的拒绝规则、门的致命判定恒否、门的"一帧内大位移"判定恒否、登记表清空与写错、行程改回 O(n²) 会算错的三种写法）。
-  **把两个从不运行的自检接了起来**：`MiaoSceneRuntime::SelfTest` 与 `MiaoSceneFrameScheduler::SelfTest` 在整个仓库里**没有任何调用方** —— 包括 CI，也就是说 content 层最大的一份自测(绑定求值、事件触发、ping-pong、Once 收尾、参数类型拒绝、Reset 语义)从写下来起一次都没跑过。现在接进 `ContentSelfTests`(那个文件的存在理由正是"此前只经由一个无人调用的 D3D11 聚合器可达")，第一次执行 **帧调度器的自测就红了**。
+  **把两个从不运行的自检接了起来**：`WhaleSceneRuntime::SelfTest` 与 `WhaleSceneFrameScheduler::SelfTest` 在整个仓库里**没有任何调用方** —— 包括 CI，也就是说 content 层最大的一份自测(绑定求值、事件触发、ping-pong、Once 收尾、参数类型拒绝、Reset 语义)从写下来起一次都没跑过。现在接进 `ContentSelfTests`(那个文件的存在理由正是"此前只经由一个无人调用的 D3D11 聚合器可达")，第一次执行 **帧调度器的自测就红了**。
   红的不是代码，是断言：原断言要求触发帧 `contentDirty` 为真，而那一条动画的第一帧值恰好等于属性默认值(0.2)，属性一个都没变。内容没变却说内容变了，只会让宿主白画一帧完全相同的图；那一帧仍然要出画，由 `continuousAnimation` 撑着，实测 `render=1`。判定为断言过严，改为钉住"没变化就不声明变化"这条真不变量。没有为了让它变绿去改产品逻辑。
   **一处实现细节**：行程  第一版是 O(n²)，而 Validate 允许一条轨道 4096 个关键帧 —— 那是 840 万次 variant 比较，而这道审查在加载期就跑了。改成 O(n·d) 的依据是可证的：`AnimationValueDistance` 用"分量差取最大"，于是两两最大距离等于各分量极差的最大值。test 里有一条拿暴力法对照的断言钉住这个等式，并且刻意让最大值与最小值落在不同关键帧上（否则 x 极差碰不到）。
-  **本轮修正过一次自己的结论**：第一版把"动画与 binding 写同一属性"也一并拒绝，理由写的是"binding 是死的"。跑到三道产品 SelfTest 夹具上才发现理由不成立 —— binding 只在 `Initialize` 跑一次，它在动画开跑之前是可观测的（`MiaoSceneRuntime::SelfTest` 里就断言了 `opacity` 起始值 0.75 来自参数），而一个没被触发的事件动画更让 binding 一直是活的。"起始值取参数、之后交给动画"是自洽模型，禁止它会挡掉正常写法（也挡掉产品自己的夹具）。所以边界改划在"两条动画"，binding 那一侧改为报告 + 写进 Skill。TODO 本条、CHANGELOG、FEATURE_CHANGELOG、Skill 已同步改正。
-  **发行内容实测**：三个内置壁纸 24 条 Loop 轨道 + 示例 1 条 PingPong 轨道端点全部逐位相同，60fps 帧步长远低于门槛；**一个例外已登记而不是静默放过** —— `animation://miao-cloud/blink-blink` 的淡入/淡出各为 0.004166666666667 秒（=1/240 秒，恰好是产品支持的最高帧率下的一帧），所以任何帧率下那一"淡变"都渲染不出来。**没有改它**：改法是拉长淡变，那是改美术，而本机不是 Windows、拉长之后好看不好看给不出证据。
-  **未做**：状态机/行为图（规划里的"事件/状态图"）、确定性随机的独立设施（现有 `MiaoAnalyticParticleField.cpp` 里那份 hash 是文件局部符号且带"逐位复刻旧渲染器"的约束，动它等于改三个壁纸的视觉）、动画混合、AI 组合说明；真机动画采样与视觉签收一律未取证（本机不是 Windows）。缓动曲线与 `ParameterSlew` 尚未接到任何生产调用方 —— 接进宿主属于 WPRO/播放宿主那一轮，因为它要同时决定暂停由谁调、参数面板怎么失焦。
+  **本轮修正过一次自己的结论**：第一版把"动画与 binding 写同一属性"也一并拒绝，理由写的是"binding 是死的"。跑到三道产品 SelfTest 夹具上才发现理由不成立 —— binding 只在 `Initialize` 跑一次，它在动画开跑之前是可观测的（`WhaleSceneRuntime::SelfTest` 里就断言了 `opacity` 起始值 0.75 来自参数），而一个没被触发的事件动画更让 binding 一直是活的。"起始值取参数、之后交给动画"是自洽模型，禁止它会挡掉正常写法（也挡掉产品自己的夹具）。所以边界改划在"两条动画"，binding 那一侧改为报告 + 写进 Skill。TODO 本条、CHANGELOG、FEATURE_CHANGELOG、Skill 已同步改正。
+  **发行内容实测**：三个内置壁纸 24 条 Loop 轨道 + 示例 1 条 PingPong 轨道端点全部逐位相同，60fps 帧步长远低于门槛；**一个例外已登记而不是静默放过** —— `animation://whale-cloud/blink-blink` 的淡入/淡出各为 0.004166666666667 秒（=1/240 秒，恰好是产品支持的最高帧率下的一帧），所以任何帧率下那一"淡变"都渲染不出来。**没有改它**：改法是拉长淡变，那是改美术，而本机不是 Windows、拉长之后好看不好看给不出证据。
+  **未做**：状态机/行为图（规划里的"事件/状态图"）、确定性随机的独立设施（现有 `WhaleAnalyticParticleField.cpp` 里那份 hash 是文件局部符号且带"逐位复刻旧渲染器"的约束，动它等于改三个壁纸的视觉）、动画混合、AI 组合说明；真机动画采样与视觉签收一律未取证（本机不是 Windows）。缓动曲线与 `ParameterSlew` 尚未接到任何生产调用方 —— 接进宿主属于 WPRO/播放宿主那一轮，因为它要同时决定暂停由谁调、参数面板怎么失焦。
   **发现并修复的隐患**：`Validate` 此前对 `enabled=false` 的轨道仍按全量规则校验（弃用的轨道坏了会让整个场景加载失败）。本轮未改这一条：拒绝是产品既定取舍（与 lights/fog 写在 2D 场景上一律拒绝同源），改它需要单独立项。
   面板状态 🟡。
 
@@ -824,16 +824,16 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：布局原语与参数、至少两尺寸样例、几何迁移测试、AI 规则。
 - **验收**：多 DPI/比例下不重叠裁切；切尺寸/跨屏/重启保持数据和位置；非法尺寸被拒。
 - **验证环境**：布局逻辑自动+Windows 跨 DPI。
-- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/MiaoWidgetGeometry.h` + `src/desktop/widgets/MiaoWidgetGeometry.cpp`（纯算术，无 Windows 依赖）+ `src/tests/WidgetGeometryTest.cpp`（61 项）+ `src/tests/ShippedWidgetGeometry.cpp`（10 项，走真实加载链逐个审查发行组件）+ `JsonStringField` 新增 `ExtractJsonDouble`（14 条新断言）。
+- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/whaledesk/WhaleWidgetGeometry.h` + `src/desktop/widgets/WhaleWidgetGeometry.cpp`（纯算术，无 Windows 依赖）+ `src/tests/WidgetGeometryTest.cpp`（61 项）+ `src/tests/ShippedWidgetGeometry.cpp`（10 项，走真实加载链逐个审查发行组件）+ `JsonStringField` 新增 `ExtractJsonDouble`（14 条新断言）。
   **本轮的结论**：geometry 全用归一化数写，于是"这个组件有多大、比例对不对"在写 manifest 时答不上来，而产品此前没有任何地方把它算出来过。算出来之后：三个发行组件全部声明 `aspectRatio: 1.0`，`ValidateInstance` 拿 `defaultWidth/defaultHeight` = 0.30/0.30 = 1.0 去比，一路绿灯；而宿主要的像素盒是"归一化宽 × 屏幕宽"与"归一化高 × 屏幕高" —— FHD 16:9 上 576×324（比例 1.778，失真 1.78×）、32:9 上 1536×432（比例 3.556，失真 3.56×）。**八个参考屏幕上没有一个声明成立**。
-  所以 `aspectRatio` 与 `asset.font`、`videoRenderer` 同类：字段在、校验过、Skill 还教它有效，而没有任何渲染器或宿主读它。差别是这次**连校验都是虚的** —— 它比的是归一化比例，不是用户看见的像素比例。四处文档已改正（Skill、`MIAODESK_CONTENT_FRAMEWORK.md` 的"允许 aspectRatio = 1.0"、本条、能力台账）。
+  所以 `aspectRatio` 与 `asset.font`、`videoRenderer` 同类：字段在、校验过、Skill 还教它有效，而没有任何渲染器或宿主读它。差别是这次**连校验都是虚的** —— 它比的是归一化比例，不是用户看见的像素比例。四处文档已改正（Skill、`WHALEDESK_CONTENT_FRAMEWORK.md` 的"允许 aspectRatio = 1.0"、本条、能力台账）。
   真实比例等于 `(归一化宽 / 归一化高) × (屏幕宽 / 屏幕高)`，已作为等式对 8 块屏幕逐个钉住；想要一个接近目标比例的方块，按这个式子反推 `defaultWidth / defaultHeight`。
   自动检查=`WidgetGeometryTest` 61 项、`ShippedWidgetGeometry` 10 项、`JsonStringFieldTest` 51 项全部通过；几何 10 处变异全红、JSON 3 处变异全红。`ExtractJsonDouble` 里原本有一条"挡 NaN"的守卫，变异检测跑出来是仍绿（`from_chars` 不接受 inf/nan，那条换成 `strtod` 才用得上），已删掉并把理由写进注释。
   **一个当场踩到的坑**（值得记）：`ExtractJsonInt` 对 `"0.30"` 解析失败并停在 `'.'` 上，于是第一版门把 `defaultWidth` 读成"取不到"、退回默认值 0.30 —— 而默认值恰好等于真值，于是三个组件全被报成"未声明 aspectRatio"，而 manifest 里明明写着 1.0。**默认值与真值撞车让整道门看起来在工作**。修法是在共享读取器里加 `ExtractJsonDouble`，而不是在门里自己写一个 `strtod`。
   **未做**：尺寸族（small/medium/large）没有定义 —— 那是产品决策（有哪几档、UI 上怎么选），本轮不发明；长文本/溢出策略、切尺寸迁移、`FitAspectInside` 接进宿主都没有；`FitAspectInside` 当前**无调用方**。真机跨 DPI/跨屏签收未取证（本机不是 Windows）。
     **补充二（同日，接线诊断）**：`ContentWidgetHost::SurfaceState` 现在把宽高比裁决写进诊断行（`aspectDeclared` / `aspectActual` / `aspectDistortion` / `aspectHonored`）。这不出新逻辑，但把上一段"量出来却没人看得见"的结论搬到现场：三个官方组件在 FHD 上会打印 `aspectDeclared=1.000 aspectActual=1.778 aspectDistortion=1.778 aspectHonored=false`。**不是修它** —— 修要动渲染，本机看不见效果。
   为此加 `JudgeWidgetAspectOfBox` 重载：宿主手里那个渲染目标尺寸是**既成事实**（夹紧、DPI、桌面边界都可能让它与推算差一两个像素），而诊断要的是既成事实。第一版实现读了 `box.aspect` 这个展示字段，于是"把 height 调小 24 像素"拿到的还是旧比例的裁决 —— 而那一条恰好是诊断要报的信息，是 `WidgetGeometryTest` 里"盒子与推算不同时裁决跟着变"逮到的。改成从 width/height 现算。另加 `FormatAspect`（三位小数 + NaN/inf 印成 `nan`）。
-    **接线可达性已逐段核对（读代码，未运行）**：`assets/widgets/` 由顶层 `CMakeLists.txt` 装到 exe 旁的 `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`MiaoWidgetContentCatalog::ResolveOneRoot` 对每个 `.mdwidget` 调 `MiaoContentDefinitionLoader::Load`（读 `manifest.json`），于是 `slot.definition.geometry.aspectRatio` 对三个官方组件有值，`SurfaceState` 那段会打印。**打印出来的文本本身未在 Windows 上看过。**
+    **接线可达性已逐段核对（读代码，未运行）**：`assets/widgets/` 由顶层 `CMakeLists.txt` 装到 exe 旁的 `Widgets/`，正是 `paths::BuiltInWidgetPackagesRoot()`；`WhaleWidgetContentCatalog::ResolveOneRoot` 对每个 `.mdwidget` 调 `WhaleContentDefinitionLoader::Load`（读 `manifest.json`），于是 `slot.definition.geometry.aspectRatio` 对三个官方组件有值，`SurfaceState` 那段会打印。**打印出来的文本本身未在 Windows 上看过。**
   面板状态 🟡。
 
 ### WPRO-02 — Native 组件视觉与控件原语
@@ -870,7 +870,7 @@ S1 基础版先完成既有可靠性验收。2026-10-03 起，3D、灯光、形�
 - **交付物**：刷新策略/测量、后台资源回收与恢复回归。
 - **验收**：无变化不重绘；多个实例不重复轮询；锁屏/休眠后无请求风暴；长稳与预算达标。
 - **验证环境**：计数/调度自动+Windows 实机测量。
-- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/miaodesk/WidgetRefreshPolicy.h` + `src/desktop/widgets/WidgetRefreshPolicy.cpp`（纯逻辑）+ `src/tests/WidgetRefreshPolicyTest.cpp`（174 项）+ 宿主接线 `ContentWidgetHost.cpp`（`ScheduleNextRefresh` 走成功路径，五条失败路径调用新增的 `ScheduleNextRefreshAfterFailure`）。
+- **证据记录**（2026-10-04，本轮，负责人=自动推进会话）：实现=`src/include/whaledesk/WidgetRefreshPolicy.h` + `src/desktop/widgets/WidgetRefreshPolicy.cpp`（纯逻辑）+ `src/tests/WidgetRefreshPolicyTest.cpp`（174 项）+ 宿主接线 `ContentWidgetHost.cpp`（`ScheduleNextRefresh` 走成功路径，五条失败路径调用新增的 `ScheduleNextRefreshAfterFailure`）。
   **修的是一个会一直烧 CPU 的问题**：`RepaintDue` 按 `nextRefreshAt == 0 || now >= nextRefreshAt` 决定要不要画，而 `nextRefreshAt` 只在**成功**的 `PaintSlot` 末尾赋值。`PaintSlot` 有五条提前返回的路径（渲染目标拿不到、渲染器加载失败、宿主数据应用失败、Draw 返回 false、Present 失败），一条都不赋值 —— 于是它保持 0，而 0 的含义是"随时都该画"。一个画不出来的组件因此每 16 ms 重试一次：一秒 60 次，一天 520 万次，每次都重跑渲染目标/渲染器/宿主数据整条链路。不是假设：`nextRefreshAt` 的赋值点一共四处，失败路径一处都没有。
   **策略**：失败 → 指数退避 1s/2s/4s/8s/16s，30s 封顶（冷启动第一分钟 6 次、稳态每分钟 2 次，今天是 3750 次）；成功 → 计数立刻归零回到内容要的间隔（恢复后若仍按 30s 爬回 16ms，一次内容变化会晚最多 30 秒才上屏，比多画几帧糟得多）；延迟永不为 0。
   自动检查=`WidgetRefreshPolicyTest` 174 项通过（含一条专门钉 off-by-one：第一版把 `ApplyRefreshOutcome` 写成"先 ++ 再算"，于是第一次失败退避到 2000ms 而不是起点 1000ms，是"退避起点必须是 1000"这条断言逮住的）；7 处变异全红；43 个纯逻辑目标全通过；21 道仓库门 + mingw 交叉语法门（0 真实错误）全通过。

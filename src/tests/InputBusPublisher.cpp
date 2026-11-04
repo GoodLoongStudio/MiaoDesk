@@ -1,19 +1,19 @@
 // The Scene input bus publisher: analysis results land in a scene's InputBus only for
 // channels the scene actually declares, and press/click are withheld while a wallpaper
-// is click-through. Links against the real MiaoSceneRuntime, so the type gate in
+// is click-through. Links against the real WhaleSceneRuntime, so the type gate in
 // SetInput is exercised rather than assumed.
-#include "miaodesk/MiaoInputBus.h"
-#include "miaodesk/MiaoInputBusPublisher.h"
-#include "miaodesk/MiaoSceneRuntime.h"
+#include "whaledesk/WhaleInputBus.h"
+#include "whaledesk/WhaleInputBusPublisher.h"
+#include "whaledesk/WhaleSceneRuntime.h"
 
 #include <cstdio>
 #include <utility>
 #include <string>
 #include <vector>
 
-using namespace miaodesk;
-using namespace miaodesk::content;
-namespace ib = miaodesk::content::inputbus;
+using namespace whaledesk;
+using namespace whaledesk::content;
+namespace ib = whaledesk::content::inputbus;
 
 int failures = 0;
 void Check(bool c, const std::string& what) {
@@ -55,7 +55,7 @@ int wmain() {
 
     std::printf("\n1. 只写 scene 声明过的通道\n");
     {
-        MiaoSceneRuntime rt;
+        WhaleSceneRuntime rt;
         std::wstring err;
         Check(rt.Initialize(MakeScene({ib::kAudioBass, ib::kPointerX}), &err), "scene initializes");
         InputBusPublisher pub(rt);
@@ -79,7 +79,7 @@ int wmain() {
 
     std::printf("\n2. 节拍是沿,不是电平\n");
     {
-        MiaoSceneRuntime rt;
+        WhaleSceneRuntime rt;
         std::wstring err;
         rt.Initialize(MakeScene({ib::kAudioBeat}), &err);
         InputBusPublisher pub(rt);
@@ -98,7 +98,7 @@ int wmain() {
 
     std::printf("\n3. interactive=false 时按压通道被扣留\n");
     {
-        MiaoSceneRuntime rt;
+        WhaleSceneRuntime rt;
         std::wstring err;
         rt.Initialize(MakeScene({ib::kPointerX, ib::kPointerInside, ib::kPointerDown, ib::kPointerClick}), &err);
         InputBusPublisher pub(rt);
@@ -116,7 +116,7 @@ int wmain() {
 
     std::printf("\n4. interactive=true 时按压通道照发\n");
     {
-        MiaoSceneRuntime rt;
+        WhaleSceneRuntime rt;
         std::wstring err;
         rt.Initialize(MakeScene({ib::kPointerDown, ib::kPointerClick}), &err);
         InputBusPublisher pub(rt);
@@ -133,7 +133,7 @@ int wmain() {
 
     std::printf("\n5. 通道契约覆盖发布器写的每一个 id\n");
     {
-        MiaoSceneRuntime rt;
+        WhaleSceneRuntime rt;
         std::wstring err;
         SceneRuntimeDefinition d = MakeScene({});
         for (const auto id : {ib::kAudioLevel, ib::kAudioBass, ib::kAudioLowMid, ib::kAudioMid,

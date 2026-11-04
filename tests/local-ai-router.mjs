@@ -49,11 +49,11 @@ const fast = backend("fast");
 const primaryPort = await listen(primary.server);
 const fastPort = await listen(fast.server);
 
-process.env.MIAODESK_PRIMARY_BASE_URL = `http://127.0.0.1:${primaryPort}/v1`;
-process.env.MIAODESK_FAST_BASE_URL = `http://127.0.0.1:${fastPort}/v1`;
-process.env.MIAODESK_PRIMARY_MODEL = "primary-model";
-process.env.MIAODESK_FAST_MODEL = "fast-model";
-process.env.MIAODESK_ROUTER_PUBLIC_MODEL = "miaodesk";
+process.env.WHALEDESK_PRIMARY_BASE_URL = `http://127.0.0.1:${primaryPort}/v1`;
+process.env.WHALEDESK_FAST_BASE_URL = `http://127.0.0.1:${fastPort}/v1`;
+process.env.WHALEDESK_PRIMARY_MODEL = "primary-model";
+process.env.WHALEDESK_FAST_MODEL = "fast-model";
+process.env.WHALEDESK_ROUTER_PUBLIC_MODEL = "whaledesk";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modulePath = join(here, "..", "runtime", "router", "server.mjs");
@@ -86,56 +86,56 @@ const base = `http://127.0.0.1:${routerPort}`;
 
 try {
   let out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     messages: [{ role: "user", content: "hi" }],
   });
   assert.equal(out.response.status, 200);
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "fast-short");
-  assert.equal(out.response.headers.get("x-miaodesk-upstream-model"), "fast-model");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "fast-short");
+  assert.equal(out.response.headers.get("x-whaledesk-upstream-model"), "fast-model");
   assert.equal(JSON.parse(out.text).choices[0].message.content, "fast");
   assert.equal(fast.requests.at(-1).body.model, "fast-model");
 
   out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     messages: [{ role: "user", content: "use a tool" }],
     tools: [{ type: "function", function: { name: "content_skill_get", parameters: {} } }],
   });
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "primary-tools");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "primary-tools");
   assert.equal(primary.requests.at(-1).body.model, "primary-model");
 
   out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     messages: [
       { role: "system", content: "name: content-review" },
       { role: "user", content: "review" },
     ],
   });
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "primary-skill");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "primary-skill");
 
   out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     messages: [{ role: "user", content: "long ".repeat(250) }],
   });
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "primary-chat");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "primary-chat");
 
   out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     stream: true,
     messages: [{ role: "user", content: "stream" }],
   });
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "fast-short");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "fast-short");
   assert.match(out.text, /data: .*fast.*fast-model/);
   assert.match(out.text, /data: \[DONE\]/);
 
   // Fast backend outage must degrade to primary instead of taking short chats down.
   await new Promise((resolve, reject) => fast.server.close(error => error ? reject(error) : resolve()));
   out = await post(base, {
-    model: "miaodesk",
+    model: "whaledesk",
     messages: [{ role: "user", content: "fast is down" }],
   });
   assert.equal(out.response.status, 200);
-  assert.equal(out.response.headers.get("x-miaodesk-route"), "fast-short-fallback-primary");
-  assert.equal(out.response.headers.get("x-miaodesk-upstream-model"), "primary-model");
+  assert.equal(out.response.headers.get("x-whaledesk-route"), "fast-short-fallback-primary");
+  assert.equal(out.response.headers.get("x-whaledesk-upstream-model"), "primary-model");
   assert.equal(JSON.parse(out.text).choices[0].message.content, "primary");
 
   const metricsResponse = await fetch(base + "/metrics");
@@ -150,7 +150,7 @@ try {
 
   const models = await fetch(base + "/v1/models");
   const modelsJson = await models.json();
-  assert.deepEqual(modelsJson.data.map(x => x.id), ["miaodesk"]);
+  assert.deepEqual(modelsJson.data.map(x => x.id), ["whaledesk"]);
 
   const health = await fetch(base + "/health");
   assert.equal((await health.json()).ok, true);

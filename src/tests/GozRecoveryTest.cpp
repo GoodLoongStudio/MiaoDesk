@@ -3,17 +3,17 @@
 // 逮到的不是"它会算错",而是**它在本机一行都验不到,而且每一步观测都被当场丢掉**:
 // `GozSearch::EnsurePipeAvailable` 一路上看得见每个环节(SCM 打不打得开、服务在不在、
 // 状态是什么、StartService 成没成、等到没有),但它只回一个 bool。于是
-// `MiaoFileSearchNotice` 的第三桶只能说"可能服务没起来,也可能查询超时" ——
+// `WhaleFileSearchNotice` 的第三桶只能说"可能服务没起来,也可能查询超时" ——
 // 一句诚实的猜测,不是诊断。
 //
 // 这里钉住:Win32 状态数值的映射、九种结局各自可达、以及**不许对已经在起的服务
 // 再叫一次 StartService**(那会拿到 ERROR_SERVICE_ALREADY_RUNNING,把结论搅浑)。
-#include "miaodesk/MiaoGozRecovery.h"
+#include "whaledesk/WhaleGozRecovery.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace goz_recovery {
 namespace {
 
@@ -43,10 +43,10 @@ bool VerdictStillMoves() {
 
 } // namespace
 } // namespace goz_recovery
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::goz_recovery;
+    using namespace whaledesk::goz_recovery;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:恢复判定不动\n");

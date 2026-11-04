@@ -1,4 +1,4 @@
-# MiaoDesk Windows Layered Direct2D UI Rendering Guide
+# WhaleDesK Windows Layered Direct2D UI Rendering Guide
 
 Status: approved implementation baseline.
 
@@ -12,7 +12,7 @@ src/ui/search/SearchWindow.cpp
 
 ## 1. 唯一可见边界原则
 
-MiaoDesk 浮动透明 UI 的可见轮廓只允许一个 owner：Direct2D 绘制的 per-pixel alpha surface。
+WhaleDesK 浮动透明 UI 的可见轮廓只允许一个 owner：Direct2D 绘制的 per-pixel alpha surface。
 
 标准路径：
 
@@ -108,7 +108,7 @@ Visible text/caret 由 DirectWrite/Direct2D 绘制；Native `EDIT` 只负责 Win
 
 ```text
 docs/WINDOWS_CUSTOM_INPUT_IME.md
-src/include/miaodesk/InputImeAnchor.h
+src/include/whaledesk/InputImeAnchor.h
 ```
 
 因此正确模型是：

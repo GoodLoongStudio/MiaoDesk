@@ -1,4 +1,4 @@
-# MiaoDesk Desktop Domain Architecture
+# WhaleDesK Desktop Domain Architecture
 
 Status: normative architecture contract.
 
@@ -7,19 +7,19 @@ Status: normative architecture contract.
 ## 1. 进程边界
 
 ```text
-MiaoDesk.exe
+WhaleDesK.exe
 ├─ App / Search / Settings UI
 ├─ AI / Pi Runtime
 └─ DesktopControlService client
 
-MiaoDeskWallpaper.exe
+WhaleDesKWallpaper.exe
 ├─ Desktop Shell
 ├─ Wallpaper
 ├─ Widgets
 ├─ Automation
 └─ Performance
 
-MiaoDeskHarness.exe
+WhaleDesKHarness.exe
 └─ DeepSeek Harness host
 ```
 
@@ -46,10 +46,10 @@ src/
 ├─ harness/
 ├─ search/
 ├─ ui/
-└─ include/miaodesk/
+└─ include/whaledesk/
 ```
 
-共享 C++ 接口放在 `src/include/miaodesk/`；只属于单一实现单元的头文件应优先与实现放在同一领域目录，新代码不要为了方便继续扩大公共 include 面。
+共享 C++ 接口放在 `src/include/whaledesk/`；只属于单一实现单元的头文件应优先与实现放在同一领域目录，新代码不要为了方便继续扩大公共 include 面。
 
 ## 2. 依赖方向
 
@@ -134,14 +134,14 @@ Wallpaper -> Pi runtime
 - Scene object model 及其 JSON 序列化（`scene/`、`serialization/`）
 - D2D / D3D11 渲染后端、post-process 与 render graph（`render/`）
 - Scene runtime 与帧调度（`runtime/`）
-- 声明式数据绑定与 `MiaoContentCapabilityBroker`（`binding/`）
+- 声明式数据绑定与 `WhaleContentCapabilityBroker`（`binding/`）
 - Asset database（`asset/`）与 shader contract / GPU parameter block（`shader/`）
 
 边界：`content/` 不拥有 Windows Shell 挂载、z-order、显示器分配或 Widget persistence —— 这些分别归 `desktop/shell/`、`desktop/wallpaper/` 和 `desktop/widgets/`。宿主侧桥接层位于 `ui/wallpaper/`（`ContentPackageUiBridge`、`ContentWidgetSettingsDialog`、`ContentWidgetPreviewRenderer`）与 `desktop/widgets/`（`WidgetService` 的 Content 分支）。
 
-`WidgetService` 的 Content 分支在 Create 与 Update 两条路径上都经 `MiaoContentModel::ValidateInstance` 按 Definition 的 geometry policy 校验；Native preset 分支则直接拒绝与 preset 默认值不符的 width/height。
+`WidgetService` 的 Content 分支在 Create 与 Update 两条路径上都经 `WhaleContentModel::ValidateInstance` 按 Definition 的 geometry policy 校验；Native preset 分支则直接拒绝与 preset 默认值不符的 width/height。
 
-第三方内容不得绕过 Capability Broker 获得 Windows API / 文件系统 / 注册表 / 原生 DLL 权限。契约细节见 `MIAODESK_CONTENT_FRAMEWORK.md` 与 `MIAO_CONTENT_PACKAGE_V1.md`。
+第三方内容不得绕过 Capability Broker 获得 Windows API / 文件系统 / 注册表 / 原生 DLL 权限。契约细节见 `WHALEDESK_CONTENT_FRAMEWORK.md` 与 `WHALE_CONTENT_PACKAGE_V1.md`。
 
 ### Automation — `src/desktop/automation/`
 
@@ -232,7 +232,7 @@ WidgetService
 ## 6. Source / Header rule
 
 - 领域实现放在对应 `src/<domain>/...`。
-- 跨多个 target/domain 的稳定接口才放 `src/include/miaodesk/`。
+- 跨多个 target/domain 的稳定接口才放 `src/include/whaledesk/`。
 - 新 target-local header 与 `.cpp` 就近放置。
 - 不允许重新引入 `src/native/src` 或第二层 source root。
 - 不允许为了“架构感”创建无调用价值的 facade/helper/library。

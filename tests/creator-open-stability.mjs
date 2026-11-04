@@ -2,7 +2,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
-const bridgeHeader = read("src/include/miaodesk/ContentCreatorBridge.h");
+const bridgeHeader = read("src/include/whaledesk/ContentCreatorBridge.h");
 const bridge = read("src/desktop/control/ContentCreatorBridge.cpp");
 const search = read("src/ui/search/SearchWindow.cpp");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
@@ -10,7 +10,7 @@ const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
 // Cross-process open must ACK/queue only. Creator construction performs API,
 // transcript and Skill I/O and must never be inside a 3-second sender timeout.
 assert.match(bridgeHeader, /kContentCreatorOpenAck/);
-assert.match(bridge, /RegisterWindowMessageW\(\s*L"MiaoDesk\.ContentCreator\.OpenRequest\.v2"\s*\)/);
+assert.match(bridge, /RegisterWindowMessageW\(\s*L"WhaleDesK\.ContentCreator\.OpenRequest\.v2"\s*\)/);
 assert.match(bridge, /SendMessageTimeoutW\([\s\S]*openMessage[\s\S]*kContentCreatorOpenAck/);
 assert.match(search, /message == creatorOpenMessage[\s\S]*PostMessageW\([\s\S]*kDeferredOpenCreatorMessage[\s\S]*return creator::kContentCreatorOpenAck;/,
   "v2 IPC must queue creator creation and ACK before doing heavy initialization");
@@ -55,7 +55,7 @@ console.log("creator open stability contract: PASS");
 assert.match(bridgeHeader, /kContentCreatorOpenVisible/);
 assert.match(bridgeHeader, /kContentCreatorOpenReady/);
 assert.match(bridgeHeader, /UINT OpenStatusMessage\(\) noexcept/);
-assert.match(bridge, /MiaoDesk\.ContentCreator\.OpenStatus\.v2/);
+assert.match(bridge, /WhaleDesK\.ContentCreator\.OpenStatus\.v2/);
 assert.match(bridge, /等待窗口真实创建/);
 assert.match(bridge, /statusMessage[\s\S]*kContentCreatorOpenReady[\s\S]*kContentCreatorOpenVisible/,
   "a queued request must not be reported successful until the host reports a real window");

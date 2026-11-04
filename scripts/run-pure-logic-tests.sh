@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在 macOS 上真正编译并运行那些只依赖 content/ 纯逻辑层的测试目标。
 #
-# 为什么需要它:CMake 里这些目标链接 MiaoDeskCore,而 MiaoDeskCore 需要 Windows。
+# 为什么需要它:CMake 里这些目标链接 WhaleDesKCore,而 WhaleDesKCore 需要 Windows。
 # 先前我在本机只做过 -fsyntax-only,于是"编译通过"被当成了"测试通过";而 CI 里
 # 这些步骤其实一直是被跳过的。两者叠加,让这批测试从未真正验证过行为。
 #
@@ -37,7 +37,7 @@ done
 # 链接清单里出现两次 → `duplicate symbol` → **全部目标 BUILD FAIL**。
 #
 # 这个坑这次会话里踩过两次:第一次 SearchDedupPolicy.cpp,第二次
-# MiaoLibraryRestoreMerge.cpp。两次都是"该自动发现的被我手写登记了"。
+# WhaleLibraryRestoreMerge.cpp。两次都是"该自动发现的被我手写登记了"。
 # 知道规则和记住规则是两件事,所以把规则写在会被读到的地方 —— 也就是这里。
 #
 # content/ 之外还有两类刻意写成纯逻辑的实现:创作工作流状态机
@@ -65,30 +65,30 @@ for f in desktop/control/CreationWorkflow.cpp \
          desktop/control/CreationDraftStore.cpp \
          desktop/control/CreatorToolWorker.cpp \
          desktop/control/CreatorWorkspaceState.cpp \
-         desktop/control/MiaoCreatorPathScope.cpp \
+         desktop/control/WhaleCreatorPathScope.cpp \
          desktop/widgets/TodayTaskPresentation.cpp \
          desktop/widgets/WidgetDataActionContract.cpp \
-         desktop/widgets/MiaoWidgetGeometry.cpp \
+         desktop/widgets/WhaleWidgetGeometry.cpp \
          desktop/widgets/WidgetRefreshPolicy.cpp \
          desktop/widgets/WidgetIdentityRules.cpp \
          desktop/widgets/NativeWidgetPreset.cpp \
-         desktop/widgets/MiaoWidgetRowAdmission.cpp \
-         ai/agent/MiaoAgentConfigAuthority.cpp \
-         ai/pi/MiaoTurnLifecycle.cpp \
-         ai/agent/MiaoSessionMigration.cpp \
-         ai/agent/MiaoLockOwnership.cpp \
-         ai/agent/MiaoLockRecord.cpp \
-         desktop/wallpaper/legacy/MiaoWallpaperCyclePolicy.cpp \
+         desktop/widgets/WhaleWidgetRowAdmission.cpp \
+         ai/agent/WhaleAgentConfigAuthority.cpp \
+         ai/pi/WhaleTurnLifecycle.cpp \
+         ai/agent/WhaleSessionMigration.cpp \
+         ai/agent/WhaleLockOwnership.cpp \
+         ai/agent/WhaleLockRecord.cpp \
+         desktop/wallpaper/legacy/WhaleWallpaperCyclePolicy.cpp \
          search/SearchTextScoring.cpp \
          search/SearchDedupPolicy.cpp \
-         search/MiaoSearchGeneration.cpp \
-         search/MiaoFileSearchNotice.cpp \
-         search/MiaoGozRecovery.cpp \
-         search/MiaoSearchHandoff.cpp \
-         ai/pi/MiaoTurnReplyScope.cpp \
-         ai/agent/MiaoIniReadLimit.cpp \
-         ui/ai/MiaoProfileSwitchGuard.cpp \
-         desktop/shell/MiaoDesktopBandOrder.cpp; do
+         search/WhaleSearchGeneration.cpp \
+         search/WhaleFileSearchNotice.cpp \
+         search/WhaleGozRecovery.cpp \
+         search/WhaleSearchHandoff.cpp \
+         ai/pi/WhaleTurnReplyScope.cpp \
+         ai/agent/WhaleIniReadLimit.cpp \
+         ui/ai/WhaleProfileSwitchGuard.cpp \
+         desktop/shell/WhaleDesKtopBandOrder.cpp; do
   if $CXX $STD -fsyntax-only "$f" 2>/dev/null; then
     SRCS+=("$f")
     echo "额外的纯逻辑实现:$f"
@@ -139,7 +139,7 @@ echo "--- 纯逻辑(content/ 子集,无 Windows 依赖)---"
 # WebAudioEnvelope 是 host->page 音频信封:它把 content/ 的 AudioSpectrumFrame 变成
 # shim 会接受的 JSON。整条链没有一行 Windows 代码,所以能在本机跑;
 # 另一半(页面侧 shim)由 tests/WebAudioEnvelopeParity.mjs 一起对。
-for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse MiaoSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate SearchRankingBaselineTest ExamplePackagesLoad MiaoSceneTimelinePolicyTest ShippedAnimationContinuity WidgetGeometryTest ShippedWidgetGeometry WidgetRefreshPolicyTest ShippedPackageAssets AgentConfigAuthorityTest TurnLifecycleTest SessionMigrationTest LockOwnershipTest LockRecordTest LibraryRowFilterTest WallpaperCyclePolicyTest SearchDedupPolicyTest SearchGenerationTest FileSearchNoticeTest GozRecoveryTest SearchHandoffTest TurnReplyScopeTest DesktopBandOrderTest LibraryRestoreMergeTest WidgetRowAdmissionTest IniReadLimitTest CreatorPathScopeTest ProfileSwitchGuardTest; do
+for t in CreationWorkflowStateTest ContentCandidateDigestTest CreatorWorkspacePolicyTest ContentCandidateLedgerTest CreatorPackageTransactionTest CreatorToolRegistryTest CreatorToolWorkerTest CreatorRuntimeSchedulerTest CreationRepairPlannerTest RenderEvidenceTest RenderEvidenceSampleBindingTest CapabilityCatalogTest CreatorReplyInterpreterTest ContentApplyRecoveryTest CreationDraftStoreTest VisualReviewGateTest ContentReleaseGateTest ContentPackageValidatorTest JsonStringFieldTest ContentCandidateReceiptTest WebAudioEnvelope InputBusPublisher AudioIngress BindingResponse WhaleSceneRuntimeTest SceneSpatial3D InputBusCore PointerAttribution SpriteTextureContract SceneTextureFixture BuiltinWallpaperPackages SpriteMaterialPolicy SceneSerializerSelfTest ContentSelfTests TodayTaskPresentationTest WidgetDataActionContractTest ShippedPackagesValidate SearchRankingBaselineTest ExamplePackagesLoad WhaleSceneTimelinePolicyTest ShippedAnimationContinuity WidgetGeometryTest ShippedWidgetGeometry WidgetRefreshPolicyTest ShippedPackageAssets AgentConfigAuthorityTest TurnLifecycleTest SessionMigrationTest LockOwnershipTest LockRecordTest LibraryRowFilterTest WallpaperCyclePolicyTest SearchDedupPolicyTest SearchGenerationTest FileSearchNoticeTest GozRecoveryTest SearchHandoffTest TurnReplyScopeTest DesktopBandOrderTest LibraryRestoreMergeTest WidgetRowAdmissionTest IniReadLimitTest CreatorPathScopeTest ProfileSwitchGuardTest; do
   run "$t" "$t.cpp"
 done
 
@@ -165,7 +165,7 @@ echo "      属于 Windows 而不属于替身:伪造一个 loopback 端点等于
 echo "      这两个的理由**不一样**,分开写:"
 echo "        SceneD2DRendererTest  真要 D2D1 设备 + WIC 位图回读,换不了替身。"
 echo "        SceneD3D11Test        四个自测里三个已经搬进 ContentSelfTests 了 —— 见"
-echo "                             MiaoD3D11RenderPolicy.cpp。剩下两个挪不动,理由不同:"
+echo "                             WhaleD3D11RenderPolicy.cpp。剩下两个挪不动,理由不同:"
 echo "                             粒子那条的**头文件**就 include 了 d3d11.h(依赖在声明里,"
 echo "                             不在归档位置);TransformMath 是 Windows-only .cpp 里的"
 echo "                             文件局部符号,没有别的入口。SceneD3D11TexturedSpriteTest 更进一步:它要真实的"

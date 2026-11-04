@@ -12,8 +12,8 @@
 // 这正是"为了防止回归加的门造成了新回归"的标准形状,所以它值得一道门。
 //
 // 校验器不吃盘,只吃包内各部分,所以这里从磁盘读真实发行包并喂给它。
-#include "miaodesk/ContentPackageValidator.h"
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentPackageValidator.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <cstdio>
 #include <fstream>
@@ -23,7 +23,7 @@
 #include <system_error>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -128,10 +128,10 @@ void ValidateShipped(const fs::path& root, const std::string& label) {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     const fs::path root = FindRepoRoot();
     if (root.empty()) {

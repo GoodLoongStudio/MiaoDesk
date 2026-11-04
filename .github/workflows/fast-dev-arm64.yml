@@ -14,7 +14,7 @@ permissions:
 
 env:
   SCCACHE_GHA_ENABLED: "on"
-  SCCACHE_GHA_VERSION: "miaodesk-arm64-v1"
+  SCCACHE_GHA_VERSION: "whaledesk-arm64-v1"
   SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
 
 jobs:
@@ -31,9 +31,9 @@ jobs:
         with:
           version: v0.18.0
 
-      - name: Generate MiaoMiao app icon
+      - name: Generate WhaleWhale app icon
         shell: pwsh
-        run: .\scripts\generate-miaomiao-icon.ps1
+        run: .\scripts\generate-whalewhale-icon.ps1
 
       - name: Configure and build ARM64 with sccache
         shell: pwsh
@@ -55,10 +55,10 @@ jobs:
           }
           if (-not $ninja) { throw 'ninja.exe was not found on the ARM64 runner.' }
 
-          Remove-Item C:\b\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path C:\b\MiaoDesk | Out-Null
+          Remove-Item C:\b\WhaleDesK\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path C:\b\WhaleDesK | Out-Null
 
-          $batch = Join-Path $env:RUNNER_TEMP 'miaodesk-arm64-fast.cmd'
+          $batch = Join-Path $env:RUNNER_TEMP 'whaledesk-arm64-fast.cmd'
           @"
           @echo off
           call "$vsDevCmd" -no_logo -arch=arm64 -host_arch=arm64
@@ -66,9 +66,9 @@ jobs:
           where cl
           where rc
           sccache --zero-stats
-          cmake -S "$env:GITHUB_WORKSPACE" -B C:\b\MiaoDesk\arm64-fast -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM="$ninja" -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\arm64-fast
+          cmake -S "$env:GITHUB_WORKSPACE" -B C:\b\WhaleDesK\arm64-fast -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM="$ninja" -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded -DCMAKE_INSTALL_PREFIX=C:\pkg\WhaleDesK\arm64-fast
           if errorlevel 1 exit /b %errorlevel%
-          cmake --build C:\b\MiaoDesk\arm64-fast --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
+          cmake --build C:\b\WhaleDesK\arm64-fast --target WhaleDesK WhaleDesKWallpaper WhaleDesKHarness --parallel
           if errorlevel 1 exit /b %errorlevel%
           sccache --show-stats
           "@ | Set-Content $batch -Encoding ascii
@@ -84,17 +84,17 @@ jobs:
       #
       # 这里加的是**诊断**,不是重试:重试会把一次真实的 install 失败也一并盖过去,
       # 那是拿"让门别响"换"门还在查"。所以只做两件不会掩盖真相的事:
-      #   1) 先确认没有残留 MiaoDesk 进程占着目录(这只会移除干扰,不会修好坏掉的东西);
+      #   1) 先确认没有残留 WhaleDesK 进程占着目录(这只会移除干扰,不会修好坏掉的东西);
       #   2) install 失败时把完整输出打出来 —— 之前 annotation 里只有
       #      sccache 统计和 exit code 1,根因一直看不见。
       - name: Refresh fast runnable package
         shell: pwsh
         run: |
-          Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue |
+          Get-Process WhaleDesK,WhaleDesKWallpaper,WhaleDesKHarness -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host "Stale $($_.ProcessName) (pid $($_.Id)) holds the dev package; stopping it."; Stop-Process -Id $_.Id -Force }
           Start-Sleep -Seconds 2
-          Remove-Item C:\pkg\MiaoDesk\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
-          $out = & cmake --install C:\b\MiaoDesk\arm64-fast --prefix C:\pkg\MiaoDesk\arm64-fast 2>&1
+          Remove-Item C:\pkg\WhaleDesK\arm64-fast -Recurse -Force -ErrorAction SilentlyContinue
+          $out = & cmake --install C:\b\WhaleDesK\arm64-fast --prefix C:\pkg\WhaleDesK\arm64-fast 2>&1
           $code = $LASTEXITCODE
           $out | Write-Host
           if ($code -ne 0) {
@@ -111,8 +111,8 @@ jobs:
       - name: Verify fast delta
         shell: pwsh
         run: |
-          foreach ($exe in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
-            $path = Join-Path 'C:\pkg\MiaoDesk\arm64-fast' $exe
+          foreach ($exe in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe')) {
+            $path = Join-Path 'C:\pkg\WhaleDesK\arm64-fast' $exe
             if (-not (Test-Path $path -PathType Leaf)) { throw "Fast delta is missing $exe" }
             if ((Get-Item $path).Length -lt 4096) { throw "Fast delta has invalid $exe" }
           }
@@ -120,7 +120,7 @@ jobs:
       - name: Smoke-test AI creator windows
         shell: pwsh
         run: |
-          $exe = 'C:\pkg\MiaoDesk\arm64-fast\MiaoDesk.exe'
+          $exe = 'C:\pkg\WhaleDesK\arm64-fast\WhaleDesK.exe'
           $process = Start-Process $exe -ArgumentList '--creator-window-self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "AI creator window smoke test failed: $($process.ExitCode)"
@@ -130,12 +130,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = 'C:\\pkg\\MiaoDesk\\arm64-fast\\MiaoDesk.exe'
+          $exe = 'C:\\pkg\\WhaleDesK\\arm64-fast\\WhaleDesK.exe'
           $hostProcess = $null
           try {
             $hostProcess = Start-Process $exe -ArgumentList '--startup' -PassThru
             Start-Sleep -Milliseconds 700
-            if ($hostProcess.HasExited) { throw "MiaoDesk IPC host exited early: $($hostProcess.ExitCode)" }
+            if ($hostProcess.HasExited) { throw "WhaleDesK IPC host exited early: $($hostProcess.ExitCode)" }
             foreach ($kind in @('wallpaper','widget')) {
               $client = Start-Process $exe -ArgumentList "--content-creator=$kind" -Wait -PassThru
               if ($client.ExitCode -ne 0) {
@@ -153,8 +153,8 @@ jobs:
       - name: Upload runnable ARM64 dev package
         uses: actions/upload-artifact@v4
         with:
-          name: MiaoDesk-arm64-fast-${{ github.sha }}
-          path: C:\pkg\MiaoDesk\arm64-fast
+          name: WhaleDesK-arm64-fast-${{ github.sha }}
+          path: C:\pkg\WhaleDesK\arm64-fast
           if-no-files-found: error
           retention-days: 3
           compression-level: 1

@@ -1,5 +1,5 @@
-#include "miaodesk/WallpaperPackage.h"
-#include "miaodesk/MiaoContentPackage.h"
+#include "whaledesk/WallpaperPackage.h"
+#include "whaledesk/WhaleContentPackage.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 void SetError(std::wstring* error, std::wstring value) {
@@ -215,9 +215,9 @@ bool CreateMediaPackage(const fs::path& packageDirectory, WallpaperPackageType t
         SetError(error, std::wstring(typeLabel) + L"壁纸必须指定源文件");
         return false;
     }
-    if (title.empty()) title = L"MiaoDesk Wallpaper";
+    if (title.empty()) title = L"WhaleDesK Wallpaper";
     if (title.size() > 256) title.resize(256);
-    if (author.empty()) author = L"MiaoDesk";
+    if (author.empty()) author = L"WhaleDesK";
     if (provenance.empty()) provenance = L"user-authored";
 
     std::error_code ec;
@@ -277,7 +277,7 @@ bool CreateMediaPackage(const fs::path& packageDirectory, WallpaperPackageType t
     std::wstring stem = SanitizedAssetName(sourceFile, fallbackExtension);
     const auto dot = stem.find_last_of(L'.');
     if (dot != std::wstring::npos) stem.resize(dot);
-    const std::string stableId = "com.goodloong.miaodesk.theme." +
+    const std::string stableId = "com.goodloong.whaledesk.theme." +
                                  std::string(type == WallpaperPackageType::Image ? "image" : "video") +
                                  "." + WideToUtf8(stem);
     if (!WallpaperPackage::WriteCanonicalManifest(packageDirectory, manifest, stableId)) {
@@ -306,7 +306,7 @@ bool IsInside(const fs::path& candidate, const fs::path& root) {
 std::string MakeGeneratedThemeId() {
     GUID guid{};
     if (FAILED(CoCreateGuid(&guid))) {
-        return "com.goodloong.miaodesk.theme.web.fallback-" +
+        return "com.goodloong.whaledesk.theme.web.fallback-" +
                std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
     }
     char suffix[64]{};
@@ -318,7 +318,7 @@ std::string MakeGeneratedThemeId() {
               static_cast<unsigned>(guid.Data4[2]), static_cast<unsigned>(guid.Data4[3]),
               static_cast<unsigned>(guid.Data4[4]), static_cast<unsigned>(guid.Data4[5]),
               static_cast<unsigned>(guid.Data4[6]), static_cast<unsigned>(guid.Data4[7]));
-    return std::string("com.goodloong.miaodesk.theme.web.") + suffix;
+    return std::string("com.goodloong.whaledesk.theme.web.") + suffix;
 }
 
 bool WriteManifest(const fs::path& path, const WallpaperPackageManifest& manifest,
@@ -503,7 +503,7 @@ bool WallpaperPackage::SelfTest() {
     std::error_code ec;
     const fs::path tempRoot = fs::temp_directory_path(ec);
     if (ec || tempRoot.empty()) return false;
-    const fs::path root = tempRoot / (L"MiaoDesk-WallpaperPackage-" + std::to_wstring(GetCurrentProcessId()));
+    const fs::path root = tempRoot / (L"WhaleDesK-WallpaperPackage-" + std::to_wstring(GetCurrentProcessId()));
     fs::remove_all(root, ec);
     fs::create_directories(root / L"nested", ec);
     if (ec) return false;
@@ -517,7 +517,7 @@ bool WallpaperPackage::SelfTest() {
         manifest.provenance = L"self-test";
         manifest.fpsCap = 42;
         manifest.audio = true;
-        if (!WriteCanonicalManifest(root, manifest, "com.goodloong.miaodesk.theme.test-web")) return false;
+        if (!WriteCanonicalManifest(root, manifest, "com.goodloong.whaledesk.theme.test-web")) return false;
     }
     {
         std::ofstream output(root / L"index.html", std::ios::binary | std::ios::trunc);
@@ -533,4 +533,4 @@ bool WallpaperPackage::SelfTest() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

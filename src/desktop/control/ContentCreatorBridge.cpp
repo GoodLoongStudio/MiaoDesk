@@ -1,8 +1,8 @@
-#include "miaodesk/ContentCreatorBridge.h"
+#include "whaledesk/ContentCreatorBridge.h"
 
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/CreatorWorkspaceState.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/CreatorWorkspaceState.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <shellapi.h>
 
@@ -15,10 +15,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
-constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
+constexpr wchar_t kSearchWindowClass[] = L"WhaleDesK.Native.SearchWindow";
 
 const wchar_t* CommandLineToken(ContentCreatorKind kind) noexcept {
     switch (kind) {
@@ -67,7 +67,7 @@ std::string WideToUtf8ForPath(std::wstring_view text) {
 }
 
 fs::path CreatorKindRoot(ContentCreatorKind kind) {
-    const fs::path root = miaodesk::paths::CreatorWorkspacesRoot();
+    const fs::path root = whaledesk::paths::CreatorWorkspacesRoot();
     if (root.empty() || !Valid(kind)) return {};
     return root / KindFolder(kind);
 }
@@ -81,7 +81,7 @@ std::string ReadActiveSession(const fs::path& file) {
     std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
     // 过滤规则不在这一行里,而在 CreatorWorkspaceState::SanitizeCreatorSessionId ——
     // 生成方与读取方共用同一个函数,"读回来还是它自己"才是一条等式。
-    return miaodesk::creator::SanitizeCreatorSessionId(text);
+    return whaledesk::creator::SanitizeCreatorSessionId(text);
 }
 
 // 写一半比不写更糟:下次打开会读到半个目录名,而那个目录不存在,于是工具调用以
@@ -102,13 +102,13 @@ void WriteActiveSession(const fs::path& file, const std::string& session) {
 
 UINT OpenRequestMessage() noexcept {
     static const UINT message = RegisterWindowMessageW(
-        L"MiaoDesk.ContentCreator.OpenRequest.v2");
+        L"WhaleDesK.ContentCreator.OpenRequest.v2");
     return message;
 }
 
 UINT OpenStatusMessage() noexcept {
     static const UINT message = RegisterWindowMessageW(
-        L"MiaoDesk.ContentCreator.OpenStatus.v2");
+        L"WhaleDesK.ContentCreator.OpenStatus.v2");
     return message;
 }
 
@@ -116,18 +116,18 @@ std::wstring ResolveCreatorWorkspaceRoot(ContentCreatorKind kind) {
     if (!Valid(kind)) return {};
     const fs::path perKind = CreatorKindRoot(kind);
     if (perKind.empty()) return {};
-    miaodesk::paths::EnsureDirectory(perKind);
+    whaledesk::paths::EnsureDirectory(perKind);
 
     const fs::path activeFile = perKind / L"active";
     std::string session = ReadActiveSession(activeFile);
     if (session.empty()) {
         const auto now = static_cast<std::uint64_t>(::GetTickCount64());
-        session = miaodesk::creator::NewCreatorSessionId(now);
+        session = whaledesk::creator::NewCreatorSessionId(now);
         WriteActiveSession(activeFile, session);
     }
 
     const fs::path workspace = perKind / fs::path(Utf8ToWideForPath(session));
-    miaodesk::paths::EnsureDirectory(workspace);
+    whaledesk::paths::EnsureDirectory(workspace);
     return workspace.wstring();
 }
 
@@ -135,14 +135,14 @@ std::wstring StartNewCreatorWorkspace(ContentCreatorKind kind) {
     if (!Valid(kind)) return {};
     const fs::path perKind = CreatorKindRoot(kind);
     if (perKind.empty()) return {};
-    miaodesk::paths::EnsureDirectory(perKind);
+    whaledesk::paths::EnsureDirectory(perKind);
 
     std::string session;
     fs::path workspace;
     for (int attempt = 0; attempt < 8; ++attempt) {
         const auto seed = static_cast<std::uint64_t>(::GetTickCount64()) +
                           static_cast<std::uint64_t>(attempt);
-        session = miaodesk::creator::NewCreatorSessionId(seed);
+        session = whaledesk::creator::NewCreatorSessionId(seed);
         workspace = perKind / fs::path(Utf8ToWideForPath(session));
         std::error_code ec;
         if (!fs::exists(workspace, ec)) break;
@@ -150,7 +150,7 @@ std::wstring StartNewCreatorWorkspace(ContentCreatorKind kind) {
     }
     if (session.empty()) return {};
 
-    if (miaodesk::paths::EnsureDirectory(workspace).empty()) return {};
+    if (whaledesk::paths::EnsureDirectory(workspace).empty()) return {};
     WriteActiveSession(perKind / L"active", session);
     return workspace.wstring();
 }
@@ -166,7 +166,7 @@ bool ActivateCreatorWorkspace(ContentCreatorKind kind, std::wstring_view workspa
     const fs::path expectedParent = fs::weakly_canonical(perKind, ec);
     if (ec || requested.parent_path() != expectedParent) return false;
 
-    const std::string session = miaodesk::creator::SanitizeCreatorSessionId(
+    const std::string session = whaledesk::creator::SanitizeCreatorSessionId(
         WideToUtf8ForPath(requested.filename().wstring()));
     if (session.empty() ||
         Utf8ToWideForPath(session) != requested.filename().wstring()) return false;
@@ -184,7 +184,7 @@ std::vector<std::wstring> ListCreatorWorkspaces(ContentCreatorKind kind) {
     for (const auto& entry : fs::directory_iterator(perKind, ec)) {
         if (ec) break;
         if (!entry.is_directory(ec)) continue;
-        const std::string session = miaodesk::creator::SanitizeCreatorSessionId(
+        const std::string session = whaledesk::creator::SanitizeCreatorSessionId(
             WideToUtf8ForPath(entry.path().filename().wstring()));
         if (session.empty()) continue;
         fs::path stampTarget = entry.path() / L"conversation.txt";
@@ -219,14 +219,14 @@ ContentCreatorKind ParseCommandLine(std::wstring_view commandLine) noexcept {
 std::wstring InitialPrompt(ContentCreatorKind kind) {
     if (kind == ContentCreatorKind::Wallpaper) {
         return
-            L"我要制作一个 MiaoDesk 壁纸。请进入壁纸创作模式：先调用 content_skill_get "
+            L"我要制作一个 WhaleDesK 壁纸。请进入壁纸创作模式：先调用 content_skill_get "
             L"读取 content-package-basics、wallpaper-content 和 content-review，"
             L"然后先问我想做成什么样。生成时先做可预览的 .mdwall 内容包，"
             L"不要未经我确认直接应用到桌面。";
     }
     if (kind == ContentCreatorKind::Widget) {
         return
-            L"我要制作一个 MiaoDesk 桌面组件。请进入组件创作模式：先调用 content_skill_get "
+            L"我要制作一个 WhaleDesK 桌面组件。请进入组件创作模式：先调用 content_skill_get "
             L"读取 content-package-basics、widget-content 和 content-review，"
             L"然后先问我组件要显示什么、尺寸和交互需求。生成时先做可预览的 .mdwidget 内容包，"
             L"不要未经我确认直接放到桌面。";
@@ -267,7 +267,7 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
             SMTO_ABORTIFHUNG | SMTO_BLOCK, quickTimeout, &result);
         if (sent != 0 &&
             static_cast<LRESULT>(result) == kContentCreatorOpenAck) {
-            miaodesk::log::Info(
+            whaledesk::log::Info(
                 L"CreatorIPC",
                 L"AI 创作请求已入队，等待窗口真实创建，kind=" +
                     std::to_wstring(static_cast<std::uint32_t>(kind)));
@@ -286,7 +286,7 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
                     const LRESULT state = static_cast<LRESULT>(status);
                     if (state == kContentCreatorOpenReady ||
                         state == kContentCreatorOpenVisible) {
-                        miaodesk::log::Info(
+                        whaledesk::log::Info(
                             L"CreatorIPC",
                             state == kContentCreatorOpenReady
                                 ? L"AI 创作窗口已创建且初始化完成。"
@@ -297,14 +297,14 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
                 Sleep(40);
             }
 
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorIPC",
                 L"AI 创作请求已获 ACK，但在等待窗口创建时超时；kind=" +
                     std::to_wstring(static_cast<std::uint32_t>(kind)));
             return false;
         }
 
-        miaodesk::log::Warn(
+        whaledesk::log::Warn(
             L"CreatorIPC",
             L"v2 创作 IPC 未获 ACK，尝试兼容旧宿主；Win32=" +
                 std::to_wstring(GetLastError()));
@@ -322,7 +322,7 @@ bool SendToRunningApp(ContentCreatorKind kind, DWORD timeoutMs) noexcept {
         SMTO_ABORTIFHUNG | SMTO_BLOCK, timeoutMs, &result);
     const bool accepted = sent != 0 && result != 0;
     if (!accepted) {
-        miaodesk::log::Error(
+        whaledesk::log::Error(
             L"CreatorIPC",
             L"AI 创作请求发送失败；宿主可能是旧版本、卡死或未就绪。Win32=" +
                 std::to_wstring(GetLastError()));
@@ -340,28 +340,28 @@ bool OpenConversation(ContentCreatorKind kind, HWND owner, std::wstring* error) 
     if (running) {
         if (SendToRunningApp(kind)) return true;
         if (error) {
-            *error = L"已找到正在运行的 MiaoDesk，但 AI 创作窗口没有进入可见状态。"
+            *error = L"已找到正在运行的 WhaleDesK，但 AI 创作窗口没有进入可见状态。"
                      L"这通常表示运行中的主程序版本过旧，或窗口创建阶段失败。"
                      L"请用当前版本重新启动妙喵；实时日志中的 CreatorIPC / CreatorWindow 会给出具体失败阶段。";
         }
         return false;
     }
 
-    const fs::path root = miaodesk::paths::ExecutableDirectory();
-    const fs::path exe = root / L"MiaoDesk.exe";
+    const fs::path root = whaledesk::paths::ExecutableDirectory();
+    const fs::path exe = root / L"WhaleDesK.exe";
     std::error_code ec;
     if (root.empty() || !fs::is_regular_file(exe, ec)) {
-        if (error) *error = L"没有找到 MiaoDesk.exe，无法打开 AI 创作窗口。";
+        if (error) *error = L"没有找到 WhaleDesK.exe，无法打开 AI 创作窗口。";
         return false;
     }
 
     const auto launched = reinterpret_cast<INT_PTR>(ShellExecuteW(
         owner, L"open", exe.c_str(), CommandLineToken(kind), root.c_str(), SW_SHOWNORMAL));
     if (launched <= 32) {
-        if (error) *error = L"启动 MiaoDesk AI 创作窗口失败，ShellExecute=" + std::to_wstring(launched);
+        if (error) *error = L"启动 WhaleDesK AI 创作窗口失败，ShellExecute=" + std::to_wstring(launched);
         return false;
     }
     return true;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

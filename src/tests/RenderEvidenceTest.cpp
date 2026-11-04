@@ -9,13 +9,13 @@
 // 最后一条是这份测试的重点。把失败帧退回一张内置封面图是最省事的"让用户看到点什么"
 // 的做法,而它的后果是一个坏包看起来渲染得很好 —— 所以它必须是一个独立状态,
 // 而且必须优先于"帧数够了"被报出来。
-#include "miaodesk/RenderEvidence.h"
+#include "whaledesk/RenderEvidence.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -55,10 +55,10 @@ RenderEvidenceRequirements Needs(std::uint32_t minFrames = 1) {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 采集的是渲染器真实输出 -------------------------------------------
     {

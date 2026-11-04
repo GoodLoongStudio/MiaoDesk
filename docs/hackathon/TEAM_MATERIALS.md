@@ -12,13 +12,13 @@
 
 - 团队成员；
 - DGX Spark；
-- 一台正在运行 MiaoDesk 的 Windows 电脑。
+- 一台正在运行 WhaleDesK 的 Windows 电脑。
 
 这样一张图就能同时说明“团队 + 硬件 + 项目”。
 
 ## 建议文件名
 
-`MiaoDesk-DGX-Spark-Hackathon-Team.jpg`
+`WhaleDesK-DGX-Spark-Hackathon-Team.jpg`
 
 ## 提交方式
 

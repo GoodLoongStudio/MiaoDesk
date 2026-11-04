@@ -11,7 +11,7 @@
 # 模板,而没有任何一份 Skill 提到它 —— AI 因此不会用它显示日期或待办文字。
 #
 # 判据同样从代码读出:能力目录里 aiAuthorable && 可执行 的那些条目,就是"AI 应当会用的"。
-# 再往 Skill 里抄一份清单就前功尽弃,所以这里解析 MiaoCapabilityCatalog.cpp 自己。
+# 再往 Skill 里抄一份清单就前功尽弃,所以这里解析 WhaleCapabilityCatalog.cpp 自己。
 #
 # **它证不了什么**:它只证明名字出现过。Skill 可以把真能力讲错(说 solidColor 有渐变)、
 # 或者提一句就过去 —— 这两种它抓不到,要人工读。它抓得住的:新增了一个 AI 可创作的能力,
@@ -28,11 +28,11 @@ def read(rel):
     with open(os.path.join(root, rel), encoding='utf-8', errors='replace') as f:
         return f.read()
 
-catalog = read('src/content/binding/MiaoCapabilityCatalog.cpp')
+catalog = read('src/content/binding/WhaleCapabilityCatalog.cpp')
 table = catalog[catalog.find('constexpr std::array<CapabilityEntry'):
                 catalog.find('static_assert(kCatalog.size()')]
 if not table:
-    print('❌ 无法从 MiaoCapabilityCatalog.cpp 切出能力表')
+    print('❌ 无法从 WhaleCapabilityCatalog.cpp 切出能力表')
     sys.exit(2)
 
 # 每条形如 {"id", ver, Carrier, Backends, {支持五态}, ...}

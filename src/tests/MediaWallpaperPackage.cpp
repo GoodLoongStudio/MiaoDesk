@@ -2,8 +2,8 @@
 // two properties that make that safe: the entry extension must match the declared
 // type, and a package built from an arbitrary source path must never place an asset
 // outside its own assets/ directory.
-#include "miaodesk/WallpaperPackage.h"
-#include "miaodesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperPackage.h"
+#include "whaledesk/WallpaperLibrary.h"
 
 #include <windows.h>
 
@@ -12,9 +12,9 @@
 #include <string>
 
 namespace fs = std::filesystem;
-using miaodesk::wallpaper::WallpaperPackage;
-using miaodesk::wallpaper::WallpaperPackageManifest;
-using miaodesk::wallpaper::WallpaperPackageType;
+using whaledesk::wallpaper::WallpaperPackage;
+using whaledesk::wallpaper::WallpaperPackageManifest;
+using whaledesk::wallpaper::WallpaperPackageType;
 
 namespace {
 
@@ -37,13 +37,13 @@ bool WriteBytes(const fs::path& path, const std::string& bytes) {
 bool WriteManifestRaw(const fs::path& package, const std::string& typeKey, const std::string& entry) {
     return WriteBytes(package / L"manifest.json",
                       "{\n  \"schema\": 1,\n  \"type\": \"" + typeKey + "\",\n" +
-                          "  \"title\": \"Gate\",\n  \"author\": \"MiaoDesk\",\n  \"entry\": \"" + entry +
+                          "  \"title\": \"Gate\",\n  \"author\": \"WhaleDesK\",\n  \"entry\": \"" + entry +
                           "\",\n  \"provenance\": \"self-test\",\n  \"fps_cap\": 30,\n  \"audio\": false\n}\n");
 }
 
 fs::path WorkRoot() {
     return fs::temp_directory_path() /
-        (L"MiaoDesk-MediaPackage-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-MediaPackage-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
 }
 
@@ -82,7 +82,7 @@ int wmain() {
         const auto package = root / L"built-video.mdwall";
         std::wstring error;
         const bool created = WallpaperPackage::CreateVideo(package, L"Built Video", sourceDir / L"clip.mp4",
-                                                           L"self-test", L"MiaoDesk", &error);
+                                                           L"self-test", L"WhaleDesK", &error);
         Check(created, "CreateVideo succeeds");
         WallpaperPackageManifest manifest;
         Check(WallpaperPackage::Validate(package, &manifest, &error) &&
@@ -92,7 +92,7 @@ int wmain() {
 
         const auto image = root / L"built-image.mdwall";
         const bool createdImage = WallpaperPackage::CreateImage(image, L"Built Image", sourceDir / L"photo.png",
-                                                                L"self-test", L"MiaoDesk", &error);
+                                                                L"self-test", L"WhaleDesK", &error);
         Check(createdImage, "CreateImage succeeds");
         Check(WallpaperPackage::Validate(image, &manifest, &error) &&
                   manifest.type == WallpaperPackageType::Image,
@@ -173,7 +173,7 @@ int wmain() {
 
     std::printf("\n5. The library imports a hand-written video package\n");
     {
-        miaodesk::wallpaper::WallpaperLibrary library(root / L"Library");
+        whaledesk::wallpaper::WallpaperLibrary library(root / L"Library");
         std::wstring error;
         Check(library.Load(&error), "empty library loads");
         const auto packages = library.PackageDirectory();
@@ -184,12 +184,12 @@ int wmain() {
         Check(WriteManifestRaw(package, "video", "assets/clip.mp4"), "hand-written manifest placed in the library");
         Check(library.Load(&error), "library reloads after a package appears");
         Check(library.InferKind(package / L"assets" / L"clip.mp4") ==
-                  miaodesk::wallpaper::LibraryWallpaperKind::Video,
+                  whaledesk::wallpaper::LibraryWallpaperKind::Video,
               "library recognises the video extension");
         bool imported = false;
-        miaodesk::wallpaper::LibraryWallpaperKind importedKind = miaodesk::wallpaper::LibraryWallpaperKind::Unknown;
+        whaledesk::wallpaper::LibraryWallpaperKind importedKind = whaledesk::wallpaper::LibraryWallpaperKind::Unknown;
         for (const auto& item : library.Items()) {
-            if (item.kind == miaodesk::wallpaper::LibraryWallpaperKind::Video &&
+            if (item.kind == whaledesk::wallpaper::LibraryWallpaperKind::Video &&
                 item.source.filename() == L"clip.mp4") {
                 imported = true;
                 importedKind = item.kind;
@@ -197,7 +197,7 @@ int wmain() {
             }
         }
         Check(imported, "the video package becomes a Video library item");
-        Check(importedKind == miaodesk::wallpaper::LibraryWallpaperKind::Video,
+        Check(importedKind == whaledesk::wallpaper::LibraryWallpaperKind::Video,
               "its kind is Video, not Unknown");
     }
 

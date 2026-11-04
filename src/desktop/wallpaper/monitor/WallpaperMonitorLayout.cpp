@@ -1,4 +1,4 @@
-#include "miaodesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 using GetDpiForMonitorFn = HRESULT (WINAPI*)(HMONITOR, int, UINT*, UINT*);
@@ -321,4 +321,4 @@ bool SelfTestMonitorLayoutGeometry() noexcept {
            ParseLayoutMode(L"primary") == LayoutMode::PrimaryOnly;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

@@ -1,5 +1,5 @@
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/WallpaperLibrary.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/WallpaperLibrary.h"
 
 #include <windows.h>
 
@@ -11,8 +11,8 @@
 #include <string>
 
 namespace fs = std::filesystem;
-using miaodesk::wallpaper::LibraryWallpaperKind;
-using miaodesk::wallpaper::WallpaperLibrary;
+using whaledesk::wallpaper::LibraryWallpaperKind;
+using whaledesk::wallpaper::WallpaperLibrary;
 
 namespace {
 
@@ -41,13 +41,13 @@ std::wstring Utf8ToWide(std::string_view value) {
     return out;
 }
 
-std::optional<miaodesk::desktop::WidgetSurfaceHealth> WaitForWidgetSurfaceHealth(
-    const miaodesk::desktop::DesktopControlService& service,
+std::optional<whaledesk::desktop::WidgetSurfaceHealth> WaitForWidgetSurfaceHealth(
+    const whaledesk::desktop::DesktopControlService& service,
     std::wstring_view widgetId,
     DWORD timeoutMs = 15000) {
     const ULONGLONG deadline = GetTickCount64() + timeoutMs;
     do {
-        miaodesk::desktop::DesktopSnapshot snapshot;
+        whaledesk::desktop::DesktopSnapshot snapshot;
         const auto result = service.GetSnapshot(&snapshot);
         if (!result.success) return std::nullopt;
         const auto surface = std::find_if(
@@ -61,12 +61,12 @@ std::optional<miaodesk::desktop::WidgetSurfaceHealth> WaitForWidgetSurfaceHealth
     return std::nullopt;
 }
 
-bool WaitForWidgetSurfaceGone(const miaodesk::desktop::DesktopControlService& service,
+bool WaitForWidgetSurfaceGone(const whaledesk::desktop::DesktopControlService& service,
                               std::wstring_view widgetId,
                               DWORD timeoutMs = 15000) {
     const ULONGLONG deadline = GetTickCount64() + timeoutMs;
     do {
-        miaodesk::desktop::DesktopSnapshot snapshot;
+        whaledesk::desktop::DesktopSnapshot snapshot;
         const auto result = service.GetSnapshot(&snapshot);
         if (!result.success) return false;
         const auto surface = std::find_if(
@@ -78,9 +78,9 @@ bool WaitForWidgetSurfaceGone(const miaodesk::desktop::DesktopControlService& se
     return false;
 }
 
-bool HasContentPackage(const miaodesk::desktop::DesktopControlService& service,
+bool HasContentPackage(const whaledesk::desktop::DesktopControlService& service,
                        std::wstring_view source) {
-    std::vector<miaodesk::content::ManagedContentPackageInfo> packages;
+    std::vector<whaledesk::content::ManagedContentPackageInfo> packages;
     const auto listed = service.ListContentPackages(&packages);
     if (!listed.success) return false;
     return std::any_of(packages.begin(), packages.end(), [&](const auto& package) {
@@ -89,7 +89,7 @@ bool HasContentPackage(const miaodesk::desktop::DesktopControlService& service,
 }
 
 bool RunContentWidgetLifecycle(const fs::path& packagePath) {
-    miaodesk::desktop::DesktopControlService service;
+    whaledesk::desktop::DesktopControlService service;
     auto fail = [](std::wstring_view stage, std::wstring_view detail = {}) {
         std::wcerr << L"Content widget lifecycle failed at " << stage;
         if (!detail.empty()) std::wcerr << L": " << detail;
@@ -97,15 +97,15 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
         return false;
     };
 
-    miaodesk::desktop::NativeWidgetCreateRequest warmupRequest;
-    warmupRequest.preset = miaodesk::wallpaper::NativeWidgetPreset::GlassClock;
+    whaledesk::desktop::NativeWidgetCreateRequest warmupRequest;
+    warmupRequest.preset = whaledesk::wallpaper::NativeWidgetPreset::GlassClock;
     warmupRequest.title = L"CI Widget host warmup";
     warmupRequest.x = 0.62f;
     warmupRequest.y = 0.05f;
     warmupRequest.width = 0.28f;
     warmupRequest.height = 0.18f;
 
-    miaodesk::wallpaper::DesktopWidget warmup;
+    whaledesk::wallpaper::DesktopWidget warmup;
     const auto warmupCreate = service.CreateNativeWidget(warmupRequest, &warmup);
     if (!warmupCreate.success) return fail(L"warmup create", warmupCreate.message);
     if (warmup.id.empty()) return fail(L"warmup create", L"created id is empty");
@@ -113,10 +113,10 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     if (!warmupSurface) return fail(L"warmup surface", L"did not become ready/renderingHealthy");
     if (warmupSurface->processId == 0) return fail(L"warmup surface", L"host process id is zero");
 
-    miaodesk::content::ContentPackageInstallResult installed;
+    whaledesk::content::ContentPackageInstallResult installed;
     const auto install = service.InstallContentPackage(packagePath, &installed);
     if (!install.success) return fail(L"package install", install.message);
-    if (installed.package.kind != miaodesk::content::ContentKind::Widget)
+    if (installed.package.kind != whaledesk::content::ContentKind::Widget)
         return fail(L"package install", L"installed package kind is not widget");
     if (installed.package.source.empty()) return fail(L"package install", L"installed source is empty");
     if (!HasContentPackage(service, installed.package.source))
@@ -125,7 +125,7 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     const std::wstring definitionId = Utf8ToWide(installed.package.id);
     if (definitionId.empty()) return fail(L"definition id", L"UTF-8 conversion failed");
 
-    miaodesk::desktop::ContentWidgetCreateRequest request;
+    whaledesk::desktop::ContentWidgetCreateRequest request;
     request.definitionId = definitionId;
     request.title = L"CI Content widget lifecycle";
     request.x = 0.05f;
@@ -134,7 +134,7 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     request.height = 0.30f;
     request.enabled = true;
 
-    miaodesk::wallpaper::DesktopWidget created;
+    whaledesk::wallpaper::DesktopWidget created;
     const auto create = service.CreateContentWidget(request, &created);
     if (!create.success) return fail(L"Content instance create", create.message);
     if (created.id.empty()) return fail(L"Content instance create", L"created id is empty");
@@ -145,9 +145,9 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     if (contentSurface->processId == 0)
         return fail(L"Content surface", L"host process id is zero");
 
-    miaodesk::content::ContentPackageUninstallResult blockedResult;
+    whaledesk::content::ContentPackageUninstallResult blockedResult;
     const auto blocked = service.UninstallContentPackage(
-        miaodesk::content::ContentKind::Widget, installed.package.source, &blockedResult);
+        whaledesk::content::ContentKind::Widget, installed.package.source, &blockedResult);
     if (blocked.success) return fail(L"protected uninstall", L"unexpectedly succeeded while instance exists");
     if (blocked.message.find(L"仍被桌面实例引用") == std::wstring::npos)
         return fail(L"protected uninstall", blocked.message);
@@ -159,9 +159,9 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
     if (!WaitForWidgetSurfaceGone(service, created.id))
         return fail(L"Content surface remove", L"surface did not disappear");
 
-    miaodesk::content::ContentPackageUninstallResult removedPackage;
+    whaledesk::content::ContentPackageUninstallResult removedPackage;
     const auto uninstall = service.UninstallContentPackage(
-        miaodesk::content::ContentKind::Widget, installed.package.source, &removedPackage);
+        whaledesk::content::ContentKind::Widget, installed.package.source, &removedPackage);
     if (!uninstall.success) return fail(L"package uninstall", uninstall.message);
     if (removedPackage.package.source != installed.package.source)
         return fail(L"package uninstall", L"removed package source mismatch");
@@ -178,7 +178,7 @@ bool RunContentWidgetLifecycle(const fs::path& packagePath) {
 bool RunContentWebReplacementContinuity() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-ContentWebReplacement-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-ContentWebReplacement-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
 
     bool ok = true;
@@ -194,7 +194,7 @@ bool RunContentWebReplacementContinuity() {
   "schema":1,
   "id":"com.goodloong.selftest.web-replacement",
   "name":"Replacement Web",
-  "author":"MiaoDesk",
+  "author":"WhaleDesK",
   "version":"1.0.0",
   "kind":"wallpaper",
   "runtime":"web",
@@ -226,7 +226,7 @@ bool RunContentWebReplacementContinuity() {
   "schema":1,
   "id":"com.goodloong.selftest.web-replacement",
   "name":"Replacement Web v2",
-  "author":"MiaoDesk",
+  "author":"WhaleDesK",
   "version":"2.0.0",
   "kind":"wallpaper",
   "runtime":"web",

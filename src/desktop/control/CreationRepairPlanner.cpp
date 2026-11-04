@@ -1,8 +1,8 @@
-#include "miaodesk/CreationRepairPlanner.h"
+#include "whaledesk/CreationRepairPlanner.h"
 
 #include <algorithm>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 bool SameIssue(const RepairAttempt& attempt, const content::ContentValidationIssue& issue) {
@@ -131,4 +131,4 @@ RepairInstruction PlanRepair(const RepairRequest& request) {
     return result;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

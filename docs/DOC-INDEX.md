@@ -1,4 +1,4 @@
-# MiaoDesk 文档索引
+# WhaleDesK 文档索引
 
 当前为产品愿景 → 设计基线 → 开发路线 → 专业版详细规划/技术契约。执行状态只在持续开发面板维护，TODO 保存规格与证据。旧大型 Editor 实现路线退出；2026-10-03 确认的 Wallpaper Engine 级表现力、macOS 级组件与专业 AI 创作正式进入基线。
 
@@ -43,13 +43,13 @@
 
 ## 当前技术契约
 
-- `MIAODESK_CONTENT_FRAMEWORK.md` — 下一阶段“配置化 / 参数化”内容框架：统一 Wallpaper / Widget 的 Package、Parameter、Scene Runtime、Capability 与 Authoring 边界
-- `MIAO_SCENE_ENGINE.md` — `Miao Scene Engine` 场景/GPU 子系统契约：Scene/Node/Component/Property/Asset、Custom HLSL、Material、Particle、Animation、Input Bus、Render Graph 与 Wallpaper/Widget Runtime Profile；其 Scene/GPU 细节优先于 Content Framework 中较早的简化描述
-- `MIAO_SCENE_ENGINE_ROADMAP.md` — Scene/GPU 子系统历史建设分解，当前产品排期见 S0～S7；包括：M0 合同冻结 → M1 Offscreen/Multi-Pass → Post Process → Animation → Particle → Input/Audio → Hot Reload/Preview → Sandbox → Widget 复用 → Dogfood/性能 → AI/Creator
-- `MIAO_CONTENT_PACKAGE_V1.md` — 外部内容包与序列化入口契约：`.mdwall/.mdwidget`、manifest、Package Root 路径沙箱、Scene/Parameter/Asset ingress、Slice B 施工顺序与首个外部内容里程碑
+- `WHALEDESK_CONTENT_FRAMEWORK.md` — 下一阶段“配置化 / 参数化”内容框架：统一 Wallpaper / Widget 的 Package、Parameter、Scene Runtime、Capability 与 Authoring 边界
+- `WHALE_SCENE_ENGINE.md` — `Whale Scene Engine` 场景/GPU 子系统契约：Scene/Node/Component/Property/Asset、Custom HLSL、Material、Particle、Animation、Input Bus、Render Graph 与 Wallpaper/Widget Runtime Profile；其 Scene/GPU 细节优先于 Content Framework 中较早的简化描述
+- `WHALE_SCENE_ENGINE_ROADMAP.md` — Scene/GPU 子系统历史建设分解，当前产品排期见 S0～S7；包括：M0 合同冻结 → M1 Offscreen/Multi-Pass → Post Process → Animation → Particle → Input/Audio → Hot Reload/Preview → Sandbox → Widget 复用 → Dogfood/性能 → AI/Creator
+- `WHALE_CONTENT_PACKAGE_V1.md` — 外部内容包与序列化入口契约：`.mdwall/.mdwidget`、manifest、Package Root 路径沙箱、Scene/Parameter/Asset ingress、Slice B 施工顺序与首个外部内容里程碑
 - `NATIVE_SOURCE_LAYOUT.md` — 当前源码目录与 ownership
 - `DESKTOP_DOMAIN_ARCHITECTURE.md` — Desktop domain/service 边界
-- `MIAODESK_GLASS_UI_DESIGN_LANGUAGE.md` — Native UI 视觉语言
+- `WHALEDESK_GLASS_UI_DESIGN_LANGUAGE.md` — Native UI 视觉语言
 - `SEARCH_BAR_VISUAL_SPEC.md` — Search Bar 视觉规范
 - `WINDOWS_CUSTOM_INPUT_IME.md` — Windows 自定义输入/IME
 - `WINDOWS_LAYERED_DIRECT2D_UI_RENDERING.md` — Layered Window + Direct2D 渲染

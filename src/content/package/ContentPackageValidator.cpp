@@ -1,17 +1,17 @@
-#include "miaodesk/ContentPackageValidator.h"
+#include "whaledesk/ContentPackageValidator.h"
 
-#include "miaodesk/JsonStringField.h"
+#include "whaledesk/JsonStringField.h"
 
-#include "miaodesk/MiaoCapabilityCatalog.h"
+#include "whaledesk/WhaleCapabilityCatalog.h"
 
 #include <algorithm>
 #include <cctype>
 #include <set>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
-// manifest.json 的必填字段。这些名字不是这里定的,是 MiaoContentPackage 的
+// manifest.json 的必填字段。这些名字不是这里定的,是 WhaleContentPackage 的
 // 加载器要的那一套 —— 校验器必须和加载器说同一种语言,否则"校验通过"到了
 // 加载那一刻还是失败,而那一次失败发生在用户眼前。
 constexpr const char* kRequiredManifestFields[] = {"id", "name", "version", "kind", "runtime", "entry"};
@@ -32,10 +32,10 @@ bool HasField(std::string_view json, std::string_view key) {
 // 必须两个都查。
 // 必填字段:传裸字段名进来,这里负责补上引号,让两处判据永远是同一个键。
 bool HasNonEmptyField(std::string_view json, std::string_view bareKey) {
-    const std::string key = std::string(miaodesk::kJsonQuote) + std::string(bareKey) +
-                           miaodesk::kJsonQuote;
+    const std::string key = std::string(whaledesk::kJsonQuote) + std::string(bareKey) +
+                           whaledesk::kJsonQuote;
     if (!HasField(json, key)) return false;
-    return !miaodesk::ExtractJsonString(json, key).empty();
+    return !whaledesk::ExtractJsonString(json, key).empty();
 }
 
 bool IsAsciiStableId(const std::string& value) {
@@ -99,7 +99,7 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
 
     // 3. schema 版本。加载器只认 kSchemaVersion;校验器必须和它说同一个数,
     //    否则"校验通过"到了加载那一刻还是失败,而那一次失败发生在用户眼前。
-    const auto schema = miaodesk::ExtractJsonInt(manifest->bytes, "\"schema\"");
+    const auto schema = whaledesk::ExtractJsonInt(manifest->bytes, "\"schema\"");
     if (!schema) {
         AddIssue(&result, content::ContentValidationFailure::MissingManifestField, "manifest.json",
                  "schema", "manifest.json 缺少或读不出 schema。", true);
@@ -118,20 +118,20 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
                  field, std::string("manifest.json 缺少必填字段 ") + field + "。", true);
         missingField = true;
     }
-    const std::string id = miaodesk::ExtractJsonString(manifest->bytes, "\"id\"");
+    const std::string id = whaledesk::ExtractJsonString(manifest->bytes, "\"id\"");
     if (!id.empty() && !IsAsciiStableId(id)) {
         AddIssue(&result, content::ContentValidationFailure::MissingManifestField, "manifest.json",
                  "id", "manifest.json 的 id 只能由字母数字和 . _ - 组成,且不能以符号开头。", true);
     }
 
     // 5. 类型与运行时。
-    const std::string kind = miaodesk::ExtractJsonString(manifest->bytes, "\"kind\"");
+    const std::string kind = whaledesk::ExtractJsonString(manifest->bytes, "\"kind\"");
     if (!kind.empty() && kind != "wallpaper" && kind != "widget") {
         AddIssue(&result, content::ContentValidationFailure::KindMismatch, "manifest.json", "kind",
                  std::string("manifest.json 的 kind 必须是 wallpaper 或 widget,现在是 ") + kind + "。",
                  true);
     }
-    const std::string runtime = miaodesk::ExtractJsonString(manifest->bytes, "\"runtime\"");
+    const std::string runtime = whaledesk::ExtractJsonString(manifest->bytes, "\"runtime\"");
     if (!runtime.empty() && runtime != "scene" && runtime != "web") {
         AddIssue(&result, content::ContentValidationFailure::UnsupportedRuntime, "manifest.json",
                  "runtime",
@@ -155,7 +155,7 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
     // 一层 capability 检查都没有 —— 只有加载器查过字符集。
     // 键要带引号,与这个文件里其它取值调用一致(见 kRequiredManifestFields 的注释)。
     const auto capabilities =
-        miaodesk::ExtractJsonStringArray(manifest->bytes, "\"capabilities\"");
+        whaledesk::ExtractJsonStringArray(manifest->bytes, "\"capabilities\"");
     if (capabilities) {
         for (const auto& capability : *capabilities) {
             if (content::IsCatalogCapability(capability)) continue;
@@ -168,7 +168,7 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
     }
 
     // 6. entry 指向的文件必须真的在包里。
-    const std::string entry = miaodesk::ExtractJsonString(manifest->bytes, "\"entry\"");
+    const std::string entry = whaledesk::ExtractJsonString(manifest->bytes, "\"entry\"");
     bool missingReferenced = false;
     if (!entry.empty()) {
         // entry 有两个都合法的位置,而这里原来只认一个:
@@ -243,4 +243,4 @@ content::ContentValidationResult ValidateCandidatePackage(std::vector<content::C
     return result;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

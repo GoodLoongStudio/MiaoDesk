@@ -4,17 +4,17 @@
 // 带 2.7 MB 位图,而"其中有没有一份没人引用的""有没有两份内容完全相同"这两个问题
 // 只能靠人眼翻 manifest —— 而人眼翻的结果不会进 CI。
 //
-// 走的是真实链路:Load → 反序列化 → Validate → MiaoAssetDatabase::Build。
+// 走的是真实链路:Load → 反序列化 → Validate → WhaleAssetDatabase::Build。
 // Build 为**每个声明过的**资产建一条记录(文件不在磁盘上就直接失败),而 dependents
 // 由 shaders / materials / 组件属性反解出来,所以"没人引用"与"同一份字节打两遍"
 // 都是现成的答案,不需要再猜一遍 JSON。
 //
 // 本轮实测:三壁纸 15 条资产记录、2.7 MB,used/dangling/duplicate 三项全为 0。
 // 这道门把"当前是干净的"固定下来 —— 三个数字任何一个变了都会红并说出是哪一条。
-#include "miaodesk/MiaoAssetDatabase.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
+#include "whaledesk/WhaleAssetDatabase.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 namespace fs = std::filesystem;
 
 static int failures = 0;
@@ -50,7 +50,7 @@ struct AssetAudit {
     bool clean() const { return dangling.empty() && duplicated.empty(); }
 };
 
-AssetAudit AuditPackageAssets(const SceneRuntimeDefinition& runtime, const MiaoAssetDatabase& assets) {
+AssetAudit AuditPackageAssets(const SceneRuntimeDefinition& runtime, const WhaleAssetDatabase& assets) {
     AssetAudit audit;
     std::map<std::uint64_t, std::vector<std::wstring>> byHash;
     for (const auto& asset : runtime.scene.assets) {
@@ -86,7 +86,7 @@ static fs::path FindRepoRoot() {
 // 在通过的那一刻长得一模一样。第一版就是那么写的,变异检测把"无人引用"那行
 // 删掉之后门照样全绿,才发现这里有个洞。
 static bool SelfCheck() {
-    const fs::path tempRoot = fs::temp_directory_path() / L"MiaoDesk-ShippedPackageAssets-SelfCheck";
+    const fs::path tempRoot = fs::temp_directory_path() / L"WhaleDesK-ShippedPackageAssets-SelfCheck";
     std::error_code ec;
     fs::remove_all(tempRoot, ec);
     if (!fs::create_directories(tempRoot / "assets", ec)) return false;
@@ -115,7 +115,7 @@ static bool SelfCheck() {
         auto runtime = scene({AssetDefinition{L"asset://self-check/dangling", AssetType::Image,
                                              L"assets/dangling.png"}},
                              {});
-        MiaoAssetDatabase assets;
+        WhaleAssetDatabase assets;
         std::wstring error;
         if (!assets.Build(tempRoot, runtime, &error)) {
             ok = false;
@@ -140,7 +140,7 @@ static bool SelfCheck() {
                                 AssetReference{L"asset://self-check/a"}},
              PropertyDefinition{L"b", PropertyType::AssetReference,
                                 AssetReference{L"asset://self-check/b"}}}});
-        MiaoAssetDatabase assets;
+        WhaleAssetDatabase assets;
         std::wstring error;
         if (!assets.Build(tempRoot, runtime, &error)) {
             ok = false;
@@ -165,7 +165,7 @@ static bool SelfCheck() {
                                 AssetReference{L"asset://self-check/c"}},
              PropertyDefinition{L"d", PropertyType::AssetReference,
                                 AssetReference{L"asset://self-check/d"}}}});
-        MiaoAssetDatabase assets;
+        WhaleAssetDatabase assets;
         std::wstring error;
         if (assets.Build(tempRoot, runtime, &error) && !AuditPackageAssets(runtime, assets).clean())
             ok = false;
@@ -217,19 +217,19 @@ int wmain() {
             const auto label = std::string(where.label) + " " + it->path().filename().string();
 
             std::wstring error;
-            LoadedMiaoContentPackage package;
-            if (!MiaoContentPackage::Load(it->path(), &package, &error)) {
+            LoadedWhaleContentPackage package;
+            if (!WhaleContentPackage::Load(it->path(), &package, &error)) {
                 std::printf("  [FAIL] %s 加载失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;
                 continue;
             }
             SceneRuntimeDefinition runtime;
-            if (!MiaoSceneSerializer::DeserializePackage(package, &runtime, &error)) {
+            if (!WhaleSceneSerializer::DeserializePackage(package, &runtime, &error)) {
                 std::printf("  [FAIL] %s 反序列化失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;
                 continue;
             }
-            MiaoAssetDatabase assets;
+            WhaleAssetDatabase assets;
             if (!assets.Build(it->path(), runtime, &error)) {
                 std::printf("  [FAIL] %s 资产库构建失败:%ls\n", label.c_str(), error.c_str());
                 ++failures;

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 // pathToFileURL is required, not decoration: `import()` treats its argument as a URL
 // specifier. On POSIX an absolute path happens to be accepted, but on Windows
-// "D:\a\MiaoDesk\tests\..." is parsed as a URL with protocol "d:" and fails with
+// "D:\a\WhaleDesK\tests\..." is parsed as a URL with protocol "d:" and fails with
 // ERR_UNSUPPORTED_ESM_URL_SCHEME. This gate is Windows-only in CI, so the POSIX-only
 // behaviour hid the bug locally.
 import { pathToFileURL } from 'node:url';
@@ -48,14 +48,14 @@ try {
 async function withEnv(env) {
   const agentDir = await mkdtemp(join(tmpdir(), 'imgprov-'));
   await writeFile(join(agentDir, 'models.json'),
-                  JSON.stringify({ providers: { miaodesk: { baseUrl: env.baseUrl ?? '' } } }), 'utf8');
+                  JSON.stringify({ providers: { whaledesk: { baseUrl: env.baseUrl ?? '' } } }), 'utf8');
   const childEnv = {
     ...process.env,
     PI_CODING_AGENT_DIR: agentDir,
-    MIAODESK_IMAGE_PROVIDER: env.provider ?? '',
-    MIAODESK_IMAGE_MODEL: env.model ?? '',
-    MIAODESK_MODEL_API_KEY: env.mainKey ?? '',
-    MIAODESK_IMAGE_API_KEY: env.imageKey ?? '',
+    WHALEDESK_IMAGE_PROVIDER: env.provider ?? '',
+    WHALEDESK_IMAGE_MODEL: env.model ?? '',
+    WHALEDESK_MODEL_API_KEY: env.mainKey ?? '',
+    WHALEDESK_IMAGE_API_KEY: env.imageKey ?? '',
   };
   const out = execFileSync(process.execPath,
       [...stripTypesFlags, probe],

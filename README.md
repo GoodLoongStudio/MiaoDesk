@@ -1,6 +1,6 @@
-# MiaoDesk
+# WhaleDesK
 
-MiaoDesk 是一个漂亮的智能桌面。用户感知到三个界面：顶部搜索框（应用搜索 / 文件搜索 / 进入 AI 聊天）、动态桌面（动态壁纸与动态小组件）、以及 DeepSeek Harness 专业工作台。所有功能都对照这三者设计。
+WhaleDesK 是一个漂亮的智能桌面。用户感知到三个界面：顶部搜索框（应用搜索 / 文件搜索 / 进入 AI 聊天）、动态桌面（动态壁纸与动态小组件）、以及 DeepSeek Harness 专业工作台。所有功能都对照这三者设计。
 
 产品愿景完整定义见 `docs/PRODUCT_VISION.md`。2026-10-03 起，专业版目标明确为 **Wallpaper Engine 级动态壁纸、macOS 级组件能力、专业 AI 壁纸/组件创作**；详细能力、S0～S7 和验收见 [专业版总体规划](docs/PROFESSIONAL_DESKTOP_PLAN.md)。
 
@@ -8,9 +8,9 @@ MiaoDesk 是一个漂亮的智能桌面。用户感知到三个界面：顶部�
 
 正式构建只有三个 Native 目标：
 
-- `MiaoDesk.exe` — 唯一用户入口，负责 Search / AI / 设置
-- `MiaoDeskWallpaper.exe` — 独立桌面/壁纸/Widget 进程
-- `MiaoDeskHarness.exe` — 独立 DeepSeek Harness 宿主
+- `WhaleDesK.exe` — 唯一用户入口，负责 Search / AI / 设置
+- `WhaleDesKWallpaper.exe` — 独立桌面/壁纸/Widget 进程
+- `WhaleDesKHarness.exe` — 独立 DeepSeek Harness 宿主
 
 诊断 acceptance executable 不属于正式 build graph，也不进入用户包。
 
@@ -75,21 +75,21 @@ external short CMake build
 本地等价 staging：
 
 ```powershell
-cmake -S . -B C:\b\MiaoDesk\x64 -A x64 -DCMAKE_INSTALL_PREFIX=C:\pkg\MiaoDesk\x64
-cmake --build C:\b\MiaoDesk\x64 --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel
-cmake --install C:\b\MiaoDesk\x64 --config Release --prefix C:\pkg\MiaoDesk\x64
-.\packaging\windows\stage.ps1 -Destination C:\pkg\MiaoDesk\x64 -Architecture x64
-.\packaging\windows\verify-path-budget.ps1 -Root C:\pkg\MiaoDesk\x64
+cmake -S . -B C:\b\WhaleDesK\x64 -A x64 -DCMAKE_INSTALL_PREFIX=C:\pkg\WhaleDesK\x64
+cmake --build C:\b\WhaleDesK\x64 --config Release --target WhaleDesK WhaleDesKWallpaper WhaleDesKHarness --parallel
+cmake --install C:\b\WhaleDesK\x64 --config Release --prefix C:\pkg\WhaleDesK\x64
+.\packaging\windows\stage.ps1 -Destination C:\pkg\WhaleDesK\x64 -Architecture x64
+.\packaging\windows\verify-path-budget.ps1 -Root C:\pkg\WhaleDesK\x64
 ```
 
 NSIS 直接消费同一 staging：
 
 ```powershell
-makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe" packaging\windows\installer.nsi
+makensis /DSTAGE_DIR="C:\pkg\WhaleDesK\x64" /DOUTPUT_FILE="WhaleDesK-x64-Setup.exe" packaging\windows\installer.nsi
 ```
 
 正式 package workflow 会同时上传原始 staging 和单文件
-`MiaoDesk-x64-Setup.exe`，并对安装器执行静默安装/卸载 smoke test。
+`WhaleDesK-x64-Setup.exe`，并对安装器执行静默安装/卸载 smoke test。
 
 构建目录必须位于源码树外。正式包不得依赖 Windows `LongPathsEnabled`、`subst`、symlink 或 Junction。
 
@@ -133,7 +133,7 @@ DSH/Pi 的直接版本只定义在 `runtime/agent/package.json`，完整间接�
 
 ## WebView2
 
-仓库只保留 MiaoDesk 实际参与编译的最小 SDK：
+仓库只保留 WhaleDesK 实际参与编译的最小 SDK：
 
 ```text
 third_party/webview2/
@@ -154,18 +154,18 @@ third_party/webview2/
 普通 AI / Desktop Agent 请求主路由：
 
 ```text
-MiaoDesk -> Pi -> bundled Node -> configured Provider
+WhaleDesK -> Pi -> bundled Node -> configured Provider
 ```
 
-DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动，UI 由 MiaoDesk WebView2 承载。
+DeepSeek Harness 使用同一产品配置，后台服务以 `--no-open` 启动，UI 由 WhaleDesK WebView2 承载。
 
 ## 最小验证
 
 正式包只保留真正保护产品的检查：
 
-- `MiaoDesk.exe --self-test`
-- `MiaoDeskWallpaper.exe --self-test`
-- `MiaoDeskHarness.exe --self-test`
+- `WhaleDesK.exe --self-test`
+- `WhaleDesKWallpaper.exe --self-test`
+- `WhaleDesKHarness.exe --self-test`
 - Native Widget `PaintReady`
 - Pi CLI `--version`
 - DSH CLI `--help`

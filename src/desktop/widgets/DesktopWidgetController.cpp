@@ -1,9 +1,9 @@
-#include "miaodesk/DesktopWidgetController.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/NativeWidgetPreset.h"
-#include "miaodesk/RuntimeLogPaths.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
+#include "whaledesk/DesktopWidgetController.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/NativeWidgetPreset.h"
+#include "whaledesk/RuntimeLogPaths.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
 
 #include <windows.h>
 
@@ -16,7 +16,7 @@
 #include <string_view>
 #include <utility>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 const wchar_t* BoolText(bool value) noexcept { return value ? L"true" : L"false"; }
@@ -127,14 +127,14 @@ bool MatchesWidgetPreset(const wallpaper::DesktopWidget& widget,
     if (widget.kind == wallpaper::DesktopWidgetKind::Content) {
         const auto definitionId = ContentDefinitionIdForPreset(preset);
         if (definitionId.empty()) return false;
-        return widget.source.wstring() == content::MiaoWidgetContentCatalog::MakeSource(definitionId);
+        return widget.source.wstring() == content::WhaleWidgetContentCatalog::MakeSource(definitionId);
     }
     return false;
 }
 
 void AppendUtf8Log(const std::filesystem::path& path, std::wstring_view text) {
     if (path.empty() || text.empty()) return;
-    const std::string utf8 = miaodesk::log::WideToUtf8(text);
+    const std::string utf8 = whaledesk::log::WideToUtf8(text);
     if (utf8.empty()) return;
     HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA,
                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -146,7 +146,7 @@ void AppendUtf8Log(const std::filesystem::path& path, std::wstring_view text) {
 }
 
 void AppendControllerErrorLog(std::wstring_view message) {
-    const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
+    const auto path = whaledesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
     std::wostringstream log;
     SYSTEMTIME now{};
@@ -161,7 +161,7 @@ void AppendControllerErrorLog(std::wstring_view message) {
 }
 
 void AppendWidgetRuntimeLog(const DesktopSnapshot& snapshot) {
-    const auto path = miaodesk::RuntimeLogPath(L"widget-runtime.log");
+    const auto path = whaledesk::RuntimeLogPath(L"widget-runtime.log");
     if (path.empty()) return;
     std::wostringstream log;
 
@@ -312,16 +312,16 @@ DesktopControlResult DesktopWidgetController::CreatePreset(
     const auto contentDefinitionId = ContentDefinitionIdForPreset(preset);
     bool useContent = false;
     if (!contentDefinitionId.empty()) {
-        const auto source = content::MiaoWidgetContentCatalog::MakeSource(contentDefinitionId);
+        const auto source = content::WhaleWidgetContentCatalog::MakeSource(contentDefinitionId);
         content::ResolvedWidgetContent resolved;
         std::wstring error;
-        if (content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &error) &&
+        if (content::WhaleWidgetContentCatalog::Resolve(source, &resolved, &error) &&
             resolved.definition.runtime == content::ContentRuntimeKind::Scene) {
             placementWidth = resolved.definition.geometry.defaultWidth;
             placementHeight = resolved.definition.geometry.defaultHeight;
             useContent = true;
         } else {
-            miaodesk::log::Info(
+            whaledesk::log::Info(
                 L"WidgetController",
                 std::wstring(definition->title) + L" Content package unavailable; using native fallback" +
                     (error.empty() ? std::wstring{} : L": " + error));
@@ -397,4 +397,4 @@ DesktopControlResult DesktopWidgetController::Remove(std::wstring_view id) const
     return service_.RemoveWidget(id);
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

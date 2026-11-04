@@ -8,13 +8,13 @@
 // 钉死,前者才有一个不会发生的理由。
 //
 // 全部在本机实跑:调度不 import Windows 头,也不认识 PiRuntime。
-#include "miaodesk/CreatorRuntimeScheduler.h"
+#include "whaledesk/CreatorRuntimeScheduler.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -432,10 +432,10 @@ void TestStateNamesAreStable() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestOnlyOneCreationAtATime();
     TestARequestWithoutABindingIsRefused();
     TestCancelOnlyAffectsItsOwnSession();

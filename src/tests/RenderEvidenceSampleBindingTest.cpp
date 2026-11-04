@@ -10,13 +10,13 @@
 // 所以这里钉的是产出侧的不变式,而不是判据侧的规则:由 MakeRenderedEvidenceSample
 // 构造出来的样本,必须能原样通过判据。判据层与产出层一旦对不上,上面那种
 // "测试全绿、真机全败"就会再来一次。
-#include "miaodesk/RenderEvidence.h"
+#include "whaledesk/RenderEvidence.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -61,10 +61,10 @@ std::vector<RenderEvidenceSample> HostStyleBatch(const std::string& digest,
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // 1. 构造点必须把摘要绑到每一帧上。这是 D-1 的直接回归:空摘要的样本整批会被拒,
     //    而拒绝原因说的是"摘要不一致",真正坏掉的那一侧(没算摘要)被那句话盖住。

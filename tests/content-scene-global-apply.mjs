@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 const read = (p) => fs.readFileSync(p, "utf8");
 const service = read("src/desktop/control/DesktopControlService.cpp");
 const wallpaper = read("src/desktop/wallpaper/WallpaperService.cpp");
-const serviceHeader = read("src/include/miaodesk/WallpaperService.h");
+const serviceHeader = read("src/include/whaledesk/WallpaperService.h");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
 
 // The AI creator (and the wallpaper library) could not land an AI-generated wallpaper.

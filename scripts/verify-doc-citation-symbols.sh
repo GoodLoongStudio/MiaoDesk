@@ -4,14 +4,14 @@
 # 为什么需要它:verify-doc-code-citations.sh 只查"这一行还在不在"。2026-09-22 做过一次
 # 全量人工核对,把 docs/ 里每条引用连同文档上下文打出来和真实那一行对照,26 条能解析的
 # 引用里**有 10 条指错了地方**,而那道门十条全放行 —— 因为那些行都存在。典型:
-#   · `MiaoSceneRuntimeModel.h:166` 被引作"每 emitter 粒子 ≤ 65536",实际那一行是
+#   · `WhaleSceneRuntimeModel.h:166` 被引作"每 emitter 粒子 ≤ 65536",实际那一行是
 #     一条关于灯光节点的注释,常量在 :257;
 #   · `PiRuntime.cpp:413` 被引作 PiRuntime::ConfigurePiAgent,实际那一行在
 #     PiRuntime::Status() 里;
 #   · `WallpaperService.cpp:307` 被引作"完整播放 video",实际那是 Scene 分支的报错返回。
 #
 # 那 10 条里有 8 条有一个共同点:引用前面不远处就写着它讲的那个符号,比如
-# `MaterialDefinition` 有 ...(`MiaoSceneRuntimeModel.h:73`)。既然符号就在句子里,
+# `MaterialDefinition` 有 ...(`WhaleSceneRuntimeModel.h:73`)。既然符号就在句子里,
 # 就可以机器核对 —— 这就是本闸门做的事:取引用点之前那段文字里的标识符,
 # 验证它确实出现在被引用的那一行附近。
 #
@@ -83,7 +83,7 @@ for name in sorted(os.listdir(docs)):
         if not ticks:
             continue
         symbol = ticks[-1]
-        # A::B 取最后一段:MiaoContentPackage::Load 的定义行写作 MiaoContentPackage::Load,
+        # A::B 取最后一段:WhaleContentPackage::Load 的定义行写作 WhaleContentPackage::Load,
         # 但有些地方只写 Load;两段都可能出现,取最后一段最稳。
         needle = symbol.split('::')[-1]
         if len(needle) < 6:

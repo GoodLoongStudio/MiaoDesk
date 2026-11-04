@@ -10,7 +10,7 @@
 
 它应该知道用户现在是想找一个文件、打开一个应用、换一张壁纸，还是做一个新的桌面组件。
 
-所以 MiaoDesk 的第一个决定，就是不把 AI 做成一个孤立的聊天页面。
+所以 WhaleDesK 的第一个决定，就是不把 AI 做成一个孤立的聊天页面。
 
 ## 第二天：先把桌面做好
 
@@ -64,7 +64,7 @@
 
 我们不希望一句“帮我做壁纸”最后变成一段不透明脚本。
 
-所以 MiaoDesk 定义了自己的 Content Package。
+所以 WhaleDesK 定义了自己的 Content Package。
 
 AI 输出的是 JSON：
 
@@ -86,7 +86,7 @@ AI 输出的是 JSON：
 
 DGX Spark 给了我们另一种选择：把大模型直接放到用户附近。
 
-MiaoDesk 通过 OpenAI Compatible 接口连接 DGX Spark 上的 vLLM。对于 Windows 客户端来说，本地模型和云模型只是不同的 API Profile。
+WhaleDesK 通过 OpenAI Compatible 接口连接 DGX Spark 上的 vLLM。对于 Windows 客户端来说，本地模型和云模型只是不同的 API Profile。
 
 ## 第七天：一个模型不应该承担所有事情
 
@@ -129,7 +129,7 @@ AI 不再只是一个远程 API，而开始变成产品 Runtime 的一部分。
 
 ## 第十天：我们想做的是 AI Native Desktop
 
-十天以后，MiaoDesk 仍然不是一个完成的终点。
+十天以后，WhaleDesK 仍然不是一个完成的终点。
 
 但我们已经验证了最重要的链路：
 
@@ -158,4 +158,4 @@ AI PC 不应该只意味着“电脑里有一块 NPU”或者“系统里多一�
 
 项目：
 
-https://github.com/GoodLoongStudio/MiaoDesk
+https://github.com/GoodLoongStudio/WhaleDesK

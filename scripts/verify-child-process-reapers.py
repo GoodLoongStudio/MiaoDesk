@@ -1,7 +1,7 @@
 import io, os, re, sys
 
 # 根目录从本脚本的位置推,不写死。
-# 写死的后果 CI 上当场撞见过:第一版是 ROOT = '/Volumes/Ext/Projects/MiaoDesk'
+# 写死的后果 CI 上当场撞见过:第一版是 ROOT = '/Volumes/Ext/Projects/WhaleDesK'
 # (作者的本机路径),本机全绿,而 ubuntu runner 上一个站点都扫不到 —— 好在
 # "一个站点都没扫到"那条守卫当场报了错,而不是打印一句"每个站点都有收尸"就退出 0。
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -21,8 +21,8 @@ SRC = os.path.join(ROOT, 'src')
 # 这里的字符串是**普通字符串而不是正则**:第一版写成了正则,把不属于反斜杠的点也转义了,
 # 于是永远匹配不上,门把三个正确登记的站点全判成"登记已过期"。
 SEPARATE = {
-    'app/main.cpp': ('kHarnessBackgroundStopEvent', 'Local\\MiaoDesk.Native.Harness.Background.Stop'),
-    'harness/HarnessHost.cpp': ('kBackgroundStopEventName', 'Local\\MiaoDesk.Native.Harness.Background.Stop'),
+    'app/main.cpp': ('kHarnessBackgroundStopEvent', 'Local\\WhaleDesK.Native.Harness.Background.Stop'),
+    'harness/HarnessHost.cpp': ('kBackgroundStopEventName', 'Local\\WhaleDesK.Native.Harness.Background.Stop'),
     'desktop/wallpaper/runtime/WallpaperEntry.cpp': ('stopEventName', None),
 }
 NOTES = {
@@ -157,7 +157,7 @@ def main():
             print('   - ' + p)
         print()
         print('修法:把 HANDLE 交给 child_reaper::AttachToReaper')
-        print('(见 include/miaodesk/MiaoChildProcessReaper.h)。若它确实应当是独立的生命周期,')
+        print('(见 include/whaledesk/WhaleChildProcessReaper.h)。若它确实应当是独立的生命周期,')
         print('就把 stop event 的名字登记到本脚本的 SEPARATE,并说清它是怎么停的。')
         return 1
     print()

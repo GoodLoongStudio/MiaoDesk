@@ -1,10 +1,10 @@
-#include "miaodesk/CreationWorkflow.h"
+#include "whaledesk/CreationWorkflow.h"
 
 #include <algorithm>
 #include <sstream>
 #include <utility>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 取消后仍要结算的事件:已经开始的应用事务必须凭正式 API 的真实结果收尾,
@@ -620,4 +620,4 @@ CreatorToolOutcome CreationWorkflow::AuthorizeToolCall(const CreatorToolRequest&
     return outcome;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

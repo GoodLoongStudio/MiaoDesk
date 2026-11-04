@@ -1,4 +1,4 @@
-# MiaoDesk 本地 AI 架构
+# WhaleDesK 本地 AI 架构
 
 - 状态:设计文档,待评审后实施
 - 日期:2026-09-20
@@ -7,7 +7,7 @@
 
 ## 1. 目标
 
-让 MiaoDesk 的全部 AI 功能可以**完全运行在用户自己的硬件上**,不依赖任何云端服务商:
+让 WhaleDesK 的全部 AI 功能可以**完全运行在用户自己的硬件上**,不依赖任何云端服务商:
 
 ```text
 搜索框的 AI 入口 · Conversation Panel 对话 · Desktop Agent 工具调用
@@ -66,9 +66,9 @@
 | --- | --- | --- |
 | Provider-neutral 路由 | 已有 | `Conversation Panel → Pi Runtime → Provider` |
 | Provider 注入 | `providerId` + `baseUrl` + `model` + `apiKey` | `PiRuntime::ProviderSetup`(`PiRuntime.h:78-108`) |
-| loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:318` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"miaodesk-local"` |
+| loopback 免密钥 | 已有,自动注入占位密钥 | `PiRuntime.cpp:318` — `if (apiKey.empty() && IsLoopbackUrl(baseUrl)) apiKey = L"whaledesk-local"` |
 | 多 Profile + 默认选择 | 已有 | `LoadDefault()`(`ApiRuntimeProfile.h:211`) |
-| 凭据存储 | Windows Credential Manager,按 profile 隔离 | `MiaoDesk/ApiProfile/<id>` |
+| 凭据存储 | Windows Credential Manager,按 profile 隔离 | `WhaleDesK/ApiProfile/<id>` |
 | Header 安全校验 | 已有,拒绝控制字符与非 ASCII | `IsHttpHeaderSafe()` |
 | 工具沙箱 | **宿主侧强制,与模型无关** | `main.cpp` allowlist |
 | 超时 / 取消 | 已有 | `PiRuntimeStatus::Cancelled`、`ReadLine(timeoutMs)` |
@@ -92,10 +92,10 @@ DGX Spark 放在局域网上属于后者。**这是正确的安全默认值** �
 ```text
 ┌─────────────────────────────┐
 │ Windows 客户端(x64 / ARM64)  │
-│  MiaoDesk.exe               │
+│  WhaleDesK.exe               │
 │    Conversation Panel       │
 │    Pi Runtime + Bundled Node│
-│    MiaoDesk Native tools    │
+│    WhaleDesK Native tools    │
 └──────────────┬──────────────┘
                │ HTTPS / HTTP(局域网)
                │ Base URL = http://<spark>:8000/v1
@@ -258,9 +258,9 @@ const model = getImageModel("openrouter", DEFAULT_IMAGE_MODEL);
 async function resolveOpenRouterApiKey() {
   const explicit = process.env.OPENROUTER_API_KEY?.trim();
   if (explicit) return explicit;
-  const baseUrl = (await currentMiaoDeskBaseUrl()).toLowerCase();
+  const baseUrl = (await currentWhaleDesKBaseUrl()).toLowerCase();
   return baseUrl.includes("openrouter.ai")
-    ? process.env.MIAODESK_MODEL_API_KEY?.trim() ?? ""
+    ? process.env.WHALEDESK_MODEL_API_KEY?.trim() ?? ""
     : "";   // ← 本地 baseUrl 走到这里,返回空
 }
 ```
@@ -280,7 +280,7 @@ async function resolveOpenRouterApiKey() {
 | 层 | 做法 | 产品改动 | 评价 |
 | --- | --- | --- | --- |
 | **L1 网关路由** | DGX Spark 上跑一个路由器,对外只暴露一个 OpenAI 兼容 endpoint,内部按任务分发 | **零** | 推荐用于 LLM 分流;但路由器只能从请求内容推断任务,不够精确 |
-| **L2 多 provider 配置** | 让产品往 `models.json` 写多个 provider(`miaodesk` / `miaodesk-fast` / `miaodesk-image`),由 Pi 按任务选择 | 小 | **正确的长期形态**;需改 `ConfigurePiAgent` |
+| **L2 多 provider 配置** | 让产品往 `models.json` 写多个 provider(`whaledesk` / `whaledesk-fast` / `whaledesk-image`),由 Pi 按任务选择 | 小 | **正确的长期形态**;需改 `ConfigurePiAgent` |
 | **L3 客户端多 profile** | 用户手动切换 profile | 零 | 只适合人工决策,不适合自动分流 |
 
 **建议:L1 + L2 组合。** LLM 分流先用 L1 上线(零风险),图片生成必须走 L2(因为它需要换 provider,不只是换模型名)。
@@ -292,11 +292,11 @@ async function resolveOpenRouterApiKey() {
 ```json
 {
   "providers": {
-    "miaodesk": {
-      "name": "MiaoDesk Provider",
+    "whaledesk": {
+      "name": "WhaleDesK Provider",
       "baseUrl": "<用户配置的 baseUrl>",
       "api": "<api 类型>",
-      "apiKey": "$MIAODESK_MODEL_API_KEY",
+      "apiKey": "$WHALEDESK_MODEL_API_KEY",
       "models": [{
         "id": "<model>", "name": "<model>",
         "input": ["text"],
@@ -308,7 +308,7 @@ async function resolveOpenRouterApiKey() {
 }
 ```
 
-配套 `settings.json`:`defaultProvider: miaodesk` + `defaultModel: <model>`。
+配套 `settings.json`:`defaultProvider: whaledesk` + `defaultModel: <model>`。
 
 **这里已经埋了两个问题:**
 
@@ -320,7 +320,7 @@ async function resolveOpenRouterApiKey() {
 ```text
 Windows 客户端(零改动)
    ↓ baseUrl = http://192.168.1.50:8000/v1
-   ↓ model   = miaodesk
+   ↓ model   = whaledesk
 ┌──────────────────────────────────────────┐
 │ DGX Spark                                │
 │                                          │
@@ -341,7 +341,7 @@ Windows 客户端(零改动)
 └──────────────────────────────────────────┘
 ```
 
-路由器对外暴露**一个** model 名(如 `miaodesk`),客户端零改动。分流规则按请求特征:
+路由器对外暴露**一个** model 名(如 `whaledesk`),客户端零改动。分流规则按请求特征:
 
 ```text
 1. 请求带 tools / tool_choice          → 主模型(工具调用优先)
@@ -504,7 +504,7 @@ model=openai/gpt-oss-120b
 default=1
 ```
 
-访问令牌写入 Windows Credential Manager,目标名 `MiaoDesk/ApiProfile/local-spark`。
+访问令牌写入 Windows Credential Manager,目标名 `WhaleDesK/ApiProfile/local-spark`。
 
 `PiRuntime`、`Direct Model`、`DeepSeek Harness` 三者都通过同一份默认 profile 读取,自动全部指向本地推理服务。
 
@@ -515,7 +515,7 @@ default=1
 | **A. DGX Spark 局域网**(推荐) | `http://192.168.x.x:8000/v1` | 需要访问令牌 | 完整能力,120B + 20B + 嵌入 |
 | **B. 客户端本机 loopback** | `http://127.0.0.1:8080/v1` | 免密钥(自动占位) | 降级形态,小模型,零配置 |
 
-拓扑 B 自动生效于:`IsLoopbackUrl` 命中 → 注入 `miaodesk-local` 占位密钥。
+拓扑 B 自动生效于:`IsLoopbackUrl` 命中 → 注入 `whaledesk-local` 占位密钥。
 
 ### 8.3 发现机制:v1 不做
 
@@ -566,10 +566,10 @@ wallpaper_validate_package · wallpaper_state_get · desktop_widget_list
 
 | 约束 | 值 | 来源 |
 | --- | --- | --- |
-| 动画帧率 | 1–240,默认 60 | `MiaoSceneFrameScheduler.h:19-21` |
-| 每 emitter 粒子 | ≤ 65536 | `MiaoSceneRuntimeModel.h:257` |
-| 每 scene 粒子 | ≤ 131072 | `MiaoSceneRuntimeModel.h:258` |
-| 渲染目标单维 | ≤ 16384 | `MiaoD3D11RenderPolicy.cpp:50` |
+| 动画帧率 | 1–240,默认 60 | `WhaleSceneFrameScheduler.h:19-21` |
+| 每 emitter 粒子 | ≤ 65536 | `WhaleSceneRuntimeModel.h:257` |
+| 每 scene 粒子 | ≤ 131072 | `WhaleSceneRuntimeModel.h:258` |
+| 渲染目标单维 | ≤ 16384 | `WhaleD3D11RenderPolicy.cpp:50` |
 | 沙箱图片 / 视频 | ≤ 25 MiB / 250 MiB | `AI_GENERATED_DESKTOP_SANDBOX.md:74` |
 
 AI / Node / Pi 不进入每帧渲染路径 —— 本地推理同样遵守。
@@ -617,7 +617,7 @@ AI / Node / Pi 不进入每帧渲染路径 —— 本地推理同样遵守。
 | 意图路由 / JSON 抽取 / 摘要 | gpt-oss-20b | 低延迟 |
 | 壁纸 / 组件内容生成(skills/) | 主模型候选(§6.2) | 强结构化 JSON;产出交 `content-review` 门禁 |
 | **图片生成(image_generate)** | **Z-Image-Turbo(常驻)/ Qwen-Image v1.0(按需)** | ⚠️ 当前硬编码 OpenRouter + Gemini,本地模式下**必然失效**;见 §7.1 / §7.5 / §7.6 |
-| 包校验 | **无需模型** | 宿主侧 `MiaoContentPackage::Validate` |
+| 包校验 | **无需模型** | 宿主侧 `WhaleContentPackage::Validate` |
 | 状态读取 | **无需模型** | `wallpaper_state_get` / `desktop_widget_list` |
 | DeepSeek Harness 工作台 | 同一本地 endpoint | 独立生命周期,可共用 profile |
 | goz 文件搜索 | 非 AI | 关键词索引;Qwen3-Embedding 为可选增强 |

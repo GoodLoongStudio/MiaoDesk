@@ -1,9 +1,9 @@
-#include "miaodesk/ContentCandidateReceipt.h"
+#include "whaledesk/ContentCandidateReceipt.h"
 
 #include <algorithm>
 #include <set>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 从 "key=value" 的一行里取一个字段。值到下一个空格为止 ——
@@ -225,4 +225,4 @@ std::string FormatCandidateReceiptLine(const content::ContentCandidateReceipt& r
     return line;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

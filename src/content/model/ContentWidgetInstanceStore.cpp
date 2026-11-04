@@ -1,6 +1,6 @@
-#include "miaodesk/ContentWidgetInstanceStore.h"
+#include "whaledesk/ContentWidgetInstanceStore.h"
 
-#include "miaodesk/AppPaths.h"
+#include "whaledesk/AppPaths.h"
 
 #include <windows.h>
 
@@ -20,7 +20,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 namespace {
 
 bool Fail(std::wstring* error, std::wstring message) {
@@ -245,7 +245,7 @@ bool SaveOverridesToPath(
     const ContentParameterValues& overrides,
     std::wstring* error) {
     ContentParameterValues resolved;
-    if (!MiaoContentModel::ResolveParameterValues(definition, overrides, &resolved, error)) return false;
+    if (!WhaleContentModel::ResolveParameterValues(definition, overrides, &resolved, error)) return false;
 
     std::error_code ec;
     fs::create_directories(path.parent_path(), ec);
@@ -259,7 +259,7 @@ bool SaveOverridesToPath(
 
     std::wstring keys;
     for (const auto& [key, value] : overrides) {
-        const auto* parameter = MiaoContentModel::FindParameter(definition, key);
+        const auto* parameter = WhaleContentModel::FindParameter(definition, key);
         if (!parameter) continue;
         const std::wstring encoded = EncodeValue(*parameter, value);
         if (encoded.empty() && parameter->type != ContentParameterType::String &&
@@ -324,7 +324,7 @@ bool ContentWidgetInstanceStore::LoadOverrides(
 
     const std::wstring keys = ReadText(path, L"Parameters", L"Keys", L"");
     for (const auto& key : SplitKeys(keys)) {
-        const auto* parameter = MiaoContentModel::FindParameter(definition, key);
+        const auto* parameter = WhaleContentModel::FindParameter(definition, key);
         // Package updates may remove a parameter. Ignore stale overrides instead
         // of making an otherwise valid widget permanently un-runnable.
         if (!parameter) continue;
@@ -336,7 +336,7 @@ bool ContentWidgetInstanceStore::LoadOverrides(
     }
 
     ContentParameterValues resolved;
-    if (!MiaoContentModel::ResolveParameterValues(definition, *overrides, &resolved, error)) return false;
+    if (!WhaleContentModel::ResolveParameterValues(definition, *overrides, &resolved, error)) return false;
     if (error) error->clear();
     return true;
 }
@@ -357,7 +357,7 @@ bool ContentWidgetInstanceStore::SetParameter(
     std::wstring_view key,
     ContentParameterValue value,
     std::wstring* error) {
-    const auto* parameter = MiaoContentModel::FindParameter(definition, key);
+    const auto* parameter = WhaleContentModel::FindParameter(definition, key);
     if (!parameter) return Fail(error, L"Unknown Content widget parameter: " + std::wstring(key));
 
     ContentParameterValues overrides;
@@ -414,7 +414,7 @@ bool ContentWidgetInstanceStore::SelfTest() {
     definition.parameters.push_back(title);
 
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-ContentWidgetInstanceStore-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-ContentWidgetInstanceStore-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
     std::error_code ec;
     fs::create_directories(root, ec);
@@ -432,7 +432,7 @@ bool ContentWidgetInstanceStore::SelfTest() {
     if (saved) {
         const std::wstring keys = ReadText(file, L"Parameters", L"Keys", L"");
         for (const auto& key : SplitKeys(keys)) {
-            const auto* parameter = MiaoContentModel::FindParameter(definition, key);
+            const auto* parameter = WhaleContentModel::FindParameter(definition, key);
             if (!parameter) continue;
             ContentParameterValue value;
             if (!DecodeValue(*parameter, ReadText(file, L"Parameters", key, L""), &value)) {
@@ -448,4 +448,4 @@ bool ContentWidgetInstanceStore::SelfTest() {
            std::get<std::wstring>(decoded.at(L"title")) == L"妙喵 Content";
 }
 
-} // namespace miaodesk::content
+} // namespace whaledesk::content

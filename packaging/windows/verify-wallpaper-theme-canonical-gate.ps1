@@ -63,7 +63,7 @@ if ($CanonicalNeonPackage) {
         throw "Canonical Neon City manifest is missing: $manifest"
     }
     $json = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($json.id -ne 'com.goodloong.miaodesk.theme.neon-city') {
+    if ($json.id -ne 'com.goodloong.whaledesk.theme.neon-city') {
         throw "Unexpected canonical manifest id: $($json.id)"
     }
     if ($json.kind -ne 'wallpaper' -or $json.runtime -notin @('scene', 'web')) {

@@ -1,8 +1,8 @@
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kConversationImageIntentPanelCoreProcProperty[] = L"MiaoDesk.Conversation.ImageIntentPanelCoreProc";
-constexpr wchar_t kConversationImageIntentInputCoreProcProperty[] = L"MiaoDesk.Conversation.ImageIntentInputCoreProc";
+constexpr wchar_t kConversationImageIntentPanelCoreProcProperty[] = L"WhaleDesK.Conversation.ImageIntentPanelCoreProc";
+constexpr wchar_t kConversationImageIntentInputCoreProcProperty[] = L"WhaleDesK.Conversation.ImageIntentInputCoreProc";
 
 std::wstring NormalizeImageIntentText(std::wstring value) {
     value = Lower(Trim(std::move(value)));
@@ -65,7 +65,7 @@ bool HandleConversationImageIntent(ConversationState& state) {
 
     SetWindowTextW(state.input, L"");
     std::wstring actual = typed;
-    actual += L"\n\n[MiaoDesk image intent: The user has already supplied image content. Call image_generate now. Do not ask for style, dimensions, purpose, or other optional preferences before attempting the tool. Only report a configuration limitation if the image tool itself returns one.]";
+    actual += L"\n\n[WhaleDesK image intent: The user has already supplied image content. Call image_generate now. Do not ask for style, dimensions, purpose, or other optional preferences before attempting the tool. Only report a configuration limitation if the image tool itself returns one.]";
     StartModelTurn(state, typed, actual, false, true);
     gConversationCaretVisible = true;
     PositionConversationInputProxyAnchored(state);
@@ -120,4 +120,4 @@ void EnsureConversationImageIntentBridge(ConversationState& state) {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk

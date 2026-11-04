@@ -1,15 +1,15 @@
-#include "miaodesk/WallpaperService.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/MiaoContentDefinitionLoader.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/WhaleContentDefinitionLoader.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
-#include "miaodesk/WallpaperMonitorAssignments.h"
-#include "miaodesk/WallpaperPackage.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/WallpaperMonitorAssignments.h"
+#include "whaledesk/WallpaperPackage.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <windows.h>
 
@@ -20,10 +20,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
-fs::path LocalMiaoDeskDirectory() {
+fs::path LocalWhaleDesKDirectory() {
     return paths::EnsureStateRoot();
 }
 
@@ -37,7 +37,7 @@ std::wstring ReadProfile(const fs::path& path, const wchar_t* key, const wchar_t
 WallpaperServiceResult EnsureWallpaperProfileUnicode(const fs::path& config) {
     std::wstring error;
     if (text::EnsureUtf16LeProfileFile(config, &error)) return {true, {}};
-    miaodesk::log::Error(L"WallpaperService", L"wallpaper.ini Unicode 初始化失败: " + error);
+    whaledesk::log::Error(L"WallpaperService", L"wallpaper.ini Unicode 初始化失败: " + error);
     return {false, error.empty() ? L"无法初始化 Unicode 壁纸配置。" : std::move(error)};
 }
 
@@ -46,7 +46,7 @@ WallpaperServiceResult PersistWallpaperSelection(
     const fs::path& imageOrWebSource,
     const fs::path& videoSource,
     std::wstring_view contentSource = {}) {
-    const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const fs::path config = LocalWhaleDesKDirectory() / L"wallpaper.ini";
     const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
     if (!unicodeReady.success) return unicodeReady;
 
@@ -72,16 +72,16 @@ std::wstring RuntimeSceneKey(const wallpaper::WallpaperLibraryItem& item) {
 }
 
 bool IsContentId(std::wstring_view id) noexcept {
-    return id.size() > content::MiaoContentPackageManager::kSourcePrefix.size() &&
-           id.substr(0, content::MiaoContentPackageManager::kSourcePrefix.size()) ==
-               content::MiaoContentPackageManager::kSourcePrefix;
+    return id.size() > content::WhaleContentPackageManager::kSourcePrefix.size() &&
+           id.substr(0, content::WhaleContentPackageManager::kSourcePrefix.size()) ==
+               content::WhaleContentPackageManager::kSourcePrefix;
 }
 
 fs::path CanonicalScenePackageRoot(const wallpaper::WallpaperLibraryItem& item) {
     if (IsContentId(item.id)) {
         content::ManagedContentPackageInfo package;
         std::wstring error;
-        if (content::MiaoContentPackageManager::Resolve(
+        if (content::WhaleContentPackageManager::Resolve(
                 content::ContentKind::Wallpaper, item.id, &package, &error)) {
             return package.packageRoot;
         }
@@ -112,20 +112,20 @@ WallpaperServiceResult ValidateCanonicalScene(const wallpaper::WallpaperLibraryI
     const fs::path packageRoot = CanonicalScenePackageRoot(item);
     if (packageRoot.empty()) return {false, L"Scene 壁纸既不是内置场景，也不是有效的 .mdwall 内容包。"};
 
-    content::LoadedMiaoContentPackage package;
+    content::LoadedWhaleContentPackage package;
     std::wstring error;
-    if (!content::MiaoContentPackage::Load(packageRoot, &package, &error))
+    if (!content::WhaleContentPackage::Load(packageRoot, &package, &error))
         return {false, error.empty() ? L"无法加载 .mdwall 内容包。" : error};
 
     content::ContentDefinition contentDefinition;
-    if (!content::MiaoContentDefinitionLoader::FromPackage(package, &contentDefinition, &error))
+    if (!content::WhaleContentDefinitionLoader::FromPackage(package, &contentDefinition, &error))
         return {false, error.empty() ? L"ContentDefinition / ParameterSchema 无效。" : error};
     if (contentDefinition.kind != content::ContentKind::Wallpaper ||
         contentDefinition.runtime != content::ContentRuntimeKind::Scene)
         return {false, L".mdwall 内容包不是 Wallpaper Scene Runtime。"};
 
     content::SceneRuntimeDefinition sceneDefinition;
-    if (!content::MiaoSceneSerializer::DeserializePackage(package, &sceneDefinition, &error))
+    if (!content::WhaleSceneSerializer::DeserializePackage(package, &sceneDefinition, &error))
         return {false, error.empty() ? L"Scene 内容定义无效。" : error};
     return {true, L"配置化 Scene 内容包已通过 ContentDefinition + Scene Runtime 校验。"};
 }
@@ -135,22 +135,22 @@ WallpaperServiceResult ResolveCanonicalWebEntry(
     fs::path* resolvedEntry) {
     content::ManagedContentPackageInfo managed;
     std::wstring error;
-    if (!content::MiaoContentPackageManager::Resolve(
+    if (!content::WhaleContentPackageManager::Resolve(
             content::ContentKind::Wallpaper, item.id, &managed, &error)) {
         return {false, error.empty() ? L"找不到已安装的 Web 内容包。" : error};
     }
     if (managed.runtime != content::ContentRuntimeKind::Web)
         return {false, L"内容包不是 Wallpaper Web Runtime。"};
 
-    content::LoadedMiaoContentPackage package;
-    if (!content::MiaoContentPackage::Load(managed.packageRoot, &package, &error))
+    content::LoadedWhaleContentPackage package;
+    if (!content::WhaleContentPackage::Load(managed.packageRoot, &package, &error))
         return {false, error.empty() ? L"无法加载 Web .mdwall 内容包。" : error};
     if (package.manifest.kind != content::ContentKind::Wallpaper ||
         package.manifest.runtime != content::ContentRuntimeKind::Web)
         return {false, L".mdwall 内容包不是 Wallpaper Web Runtime。"};
 
     fs::path entry;
-    if (!content::MiaoContentPackage::ResolvePackagePath(
+    if (!content::WhaleContentPackage::ResolvePackagePath(
             package.root, package.manifest.entry, &entry, &error))
         return {false, error.empty() ? L"Web 内容包 entry 无效。" : error};
 
@@ -208,11 +208,11 @@ void MarkLibraryItemUsed(std::wstring_view id) {
     wallpaper::WallpaperLibrary library;
     std::wstring error;
     if (!library.Load(&error)) {
-        miaodesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新（无法加载库）: " + error);
+        whaledesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新（无法加载库）: " + error);
         return;
     }
     if (!library.MarkUsed(id, &error)) {
-        miaodesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新: " + error);
+        whaledesk::log::Info(L"WallpaperService", L"壁纸使用时间未更新: " + error);
     }
 }
 
@@ -220,7 +220,7 @@ void MarkLibraryItemUsed(std::wstring_view id) {
 
 WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
     if (!state) return {false, L"WallpaperState 输出不能为空。"};
-    const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const fs::path config = LocalWhaleDesKDirectory() / L"wallpaper.ini";
     const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
     if (!unicodeReady.success) return unicodeReady;
 
@@ -252,7 +252,7 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
                 // the last persisted physical HTML path. If the package is
                 // missing, damaged, or its entry no longer validates, expose
                 // the safe built-in scene for this state read instead.
-                miaodesk::log::Warn(
+                whaledesk::log::Warn(
                     L"WallpaperService",
                     L"Content Web 状态恢复失败，回退到 aurora: id=" + contentSource +
                         L", reason=" + resolved.message);
@@ -268,56 +268,56 @@ WallpaperServiceResult WallpaperService::GetState(WallpaperState* state) const {
 }
 
 WallpaperServiceResult WallpaperService::SetEnabled(const bool enabled) const {
-    const fs::path config = LocalMiaoDeskDirectory() / L"wallpaper.ini";
+    const fs::path config = LocalWhaleDesKDirectory() / L"wallpaper.ini";
     const auto unicodeReady = EnsureWallpaperProfileUnicode(config);
     if (!unicodeReady.success) return unicodeReady;
 
     const wchar_t* value = enabled ? L"1" : L"0";
     if (WritePrivateProfileStringW(L"Wallpaper", L"Enabled", value, config.c_str()) == FALSE) {
-        miaodesk::log::Error(L"WallpaperService", L"SetEnabled(" + std::wstring(value) + L") 写入 ini 失败: " + config.wstring());
+        whaledesk::log::Error(L"WallpaperService", L"SetEnabled(" + std::wstring(value) + L") 写入 ini 失败: " + config.wstring());
         return {false, L"无法保存壁纸启用状态。"};
     }
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, config.c_str());
-    miaodesk::log::Info(L"WallpaperService", L"SetEnabled(" + std::wstring(value) + L") 成功保存至 " + config.wstring());
+    whaledesk::log::Info(L"WallpaperService", L"SetEnabled(" + std::wstring(value) + L") 成功保存至 " + config.wstring());
     return {true, enabled ? L"壁纸已启用，小组件不受影响。" : L"壁纸已停用，小组件仍可显示。"};
 }
 
 WallpaperServiceResult WallpaperService::ApplyWebPackage(const fs::path& package) const {
-    miaodesk::log::Info(L"WallpaperService", L"ApplyWebPackage 请求: " + package.wstring());
+    whaledesk::log::Info(L"WallpaperService", L"ApplyWebPackage 请求: " + package.wstring());
     wallpaper::WallpaperPackageManifest manifest;
     std::wstring error;
     if (!wallpaper::WallpaperPackage::Validate(package, &manifest, &error)) {
-        miaodesk::log::Error(L"WallpaperService", L"ApplyWebPackage 校验失败: " + error);
+        whaledesk::log::Error(L"WallpaperService", L"ApplyWebPackage 校验失败: " + error);
         return {false, error.empty() ? L".mdwall 校验失败。" : error};
     }
     if (manifest.type != wallpaper::WallpaperPackageType::Web) {
-        miaodesk::log::Error(L"WallpaperService", L"ApplyWebPackage 类型不匹配: 不是 Web 类型");
+        whaledesk::log::Error(L"WallpaperService", L"ApplyWebPackage 类型不匹配: 不是 Web 类型");
         return {false, L"当前壁纸服务只接受 Web 类型 .mdwall。"};
     }
 
     std::error_code ec;
     const fs::path source = fs::absolute(package / manifest.entry, ec).lexically_normal();
     if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec)) {
-        miaodesk::log::Error(L"WallpaperService", L"ApplyWebPackage entry 文件不存在: " + source.wstring());
+        whaledesk::log::Error(L"WallpaperService", L"ApplyWebPackage entry 文件不存在: " + source.wstring());
         return {false, L".mdwall Web entry 不存在。"};
     }
 
     const auto persisted = PersistWallpaperSelection(L"web", source, {});
     if (!persisted.success) {
-        miaodesk::log::Error(L"WallpaperService", L"ApplyWebPackage 保存配置失败: " + persisted.message);
+        whaledesk::log::Error(L"WallpaperService", L"ApplyWebPackage 保存配置失败: " + persisted.message);
         return persisted;
     }
-    miaodesk::log::Info(L"WallpaperService", L"ApplyWebPackage 成功: \"" + manifest.title + L"\" -> " + source.wstring());
+    whaledesk::log::Info(L"WallpaperService", L"ApplyWebPackage 成功: \"" + manifest.title + L"\" -> " + source.wstring());
     return {true, L"已准备 Web 桌面：" + manifest.title + L" · " + source.wstring()};
 }
 
 WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const {
     if (item.id.empty()) {
-        miaodesk::log::Error(L"WallpaperService", L"ApplyLibraryItem 失败: 缺少 id");
+        whaledesk::log::Error(L"WallpaperService", L"ApplyLibraryItem 失败: 缺少 id");
         return {false, L"壁纸库项目缺少 id。"};
     }
 
-    miaodesk::log::Info(L"WallpaperService", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
+    whaledesk::log::Info(L"WallpaperService", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
     WallpaperServiceResult result{false, L"不支持的壁纸库项目类型。"};
     std::error_code ec;
     switch (item.kind) {
@@ -326,38 +326,38 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
         if (scene.empty()) {
             const auto canonical = ValidateCanonicalScene(item);
             if (!canonical.success) {
-                miaodesk::log::Error(L"WallpaperService", L"配置化 Scene 校验失败: " + canonical.message);
+                whaledesk::log::Error(L"WallpaperService", L"配置化 Scene 校验失败: " + canonical.message);
                 return canonical;
             }
             result = {false, L"该配置化 Scene 已进入内容框架；当前全局/跨屏入口仍只接受内置 Scene，请在目标显示器上分配该壁纸。"};
             break;
         }
         const auto persisted = PersistWallpaperSelection(scene, {}, {});
-        if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择 Scene: " + scene);
+        if (persisted.success) whaledesk::log::Info(L"WallpaperService", L"已选择 Scene: " + scene);
         result = persisted.success ? WallpaperServiceResult{true, L"已选择 Scene：" + item.title} : persisted;
         break;
     }
     case wallpaper::LibraryWallpaperKind::Image: {
         const fs::path source = fs::absolute(item.source, ec).lexically_normal();
         if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec)) {
-            miaodesk::log::Error(L"WallpaperService", L"图片壁纸文件不存在: " + source.wstring());
+            whaledesk::log::Error(L"WallpaperService", L"图片壁纸文件不存在: " + source.wstring());
             result = {false, L"图片壁纸文件不存在。"};
             break;
         }
         const auto persisted = PersistWallpaperSelection(L"image", source, {});
-        if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择图片壁纸: " + source.wstring());
+        if (persisted.success) whaledesk::log::Info(L"WallpaperService", L"已选择图片壁纸: " + source.wstring());
         result = persisted.success ? WallpaperServiceResult{true, L"已选择图片壁纸：" + item.title} : persisted;
         break;
     }
     case wallpaper::LibraryWallpaperKind::Video: {
         const fs::path source = fs::absolute(item.source, ec).lexically_normal();
         if (ec || !fs::exists(source, ec) || !fs::is_regular_file(source, ec)) {
-            miaodesk::log::Error(L"WallpaperService", L"视频壁纸文件不存在: " + source.wstring());
+            whaledesk::log::Error(L"WallpaperService", L"视频壁纸文件不存在: " + source.wstring());
             result = {false, L"视频壁纸文件不存在。"};
             break;
         }
         const auto persisted = PersistWallpaperSelection(L"video", {}, source);
-        if (persisted.success) miaodesk::log::Info(L"WallpaperService", L"已选择视频壁纸: " + source.wstring());
+        if (persisted.success) whaledesk::log::Info(L"WallpaperService", L"已选择视频壁纸: " + source.wstring());
         result = persisted.success ? WallpaperServiceResult{true, L"已选择视频壁纸：" + item.title} : persisted;
         break;
     }
@@ -369,13 +369,13 @@ WallpaperServiceResult WallpaperService::ApplyLibraryItem(const wallpaper::Wallp
         fs::path source;
         const auto valid = ResolveCanonicalWebEntry(item, &source);
         if (!valid.success) {
-            miaodesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
+            whaledesk::log::Error(L"WallpaperService", L"配置化 Web 校验失败: " + valid.message);
             result = valid;
             break;
         }
         const auto persisted = PersistWallpaperSelection(L"web", source, {}, item.id);
         if (persisted.success)
-            miaodesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
+            whaledesk::log::Info(L"WallpaperService", L"已选择 Content Web 壁纸: " + source.wstring());
         result = persisted.success ? WallpaperServiceResult{true, L"已选择 Web 壁纸：" + item.title} : persisted;
         break;
     }
@@ -424,4 +424,4 @@ WallpaperServiceResult WallpaperService::ClearMonitorAssignment(std::wstring_vie
     return {true, L"显示器壁纸分配已清除。"};
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

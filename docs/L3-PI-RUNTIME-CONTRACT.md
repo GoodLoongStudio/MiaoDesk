@@ -1,4 +1,4 @@
-# MiaoDesk Pi Runtime Contract
+# WhaleDesK Pi Runtime Contract
 
 Status: normative runtime contract.
 
@@ -20,7 +20,7 @@ Bundled Node
 current Provider / Model / Base URL / API Key
 ```
 
-Pi 负责 Agent loop、context、generic tools、skills/extensions；MiaoDesk 负责真正依赖产品内部状态的 Desktop tools。
+Pi 负责 Agent loop、context、generic tools、skills/extensions；WhaleDesK 负责真正依赖产品内部状态的 Desktop tools。
 
 Direct Model 只能在 Pi Runtime 真实失败时作为轻量 fallback，不能重新成为桌面自动化主路线。
 
@@ -48,7 +48,7 @@ runtime/arm64/runtime-lock.json
 
 ## 3. Provider-neutral
 
-MiaoDesk 统一管理 Provider、Model、Base URL、API protocol 和 API Key。Provider branding 不得决定是否绕过 Pi，endpoint/protocol semantics 优先。
+WhaleDesK 统一管理 Provider、Model、Base URL、API protocol 和 API Key。Provider branding 不得决定是否绕过 Pi，endpoint/protocol semantics 优先。
 
 API Key 长期存储使用 Windows Credential Manager。不得写入 prompt、session、普通配置文件或日志；子进程只通过受控环境获得当前凭据。
 
@@ -63,7 +63,7 @@ Conversation Panel -> Pi Runtime -> Provider
 DeepSeek Harness 是独立高级工作台：
 
 ```text
-MiaoDeskHarness.exe
+WhaleDesKHarness.exe
     ↓
 Runtime/Node/node.exe
     ↓
@@ -84,7 +84,7 @@ skills / extensions / packages
 
 不要为普通文件、脚本、Git、JSON/CSV 等任务继续增加一套 C++ Agent tool。
 
-MiaoDesk Native tools 只暴露依赖内部产品状态的能力，例如 settings、wallpaper state/package、Widget state 和 desktop preview。实际 tool allowlist 以当前 Pi launch/runtime code 为准，不在文档复制第二份易漂移的完整列表。
+WhaleDesK Native tools 只暴露依赖内部产品状态的能力，例如 settings、wallpaper state/package、Widget state 和 desktop preview。实际 tool allowlist 以当前 Pi launch/runtime code 为准，不在文档复制第二份易漂移的完整列表。
 
 ## 6. Desktop mutation 安全边界
 
@@ -132,7 +132,7 @@ Widget 是独立产品对象：换壁纸不能删除 Widget。AI 是 Desktop Con
 Pi 用户状态位于：
 
 ```text
-%LOCALAPPDATA%\MiaoDesk\PiAgent\
+%LOCALAPPDATA%\WhaleDesK\PiAgent\
 ```
 
 用户 session/skills/extensions 与产品 bundled runtime 分离，产品升级不得覆盖用户内容。
@@ -147,9 +147,9 @@ Runtime 日志由当前 `RuntimeLogPaths` 统一管理。日志可以记录版�
 - bundled Node 可运行
 - DSH CLI `--help`
 - Pi CLI `--version`
-- `MiaoDesk.exe --self-test`
-- `MiaoDeskWallpaper.exe --self-test`
-- `MiaoDeskHarness.exe --self-test`
+- `WhaleDesK.exe --self-test`
+- `WhaleDesKWallpaper.exe --self-test`
+- `WhaleDesKHarness.exe --self-test`
 - moved-install Harness Web smoke
 - stock-Windows path budget
 

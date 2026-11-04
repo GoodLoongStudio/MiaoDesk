@@ -7,7 +7,7 @@ const out = {
   model: mod.IMAGE_MODEL || mod.DEFAULT_IMAGE_MODEL,
   key: await mod.resolveImageApiKey(),
 };
-const baseUrl = await mod.currentMiaoDeskBaseUrl();
+const baseUrl = await mod.currentWhaleDesKBaseUrl();
 out.baseUrl = baseUrl;
 out.loopback = mod.isLoopback(baseUrl.toLowerCase());
 try {

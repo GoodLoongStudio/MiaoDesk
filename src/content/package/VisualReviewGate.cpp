@@ -1,8 +1,8 @@
-#include "miaodesk/VisualReviewGate.h"
+#include "whaledesk/VisualReviewGate.h"
 
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 
 const char* ToString(VisualIssueSeverity severity) noexcept {
     switch (severity) {
@@ -134,4 +134,4 @@ VisualGateResult JudgeVisualReview(const VisualReviewSubmission& submission) {
     return result;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

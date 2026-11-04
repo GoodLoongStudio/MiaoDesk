@@ -5,10 +5,10 @@ on:
     branches: [main]
     paths:
       - .github/workflows/build-windows-arm64-exe.yml
-      # 这一步跑 scripts/generate-miaomiao-icon.ps1。此前 paths 只有工作流自己,
+      # 这一步跑 scripts/generate-whalewhale-icon.ps1。此前 paths 只有工作流自己,
       # 于是改这个脚本不会触发验证它的工作流 —— 而 verify-workflow-paths.sh 那时
       # 只解析 `run: |`,看不见单行 run:,所以这条缺口一直没报。
-      - scripts/generate-miaomiao-icon.ps1
+      - scripts/generate-whalewhale-icon.ps1
   workflow_dispatch:
 
 permissions:
@@ -23,8 +23,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      BUILD_ROOT: C:\b\MiaoDesk\arm64-exe
-      OUT_ROOT: C:\pkg\MiaoDesk\arm64-exe
+      BUILD_ROOT: C:\b\WhaleDesK\arm64-exe
+      OUT_ROOT: C:\pkg\WhaleDesK\arm64-exe
 
     steps:
       - uses: actions/checkout@v5
@@ -33,7 +33,7 @@ jobs:
 
       - name: Generate app icon
         shell: pwsh
-        run: .\scripts\generate-miaomiao-icon.ps1
+        run: .\scripts\generate-whalewhale-icon.ps1
 
       - name: Configure ARM64 cross build
         shell: pwsh
@@ -49,15 +49,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          cmake --build $env:BUILD_ROOT --config Release --target MiaoDesk --parallel 2
-          if ($LASTEXITCODE -ne 0) { throw 'ARM64 MiaoDesk build failed.' }
+          cmake --build $env:BUILD_ROOT --config Release --target WhaleDesK --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 WhaleDesK build failed.' }
 
       - name: Locate and verify ARM64 EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = Get-ChildItem $env:BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
-          if (-not $exe) { throw 'MiaoDesk.exe was not produced.' }
+          $exe = Get-ChildItem $env:BUILD_ROOT -Filter WhaleDesK.exe -File -Recurse | Select-Object -First 1
+          if (-not $exe) { throw 'WhaleDesK.exe was not produced.' }
 
           $stream = [System.IO.File]::OpenRead($exe.FullName)
           try {
@@ -65,21 +65,21 @@ jobs:
             $stream.Position = 0x3C
             $peOffset = $reader.ReadUInt32()
             $stream.Position = $peOffset
-            if ($reader.ReadUInt32() -ne 0x00004550) { throw 'MiaoDesk.exe is not a PE image.' }
+            if ($reader.ReadUInt32() -ne 0x00004550) { throw 'WhaleDesK.exe is not a PE image.' }
             $machine = $reader.ReadUInt16()
           } finally {
             $stream.Dispose()
           }
-          if ($machine -ne 0xAA64) { throw "MiaoDesk.exe is not ARM64; PE machine=0x$($machine.ToString('X4'))" }
-          Copy-Item $exe.FullName (Join-Path $env:OUT_ROOT 'MiaoDesk-arm64.exe') -Force
+          if ($machine -ne 0xAA64) { throw "WhaleDesK.exe is not ARM64; PE machine=0x$($machine.ToString('X4'))" }
+          Copy-Item $exe.FullName (Join-Path $env:OUT_ROOT 'WhaleDesK-arm64.exe') -Force
           Write-Host "ARM64 EXE: $($exe.FullName)"
           Write-Host "Bytes: $($exe.Length)"
 
       - name: Upload ARM64 EXE
         uses: actions/upload-artifact@v4
         with:
-          name: MiaoDesk-arm64-exe-${{ github.sha }}
-          path: C:/pkg/MiaoDesk/arm64-exe/MiaoDesk-arm64.exe
+          name: WhaleDesK-arm64-exe-${{ github.sha }}
+          path: C:/pkg/WhaleDesK/arm64-exe/WhaleDesK-arm64.exe
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

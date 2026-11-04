@@ -23,8 +23,8 @@ During `WallpaperLibrary::Load`, before normal package discovery:
 1. Consider only `Kind=scene` records that are not already `content:*`.
 2. Walk upward from `Source` only while it remains inside the managed wallpaper package root.
 3. Stop at the nearest `.mdwall` ancestor.
-4. Load the package through `MiaoContentPackage` and require `kind=wallpaper`, `runtime=scene` and a valid Scene payload.
-5. Derive `content:<manifest.id>` with `MiaoContentPackageManager::MakeSource`.
+4. Load the package through `WhaleContentPackage` and require `kind=wallpaper`, `runtime=scene` and a valid Scene payload.
+5. Derive `content:<manifest.id>` with `WhaleContentPackageManager::MakeSource`.
 6. Preserve user metadata from the legacy record: favorite, import time and last-used time.
 7. Replace the legacy INI section only after the stable record is successfully persisted.
 8. If a stable record already exists, merge user metadata conservatively instead of creating a duplicate.

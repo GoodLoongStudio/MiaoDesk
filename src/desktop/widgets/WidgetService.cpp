@@ -1,9 +1,9 @@
-#include "miaodesk/WidgetService.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/DesktopSurfaceTelemetry.h"
-#include "miaodesk/NativeWidgetHost.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WebDesktopSurfaceChild.h"
+#include "whaledesk/WidgetService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/DesktopSurfaceTelemetry.h"
+#include "whaledesk/NativeWidgetHost.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WebDesktopSurfaceChild.h"
 
 #include <windows.h>
 
@@ -16,10 +16,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
-constexpr wchar_t kNativeHostClass[] = L"MiaoDesk.Native.WidgetSurface";
+constexpr wchar_t kNativeHostClass[] = L"WhaleDesK.Native.WidgetSurface";
 constexpr LONG kGeometryTolerancePx = 8;
 constexpr float kPresetGeometryTolerance = 0.0001f;
 
@@ -58,7 +58,7 @@ bool IsSupportedContentRuntime(const wallpaper::DesktopWidget& widget) {
     if (widget.kind != wallpaper::DesktopWidgetKind::Content) return false;
     content::ResolvedWidgetContent resolved;
     std::wstring ignored;
-    return content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &ignored) &&
+    return content::WhaleWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &ignored) &&
            resolved.definition.kind == content::ContentKind::Widget &&
            resolved.definition.runtime == content::ContentRuntimeKind::Scene;
 }
@@ -71,7 +71,7 @@ bool ValidateContentWidget(
 
     content::ResolvedWidgetContent resolved;
     std::wstring resolveError;
-    if (!content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &resolveError)) {
+    if (!content::WhaleWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, &resolveError)) {
         if (error) *error = resolveError.empty() ? L"找不到或无法验证 Content widget package。" : resolveError;
         return false;
     }
@@ -93,7 +93,7 @@ bool ValidateContentWidget(
     instance.y = widget.y;
     instance.width = widget.width;
     instance.height = widget.height;
-    return content::MiaoContentModel::ValidateInstance(resolved.definition, instance, error);
+    return content::WhaleContentModel::ValidateInstance(resolved.definition, instance, error);
 }
 
 std::wstring WindowText(HWND window) {
@@ -489,4 +489,4 @@ WidgetServiceResult WidgetService::GetRuntimeHealth(WidgetRuntimeHealth* health)
     return {true, L"桌面小组件运行状态读取完成。"};
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

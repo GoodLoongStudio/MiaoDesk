@@ -32,10 +32,10 @@ try {
   assert.equal(typeof address, 'object');
   const baseUrl = `http://127.0.0.1:${address.port}/v1`;
 
-  process.env.MIAODESK_IMAGE_PROVIDER = 'local-openai-compatible';
-  process.env.MIAODESK_IMAGE_BASE_URL = baseUrl;
-  process.env.MIAODESK_IMAGE_MODEL = 'Z-Image-Turbo';
-  process.env.MIAODESK_IMAGE_API_KEY = '';
+  process.env.WHALEDESK_IMAGE_PROVIDER = 'local-openai-compatible';
+  process.env.WHALEDESK_IMAGE_BASE_URL = baseUrl;
+  process.env.WHALEDESK_IMAGE_MODEL = 'Z-Image-Turbo';
+  process.env.WHALEDESK_IMAGE_API_KEY = '';
 
   const extractor = await import('./extract-image-openai-shim.mjs');
   const shim = await import(pathToFileURL(extractor.default).href + `?t=${Date.now()}`);

@@ -1,6 +1,6 @@
-#include "miaodesk/HarnessSettingsBridge.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/ApiRuntimeProfile.h"
+#include "whaledesk/HarnessSettingsBridge.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/ApiRuntimeProfile.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -11,10 +11,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kHarnessCredentialEnv[] = L"MIAODESK_API_KEY";
+constexpr wchar_t kHarnessCredentialEnv[] = L"WHALEDESK_API_KEY";
 
 std::string WideToUtf8(const std::wstring& value) {
     if (value.empty()) return {};
@@ -25,7 +25,7 @@ std::string WideToUtf8(const std::wstring& value) {
     return out;
 }
 
-fs::path MiaoDeskRoot() {
+fs::path WhaleDesKRoot() {
     return paths::StateRoot();
 }
 
@@ -80,25 +80,25 @@ std::string BuildSettingsYaml(const std::wstring& providerId,
     const std::wstring resolvedBase = HarnessBaseUrl(baseUrl, endpoint, anthropic);
 
     std::string yaml;
-    yaml += "# Managed by MiaoDesk. Provider/Base URL/Model come from the API Configuration Center default profile.\n";
+    yaml += "# Managed by WhaleDesK. Provider/Base URL/Model come from the API Configuration Center default profile.\n";
     yaml += "# API key stays in Windows Credential Manager and is injected only into the DSH child process.\n";
     yaml += "llm-pi-ai:\n";
     yaml += "  providers:\n";
-    yaml += "    miaodesk:\n";
-    yaml += "      displayName: 'MiaoDesk'\n";
-    if (hasApiKey) yaml += "      apiKeyEnv: MIAODESK_API_KEY\n";
+    yaml += "    whaledesk:\n";
+    yaml += "      displayName: 'WhaleDesK'\n";
+    if (hasApiKey) yaml += "      apiKeyEnv: WHALEDESK_API_KEY\n";
     yaml += "      api: " + YamlQuote(protocol) + "\n";
     yaml += "      baseURL: " + YamlQuote(resolvedBase) + "\n";
     yaml += "      models:\n";
     yaml += "        - id: " + YamlQuote(model) + "\n";
     yaml += "agent-default-model:\n";
-    yaml += "  provider: miaodesk\n";
+    yaml += "  provider: whaledesk\n";
     yaml += "  model: " + YamlQuote(model) + "\n";
     return yaml;
 }
 
 std::string BuildUnconfiguredSettingsYaml() {
-    return "# Managed by MiaoDesk. No complete API profile is configured yet.\n{}\n";
+    return "# Managed by WhaleDesK. No complete API profile is configured yet.\n{}\n";
 }
 
 bool WriteAtomically(const fs::path& path, const std::string& content) {
@@ -130,7 +130,7 @@ bool WriteAtomically(const fs::path& path, const std::string& content) {
 bool PrepareUnconfiguredSettings(const fs::path& dshHome, HarnessSettingsBridgeState* state) {
     if (!state) return false;
     if (!WriteAtomically(dshHome / L"settings.yaml", BuildUnconfiguredSettingsYaml())) {
-        state->error = L"无法写入 MiaoDesk Harness 空 settings.yaml";
+        state->error = L"无法写入 WhaleDesK Harness 空 settings.yaml";
         return false;
     }
     state->configured = false;
@@ -148,7 +148,7 @@ bool PrepareUnconfiguredSettings(const fs::path& dshHome, HarnessSettingsBridgeS
 
 HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
     HarnessSettingsBridgeState state;
-    const fs::path root = MiaoDeskRoot();
+    const fs::path root = WhaleDesKRoot();
     if (root.empty()) {
         state.error = L"LOCALAPPDATA 不可用";
         return state;
@@ -159,7 +159,7 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
     std::error_code ec;
     fs::create_directories(dshHome, ec);
     if (ec) {
-        state.error = L"无法创建 MiaoDesk Harness DSH_HOME";
+        state.error = L"无法创建 WhaleDesK Harness DSH_HOME";
         return state;
     }
 
@@ -192,7 +192,7 @@ HarnessSettingsBridgeState PrepareHarnessSettingsBridge() {
     const std::string yaml = BuildSettingsYaml(state.providerId, profile.baseUrl, profile.endpoint,
                                                state.model, state.hasApiKey);
     if (!WriteAtomically(dshHome / L"settings.yaml", yaml)) {
-        state.error = L"无法写入 MiaoDesk Harness settings.yaml";
+        state.error = L"无法写入 WhaleDesK Harness settings.yaml";
         state.apiKey.clear();
         return state;
     }
@@ -219,17 +219,17 @@ bool HarnessSettingsBridgeSelfTest() {
                                                      L"demo/responses",
                                                      true);
     const std::string unconfigured = BuildUnconfiguredSettingsYaml();
-    return openAi.find("provider: miaodesk") != std::string::npos &&
+    return openAi.find("provider: whaledesk") != std::string::npos &&
            openAi.find("model: 'demo/model'") != std::string::npos &&
            openAi.find("baseURL: 'https://gateway.example/v1'") != std::string::npos &&
-           openAi.find("apiKeyEnv: MIAODESK_API_KEY") != std::string::npos &&
+           openAi.find("apiKeyEnv: WHALEDESK_API_KEY") != std::string::npos &&
            openAi.find("sk-") == std::string::npos &&
            anthropic.find("api: 'anthropic-messages'") != std::string::npos &&
            anthropic.find("baseURL: 'https://api.anthropic.com/v1'") != std::string::npos &&
            responses.find("api: 'openai-responses'") != std::string::npos &&
            responses.find("baseURL: 'https://gateway.example/v1'") != std::string::npos &&
            unconfigured.find("{}") != std::string::npos &&
-           std::wstring(kHarnessCredentialEnv) == L"MIAODESK_API_KEY";
+           std::wstring(kHarnessCredentialEnv) == L"WHALEDESK_API_KEY";
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

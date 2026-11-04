@@ -12,10 +12,10 @@
 //   ③ 登记表与实际不符(新增/删除了宽高比声明)。
 //
 // 真实接线(信箱化)属于 WPRO-01 的实施轮,那需要 Windows 上看得见效果才敢签收。
-#include "miaodesk/JsonStringField.h"
-#include "miaodesk/MiaoContentModel.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoWidgetGeometry.h"
+#include "whaledesk/JsonStringField.h"
+#include "whaledesk/WhaleContentModel.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleWidgetGeometry.h"
 
 #include <cmath>
 #include <cstdio>
@@ -27,9 +27,9 @@
 #include <vector>
 #include <vector>
 
-using namespace miaodesk;
-using namespace miaodesk::content;
-using namespace miaodesk::desktop;
+using namespace whaledesk;
+using namespace whaledesk::content;
+using namespace whaledesk::desktop;
 namespace fs = std::filesystem;
 
 static int failures = 0;
@@ -95,9 +95,9 @@ int wmain() {
         const auto name = it->path().filename().string();
         seen.insert(name);
 
-        LoadedMiaoContentPackage package;
+        LoadedWhaleContentPackage package;
         std::wstring error;
-        if (!MiaoContentPackage::Load(it->path(), &package, &error)) {
+        if (!WhaleContentPackage::Load(it->path(), &package, &error)) {
             std::printf("  [FAIL] %s 加载失败:%ls\n", name.c_str(), error.c_str());
             ++failures;
             continue;

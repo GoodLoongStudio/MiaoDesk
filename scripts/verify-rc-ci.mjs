@@ -412,7 +412,7 @@ const fs = runsFile ? await import("node:fs/promises") : null;
 // 在 GHES 上能跑,也让自检能在本机起一个假 API —— 否则"退出码 4"这条新路只能靠猜。
 const apiBase = process.env.GITHUB_API_URL || "https://api.github.com";
 
-const repo = process.env.GITHUB_REPOSITORY || "GoodLoongStudio/MiaoDesk";
+const repo = process.env.GITHUB_REPOSITORY || "GoodLoongStudio/WhaleDesK";
 const token = process.env.GITHUB_TOKEN || "";
 const headers = { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
 const runs = [];

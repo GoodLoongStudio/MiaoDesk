@@ -5,25 +5,25 @@
 # 能守住"目录和代码同步"的只有这一道 —— 它从**代码读出**事实,再与目录比对。
 #
 # 判据全部来自代码,脚本里不抄清单(抄一份清单到脚本里,改名那天它就会悄悄说相反的话):
-#   · 场景组件 kind —— src/include/miaodesk/MiaoSceneModel.h 的 ComponentKind 枚举;
-#   · 输入通道 —— src/include/miaodesk/MiaoInputBus.h 的通道常量(宽串字面量);
-#   · 数据前缀 —— src/content/binding/MiaoContentDataBinding.cpp 的 RequiredCapability;
-#   · 内置材质 —— src/content/render/MiaoSpriteMaterialPolicy.cpp 里真正被支持的 builtin;
-#   · 响应曲线 —— MiaoSceneRuntimeModel.h 的 kBindingResponseCount。
+#   · 场景组件 kind —— src/include/whaledesk/WhaleSceneModel.h 的 ComponentKind 枚举;
+#   · 输入通道 —— src/include/whaledesk/WhaleInputBus.h 的通道常量(宽串字面量);
+#   · 数据前缀 —— src/content/binding/WhaleContentDataBinding.cpp 的 RequiredCapability;
+#   · 内置材质 —— src/content/render/WhaleSpriteMaterialPolicy.cpp 里真正被支持的 builtin;
+#   · 响应曲线 —— WhaleSceneRuntimeModel.h 的 kBindingResponseCount。
 #
 # 它还反向查两件目录自己说了才算数的事:
-#   · 每条被目录标成 Real 的输入通道,MiaoInputBus.h 里必须有对应常量;
+#   · 每条被目录标成 Real 的输入通道,WhaleInputBus.h 里必须有对应常量;
 #   · 每条被目录标成 DeclaredOnly 的 manifest 能力,不得出现在"会被拒绝"的反例之外 ——
 #     也就是已发行的包声明它必须仍然加载成功(theme.wallpaper 正是这种)。
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 
-CATALOG="$ROOT/src/content/binding/MiaoCapabilityCatalog.cpp"
-MODEL="$ROOT/src/include/miaodesk/MiaoSceneModel.h"
-INPUTBUS="$ROOT/src/include/miaodesk/MiaoInputBus.h"
-BINDING="$ROOT/src/content/binding/MiaoContentDataBinding.cpp"
-MATERIAL="$ROOT/src/content/render/MiaoSpriteMaterialPolicy.cpp"
+CATALOG="$ROOT/src/content/binding/WhaleCapabilityCatalog.cpp"
+MODEL="$ROOT/src/include/whaledesk/WhaleSceneModel.h"
+INPUTBUS="$ROOT/src/include/whaledesk/WhaleInputBus.h"
+BINDING="$ROOT/src/content/binding/WhaleContentDataBinding.cpp"
+MATERIAL="$ROOT/src/content/render/WhaleSpriteMaterialPolicy.cpp"
 
 fails=0
 note() { printf '  %s\n' "$1"; }
@@ -44,20 +44,20 @@ enum_members() {
   awk '/^enum class ComponentKind/{f=1;next} f && /^};/{exit} f' "$MODEL" |
     grep -o '^    [A-Z][A-Za-z]*' | tr -d ' '
 }
-catalog_ids > /tmp/miaodesk_catalog_ids.$$
-trap 'rm -f /tmp/miaodesk_catalog_ids.$$' EXIT
+catalog_ids > /tmp/whaledesk_catalog_ids.$$
+trap 'rm -f /tmp/whaledesk_catalog_ids.$$' EXIT
 
 missing=0
 for member in $(enum_members); do
   first=$(printf '%s' "$member" | cut -c1 | tr 'A-Z' 'a-z')
   rest=$(printf '%s' "$member" | cut -c2-)
   expected="scene.$first$rest"
-  if ! grep -qx "$expected" /tmp/miaodesk_catalog_ids.$$; then
+  if ! grep -qx "$expected" /tmp/whaledesk_catalog_ids.$$; then
     bad "ComponentKind::$member 在目录里没有对应的 $expected"
     missing=$((missing + 1))
   fi
 done
-catalog_scene_count=$(grep -c '^scene\.' /tmp/miaodesk_catalog_ids.$$ || true)
+catalog_scene_count=$(grep -c '^scene\.' /tmp/whaledesk_catalog_ids.$$ || true)
 enum_count=$(enum_members | wc -l | tr -d ' ')
 if [ "$catalog_scene_count" != "$enum_count" ]; then
   bad "目录里有 $catalog_scene_count 个 scene.* 能力,而 ComponentKind 只有 $enum_count 个成员"
@@ -114,7 +114,7 @@ if [ -n "$supported_builtin" ]; then
 fi
 
 # 5. 响应曲线数。
-k=$(grep -o 'kBindingResponseCount = [0-9]*' "$ROOT/src/include/miaodesk/MiaoSceneRuntimeModel.h" | grep -o '[0-9]*$')
+k=$(grep -o 'kBindingResponseCount = [0-9]*' "$ROOT/src/include/whaledesk/WhaleSceneRuntimeModel.h" | grep -o '[0-9]*$')
 c=$(catalog_ids | grep -c '^binding\.response\.')
 if [ "$k" != "$c" ]; then
   bad "响应曲线枚举声明 $k 个,目录登记 $c 个"

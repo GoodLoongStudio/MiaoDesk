@@ -1,6 +1,6 @@
-#include "miaodesk/ContentWidgetSettingsDialog.h"
-#include "miaodesk/TodayTaskEditorDialog.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/ContentWidgetSettingsDialog.h"
+#include "whaledesk/TodayTaskEditorDialog.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <windowsx.h>
 
@@ -17,10 +17,10 @@
 #include <utility>
 #include <vector>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kWidgetSettingsDialogClass[] = L"MiaoDesk.ContentWidget.Settings";
+constexpr wchar_t kWidgetSettingsDialogClass[] = L"WhaleDesK.ContentWidget.Settings";
 constexpr int kApplyId = 7101;
 constexpr int kResetId = 7102;
 constexpr int kCloseId = 7103;
@@ -71,7 +71,7 @@ std::wstring FriendlyParameterName(std::wstring_view key) {
     return std::wstring(key);
 }
 
-// step is real schema -- documented in MIAO_CONTENT_PACKAGE_V1.md and declared by
+// step is real schema -- documented in WHALE_CONTENT_PACKAGE_V1.md and declared by
 // every shipped package -- and the form advertises it as a constraint ("step N"),
 // but nothing enforced it, so 0.313 was happily committed on a step-0.01 field.
 //
@@ -611,4 +611,4 @@ bool ShowContentWidgetSettingsDialog(
     return state.changed;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

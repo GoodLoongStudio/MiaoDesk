@@ -15,13 +15,13 @@
 // "没看图"咽回去 —— 排障时最需要的正是两件事同时摆在眼前。
 //
 // "没提供视觉能力的 Provider"走的是同一条 NotReviewed:如实标记,不给分。
-#include "miaodesk/VisualReviewGate.h"
+#include "whaledesk/VisualReviewGate.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -66,10 +66,10 @@ VisualIssue Blocking(const char* kind, const char* region, const char* suggestio
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 真的看过、没有阻塞问题 -----------------------------------------
     {

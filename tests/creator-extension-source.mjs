@@ -45,7 +45,7 @@ assert.ok(creatorNames.length === 8, `the registry must list exactly eight creat
 // 给一个已经漂移过的清单做复核。
 assert.match(
   cpp,
-  /for \(const auto& name : miaodesk::creator::CreatorToolNames\(\)\)/,
+  /for \(const auto& name : whaledesk::creator::CreatorToolNames\(\)\)/,
   "the creator TOOL_NAMES must be generated from CreatorToolNames(), not hand-written a second time",
 );
 assert.match(
@@ -138,7 +138,7 @@ try {
   }
 
   // 真正的源文件。
-  const file = join(workDir, "miaodesk-creator-tools.ts");
+  const file = join(workDir, "whaledesk-creator-tools.ts");
   writeFileSync(file, source);
   const outcome = parseOutcome(file);
   if (outcome === "syntax") {
@@ -191,7 +191,7 @@ assert.ok(!/pi-ai\/compat/.test(source),
   "the creator extension must not import pi-ai's image compat: image generation goes through the host worker");
 assert.ok(!source.includes("Buffer.from"),
   "the creator extension must not write image bytes itself -- creator_image_generate is executed by the host");
-assert.ok(!source.includes("MiaoDesk Images"),
+assert.ok(!source.includes("WhaleDesK Images"),
   "the creator extension must not have the chat image output directory");
 // 通用 shell 与文件能力:一条都不该有。
 for (const forbidden of ["bash", "grep", "read", "write", "edit", "find", "ls"]) {
@@ -204,12 +204,12 @@ for (const forbidden of ["bash", "grep", "read", "write", "edit", "find", "ls"])
 // 扩展补进参数只是为了让"忘了带"不变成失败;worker 侧仍然用自己的环境变量复核。
 assert.match(
   head,
-  /const SESSION = process\.env\.MIAODESK_CREATOR_SESSION \?\? "";/,
+  /const SESSION = process\.env\.WHALEDESK_CREATOR_SESSION \?\? "";/,
   "the creator extension must take its session id from the host environment",
 );
 assert.match(
   head,
-  /const WORKSPACE = process\.env\.MIAODESK_CREATOR_WORKSPACE \?\? "";/,
+  /const WORKSPACE = process\.env\.WHALEDESK_CREATOR_WORKSPACE \?\? "";/,
   "the creator extension must take its workspace from the host environment",
 );
 assert.match(

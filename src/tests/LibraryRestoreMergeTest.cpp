@@ -10,12 +10,12 @@
 //   · 三条不变式各自成立(单调:合并结果不劣于任一输入);
 //   · 0 是"没有记录",不是 1970 年;
 //   · 字段清单与结构体配对 —— 加字段必须同时改清单,否则自检红。
-#include "miaodesk/MiaoLibraryRestoreMerge.h"
+#include "whaledesk/WhaleLibraryRestoreMerge.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace library_restore {
 namespace {
 
@@ -77,10 +77,10 @@ void ForEachField(const RestoredUserState& s, Fn&& fn) {
 
 } // namespace
 } // namespace library_restore
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::library_restore;
+    using namespace whaledesk::library_restore;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:合并判定不动\n");

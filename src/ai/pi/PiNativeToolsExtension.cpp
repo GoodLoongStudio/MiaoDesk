@@ -1,6 +1,6 @@
-#include "miaodesk/PiNativeToolsExtension.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/CreatorToolRegistry.h"
+#include "whaledesk/PiNativeToolsExtension.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/CreatorToolRegistry.h"
 
 #include <windows.h>
 
@@ -12,10 +12,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kNativeToolHostEnvironment[] = L"MIAODESK_NATIVE_TOOL_HOST";
+constexpr wchar_t kNativeToolHostEnvironment[] = L"WHALEDESK_NATIVE_TOOL_HOST";
 
 
 fs::path ModulePath() {
@@ -44,19 +44,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const HOST = process.env.MIAODESK_NATIVE_TOOL_HOST ?? "";
+const HOST = process.env.WHALEDESK_NATIVE_TOOL_HOST ?? "";
 const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 // The image provider is configurable rather than hardcoded so a local inference
 // endpoint can be selected. The default is "openrouter" purely for backward
 // compatibility with existing behaviour.
 //
-// MIAODESK_IMAGE_PROVIDER / BASE_URL / MODEL are exported by the host from the
+// WHALEDESK_IMAGE_PROVIDER / BASE_URL / MODEL are exported by the host from the
 // active API profile. Generic OpenAI-compatible providers are called directly by
-// MiaoDesk so local image generation does not depend on pi-ai recognising a custom
+// WhaleDesK so local image generation does not depend on pi-ai recognising a custom
 // provider name. Named cloud providers keep using pi-ai compat.
-const IMAGE_PROVIDER = (process.env.MIAODESK_IMAGE_PROVIDER ?? "").trim();
-const IMAGE_BASE_URL = (process.env.MIAODESK_IMAGE_BASE_URL ?? "").trim();
-const IMAGE_MODEL = (process.env.MIAODESK_IMAGE_MODEL ?? "").trim();
+const IMAGE_PROVIDER = (process.env.WHALEDESK_IMAGE_PROVIDER ?? "").trim();
+const IMAGE_BASE_URL = (process.env.WHALEDESK_IMAGE_BASE_URL ?? "").trim();
+const IMAGE_MODEL = (process.env.WHALEDESK_IMAGE_MODEL ?? "").trim();
 // A loopback endpoint is the product's own local inference server, which the
 // profile already treats as keyless. Treating it as keyless here too is what makes
 // "run everything locally" work without inventing a token.
@@ -82,8 +82,8 @@ function textResult(text: string) {
 }
 
 async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal): Promise<string> {
-  if (!HOST) throw new Error("MiaoDesk native tool host is unavailable.");
-  const work = await mkdtemp(join(tmpdir(), "miaodesk-pi-tool-"));
+  if (!HOST) throw new Error("WhaleDesK native tool host is unavailable.");
+  const work = await mkdtemp(join(tmpdir(), "whaledesk-pi-tool-"));
   const input = join(work, "input.json");
   const output = join(work, "output.txt");
   try {
@@ -104,25 +104,25 @@ async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal
       };
       const abort = () => {
         try { child.kill(); } catch {}
-        finish(new Error(`MiaoDesk native tool cancelled: ${tool}`));
+        finish(new Error(`WhaleDesK native tool cancelled: ${tool}`));
       };
       timer = setTimeout(() => {
         try { child.kill(); } catch {}
-        finish(new Error(`MiaoDesk native tool timed out: ${tool}`));
+        finish(new Error(`WhaleDesK native tool timed out: ${tool}`));
       }, 30000);
       if (signal?.aborted) return abort();
       signal?.addEventListener("abort", abort, { once: true });
       child.once("error", error => finish(error));
       child.once("exit", code => code === 0
         ? finish()
-        : finish(new Error(`MiaoDesk native tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
+        : finish(new Error(`WhaleDesK native tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
     });
     const raw = await readFile(output, "utf8");
     const newline = raw.indexOf("\n");
-    if (newline < 1) throw new Error(`MiaoDesk native tool returned an invalid result: ${tool}`);
+    if (newline < 1) throw new Error(`WhaleDesK native tool returned an invalid result: ${tool}`);
     const success = raw.slice(0, newline).trim() === "1";
     const message = raw.slice(newline + 1).trim() ||
-      (success ? "MiaoDesk native tool completed." : "MiaoDesk native tool failed.");
+      (success ? "WhaleDesK native tool completed." : "WhaleDesK native tool failed.");
     if (!success) throw new Error(message);
     return message;
   } finally {
@@ -136,7 +136,7 @@ function safeFileStem(value: string): string {
     .replace(/[. ]+$/g, "")
     .trim()
     .slice(0, 96);
-  return cleaned || `MiaoDesk-Image-${Date.now()}`;
+  return cleaned || `WhaleDesK-Image-${Date.now()}`;
 }
 
 function extensionForMime(mimeType: string): string {
@@ -147,12 +147,12 @@ function extensionForMime(mimeType: string): string {
   return ".png";
 }
 
-async function currentMiaoDeskBaseUrl(): Promise<string> {
+async function currentWhaleDesKBaseUrl(): Promise<string> {
   const agentDir = process.env.PI_CODING_AGENT_DIR;
   if (!agentDir) return "";
   try {
     const raw = await readFile(join(agentDir, "models.json"), "utf8");
-    return String(JSON.parse(raw)?.providers?.miaodesk?.baseUrl ?? "");
+    return String(JSON.parse(raw)?.providers?.whaledesk?.baseUrl ?? "");
   } catch { return ""; }
 }
 
@@ -165,12 +165,12 @@ async function currentMiaoDeskBaseUrl(): Promise<string> {
 //   * a loopback endpoint is keyless, matching how the profile itself treats it;
 //   * otherwise reuse the main model key, whatever the provider is.
 async function resolveImageApiKey(): Promise<string> {
-  const explicit = process.env.MIAODESK_IMAGE_API_KEY?.trim();
+  const explicit = process.env.WHALEDESK_IMAGE_API_KEY?.trim();
   if (explicit) return explicit;
   if (!IMAGE_PROVIDER) return "";
-  const baseUrl = (IMAGE_BASE_URL || await currentMiaoDeskBaseUrl()).toLowerCase();
+  const baseUrl = (IMAGE_BASE_URL || await currentWhaleDesKBaseUrl()).toLowerCase();
   if (isLoopback(baseUrl)) return "local";
-  return process.env.MIAODESK_MODEL_API_KEY?.trim() ?? "";
+  return process.env.WHALEDESK_MODEL_API_KEY?.trim() ?? "";
 }
 
 function usesOpenAICompatibleImageShim(provider: string): boolean {
@@ -188,7 +188,7 @@ function openAIImageEndpoint(baseUrl: string): string {
 async function generateOpenAICompatibleImage(
   prompt: string, imageModel: string, apiKey: string, signal?: AbortSignal
 ): Promise<{ data: string; mimeType: string }> {
-  const baseUrl = IMAGE_BASE_URL || await currentMiaoDeskBaseUrl();
+  const baseUrl = IMAGE_BASE_URL || await currentWhaleDesKBaseUrl();
   const endpoint = openAIImageEndpoint(baseUrl);
   if (!endpoint) throw new Error("图片生成能力未配置 imageBaseUrl。");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -225,7 +225,7 @@ async function generateImage(prompt: string, fileName: string, signal?: AbortSig
   const imageModel = IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
   const apiKey = await resolveImageApiKey();
   if (!apiKey) throw new Error(`图片生成能力当前未配置：需要 ${IMAGE_PROVIDER} 的 API Key。聊天和其他 Pi 工具仍可正常使用。`);
-  console.error(`[MiaoDesk][artifact] image_generate start provider=${IMAGE_PROVIDER} model=${imageModel}`);
+  console.error(`[WhaleDesK][artifact] image_generate start provider=${IMAGE_PROVIDER} model=${imageModel}`);
   let image: { data: string; mimeType: string } | undefined;
   if (usesOpenAICompatibleImageShim(IMAGE_PROVIDER)) {
     image = await generateOpenAICompatibleImage(prompt, imageModel, apiKey, signal);
@@ -247,12 +247,12 @@ async function generateImage(prompt: string, fileName: string, signal?: AbortSig
       | undefined;
   }
   if (!image?.data) throw new Error("Pi 图片生成完成，但 Provider 没有返回图片数据。");
-  const outputDir = join(process.cwd(), "MiaoDesk Images");
+  const outputDir = join(process.cwd(), "WhaleDesK Images");
   await mkdir(outputDir, { recursive: true });
   const stem = safeFileStem(fileName.replace(/\.[A-Za-z0-9]+$/, ""));
   const output = join(outputDir, stem + extensionForMime(image.mimeType || "image/png"));
   await writeFile(output, Buffer.from(image.data, "base64"));
-  console.error(`[MiaoDesk][artifact] image_generate success path=${output}`);
+  console.error(`[WhaleDesK][artifact] image_generate success path=${output}`);
   return output;
 }
 
@@ -273,8 +273,8 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     });
   };
 
-  native("settings_open", "Open MiaoDesk Settings",
-    "Open the native MiaoDesk Settings Center. Use this for MiaoDesk settings or provider configuration instead of shell commands.",
+  native("settings_open", "Open WhaleDesK Settings",
+    "Open the native WhaleDesK Settings Center. Use this for WhaleDesK settings or provider configuration instead of shell commands.",
     Type.Object({}, { additionalProperties: false }));
 
   native("ppt_create", "Create PowerPoint Presentation",
@@ -308,28 +308,28 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
       try {
-        const output = await generateImage(params.prompt, params.file_name ?? `MiaoDesk-Image-${Date.now()}`, signal);
+        const output = await generateImage(params.prompt, params.file_name ?? `WhaleDesK-Image-${Date.now()}`, signal);
         return textResult(`图片已生成：${output}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[MiaoDesk][artifact] image_generate failed: ${message}`);
+        console.error(`[WhaleDesK][artifact] image_generate failed: ${message}`);
         throw new Error(message);
       }
     },
   });
 
-  native("wallpaper_validate_package", "Validate MiaoDesk Wallpaper",
+  native("wallpaper_validate_package", "Validate WhaleDesK Wallpaper",
     "Validate an existing local .mdwall package. This does not apply it.",
     Type.Object({ path: Type.String() }, { additionalProperties: false }));
   native("content_skill_get", "Load Content Skill",
-    "Load a MiaoDesk content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
+    "Load a WhaleDesK content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
     Type.Object({
       name: Type.Optional(Type.String({
         description: "content-package-basics | wallpaper-content | widget-content | content-review",
       })),
     }, { additionalProperties: false }));
   native("wallpaper_state_get", "Read Desktop State",
-    "Read current MiaoDesk desktop state. This is read-only.",
+    "Read current WhaleDesK desktop state. This is read-only.",
     Type.Object({}, { additionalProperties: false }));
   native("desktop_widget_list", "List Desktop Widgets",
     "List current persistent widgets. This is read-only.",
@@ -354,7 +354,7 @@ constexpr std::string_view kExtensionSourcePart2 = R"PIEXT(export default functi
   pi.on("before_agent_start", async (event) => {
     activateNativeTools(pi);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change the desktop wallpaper, use desktop_preview_wallpaper. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Your widget tools are read-only: use desktop_widget_list to inspect widgets, and never generate widget HTML/CSS/JavaScript. Do not claim your tools created or changed a widget.\n- Widget creation is a SEPARATE, user-initiated flow, not one of your tools: the user starts it with "AI 制作组件" in the widget library. It asks their requirements first, then builds a previewable .mdwidget content package that the user must confirm before it reaches the desktop. So never say widgets cannot be made — say the user opens that creator and you will help inside it.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
+      systemPrompt: `${event.systemPrompt}\n\n## WhaleDesK Artifact and Desktop Safety\n- For a real PPT file, use ppt_create.\n- For a standalone image, use image_generate.\n- For ANY request to add/change the desktop wallpaper, use desktop_preview_wallpaper. Never use shell/file tricks to mutate the desktop.\n- Desktop generation is PREVIEW-FIRST: you can create a sandbox preview, but you can never Apply/Reject it for the user. The native Apply button is the only commit authority.\n- Your widget tools are read-only: use desktop_widget_list to inspect widgets, and never generate widget HTML/CSS/JavaScript. Do not claim your tools created or changed a widget.\n- Widget creation is a SEPARATE, user-initiated flow, not one of your tools: the user starts it with "AI 制作组件" in the widget library. It asks their requirements first, then builds a previewable .mdwidget content package that the user must confirm before it reaches the desktop. So never say widgets cannot be made — say the user opens that creator and you will help inside it.\n- For a decorative dynamic wallpaper, choose the closest safe application-owned preset. A blue-ocean dynamic wallpaper should prefer ocean_flow.\n- Built-in showcase keys: wallpapers aurora_flow, neon_flow, ocean_flow.\n- Never claim a persistent desktop change happened after a preview tool. Say it is waiting for the user's Apply decision.\n- Never claim an artifact was created unless the corresponding tool reports success.`,
     };
   });
 }
@@ -383,20 +383,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const HOST = process.env.MIAODESK_NATIVE_TOOL_HOST ?? "";
+const HOST = process.env.WHALEDESK_NATIVE_TOOL_HOST ?? "";
 // 会话与工作区由宿主通过环境变量给出,不由模型填写。扩展把它们补进参数,是为了让
 // "模型忘了带"不变成一次失败;而 worker 会用**自己的**环境变量复核,所以模型若把
 // 这两个字段改成别的值,在 worker 侧就是一次归属不符的拒绝 —— 参数永远不是事实来源。
-const SESSION = process.env.MIAODESK_CREATOR_SESSION ?? "";
-const WORKSPACE = process.env.MIAODESK_CREATOR_WORKSPACE ?? "";
+const SESSION = process.env.WHALEDESK_CREATOR_SESSION ?? "";
+const WORKSPACE = process.env.WHALEDESK_CREATOR_WORKSPACE ?? "";
 
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
 }
 
 async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal): Promise<string> {
-  if (!HOST) throw new Error("MiaoDesk native tool host is unavailable.");
-  const work = await mkdtemp(join(tmpdir(), "miaodesk-pi-creator-"));
+  if (!HOST) throw new Error("WhaleDesK native tool host is unavailable.");
+  const work = await mkdtemp(join(tmpdir(), "whaledesk-pi-creator-"));
   const input = join(work, "input.json");
   const output = join(work, "output.txt");
   try {
@@ -417,25 +417,25 @@ async function runNativeTool(tool: string, params: unknown, signal?: AbortSignal
       };
       const abort = () => {
         try { child.kill(); } catch {}
-        finish(new Error(`MiaoDesk creator tool cancelled: ${tool}`));
+        finish(new Error(`WhaleDesK creator tool cancelled: ${tool}`));
       };
       timer = setTimeout(() => {
         try { child.kill(); } catch {}
-        finish(new Error(`MiaoDesk creator tool timed out: ${tool}`));
+        finish(new Error(`WhaleDesK creator tool timed out: ${tool}`));
       }, 120000);
       if (signal?.aborted) return abort();
       signal?.addEventListener("abort", abort, { once: true });
       child.once("error", error => finish(error));
       child.once("exit", code => code === 0
         ? finish()
-        : finish(new Error(`MiaoDesk creator tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
+        : finish(new Error(`WhaleDesK creator tool worker exited with code ${code ?? "unknown"}: ${tool}`)));
     });
     const raw = await readFile(output, "utf8");
     const newline = raw.indexOf("\n");
-    if (newline < 1) throw new Error(`MiaoDesk creator tool returned an invalid result: ${tool}`);
+    if (newline < 1) throw new Error(`WhaleDesK creator tool returned an invalid result: ${tool}`);
     const success = raw.slice(0, newline).trim() === "1";
     const message = raw.slice(newline + 1).trim() ||
-      (success ? "MiaoDesk creator tool completed." : "MiaoDesk creator tool failed.");
+      (success ? "WhaleDesK creator tool completed." : "WhaleDesK creator tool failed.");
     if (!success) throw new Error(message);
     return message;
   } finally {
@@ -449,7 +449,7 @@ constexpr std::string_view kCreatorExtensionSourceBody = R"PIEXT(function activa
   pi.setActiveTools([...new Set([...active, ...TOOL_NAMES])]);
 }
 
-export default function miaodeskCreatorTools(pi: ExtensionAPI) {
+export default function whaledeskCreatorTools(pi: ExtensionAPI) {
   // 每个创作工具都只是"把参数转给宿主"。参数的形状在这里声明清楚:
   // required 的字段和 CreatorToolRegistry 的必填校验一一对应,所以模型漏带时
   // 先在 typebox 这一层就得到一个明确的错误,而不是走到 worker 才被拒。
@@ -468,7 +468,7 @@ export default function miaodeskCreatorTools(pi: ExtensionAPI) {
     Type.Object({}, { additionalProperties: false }));
 
   creator("content_skill_get", "Load Content Skill",
-    "Load a MiaoDesk content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
+    "Load a WhaleDesK content-creation skill before writing any .mdwall/.mdwidget package. Call content-package-basics first, then the matching domain skill, then content-review. Omit name to list available skills. This is read-only.",
     Type.Object({
       name: Type.Optional(Type.String({
         description: "content-package-basics | wallpaper-content | widget-content | content-review",
@@ -518,7 +518,7 @@ export default function miaodeskCreatorTools(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     activateNativeTools(pi);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## MiaoDesk Content Creator\n- You are making one declarative content package. You have NO shell, NO general file tools, and NO access outside this work's workspace. That is deliberate: everything you need is one of the creator_* tools.\n- Start with creator_capabilities_get and content_skill_get before writing anything.\n- Read a file with creator_package_read and write it with creator_package_update. Write only manifest.json, parameters.json, scene/*.json, preview.<image>, or assets/*. Never write code, HTML, CSS, JavaScript, or executables: desktop content is JSON only.\n- Every write is checked against the allowed layout, a size limit, and the workspace root. A rejected write leaves the package untouched and tells you why; fix the cause instead of retrying the same call.\n- Use creator_asset_import for media the work already references or that the user gave you; it lands inside assets/. There is NO artwork generator in this build: creator_image_generate is in the tool list but the host reports it as not implemented. Do not call it, and do not promise to draw images. Ask the user to import media, or say plainly that generating artwork is not available yet.\n- Before submitting, call creator_preview_evidence and read what it reports.\n- creator_candidate_submit returns a structured receipt. Only a candidate you actually received a receipt for can be applied. Never claim the user's desktop changed: only their Apply button commits.\n- Never claim a tool succeeded unless its result says so.`,
+      systemPrompt: `${event.systemPrompt}\n\n## WhaleDesK Content Creator\n- You are making one declarative content package. You have NO shell, NO general file tools, and NO access outside this work's workspace. That is deliberate: everything you need is one of the creator_* tools.\n- Start with creator_capabilities_get and content_skill_get before writing anything.\n- Read a file with creator_package_read and write it with creator_package_update. Write only manifest.json, parameters.json, scene/*.json, preview.<image>, or assets/*. Never write code, HTML, CSS, JavaScript, or executables: desktop content is JSON only.\n- Every write is checked against the allowed layout, a size limit, and the workspace root. A rejected write leaves the package untouched and tells you why; fix the cause instead of retrying the same call.\n- Use creator_asset_import for media the work already references or that the user gave you; it lands inside assets/. There is NO artwork generator in this build: creator_image_generate is in the tool list but the host reports it as not implemented. Do not call it, and do not promise to draw images. Ask the user to import media, or say plainly that generating artwork is not available yet.\n- Before submitting, call creator_preview_evidence and read what it reports.\n- creator_candidate_submit returns a structured receipt. Only a candidate you actually received a receipt for can be applied. Never claim the user's desktop changed: only their Apply button commits.\n- Never claim a tool succeeded unless its result says so.`,
     };
   });
 }
@@ -534,7 +534,7 @@ export default function miaodeskCreatorTools(pi: ExtensionAPI) {
 std::string CreatorExtensionSource() {
     std::string source(kCreatorExtensionSourceHead);
     source += "const TOOL_NAMES = [\n";
-    for (const auto& name : miaodesk::creator::CreatorToolNames()) {
+    for (const auto& name : whaledesk::creator::CreatorToolNames()) {
         source += "  \"";
         source += name;
         source += "\",\n";
@@ -551,11 +551,11 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
                                  const std::wstring& targetDirectory) {
     const auto module = ModulePath();
     if (module.empty()) {
-        if (error) *error = L"Unable to resolve MiaoDesk native tool host.";
+        if (error) *error = L"Unable to resolve WhaleDesK native tool host.";
         return false;
     }
     if (!SetEnvironmentVariableW(kNativeToolHostEnvironment, module.c_str())) {
-        if (error) *error = L"Unable to export MiaoDesk native tool host path.";
+        if (error) *error = L"Unable to export WhaleDesK native tool host path.";
         return false;
     }
 
@@ -565,8 +565,8 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
     // 而没有任何一处代码改过聊天的 allowlist。
     fs::path root = targetDirectory.empty() ? fs::path(PiAgentDirectory()) : fs::path(targetDirectory);
     const wchar_t* fileName = variant == PiNativeToolsVariant::Creator
-                                  ? L"miaodesk-creator-tools.ts"
-                                  : L"miaodesk-native-tools.ts";
+                                  ? L"whaledesk-creator-tools.ts"
+                                  : L"whaledesk-native-tools.ts";
 
     std::error_code ec;
     const auto extensions = root / L"extensions";
@@ -593,19 +593,19 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
         {
             std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
             if (!stream) {
-                if (error) *error = L"Unable to write MiaoDesk Pi extension.";
+                if (error) *error = L"Unable to write WhaleDesK Pi extension.";
                 return false;
             }
             stream.write(expected.data(), static_cast<std::streamsize>(expected.size()));
             if (!stream) {
-                if (error) *error = L"Unable to finish writing MiaoDesk Pi extension.";
+                if (error) *error = L"Unable to finish writing WhaleDesK Pi extension.";
                 return false;
             }
         }
 
         if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
             fs::remove(temporary, ec);
-            if (error) *error = L"Unable to install MiaoDesk Pi extension.";
+            if (error) *error = L"Unable to install WhaleDesK Pi extension.";
             return false;
         }
     }
@@ -614,4 +614,4 @@ bool EnsurePiNativeToolsExtension(std::wstring* error, std::wstring* extensionPa
     return true;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

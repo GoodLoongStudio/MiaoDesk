@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const registry = read("src/desktop/control/CreatorToolRegistry.cpp");
-const registryHeader = read("src/include/miaodesk/CreatorToolRegistry.h");
+const registryHeader = read("src/include/whaledesk/CreatorToolRegistry.h");
 const profiles = read("src/desktop/control/PiLaunchProfile.cpp");
 const worker = read("src/app/main.cpp");
 const extension = read("src/ai/pi/PiNativeToolsExtension.cpp");
@@ -81,9 +81,9 @@ assert.match(workerFn, /IsCreatorTool\(/,
   "the worker must route creator tools through the shared registry, not a second literal list");
 
 // The registry header must be included so that call actually compiles.
-assert.match(worker, /#include "miaodesk\/CreatorToolRegistry\.h"/,
+assert.match(worker, /#include "whaledesk\/CreatorToolRegistry\.h"/,
   "src/app/main.cpp must include CreatorToolRegistry.h");
-assert.match(worker, /miaodesk::creator::IsCreatorTool\(tool\)/,
+assert.match(worker, /whaledesk::creator::IsCreatorTool\(tool\)/,
   "IsAllowedPiNativeTool must call IsCreatorTool so the two lists cannot drift");
 
 // --- The two allowlists must not silently overlap outside content_skill_get ------
@@ -105,7 +105,7 @@ assert.match(registry, /case CreatorToolName::PackageUpdate:\s*\n\s*case Creator
 const creatorExtension = read("src/ai/pi/PiNativeToolsExtension.cpp");
 assert.match(creatorExtension, /PiNativeToolsVariant::Creator/,
   "the extension installer must still special-case the Creator variant");
-assert.match(creatorExtension, /miaodesk-creator-tools\.ts/,
+assert.match(creatorExtension, /whaledesk-creator-tools\.ts/,
   "the Creator variant must materialise its own file, not share the chat one");
 
 // The extension's TOOL_NAMES must not be the only registration path for creator tools:

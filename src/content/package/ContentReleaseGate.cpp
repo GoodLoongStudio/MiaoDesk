@@ -1,11 +1,11 @@
-#include "miaodesk/ContentReleaseGate.h"
+#include "whaledesk/ContentReleaseGate.h"
 
 #include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 配置项 → 人话。用一个表而不是十个 if:加一项只改一行,而且顺序稳定(报出来才读得清)。
@@ -296,4 +296,4 @@ ReleaseDecision JudgeRelease(const ReleaseRequest& request) {
     return decision;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

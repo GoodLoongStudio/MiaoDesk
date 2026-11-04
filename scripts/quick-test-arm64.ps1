@@ -1,5 +1,5 @@
 param(
-  [string]$RunRoot = 'C:\MiaoDeskDev',
+  [string]$RunRoot = 'C:\WhaleDesKDev',
   [switch]$NoLaunch
 )
 
@@ -15,7 +15,7 @@ if (-not (Test-Path $core -PathType Leaf)) { throw "Missing ARM64 quick-test cor
 & $core -RunRoot $RunRoot -NoLaunch
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$statePath = Join-Path $RunRoot '.miaodesk-dev-state.json'
+$statePath = Join-Path $RunRoot '.whaledesk-dev-state.json'
 if (-not (Test-Path $statePath -PathType Leaf)) { throw 'ARM64 dev state was not created.' }
 $state = Get-Content $statePath -Raw | ConvertFrom-Json
 $sha = (& git rev-parse HEAD).Trim()
@@ -24,8 +24,8 @@ if ([string]$state.installedSha -ne $sha) { throw "ARM64 state SHA mismatch: $($
 $needsExactOverlay = ([string]$state.mode -ne 'delta')
 if ($needsExactOverlay) {
   $gh = Get-Command gh.exe -ErrorAction Stop
-  $repo = 'GoodLoongStudio/MiaoDesk'
-  $artifactName = "MiaoDesk-arm64-fast-$sha"
+  $repo = 'GoodLoongStudio/WhaleDesK'
+  $artifactName = "WhaleDesK-arm64-fast-$sha"
 
   Write-Host ""
   Write-Host "==> Apply exact current-SHA ARM64 overlay" -ForegroundColor Cyan
@@ -52,7 +52,7 @@ if ($needsExactOverlay) {
   }
   if (-not $selectedRun) { throw "Timed out waiting for $artifactName" }
 
-  $temp = Join-Path $env:TEMP ("MiaoDeskOverlay-" + [Guid]::NewGuid().ToString('N'))
+  $temp = Join-Path $env:TEMP ("WhaleDesKOverlay-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $temp | Out-Null
   try {
     $selectedIds = @($selectedRun.databaseId)
@@ -60,11 +60,11 @@ if ($needsExactOverlay) {
     [Int64]$selectedRunId = $selectedIds[0]
     & $gh.Source run download $selectedRunId --repo $repo --name $artifactName --dir $temp
     if ($LASTEXITCODE -ne 0) { throw "Unable to download $artifactName" }
-    $exe = Get-ChildItem $temp -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
-    if (-not $exe) { throw 'Downloaded ARM64 overlay has no MiaoDesk.exe.' }
+    $exe = Get-ChildItem $temp -Filter WhaleDesK.exe -File -Recurse | Select-Object -First 1
+    if (-not $exe) { throw 'Downloaded ARM64 overlay has no WhaleDesK.exe.' }
     $source = $exe.Directory.FullName
 
-    foreach ($name in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')) {
+    foreach ($name in @('WhaleDesK','WhaleDesKWallpaper','WhaleDesKHarness')) {
       Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
 
@@ -73,14 +73,14 @@ if ($needsExactOverlay) {
     foreach ($dir in @('Assets','Config','Wallpapers','Widgets','skills')) {
       Remove-Item (Join-Path $RunRoot $dir) -Recurse -Force -ErrorAction SilentlyContinue
     }
-    foreach ($file in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe','LICENSE','THIRD-PARTY-NOTICES.md')) {
+    foreach ($file in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe','LICENSE','THIRD-PARTY-NOTICES.md')) {
       Remove-Item (Join-Path $RunRoot $file) -Force -ErrorAction SilentlyContinue
     }
 
     robocopy $source $RunRoot /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "ARM64 overlay copy failed: $LASTEXITCODE" }
 
-    foreach ($exeName in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')) {
+    foreach ($exeName in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe')) {
       $p = Start-Process (Join-Path $RunRoot $exeName) -ArgumentList '--self-test' -Wait -PassThru
       if ($p.ExitCode -ne 0) { throw "$exeName --self-test failed after current overlay: $($p.ExitCode)" }
       Write-Host "[PASS] $exeName --self-test" -ForegroundColor Green
@@ -100,14 +100,14 @@ if ($needsExactOverlay) {
 }
 
 function Start-ExactDevHost {
-  $targetExe = [IO.Path]::GetFullPath((Join-Path $RunRoot 'MiaoDesk.exe'))
+  $targetExe = [IO.Path]::GetFullPath((Join-Path $RunRoot 'WhaleDesK.exe'))
 
-  # A Store/formal install may already have a startup-resident MiaoDesk.exe.
+  # A Store/formal install may already have a startup-resident WhaleDesK.exe.
   # The product is single-instance, so launching the dev EXE while that process
   # owns the mutex simply exits and all creator IPC continues going to the old
   # installation. Kill product UI processes before launch, then prove the host
-  # that survives is the EXE from C:\MiaoDeskDev.
-  foreach ($name in @('MiaoDesk','MiaoDeskWallpaper','MiaoDeskHarness')) {
+  # that survives is the EXE from C:\WhaleDesKDev.
+  foreach ($name in @('WhaleDesK','WhaleDesKWallpaper','WhaleDesKHarness')) {
     Get-Process $name -ErrorAction SilentlyContinue |
       Stop-Process -Force -ErrorAction SilentlyContinue
   }
@@ -118,19 +118,19 @@ function Start-ExactDevHost {
     Start-Sleep -Milliseconds 900
 
     $matches = @(
-      Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+      Get-CimInstance Win32_Process -Filter "Name='WhaleDesK.exe'" -ErrorAction SilentlyContinue |
       Where-Object {
         $_.ExecutablePath -and
         ([IO.Path]::GetFullPath([string]$_.ExecutablePath) -ieq $targetExe)
       }
     )
     if ($matches.Count -eq 1) {
-      Write-Host "[PASS] Dev MiaoDesk host is active: $targetExe" -ForegroundColor Green
+      Write-Host "[PASS] Dev WhaleDesK host is active: $targetExe" -ForegroundColor Green
       return
     }
 
     $other = @(
-      Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+      Get-CimInstance Win32_Process -Filter "Name='WhaleDesK.exe'" -ErrorAction SilentlyContinue |
       Where-Object { $_.ExecutablePath -and ([IO.Path]::GetFullPath([string]$_.ExecutablePath) -ine $targetExe) }
     )
     foreach ($process in $other) {
@@ -140,10 +140,10 @@ function Start-ExactDevHost {
   }
 
   $paths = @(
-    Get-CimInstance Win32_Process -Filter "Name='MiaoDesk.exe'" -ErrorAction SilentlyContinue |
+    Get-CimInstance Win32_Process -Filter "Name='WhaleDesK.exe'" -ErrorAction SilentlyContinue |
     ForEach-Object { [string]$_.ExecutablePath }
   )
-  throw "Dev MiaoDesk host did not take the singleton. Expected '$targetExe'; running: $($paths -join '; ')"
+  throw "Dev WhaleDesK host did not take the singleton. Expected '$targetExe'; running: $($paths -join '; ')"
 }
 
 if (-not $NoLaunch) {

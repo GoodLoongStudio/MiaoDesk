@@ -23,9 +23,9 @@
 // 摆不出"这个目标上已经挂着一份、而新的一笔正在飞"。判定函数要的正是这种局面,
 // 所以那几节直接摆账本 —— 但摆出来的条目与 CreationWorkflow 记录的字段一一对应
 // (见 HandMadeEntry),而能被 workflow 走出来的节都尽量走真的。
-#include "miaodesk/ContentApplyRecovery.h"
+#include "whaledesk/ContentApplyRecovery.h"
 
-#include "miaodesk/CreationWorkflow.h"
+#include "whaledesk/CreationWorkflow.h"
 
 #include <cstdio>
 #include <string>
@@ -35,7 +35,7 @@
 // 字段与 CreationWorkflow 写进 ApplyIdempotencyEntry 的完全一致。
 
 // ---- 下面这些走真的 CreationWorkflow ----------------------------------------
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -156,10 +156,10 @@ const ApplyIdempotencyEntry* Settled(const CreationWorkflow& workflow,
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 落地了:撤销才是错的 -------------------------------------------
     {

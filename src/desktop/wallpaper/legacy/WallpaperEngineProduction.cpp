@@ -12,11 +12,11 @@
 #include <shellapi.h>
 #include <d2d1.h>
 
-#include "miaodesk/AutomationUiAdapter.h"
-#include "miaodesk/DesktopAiSettingsPage.h"
-#include "miaodesk/LayeredSceneRenderer.h"
-#include "miaodesk/PerformanceUiAdapter.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/AutomationUiAdapter.h"
+#include "whaledesk/DesktopAiSettingsPage.h"
+#include "whaledesk/LayeredSceneRenderer.h"
+#include "whaledesk/PerformanceUiAdapter.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -26,7 +26,7 @@
 
 namespace D2D1 {
 
-inline D2D1_RENDER_TARGET_PROPERTIES MiaoDeskWallpaperPixelRenderTargetProperties() {
+inline D2D1_RENDER_TARGET_PROPERTIES WhaleDesKWallpaperPixelRenderTargetProperties() {
     // DesktopShellHost and WallpaperMonitorLayout intentionally operate in physical
     // desktop pixels. Direct2D's default desktop DPI converts drawing coordinates
     // to DIPs, which double-scales a 200% desktop and leaves only the upper-left
@@ -40,11 +40,11 @@ inline D2D1_RENDER_TARGET_PROPERTIES MiaoDeskWallpaperPixelRenderTargetPropertie
 
 } // namespace D2D1
 
-namespace miaodesk::wallpaper::scenes {
+namespace whaledesk::wallpaper::scenes {
 
-inline void PaintMiaoCloudProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
-    if (PaintPackagedScene(L"MiaoCloud.mdwall", context, size)) return;
-    PaintMiaoCloud(context, size);
+inline void PaintWhaleCloudProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
+    if (PaintPackagedScene(L"WhaleCloud.mdwall", context, size)) return;
+    PaintWhaleCloud(context, size);
 }
 
 inline void PaintNeonCityProduction(const ScenePaintContext& context, const D2D1_SIZE_F& size) {
@@ -57,11 +57,11 @@ inline void PaintMysticMoonProduction(const ScenePaintContext& context, const D2
     PaintMysticMoon(context, size);
 }
 
-} // namespace miaodesk::wallpaper::scenes
+} // namespace whaledesk::wallpaper::scenes
 
 namespace {
 
-BOOL WINAPI MiaoDeskWallpaperShellNotifyIconW(DWORD, PNOTIFYICONDATAW) {
+BOOL WINAPI WhaleDesKWallpaperShellNotifyIconW(DWORD, PNOTIFYICONDATAW) {
     // Production has exactly one tray owner: the main 妙喵 process.
     // Historical wallpaper-host tray calls become successful no-ops.
     return TRUE;
@@ -99,7 +99,7 @@ void EnsureLegacyProfileUnicode(LPCWSTR fileName) {
     // product is migrating to service APIs. Make every one of those Profile API
     // calls Unicode-safe so Chinese paths/diagnostics cannot regress depending
     // on the machine's active ANSI code page.
-    miaodesk::text::EnsureUtf16LeProfileFile(std::filesystem::path(fileName), nullptr);
+    whaledesk::text::EnsureUtf16LeProfileFile(std::filesystem::path(fileName), nullptr);
 }
 
 DWORD CopyProfileValue(std::wstring_view value, LPWSTR output, DWORD size) {
@@ -110,10 +110,10 @@ DWORD CopyProfileValue(std::wstring_view value, LPWSTR output, DWORD size) {
     return static_cast<DWORD>(copyCount);
 }
 
-std::wstring PerformanceValue(const miaodesk::wallpaper::PerformanceConfig& config, LPCWSTR key) {
-    using miaodesk::wallpaper::PerformanceActionKey;
+std::wstring PerformanceValue(const whaledesk::wallpaper::PerformanceConfig& config, LPCWSTR key) {
+    using whaledesk::wallpaper::PerformanceActionKey;
     if (_wcsicmp(key, L"PauseFullscreen") == 0)
-        return config.fullscreenAction == miaodesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0";
+        return config.fullscreenAction == whaledesk::wallpaper::PerformanceAction::Pause ? L"1" : L"0";
     if (_wcsicmp(key, L"FpsCap") == 0) return std::to_wstring(config.fpsCap);
     if (_wcsicmp(key, L"ThrottleFps") == 0) return std::to_wstring(config.throttleFps);
     if (_wcsicmp(key, L"FullscreenAction") == 0) return PerformanceActionKey(config.fullscreenAction);
@@ -126,10 +126,10 @@ std::wstring PerformanceValue(const miaodesk::wallpaper::PerformanceConfig& conf
     return {};
 }
 
-bool ApplyPerformanceValue(miaodesk::wallpaper::PerformanceConfig* config, LPCWSTR key, LPCWSTR value) {
+bool ApplyPerformanceValue(whaledesk::wallpaper::PerformanceConfig* config, LPCWSTR key, LPCWSTR value) {
     if (!config || !key || !value) return false;
-    using miaodesk::wallpaper::ParsePerformanceAction;
-    using miaodesk::wallpaper::PerformanceAction;
+    using whaledesk::wallpaper::ParsePerformanceAction;
+    using whaledesk::wallpaper::PerformanceAction;
 
     if (_wcsicmp(key, L"PauseFullscreen") == 0) {
         config->fullscreenAction = _wtoi(value) != 0 ? PerformanceAction::Pause : PerformanceAction::Normal;
@@ -174,12 +174,12 @@ bool ApplyPerformanceValue(miaodesk::wallpaper::PerformanceConfig* config, LPCWS
     return false;
 }
 
-UINT WINAPI MiaoDeskGetPrivateProfileIntW(
+UINT WINAPI WhaleDesKGetPrivateProfileIntW(
     LPCWSTR section, LPCWSTR key, INT fallback, LPCWSTR fileName) {
     EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        miaodesk::wallpaper::PerformanceUiAdapter adapter;
-        miaodesk::wallpaper::PerformanceConfig config;
+        whaledesk::wallpaper::PerformanceUiAdapter adapter;
+        whaledesk::wallpaper::PerformanceConfig config;
         if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return static_cast<UINT>(_wtoi(value.c_str()));
@@ -188,12 +188,12 @@ UINT WINAPI MiaoDeskGetPrivateProfileIntW(
     return ::GetPrivateProfileIntW(section, key, fallback, fileName);
 }
 
-DWORD WINAPI MiaoDeskGetPrivateProfileStringW(
+DWORD WINAPI WhaleDesKGetPrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR fallback, LPWSTR output, DWORD size, LPCWSTR fileName) {
     EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key)) {
-        miaodesk::wallpaper::PerformanceUiAdapter adapter;
-        miaodesk::wallpaper::PerformanceConfig config;
+        whaledesk::wallpaper::PerformanceUiAdapter adapter;
+        whaledesk::wallpaper::PerformanceConfig config;
         if (adapter.Load(&config)) {
             const auto value = PerformanceValue(config, key);
             if (!value.empty()) return CopyProfileValue(value, output, size);
@@ -202,12 +202,12 @@ DWORD WINAPI MiaoDeskGetPrivateProfileStringW(
     return ::GetPrivateProfileStringW(section, key, fallback, output, size, fileName);
 }
 
-BOOL WINAPI MiaoDeskWritePrivateProfileStringW(
+BOOL WINAPI WhaleDesKWritePrivateProfileStringW(
     LPCWSTR section, LPCWSTR key, LPCWSTR value, LPCWSTR fileName) {
     EnsureLegacyProfileUnicode(fileName);
     if (IsWallpaperSection(section) && IsPerformanceKey(key) && value) {
-        miaodesk::wallpaper::PerformanceUiAdapter adapter;
-        miaodesk::wallpaper::PerformanceConfig config;
+        whaledesk::wallpaper::PerformanceUiAdapter adapter;
+        whaledesk::wallpaper::PerformanceConfig config;
         if (!adapter.Load(&config)) return FALSE;
         if (!ApplyPerformanceValue(&config, key, value)) return FALSE;
         return adapter.Save(config) ? TRUE : FALSE;
@@ -215,12 +215,12 @@ BOOL WINAPI MiaoDeskWritePrivateProfileStringW(
     return ::WritePrivateProfileStringW(section, key, value, fileName);
 }
 
-int WINAPI MiaoDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT type) {
+int WINAPI WhaleDesKMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT type) {
     // The V2 shell still emits this one historical placeholder callback for its
     // AI navigation item. Convert only that placeholder into the real in-place
     // API/Harness page; all other product dialogs retain normal MessageBoxW behavior.
-    if (text && std::wstring_view(text).find(L"AI 模型配置位于 MiaoDesk 设置中心") != std::wstring_view::npos) {
-        return miaodesk::wallpaper::ShowDesktopAiSettingsPage(owner) ? IDOK : IDCANCEL;
+    if (text && std::wstring_view(text).find(L"AI 模型配置位于 WhaleDesK 设置中心") != std::wstring_view::npos) {
+        return whaledesk::wallpaper::ShowDesktopAiSettingsPage(owner) ? IDOK : IDCANCEL;
     }
     return ::MessageBoxW(owner, text, caption, type);
 }
@@ -230,22 +230,22 @@ int WINAPI MiaoDeskMessageBoxW(HWND owner, LPCWSTR text, LPCWSTR caption, UINT t
 // WallpaperEngine.cpp is still included as a migration implementation unit and
 // historically refers to the desktop namespace as wallpaper::. Keep that alias
 // local to this production bridge instead of leaking it into public headers.
-namespace wallpaper = miaodesk::wallpaper;
+namespace wallpaper = whaledesk::wallpaper;
 
 #define WallpaperAutomationStore AutomationUiAdapter
-#define GetPrivateProfileIntW MiaoDeskGetPrivateProfileIntW
-#define GetPrivateProfileStringW MiaoDeskGetPrivateProfileStringW
-#define WritePrivateProfileStringW MiaoDeskWritePrivateProfileStringW
-#define MessageBoxW MiaoDeskMessageBoxW
-#define Shell_NotifyIconW MiaoDeskWallpaperShellNotifyIconW
-#define RenderTargetProperties MiaoDeskWallpaperPixelRenderTargetProperties
-#define PaintMiaoCloud PaintMiaoCloudProduction
+#define GetPrivateProfileIntW WhaleDesKGetPrivateProfileIntW
+#define GetPrivateProfileStringW WhaleDesKGetPrivateProfileStringW
+#define WritePrivateProfileStringW WhaleDesKWritePrivateProfileStringW
+#define MessageBoxW WhaleDesKMessageBoxW
+#define Shell_NotifyIconW WhaleDesKWallpaperShellNotifyIconW
+#define RenderTargetProperties WhaleDesKWallpaperPixelRenderTargetProperties
+#define PaintWhaleCloud PaintWhaleCloudProduction
 #define PaintNeonCity PaintNeonCityProduction
 #define PaintMysticMoon PaintMysticMoonProduction
 #include "WallpaperEngine.cpp"
 #undef PaintMysticMoon
 #undef PaintNeonCity
-#undef PaintMiaoCloud
+#undef PaintWhaleCloud
 #undef RenderTargetProperties
 #undef Shell_NotifyIconW
 #undef MessageBoxW

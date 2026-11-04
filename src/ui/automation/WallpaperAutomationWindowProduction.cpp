@@ -5,7 +5,7 @@
 // mutation/read goes through AutomationService. Keep the original source file as
 // the migration body until the V2 UI replaces this window.
 
-#include "miaodesk/AutomationUiAdapter.h"
+#include "whaledesk/AutomationUiAdapter.h"
 
 #define WallpaperAutomationStore AutomationUiAdapter
 #include "WallpaperAutomationWindow.cpp"

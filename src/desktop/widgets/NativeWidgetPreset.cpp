@@ -1,9 +1,9 @@
-#include "miaodesk/NativeWidgetPreset.h"
+#include "whaledesk/NativeWidgetPreset.h"
 
 #include <array>
 #include <cwctype>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 // 宽字符的大小写不敏感比较,与 _wcsnicmp 在本文件的用途上等价。
@@ -82,4 +82,4 @@ std::uint32_t NativePresetRefreshIntervalMs(NativeWidgetPreset preset) noexcept 
     return definition ? definition->periodicRefreshMs : 0;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

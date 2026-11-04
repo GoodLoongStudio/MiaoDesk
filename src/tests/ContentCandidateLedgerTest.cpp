@@ -8,13 +8,13 @@
 //      来自模型报的路径那份就白封了。
 //
 // 全部在本机真实运行,不碰文件系统:复制封存由宿主做,台账只记账与判定。
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::content {
+namespace whaledesk::content {
 namespace {
 
 int g_failures = 0;
@@ -264,10 +264,10 @@ void TestIncompleteSnapshotIsRejectedBeforeRevision() {
 }
 
 } // namespace
-} // namespace miaodesk::content
+} // namespace whaledesk::content
 
 int wmain() {
-    using namespace miaodesk::content;
+    using namespace whaledesk::content;
     TestReceiptIsStructured();
     TestValidationFailureIsStructuredAndLocatable();
     TestSamePathNewContentIsANewRevision();

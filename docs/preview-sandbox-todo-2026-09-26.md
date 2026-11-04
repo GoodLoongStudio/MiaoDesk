@@ -23,9 +23,9 @@ Scope: AI wallpaper editor + AI widget editor (shared `ContentCreatorDialog`).
 
 | Workflow | Run | Result | Relevant steps |
 | --- | --- | --- | --- |
-| Repo Hygiene | [#209](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256953987) | success | `Verify dedicated content creator modes` |
-| Windows x64 Build | [#515](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256953990) | success | `Render a textured sprite through the real D2D backend`, `Verify binding response curves`, `Verify scene runtime binding end to end`, `Verify Widget lifecycle in quick-build layout` |
-| Windows ARM64 Package | [#240](https://github.com/GoodLoongStudio/MiaoDesk/actions/runs/36256954003) | success | `package` + `installer` jobs |
+| Repo Hygiene | [#209](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256953987) | success | `Verify dedicated content creator modes` |
+| Windows x64 Build | [#515](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256953990) | success | `Render a textured sprite through the real D2D backend`, `Verify binding response curves`, `Verify scene runtime binding end to end`, `Verify Widget lifecycle in quick-build layout` |
+| Windows ARM64 Package | [#240](https://github.com/GoodLoongStudio/WhaleDesK/actions/runs/36256954003) | success | `package` + `installer` jobs |
 
 Every job and step in these workflows reported `success` for this SHA. The one
 non-success step in `Windows x64 Build` — `Upload Content widget lifecycle

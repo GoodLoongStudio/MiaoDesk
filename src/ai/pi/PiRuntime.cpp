@@ -1,13 +1,13 @@
-#include "miaodesk/PiRuntime.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/JsonStringField.h"
-#include "miaodesk/CreatorWorkspacePolicy.h"
-#include "miaodesk/MiaoChildProcessReaper.h"
-#include "miaodesk/MiaoTurnLifecycle.h"
-#include "miaodesk/PiNativeToolsExtension.h"
-#include "miaodesk/PiLaunchProfile.h"
-#include "miaodesk/RuntimeLogPaths.h"
-#include "miaodesk/ApiRuntimeProfile.h"
+#include "whaledesk/PiRuntime.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/JsonStringField.h"
+#include "whaledesk/CreatorWorkspacePolicy.h"
+#include "whaledesk/WhaleChildProcessReaper.h"
+#include "whaledesk/WhaleTurnLifecycle.h"
+#include "whaledesk/PiNativeToolsExtension.h"
+#include "whaledesk/PiLaunchProfile.h"
+#include "whaledesk/RuntimeLogPaths.h"
+#include "whaledesk/ApiRuntimeProfile.h"
 
 #include <shlobj.h>
 #include <algorithm>
@@ -24,12 +24,12 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-using miaodesk::ExtractJsonString;
+using whaledesk::ExtractJsonString;
 
-constexpr wchar_t kApiKeyEnvironment[] = L"MIAODESK_MODEL_API_KEY";
+constexpr wchar_t kApiKeyEnvironment[] = L"WHALEDESK_MODEL_API_KEY";
 constexpr DWORD kTurnTimeoutMs = 600000;
 
 std::wstring Lower(std::wstring value) {
@@ -315,7 +315,7 @@ PiRuntime::ProviderSetup PiRuntime::BuildProviderSetup(const L3Agent& agent) con
     setup.imageBaseUrl = agent.Config().imageBaseUrl;
     setup.imageApiKey = agent.Config().imageApiKey;
     setup.imageModel = agent.Config().imageModel;
-    if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"miaodesk-local";
+    if (setup.apiKey.empty() && IsLoopbackUrl(setup.baseUrl)) setup.apiKey = L"whaledesk-local";
 
     if (setup.nodePath.empty()) { setup.message = L"未找到 Bundled Node Runtime"; return setup; }
     if (setup.piPath.empty()) { setup.message = L"未找到 Pi Runtime"; return setup; }
@@ -381,11 +381,11 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
     const auto model = EscapeJson(setup.model);
     const auto shell = EscapeJson(PowerShellPath());
 
-    std::string models = "{\n  \"providers\": {\n    \"miaodesk\": {\n";
-    models += "      \"name\": \"MiaoDesk Provider\",\n";
+    std::string models = "{\n  \"providers\": {\n    \"whaledesk\": {\n";
+    models += "      \"name\": \"WhaleDesK Provider\",\n";
     models += "      \"baseUrl\": \"" + base + "\",\n";
     models += "      \"api\": \"" + api + "\",\n";
-    models += "      \"apiKey\": \"$MIAODESK_MODEL_API_KEY\",\n";
+    models += "      \"apiKey\": \"$WHALEDESK_MODEL_API_KEY\",\n";
     // Chat capability is conservative by default. Image generation is a separate Pi tool/provider
     // and must not cause every arbitrary chat endpoint to be advertised as vision-capable.
     // contextWindow / maxTokens come from the Profile when the user set them; otherwise keep the
@@ -403,7 +403,7 @@ bool PiRuntime::ConfigurePiAgent(const ProviderSetup& setup, std::wstring& error
 
     std::string settings = "{\n";
     settings += "  \"defaultProjectTrust\": \"always\",\n";
-    settings += "  \"defaultProvider\": \"miaodesk\",\n";
+    settings += "  \"defaultProvider\": \"whaledesk\",\n";
     settings += "  \"defaultModel\": \"" + model + "\",\n";
     settings += "  \"shellPath\": \"" + shell + "\",\n";
     settings += "  \"quietStartup\": true\n";
@@ -447,10 +447,10 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     // so plain chat keeps today's behaviour byte for byte.
     const std::wstring systemPrompt = setup.systemPrompt.empty()
         ? std::wstring(
-            L"You are MiaoDesk's persistent desktop Agent, not a chat-only assistant. "
+            L"You are WhaleDesK's persistent desktop Agent, not a chat-only assistant. "
         L"For any actionable request involving files, folders, shell, settings, wallpaper, widgets, PPT, images, or desktop state, you MUST call tools first instead of only describing steps. "
         L"Pure conversational replies are allowed only for greetings, clarification, or explaining prior tool results. "
-        L"The tool named bash is backed by Windows PowerShell 5.1 in MiaoDesk; use PowerShell syntax, not POSIX shell syntax. "
+        L"The tool named bash is backed by Windows PowerShell 5.1 in WhaleDesK; use PowerShell syntax, not POSIX shell syntax. "
         L"Never claim an action succeeded unless the tool result confirms it. "
         L"Desktop wallpaper changes are preview-first: use desktop_preview_wallpaper, and never claim the desktop was applied until the user clicks Apply. "
         L"Inspect installed widgets with the read-only desktop_widget_list; author NEW widgets as JSON "
@@ -475,7 +475,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         : setup.systemPrompt;
 
     // Pi treats --tools as a hard allowlist across built-in AND extension tools.
-    // Omitting MiaoDesk extension tools here silently strips Agent desktop capabilities.
+    // Omitting WhaleDesK extension tools here silently strips Agent desktop capabilities.
     const std::wstring toolAllowlist = setup.toolAllowlist.empty() ? kPiChatToolAllowlist
                                                                   : setup.toolAllowlist;
 
@@ -496,7 +496,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
     }
 
     std::wstring command = QuoteArg(setup.nodePath) + L" " + QuoteArg(setup.piPath) +
-        L" --mode rpc --no-session --approve --provider miaodesk --model " + QuoteArg(setup.model) +
+        L" --mode rpc --no-session --approve --provider whaledesk --model " + QuoteArg(setup.model) +
         L" --no-extensions --extension " + QuoteArg(extensionPath) +
         L" --tools " + toolAllowlist +
         L" --append-system-prompt " + QuoteArg(systemPrompt);
@@ -514,17 +514,17 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         // Separate Pi session storage so a future --session run cannot mix the two
         // modes' histories. Today --no-session means Pi writes nothing here anyway.
         {L"PI_CODING_AGENT_SESSION_DIR", setup.sessionDir.empty() ? setup.agentDir : setup.sessionDir},
-        {L"MIAODESK_IMAGE_PROVIDER", setup.imageProvider},
-        {L"MIAODESK_IMAGE_BASE_URL", setup.imageBaseUrl},
-        {L"MIAODESK_IMAGE_API_KEY", setup.imageApiKey},
-        {L"MIAODESK_IMAGE_MODEL", setup.imageModel},
+        {L"WHALEDESK_IMAGE_PROVIDER", setup.imageProvider},
+        {L"WHALEDESK_IMAGE_BASE_URL", setup.imageBaseUrl},
+        {L"WHALEDESK_IMAGE_API_KEY", setup.imageApiKey},
+        {L"WHALEDESK_IMAGE_MODEL", setup.imageModel},
         {L"PI_OFFLINE", L"1"},
         {L"PI_SKIP_VERSION_CHECK", L"1"},
         {L"PI_TELEMETRY", L"0"},
         {kApiKeyEnvironment, setup.apiKey},
     };
     if (launchProfile_.mode == PiLaunchMode::Creator && !setup.workingDirectory.empty()) {
-        const auto sessionUtf8 = miaodesk::creator::DeriveCreatorSessionId(
+        const auto sessionUtf8 = whaledesk::creator::DeriveCreatorSessionId(
             WideToUtf8(setup.workingDirectory));
         environmentOverrides.push_back({kCreatorWorkspaceEnvironment, setup.workingDirectory});
         environmentOverrides.push_back({kCreatorSessionEnvironment, Utf8ToWide(sessionUtf8)});
@@ -568,7 +568,7 @@ bool PiRuntime::LaunchProcess(const ProviderSetup& setup, std::wstring& error) {
         sessionSignature_ = setup.signature;
     }
 
-    // 强杀路径:CleanupProcess 只在正常退出时跑。MiaoDesk 被 TerminateProcess 之后,
+    // 强杀路径:CleanupProcess 只在正常退出时跑。WhaleDesK 被 TerminateProcess 之后,
     // 这个 Node 进程会一直活下去,握着一根已经断掉的 stdin 管子,而没有人再去收它 ——
     // 那正是 P0-08 的“无永久 Node … 孤儿”。所以这里把它装进一个
     // KILL_ON_JOB_CLOSE 的 job:父进程一死,内核连坐杀掉它。
@@ -666,7 +666,7 @@ void PiRuntime::RunTurn(ProviderSetup setup, std::wstring prompt, DeltaCallback 
         return;
     }
 
-    const std::string request = "{\"id\":\"miaodesk-turn\",\"type\":\"prompt\",\"message\":\"" + EscapeJson(prompt) + "\"}";
+    const std::string request = "{\"id\":\"whaledesk-turn\",\"type\":\"prompt\",\"message\":\"" + EscapeJson(prompt) + "\"}";
     if (!WriteLine(request)) {
         error = L"发送 Pi prompt 失败";
         AppendRuntimeLog(error);
@@ -872,4 +872,4 @@ void PiRuntime::CleanupProcess() {
     sessionSignature_.clear();
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

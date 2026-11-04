@@ -1,6 +1,6 @@
-#include "miaodesk/DesktopWidgetTools.h"
+#include "whaledesk/DesktopWidgetTools.h"
 
-#include "miaodesk/DesktopControlService.h"
+#include "whaledesk/DesktopControlService.h"
 
 #include <windows.h>
 
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 NativeToolResult ToNative(desktop::DesktopControlResult result) {
@@ -108,4 +108,4 @@ NativeToolResult ExecuteDesktopControlTool(std::string_view toolName, std::strin
     return {false, L"未知桌面控制工具。"};
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

@@ -1,4 +1,4 @@
-// MiaoDesk web wallpaper audio bridge.
+// WhaleDesK web wallpaper audio bridge.
 //
 // Injected into every web wallpaper by WebDesktopSurfaceChild. Hand-authored web
 // content is the only consumer: the AI/skill authoring path never produces web
@@ -23,7 +23,7 @@
   // every navigation and every iframe, so a naive shim would register the message
   // listener twice and deliver every frame twice.
   if (typeof window === "undefined" || !window) return;
-  if (window.wallpaper && window.wallpaper.__miaodeskBridge) return;
+  if (window.wallpaper && window.wallpaper.__whaledeskBridge) return;
 
   var BRIDGE_VERSION = 1;
   var BAND_COUNT = 5;
@@ -125,7 +125,7 @@
   }
 
   window.wallpaper = {
-    __miaodeskBridge: true,
+    __whaledeskBridge: true,
     version: BRIDGE_VERSION,
     bandCount: BAND_COUNT,
     spectrumCount: SPECTRUM_COUNT,

@@ -48,7 +48,7 @@ assert.deepStrictEqual(collisions, [],
 assert.ok(values.size >= 10, `expected the class constants to be resolved, got ${values.size}`);
 
 const resolve = (token) => (token.startsWith("L\"") ? token.slice(2, -1) : values.get(token));
-const isOurClass = (name) => typeof name === "string" && name.startsWith("MiaoDesk.");
+const isOurClass = (name) => typeof name === "string" && name.startsWith("WhaleDesK.");
 
 // Registered: `lpszClassName = <token>;`
 const registered = new Set();

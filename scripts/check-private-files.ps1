@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 function Get-RepositoryRoot {
     $root = (& git rev-parse --show-toplevel 2>$null)
     if ($LASTEXITCODE -ne 0 -or -not $root) {
-        throw 'This script must be run inside the MiaoDesk Git repository.'
+        throw 'This script must be run inside the WhaleDesK Git repository.'
     }
     return $root.Trim()
 }

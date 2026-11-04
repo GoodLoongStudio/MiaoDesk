@@ -1,6 +1,6 @@
-; MiaoDesk Windows installer
+; WhaleDesK Windows installer
 ; Build:
-;   makensis /DSTAGE_DIR="C:\pkg\MiaoDesk\x64" /DOUTPUT_FILE="MiaoDesk-x64-Setup.exe" packaging\windows\installer.nsi
+;   makensis /DSTAGE_DIR="C:\pkg\WhaleDesK\x64" /DOUTPUT_FILE="WhaleDesK-x64-Setup.exe" packaging\windows\installer.nsi
 ;
 ; STAGE_DIR must be the canonical tree produced by packaging\windows\stage.ps1 -Architecture x64.
 
@@ -12,14 +12,14 @@ Unicode true
     !error "STAGE_DIR is required."
 !endif
 !ifndef OUTPUT_FILE
-    !define OUTPUT_FILE "MiaoDesk-x64-Setup.exe"
+    !define OUTPUT_FILE "WhaleDesK-x64-Setup.exe"
 !endif
 
-!define PRODUCT_NAME "MiaoDesk"
+!define PRODUCT_NAME "WhaleDesK"
 !define PRODUCT_VERSION "0.1.3"
 !define PRODUCT_PUBLISHER "GoodLoongStudio"
-!define PRODUCT_REG_KEY "Software\GoodLoongStudio\MiaoDesk"
-!define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\MiaoDesk"
+!define PRODUCT_REG_KEY "Software\GoodLoongStudio\WhaleDesK"
+!define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\WhaleDesK"
 
 ; Microsoft Partner Center reads the package version from the installer's Windows
 ; version resource. Without VIProductVersion the EXE reports version 0.0.0.0 and the
@@ -37,11 +37,11 @@ VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} ${PRODUCT_VERSION} Installer"
 VIAddVersionKey "LegalCopyright" "Copyright (c) GoodLoongStudio"
-InstallDir "$PROGRAMFILES64\MiaoDesk"
+InstallDir "$PROGRAMFILES64\WhaleDesK"
 
 ; File search depends on gozd, which must run as an elevated Windows service to
 ; read the NTFS index. A per-user/unelevated installation silently skipped that
-; service and left MiaoDesk's file-search UI permanently unavailable.
+; service and left WhaleDesK's file-search UI permanently unavailable.
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 ShowInstDetails show
@@ -70,22 +70,22 @@ Function CheckInstallDirectoryLength
     IntCmp $0 85 Done Done Warn
 Warn:
     MessageBox MB_OK|MB_ICONEXCLAMATION \
-        "当前安装路径长度为 $0 个字符。建议使用较短路径，例如 C:\Program Files\MiaoDesk 或 D:\Apps\MiaoDesk。安装不会被阻止。"
+        "当前安装路径长度为 $0 个字符。建议使用较短路径，例如 C:\Program Files\WhaleDesK 或 D:\Apps\WhaleDesK。安装不会被阻止。"
 Done:
 FunctionEnd
 
-Section "MiaoDesk"
+Section "WhaleDesK"
     ; An in-place upgrade must not leave the previous desktop runtime and its
     ; Widget helpers alive. Otherwise the new UI talks to old in-memory code
     ; even though the files on disk were replaced.
-    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDesk.exe'
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM WhaleDesK.exe'
     Pop $0
-    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDeskWallpaper.exe'
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM WhaleDesKWallpaper.exe'
     Pop $0
-    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM MiaoDeskHarness.exe'
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM WhaleDesKHarness.exe'
     Pop $0
 
-    ; A previous MiaoDesk release may already own the goz service. Stop it
+    ; A previous WhaleDesK release may already own the goz service. Stop it
     ; before replacing the executable because Windows keeps service images
     ; locked while they are running.
     IfFileExists "$INSTDIR\Goz\gozd.exe" 0 GozUpgradeStopped
@@ -101,7 +101,7 @@ GozUpgradeStopped:
     ; File search is client/server: goz.exe only queries the elevated gozd
     ; indexer. Install the daemon as a service and do not let setup finish until
     ; the pipe/index is genuinely queryable. On a fresh machine the first NTFS
-    ; snapshot can take several seconds; launching MiaoDesk before that point
+    ; snapshot can take several seconds; launching WhaleDesK before that point
     ; made file search look permanently broken.
     nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" install'
     Pop $0
@@ -131,13 +131,13 @@ GozServiceReady:
     ; Recreate shortcut files instead of updating them in place. Explorer may
     ; otherwise keep the previous shortcut/icon metadata when an application is
     ; reinstalled to the same path with the same icon filename.
-    Delete "$SMPROGRAMS\MiaoDesk.lnk"
-    Delete "$DESKTOP\MiaoDesk.lnk"
-    CreateShortCut "$SMPROGRAMS\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
-    CreateShortCut "$DESKTOP\MiaoDesk.lnk" "$INSTDIR\MiaoDesk.exe" "" "$INSTDIR\Assets\MiaoMiao.ico" 0
+    Delete "$SMPROGRAMS\WhaleDesK.lnk"
+    Delete "$DESKTOP\WhaleDesK.lnk"
+    CreateShortCut "$SMPROGRAMS\WhaleDesK.lnk" "$INSTDIR\WhaleDesK.exe" "" "$INSTDIR\Assets\WhaleWhale.ico" 0
+    CreateShortCut "$DESKTOP\WhaleDesK.lnk" "$INSTDIR\WhaleDesK.exe" "" "$INSTDIR\Assets\WhaleWhale.ico" 0
 
     ; Tell Explorer that shell/icon metadata changed so an in-place upgrade does
-    ; not keep rendering a cached icon from the previous MiaoDesk installation.
+    ; not keep rendering a cached icon from the previous WhaleDesK installation.
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 
     WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallDir" "$INSTDIR"
@@ -145,7 +145,7 @@ GozServiceReady:
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayIcon" "$INSTDIR\MiaoDesk.exe"
+    WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayIcon" "$INSTDIR\WhaleDesK.exe"
     WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
     WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoModify" 1
     WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoRepair" 1
@@ -153,7 +153,7 @@ SectionEnd
 
 Section "Uninstall"
     SetRegView 64
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MiaoDesk"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "WhaleDesK"
     ReadRegStr $0 HKLM "${PRODUCT_REG_KEY}" "InstallDir"
     StrCmp $0 "$INSTDIR" 0 PerUserUninstall
     StrCpy $InstallMode "all"
@@ -178,11 +178,11 @@ RemoveFiles:
     nsExec::ExecToLog '"$INSTDIR\Goz\gozd.exe" uninstall'
     Pop $0
 GozServiceRemoved:
-    Delete "$SMPROGRAMS\MiaoDesk.lnk"
-    Delete "$DESKTOP\MiaoDesk.lnk"
-    Delete "$INSTDIR\MiaoDesk.exe"
-    Delete "$INSTDIR\MiaoDeskWallpaper.exe"
-    Delete "$INSTDIR\MiaoDeskHarness.exe"
+    Delete "$SMPROGRAMS\WhaleDesK.lnk"
+    Delete "$DESKTOP\WhaleDesK.lnk"
+    Delete "$INSTDIR\WhaleDesK.exe"
+    Delete "$INSTDIR\WhaleDesKWallpaper.exe"
+    Delete "$INSTDIR\WhaleDesKHarness.exe"
     Delete "$INSTDIR\Uninstall.exe"
 
     ; Delete only product-owned subtrees. Never recursively delete an arbitrary

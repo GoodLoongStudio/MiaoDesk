@@ -1,6 +1,6 @@
 ---
 name: wallpaper-content
-description: 生成 MiaoDesk 壁纸内容包(.mdwall)。在 content-package-basics 之上叠加壁纸领域规则:wallpaper profile、click-through 语义、按载体×运行时选择壁纸路径、按需重绘。生成壁纸或修改壁纸内容时使用。
+description: 生成 WhaleDesK 壁纸内容包(.mdwall)。在 content-package-basics 之上叠加壁纸领域规则:wallpaper profile、click-through 语义、按载体×运行时选择壁纸路径、按需重绘。生成壁纸或修改壁纸内容时使用。
 ---
 
 # 壁纸内容生成
@@ -22,7 +22,7 @@ description: 生成 MiaoDesk 壁纸内容包(.mdwall)。在 content-package-basi
 - kind 为 wallpaper。
 
 【分类:载体 × 运行时,不是一个平面列表】
-MiaoDesk 的桌面内容 = 载体 × 运行时两个正交维度。
+WhaleDesK 的桌面内容 = 载体 × 运行时两个正交维度。
 
 - 载体(ContentKind):Wallpaper / Widget。壁纸包取 Wallpaper。
 - 运行时(ContentRuntimeKind):Scene / Web。壁纸包优先 Scene。

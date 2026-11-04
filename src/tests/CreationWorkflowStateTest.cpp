@@ -10,13 +10,13 @@
 // 事件一律用 designated initializer(.type = ... / .target = ...)。曾经用位置初始化,
 // 结果把一个 beforeState 写到了 operationId 上,表现出来是"缺 operationId 被拒绝" ——
 // 一个假失败,查起来像状态机坏了。按名字赋值之后这类错误不可能再发生。
-#include "miaodesk/CreationWorkflow.h"
+#include "whaledesk/CreationWorkflow.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -639,10 +639,10 @@ void TestDraftPersistHookSeesLastValidCandidate() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestHappyPathReachesReady();
     TestModelTextCannotDriveApplied();
     TestOnlyAUserClickAtReadyStartsAnApply();

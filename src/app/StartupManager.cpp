@@ -1,7 +1,7 @@
-#include "miaodesk/StartupManager.h"
+#include "whaledesk/StartupManager.h"
 
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <windows.h>
 #include <appmodel.h>
@@ -18,12 +18,12 @@
 #include <thread>
 #include <utility>
 
-namespace miaodesk::startup {
+namespace whaledesk::startup {
 namespace {
 
-constexpr wchar_t kStartupTaskId[] = L"MiaoDeskStartup";
+constexpr wchar_t kStartupTaskId[] = L"WhaleDesKStartup";
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kRunValue[] = L"MiaoDesk";
+constexpr wchar_t kRunValue[] = L"WhaleDesK";
 constexpr wchar_t kStartupSection[] = L"Startup";
 constexpr wchar_t kConsentKey[] = L"ConsentRecorded";
 
@@ -73,7 +73,7 @@ bool SetUnpackagedStartupEnabled(bool enabled, std::wstring* error) {
 
     const std::wstring executable = ModulePath();
     if (executable.empty()) {
-        if (error) *error = L"无法读取 MiaoDesk.exe 路径，Win32=" + std::to_wstring(GetLastError());
+        if (error) *error = L"无法读取 WhaleDesK.exe 路径，Win32=" + std::to_wstring(GetLastError());
         return false;
     }
 
@@ -104,7 +104,7 @@ bool SetPackagedStartupEnabled(bool enabled, std::wstring* error) {
             const auto task = winrt::Windows::ApplicationModel::StartupTask::GetAsync(
                 kStartupTaskId).get();
             if (!task) {
-                workerError = L"Windows 未找到 MiaoDesk 的启动任务。";
+                workerError = L"Windows 未找到 WhaleDesK 的启动任务。";
                 return;
             }
 
@@ -132,7 +132,7 @@ bool SetPackagedStartupEnabled(bool enabled, std::wstring* error) {
             const StartupTaskState requested = task.RequestEnableAsync().get();
             succeeded = requested == StartupTaskState::Enabled;
             if (!succeeded) {
-                workerError = L"Windows 没有启用 MiaoDesk 启动任务，状态=" +
+                workerError = L"Windows 没有启用 WhaleDesK 启动任务，状态=" +
                               std::to_wstring(static_cast<int>(requested));
             }
         } catch (const winrt::hresult_error& exception) {
@@ -246,8 +246,8 @@ bool SelfTest() {
            IsStartupArgument(L"--foo --startup --bar") &&
            !IsStartupArgument(L"--self-test") &&
            !IsStartupArgument(L"--startup-disabled") &&
-           RunCommand(L"C:\\Program Files\\MiaoDesk\\MiaoDesk.exe") ==
-               L"\"C:\\Program Files\\MiaoDesk\\MiaoDesk.exe\" --startup";
+           RunCommand(L"C:\\Program Files\\WhaleDesK\\WhaleDesK.exe") ==
+               L"\"C:\\Program Files\\WhaleDesK\\WhaleDesK.exe\" --startup";
 }
 
-} // namespace miaodesk::startup
+} // namespace whaledesk::startup

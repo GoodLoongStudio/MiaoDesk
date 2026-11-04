@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 仓库里不得躺「本机生成的构建/解释器产物」。
 #
-# 为什么需要它:2026-09-22,`scripts/__pycache__/generate-miao-cloud-scene.cpython-314.pyc`
-# 跟着一个文档闸门的提交进了版本库。它是一次 `python3 scripts/generate-miao-cloud-scene.py`
+# 为什么需要它:2026-09-22,`scripts/__pycache__/generate-whale-cloud-scene.cpython-314.pyc`
+# 跟着一个文档闸门的提交进了版本库。它是一次 `python3 scripts/generate-whale-cloud-scene.py`
 # 的副产品 —— CPython 把字节码缓存写在源文件旁边,而 .gitignore 里一条 Python 的规则都没有,
 # 于是 `git add -A` 就把它连着正事一起收走了。
 #
@@ -18,7 +18,7 @@
 #
 # 两版判据的演化,记在这里免得再走一遍:
 #   第一版「扫所有二进制扩展名」→ 当场误报三个**故意**提交的二进制
-#     (vendored 的 WebView2LoaderStatic.lib、downloads/store/ 下的 Store 分发包)。
+#     (vendored 的 WebView2LoaderStatic.lib、历史 Store 分发包)。
 #     它们的引入提交本来就写明了意图,README 也登记了。把红灯挂在正确代码上,
 #     比不设门更糟:它会训练人忽略这道门。
 #   第二版「按扩展名判 + 逐文件 allowlist」→ 仍然不对。`git ls-files -I` 判出的
@@ -83,11 +83,9 @@ REGIONS = [
     ('docs/design/',
      '设计参考图的冻结快照,评审要对着看(7b6516a "Freeze Search Bar visual reference")。'),
     ('docs/hackathon/',
-     'Hackathon 提交材料包含演示视频,由 4d67ea25 "docs: add MiaoDesk hackathon demo video" 明确引入并需随提交材料归档。'),
+     'Hackathon 提交材料包含演示视频,由 4d67ea25 "docs: add WhaleDesK hackathon demo video" 明确引入并需随提交材料归档。'),
     ('packaging/store/assets/',
      'Store 展示素材,由 e20114b 一起生成并登记。'),
-    ('downloads/store/',
-     'Store 提交通道分发的已签名安装包。它们必须可复现地拿到,a008aaa / b44bf19。'),
     ('runtime/x64/node/',
      'vendored 的 Node 运行时,锁版本,构建时不得联网下载(0c84de5)。'),
     ('runtime/arm64/node/',
@@ -122,7 +120,7 @@ for prefix, _why in REGIONS:
 if not os.path.isfile(os.path.join(root, '.gitignore')):
     problems.append("仓库没有 .gitignore,`git add -A` 会把工作区所有产物一起收走。")
 else:
-    probe = 'scripts/__pycache__/generate-miao-cloud-scene.cpython-314.pyc'
+    probe = 'scripts/__pycache__/generate-whale-cloud-scene.cpython-314.pyc'
     r = subprocess.run(['git', 'check-ignore', '-q', probe], cwd=root)
     if r.returncode != 0:
         problems.append(

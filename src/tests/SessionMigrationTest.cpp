@@ -14,12 +14,12 @@
 // L3PersistenceSelfTest 没有覆盖这条路(只有 legacy 一轮、profile 一轮,没有"换")。
 //
 // 判定与 Node/管道/WinHTTP 全都无关,只取决于两组字段,所以本机真的能跑。
-#include "miaodesk/MiaoSessionMigration.h"
+#include "whaledesk/WhaleSessionMigration.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::session_migration {
+namespace whaledesk::session_migration {
 namespace {
 
 int g_failures = 0;
@@ -49,11 +49,11 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::session_migration
+} // namespace whaledesk::session_migration
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::session_migration;
+    using namespace whaledesk;
+    using namespace whaledesk::session_migration;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:判不出该搬与不该搬\n");

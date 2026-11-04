@@ -1,6 +1,6 @@
-#include "miaodesk/CreationDraftStore.h"
+#include "whaledesk/CreationDraftStore.h"
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 行式 key=value 的转义。值里可能出现换行(需求正文是用户自己写的话)与分隔符,
@@ -278,4 +278,4 @@ DraftRestorePlan PlanDraftRestore(std::string_view savedDraft, std::string_view 
     return plan;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

@@ -1,15 +1,15 @@
-# MiaoDesk Windows Path Layout Contract
+# WhaleDesK Windows Path Layout Contract
 
-This is a production contract for stock Windows 10/11 environments. MiaoDesk must not require users to enable Win32 long paths, edit long-path registry policy, run `subst`, or create symlinks/junctions.
+This is a production contract for stock Windows 10/11 environments. WhaleDesK must not require users to enable Win32 long paths, edit long-path registry policy, run `subst`, or create symlinks/junctions.
 
 ## Build roots
 
 Source location is user-controlled and may be deep. Build and staging output must stay outside the source tree under short disposable roots.
 
 ```text
-C:\b\MiaoDesk\x64
-C:\b\MiaoDesk\arm64
-C:\pkg\MiaoDesk\<arch>
+C:\b\WhaleDesK\x64
+C:\b\WhaleDesK\arm64
+C:\pkg\WhaleDesK\<arch>
 ```
 
 `CMAKE_WIN32_LONG_PATHS` may be a developer convenience only. It is not a packaging acceptance criterion.
@@ -50,10 +50,10 @@ DSH/Pi versions belong only to `runtime/agent/package.json`; their complete tran
 First-party files enter packages through `cmake --install`; runtime materialization extends that same staging tree.
 
 ```text
-MiaoDesk\
-  MiaoDesk.exe
-  MiaoDeskWallpaper.exe
-  MiaoDeskHarness.exe
+WhaleDesK\
+  WhaleDesK.exe
+  WhaleDesKWallpaper.exe
+  WhaleDesKHarness.exe
   Assets\
   Config\
     product.ini
@@ -79,9 +79,9 @@ The complete install tree must remain movable after packaging.
 
 ## Mutable state
 
-Program files are relocatable/read-mostly. Mutable state belongs under `%LOCALAPPDATA%\MiaoDesk\...`; secrets belong in Windows Credential Manager. Do not write caches, DSH home, logs or user data into the installed third-party dependency tree.
+Program files are relocatable/read-mostly. Mutable state belongs under `%LOCALAPPDATA%\WhaleDesK\...`; secrets belong in Windows Credential Manager. Do not write caches, DSH home, logs or user data into the installed third-party dependency tree.
 
-Native code resolves this root through the shared `miaodesk::paths` helpers.
+Native code resolves this root through the shared `whaledesk::paths` helpers.
 Individual domains must not implement their own `LOCALAPPDATA` fallback logic.
 
 ## Installer
@@ -90,7 +90,7 @@ NSIS consumes the canonical staging root directly. It must not build a second Ru
 
 Default paths stay shallow. If a selected install root exceeds 85 characters, warn but do not block. The installer must not create path-shortening junctions or modify `LongPathsEnabled`.
 
-Uninstall removes only known MiaoDesk-owned files/subdirectories and must not recursively delete an arbitrary user-selected install root.
+Uninstall removes only known WhaleDesK-owned files/subdirectories and must not recursively delete an arbitrary user-selected install root.
 
 ## Path budget
 

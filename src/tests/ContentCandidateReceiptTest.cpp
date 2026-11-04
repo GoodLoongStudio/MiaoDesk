@@ -10,13 +10,13 @@
 //   * 摘要对、candidateId 对,但 sessionId / epoch 是上一轮的;
 //   * 回执说 accepted,而宿主的台账里根本没有这个摘要。
 // 三种都必须被拒,而且拒绝的理由要说清是哪一个 —— 一句"不可信"等于让排查从零开始。
-#include "miaodesk/ContentCandidateReceipt.h"
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/ContentCandidateReceipt.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -256,10 +256,10 @@ void TestOnlyTheFirstReceiptLineCounts() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestARealReceiptRoundTrips();
     TestTextWithoutAReceiptIsNotAReceipt();
     TestProseCannotImpersonateAReceipt();

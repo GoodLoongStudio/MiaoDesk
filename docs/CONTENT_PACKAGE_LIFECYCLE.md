@@ -1,13 +1,13 @@
-# MiaoDesk 壁纸与小组件内容包生命周期
+# WhaleDesK 壁纸与小组件内容包生命周期
 
 ## 目标
 
-MiaoDesk 将壁纸和桌面小组件统一视为“可替换内容包”。运行时不依赖用户下载时的原始路径，也不把文件夹名称当作身份；内容包的稳定身份只来自 `manifest.json` 中的 `id`。
+WhaleDesK 将壁纸和桌面小组件统一视为“可替换内容包”。运行时不依赖用户下载时的原始路径，也不把文件夹名称当作身份；内容包的稳定身份只来自 `manifest.json` 中的 `id`。
 
 核心目标：
 
 - 壁纸与小组件统一使用稳定 Content ID。
-- 用户安装后统一进入 MiaoDesk 托管目录，原下载文件可删除。
+- 用户安装后统一进入 WhaleDesK 托管目录，原下载文件可删除。
 - 文件夹改名、包在托管目录内重排时，不改变内容身份。
 - 同 ID 的用户包支持安全替换/升级。
 - 内置包保持只读，用户包不能静默覆盖内置包。
@@ -69,7 +69,7 @@ content:<manifest.id>
 ```text
 content:com.goodloong.glass-clock
 content:com.goodloong.weather-glass
-content:com.goodloong.miao-cloud
+content:com.goodloong.whale-cloud
 ```
 
 以下内容都不是身份：
@@ -109,7 +109,7 @@ assets/
 ### 安装目录中的内置内容
 
 ```text
-<MiaoDesk安装目录>/
+<WhaleDesK安装目录>/
 ├─ Wallpapers/
 │  └─ *.mdwall/
 └─ Widgets/
@@ -121,7 +121,7 @@ assets/
 ### 用户托管内容
 
 ```text
-%LOCALAPPDATA%/MiaoDesk/
+%LOCALAPPDATA%/WhaleDesK/
 ├─ WallpaperLibrary/
 │  ├─ Packages/
 │  │  └─ *.mdwall/
@@ -183,7 +183,7 @@ manifest.id = com.example.cool-clock
     ↓
 原子替换
     ↓
-%LOCALAPPDATA%/MiaoDesk/DesktopWidgets/Packages/
+%LOCALAPPDATA%/WhaleDesK/DesktopWidgets/Packages/
 com.example.cool-clock.mdwidget
     ↓
 Catalog 重新扫描
@@ -195,7 +195,7 @@ content:com.example.cool-clock
 壁纸同理，目标目录改为：
 
 ```text
-%LOCALAPPDATA%/MiaoDesk/WallpaperLibrary/Packages/
+%LOCALAPPDATA%/WhaleDesK/WallpaperLibrary/Packages/
 ```
 
 ## 同 ID 处理规则
@@ -254,7 +254,7 @@ Catalog 扫描 `.mdwall` / `.mdwidget`，再读取 manifest ID，因此目录名
 
 ```text
 1. <安装目录>/Widgets
-2. %LOCALAPPDATA%/MiaoDesk/DesktopWidgets/Packages
+2. %LOCALAPPDATA%/WhaleDesK/DesktopWidgets/Packages
 ```
 
 ### Wallpaper
@@ -263,7 +263,7 @@ Catalog 扫描 `.mdwall` / `.mdwidget`，再读取 manifest ID，因此目录名
 
 ```text
 1. <安装目录>/Wallpapers
-2. %LOCALAPPDATA%/MiaoDesk/WallpaperLibrary/Packages
+2. %LOCALAPPDATA%/WhaleDesK/WallpaperLibrary/Packages
 ```
 
 同一个稳定 ID 不允许同时存在两个可生效版本。内置内容优先，并且安装 API 应提前拒绝冲突，避免出现“用户文件存在但永远解析不到”的假安装状态。
@@ -273,7 +273,7 @@ Catalog 扫描 `.mdwall` / `.mdwidget`，再读取 manifest ID，因此目录名
 普通图片、视频不是 Content package，继续进入：
 
 ```text
-%LOCALAPPDATA%/MiaoDesk/WallpaperLibrary/Media
+%LOCALAPPDATA%/WhaleDesK/WallpaperLibrary/Media
 ```
 
 它们属于兼容资源路径，不强行伪装为 `.mdwall`。
@@ -384,7 +384,7 @@ content:<id>
 第一批代码直接完成：
 
 1. 增加用户 Wallpaper/Widget package root 的统一路径函数。
-2. 新增 `MiaoContentPackageManager`。
+2. 新增 `WhaleContentPackageManager`。
 3. 支持 Inspect。
 4. 支持用户托管 Install。
 5. 支持同 ID 原子 Replace。

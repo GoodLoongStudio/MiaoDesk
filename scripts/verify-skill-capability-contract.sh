@@ -2,12 +2,12 @@
 # CCA-06:运行时上限优先于文档副本。
 #
 # 计划验收里有一句是"运行时没有提供的 CPU/GPU/任务操作能力不能靠虚构 binding 伪造"。
-# 这句话以前**没有任何执行点**:规范(skills/)、契约文档(docs/MIAO_CONTENT_PACKAGE_V1.md)
+# 这句话以前**没有任何执行点**:规范(skills/)、契约文档(docs/WHALE_CONTENT_PACKAGE_V1.md)
 # 和代码是几份各自手写的文本,于是文档可以宣称一个运行时根本没有的数据能力,而两边
 # 都不报错。
 #
 # 实测到的那个例子:`content-package-basics/SKILL.md` 把 capabilities 举例成
-# "clock.read / weather.read / audio.read"。而 `MiaoContentCapabilityBroker::
+# "clock.read / weather.read / audio.read"。而 `WhaleContentCapabilityBroker::
 # RequiredCapability` 只认识 time. / weather. / tasks. 三个前缀 —— **没有 audio.**。
 # 内容能拿到的音频是**输入通道** `input://audio/*`,它不需要、也没有对应的能力声明。
 # 后果不是包被拒(loader 只查 capability id 的字符集),而是更坏的两种:
@@ -17,14 +17,14 @@
 # 一个虚构的能力比一个缺失的能力更难发现:缺失会亮红,虚构只会静悄悄地不工作。
 #
 # 判据从代码**读出**,不是再抄一份:
-#   · 数据能力:从 MiaoContentDataBinding.cpp 的 RequiredCapability 读 (前缀 → capability);
-#   · 输入通道:从 MiaoInputBus.h 的 ChannelShape 表读(input://... 的封闭集合)。
+#   · 数据能力:从 WhaleContentDataBinding.cpp 的 RequiredCapability 读 (前缀 → capability);
+#   · 输入通道:从 WhaleInputBus.h 的 ChannelShape 表读(input://... 的封闭集合)。
 # 抄一份清单到脚本里,改名那天它就会悄悄说相反的话 —— 2026-09-22
 # verify-skill-material-rule.sh 已经吃过这个亏,这里不重犯。
 #
-# 检查范围:所有**会教到作者**的文本 —— skills/、docs/MIAO_CONTENT_PACKAGE_V1.md,
+# 检查范围:所有**会教到作者**的文本 —— skills/、docs/WHALE_CONTENT_PACKAGE_V1.md,
 # 以及仓库自带的样例 manifest 与自测夹具。代码自己说给自己听的不查
-# (src/content/binding/MiaoContentDataBinding.cpp 是唯一真源,查它等于查它自己)。
+# (src/content/binding/WhaleContentDataBinding.cpp 是唯一真源,查它等于查它自己)。
 #
 # **它证不了什么(写下来,免得把"门绿了"当成"文档写对了")**:
 # 它只比对 id。文档可以把真能力说错用途(例如说 weather.read 需要网络授权),或者
@@ -49,22 +49,22 @@ def read(rel):
         return f.read()
 
 # --- 1) 真源一:数据能力(前缀 → capability) --------------------------------
-binding = read('src/content/binding/MiaoContentDataBinding.cpp')
+binding = read('src/content/binding/WhaleContentDataBinding.cpp')
 capabilities = set(re.findall(
     r'if\s*\(\s*StartsWith\(\s*dataPath\s*,\s*L"([^"]+)"\s*\)\s*\)\s*return\s+L"([^"]+)"',
     binding))
 if not capabilities:
-    print('❌ 无法从 src/content/binding/MiaoContentDataBinding.cpp 解析 RequiredCapability')
+    print('❌ 无法从 src/content/binding/WhaleContentDataBinding.cpp 解析 RequiredCapability')
     print('   (StartsWith(dataPath, L"...") return L"...") 形状变了,闸门需要跟着代码改)')
     sys.exit(2)
 prefix_to_capability = {prefix: capability for prefix, capability in capabilities}
 capability_set = set(prefix_to_capability.values())
 
 # --- 2) 真源二:输入通道 -----------------------------------------------------
-bus = read('src/include/miaodesk/MiaoInputBus.h')
+bus = read('src/include/whaledesk/WhaleInputBus.h')
 channels = set(re.findall(r'inline constexpr std::wstring_view\s+k\w+\s*=\s*L"(input://[^"]+)"', bus))
 if not channels:
-    print('❌ 无法从 src/include/miaodesk/MiaoInputBus.h 解析输入通道表')
+    print('❌ 无法从 src/include/whaledesk/WhaleInputBus.h 解析输入通道表')
     print('   (ChannelShape 依赖这些常量;一个都没有说明形状变了)')
     sys.exit(2)
 
@@ -75,7 +75,7 @@ if not channels:
 shape_body = bus[bus.find('inline bool ChannelShape('):]
 shape_end = shape_body.find('\n}\n')
 if shape_end == -1:
-    print('❌ 无法从 MiaoInputBus.h 切出 ChannelShape 的函数体')
+    print('❌ 无法从 WhaleInputBus.h 切出 ChannelShape 的函数体')
     sys.exit(2)
 shape_body = shape_body[:shape_end]
 formally = set()
@@ -98,7 +98,7 @@ for m in re.finditer(r'inline constexpr std::wstring_view\s+(k\w+)\s*=\s*L"(inpu
     if m.group(1) not in formally:
         unshaped.append(m.group(2))
 if unshaped:
-    print('❌ MiaoInputBus.h 声明了 ChannelShape 分支不到的输入通道:')
+    print('❌ WhaleInputBus.h 声明了 ChannelShape 分支不到的输入通道:')
     for c in sorted(unshaped):
         print(f'      · {c} —— 加进了常量表但没进形状表,生产者写不进、场景声明它无效')
     sys.exit(1)
@@ -106,7 +106,7 @@ if unshaped:
 print('真实的数据能力(来自 RequiredCapability):')
 for prefix in sorted(prefix_to_capability):
     print(f'   {prefix:<12} → {prefix_to_capability[prefix]}')
-print(f'真实的输入通道(来自 MiaoInputBus.h):{len(channels)} 个')
+print(f'真实的输入通道(来自 WhaleInputBus.h):{len(channels)} 个')
 for c in sorted(channels):
     print(f'   {c}')
 
@@ -118,7 +118,7 @@ if os.path.isdir(skills_dir):
         for name in files:
             if name.endswith('.md'):
                 scope.append(os.path.relpath(os.path.join(dirpath, name), root))
-for rel in ('docs/MIAO_CONTENT_PACKAGE_V1.md', 'docs/MIAODESK_CONTENT_FRAMEWORK.md',
+for rel in ('docs/WHALE_CONTENT_PACKAGE_V1.md', 'docs/WHALEDESK_CONTENT_FRAMEWORK.md',
             'docs/DESIGN_BASELINE.md'):
     if os.path.isfile(os.path.join(root, rel)):
         scope.append(rel)
@@ -132,7 +132,7 @@ for base in ('assets/wallpapers', 'assets/widgets'):
             if name == 'manifest.json':
                 scope.append(os.path.relpath(os.path.join(dirpath, name), root))
 # 自测夹具:它写出来的东西是"一个合法的包"的活样本。
-scope.append('src/content/package/MiaoContentPackage.cpp')
+scope.append('src/content/package/WhaleContentPackage.cpp')
 
 checked_capability = 0
 checked_channel = 0
@@ -182,9 +182,9 @@ for rel in sorted(set(scope)):
         if claimed not in channels:
             line = text.count('\n', 0, m.start()) + 1
             problems.append(f'{rel}:{line} 声明了输入通道 "{claimed}",'
-                            f'而 MiaoInputBus.h 的闭集里没有它。\n'
+                            f'而 WhaleInputBus.h 的闭集里没有它。\n'
                             f'      → 场景声明一个不存在的通道是无效的;'
-                            f'要新通道得先在 MiaoInputBus.h 加常量并进 ChannelShape。')
+                            f'要新通道得先在 WhaleInputBus.h 加常量并进 ChannelShape。')
 
 print()
 print(f'核对了 {len(set(scope))} 个文本,{checked_capability} 处能力声明、'

@@ -85,8 +85,8 @@ docker pull nvcr.io/nvidia/vllm:<TAG-FROM-PLAYBOOK>
 ### 1.2 准备模型目录
 
 ```bash
-sudo mkdir -p /srv/miaodesk/models
-sudo chown "$USER":"$USER" /srv/miaodesk/models
+sudo mkdir -p /srv/whaledesk/models
+sudo chown "$USER":"$USER" /srv/whaledesk/models
 ```
 
 模型从 Hugging Face 拉取,**必须校验 SHA-256**,与项目 `runtime/<arch>/runtime-lock.json` 的做法一致:
@@ -97,21 +97,21 @@ export HF_HUB_ENABLE_HF_TRANSFER=1
 # 主模型候选 A
 huggingface-cli download openai/gpt-oss-120b \
   --include "*.safetensors" "*.json" "tokenizer*" \
-  --local-dir /srv/miaodesk/models/gpt-oss-120b
+  --local-dir /srv/whaledesk/models/gpt-oss-120b
 
 # 主模型候选 B
 huggingface-cli download Qwen/Qwen3.6-35B-A3B \
-  --local-dir /srv/miaodesk/models/qwen3.6-35b-a3b
+  --local-dir /srv/whaledesk/models/qwen3.6-35b-a3b
 
 # 轻量模型
 huggingface-cli download openai/gpt-oss-20b \
-  --local-dir /srv/miaodesk/models/gpt-oss-20b
+  --local-dir /srv/whaledesk/models/gpt-oss-20b
 ```
 
 校验(示例,实际哈希以 Hugging Face 页面为准):
 
 ```bash
-sha256sum /srv/miaodesk/models/*/*.safetensors | tee /srv/miaodesk/models/SHA256SUMS
+sha256sum /srv/whaledesk/models/*/*.safetensors | tee /srv/whaledesk/models/SHA256SUMS
 ```
 
 > ⚠️ **HuggingFace 与 hf-mirror 在实测节点上均不可达**(见 §0.1)。等价写法,从可达的
@@ -120,7 +120,7 @@ sha256sum /srv/miaodesk/models/*/*.safetensors | tee /srv/miaodesk/models/SHA256
 > ```bash
 > pip install modelscope
 > modelscope download --model AI-ModelScope/gpt-oss-120b \
->   --local_dir /srv/miaodesk/models/gpt-oss-120b
+>   --local_dir /srv/whaledesk/models/gpt-oss-120b
 > ```
 >
 > 三条实务:
@@ -137,9 +137,9 @@ sha256sum /srv/miaodesk/models/*/*.safetensors | tee /srv/miaodesk/models/SHA256
 **候选 A(gpt-oss-120b)**:
 
 ```bash
-docker run -d --name miaodesk-vllm-a --gpus all --ipc host \
+docker run -d --name whaledesk-vllm-a --gpus all --ipc host \
   -p 8000:8000 \
-  -v /srv/miaodesk/models:/models \
+  -v /srv/whaledesk/models:/models \
   nvcr.io/nvidia/vllm:<TAG> \
   vllm serve /models/gpt-oss-120b \
     --served-model-name openai/gpt-oss-120b \
@@ -152,9 +152,9 @@ docker run -d --name miaodesk-vllm-a --gpus all --ipc host \
 **候选 B(Qwen3.6-35B-A3B)**:
 
 ```bash
-docker run -d --name miaodesk-vllm-b --gpus all --ipc host \
+docker run -d --name whaledesk-vllm-b --gpus all --ipc host \
   -p 8001:8000 \
-  -v /srv/miaodesk/models:/models \
+  -v /srv/whaledesk/models:/models \
   nvcr.io/nvidia/vllm:<TAG> \
   vllm serve /models/qwen3.6-35b-a3b \
     --served-model-name Qwen/Qwen3.6-35B-A3B \
@@ -177,17 +177,17 @@ docker run -d --name miaodesk-vllm-b --gpus all --ipc host \
 
 ## 2. 图像生成服务
 
-✅ **产品侧 OpenAI-compatible 图片调用链已接通。** Image API Key 独立保存在 Windows Credential Manager，不写入 `api-profiles.ini`；本地 loopback 端点可留空。 MiaoDesk 可为图片单独配置 `imageBaseUrl` / `imageModel`，并直接调用 `<imageBaseUrl>/images/generations`；聊天和图片可以使用不同端口。选型依据与许可分析见 `LOCAL_AI_ARCHITECTURE.md` §7.6。
+✅ **产品侧 OpenAI-compatible 图片调用链已接通。** Image API Key 独立保存在 Windows Credential Manager，不写入 `api-profiles.ini`；本地 loopback 端点可留空。 WhaleDesK 可为图片单独配置 `imageBaseUrl` / `imageModel`，并直接调用 `<imageBaseUrl>/images/generations`；聊天和图片可以使用不同端口。选型依据与许可分析见 `LOCAL_AI_ARCHITECTURE.md` §7.6。
 
 ### 2.1 为什么单独一节
 
-`image_generate` 是独立的图片能力，不把聊天 provider 宣称为 vision-capable。对于 `local-openai-compatible` / `openai-compatible`，MiaoDesk 自己通过 OpenAI Images 兼容协议调用图片端点；具名云 provider 仍可走 Pi compat。建议图片服务独立部署、独立端口。
+`image_generate` 是独立的图片能力，不把聊天 provider 宣称为 vision-capable。对于 `local-openai-compatible` / `openai-compatible`，WhaleDesK 自己通过 OpenAI Images 兼容协议调用图片端点；具名云 provider 仍可走 Pi compat。建议图片服务独立部署、独立端口。
 
 ### 2.2 产品侧前置改动(必须)
 
 `src/ai/pi/PiNativeToolsExtension.cpp` 当前硬编码:
 
-现在不再依赖 `getImageModel()` 是否认识本地 provider 名。通用 OpenAI-compatible 图片端点由 MiaoDesk 直接请求 `/images/generations`，要求返回 `data[0].b64_json`。配置中心可直接填写 Image Base URL 与 Image Model。
+现在不再依赖 `getImageModel()` 是否认识本地 provider 名。通用 OpenAI-compatible 图片端点由 WhaleDesK 直接请求 `/images/generations`，要求返回 `data[0].b64_json`。配置中心可直接填写 Image Base URL 与 Image Model。
 
 ### 2.3 运行时:ComfyUI + OpenAI 兼容 shim
 
@@ -238,9 +238,9 @@ SD 3.5 Large(仅年营收 <$1M 免费)、HunyuanImage-3.0(许可未核实)、SDX
 
 ```bash
 # ComfyUI(以 NVIDIA Spark playbook 当天给出的镜像与版本为准)
-docker run -d --name miaodesk-image --gpus all \
+docker run -d --name whaledesk-image --gpus all \
   -p 192.168.1.50:8188:8188 \
-  -v /srv/miaodesk/models:/models \
+  -v /srv/whaledesk/models:/models \
   <COMFYUI-IMAGE-FROM-PLAYBOOK>:<TAG>
 ```
 
@@ -279,21 +279,21 @@ curl -fsS http://192.168.1.50:8188/health
 
 ```bash
 # 生成一个高熵令牌
-openssl rand -hex 32 > ~/miaodesk-vllm.token
-chmod 600 ~/miaodesk-vllm.token
+openssl rand -hex 32 > ~/whaledesk-vllm.token
+chmod 600 ~/whaledesk-vllm.token
 ```
 
 把它作为环境变量注入容器(不要写进镜像或命令行历史):
 
 ```bash
-docker rm -f miaodesk-vllm-a
-docker run -d --name miaodesk-vllm-a --gpus all --ipc host \
-  --env-file ~/miaodesk-vllm.env \
+docker rm -f whaledesk-vllm-a
+docker run -d --name whaledesk-vllm-a --gpus all --ipc host \
+  --env-file ~/whaledesk-vllm.env \
   -p 192.168.1.50:8000:8000 \
-  -v /srv/miaodesk/models:/models \
+  -v /srv/whaledesk/models:/models \
   nvcr.io/nvidia/vllm:<TAG> \
   vllm serve /models/gpt-oss-120b \
-    --api-key "$(cat ~/miaodesk-vllm.token)" \
+    --api-key "$(cat ~/whaledesk-vllm.token)" \
     --served-model-name openai/gpt-oss-120b \
     --max-model-len 32768 --gpu-memory-utilization 0.8 \
     --enable-auto-tool-choice --tool-call-parser openai
@@ -305,7 +305,7 @@ docker run -d --name miaodesk-vllm-a --gpus all --ipc host \
 
 ```bash
 sudo ufw default deny incoming
-sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp comment 'MiaoDesk Windows client'
+sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp comment 'WhaleDesK Windows client'
 sudo ufw enable
 ```
 
@@ -319,7 +319,7 @@ sudo ufw enable
 
 ```powershell
 # 目标名必须与 profile id 对应
-cmdkey /generic:MiaoDesk/ApiProfile/local-spark /user:miaodesk /pass:"<令牌>"
+cmdkey /generic:WhaleDesK/ApiProfile/local-spark /user:whaledesk /pass:"<令牌>"
 ```
 
 或在设置中心 → API 配置里新增 profile 并填写密钥(推荐,产品自己写入凭据存储)。
@@ -356,7 +356,7 @@ loopback 会自动注入占位密钥(`PiRuntime.cpp:318`),**无需填 API Key**�
 ```bash
 # 服务端
 curl -fsS http://192.168.1.50:8000/health && echo " vllm ok"
-curl -fsS -H "Authorization: Bearer $(cat ~/miaodesk-vllm.token)" \
+curl -fsS -H "Authorization: Bearer $(cat ~/whaledesk-vllm.token)" \
   http://192.168.1.50:8000/v1/models
 ```
 
@@ -408,7 +408,7 @@ curl -fsS -H "Authorization: Bearer $(cat ~/miaodesk-vllm.token)" \
 
 ## 8. 升级与回滚
 
-- **模型与服务器版本分离**:模型放 `/srv/miaodesk/models/<name>`,服务器用容器 TAG,两者可独立回滚。
+- **模型与服务器版本分离**:模型放 `/srv/whaledesk/models/<name>`,服务器用容器 TAG,两者可独立回滚。
 - 升级流程:拉新 TAG → 起新容器(不同端口 / 名字)→ 跑 §6 清单 → 切换客户端 Base URL 端口 → 停旧容器。
 - 回滚:客户端 Base URL 指回旧容器端口即可,**不需要动客户端配置以外的东西**。
 - 保留上一个已知良好版本的容器 TAG 与模型目录,至少一个版本。
@@ -416,10 +416,10 @@ curl -fsS -H "Authorization: Bearer $(cat ~/miaodesk-vllm.token)" \
 ## 9. 完全卸载
 
 ```bash
-docker rm -f miaodesk-vllm-a miaodesk-vllm-b
-rm -rf /srv/miaodesk/models
-rm -f ~/miaodesk-vllm.token ~/miaodesk-vllm.env
-# Windows 侧:删除 profile,并在凭据管理器删除 MiaoDesk/ApiProfile/local-spark
+docker rm -f whaledesk-vllm-a whaledesk-vllm-b
+rm -rf /srv/whaledesk/models
+rm -f ~/whaledesk-vllm.token ~/whaledesk-vllm.env
+# Windows 侧:删除 profile,并在凭据管理器删除 WhaleDesK/ApiProfile/local-spark
 ```
 
 ## 10. 本手册未验证的部分

@@ -10,12 +10,12 @@
 // What it actually protects: the scene deliberately declares "materials":[]. If a
 // textured sprite still needed a solidColor material to reach the draw path, that scene
 // would be invalid, and this test is what says so out loud.
-#include "miaodesk/MiaoAssetDatabase.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoSceneRuntime.h"
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
+#include "whaledesk/WhaleAssetDatabase.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleSceneRuntime.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -23,24 +23,24 @@
 #include <string>
 #include <system_error>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 
 namespace fs = std::filesystem;
 static std::error_code error_removal;
 
 // The three literals below must stay byte-identical to `texturedScene` /
-// `wallpaperManifest` / `emptyParameters` in MiaoSceneD2DRenderer.cpp's SelfTest.
+// `wallpaperManifest` / `emptyParameters` in WhaleSceneD2DRenderer.cpp's SelfTest.
 // scripts/verify-scene-fixture-parity.sh enforces all three, because the two copies are
 // otherwise free to drift — and the copy that drifts is always the one nobody runs.
 //
 // Why the manifest and the parameter file are here and not just the scene: the first
 // version of this SelfTest wrote scene.json into its sub-packages and nothing else, so
-// every phase died at MiaoContentPackage::Load with "requires manifest.json". That is
+// every phase died at WhaleContentPackage::Load with "requires manifest.json". That is
 // fifty lines of pure logic — no D2D, no WIC — and it cost a 90-second Windows round
 // trip to find out, because the only test that reaches it is the Windows-only one.
 // Writing the whole package here means the package's *shape* is pinned on every commit.
 constexpr std::string_view kWallpaperManifest = R"json({
-  "schema":1,"id":"com.goodloong.selftest-textured","name":"Self Test Textured","author":"MiaoDesk","version":"1.0.0",
+  "schema":1,"id":"com.goodloong.selftest-textured","name":"Self Test Textured","author":"WhaleDesK","version":"1.0.0",
   "kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
 })json";
 constexpr std::string_view kEmptyParameters = R"json({"schema":1,"parameters":[]})json";
@@ -73,9 +73,9 @@ static void Check(bool ok, const char* what) {
     if (!ok) ++failures;
 }
 
-// Writes the whole package the way MiaoSceneD2DRenderer's SelfTest does — manifest,
+// Writes the whole package the way WhaleSceneD2DRenderer's SelfTest does — manifest,
 // parameters, scene, and a placeholder image — then hands the directory to
-// MiaoContentPackage::Load. The image is deliberately not a real PNG: WIC decoding is
+// WhaleContentPackage::Load. The image is deliberately not a real PNG: WIC decoding is
 // Windows-only and is covered by the Windows test. Everything before the decoder is
 // package plumbing, and that plumbing is exactly what was missing the first time.
 bool WriteFixturePackage(const fs::path& package) {
@@ -102,12 +102,12 @@ bool WriteFixturePackage(const fs::path& package) {
 int wmain() {
     std::wstring error;
 
-    std::printf("\n0. 整个包的形状:MiaoContentPackage::Load 必须接受\n");
-    const fs::path package = fs::temp_directory_path() / L"MiaoDesk-SceneTextureFixture.mdwall";
+    std::printf("\n0. 整个包的形状:WhaleContentPackage::Load 必须接受\n");
+    const fs::path package = fs::temp_directory_path() / L"WhaleDesK-SceneTextureFixture.mdwall";
     Check(WriteFixturePackage(package), "manifest.json + parameters.json + scene.json 落盘");
-    LoadedMiaoContentPackage loaded;
-    const bool packageLoaded = MiaoContentPackage::Load(package, &loaded, &error);
-    Check(packageLoaded, "MiaoContentPackage::Load 接受这个包");
+    LoadedWhaleContentPackage loaded;
+    const bool packageLoaded = WhaleContentPackage::Load(package, &loaded, &error);
+    Check(packageLoaded, "WhaleContentPackage::Load 接受这个包");
     if (!packageLoaded) {
         std::printf("         (error = %ls)\n", error.c_str());
         std::printf("         这一种失败此前只能等一轮 Windows CI —— 包形状是纯逻辑,\n");
@@ -119,7 +119,7 @@ int wmain() {
 
     std::printf("\n1. 贴图场景 fixture 能被反序列化\n");
     SceneRuntimeDefinition runtime;
-    const bool parsed = MiaoSceneSerializer::DeserializePackage(loaded, &runtime, &error);
+    const bool parsed = WhaleSceneSerializer::DeserializePackage(loaded, &runtime, &error);
     Check(parsed, "texturedScene 反序列化成功");
     if (!parsed) {
         std::printf("         (error = %ls)\n", error.c_str());
@@ -129,11 +129,11 @@ int wmain() {
     }
 
     std::printf("\n2. 反序列化结果通过运行时校验\n");
-    Check(MiaoSceneRuntimeModel::Validate(runtime, &error), "运行时校验通过");
+    Check(WhaleSceneRuntimeModel::Validate(runtime, &error), "运行时校验通过");
     if (!error.empty()) std::printf("         (error = %ls)\n", error.c_str());
 
     std::printf("\n3. 场景模型本身也通过校验(两个校验器都必须接受)\n");
-    Check(MiaoSceneModel::Validate(runtime.scene, &error), "MiaoSceneModel::Validate 通过");
+    Check(WhaleSceneModel::Validate(runtime.scene, &error), "WhaleSceneModel::Validate 通过");
 
     std::printf("\n4. 关键断言:没有 material 也能过\n");
     Check(runtime.materials.empty(), "fixture 的 materials 数组是空的");
@@ -180,7 +180,7 @@ int wmain() {
     std::printf("\n8. texture 指向缺失资产时,同一个 fixture 会被拒\n");
     {
         // The difference between "the file is missing" and "the asset id is missing"
-        // matters: MiaoAssetDatabase owns the former at load time, MiaoSceneModel owns
+        // matters: WhaleAssetDatabase owns the former at load time, WhaleSceneModel owns
         // the latter at validation time. Both have to be checked somewhere; this is the
         // one the author sees before they hit the renderer.
         SceneRuntimeDefinition dangling = runtime;
@@ -193,7 +193,7 @@ int wmain() {
                 }
             }
         }
-        const bool stillValid = MiaoSceneModel::Validate(dangling.scene, &error);
+        const bool stillValid = WhaleSceneModel::Validate(dangling.scene, &error);
         Check(!stillValid, "缺失的 asset id 被拒");
         if (stillValid) {
             std::printf("         (通过了 —— 这正是会让渲染期变成空白矩形的那种拼写错误)\n");
@@ -203,9 +203,9 @@ int wmain() {
         }
     }
 
-    std::printf("\n9. 资产文件真的在磁盘上(MiaoAssetDatabase::Build)\n");
+    std::printf("\n9. 资产文件真的在磁盘上(WhaleAssetDatabase::Build)\n");
     {
-        MiaoAssetDatabase assets;
+        WhaleAssetDatabase assets;
         const bool built = assets.Build(package, runtime, &error);
         Check(built, "assets/panel.png 解析成功");
         if (built) Check(assets.Size() == 1, "恰好一个资产");

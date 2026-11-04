@@ -14,7 +14,7 @@ For managed wallpaper packages, UI surfaces must expose exactly one logical iden
 
 ## Install/list guard
 
-A wallpaper package shown by package-management UI must already have passed normal `MiaoContentPackage` validation and must expose a canonical source generated from its manifest id.
+A wallpaper package shown by package-management UI must already have passed normal `WhaleContentPackage` validation and must expose a canonical source generated from its manifest id.
 
 ```text
 source == content:<manifest.id>
@@ -69,6 +69,6 @@ Before any persisted identity migration is enabled, validate on ARM64 Windows un
 
 - Chinese theme names/authors and package paths display correctly;
 - package manager shows only canonical theme-package identities;
-- existing `scene-*` assignments continue to render the expected MiaoCloud / NeonCity / MysticMoon layered visuals;
+- existing `scene-*` assignments continue to render the expected WhaleCloud / NeonCity / MysticMoon layered visuals;
 - no assignment file is silently rewritten while browsing, applying, refreshing or restarting;
 - install/manage/apply/reinstall/uninstall wording consistently uses the theme-package model.

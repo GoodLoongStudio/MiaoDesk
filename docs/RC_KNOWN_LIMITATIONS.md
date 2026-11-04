@@ -6,7 +6,7 @@ This document separates **known product limitations** from **release evidence th
 
 ### Local AI model weights are not bundled
 
-Release packages intentionally reject unreviewed local model weights during staging. MiaoDesk can use configured OpenAI-compatible local or remote endpoints, including DGX-hosted services, but model files themselves are not shipped until distribution/license evidence is explicitly reviewed.
+Release packages intentionally reject unreviewed local model weights during staging. WhaleDesK can use configured OpenAI-compatible local or remote endpoints, including DGX-hosted services, but model files themselves are not shipped until distribution/license evidence is explicitly reviewed.
 
 ### Local-model selection is not final
 
@@ -82,7 +82,7 @@ The verifier checks that:
 Run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\verify-rc-evidence.ps1 -EvidenceRoot C:\MiaoDesk-RC-Evidence
+powershell -ExecutionPolicy Bypass -File packaging\windows\verify-rc-evidence.ps1 -EvidenceRoot C:\WhaleDesK-RC-Evidence
 ```
 
 The verifier does not turn telemetry into a visual judgment. It only prevents missing, mixed-machine, regressed, or unsigned evidence from being treated as complete.

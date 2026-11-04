@@ -2,7 +2,7 @@
 
 This is the execution-evidence step for RC plan issue #60 / P0-1.
 
-Run from a normal Windows desktop session after installing or staging MiaoDesk:
+Run from a normal Windows desktop session after installing or staging WhaleDesK:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\collect-visual-acceptance.ps1 -OpenResult
@@ -22,7 +22,7 @@ The collector creates one timestamped folder on the Desktop containing:
 
 ## What is automated
 
-The collector enumerates MiaoDesk desktop surfaces and records:
+The collector enumerates WhaleDesK desktop surfaces and records:
 
 - Window class/title/HWND/process;
 - surface role;
@@ -31,7 +31,7 @@ The collector enumerates MiaoDesk desktop surfaces and records:
 - desktop rectangle and parent window class;
 - WebView2 Environment/Controller/Navigation readiness;
 - Native Widget PaintReady;
-- MiaoDesk process working set/private memory/handle count/CPU time.
+- WhaleDesK process working set/private memory/handle count/CPU time.
 
 Warnings are emitted for invisible surfaces, missing Widget PaintReady, or incomplete Web surface lifecycle telemetry.
 
@@ -39,7 +39,7 @@ Warnings are emitted for invisible surfaces, missing Widget PaintReady, or incom
 
 The collector deliberately does not claim visual correctness from telemetry alone. Check the screenshot/live desktop for:
 
-- MiaoCloud / NeonCity / MysticMoon composition and motion;
+- WhaleCloud / NeonCity / MysticMoon composition and motion;
 - Widget text/borders not clipped;
 - widget-on-desktop z-order relative to wallpaper/icons;
 - cross-monitor mixed-DPI movement;

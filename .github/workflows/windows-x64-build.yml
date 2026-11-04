@@ -21,7 +21,7 @@ on:
       - config/**
       - packaging/windows/verify-widget-visibility.ps1
       - third_party/webview2/**
-      - scripts/generate-miaomiao-icon.ps1
+      - scripts/generate-whalewhale-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/windows-x64-build.yml
   pull_request:
@@ -43,7 +43,7 @@ on:
       - config/**
       - packaging/windows/verify-widget-visibility.ps1
       - third_party/webview2/**
-      - scripts/generate-miaomiao-icon.ps1
+      - scripts/generate-whalewhale-icon.ps1
       - scripts/verify-path-layout-contract.ps1
       - .github/workflows/windows-x64-build.yml
   workflow_dispatch:
@@ -60,15 +60,15 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 15
     env:
-      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\quick-x64
-      MIAODESK_STAGE_ROOT: C:\b\MiaoDesk\quick-stage-x64
+      WHALEDESK_BUILD_ROOT: C:\b\WhaleDesK\quick-x64
+      WHALEDESK_STAGE_ROOT: C:\b\WhaleDesK\quick-stage-x64
 
     steps:
       - uses: actions/checkout@v5
 
-      - name: Generate MiaoMiao app icon
+      - name: Generate WhaleWhale app icon
         shell: pwsh
-        run: .\scripts\generate-miaomiao-icon.ps1
+        run: .\scripts\generate-whalewhale-icon.ps1
 
       - name: Verify path layout
         shell: pwsh
@@ -78,10 +78,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
-          $gateOut = cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 2>&1
+          Remove-Item $env:WHALEDESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:WHALEDESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:WHALEDESK_BUILD_ROOT -Parent) | Out-Null
+          $gateOut = cmake -S . -B $env:WHALEDESK_BUILD_ROOT -A x64 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
@@ -97,7 +97,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $log = & cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness MiaoDeskContentWebReplacementTest MiaoDeskContentSkillLoadingTest MiaoDeskMediaPackageTest MiaoDeskInputBusCoreTest MiaoDeskInputBusPublisherTest MiaoDeskAudioIngressTest MiaoDeskBindingResponseTest MiaoDeskSceneRuntimeTest MiaoDeskSceneSpatial3DTest MiaoDeskPointerAttributionTest MiaoDeskSpriteTextureContractTest MiaoDeskSceneD2DRendererTest MiaoDeskSceneTextureFixtureTest MiaoDeskBuiltinWallpaperPackagesTest MiaoDeskSpriteMaterialPolicyTest MiaoDeskSceneSerializerSelfTest MiaoDeskContentSelfTests MiaoDeskWebAudioEnvelopeTest MiaoDeskSceneD3D11Test MiaoDeskSceneD3D11TexturedSpriteTest MiaoDeskWallpaperAudioTapTest MiaoDeskCreationWorkflowStateTest MiaoDeskContentCandidateDigestTest MiaoDeskCreatorWorkspacePolicyTest MiaoDeskContentCandidateLedgerTest MiaoDeskCreatorPackageTransactionTest MiaoDeskCreatorToolRegistryTest --parallel 2>&1
+          $log = & cmake --build $env:WHALEDESK_BUILD_ROOT --config Release --target WhaleDesK WhaleDesKWallpaper WhaleDesKHarness WhaleDesKContentWebReplacementTest WhaleDesKContentSkillLoadingTest WhaleDesKMediaPackageTest WhaleDesKInputBusCoreTest WhaleDesKInputBusPublisherTest WhaleDesKAudioIngressTest WhaleDesKBindingResponseTest WhaleDesKSceneRuntimeTest WhaleDesKSceneSpatial3DTest WhaleDesKPointerAttributionTest WhaleDesKSpriteTextureContractTest WhaleDesKSceneD2DRendererTest WhaleDesKSceneTextureFixtureTest WhaleDesKBuiltinWallpaperPackagesTest WhaleDesKSpriteMaterialPolicyTest WhaleDesKSceneSerializerSelfTest WhaleDesKContentSelfTests WhaleDesKWebAudioEnvelopeTest WhaleDesKSceneD3D11Test WhaleDesKSceneD3D11TexturedSpriteTest WhaleDesKWallpaperAudioTapTest WhaleDesKCreationWorkflowStateTest WhaleDesKContentCandidateDigestTest WhaleDesKCreatorWorkspacePolicyTest WhaleDesKContentCandidateLedgerTest WhaleDesKCreatorPackageTransactionTest WhaleDesKCreatorToolRegistryTest --parallel 2>&1
           $log | ForEach-Object { "$_" } | Write-Host
           if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { "$_" } | Where-Object { $_ -match '(error C\d+|error LNK\d+|fatal error|error MSB\d+|CMake Error)' } |
@@ -112,9 +112,9 @@ jobs:
       - name: Smoke-test AI creator windows
         shell: pwsh
         run: |
-          $exe = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse |
+          $exe = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesK.exe -File -Recurse |
             Select-Object -First 1
-          if (-not $exe) { throw 'MiaoDesk.exe was not found for creator window smoke test.' }
+          if (-not $exe) { throw 'WhaleDesK.exe was not found for creator window smoke test.' }
           $process = Start-Process $exe.FullName -ArgumentList '--creator-window-self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "AI creator window smoke test failed: $($process.ExitCode)"
@@ -124,14 +124,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exeItem = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse | Select-Object -First 1
-          if (-not $exeItem) { throw 'MiaoDesk.exe was not found for creator IPC test.' }
+          $exeItem = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesK.exe -File -Recurse | Select-Object -First 1
+          if (-not $exeItem) { throw 'WhaleDesK.exe was not found for creator IPC test.' }
           $exe = $exeItem.FullName
           $hostProcess = $null
           try {
             $hostProcess = Start-Process $exe -ArgumentList '--startup' -PassThru
             Start-Sleep -Milliseconds 700
-            if ($hostProcess.HasExited) { throw "MiaoDesk IPC host exited early: $($hostProcess.ExitCode)" }
+            if ($hostProcess.HasExited) { throw "WhaleDesK IPC host exited early: $($hostProcess.ExitCode)" }
             foreach ($kind in @('wallpaper','widget')) {
               $client = Start-Process $exe -ArgumentList "--content-creator=$kind" -Wait -PassThru
               if ($client.ExitCode -ne 0) {
@@ -219,7 +219,7 @@ jobs:
       - name: Verify Content web replacement continuity
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentWebReplacementTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content web replacement continuity test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -238,7 +238,7 @@ jobs:
       - name: Verify content skill loading gate
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentSkillLoadingTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentSkillLoadingTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content skill loading test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -257,7 +257,7 @@ jobs:
       - name: Verify media wallpaper package gate
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskMediaPackageTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKMediaPackageTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Media wallpaper package test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -276,7 +276,7 @@ jobs:
       - name: Verify Scene input bus core
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusCoreTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKInputBusCoreTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene input bus core test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -295,7 +295,7 @@ jobs:
       - name: Verify Scene input bus publisher
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskInputBusPublisherTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKInputBusPublisherTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene input bus publisher test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -314,7 +314,7 @@ jobs:
       - name: Verify audio ingress conversion
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskAudioIngressTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKAudioIngressTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Audio ingress test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -331,14 +331,14 @@ jobs:
           }
 
       # The first time the WASAPI capture thread has ever run. It has compile-and-link
-      # evidence from MiaoDeskWallpaper.exe, which is not evidence that a capture
+      # evidence from WhaleDesKWallpaper.exe, which is not evidence that a capture
       # thread owning a COM apartment, a join at Stop(), and a retry loop for machines
       # with no sound card all work. The test branches on whether this runner has a
       # render endpoint and prints the branch, so the log says which assertions applied.
       - name: Run the WASAPI loopback capture thread
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaperAudioTapTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKWallpaperAudioTapTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'WASAPI audio tap test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -357,7 +357,7 @@ jobs:
       - name: Verify binding response curves
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskBindingResponseTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKBindingResponseTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Binding response test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -376,7 +376,7 @@ jobs:
       - name: Verify scene runtime binding end to end
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneRuntimeTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneRuntimeTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene runtime test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -395,7 +395,7 @@ jobs:
       - name: Verify pointer attribution across a multi-monitor topology
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskPointerAttributionTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKPointerAttributionTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Pointer attribution test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -414,7 +414,7 @@ jobs:
       - name: Verify SpriteRenderer texture contract
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSpriteTextureContractTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSpriteTextureContractTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Sprite texture contract test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -433,7 +433,7 @@ jobs:
       - name: Verify the textured-sprite scene fixture schema
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneTextureFixtureTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneTextureFixtureTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene texture fixture test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -452,7 +452,7 @@ jobs:
       - name: Render a textured sprite through the real D2D backend
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneD2DRendererTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneD2DRendererTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene D2D renderer test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -471,7 +471,7 @@ jobs:
       - name: Walk the shipped .mdwall packages through the content chain
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskBuiltinWallpaperPackagesTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKBuiltinWallpaperPackagesTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Builtin wallpaper packages test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -492,7 +492,7 @@ jobs:
         run: |
           # $LASTEXITCODE 判空:& 一个 .exe 之前本步没有原生命令,它是 $null,
           # 而 $null -ne 0 恒真 —— 会把通过的步骤判成失败。
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneSerializerSelfTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneSerializerSelfTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Scene serializer self-test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -511,7 +511,7 @@ jobs:
       - name: Run the content-layer self-tests that had no caller
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentSelfTests.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentSelfTests.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content self-tests executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -530,7 +530,7 @@ jobs:
       - name: Verify the host-side audio envelope against the injected web bridge
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWebAudioEnvelopeTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKWebAudioEnvelopeTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'web audio envelope test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -553,7 +553,7 @@ jobs:
       - name: Render a textured sprite through D3D11 and read the pixels back
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneD3D11TexturedSpriteTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneD3D11TexturedSpriteTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'D3D11 textured sprite test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -572,7 +572,7 @@ jobs:
       - name: Run the D3D11 renderer self-tests that had no caller
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneD3D11Test.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneD3D11Test.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'D3D11 renderer self-test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -591,7 +591,7 @@ jobs:
       - name: Verify the two render backends agree on which sprites are drawable
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSpriteMaterialPolicyTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSpriteMaterialPolicyTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Sprite material policy test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -613,7 +613,7 @@ jobs:
       - name: Verify the creation workflow state machine
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskCreationWorkflowStateTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKCreationWorkflowStateTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Creation workflow state test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -637,7 +637,7 @@ jobs:
       - name: Verify the creator workspace policy
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskCreatorWorkspacePolicyTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKCreatorWorkspacePolicyTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Creator workspace policy test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -656,7 +656,7 @@ jobs:
       - name: Verify the content candidate digest
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentCandidateDigestTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentCandidateDigestTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Candidate digest test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -678,7 +678,7 @@ jobs:
       - name: Verify the content candidate ledger
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentCandidateLedgerTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentCandidateLedgerTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content candidate ledger test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -701,7 +701,7 @@ jobs:
       - name: Verify the package write transaction
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskCreatorPackageTransactionTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKCreatorPackageTransactionTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Package write transaction test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -720,7 +720,7 @@ jobs:
       - name: Verify the creator tool registry
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskCreatorToolRegistryTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKCreatorToolRegistryTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Creator tool registry test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -739,7 +739,7 @@ jobs:
       - name: Verify 3D scene spatial mode, lights and fog
         shell: pwsh
         run: |
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskSceneSpatial3DTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKSceneSpatial3DTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw '3D scene test executable was not found.' }
           $gateOut = & $test.FullName 2>&1
@@ -759,30 +759,30 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+          Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
           $deadline = [DateTime]::UtcNow.AddSeconds(5)
           do {
             Start-Sleep -Milliseconds 100
-            $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+            $alive = @(Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue).Count
             if ($alive -eq 0) { break }
           } while ([DateTime]::UtcNow -lt $deadline)
           if ($alive -ne 0) {
-            throw 'MiaoDeskWallpaper process family did not stop before quick-build Widget lifecycle.'
+            throw 'WhaleDesKWallpaper process family did not stop before quick-build Widget lifecycle.'
           }
 
       - name: Verify Widget lifecycle in quick-build layout
         shell: pwsh
         run: |
-          $wallpaper = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskWallpaper.exe -File -Recurse |
+          $wallpaper = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKWallpaper.exe -File -Recurse |
             Select-Object -First 1
-          if (-not $wallpaper) { throw 'Built MiaoDeskWallpaper.exe was not found.' }
+          if (-not $wallpaper) { throw 'Built WhaleDesKWallpaper.exe was not found.' }
 
           $attempt = 1
           while ($true) {
             try {
               Write-Host "Running Widget lifecycle smoke attempt $attempt/2."
-              Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
               Start-Sleep -Milliseconds 750
               $gateOut = & pwsh -NoLogo -NoProfile -NonInteractive -File .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $wallpaper.DirectoryName 2>&1
               $gateExit = $LASTEXITCODE
@@ -800,7 +800,7 @@ jobs:
             } catch {
               if ($attempt -ge 2) { throw }
               Write-Host "Widget lifecycle smoke attempt $attempt failed; retrying once to separate transient desktop startup races from real regressions." -ForegroundColor Yellow
-              Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
               Start-Sleep -Seconds 2
               $attempt++
             }
@@ -810,7 +810,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $gateOut = cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT 2>&1
+          $gateOut = cmake --install $env:WHALEDESK_BUILD_ROOT --config Release --prefix $env:WHALEDESK_STAGE_ROOT 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
@@ -827,7 +827,7 @@ jobs:
             'Widgets\GlassClock.mdwidget\scene.json',
             'Widgets\GlassClock.mdwidget\parameters.json'
           )) {
-            if (-not (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT $relative) -PathType Leaf)) {
+            if (-not (Test-Path (Join-Path $env:WHALEDESK_STAGE_ROOT $relative) -PathType Leaf)) {
               throw "Staged built-in widget package file is missing: $relative"
             }
           }
@@ -836,30 +836,30 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $test = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDeskContentWebReplacementTest.exe -File -Recurse |
+          $test = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesKContentWebReplacementTest.exe -File -Recurse |
             Select-Object -First 1
           if (-not $test) { throw 'Content lifecycle test executable was not found.' }
-          $stagedTest = Join-Path $env:MIAODESK_STAGE_ROOT 'MiaoDeskContentWebReplacementTest.exe'
+          $stagedTest = Join-Path $env:WHALEDESK_STAGE_ROOT 'WhaleDesKContentWebReplacementTest.exe'
           Copy-Item $test.FullName $stagedTest -Force
-          $builtInPackage = Join-Path $env:MIAODESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
+          $builtInPackage = Join-Path $env:WHALEDESK_STAGE_ROOT 'Widgets\GlassClock.mdwidget'
           if (-not (Test-Path $builtInPackage -PathType Container)) {
             throw "Content lifecycle source package is missing: $builtInPackage"
           }
 
-          function Stop-MiaoDeskWallpaperFamily {
-            Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue |
+          function Stop-WhaleDesKWallpaperFamily {
+            Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue |
               Stop-Process -Force -ErrorAction SilentlyContinue
             $deadline = [DateTime]::UtcNow.AddSeconds(5)
             do {
               Start-Sleep -Milliseconds 100
-              $alive = @(Get-Process MiaoDeskWallpaper -ErrorAction SilentlyContinue).Count
+              $alive = @(Get-Process WhaleDesKWallpaper -ErrorAction SilentlyContinue).Count
               if ($alive -eq 0) { return }
             } while ([DateTime]::UtcNow -lt $deadline)
-            throw 'MiaoDeskWallpaper process family did not stop before isolated Content lifecycle test.'
+            throw 'WhaleDesKWallpaper process family did not stop before isolated Content lifecycle test.'
           }
 
           $previousLocalAppData = $env:LOCALAPPDATA
-          $stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-content-widget-service-lifecycle'
+          $stateBase = Join-Path $env:RUNNER_TEMP 'WhaleDesK-content-widget-service-lifecycle'
           $diagnosticPath = Join-Path $env:RUNNER_TEMP 'content-widget-lifecycle-output.txt'
           Remove-Item $diagnosticPath -Force -ErrorAction SilentlyContinue
           try {
@@ -867,7 +867,7 @@ jobs:
             # Wait for every coordinator/helper process to be gone before changing
             # LOCALAPPDATA, otherwise named mutex/window state from the old store can
             # race the isolated service test and make EnsureRuntime target stale helpers.
-            Stop-MiaoDeskWallpaperFamily
+            Stop-WhaleDesKWallpaperFamily
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
             New-Item -ItemType Directory -Force -Path $stateBase | Out-Null
 
@@ -917,12 +917,12 @@ jobs:
                   if ($line.Length -gt 500) { $line = $line.Substring(0, 500) }
                   Write-Host "::error::$line"
                 }
-              $wallpaperIni = Join-Path $env:LOCALAPPDATA 'MiaoDesk\wallpaper.ini'
+              $wallpaperIni = Join-Path $env:LOCALAPPDATA 'WhaleDesK\wallpaper.ini'
               if (Test-Path $wallpaperIni -PathType Leaf) {
                 Write-Host 'Content lifecycle wallpaper diagnostics:' -ForegroundColor Yellow
                 Get-Content $wallpaperIni | Tee-Object -FilePath $diagnosticPath -Append | Out-Host
               }
-              $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
+              $debugLog = Join-Path ([Environment]::GetFolderPath('Desktop')) 'WhaleDesK-Logs\desktop-debug.log'
               if (Test-Path $debugLog -PathType Leaf) {
                 Write-Host 'Content lifecycle desktop-debug.log tail:' -ForegroundColor Yellow
                 Get-Content $debugLog -Encoding UTF8 | Select-Object -Last 80 |
@@ -931,7 +931,7 @@ jobs:
               throw "Content widget service lifecycle regression failed with exit code $lifecycleExitCode."
             }
           } finally {
-            Stop-MiaoDeskWallpaperFamily
+            Stop-WhaleDesKWallpaperFamily
             $env:LOCALAPPDATA = $previousLocalAppData
             Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item $stagedTest -Force -ErrorAction SilentlyContinue
@@ -948,12 +948,12 @@ jobs:
 
       - name: Verify staged GlassClock Content Framework route
         shell: pwsh
-        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:WHALEDESK_STAGE_ROOT
 
       - name: Verify login startup stays hidden
         shell: pwsh
         run: |
-          $app = Get-ChildItem $env:MIAODESK_BUILD_ROOT -Filter MiaoDesk.exe -File -Recurse |
+          $app = Get-ChildItem $env:WHALEDESK_BUILD_ROOT -Filter WhaleDesK.exe -File -Recurse |
             Select-Object -First 1
-          if (-not $app) { throw 'Built MiaoDesk.exe was not found.' }
+          if (-not $app) { throw 'Built WhaleDesK.exe was not found.' }
           .\packaging\windows\verify-login-startup.ps1 -ProductRoot $app.DirectoryName

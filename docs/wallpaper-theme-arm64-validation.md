@@ -35,9 +35,9 @@ Do not log, dump, screenshot, or otherwise expose Desktop AI API keys while chec
 
 The three shipped themes must appear to users only as canonical managed `.mdwall` packages:
 
-- `content:com.goodloong.miaodesk.theme.miao-cloud`
-- `content:com.goodloong.miaodesk.theme.neon-city`
-- `content:com.goodloong.miaodesk.theme.mystic-moon`
+- `content:com.goodloong.whaledesk.theme.whale-cloud`
+- `content:com.goodloong.whaledesk.theme.neon-city`
+- `content:com.goodloong.whaledesk.theme.mystic-moon`
 
 Pass criteria:
 
@@ -98,7 +98,7 @@ Repeat the legacy `scene-*` assignment case and verify uninstall/reinstall never
 
 Validate the production layered `scene.ini` rendering path for:
 
-- MiaoCloud
+- WhaleCloud
 - NeonCity
 - MysticMoon
 

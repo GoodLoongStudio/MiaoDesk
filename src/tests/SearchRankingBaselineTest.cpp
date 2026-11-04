@@ -12,13 +12,13 @@
 //
 // 分数不逐个钉死:分数是实现细节,钉死它会让任何一次调优都变成"改 40 个数"。
 // 钉的是**顺序**与**命中/不命中** —— 那才是用户看见的东西。
-#include "miaodesk/SearchTextScoring.h"
+#include "whaledesk/SearchTextScoring.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -56,8 +56,8 @@ std::vector<SearchRankEntry> BaselineIndex() {
         {L"日历", L"calendar outlook", L"Outlook.exe", L"Windows"},
         {L"邮件", L"mail outlook", L"Outlook.exe", L"邮件"},
         {L"时钟", L"clock alarm", L"Clock.exe", L"Windows"},
-        {L"妙喵壁纸", L"miaodesk wallpaper", L"MiaoDesk.exe", L"桌面"},
-        {L"妙喵壁纸设置", L"miaodesk settings", L"MiaoDesk.exe", L"桌面"},
+        {L"妙喵壁纸", L"whaledesk wallpaper", L"WhaleDesK.exe", L"桌面"},
+        {L"妙喵壁纸设置", L"whaledesk settings", L"WhaleDesK.exe", L"桌面"},
         // 同名不同目标:两分钟uild it up 的重复项,用来钉去重与稳定序。
         {L"Steam", L"steam games", L"Steam.exe", L"游戏"},
         {L"Steam 客户端", L"steam client", L"Steam.exe", L"游戏"},
@@ -93,10 +93,10 @@ void ExpectTop(const std::vector<SearchRankEntry>& index, const wchar_t* query,
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     const auto index = BaselineIndex();
 

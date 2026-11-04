@@ -1,4 +1,4 @@
-#include "miaodesk/CreatorWorkspaceState.h"
+#include "whaledesk/CreatorWorkspaceState.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 已知的键。解析时用它区分"没见过的新字段"和"重复的已知字段"。
@@ -200,4 +200,4 @@ std::string SanitizeCreatorSessionId(const std::string& text) {
     return session;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

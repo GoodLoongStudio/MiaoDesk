@@ -1,13 +1,13 @@
 // Runs the content-layer SelfTests that only ever hung off an aggregator with no caller.
 //
-// The situation this file fixes: `MiaoSceneD3D11Renderer::SelfTest()` is
+// The situation this file fixes: `WhaleSceneD3D11Renderer::SelfTest()` is
 // Windows-only and **nothing called it**, and inside it sat
-// `MiaoRenderGraph::SelfTest() && MiaoPostProcessCompiler::SelfTest() && ...` — seven
+// `WhaleRenderGraph::SelfTest() && WhalePostProcessCompiler::SelfTest() && ...` — seven
 // pure-logic self-tests, every one of them reachable only through that dead call, and
 // none of them run anywhere else. Between them they are ~290 lines of assertions about
 // the render graph, the post-process compiler, the shader library, the shader ABI
 // contract, GPU parameter packing and the particle runtime, plus
-// `MiaoSceneRuntimeModel::SelfTest()` (build + parameter + input resolution), which the
+// `WhaleSceneRuntimeModel::SelfTest()` (build + parameter + input resolution), which the
 // aggregator did not even include and which has no other caller either.
 //
 // So the same defect recurred a third time this session, and each time the fix is the
@@ -16,13 +16,13 @@
 // rather than waiting for a 90-second Windows round trip to tell us they broke.
 //
 // Windows-only members of that aggregator are deliberately *not* called from here:
-// `MiaoD3D11ParticleRenderer::SelfTest`, `MiaoD3D11TextureLoader::SelfTestPathPolicy` and
+// `WhaleD3D11ParticleRenderer::SelfTest`, `WhaleD3D11TextureLoader::SelfTestPathPolicy` and
 // the file-local `TransformMathSelfTest`.
 //
-// `MiaoD3D11RenderTargetPool::SelfTest` *used* to be in that list, on the stated grounds
+// `WhaleD3D11RenderTargetPool::SelfTest` *used* to be in that list, on the stated grounds
 // that it "needs d3d11.h". That was wrong twice over, and the correction is instructive:
 // its *implementation* did sit in a .cpp that includes d3d11.h, but it is pure
-// arithmetic, and moving it to MiaoD3D11RenderPolicy.cpp made it runnable here. The
+// arithmetic, and moving it to WhaleD3D11RenderPolicy.cpp made it runnable here. The
 // lesson is that "this needs d3d11.h" was doing duty as an explanation when it was only
 // a description of where the code happened to be filed.
 //
@@ -32,22 +32,22 @@
 // `SelfTestPathPolicy` looks platform-free but is not — one of its three assertions is
 // `!IsSafeRelativePath(L"C:\\outside.png")`, and a drive letter plus a backslash only
 // escapes a package where a backslash is a separator. Running it here returns false.
-#include "miaodesk/MiaoGpuParameterBlock.h"
-#include "miaodesk/MiaoAnalyticParticleField.h"
-#include "miaodesk/MiaoParticleRuntime.h"
-#include "miaodesk/MiaoPostProcessCompiler.h"
-#include "miaodesk/MiaoPostProcessShaderLibrary.h"
-#include "miaodesk/MiaoRenderGraph.h"
-#include "miaodesk/MiaoD3D11RenderTarget.h"
-#include "miaodesk/MiaoD3D11TextureLoader.h"
-#include "miaodesk/MiaoSceneRuntime.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneFrameScheduler.h"
-#include "miaodesk/MiaoShaderContract.h"
+#include "whaledesk/WhaleGpuParameterBlock.h"
+#include "whaledesk/WhaleAnalyticParticleField.h"
+#include "whaledesk/WhaleParticleRuntime.h"
+#include "whaledesk/WhalePostProcessCompiler.h"
+#include "whaledesk/WhalePostProcessShaderLibrary.h"
+#include "whaledesk/WhaleRenderGraph.h"
+#include "whaledesk/WhaleD3D11RenderTarget.h"
+#include "whaledesk/WhaleD3D11TextureLoader.h"
+#include "whaledesk/WhaleSceneRuntime.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneFrameScheduler.h"
+#include "whaledesk/WhaleShaderContract.h"
 
 #include <cstdio>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 
 namespace {
 
@@ -63,34 +63,34 @@ void Run(const char* what, bool (*fn)()) {
 int wmain() {
     std::printf("\n1. 内容层 SelfTest(此前只经由一个无人调用的 D3D11 聚合器可达)\n");
 
-    Run("MiaoRenderGraph::SelfTest", MiaoRenderGraph::SelfTest);
-    Run("MiaoPostProcessCompiler::SelfTest", MiaoPostProcessCompiler::SelfTest);
-    Run("MiaoPostProcessShaderLibrary::SelfTest", MiaoPostProcessShaderLibrary::SelfTest);
-    Run("MiaoShaderContract::SelfTest", MiaoShaderContract::SelfTest);
-    Run("MiaoGpuParameterPacker::SelfTest", MiaoGpuParameterPacker::SelfTest);
-    Run("MiaoParticleRuntime::SelfTest", MiaoParticleRuntime::SelfTest);
-    // 解析场粒子。MiaoParticleRuntime 模拟的是"有状态发射器";内置壁纸的粒子是
+    Run("WhaleRenderGraph::SelfTest", WhaleRenderGraph::SelfTest);
+    Run("WhalePostProcessCompiler::SelfTest", WhalePostProcessCompiler::SelfTest);
+    Run("WhalePostProcessShaderLibrary::SelfTest", WhalePostProcessShaderLibrary::SelfTest);
+    Run("WhaleShaderContract::SelfTest", WhaleShaderContract::SelfTest);
+    Run("WhaleGpuParameterPacker::SelfTest", WhaleGpuParameterPacker::SelfTest);
+    Run("WhaleParticleRuntime::SelfTest", WhaleParticleRuntime::SelfTest);
+    // 解析场粒子。WhaleParticleRuntime 模拟的是"有状态发射器";内置壁纸的粒子是
     // "无状态解析场",两者不是参数差别而是模型差别,所以是另一份实现。它平台无关,
     // 于是每台机器都能跑 —— 包括"位置是否落在 legacy 那个 hash 上"这类保真断言。
-    Run("MiaoAnalyticParticleField SelfTest", MiaoAnalyticParticleFieldSelfTest);
-    Run("MiaoSceneRuntimeModel::SelfTest", MiaoSceneRuntimeModel::SelfTest);
+    Run("WhaleAnalyticParticleField SelfTest", WhaleAnalyticParticleFieldSelfTest);
+    Run("WhaleSceneRuntimeModel::SelfTest", WhaleSceneRuntimeModel::SelfTest);
     // 第八项,来自 P3-6 第 2 步之后的一次更正:渲染目标池的尺寸自测此前也只在 Windows
     // 上跑,而它是纯算术 —— 只是实现躺在一个 include 了 d3d11.h 的 .cpp 里。
-    // 现已搬进 MiaoD3D11RenderPolicy.cpp(平台无关),于是回到每台机器都能跑。
-    Run("MiaoD3D11RenderTargetPool::SelfTest", MiaoD3D11RenderTargetPool::SelfTest);
+    // 现已搬进 WhaleD3D11RenderPolicy.cpp(平台无关),于是回到每台机器都能跑。
+    Run("WhaleD3D11RenderTargetPool::SelfTest", WhaleD3D11RenderTargetPool::SelfTest);
     // 第九项:包内路径安全规则。它此前整个自测都被当成 Windows-only,而其中两条断言
     // (包内资源放行、../ 逃逸拒绝)在任何平台上语义相同。按平台拆开之后,
-    // 这两条从"等一轮 Windows CI"变成"每次提交都在本机跑"。见 MiaoD3D11RenderPolicy.cpp。
-    Run("MiaoD3D11TextureLoader::SelfTestPathPolicy", MiaoD3D11TextureLoader::SelfTestPathPolicy);
+    // 这两条从"等一轮 Windows CI"变成"每次提交都在本机跑"。见 WhaleD3D11RenderPolicy.cpp。
+    Run("WhaleD3D11TextureLoader::SelfTestPathPolicy", WhaleD3D11TextureLoader::SelfTestPathPolicy);
     // 第十项:场景运行时本体。它是 content 层最大的一份自测(绑定求值、事件触发、
     // ping-pong 循环、Once 收尾、参数类型拒绝、Reset 语义),而它**在整个仓库里
     // 没有任何调用方** —— 所以它在任何机器上都没有被执行过,包括 CI。
-    // 这一轮加进来:MiaoSceneRuntime 是纯逻辑(不 import Windows 头),
+    // 这一轮加进来:WhaleSceneRuntime 是纯逻辑(不 import Windows 头),
     // 于是这些断言从"从不运行"变成"每轮都跑"。改动后仍通过。
-    Run("MiaoSceneRuntime::SelfTest", MiaoSceneRuntime::SelfTest);
+    Run("WhaleSceneRuntime::SelfTest", WhaleSceneRuntime::SelfTest);
     // 第十一项:帧调度器。它定的是"这一帧到底还要不要画"(Once 跨过时长时补最后一帧、
     // 空闲内容降到 0FPS、fps 夹紧),而它同样没有调用方。
-    Run("MiaoSceneFrameScheduler::SelfTest", MiaoSceneFrameScheduler::SelfTest);
+    Run("WhaleSceneFrameScheduler::SelfTest", WhaleSceneFrameScheduler::SelfTest);
 
     std::printf("\n");
     if (failures != 0) {

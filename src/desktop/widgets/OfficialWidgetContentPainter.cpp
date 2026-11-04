@@ -1,15 +1,15 @@
-#include "miaodesk/NativeWidgetPainter.h"
+#include "whaledesk/NativeWidgetPainter.h"
 
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <d2d1helper.h>
 #include <windows.h>
 
 #include <string>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr std::wstring_view kGlassClockDefinitionId = L"com.goodloong.glass-clock";
@@ -19,14 +19,14 @@ void LogFallbackOnce(std::wstring_view detail) {
     const std::wstring current(detail);
     if (current == lastDetail) return;
     lastDetail = current;
-    miaodesk::log::Warn(L"WidgetContent", L"GlassClock .mdwidget 回退 Native painter: " + current);
+    whaledesk::log::Warn(L"WidgetContent", L"GlassClock .mdwidget 回退 Native painter: " + current);
 }
 
 void LogSuccessOnce() {
     static bool logged = false;
     if (logged) return;
     logged = true;
-    miaodesk::log::Info(L"WidgetContent", L"GlassClock 已通过 Miao Content Framework / Scene TextRenderer 绘制");
+    whaledesk::log::Info(L"WidgetContent", L"GlassClock 已通过 Whale Content Framework / Scene TextRenderer 绘制");
 }
 
 } // namespace
@@ -41,7 +41,7 @@ bool TryPaintOfficialWidgetContent(
         return false;
     }
 
-    const std::wstring source = content::MiaoWidgetContentCatalog::MakeSource(kGlassClockDefinitionId);
+    const std::wstring source = content::WhaleWidgetContentCatalog::MakeSource(kGlassClockDefinitionId);
     if (source.empty()) {
         if (error) *error = L"GlassClock content source id is invalid.";
         LogFallbackOnce(error ? *error : L"invalid source");
@@ -50,7 +50,7 @@ bool TryPaintOfficialWidgetContent(
 
     content::ResolvedWidgetContent resolved;
     std::wstring resolveError;
-    if (!content::MiaoWidgetContentCatalog::Resolve(source, &resolved, &resolveError)) {
+    if (!content::WhaleWidgetContentCatalog::Resolve(source, &resolved, &resolveError)) {
         if (error) *error = resolveError;
         LogFallbackOnce(resolveError);
         return false;
@@ -63,7 +63,7 @@ bool TryPaintOfficialWidgetContent(
         return false;
     }
 
-    content::MiaoSceneD2DRenderer renderer;
+    content::WhaleSceneD2DRenderer renderer;
     std::wstring renderError;
     if (!renderer.Load(resolved.packageRoot, context.target, &renderError)) {
         if (error) *error = renderError;
@@ -92,4 +92,4 @@ bool TryPaintOfficialWidgetContent(
     return true;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

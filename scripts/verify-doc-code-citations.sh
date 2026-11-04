@@ -13,7 +13,7 @@
 # 这个边界不是理论上的。2026-09-22 做过一次全量人工核对:把 docs/ 里每一条
 # `文件.cpp:行号` 引用连同它的文档上下文,与实际那一行打印出来对照,26 条能解析的引用里
 # **有 10 条指错了地方** —— 而这 10 条这道门全是放行的(因为那些行都存在)。典型:
-#   · MiaoSceneRuntimeModel.h:166 被引作"每 emitter 粒子 ≤ 65536",实际那一行是一条
+#   · WhaleSceneRuntimeModel.h:166 被引作"每 emitter 粒子 ≤ 65536",实际那一行是一条
 #     关于灯光节点的注释,常量在 :257;
 #   · PiRuntime.cpp:413 被引作 ConfigurePiAgent,实际那是 PiRuntime::Status() 里的,
 #     函数在 :429;

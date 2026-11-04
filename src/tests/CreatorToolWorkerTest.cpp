@@ -11,11 +11,11 @@
 //
 // 全部断言都在本机真实运行:workspace 是一个 in-memory 实现,所以盘满、暂存被占用、
 // 摘要不符这些分支不需要 Windows 也能走到。
-#include "miaodesk/CreatorToolWorker.h"
-#include "miaodesk/ContentCandidateReceipt.h"
-#include "miaodesk/RenderEvidence.h"
-#include "miaodesk/CreatorWorkspaceState.h"
-#include "miaodesk/ContentCandidateLedger.h"
+#include "whaledesk/CreatorToolWorker.h"
+#include "whaledesk/ContentCandidateReceipt.h"
+#include "whaledesk/RenderEvidence.h"
+#include "whaledesk/CreatorWorkspaceState.h"
+#include "whaledesk/ContentCandidateLedger.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -901,7 +901,7 @@ void TestNewCreatorSessionId() {
 
     // 它要能原样通过 DeriveCreatorSessionId 的反推:目录名的最后一段就是它自己。
     const std::string root =
-        "C:/Users/me/AppData/Local/MiaoDesk/CreatorWorkspaces/wallpaper/" + first;
+        "C:/Users/me/AppData/Local/WhaleDesK/CreatorWorkspaces/wallpaper/" + first;
     CheckEq(DeriveCreatorSessionId(root), first, "工作区根反推回来的就是它自己");
 }
 
@@ -1225,10 +1225,10 @@ void TestEvidenceWithoutAUsableDigestIsRefused() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestStateRoundTrip();
     TestStateParseRejectsWhatItCannotTrust();
     TestHostBindingWinsOverArguments();

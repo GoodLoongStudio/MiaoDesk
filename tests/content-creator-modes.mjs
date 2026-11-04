@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 
 const read = (path) => fs.readFileSync(path, "utf8");
 
-const header = read("src/include/miaodesk/ConversationPanel.h");
+const header = read("src/include/whaledesk/ConversationPanel.h");
 const panel = read("src/ui/ai/ConversationPanel.cpp");
 const panelImpl = read("src/ui/ai/ConversationPanelImpl.inc");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
-const creatorHeader = read("src/include/miaodesk/ContentCreatorDialog.h");
+const creatorHeader = read("src/include/whaledesk/ContentCreatorDialog.h");
 const search = read("src/ui/search/SearchWindow.cpp");
-const searchHeader = read("src/include/miaodesk/SearchWindow.h");
+const searchHeader = read("src/include/whaledesk/SearchWindow.h");
 const bridge = read("src/desktop/control/ContentCreatorBridge.cpp");
 const library = read("src/ui/wallpaper/WallpaperLibraryWindowV2.cpp");
 const wallpaperSkill = read("skills/wallpaper-content/SKILL.md");
@@ -19,7 +19,7 @@ assert.ok(header.includes("PiRuntime& SharedConversationPiRuntime() noexcept"));
 assert.match(panel, /PiRuntime& SharedConversationPiRuntime\(\) noexcept[\s\S]*return gPiRuntime/);
 
 assert.match(creatorHeader, /ShowContentCreatorDialog/);
-assert.match(creator, /MiaoDesk.Native.ContentCreatorDialog/);
+assert.match(creator, /WhaleDesK.Native.ContentCreatorDialog/);
 assert.match(creator, /AI 制作壁纸/);
 assert.match(creator, /AI 制作组件/);
 assert.match(creator, /content-package-basics/);
@@ -37,12 +37,12 @@ assert.match(creator, /if \(HWND existing = FindOpenCreatorWindow\(kind\)\)[\s\S
 assert.match(creator, /WS_EX_APPWINDOW, kCreatorWindowClass, title,[\s\S]*placement\.x, placement\.y, placement\.width, placement\.height,[\s\S]*nullptr, nullptr, instance, state/,
   "the modeless creator must be an independent top-level window, not owned by the hidden SearchWindow");
 assert.match(bridge, /AllowSetForegroundWindow\(targetProcessId\)/,
-  "the foreground Wallpaper Library must grant the running MiaoDesk process permission to activate the creator");
+  "the foreground Wallpaper Library must grant the running WhaleDesK process permission to activate the creator");
 assert.ok(creator.includes("pi->AskAsync("));
 assert.ok(creator.includes("InstallContentPackage("));
 assert.ok(creator.includes("CreateContentWidget("));
 assert.ok(creator.includes("ApplyLibraryItem("));
-assert.ok(creator.includes("MiaoContentPackage::Load("));
+assert.ok(creator.includes("WhaleContentPackage::Load("));
 assert.match(creator, /FindGeneratedPackagePath/);
 assert.ok(creator.includes("EnableWindow(preview, TRUE)"));
 // The library button is no longer simply enabled when a package loads: a validated
@@ -63,7 +63,7 @@ assert.doesNotMatch(creator, /EnableWindow\(apply, TRUE\)/,
   "apply must never be enabled unconditionally");
 assert.match(creator, /previewPane/);
 assert.match(creator, /LoadPreviewBitmap/);
-assert.match(creator, /MiaoSceneD2DRenderer/);
+assert.match(creator, /WhaleSceneD2DRenderer/);
 assert.match(creator, /StartLivePreview/);
 assert.match(creator, /DrawLivePreview/);
 assert.match(creator, /kPreviewTimerId/);
@@ -124,7 +124,7 @@ assert.match(creator, /未发送，当前有任务在进行/,
 // grep below while the three sides were still coupled only by a human promise.
 // So pin the coupling itself: one prefix constant, referenced by the creator's
 // marker and by the verdict text.
-const lifecycle = read("src/include/miaodesk/MiaoTurnLifecycle.h");
+const lifecycle = read("src/include/whaledesk/WhaleTurnLifecycle.h");
 assert.match(lifecycle, /inline constexpr wchar_t kTurnRejectionPrefix\[\] = L"Pi Runtime 正忙"/,
   "the shared rejection prefix must exist with the creator's marker value");
 const rejectionPrefix = [...lifecycle.matchAll(/kTurnRejectionPrefix\[\] = L"([^"]*)"/g)][0][1];

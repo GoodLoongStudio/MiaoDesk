@@ -1,4 +1,4 @@
-# MiaoDesk 专业级动态桌面与 AI 创作总体规划
+# WhaleDesK 专业级动态桌面与 AI 创作总体规划
 
 - 版本：1.0；建立／更新：2026-10-03。
 - 依据：项目所有者确认的新目标——动态壁纸达到 Wallpaper Engine 水平，组件能力堪比 macOS，AI 能专业地理解、运用和组合底层能力。
@@ -18,7 +18,7 @@
 | macOS 级组件 | 浏览安装、多尺寸、自适应布局、数据更新、直接操作、状态反馈、键盘/无障碍、个性化和低功耗 | 三款固定卡片；假数据；只模仿玻璃外观 |
 | 专业 AI 创作 | 设计、素材、制作、校验、真实渲染、评审、局部修复、连续修改和交付 | 仅生成合法 JSON；模型自称好看；封面冒充动画验收 |
 
-使用 MiaoDesk 自己的格式、Native Runtime 和创作流程。旧大型编辑器的代码和 UI 不自动复活；但 3D、形变、程序化效果等表达能力不能再以“旧编辑器特性”为由排除。Steam Workshop 生态规模、Apple 跨设备私有协议不作为本轮完成条件。
+使用 WhaleDesK 自己的格式、Native Runtime 和创作流程。旧大型编辑器的代码和 UI 不自动复活；但 3D、形变、程序化效果等表达能力不能再以“旧编辑器特性”为由排除。Steam Workshop 生态规模、Apple 跨设备私有协议不作为本轮完成条件。
 
 完整专业版必须满足 S0～S7。S1 后可按原 RC 规则交付稳定基础版，但只能标注实际范围，不能宣称三个新目标已经完成。
 
@@ -29,7 +29,7 @@
 | 事项 | 本次核对 | 后续动作 |
 | --- | --- | --- |
 | 官方壁纸迁移 | 三个 manifest 均以 scene.json 为入口，场景一致性检查通过 | 正式运行、效果、多屏与性能验收：DESK-01 |
-| Scene 指针/音频 | IndependentWallpaperHost 已发布输入；MiaoWallpaperAudioTap 已有 WASAPI 采集 | 归属、暂停、设备变化与恢复：DESK-03/04 |
+| Scene 指针/音频 | IndependentWallpaperHost 已发布输入；WhaleWallpaperAudioTap 已有 WASAPI 采集 | 归属、暂停、设备变化与恢复：DESK-03/04 |
 | Web 音频 | WebDesktopSurfaceChild 已推帧 | 页面真实收帧与资源策略：DESK-05；暂停时仍保留采集客户端需处理 |
 | Creator | 已有候选、事务、恢复、工具 registry 等实现与测试 | 按用户路径核实集成；历史 CCA 状态不能当当前结论 |
 | Shader/AI 边界 | 长期可编程目标与当前 Creator 声明式限制存在混淆 | CAP-01 分开运行、预览和 AI 创作支持；高级 AI Shader 由 ADV-04 放行 |
@@ -37,13 +37,13 @@
 
 本次本机运行了 Creator 开窗、创作模式、多 API、搜索路由、C++→Web 音频信封五项契约检查及三官方场景一致性检查，全部通过；未运行 Windows 产品。
 
-代码入口：`src/desktop/wallpaper/monitor/IndependentWallpaperHost.cpp`、`src/desktop/wallpaper/monitor/MiaoWallpaperAudioTap.cpp`、`src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp`、`src/desktop/control/`、`src/content/`。
+代码入口：`src/desktop/wallpaper/monitor/IndependentWallpaperHost.cpp`、`src/desktop/wallpaper/monitor/WhaleWallpaperAudioTap.cpp`、`src/desktop/wallpaper/web/WebDesktopSurfaceChild.cpp`、`src/desktop/control/`、`src/content/`。
 
 原面板的百分比仅针对旧基础范围，不能沿用为专业版完成率。新范围按能力、证据和阶段门统计。
 
 ## 3. 壁纸基础能力
 
-外部依据见 [Wallpaper Engine 对标](WALLPAPER_ENGINE_BENCHMARK.md)。下表是 MiaoDesk 建设要求。
+外部依据见 [Wallpaper Engine 对标](WALLPAPER_ENGINE_BENCHMARK.md)。下表是 WhaleDesK 建设要求。
 
 | 能力组 | 基础能力 | 代表作品与验收 | 任务 |
 | --- | --- | --- | --- |

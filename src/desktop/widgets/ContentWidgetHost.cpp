@@ -1,22 +1,22 @@
-#include "miaodesk/ContentWidgetHost.h"
+#include "whaledesk/ContentWidgetHost.h"
 
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/ContentWidgetInstanceStore.h"
-#include "miaodesk/DesktopShellHost.h"
-#include "miaodesk/DesktopSurfaceTelemetry.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/MiaoWidgetContentCatalog.h"
-#include "miaodesk/NativeWeatherService.h"
-#include "miaodesk/NativeWidgetHost.h"
-#include "miaodesk/NativeWidgetPreset.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/TodayTaskContentProvider.h"
-#include "miaodesk/MiaoWidgetGeometry.h"
-#include "miaodesk/WidgetRefreshPolicy.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/WebDesktopSurfaceChild.h"
-#include "miaodesk/WidgetService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/ContentWidgetInstanceStore.h"
+#include "whaledesk/DesktopShellHost.h"
+#include "whaledesk/DesktopSurfaceTelemetry.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/WhaleWidgetContentCatalog.h"
+#include "whaledesk/NativeWeatherService.h"
+#include "whaledesk/NativeWidgetHost.h"
+#include "whaledesk/NativeWidgetPreset.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/TodayTaskContentProvider.h"
+#include "whaledesk/WhaleWidgetGeometry.h"
+#include "whaledesk/WidgetRefreshPolicy.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/WebDesktopSurfaceChild.h"
+#include "whaledesk/WidgetService.h"
 
 #include <d2d1.h>
 #include <d2d1_1.h>
@@ -38,19 +38,19 @@
 
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
-// WPRO-05 的刷新间隔常量住在 miaodesk::desktop(与策略实现同一处)。引进来,
+// WPRO-05 的刷新间隔常量住在 whaledesk::desktop(与策略实现同一处)。引进来,
 // 免得每个宿主各写一份 1000 / 2000 —— 两处各写一个的代价是"改空闲间隔"要在两个
 // 地方各改一次,而漏掉的那处不会有任何测试红。
-using miaodesk::desktop::ApplyRefreshOutcome;
-using miaodesk::desktop::kWidgetDirectSurfaceHeartbeatMs;
-using miaodesk::desktop::kWidgetIdleRefreshMs;
-using miaodesk::desktop::FormatAspect;
-using miaodesk::desktop::JudgeWidgetAspectOfBox;
-using miaodesk::desktop::NextRefreshAt;
-using miaodesk::desktop::WidgetPixelBox;
-using miaodesk::desktop::WidgetRefreshState;
+using whaledesk::desktop::ApplyRefreshOutcome;
+using whaledesk::desktop::kWidgetDirectSurfaceHeartbeatMs;
+using whaledesk::desktop::kWidgetIdleRefreshMs;
+using whaledesk::desktop::FormatAspect;
+using whaledesk::desktop::JudgeWidgetAspectOfBox;
+using whaledesk::desktop::NextRefreshAt;
+using whaledesk::desktop::WidgetPixelBox;
+using whaledesk::desktop::WidgetRefreshState;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr wchar_t kContentHostMode[] = L"--content-widget-host";
@@ -264,7 +264,7 @@ bool ResolveContentRuntime(
     }
 
     content::ResolvedWidgetContent resolved;
-    if (!content::MiaoWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, error)) return false;
+    if (!content::WhaleWidgetContentCatalog::Resolve(widget.source.wstring(), &resolved, error)) return false;
     if (resolved.definition.kind != content::ContentKind::Widget) {
         if (error) *error = L"Content definition is not a widget: " + resolved.definition.id;
         return false;
@@ -311,7 +311,7 @@ struct ContentSlot {
     UINT layerWidth{};
     UINT layerHeight{};
 
-    std::unique_ptr<content::MiaoSceneD2DRenderer> renderer;
+    std::unique_ptr<content::WhaleSceneD2DRenderer> renderer;
     ID2D1RenderTarget* rendererTarget{};
 
     bool dragging{};
@@ -388,9 +388,9 @@ struct ContentWidgetHostApp {
             box.width = static_cast<float>(slot.layerWidth);
             box.height = static_cast<float>(slot.layerHeight);
             const auto verdict = JudgeWidgetAspectOfBox(box, slot.definition.geometry.aspectRatio);
-            return L" aspectDeclared=" + miaodesk::desktop::FormatAspect(verdict.declaredAspect) +
-                   L" aspectActual=" + miaodesk::desktop::FormatAspect(verdict.pixelAspect) +
-                   L" aspectDistortion=" + miaodesk::desktop::FormatAspect(verdict.distortion) +
+            return L" aspectDeclared=" + whaledesk::desktop::FormatAspect(verdict.declaredAspect) +
+                   L" aspectActual=" + whaledesk::desktop::FormatAspect(verdict.pixelAspect) +
+                   L" aspectDistortion=" + whaledesk::desktop::FormatAspect(verdict.distortion) +
                    L" aspectHonored=" + (verdict.exact ? L"true" : L"false");
         }
         // 没声明就不写这一段:写了会让人以为这里有过一个结论。
@@ -419,12 +419,12 @@ struct ContentWidgetHostApp {
                AspectVerdict(slot);
     }
 
-    void LogSlot(miaodesk::log::Level level, std::wstring_view event,
+    void LogSlot(whaledesk::log::Level level, std::wstring_view event,
                  const ContentSlot& slot, std::wstring_view detail = {}) const {
         std::wstring text(event);
         text += L": " + SurfaceState(slot);
         if (!detail.empty()) text += L" " + std::wstring(detail);
-        miaodesk::log::Write(level, L"ContentWidgetHost", text);
+        whaledesk::log::Write(level, L"ContentWidgetHost", text);
     }
 
     void ReportFailure(ContentSlot* slot, std::wstring message) {
@@ -433,8 +433,8 @@ struct ContentWidgetHostApp {
         WriteDiagnostics(lastError);
         if (slot) MarkPaintReady(slot->hwnd, false);
         if (!changed) return;
-        if (slot) LogSlot(miaodesk::log::Level::Error, L"Content Surface 失败", *slot, lastError);
-        else miaodesk::log::Error(L"ContentWidgetHost", lastError);
+        if (slot) LogSlot(whaledesk::log::Level::Error, L"Content Surface 失败", *slot, lastError);
+        else whaledesk::log::Error(L"ContentWidgetHost", lastError);
     }
 
     bool EnsureFactory() {
@@ -628,7 +628,7 @@ struct ContentWidgetHostApp {
             return false;
         }
         for (const auto& [key, value] : overrides) {
-            const auto* parameter = content::MiaoContentModel::FindParameter(slot.definition, key);
+            const auto* parameter = content::WhaleContentModel::FindParameter(slot.definition, key);
             if (!parameter) continue;
             if (!slot.renderer->SetParameter(parameter->runtimeId, value, &error)) {
                 ReportFailure(&slot, L"Content parameter apply failed: " + key + L": " + error);
@@ -687,7 +687,7 @@ struct ContentWidgetHostApp {
 
     bool EnsureRenderer(ContentSlot& slot) {
         if (!slot.activeTarget || slot.packageRoot.empty()) return false;
-        if (!slot.renderer) slot.renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+        if (!slot.renderer) slot.renderer = std::make_unique<content::WhaleSceneD2DRenderer>();
         if (slot.rendererTarget == slot.activeTarget && slot.renderer->Loaded()) return true;
         slot.renderer->Reset();
         std::wstring error;
@@ -728,10 +728,10 @@ struct ContentWidgetHostApp {
         const ULONGLONG now = GetTickCount64();
         std::uint32_t interval = kWidgetIdleRefreshMs;
         if (slot.renderer && slot.renderer->Loaded()) {
-            content::MiaoSceneFrameDemand demand;
+            content::WhaleSceneFrameDemand demand;
             std::wstring ignored;
             if (slot.renderer->PrepareFrame(timeSeconds, &demand,
-                                            content::MiaoSceneFrameScheduler::kDefaultAnimationFps,
+                                            content::WhaleSceneFrameScheduler::kDefaultAnimationFps,
                                             &ignored) && demand.intervalMs > 0) {
                 interval = std::max<std::uint32_t>(kRefreshTickMs, demand.intervalMs);
             }
@@ -802,7 +802,7 @@ struct ContentWidgetHostApp {
         lastError.clear();
         ScheduleNextRefresh(slot, timeSeconds);
         if (firstPaint || recovered) {
-            LogSlot(miaodesk::log::Level::Info,
+            LogSlot(whaledesk::log::Level::Info,
                     firstPaint ? L"Content 组件首次绘制成功" : L"Content 组件绘制恢复成功",
                     slot);
         }
@@ -814,11 +814,11 @@ struct ContentWidgetHostApp {
         if (shouldRunHere) {
             weatherService.Start(messageWindow, kWeatherUpdatedMessage);
             weatherStarted = true;
-            miaodesk::log::Info(L"ContentWidgetHost", L"Content Weather 启动共享天气刷新服务");
+            whaledesk::log::Info(L"ContentWidgetHost", L"Content Weather 启动共享天气刷新服务");
         } else {
             weatherService.Stop();
             weatherStarted = false;
-            miaodesk::log::Info(L"ContentWidgetHost", L"Content Weather 停止天气刷新服务，改由 Native Weather 或无天气组件状态接管");
+            whaledesk::log::Info(L"ContentWidgetHost", L"Content Weather 停止天气刷新服务，改由 Native Weather 或无天气组件状态接管");
         }
     }
 
@@ -957,7 +957,7 @@ struct ContentWidgetHostApp {
     }
 
     void DestroySlot(ContentSlot& slot) {
-        if (slot.hwnd && IsWindow(slot.hwnd)) LogSlot(miaodesk::log::Level::Info, L"销毁 Content Surface", slot);
+        if (slot.hwnd && IsWindow(slot.hwnd)) LogSlot(whaledesk::log::Level::Info, L"销毁 Content Surface", slot);
         ReleaseSurface(slot);
         if (slot.hwnd && IsWindow(slot.hwnd)) DestroyWindow(slot.hwnd);
         slot.hwnd = nullptr;
@@ -1147,13 +1147,13 @@ struct ContentWidgetHostApp {
         if (!lastError.empty()) summary += L" error=\"" + lastError + L"\"";
         WriteDiagnostics(summary);
         if (summary != lastLoggedSummary) {
-            miaodesk::log::Info(L"ContentWidgetHost", summary);
+            whaledesk::log::Info(L"ContentWidgetHost", summary);
             lastLoggedSummary = summary;
         }
 
         DesktopShellHost shell;
         std::wstring shellError;
-        if (shell.EnsureCurrent(&shellError)) shell.RepairKnownMiaoDeskSurfaces();
+        if (shell.EnsureCurrent(&shellError)) shell.RepairKnownWhaleDesKSurfaces();
     }
 
     void RepaintDue() {
@@ -1178,7 +1178,7 @@ struct ContentWidgetHostApp {
     int Run() {
         if (!parent || !IsWindow(parent) || !EnsureFactory() || !EnsureWindows()) return 74;
         WriteDiagnostics(L"Content Direct2D Widget host started parent=" + HandleText(parent));
-        miaodesk::log::Info(L"ContentWidgetHost", L"Content 组件宿主启动: parent=" + HandleText(parent));
+        whaledesk::log::Info(L"ContentWidgetHost", L"Content 组件宿主启动: parent=" + HandleText(parent));
         SetTimer(messageWindow, kSyncTimerId, kSyncIntervalMs, nullptr);
         SetTimer(messageWindow, kRefreshTimerId, kRefreshTickMs, nullptr);
         SyncFromStore();
@@ -1288,7 +1288,7 @@ bool ContentWidgetProcessSet::Start(HWND parentWindow) {
 
     const std::wstring executable = ExecutablePath();
     if (executable.empty()) {
-        lastError_ = L"Cannot locate MiaoDeskWallpaper.exe";
+        lastError_ = L"Cannot locate WhaleDesKWallpaper.exe";
         return false;
     }
     std::wstring command = QuoteArg(executable) + L" " + kContentHostMode + L" --parent-hwnd " +
@@ -1353,8 +1353,8 @@ std::wstring ContentWidgetProcessSet::DiagnosticsText() const {
 }
 
 bool ContentWidgetProcessSet::SelfTest() noexcept {
-    return content::MiaoWidgetContentCatalog::IsContentSource(L"content:com.goodloong.example") &&
-           !content::MiaoWidgetContentCatalog::IsContentSource(L"native:glass-clock");
+    return content::WhaleWidgetContentCatalog::IsContentSource(L"content:com.goodloong.example") &&
+           !content::WhaleWidgetContentCatalog::IsContentSource(L"native:glass-clock");
 }
 
 int TryRunContentWidgetHost(HINSTANCE instance) {
@@ -1379,4 +1379,4 @@ int TryRunContentWidgetHost(HINSTANCE instance) {
     return result;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

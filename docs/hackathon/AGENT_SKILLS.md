@@ -1,6 +1,6 @@
 # Agent Skills 说明
 
-MiaoDesk 把“怎么制作壁纸、怎么制作组件、怎么检查安全性”写成独立的 Markdown Skill。
+WhaleDesK 把“怎么制作壁纸、怎么制作组件、怎么检查安全性”写成独立的 Markdown Skill。
 
 这样做的目的，是让 AI 可以学习产品规则，但不能绕过产品规则。
 
@@ -22,7 +22,7 @@ MiaoDesk 把“怎么制作壁纸、怎么制作组件、怎么检查安全性�
 
 一句话：
 
-> 教 AI “MiaoDesk 内容包应该长什么样”。
+> 教 AI “WhaleDesK 内容包应该长什么样”。
 
 ## Skill 2：Wallpaper Content
 
@@ -39,7 +39,7 @@ MiaoDesk 把“怎么制作壁纸、怎么制作组件、怎么检查安全性�
 
 一句话：
 
-> 教 AI “怎样做一张真的能在 MiaoDesk 里运行的动态壁纸”。
+> 教 AI “怎样做一张真的能在 WhaleDesK 里运行的动态壁纸”。
 
 ## Skill 3：Widget Content
 
@@ -111,4 +111,4 @@ Skill 文件可以独立版本管理，并且和代码一起开源。
 
 Skills 总入口：
 
-https://github.com/GoodLoongStudio/MiaoDesk/tree/main/skills
+https://github.com/GoodLoongStudio/WhaleDesK/tree/main/skills

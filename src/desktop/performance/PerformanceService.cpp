@@ -1,6 +1,6 @@
-#include "miaodesk/PerformanceService.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/PerformanceService.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 fs::path ConfigPath() {
@@ -96,4 +96,4 @@ PerformanceServiceResult PerformanceService::SaveConfig(const wallpaper::Perform
               : PerformanceServiceResult{false, L"无法保存性能策略。"};
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

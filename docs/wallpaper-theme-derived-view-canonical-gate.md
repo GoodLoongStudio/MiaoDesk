@@ -15,7 +15,7 @@ This gate is intentionally independent from monitor-assignment loading. It prote
 
 The Independent layout/self-test must materialize the following state in a UTF-16LE `library.ini` and a separate monitor-assignment fixture:
 
-1. canonical `content:com.goodloong.miaodesk.theme.neon-city` package exists and validates;
+1. canonical `content:com.goodloong.whaledesk.theme.neon-city` package exists and validates;
 2. persisted monitor assignment is still `scene-neon`;
 3. the Library contains the canonical item plus a stale legacy row;
 4. Favorites and Recently Used both include the stale legacy row before refresh;

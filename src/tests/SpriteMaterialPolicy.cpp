@@ -2,31 +2,31 @@
 //
 // Why this exists: the D2D and D3D11 backends each worked out their own rule for how a
 // sprite reaches a texture, and the rules disagreed. The case that exposed it is not
-// hypothetical -- MiaoCloud's five layer sprites declare a `texture` and no `materialId`,
+// hypothetical -- WhaleCloud's five layer sprites declare a `texture` and no `materialId`,
 // so D2D drew them while D3D11 refused to load the package at all ("Scene SpriteRenderer
 // does not resolve a material"). The only fully populated wallpaper in the repository
 // worked on one backend and failed on the other, and the difference could only surface on
 // a machine with a D3D11 device.
 //
-// That is now one rule (MiaoSpriteMaterialPolicy.cpp), and this test pins two things
+// That is now one rule (WhaleSpriteMaterialPolicy.cpp), and this test pins two things
 // about it:
 //   1. the rule itself -- every combination below, including the ones that must be refused;
 //   2. parity -- every input both backends accept resolves to the same draw path.
 //      Otherwise a future edit could make the two disagree again with nothing noticing,
 //      because the rendering side of this cannot run on a machine without a D3D11 device.
 //
-// Every scene in the repository is represented below: MiaoCloud (texture and no
+// Every scene in the repository is represented below: WhaleCloud (texture and no
 // material), the three widgets and AuroraMinimal (a solidColor material and no texture),
 // ShaderPulse (a programmable material -- D3D11 only).
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSpriteMaterialPolicy.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSpriteMaterialPolicy.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 
 namespace {
 
@@ -72,7 +72,7 @@ bool Resolves(
 } // namespace
 
 int wmain() {
-    std::printf("\n1. SpriteRenderer material policy (MiaoSpriteMaterialPolicy.cpp)\n");
+    std::printf("\n1. SpriteRenderer material policy (WhaleSpriteMaterialPolicy.cpp)\n");
 
     const auto solid = MakeMaterial(L"material://m", MaterialModel::Builtin, L"solidColor");
     const auto gradient = MakeMaterial(L"material://m", MaterialModel::Builtin, L"gradient");
@@ -93,7 +93,7 @@ int wmain() {
 
     std::printf("\n  a. shapes both backends must accept\n");
 
-    // MiaoCloud's shape. This is the cell that used to diverge: D3D11 refused the whole
+    // WhaleCloud's shape. This is the cell that used to diverge: D3D11 refused the whole
     // package here with "does not resolve a material" while D2D drew it.
     Check(Resolves(L"", nullptr, L"asset://layer/cat/image", false, &d2d) &&
               d2d == SpriteDrawPath::SpriteTexture,

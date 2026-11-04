@@ -19,8 +19,8 @@ concurrency:
 #   no-conflict-markers     2026-09-22 stage.ps1 里留着 <<<<<<< 三行,干掉了三个打包
 #                           工作流。.ps1 不进 C++ 编译器,所以在被 pwsh 解析前一路绿灯。
 #
-#   cmake-covers-sources    MiaoD3D11TextureLoader.cpp 在磁盘上、语法没问题,但没进
-#                           MIAODESK_*_SOURCES,从来没被编译过 → 链接期 LNK2019。
+#   cmake-covers-sources    WhaleD3D11TextureLoader.cpp 在磁盘上、语法没问题,但没进
+#                           WHALEDESK_*_SOURCES,从来没被编译过 → 链接期 LNK2019。
 #                           语法闸门扫的是"磁盘上有什么",照样编译它,所以看不出它没被收录。
 #
 #   shell-scripts-parse    run-pure-logic-tests.sh 第 98 行一句 echo 的引号没有闭合,
@@ -143,7 +143,7 @@ jobs:
       # skills/ 是用户制作壁纸时唯一读到的规范。它此前只写了"material 优先引用
       # builtin",而渲染器只接受 builtinName:"solidColor" 一个值、programmable
       # 只有 D3D11 能画、texture 与 material 同时写会被拒 —— 规范在教作者写
-      # 渲染器会拒的包。这个门从 MiaoSpriteMaterialPolicy.cpp 读出认可的 builtin 名,
+      # 渲染器会拒的包。这个门从 WhaleSpriteMaterialPolicy.cpp 读出认可的 builtin 名,
       # 再按小节核对 skills 是否说到它。判据是关键词命中,措辞层面的改写抓不到,
       # 这一点写在这个脚本自己的头部了。
       - name: Verify the content skills state the renderer's sprite-material rule
@@ -162,7 +162,7 @@ jobs:
       # skills/ 与 docs/ 把 capabilities 举例成 "clock.read / weather.read /
       # audio.read",而 RequiredCapability 只认识 time. / weather. / tasks. 三个
       # 前缀 —— 音频是输入通道,不是能力声明。
-      # 判据从代码读出(MiaoContentDataBinding.cpp 的能力映射、MiaoInputBus.h 的通道
+      # 判据从代码读出(WhaleContentDataBinding.cpp 的能力映射、WhaleInputBus.h 的通道
       # 闭集),不在这里再抄一份。
       - name: Verify skills and docs claim only capabilities the runtime has
         shell: bash
@@ -176,7 +176,7 @@ jobs:
 
       # CAP-01:能力目录是本机唯一守得住"目录与代码同步"的地方。它从代码读出事实
       # (ComponentKind 枚举、InputBus 通道常量、broker 的前缀↔能力对、真正被支持的
-      # builtin、kBindingResponseCount),再与 MiaoCapabilityCatalog.cpp 比对。
+      # builtin、kBindingResponseCount),再与 WhaleCapabilityCatalog.cpp 比对。
       # 早期版本只比**数量**:把 scene.spriteRenderer 改名成 scene.sprite 时数量不变,
       # 门放行了 —— 而"同名"恰恰是它唯一该保证的事。现在比的是名字。
       - name: Verify the capability catalog names what the code has
@@ -209,14 +209,14 @@ jobs:
       - name: Verify builtin scene.json matches frozen legacy migration fixtures
         shell: bash
         run: |
-          out=$(python3 scripts/generate-miao-cloud-scene.py --check 2>&1) || {
+          out=$(python3 scripts/generate-whale-cloud-scene.py --check 2>&1) || {
             echo "$out" | tail -20 | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit 1
           }
 
-      # NeonCity 与 MysticMoon 的美术资产是脚本产物,不是手绘源。MiaoCloud 有上面
+      # NeonCity 与 MysticMoon 的美术资产是脚本产物,不是手绘源。WhaleCloud 有上面
       # 那个门(它的 scene.json 从 scene.ini 生成),这两个包一直**没有任何门**:
       # 唯一的检查写在脚本自己身上,而那个检查跑不起来。
       # 具体到 2026-09-22:at HEAD,`--check` 第一行就死 —— configparser.read() 打不开
@@ -253,7 +253,7 @@ jobs:
       # stage.ps1 里那份手写的壁纸资产断言清单。真正的拷贝是 CMake 的
       # install(DIRECTORY ...) 整目录,所以少列一项不会让文件消失 —— 但会让
       # "它是否真的进了打包产物"失去检查。cloud.png 就是这样被漏了一整天:
-      # MiaoCloud scene.json 从空壳填成 5 层的同一天,断言清单还是 4 项。
+      # WhaleCloud scene.json 从空壳填成 5 层的同一天,断言清单还是 4 项。
       # 判据从每个包的生效入口推。对三个内置包还额外断言 legacy_entry 与
       # scene.ini 都不得回流,让产品入口、门禁与打包清单保持同一个 canonical 来源。
       - name: Verify the staged wallpaper asset assertions match each package's effective entry

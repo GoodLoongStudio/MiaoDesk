@@ -7,12 +7,12 @@
 // 于是变成"丢了几条并报告成功"。撞 singleton 键时的两种去重结局也压在同一行里。
 //
 // 这里钉住:五种结局各自可达、各有各的说法,以及撞键时"启用状态优先、同状态先出现者胜"。
-#include "miaodesk/MiaoWidgetRowAdmission.h"
+#include "whaledesk/WhaleWidgetRowAdmission.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace widget_row {
 namespace {
 
@@ -50,10 +50,10 @@ bool VerdictStillMoves() {
 
 } // namespace
 } // namespace widget_row
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::widget_row;
+    using namespace whaledesk::widget_row;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:入账判定不动\n");

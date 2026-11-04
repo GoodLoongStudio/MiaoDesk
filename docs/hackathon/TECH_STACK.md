@@ -7,11 +7,11 @@
 | Windows 客户端 | Native C++ / Win32 |
 | 桌面渲染 | Direct2D / D3D11 |
 | Web 能力 | Microsoft WebView2（按需） |
-| AI Agent | Pi Agent + MiaoDesk Native Tools |
+| AI Agent | Pi Agent + WhaleDesK Native Tools |
 | AI 接口 | OpenAI Compatible API |
 | 本地推理 | NVIDIA DGX Spark + vLLM |
 | 本地图像生成 | ComfyUI + OpenAI Compatible Shim |
-| 内容系统 | MiaoDesk Content Package / Scene Runtime |
+| 内容系统 | WhaleDesK Content Package / Scene Runtime |
 | Skills | Markdown SKILL.md |
 | 文件搜索 | Goz NTFS 索引服务 |
 | 自动构建 | GitHub Actions |
@@ -22,7 +22,7 @@
 
 ### NVIDIA DGX Spark
 
-MiaoDesk 使用 DGX Spark 作为本地 AI 推理节点。
+WhaleDesK 使用 DGX Spark 作为本地 AI 推理节点。
 
 主要用途：
 
@@ -44,7 +44,7 @@ DGX Spark 的本地推理环境使用 CUDA 加速。项目部署文档当前以 
 
 部署方案参考 NVIDIA 为 DGX Spark 提供的官方 Playbook。图像生成部分采用 NVIDIA Spark 文档支持的 ComfyUI 路线。
 
-> MiaoDesk Windows 客户端本身不直接链接 CUDA 或 TensorRT。GPU 推理运行在 DGX Spark 服务端，客户端通过标准 API 调用。
+> WhaleDesK Windows 客户端本身不直接链接 CUDA 或 TensorRT。GPU 推理运行在 DGX Spark 服务端，客户端通过标准 API 调用。
 
 ## 3. NVIDIA 相关模型
 
@@ -96,14 +96,14 @@ NVFP4 对 DGX Spark 这类 Blackwell 平台有很高的部署价值，可以在�
 运行方式：
 
 ```text
-MiaoDesk → OpenAI Images API → Shim → ComfyUI → Z-Image-Turbo
+WhaleDesK → OpenAI Images API → Shim → ComfyUI → Z-Image-Turbo
 ```
 
 用于生成壁纸素材等视觉内容。
 
 ## 5. StepFun / 阶跃星辰
 
-MiaoDesk 的 API 配置中心支持 OpenAI Compatible Provider，因此可以直接配置 StepFun。
+WhaleDesK 的 API 配置中心支持 OpenAI Compatible Provider，因此可以直接配置 StepFun。
 
 当前测试配置示例：
 
@@ -119,11 +119,11 @@ Model：step-3.5-flash
 - 与 DGX Spark 本地模型做效果对比；
 - 在本地模型不可用时，由用户手动选择云端 Provider。
 
-MiaoDesk 不把 StepFun 写死在业务逻辑里，而是通过统一 API Profile 管理。
+WhaleDesK 不把 StepFun 写死在业务逻辑里，而是通过统一 API Profile 管理。
 
 ## 6. Agent 与 Skills
 
-MiaoDesk 的 Agent 不依赖一个巨大 System Prompt 完成所有事情。
+WhaleDesK 的 Agent 不依赖一个巨大 System Prompt 完成所有事情。
 
 复杂内容创作被拆成 Skill：
 
@@ -152,4 +152,4 @@ Skill 是 Markdown 文件，模型按任务读取。
 
 项目地址：
 
-https://github.com/GoodLoongStudio/MiaoDesk
+https://github.com/GoodLoongStudio/WhaleDesK

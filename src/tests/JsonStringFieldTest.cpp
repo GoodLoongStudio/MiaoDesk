@@ -8,7 +8,7 @@
 // 这里最重要的一条是"键位置":find 一个带引号的字段名会命中任何出现的地方,
 // 包括**值**。"kind":"id" 里含有 "id",于是裸字符串查找会把"id 字段缺失"
 // 判成"id 在"。校验器第一版就是这个 bug,而这个用例钉住它。
-#include "miaodesk/JsonStringField.h"
+#include "whaledesk/JsonStringField.h"
 
 #include <cmath>
 #include <cstdio>
@@ -49,7 +49,7 @@ void CheckEqD(const std::optional<double>& actual, double expected, double toler
 } // namespace
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     // --- 基本读取 -------------------------------------------------------------
     CheckEq(ExtractJsonString(R"({"a":"1","b":"two"})", "\"b\""), "two", "取到第二个字段");

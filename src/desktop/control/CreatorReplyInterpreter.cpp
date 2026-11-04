@@ -1,10 +1,10 @@
-#include "miaodesk/CreatorReplyInterpreter.h"
+#include "whaledesk/CreatorReplyInterpreter.h"
 
-#include "miaodesk/ContentCandidateReceipt.h"
+#include "whaledesk/ContentCandidateReceipt.h"
 
 #include <algorithm>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 // 正文里一个看起来像包路径的候选:盘符开头、以该 kind 的扩展名结尾。
@@ -133,4 +133,4 @@ CreatorReplyReading InterpretCreatorReply(std::string_view text, std::uint32_t k
     return reading;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

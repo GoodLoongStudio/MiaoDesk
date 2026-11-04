@@ -1,23 +1,23 @@
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/MiaoCreatorPathScope.h"
-#include "miaodesk/MiaoProfileSwitchGuard.h"
-#include "miaodesk/CreatorReplyInterpreter.h"
-#include "miaodesk/CreatorWorkspaceState.h"
-#include "miaodesk/ContentCreatorDialog.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WhaleCreatorPathScope.h"
+#include "whaledesk/WhaleProfileSwitchGuard.h"
+#include "whaledesk/CreatorReplyInterpreter.h"
+#include "whaledesk/CreatorWorkspaceState.h"
+#include "whaledesk/ContentCreatorDialog.h"
 
-#include "miaodesk/ConversationPanel.h"
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/NativeTools.h"
-#include "miaodesk/NativeUiScale.h"
-#include "miaodesk/PiRuntime.h"
-#include "miaodesk/PiLaunchProfile.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/ToolDisplayNames.h"
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/WallpaperRuntimeControl.h"
+#include "whaledesk/ConversationPanel.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/NativeTools.h"
+#include "whaledesk/NativeUiScale.h"
+#include "whaledesk/PiRuntime.h"
+#include "whaledesk/PiLaunchProfile.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/ToolDisplayNames.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/WallpaperRuntimeControl.h"
 
 #include <shellapi.h>
 #include <d2d1helper.h>
@@ -38,12 +38,12 @@
 #include <string_view>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
 namespace {
 
-constexpr wchar_t kCreatorWindowClass[] = L"MiaoDesk.Native.ContentCreatorDialog";
+constexpr wchar_t kCreatorWindowClass[] = L"WhaleDesK.Native.ContentCreatorDialog";
 
 // Creator surfaces open in this thread, in creation order. DialogState is private to
 // this translation unit and its lifetime ends inside WM_DESTROY, so this list is the
@@ -284,7 +284,7 @@ std::wstring LoadCreatorConversation(ContentCreatorKind kind) {
 bool SaveCreatorConversation(ContentCreatorKind kind, std::wstring_view text) {
     const fs::path path = CreatorConversationPath(kind);
     if (path.empty()) return false;
-    miaodesk::paths::EnsureDirectory(path.parent_path());
+    whaledesk::paths::EnsureDirectory(path.parent_path());
 
     fs::path temporary = path;
     temporary += L".tmp";
@@ -593,7 +593,7 @@ struct DialogState {
     HBITMAP previewBitmap{};
     ComPtr<ID2D1Factory> previewFactory;
     ComPtr<ID2D1HwndRenderTarget> previewTarget;
-    std::unique_ptr<content::MiaoSceneD2DRenderer> scenePreview;
+    std::unique_ptr<content::WhaleSceneD2DRenderer> scenePreview;
     ULONGLONG previewStartedAt{};
     ULONGLONG previewElapsedMs{};
     std::wstring previewRenderError;
@@ -615,9 +615,9 @@ struct DialogState {
     // 当前作品的:模型在回复里提到另一个 workspace 的路径(对话历史就是从当前 workspace
     // 读回来的),那个包就会成为本轮结果并可应用到桌面。用户在 A 上说"再小一点",
     // 落到桌面上的是 B。CREATE-06 的验收原话是"修改正确 workspace,不新建错误作品"。
-    // 归属判定在 MiaoCreatorPathScope(纯逻辑,本机可测)。
+    // 归属判定在 WhaleCreatorPathScope(纯逻辑,本机可测)。
     std::wstring workspaceRoot;
-    // 这一轮属于哪一次创作。从工作区里的 .miaodesk-session.state 读 ——
+    // 这一轮属于哪一次创作。从工作区里的 .whaledesk-session.state 读 ——
     // 它是 CreatorWorkspaceState 里那个 epoch 的唯一来源,而回执核验要拿它比
     // (`ContentCandidateSubmission::sourceTurn` 写的就是这个值)。
     // 读不到就留 0:那会让 InterpretCreatorReply 把回执判成不过核验,
@@ -636,7 +636,7 @@ struct DialogState {
     // silently re-arm the button.
     fs::path appliedPackageRoot;
     std::wstring lastUserPrompt;
-    // Visible history is durable. Closing the creator, exiting MiaoDesk, or
+    // Visible history is durable. Closing the creator, exiting WhaleDesK, or
     // rebooting Windows must reopen the same conversation. A fresh Pi child
     // process receives this saved context on the first resumed turn.
     std::wstring restoredConversationContext;
@@ -1138,7 +1138,7 @@ struct DialogState {
             SetPreviewError(previewRenderError.empty() ? L"无法创建实时预览 Surface。" : previewRenderError);
             return false;
         }
-        auto renderer = std::make_unique<content::MiaoSceneD2DRenderer>();
+        auto renderer = std::make_unique<content::WhaleSceneD2DRenderer>();
         std::wstring error;
         if (!renderer->Load(packageRoot, previewTarget.Get(), &error)) {
             scenePreview.reset();
@@ -1294,7 +1294,7 @@ struct DialogState {
     }
 
     void PopulateApiProfiles(bool preserveSelection = false) {
-        // 闸门判定住在 MiaoProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
+        // 闸门判定住在 WhaleProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
         // 这段判定原本散在五处、两种相反结论,完整故事写在那个头文件里。这里只说
         // 关键的一句:原来 `&& !busy` 让"这个窗口自己的轮次正在跑"成为重建的**理由**,
         // 而重建通向 ReloadConfig() 的 Stop() + worker_.join() + conversation_.clear()
@@ -1511,7 +1511,7 @@ struct DialogState {
     //     (PiRuntime.cpp:526-528), so by construction the host's verdict never reaches
     //     it. This field is what closes that loop.
     //
-    // The message comes straight from the validator (MiaoContentModel's Fail texts, e.g.
+    // The message comes straight from the validator (WhaleContentModel's Fail texts, e.g.
     // "Content parameter is below minimum: <key>"), which is exactly the kind of specific,
     // machine-checkable statement a model can act on.
     std::wstring lastValidationError;
@@ -1567,13 +1567,13 @@ struct DialogState {
             previewBitmap = nullptr;
         }
 
-        content::LoadedMiaoContentPackage package;
+        content::LoadedWhaleContentPackage package;
         std::wstring previewError;
-        if (!content::MiaoContentPackage::Load(path, &package, &previewError)) return;
+        if (!content::WhaleContentPackage::Load(path, &package, &previewError)) return;
 
         if (!package.manifest.preview.empty()) {
             fs::path previewPath;
-            if (content::MiaoContentPackage::ResolvePackagePath(
+            if (content::WhaleContentPackage::ResolvePackagePath(
                     package.root, package.manifest.preview, &previewPath, &previewError)) {
                 previewBitmap = LoadPreviewBitmap(previewPath);
             }
@@ -1636,7 +1636,7 @@ struct DialogState {
     // "再小一点",落到桌面上的是 B 作品。CREATE-06 的验收原话是
     // "修改正确 workspace,不新建错误作品"。
     //
-    // 判定在 MiaoCreatorPathScope(纯逻辑,本机有门);这里只把结论接到三个出口上。
+    // 判定在 WhaleCreatorPathScope(纯逻辑,本机有门);这里只把结论接到三个出口上。
     // 注意**三处都要判**:FindGeneratedPackagePath 与目录候选是两条独立的扫描路径,
     // 漏掉任一条都还能从那儿把别处的包拿进来。
     // 从工作区状态文件读本轮 epoch。读不到留 0,理由见字段声明。
@@ -1795,9 +1795,9 @@ struct DialogState {
     bool OpenPreview() {
         if (generatedPackage.empty()) return false;
 
-        content::LoadedMiaoContentPackage package;
+        content::LoadedWhaleContentPackage package;
         std::wstring error;
-        if (!content::MiaoContentPackage::Load(generatedPackage, &package, &error)) {
+        if (!content::WhaleContentPackage::Load(generatedPackage, &package, &error)) {
             MessageBoxW(window, error.empty() ? L"内容包预览校验失败。" : error.c_str(),
                         L"妙喵 AI", MB_OK | MB_ICONERROR);
             return false;
@@ -1805,7 +1805,7 @@ struct DialogState {
 
         fs::path previewPath;
         if (!package.manifest.preview.empty() &&
-            content::MiaoContentPackage::ResolvePackagePath(
+            content::WhaleContentPackage::ResolvePackagePath(
                 package.root, package.manifest.preview, &previewPath, &error)) {
             const HINSTANCE opened = ShellExecuteW(
                 window, L"open", previewPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -2141,8 +2141,8 @@ struct DialogState {
         if (agent && agent->Busy()) agent->Stop();
         if (pi) {
             pi->ResetSession();
-            pi->SetLaunchProfile(miaodesk::MakeCreatorLaunchProfile(
-                miaodesk::paths::PiAgentRoot().wstring(),
+            pi->SetLaunchProfile(whaledesk::MakeCreatorLaunchProfile(
+                whaledesk::paths::PiAgentRoot().wstring(),
                 std::wstring(workspaceRoot), std::wstring{}));
         }
         ResetWorkspaceUi();
@@ -2344,13 +2344,13 @@ struct DialogState {
             mark(previewFullscreen, L"previewFullscreen");
             mark(skillList, L"skillList");
             mark(skillText, L"skillText");
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorWindow",
                 L"WM_CREATE 控件初始化失败；缺失=" + missing +
                     L"；Win32=" + std::to_wstring(GetLastError()));
         }
         if (created && !PostMessageW(window, kInitializeCreatorMessage, 0, 0)) {
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorWindow",
                 L"AI 创作窗口已创建，但初始化任务入队失败；改为同步恢复。Win32=" +
                     std::to_wstring(GetLastError()));
@@ -2361,7 +2361,7 @@ struct DialogState {
 
     void InitializeAfterOpen() {
         if (creatorInitialized) return;
-        miaodesk::log::Info(
+        whaledesk::log::Info(
             L"CreatorWindow",
             L"窗口已可见，开始加载 API、对话历史与 Skill。");
         // 打开时就记下当前作品。此前整个生命周期里都不记,所以
@@ -2380,7 +2380,7 @@ struct DialogState {
         RefreshActivityLine();
         Layout();
         if (window) InvalidateRect(window, nullptr, TRUE);
-        miaodesk::log::Info(
+        whaledesk::log::Info(
             L"CreatorWindow",
             L"AI 创作环境初始化完成。");
     }
@@ -2635,7 +2635,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         // "聊天加载到创作的扩展文件"。
         if (state->pi) {
             state->pi->SetLaunchProfile(
-                miaodesk::MakeChatLaunchProfile(miaodesk::paths::PiAgentRoot().wstring()));
+                whaledesk::MakeChatLaunchProfile(whaledesk::paths::PiAgentRoot().wstring()));
         }
         // Leave the keyboard-navigation list before the state goes away, so the pump
         // can never be pointed at a window whose GWLP_USERDATA is already null.
@@ -2695,17 +2695,17 @@ bool IsContentCreatorDialogReady(ContentCreatorKind kind) noexcept {
 
 bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, ContentCreatorKind kind) {
     if (!instance || !Valid(kind)) {
-        miaodesk::log::Error(L"CreatorWindow", L"拒绝无效的 AI 创作窗口创建参数。");
+        whaledesk::log::Error(L"CreatorWindow", L"拒绝无效的 AI 创作窗口创建参数。");
         return false;
     }
 
     if (HWND existing = FindOpenCreatorWindow(kind)) {
-        miaodesk::log::Info(L"CreatorWindow", L"复用并激活已有 AI 创作窗口。");
+        whaledesk::log::Info(L"CreatorWindow", L"复用并激活已有 AI 创作窗口。");
         ActivateCreatorWindow(existing);
         return true;
     }
 
-    miaodesk::log::Info(
+    whaledesk::log::Info(
         L"CreatorWindow",
         L"开始创建 AI 创作窗口，kind=" +
             std::to_wstring(static_cast<std::uint32_t>(kind)));
@@ -2719,7 +2719,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         const DWORD error = GetLastError();
-        miaodesk::log::Error(
+        whaledesk::log::Error(
             L"CreatorWindow",
             L"注册 AI 创作窗口类失败，Win32=" + std::to_wstring(error));
         return false;
@@ -2737,8 +2737,8 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
 
     // 装上创作 profile。**这一步是整条创作链唯一缺失的那一次调用**:
     // PiRuntime 从 launchProfile_ 取 sessionDir / workingDirectory / toolAllowlist /
-    // systemPrompt,并且只在 mode == Creator 时导出 MIAODESK_CREATOR_WORKSPACE 与
-    // MIAODESK_CREATOR_SESSION —— 而 src/app/main.cpp 的 RunCreatorTool 正是从这两个
+    // systemPrompt,并且只在 mode == Creator 时导出 WHALEDESK_CREATOR_WORKSPACE 与
+    // WHALEDESK_CREATOR_SESSION —— 而 src/app/main.cpp 的 RunCreatorTool 正是从这两个
     // 环境变量取工作区与会话。装之前 PiRuntime 手里是结构体默认值(mode = Chat),
     // 于是 --tools 用聊天那份:七个 creator_* 名字被整体剥掉,--extension 落盘的也
     // 是 Chat 变体(它本身不含创作工具),两个环境变量不导出。**创作轮次里模型一条
@@ -2752,8 +2752,8 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     // 拿着创作的 allowlist 跑,那是 CCA-03 花整节防的那件事。
     if (state->pi) {
         const std::wstring workspace = ResolveCreatorWorkspaceRoot(kind);
-        state->pi->SetLaunchProfile(miaodesk::MakeCreatorLaunchProfile(
-            miaodesk::paths::PiAgentRoot().wstring(), workspace, std::wstring{}));
+        state->pi->SetLaunchProfile(whaledesk::MakeCreatorLaunchProfile(
+            whaledesk::paths::PiAgentRoot().wstring(), workspace, std::wstring{}));
     }
 
     const wchar_t* title = kind == ContentCreatorKind::Widget ? L"妙喵 · AI 制作组件" : L"妙喵 · AI 制作壁纸";
@@ -2774,10 +2774,10 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
         // fail before WM_NCCREATE/WM_DESTROY ever run.
         if (state->pi) {
             state->pi->SetLaunchProfile(
-                miaodesk::MakeChatLaunchProfile(
-                    miaodesk::paths::PiAgentRoot().wstring()));
+                whaledesk::MakeChatLaunchProfile(
+                    whaledesk::paths::PiAgentRoot().wstring()));
         }
-        miaodesk::log::Error(
+        whaledesk::log::Error(
             L"CreatorWindow",
             L"CreateWindowExW 创建 AI 创作窗口失败；kind=" +
                 std::to_wstring(static_cast<std::uint32_t>(kind)) +
@@ -2793,7 +2793,7 @@ bool ShowContentCreatorDialog(HINSTANCE instance, HWND owner, L3Agent& agent, Co
     g_openCreatorWindows.push_back(window);
     ActivateCreatorWindow(window);
     UpdateWindow(window);
-    miaodesk::log::Info(
+    whaledesk::log::Info(
         L"CreatorWindow",
         L"AI 创作窗口创建成功，HWND=" +
             std::to_wstring(reinterpret_cast<std::uintptr_t>(window)));
@@ -2809,7 +2809,7 @@ bool ContentCreatorWindowSelfTest(HINSTANCE instance) {
              ContentCreatorKind::Wallpaper,
              ContentCreatorKind::Widget}) {
         if (!ShowContentCreatorDialog(instance, nullptr, agent, kind)) {
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorWindowTest",
                 L"AI 创作窗口 smoke test 创建失败，kind=" +
                     std::to_wstring(static_cast<std::uint32_t>(kind)));
@@ -2818,7 +2818,7 @@ bool ContentCreatorWindowSelfTest(HINSTANCE instance) {
 
         HWND window = FindOpenCreatorWindow(kind);
         if (!window || !IsWindow(window)) {
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorWindowTest",
                 L"AI 创作窗口 smoke test 未找到创建后的 HWND。");
             return false;
@@ -2826,7 +2826,7 @@ bool ContentCreatorWindowSelfTest(HINSTANCE instance) {
 
         SendMessageW(window, WM_CLOSE, 0, 0);
         if (IsWindow(window)) {
-            miaodesk::log::Error(
+            whaledesk::log::Error(
                 L"CreatorWindowTest",
                 L"AI 创作窗口 smoke test 关闭后 HWND 仍然存在。");
             DestroyWindow(window);
@@ -2834,10 +2834,10 @@ bool ContentCreatorWindowSelfTest(HINSTANCE instance) {
         }
     }
 
-    miaodesk::log::Info(
+    whaledesk::log::Info(
         L"CreatorWindowTest",
         L"壁纸与组件 AI 创作窗口 smoke test 均通过。");
     return true;
 }
 
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator

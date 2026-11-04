@@ -11,13 +11,13 @@
 // 没有渲染器;照那样抄出来的产物是空白的。示例是教学的入口,它坏了比一个用户包坏了更糟。
 //
 // 这里验的是"链走得通 + 内容自洽",不验像素(要 GPU 与真机)。
-#include "miaodesk/MiaoAssetDatabase.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoSceneModel.h"
-#include "miaodesk/MiaoSceneRuntime.h"
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/MiaoShaderContract.h"
+#include "whaledesk/WhaleAssetDatabase.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleSceneModel.h"
+#include "whaledesk/WhaleSceneRuntime.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/WhaleShaderContract.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-using namespace miaodesk::content;
+using namespace whaledesk::content;
 namespace fs = std::filesystem;
 
 static int failures = 0;
@@ -72,30 +72,30 @@ struct Outcome {
 
 static Outcome Walk(const fs::path& root) {
     Outcome out;
-    LoadedMiaoContentPackage package;
+    LoadedWhaleContentPackage package;
     std::wstring error;
-    if (!MiaoContentPackage::Load(root, &package, &error)) {
+    if (!WhaleContentPackage::Load(root, &package, &error)) {
         out.error = error;
         return out;
     }
     out.loaded = true;
-    if (!MiaoSceneSerializer::DeserializePackage(package, &out.runtime, &error)) {
+    if (!WhaleSceneSerializer::DeserializePackage(package, &out.runtime, &error)) {
         out.error = error;
         return out;
     }
     out.deserialized = true;
-    if (!MiaoSceneRuntimeModel::Validate(out.runtime, &error)) {
+    if (!WhaleSceneRuntimeModel::Validate(out.runtime, &error)) {
         out.error = error;
         return out;
     }
     out.runtimeValid = true;
-    MiaoAssetDatabase assets;
+    WhaleAssetDatabase assets;
     if (!assets.Build(root, out.runtime, &error)) {
         out.error = error;
         return out;
     }
     out.assetsResolve = true;
-    MiaoSceneRuntime runtime;
+    WhaleSceneRuntime runtime;
     if (!runtime.Initialize(out.runtime, &error)) {
         out.error = error;
         return out;
@@ -151,7 +151,7 @@ int wmain() {
         std::printf("\n%s\n", label.c_str());
 
         const Outcome out = Walk(entry.path());
-        Check(out.loaded, "manifest 与入口通过 MiaoContentPackage::Load");
+        Check(out.loaded, "manifest 与入口通过 WhaleContentPackage::Load");
         if (!out.loaded) {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
@@ -161,14 +161,14 @@ int wmain() {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
         }
-        Check(out.runtimeValid, "场景通过 MiaoSceneRuntimeModel::Validate");
+        Check(out.runtimeValid, "场景通过 WhaleSceneRuntimeModel::Validate");
         if (!out.runtimeValid) {
             std::printf("         (error = %ls)\n", out.error.c_str());
             continue;
         }
         Check(out.assetsResolve, "资产数据库解析出全部引用(文件都在磁盘上)");
         if (!out.assetsResolve) std::printf("         (error = %ls)\n", out.error.c_str());
-        Check(out.initialized, "MiaoSceneRuntime::Initialize 通过");
+        Check(out.initialized, "WhaleSceneRuntime::Initialize 通过");
         if (!out.initialized) std::printf("         (error = %ls)\n", out.error.c_str());
         Check(out.nodeCount > 0, "场景不是空的");
 
@@ -195,8 +195,8 @@ int wmain() {
     std::string hlsl;
     if (ReadText(pulse, &hlsl)) {
         std::wstring shaderError;
-        Check(MiaoShaderContract::ValidateEntryPoint("main", &shaderError) ||
-                  MiaoShaderContract::ValidateEntryPoint("VSMain", &shaderError),
+        Check(WhaleShaderContract::ValidateEntryPoint("main", &shaderError) ||
+                  WhaleShaderContract::ValidateEntryPoint("VSMain", &shaderError),
               "示例 shader 的入口点命名符合契约");
     } else {
         Check(false, "ShaderPulse 的 HLSL 还在(它是可编程材质的唯一示例)");

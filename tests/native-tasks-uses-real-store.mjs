@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 //   3. painter 里不再有"自己声明一个任务数组"的写法 —— 那是下一次写死的入口。
 
 const read = (path) => fs.readFileSync(path, "utf8");
-const painter = read(process.env.NATIVE_WIDGET_PAINTER_H ?? "src/include/miaodesk/NativeWidgetPainter.h");
+const painter = read(process.env.NATIVE_WIDGET_PAINTER_H ?? "src/include/whaledesk/NativeWidgetPainter.h");
 const host = read(process.env.NATIVE_WIDGET_HOST_CPP ?? "src/desktop/widgets/NativeWidgetHost.cpp");
 
 function bodyOf(source, signature) {

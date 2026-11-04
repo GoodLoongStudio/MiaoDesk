@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
-const runtime = read("src/include/miaodesk/PiRuntime.h");
+const runtime = read("src/include/whaledesk/PiRuntime.h");
 
 // Two gaps this round closes, both of which cost the user a turn:
 //
@@ -56,7 +56,7 @@ assert.ok(sharedNameUses.length >= 3,
 assert.doesNotMatch(creator, /std::wstring FriendlyToolName\(/,
   "the creator must not carry its own copy of the tool-name table -- the two surfaces"
   + " would drift the moment a tool is added");
-assert.match(read("src/include/miaodesk/ToolDisplayNames.h"), /inline std::wstring FriendlyToolName\(/,
+assert.match(read("src/include/whaledesk/ToolDisplayNames.h"), /inline std::wstring FriendlyToolName\(/,
   "ToolDisplayNames.h must own the map for both surfaces");
 
 // The idle text must come back. The line is a static set once at creation, so overwriting

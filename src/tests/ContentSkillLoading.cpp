@@ -3,7 +3,7 @@
 // the skill name into a path (instead of an allowlist lookup) would let a model
 // reach arbitrary files, so this exercises the real dispatch path rather than a
 // re-implementation of the logic.
-#include "miaodesk/NativeTools.h"
+#include "whaledesk/NativeTools.h"
 
 #include <windows.h>
 
@@ -57,18 +57,18 @@ void PlantSkills(const fs::path& root) {
         WriteUtf8(root / L"skills" / fs::path(name) / L"SKILL.md", body);
     }
     WriteUtf8(root / L"skills" / L"README.md",
-              "---\nname: index\n---\n\nMiaoDesk content skills index: content-package-basics and friends.\n");
+              "---\nname: index\n---\n\nWhaleDesK content skills index: content-package-basics and friends.\n");
 }
 
-miaodesk::NativeToolResult Get(std::string_view arguments) {
-    return miaodesk::ExecuteNativeToolRaw("content_skill_get", arguments);
+whaledesk::NativeToolResult Get(std::string_view arguments) {
+    return whaledesk::ExecuteNativeToolRaw("content_skill_get", arguments);
 }
 
-bool ServedBody(const miaodesk::NativeToolResult& result) {
+bool ServedBody(const whaledesk::NativeToolResult& result) {
     return result.success && result.message.find(Utf8ToWide(kSkillBodyMarker)) != std::wstring::npos;
 }
 
-bool ServedIndex(const miaodesk::NativeToolResult& result) {
+bool ServedIndex(const whaledesk::NativeToolResult& result) {
     return result.success && result.message.find(L"content skills index") != std::wstring::npos;
 }
 
@@ -76,7 +76,7 @@ bool ServedIndex(const miaodesk::NativeToolResult& result) {
 
 int wmain() {
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-ContentSkill-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-ContentSkill-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()));
     std::error_code ec;
     fs::remove_all(root, ec);
@@ -170,7 +170,7 @@ int wmain() {
 
     std::printf("\n7. Unknown tool name still routes to the generic error\n");
     {
-        const auto result = miaodesk::ExecuteNativeToolRaw("content_skill_delete", "{}");
+        const auto result = whaledesk::ExecuteNativeToolRaw("content_skill_delete", "{}");
         Check(!result.success, "unknown tool rejected");
     }
 

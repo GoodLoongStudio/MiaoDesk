@@ -16,7 +16,7 @@ on:
       - third_party/webview2/**
       - packaging/windows/**
       - packaging/store/**
-      - scripts/generate-miaomiao-icon.ps1
+      - scripts/generate-whalewhale-icon.ps1
       - .github/workflows/package-windows-x64-msix.yml
   pull_request:
     paths:
@@ -32,7 +32,7 @@ on:
       - third_party/webview2/**
       - packaging/windows/**
       - packaging/store/**
-      - scripts/generate-miaomiao-icon.ps1
+      - scripts/generate-whalewhale-icon.ps1
       - .github/workflows/package-windows-x64-msix.yml
   workflow_dispatch:
 
@@ -48,9 +48,9 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 45
     env:
-      MIAODESK_BUILD_ROOT: C:\b\MiaoDesk\msix-x64
-      MIAODESK_STAGE_ROOT: C:\pkg\MiaoDesk\msix-x64
-      MIAODESK_MSIX_PATH: C:\pkg\MiaoDesk\MiaoDesk-x64.msix
+      WHALEDESK_BUILD_ROOT: C:\b\WhaleDesK\msix-x64
+      WHALEDESK_STAGE_ROOT: C:\pkg\WhaleDesK\msix-x64
+      WHALEDESK_MSIX_PATH: C:\pkg\WhaleDesK\WhaleDesK-x64.msix
 
     steps:
       - uses: actions/checkout@v5
@@ -60,24 +60,24 @@ jobs:
       - name: Restore agent npm cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
-          key: miaodesk-agent-npm-${{ runner.os }}-x64-${{ hashFiles('runtime/agent/package-lock.json') }}
+          path: ${{ runner.temp }}\WhaleDesK-AgentNpmCache-x64
+          key: whaledesk-agent-npm-${{ runner.os }}-x64-${{ hashFiles('runtime/agent/package-lock.json') }}
           restore-keys: |
-            miaodesk-agent-npm-${{ runner.os }}-x64-
+            whaledesk-agent-npm-${{ runner.os }}-x64-
 
-      - name: Generate MiaoMiao app icon
+      - name: Generate WhaleWhale app icon
         shell: pwsh
-        run: .\scripts\generate-miaomiao-icon.ps1
+        run: .\scripts\generate-whalewhale-icon.ps1
 
       - name: Configure
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Remove-Item $env:MIAODESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item $env:MIAODESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_BUILD_ROOT -Parent) | Out-Null
-          New-Item -ItemType Directory -Force -Path (Split-Path $env:MIAODESK_STAGE_ROOT -Parent) | Out-Null
-          $gateOut = cmake -S . -B $env:MIAODESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:MIAODESK_STAGE_ROOT" 2>&1
+          Remove-Item $env:WHALEDESK_BUILD_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:WHALEDESK_STAGE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:WHALEDESK_BUILD_ROOT -Parent) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path $env:WHALEDESK_STAGE_ROOT -Parent) | Out-Null
+          $gateOut = cmake -S . -B $env:WHALEDESK_BUILD_ROOT -A x64 -DCMAKE_INSTALL_PREFIX="$env:WHALEDESK_STAGE_ROOT" 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
@@ -93,7 +93,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $gateOut = cmake --build $env:MIAODESK_BUILD_ROOT --config Release --target MiaoDesk MiaoDeskWallpaper MiaoDeskHarness --parallel 2>&1
+          $gateOut = cmake --build $env:WHALEDESK_BUILD_ROOT --config Release --target WhaleDesK WhaleDesKWallpaper WhaleDesKHarness --parallel 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
@@ -109,7 +109,7 @@ jobs:
       - name: Install product files
         shell: pwsh
         run: |
-          $gateOut = cmake --install $env:MIAODESK_BUILD_ROOT --config Release --prefix $env:MIAODESK_STAGE_ROOT 2>&1
+          $gateOut = cmake --install $env:WHALEDESK_BUILD_ROOT --config Release --prefix $env:WHALEDESK_STAGE_ROOT 2>&1
           $gateExit = $LASTEXITCODE
           $gateOut | Write-Host
           if ($gateExit -ne 0) {
@@ -124,9 +124,9 @@ jobs:
 
       - name: Stage runtime
         env:
-          MIAODESK_NPM_CACHE: ${{ runner.temp }}\MiaoDesk-AgentNpmCache-x64
+          WHALEDESK_NPM_CACHE: ${{ runner.temp }}\WhaleDesK-AgentNpmCache-x64
         shell: pwsh
-        run: .\packaging\windows\stage.ps1 -Destination $env:MIAODESK_STAGE_ROOT -Architecture x64
+        run: .\packaging\windows\stage.ps1 -Destination $env:WHALEDESK_STAGE_ROOT -Architecture x64
 
       - name: Verify app, builtin widget, and startup mode
         shell: pwsh
@@ -137,27 +137,27 @@ jobs:
             'Widgets\GlassClock.mdwidget\scene.json',
             'Widgets\GlassClock.mdwidget\parameters.json'
           )) {
-            if (-not (Test-Path (Join-Path $env:MIAODESK_STAGE_ROOT $relative) -PathType Leaf)) {
+            if (-not (Test-Path (Join-Path $env:WHALEDESK_STAGE_ROOT $relative) -PathType Leaf)) {
               throw "Built-in widget package file is missing: $relative"
             }
           }
-          foreach ($exe in @('MiaoDeskHarness.exe','MiaoDeskWallpaper.exe','MiaoDesk.exe')) {
-            $p = Start-Process -FilePath (Join-Path $env:MIAODESK_STAGE_ROOT $exe) -ArgumentList '--self-test' -Wait -PassThru
+          foreach ($exe in @('WhaleDesKHarness.exe','WhaleDesKWallpaper.exe','WhaleDesK.exe')) {
+            $p = Start-Process -FilePath (Join-Path $env:WHALEDESK_STAGE_ROOT $exe) -ArgumentList '--self-test' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "$exe self-test failed: $($p.ExitCode)" }
           }
-          .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+          .\packaging\windows\verify-login-startup.ps1 -ProductRoot $env:WHALEDESK_STAGE_ROOT
 
       - name: Verify staged GlassClock Content Framework route
         shell: pwsh
-        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:MIAODESK_STAGE_ROOT
+        run: .\packaging\windows\verify-widget-visibility.ps1 -ProductRoot $env:WHALEDESK_STAGE_ROOT
 
       - name: Build MSIX
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $gateOut = & .\packaging\store\msix\pack-msix.ps1 `
-            -StageRoot $env:MIAODESK_STAGE_ROOT `
-            -OutputMsix $env:MIAODESK_MSIX_PATH 2>&1
+            -StageRoot $env:WHALEDESK_STAGE_ROOT `
+            -OutputMsix $env:WHALEDESK_MSIX_PATH 2>&1
             $gateExit = $LASTEXITCODE
             $gateOut | Write-Host
             if ($gateExit -ne 0) {
@@ -174,18 +174,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $unpack = Join-Path $env:RUNNER_TEMP 'miaodesk-msix-verify'
+          $unpack = Join-Path $env:RUNNER_TEMP 'whaledesk-msix-verify'
           Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $unpack | Out-Null
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          [System.IO.Compression.ZipFile]::ExtractToDirectory($env:MIAODESK_MSIX_PATH, $unpack)
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($env:WHALEDESK_MSIX_PATH, $unpack)
           [xml]$manifest = Get-Content (Join-Path $unpack 'AppxManifest.xml') -Raw
           $ns = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
           $ns.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
           $ns.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
           $task = $manifest.SelectSingleNode('/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]/desktop:StartupTask', $ns)
           if (-not $task) { throw 'windows.startupTask is missing.' }
-          if ($task.TaskId -ne 'MiaoDeskStartup') { throw "Unexpected startup TaskId: $($task.TaskId)" }
+          if ($task.TaskId -ne 'WhaleDesKStartup') { throw "Unexpected startup TaskId: $($task.TaskId)" }
           if ($task.Enabled -ne 'true') { throw "Startup task must default to enabled; actual=$($task.Enabled)" }
           if ($task.DisplayName -ne '妙喵') { throw "Unexpected startup display name: $($task.DisplayName)" }
           if ($manifest.Package.Identity.Version -ne '0.1.3.0') { throw "Unexpected MSIX version: $($manifest.Package.Identity.Version)" }
@@ -204,10 +204,10 @@ jobs:
       - name: Upload MSIX
         uses: actions/upload-artifact@v4
         with:
-          name: MiaoDesk-windows-x64-msix-startup-${{ github.sha }}
+          name: WhaleDesK-windows-x64-msix-startup-${{ github.sha }}
           path: |
-            C:/pkg/MiaoDesk/MiaoDesk-x64.msix
-            C:/pkg/MiaoDesk/MiaoDesk-x64.msixupload
+            C:/pkg/WhaleDesK/WhaleDesK-x64.msix
+            C:/pkg/WhaleDesK/WhaleDesK-x64.msixupload
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

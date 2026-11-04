@@ -6,13 +6,13 @@
 //   * Pi 给了、worker 不认 -> 调用失败,模型重试,用户看到"它一直不成功";
 //   * worker 认、Pi 没给   -> 能力躺着没人能用,而没有任何东西报错。
 // 所以这里既测路由,也测两侧对名册的覆盖。
-#include "miaodesk/CreatorToolRegistry.h"
+#include "whaledesk/CreatorToolRegistry.h"
 
 #include <cstdio>
 #include <set>
 #include <string>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -285,10 +285,10 @@ void TestAllowedCallsCarryTheirArguments() {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
     TestRegistryIsCompleteAndStable();
     TestMutatingClassification();
     TestCrossWorkToolCallIsRejected();

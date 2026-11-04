@@ -1,5 +1,5 @@
-#include "miaodesk/TodayTaskEditorDialog.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/TodayTaskEditorDialog.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <commctrl.h>
 
@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kEditorClass[] = L"MiaoDesk.TodayTasks.Editor";
-constexpr wchar_t kItemClass[] = L"MiaoDesk.TodayTasks.ItemEditor";
+constexpr wchar_t kEditorClass[] = L"WhaleDesK.TodayTasks.Editor";
+constexpr wchar_t kItemClass[] = L"WhaleDesK.TodayTasks.ItemEditor";
 
 constexpr int kListId = 7301;
 constexpr int kAddId = 7302;
@@ -536,4 +536,4 @@ bool ShowTodayTaskEditorDialog(
     return state.changed;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

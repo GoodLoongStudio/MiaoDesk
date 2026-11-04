@@ -5,9 +5,9 @@
 // "manifest 承诺正方形的组件,在 16:9 屏幕上其实是 1.78:1"这件事在本机就能看见。
 //
 // 这里验的是算术,不验渲染:真正把它落到像素要改宿主,那需要 Windows。
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/MiaoWidgetGeometry.h"
-#include "miaodesk/MiaoContentModel.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/WhaleWidgetGeometry.h"
+#include "whaledesk/WhaleContentModel.h"
 
 #include <cmath>
 #include <cstdio>
@@ -16,7 +16,7 @@
 #include <optional>
 #include <string>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 int g_failures = 0;
@@ -38,8 +38,8 @@ void CheckNear(float actual, float expected, float tolerance, const std::string&
     }
 }
 
-using namespace miaodesk::content;
-using namespace miaodesk::wallpaper;
+using namespace whaledesk::content;
+using namespace whaledesk::wallpaper;
 
 // 随产品发行的那三个官方组件的真实形状(逐个从 manifest.json 抄来)。
 ContentDefinition ShippedLike(const char* id, float w, float h, bool resize,
@@ -74,18 +74,18 @@ ContentInstance At(float x, float y, float w, float h) {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::desktop;
+    using namespace whaledesk;
+    using namespace whaledesk::desktop;
 
     const MonitorPixels fhd{1920.0f, 1080.0f};
 
     // ---- 1. 归一化 → 像素,就是用户看见的那个数 ----
     {
         const std::optional<float> square = 1.0f;
-        auto clock = ::miaodesk::desktop::ShippedLike("glass-clock", 0.30f, 0.30f, false, &square);
+        auto clock = ::whaledesk::desktop::ShippedLike("glass-clock", 0.30f, 0.30f, false, &square);
         const auto box = ResolveWidgetPixelBox(clock.geometry, At(0.35f, 0.35f, 0.30f, 0.30f), fhd);
         CheckNear(box.width, 576.0f, 0.001f, "0.30 宽在 1920 上是 576 像素");
         CheckNear(box.height, 324.0f, 0.001f, "0.30 高在 1080 上是 324 像素");
@@ -105,7 +105,7 @@ int wmain() {
     // ---- 2. 核心缺口:声明的宽高比在 16:9 上不成立 ----
     {
         const std::optional<float> square = 1.0f;
-        auto clock = ::miaodesk::desktop::ShippedLike("glass-clock", 0.30f, 0.30f, false, &square);
+        auto clock = ::whaledesk::desktop::ShippedLike("glass-clock", 0.30f, 0.30f, false, &square);
         for (const auto& monitor : kReferenceMonitors) {
             const auto verdict =
                 JudgeWidgetAspect(clock.geometry, At(0.35f, 0.35f, 0.30f, 0.30f), monitor.pixels);
@@ -129,7 +129,7 @@ int wmain() {
         // 而不是一个 21:9 形状的归一化盒。作者以为自己在写形状,其实写的是
         // "相对于屏幕的比例",而形状是它乘上屏幕比例的结果。
         const std::optional<float> ultrawide = 3440.0f / 1440.0f;
-        auto banner = ::miaodesk::desktop::ShippedLike("banner", 0.30f, 0.30f, false, &ultrawide);
+        auto banner = ::whaledesk::desktop::ShippedLike("banner", 0.30f, 0.30f, false, &ultrawide);
         const auto uw = JudgeWidgetAspect(banner.geometry, At(0.0f, 0.0f, 0.30f, 0.30f),
                                           MonitorPixels{3440.0f, 1440.0f});
         Check(uw.exact, "声明 2.389 配 21:9 屏幕时要 w = h,不是 w/h = 2.389");
@@ -137,7 +137,7 @@ int wmain() {
 
         // 等式本身,在三种屏幕上逐个验。
         for (const auto& monitor : kReferenceMonitors) {
-            auto kit = ::miaodesk::desktop::ShippedLike("kit", 0.25f, 0.40f, true, nullptr);
+            auto kit = ::whaledesk::desktop::ShippedLike("kit", 0.25f, 0.40f, true, nullptr);
             const auto box = ResolveWidgetPixelBox(kit.geometry, At(0.0f, 0.0f, 0.25f, 0.40f),
                                                    monitor.pixels);
             const float expected = (0.25f / 0.40f) * (monitor.pixels.width / monitor.pixels.height);
@@ -150,7 +150,7 @@ int wmain() {
     // ---- 3. 没声明就说没声明 ----
     {
         const std::optional<float> none;
-        auto free = ::miaodesk::desktop::ShippedLike("free", 0.30f, 0.30f, false, nullptr);
+        auto free = ::whaledesk::desktop::ShippedLike("free", 0.30f, 0.30f, false, nullptr);
         const auto verdict = JudgeWidgetAspect(free.geometry, At(0.0f, 0.0f, 0.30f, 0.30f), fhd);
         Check(!verdict.declared, "没声明 aspectRatio 时 verdict.declared 为假");
         Check(verdict.exact, "没声明时不得报'不一致'");
@@ -160,7 +160,7 @@ int wmain() {
     // ---- 4. 信箱化:内盒必须在盒子里,并且真的保住比例 ----
     {
         const auto box = ResolveWidgetPixelBox(
-            ::miaodesk::desktop::ShippedLike("c", 0.30f, 0.30f, false, nullptr).geometry,
+            ::whaledesk::desktop::ShippedLike("c", 0.30f, 0.30f, false, nullptr).geometry,
             At(0.0f, 0.0f, 0.30f, 0.30f), fhd);
         const auto fitted = FitAspectInside(box, 1.0f);
         CheckNear(fitted.height, box.height, 1e-4f, "1:1 时装不满宽度,高度保持");
@@ -206,7 +206,7 @@ int wmain() {
 
     // ---- 5. 极端屏幕与极端输入不许 NaN ----
     {
-        auto d = ::miaodesk::desktop::ShippedLike("d", 0.30f, 0.30f, true, nullptr);
+        auto d = ::whaledesk::desktop::ShippedLike("d", 0.30f, 0.30f, true, nullptr);
         const MonitorPixels screens[] = {{0.0f, 0.0f},
                                          {1920.0f, 0.0f},
                                          {std::numeric_limits<float>::quiet_NaN(), 1080.0f},
@@ -232,7 +232,7 @@ int wmain() {
     // ---- 6. 固定尺寸的组件忽略 instance 里那份(ValidateInstance 已保证它俩相等) ----
     {
         const std::optional<float> none;
-        auto fixed = ::miaodesk::desktop::ShippedLike("fixed", 0.30f, 0.30f, false, nullptr);
+        auto fixed = ::whaledesk::desktop::ShippedLike("fixed", 0.30f, 0.30f, false, nullptr);
         const auto box = ResolveWidgetPixelBox(fixed.geometry, At(0.0f, 0.0f, 0.90f, 0.90f), fhd);
         CheckNear(box.width, 576.0f, 0.01f, "固定尺寸组件用声明值,不用 instance 值");
         CheckNear(box.height, 324.0f, 0.01f, "高同样用声明值");
@@ -243,7 +243,7 @@ int wmain() {
         const std::optional<float> square = 1.0f;
         // 与"从归一化反推"必须给出同一个答案 —— 两条路算的是同一件事,
         // 分歧只应来自宿主真实的盒子与推算不同(而那本身就是该报的信息)。
-        auto clock = ::miaodesk::desktop::ShippedLike("c", 0.30f, 0.30f, false, &square);
+        auto clock = ::whaledesk::desktop::ShippedLike("c", 0.30f, 0.30f, false, &square);
         const auto box = ResolveWidgetPixelBox(clock.geometry, At(0.0f, 0.0f, 0.30f, 0.30f),
                                                MonitorPixels{1920.0f, 1080.0f});
         const auto viaBox = JudgeWidgetAspectOfBox(box, clock.geometry.aspectRatio);

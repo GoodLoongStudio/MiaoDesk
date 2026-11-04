@@ -3,18 +3,18 @@
 // Elastic curve is the one with real failure history: an earlier formulation used
 // 1 - e^(-kt)(1 + cos(wt))/2, which never exceeds 1 because (1 + cos) is never
 // negative, so it was a critically damped approach wearing an elastic's name.
-#include "miaodesk/MiaoSceneRuntimeModel.h"
-#include "miaodesk/MiaoSceneSerializer.h"
+#include "whaledesk/WhaleSceneRuntimeModel.h"
+#include "whaledesk/WhaleSceneSerializer.h"
 
 #include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
 
-using miaodesk::content::BindingResponse;
-using miaodesk::content::BindingResponseKey;
-using miaodesk::content::ParseBindingResponse;
-using miaodesk::content::kBindingResponseCount;
+using whaledesk::content::BindingResponse;
+using whaledesk::content::BindingResponseKey;
+using whaledesk::content::ParseBindingResponse;
+using whaledesk::content::kBindingResponseCount;
 
 int failures = 0;
 void Check(bool c, const std::string& w) {
@@ -22,9 +22,9 @@ void Check(bool c, const std::string& w) {
     if (!c) ++failures;
 }
 
-// A mirrored copy of the curve in MiaoSceneRuntime.cpp::ApplyBindingResponse, used
+// A mirrored copy of the curve in WhaleSceneRuntime.cpp::ApplyBindingResponse, used
 // here to probe the math over the whole domain. The end-to-end test in
-// MiaoSceneRuntimeTest drives the real implementation.
+// WhaleSceneRuntimeTest drives the real implementation.
 double Response(BindingResponse r, double t) {
     switch (r) {
     case BindingResponse::Linear: return t;
@@ -67,7 +67,7 @@ int wmain() {
                 maxV = std::max(maxV, v); minV = std::min(minV, v);
                 if (v < -1.0 || v > 2.0) bounded = false;
             }
-            const char* n = miaodesk::content::BindingResponseKey(r);
+            const char* n = whaledesk::content::BindingResponseKey(r);
             Check(finite, std::string("finite over [0,1]: ") + n);
             Check(bounded, std::string("bounded in [-1,2]: ") + n);
             if (r != BindingResponse::Elastic && r != BindingResponse::Invert)
@@ -86,7 +86,7 @@ int wmain() {
                   "invert endpoints pinned: 0->1, 1->0");
         } else {
             Check(std::abs(Response(r, 0.0)) < 1e-12 && std::abs(Response(r, 1.0) - 1.0) < 1e-12,
-                  std::string("endpoints pinned: ") + miaodesk::content::BindingResponseKey(r));
+                  std::string("endpoints pinned: ") + whaledesk::content::BindingResponseKey(r));
         }
     }
 
@@ -129,13 +129,13 @@ int wmain() {
         bool ok = true;
         for (auto r : all) {
             BindingResponse back;
-            if (!miaodesk::content::ParseBindingResponse(miaodesk::content::BindingResponseKey(r), &back) || back != r) ok = false;
+            if (!whaledesk::content::ParseBindingResponse(whaledesk::content::BindingResponseKey(r), &back) || back != r) ok = false;
         }
         Check(ok, "every response round-trips through its key");
         BindingResponse tmp;
-        Check(!miaodesk::content::ParseBindingResponse("wobble", &tmp), "unknown key rejected");
-        Check(!miaodesk::content::ParseBindingResponse("", &tmp), "empty key rejected");
-        Check(!miaodesk::content::ParseBindingResponse("Linear", &tmp), "keys are lowercase only");
+        Check(!whaledesk::content::ParseBindingResponse("wobble", &tmp), "unknown key rejected");
+        Check(!whaledesk::content::ParseBindingResponse("", &tmp), "empty key rejected");
+        Check(!whaledesk::content::ParseBindingResponse("Linear", &tmp), "keys are lowercase only");
     }
 
     std::printf("\n7. Linear 必须与旧行为逐位一致\n");

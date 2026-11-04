@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$executable = Join-Path $ProductRoot 'MiaoDesk.exe'
+$executable = Join-Path $ProductRoot 'WhaleDesK.exe'
 if (-not (Test-Path $executable -PathType Leaf)) {
     throw "Login startup smoke test cannot find $executable"
 }
@@ -15,7 +15,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 
-public static class MiaoDeskStartupProbe {
+public static class WhaleDesKStartupProbe {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
@@ -50,7 +50,7 @@ public static class MiaoDeskStartupProbe {
 '@
 
 $previousLocalAppData = $env:LOCALAPPDATA
-$stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-login-startup-smoke'
+$stateBase = Join-Path $env:RUNNER_TEMP 'WhaleDesK-login-startup-smoke'
 $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
 Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
@@ -58,8 +58,8 @@ New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
 # RuntimeLogger currently writes the user-visible diagnostic log under Desktop.
 # Hosted Windows runners can make FindWindow unreliable for hidden WS_EX_TOOLWINDOW
 # windows, so readiness is proved by the product's own post-Create startup marker.
-$logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MiaoDesk-Logs\desktop-debug.log'
-$startupMarker = 'MiaoDesk 登录启动成功，已静默驻留托盘'
+$logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'WhaleDesK-Logs\desktop-debug.log'
+$startupMarker = 'WhaleDesK 登录启动成功，已静默驻留托盘'
 
 try {
     $beforeLength = if (Test-Path $logPath -PathType Leaf) { (Get-Item $logPath).Length } else { 0L }
@@ -69,7 +69,7 @@ try {
     $ready = $false
     for ($attempt = 0; $attempt -lt 60 -and -not $ready; $attempt++) {
         Start-Sleep -Milliseconds 250
-        if ($process.HasExited) { throw "MiaoDesk startup process exited early: $($process.ExitCode)" }
+        if ($process.HasExited) { throw "WhaleDesK startup process exited early: $($process.ExitCode)" }
         if (-not (Test-Path $logPath -PathType Leaf)) { continue }
 
         # Read only after startup began when possible, to avoid accepting a marker
@@ -87,14 +87,14 @@ try {
         $ready = $newText.Contains($startupMarker)
     }
     if (-not $ready) {
-        throw 'MiaoDesk startup process did not reach its silent tray-ready state within 15 seconds.'
+        throw 'WhaleDesK startup process did not reach its silent tray-ready state within 15 seconds.'
     }
 
     # The login path must never expose a top-level UI. Checking by PID is more
     # reliable than FindWindow(className) for hidden layered/tool windows on CI.
-    $visibleClasses = [MiaoDeskStartupProbe]::VisibleWindowClasses([uint32]$process.Id)
+    $visibleClasses = [WhaleDesKStartupProbe]::VisibleWindowClasses([uint32]$process.Id)
     if ($visibleClasses.Count -gt 0) {
-        throw "MiaoDesk displayed top-level window(s) during login startup: $($visibleClasses -join ', ')"
+        throw "WhaleDesK displayed top-level window(s) during login startup: $($visibleClasses -join ', ')"
     }
 
     Write-Host 'Login startup reached silent tray-ready state without showing a top-level window.' -ForegroundColor Cyan
@@ -108,7 +108,7 @@ try {
     Write-Host "::error title=Login startup smoke failed::$details"
     throw
 } finally {
-    Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue |
+    Get-Process WhaleDesK,WhaleDesKWallpaper,WhaleDesKHarness -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA = $previousLocalAppData
     Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue

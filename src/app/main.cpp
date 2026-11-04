@@ -1,23 +1,23 @@
-#include "miaodesk/AppSearch.h"
-#include "miaodesk/CreatorToolRegistry.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/DesktopWidgetStore.h"
-#include "miaodesk/DesktopWidgetTools.h"
-#include "miaodesk/GeneratedDesktopPreview.h"
-#include "miaodesk/MiaoLockOwnershipHost.h"
-#include "miaodesk/GozSearch.h"
-#include "miaodesk/HarnessProcessManager.h"
-#include "miaodesk/L3Agent.h"
-#include "miaodesk/CreatorToolWorker.h"
-#include "miaodesk/ContentCreatorDialog.h"
-#include "miaodesk/CreatorWorkspaceState.h"
-#include "miaodesk/JsonStringField.h"
-#include "miaodesk/MiaoSceneD2DRenderer.h"
-#include "miaodesk/NativeTools.h"
-#include "miaodesk/PiNativeToolsExtension.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/SearchWindow.h"
-#include "miaodesk/StartupManager.h"
+#include "whaledesk/AppSearch.h"
+#include "whaledesk/CreatorToolRegistry.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/DesktopWidgetStore.h"
+#include "whaledesk/DesktopWidgetTools.h"
+#include "whaledesk/GeneratedDesktopPreview.h"
+#include "whaledesk/WhaleLockOwnershipHost.h"
+#include "whaledesk/GozSearch.h"
+#include "whaledesk/HarnessProcessManager.h"
+#include "whaledesk/L3Agent.h"
+#include "whaledesk/CreatorToolWorker.h"
+#include "whaledesk/ContentCreatorDialog.h"
+#include "whaledesk/CreatorWorkspaceState.h"
+#include "whaledesk/JsonStringField.h"
+#include "whaledesk/WhaleSceneD2DRenderer.h"
+#include "whaledesk/NativeTools.h"
+#include "whaledesk/PiNativeToolsExtension.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/SearchWindow.h"
+#include "whaledesk/StartupManager.h"
 
 #include <windows.h>
 
@@ -37,24 +37,24 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 bool RunL3PersistenceSelfTest();
 }
 
 namespace {
 
-constexpr wchar_t kSearchWindowClass[] = L"MiaoDesk.Native.SearchWindow";
+constexpr wchar_t kSearchWindowClass[] = L"WhaleDesK.Native.SearchWindow";
 constexpr wchar_t kLoopbackNoProxy[] = L"localhost,127.0.0.1,::1";
-constexpr wchar_t kHarnessBackgroundMutex[] = L"Local\\MiaoDesk.Native.Harness.Background.Singleton";
-constexpr wchar_t kHarnessBackgroundStopEvent[] = L"Local\\MiaoDesk.Native.Harness.Background.Stop";
+constexpr wchar_t kHarnessBackgroundMutex[] = L"Local\\WhaleDesK.Native.Harness.Background.Singleton";
+constexpr wchar_t kHarnessBackgroundStopEvent[] = L"Local\\WhaleDesK.Native.Harness.Background.Stop";
 
 int ReportUnexpectedExit(int exitCode, std::wstring reason) {
     const std::wstring details = L"原因：" + reason +
         L"；退出代码=" + std::to_wstring(exitCode);
-    miaodesk::log::Error(L"AppExit", details);
+    whaledesk::log::Error(L"AppExit", details);
 
-    const auto logPath = miaodesk::RuntimeLogPath(L"desktop-debug.log");
-    std::wstring message = L"MiaoDesk 因非用户操作而退出。\r\n\r\n" + details;
+    const auto logPath = whaledesk::RuntimeLogPath(L"desktop-debug.log");
+    std::wstring message = L"WhaleDesK 因非用户操作而退出。\r\n\r\n" + details;
     if (!logPath.empty()) {
         message += L"\r\n日志：" + logPath.wstring();
         message += L"\r\n\r\n请截图此窗口，并将日志文件一并反馈。"
@@ -62,9 +62,9 @@ int ReportUnexpectedExit(int exitCode, std::wstring reason) {
     } else {
         message += L"\r\n\r\n日志目录创建失败，请截图此窗口并反馈。";
     }
-    MessageBoxW(nullptr, message.c_str(), L"MiaoDesk · 意外退出",
+    MessageBoxW(nullptr, message.c_str(), L"WhaleDesK · 意外退出",
                 MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
-    if (!logPath.empty()) miaodesk::log::OpenLogDirectory();
+    if (!logPath.empty()) whaledesk::log::OpenLogDirectory();
     return exitCode;
 }
 
@@ -84,8 +84,8 @@ LONG WINAPI ReportUnhandledException(EXCEPTION_POINTERS* exception) {
         ReportUnexpectedExit(70, L"发生未处理的 C++ 异常");
     } catch (...) {
         MessageBoxW(nullptr,
-                    L"MiaoDesk 发生未处理异常，即将退出。请截图此窗口。",
-                    L"MiaoDesk · 意外退出", MB_OK | MB_ICONERROR | MB_TOPMOST);
+                    L"WhaleDesK 发生未处理异常，即将退出。请截图此窗口。",
+                    L"WhaleDesK · 意外退出", MB_OK | MB_ICONERROR | MB_TOPMOST);
     }
     TerminateProcess(GetCurrentProcess(), 70);
     __assume(false);
@@ -131,7 +131,7 @@ bool IsAllowedPiNativeTool(std::string_view tool) {
     // model retries forever while the user sees "it never succeeds"; when this table
     // knows a tool Pi does not offer, the capability sits unused and nothing reports
     // it. One registry with two derivations is the only shape where that cannot happen.
-    return miaodesk::creator::IsCreatorTool(tool) ||
+    return whaledesk::creator::IsCreatorTool(tool) ||
            tool == "settings_open" ||
            tool == "ppt_create" ||
            tool == "file_create" ||
@@ -141,7 +141,7 @@ bool IsAllowedPiNativeTool(std::string_view tool) {
            tool == "wallpaper_state_get" ||
            tool == "desktop_widget_list" ||
            tool == "content_skill_get" ||
-           miaodesk::preview::IsGeneratedPreviewTool(tool);
+           whaledesk::preview::IsGeneratedPreviewTool(tool);
 }
 
 bool NoProxyContains(const std::wstring& raw, std::wstring_view token) {
@@ -198,17 +198,17 @@ bool NamedMutexExists(const wchar_t* name) {
 bool LaunchHarnessBackgroundOwner() {
     if (NamedMutexExists(kHarnessBackgroundMutex)) {
         // 上一版:锁在就当它在好好干活。锁在不管持有者是死了还是卡住都会在,
-        // 而那两类要分开说。裁决是纯逻辑那份(MiaoLockOwnership),这里只按它改返回值:
+        // 而那两类要分开说。裁决是纯逻辑那份(WhaleLockOwnership),这里只按它改返回值:
         // 健康的返回 true,卡住/判不了的返回 false —— 我们并没有拿到一个能干活的
         // 后台 Harness。不起第二个这条不变,变的是不再谎报成功。
-        return miaodesk::lock_host::ExistingOwnerIsHealthy(
+        return whaledesk::lock_host::ExistingOwnerIsHealthy(
             kHarnessBackgroundMutex,
             static_cast<std::uint64_t>(
                 std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-            miaodesk::lock_host::kDefaultOwnershipLeaseSeconds);
+            whaledesk::lock_host::kDefaultOwnershipLeaseSeconds);
     }
-    const fs::path harness = ModuleDirectory() / L"MiaoDeskHarness.exe";
+    const fs::path harness = ModuleDirectory() / L"WhaleDesKHarness.exe";
     std::error_code ec;
     if (!fs::is_regular_file(harness, ec)) return false;
 
@@ -281,7 +281,7 @@ bool HasBundledRuntimePathIfInstalled() {
 // 这个接口而不是直接在分发函数里写文件,是因为「错误后无半写文件」这条只能在
 // 决策层被断言 —— 把 <filesystem> 塞进分发函数,那些断言就只剩一句
 // "Windows 真机待验",而它们恰好是最不该只留给真机的那批。
-class FilesystemCreatorWorkspace : public miaodesk::creator::CreatorWorkspacePort {
+class FilesystemCreatorWorkspace : public whaledesk::creator::CreatorWorkspacePort {
 public:
     explicit FilesystemCreatorWorkspace(std::wstring workspaceRoot)
         : root_(std::move(workspaceRoot)) {}
@@ -296,8 +296,8 @@ public:
         return true;
     }
 
-    std::vector<miaodesk::content::CandidatePart> Snapshot() override {
-        std::vector<miaodesk::content::CandidatePart> parts;
+    std::vector<whaledesk::content::CandidatePart> Snapshot() override {
+        std::vector<whaledesk::content::CandidatePart> parts;
         std::error_code ec;
         if (!fs::exists(root_, ec)) return parts;
         for (const auto& entry : fs::recursive_directory_iterator(
@@ -313,8 +313,8 @@ public:
         return parts;
     }
 
-    miaodesk::creator::CreatorFileFacts Facts(const std::string& relativePath) override {
-        miaodesk::creator::CreatorFileFacts facts;
+    whaledesk::creator::CreatorFileFacts Facts(const std::string& relativePath) override {
+        whaledesk::creator::CreatorFileFacts facts;
         const auto path = Resolve(relativePath);
         if (path.empty()) return facts;
         std::error_code ec;
@@ -376,7 +376,7 @@ public:
     }
 
     bool SealSnapshot(const std::string& digest,
-                      const std::vector<miaodesk::content::CandidatePart>& parts,
+                      const std::vector<whaledesk::content::CandidatePart>& parts,
                       std::string* snapshotPath) override {
         // 封存必须是**工作区之外**的一份独立副本。指向工作区的话,"封存后修改源
         // 目录不能改变待应用候选"这条名存实亡 —— 因为封存的就是源目录。
@@ -440,8 +440,8 @@ public:
                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     }
 
-    bool CollectEvidence(const miaodesk::creator::RenderEvidenceRequirements& requirements,
-                         std::vector<miaodesk::creator::RenderEvidenceSample>* samples,
+    bool CollectEvidence(const whaledesk::creator::RenderEvidenceRequirements& requirements,
+                         std::vector<whaledesk::creator::RenderEvidenceSample>* samples,
                          std::string* detail) override {
         // 离屏采集:自建一个 DC render target,不碰用户屏幕上的任何窗口。
         // 计划验收的第四条(不需要抓取私人桌面)就是这一行保证的。
@@ -469,7 +469,7 @@ public:
         }
 
         // 渲染器要的是包根目录。工作区本身就是那个根。
-        miaodesk::content::MiaoSceneD2DRenderer renderer;
+        whaledesk::content::WhaleSceneD2DRenderer renderer;
         std::wstring renderError;
         const bool loaded = renderer.Load(root_, target.Get(), &renderError);
 
@@ -479,13 +479,13 @@ public:
         // 每帧的摘要由 MakeRenderedEvidenceSample 绑定,它只接受这一个字符串,
         // 所以调用点没有第二个变量可以填错 —— 上一版在这里另声明了一个从未赋值的
         // 局部 digest,结果每一帧都带空摘要,判据层只能整批拒绝。
-        const auto computed = miaodesk::content::ComputeCandidateDigest(Snapshot());
+        const auto computed = whaledesk::content::ComputeCandidateDigest(Snapshot());
         if (!computed.UsableAsIdentity()) {
             *detail = "当前工作区算不出可用的候选摘要,无法为它采集渲染证据。";
             return false;
         }
 
-        miaodesk::creator::OffscreenEvidenceRequest offscreen;
+        whaledesk::creator::OffscreenEvidenceRequest offscreen;
         offscreen.width = static_cast<std::uint32_t>(width);
         offscreen.height = static_cast<std::uint32_t>(height);
         offscreen.backend = "d2d";
@@ -507,16 +507,16 @@ public:
                                                       : frameError);
                 return false;
             }
-            samples->push_back(miaodesk::creator::MakeRenderedEvidenceSample(
+            samples->push_back(whaledesk::creator::MakeRenderedEvidenceSample(
                 index, static_cast<std::uint64_t>(::GetTickCount64()), offscreen,
                 computed.value));
         }
         return true;
     }
 
-    bool SaveState(const miaodesk::creator::CreatorWorkspaceState& state) override {
-        const auto path = fs::path(root_) / fs::path(miaodesk::creator::kCreatorWorkspaceStateFileName);
-        const auto text = miaodesk::creator::SerializeCreatorWorkspaceState(state);
+    bool SaveState(const whaledesk::creator::CreatorWorkspaceState& state) override {
+        const auto path = fs::path(root_) / fs::path(whaledesk::creator::kCreatorWorkspaceStateFileName);
+        const auto text = whaledesk::creator::SerializeCreatorWorkspaceState(state);
         auto temporary = path;
         temporary += L".tmp";
         {
@@ -549,7 +549,7 @@ public:
         if (!fs::is_regular_file(path, ec) || ec) return false;
         // 来源还要过一遍扩展名:不能借"导入素材"把一个 .js 弄进包里。
         const auto extension = path.extension().string();
-        if (miaodesk::creator::CreatorWorkspacePolicy::IsForbiddenExtension(extension)) {
+        if (whaledesk::creator::CreatorWorkspacePolicy::IsForbiddenExtension(extension)) {
             return false;
         }
         std::ifstream stream(path, std::ios::binary);
@@ -577,7 +577,7 @@ private:
     // 一个没规范化的路径可以让 ".." 藏在 "scene\..\..\x" 里,而字符串比对看不出来。
     fs::path Resolve(const std::string& relativePath) const {
         std::string normalized;
-        if (!miaodesk::creator::NormalizeCreatorRelativePath(relativePath, &normalized)) return {};
+        if (!whaledesk::creator::NormalizeCreatorRelativePath(relativePath, &normalized)) return {};
         fs::path candidate = root_;
         for (const auto& segment : fs::path(normalized)) candidate /= segment;
         std::error_code ec;
@@ -610,13 +610,13 @@ private:
         return text;
     }
 
-    static miaodesk::content::CandidatePartRole RoleOf(const std::string& relativePath) {
-        if (relativePath == "manifest.json") return miaodesk::content::CandidatePartRole::Manifest;
-        if (relativePath == "parameters.json") return miaodesk::content::CandidatePartRole::Parameters;
-        if (relativePath.rfind("scene/", 0) == 0) return miaodesk::content::CandidatePartRole::Scene;
-        if (relativePath.rfind("preview.", 0) == 0) return miaodesk::content::CandidatePartRole::Preview;
-        if (relativePath.rfind("assets/", 0) == 0) return miaodesk::content::CandidatePartRole::Asset;
-        return miaodesk::content::CandidatePartRole::Other;
+    static whaledesk::content::CandidatePartRole RoleOf(const std::string& relativePath) {
+        if (relativePath == "manifest.json") return whaledesk::content::CandidatePartRole::Manifest;
+        if (relativePath == "parameters.json") return whaledesk::content::CandidatePartRole::Parameters;
+        if (relativePath.rfind("scene/", 0) == 0) return whaledesk::content::CandidatePartRole::Scene;
+        if (relativePath.rfind("preview.", 0) == 0) return whaledesk::content::CandidatePartRole::Preview;
+        if (relativePath.rfind("assets/", 0) == 0) return whaledesk::content::CandidatePartRole::Asset;
+        return whaledesk::content::CandidatePartRole::Other;
     }
 
     fs::path root_;
@@ -636,23 +636,23 @@ std::wstring Utf8ToWide(const std::string& value) {
     return out;
 }
 
-miaodesk::NativeToolResult RunCreatorTool(const std::string& tool, const std::string& arguments) {
-    using namespace miaodesk::creator;
+whaledesk::NativeToolResult RunCreatorTool(const std::string& tool, const std::string& arguments) {
+    using namespace whaledesk::creator;
 
     // 会话与工作区从宿主的环境变量取,不从参数里取。参数是模型写的,
     // 它说什么都不是事实来源;环境变量是宿主这一侧导出的。
-    const auto workspaceRoot = ReadEnvironmentValue(miaodesk::kCreatorWorkspaceEnvironment);
-    const auto sessionId = ReadEnvironmentValue(miaodesk::kCreatorSessionEnvironment);
+    const auto workspaceRoot = ReadEnvironmentValue(whaledesk::kCreatorWorkspaceEnvironment);
+    const auto sessionId = ReadEnvironmentValue(whaledesk::kCreatorSessionEnvironment);
 
     CreatorToolArgs args;
-    args.sessionId = miaodesk::ExtractJsonString(arguments, "\"sessionId\"");
-    args.workspaceRoot = miaodesk::ExtractJsonString(arguments, "\"workspaceRoot\"");
-    args.relativePath = miaodesk::ExtractJsonString(arguments, "\"relativePath\"");
-    args.content = miaodesk::ExtractJsonString(arguments, "\"content\"");
-    args.source = miaodesk::ExtractJsonString(arguments, "\"source\"");
-    args.digest = miaodesk::ExtractJsonString(arguments, "\"digest\"");
-    args.backend = miaodesk::ExtractJsonString(arguments, "\"backend\"");
-    args.summary = miaodesk::ExtractJsonString(arguments, "\"summary\"");
+    args.sessionId = whaledesk::ExtractJsonString(arguments, "\"sessionId\"");
+    args.workspaceRoot = whaledesk::ExtractJsonString(arguments, "\"workspaceRoot\"");
+    args.relativePath = whaledesk::ExtractJsonString(arguments, "\"relativePath\"");
+    args.content = whaledesk::ExtractJsonString(arguments, "\"content\"");
+    args.source = whaledesk::ExtractJsonString(arguments, "\"source\"");
+    args.digest = whaledesk::ExtractJsonString(arguments, "\"digest\"");
+    args.backend = whaledesk::ExtractJsonString(arguments, "\"backend\"");
+    args.summary = whaledesk::ExtractJsonString(arguments, "\"summary\"");
 
     CreatorWorkerInput input;
     input.workspaceRoot = WideToUtf8(workspaceRoot);
@@ -674,7 +674,7 @@ miaodesk::NativeToolResult RunCreatorTool(const std::string& tool, const std::st
     std::optional<CreatorPackageTransaction> transaction;
     const auto reply = DispatchCreatorTool(tool, args, input, port, &transaction);
 
-    miaodesk::NativeToolResult result;
+    whaledesk::NativeToolResult result;
     result.success = reply.ok;
     result.message = Utf8ToWide(reply.ToModelText());
     return result;
@@ -709,15 +709,15 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
     const std::string arguments((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     if (!input.good() && !input.eof()) return 23;
 
-    miaodesk::NativeToolResult result;
-    if (miaodesk::creator::IsCreatorTool(toolUtf8)) {
+    whaledesk::NativeToolResult result;
+    if (whaledesk::creator::IsCreatorTool(toolUtf8)) {
         result = RunCreatorTool(toolUtf8, arguments);
-    } else if (miaodesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
-        result = miaodesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
+    } else if (whaledesk::preview::IsGeneratedPreviewTool(toolUtf8)) {
+        result = whaledesk::preview::ExecuteGeneratedPreviewTool(toolUtf8, arguments);
     } else if (toolUtf8 == "wallpaper_state_get" || toolUtf8 == "desktop_widget_list") {
-        result = miaodesk::ExecuteDesktopControlTool(toolUtf8, arguments);
+        result = whaledesk::ExecuteDesktopControlTool(toolUtf8, arguments);
     } else {
-        result = miaodesk::ExecuteNativeToolRaw(toolUtf8, arguments);
+        result = whaledesk::ExecuteNativeToolRaw(toolUtf8, arguments);
     }
 
     std::string payload = result.success ? "1\n" : "0\n";
@@ -733,21 +733,21 @@ int RunNativeToolWorkerIfRequested(bool& handled) {
 bool RunNativeSelfTest() {
     if (!HasLoopbackProxyBypass()) return false;
     if (!HasBundledRuntimePathIfInstalled()) return false;
-    if (!miaodesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return false;
-    if (!miaodesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
+    if (!whaledesk::wallpaper::BuiltinWallpaperCatalogSelfTest()) return false;
+    if (!whaledesk::wallpaper::DesktopWidgetStore::SelfTest()) return false;
 
-    miaodesk::AppSearch apps;
+    whaledesk::AppSearch apps;
     apps.BuildIndex();
     const auto appResults = apps.Query(L"Notepad", 5);
     if (apps.Count() < 5 || appResults.empty()) return false;
 
-    miaodesk::GozSearch files;
+    whaledesk::GozSearch files;
     if (!files.SelfTest()) return false;
 
-    if (!miaodesk::HarnessProcessManager::SelfTest()) return false;
-    if (!miaodesk::RunL3PersistenceSelfTest()) return false;
+    if (!whaledesk::HarnessProcessManager::SelfTest()) return false;
+    if (!whaledesk::RunL3PersistenceSelfTest()) return false;
 
-    miaodesk::L3Agent l3;
+    whaledesk::L3Agent l3;
     std::wstring reply;
     bool consumedSecret = false;
     if (!l3.TryHandleLocal(L"/time", reply, consumedSecret) || reply.empty() || consumedSecret) return false;
@@ -767,7 +767,7 @@ bool RunNativeSelfTest() {
         reply.find(L"/new") == std::wstring::npos) return false;
     if (reply.find(L"4317") != std::wstring::npos || reply.find(L"4318") != std::wstring::npos || reply.find(L"MCP") != std::wstring::npos) return false;
 
-    for (const wchar_t* command : {L"/apps Notepad", L"/files MiaoDesk"}) {
+    for (const wchar_t* command : {L"/apps Notepad", L"/files WhaleDesK"}) {
         reply.clear();
         consumedSecret = false;
         if (!l3.TryHandleLocal(command, reply, consumedSecret) || reply.empty() || consumedSecret) return false;
@@ -815,28 +815,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
 
     std::wstring piExtensionError;
-    const bool piExtensionReady = miaodesk::EnsurePiNativeToolsExtension(&piExtensionError);
+    const bool piExtensionReady = whaledesk::EnsurePiNativeToolsExtension(&piExtensionError);
     if (!piExtensionReady && !piExtensionError.empty()) {
-        OutputDebugStringW((L"MiaoDesk Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
-        miaodesk::log::Error(L"PiExtension", piExtensionError);
+        OutputDebugStringW((L"WhaleDesK Pi extension bootstrap failed: " + piExtensionError + L"\r\n").c_str());
+        whaledesk::log::Error(L"PiExtension", piExtensionError);
     }
 
     const std::wstring_view args = commandLine ? std::wstring_view(commandLine) : std::wstring_view{};
     if (args.find(L"--creator-window-self-test") != std::wstring_view::npos) {
-        const int result = miaodesk::creator::ContentCreatorWindowSelfTest(instance) ? 0 : 8;
+        const int result = whaledesk::creator::ContentCreatorWindowSelfTest(instance) ? 0 : 8;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
     }
     if (args.find(L"--self-test") != std::wstring_view::npos) {
         const int result = piExtensionReady && RunNativeSelfTest() &&
-                           miaodesk::startup::SelfTest() ? 0 : 5;
+                           whaledesk::startup::SelfTest() ? 0 : 5;
         if (SUCCEEDED(com)) CoUninitialize();
         return result;
     }
 
-    const bool startupLaunch = miaodesk::startup::IsStartupLaunch(args);
-    const auto creatorKind = miaodesk::creator::ParseCommandLine(args);
-    HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\MiaoDesk.Native.Search.Singleton");
+    const bool startupLaunch = whaledesk::startup::IsStartupLaunch(args);
+    const auto creatorKind = whaledesk::creator::ParseCommandLine(args);
+    HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\WhaleDesK.Native.Search.Singleton");
     if (!mutex) {
         const DWORD mutexError = GetLastError();
         if (SUCCEEDED(com)) CoUninitialize();
@@ -845,14 +845,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         int forwardedResult = 0;
-        if (creatorKind != miaodesk::creator::ContentCreatorKind::None) {
-            // The single running MiaoDesk process owns L3/Pi and the conversation
+        if (creatorKind != whaledesk::creator::ContentCreatorKind::None) {
+            // The single running WhaleDesK process owns L3/Pi and the conversation
             // surface. Forward creator mode instead of starting a second AI stack.
             // A creator request is successful only after the existing host reports
             // that the requested top-level window really exists.
-            if (!miaodesk::creator::SendToRunningApp(creatorKind)) {
+            if (!whaledesk::creator::SendToRunningApp(creatorKind)) {
                 ActivateExistingSearchWindow();
-                miaodesk::log::Error(
+                whaledesk::log::Error(
                     L"CreatorIPC",
                     L"单实例创作请求转发失败；返回非零退出码。");
                 forwardedResult = 9;
@@ -865,11 +865,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         return forwardedResult;
     }
 
-    if (!startupLaunch) miaodesk::startup::PromptForConsentIfNeeded();
+    if (!startupLaunch) whaledesk::startup::PromptForConsentIfNeeded();
 
-    miaodesk::SearchWindow window(instance);
+    whaledesk::SearchWindow window(instance);
     const bool showSearchOnLaunch =
-        !startupLaunch && creatorKind == miaodesk::creator::ContentCreatorKind::None;
+        !startupLaunch && creatorKind == whaledesk::creator::ContentCreatorKind::None;
     if (!window.Create(showSearchOnLaunch)) {
         const std::wstring reason = window.LastCreateError().empty()
             ? L"搜索窗口初始化失败" : window.LastCreateError();
@@ -877,14 +877,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         CloseHandle(mutex);
         return ReportUnexpectedExit(4, reason);
     }
-    miaodesk::log::Info(L"App", startupLaunch
-        ? L"MiaoDesk 登录启动成功，已静默驻留托盘"
-        : L"MiaoDesk 主窗口启动成功");
+    whaledesk::log::Info(L"App", startupLaunch
+        ? L"WhaleDesK 登录启动成功，已静默驻留托盘"
+        : L"WhaleDesK 主窗口启动成功");
 
-    if (creatorKind != miaodesk::creator::ContentCreatorKind::None)
+    if (creatorKind != whaledesk::creator::ContentCreatorKind::None)
         window.OpenContentCreator(creatorKind);
 
-    // Keep MiaoDesk startup responsive, then prewarm the full DeepSeek workbench in the
+    // Keep WhaleDesK startup responsive, then prewarm the full DeepSeek workbench in the
     // background. If the user opens it earlier, the UI launches the same singleton owner.
     std::jthread harnessWarmup;
     if (!startupLaunch) {
@@ -907,7 +907,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     if (!window.ExitExpected()) {
         return ReportUnexpectedExit(7, L"主窗口被意外销毁");
     }
-    miaodesk::log::Info(
-        L"AppExit", L"MiaoDesk 正常退出；退出代码=" + std::to_wstring(result));
+    whaledesk::log::Info(
+        L"AppExit", L"WhaleDesK 正常退出；退出代码=" + std::to_wstring(result));
     return result;
 }

@@ -49,7 +49,7 @@ for (const [name, body] of [["nothing selected", noSelection], ["source missing"
     `the ${name} branch must write a status line -- this is the only apply failure the user`);
   assert.match(body, /MessageBeep\(MB_ICONERROR\)/,
     `the ${name} branch must beep, so a click that did nothing is audible`);
-  assert.match(body, /miaodesk::log::(?:Warn|Error)\(/,
+  assert.match(body, /whaledesk::log::(?:Warn|Error)\(/,
     `the ${name} branch must still log the reason`);
 }
 

@@ -19,7 +19,7 @@ if ($SampleIntervalSeconds -lt 0.25) { throw 'SampleIntervalSeconds must be at l
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $OutputDirectory = Join-Path ([Environment]::GetFolderPath('Desktop')) "MiaoDesk-Perf-$Scenario-$stamp"
+    $OutputDirectory = Join-Path ([Environment]::GetFolderPath('Desktop')) "WhaleDesK-Perf-$Scenario-$stamp"
 }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $logicalProcessors = [Math]::Max(1, [Environment]::ProcessorCount)
@@ -39,7 +39,7 @@ function Get-OwnedProcessGraph {
     }
 
     $roots = @($rows | Where-Object {
-        $_.Name -in @('MiaoDesk.exe','MiaoDeskWallpaper.exe','MiaoDeskHarness.exe')
+        $_.Name -in @('WhaleDesK.exe','WhaleDesKWallpaper.exe','WhaleDesKHarness.exe')
     } | ForEach-Object { [int]$_.ProcessId })
 
     $owned = New-Object 'System.Collections.Generic.HashSet[int]'
@@ -101,7 +101,7 @@ function Percentile([double[]]$Values, [double]$P) {
 
 $firstGraph = Get-OwnedProcessGraph
 if ($firstGraph.RootPids.Count -eq 0) {
-    throw 'No running MiaoDesk root process was found.'
+    throw 'No running WhaleDesK root process was found.'
 }
 
 $computerSystem = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
@@ -289,7 +289,7 @@ $report | ConvertTo-Json -Depth 9 | Set-Content -Path $reportPath -Encoding UTF8
 $mb = 1MB
 $summaryPath = Join-Path $OutputDirectory "performance-$Scenario.txt"
 $lines = @(
-    "MiaoDesk performance baseline: $Scenario"
+    "WhaleDesK performance baseline: $Scenario"
     "Generated: $($report.generatedAt)"
     "Duration: $DurationSeconds s after $WarmupSeconds s warm-up @ $SampleIntervalSeconds s"
     "Machine: $($machine.computerName) · $($machine.windowsCaption) $($machine.windowsVersion) build $($machine.windowsBuild)"
@@ -316,7 +316,7 @@ if ($comparison) {
 }
 $lines | Set-Content -Path $summaryPath -Encoding UTF8
 
-Write-Host "MiaoDesk performance report:" -ForegroundColor Green
+Write-Host "WhaleDesK performance report:" -ForegroundColor Green
 Write-Host "  $reportPath"
 Write-Host "  $summaryPath"
 

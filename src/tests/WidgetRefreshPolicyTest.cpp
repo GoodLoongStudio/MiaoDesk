@@ -9,12 +9,12 @@
 //   · 成功即恢复 —— 恢复之后如果还按退避间隔走,一次内容变化会晚最多 30 秒才上屏,
 //     那比"多画几帧"糟得多;
 //   · 绝不为 0 —— 0 在宿主那里的含义正是要修的那个 bug。
-#include "miaodesk/WidgetRefreshPolicy.h"
+#include "whaledesk/WidgetRefreshPolicy.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 int g_failures = 0;
@@ -29,11 +29,11 @@ void Check(bool ok, const std::string& what) {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::desktop;
+    using namespace whaledesk;
+    using namespace whaledesk::desktop;
 
     // ---- 1. 成功路径:内容要帧就按它要的,不要帧就按 idle ----
     Check(NextRefreshDelayAfterSuccess(16, false) == 16, "内容要 16ms 一帧就给 16ms");

@@ -5,13 +5,13 @@
 // 恒说"已经有序"则修复永远不跑(Explorer 重启后壁纸盖住图标、组件点不动);
 // 恒说"需要修"则每一跳都重发 z-order,DWM 每秒重组整条带子,用户看到壁纸闪。
 // 代码注释里那句 "reads as wallpaper flicker" 说的正是后者。
-#include "miaodesk/MiaoDesktopBandOrder.h"
+#include "whaledesk/WhaleDesKtopBandOrder.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 int g_failures = 0;
@@ -53,10 +53,10 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk;
+    using namespace whaledesk;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:层级判定不动\n");

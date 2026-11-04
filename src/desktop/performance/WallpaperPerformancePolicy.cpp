@@ -1,16 +1,16 @@
-#include "miaodesk/WallpaperPerformancePolicy.h"
-#include "miaodesk/WallpaperApplicationRules.h"
+#include "whaledesk/WallpaperPerformancePolicy.h"
+#include "whaledesk/WallpaperApplicationRules.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <cwchar>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-bool IsMiaoDeskWindowClass(const wchar_t* className) {
+bool IsWhaleDesKWindowClass(const wchar_t* className) {
     if (!className || !*className) return false;
-    constexpr wchar_t prefix[] = L"MiaoDesk.Native.";
+    constexpr wchar_t prefix[] = L"WhaleDesK.Native.";
     return wcsncmp(className, prefix, std::size(prefix) - 1) == 0;
 }
 
@@ -19,7 +19,7 @@ bool IsIgnoredForeground(HWND foreground, HWND wallpaperWindow, HWND settingsWin
 
     wchar_t className[128]{};
     GetClassNameW(foreground, className, static_cast<int>(std::size(className)));
-    return IsMiaoDeskWindowClass(className) ||
+    return IsWhaleDesKWindowClass(className) ||
            _wcsicmp(className, L"Progman") == 0 ||
            _wcsicmp(className, L"WorkerW") == 0 ||
            _wcsicmp(className, L"Shell_TrayWnd") == 0;
@@ -228,7 +228,7 @@ bool WallpaperPerformancePolicy::SelfTest() noexcept {
     if (NormalizeFpsCap(31) != 30 || NormalizeFpsCap(58) != 60 || NormalizeFpsCap(100) != 120) return false;
     if (ParsePerformanceAction(L"pause") != PerformanceAction::Pause) return false;
     if (StrongerAction(PerformanceAction::Throttle, PerformanceAction::Stop) != PerformanceAction::Stop) return false;
-    if (!IsMiaoDeskWindowClass(L"MiaoDesk.Native.DesktopLibrary") || IsMiaoDeskWindowClass(L"Notepad")) return false;
+    if (!IsWhaleDesKWindowClass(L"WhaleDesK.Native.DesktopLibrary") || IsWhaleDesKWindowClass(L"Notepad")) return false;
 
     PerformanceConfig config;
     config.fpsCap = 60;
@@ -262,4 +262,4 @@ bool WallpaperPerformancePolicy::SelfTest() noexcept {
     return WallpaperApplicationRules::SelfTest();
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

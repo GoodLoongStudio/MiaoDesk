@@ -1,11 +1,11 @@
 ---
 name: content-package-basics
-description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 .mdwidget 组件包之前必用,定义 manifest 字段、稳定 ID、Package Root 边界、capability 声明、ParameterSchema 与 binding 规则。壁纸与组件 skill 的共同基础。
+description: WhaleDesK 内容包契约底座。生成任何 .mdwall 壁纸包或 .mdwidget 组件包之前必用,定义 manifest 字段、稳定 ID、Package Root 边界、capability 声明、ParameterSchema 与 binding 规则。壁纸与组件 skill 的共同基础。
 ---
 
-# MiaoDesk 内容包契约底座
+# WhaleDesK 内容包契约底座
 
-定义什么是合法的 MiaoDesk 内容包。所有内容生成任务的第一步,`wallpaper-content` 与 `widget-content` 都建立在它之上。
+定义什么是合法的 WhaleDesK 内容包。所有内容生成任务的第一步,`wallpaper-content` 与 `widget-content` 都建立在它之上。
 
 ## 何时使用
 
@@ -16,7 +16,7 @@ description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 
 ## 正面提示词
 
 ```text
-生成 MiaoDesk 内容包时严格遵守以下契约。
+生成 WhaleDesK 内容包时严格遵守以下契约。
 
 【manifest.json】
 - schema 必须为 1。
@@ -79,7 +79,7 @@ description: MiaoDesk 内容包契约底座。生成任何 .mdwall 壁纸包或 
 
 1. 组件自带的 `texture` 属性(assetReference),指向一个 `AssetType::Image` 资产。
    - **不需要 material**,也不用声明 `materials[]` —— 仓库里唯一填满的壁纸
-     MiaoCloud 就是这种:5 个图层 sprite 各有 texture,`materials` 是空数组。
+     WhaleCloud 就是这种:5 个图层 sprite 各有 texture,`materials` 是空数组。
    - 这是图片图层该用的写法,优先级高于 shader 路线。
 2. `materialId` 指向一个 material。
    - builtin material:**只有 `builtinName: "solidColor"` 一种能用**。

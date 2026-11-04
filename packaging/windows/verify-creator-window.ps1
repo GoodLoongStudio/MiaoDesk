@@ -4,9 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$exe = Join-Path $ProductRoot 'MiaoDesk.exe'
+$exe = Join-Path $ProductRoot 'WhaleDesK.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-    throw "Creator window smoke cannot find MiaoDesk.exe at '$exe'."
+    throw "Creator window smoke cannot find WhaleDesK.exe at '$exe'."
 }
 
 Add-Type -TypeDefinition @'
@@ -15,7 +15,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 
-public sealed class MiaoDeskCreatorWindowInfo {
+public sealed class WhaleDesKCreatorWindowInfo {
     public IntPtr Handle;
     public string ClassName;
     public string Title;
@@ -23,7 +23,7 @@ public sealed class MiaoDeskCreatorWindowInfo {
     public IntPtr Owner;
 }
 
-public static class MiaoDeskCreatorWindowProbe {
+public static class WhaleDesKCreatorWindowProbe {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
@@ -48,8 +48,8 @@ public static class MiaoDeskCreatorWindowProbe {
 
     const uint GW_OWNER = 4;
 
-    public static MiaoDeskCreatorWindowInfo[] Find(uint processId) {
-        var result = new List<MiaoDeskCreatorWindowInfo>();
+    public static WhaleDesKCreatorWindowInfo[] Find(uint processId) {
+        var result = new List<WhaleDesKCreatorWindowInfo>();
         EnumWindows((hWnd, lParam) => {
             uint ownerPid;
             GetWindowThreadProcessId(hWnd, out ownerPid);
@@ -57,12 +57,12 @@ public static class MiaoDeskCreatorWindowProbe {
 
             var className = new StringBuilder(256);
             GetClassName(hWnd, className, className.Capacity);
-            if (!String.Equals(className.ToString(), "MiaoDesk.Native.ContentCreatorDialog",
+            if (!String.Equals(className.ToString(), "WhaleDesK.Native.ContentCreatorDialog",
                                StringComparison.Ordinal)) return true;
 
             var title = new StringBuilder(512);
             GetWindowText(hWnd, title, title.Capacity);
-            result.Add(new MiaoDeskCreatorWindowInfo {
+            result.Add(new WhaleDesKCreatorWindowInfo {
                 Handle = hWnd,
                 ClassName = className.ToString(),
                 Title = title.ToString(),
@@ -84,11 +84,11 @@ function Wait-CreatorWindows {
     )
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
-        $windows = @([MiaoDeskCreatorWindowProbe]::Find($ProcessId))
+        $windows = @([WhaleDesKCreatorWindowProbe]::Find($ProcessId))
         if ($windows.Count -ge $ExpectedCount) { return $windows }
         Start-Sleep -Milliseconds 200
     } while ([DateTime]::UtcNow -lt $deadline)
-    return @([MiaoDeskCreatorWindowProbe]::Find($ProcessId))
+    return @([WhaleDesKCreatorWindowProbe]::Find($ProcessId))
 }
 
 function Invoke-CreatorRequest {
@@ -100,11 +100,11 @@ function Invoke-CreatorRequest {
 }
 
 $previousLocalAppData = $env:LOCALAPPDATA
-$stateBase = Join-Path $env:RUNNER_TEMP 'MiaoDesk-creator-window-smoke'
+$stateBase = Join-Path $env:RUNNER_TEMP 'WhaleDesK-creator-window-smoke'
 $env:LOCALAPPDATA = Join-Path $stateBase 'LocalAppData'
 
 try {
-    Get-Process MiaoDesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process WhaleDesK -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 400
     Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
@@ -112,7 +112,7 @@ try {
     $appProcess = Start-Process -FilePath $exe -ArgumentList '--startup' -WorkingDirectory $ProductRoot -PassThru
     Start-Sleep -Milliseconds 800
     if ($appProcess.HasExited) {
-        throw "MiaoDesk creator host exited during startup: $($appProcess.ExitCode)"
+        throw "WhaleDesK creator host exited during startup: $($appProcess.ExitCode)"
     }
 
     Invoke-CreatorRequest -Kind 'wallpaper'
@@ -160,7 +160,7 @@ catch {
     throw
 }
 finally {
-    Get-Process MiaoDesk,MiaoDeskWallpaper,MiaoDeskHarness -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process WhaleDesK,WhaleDesKWallpaper,WhaleDesKHarness -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA = $previousLocalAppData
     Remove-Item $stateBase -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -13,9 +13,9 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const worker = read("src/app/main.cpp");
-const dispatchHeader = read("src/include/miaodesk/CreatorToolWorker.h");
+const dispatchHeader = read("src/include/whaledesk/CreatorToolWorker.h");
 const dispatchImpl = read("src/desktop/control/CreatorToolWorker.cpp");
-const extensionHeader = read("src/include/miaodesk/PiNativeToolsExtension.h");
+const extensionHeader = read("src/include/whaledesk/PiNativeToolsExtension.h");
 
 function functionBody(source, signature) {
   const start = source.indexOf(signature);
@@ -33,7 +33,7 @@ function functionBody(source, signature) {
 
 // --- 1. 创作工具必须在通用路径之前被接走 --------------------------------------
 
-const dispatch = functionBody(worker, "miaodesk::NativeToolResult RunCreatorTool");
+const dispatch = functionBody(worker, "whaledesk::NativeToolResult RunCreatorTool");
 assert.ok(dispatch.length > 0, "main.cpp must implement RunCreatorTool");
 
 // 关键的一条:在 RunNativeToolWorkerIfRequested 里,creator 工具必须**先**被分派,
@@ -59,9 +59,9 @@ assert.match(worker, /kCreatorWorkspaceEnvironment/,
 assert.match(worker, /kCreatorSessionEnvironment/,
   "the worker must read the session id from the host's environment");
 // 这两个常量必须真的定义在宿主与扩展共用的那个头里。
-assert.match(extensionHeader, /kCreatorWorkspaceEnvironment\[\] = L"MIAODESK_CREATOR_WORKSPACE"/,
+assert.match(extensionHeader, /kCreatorWorkspaceEnvironment\[\] = L"WHALEDESK_CREATOR_WORKSPACE"/,
   "kCreatorWorkspaceEnvironment must be the shared name, defined once");
-assert.match(extensionHeader, /kCreatorSessionEnvironment\[\] = L"MIAODESK_CREATOR_SESSION"/,
+assert.match(extensionHeader, /kCreatorSessionEnvironment\[\] = L"WHALEDESK_CREATOR_SESSION"/,
   "kCreatorSessionEnvironment must be the shared name, defined once");
 
 // sessionId / workspaceRoot 不得从工具参数里取来当事实。参数仍然要读
@@ -77,8 +77,8 @@ assert.ok(!/input\.workspaceRoot = .*ExtractJsonString/.test(dispatch),
 
 // worker 每次调用都是新进程,手里没有宿主内存。阶段、epoch、取消位必须落在
 // 工作区里由它读;读不懂时 hasState 必须是 false,而不是拿半份状态去放行一次写入。
-const stateHeader = read("src/include/miaodesk/CreatorWorkspaceState.h");
-assert.match(stateHeader, /kCreatorWorkspaceStateFileName = "\.miaodesk-session\.state"/,
+const stateHeader = read("src/include/whaledesk/CreatorWorkspaceState.h");
+assert.match(stateHeader, /kCreatorWorkspaceStateFileName = "\.whaledesk-session\.state"/,
   "the state file name must be fixed, so the host and the worker agree on it");
 assert.match(worker, /ParseCreatorWorkspaceState\(text, &input\.state\)/,
   "the worker must parse the workspace state file");
@@ -111,7 +111,7 @@ assert.match(replaceTarget, /MoveFileExW\([\s\S]*MOVEFILE_REPLACE_EXISTING \| MO
 // --- 5. reparse point 要真的去问文件系统 --------------------------------------
 
 // 不问的话,"解析后落在工作区之外"只能靠路径字符串猜,而猜不出 junction。
-assert.match(functionBody(port, "miaodesk::creator::CreatorFileFacts Facts(const std::string& relativePath) override"),
+assert.match(functionBody(port, "whaledesk::creator::CreatorFileFacts Facts(const std::string& relativePath) override"),
   /fs::is_symlink\(status\)/,
   "the host must ask the filesystem whether the path is a reparse point");
 

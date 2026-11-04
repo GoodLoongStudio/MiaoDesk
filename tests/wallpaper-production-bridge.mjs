@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import assert from "node:assert/strict";
 
-const source = fs.readFileSync("src/include/miaodesk/LayeredSceneRenderer.h", "utf8");
-const miaoCloud = fs.readFileSync("assets/wallpapers/MiaoCloud.mdwall/manifest.json", "utf8");
+const source = fs.readFileSync("src/include/whaledesk/LayeredSceneRenderer.h", "utf8");
+const whaleCloud = fs.readFileSync("assets/wallpapers/WhaleCloud.mdwall/manifest.json", "utf8");
 const neonCity = fs.readFileSync("assets/wallpapers/NeonCity.mdwall/manifest.json", "utf8");
 const mysticMoon = fs.readFileSync("assets/wallpapers/MysticMoon.mdwall/manifest.json", "utf8");
 
 for (const [name, manifestText] of [
-  ["MiaoCloud", miaoCloud],
+  ["WhaleCloud", whaleCloud],
   ["NeonCity", neonCity],
   ["MysticMoon", mysticMoon],
 ]) {
@@ -16,10 +16,10 @@ for (const [name, manifestText] of [
   assert.equal(manifest.runtime, "scene", `${name} must stay a Scene runtime package`);
 }
 
-assert.match(source, /#include "miaodesk\/MiaoSceneD2DRenderer\.h"/);
+assert.match(source, /#include "whaledesk\/WhaleSceneD2DRenderer\.h"/);
 assert.match(source, /UsesCanonicalSceneJson\(const WallpaperPackageManifest& manifest\)/);
 assert.match(source, /extension == L"\.json"/);
-assert.match(source, /MiaoSceneD2DRenderer/);
+assert.match(source, /WhaleSceneD2DRenderer/);
 assert.match(source, /renderer->Load\(packageRoot, context\.target, &entry\.error\)/);
 assert.match(source, /entry\.canonicalRenderer->Draw\(context\.time, targetSize, &drawError\)/);
 

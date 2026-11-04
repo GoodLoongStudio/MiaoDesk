@@ -1,17 +1,17 @@
 // P0-08 后半句:锁持有权记录的编解码。
 //
-// 为什么单独有这一份:`MiaoLockOwnership` 判"锁现在是什么状态",但它需要
+// 为什么单独有这一份:`WhaleLockOwnership` 判"锁现在是什么状态",但它需要
 // "谁持有、多久没心跳"—— 而这两件事此前**没有任何地方记录**。命名 mutex 只保证
 // 存在与否,不带身份。这份记录就是那个身份。
 //
 // 反空洞自检查的是**格式本身**改坏了还查得出来:记录恰好有效时,
 // "pid 缺失也能解析成功"这种洞永远问不出来。
-#include "miaodesk/MiaoLockRecord.h"
+#include "whaledesk/WhaleLockRecord.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::lock_record {
+namespace whaledesk::lock_record {
 namespace {
 
 int g_failures = 0;
@@ -26,11 +26,11 @@ void Check(bool ok, const std::string& what) {
 }
 
 } // namespace
-} // namespace miaodesk::lock_record
+} // namespace whaledesk::lock_record
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::lock_record;
+    using namespace whaledesk;
+    using namespace whaledesk::lock_record;
 
     if (!SelfCheck()) {
         std::printf("\n[FAIL] 反空洞自检没通过:解析器对明知有问题的文本放行\n");

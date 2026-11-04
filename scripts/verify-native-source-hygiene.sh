@@ -48,7 +48,7 @@ appdata_patterns = [
 ]
 # .ps1 里用反斜杠书写;本机与 CI 都统一成 POSIX 相对路径再比。
 appdata_allow = {
-    'src/include/miaodesk/AppPaths.h',
+    'src/include/whaledesk/AppPaths.h',
     'src/ai/agent/L3PersistenceSelfTest.cpp',
     'src/desktop/wallpaper/runtime/WallpaperEntry.cpp',
 }

@@ -1,0 +1,67 @@
+#pragma once
+
+#include <d2d1.h>
+
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <string_view>
+
+#include "whaledesk/WhaleSceneFrameScheduler.h"
+
+namespace whaledesk::content {
+
+class WhaleSceneD2DRenderer {
+public:
+    WhaleSceneD2DRenderer();
+    ~WhaleSceneD2DRenderer();
+
+    WhaleSceneD2DRenderer(const WhaleSceneD2DRenderer&) = delete;
+    WhaleSceneD2DRenderer& operator=(const WhaleSceneD2DRenderer&) = delete;
+
+    bool Load(
+        const std::filesystem::path& packageRoot,
+        ID2D1RenderTarget* target,
+        std::wstring* error = nullptr);
+
+    bool Draw(float timeSeconds, const D2D1_SIZE_F& size, std::wstring* error = nullptr);
+    bool SetParameter(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
+    bool SetInput(std::wstring_view id, PropertyValue value, std::wstring* error = nullptr);
+
+    // The scene runtime this renderer owns, or nullptr when nothing is loaded. A host
+    // needs it to publish audio/pointer input through InputBusPublisher, which writes
+    // only the channels the scene declared.
+    WhaleSceneRuntime* Runtime() noexcept;
+
+    // Host-owned data providers (weather, tasks, media state, etc.) publish
+    // bounded typed values through declarative paths. Content still needs the
+    // matching capability before a template can read any injected value.
+    bool SetDataValue(std::wstring_view path, PropertyValue value, std::wstring* error = nullptr);
+    void ClearDataValues() noexcept;
+
+    // Canonical host-side scheduling entry point. It advances runtime animation
+    // state to timeSeconds before reporting demand, so a Once animation always
+    // receives its terminal frame before an idle Widget drops to 0 FPS.
+    bool PrepareFrame(
+        double timeSeconds,
+        WhaleSceneFrameDemand* demand,
+        std::uint32_t animationFps = WhaleSceneFrameScheduler::kDefaultAnimationFps,
+        std::wstring* error = nullptr);
+
+    void Reset() noexcept;
+
+    bool Loaded() const noexcept;
+    RuntimeProfile Profile() const noexcept;
+    std::uint64_t RuntimeGeneration() const noexcept;
+    std::wstring PackageId() const;
+    std::wstring LastErrorText() const;
+
+    static bool SelfTest();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace whaledesk::content

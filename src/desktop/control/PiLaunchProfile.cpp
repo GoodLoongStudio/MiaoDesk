@@ -1,6 +1,6 @@
-#include "miaodesk/PiLaunchProfile.h"
+#include "whaledesk/PiLaunchProfile.h"
 
-namespace miaodesk {
+namespace whaledesk {
 
 // 普通聊天:今天的取值原样保留。任何改动都会让 tests/pi-launch-profile-isolation.mjs 变红。
 const wchar_t kPiChatToolAllowlist[] =
@@ -69,4 +69,4 @@ PiLaunchProfile MakeCreatorLaunchProfile(std::wstring agentDir, std::wstring wor
     return profile;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

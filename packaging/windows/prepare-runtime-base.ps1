@@ -53,8 +53,8 @@ Remove-Item $nodeDir,$gozDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
 $tempBase = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { $env:TEMP } else { $env:RUNNER_TEMP }
-$nodeTemp = Join-Path $tempBase ('MiaoDesk-Node-' + [guid]::NewGuid().ToString('N'))
-$gozTemp = Join-Path $tempBase ('MiaoDesk-Goz-' + [guid]::NewGuid().ToString('N'))
+$nodeTemp = Join-Path $tempBase ('WhaleDesK-Node-' + [guid]::NewGuid().ToString('N'))
+$gozTemp = Join-Path $tempBase ('WhaleDesK-Goz-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-Tar $nodeArchive $nodeTemp
     $nodeHome = Get-ChildItem $nodeTemp -Directory -Recurse |

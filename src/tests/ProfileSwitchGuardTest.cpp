@@ -2,19 +2,19 @@
 //
 // 这段判定原本散在**五处**、四种写法、两种相反结论,而它们管的是同一个共享 Pi
 // 运行时,并且都住在本机跑不到的文件里(ConversationPanelImpl.inc 与
-// ContentCreatorDialog.cpp)。完整故事写在 MiaoProfileSwitchGuard.h 的头注释里 ——
+// ContentCreatorDialog.cpp)。完整故事写在 WhaleProfileSwitchGuard.h 的头注释里 ——
 // 一句话:`&& !busy` 那个豁免让"这个窗口自己的轮次正在跑"成为重建下拉的理由,
 // 而重建通向 ReloadConfig 的 Stop 与 conversation_ 清空。
 //
 // 这里钉住:首填与运行期刷新的分界、任一忙位为真就不动(不只是 piBusy ——
 // busy 已置真而 Pi 还不忙的那段间隙真实存在)、以及 Keep 只在 preserveSelection
 // 为真时出现(调用点靠这条省掉一层永远为真的判断)。
-#include "miaodesk/MiaoProfileSwitchGuard.h"
+#include "whaledesk/WhaleProfileSwitchGuard.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace profile_switch {
 namespace {
 
@@ -40,10 +40,10 @@ bool VerdictStillMoves() {
 
 } // namespace
 } // namespace profile_switch
-} // namespace miaodesk
+} // namespace whaledesk
 
 int wmain() {
-    using namespace miaodesk::profile_switch;
+    using namespace whaledesk::profile_switch;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:闸门判定不动\n");

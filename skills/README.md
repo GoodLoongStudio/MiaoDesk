@@ -1,6 +1,6 @@
-# MiaoDesk 内容创作 Skills
+# WhaleDesK 内容创作 Skills
 
-一套用于生成 MiaoDesk 壁纸与小组件内容包的 skill。**完全自包含,不依赖也不修改 `src/`、`docs/`、`packaging/` 下任何原有文件。**
+一套用于生成 WhaleDesK 壁纸与小组件内容包的 skill。**完全自包含,不依赖也不修改 `src/`、`docs/`、`packaging/` 下任何原有文件。**
 
 ## 包含的 skill
 
@@ -13,7 +13,7 @@
 
 ## 分类约定
 
-MiaoDesk 桌面内容 = **载体 × 运行时**两个正交维度,不是 "Image / Video / Web / Scene" 的平面四分类:
+WhaleDesK 桌面内容 = **载体 × 运行时**两个正交维度,不是 "Image / Video / Web / Scene" 的平面四分类:
 
 - **载体** `ContentKind`:Wallpaper(壁纸层,桌面图标之下)/ Widget(组件层,桌面图标之上,可交互)
 - **运行时** `ContentRuntimeKind`:Scene / Web
@@ -46,8 +46,8 @@ Web 运行时是给**用户手工或第三方内容**用的,不属于 skill 的�
 
 格式契约以仓库内既有文档为准:
 
-- `docs/MIAO_CONTENT_PACKAGE_V1.md` — manifest v1 与 Package Root 边界
-- `docs/MIAODESK_CONTENT_FRAMEWORK.md` — ContentDefinition / Parameter / Scene Runtime
+- `docs/WHALE_CONTENT_PACKAGE_V1.md` — manifest v1 与 Package Root 边界
+- `docs/WHALEDESK_CONTENT_FRAMEWORK.md` — ContentDefinition / Parameter / Scene Runtime
 - `docs/DESIGN_BASELINE.md` §5 — Widget geometry 与交互模型
 - 可参照的完整示例:`assets/widgets/GlassClock.mdwidget/`(仓库路径)。
   **装好的产品里它在 `Widgets/GlassClock.mdwidget`** —— 见根 CMakeLists 的

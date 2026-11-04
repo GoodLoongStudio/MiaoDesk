@@ -1,13 +1,13 @@
-#include "miaodesk/WallpaperLibrary.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/MiaoLibraryRowFilter.h"
-#include "miaodesk/MiaoLibraryRestoreMerge.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/MiaoContentPackage.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/MiaoSceneSerializer.h"
-#include "miaodesk/UnicodeProfileFile.h"
-#include "miaodesk/WallpaperPackage.h"
+#include "whaledesk/WallpaperLibrary.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/WhaleLibraryRowFilter.h"
+#include "whaledesk/WhaleLibraryRestoreMerge.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/WhaleContentPackage.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/WhaleSceneSerializer.h"
+#include "whaledesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperPackage.h"
 
 #include <windows.h>
 #include <shobjidl.h>
@@ -24,9 +24,9 @@
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
-namespace library_row = miaodesk::library_row;
+namespace library_row = whaledesk::library_row;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 constexpr wchar_t kItemPrefix[] = L"Item.";
@@ -283,7 +283,7 @@ bool WallpaperLibrary::Load(std::wstring* error) {
     // 返回 true。调用方只问成败,于是拿着一个悄悄变短的库继续 —— P0-07 的
     // "库状态一致恢复"实际变成了"恢复成一个更短的库并报告成功"。
     // 现在仍然不进库(那是要动 UI 的决定),但把原因记下来,
-    // 让宿主第一次能说出口。判定与那句话在 MiaoLibraryRowFilter(纯逻辑,有门)。
+    // 让宿主第一次能说出口。判定与那句话在 WhaleLibraryRowFilter(纯逻辑,有门)。
     const auto skipReason = library_row::ClassifyLibraryRow(item.id, item.kindText);
     if (skipReason == library_row::RowSkipReason::None) {
         items_.push_back(std::move(item));
@@ -298,20 +298,20 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (Lower(legacy.source.wstring()).rfind(L"content:", 0) == 0) continue;
         const fs::path packageRoot = ManagedPackageRoot(legacy.source, PackageDirectory());
         if (packageRoot.empty()) continue;
-        content::LoadedMiaoContentPackage package;
+        content::LoadedWhaleContentPackage package;
         std::wstring packageError;
-        if (!content::MiaoContentPackage::Load(packageRoot, &package, &packageError) ||
+        if (!content::WhaleContentPackage::Load(packageRoot, &package, &packageError) ||
             package.manifest.kind != content::ContentKind::Wallpaper ||
             package.manifest.runtime != content::ContentRuntimeKind::Scene) continue;
         content::SceneRuntimeDefinition runtime;
-        if (!content::MiaoSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
-        const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(package.manifest.id);
+        if (!content::WhaleSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
+        const std::wstring stableId = content::WhaleContentPackageManager::MakeSource(package.manifest.id);
         if (stableId.empty()) continue;
         const auto legacyIndex = FindIndex(legacy.id);
         if (!legacyIndex) continue;
         const auto stableIndex = FindIndex(stableId);
         WallpaperLibraryItem migrated = stableIndex ? items_[*stableIndex] : items_[*legacyIndex];
-        // 用户状态的合并策略住在 MiaoLibraryRestoreMerge(纯逻辑,本机可测 38 项)。
+        // 用户状态的合并策略住在 WhaleLibraryRestoreMerge(纯逻辑,本机可测 38 项)。
         // 此前这两行在 Load 里有**两份一字不差的副本**(这一段和下面 scene-* 那一段),
         // 而没有任何一处说明"为什么恰好是这三个字段"。于是往 WallpaperLibraryItem
         // 加一个字段时,两份副本都会安静地不合并它:恢复之后用户那一项变回默认值,
@@ -364,14 +364,14 @@ bool WallpaperLibrary::Load(std::wstring* error) {
         if (canonical.kind != LibraryWallpaperKind::Scene || canonical.source.empty()) continue;
         const fs::path packageRoot = ManagedPackageRoot(canonical.source, PackageDirectory());
         if (packageRoot.empty()) continue;
-        content::LoadedMiaoContentPackage package;
+        content::LoadedWhaleContentPackage package;
         std::wstring packageError;
-        if (!content::MiaoContentPackage::Load(packageRoot, &package, &packageError) ||
+        if (!content::WhaleContentPackage::Load(packageRoot, &package, &packageError) ||
             package.manifest.kind != content::ContentKind::Wallpaper ||
             package.manifest.runtime != content::ContentRuntimeKind::Scene ||
-            content::MiaoContentPackageManager::MakeSource(package.manifest.id) != canonicalId) continue;
+            content::WhaleContentPackageManager::MakeSource(package.manifest.id) != canonicalId) continue;
         content::SceneRuntimeDefinition runtime;
-        if (!content::MiaoSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
+        if (!content::WhaleSceneSerializer::DeserializePackage(package, &runtime, &packageError)) continue;
 
         WallpaperLibraryItem merged = canonical;
         // 同一份策略,见上面那一段的说明。两份都必须走这里 —— 只换一份等于
@@ -588,25 +588,25 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
     for (const auto& entry : fs::directory_iterator(packages, ec)) {
         if (ec) { SetError(error, L"扫描壁纸包目录失败"); return false; }
         if (!entry.is_directory(ec) || Lower(entry.path().extension().wstring()) != L".mdwall") continue;
-        content::LoadedMiaoContentPackage canonical;
+        content::LoadedWhaleContentPackage canonical;
         std::wstring canonicalError;
-        if (content::MiaoContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
+        if (content::WhaleContentPackage::Load(entry.path(), &canonical, &canonicalError) &&
             canonical.manifest.kind == content::ContentKind::Wallpaper) {
             LibraryWallpaperKind canonicalKind = LibraryWallpaperKind::Unknown;
             fs::path source;
             if (canonical.manifest.runtime == content::ContentRuntimeKind::Scene) {
                 content::SceneRuntimeDefinition runtime;
-                if (!content::MiaoSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
+                if (!content::WhaleSceneSerializer::DeserializePackage(canonical, &runtime, &canonicalError)) continue;
                 canonicalKind = LibraryWallpaperKind::Scene;
                 source = NormalizedAbsolute(entry.path());
             } else if (canonical.manifest.runtime == content::ContentRuntimeKind::Web) {
-                if (!content::MiaoContentPackage::ResolvePackagePath(canonical.root, canonical.manifest.entry, &source, &canonicalError) ||
+                if (!content::WhaleContentPackage::ResolvePackagePath(canonical.root, canonical.manifest.entry, &source, &canonicalError) ||
                     !fs::is_regular_file(source, ec)) { ec.clear(); continue; }
                 ec.clear();
                 canonicalKind = LibraryWallpaperKind::Web;
                 source = NormalizedAbsolute(source);
             } else continue;
-            const std::wstring stableId = content::MiaoContentPackageManager::MakeSource(canonical.manifest.id);
+            const std::wstring stableId = content::WhaleContentPackageManager::MakeSource(canonical.manifest.id);
             if (stableId.empty()) continue;
             const auto stableIndex = FindIndex(stableId);
             const auto sourceIndex = stableIndex ? std::optional<std::size_t>{} : FindSourceIndex(source);
@@ -629,7 +629,7 @@ bool WallpaperLibrary::DiscoverPackages(std::wstring* error) {
             if (!canonical.manifest.preview.empty()) {
                 fs::path preview;
                 std::wstring previewError;
-                if (content::MiaoContentPackage::ResolvePackagePath(canonical.root, canonical.manifest.preview, &preview, &previewError) &&
+                if (content::WhaleContentPackage::ResolvePackagePath(canonical.root, canonical.manifest.preview, &preview, &previewError) &&
                     fs::is_regular_file(preview, ec)) item.thumbnail = preview;
                 ec.clear();
             }
@@ -745,11 +745,11 @@ std::optional<std::size_t> WallpaperLibrary::FindSourceIndex(const fs::path& sou
 bool WallpaperLibrary::SelfTest() {
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-WallpaperLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        (L"WhaleDesK-WallpaperLibrary-SelfTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
     fs::create_directories(root, ec);
     if (ec) return false;
     const fs::path sample = root / L"中文壁纸.html";
-    { std::ofstream output(sample, std::ios::binary); output << "<html><body>MiaoDesk wallpaper library self-test</body></html>"; }
+    { std::ofstream output(sample, std::ios::binary); output << "<html><body>WhaleDesK wallpaper library self-test</body></html>"; }
     WallpaperLibrary library(root / L"Library");
     std::wstring error;
     bool ok = library.Load(&error);
@@ -765,7 +765,7 @@ bool WallpaperLibrary::SelfTest() {
         ok = ok && !library.RecentlyUsed(1).empty();
     }
     ok = ok && library.UpsertScene(L"scene-aurora", L"妙喵云境", &error);
-    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.miaodesk.theme.neon-city";
+    constexpr wchar_t kNeonCanonical[] = L"content:com.goodloong.whaledesk.theme.neon-city";
     ok = ok && library.UpsertScene(kNeonCanonical, L"霓虹之城", &error);
     const auto legacyNeonAlias = library.Find(L"scene-neon");
     ok = ok && legacyNeonAlias.has_value();
@@ -780,19 +780,19 @@ bool WallpaperLibrary::SelfTest() {
     });
 
     const fs::path legacyPackage = library.PackageDirectory() / L"selftest.mdwall";
-    ok = ok && WallpaperPackage::CreateWeb(legacyPackage, L"Package Web", "<html><body>package</body></html>", L"self-test", L"MiaoDesk", &error);
+    ok = ok && WallpaperPackage::CreateWeb(legacyPackage, L"Package Web", "<html><body>package</body></html>", L"self-test", L"WhaleDesK", &error);
     const fs::path canonicalPackage = library.PackageDirectory() / L"canonical-selftest.mdwall";
     fs::create_directories(canonicalPackage, ec); ok = ok && !ec;
-    ok = ok && WriteUtf8File(canonicalPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.selftest.scene","name":"Canonical Scene","author":"MiaoDesk","version":"1.0.0","kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]})json");
+    ok = ok && WriteUtf8File(canonicalPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.selftest.scene","name":"Canonical Scene","author":"WhaleDesK","version":"1.0.0","kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]})json");
     ok = ok && WriteUtf8File(canonicalPackage / L"scene.json", R"json({"schema":1,"id":"scene://library-canonical-selftest","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root","nodes":[{"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[{"id":"component://root/transform","kind":"transform","properties":[{"name":"opacity","type":"float","default":1.0}]}]}],"assets":[],"shaders":[],"materials":[],"inputs":[],"bindings":[],"animations":[],"postProcesses":[]})json");
     ok = ok && WriteUtf8File(canonicalPackage / L"parameters.json", R"json({"schema":1,"parameters":[]})json");
     const fs::path canonicalWebPackage = library.PackageDirectory() / L"canonical-web-selftest.mdwall";
     fs::create_directories(canonicalWebPackage, ec); ok = ok && !ec;
-    ok = ok && WriteUtf8File(canonicalWebPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.selftest.web","name":"Canonical Web","author":"MiaoDesk","version":"1.0.0","kind":"wallpaper","runtime":"web","entry":"index.html","capabilities":[]})json");
-    ok = ok && WriteUtf8File(canonicalWebPackage / L"index.html", "<html><body>MiaoDesk canonical web wallpaper</body></html>");
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.selftest.web","name":"Canonical Web","author":"WhaleDesK","version":"1.0.0","kind":"wallpaper","runtime":"web","entry":"index.html","capabilities":[]})json");
+    ok = ok && WriteUtf8File(canonicalWebPackage / L"index.html", "<html><body>WhaleDesK canonical web wallpaper</body></html>");
     const fs::path neonCanonicalPackage = library.PackageDirectory() / L"neon-collapse-selftest.mdwall";
     fs::create_directories(neonCanonicalPackage, ec); ok = ok && !ec;
-    ok = ok && WriteUtf8File(neonCanonicalPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.miaodesk.theme.neon-city","name":"霓虹之城主题包","author":"妙桌面","version":"1.0.0","kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]})json");
+    ok = ok && WriteUtf8File(neonCanonicalPackage / L"manifest.json", R"json({"schema":1,"id":"com.goodloong.whaledesk.theme.neon-city","name":"霓虹之城主题包","author":"妙桌面","version":"1.0.0","kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]})json");
     ok = ok && WriteUtf8File(neonCanonicalPackage / L"scene.json", R"json({"schema":1,"id":"scene://library-neon-collapse-selftest","kind":"wallpaper","profile":"wallpaper","rootNodeId":"node://root","nodes":[{"id":"node://root","name":"Root","parentId":"","enabled":true,"components":[{"id":"component://root/transform","kind":"transform","properties":[{"name":"opacity","type":"float","default":1.0}]}]}],"assets":[],"shaders":[],"materials":[],"inputs":[],"bindings":[],"animations":[],"postProcesses":[]})json");
     ok = ok && WriteUtf8File(neonCanonicalPackage / L"parameters.json", R"json({"schema":1,"parameters":[]})json");
 
@@ -940,4 +940,4 @@ bool WallpaperLibrary::SelfTest() {
     return ok;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

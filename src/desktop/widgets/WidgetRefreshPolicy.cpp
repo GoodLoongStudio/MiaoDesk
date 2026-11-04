@@ -1,8 +1,8 @@
-#include "miaodesk/WidgetRefreshPolicy.h"
+#include "whaledesk/WidgetRefreshPolicy.h"
 
 #include <algorithm>
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 
 std::uint32_t NextRefreshDelayAfterSuccess(std::uint32_t demandIntervalMs,
                                            bool directPresentation) noexcept {
@@ -49,4 +49,4 @@ std::uint64_t NextRefreshAt(std::uint64_t nowMs, std::uint32_t delayMs) noexcept
     return nowMs + (delayMs == 0 ? 1u : delayMs);
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

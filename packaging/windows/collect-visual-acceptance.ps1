@@ -12,7 +12,7 @@ if ($env:OS -ne 'Windows_NT') {
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $OutputDirectory = Join-Path ([Environment]::GetFolderPath('Desktop')) "MiaoDesk-Acceptance-$stamp"
+    $OutputDirectory = Join-Path ([Environment]::GetFolderPath('Desktop')) "WhaleDesK-Acceptance-$stamp"
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -26,7 +26,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class MiaoDeskAcceptanceNative
+public static class WhaleDesKAcceptanceNative
 {
     public delegate bool EnumWindowProc(IntPtr hwnd, IntPtr lParam);
 
@@ -136,16 +136,16 @@ public static class MiaoDeskAcceptanceNative
 Add-Type -TypeDefinition $nativeSource -Language CSharp
 
 function Get-WindowClass([IntPtr]$Hwnd) {
-    return [MiaoDeskAcceptanceNative]::ClassName($Hwnd)
+    return [WhaleDesKAcceptanceNative]::ClassName($Hwnd)
 }
 
 function Get-WindowTextSafe([IntPtr]$Hwnd) {
-    return [MiaoDeskAcceptanceNative]::WindowText($Hwnd)
+    return [WhaleDesKAcceptanceNative]::WindowText($Hwnd)
 }
 
 function Get-WindowRectObject([IntPtr]$Hwnd) {
-    $rect = New-Object MiaoDeskAcceptanceNative+RECT
-    if (-not [MiaoDeskAcceptanceNative]::GetWindowRect($Hwnd, [ref]$rect)) {
+    $rect = New-Object WhaleDesKAcceptanceNative+RECT
+    if (-not [WhaleDesKAcceptanceNative]::GetWindowRect($Hwnd, [ref]$rect)) {
         return $null
     }
     return [ordered]@{
@@ -159,11 +159,11 @@ function Get-WindowRectObject([IntPtr]$Hwnd) {
 }
 
 function Test-WindowProperty([IntPtr]$Hwnd, [string]$Name) {
-    return [MiaoDeskAcceptanceNative]::GetProp($Hwnd, $Name) -ne [IntPtr]::Zero
+    return [WhaleDesKAcceptanceNative]::GetProp($Hwnd, $Name) -ne [IntPtr]::Zero
 }
 
 function Get-WindowPropertyInt([IntPtr]$Hwnd, [string]$Name) {
-    $value = [MiaoDeskAcceptanceNative]::GetProp($Hwnd, $Name)
+    $value = [WhaleDesKAcceptanceNative]::GetProp($Hwnd, $Name)
     if ($value -eq [IntPtr]::Zero) { return 0 }
     return $value.ToInt64()
 }
@@ -174,7 +174,7 @@ function Get-MonitorSnapshot {
         $bounds = $screen.Bounds
         $centerX = $bounds.Left + [int]([Math]::Floor($bounds.Width / 2.0))
         $centerY = $bounds.Top + [int]([Math]::Floor($bounds.Height / 2.0))
-        $dpi = [uint32][MiaoDeskAcceptanceNative]::MonitorDpi($centerX, $centerY)
+        $dpi = [uint32][WhaleDesKAcceptanceNative]::MonitorDpi($centerX, $centerY)
         $result += [pscustomobject][ordered]@{
             deviceName = $screen.DeviceName
             primary = $screen.Primary
@@ -200,47 +200,47 @@ function Test-RectOverlapsMonitor($Rect, $Monitor) {
             $Rect.bottom -gt $Monitor.top)
 }
 
-function Get-MiaoDeskSurfaceSnapshot {
+function Get-WhaleDesKSurfaceSnapshot {
     $result = @()
-    foreach ($hwnd in [MiaoDeskAcceptanceNative]::AllWindows()) {
+    foreach ($hwnd in [WhaleDesKAcceptanceNative]::AllWindows()) {
         $class = Get-WindowClass $hwnd
         if ($class -notin @(
-            'MiaoDesk.Native.WidgetSurface',
-            'MiaoDesk.Native.WebWallpaperHost'
+            'WhaleDesK.Native.WidgetSurface',
+            'WhaleDesK.Native.WebWallpaperHost'
         )) {
             continue
         }
 
         [uint32]$pid = 0
-        [void][MiaoDeskAcceptanceNative]::GetWindowThreadProcessId($hwnd, [ref]$pid)
-        $parent = [MiaoDeskAcceptanceNative]::GetParent($hwnd)
+        [void][WhaleDesKAcceptanceNative]::GetWindowThreadProcessId($hwnd, [ref]$pid)
+        $parent = [WhaleDesKAcceptanceNative]::GetParent($hwnd)
         $parentClass = if ($parent -ne [IntPtr]::Zero) { Get-WindowClass $parent } else { '' }
-        $role = Get-WindowPropertyInt $hwnd 'MiaoDesk.WebSurface.Role'
+        $role = Get-WindowPropertyInt $hwnd 'WhaleDesK.WebSurface.Role'
 
         $result += [pscustomobject][ordered]@{
             hwnd = ('0x{0:X}' -f $hwnd.ToInt64())
             class = $class
             title = Get-WindowTextSafe $hwnd
             processId = $pid
-            visible = [MiaoDeskAcceptanceNative]::IsWindowVisible($hwnd)
-            dpi = [MiaoDeskAcceptanceNative]::GetDpiForWindow($hwnd)
+            visible = [WhaleDesKAcceptanceNative]::IsWindowVisible($hwnd)
+            dpi = [WhaleDesKAcceptanceNative]::GetDpiForWindow($hwnd)
             rect = Get-WindowRectObject $hwnd
             parentHwnd = if ($parent -eq [IntPtr]::Zero) { $null } else { '0x{0:X}' -f $parent.ToInt64() }
             parentClass = $parentClass
             role = $role
-            environmentReady = Test-WindowProperty $hwnd 'MiaoDesk.WebSurface.EnvironmentReady'
-            controllerReady = Test-WindowProperty $hwnd 'MiaoDesk.WebSurface.ControllerReady'
-            navigationReady = Test-WindowProperty $hwnd 'MiaoDesk.WebSurface.NavigationReady'
-            widgetPaintReady = Test-WindowProperty $hwnd 'MiaoDesk.Native.WidgetPaintReady'
+            environmentReady = Test-WindowProperty $hwnd 'WhaleDesK.WebSurface.EnvironmentReady'
+            controllerReady = Test-WindowProperty $hwnd 'WhaleDesK.WebSurface.ControllerReady'
+            navigationReady = Test-WindowProperty $hwnd 'WhaleDesK.WebSurface.NavigationReady'
+            widgetPaintReady = Test-WindowProperty $hwnd 'WhaleDesK.Native.WidgetPaintReady'
         }
     }
     return @($result | Sort-Object class, title, hwnd)
 }
 
-function Get-MiaoDeskProcessSnapshot {
+function Get-WhaleDesKProcessSnapshot {
     $items = @()
     foreach ($process in @(Get-Process -ErrorAction SilentlyContinue |
-                           Where-Object { $_.ProcessName -like 'MiaoDesk*' })) {
+                           Where-Object { $_.ProcessName -like 'WhaleDesK*' })) {
         $startTime = $null
         $processPath = $null
         try { $startTime = $process.StartTime.ToString('o') } catch {}
@@ -296,15 +296,15 @@ function Save-VirtualDesktopScreenshot([string]$Path) {
 }
 
 $monitors = @(Get-MonitorSnapshot)
-$surfaceBefore = @(Get-MiaoDeskSurfaceSnapshot)
-$processes = @(Get-MiaoDeskProcessSnapshot)
+$surfaceBefore = @(Get-WhaleDesKSurfaceSnapshot)
+$processes = @(Get-WhaleDesKProcessSnapshot)
 
 $screenshotPath = Join-Path $OutputDirectory 'desktop.png'
 $virtualScreen = Save-VirtualDesktopScreenshot $screenshotPath
 
-$widgetSurfaces = @($surfaceBefore | Where-Object { $_.class -eq 'MiaoDesk.Native.WidgetSurface' })
+$widgetSurfaces = @($surfaceBefore | Where-Object { $_.class -eq 'WhaleDesK.Native.WidgetSurface' })
 $wallpaperSurfaces = @($surfaceBefore | Where-Object {
-    $_.class -eq 'MiaoDesk.Native.WebWallpaperHost' -and $_.role -eq 1
+    $_.class -eq 'WhaleDesK.Native.WebWallpaperHost' -and $_.role -eq 1
 })
 
 $surfaceWarnings = @()
@@ -325,7 +325,7 @@ foreach ($surface in $surfaceBefore) {
     if ($surface.role -eq 2 -and -not $surface.widgetPaintReady) {
         $surfaceWarnings += "Widget PaintReady missing: $($surface.title)"
     }
-    if ($surface.class -eq 'MiaoDesk.Native.WebWallpaperHost') {
+    if ($surface.class -eq 'WhaleDesK.Native.WebWallpaperHost') {
         if (-not $surface.environmentReady -or
             -not $surface.controllerReady -or
             -not $surface.navigationReady) {
@@ -357,7 +357,7 @@ $report = [pscustomobject][ordered]@{
     processes = $processes
     warnings = $surfaceWarnings
     manualChecks = @(
-        'Wallpaper composition matches the expected MiaoCloud / NeonCity / MysticMoon visual baseline.',
+        'Wallpaper composition matches the expected WhaleCloud / NeonCity / MysticMoon visual baseline.',
         'Widgets are above the wallpaper and do not disappear behind desktop icons.',
         'No widget text, border or content is clipped on landscape or portrait monitors.',
         'Drag a widget across monitors with different DPI and confirm its size/text remains readable.',
@@ -372,7 +372,7 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -Path $reportPath -Encoding UTF8
 
 $summaryPath = Join-Path $OutputDirectory 'README.txt'
 @(
-    'MiaoDesk Windows visual acceptance evidence'
+    'WhaleDesK Windows visual acceptance evidence'
     "Generated: $($report.generatedAt)"
     "Screenshot: $screenshotPath"
     "Report: $reportPath"
@@ -382,7 +382,7 @@ $summaryPath = Join-Path $OutputDirectory 'README.txt'
     "Surfaces: $($report.summary.surfaceCount)"
     "Widgets: $($report.summary.widgetSurfaceCount)"
     "Wallpaper surfaces: $($report.summary.wallpaperSurfaceCount)"
-    "MiaoDesk processes: $($report.summary.processCount)"
+    "WhaleDesK processes: $($report.summary.processCount)"
     "Warnings: $($report.summary.warningCount)"
     ''
     'Warnings:'
@@ -392,7 +392,7 @@ $summaryPath = Join-Path $OutputDirectory 'README.txt'
     $($report.manualChecks | ForEach-Object { "  - $_" })
 ) | Set-Content -Path $summaryPath -Encoding UTF8
 
-Write-Host "MiaoDesk visual acceptance evidence written to:" -ForegroundColor Green
+Write-Host "WhaleDesK visual acceptance evidence written to:" -ForegroundColor Green
 Write-Host "  $OutputDirectory"
 Write-Host "  Screenshot: $screenshotPath"
 Write-Host "  JSON:       $reportPath"

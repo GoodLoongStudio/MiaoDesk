@@ -1,12 +1,12 @@
-# MiaoDesk Pi Agent Conversation UX
+# WhaleDesK Pi Agent Conversation UX
 
 > Status: Product and interaction baseline
 >
-> Scope: The primary end-user conversation surface for Pi-first Turing AI in MiaoDesk.
+> Scope: The primary end-user conversation surface for Pi-first Turing AI in WhaleDesK.
 
 ## 1. Product idea
 
-Pi should feel like a persistent desktop contact: a person-like conversation partner that can continue talking indefinitely, remember the current conversation context, and—when appropriate—operate the user's computer through MiaoDesk's controlled native capabilities.
+Pi should feel like a persistent desktop contact: a person-like conversation partner that can continue talking indefinitely, remember the current conversation context, and—when appropriate—operate the user's computer through WhaleDesK's controlled native capabilities.
 
 The experience must not look or behave like a terminal. The terminal/raw session remains an advanced/debug surface only.
 
@@ -17,7 +17,7 @@ The normal user mental model is:
 This combines two modes in one continuous conversation:
 
 1. **Conversation** — natural, ongoing chat.
-2. **Action** — Pi may invoke approved MiaoDesk tools to inspect and change the wallpaper, inspect widgets, and work with files, settings, automation, search, and other desktop capabilities.
+2. **Action** — Pi may invoke approved WhaleDesK tools to inspect and change the wallpaper, inspect widgets, and work with files, settings, automation, search, and other desktop capabilities.
 
 The user should never need to switch mentally between “chat mode” and “agent mode”. Actions should appear as part of the conversation.
 
@@ -73,7 +73,7 @@ Recent messages (high fidelity)
 + explicit user memory/context allowed by product policy
 ```
 
-The UI still renders the full local history that MiaoDesk chooses to retain, even when the model only receives a compressed working context.
+The UI still renders the full local history that WhaleDesK chooses to retain, even when the model only receives a compressed working context.
 
 ## 4. Conversation panel behavior
 
@@ -191,7 +191,7 @@ Pi conversation/controller layer
     ↓
 Pi Agent / Harness
     ↓ tool calls
-MiaoDesk native tool bridge
+WhaleDesK native tool bridge
     ↓
 DesktopControlService
     ↓
@@ -241,7 +241,7 @@ Examples:
 - apply an already-installed wallpaper
 - show/hide a widget
 - open a file/folder/application
-- change non-destructive MiaoDesk preferences
+- change non-destructive WhaleDesK preferences
 
 ### Medium-risk / contextual confirmation may be appropriate
 
@@ -323,13 +323,13 @@ Conversation is durable product state, not a window lifetime detail.
 Required behavior:
 
 - closing and reopening a surface restores the active conversation;
-- exiting MiaoDesk or rebooting Windows restores the same active conversation;
+- exiting WhaleDesK or rebooting Windows restores the same active conversation;
 - General AI, Wallpaper Creator, and Widget Creator keep independent histories;
 - **New Conversation** creates a fresh conversation without deleting the old one;
 - **History** lists recent local conversations and can switch back to any retained conversation;
 - switching history restores both visible messages and enough recent context for the model to continue naturally;
 - creator history switches the creator workspace together with the transcript, so an old wallpaper/widget conversation continues against its own files;
-- local conversation archives live under the MiaoDesk application-data directory;
+- local conversation archives live under the WhaleDesK application-data directory;
 - API keys and other consumed secrets must never be serialized into transcript history;
 - tool results stored in history must remain user-readable summaries rather than sensitive raw runtime payloads.
 
@@ -422,7 +422,7 @@ This entire sequence must stay in one conversation.
 1. Ask Pi to perform a supported desktop action.
 2. Pi explains the action naturally.
 3. Tool status appears as a card.
-4. The tool runs through MiaoDesk's approved service boundary.
+4. The tool runs through WhaleDesK's approved service boundary.
 5. Result appears in the same conversation.
 
 ### Destructive action

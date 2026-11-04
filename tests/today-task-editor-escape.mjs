@@ -27,7 +27,7 @@ const itemProc = file.slice(
 // rather than silent.
 const editorLoop = file.slice(
   file.indexOf("bool ShowTodayTaskEditorDialog("),
-  file.indexOf("\n} // namespace miaodesk::wallpaper")
+  file.indexOf("\n} // namespace whaledesk::wallpaper")
 );
 const itemLoop = file.slice(
   file.indexOf("bool EditTaskItem("),

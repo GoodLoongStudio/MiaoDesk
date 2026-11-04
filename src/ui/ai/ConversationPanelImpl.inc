@@ -1,12 +1,12 @@
-#include "miaodesk/L3CliWindow.h"
-#include "miaodesk/MiaoProfileSwitchGuard.h"
-#include "miaodesk/MiaoTurnReplyScope.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/PiRuntime.h"
-#include "miaodesk/GeneratedDesktopPreview.h"
-#include "miaodesk/RuntimeLogPaths.h"
-#include "miaodesk/StoreDemoExperience.h"
-#include "miaodesk/ToolDisplayNames.h"
+#include "whaledesk/L3CliWindow.h"
+#include "whaledesk/WhaleProfileSwitchGuard.h"
+#include "whaledesk/WhaleTurnReplyScope.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/PiRuntime.h"
+#include "whaledesk/GeneratedDesktopPreview.h"
+#include "whaledesk/RuntimeLogPaths.h"
+#include "whaledesk/StoreDemoExperience.h"
+#include "whaledesk/ToolDisplayNames.h"
 
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -26,10 +26,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kConversationClass[] = L"MiaoDesk.Native.ConversationPanel";
+constexpr wchar_t kConversationClass[] = L"WhaleDesK.Native.ConversationPanel";
 constexpr int kInputId = 3102;
 constexpr int kSendId = 3103;
 constexpr int kApiProfileId = 3104; // Contract marker: send is custom drawn but keeps the stable semantic id.
@@ -211,7 +211,7 @@ const wchar_t* ConversationScopeFolder(ConversationPanelMode mode) {
 }
 
 fs::path ConversationScopeRoot(ConversationPanelMode mode) {
-    const fs::path stateRoot = miaodesk::paths::StateRoot();
+    const fs::path stateRoot = whaledesk::paths::StateRoot();
     return stateRoot.empty()
         ? fs::path{}
         : stateRoot / L"Conversations" / ConversationScopeFolder(mode);
@@ -309,7 +309,7 @@ std::wstring PersistableConversationText(const ChatEntry& entry) {
 
 void WriteActiveConversationId(ConversationPanelMode mode, std::wstring_view id) {
     if (!ValidConversationId(id)) return;
-    const fs::path root = miaodesk::paths::EnsureDirectory(ConversationScopeRoot(mode));
+    const fs::path root = whaledesk::paths::EnsureDirectory(ConversationScopeRoot(mode));
     if (root.empty()) return;
     const fs::path path = root / L"active";
     fs::path temporary = path;
@@ -342,13 +342,13 @@ std::wstring ReadActiveConversationId(ConversationPanelMode mode) {
 bool SaveConversationArchive(const ConversationState& state) {
     if (state.conversationId.empty()) return false;
     const fs::path path = ConversationArchivePath(state.mode, state.conversationId);
-    if (path.empty() || miaodesk::paths::EnsureDirectory(path.parent_path()).empty()) return false;
+    if (path.empty() || whaledesk::paths::EnsureDirectory(path.parent_path()).empty()) return false;
     fs::path temporary = path;
     temporary += L".tmp";
 
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     if (!output) return false;
-    output << "MIAODESK_CHAT_V1\n";
+    output << "WHALEDESK_CHAT_V1\n";
     for (const auto& entry : state.entries) {
         output << EntryKindCode(entry.kind) << '\t'
                << EscapeConversationField(entry.time) << '\t'
@@ -374,7 +374,7 @@ bool LoadConversationArchive(
     if (!input) return false;
 
     std::string line;
-    if (!std::getline(input, line) || line != "MIAODESK_CHAT_V1") return false;
+    if (!std::getline(input, line) || line != "WHALEDESK_CHAT_V1") return false;
     while (std::getline(input, line)) {
         if (line.size() < 3 || line[1] != '\t') continue;
         const std::size_t secondTab = line.find('\t', 2);
@@ -576,13 +576,13 @@ void StrokeRounded(HDC dc, const RECT& rect, int radius, COLORREF color) {
     DeleteObject(pen);
 }
 
-HICON MiaoMiaoChatIcon() {
+HICON WhaleWhaleChatIcon() {
     static HICON icon = []() -> HICON {
         wchar_t exePath[32768]{};
         const DWORD length = GetModuleFileNameW(
             nullptr, exePath, static_cast<DWORD>(std::size(exePath)));
         if (length == 0 || length >= std::size(exePath)) return nullptr;
-        const fs::path path = fs::path(exePath).parent_path() / L"Assets" / L"MiaoMiao.ico";
+        const fs::path path = fs::path(exePath).parent_path() / L"Assets" / L"WhaleWhale.ico";
         std::error_code ec;
         if (!fs::is_regular_file(path, ec)) return nullptr;
         return reinterpret_cast<HICON>(LoadImageW(
@@ -594,7 +594,7 @@ HICON MiaoMiaoChatIcon() {
 
 void DrawAvatar(HDC dc, int cx, int cy, int radius, bool user) {
     if (!user) {
-        if (HICON icon = MiaoMiaoChatIcon()) {
+        if (HICON icon = WhaleWhaleChatIcon()) {
             const int side = radius * 2;
             DrawIconEx(dc, cx - radius, cy - radius, icon, side, side, 0, nullptr, DI_NORMAL);
             return;
@@ -644,7 +644,7 @@ void DrawWrapped(HDC dc, HFONT font, COLORREF color, const std::wstring& text, R
     SelectObject(dc, old);
 }
 
-using miaodesk::ai::FriendlyToolName;
+using whaledesk::ai::FriendlyToolName;
 
 std::wstring FileNameOnly(const std::wstring& path) {
     const auto name = fs::path(path).filename().wstring();
@@ -1454,7 +1454,7 @@ void PaintConversation(ConversationState& state, HDC target) {
 }
 
 void PopulateConversationApiProfiles(ConversationState& state, bool preserveSelection = false) {
-    // 闸门判定住在 MiaoProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
+    // 闸门判定住在 WhaleProfileSwitchGuard(纯逻辑,本机可测 31 项 + 12 处变异全红)。
     // 这段判定原本散在五处、两种相反结论,完整故事写在那个头文件里 —— 一句话:
     // 这一行原来带着 `&& !state.busy`,它让"这个窗口自己的轮次正在跑"成为重建的
     // **理由**,而重建通向 ReloadConfig() 的 Stop() + conversation_.clear()。
@@ -1771,7 +1771,7 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kDeltaMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(WhaleTurnReplyScope,本机可测)。
         // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
         // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
         // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
@@ -1791,7 +1791,7 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kPiDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(WhaleTurnReplyScope,本机可测)。
         // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
         // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
         // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
@@ -1812,7 +1812,7 @@ LRESULT CALLBACK ConversationProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
     case kDirectDoneMessage: {
         std::unique_ptr<UiMessage> payload(reinterpret_cast<UiMessage*>(lParam));
-        // 这条回包还属于当前这一轮吗?三方比对比在这里(MiaoTurnReplyScope,本机可测)。
+        // 这条回包还属于当前这一轮吗?三方比对比在这里(WhaleTurnReplyScope,本机可测)。
         // 此前这一行是三处一字不差的副本,任何一处漏改都没有东西会响;而少任何一边
         // 都有一种用户看得见的串台:只看 turn → 取消后旧轮的 delta 追加进新一轮的条目;
         // 只看 latest → 面板已切轮后 delta 仍落到旧那一轮上。
@@ -1958,7 +1958,7 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
         PlacePanel(*gConversationState);
         ShowWindow(gConversationState->window, SW_SHOWNORMAL);
         SetForegroundWindow(gConversationState->window);
-        // 搜索框那段词怎么进面板:纯判定住在 MiaoSearchHandoff(本机可测)。
+        // 搜索框那段词怎么进面板:纯判定住在 WhaleSearchHandoff(本机可测)。
         // 原来的写法是 `if (有词 && !busy && !pendingConfirmation) { 填进去; 发出去; }` ——
         // 于是面板正忙或在等确认时,**那段词既不进输入框也不发出去,整段消失**。
         // 用户看到的是 AI 窗口被带到前台、输入框空空如也、什么也没发生。
@@ -2080,4 +2080,4 @@ bool ShowL3CliWindow(HINSTANCE instance, HWND owner, L3Agent& agent, const std::
     return true;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

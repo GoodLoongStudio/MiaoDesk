@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 
 const root = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
-const header = path.join(root, "src/include/miaodesk/LibraryFilterChipLayout.h");
+const header = path.join(root, "src/include/whaledesk/LibraryFilterChipLayout.h");
 const library = fs.readFileSync(path.join(root, "src/ui/wallpaper/WallpaperLibraryWindowV2.cpp"), "utf8");
 
 // The library's filter chip row ran off the right edge. At the window's own minimum
@@ -31,7 +31,7 @@ const program = `
 #include "LibraryFilterChipLayout.h"
 #include <cstdio>
 #include <vector>
-using namespace miaodesk::library_ui;
+using namespace whaledesk::library_ui;
 
 static void dump(const char* name, std::int32_t count, bool lastWide, std::int32_t gap,
                  std::int32_t span) {
@@ -77,7 +77,7 @@ int main() {
 }
 `;
 
-const work = fs.mkdtempSync("/tmp/miaodesk-chips-");
+const work = fs.mkdtempSync("/tmp/whaledesk-chips-");
 const src = path.join(work, "chips.cpp");
 fs.writeFileSync(src, program);
 const bin = path.join(work, "chips");

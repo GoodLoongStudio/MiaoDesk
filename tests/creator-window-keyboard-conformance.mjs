@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 const read = (p) => fs.readFileSync(p, "utf8");
 const creator = read("src/ui/ai/ContentCreatorDialog.cpp");
-const creatorHeader = read("src/include/miaodesk/ContentCreatorDialog.h");
+const creatorHeader = read("src/include/whaledesk/ContentCreatorDialog.h");
 const search = read("src/ui/search/SearchWindow.cpp");
 
 // The AI creator is modeless: it is created by SearchWindow and its messages are

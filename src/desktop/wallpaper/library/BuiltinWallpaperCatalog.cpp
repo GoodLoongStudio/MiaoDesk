@@ -1,6 +1,6 @@
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
 
 #include <windows.h>
 
@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
 namespace fs = std::filesystem;
@@ -18,14 +18,14 @@ namespace fs = std::filesystem;
 // FindBuiltinWallpaper()/LegacyBuiltinWallpaperId() use this table so existing
 // persisted monitor assignments and runtime lookups remain byte-for-byte stable.
 constexpr std::array<BuiltinWallpaperDefinition, 3> kRuntimeWallpapers{{
-    {L"scene-aurora", L"aurora", L"aurora_flow", L"MiaoCloud.mdwall",
-     L"content:com.goodloong.miaodesk.theme.miao-cloud",
+    {L"scene-aurora", L"aurora", L"aurora_flow", L"WhaleCloud.mdwall",
+     L"content:com.goodloong.whaledesk.theme.whale-cloud",
      L"妙喵云境", L"云端妙喵 · 星光花瓣"},
     {L"scene-neon", L"neon", L"neon_flow", L"NeonCity.mdwall",
-     L"content:com.goodloong.miaodesk.theme.neon-city",
+     L"content:com.goodloong.whaledesk.theme.neon-city",
      L"霓虹之城", L"未来都市 · 雨夜光轨"},
     {L"scene-grid", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
-     L"content:com.goodloong.miaodesk.theme.mystic-moon",
+     L"content:com.goodloong.whaledesk.theme.mystic-moon",
      L"月影秘境", L"月湖秘境 · 萤火薄雾"},
 }};
 
@@ -34,14 +34,14 @@ constexpr std::array<BuiltinWallpaperDefinition, 3> kRuntimeWallpapers{{
 // lets bootstrap/upsert stop creating new visible scene-* library rows without
 // rewriting any existing monitor assignment on disk.
 constexpr std::array<BuiltinWallpaperDefinition, 3> kLibraryWallpapers{{
-    {L"content:com.goodloong.miaodesk.theme.miao-cloud", L"aurora", L"aurora_flow", L"MiaoCloud.mdwall",
-     L"content:com.goodloong.miaodesk.theme.miao-cloud",
+    {L"content:com.goodloong.whaledesk.theme.whale-cloud", L"aurora", L"aurora_flow", L"WhaleCloud.mdwall",
+     L"content:com.goodloong.whaledesk.theme.whale-cloud",
      L"妙喵云境", L"云端妙喵 · 星光花瓣"},
-    {L"content:com.goodloong.miaodesk.theme.neon-city", L"neon", L"neon_flow", L"NeonCity.mdwall",
-     L"content:com.goodloong.miaodesk.theme.neon-city",
+    {L"content:com.goodloong.whaledesk.theme.neon-city", L"neon", L"neon_flow", L"NeonCity.mdwall",
+     L"content:com.goodloong.whaledesk.theme.neon-city",
      L"霓虹之城", L"未来都市 · 雨夜光轨"},
-    {L"content:com.goodloong.miaodesk.theme.mystic-moon", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
-     L"content:com.goodloong.miaodesk.theme.mystic-moon",
+    {L"content:com.goodloong.whaledesk.theme.mystic-moon", L"grid", L"ocean_flow", L"MysticMoon.mdwall",
+     L"content:com.goodloong.whaledesk.theme.mystic-moon",
      L"月影秘境", L"月湖秘境 · 萤火薄雾"},
 }};
 
@@ -86,7 +86,7 @@ bool UnicodeProfileRoundTripSelfTest() noexcept {
     // Exercise the filesystem boundary too: a Unicode profile path must remain
     // valid on Western Windows code pages just like Chinese wallpaper paths do.
     const fs::path path = tempRoot /
-        (L"MiaoDesk-UnicodeProfile-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-UnicodeProfile-中文-ÄÖÜ-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()) + L".ini");
     fs::remove(path, ec);
 
@@ -234,13 +234,13 @@ bool BuiltinWallpaperCatalogSelfTest() noexcept {
 
     return FindBuiltinWallpaper(L"ocean") == &kRuntimeWallpapers[2] &&
            FindLegacyBuiltinWallpaper(L"ocean") == nullptr &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.miao-cloud") == &kRuntimeWallpapers[0] &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.neon-city") == &kRuntimeWallpapers[1] &&
-           FindBuiltinWallpaper(L"content:com.goodloong.miaodesk.theme.mystic-moon") == &kRuntimeWallpapers[2] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.whaledesk.theme.whale-cloud") == &kRuntimeWallpapers[0] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.whaledesk.theme.neon-city") == &kRuntimeWallpapers[1] &&
+           FindBuiltinWallpaper(L"content:com.goodloong.whaledesk.theme.mystic-moon") == &kRuntimeWallpapers[2] &&
            CanonicalBuiltinWallpaperSource(L"unknown").empty() &&
            LegacyBuiltinWallpaperId(L"unknown").empty() &&
            FindLegacyBuiltinWallpaper(L"unknown") == nullptr &&
            FindBuiltinWallpaper(L"unknown") == nullptr;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

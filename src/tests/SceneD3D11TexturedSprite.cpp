@@ -2,7 +2,7 @@
 // reads both final frames back.
 //
 // Why this file exists: the D3D11 textured draw path (SpriteDrawPath::SpriteTexture +
-// MiaoBuiltinTextured + t0) has been compiled and linked for a while, and until now
+// WhaleBuiltinTextured + t0) has been compiled and linked for a while, and until now
 // that was all the evidence it ever had. "It compiles" is not "it draws" — an HLSL
 // shader is compiled at runtime by D3DCompile, so a broken shader, a missing t0 bind or
 // a wrong sampler would all survive every compile-and-link gate in this repository.
@@ -25,8 +25,8 @@
 // is rendered by the D2D backend; this one exists to put one textured sprite in front of
 // a D3D11 device. It is minimal on purpose — one node, one transform, one sprite — so
 // that a failure means the textured path and nothing else.
-#include "miaodesk/MiaoAnalyticParticleField.h"
-#include "miaodesk/MiaoSceneD3D11Renderer.h"
+#include "whaledesk/WhaleAnalyticParticleField.h"
+#include "whaledesk/WhaleSceneD3D11Renderer.h"
 
 #include <windows.h>
 #include <d3d11.h>
@@ -47,11 +47,11 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-using miaodesk::content::MiaoSceneD3D11Renderer;
+using whaledesk::content::WhaleSceneD3D11Renderer;
 
 namespace {
 
-constexpr wchar_t kTestWindowClass[] = L"MiaoDesk.SceneD3D11.SelfTest";
+constexpr wchar_t kTestWindowClass[] = L"WhaleDesK.SceneD3D11.SelfTest";
 constexpr unsigned kSurfaceSize = 64;
 
 int failures = 0;
@@ -112,7 +112,7 @@ bool WriteMagentaPng(IWICImagingFactory* factory, const fs::path& path) {
     ComPtr<IWICBitmapEncoder> encoder;
     if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())))
         return false;
-    // This block is deliberately identical to MiaoSceneD2DRenderer's WriteSelfTestPng,
+    // This block is deliberately identical to WhaleSceneD2DRenderer's WriteSelfTestPng,
     // which is proven on this exact runner. My first version drifted from it in two ways —
     // it passed nullptr for the frame's property bag and it called
     // SetPixelFormat(PBGRA), which PNG does not support. Neither was the crash, but
@@ -148,14 +148,14 @@ int wmain() {
 
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() /
-        (L"MiaoDesk-SceneD3D11-Textured-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+        (L"WhaleDesK-SceneD3D11-Textured-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
          std::to_wstring(GetTickCount64()) + L".mdwall");
     fs::remove_all(root, ec);
     fs::create_directories(root / L"assets", ec);
 
     // A minimal one-sprite scene. `texture` is the sprite's own assetReference and there
     // is deliberately no material in the package at all — that is the case this path is
-    // for (a textured sprite needs no material; see MiaoSpriteMaterialPolicy).
+    // for (a textured sprite needs no material; see WhaleSpriteMaterialPolicy).
     //
     // scale is 0.5, not 1.0, and that is the whole point. At scale 1.0 with
     // cornerRadius 0 the sprite covers the entire surface — that is what the D2D path
@@ -188,7 +188,7 @@ int wmain() {
     })json";
     constexpr std::string_view manifestJson = R"json({
       "schema":1,"id":"com.goodloong.selftest-d3d11-textured","name":"Self Test D3D11 Textured",
-      "author":"MiaoDesk","version":"1.0.0",
+      "author":"WhaleDesK","version":"1.0.0",
       "kind":"wallpaper","runtime":"scene","entry":"scene.json","parameters":"parameters.json","capabilities":[]
     })json";
     constexpr std::string_view parametersJson = R"json({"schema":1,"parameters":[]})json";
@@ -238,7 +238,7 @@ int wmain() {
 
     std::wstring error;
     Phase("renderer.Load");
-    MiaoSceneD3D11Renderer renderer;
+    WhaleSceneD3D11Renderer renderer;
     const bool loaded = wrote && window &&
         renderer.Load(root, window, &error);
     std::printf("      Load -> %s\n", loaded ? "ok" : "失败");
@@ -370,14 +370,14 @@ int wmain() {
         pixels.size() == static_cast<std::size_t>(width) * height * 4u;
     Step(particleFramed, "把 particle-color 最终目标读回 CPU");
 
-    miaodesk::content::ParticleEmitterDefinition expectedEmitter;
+    whaledesk::content::ParticleEmitterDefinition expectedEmitter;
     expectedEmitter.id = L"particle://selftest/comet";
-    expectedEmitter.mode = miaodesk::content::ParticleEmitterMode::CometTrail;
+    expectedEmitter.mode = whaledesk::content::ParticleEmitterMode::CometTrail;
     expectedEmitter.analyticCount = 1;
-    expectedEmitter.analyticColor = miaodesk::content::Color4{1.0, 0.84, 0.98, 1.0};
+    expectedEmitter.analyticColor = whaledesk::content::Color4{1.0, 0.84, 0.98, 1.0};
     expectedEmitter.analyticSpeed = 0.10;
     expectedEmitter.analyticOpacity = 1.0;
-    const auto expectedSamples = miaodesk::content::EvaluateAnalyticParticleField(
+    const auto expectedSamples = whaledesk::content::EvaluateAnalyticParticleField(
         expectedEmitter, static_cast<double>(width), static_cast<double>(height), 0.0);
     Step(particleFramed && !expectedSamples.empty() && expectedSamples.front().cross,
          "共享解析场产生带 cross 标记的 comet head");
@@ -488,13 +488,13 @@ int wmain() {
         pixels.size() == static_cast<std::size_t>(width) * height * 4u;
     Step(petalFramed, "把 PetalFall 最终颜色目标读回 CPU");
 
-    miaodesk::content::ParticleEmitterDefinition petalEmitter;
+    whaledesk::content::ParticleEmitterDefinition petalEmitter;
     petalEmitter.id = L"particle://selftest/petal";
-    petalEmitter.mode = miaodesk::content::ParticleEmitterMode::PetalFall;
+    petalEmitter.mode = whaledesk::content::ParticleEmitterMode::PetalFall;
     petalEmitter.analyticCount = 1;
-    petalEmitter.analyticColor = miaodesk::content::Color4{0.2, 1.0, 0.2, 1.0};
+    petalEmitter.analyticColor = whaledesk::content::Color4{0.2, 1.0, 0.2, 1.0};
     petalEmitter.analyticOpacity = 1.0;
-    const auto petalSamples = miaodesk::content::EvaluateAnalyticParticleField(
+    const auto petalSamples = whaledesk::content::EvaluateAnalyticParticleField(
         petalEmitter, static_cast<double>(width), static_cast<double>(height), 0.0);
     Step(petalFramed && !petalSamples.empty(), "共享解析场产生 PetalFall sample");
 
@@ -552,7 +552,7 @@ int wmain() {
     // CoUninitialize had already torn the apartment down. 0xC0000005 with nothing before
     // it in the log.
     //
-    // MiaoSceneD2DRenderer's self-test spells the same discipline out as five explicit
+    // WhaleSceneD2DRenderer's self-test spells the same discipline out as five explicit
     // Reset() calls before its CoUninitialize; this is that list, one file over.
     renderer.Reset();
     wic.Reset();

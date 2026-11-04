@@ -1,10 +1,10 @@
-#include "miaodesk/DesktopControlService.h"
+#include "whaledesk/DesktopControlService.h"
 
-#include "miaodesk/WallpaperRuntimeControl.h"
-#include "miaodesk/AppPaths.h"
-#include "miaodesk/UnicodeProfileFile.h"
-#include "miaodesk/WallpaperMonitorLayout.h"
-#include "miaodesk/RuntimeLogger.h"
+#include "whaledesk/WallpaperRuntimeControl.h"
+#include "whaledesk/AppPaths.h"
+#include "whaledesk/UnicodeProfileFile.h"
+#include "whaledesk/WallpaperMonitorLayout.h"
+#include "whaledesk/RuntimeLogger.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -15,18 +15,18 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
-constexpr wchar_t kWallpaperControlClass[] = L"MiaoDesk.Native.WallpaperControl";
-constexpr wchar_t kShellMutex[] = L"Local\\MiaoDesk.DesktopShellSupervisor.v1";
-constexpr wchar_t kWebRuntimeMutex[] = L"Local\\MiaoDesk.WebWallpaperRuntime.v1";
-constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\MiaoDesk.WidgetRuntime.v1";
+constexpr wchar_t kWallpaperControlClass[] = L"WhaleDesK.Native.WallpaperControl";
+constexpr wchar_t kShellMutex[] = L"Local\\WhaleDesK.DesktopShellSupervisor.v1";
+constexpr wchar_t kWebRuntimeMutex[] = L"Local\\WhaleDesK.WebWallpaperRuntime.v1";
+constexpr wchar_t kWidgetRuntimeMutex[] = L"Local\\WhaleDesK.WidgetRuntime.v1";
 constexpr wchar_t kShellMode[] = L"--desktop-shell-supervisor";
 constexpr wchar_t kWebRuntimeMode[] = L"--web-wallpaper-runtime";
 constexpr wchar_t kWidgetRuntimeMode[] = L"--widget-runtime";
-constexpr wchar_t kNativeWidgetHostMessageClass[] = L"MiaoDesk.Native.WidgetHostMessage";
-constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"MiaoDesk.WidgetRuntimeReload.v1";
+constexpr wchar_t kNativeWidgetHostMessageClass[] = L"WhaleDesK.Native.WidgetHostMessage";
+constexpr wchar_t kWidgetRuntimeReloadMessageName[] = L"WhaleDesK.WidgetRuntimeReload.v1";
 constexpr DWORD kRuntimeReadyTimeoutMs = 5000;
 constexpr DWORD kRuntimeReadyPollMs = 100;
 
@@ -123,10 +123,10 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     if (RuntimeInfrastructureReady())
         return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已就绪。"};
 
-    const fs::path executable = ModuleDirectory() / L"MiaoDeskWallpaper.exe";
+    const fs::path executable = ModuleDirectory() / L"WhaleDesKWallpaper.exe";
     std::error_code ec;
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec))
-        return {false, L"找不到 MiaoDeskWallpaper.exe。"};
+        return {false, L"找不到 WhaleDesKWallpaper.exe。"};
 
     const bool nativeAlive = FindWindowW(kWallpaperControlClass, nullptr) != nullptr;
     bool launched = false;
@@ -143,7 +143,7 @@ DesktopControlResult DesktopControlService::EnsureRuntime() const {
     if (!launched && !RuntimeInfrastructureReady())
         return {false, L"无法启动或修复桌面运行时。"};
     if (!WaitForRuntimeControl())
-        return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 MiaoDesk-Logs。"};
+        return {false, L"桌面运行时进程已启动，但 Native/Shell/Web/Widget 故障域在 5 秒内没有全部就绪。请查看 WhaleDesK-Logs。"};
     return {true, L"桌面运行时与隔离 Shell/Web/Widget helper 已启动并就绪。"};
 }
 
@@ -202,8 +202,8 @@ DesktopControlResult DesktopControlService::InspectContentPackage(
     content::ManagedContentPackageInfo* info) const {
     if (!info) return {false, L"Content package info 输出不能为空。"};
     std::wstring error;
-    if (!content::MiaoContentPackageManager::Inspect(package, info, &error)) {
-        miaodesk::log::Error(L"DesktopControl", L"InspectContentPackage 失败: " + error);
+    if (!content::WhaleContentPackageManager::Inspect(package, info, &error)) {
+        whaledesk::log::Error(L"DesktopControl", L"InspectContentPackage 失败: " + error);
         return {false, error.empty() ? L"内容包校验失败。" : error};
     }
     return {true, L"内容包已识别：" + info->source};
@@ -215,14 +215,14 @@ DesktopControlResult DesktopControlService::InstallContentPackage(
     const content::ContentPackageInstallOptions& options) const {
     if (!installed) return {false, L"Content package install result 输出不能为空。"};
     std::wstring error;
-    if (!content::MiaoContentPackageManager::Install(package, installed, options, &error)) {
-        miaodesk::log::Error(L"DesktopControl", L"InstallContentPackage 失败: " + error);
+    if (!content::WhaleContentPackageManager::Install(package, installed, options, &error)) {
+        whaledesk::log::Error(L"DesktopControl", L"InstallContentPackage 失败: " + error);
         return {false, error.empty() ? L"内容包安装失败。" : error};
     }
 
     const auto& info = installed->package;
     const std::wstring action = installed->replacedExisting ? L"已替换" : L"已安装";
-    miaodesk::log::Info(
+    whaledesk::log::Info(
         L"DesktopControl",
         action + std::wstring(L" Content ") + ContentKindText(info.kind) + L": " + info.source +
             L" -> " + info.packageRoot.wstring());
@@ -240,31 +240,31 @@ DesktopControlResult DesktopControlService::ResolveContentPackage(
     content::ManagedContentPackageInfo* info) const {
     if (!info) return {false, L"Content package info 输出不能为空。"};
     std::wstring error;
-    if (!content::MiaoContentPackageManager::Resolve(kind, source, info, &error))
+    if (!content::WhaleContentPackageManager::Resolve(kind, source, info, &error))
         return {false, error.empty() ? L"无法解析内容包。" : error};
     return {true, L"内容包已解析：" + info->source};
 }
 
 DesktopControlResult DesktopControlService::ApplyWebPackage(const fs::path& package) const {
-    miaodesk::log::Info(L"DesktopControl", L"ApplyWebPackage: " + package.wstring());
+    whaledesk::log::Info(L"DesktopControl", L"ApplyWebPackage: " + package.wstring());
     WallpaperService service;
     const auto result = service.ApplyWebPackage(package);
     if (!result.success) {
-        miaodesk::log::Error(L"DesktopControl", L"ApplyWebPackage 失败: " + result.message);
+        whaledesk::log::Error(L"DesktopControl", L"ApplyWebPackage 失败: " + result.message);
         return FromWallpaper(result);
     }
     const auto runtime = EnsureRuntime();
     if (!runtime.success) {
-        miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        whaledesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
         return runtime;
     }
-    miaodesk::wallpaper::NotifyWallpaperRuntimeReload();
-    miaodesk::log::Info(L"DesktopControl", L"ApplyWebPackage 成功完成并已通知重载");
+    whaledesk::wallpaper::NotifyWallpaperRuntimeReload();
+    whaledesk::log::Info(L"DesktopControl", L"ApplyWebPackage 成功完成并已通知重载");
     return {true, result.message};
 }
 
 DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::WallpaperLibraryItem& item) const {
-    miaodesk::log::Info(L"DesktopControl", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
+    whaledesk::log::Info(L"DesktopControl", L"ApplyLibraryItem: id=" + item.id + L", title=\"" + item.title + L"\"");
     WallpaperService service;
     const auto result = service.ApplyLibraryItem(item);
     if (!result.success) {
@@ -280,11 +280,11 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
         // support Content Scene (it resolves content:<id> through the content resolver),
         // so nothing new is being asked of the renderer.
         if (!service.NeedsPerMonitorApply(item)) {
-            miaodesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
+            whaledesk::log::Error(L"DesktopControl", L"ApplyLibraryItem 失败: " + result.message);
             return FromWallpaper(result);
         }
 
-        miaodesk::log::Info(L"DesktopControl",
+        whaledesk::log::Info(L"DesktopControl",
             L"Content Scene 无全局入口，改为分配到所有显示器: id=" + item.id);
         const auto topology = wallpaper::QueryMonitorTopology();
         if (!topology.Valid() || topology.monitors.empty()) {
@@ -313,7 +313,7 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
         std::wstring unicodeError;
         const bool unicodeReady = text::EnsureUtf16LeProfileFile(config, &unicodeError);
         if (!unicodeReady) {
-            miaodesk::log::Error(L"DesktopControl", L"wallpaper.ini Unicode 初始化失败: " + unicodeError);
+            whaledesk::log::Error(L"DesktopControl", L"wallpaper.ini Unicode 初始化失败: " + unicodeError);
         }
         const bool layoutSwitched = unicodeReady &&
             WritePrivateProfileStringW(L"Wallpaper", L"Layout", L"independent", config.c_str()) != FALSE;
@@ -322,21 +322,21 @@ DesktopControlResult DesktopControlService::ApplyLibraryItem(const wallpaper::Wa
         const auto runtime = EnsureRuntime();
         if (assigned == 0) return {false, firstFailure};
         if (!layoutSwitched) {
-            miaodesk::log::Error(L"DesktopControl", L"Content Scene 已分配但无法切换到 Independent 布局");
+            whaledesk::log::Error(L"DesktopControl", L"Content Scene 已分配但无法切换到 Independent 布局");
             return {false, L"壁纸已分配到显示器，但无法切换到每屏独立布局，桌面不会变化。"};
         }
         if (!runtime.success) return runtime;
-        miaodesk::log::Info(L"DesktopControl",
+        whaledesk::log::Info(L"DesktopControl",
             L"Content Scene 已分配到 " + std::to_wstring(assigned) + L" 台显示器");
         return {true, L"已应用到全部 " + std::to_wstring(assigned) + L" 台显示器：" + item.title};
     }
     const auto runtime = EnsureRuntime();
     if (!runtime.success) {
-        miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+        whaledesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
         return runtime;
     }
-    miaodesk::wallpaper::NotifyWallpaperRuntimeReload();
-    miaodesk::log::Info(L"DesktopControl", L"ApplyLibraryItem 成功完成并已通知重载");
+    whaledesk::wallpaper::NotifyWallpaperRuntimeReload();
+    whaledesk::log::Info(L"DesktopControl", L"ApplyLibraryItem 成功完成并已通知重载");
     return {true, result.message};
 }
 
@@ -344,7 +344,7 @@ DesktopControlResult DesktopControlService::AssignLibraryItemToMonitor(
     const wallpaper::WallpaperLibraryItem& item,
     std::wstring_view monitorId,
     std::wstring_view friendlyName) const {
-    miaodesk::log::Info(L"DesktopControl", L"AssignLibraryItemToMonitor: id=" + item.id + L", monitor=" + std::wstring(monitorId));
+    whaledesk::log::Info(L"DesktopControl", L"AssignLibraryItemToMonitor: id=" + item.id + L", monitor=" + std::wstring(monitorId));
     WallpaperService service;
     const auto result = service.AssignLibraryItemToMonitor(item, monitorId, friendlyName);
     if (!result.success) return FromWallpaper(result);
@@ -396,46 +396,46 @@ DesktopControlResult DesktopControlService::FindWidget(std::wstring_view id, wal
 }
 
 DesktopControlResult DesktopControlService::SetWallpaperEnabled(const bool enabled) const {
-    miaodesk::log::Info(L"DesktopControl", L"SetWallpaperEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
+    whaledesk::log::Info(L"DesktopControl", L"SetWallpaperEnabled(" + std::wstring(enabled ? L"true" : L"false") + L") 请求");
     WallpaperService service;
     const auto persisted = service.SetEnabled(enabled);
     if (!persisted.success) {
-        miaodesk::log::Error(L"DesktopControl", L"保存壁纸状态失败: " + persisted.message);
+        whaledesk::log::Error(L"DesktopControl", L"保存壁纸状态失败: " + persisted.message);
         return FromWallpaper(persisted);
     }
 
-    const fs::path executable = ModuleDirectory() / L"MiaoDeskWallpaper.exe";
+    const fs::path executable = ModuleDirectory() / L"WhaleDesKWallpaper.exe";
     std::error_code ec;
     if (!fs::exists(executable, ec) || !fs::is_regular_file(executable, ec)) {
-        miaodesk::log::Info(L"DesktopControl", L"找不到 MiaoDeskWallpaper.exe，状态仅保存至 ini");
+        whaledesk::log::Info(L"DesktopControl", L"找不到 WhaleDesKWallpaper.exe，状态仅保存至 ini");
         return {true, persisted.message};
     }
 
     if (enabled) {
         const auto runtime = EnsureRuntime();
         if (!runtime.success) {
-            miaodesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
+            whaledesk::log::Error(L"DesktopControl", L"EnsureRuntime 失败: " + runtime.message);
             return runtime;
         }
-        if (miaodesk::wallpaper::NotifyWallpaperRuntimeEnabled(true)) {
-            miaodesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送启用消息");
+        if (whaledesk::wallpaper::NotifyWallpaperRuntimeEnabled(true)) {
+            whaledesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送启用消息");
             return {true, persisted.message};
         }
         if (!LaunchRuntime(executable, L"--resume")) {
-            miaodesk::log::Error(L"DesktopControl", L"启动运行进程 --resume 失败");
+            whaledesk::log::Error(L"DesktopControl", L"启动运行进程 --resume 失败");
             return {false, L"壁纸状态已保存，但无法通知桌面运行时。"};
         }
-        miaodesk::log::Info(L"DesktopControl", L"成功通过 --resume 启动壁纸运行时");
+        whaledesk::log::Info(L"DesktopControl", L"成功通过 --resume 启动壁纸运行时");
         return {true, persisted.message};
     }
 
-    if (miaodesk::wallpaper::NotifyWallpaperRuntimeEnabled(false)) {
-        miaodesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送停用消息");
+    if (whaledesk::wallpaper::NotifyWallpaperRuntimeEnabled(false)) {
+        whaledesk::log::Info(L"DesktopControl", L"成功向壁纸控制窗口发送停用消息");
         return {true, persisted.message};
     }
     // Disable is ini-authoritative. Do not EnsureRuntime or cold-launch just to stop.
-    miaodesk::log::Info(L"DesktopControl", L"壁纸停用状态已权威保存至 ini");
+    whaledesk::log::Info(L"DesktopControl", L"壁纸停用状态已权威保存至 ini");
     return {true, persisted.message};
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

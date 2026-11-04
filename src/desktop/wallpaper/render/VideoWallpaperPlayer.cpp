@@ -1,4 +1,4 @@
-#include "miaodesk/VideoWallpaperPlayer.h"
+#include "whaledesk/VideoWallpaperPlayer.h"
 #include <mfapi.h>
 #include <mfplay.h>
 #include <wrl/client.h>
@@ -10,7 +10,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 constexpr double kHundredNsPerSecond = 10000000.0;
@@ -489,4 +489,4 @@ bool VideoWallpaperPlayer::MediaFoundationAvailable() {
     return SUCCEEDED(hr);
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

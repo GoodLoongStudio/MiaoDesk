@@ -2,26 +2,26 @@
 
 const endpoints = ["A", "B"].map((label) => ({
   label,
-  baseUrl: process.env[`MIAODESK_EVAL_${label}_BASE_URL`],
-  model: process.env[`MIAODESK_EVAL_${label}_MODEL`],
-  apiKey: process.env[`MIAODESK_EVAL_${label}_API_KEY`] || "",
+  baseUrl: process.env[`WHALEDESK_EVAL_${label}_BASE_URL`],
+  model: process.env[`WHALEDESK_EVAL_${label}_MODEL`],
+  apiKey: process.env[`WHALEDESK_EVAL_${label}_API_KEY`] || "",
 }));
 
 for (const candidate of endpoints) {
   if (!candidate.baseUrl || !candidate.model) {
-    console.error(`Missing MIAODESK_EVAL_${candidate.label}_BASE_URL or MIAODESK_EVAL_${candidate.label}_MODEL`);
+    console.error(`Missing WHALEDESK_EVAL_${candidate.label}_BASE_URL or WHALEDESK_EVAL_${candidate.label}_MODEL`);
     process.exit(2);
   }
 }
 
-const runs = Math.max(1, Number.parseInt(process.env.MIAODESK_EVAL_RUNS || "3", 10));
-const timeoutMs = Math.max(1000, Number.parseInt(process.env.MIAODESK_EVAL_TIMEOUT_MS || "120000", 10));
+const runs = Math.max(1, Number.parseInt(process.env.WHALEDESK_EVAL_RUNS || "3", 10));
+const timeoutMs = Math.max(1000, Number.parseInt(process.env.WHALEDESK_EVAL_TIMEOUT_MS || "120000", 10));
 
 const tool = {
   type: "function",
   function: {
     name: "content_skill_get",
-    description: "Read a MiaoDesk content skill.",
+    description: "Read a WhaleDesK content skill.",
     parameters: { type: "object", properties: { kind: { type: "string", enum: ["wallpaper", "widget"] } }, required: ["kind"] },
   },
 };
@@ -29,8 +29,8 @@ const tool = {
 const cases = [
   {
     id: "short-chat",
-    body: { messages: [{ role: "user", content: "Reply with exactly: MiaoDesk ready" }], temperature: 0 },
-    check: (json) => textOf(json).trim() === "MiaoDesk ready",
+    body: { messages: [{ role: "user", content: "Reply with exactly: WhaleDesK ready" }], temperature: 0 },
+    check: (json) => textOf(json).trim() === "WhaleDesK ready",
   },
   {
     id: "tool-selection",

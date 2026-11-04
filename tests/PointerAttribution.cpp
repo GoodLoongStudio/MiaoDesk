@@ -4,12 +4,12 @@
 // 光标物理像素 - 显示器原点 = 显示器内坐标,再除以该显示器尺寸。
 // 这里用一张假的显示器拓扑验证这些决策,尤其是主屏不在 (0,0) 的情况 —— 那正是用
 // 虚拟桌面坐标会算错的场景,也是"壁纸不得知道桌面布局"这条规则真正起作用的地方。
-#include "miaodesk/MiaoInputBus.h"
+#include "whaledesk/WhaleInputBus.h"
 
 #include <cstdio>
 #include <vector>
 
-using namespace miaodesk::content::inputbus;
+using namespace whaledesk::content::inputbus;
 
 static int failures = 0;
 static void Check(bool ok, const char* what) {

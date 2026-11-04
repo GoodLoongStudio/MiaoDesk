@@ -1,7 +1,7 @@
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
-constexpr wchar_t kConversationCornerResizeCoreProcProperty[] = L"MiaoDesk.Conversation.CornerResizeCoreProc";
+constexpr wchar_t kConversationCornerResizeCoreProcProperty[] = L"WhaleDesK.Conversation.CornerResizeCoreProc";
 
 int ConversationCornerResizeEdgeAtPoint(const ConversationState& state, POINT point) {
     RECT client{};
@@ -73,4 +73,4 @@ void EnsureConversationCornerResizeBridge(HWND panel) {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk

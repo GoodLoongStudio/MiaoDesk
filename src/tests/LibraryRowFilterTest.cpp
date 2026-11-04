@@ -6,12 +6,12 @@
 //
 // 反空洞自检恒返回 None 的函数在其余断言上同样全绿,所以先喂一个明知该跳的
 // (不认识的 Kind)和一个明知不该跳的(合法小写),确认判定真的会动。
-#include "miaodesk/MiaoLibraryRowFilter.h"
+#include "whaledesk/WhaleLibraryRowFilter.h"
 
 #include <cstdio>
 #include <string>
 
-namespace miaodesk::library_row {
+namespace whaledesk::library_row {
 namespace {
 
 int g_failures = 0;
@@ -31,11 +31,11 @@ bool VerdictStillMoves() {
 }
 
 } // namespace
-} // namespace miaodesk::library_row
+} // namespace whaledesk::library_row
 
 int wmain() {
-    using namespace miaodesk;
-    using namespace miaodesk::library_row;
+    using namespace whaledesk;
+    using namespace whaledesk::library_row;
 
     if (!VerdictStillMoves()) {
         std::printf("\n[FAIL] 反空洞自检没通过:判定恒返回同一答案\n");

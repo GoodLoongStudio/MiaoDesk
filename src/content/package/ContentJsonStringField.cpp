@@ -1,4 +1,4 @@
-#include "miaodesk/JsonStringField.h"
+#include "whaledesk/JsonStringField.h"
 
 #include <charconv>
 #include <cmath>
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 // 找一个**键位置**上的 key,而不是任何出现的地方。
@@ -213,4 +213,4 @@ std::optional<std::vector<std::string>> ExtractJsonStringArray(std::string_view 
     return std::nullopt;
 }
 
-} // namespace miaodesk
+} // namespace whaledesk

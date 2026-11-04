@@ -1,18 +1,18 @@
 import http from "node:http";
 import { URL } from "node:url";
 
-const HOST = process.env.MIAODESK_ROUTER_HOST || "0.0.0.0";
-const PORT = Number(process.env.MIAODESK_ROUTER_PORT || 8000);
-const PUBLIC_MODEL = process.env.MIAODESK_ROUTER_PUBLIC_MODEL || "miaodesk";
-const PRIMARY_BASE_URL = (process.env.MIAODESK_PRIMARY_BASE_URL || "http://127.0.0.1:8001/v1").replace(/\/+$/, "");
-const FAST_BASE_URL = (process.env.MIAODESK_FAST_BASE_URL || "http://127.0.0.1:8002/v1").replace(/\/+$/, "");
-const PRIMARY_MODEL = process.env.MIAODESK_PRIMARY_MODEL || "primary";
-const FAST_MODEL = process.env.MIAODESK_FAST_MODEL || "fast";
-const PRIMARY_API_KEY = process.env.MIAODESK_PRIMARY_API_KEY || "";
-const FAST_API_KEY = process.env.MIAODESK_FAST_API_KEY || "";
-const INBOUND_API_KEY = process.env.MIAODESK_ROUTER_API_KEY || "";
-const SHORT_USER_CHARS = Number(process.env.MIAODESK_ROUTER_SHORT_USER_CHARS || 240);
-const SHORT_TOTAL_CHARS = Number(process.env.MIAODESK_ROUTER_SHORT_TOTAL_CHARS || 900);
+const HOST = process.env.WHALEDESK_ROUTER_HOST || "0.0.0.0";
+const PORT = Number(process.env.WHALEDESK_ROUTER_PORT || 8000);
+const PUBLIC_MODEL = process.env.WHALEDESK_ROUTER_PUBLIC_MODEL || "whaledesk";
+const PRIMARY_BASE_URL = (process.env.WHALEDESK_PRIMARY_BASE_URL || "http://127.0.0.1:8001/v1").replace(/\/+$/, "");
+const FAST_BASE_URL = (process.env.WHALEDESK_FAST_BASE_URL || "http://127.0.0.1:8002/v1").replace(/\/+$/, "");
+const PRIMARY_MODEL = process.env.WHALEDESK_PRIMARY_MODEL || "primary";
+const FAST_MODEL = process.env.WHALEDESK_FAST_MODEL || "fast";
+const PRIMARY_API_KEY = process.env.WHALEDESK_PRIMARY_API_KEY || "";
+const FAST_API_KEY = process.env.WHALEDESK_FAST_API_KEY || "";
+const INBOUND_API_KEY = process.env.WHALEDESK_ROUTER_API_KEY || "";
+const SHORT_USER_CHARS = Number(process.env.WHALEDESK_ROUTER_SHORT_USER_CHARS || 240);
+const SHORT_TOTAL_CHARS = Number(process.env.WHALEDESK_ROUTER_SHORT_TOTAL_CHARS || 900);
 
 const metrics = {
   startedAt: new Date().toISOString(),
@@ -32,7 +32,7 @@ const SKILL_SIGNATURES = Object.freeze([
   "name: wallpaper-content",
   "name: widget-content",
   "name: content-review",
-  "MiaoDesk Artifact and Desktop Safety",
+  "WhaleDesK Artifact and Desktop Safety",
 ]);
 
 function textOf(content) {
@@ -147,17 +147,17 @@ async function proxyChat(req, res) {
         upstreamResponse = await requestUpstream(selected);
       } catch (fallbackError) {
         metrics.upstreamFailures += 1;
-        json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+        json(res, 502, { error: { message: "WhaleDesK router upstream unavailable: " +
           (fallbackError instanceof Error ? fallbackError.message : String(fallbackError)) } }, {
-          "x-miaodesk-route": classification.route + "-fallback-failed",
+          "x-whaledesk-route": classification.route + "-fallback-failed",
         });
         return;
       }
     } else {
       metrics.upstreamFailures += 1;
-      json(res, 502, { error: { message: "MiaoDesk router upstream unavailable: " +
+      json(res, 502, { error: { message: "WhaleDesK router upstream unavailable: " +
         (error instanceof Error ? error.message : String(error)) } }, {
-        "x-miaodesk-route": classification.route,
+        "x-whaledesk-route": classification.route,
       });
       return;
     }
@@ -169,8 +169,8 @@ async function proxyChat(req, res) {
     if (value) responseHeaders[name] = value;
   }
   const fellBack = classification.upstream === "fast" && selected.model !== upstream.model;
-  responseHeaders["x-miaodesk-route"] = fellBack ? classification.route + "-fallback-primary" : classification.route;
-  responseHeaders["x-miaodesk-upstream-model"] = selected.model;
+  responseHeaders["x-whaledesk-route"] = fellBack ? classification.route + "-fallback-primary" : classification.route;
+  responseHeaders["x-whaledesk-upstream-model"] = selected.model;
 
   res.writeHead(upstreamResponse.status, responseHeaders);
   if (!upstreamResponse.body) {
@@ -220,7 +220,7 @@ export function createRouterServer() {
     if (req.method === "GET" && url.pathname === "/v1/models") {
       json(res, 200, {
         object: "list",
-        data: [{ id: PUBLIC_MODEL, object: "model", owned_by: "miaodesk" }],
+        data: [{ id: PUBLIC_MODEL, object: "model", owned_by: "whaledesk" }],
       });
       return;
     }
@@ -239,6 +239,6 @@ export { classifyRequest, textOf, metrics };
 if (import.meta.url === new URL(process.argv[1] || "", "file://").href) {
   const server = createRouterServer();
   server.listen(PORT, HOST, () => {
-    console.log(`MiaoDesk L1 router listening on http://${HOST}:${PORT}/v1 model=${PUBLIC_MODEL}`);
+    console.log(`WhaleDesK L1 router listening on http://${HOST}:${PORT}/v1 model=${PUBLIC_MODEL}`);
   });
 }

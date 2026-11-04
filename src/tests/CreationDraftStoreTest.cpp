@@ -13,13 +13,13 @@
 //   * 取消过:只显示,不自动继续 —— 取消之后自己动起来,是他取消没生效。
 //
 // 顺带钉住往返:序列化再解析回来必须逐字段相同,包括那一段多行需求原文。
-#include "miaodesk/CreationDraftStore.h"
+#include "whaledesk/CreationDraftStore.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-namespace miaodesk::creator {
+namespace whaledesk::creator {
 namespace {
 
 int g_failures = 0;
@@ -75,10 +75,10 @@ std::string ParseError(const std::string& text) {
 }
 
 } // namespace
-} // namespace miaodesk::creator
+} // namespace whaledesk::creator
 
 int wmain() {
-    using namespace miaodesk::creator;
+    using namespace whaledesk::creator;
 
     // --- 1. 往返:序列化再读回来,一个字段都不能差 ---------------------------
     {

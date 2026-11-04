@@ -1,6 +1,6 @@
 # Wallpaper theme identity migration
 
-This document defines the compatibility contract for moving wallpaper themes from legacy `scene-*` library identities to canonical Miao Content Package identities (`content:<manifest.id>`).
+This document defines the compatibility contract for moving wallpaper themes from legacy `scene-*` library identities to canonical Whale Content Package identities (`content:<manifest.id>`).
 
 ## Invariants
 
@@ -19,8 +19,8 @@ The migration must preserve all of the following:
 For a validated wallpaper package:
 
 ```text
-manifest.id = com.goodloong.wallpaper.miaocloud
-library id  = content:com.goodloong.wallpaper.miaocloud
+manifest.id = com.goodloong.wallpaper.whalecloud
+library id  = content:com.goodloong.wallpaper.whalecloud
 ```
 
 `manifest.id` is the stable identity. `name`, `version`, package directory, `entry`, and preview assets may change between versions without changing assignment identity.
@@ -55,7 +55,7 @@ Add an explicit alias table from known legacy scene ids to canonical content ids
 Example:
 
 ```text
-scene-aurora -> content:com.goodloong.wallpaper.miaocloud
+scene-aurora -> content:com.goodloong.wallpaper.whalecloud
 scene-neon   -> content:com.goodloong.wallpaper.neoncity
 scene-grid   -> content:com.goodloong.wallpaper.mysticmoon
 ```
@@ -70,7 +70,7 @@ For each legacy assignment:
 
 1. Load the current assignment without modifying it.
 2. Resolve its legacy id to one exact canonical content id.
-3. Resolve and validate the canonical package through `MiaoContentPackageManager`.
+3. Resolve and validate the canonical package through `WhaleContentPackageManager`.
 4. Verify the package has `kind=wallpaper` and a supported runtime.
 5. Verify the concrete runtime entry exists and passes the same validation used by normal package install/indexing.
 6. Persist a temporary UTF-16LE assignment file containing the canonical id while preserving monitor id and friendly name exactly.
@@ -175,7 +175,7 @@ Before the migration can be enabled for users, verify on ARM64 Windows, includin
 - wallpaper file paths containing Chinese characters remain usable after restart;
 - existing `scene-*` assignments still apply before migration;
 - canonical assignments apply after explicit migration;
-- MiaoCloud, NeonCity, and MysticMoon layered visuals are unchanged;
+- WhaleCloud, NeonCity, and MysticMoon layered visuals are unchanged;
 - install/manage/apply wording consistently presents `.mdwall` as a wallpaper theme package;
 - package reinstall and uninstall behavior remains coherent with the displayed canonical identity.
 

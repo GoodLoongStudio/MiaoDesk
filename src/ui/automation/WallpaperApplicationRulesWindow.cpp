@@ -1,6 +1,6 @@
-#include "miaodesk/WallpaperApplicationRulesWindow.h"
-#include "miaodesk/WallpaperApplicationRules.h"
-#include "miaodesk/SurfaceKeyboardFocus.h"
+#include "whaledesk/WallpaperApplicationRulesWindow.h"
+#include "whaledesk/WallpaperApplicationRules.h"
+#include "whaledesk/SurfaceKeyboardFocus.h"
 
 #include <commdlg.h>
 
@@ -13,10 +13,10 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kApplicationRulesWindowClass[] = L"MiaoDesk.Native.WallpaperApplicationRules";
+constexpr wchar_t kApplicationRulesWindowClass[] = L"WhaleDesK.Native.WallpaperApplicationRules";
 constexpr UINT_PTR kRefreshTimer = 1;
 constexpr int kListId = 7001;
 constexpr int kExeId = 7002;
@@ -330,7 +330,7 @@ struct WallpaperApplicationRulesWindow::Impl {
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
 
-        window = CreateWindowExW(WS_EX_APPWINDOW, kApplicationRulesWindowClass, L"MiaoDesk 应用程序壁纸规则",
+        window = CreateWindowExW(WS_EX_APPWINDOW, kApplicationRulesWindowClass, L"WhaleDesK 应用程序壁纸规则",
                                  WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 820, 610,
                                  nullptr, nullptr, instance, this);
@@ -441,4 +441,4 @@ HWND WallpaperApplicationRulesWindow::Window() const noexcept {
     return impl_ ? impl_->window : nullptr;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

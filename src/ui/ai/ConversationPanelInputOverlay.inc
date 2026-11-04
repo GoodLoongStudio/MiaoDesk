@@ -2,14 +2,14 @@
 #include <imm.h>
 #pragma comment(lib, "imm32.lib")
 
-namespace miaodesk {
+namespace whaledesk {
 namespace {
 
 constexpr int kConversationInputControlId = 3102;
 constexpr UINT kConversationPiActivityMessage = WM_APP + 34;
 constexpr UINT_PTR kConversationCaretTimer = 42;
-constexpr wchar_t kConversationCoreProcProperty[] = L"MiaoDesk.Conversation.CoreProc";
-constexpr wchar_t kConversationInputCoreProcProperty[] = L"MiaoDesk.Conversation.InputCoreProc";
+constexpr wchar_t kConversationCoreProcProperty[] = L"WhaleDesK.Conversation.CoreProc";
+constexpr wchar_t kConversationInputCoreProcProperty[] = L"WhaleDesK.Conversation.InputCoreProc";
 
 enum class ConversationPointerMode { None, Move, Resize };
 
@@ -244,7 +244,7 @@ void StartWindowsVoiceTyping(HWND panel) {
 }
 
 void EnsureConversationInputOverlay(HINSTANCE) {
-    HWND panel = FindWindowW(L"MiaoDesk.Native.ConversationPanel", nullptr);
+    HWND panel = FindWindowW(L"WhaleDesK.Native.ConversationPanel", nullptr);
     if (!panel) return;
     auto* state = reinterpret_cast<ConversationState*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
     if (!state) return;
@@ -623,4 +623,4 @@ void EnsureConversationActivityBridge(HWND panel) {
 }
 
 } // namespace
-} // namespace miaodesk
+} // namespace whaledesk

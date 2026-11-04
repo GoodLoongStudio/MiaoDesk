@@ -17,10 +17,10 @@ function between(startMarker, endMarker) {
 }
 
 const constants = between('const IMAGE_PROVIDER', 'const TOOL_NAMES');
-let baseUrl = between('async function currentMiaoDeskBaseUrl', '// Resolves the credential');
+let baseUrl = between('async function currentWhaleDesKBaseUrl', '// Resolves the credential');
 baseUrl = baseUrl.replace(
-  'async function currentMiaoDeskBaseUrl(): Promise<string>',
-  'async function currentMiaoDeskBaseUrl()'
+  'async function currentWhaleDesKBaseUrl(): Promise<string>',
+  'async function currentWhaleDesKBaseUrl()'
 );
 let key = between('// Resolves the credential', 'function usesOpenAICompatibleImageShim');
 key = key.replace(

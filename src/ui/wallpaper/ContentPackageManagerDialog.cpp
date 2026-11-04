@@ -1,8 +1,8 @@
-#include "miaodesk/ContentPackageManagerDialog.h"
+#include "whaledesk/ContentPackageManagerDialog.h"
 
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/MiaoContentPackageManager.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/WhaleContentPackageManager.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <shellapi.h>
 
@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kPackageManagerWindowClass[] = L"MiaoDesk.Native.ContentPackageManager";
+constexpr wchar_t kPackageManagerWindowClass[] = L"WhaleDesK.Native.ContentPackageManager";
 constexpr int kListId = 7001;
 constexpr int kRefreshId = 7002;
 constexpr int kOpenFolderId = 7003;
@@ -49,9 +49,9 @@ const wchar_t* RuntimeText(content::ContentRuntimeKind runtime) noexcept {
 bool HasCanonicalContentIdentity(const content::ManagedContentPackageInfo& package) {
     if (package.id.empty() || package.source.empty()) return false;
     std::string parsedId;
-    if (!content::MiaoContentPackageManager::ParseSource(package.source, &parsedId)) return false;
+    if (!content::WhaleContentPackageManager::ParseSource(package.source, &parsedId)) return false;
     return parsedId == package.id &&
-           package.source == content::MiaoContentPackageManager::MakeSource(package.id);
+           package.source == content::WhaleContentPackageManager::MakeSource(package.id);
 }
 
 bool VisibleInPackageManager(const content::ManagedContentPackageInfo& package,
@@ -236,7 +236,7 @@ struct DialogState {
             if (showError) {
                 MessageBoxW(window,
                             result.message.empty() ? L"无法读取已安装内容包。" : result.message.c_str(),
-                            L"MiaoDesk 内容包", MB_OK | MB_ICONERROR);
+                            L"WhaleDesK 内容包", MB_OK | MB_ICONERROR);
             }
             return false;
         }
@@ -272,7 +272,7 @@ struct DialogState {
         const HINSTANCE opened = ShellExecuteW(window, L"open", package->packageRoot.c_str(),
                                                nullptr, nullptr, SW_SHOWNORMAL);
         if (reinterpret_cast<INT_PTR>(opened) <= 32) {
-            MessageBoxW(window, L"无法打开内容包目录。", L"MiaoDesk 内容包",
+            MessageBoxW(window, L"无法打开内容包目录。", L"WhaleDesK 内容包",
                         MB_OK | MB_ICONERROR);
         }
     }
@@ -285,14 +285,14 @@ struct DialogState {
                         kind == content::ContentKind::Widget
                             ? L"内置小组件内容包不能卸载。"
                             : L"内置壁纸主题包不能卸载。",
-                        L"MiaoDesk 内容包", MB_OK | MB_ICONINFORMATION);
+                        L"WhaleDesK 内容包", MB_OK | MB_ICONINFORMATION);
             return;
         }
 
         const std::wstring name = package->name.empty() ? package->source : package->name;
         const std::wstring prompt = L"卸载“" + name + L"”？\r\n\r\n" + package->source +
-            L"\r\n\r\n如果仍有桌面小组件实例或显示器壁纸分配引用它，MiaoDesk 会拒绝卸载并提示先处理引用。";
-        if (MessageBoxW(window, prompt.c_str(), L"MiaoDesk 内容包",
+            L"\r\n\r\n如果仍有桌面小组件实例或显示器壁纸分配引用它，WhaleDesK 会拒绝卸载并提示先处理引用。";
+        if (MessageBoxW(window, prompt.c_str(), L"WhaleDesK 内容包",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
 
         const content::ContentKind selectedKind = package->kind;
@@ -302,11 +302,11 @@ struct DialogState {
         if (!result.success) {
             MessageBoxW(window,
                         result.message.empty() ? L"内容包卸载失败。" : result.message.c_str(),
-                        L"MiaoDesk 内容包", MB_OK | MB_ICONWARNING);
+                        L"WhaleDesK 内容包", MB_OK | MB_ICONWARNING);
             return;
         }
         changed = true;
-        MessageBoxW(window, result.message.c_str(), L"MiaoDesk 内容包",
+        MessageBoxW(window, result.message.c_str(), L"WhaleDesK 内容包",
                     MB_OK | MB_ICONINFORMATION);
         Refresh(false);
     }
@@ -480,4 +480,4 @@ bool ShowContentPackageManagerDialog(
     return state.changed;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper

@@ -1,6 +1,6 @@
-#include "miaodesk/TodayTaskPresentation.h"
+#include "whaledesk/TodayTaskPresentation.h"
 
-namespace miaodesk::desktop {
+namespace whaledesk::desktop {
 namespace {
 
 // 数数的口径与 TodayTaskContentProvider 保持一致:那边是内容组件的真实来源,
@@ -51,4 +51,4 @@ std::wstring TaskOverflowText(std::size_t totalItems, std::size_t visibleSlots) 
     return L"还有 " + std::to_wstring(totalItems - visibleSlots) + L" 项";
 }
 
-} // namespace miaodesk::desktop
+} // namespace whaledesk::desktop

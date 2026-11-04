@@ -19,7 +19,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 // 断言，它证明不了解析正确." So it was logic with no net, and it moved again here.
 
 // --- run the real function -----------------------------------------------
-const work = fs.mkdtempSync("/tmp/miaodesk-url-policy-");
+const work = fs.mkdtempSync("/tmp/whaledesk-url-policy-");
 try {
   const bin = path.join(work, "policy");
   execFileSync("clang++",
@@ -41,7 +41,7 @@ try {
 }
 
 // --- the guard must live somewhere testable ------------------------------
-const policy = read("src/include/miaodesk/ApiUrlSecretPolicy.h");
+const policy = read("src/include/whaledesk/ApiUrlSecretPolicy.h");
 assert.match(policy, /inline bool UrlCarriesSecret\(const std::wstring& url\)/,
   "the guard must stay a free inline function in its own header, where a harness can"
   + " compile it without the whole settings page");
@@ -52,9 +52,9 @@ const page = read("src/ui/settings/DesktopAiSettingsPage.cpp");
 assert.doesNotMatch(page, /bool UrlCarriesSecret\(const std::wstring& url\) \{/,
   "the local copy must not come back: a definition inside an anonymous namespace in the"
   + " settings page is a definition nothing can execute");
-assert.match(page, /using miaodesk::api_url::UrlCarriesSecret;/,
+assert.match(page, /using whaledesk::api_url::UrlCarriesSecret;/,
   "the settings page must use the shared one");
-assert.match(page, /#include "miaodesk\/ApiUrlSecretPolicy\.h"/,
+assert.match(page, /#include "whaledesk\/ApiUrlSecretPolicy\.h"/,
   "...and include its header -- without this the page does not compile, which is the one"
   + " thing the include assertions are for");
 
@@ -101,7 +101,7 @@ for (const name of ["key", "api_key", "apikey", "x-api-key", "secret_key", "toke
 // Endpoint=<path> is printed verbatim; with a credential in the path that is the secret
 // in the transcript and in l3-runtime.log.
 const agent = read("src/ai/agent/L3Agent.cpp");
-assert.match(agent, /L" · Endpoint=" \+ miaodesk::secrets::RedactSecrets\(path\)/,
+assert.match(agent, /L" · Endpoint=" \+ whaledesk::secrets::RedactSecrets\(path\)/,
   "the chat failure line must redact the endpoint it echoes -- a credential allowed into"
   + " the path would otherwise be printed by name");
 

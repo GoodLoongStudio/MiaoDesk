@@ -30,7 +30,7 @@ assert.match(sizeBranch, /input_ime_detail::EnsureSearchImeGeometry\(edit_\)/,
   "WM_SIZE must re-anchor through the shared Search geometry helper");
 
 // The helper itself must be the one that sets the real rect, not a stub.
-const anchor = read("src/include/miaodesk/InputImeAnchor.h");
+const anchor = read("src/include/whaledesk/InputImeAnchor.h");
 assert.match(anchor, /SetWindowPos\(\s*edit,\s*nullptr,\s*kSearchEditLeft,\s*kSearchEditTop/,
   "EnsureSearchImeGeometry must place the real input rectangle");
 

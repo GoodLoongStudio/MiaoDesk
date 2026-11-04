@@ -1,20 +1,20 @@
-#include "miaodesk/WallpaperLibraryWindow.h"
-#include "miaodesk/BuiltinWallpaperCatalog.h"
-#include "miaodesk/ContentWidgetPreviewRenderer.h"
-#include "miaodesk/ContentCreatorBridge.h"
-#include "miaodesk/LibraryFilterChipLayout.h"
-#include "miaodesk/ContentWidgetSettingsDialog.h"
-#include "miaodesk/DesktopAiSettingsPage.h"
-#include "miaodesk/DesktopControlService.h"
-#include "miaodesk/DesktopWidgetController.h"
-#include "miaodesk/RuntimeLogger.h"
-#include "miaodesk/LiveLogWindow.h"
-#include "miaodesk/NativeWidgetPainter.h"
-#include "miaodesk/NativeWidgetPreset.h"
-#include "miaodesk/TodayTaskPresentation.h"
-#include "miaodesk/TodayTaskStore.h"
-#include "miaodesk/NativeWeatherService.h"
-#include "miaodesk/NativeUiScale.h"
+#include "whaledesk/WallpaperLibraryWindow.h"
+#include "whaledesk/BuiltinWallpaperCatalog.h"
+#include "whaledesk/ContentWidgetPreviewRenderer.h"
+#include "whaledesk/ContentCreatorBridge.h"
+#include "whaledesk/LibraryFilterChipLayout.h"
+#include "whaledesk/ContentWidgetSettingsDialog.h"
+#include "whaledesk/DesktopAiSettingsPage.h"
+#include "whaledesk/DesktopControlService.h"
+#include "whaledesk/DesktopWidgetController.h"
+#include "whaledesk/RuntimeLogger.h"
+#include "whaledesk/LiveLogWindow.h"
+#include "whaledesk/NativeWidgetPainter.h"
+#include "whaledesk/NativeWidgetPreset.h"
+#include "whaledesk/TodayTaskPresentation.h"
+#include "whaledesk/TodayTaskStore.h"
+#include "whaledesk/NativeWeatherService.h"
+#include "whaledesk/NativeUiScale.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -43,11 +43,11 @@
 
 namespace fs = std::filesystem;
 
-namespace miaodesk::wallpaper {
+namespace whaledesk::wallpaper {
 namespace {
 
-constexpr wchar_t kLibraryWindowClass[] = L"MiaoDesk.Native.DesktopLibrary";
-constexpr wchar_t kGridClass[] = L"MiaoDesk.Native.DesktopLibraryGrid";
+constexpr wchar_t kLibraryWindowClass[] = L"WhaleDesK.Native.DesktopLibrary";
+constexpr wchar_t kGridClass[] = L"WhaleDesK.Native.DesktopLibraryGrid";
 
 constexpr int kSearchId = 6101;
 constexpr int kAddId = 6102;
@@ -215,7 +215,7 @@ bool MatchesWallpaperFilter(const WallpaperLibraryItem& item, int filterIndex) {
     case 2: // 静态
         return item.kind == LibraryWallpaperKind::Image;
     case 3: // 猫咪
-        return ContainsAny(searchable, {L"猫", L"喵", L"miao", L"cat"});
+        return ContainsAny(searchable, {L"猫", L"喵", L"whale", L"cat"});
     case 4: // 风景
         return ContainsAny(searchable, {L"风景", L"自然", L"山", L"湖", L"海", L"月", L"云", L"樱", L"forest", L"lake", L"moon"});
     case 5: // 科幻
@@ -500,9 +500,9 @@ struct WallpaperLibraryWindow::Impl {
         desktop::DesktopState state{};
         const bool currentlyEnabled = desktopControl.GetState(&state).success ? state.enabled : true;
         const bool enable = !currentlyEnabled;
-        miaodesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用 (动态壁纸渲染中)" : L"已停用 (原生桌面壁纸)") + L" -> 目标切换为=" + std::wstring(enable ? L"启用壁纸" : L"停止壁纸"));
+        whaledesk::log::Info(L"UI.Library", L"用户点击启停壁纸: 当前状态=" + std::wstring(currentlyEnabled ? L"已启用 (动态壁纸渲染中)" : L"已停用 (原生桌面壁纸)") + L" -> 目标切换为=" + std::wstring(enable ? L"启用壁纸" : L"停止壁纸"));
         const auto result = desktopControl.SetWallpaperEnabled(enable);
-        miaodesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
+        whaledesk::log::Info(L"UI.Library", L"启停壁纸调用结果: " + result.message);
         RefreshWallpaperToggle();
         SetStatus(result.message.empty()
                       ? (enable ? L"壁纸已启用。" : L"壁纸已停用，小组件仍可显示。")
@@ -510,17 +510,17 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void OpenLogs() {
-        miaodesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
-        miaodesk::log::ShowLiveLogConsole(instance, window);
+        whaledesk::log::Info(L"UI.Library", L"用户点击打开实时运行日志面板");
+        whaledesk::log::ShowLiveLogConsole(instance, window);
     }
 
     void OpenCreator() {
         if (page == Page::AI) return;
         const auto kind = page == Page::Widgets
-            ? miaodesk::creator::ContentCreatorKind::Widget
-            : miaodesk::creator::ContentCreatorKind::Wallpaper;
+            ? whaledesk::creator::ContentCreatorKind::Widget
+            : whaledesk::creator::ContentCreatorKind::Wallpaper;
         std::wstring error;
-        if (!miaodesk::creator::OpenConversation(kind, window, &error)) {
+        if (!whaledesk::creator::OpenConversation(kind, window, &error)) {
             MessageBoxW(
                 window,
                 error.empty() ? L"无法打开 AI 创作窗口。" : error.c_str(),
@@ -550,7 +550,7 @@ struct WallpaperLibraryWindow::Impl {
             // 状态行是给人在窗口底部看的,列太多就读不动了。全量进日志。
             if (detail.size() > 240) { detail += L"…"; break; }
         }
-        miaodesk::log::Warn(L"UI.Library",
+        whaledesk::log::Warn(L"UI.Library",
                             L"壁纸库有 " + std::to_wstring(skippedLibraryRows.size()) +
                                 L" 条记录本版本读不了,已跳过:" + detail);
         SetStatus(L"有 " + std::to_wstring(skippedLibraryRows.size()) +
@@ -563,7 +563,7 @@ struct WallpaperLibraryWindow::Impl {
         if (wallpaperQueryInitialized && query == lastWallpaperQuery) {
             std::wstring error;
             if (!library->Load(&error) && !error.empty())
-                miaodesk::log::Warn(L"UI.Library", L"重新加载壁纸库失败: " + error);
+                whaledesk::log::Warn(L"UI.Library", L"重新加载壁纸库失败: " + error);
         }
         // 跳过了什么,每次刷新都报一次 —— **不只挂在重新加载那条上**。
         // 第一次进窗口时 Load 是调用方做的(这个分支不 Load),所以把报告放在
@@ -864,7 +864,7 @@ struct WallpaperLibraryWindow::Impl {
         COLORREF accent = RGB(92, 135, 255);
         if (item.kind == LibraryWallpaperKind::Scene) {
             const std::wstring id = LowerCopy(item.id);
-            if (ContainsAny(id, {L"miao-cloud", L"aurora"})) {
+            if (ContainsAny(id, {L"whale-cloud", L"aurora"})) {
                 base = RGB(39, 83, 160); accent = RGB(242, 169, 226);
             } else if (ContainsAny(id, {L"neon-city", L"neon"})) {
                 base = RGB(18, 6, 32); accent = RGB(255, 96, 180);
@@ -1181,7 +1181,7 @@ struct WallpaperLibraryWindow::Impl {
         const bool installed = page == Page::Installed;
         const bool widgets = page == Page::Widgets;
         const bool ai = page == Page::AI;
-        miaodesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置"));
+        whaledesk::log::Info(L"UI.Library", L"切换选项卡: " + std::wstring(installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置"));
         activeNavId = installed ? kNavInstalledId : widgets ? kNavWidgetsId : kNavAiId;
         SetWindowTextW(sectionTitle, installed ? L"壁纸库" : widgets ? L"组件" : L"API 配置");
         ShowWindow(wallpaperGrid, installed ? SW_SHOW : SW_HIDE);
@@ -1225,13 +1225,13 @@ struct WallpaperLibraryWindow::Impl {
         // status, no beep, no idea the click had been dropped. The card itself had told
         // them the resource was gone, so the click was the natural next move.
         if (!selected) {
-            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸");
+            whaledesk::log::Warn(L"UI.Library", L"应用壁纸失败：未选中壁纸");
             SetStatus(L"先选择一个桌面，再点应用到桌面。");
             MessageBeep(MB_ICONERROR);
             return;
         }
         if (SourceMissing(*selected)) {
-            miaodesk::log::Warn(L"UI.Library", L"应用壁纸失败：资源不存在 (\"" + selected->title + L"\", ID=" + selected->id + L")");
+            whaledesk::log::Warn(L"UI.Library", L"应用壁纸失败：资源不存在 (\"" + selected->title + L"\", ID=" + selected->id + L")");
             // Name the wallpaper and what to do about it: re-importing is the fix, and
             // "删掉再导入一次" is not something a user can infer from a beep. Pointing at
             // 移除 is honest -- the stored entry no longer resolves.
@@ -1240,7 +1240,7 @@ struct WallpaperLibraryWindow::Impl {
             return;
         }
         const std::wstring targetId = SelectedTargetId();
-        miaodesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
+        whaledesk::log::Info(L"UI.Library", L"用户点击应用壁纸: \"" + selected->title + L"\" (ID=" + selected->id + L", 类型=" + KindLabel(selected->kind) + L"), 目标屏幕=" + (targetId.empty() ? L"全局 (所有显示器)" : (L"指定单屏 ID: " + targetId)));
         bool applied = true;
         std::wstring failure;
         if (applyCallback) {
@@ -1256,7 +1256,7 @@ struct WallpaperLibraryWindow::Impl {
             const auto result = targetId.empty()
                 ? desktopControl.ApplyLibraryItem(*selected)
                 : desktopControl.AssignLibraryItemToMonitor(*selected, targetId, FriendlyMonitor(targetId));
-            miaodesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
+            whaledesk::log::Info(L"UI.Library", L"DesktopControl 应用结果: " + result.message);
             applied = result.success;
             failure = result.message;
         }
@@ -1270,7 +1270,7 @@ struct WallpaperLibraryWindow::Impl {
             // The result was already being logged and then ignored: a failed apply of
             // the product's core action told the user "已应用到桌面" and left nothing
             // in the status line to retry against.
-            miaodesk::log::Error(L"UI.Library", L"应用壁纸失败: " + failure);
+            whaledesk::log::Error(L"UI.Library", L"应用壁纸失败: " + failure);
             SetStatus(failure.empty() ? L"应用壁纸失败。" : failure);
             MessageBeep(MB_ICONERROR);
             return;
@@ -1281,10 +1281,10 @@ struct WallpaperLibraryWindow::Impl {
     void ToggleFavorite() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library) return;
-        miaodesk::log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
+        whaledesk::log::Info(L"UI.Library", L"用户点击收藏/取消收藏: \"" + selected->title + L"\", 当前=" + (selected->favorite ? L"已收藏" : L"未收藏"));
         std::wstring error;
         if (!library->SetFavorite(selected->id, !selected->favorite, &error)) {
-            miaodesk::log::Error(L"UI.Library", L"收藏操作失败: " + error);
+            whaledesk::log::Error(L"UI.Library", L"收藏操作失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
@@ -1295,31 +1295,31 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveSelected() {
         const auto selected = SelectedWallpaper();
         if (!selected || !library || selected->kind == LibraryWallpaperKind::Scene) return;
-        miaodesk::log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
+        whaledesk::log::Info(L"UI.Library", L"用户请求移除壁纸: \"" + selected->title + L"\" (id=" + selected->id + L")");
         if (MessageBoxW(window, (L"从桌面库移除“" + selected->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         std::wstring error;
         if (!library->Remove(selected->id, selected->managedCopy, &error)) {
-            miaodesk::log::Error(L"UI.Library", L"移除壁纸失败: " + error);
+            whaledesk::log::Error(L"UI.Library", L"移除壁纸失败: " + error);
             MessageBoxW(window, error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        miaodesk::log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
+        whaledesk::log::Info(L"UI.Library", L"成功移除壁纸: " + selected->id);
         selectedWallpaperId.clear();
         RefreshWallpapers();
     }
 
     void ImportPath(const fs::path& path) {
         if (!library) return;
-        miaodesk::log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
+        whaledesk::log::Info(L"UI.Library", L"用户导入文件: " + path.wstring());
         std::wstring error;
         auto imported = library->ImportFile(path, {}, &error);
         if (!imported) {
-            miaodesk::log::Error(L"UI.Library", L"导入失败: " + error);
+            whaledesk::log::Error(L"UI.Library", L"导入失败: " + error);
             MessageBoxW(window, error.empty() ? L"导入失败。" : error.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        miaodesk::log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
+        whaledesk::log::Info(L"UI.Library", L"导入成功: \"" + imported->title + L"\" (id=" + imported->id + L")");
         selectedWallpaperId = imported->id;
         RefreshWallpapers();
         SetStatus(L"已导入：" + imported->title);
@@ -1398,15 +1398,15 @@ struct WallpaperLibraryWindow::Impl {
     }
 
     void CreateWidgetPreset(desktop::WidgetFixedPreset preset) {
-        miaodesk::log::Info(L"UI.Widgets", L"用户创建小组件预设...");
+        whaledesk::log::Info(L"UI.Widgets", L"用户创建小组件预设...");
         DesktopWidget created;
         const auto result = widgetController.CreatePreset(preset, PrimaryMonitorId(), &created);
         if (!result.success) {
-            miaodesk::log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
+            whaledesk::log::Error(L"UI.Widgets", L"创建小组件预设失败: " + result.message);
             MessageBoxW(window, result.message.empty() ? L"创建小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
         }
-        miaodesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
+        whaledesk::log::Info(L"UI.Widgets", L"成功创建小组件: \"" + created.title + L"\" (id=" + created.id + L")");
         selectedWidgetId = created.id;
         RefreshWidgets();
         SetStatus(L"已创建桌面小组件：" + created.title);
@@ -1469,9 +1469,9 @@ struct WallpaperLibraryWindow::Impl {
         const auto current = SelectedWidget();
         if (!current) return;
         const bool target = !current->enabled;
-        miaodesk::log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
+        whaledesk::log::Info(L"UI.Widgets", L"用户切换小组件启停: \"" + current->title + L"\" -> " + std::wstring(target ? L"启用" : L"停用"));
         const auto result = widgetController.SetEnabled(current->id, target);
-        miaodesk::log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
+        whaledesk::log::Info(L"UI.Widgets", L"切换小组件启停结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"更新小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
@@ -1483,11 +1483,11 @@ struct WallpaperLibraryWindow::Impl {
     void RemoveWidget() {
         const auto current = SelectedWidget();
         if (!current) return;
-        miaodesk::log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
+        whaledesk::log::Info(L"UI.Widgets", L"用户请求删除小组件: \"" + current->title + L"\" (id=" + current->id + L")");
         if (MessageBoxW(window, (L"删除小组件“" + current->title + L"”？").c_str(), L"妙喵",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return;
         const auto result = widgetController.Remove(current->id);
-        miaodesk::log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
+        whaledesk::log::Info(L"UI.Widgets", L"删除小组件结果: " + result.message);
         if (!result.success) {
             MessageBoxW(window, result.message.empty() ? L"删除小组件失败。" : result.message.c_str(), L"妙喵", MB_OK | MB_ICONERROR);
             return;
@@ -1908,7 +1908,7 @@ struct WallpaperLibraryWindow::Impl {
                              suggested->right - suggested->left, suggested->bottom - suggested->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
-            miaodesk::log::Info(
+            whaledesk::log::Info(
                 L"UI.Library",
                 L"显示器缩放发生变化: 系统 DPI=" + std::to_wstring(self->Dpi()) +
                 L", 字体有效 DPI=" + std::to_wstring(ui::EffectiveFontDpi(hwnd)));
@@ -1928,7 +1928,7 @@ struct WallpaperLibraryWindow::Impl {
             const int width = LOWORD(lParam);
             const int height = HIWORD(lParam);
             const wchar_t* stateStr = wParam == SIZE_MAXIMIZED ? L"最大化" : (wParam == SIZE_MINIMIZED ? L"最小化" : L"正常自由缩放");
-            miaodesk::log::Info(L"UI.Library", L"设置页面窗口尺寸变更: 宽=" + std::to_wstring(width) +
+            whaledesk::log::Info(L"UI.Library", L"设置页面窗口尺寸变更: 宽=" + std::to_wstring(width) +
                                   L", 高=" + std::to_wstring(height) + L", 状态=" + stateStr);
             self->Layout();
             return 0;
@@ -2209,4 +2209,4 @@ HWND WallpaperLibraryWindow::Window() const noexcept {
     return impl_->window;
 }
 
-} // namespace miaodesk::wallpaper
+} // namespace whaledesk::wallpaper
